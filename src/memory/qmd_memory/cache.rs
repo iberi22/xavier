@@ -5,8 +5,14 @@ use std::sync::{Arc, LazyLock};
 use std::time::Instant;
 use tokio::sync::RwLock as AsyncRwLock;
 
-use crate::memory::qmd_memory::types::EmbeddingCacheEntry;
+use crate::memory::schema::matches_filters;
+use crate::memory::qmd_memory::search::lexical_score;
+use crate::memory::qmd_memory::types::{CachedSearchResult, EmbeddingCacheEntry, MemoryDocument, SearchCacheKey};
+use crate::memory::qmd_memory::utils::normalize_query;
+use crate::memory::qmd_memory::QmdMemory;
+use crate::memory::schema::MemoryQueryFilters;
 use crate::utils::crypto::hex_encode;
+use std::sync::atomic::Ordering as AtomicOrdering;
 
 pub const EMBEDDING_CACHE_TTL_SECS: u64 = 3600; // 1 hour
 
@@ -121,4 +127,70 @@ pub fn preserve_quoted_speech(text: &str) -> String {
         .to_string();
 
     result
+}
+
+pub async fn search_with_cache_filtered(
+    memory: &QmdMemory,
+    query_text: &str,
+    limit: usize,
+    filters: Option<&MemoryQueryFilters>,
+) -> Result<CachedSearchResult> {
+    let normalized_query = normalize_query(query_text);
+    let cache_key = SearchCacheKey {
+        workspace_id: memory.workspace_id.clone(),
+        query: normalized_query.clone(),
+        limit,
+        filters: serde_json::to_string(&filters).unwrap_or_default(),
+    };
+
+    if let Some(cached) = memory.search_cache.read().await.get(&cache_key).cloned() {
+        memory.cache_counters
+            .hits
+            .fetch_add(1, AtomicOrdering::Relaxed);
+        return Ok(CachedSearchResult {
+            documents: cached,
+            cache_hit: true,
+        });
+    }
+
+    let docs = memory.docs.read().await;
+    let mut scored: Vec<(f32, MemoryDocument)> = docs
+        .iter()
+        .filter_map(|doc| {
+            if !matches_filters(&doc.path, &doc.metadata, &memory.workspace_id, filters) {
+                return None;
+            }
+            let score = lexical_score(doc, &normalized_query);
+            (score > 0.0).then(|| (score, doc.clone()))
+        })
+        .collect();
+    drop(docs);
+
+    scored.sort_by(|left, right| {
+        right
+            .0
+            .partial_cmp(&left.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.1.path.cmp(&right.1.path))
+    });
+
+    let documents: Vec<MemoryDocument> =
+        scored.into_iter().map(|(_, doc)| doc).take(limit).collect();
+
+    memory.search_cache
+        .write()
+        .await
+        .insert(cache_key, documents.clone());
+    memory.cache_counters
+        .misses
+        .fetch_add(1, AtomicOrdering::Relaxed);
+
+    Ok(CachedSearchResult {
+        documents,
+        cache_hit: false,
+    })
+}
+
+pub async fn invalidate_cache(memory: &QmdMemory) {
+    memory.search_cache.write().await.clear();
 }

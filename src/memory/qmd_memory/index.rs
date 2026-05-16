@@ -1,9 +1,11 @@
-use serde_json::{json, Value};
-use std::collections::HashSet;
-
-use crate::memory::qmd_memory::types::QueryBundle;
+use crate::memory::qmd_memory::cache::generate_embedding;
+use crate::memory::qmd_memory::types::{MemoryDocument, QueryBundle};
 use crate::memory::qmd_memory::utils::*;
-use std::collections::HashMap;
+use crate::memory::qmd_memory::QmdMemory;
+use crate::memory::schema::TypedMemoryPayload;
+use anyhow::Result;
+use serde_json::{json, Value};
+use std::collections::{HashMap, HashSet};
 
 pub fn build_query_bundle_internal(query_text: &str) -> QueryBundle {
     let normalized_query = normalize_query(query_text);
@@ -373,4 +375,91 @@ pub fn dedupe_variants(variants: Vec<(String, String, Value)>) -> Vec<(String, S
             seen.insert(key)
         })
         .collect()
+}
+
+pub async fn add_document(
+    memory: &QmdMemory,
+    path: String,
+    content: String,
+    metadata: Value,
+) -> Result<String> {
+    add_document_typed_with_embedding(memory, path, content, metadata, None, None).await
+}
+
+pub async fn add_document_typed(
+    memory: &QmdMemory,
+    path: String,
+    content: String,
+    metadata: Value,
+    typed: Option<TypedMemoryPayload>,
+) -> Result<String> {
+    add_document_typed_with_embedding(memory, path, content, metadata, typed, None).await
+}
+
+pub async fn add_document_typed_with_embedding(
+    memory: &QmdMemory,
+    path: String,
+    content: String,
+    metadata: Value,
+    typed: Option<TypedMemoryPayload>,
+    embedding: Option<Vec<f32>>,
+) -> Result<String> {
+    let id = ulid::Ulid::new().to_string();
+    let metadata = crate::memory::schema::normalize_metadata(
+        &path,
+        metadata,
+        &memory.workspace_id,
+        typed.as_ref(),
+    )?;
+    let metadata = normalize_locomo_metadata(&path, metadata);
+    let variants = expand_document_variants(&path, &content, &metadata);
+    let is_locomo_benchmark = metadata
+        .get("benchmark")
+        .and_then(|value| value.as_str())
+        .is_some_and(|value| value.eq_ignore_ascii_case("locomo"))
+        || path.contains("locomo/");
+    let base_embedding = if is_locomo_benchmark {
+        Vec::new()
+    } else if let Some(embedding) = embedding.clone() {
+        embedding
+    } else {
+        generate_embedding(&content)
+            .await
+            .unwrap_or_else(|_| Vec::new())
+    };
+
+    for (index, (variant_path, variant_content, variant_metadata)) in
+        variants.into_iter().enumerate()
+    {
+        let variant_embedding = if is_locomo_benchmark || variant_content == content {
+            base_embedding.clone()
+        } else {
+            generate_embedding(&variant_content)
+                .await
+                .unwrap_or_else(|_| Vec::new())
+        };
+
+        memory
+            .add(MemoryDocument {
+                id: Some(if index == 0 {
+                    id.clone()
+                } else {
+                    ulid::Ulid::new().to_string()
+                }),
+                path: variant_path,
+                content: variant_content,
+                metadata: variant_metadata,
+                content_vector: Some(variant_embedding.clone()),
+                embedding: variant_embedding,
+                cluster_id: typed.as_ref().and_then(|t| t.cluster_id.clone()),
+                level: typed
+                    .as_ref()
+                    .and_then(|t| t.level)
+                    .unwrap_or(crate::memory::schema::MemoryLevel::Raw),
+                relation: typed.as_ref().and_then(|t| t.relation.clone()),
+            })
+            .await?;
+    }
+
+    Ok(id)
 }
