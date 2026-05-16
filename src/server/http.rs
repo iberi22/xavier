@@ -339,6 +339,7 @@ impl HttpConfig {
 }
 
 pub struct HttpServer {
+    #[allow(dead_code)]
     config: HttpConfig,
 }
 

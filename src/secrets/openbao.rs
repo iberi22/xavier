@@ -4,7 +4,9 @@ use std::future::Future;
 use std::pin::Pin;
 
 pub struct OpenBaoSecretStore {
+    #[allow(dead_code)]
     address: String,
+    #[allow(dead_code)]
     token: String,
 }
 
