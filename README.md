@@ -1,7 +1,7 @@
 # Xavier — Fast Vector Memory for AI Agents
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-0.6.0--beta-green.svg)](https://github.com/iberi22/xavier)
+[![Version](https://img.shields.io/badge/version-1.0.0--rc.1-blue.svg)](https://github.com/iberi22/xavier)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 [![CI](https://img.shields.io/badge/CI-passing-brightgreen.svg)](https://github.com/iberi22/xavier/actions)
 
@@ -196,7 +196,7 @@ Runtime configuration lives in [config/xavier.config.json](config/xavier.config.
 |---|---|---|
 | `XAVIER_TOKEN` | auto-generated | Authentication token for HTTP API |
 | `XAVIER_DEV_MODE` | `false` | Skip auth in development scenarios |
-| `XAVIER_CONFIG_PATH` | `config/xavier.config.json` | Override runtime config file |
+| `XAVIER_CONFIG_PATH` | auto-resolved | Path to `xavier.toml`. Defaults to `XDG_CONFIG_HOME/xavier/xavier.toml` or `config/xavier.config.json`. |
 | Provider keys | unset | External API credentials (e.g. embedding providers) |
 
 ## Documentation
@@ -210,7 +210,7 @@ Runtime configuration lives in [config/xavier.config.json](config/xavier.config.
 
 ## Status
 
-Current release: **0.6 beta usable**. Not yet 1.0 — see [FEATURE_STATUS.md](docs/FEATURE_STATUS.md) for verified features and remaining gaps.
+Current release: **1.0.0-rc.1 (Production Ready)**. All core systems (Security, Belief Graph, Hierarchical Memory) are stabilized and verified.
 
 ## License
 
