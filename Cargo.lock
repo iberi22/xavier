@@ -1194,7 +1194,7 @@ dependencies = [
 
 [[package]]
 name = "code-graph"
-version = "0.2.0"
+version = "1.0.0-rc.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -9497,7 +9497,7 @@ dependencies = [
 
 [[package]]
 name = "xavier"
-version = "0.6.0-beta"
+version = "1.0.0-rc.1"
 dependencies = [
  "aes-gcm",
  "aho-corasick",
@@ -9514,6 +9514,7 @@ dependencies = [
  "criterion",
  "cron",
  "crossterm",
+ "dirs 6.0.0",
  "eframe",
  "egui",
  "egui_extras",
