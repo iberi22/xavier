@@ -1,33 +1,16 @@
 //! CLI configuration utilities
 
 use anyhow::{anyhow, Result};
-use rand::{rngs::OsRng, RngCore};
 use std::path::PathBuf;
-use tracing::warn;
 
 use crate::settings::XavierSettings;
 
 pub fn resolve_http_token() -> Result<String> {
-    match std::env::var("XAVIER_TOKEN") {
-        Ok(token) => Ok(token),
-        Err(_) if xavier_dev_mode_enabled() => {
-            let mut bytes = [0u8; 16];
-            OsRng.fill_bytes(&mut bytes);
-            let token = hex::encode(bytes);
-            warn!("XAVIER_TOKEN not set, generated random token because XAVIER_DEV_MODE=true");
-            Ok(token)
-        }
-        Err(_) => Err(anyhow!(
-            "XAVIER_TOKEN environment variable must be set to start the HTTP server. Set XAVIER_DEV_MODE=true only for explicit local development."
-        )),
-    }
+    XavierSettings::current().auth_token.ok_or_else(|| {
+        anyhow!("XAVIER_TOKEN environment variable must be set to start the HTTP server.")
+    })
 }
 
-pub fn xavier_dev_mode_enabled() -> bool {
-    std::env::var("XAVIER_DEV_MODE")
-        .ok()
-        .is_some_and(|value| matches!(value.as_str(), "1" | "true" | "TRUE"))
-}
 
 pub fn resolve_http_bind_host() -> String {
     std::env::var("XAVIER_HOST").unwrap_or_else(|_| XavierSettings::current().server.host)
@@ -60,20 +43,21 @@ pub fn resolve_http_port() -> u16 {
 }
 
 pub fn xavier_token() -> String {
-    std::env::var("XAVIER_TOKEN")
+    XavierSettings::current()
+        .auth_token
         .expect("XAVIER_TOKEN environment variable must be set for CLI client commands")
 }
 
 pub fn require_xavier_token() -> Result<String> {
-    std::env::var("XAVIER_TOKEN").map_err(|_| {
-        anyhow!("XAVIER_TOKEN environment variable must be set for CLI client commands")
-    })
+    XavierSettings::current()
+        .auth_token
+        .ok_or_else(|| anyhow!("XAVIER_TOKEN environment variable must be set for CLI client commands"))
 }
 
 pub fn code_graph_db_path() -> PathBuf {
     std::env::var("XAVIER_CODE_GRAPH_DB_PATH")
         .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from("data").join("code_graph.db"))
+        .unwrap_or_else(|_| XavierSettings::resolve_data_dir().join("code_graph.db"))
 }
 
 pub fn state_panel_root(workspace_dir: &std::path::Path, workspace_id: &str) -> PathBuf {
