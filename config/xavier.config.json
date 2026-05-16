@@ -32,7 +32,9 @@
     "embedding_url": "http://localhost:11434/v1",
     "embedding_model": "embeddinggemma",
     "router_retrieved_model": "",
-    "router_complex_model": ""
+    "router_complex_model": "",
+    "router_fast_model": "opencode/minimax-m2.7",
+    "router_quality_model": "opencode/deepseek-v4-pro"
   },
   "retrieval": {
     "disable_hyde": true

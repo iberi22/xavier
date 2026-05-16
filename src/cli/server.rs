@@ -8,7 +8,7 @@ use axum::{
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
+    Json, Router, extract::Query,
 };
 
 use serde::{Deserialize, Serialize};
@@ -26,6 +26,7 @@ use super::utils::estimate_tokens;
 use crate::cli::config::{
     code_graph_db_path, resolve_base_url, resolve_base_url_for_port, resolve_http_bind_host, resolve_http_token, state_panel_root, xavier_token,
 };
+use crate::settings::XavierSettings;
 use crate::cli::state::CliState;
 use xavier::adapters::inbound::http::routes::{
     sync_check_handler, time_metric_handler, verify_save_handler,
@@ -58,21 +59,9 @@ use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
 
 pub async fn start_http_server(port: u16) -> Result<()> {
+    let settings = XavierSettings::current();
+    settings.apply_to_env();
     std::env::set_var("XAVIER_PORT", port.to_string());
-
-    // Set default router model assignments (user can override via env)
-    if std::env::var("XAVIER_ROUTER_FAST_MODEL").is_err() {
-        std::env::set_var("XAVIER_ROUTER_FAST_MODEL", "opencode/minimax-m2.7");
-    }
-    if std::env::var("XAVIER_ROUTER_QUALITY_MODEL").is_err() {
-        std::env::set_var("XAVIER_ROUTER_QUALITY_MODEL", "opencode/deepseek-v4-pro");
-    }
-    if std::env::var("XAVIER_ROUTER_RETRIEVED_MODEL").is_err() {
-        std::env::set_var("XAVIER_ROUTER_RETRIEVED_MODEL", "opencode/minimax-m2.7");
-    }
-    if std::env::var("XAVIER_ROUTER_COMPLEX_MODEL").is_err() {
-        std::env::set_var("XAVIER_ROUTER_COMPLEX_MODEL", "opencode/deepseek-v4-pro");
-    }
 
     let bind_host = resolve_http_bind_host();
     let bind_addr = format!("{}:{}", bind_host, port);
@@ -133,8 +122,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     rate_manager.init_schema()?;
     threat_store.init_schema()?;
 
-    let workspace_id =
-        std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string());
+    let workspace_id = XavierSettings::current().workspace.default_workspace_id;
     let durable_state = store.load_workspace_state(&workspace_id).await?;
     let docs = Arc::new(RwLock::new(
         durable_state
@@ -177,12 +165,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     let code_query = Arc::new(::code_graph::query::QueryEngine::new(Arc::clone(&code_db)));
 
     // Determine workspace root for path traversal protection
-    let workspace_dir = std::path::absolute(
-        std::env::var("XAVIER_WORKSPACE_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))),
-    )
-    .unwrap_or_else(|_| PathBuf::from("."));
+    let workspace_dir = PathBuf::from(XavierSettings::current().memory.workspace_dir);
     info!(
         "Workspace root for path security: {}",
         workspace_dir.display()
@@ -277,6 +260,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/memory/add", post(add_handler))
         .route("/memory/delete", post(delete_handler))
         .route("/memory/stats", get(stats_handler))
+        .route("/memory/export", get(export_handler))
         .route("/code/scan", post(code_scan_handler))
         .route("/code/find", post(code_find_handler))
         .route("/code/context", post(code_context_handler))
@@ -335,6 +319,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/v1/usage/cooldown", post(usage_cooldown_handler))
         .route("/v1/usage/track", post(usage_track_handler))
         .route("/v1/usage/summary/{provider}", get(usage_summary_handler))
+        .layer(middleware::from_fn_with_state(state.clone(), rate_limit_middleware))
         .layer(middleware::from_fn(auth_middleware));
 
     // Add enterprise plugin routes if feature is enabled
@@ -465,21 +450,21 @@ pub async fn build_handler(State(state): State<CliState>) -> Response {
             "version": env!("CARGO_PKG_VERSION"),
             "workspace_id": state.workspace_id,
             "base_url": resolve_base_url(),
-            "memory_backend": std::env::var("XAVIER_MEMORY_BACKEND").unwrap_or_else(|_| "vec".to_string()),
+            "memory_backend": XavierSettings::current().memory.backend,
             "code_graph_db_path": code_graph_db_path(),
         }),
     )
 }
 
 pub async fn account_usage_handler(State(state): State<CliState>, headers: HeaderMap) -> Response {
-    let expected_token = match std::env::var("XAVIER_TOKEN") {
+    let expected_token = match resolve_http_token() {
         Ok(token) => token,
-        Err(_) => {
+        Err(e) => {
             return json_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 serde_json::json!({
                     "status": "error",
-                    "message": "XAVIER_TOKEN is not configured",
+                    "message": format!("Token resolution failed: {e}"),
                 }),
             )
         }
@@ -549,12 +534,12 @@ pub fn json_response(status: StatusCode, body: serde_json::Value) -> Response {
 }
 
 pub async fn auth_middleware(req: Request<Body>, next: Next) -> Response {
-    let expected_token = match std::env::var("XAVIER_TOKEN") {
+    let expected_token = match resolve_http_token() {
         Ok(token) => token,
-        Err(_) => {
+        Err(e) => {
             return json_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                serde_json::json!({"status":"error","message":"XAVIER_TOKEN is not configured"}),
+                serde_json::json!({"status":"error","message": format!("Token resolution failed: {e}")}),
             );
         }
     };
@@ -572,6 +557,47 @@ pub async fn auth_middleware(req: Request<Body>, next: Next) -> Response {
     }
 
     next.run(req).await
+}
+
+pub async fn rate_limit_middleware(
+    State(state): State<CliState>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    let provider = "api_gateway";
+    match state.rate_manager.get_status(provider).await {
+        Ok(status) => {
+            if let Some(until) = status.rate_limited_until {
+                if until > chrono::Utc::now() {
+                    warn!("Global rate limit reached, blocking request");
+                    return json_response(
+                        StatusCode::TOO_MANY_REQUESTS,
+                        serde_json::json!({
+                            "status": "error",
+                            "message": "Rate limit exceeded. Please try again later.",
+                            "retry_after": until.to_rfc3339()
+                        }),
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            warn!("Failed to check rate limit: {}", e);
+        }
+    }
+
+    let response = next.run(req).await;
+
+    // Track usage (simple 1 unit per request)
+    if let Err(e) = state
+        .rate_manager
+        .track_request(provider, 1, response.status().as_u16(), 0.0, false)
+        .await
+    {
+        warn!("Failed to track rate limit usage: {}", e);
+    }
+
+    response
 }
 
 pub async fn panel_list_threads(State(state): State<CliState>) -> Response {
@@ -820,7 +846,8 @@ pub async fn add_handler(
                 "confidence": sec_result.detection_confidence,
                 "attack_type": sec_result.attack_type,
             }
-        }));
+        }))
+        .into_response();
     }
 
     let effective_content = sec_result
@@ -883,14 +910,18 @@ pub async fn add_handler(
                     "sanitized": sec_result.sanitized_input.is_some(),
                     "attack_type": sec_result.attack_type,
                 }
-            }))
+            })).into_response()
         }
         Err(e) => {
             info!("Add memory error: {}", e);
-            axum::Json(serde_json::json!({
-                "status": "error",
-                "message": e.to_string(),
-            }))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(serde_json::json!({
+                    "status": "error",
+                    "message": e.to_string(),
+                })),
+            )
+                .into_response()
         }
     }
 }
@@ -900,12 +931,12 @@ pub async fn delete_handler(
     headers: HeaderMap,
     axum::extract::Json(payload): axum::extract::Json<DeleteMemoryRequest>,
 ) -> Response {
-    let expected_token = match std::env::var("XAVIER_TOKEN") {
+    let expected_token = match resolve_http_token() {
         Ok(token) => token,
-        Err(_) => {
+        Err(e) => {
             return json_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                serde_json::json!({"status":"error","message":"XAVIER_TOKEN not configured"}),
+                serde_json::json!({"status":"error","message": format!("Token resolution failed: {e}")}),
             );
         }
     };
@@ -1986,7 +2017,7 @@ pub async fn search_memories_filtered(
 
     let parsed_levels = levels
         .iter()
-        .filter_map(|l| Some(xavier::memory::schema::MemoryLevel::parse(l)))
+        .map(|l| xavier::memory::schema::MemoryLevel::parse(l))
         .collect::<Vec<_>>();
 
     let filters = xavier::memory::schema::MemoryQueryFilters {
@@ -2214,6 +2245,29 @@ pub(crate) struct AgentPushContextPayload {
     metadata: Option<serde_json::Value>,
 }
 
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ExportPayload {
+    pub public: Option<bool>,
+}
+
+pub async fn export_handler(
+    State(state): State<CliState>,
+    Query(params): Query<ExportPayload>,
+) -> impl IntoResponse {
+    let public_only = params.public.unwrap_or(false);
+    match state.memory.export(public_only).await {
+        Ok(docs) => Json(docs).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": e.to_string()
+            })),
+        )
+            .into_response(),
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct SwarmConfig {
