@@ -177,7 +177,7 @@ fn resolve_code_graph_db_path() -> PathBuf {
 async fn load_memory_from_env() -> Result<Arc<QmdMemory>> {
     XavierSettings::current().apply_to_env();
     if std::env::var_os("XAVIER_TOKEN").is_none() {
-        std::env::set_var("XAVIER_TOKEN", "chronicle-local-token");
+        return Err(anyhow!("XAVIER_TOKEN environment variable must be set"));
     }
 
     let workspace_id =
