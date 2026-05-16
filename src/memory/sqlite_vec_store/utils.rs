@@ -87,3 +87,55 @@ pub fn code_tokens(text: &str) -> Vec<String> {
     }
     expanded
 }
+
+pub const DEFAULT_RRF_K: usize = 60;
+pub const DEFAULT_QJL_THRESHOLD: usize = 500;
+
+pub fn configured_qjl_threshold() -> usize {
+    std::env::var("XAVIER_QJL_THRESHOLD")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_QJL_THRESHOLD)
+}
+
+pub fn configured_rrf_k() -> usize {
+    std::env::var("XAVIER_RRF_K")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .filter(|value| *value > 0)
+        .unwrap_or(DEFAULT_RRF_K)
+}
+
+pub fn dynamic_rrf_k(dataset_size: usize) -> usize {
+    let base = configured_rrf_k();
+    if dataset_size <= 1_000 {
+        return base;
+    }
+
+    base.saturating_add(dataset_size / 1_000)
+}
+
+pub fn entity_extraction_enabled() -> bool {
+    std::env::var("XAVIER_ENTITY_EXTRACTION_ENABLED")
+        .ok()
+        .map(|value| {
+            !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "0" | "false" | "off"
+            )
+        })
+        .unwrap_or(true)
+}
+
+pub fn audit_chain_enabled() -> bool {
+    std::env::var("XAVIER_AUDIT_CHAIN_ENABLED")
+        .ok()
+        .map(|value| {
+            !matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "0" | "false" | "off"
+            )
+        })
+        .unwrap_or(true)
+}
