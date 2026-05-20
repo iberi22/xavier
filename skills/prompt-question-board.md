@@ -82,7 +82,7 @@ Genera una pregunta estructurada basada en la siguiente descripción:
 Para guardar en Xavier:
 ```bash
 curl -X POST "http://localhost:8003/memory/add" \
-  -H "X-Xavier-Token: dev-token" \
+  -H "X-Xavier-Token: ${XAVIER_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "path": "sweat-operations/questions/q-{id}",
@@ -99,7 +99,7 @@ curl -X POST "http://localhost:8003/memory/add" \
 Para buscar preguntas:
 ```bash
 curl -X POST "http://localhost:8003/memory/search" \
-  -H "X-Xavier-Token: dev-token" \
+  -H "X-Xavier-Token: ${XAVIER_TOKEN}" \
   -H "Content-Type: application/json" \
   -d '{
     "query": "sweat-operations questions",
