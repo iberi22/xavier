@@ -1431,7 +1431,13 @@ impl WorkspaceRegistry {
     pub async fn default_from_env(runtime_config: RuntimeConfig) -> Result<Self> {
         let registry = Self::new();
         let config = WorkspaceConfig::from_env();
-        let panel_root = PathBuf::from("data").join("workspaces").join(&config.id);
+        let panel_root = match std::env::var("XAVIER_WORKSPACE_DIR") {
+            Ok(dir) => PathBuf::from(dir).join(&config.id),
+            Err(_) => match std::env::var("XAVIER_DATA_DIR") {
+                Ok(dir) => PathBuf::from(dir).join("workspaces").join(&config.id),
+                Err(_) => PathBuf::from("data").join("workspaces").join(&config.id),
+            },
+        };
         let workspace = WorkspaceState::new(config, runtime_config, panel_root).await?;
         seed_workspace(&workspace).await?;
         registry.insert(workspace).await?;
