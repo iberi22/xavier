@@ -12,7 +12,14 @@ pub mod rbac;
 pub mod audit;
 pub mod keys;
 pub mod rate_limit;
+#[cfg(feature = "enterprise")]
 pub mod http;
+#[cfg(not(feature = "enterprise"))]
+pub mod http {
+    pub fn enterprise_router() -> axum::Router {
+        axum::Router::new()
+    }
+}
 pub mod persistence;
 #[cfg(test)]
 pub mod tests;
