@@ -27,7 +27,7 @@ Xavier is the global memory brain. **Cortex** acts as its synchronization plugin
 ## Main Project
 - Repo: `iberi22/xavier` — Open source context engine.
 - Stack: Rust + SQLite-Vec.
-- Plugins: Cortex ("E:\scripts-python\cortex") - PGheart ("E:\scripts-python\pgheart").
+- Plugins: Cortex ("~/dev/cortex") - PGheart ("~/dev/pgheart").
 - Objective: To become the central memory system for all SWAL agents.
 
 ---
