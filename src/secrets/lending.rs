@@ -1,14 +1,26 @@
+use std::fmt;
 use super::SecretError;
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct EphemeralLease {
     pub session_token: String,
     pub real_secret_id: String,
     pub agent_id: String,
     pub expires_at: SystemTime,
+}
+
+impl fmt::Debug for EphemeralLease {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EphemeralLease")
+            .field("session_token", &"[REDACTED]")
+            .field("real_secret_id", &"[REDACTED]")
+            .field("agent_id", &self.agent_id)
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
 }
 
 pub trait AuditLogger {

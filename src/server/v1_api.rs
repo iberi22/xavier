@@ -77,6 +77,29 @@ pub struct V1MemorySearchResponse {
     pub results: Vec<V1MemoryResponse>,
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct V1ExportParams {
+    pub public: Option<bool>,
+}
+
+pub async fn v1_memories_export(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Query(params): Query<V1ExportParams>,
+) -> impl IntoResponse {
+    let public_only = params.public.unwrap_or(false);
+    match workspace.workspace.memory.export(public_only).await {
+        Ok(docs) => Json(docs).into_response(),
+        Err(e) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": e.to_string()
+            })),
+        )
+            .into_response(),
+    }
+}
+
 fn is_primary_memory(metadata: &serde_json::Value) -> bool {
     metadata.get("source_path").is_none()
 }

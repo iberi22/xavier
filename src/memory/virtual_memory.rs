@@ -61,8 +61,10 @@ impl VirtualMemory {
                         if let Ok(Some(doc)) = self.memory.get(&source_id).await {
                             // Expansion: If this belongs to a cluster, pull cluster siblings
                             if let Some(cluster_id) = &doc.cluster_id {
-                                let mut filters = crate::memory::schema::MemoryQueryFilters::default();
-                                filters.cluster_ids = Some(vec![cluster_id.clone()]);
+                                let filters = crate::memory::schema::MemoryQueryFilters {
+                                    cluster_ids: Some(vec![cluster_id.clone()]),
+                                    ..Default::default()
+                                };
                                 if let Ok(siblings) = self.memory.search_filtered(query, 5, Some(&filters)).await {
                                     for sibling in siblings {
                                         let sibling_id = sibling.id.clone().unwrap_or_else(|| sibling.path.clone());
@@ -120,8 +122,10 @@ impl VirtualMemory {
                     if !seen_ids.contains(&doc_id) {
                         // Expansion: If this belongs to a cluster, pull cluster siblings
                         if let Some(cluster_id) = &doc.cluster_id {
-                            let mut filters = crate::memory::schema::MemoryQueryFilters::default();
-                            filters.cluster_ids = Some(vec![cluster_id.clone()]);
+                            let filters = crate::memory::schema::MemoryQueryFilters {
+                                cluster_ids: Some(vec![cluster_id.clone()]),
+                                ..Default::default()
+                            };
                             if let Ok(siblings) = self.memory.search_filtered(query, 3, Some(&filters)).await {
                                 for sibling in siblings {
                                     let sibling_id = sibling.id.clone().unwrap_or_else(|| sibling.path.clone());

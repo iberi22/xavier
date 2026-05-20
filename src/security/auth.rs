@@ -3,10 +3,36 @@
 
 use std::fmt;
 
+use anyhow::{anyhow, Result};
 use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
+
+/// Resolve the XAVIER_TOKEN from the environment.
+///
+/// If `XAVIER_TOKEN` is set, returns its value.
+///
+/// If `XAVIER_TOKEN` is unset:
+/// - With the `dev-mode` feature enabled, falls back to `"dev-token"`.
+/// - Without `dev-mode` (the default), returns an error.
+pub fn resolve_xavier_token() -> Result<String> {
+    match std::env::var("XAVIER_TOKEN") {
+        Ok(token) => Ok(token),
+        Err(_) => {
+            #[cfg(feature = "dev-mode")]
+            {
+                Ok("dev-token".to_string())
+            }
+            #[cfg(not(feature = "dev-mode"))]
+            {
+                Err(anyhow!(
+                    "XAVIER_TOKEN environment variable is not set"
+                ))
+            }
+        }
+    }
+}
 
 /// JWT Claims for authentication
 #[derive(Clone, Serialize, Deserialize)]
@@ -22,7 +48,7 @@ impl Claims {
     pub fn new(user_id: String, email: String, role: UserRole, expires_in: u64) -> Self {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .expect("SystemTime::duration_since failed - clock is before UNIX epoch")
+            .unwrap_or(std::time::Duration::from_secs(0))
             .as_secs();
 
         Self {
@@ -37,7 +63,7 @@ impl Claims {
     pub fn is_expired(&self) -> bool {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .expect("SystemTime::duration_since failed - clock is before UNIX epoch")
+            .unwrap_or(std::time::Duration::from_secs(0))
             .as_secs();
         now > self.exp
     }
@@ -69,7 +95,7 @@ impl User {
     pub fn new(email: String, name: String, role: UserRole) -> Self {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .expect("SystemTime::duration_since failed - clock is before UNIX epoch")
+            .unwrap_or(std::time::Duration::from_secs(0))
             .as_secs();
 
         Self {
@@ -119,11 +145,21 @@ impl fmt::Debug for LoginRequest {
 }
 
 /// Login response
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 pub struct LoginResponse {
     pub token: String,
     pub refresh_token: String,
     pub user: User,
+}
+
+impl fmt::Debug for LoginResponse {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LoginResponse")
+            .field("token", &"[REDACTED]")
+            .field("refresh_token", &"[REDACTED]")
+            .field("user", &self.user)
+            .finish()
+    }
 }
 
 /// User store for managing users
@@ -248,7 +284,7 @@ impl RateLimiter {
     pub async fn check(&self, key: &str) -> bool {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .expect("SystemTime::duration_since failed - clock is before UNIX epoch")
+            .unwrap_or(std::time::Duration::from_secs(0))
             .as_secs();
 
         let mut requests = self.requests.write().await;

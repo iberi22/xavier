@@ -58,4 +58,8 @@ impl MemoryQueryPort for MemoryUseCase {
     async fn list(&self, workspace_id: &str, limit: usize) -> anyhow::Result<Vec<MemoryRecord>> {
         self.inner.list(workspace_id, limit).await
     }
+
+    async fn export(&self, public_only: bool) -> anyhow::Result<Vec<MemoryRecord>> {
+        self.inner.export(public_only).await
+    }
 }

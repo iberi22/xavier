@@ -83,3 +83,7 @@ notebooks/.ipynb_checkpoints/
 .xavier/
 scratch/
 check-errors.txt
+/target_local/
+/cargo_check_output.txt
+/diag.json
+

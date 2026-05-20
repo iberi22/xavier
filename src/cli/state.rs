@@ -8,11 +8,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use xavier::agents::rate_limit::RateLimitManager;
 use xavier::app::proxy_use_case::ProxyUseCase;
+use xavier::app::security_service::SecurityService;
 use xavier::coordination::{KeyLendingEngine, XavierEventBus};
+use xavier::embedding::Embedder;
 use xavier::memory::session_store::SessionStore;
 use xavier::memory::store::MemoryStore;
 use xavier::ports::inbound::{AgentLifecyclePort, MemoryQueryPort};
-use xavier::app::security_service::SecurityService;
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
 
@@ -32,20 +33,22 @@ pub struct CliState {
     pub panel_store: Arc<SessionStore>,
     pub secrets_engine: Arc<KeyLendingEngine>,
     #[allow(dead_code)]
-    // TODO: integrate with future event-driven architecture
+    // Note: Wire event_bus into event-driven architecture (e.g. system3 event bus integration)
     pub event_bus: XavierEventBus,
     #[allow(dead_code)]
-    // TODO: integrate with persistent task management
+    // Note: Migrate tasks from InMemoryTaskStore to persistent SQLite store
     pub tasks: Arc<TaskService<InMemoryTaskStore>>,
     pub rate_manager: Arc<RateLimitManager>,
     #[allow(dead_code)]
-    // TODO: enable structured prompt caching across sessions
+    // Note: Implement structured prompt caching (keyed by session+model, auto-expire TTL)
     pub prompt_cache: Arc<Mutex<HashMap<String, Vec<String>>>>,
     #[allow(dead_code)]
-    // TODO: use for background provider health checks
+    // Note: Use http_client for background provider health checks (model status, rate limits)
     pub http_client: reqwest::Client,
     pub proxy_use_case: Arc<ProxyUseCase>,
-
+    #[allow(dead_code)]
+    // Note: Wire embedder into memory embedding pipeline (currently unused)
+    pub embedder: Arc<dyn Embedder>,
 }
 
 #[derive(Parser)]

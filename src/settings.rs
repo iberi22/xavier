@@ -1,3 +1,4 @@
+use std::fmt;
 use std::{fs, path::PathBuf};
 
 use anyhow::{Context, Result};
@@ -5,7 +6,7 @@ use serde::Deserialize;
 
 const DEFAULT_CONFIG_PATH: &str = "config/xavier.config.json";
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Clone, Deserialize, Default)]
 pub struct XavierSettings {
     #[serde(default)]
     pub server: ServerSettings,
@@ -19,6 +20,22 @@ pub struct XavierSettings {
     pub retrieval: RetrievalSettings,
     #[serde(default)]
     pub sync: SyncSettings,
+    #[serde(skip)]
+    pub auth_token: Option<String>,
+}
+
+impl fmt::Debug for XavierSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("XavierSettings")
+            .field("server", &self.server)
+            .field("workspace", &self.workspace)
+            .field("memory", &self.memory)
+            .field("models", &self.models)
+            .field("retrieval", &self.retrieval)
+            .field("sync", &self.sync)
+            .field("auth_token", &"[REDACTED]")
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -80,14 +97,20 @@ pub struct MemorySettings {
 
 impl Default for MemorySettings {
     fn default() -> Self {
+        let data_dir = XavierSettings::resolve_data_dir();
         Self {
             backend: "vec".to_string(),
-            data_dir: "data".to_string(),
+            data_dir: data_dir.to_string_lossy().to_string(),
             embedding_dimensions: 768,
-            workspace_dir: "data/workspaces".to_string(),
-            file_path: "data/workspaces/default/memory-store.json".to_string(),
-            sqlite_path: "data/memory-store.sqlite3".to_string(),
-            vec_path: "data/vec-store.sqlite3".to_string(),
+            workspace_dir: data_dir.join("workspaces").to_string_lossy().to_string(),
+            file_path: data_dir
+                .join("workspaces")
+                .join("default")
+                .join("memory-store.json")
+                .to_string_lossy()
+                .to_string(),
+            sqlite_path: data_dir.join("memory-store.sqlite3").to_string_lossy().to_string(),
+            vec_path: data_dir.join("vec-store.sqlite3").to_string_lossy().to_string(),
         }
     }
 }
@@ -102,6 +125,8 @@ pub struct ModelSettings {
     pub embedding_model: String,
     pub router_retrieved_model: String,
     pub router_complex_model: String,
+    pub router_fast_model: String,
+    pub router_quality_model: String,
 }
 
 impl Default for ModelSettings {
@@ -115,6 +140,8 @@ impl Default for ModelSettings {
             embedding_model: "embeddinggemma".to_string(),
             router_retrieved_model: String::new(),
             router_complex_model: String::new(),
+            router_fast_model: "opencode/minimax-m2.7".to_string(),
+            router_quality_model: "opencode/deepseek-v4-pro".to_string(),
         }
     }
 }
@@ -152,10 +179,42 @@ impl Default for SyncSettings {
 }
 
 impl XavierSettings {
+    pub fn resolve_config_path() -> PathBuf {
+        if let Ok(env_path) = std::env::var("XAVIER_CONFIG_PATH") {
+            return PathBuf::from(env_path);
+        }
+
+        if let Some(config_dir) = dirs::config_dir() {
+            // Priority 1: ~/.config/xavier/xavier.toml (or OS equivalent)
+            let xavier_toml = config_dir.join("xavier").join("xavier.toml");
+            if xavier_toml.exists() {
+                return xavier_toml;
+            }
+            // Priority 2: ~/.config/xavier/xavier.config.json
+            let xavier_json = config_dir.join("xavier").join("xavier.config.json");
+            if xavier_json.exists() {
+                return xavier_json;
+            }
+        }
+
+        // Fallback to local project config
+        PathBuf::from(DEFAULT_CONFIG_PATH)
+    }
+
+    pub fn resolve_data_dir() -> PathBuf {
+        if let Ok(env_path) = std::env::var("XAVIER_DATA_DIR") {
+            return PathBuf::from(env_path);
+        }
+
+        if let Some(data_dir) = dirs::data_dir() {
+            return data_dir.join("xavier");
+        }
+
+        PathBuf::from("data")
+    }
+
     pub fn load() -> Result<Option<Self>> {
-        let path = std::env::var("XAVIER_CONFIG_PATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| PathBuf::from(DEFAULT_CONFIG_PATH));
+        let path = Self::resolve_config_path();
 
         if !path.exists() {
             return Ok(None);
@@ -163,12 +222,25 @@ impl XavierSettings {
 
         let raw = fs::read_to_string(&path)
             .with_context(|| format!("failed to read config file at {}", path.display()))?;
-        let parsed = serde_json::from_str::<Self>(&raw)
-            .with_context(|| format!("failed to parse config file at {}", path.display()))?;
+        
+        // Handle both JSON and YAML/TOML if we want, but for now stick to what we have
+        let parsed = if path.extension().is_some_and(|ext| ext == "toml") {
+            // We need a TOML parser if we want to support .toml
+            // But for now, let's assume JSON as per current implementation
+            serde_json::from_str::<Self>(&raw)
+                .with_context(|| format!("failed to parse TOML config (as JSON) at {}", path.display()))?
+        } else {
+            serde_json::from_str::<Self>(&raw)
+                .with_context(|| format!("failed to parse config file at {}", path.display()))?
+        };
+
         Ok(Some(parsed))
     }
 
     pub fn apply_to_env(&self) {
+        if let Some(token) = &self.auth_token {
+            set_if_absent("XAVIER_TOKEN", token);
+        }
         set_if_absent("XAVIER_HOST", &self.server.host);
         set_if_absent("XAVIER_PORT", &self.server.port.to_string());
         set_if_absent("XAVIER_LOG_LEVEL", &self.server.log_level);
@@ -230,6 +302,8 @@ impl XavierSettings {
             "XAVIER_ROUTER_COMPLEX_MODEL",
             non_empty(&self.models.router_complex_model),
         );
+        set_if_absent("XAVIER_ROUTER_FAST_MODEL", &self.models.router_fast_model);
+        set_if_absent("XAVIER_ROUTER_QUALITY_MODEL", &self.models.router_quality_model);
 
         set_if_absent(
             "XAVIER_DISABLE_HYDE",
@@ -263,7 +337,9 @@ impl XavierSettings {
     }
 
     pub fn current() -> Self {
-        Self::load().ok().flatten().unwrap_or_default()
+        let mut settings = Self::load().ok().flatten().unwrap_or_default();
+        settings.auth_token = std::env::var("XAVIER_TOKEN").ok();
+        settings
     }
 
     pub fn client_base_url(&self) -> String {

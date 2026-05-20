@@ -135,6 +135,15 @@ pub enum Command {
         #[command(subcommand)]
         cmd: UsageCommand,
     },
+    /// Export memories to JSON
+    Export {
+        /// Export only public memories (exclude is_private: true)
+        #[arg(long)]
+        public: bool,
+        /// Output file path
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -389,6 +398,34 @@ impl Cli {
                 xavier::chronicle::cli::handle_chronicle_command(cmd.clone()).await
             }
             Command::Secrets { cmd } => handle_secrets_command(cmd.clone()).await,
+            Command::Export { public, output } => {
+                let base_url = resolve_base_url();
+                let token = require_xavier_token()?;
+                let client = CLI_HTTP_CLIENT.clone();
+                
+                println!("Exporting memories (public_only={})...", public);
+                let resp = client
+                    .get(format!("{}/memory/export?public={}", base_url, public))
+                    .header("X-Xavier-Token", &token)
+                    .send()
+                    .await?;
+                
+                if resp.status().is_success() {
+                    let docs: Vec<MemoryDocument> = resp.json().await?;
+                    let json = serde_json::to_string_pretty(&docs)?;
+                    
+                    if let Some(path) = output {
+                        std::fs::write(&path, json)?;
+                        println!("✅ Exported {} memories to {}", docs.len(), path.display());
+                    } else {
+                        println!("{}", json);
+                        println!("\n✅ Exported {} memories to stdout", docs.len());
+                    }
+                } else {
+                    println!("❌ Export failed: {}", resp.text().await?);
+                }
+                Ok(())
+            }
         }
     }
 }

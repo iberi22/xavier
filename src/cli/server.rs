@@ -8,7 +8,7 @@ use axum::{
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
+    Json, Router, extract::Query,
 };
 
 use serde::{Deserialize, Serialize};
@@ -26,7 +26,10 @@ use super::utils::estimate_tokens;
 use crate::cli::config::{
     code_graph_db_path, resolve_base_url, resolve_base_url_for_port, resolve_http_bind_host, resolve_http_token, state_panel_root, xavier_token,
 };
+use std::time::Instant;
+use crate::settings::XavierSettings;
 use crate::cli::state::CliState;
+use xavier::embedding::build_embedder_from_env;
 use xavier::adapters::inbound::http::routes::{
     sync_check_handler, time_metric_handler, verify_save_handler,
 };
@@ -58,21 +61,9 @@ use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
 
 pub async fn start_http_server(port: u16) -> Result<()> {
+    let settings = XavierSettings::current();
+    settings.apply_to_env();
     std::env::set_var("XAVIER_PORT", port.to_string());
-
-    // Set default router model assignments (user can override via env)
-    if std::env::var("XAVIER_ROUTER_FAST_MODEL").is_err() {
-        std::env::set_var("XAVIER_ROUTER_FAST_MODEL", "opencode/minimax-m2.7");
-    }
-    if std::env::var("XAVIER_ROUTER_QUALITY_MODEL").is_err() {
-        std::env::set_var("XAVIER_ROUTER_QUALITY_MODEL", "opencode/deepseek-v4-pro");
-    }
-    if std::env::var("XAVIER_ROUTER_RETRIEVED_MODEL").is_err() {
-        std::env::set_var("XAVIER_ROUTER_RETRIEVED_MODEL", "opencode/minimax-m2.7");
-    }
-    if std::env::var("XAVIER_ROUTER_COMPLEX_MODEL").is_err() {
-        std::env::set_var("XAVIER_ROUTER_COMPLEX_MODEL", "opencode/deepseek-v4-pro");
-    }
 
     let bind_host = resolve_http_bind_host();
     let bind_addr = format!("{}:{}", bind_host, port);
@@ -133,8 +124,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     rate_manager.init_schema()?;
     threat_store.init_schema()?;
 
-    let workspace_id =
-        std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string());
+    let workspace_id = XavierSettings::current().workspace.default_workspace_id;
     let durable_state = store.load_workspace_state(&workspace_id).await?;
     let docs = Arc::new(RwLock::new(
         durable_state
@@ -155,6 +145,9 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .user_agent(concat!("xavier-server/", env!("CARGO_PKG_VERSION")))
         .build()
         .map_err(|e| anyhow!("Failed to build HTTP client: {}", e))?;
+
+    let embedder = build_embedder_from_env().await
+        .map_err(|e| anyhow!("Failed to build embedder: {}", e))?;
 
     // Register global time metrics port for HTTP handler (wrap in adapter)
     use xavier::adapters::inbound::http::routes::{init_health_port, init_time_store};
@@ -177,12 +170,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     let code_query = Arc::new(::code_graph::query::QueryEngine::new(Arc::clone(&code_db)));
 
     // Determine workspace root for path traversal protection
-    let workspace_dir = std::path::absolute(
-        std::env::var("XAVIER_WORKSPACE_DIR")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))),
-    )
-    .unwrap_or_else(|_| PathBuf::from("."));
+    let workspace_dir = PathBuf::from(XavierSettings::current().memory.workspace_dir);
     info!(
         "Workspace root for path security: {}",
         workspace_dir.display()
@@ -257,7 +245,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         prompt_cache,
         proxy_use_case,
         http_client,
-
+        embedder,
     };
 
     info!(
@@ -278,6 +266,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/memory/add", post(add_handler))
         .route("/memory/delete", post(delete_handler))
         .route("/memory/stats", get(stats_handler))
+        .route("/memory/export", get(export_handler))
         .route("/code/scan", post(code_scan_handler))
         .route("/code/find", post(code_find_handler))
         .route("/code/context", post(code_context_handler))
@@ -291,6 +280,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/code/hubs", get(code_hubs_handler))
         .route("/code/hotspots", get(code_hotspots_handler))
         .route("/v1/account/usage", get(account_usage_handler))
+        .route("/v1/embeddings", post(embed_handler))
         .route("/security/scan", post(security_scan_handler))
         .route("/memory/query", post(memory_query_handler))
         .route("/session/compact", post(session_compact_handler))
@@ -336,6 +326,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/v1/usage/cooldown", post(usage_cooldown_handler))
         .route("/v1/usage/track", post(usage_track_handler))
         .route("/v1/usage/summary/{provider}", get(usage_summary_handler))
+        .layer(middleware::from_fn_with_state(state.clone(), rate_limit_middleware))
         .layer(middleware::from_fn(auth_middleware));
 
     // Add enterprise plugin routes if feature is enabled
@@ -349,8 +340,9 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             .route("/plugins/sync", post(plugins_sync_handler));
     }
 
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/health", get(health_handler))
+        .route("/v1/version", get(version_handler))
         .route("/build", get(build_handler))
         .route("/ready", get(readiness_handler))
         .route("/readiness", get(readiness_handler))
@@ -358,6 +350,18 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/panel/assets/{*path}", get(panel_asset))
         .merge(protected_routes)
         .with_state(state);
+
+    // Merge enterprise HTTP API routes when feature is enabled, under auth
+    #[cfg(feature = "enterprise")]
+    {
+        use xavier::enterprise::http::{enterprise_router, EnterpriseState};
+        use std::sync::{Arc, Mutex};
+        let enterprise_state = Arc::new(Mutex::new(EnterpriseState::init_default()));
+        app = app.merge(
+            enterprise_router(enterprise_state)
+                .layer(middleware::from_fn(auth_middleware))
+        );
+    }
 
     let listener = TcpListener::bind(&bind_addr).await?;
     let bound_addr = listener.local_addr()?;
@@ -399,13 +403,91 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     Ok(())
 }
 
+/// Server startup time for uptime tracking
+static START_TIME: once_cell::sync::Lazy<Instant> = once_cell::sync::Lazy::new(Instant::now);
+
 pub async fn health_handler() -> Response {
+    // Uptime in seconds since startup
+    let uptime_secs = START_TIME.elapsed().as_secs();
+
+    // Determine embedding provider mode from env
+    let embedding_provider = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
+        .ok()
+        .map(|v| v.trim().to_ascii_lowercase())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| {
+            // Auto-detect based on configured env vars
+            if std::env::var("XAVIER_EMBEDDER").ok().map(|v| v.trim().to_ascii_lowercase())
+                .as_deref() == Some("gllm")
+                || std::env::var("XAVIER_GLLM_MODEL").is_ok()
+            {
+                "gllm".to_string()
+            } else if std::env::var("OPENAI_API_KEY").is_ok()
+                || std::env::var("XAVIER_EMBEDDING_API_KEY").is_ok()
+            {
+                "openai".to_string()
+            } else {
+                "none".to_string()
+            }
+        });
+
+    // Calculate size of data/ directory
+    let sqlite_db_size = calculate_data_dir_size().unwrap_or(0);
+
     json_response(
         StatusCode::OK,
         serde_json::json!({
             "status": "ok",
             "service": "xavier",
             "version": env!("CARGO_PKG_VERSION"),
+            "embedding_provider": embedding_provider,
+            "sqlite_db_size": sqlite_db_size,
+            "uptime": uptime_secs,
+        }),
+    )
+}
+
+/// Calculate the total size (in bytes) of the data/ directory
+fn calculate_data_dir_size() -> Option<u64> {
+    let data_dir = std::path::Path::new("data");
+    if !data_dir.is_dir() {
+        return None;
+    }
+    let mut total_size = 0u64;
+    if let Ok(entries) = std::fs::read_dir(data_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                total_size += std::fs::metadata(&path).ok()?.len();
+            } else if path.is_dir() {
+                if let Ok(sub_entries) = std::fs::read_dir(&path) {
+                    for sub_entry in sub_entries.flatten() {
+                        if sub_entry.path().is_file() {
+                            total_size += std::fs::metadata(&sub_entry.path()).ok()?.len();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Some(total_size)
+}
+
+/// GET /v1/version — Service version info
+pub async fn version_handler() -> Response {
+    let features = if cfg!(feature = "enterprise") {
+        vec!["gllm-embeddings", "enterprise"]
+    } else {
+        vec!["gllm-embeddings"]
+    };
+
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "service": "xavier",
+            "version": env!("CARGO_PKG_VERSION"),
+            "features": features,
+            "build": env!("CARGO_PKG_VERSION"),
         }),
     )
 }
@@ -466,21 +548,21 @@ pub async fn build_handler(State(state): State<CliState>) -> Response {
             "version": env!("CARGO_PKG_VERSION"),
             "workspace_id": state.workspace_id,
             "base_url": resolve_base_url(),
-            "memory_backend": std::env::var("XAVIER_MEMORY_BACKEND").unwrap_or_else(|_| "vec".to_string()),
+            "memory_backend": XavierSettings::current().memory.backend,
             "code_graph_db_path": code_graph_db_path(),
         }),
     )
 }
 
 pub async fn account_usage_handler(State(state): State<CliState>, headers: HeaderMap) -> Response {
-    let expected_token = match std::env::var("XAVIER_TOKEN") {
+    let expected_token = match resolve_http_token() {
         Ok(token) => token,
-        Err(_) => {
+        Err(e) => {
             return json_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 serde_json::json!({
                     "status": "error",
-                    "message": "XAVIER_TOKEN is not configured",
+                    "message": format!("Token resolution failed: {e}"),
                 }),
             )
         }
@@ -534,6 +616,48 @@ pub async fn account_usage_handler(State(state): State<CliState>, headers: Heade
     )
 }
 
+/// POST /v1/embeddings — OpenAI-compatible embedding endpoint
+/// Uses Xavier's gllm native embedder (no external server needed)
+async fn embed_handler(
+    State(state): State<CliState>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let input = body
+        .get("input")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "Missing 'input' field"})),
+            )
+        })?;
+
+    let model = body
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("all-MiniLM-L6-v2");
+
+    match state.embedder.encode(input).await {
+        Ok(embedding) => Ok(Json(serde_json::json!({
+            "object": "list",
+            "data": [{
+                "object": "embedding",
+                "index": 0,
+                "embedding": embedding,
+            }],
+            "model": model,
+            "usage": {
+                "prompt_tokens": input.len(),
+                "total_tokens": input.len(),
+            }
+        }))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("Embedding failed: {}", e)})),
+        )),
+    }
+}
+
 pub fn json_response(status: StatusCode, body: serde_json::Value) -> Response {
     Response::builder()
         .status(status)
@@ -550,12 +674,12 @@ pub fn json_response(status: StatusCode, body: serde_json::Value) -> Response {
 }
 
 pub async fn auth_middleware(req: Request<Body>, next: Next) -> Response {
-    let expected_token = match std::env::var("XAVIER_TOKEN") {
+    let expected_token = match resolve_http_token() {
         Ok(token) => token,
-        Err(_) => {
+        Err(e) => {
             return json_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                serde_json::json!({"status":"error","message":"XAVIER_TOKEN is not configured"}),
+                serde_json::json!({"status":"error","message": format!("Token resolution failed: {e}")}),
             );
         }
     };
@@ -563,9 +687,20 @@ pub async fn auth_middleware(req: Request<Body>, next: Next) -> Response {
     let provided_token = req
         .headers()
         .get("X-Xavier-Token")
-        .and_then(|value| value.to_str().ok());
+        .and_then(|value| value.to_str().ok())
+        .or_else(|| {
+            req.headers()
+                .get("Authorization")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.strip_prefix("Bearer "))
+        });
 
-    if provided_token != Some(expected_token.as_str()) {
+    // Constant-time comparison to prevent timing attacks
+    use subtle::ConstantTimeEq;
+    let provided_bytes = provided_token.unwrap_or("").as_bytes();
+    let expected_bytes = expected_token.as_str().as_bytes();
+    let is_match: bool = provided_bytes.ct_eq(expected_bytes).into();
+    if !is_match {
         return json_response(
             StatusCode::UNAUTHORIZED,
             serde_json::json!({"status":"error","message":"Unauthorized"}),
@@ -573,6 +708,47 @@ pub async fn auth_middleware(req: Request<Body>, next: Next) -> Response {
     }
 
     next.run(req).await
+}
+
+pub async fn rate_limit_middleware(
+    State(state): State<CliState>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    let provider = "api_gateway";
+    match state.rate_manager.get_status(provider).await {
+        Ok(status) => {
+            if let Some(until) = status.rate_limited_until {
+                if until > chrono::Utc::now() {
+                    warn!("Global rate limit reached, blocking request");
+                    return json_response(
+                        StatusCode::TOO_MANY_REQUESTS,
+                        serde_json::json!({
+                            "status": "error",
+                            "message": "Rate limit exceeded. Please try again later.",
+                            "retry_after": until.to_rfc3339()
+                        }),
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            warn!("Failed to check rate limit: {}", e);
+        }
+    }
+
+    let response = next.run(req).await;
+
+    // Track usage (simple 1 unit per request)
+    if let Err(e) = state
+        .rate_manager
+        .track_request(provider, 1, response.status().as_u16(), 0.0, false)
+        .await
+    {
+        warn!("Failed to track rate limit usage: {}", e);
+    }
+
+    response
 }
 
 pub async fn panel_list_threads(State(state): State<CliState>) -> Response {
@@ -886,7 +1062,8 @@ pub async fn add_handler(
                 "confidence": sec_result.detection_confidence,
                 "attack_type": sec_result.attack_type,
             }
-        }));
+        }))
+        .into_response();
     }
 
     let effective_content = sec_result
@@ -949,14 +1126,18 @@ pub async fn add_handler(
                     "sanitized": sec_result.sanitized_input.is_some(),
                     "attack_type": sec_result.attack_type,
                 }
-            }))
+            })).into_response()
         }
         Err(e) => {
             info!("Add memory error: {}", e);
-            axum::Json(serde_json::json!({
-                "status": "error",
-                "message": e.to_string(),
-            }))
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(serde_json::json!({
+                    "status": "error",
+                    "message": e.to_string(),
+                })),
+            )
+                .into_response()
         }
     }
 }
@@ -966,12 +1147,12 @@ pub async fn delete_handler(
     headers: HeaderMap,
     axum::extract::Json(payload): axum::extract::Json<DeleteMemoryRequest>,
 ) -> Response {
-    let expected_token = match std::env::var("XAVIER_TOKEN") {
+    let expected_token = match resolve_http_token() {
         Ok(token) => token,
-        Err(_) => {
+        Err(e) => {
             return json_response(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                serde_json::json!({"status":"error","message":"XAVIER_TOKEN not configured"}),
+                serde_json::json!({"status":"error","message": format!("Token resolution failed: {e}")}),
             );
         }
     };
@@ -2052,7 +2233,7 @@ pub async fn search_memories_filtered(
 
     let parsed_levels = levels
         .iter()
-        .filter_map(|l| Some(xavier::memory::schema::MemoryLevel::parse(l)))
+        .map(|l| xavier::memory::schema::MemoryLevel::parse(l))
         .collect::<Vec<_>>();
 
     let filters = xavier::memory::schema::MemoryQueryFilters {
@@ -2280,6 +2461,29 @@ pub(crate) struct AgentPushContextPayload {
     metadata: Option<serde_json::Value>,
 }
 
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ExportPayload {
+    pub public: Option<bool>,
+}
+
+pub async fn export_handler(
+    State(state): State<CliState>,
+    Query(params): Query<ExportPayload>,
+) -> impl IntoResponse {
+    let public_only = params.public.unwrap_or(false);
+    match state.memory.export(public_only).await {
+        Ok(docs) => Json(docs).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": e.to_string()
+            })),
+        )
+            .into_response(),
+    }
+}
 
 #[derive(Debug, Deserialize)]
 pub struct SwarmConfig {

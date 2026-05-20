@@ -1,86 +1,206 @@
 use serde_json::{json, Value};
 use std::collections::HashSet;
 
-use crate::memory::qmd_memory::types::QueryBundle;
+use crate::memory::qmd_memory::reader::generate_embedding;
+use crate::memory::qmd_memory::types::MemoryDocument;
 use crate::memory::qmd_memory::utils::*;
-use std::collections::HashMap;
+use crate::memory::qmd_memory::QmdMemory;
+use crate::memory::schema::TypedMemoryPayload;
+use crate::memory::store::MemoryRecord;
+use anyhow::Result;
 
-pub fn build_query_bundle_internal(query_text: &str) -> QueryBundle {
-    let normalized_query = normalize_query(query_text);
-    let mut variants = vec![normalized_query.clone()];
-    let mut weights = HashMap::from([(normalized_query.clone(), 1.0)]);
+// ── CRUD write operations ────────────────────────────────────────────
 
-    let tokens = normalized_query
-        .split_whitespace()
+pub(crate) fn memory_record_from_document(
+    workspace_id: &str,
+    document: &MemoryDocument,
+) -> MemoryRecord {
+    let primary = document
+        .metadata
+        .get("source_path")
+        .and_then(|value| value.as_str())
+        .is_none();
+    let parent_id = document
+        .metadata
+        .get("parent_id")
+        .and_then(|value| value.as_str())
         .map(|value| value.to_string())
+        .or_else(|| {
+            (!primary)
+                .then(|| {
+                    document
+                        .metadata
+                        .get("source_path")
+                        .and_then(|value| value.as_str())
+                        .map(|value| value.to_string())
+                })
+                .flatten()
+        });
+
+    MemoryRecord::from_document(workspace_id, document, primary, parent_id)
+}
+
+pub async fn add(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
+    memory.docs.write().await.push(doc.clone());
+    memory.invalidate_cache().await;
+    if let Some(store) = memory.store().await {
+        store
+            .put(memory_record_from_document(&memory.workspace_id, &doc))
+            .await?;
+    }
+    Ok(())
+}
+
+pub async fn update(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
+    let persisted = doc.clone();
+    let mut docs = memory.docs.write().await;
+    if let Some(existing) = docs
+        .iter_mut()
+        .find(|d| d.id == doc.id || d.path == doc.path)
+    {
+        *existing = doc;
+    } else {
+        docs.push(doc);
+    }
+    drop(docs);
+    memory.invalidate_cache().await;
+    if let Some(store) = memory.store().await {
+        store
+            .update(memory_record_from_document(&memory.workspace_id, &persisted))
+            .await?;
+    }
+    Ok(())
+}
+
+pub async fn delete(memory: &QmdMemory, path_or_id: &str) -> Result<Option<MemoryDocument>> {
+    let mut docs = memory.docs.write().await;
+    let removed = docs
+        .iter()
+        .position(|doc| doc.path == path_or_id || doc.id.as_deref() == Some(path_or_id))
+        .map(|index| docs.remove(index));
+    drop(docs);
+
+    if removed.is_some() {
+        memory.invalidate_cache().await;
+        if let Some(store) = memory.store().await {
+            let _ = store.delete(&memory.workspace_id, path_or_id).await?;
+        }
+    }
+
+    Ok(removed)
+}
+
+pub async fn clear(memory: &QmdMemory) -> Result<usize> {
+    let ids = memory
+        .docs
+        .read()
+        .await
+        .iter()
+        .filter_map(|doc| doc.id.clone().or_else(|| Some(doc.path.clone())))
         .collect::<Vec<_>>();
+    let mut docs = memory.docs.write().await;
+    let removed = docs.len();
+    docs.clear();
+    drop(docs);
+    memory.invalidate_cache().await;
+    if let Some(store) = memory.store().await {
+        for id in ids {
+            let _ = store.delete(&memory.workspace_id, &id).await?;
+        }
+    }
+    Ok(removed)
+}
 
-    for token in tokens.into_iter().take(MAX_EXPANSIONS) {
-        if let Some(synonyms) = SYNONYM_MAP.get(token.as_str()) {
-            for synonym in synonyms.iter().take(2) {
-                let expanded = if normalized_query.is_empty() {
-                    (*synonym).to_string()
+// ── Document indexing ─────────────────────────────────────────────────
+
+pub async fn add_document(
+    memory: &QmdMemory,
+    path: String,
+    content: String,
+    metadata: Value,
+) -> Result<String> {
+    add_document_typed_with_embedding(memory, path, content, metadata, None, None).await
+}
+
+pub async fn add_document_typed(
+    memory: &QmdMemory,
+    path: String,
+    content: String,
+    metadata: Value,
+    typed: Option<TypedMemoryPayload>,
+) -> Result<String> {
+    add_document_typed_with_embedding(memory, path, content, metadata, typed, None).await
+}
+
+pub async fn add_document_typed_with_embedding(
+    memory: &QmdMemory,
+    path: String,
+    content: String,
+    metadata: Value,
+    typed: Option<TypedMemoryPayload>,
+    embedding: Option<Vec<f32>>,
+) -> Result<String> {
+    let id = ulid::Ulid::new().to_string();
+    let metadata = crate::memory::schema::normalize_metadata(
+        &path,
+        metadata,
+        &memory.workspace_id,
+        typed.as_ref(),
+    )?;
+    let metadata = normalize_locomo_metadata(&path, metadata);
+    let variants = expand_document_variants(&path, &content, &metadata);
+    let is_locomo_benchmark = metadata
+        .get("benchmark")
+        .and_then(|value| value.as_str())
+        .is_some_and(|value| value.eq_ignore_ascii_case("locomo"))
+        || path.contains("locomo/");
+    let base_embedding = if is_locomo_benchmark {
+        Vec::new()
+    } else if let Some(embedding) = embedding.clone() {
+        embedding
+    } else {
+        generate_embedding(&content)
+            .await
+            .unwrap_or_else(|_| Vec::new())
+    };
+
+    for (index, (variant_path, variant_content, variant_metadata)) in
+        variants.into_iter().enumerate()
+    {
+        let variant_embedding = if is_locomo_benchmark || variant_content == content {
+            base_embedding.clone()
+        } else {
+            generate_embedding(&variant_content)
+                .await
+                .unwrap_or_else(|_| Vec::new())
+        };
+
+        memory
+            .add(MemoryDocument {
+                id: Some(if index == 0 {
+                    id.clone()
                 } else {
-                    format!("{normalized_query} {synonym}")
-                };
-                if weights.contains_key(&expanded) {
-                    continue;
-                }
-                variants.push(expanded.clone());
-                weights.insert(expanded, 0.85);
-            }
-        }
+                    ulid::Ulid::new().to_string()
+                }),
+                path: variant_path,
+                content: variant_content,
+                metadata: variant_metadata,
+                content_vector: Some(variant_embedding.clone()),
+                embedding: variant_embedding,
+                cluster_id: typed.as_ref().and_then(|t| t.cluster_id.clone()),
+                level: typed
+                    .as_ref()
+                    .and_then(|t| t.level)
+                    .unwrap_or(crate::memory::schema::MemoryLevel::Raw),
+                relation: typed.as_ref().and_then(|t| t.relation.clone()),
+            })
+            .await?;
     }
 
-    if variants.len() == 1 {
-        for token in query_text.split_whitespace().take(MAX_EXPANSIONS) {
-            let cleaned = normalize_token(token);
-            if cleaned.len() < 3 || cleaned == normalized_query {
-                continue;
-            }
-            if let std::collections::hash_map::Entry::Vacant(entry) =
-                weights.entry(format!("{normalized_query} {cleaned}"))
-            {
-                let expanded = entry.key().clone();
-                variants.push(expanded.clone());
-                entry.insert(0.8);
-            }
-        }
-    }
-
-    variants.truncate(5);
-
-    QueryBundle {
-        normalized_query,
-        variants,
-        weights,
-    }
+    Ok(id)
 }
 
-pub fn extract_candidate_terms_internal(text: &str) -> Vec<String> {
-    text.split_whitespace()
-        .map(normalize_token)
-        .filter(|token| token.len() >= 4)
-        .filter(|token| {
-            !matches!(
-                token.as_str(),
-                "with"
-                    | "that"
-                    | "this"
-                    | "from"
-                    | "have"
-                    | "were"
-                    | "when"
-                    | "what"
-                    | "where"
-                    | "which"
-                    | "would"
-                    | "could"
-            )
-        })
-        .collect()
-}
-
+/// Expand a document into derived variants (facts, temporal events, etc.)
 pub fn expand_document_variants(
     path: &str,
     content: &str,
@@ -96,6 +216,7 @@ pub fn expand_document_variants(
         .get("session_time")
         .and_then(|value| value.as_str())
         .map(str::to_string);
+
     let speaker = metadata
         .get("speaker")
         .and_then(|value| value.as_str())
@@ -119,6 +240,7 @@ pub fn expand_document_variants(
     dedupe_variants(variants)
 }
 
+/// Normalize LOCOMO document metadata (dia_ids, source paths).
 pub fn normalize_locomo_metadata(path: &str, metadata: Value) -> Value {
     if !is_locomo_document(path, &metadata) {
         return metadata;
@@ -148,7 +270,9 @@ pub fn normalize_locomo_metadata(path: &str, metadata: Value) -> Value {
     metadata
 }
 
-pub fn build_fact_variants(
+// ── Fact / temporal variant builders ──────────────────────────────────
+
+fn build_fact_variants(
     path: &str,
     content: &str,
     metadata: &Value,
@@ -185,7 +309,7 @@ pub fn build_fact_variants(
         ));
     };
 
-    if let Some(value) = capture_value(
+    if let Some(value) = crate::memory::qmd_memory::utils::capture_value(
         content,
         r"(?i)\b(?:i am|i'm)\s+(?:a\s+)?(transgender woman|trans woman|woman|man|nonbinary|non-binary)\b",
     ) {
@@ -199,7 +323,7 @@ pub fn build_fact_variants(
         );
     }
 
-    if let Some(value) = capture_value(
+    if let Some(value) = crate::memory::qmd_memory::utils::capture_value(
         content,
         r"(?i)\b(?:i am|i'm)\s+(single|married|divorced|engaged|widowed)\b",
     ) {
@@ -218,7 +342,7 @@ pub fn build_fact_variants(
         );
     }
 
-    if let Some(value) = capture_value(
+    if let Some(value) = crate::memory::qmd_memory::utils::capture_value(
         content,
         r"(?i)\b(?:researched|researching)\s+([A-Za-z][A-Za-z\s'-]{2,80})",
     ) {
@@ -255,7 +379,10 @@ pub fn build_fact_variants(
         push_fact(4, "fact_atom", "duration", value);
     }
 
-    if let Some(value) = capture_value(content, r"(?i)\bmoved from\s+([A-Z][a-zA-Z]+)\b") {
+    if let Some(value) = crate::memory::qmd_memory::utils::capture_value(
+        content,
+        r"(?i)\bmoved from\s+([A-Z][a-zA-Z]+)\b",
+    ) {
         push_fact(5, "fact_atom", "origin_place", sentence_case_phrase(&value));
     }
 
@@ -297,7 +424,7 @@ pub fn build_fact_variants(
     variants
 }
 
-pub fn build_temporal_variants(
+fn build_temporal_variants(
     path: &str,
     content: &str,
     metadata: &Value,
@@ -334,7 +461,7 @@ pub fn build_temporal_variants(
     )]
 }
 
-pub fn build_variant_metadata(
+fn build_variant_metadata(
     metadata: &Value,
     source_path: &str,
     memory_kind: &str,
@@ -353,7 +480,7 @@ pub fn build_variant_metadata(
     normalize_locomo_metadata(source_path, base)
 }
 
-pub fn dedupe_variants(variants: Vec<(String, String, Value)>) -> Vec<(String, String, Value)> {
+fn dedupe_variants(variants: Vec<(String, String, Value)>) -> Vec<(String, String, Value)> {
     let mut seen = HashSet::new();
     variants
         .into_iter()

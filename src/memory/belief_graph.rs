@@ -321,7 +321,7 @@ impl BeliefGraph {
                 let da = distances.get(*a).unwrap_or(&f32::INFINITY);
                 let db = distances.get(*b).unwrap_or(&f32::INFINITY);
                 da.partial_cmp(db).unwrap_or(std::cmp::Ordering::Equal)
-            }).cloned().unwrap();
+            }).cloned().expect("belief_graph: find_highest_confidence_path had empty queue");
 
             queue.remove(&current);
 

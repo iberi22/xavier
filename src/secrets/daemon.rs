@@ -1,15 +1,27 @@
+use std::fmt;
 use super::store::SecretStore;
 use super::SecretError;
 use super::SecretResult;
 use std::collections::HashSet;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Grant {
     pub id: String,
     pub key: String,
     pub permissions: HashSet<String>,
     pub expires_at: u64,
+}
+
+impl fmt::Debug for Grant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Grant")
+            .field("id", &self.id)
+            .field("key", &"[REDACTED]")
+            .field("permissions", &self.permissions)
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
 }
 
 pub struct SecretDaemon {

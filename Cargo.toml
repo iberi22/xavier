@@ -1,6 +1,7 @@
 [package]
 name = "xavier"
-version = "0.6.0-beta"
+version = "1.0.0-rc.1"
+authors = ["BELA <bela@swal.dev>", "Xavier <xavier@swal.dev>"]
 edition = "2021"
 autobins = false
 description = "Xavier - Cognitive Memory Runtime for AI Agents (open source)"
@@ -40,15 +41,16 @@ ci-safe = []
 bench-runners = []
 telegram = ["teloxide"]
 local-gllm = ["dep:gllm", "dep:candle-core"]
+dev-mode = []
 # Enterprise features: Cortex Enterprise Cloud integration
 enterprise = []
 
 [dependencies]
 code-graph = { path = "./code-graph" }
 anyhow = "1.0.102"
-git2 = "0.20"
+git2 = { version = "0.20", features = ["vendored-openssl"] }
 async-trait = "0.1"
-reqwest = { version = "0.13", features = ["json"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 gllm = { version = "0.10.6", default-features = false, features = ["cpu"], optional = true }
 candle-core = { version = "=0.9.1", optional = true }
 teloxide = { version = "0.12", optional = true }
@@ -60,7 +62,11 @@ flate2 = "1.0"
 tokio = { version = "1.52.2", features = ["full"] }
 tokio-stream = "0.1"
 ulid = "1.1"
-uuid = { version = "1.8", features = ["v4"] }
+uuid = { version = "1.8", features = ["v4", "serde"] }
+dirs = "6.0"
+
+# Constant-time comparison for security tokens
+subtle = "2.6"
 
 # HTTP Server
 axum = { version = "0.8", features = ["ws"] }
@@ -120,6 +126,7 @@ unicode-normalization = "0.1"
 aes-gcm = "0.10"
 argon2 = "0.5"
 rand = "0.8"
+governor = { version = "0.7", default-features = false, features = ["std", "jitter", "dashmap"] }
 
 # HMAC for webhook signature verification
 hmac = "0.12"

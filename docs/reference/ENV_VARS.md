@@ -308,9 +308,9 @@ Controls how many documents/tokens are included at each context regeneration hoo
 
 | Variable | Type | Default | Required | Description |
 |----------|------|---------|----------|-------------|
-| `PLANKA_URL` | `string` | — | ✅ | Planka server URL |
-| `PLANKA_EMAIL` | `string` | — | ✅ | Planka login email |
-| `PLANKA_PASSWORD` | `string` | — | ✅ | Planka login password |
+| `PLANKKA_HOST` | `string` | — | ✅ | Planka server URL (e.g., http://localhost:3000) |
+| `PLANKKA_EMAIL` | `string` | — | ✅ | Planka login email |
+| `PLANKKA_PASSWORD` | `string` | — | ✅ | Planka login password |
 
 All three must be set for the Planka integration to activate. Used for automatic task creation/move operations.
 

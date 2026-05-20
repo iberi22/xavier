@@ -1,3 +1,4 @@
+use std::fmt;
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
@@ -6,7 +7,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SecretLease {
     pub token: String,
     pub secret_name: String,
@@ -14,6 +15,19 @@ pub struct SecretLease {
     pub agent_id: String,
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
+}
+
+impl fmt::Debug for SecretLease {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SecretLease")
+            .field("token", &"[REDACTED]")
+            .field("secret_name", &"[REDACTED]")
+            .field("secret_value", &"[REDACTED]")
+            .field("agent_id", &self.agent_id)
+            .field("expires_at", &self.expires_at)
+            .field("created_at", &self.created_at)
+            .finish()
+    }
 }
 
 impl SecretLease {
