@@ -155,7 +155,7 @@ impl AuditLog {
     ) -> &AuditEntry {
         let entry = AuditEntry::new(tenant_id, action, resource);
         self.log(entry);
-        self.entries.back().unwrap()
+        self.entries.back().expect("audit_log: record called on empty log after push")
     }
 
     /// Get entries for a tenant

@@ -146,6 +146,19 @@ impl TenantStore {
     pub fn exists(&self, id: &TenantId) -> bool {
         self.tenants.contains_key(id)
     }
+
+    /// Insert a tenant directly into the store (used when loading from persistence).
+    /// Unlike `create`, this does NOT generate a new ID — it inserts the tenant as-is.
+    pub fn insert_existing(&mut self, tenant: Tenant) {
+        self.tenants.insert(tenant.id, tenant);
+    }
+
+    /// Bulk insert tenants from persistence.
+    pub fn load_from_iter(&mut self, tenants: impl IntoIterator<Item = Tenant>) {
+        for tenant in tenants {
+            self.tenants.insert(tenant.id, tenant);
+        }
+    }
 }
 
 impl Default for TenantStore {
@@ -157,10 +170,11 @@ impl Default for TenantStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
 
     #[test]
     fn test_tenant_creation() {
-        let store = TenantStore::new();
+        let mut store = TenantStore::new();
         let tenant = store.create("Test Tenant", Plan::Pro);
         
         assert_eq!(tenant.name, "Test Tenant");

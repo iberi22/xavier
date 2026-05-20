@@ -94,11 +94,20 @@ impl RateLimiter {
 
     /// Get or create a limiter for a key
     fn get_limiter(&mut self, key: RateLimitKey) -> Arc<GovRateLimiter<governor::state::direct::NotKeyed, governor::state::InMemoryState, governor::clock::DefaultClock, StateInformationMiddleware>> {
+        // Check if limiter already exists
+        if let Some(existing) = self.limiters.get(&key) {
+            return existing.clone();
+        }
+
         let config = self.config.get(&key).cloned().unwrap_or_default();
 
         // Create quota based on config
         let rpm = NonZeroU32::new(config.rpm).unwrap_or(NonZeroU32::new(1).unwrap());
         let burst = NonZeroU32::new(config.burst).unwrap_or(rpm);
+
+        // Validate: burst should not exceed rpm (per minute quota)
+        let burst = std::cmp::min(burst, rpm);
+
         let quota = Quota::per_minute(rpm).allow_burst(burst);
         let limiter = GovRateLimiter::direct(quota).with_middleware::<StateInformationMiddleware>();
 
@@ -187,6 +196,7 @@ impl RateLimitState {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
 
     #[test]
     fn test_rate_limit_config() {
