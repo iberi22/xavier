@@ -61,12 +61,12 @@ pub(crate) fn extract_date_answer(text: &str) -> Option<String> {
     let expanded_patterns = EXPANDED_DATE_PATTERNS
         .get_or_init(|| {
             vec![
-                Regex::new(r"(?i)\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b").unwrap(),
-                Regex::new(r"(?i)\b[A-Za-z]+\s+\d{1,2},\s+\d{4}\b").unwrap(),
-                Regex::new(r"\b\d{4}-\d{2}-\d{2}\b").unwrap(),
-                Regex::new(r"(?i)\b[A-Za-z]+\s+\d{4}\b").unwrap(),
-                Regex::new(r"(?i)\b(yesterday|last\s+(week|month|year))\b").unwrap(),
-                Regex::new(r"\b(19|20)\d{2}\b").unwrap(),
+                Regex::new(r"(?i)\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b").expect("invalid regex: day month year"),
+                Regex::new(r"(?i)\b[A-Za-z]+\s+\d{1,2},\s+\d{4}\b").expect("invalid regex: month day year"),
+                Regex::new(r"\b\d{4}-\d{2}-\d{2}\b").expect("invalid regex: ISO date"),
+                Regex::new(r"(?i)\b[A-Za-z]+\s+\d{4}\b").expect("invalid regex: month year"),
+                Regex::new(r"(?i)\b(yesterday|last\s+(week|month|year))\b").expect("invalid regex: relative date"),
+                Regex::new(r"\b(19|20)\d{2}\b").expect("invalid regex: year"),
             ]
         })
         .as_slice();
@@ -98,27 +98,27 @@ pub(crate) fn date_granularity_rank(text: &str) -> usize {
 
     let trimmed = text.trim();
     if DAY_MONTH_YEAR
-        .get_or_init(|| Regex::new(r"(?i)\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b").unwrap())
+        .get_or_init(|| Regex::new(r"(?i)\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b").expect("invalid regex: day month year"))
         .is_match(trimmed)
         || MONTH_DAY_YEAR
-            .get_or_init(|| Regex::new(r"(?i)\b[A-Za-z]+\s+\d{1,2},\s+\d{4}\b").unwrap())
+            .get_or_init(|| Regex::new(r"(?i)\b[A-Za-z]+\s+\d{1,2},\s+\d{4}\b").expect("invalid regex: month day year"))
             .is_match(trimmed)
         || ISO_DATE
-            .get_or_init(|| Regex::new(r"\b\d{4}-\d{2}-\d{2}\b").unwrap())
+            .get_or_init(|| Regex::new(r"\b\d{4}-\d{2}-\d{2}\b").expect("invalid regex: ISO date"))
             .is_match(trimmed)
     {
         return 3;
     }
 
     if MONTH_YEAR
-        .get_or_init(|| Regex::new(r"(?i)\b[A-Za-z]+\s+\d{4}\b").unwrap())
+        .get_or_init(|| Regex::new(r"(?i)\b[A-Za-z]+\s+\d{4}\b").expect("invalid regex: month year"))
         .is_match(trimmed)
     {
         return 2;
     }
 
     if YEAR_ONLY
-        .get_or_init(|| Regex::new(r"\b(19|20)\d{2}\b").unwrap())
+        .get_or_init(|| Regex::new(r"\b(19|20)\d{2}\b").expect("invalid regex: year"))
         .is_match(trimmed)
     {
         return 1;
@@ -203,6 +203,7 @@ pub(crate) fn extract_relative_date_answer(text: &str, session_time: &str) -> Op
     None
 }
 
+#[allow(dead_code)]
 pub(crate) fn has_temporal_signal(text: &str) -> bool {
     let lowered = text.to_lowercase();
     extract_date_answer(text).is_some()

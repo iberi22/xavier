@@ -99,8 +99,6 @@ impl Coordinator {
 }
 
 pub struct DistributedLock {
-    // TODO: Dead code - remove or expose the resource id in lock state reporting.
-    #[allow(dead_code)]
     resource_id: String,
     owner: RwLock<Option<String>>,
 }
@@ -111,6 +109,11 @@ impl DistributedLock {
             resource_id,
             owner: RwLock::new(None),
         }
+    }
+
+    /// Get the resource ID associated with this lock
+    pub fn resource_id(&self) -> &str {
+        &self.resource_id
     }
 
     pub async fn try_acquire(&self, owner: &str) -> bool {

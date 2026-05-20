@@ -1,12 +1,17 @@
 use crate::ports::inbound::health_port::{HealthPort, HealthStatus};
 use crate::tasks::session_sync_task::get_last_sync_result;
 use async_trait::async_trait;
+use std::time::Instant;
 
-pub struct HealthService;
+pub struct HealthService {
+    pub start_time: Instant,
+}
 
 impl HealthService {
     pub fn new() -> Self {
-        Self
+        Self {
+            start_time: Instant::now(),
+        }
     }
 }
 
