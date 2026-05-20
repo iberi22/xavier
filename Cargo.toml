@@ -8,6 +8,8 @@ description = "Xavier - Cognitive Memory Runtime for AI Agents (open source)"
 license = "MIT"
 repository = "https://github.com/iberi22/xavier"
 homepage = "https://github.com/iberi22/xavier"
+keywords = ["memory", "ai-agents", "vector-database", "rag", "embeddings"]
+categories = ["database", "science", "data-structures"]
 
 [package.metadata.enterprise]
 brand = "Xavier"
