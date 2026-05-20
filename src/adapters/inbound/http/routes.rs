@@ -69,9 +69,15 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
 
     // Add enterprise plugin routes if feature is enabled
     #[cfg(feature = "enterprise")]
-    let router = router
-        .route("/plugins/health", get(plugins_health_handler))
-        .route("/plugins/sync", post(plugins_sync_handler));
+    let router = {
+        let router = router
+            .route("/plugins/health", get(plugins_health_handler))
+            .route("/plugins/sync", post(plugins_sync_handler));
+
+        use crate::enterprise::http::{enterprise_router, EnterpriseState};
+        let enterprise_state = std::sync::Arc::new(std::sync::Mutex::new(EnterpriseState::init_default()));
+        router.merge(enterprise_router(enterprise_state))
+    };
 
     router.with_state(agent_registry)
 }
