@@ -65,6 +65,9 @@ ulid = "1.1"
 uuid = { version = "1.8", features = ["v4", "serde"] }
 dirs = "6.0"
 
+# Constant-time comparison for security tokens
+subtle = "2.6"
+
 # HTTP Server
 axum = { version = "0.8", features = ["ws"] }
 tower = "0.5"
