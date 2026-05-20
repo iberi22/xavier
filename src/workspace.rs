@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    fmt,
     path::PathBuf,
     sync::{
         atomic::{AtomicU64, AtomicUsize, Ordering},
@@ -76,11 +77,21 @@ impl PlanTier {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SessionToken {
     pub token: String,
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
+}
+
+impl fmt::Debug for SessionToken {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SessionToken")
+            .field("token", &"[REDACTED]")
+            .field("created_at", &self.created_at)
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -131,7 +142,7 @@ impl SyncPolicy {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct WorkspaceConfig {
     pub id: String,
     pub token: String,
@@ -143,6 +154,23 @@ pub struct WorkspaceConfig {
     pub embedding_provider_mode: EmbeddingProviderMode,
     pub managed_google_embeddings: bool,
     pub sync_policy: SyncPolicy,
+}
+
+impl fmt::Debug for WorkspaceConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WorkspaceConfig")
+            .field("id", &self.id)
+            .field("token", &"[REDACTED]")
+            .field("plan", &self.plan)
+            .field("memory_backend", &self.memory_backend)
+            .field("storage_limit_bytes", &self.storage_limit_bytes)
+            .field("request_limit", &self.request_limit)
+            .field("request_unit_limit", &self.request_unit_limit)
+            .field("embedding_provider_mode", &self.embedding_provider_mode)
+            .field("managed_google_embeddings", &self.managed_google_embeddings)
+            .field("sync_policy", &self.sync_policy)
+            .finish()
+    }
 }
 
 impl WorkspaceConfig {
