@@ -1,6 +1,6 @@
 # Xavier Quick Reference
 
-**Base:** `http://localhost:8003` | **Token:** `dev-token`
+**Base:** `http://localhost:8003` | **Token:** Set `XAVIER_TOKEN` env var (required)
 
 ## Backends
 

@@ -11,24 +11,24 @@ Xavier is a fast vector memory system for AI agents, providing ~7ms average sear
 
 ```
 +-------------------------------------------------------------+
-¦                      Xavier v0.4.1                        ¦
-+-------------------------------------------------------------¦
-¦   CLI Tool    ¦   HTTP API    ¦      MCP-stdio              ¦
-+-------------------------------------------------------------¦
-¦                  Security Layer                            ¦
-¦            (Prompt Injection Detection)                    ¦
-+-------------------------------------------------------------¦
-¦                  Hybrid Search Engine                      ¦
-¦    +-------------------------------------------+           ¦
-¦    ¦ Vector   ¦  FTS5    ¦  Graph   ¦  RRF     ¦           ¦
-¦    ¦ (vec)    ¦ (BM25)   ¦ (Entity) ¦ Fusion   ¦           ¦
-¦    +-------------------------------------------+           ¦
-+-------------------------------------------------------------¦
-¦              SQLite-vec Storage                             ¦
-¦    +--------------------------------------------+           ¦
-¦    ¦ memory_vec   ¦ memory_fts   ¦  entities    ¦           ¦
-¦    ¦   (vector)   ¦   (text)     ¦   (graph)    ¦           ¦
-¦    +--------------------------------------------+           ¦
+ï¿½                      Xavier v0.4.1                        ï¿½
++-------------------------------------------------------------ï¿½
+ï¿½   CLI Tool    ï¿½   HTTP API    ï¿½      MCP-stdio              ï¿½
++-------------------------------------------------------------ï¿½
+ï¿½                  Security Layer                            ï¿½
+ï¿½            (Prompt Injection Detection)                    ï¿½
++-------------------------------------------------------------ï¿½
+ï¿½                  Hybrid Search Engine                      ï¿½
+ï¿½    +-------------------------------------------+           ï¿½
+ï¿½    ï¿½ Vector   ï¿½  FTS5    ï¿½  Graph   ï¿½  RRF     ï¿½           ï¿½
+ï¿½    ï¿½ (vec)    ï¿½ (BM25)   ï¿½ (Entity) ï¿½ Fusion   ï¿½           ï¿½
+ï¿½    +-------------------------------------------+           ï¿½
++-------------------------------------------------------------ï¿½
+ï¿½              SQLite-vec Storage                             ï¿½
+ï¿½    +--------------------------------------------+           ï¿½
+ï¿½    ï¿½ memory_vec   ï¿½ memory_fts   ï¿½  entities    ï¿½           ï¿½
+ï¿½    ï¿½   (vector)   ï¿½   (text)     ï¿½   (graph)    ï¿½           ï¿½
+ï¿½    +--------------------------------------------+           ï¿½
 +-------------------------------------------------------------+
 ```
 
@@ -156,7 +156,7 @@ Request ? SecurityService.process_input()
 |----------|---------|-------------|
 | `XAVIER_PORT` | `8006` | HTTP server port |
 | `XAVIER_HOST` | `0.0.0.0` | Bind address |
-| `XAVIER_TOKEN` | `dev-token` | Authentication |
+| `XAVIER_TOKEN` | *(required)* | Authentication â€” must be set to a secure random value |
 | `XAVIER_DEV_MODE` | `false` | Skip auth (dev) |
 | `XAVIER_LOG_LEVEL` | `info` | Log verbosity |
 

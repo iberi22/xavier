@@ -63,7 +63,7 @@ curl http://localhost:8040/readiness
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `XAVIER_PORT` | `8040` | HTTP server port |
-| `XAVIER_TOKEN` | `dev-token` | Auth token |
+| `XAVIER_TOKEN` | *(required)* | Auth token |
 | `RUST_LOG` | `info` | Log filter (trace,debug,info,warn,error) |
 | `XAVIER_LOG_LEVEL` | `info` | Alternative log filter |
 | `XAVIER_MEMORY_BACKEND` | `vec` | Memory backend: `vec`, `surrealdb`, `auto` |

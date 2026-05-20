@@ -401,7 +401,7 @@ impl Cli {
                     let json = serde_json::to_string_pretty(&docs)?;
                     
                     if let Some(path) = output {
-                        std::fs::write(&path, json)?;
+                        std::fs::write(path, json)?;
                         println!("✅ Exported {} memories to {}", docs.len(), path.display());
                     } else {
                         println!("{}", json);
