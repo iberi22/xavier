@@ -42,7 +42,7 @@ pub async fn panel_index() -> impl IntoResponse {
         Ok(contents) => Html(contents).into_response(),
         Err(_) => (
             StatusCode::SERVICE_UNAVAILABLE,
-            "Panel assets are missing. Build the panel-ui frontend first.",
+            "Panel frontend assets are missing. Build them first: cd panel-ui && npm install && npm run build",
         )
             .into_response(),
     }
