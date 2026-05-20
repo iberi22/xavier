@@ -230,20 +230,7 @@ async fn secure_mcp_external_input(
 }
 
 fn should_prescan_tool_argument(tool_name: &str, argument_name: &str) -> bool {
-    if matches!(
-        tool_name,
-        "save_fragment"
-            | "memoryfragment_save"
-            | "search_fragments"
-            | "memoryfragment_search"
-            | "get_recent_fragments"
-            | "memoryfragment_recent"
-            | "memoryfragment_get"
-            | "memoryfragment_delete"
-    ) {
-        return false;
-    }
-
+    let _ = tool_name; // unused — all tools get scanned equally
     argument_name != "id"
 }
 
@@ -506,6 +493,14 @@ pub fn get_xavier_tools() -> Vec<MCPTool> {
                     }
                 },
                 "required": ["id"]
+            }),
+        },
+        MCPTool {
+            name: "stats".to_string(),
+            description: "Get Xavier memory statistics".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {}
             }),
         },
     ]
@@ -1327,6 +1322,48 @@ pub async fn handle_tool_call(
                 is_error: Some(false),
             })?)
         }
+        "stats" => {
+            let records = workspace.workspace.list_memory_records().await?;
+            let total = records.len();
+            let projects = records
+                .iter()
+                .filter_map(|r| {
+                    r.metadata
+                        .get("namespace")
+                        .and_then(|n| n.get("project"))
+                        .and_then(|p| p.as_str())
+                        .map(|p| p.to_string())
+                })
+                .collect::<std::collections::HashSet<_>>();
+            let agents = records
+                .iter()
+                .filter_map(|r| {
+                    r.metadata
+                        .get("namespace")
+                        .and_then(|n| n.get("agent_id"))
+                        .and_then(|a| a.as_str())
+                        .map(|a| a.to_string())
+                })
+                .collect::<std::collections::HashSet<_>>();
+
+            let entity_count = workspace.workspace.entity_graph.all_entities().await.len();
+            let semantic_stats = workspace.workspace.semantic_memory.stats().await;
+
+            Ok(serde_json::to_value(MCPToolResult {
+                content: vec![MCPTextContent {
+                    content_type: "text".to_string(),
+                    text: serde_json::json!({
+                        "total_memories": total,
+                        "projects": projects.len(),
+                        "agents": agents.len(),
+                        "total_entities": entity_count,
+                        "semantic_entities": semantic_stats.total_entities,
+                        "semantic_relations": semantic_stats.total_relations,
+                    }).to_string(),
+                }],
+                is_error: Some(false),
+            })?)
+        }
         _ => Err(anyhow::anyhow!("Tool not implemented: {}", name)),
     }
 }
@@ -1342,6 +1379,7 @@ mod tests {
     };
     use std::path::PathBuf;
     use std::sync::Arc;
+    use std::time::Duration;
     use std::time::{SystemTime, UNIX_EPOCH};
     use tower::util::ServiceExt;
 
@@ -1589,7 +1627,7 @@ mod tests {
                 .as_array()
                 .expect("tools array expected")
                 .len(),
-            14
+            15
         );
     }
 
@@ -1999,11 +2037,76 @@ mod tests {
             .expect("read response body failed");
         let payload: Value = serde_json::from_slice(&body).expect("parse response JSON failed");
 
-        assert_eq!(payload["result"]["is_error"], true, "{payload:?}");
+        // Generic security scan catches the injection first and returns a standard
+        // MCP error (-32000) instead of a result with is_error=true.
+        assert!(
+            payload.get("error").is_some(),
+            "Expected MCP error response, got: {payload:?}"
+        );
+        assert_eq!(payload["error"]["code"], -32000);
+        let msg = payload["error"]["message"]
+            .as_str()
+            .expect("error message expected");
+        assert!(msg.contains("Security policy violation"));
+        assert!(msg.contains("prompt injection"));
+    }
+
+    #[tokio::test]
+    async fn tools_call_stats_returns_memory_statistics() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace.clone());
+
+        // Add some memory first so stats are non-zero
+        workspace
+            .workspace
+            .memory
+            .add_document_typed(
+                "projects/test/note".to_string(),
+                "Test memory for stats".to_string(),
+                json!({}),
+                Some(TypedMemoryPayload {
+                    kind: Some(MemoryKind::Document),
+                    evidence_kind: Some(EvidenceKind::Observation),
+                    namespace: Some(MemoryNamespace {
+                        project: Some("test-project".to_string()),
+                        agent_id: Some("test-agent".to_string()),
+                        ..MemoryNamespace::default()
+                    }),
+                    provenance: None,
+                    ..Default::default()
+                }),
+            )
+            .await
+            .expect("add_document_typed failed for test");
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let response = post_json(
+            app,
+            json!({
+                "jsonrpc": "2.0",
+                "id": 99,
+                "method": "tools/call",
+                "params": {
+                    "name": "stats",
+                    "arguments": {}
+                }
+            }),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read response body failed");
+        let payload: Value = serde_json::from_slice(&body).expect("parse response JSON failed");
         let text = payload["result"]["content"][0]["text"]
             .as_str()
             .expect("text string expected");
-        assert!(text.contains("security_policy_violation"));
+        let stats: Value = serde_json::from_str(text).expect("stats should be valid JSON");
+        assert!(stats["total_memories"].as_u64().unwrap_or(0) >= 1);
+        assert!(stats["projects"].as_u64().unwrap_or(0) >= 1);
+        assert!(stats["agents"].as_u64().unwrap_or(0) >= 1);
     }
 
     #[tokio::test]
