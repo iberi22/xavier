@@ -12,7 +12,7 @@
 const http = require('http');
 
 const XAVIER_URL = process.env.XAVIER_URL || 'http://localhost:8003';
-const XAVIER_TOKEN = process.env.XAVIER_TOKEN || 'dev-token';
+const XAVIER_TOKEN = process.env.XAVIER_TOKEN;
 
 const PROVIDERS = ['opencode-go', 'deepseek', 'groq', 'openrouter', 'google', 'openai', 'anthropic'];
 

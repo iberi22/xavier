@@ -27,7 +27,11 @@ $ErrorActionPreference = 'Stop'
 $PROJECT_ROOT = 'E:\scripts-python\xavier'
 $env:XAVIER_PORT = '8003'
 $env:XAVIER_DEV_MODE = 'true'
-$env:XAVIER_TOKEN = 'dev-token'
+$env:XAVIER_TOKEN = if ($env:XAVIER_TOKEN) { $env:XAVIER_TOKEN } else {
+    Write-Warning "XAVIER_TOKEN not set. Set env:XAVIER_TOKEN to a secure random value before running in production."
+    # Generate a random 32-hex-char token for dev sessions only
+    -join ((48..57) + (97..102) | Get-Random -Count 32 | ForEach-Object { [char]$_ })
+}
 $env:XAVIER_WORKSPACE_DIR = "$PROJECT_ROOT\data"
 $env:XAVIER_DATA_DIR = "$PROJECT_ROOT\data"
 $BINARY = "C:\Users\belal\.cargo\target_global\release\xavier.exe"

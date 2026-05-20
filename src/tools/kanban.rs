@@ -39,7 +39,7 @@ impl std::fmt::Debug for PlankaConfig {
 impl PlankaConfig {
     /// Create a default (unconfigured) config — always returns an error.
     /// Use `from_env()` instead to load from environment variables.
-    pub fn default() -> Result<Self, PlankaConfigError> {
+    pub fn err_not_configured() -> Result<Self, PlankaConfigError> {
         Err(PlankaConfigError::NotConfigured(
             "Planka not configured. Set PLANKKA_HOST, PLANKKA_EMAIL, and PLANKKA_PASSWORD environment variables."
                 .to_string(),
@@ -681,7 +681,7 @@ mod tests {
 
     #[test]
     fn test_default_returns_error() {
-        let result = PlankaConfig::default();
+        let result = PlankaConfig::err_not_configured();
         assert!(result.is_err());
         let err = result.unwrap_err();
         match err {

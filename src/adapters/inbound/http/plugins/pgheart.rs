@@ -161,7 +161,7 @@ impl PgHeartPlugin {
 
     /// Get the last heartbeat timestamp
     pub async fn last_heartbeat(&self) -> Option<u64> {
-        self.last_heartbeat.read().await.clone()
+        *self.last_heartbeat.read().await
     }
 }
 
