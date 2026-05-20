@@ -259,8 +259,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     println!("Code graph DB: {}", code_db_path.display());
 
     // Build router with state-aware routes
-    #[allow(unused_mut)]
-    let mut protected_routes = Router::new()
+    let protected_routes = Router::new()
         .route("/memory/search", post(search_handler))
         .route("/memory/add", post(add_handler))
         .route("/memory/delete", post(delete_handler))
@@ -330,16 +329,16 @@ pub async fn start_http_server(port: u16) -> Result<()> {
 
     // Add enterprise plugin routes if feature is enabled
     #[cfg(feature = "enterprise")]
-    {
+    let protected_routes = {
         use xavier::adapters::inbound::http::routes::{
             plugins_health_handler, plugins_sync_handler,
         };
-        protected_routes = protected_routes
+        protected_routes
             .route("/plugins/health", get(plugins_health_handler))
-            .route("/plugins/sync", post(plugins_sync_handler));
-    }
+            .route("/plugins/sync", post(plugins_sync_handler))
+    };
 
-    let mut app = Router::new()
+    let app = Router::new()
         .route("/health", get(health_handler))
         .route("/v1/version", get(version_handler))
         .route("/build", get(build_handler))
@@ -352,15 +351,15 @@ pub async fn start_http_server(port: u16) -> Result<()> {
 
     // Merge enterprise HTTP API routes when feature is enabled, under auth
     #[cfg(feature = "enterprise")]
-    {
+    let app = {
         use xavier::enterprise::http::{enterprise_router, EnterpriseState};
         use std::sync::{Arc, Mutex};
         let enterprise_state = Arc::new(Mutex::new(EnterpriseState::init_default()));
-        app = app.merge(
+        app.merge(
             enterprise_router(enterprise_state)
                 .layer(middleware::from_fn(auth_middleware))
-        );
-    }
+        )
+    };
 
     let listener = TcpListener::bind(&bind_addr).await?;
     let bound_addr = listener.local_addr()?;

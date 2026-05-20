@@ -3,6 +3,8 @@
 //! Only compiled when the `enterprise` feature is enabled.
 //! Merge with the main router via `Router::merge()`.
 
+#![cfg(feature = "enterprise")]
+
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
@@ -192,7 +194,7 @@ impl From<Tenant> for TenantResponse {
 }
 
 /// POST /v1/tenants — Create a new tenant
-async fn create_tenant(
+pub(crate) async fn create_tenant(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
     Json(payload): Json<CreateTenant>,
 ) -> Result<Json<TenantResponse>, EnterpriseError> {
@@ -222,7 +224,7 @@ async fn create_tenant(
 }
 
 /// GET /v1/tenants — List all tenants
-async fn list_tenants(
+pub(crate) async fn list_tenants(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
 ) -> Result<Json<Vec<TenantResponse>>, StatusCode> {
     let state = state.lock().expect("poisoned lock: enterprise_list_tenants");
@@ -237,7 +239,7 @@ async fn list_tenants(
 }
 
 /// GET /v1/tenants/:id — Get a tenant by ID
-async fn get_tenant(
+pub(crate) async fn get_tenant(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
     Path(id): Path<TenantId>,
 ) -> Result<Json<TenantResponse>, EnterpriseError> {
@@ -275,7 +277,7 @@ pub struct ApiKeyResponse {
 }
 
 /// POST /v1/keys — Create a new API key for a tenant
-async fn create_key(
+pub(crate) async fn create_key(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
     Json(payload): Json<CreateKey>,
 ) -> Result<Json<ApiKeyResponse>, EnterpriseError> {
@@ -336,7 +338,7 @@ async fn create_key(
 }
 
 /// GET /v1/keys/:tenant_id — List all API keys for a tenant
-async fn list_keys(
+pub(crate) async fn list_keys(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
     Path(id): Path<TenantId>,
 ) -> Result<Json<Vec<ApiKey>>, StatusCode> {
@@ -351,7 +353,7 @@ async fn list_keys(
 }
 
 /// DELETE /v1/keys/:key_id — Revoke an API key
-async fn revoke_key(
+pub(crate) async fn revoke_key(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
     Path(key_id): Path<String>,
 ) -> Result<StatusCode, StatusCode> {
@@ -395,7 +397,7 @@ async fn revoke_key(
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// GET /v1/audit — Query audit log entries
-async fn query_audit(
+pub(crate) async fn query_audit(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
     Query(params): Query<AuditQuery>,
 ) -> Result<Json<Vec<AuditEntry>>, StatusCode> {
@@ -440,7 +442,7 @@ pub struct RateLimitsResponse {
 }
 
 /// GET /v1/rate-limits — Get current rate limit configuration
-async fn get_rate_limits(
+pub(crate) async fn get_rate_limits(
     State(_state): State<Arc<Mutex<EnterpriseState>>>,
 ) -> Result<Json<RateLimitsResponse>, StatusCode> {
     Ok(Json(RateLimitsResponse {
@@ -456,7 +458,7 @@ pub struct UpdateRateLimits {
 }
 
 /// PATCH /v1/rate-limits — Update rate limit configuration
-async fn update_rate_limits(
+pub(crate) async fn update_rate_limits(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
     Json(payload): Json<UpdateRateLimits>,
 ) -> Result<StatusCode, StatusCode> {
@@ -483,7 +485,6 @@ async fn update_rate_limits(
 /// Returns an empty router when `enterprise` feature is disabled.
 ///
 /// Usage: `router.merge(enterprise_router(state))`
-#[cfg(feature = "enterprise")]
 pub fn enterprise_router(state: Arc<Mutex<EnterpriseState>>) -> axum::Router {
     axum::Router::new()
         // Tenant management
@@ -500,10 +501,4 @@ pub fn enterprise_router(state: Arc<Mutex<EnterpriseState>>) -> axum::Router {
         .route("/v1/rate-limits", get(get_rate_limits))
         .route("/v1/rate-limits", patch(update_rate_limits))
         .with_state(state)
-}
-
-/// No-op router when enterprise feature is disabled
-#[cfg(not(feature = "enterprise"))]
-pub fn enterprise_router() -> axum::Router {
-    axum::Router::new()
 }
