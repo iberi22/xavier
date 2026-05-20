@@ -5,7 +5,7 @@ This document details the critical security fixes applied in Phase 1 to address 
 ## 1. Hardcoded Credentials Removal
 **File:** `src/tools/kanban.rs`
 **Issue:** The `PlankaConfig` struct contained hardcoded default credentials (`swaladmin2026`).
-**Fix:** Removed the hardcoded fallback. The system now strictly requires `PLANKA_URL`, `PLANKA_EMAIL`, and `PLANKA_PASSWORD` environment variables to be set.
+**Fix:** Removed the hardcoded fallback. The system now strictly requires `PLANKKA_HOST`, `PLANKKA_EMAIL`, and `PLANKKA_PASSWORD` environment variables to be set.
 **Regression Prevention:** Added tests to ensure `PlankaConfig::from_env()` returns `None` if any required environment variable is missing, and never falls back to hardcoded secrets.
 
 ## 2. Token Enforcement in CLI and Workspace
