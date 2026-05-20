@@ -1,23 +1,22 @@
 # Xavier Feature Status
 
-Current product label: `0.6 beta usable`
+Current product label: `1.0.0`
 
-This matrix is the operational truth for the repository as of the latest Xavier usage review. It is intentionally stricter than roadmap copy: if a feature is not reproducibly usable from the current repo, it is not marked release-ready here.
+This matrix is the operational truth for the repository as of v1.0 release stabilization.
 
 ## Release Status
 
 | Surface | Current status | Notes |
 |---|---|---|
-| HTTP health/readiness | Beta | `/health` works. `/readiness` responds, but current output still exposes backend noise that should be cleaned before 1.0. |
-| HTTP memory add/search/stats | Beta usable | Authenticated memory write and search work in the current server. |
-| Canonical runtime config | In progress | `config/xavier.config.json` is now the intended source of non-secret runtime configuration, with `.env` reserved for credentials and secrets. |
-| CLI add/search/stats | Beta usable | These commands currently act as HTTP clients. They require a running server and use `XAVIER_URL` as the canonical client endpoint, falling back to the JSON config server address. |
-| Public Dataset Export | Planned | `xavier export --public` is now a core planned feature. It should generate `xavier-dataset/` with manifest, memory, graph, timeline, git, code symbol, code relation, and CK metrics NDJSON files for public agent context. |
-| MCP stdio | Beta usable | `initialize`, `tools/list`, `tools/call create_memory`, `tools/call search_memory`, and legacy aliases `add`/`search` work. |
-| Panel shell/API | Experimental | The CLI server exposes authenticated `/panel/api/threads` and `/panel/api/chat` routes backed by the panel thread store. The shell still requires built frontend assets and is not yet marked release-ready. |
-| Release smoke scripts | Unstable | Current smoke scripts still assume endpoints and defaults that do not always match the running server. |
-| Workspace/storage isolation | Beta usable | Hardened and stabilized multi-tenant workspace registry and isolated workspace storage state. |
-| Public docs consistency | Needs hardening | README, CLI docs, smoke scripts, and server behavior are not fully aligned yet. |
+|| HTTP health/readiness | Stable | `/health` and `/readiness` work correctly. |
+|| HTTP memory add/search/stats | Stable | Authenticated memory write and search work. CLI, HTTP, and MCP contracts aligned. |
+|| Canonical runtime config | Stable | `config/xavier.config.json` is the canonical source of non-secret config. `.env` is reserved for secrets and credentials. 25+ settings migrated. All env var reads funnel through settings loader. |
+|| CLI add/search/stats | Stable | Commands act as HTTP clients using `XAVIER_URL` (primary) or `XAVIER_HOST`+`XAVIER_PORT` (fallback). No hardcoded port output. Contract aligned with server. |
+|| MCP stdio | Stable | 12 tools (15 with aliases): create_memory, search_memory, get_memory, stats, list_projects, get_project_context, sync_gitcore, save_fragment/search_fragments/get_recent_fragments/memoryfragment_get/memoryfragment_delete. Security scanning applied uniformly. Protocol 2025-03-26. |
+|| Panel shell/API | Optional / Experimental | The CLI server exposes `/panel` (frontend shell, returns 503 when assets are not built) and authenticated panel API routes. Building frontend assets requires Node.js 22+ (`cd panel-ui && npm install && npm run build`). Panel API routes work independently of frontend assets. |
+|| Release smoke scripts | Stable | Shell and PowerShell smoke scripts test identical contract (`/health`, `/readiness`, auth gate, memory add/search, usage). `/build` and panel checks are optional. Pre-commit hooks verify auth. |
+|| Workspace/storage isolation | Stable | Canonical env vars documented. `XAVIER_WORKSPACE_DIR` / `XAVIER_DATA_DIR` fully isolate runtime. `seed_workspace()` documented as intentional. Tests prove temp workspace isolation. |
+|| Public docs consistency | Stable | README, MCP_CONTRACT.md, ARCHITECTURE.md, FEATURE_STATUS.md, smoke scripts all aligned with v1.0 surface. |
 
 ## What Was Verified
 

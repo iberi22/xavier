@@ -2,7 +2,8 @@ param(
     [string]$BaseUrl = $(if ($env:XAVIER_URL) { $env:XAVIER_URL } else { "http://127.0.0.1:8006" }),
     [string]$Token = $(if ($env:XAVIER_TOKEN) { $env:XAVIER_TOKEN } else { "" }),
     [int]$TimeoutSec = 30,
-    [switch]$RequireBuildRoute
+    [switch]$RequireBuildRoute = $(if ($env:XAVIER_REQUIRE_BUILD_ROUTE -eq "1") { $true } else { $false }),
+    [switch]$RequirePanel = $(if ($env:XAVIER_REQUIRE_PANEL -eq "1") { $true } else { $false })
 )
 
 $ErrorActionPreference = "Stop"
@@ -119,5 +120,99 @@ if ($usage.StatusCode -ne 200) {
     throw "Usage endpoint failed"
 }
 Write-Host "PASS /v1/account/usage" -ForegroundColor Green
+
+if ($RequirePanel) {
+    try {
+        $panelShell = Invoke-JsonRequest -Method "GET" -Url "$BaseUrl/panel"
+        $panelStatusCode = $panelShell.StatusCode
+
+        if ($panelStatusCode -eq 200) {
+            Write-Host "PASS /panel returns 200 (frontend assets present)" -ForegroundColor Green
+        } elseif ($panelStatusCode -eq 503) {
+            Write-Host "PASS /panel returns 503 (frontend assets missing — panel is optional)" -ForegroundColor Green
+        } else {
+            throw "/panel returned unexpected status $panelStatusCode (expected 200 or 503)"
+        }
+
+        if ($panelStatusCode -eq 200) {
+            $panelAsset = Invoke-JsonRequest -Method "GET" -Url "$BaseUrl/panel/assets/index.js"
+            if ($panelAsset.StatusCode -ne 200) {
+                throw "/panel/assets/index.js returned $($panelAsset.StatusCode)"
+            }
+            Write-Host "PASS /panel/assets/index.js" -ForegroundColor Green
+
+            $panelMissing = Invoke-JsonRequest -Method "GET" -Url "$BaseUrl/panel/assets/missing.js"
+            if ($panelMissing.StatusCode -ne 404) {
+                throw "Missing panel asset returned $($panelMissing.StatusCode) instead of 404"
+            }
+            Write-Host "PASS missing panel asset returns 404" -ForegroundColor Green
+        } else {
+            Write-Host "INFO /panel returned 503 (assets not built) — skipping asset-availability checks" -ForegroundColor Yellow
+        }
+
+        $panelUnauth = Invoke-JsonRequest -Method "GET" -Url "$BaseUrl/panel/api/threads"
+        if ($panelUnauth.StatusCode -ne 401) {
+            throw "Panel auth gate returned $($panelUnauth.StatusCode) instead of 401"
+        }
+        Write-Host "PASS panel auth gate" -ForegroundColor Green
+
+        $panelThreads = Invoke-JsonRequest -Method "GET" -Url "$BaseUrl/panel/api/threads" -Headers $headers
+        if ($panelThreads.StatusCode -ne 200) {
+            throw "Panel list threads failed"
+        }
+        Write-Host "PASS /panel/api/threads" -ForegroundColor Green
+
+        $newThread = Invoke-JsonRequest -Method "POST" -Url "$BaseUrl/panel/api/threads" -Headers $headers -Body @{
+            title = "New Thread"
+        }
+        if ($newThread.StatusCode -ne 200) {
+            throw "Panel create thread failed"
+        }
+        $newThreadJson = $newThread.Content | ConvertFrom-Json
+        $threadId = $newThreadJson.id
+        if ([string]::IsNullOrWhiteSpace($threadId)) {
+            throw "Panel create thread response missing id"
+        }
+        Write-Host "PASS create panel thread" -ForegroundColor Green
+
+        $emptyDetail = Invoke-JsonRequest -Method "GET" -Url "$BaseUrl/panel/api/threads/$threadId" -Headers $headers
+        if ($emptyDetail.StatusCode -ne 200) {
+            throw "Panel get empty thread failed"
+        }
+        $emptyDetailJson = $emptyDetail.Content | ConvertFrom-Json
+        if ($emptyDetailJson.thread.title -ne "New Thread" -or @($emptyDetailJson.messages).Count -ne 0) {
+            throw "Empty panel thread detail shape mismatch"
+        }
+        Write-Host "PASS empty panel thread detail" -ForegroundColor Green
+
+        $panelChat = Invoke-JsonRequest -Method "POST" -Url "$BaseUrl/panel/api/chat" -Headers $headers -Body @{
+            thread_id = $threadId
+            message = "Explain xavier memory and show a structured UI."
+        }
+        if ($panelChat.StatusCode -ne 200) {
+            throw "Panel chat failed"
+        }
+        $panelChatJson = $panelChat.Content | ConvertFrom-Json
+        if ($panelChatJson.thread.id -ne $threadId -or @($panelChatJson.messages).Count -ne 2 -or $panelChatJson.messages[-1].role -ne "assistant") {
+            throw "Panel chat response shape mismatch"
+        }
+        Write-Host "PASS /panel/api/chat" -ForegroundColor Green
+
+        $updatedDetail = Invoke-JsonRequest -Method "GET" -Url "$BaseUrl/panel/api/threads/$threadId" -Headers $headers
+        if ($updatedDetail.StatusCode -ne 200) {
+            throw "Panel get updated thread failed"
+        }
+        $updatedDetailJson = $updatedDetail.Content | ConvertFrom-Json
+        if ($updatedDetailJson.thread.title -eq "New Thread" -or @($updatedDetailJson.messages).Count -ne 2) {
+            throw "First panel message should retitle thread"
+        }
+        Write-Host "PASS first panel message retitles the thread" -ForegroundColor Green
+
+    } catch {
+        throw
+    }
+} else {
+    Write-Host "WARN panel checks skipped; set -RequirePanel to enforce panel validation" -ForegroundColor Yellow
+}
 
 Write-Host "Xavier release smoke checks passed." -ForegroundColor Cyan

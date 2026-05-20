@@ -144,6 +144,7 @@ jobs:
       XAVIER_HOST: 127.0.0.1
       XAVIER_PORT: 8003
       XAVIER_CODE_GRAPH_DB_PATH: data/ci-release-smoke.db
+      XAVIER_REQUIRE_PANEL: 1
     steps:
       - uses: actions/checkout@v6.0.2
       - name: Setup Node

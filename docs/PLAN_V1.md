@@ -60,6 +60,9 @@
 - [ ] Cerrar issues con tag `migrated-to-xavier`
 
 ### FASE 4: Release (~2h)
+- [ ] Run `scripts/release-smoke.sh` against live server — all checks PASS
+- [ ] Run `scripts/release-smoke.ps1` against live server — all checks PASS
+- [ ] Run `scripts/release-smoke.ps1 -RequirePanel` / `XAVIER_REQUIRE_PANEL=1` if panel UI is built
 - [ ] Commit + Push Xavier (cambios actuales + enterprise + fixes)
 - [ ] Commit + Push PgHeart (fixes + mejoras)
 - [ ] GitHub Release Xavier v1.0.0
