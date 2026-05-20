@@ -13,6 +13,9 @@ pub mod audit;
 pub mod keys;
 pub mod rate_limit;
 pub mod http;
+pub mod persistence;
+#[cfg(test)]
+pub mod tests;
 
 pub use tenancy::{Tenant, TenantId, Plan, TenantStore};
 pub use rbac::{Permission, Role, RoleGuard, PermissionCheck};

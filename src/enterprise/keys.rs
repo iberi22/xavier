@@ -212,6 +212,32 @@ impl ApiKeyStore {
             .map(|v| v.len())
             .unwrap_or(0)
     }
+
+    /// Insert an API key directly into the store (used when loading from persistence).
+    /// Unlike `create`, this does NOT generate a new key — it inserts the key as-is
+    /// and rebuilds the tenant_keys index.
+    pub fn insert_existing(&mut self, key: ApiKey) {
+        let id = key.id.clone();
+        let tenant_id = key.tenant_id;
+        self.keys.insert(id.clone(), key);
+        self.tenant_keys
+            .entry(tenant_id)
+            .or_insert_with(Vec::new)
+            .push(id);
+    }
+
+    /// Bulk insert API keys from persistence.
+    pub fn load_from_iter(&mut self, keys: impl IntoIterator<Item = ApiKey>) {
+        for key in keys {
+            let id = key.id.clone();
+            let tenant_id = key.tenant_id;
+            self.keys.insert(id.clone(), key);
+            self.tenant_keys
+                .entry(tenant_id)
+                .or_insert_with(Vec::new)
+                .push(id);
+        }
+    }
 }
 
 impl Default for ApiKeyStore {
@@ -262,10 +288,11 @@ pub fn extract_prefix(full_key: &str) -> Option<(&str, &str)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use uuid::Uuid;
 
     #[test]
     fn test_api_key_generation() {
-        let store = ApiKeyStore::new();
+        let mut store = ApiKeyStore::new();
         let tenant_id = Uuid::new_v4();
         
         let (raw_key, key) = store.create(tenant_id, "Test Key", ApiKeyType::Live);
