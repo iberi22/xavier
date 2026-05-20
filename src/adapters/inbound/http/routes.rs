@@ -349,6 +349,7 @@ pub fn get_plugin_registry(
 
 #[cfg(feature = "enterprise")]
 pub async fn plugins_health_handler() -> Json<PluginsHealthResponse> {
+    #[allow(unused_imports)]
     use crate::adapters::inbound::http::plugins::Plugin;
 
     let registry = get_plugin_registry();
@@ -393,6 +394,7 @@ pub async fn plugins_health_handler() -> Json<PluginsHealthResponse> {
 pub async fn plugins_sync_handler(
     Json(payload): Json<PluginSyncRequest>,
 ) -> Json<PluginSyncResponse> {
+    #[allow(unused_imports)]
     use crate::adapters::inbound::http::plugins::{Plugin, SyncDirection};
 
     let direction = match payload.direction.to_lowercase().as_str() {
