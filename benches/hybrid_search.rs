@@ -1,10 +1,10 @@
-﻿use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use sha2::{Digest, Sha256};
 use tempfile::tempdir;
 use tokio::runtime::Runtime;
-use xavier::memory::belief_graph::BeliefRelation;
+use xavier::domain::memory::belief::BeliefEdge;
 use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
-use xavier::memory::{HybridSearchMode, MemoryRecord, MemoryStore};
+use xavier::memory::{MemoryRecord, MemoryStore};
 
 fn stable_key(kind: &str, parts: &[&str]) -> String {
     let mut digest = Sha256::new();
@@ -78,6 +78,9 @@ fn bench_hybrid_search(c: &mut Criterion) {
                     revision: 1,
                     primary: true,
                     parent_id: None,
+                    cluster_id: None,
+                    level: Default::default(),
+                    relation: None,
                     revisions: Vec::new(),
                 })
                 .await
@@ -88,40 +91,20 @@ fn bench_hybrid_search(c: &mut Criterion) {
             .save_beliefs(
                 workspace_id,
                 vec![
-                    BeliefRelation {
-                        id: ulid::Ulid::new().to_string(),
-                        source: "ACCT-9F3A".to_string(),
-                        target: "Alice Johnson".to_string(),
-                        relation_type: "approved_by".to_string(),
-                        weight: 0.9,
-                        confidence: 0.9,
-                        source_memory_id: Some(stable_key(
-                            "memory",
-                            &[workspace_id, "memory/account-renewal"],
-                        )),
-                        valid_from: None,
-                        valid_until: None,
-                        superseded_by: None,
-                        created_at: chrono::Utc::now(),
-                        updated_at: chrono::Utc::now(),
-                    },
-                    BeliefRelation {
-                        id: ulid::Ulid::new().to_string(),
-                        source: "INC-4821".to_string(),
-                        target: "OpenClaw".to_string(),
-                        relation_type: "handled_by".to_string(),
-                        weight: 0.8,
-                        confidence: 0.8,
-                        source_memory_id: Some(stable_key(
-                            "memory",
-                            &[workspace_id, "memory/incident"],
-                        )),
-                        valid_from: None,
-                        valid_until: None,
-                        superseded_by: None,
-                        created_at: chrono::Utc::now(),
-                        updated_at: chrono::Utc::now(),
-                    },
+                    BeliefEdge::new(
+                        "ACCT-9F3A".to_string(),
+                        "Alice Johnson".to_string(),
+                        "approved_by".to_string(),
+                        0.9,
+                        stable_key("memory", &[workspace_id, "memory/account-renewal"]),
+                    ),
+                    BeliefEdge::new(
+                        "INC-4821".to_string(),
+                        "OpenClaw".to_string(),
+                        "handled_by".to_string(),
+                        0.8,
+                        stable_key("memory", &[workspace_id, "memory/incident"]),
+                    ),
                 ],
             )
             .await
@@ -151,8 +134,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
                 .hybrid_search_with_embedding(
                     workspace_id,
                     query,
-                    HybridSearchMode::Vector,
-                    Some(embedding),
+                    embedding.to_vec(),
                     None,
                     3,
                 )
@@ -169,8 +151,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
                 .hybrid_search_with_embedding(
                     workspace_id,
                     query,
-                    HybridSearchMode::Both,
-                    Some(embedding),
+                    embedding.to_vec(),
                     None,
                     3,
                 )
@@ -203,8 +184,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
                         .hybrid_search_with_embedding(
                             workspace_id,
                             query,
-                            HybridSearchMode::Vector,
-                            Some(embedding),
+                            embedding.to_vec(),
                             None,
                             3,
                         )
@@ -223,8 +203,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
                         .hybrid_search_with_embedding(
                             workspace_id,
                             query,
-                            HybridSearchMode::Both,
-                            Some(embedding),
+                            embedding.to_vec(),
                             None,
                             3,
                         )
