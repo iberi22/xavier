@@ -12,9 +12,10 @@ pub mod rbac;
 pub mod audit;
 pub mod keys;
 pub mod rate_limit;
+pub mod http;
 
 pub use tenancy::{Tenant, TenantId, Plan, TenantStore};
 pub use rbac::{Permission, Role, RoleGuard, PermissionCheck};
 pub use audit::{AuditEntry, AuditLog, AuditAction};
-pub use keys::{ApiKey, ApiKeyStore};
+pub use keys::{ApiKey, ApiKeyStore, ApiKeyType};
 pub use rate_limit::{RateLimiter, RateLimitConfig, RateLimitResult, RateLimitKey};
