@@ -27,7 +27,7 @@ async function main() {
   const queries = ['*', 'task', 'repo', 'decision', 'session', 'xavier', 'memory', 'openclaw'];
 
   for (const q of queries) {
-    const r = await api('http://localhost:8006', 'dev-token', '/memory/search', {query: q, limit: 20});
+    const r = await api(process.env.XAVIER_URL || 'http://localhost:8006', process.env.XAVIER_TOKEN || '', '/memory/search', {query: q, limit: 20});
     const count = r.results ? r.results.length : 0;
     console.log('Query "' + q + '": ' + count + ' results');
     if (r.results && r.results.length > 0) {
@@ -39,7 +39,7 @@ async function main() {
 
   console.log('\n--- /memory/manage ---');
   try {
-    const m = await api('http://localhost:8006', 'dev-token', '/memory/manage', {action: 'stats'});
+    const m = await api(process.env.XAVIER_URL || 'http://localhost:8006', process.env.XAVIER_TOKEN || '', '/memory/manage', {action: 'stats'});
     console.log(JSON.stringify(m, null, 2));
   } catch(e) { console.log('Error: ' + e.message); }
 }
