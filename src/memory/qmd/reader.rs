@@ -1,23 +1,22 @@
 use anyhow::Result;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
-use std::sync::{Arc, LazyLock};
+use std::sync::atomic::Ordering as AtomicOrdering;
 use std::time::Instant;
-use tokio::sync::RwLock as AsyncRwLock;
 
-use crate::memory::schema::matches_filters;
+use crate::memory::qmd_memory::config::EMBEDDING_CACHE;
+use crate::memory::qmd_memory::config::EMBEDDING_CACHE_TTL_SECS;
+use crate::memory::qmd_memory::query_builder::normalize_query;
 use crate::memory::qmd_memory::search::lexical_score;
-use crate::memory::qmd_memory::types::{CachedSearchResult, EmbeddingCacheEntry, MemoryDocument, SearchCacheKey};
-use crate::memory::qmd_memory::utils::normalize_query;
+use crate::memory::qmd_memory::types::{
+    CachedSearchResult, EmbeddingCacheEntry, MemoryDocument, MemoryUsage, SearchCacheKey,
+};
+use crate::memory::qmd_memory::utils::extract_speakers;
 use crate::memory::qmd_memory::QmdMemory;
 use crate::memory::schema::MemoryQueryFilters;
+use crate::memory::schema::matches_filters;
 use crate::utils::crypto::hex_encode;
-use std::sync::atomic::Ordering as AtomicOrdering;
 
-pub const EMBEDDING_CACHE_TTL_SECS: u64 = 3600; // 1 hour
-
-pub static EMBEDDING_CACHE: LazyLock<Arc<AsyncRwLock<HashMap<String, EmbeddingCacheEntry>>>> =
-    LazyLock::new(|| Arc::new(AsyncRwLock::new(HashMap::new())));
+// ── Embedding cache operations ───────────────────────────────────────
 
 pub fn embedding_cache_key(content: &str) -> String {
     let mut hasher = Sha256::new();
@@ -89,7 +88,7 @@ pub async fn generate_embedding(text: &str) -> Result<Vec<f32>> {
 }
 
 pub fn preprocess_for_embedding(text: &str) -> String {
-    let speakers = crate::memory::qmd_memory::utils::extract_speakers(text);
+    let speakers = extract_speakers(text);
 
     if speakers.is_empty() {
         // Still preprocess to handle quoted speech
@@ -116,7 +115,6 @@ pub fn preserve_quoted_speech(text: &str) -> String {
 
     // Pattern for quoted speech: "..." or '...'
     let quote_re = regex::Regex::new(r#"["']([^"']+)["']"#).expect("test assertion");
-
     let mut quote_count = 0;
     result = quote_re
         .replace_all(&result, |caps: &regex::Captures| {
@@ -128,6 +126,8 @@ pub fn preserve_quoted_speech(text: &str) -> String {
 
     result
 }
+
+// ── Search cache operations ───────────────────────────────────────────
 
 pub async fn search_with_cache_filtered(
     memory: &QmdMemory,
@@ -144,7 +144,8 @@ pub async fn search_with_cache_filtered(
     };
 
     if let Some(cached) = memory.search_cache.read().await.get(&cache_key).cloned() {
-        memory.cache_counters
+        memory
+            .cache_counters
             .hits
             .fetch_add(1, AtomicOrdering::Relaxed);
         return Ok(CachedSearchResult {
@@ -177,11 +178,13 @@ pub async fn search_with_cache_filtered(
     let documents: Vec<MemoryDocument> =
         scored.into_iter().map(|(_, doc)| doc).take(limit).collect();
 
-    memory.search_cache
+    memory
+        .search_cache
         .write()
         .await
         .insert(cache_key, documents.clone());
-    memory.cache_counters
+    memory
+        .cache_counters
         .misses
         .fetch_add(1, AtomicOrdering::Relaxed);
 
@@ -193,4 +196,76 @@ pub async fn search_with_cache_filtered(
 
 pub async fn invalidate_cache(memory: &QmdMemory) {
     memory.search_cache.write().await.clear();
+}
+
+// ── Read / query operations ───────────────────────────────────────────
+
+pub async fn init(memory: &QmdMemory) -> Result<()> {
+    if let Some(store) = memory.store().await {
+        let state = store.load_workspace_state(&memory.workspace_id).await?;
+        let docs: Vec<MemoryDocument> = state
+            .memories
+            .into_iter()
+            .map(|record| record.to_document())
+            .collect();
+        let loaded_memories = docs.len();
+        *memory.docs.write().await = docs;
+        tracing::info!(
+            workspace_id = %memory.workspace_id,
+            loaded_memories = loaded_memories,
+            "QmdMemory loaded from persistent store"
+        );
+    }
+    Ok(())
+}
+
+pub async fn get(memory: &QmdMemory, path_or_id: &str) -> Result<Option<MemoryDocument>> {
+    let docs = memory.docs.read().await;
+    Ok(docs
+        .iter()
+        .find(|doc| doc.path == path_or_id || doc.id.as_deref() == Some(path_or_id))
+        .cloned())
+}
+
+pub async fn usage(memory: &QmdMemory) -> MemoryUsage {
+    let docs = memory.docs.read().await;
+    MemoryUsage {
+        document_count: docs.len(),
+        storage_bytes: docs.iter().map(MemoryDocument::estimated_bytes).sum(),
+    }
+}
+
+pub async fn cache_metrics(memory: &QmdMemory) -> crate::memory::qmd_memory::types::CacheMetrics {
+    crate::memory::qmd_memory::types::CacheMetrics {
+        hits: memory.cache_counters.hits.load(AtomicOrdering::Relaxed),
+        misses: memory.cache_counters.misses.load(AtomicOrdering::Relaxed),
+        entries: memory.search_cache.read().await.len(),
+    }
+}
+
+pub async fn export(memory: &QmdMemory, public_only: bool) -> Result<Vec<MemoryDocument>> {
+    let docs = memory.docs.read().await;
+    let exported = docs
+        .iter()
+        .filter(|doc| {
+            if !public_only {
+                return true;
+            }
+            // If public_only, check metadata for visibility
+            let is_private = doc
+                .metadata
+                .get("is_private")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let visibility = doc
+                .metadata
+                .get("visibility")
+                .and_then(|v| v.as_str())
+                .unwrap_or("public");
+
+            !is_private && visibility != "private"
+        })
+        .cloned()
+        .collect();
+    Ok(exported)
 }

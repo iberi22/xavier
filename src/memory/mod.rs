@@ -16,8 +16,6 @@ pub mod qmd_memory;
 pub mod schema;
 pub mod semantic;
 pub mod semantic_cache;
-// TODO: Dead code - remove or wire session_store into session persistence.
-#[allow(dead_code)]
 pub mod session_store;
 pub mod sqlite_store;
 pub mod sqlite_vec_store;

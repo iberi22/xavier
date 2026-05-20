@@ -316,8 +316,9 @@ impl FileIndexer {
     pub async fn sync_incremental(&self, _memory: &QmdMemory) -> Result<IndexResult> {
         info!("🔄 Starting incremental sync");
 
-        // TODO: Check file modification times vs indexed times
-        // Only re-index files that have changed
+        // Note: Implement incremental sync — check file modification times vs indexed times
+        // Currently falls back to full re-index (index_all). Track mtime in metadata store
+        // and only re-index files where mtime has changed.
 
         self.index_all().await
     }
