@@ -2,11 +2,14 @@
 # Xavier - Optimized Multi-Stage Docker Build
 # Target: < 100MB production image
 #
-# Usage: docker build -t xavier . && docker run -p 8006:8006 xavier
+# Usage: docker build --build-arg FEATURES="local-gllm,cli-interactive" -t xavier .
+#        docker run -p 8006:8006 xavier
 
 # Stage 1: Builder
 # Using slim variant to keep final image small (~500MB vs ~800MB for full)
 FROM rust:1.90-bookworm AS builder
+
+ARG FEATURES=local-gllm,cli-interactive
 
 WORKDIR /app
 
@@ -30,7 +33,8 @@ COPY code-graph/ code-graph/
 
 # Build only xavier binary (skip bench, gui, tui for smaller image)
 # Using -j 1 to avoid OOM on memory-constrained systems (Windows Docker Desktop)
-RUN cargo build --release --bin xavier -j 1
+# FEATURES build-arg enables enterprise features when needed (e.g. "local-gllm,cli-interactive,enterprise")
+RUN cargo build --release --bin xavier -j 1 --features "${FEATURES}"
 
 # Strip debug symbols to reduce binary size (~15-20MB savings)
 RUN strip -s /app/target/release/xavier
