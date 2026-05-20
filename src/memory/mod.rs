@@ -11,6 +11,7 @@ pub mod graph_store;
 pub mod layers_config;
 pub mod manager;
 pub mod patterns;
+pub mod qmd;
 pub mod qmd_memory;
 pub mod schema;
 pub mod semantic;
