@@ -15,14 +15,14 @@ Set connection variables first.
 
 ```bash
 export XAVIER_URL="${XAVIER_URL:-http://localhost:8003}"
-export XAVIER_TOKEN="${XAVIER_TOKEN:-dev-token}"
+export XAVIER_TOKEN="${XAVIER_TOKEN:-${XAVIER_TOKEN}}"
 ```
 
 ### PowerShell
 
 ```powershell
 $env:XAVIER_URL = $env:XAVIER_URL ?? "http://localhost:8003"
-$env:XAVIER_TOKEN = $env:XAVIER_TOKEN ?? "dev-token"
+$env:XAVIER_TOKEN = $env:XAVIER_TOKEN ?? "${XAVIER_TOKEN}"
 ```
 
 All endpoints except `GET /health` require `X-Xavier-Token`.
