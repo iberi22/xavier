@@ -348,6 +348,10 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .merge(protected_routes)
         .with_state(state);
 
+    // Merge enterprise HTTP API routes when feature is enabled
+    #[cfg(feature = "enterprise")]
+    let app = app.merge(xavier::enterprise::http::enterprise_router());
+
     let listener = TcpListener::bind(&bind_addr).await?;
     let bound_addr = listener.local_addr()?;
 
