@@ -73,7 +73,7 @@ Status after focused diff: **do not migrate**.
 
 Reasons:
 
-- Canonical `xavier/src/tools/kanban.rs` already has safer env-only config via `PLANKA_URL`, `PLANKA_EMAIL`, `PLANKA_PASSWORD`.
+- Canonical `xavier/src/tools/kanban.rs` already has safer env-only config via `PLANKKA_HOST`, `PLANKKA_EMAIL`, `PLANKKA_PASSWORD`.
 - Canonical implements custom `Debug` for `PlankaConfig` and redacts password.
 - The clone commit introduces a fallback string that looks like a URL in the email field; this is not a real improvement.
 - The change is mostly line-ending/noise (`645 insertions / 645 deletions`) with no valuable behavior to port.

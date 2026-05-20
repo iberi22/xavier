@@ -4,6 +4,7 @@
 //! A cognitive memory system with agent runtime, task management, and native UI.
 
 pub mod a2a;
+pub mod enterprise;
 pub mod agents;
 pub mod api;
 pub mod checkpoint;

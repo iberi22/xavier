@@ -1,98 +1,11 @@
 use chrono::{Datelike, NaiveDate};
 use regex::Regex;
 use serde_json::Value;
-use std::collections::HashMap;
-use std::sync::LazyLock;
 
+use crate::memory::qmd_memory::config::*;
 use crate::memory::qmd_memory::types::MemoryDocument;
 
-pub static SPEAKER_COLON_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^([^:\s]+):\s*").expect("valid regex"));
-pub static SPEAKER_BRACKET_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?m)^\[([^]\s]+)\]").expect("valid regex"));
-pub static SPEAKER_ROLE_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(
-        r"(?i)(?:Speaker|Person|Host|Guest|Interviewer|Interviewee|Moderator):\s*([A-Z][a-zA-Z]+)",
-    )
-    .expect("valid regex")
-});
-pub static QUERY_SPEAKER_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)\b(?:who|what|where|when|why|how|did|was|were)(?:\s+is|\s+did|\s+was|\s+were)?\s+([A-Z][a-zA-Z]+)").expect("valid regex")
-});
-pub static SHE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bshe\b").expect("valid regex"));
-pub static HE_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bhe\b").expect("valid regex"));
-pub static SYNONYM_MAP: LazyLock<HashMap<&'static str, &'static [&'static str]>> =
-    LazyLock::new(|| {
-        HashMap::from([
-            ("bug", &["issue", "error", "failure", "defect"][..]),
-            ("cache", &["caching", "memoization", "store"][..]),
-            ("fast", &["quick", "speed", "latency"][..]),
-            ("memory", &["context", "retrieval", "knowledge"][..]),
-            ("search", &["lookup", "find", "retrieve"][..]),
-            ("vector", &["embedding", "semantic", "dense"][..]),
-            ("query", &["question", "request", "prompt"][..]),
-            ("reasoning", &["multi-hop", "inference", "analysis"][..]),
-        ])
-    });
-
-pub const RRF_K: f32 = 60.0;
-pub const KEYWORD_WEIGHT: f32 = 0.7;
-pub const SEMANTIC_WEIGHT: f32 = 0.3;
-pub const MAX_EXPANSIONS: usize = 4;
-pub const MAX_MULTI_HOP_DEPTH: usize = 2;
-pub const MAX_RERANK_CANDIDATES: usize = 32;
-
-pub static DIA_ID_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^([a-z]+\d+):0*([0-9]+)$").expect("valid regex"));
-pub static LOCOMO_PATH_DIA_ID_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)(/)([a-z]+\d+):0*([0-9]+)([#/]|$)").expect("valid regex"));
-
-pub fn normalize_query(query_text: &str) -> String {
-    query_text
-        .split_whitespace()
-        .map(normalize_token)
-        .filter(|token| {
-            !token.is_empty()
-                && !matches!(
-                    token.as_str(),
-                    "when"
-                        | "what"
-                        | "where"
-                        | "which"
-                        | "who"
-                        | "how"
-                        | "why"
-                        | "did"
-                        | "does"
-                        | "was"
-                        | "were"
-                        | "the"
-                        | "and"
-                        | "for"
-                        | "with"
-                        | "about"
-                        | "into"
-                        | "from"
-                        | "that"
-                        | "this"
-                        | "your"
-                        | "have"
-                        | "had"
-                )
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-pub fn normalize_token(token: &str) -> String {
-    token
-        .chars()
-        .filter(|char| char.is_alphanumeric())
-        .collect::<String>()
-        .to_lowercase()
-}
+// ── Document classification ──────────────────────────────────────────
 
 pub fn is_locomo_document(path: &str, metadata: &Value) -> bool {
     path.contains("locomo/")
@@ -122,11 +35,13 @@ pub(crate) fn cosine_similarity(left: &[f32], right: &[f32]) -> f32 {
     dot / (left_magnitude * right_magnitude)
 }
 
+// ── Speaker utilities ────────────────────────────────────────────────
+
 pub fn extract_speakers(text: &str) -> Vec<String> {
     let mut speakers = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    for re in &[&*SPEAKER_COLON_RE, &*SPEAKER_BRACKET_RE, &*SPEAKER_ROLE_RE] {
+    for re in [&*SPEAKER_COLON_RE, &*SPEAKER_BRACKET_RE, &*SPEAKER_ROLE_RE] {
         for cap in re.captures_iter(text) {
             if let Some(name) = cap.get(1) {
                 let name = name.as_str().trim();
@@ -240,7 +155,9 @@ pub fn resolve_pronouns(query: &str, speakers: &[String]) -> String {
     if query.to_lowercase().contains("he") {
         let male_candidates: Vec<_> = speakers.iter().filter(|s| is_male_name(s)).collect();
         if male_candidates.len() == 1 {
-            resolved = HE_RE.replace_all(&resolved, male_candidates[0]).to_string();
+            resolved = HE_RE
+                .replace_all(&resolved, male_candidates[0])
+                .to_string();
         }
     }
 
@@ -257,6 +174,8 @@ pub fn extract_speaker_from_query(query: &str) -> Option<String> {
         }
     })
 }
+
+// ── DIA ID utilities ─────────────────────────────────────────────────
 
 pub fn normalize_dia_id(value: &str) -> Option<String> {
     let trimmed = value.trim();
@@ -312,6 +231,8 @@ pub fn normalize_locomo_path(path: &str) -> String {
         .into_owned()
 }
 
+// ── Primary speaker extraction ───────────────────────────────────────
+
 pub fn extract_primary_speaker(content: &str) -> Option<String> {
     content.lines().find_map(|line| {
         line.split_once(':').and_then(|(candidate, _)| {
@@ -328,6 +249,8 @@ pub fn extract_primary_speaker(content: &str) -> Option<String> {
         })
     })
 }
+
+// ── Value extraction utilities ───────────────────────────────────────
 
 pub fn capture_value(content: &str, pattern: &str) -> Option<String> {
     Regex::new(pattern)
@@ -407,6 +330,8 @@ pub fn extract_quoted_titles(content: &str) -> Vec<String> {
         .filter(|value| !value.is_empty())
         .collect()
 }
+
+// ── Duration / Temporal value extraction ─────────────────────────────
 
 pub fn extract_duration_value(content: &str) -> Option<String> {
     let years_ago = Regex::new(r"(?i)\b(\d+)\s+years?\s+ago\b").ok()?;
@@ -554,6 +479,8 @@ pub fn format_date(date: NaiveDate) -> String {
 pub fn clean_extracted_date(value: &str) -> String {
     value.trim().trim_end_matches(['.', ',', ';']).to_string()
 }
+
+// ── Date / query utilities ───────────────────────────────────────────
 
 pub fn infer_date_granularity(value: &str) -> &'static str {
     if value.chars().all(|ch| ch.is_ascii_digit()) && value.len() == 4 {

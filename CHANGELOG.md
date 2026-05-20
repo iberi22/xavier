@@ -1,5 +1,26 @@
 # Xavier Changelog
 
+## [1.0.0-rc.1] - 2026-05-16
+
+### Added
+- **Autonomous Integrator Protocol**: Systematic workflow for merging agent-generated PRs with automatic build verification.
+- **Hierarchical Memory (L0-L1-L2)**: Stabilized multi-layered memory virtualization to minimize token consumption and stabilize context.
+- **Token Budget Enforcement**: Hard token caps (4000 tokens) in context assembly pipeline with greedy relevance truncation.
+- **Belief Graph Stabilization**: Deterministic graph traversal, contradiction detection, and high-performance BFS for relationship mapping.
+- **XDG Compliance**: Implemented cross-platform path resolution using the `dirs` crate, supporting `XDG_CONFIG_HOME` and native data paths.
+- **API Rate Limiting**: Integrated `rate_limit_middleware` in the HTTP server to protect against API abuse and track global usage.
+
+### Changed
+- **Production Readiness**: Hardened hexagonal architecture boundaries and removed legacy dead code across CLI and core layers.
+- **Modular Memory Engine**: Refactored the monolithic `sqlite_vec_store` into specialized submodules for improved maintainability.
+- **Security Hardening**: Integrated structured logging for sanitization and resolved outbound timeout issues. Added global API gateway rate limiting.
+
+### Fixed
+- **Memory Persistence**: Resolved hierarchical field initialization issues in `MemoryDocument` and `MemoryRecord`.
+- **Concurrency Stability**: Fixed Rayon/Tokio deadlocks in high-performance modules.
+- **Schema Integrity**: Fixed missing columns in `relations` and `timeline_events` tables with automatic migrations.
+- **Vector Search Fixes**: Resolved `ON CONFLICT` compatibility issues with `sqlite-vec` virtual tables in `upsert_vector`.
+
 ## [0.4.0] - 2026-03-24
 
 ### Added

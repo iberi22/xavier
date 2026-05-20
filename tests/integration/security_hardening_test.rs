@@ -59,10 +59,11 @@ fn test_security_hardening_env_enforcement() {
 
     // For Kanban, we already have unit tests.
     // Here we just verify that we can't create a client without proper env
-    env::remove_var("PLANKA_URL");
-    env::remove_var("PLANKA_EMAIL");
-    env::remove_var("PLANKA_PASSWORD");
+    env::remove_var("PLANKKA_HOST");
+    env::remove_var("PLANKKA_EMAIL");
+    env::remove_var("PLANKKA_PASSWORD");
 
-    // If we were to use PlankaClient::from_env(), it would panic (expect),
-    // which is the desired hardening behavior.
+    // PlankaConfig::default() returns Err(NotConfigured) — no hardcoded creds
+    // PlankaConfig::from_env() returns Err(MissingEnvVar) — no silent fallback
+    // Both are the desired hardening behavior.
 }

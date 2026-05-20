@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use std::sync::atomic::AtomicUsize;
 use std::time::Instant;
 
+/// Type definitions for the QMD memory system.
+
 #[derive(Debug, Clone)]
 pub struct EmbeddingCacheEntry {
     pub vector: Vec<f32>,
