@@ -1,67 +1,57 @@
-# Xavier Changelog
+# Changelog
 
-## [1.0.0-rc.1] - 2026-05-16
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.0.0-rc.1] - Unreleased
 
 ### Added
-- **Autonomous Integrator Protocol**: Systematic workflow for merging agent-generated PRs with automatic build verification.
-- **Hierarchical Memory (L0-L1-L2)**: Stabilized multi-layered memory virtualization to minimize token consumption and stabilize context.
-- **Token Budget Enforcement**: Hard token caps (4000 tokens) in context assembly pipeline with greedy relevance truncation.
-- **Belief Graph Stabilization**: Deterministic graph traversal, contradiction detection, and high-performance BFS for relationship mapping.
-- **XDG Compliance**: Implemented cross-platform path resolution using the `dirs` crate, supporting `XDG_CONFIG_HOME` and native data paths.
-- **API Rate Limiting**: Integrated `rate_limit_middleware` in the HTTP server to protect against API abuse and track global usage.
 
-### Changed
-- **Production Readiness**: Hardened hexagonal architecture boundaries and removed legacy dead code across CLI and core layers.
-- **Modular Memory Engine**: Refactored the monolithic `sqlite_vec_store` into specialized submodules for improved maintainability.
-- **Security Hardening**: Integrated structured logging for sanitization and resolved outbound timeout issues. Added global API gateway rate limiting.
+- **Context Regeneration** — Multi-phase context regeneration system (Phase 0, 1, 2)
+  - Phase 0: Core framework for context regeneration
+  - Phase 1: Full context regeneration with session management
+  - Phase 2: Enhanced regeneration with reconciliation
+- **Multi-Provider Agent Spawn** — Support for MiniMax and DeepSeek providers with different context sizes (#96)
+- **Agent Skill Context Loading** — Per-spawn skill context loading for agents (#97)
+- **CLI-Based Agent Spawn** — Spawn 10-15 agents with provider routing (#98)
+- **WebSocket Streaming** — Real-time event streaming via WebSocket
+- **Hook System and BM25 Hybrid Search** — New hook system with BM25 hybrid search capabilities
+- **Unified MCP Implementation** — Gestalt MemoryFragment tools with unified output formats
+- **Dockerfile** — Sevier2 runtime environment defaults added to Dockerfile
+- **Changelog** — CHANGELOG-MAY2026 documentation
 
 ### Fixed
-- **Memory Persistence**: Resolved hierarchical field initialization issues in `MemoryDocument` and `MemoryRecord`.
-- **Concurrency Stability**: Fixed Rayon/Tokio deadlocks in high-performance modules.
-- **Schema Integrity**: Fixed missing columns in `relations` and `timeline_events` tables with automatic migrations.
-- **Vector Search Fixes**: Resolved `ON CONFLICT` compatibility issues with `sqlite-vec` virtual tables in `upsert_vector`.
 
-## [0.4.0] - 2026-03-24
+- **Security Hardening** — Multiple security fixes applied:
+  - Fixed SSRF risk in `verify_save_handler` and other outbound call sites
+  - Aligned token generation and validation logic
+  - Phase 1 Security Hardening with 4 critical fixes applied
+  - Security Hardening documentation and regression tests
+- **Test Fixes** — Resolved 19 failing tests
+- **Compiler Errors & OOM** — Fixed compiler errors and out-of-memory issues (May 2026)
+- **SessionSyncTask** — Made thresholds configurable via environment variables (#152)
+- **AutoVerifier** — Fixed score to satisfy 0.8 threshold (#153)
+- **Magic Constants** — Extracted magic constants to configuration in `gating.rs` (#154)
+- **Error Handling** — Replaced `unwrap`/`expect` with proper error handling in `http.rs` (#156)
+- **Router Wiring** — Wired `verify_save_handler` to CLI router (`cli.rs`) (#157)
+- **Index Lag** — Implemented real `estimate_index_lag` in `SessionSyncTask` (#158)
+- **Integration Tests** — Implemented real test logic in Sevier2 integration tests (#151)
+- **MCP Wiring** — Wired MCP to `MemoryQueryPort`, removing TODO stubs (#161)
+- **Agent Registry** — Wired agent registry through `AgentLifecyclePort` (#94, #159)
+- **Agent Unregister** — Wired agent unregister endpoint as POST
+- **Graceful Shutdown** — Added graceful shutdown for session sync cron
+- **Duplicate Handler** — Removed duplicate session event handler
+- **Hexagonal Architecture** — Untangled ports/infra layers (#90)
+- **Docker Tests** — `cargo fmt` applied
+- **Sevier2 Payload** — Corrected agent registration payload
 
-### Added
-- **TUI Dashboard**: Interactive terminal-based monitor using `ratatui` for real-time memory and metrics visibility.
-- **Git-Chunk Synchronization**: Decentralized sync protocol using compressed JSONL chunks for friction-less memory sharing via Git.
-- **Local LLM Provider**: Native support for local OpenAI-compatible endpoints (Ollama, LocalAI) via `ModelProviderKind::Local`.
-- **Hierarchical Curation**: Memory Manager categorizes facts using CurationAgent (Domain > Topic).
-- **Temporal Graph**: Belief Graph now ingests `valid_from` timestamps connected to session context.
+### Documentation
 
-### Changed
-- **Metadata Flexibility**: Memory documents now support arbitrary JSON metadata, fully queryable and displayed in the TUI.
-
-## [0.3.0] - 2026-03-17
-
-### Added
-- **Security Audit**: Performed a comprehensive security review and documented findings in `security_audit_report.md`.
-- **REST API Exposure**: Integrated Axum-based HTTP endpoints for memory search, addition, and agent runtime interaction.
-- **Enhanced Retrieval**: Implemented hybrid search combining semantic embeddings with keyword-based retrieval.
-- **Self-Improving Agents**: Added experimental `self_improve.rs` module for autonomous performance analysis and optimization.
-- **Belief Graphs**: Operationalized `belief_graph.rs` to track relationships between memory nodes.
-
-### Changed
-- **Architecture Realignment**: Migrated repository structure to comply with Git-Core v3.2 Protocol.
-- **Documentation Consolidation**: Centralized system specifications, research, and agent prompts under the `docs/` hierarchy.
-- **Auth Middleware**: Standardized `X-Xavier-Token` enforcement across all public endpoints.
-
-### Fixed
-- **Docker Integration**: Resolved health check failures and port binding conflicts in the development stack.
-- **Dependency Management**: Aligned crate versions for `axum`, `tokio`, and `surrealdb` across workspace members.
-
----
-
-## [0.2.0] - 2026-03-08
-
-### Added
-- **Hybrid Retrieval Engine**: Initial implementation of the multi-stage memory search.
-- **MCP Surface**: Added Model Context Protocol support for seamless IDE integration.
-- **Persistence Layer**: Integrated SurrealDB as the primary storage engine for belief graphs.
-
----
-
-## [0.1.0] - 2026-03-01
-
-- **Initial Baseline**: Core Rust-native runtime for agent memory orchestration.
+- **Architecture** — Multi-crate workspace evolution strategy documented
+- **Agent Pipeline** — Multi-agent development pipeline guide added
+- **Code Reviews** — Architecture analysis and code reviews added
+- **Jules Prompts** — Documentation for Phase 1-3 (8 complete tasks) added
+- **Jules Workflow** — Jules workflow guide and daily memory added
+- **Issue Updates** — Updated Jules prompts with new issue numbers
