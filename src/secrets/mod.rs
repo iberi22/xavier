@@ -73,7 +73,7 @@ impl SecretsManager {
 pub mod audit;
 pub mod lending;
 
-// TODO: Dead code - remove or wire secret daemon into production runtime.
+// Note: Wire secret daemon into production runtime
 #[allow(dead_code)]
 pub mod daemon;
 pub mod local;
