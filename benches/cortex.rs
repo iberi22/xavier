@@ -1,4 +1,4 @@
-﻿use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use std::hint::black_box;
 use tokio::runtime::Runtime;
 use xavier::memory::belief_graph::{Belief, BeliefGraph, Confidence};
@@ -19,9 +19,9 @@ fn bench_belief_graph_search(c: &mut Criterion) {
                         Confidence::Medium,
                     ),
                     None,
-                    None,
                 )
-                .await;
+                .await
+                .ok();
         }
     });
 
