@@ -461,7 +461,7 @@ fn calculate_data_dir_size() -> Option<u64> {
                 if let Ok(sub_entries) = std::fs::read_dir(&path) {
                     for sub_entry in sub_entries.flatten() {
                         if sub_entry.path().is_file() {
-                            total_size += std::fs::metadata(&sub_entry.path()).ok()?.len();
+                            total_size += std::fs::metadata(sub_entry.path()).ok()?.len();
                         }
                     }
                 }
@@ -696,7 +696,7 @@ pub async fn auth_middleware(req: Request<Body>, next: Next) -> Response {
     // Constant-time comparison to prevent timing attacks
     use subtle::ConstantTimeEq;
     let provided_bytes = provided_token.unwrap_or("").as_bytes();
-    let expected_bytes = expected_token.as_str().as_bytes();
+    let expected_bytes = expected_token.as_bytes();
     let is_match: bool = provided_bytes.ct_eq(expected_bytes).into();
     if !is_match {
         return json_response(

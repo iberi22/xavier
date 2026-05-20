@@ -102,7 +102,7 @@ impl ApiKey {
 
     /// Check if key is active
     pub fn is_active(&self) -> bool {
-        !self.revoked && self.expires_at.map_or(true, |e| Utc::now() <= e)
+        !self.revoked && self.expires_at.is_none_or(|e| Utc::now() <= e)
     }
 }
 
@@ -132,9 +132,9 @@ impl ApiKeyStore {
         self.keys.insert(key.id.clone(), key.clone());
         self.tenant_keys
             .entry(tenant_id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(key.id.clone());
-        
+
         (raw_key, key)
     }
 
@@ -222,7 +222,7 @@ impl ApiKeyStore {
         self.keys.insert(id.clone(), key);
         self.tenant_keys
             .entry(tenant_id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(id);
     }
 
@@ -234,7 +234,7 @@ impl ApiKeyStore {
             self.keys.insert(id.clone(), key);
             self.tenant_keys
                 .entry(tenant_id)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(id);
         }
     }
