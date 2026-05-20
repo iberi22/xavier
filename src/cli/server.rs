@@ -26,6 +26,7 @@ use super::utils::estimate_tokens;
 use crate::cli::config::{
     code_graph_db_path, resolve_base_url, resolve_base_url_for_port, resolve_http_bind_host, resolve_http_token, state_panel_root, xavier_token,
 };
+use std::time::Instant;
 use crate::settings::XavierSettings;
 use crate::cli::state::CliState;
 use xavier::embedding::build_embedder_from_env;
@@ -338,8 +339,9 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             .route("/plugins/sync", post(plugins_sync_handler));
     }
 
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/health", get(health_handler))
+        .route("/v1/version", get(version_handler))
         .route("/build", get(build_handler))
         .route("/ready", get(readiness_handler))
         .route("/readiness", get(readiness_handler))
@@ -348,9 +350,17 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .merge(protected_routes)
         .with_state(state);
 
-    // Merge enterprise HTTP API routes when feature is enabled
+    // Merge enterprise HTTP API routes when feature is enabled, under auth
     #[cfg(feature = "enterprise")]
-    let app = app.merge(xavier::enterprise::http::enterprise_router());
+    {
+        use xavier::enterprise::http::{enterprise_router, EnterpriseState};
+        use std::sync::{Arc, Mutex};
+        let enterprise_state = Arc::new(Mutex::new(EnterpriseState::init_default()));
+        app = app.merge(
+            enterprise_router(enterprise_state)
+                .layer(middleware::from_fn(auth_middleware))
+        );
+    }
 
     let listener = TcpListener::bind(&bind_addr).await?;
     let bound_addr = listener.local_addr()?;
@@ -392,13 +402,91 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     Ok(())
 }
 
+/// Server startup time for uptime tracking
+static START_TIME: once_cell::sync::Lazy<Instant> = once_cell::sync::Lazy::new(Instant::now);
+
 pub async fn health_handler() -> Response {
+    // Uptime in seconds since startup
+    let uptime_secs = START_TIME.elapsed().as_secs();
+
+    // Determine embedding provider mode from env
+    let embedding_provider = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
+        .ok()
+        .map(|v| v.trim().to_ascii_lowercase())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| {
+            // Auto-detect based on configured env vars
+            if std::env::var("XAVIER_EMBEDDER").ok().map(|v| v.trim().to_ascii_lowercase())
+                .as_deref() == Some("gllm")
+                || std::env::var("XAVIER_GLLM_MODEL").is_ok()
+            {
+                "gllm".to_string()
+            } else if std::env::var("OPENAI_API_KEY").is_ok()
+                || std::env::var("XAVIER_EMBEDDING_API_KEY").is_ok()
+            {
+                "openai".to_string()
+            } else {
+                "none".to_string()
+            }
+        });
+
+    // Calculate size of data/ directory
+    let sqlite_db_size = calculate_data_dir_size().unwrap_or(0);
+
     json_response(
         StatusCode::OK,
         serde_json::json!({
             "status": "ok",
             "service": "xavier",
             "version": env!("CARGO_PKG_VERSION"),
+            "embedding_provider": embedding_provider,
+            "sqlite_db_size": sqlite_db_size,
+            "uptime": uptime_secs,
+        }),
+    )
+}
+
+/// Calculate the total size (in bytes) of the data/ directory
+fn calculate_data_dir_size() -> Option<u64> {
+    let data_dir = std::path::Path::new("data");
+    if !data_dir.is_dir() {
+        return None;
+    }
+    let mut total_size = 0u64;
+    if let Ok(entries) = std::fs::read_dir(data_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                total_size += std::fs::metadata(&path).ok()?.len();
+            } else if path.is_dir() {
+                if let Ok(sub_entries) = std::fs::read_dir(&path) {
+                    for sub_entry in sub_entries.flatten() {
+                        if sub_entry.path().is_file() {
+                            total_size += std::fs::metadata(&sub_entry.path()).ok()?.len();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Some(total_size)
+}
+
+/// GET /v1/version — Service version info
+pub async fn version_handler() -> Response {
+    let features = if cfg!(feature = "enterprise") {
+        vec!["gllm-embeddings", "enterprise"]
+    } else {
+        vec!["gllm-embeddings"]
+    };
+
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "service": "xavier",
+            "version": env!("CARGO_PKG_VERSION"),
+            "features": features,
+            "build": env!("CARGO_PKG_VERSION"),
         }),
     )
 }
@@ -606,7 +694,12 @@ pub async fn auth_middleware(req: Request<Body>, next: Next) -> Response {
                 .and_then(|value| value.strip_prefix("Bearer "))
         });
 
-    if provided_token != Some(expected_token.as_str()) {
+    // Constant-time comparison to prevent timing attacks
+    use subtle::ConstantTimeEq;
+    let provided_bytes = provided_token.unwrap_or("").as_bytes();
+    let expected_bytes = expected_token.as_str().as_bytes();
+    let is_match: bool = provided_bytes.ct_eq(expected_bytes).into();
+    if !is_match {
         return json_response(
             StatusCode::UNAUTHORIZED,
             serde_json::json!({"status":"error","message":"Unauthorized"}),
