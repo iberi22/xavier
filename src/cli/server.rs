@@ -28,6 +28,7 @@ use crate::cli::config::{
 };
 use crate::settings::XavierSettings;
 use crate::cli::state::CliState;
+use xavier::embedding::build_embedder_from_env;
 use xavier::adapters::inbound::http::routes::{
     sync_check_handler, time_metric_handler, verify_save_handler,
 };
@@ -144,6 +145,9 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .build()
         .map_err(|e| anyhow!("Failed to build HTTP client: {}", e))?;
 
+    let embedder = build_embedder_from_env().await
+        .map_err(|e| anyhow!("Failed to build embedder: {}", e))?;
+
     // Register global time metrics port for HTTP handler (wrap in adapter)
     use xavier::adapters::inbound::http::routes::{init_health_port, init_time_store};
     use xavier::adapters::inbound::http::time_metrics_adapter::TimeMetricsAdapter;
@@ -240,7 +244,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         prompt_cache,
         proxy_use_case,
         http_client,
-
+        embedder,
     };
 
     info!(
@@ -274,6 +278,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/code/hubs", get(code_hubs_handler))
         .route("/code/hotspots", get(code_hotspots_handler))
         .route("/v1/account/usage", get(account_usage_handler))
+        .route("/v1/embeddings", post(embed_handler))
         .route("/security/scan", post(security_scan_handler))
         .route("/memory/query", post(memory_query_handler))
         .route("/session/compact", post(session_compact_handler))
@@ -518,6 +523,48 @@ pub async fn account_usage_handler(State(state): State<CliState>, headers: Heade
     )
 }
 
+/// POST /v1/embeddings — OpenAI-compatible embedding endpoint
+/// Uses Xavier's gllm native embedder (no external server needed)
+async fn embed_handler(
+    State(state): State<CliState>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let input = body
+        .get("input")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| {
+            (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "Missing 'input' field"})),
+            )
+        })?;
+
+    let model = body
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("all-MiniLM-L6-v2");
+
+    match state.embedder.encode(input).await {
+        Ok(embedding) => Ok(Json(serde_json::json!({
+            "object": "list",
+            "data": [{
+                "object": "embedding",
+                "index": 0,
+                "embedding": embedding,
+            }],
+            "model": model,
+            "usage": {
+                "prompt_tokens": input.len(),
+                "total_tokens": input.len(),
+            }
+        }))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("Embedding failed: {}", e)})),
+        )),
+    }
+}
+
 pub fn json_response(status: StatusCode, body: serde_json::Value) -> Response {
     Response::builder()
         .status(status)
@@ -547,7 +594,13 @@ pub async fn auth_middleware(req: Request<Body>, next: Next) -> Response {
     let provided_token = req
         .headers()
         .get("X-Xavier-Token")
-        .and_then(|value| value.to_str().ok());
+        .and_then(|value| value.to_str().ok())
+        .or_else(|| {
+            req.headers()
+                .get("Authorization")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.strip_prefix("Bearer "))
+        });
 
     if provided_token != Some(expected_token.as_str()) {
         return json_response(

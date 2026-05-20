@@ -1,3 +1,4 @@
+use std::fmt;
 use std::collections::HashMap;
 use thiserror::Error;
 
@@ -17,10 +18,19 @@ pub enum SecretError {
 
 pub type SecretResult<T> = Result<T, SecretError>;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Secret {
     pub key: String,
     pub value: String,
+}
+
+impl fmt::Debug for Secret {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Secret")
+            .field("key", &"[REDACTED]")
+            .field("value", &"[REDACTED]")
+            .finish()
+    }
 }
 
 #[derive(Default)]

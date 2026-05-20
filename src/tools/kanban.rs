@@ -4,8 +4,19 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::info;
+
+/// Planka configuration errors
+#[derive(Error, Debug)]
+pub enum PlankaConfigError {
+    #[error("Planka not configured: {0}")]
+    NotConfigured(String),
+
+    #[error("Missing required environment variable: {0}")]
+    MissingEnvVar(&'static str),
+}
 
 /// Planka API configuration
 #[derive(Clone)]
@@ -26,11 +37,34 @@ impl std::fmt::Debug for PlankaConfig {
 }
 
 impl PlankaConfig {
-    pub fn from_env() -> Option<Self> {
-        Some(Self {
-            base_url: std::env::var("PLANKA_URL").ok()?,
-            email: std::env::var("PLANKA_EMAIL").ok()?,
-            password: std::env::var("PLANKA_PASSWORD").ok()?,
+    /// Create a default (unconfigured) config — always returns an error.
+    /// Use `from_env()` instead to load from environment variables.
+    pub fn default() -> Result<Self, PlankaConfigError> {
+        Err(PlankaConfigError::NotConfigured(
+            "Planka not configured. Set PLANKKA_HOST, PLANKKA_EMAIL, and PLANKKA_PASSWORD environment variables."
+                .to_string(),
+        ))
+    }
+
+    /// Load configuration from environment variables:
+    /// - `PLANKKA_HOST` — Planka server URL (e.g., http://localhost:3000)
+    /// - `PLANKKA_EMAIL` — Login email
+    /// - `PLANKKA_PASSWORD` — Login password
+    pub fn from_env() -> Result<Self, PlankaConfigError> {
+        let base_url = std::env::var("PLANKKA_HOST")
+            .map_err(|_| PlankaConfigError::MissingEnvVar("PLANKKA_HOST"))?;
+        let email = std::env::var("PLANKKA_EMAIL")
+            .map_err(|_| PlankaConfigError::MissingEnvVar("PLANKKA_EMAIL"))?;
+        let password = std::env::var("PLANKKA_PASSWORD")
+            .map_err(|_| PlankaConfigError::MissingEnvVar("PLANKKA_PASSWORD"))?;
+
+        // Strip trailing slash if present
+        let base_url = base_url.trim_end_matches('/').to_string();
+
+        Ok(Self {
+            base_url,
+            email,
+            password,
         })
     }
 }
@@ -119,11 +153,8 @@ impl PlankaClient {
     }
 
     /// Create with environment config
-    pub fn from_env() -> Self {
-        Self::new(
-            PlankaConfig::from_env()
-                .expect("PLANKA_URL, PLANKA_EMAIL, PLANKA_PASSWORD must be set"),
-        )
+    pub fn from_env() -> Result<Self, PlankaConfigError> {
+        Ok(Self::new(PlankaConfig::from_env()?))
     }
 
     /// Login and get access token
@@ -646,10 +677,92 @@ pub fn get_kanban_tools() -> Vec<KanbanTool> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_returns_error() {
+        let result = PlankaConfig::default();
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        match err {
+            PlankaConfigError::NotConfigured(msg) => {
+                assert!(msg.contains("Planka not configured"));
+            }
+            _ => panic!("Expected NotConfigured error, got: {:?}", err),
+        }
+    }
+
+    #[test]
+    fn test_from_env_missing_host() {
+        // Temporarily unset env vars to test missing error
+        let prev_host = std::env::var("PLANKKA_HOST").ok();
+        let prev_email = std::env::var("PLANKKA_EMAIL").ok();
+        let prev_pass = std::env::var("PLANKKA_PASSWORD").ok();
+
+        std::env::remove_var("PLANKKA_HOST");
+        std::env::remove_var("PLANKKA_EMAIL");
+        std::env::remove_var("PLANKKA_PASSWORD");
+
+        let result = PlankaConfig::from_env();
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            PlankaConfigError::MissingEnvVar(name) => {
+                assert_eq!(name, "PLANKKA_HOST");
+            }
+            e => panic!("Expected MissingEnvVar, got: {:?}", e),
+        }
+
+        // Restore env vars
+        if let Some(v) = prev_host { std::env::set_var("PLANKKA_HOST", v); }
+        if let Some(v) = prev_email { std::env::set_var("PLANKKA_EMAIL", v); }
+        if let Some(v) = prev_pass { std::env::set_var("PLANKKA_PASSWORD", v); }
+    }
+
+    #[test]
+    fn test_from_env_success() {
+        std::env::set_var("PLANKKA_HOST", "http://localhost:3000");
+        std::env::set_var("PLANKKA_EMAIL", "test@test.com");
+        std::env::set_var("PLANKKA_PASSWORD", "test123");
+
+        let config = PlankaConfig::from_env().expect("test assertion");
+        assert_eq!(config.base_url, "http://localhost:3000");
+        assert_eq!(config.email, "test@test.com");
+        assert_eq!(config.password, "test123");
+
+        std::env::remove_var("PLANKKA_HOST");
+        std::env::remove_var("PLANKKA_EMAIL");
+        std::env::remove_var("PLANKKA_PASSWORD");
+    }
+
+    #[test]
+    fn test_from_env_strips_trailing_slash() {
+        std::env::set_var("PLANKKA_HOST", "http://localhost:3000/");
+        std::env::set_var("PLANKKA_EMAIL", "test@test.com");
+        std::env::set_var("PLANKKA_PASSWORD", "test123");
+
+        let config = PlankaConfig::from_env().expect("test assertion");
+        assert_eq!(config.base_url, "http://localhost:3000");
+
+        std::env::remove_var("PLANKKA_HOST");
+        std::env::remove_var("PLANKKA_EMAIL");
+        std::env::remove_var("PLANKKA_PASSWORD");
+    }
+
+    #[test]
+    fn test_debug_redacts_password() {
+        let config = PlankaConfig {
+            base_url: "http://localhost:3000".to_string(),
+            email: "test@example.com".to_string(),
+            password: "supersecret".to_string(),
+        };
+        let debug_str = format!("{:?}", config);
+        assert!(!debug_str.contains("supersecret"));
+        assert!(debug_str.contains("<redacted>"));
+    }
 
     #[tokio::test]
     async fn test_client_creation() {
-        // Test requires PLANKA_* env vars - skip in unit tests
-        // PlankaClient::from_env();
+        // Test requires PLANKKA_* env vars - skip in unit tests
+        // PlankaClient::from_env().expect("PLANKKA_HOST, PLANKKA_EMAIL, PLANKKA_PASSWORD must be set");
     }
 }

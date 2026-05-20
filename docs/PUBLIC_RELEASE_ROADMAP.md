@@ -1,72 +1,116 @@
-# Xavier — Public Release Roadmap (Master Plan)
+# Xavier Public Release Roadmap (Master Plan)
 
-> **Generated:** 2026-04-30
+> **Generated:** 2026-05-20
 > **Owner:** Xavier CEO
-> **Status:** Planning
-> **Target v0.5 Public Release:** Q2 2026
+> **Status:** Active
+> **Target v1.0 Release:** Q2 2026
 
 ---
 
 ## Table of Contents
 
-1. [Pre-Release Checklist](#1-pre-release-checklist)
-2. [Showstoppers & Quick Wins](#2-showstoppers--quick-wins)
-3. [v0.5 — Minimal Public-Ready Release](#3-v05--minimal-public-ready-release)
-4. [v1.0 — Full Feature Parity](#4-v10--full-feature-parity)
-5. [v1.1+ — Nice-to-Have Improvements](#5-v11--nice-to-have-improvements)
-6. [Complete Dependency Graph](#6-complete-dependency-graph)
-7. ["Good Enough for v0.5" Threshold](#7-good-enough-for-v05-threshold)
-8. [Risk Matrix](#8-risk-matrix)
+1. [v1.0 Status Summary](#1-v10-status-summary)
+2. [Enterprise Features (migrated from Cortex)](#2-enterprise-features-migrated-from-cortex)
+3. [PGHEART Integration](#3-pgheart-integration)
+4. [Known Issues](#4-known-issues)
+5. [Risk Matrix](#5-risk-matrix)
 
 ---
 
-## 1. Pre-Release Checklist
+## 1. v1.0 Status Summary
 
-> **MAY NOT ship public with ANY of these unchecked.**
+### âœ… DONE â€” Security Showstoppers
 
-| # | Item | Category | Effort | Status | Dependency |
-|---|------|----------|--------|--------|------------|
-| 1 | Remove hardcoded credentials in kanban.rs (PlankaConfig default hardcodes password `swaladmin2026`, email `admin@swal.ai`, IP `192.168.1.8:3000`) | **SECURITY-SHOWSTOPPER** | 30 min | ? OPEN | None |
-| 2 | Remove `dev-token` fallback in all auth paths — `XAVIER_TOKEN` default must error, not silently use `dev-token` | **SECURITY-SHOWSTOPPER** | 1 hr | ? OPEN | None |
-| 3 | Remove `#[derive(Debug)]` from all structs containing secrets (password, token, keys, credentials) across the codebase | **SECURITY** | 1 hr | ? OPEN | None |
-| 4 | Finish prompt_guard sanitize — incomplete patterns, missing contextual sanitization (template patterns only partially blocked, no URL/LLM injection context) | **SECURITY** | 2 hr | ? OPEN | None |
-| 5 | Create `docs/` for public consumption — current docs are internal/agent-only or scattered; need curated public-facing docs | **DOCS** | 4 hr | ? OPEN | None |
-| 6 | Create `examples/` directory with working examples (CLI, HTTP API, MCP integration) | **DOCS** | 2 hr | ? OPEN | #5 |
-| 7 | Clean up README — make CEO concept public-friendly, remove internal references, add proper badges and quick-start | **DOCS** | 1 hr | ? OPEN | #5 |
-| 8 | Document public export pipeline for GitHub raw + Hugging Face dataset artifacts (`xavier export --public`) | **DOCS** | 1 hr | ? OPEN | #5 |
-| 9 | Audit all `unwrap()` and `expect()` in public API paths (crash risk) | **QUALITY** | 2 hr | ? OPEN | None |
-| 10 | Ensure no `localhost`-only assumption in HTTP binding — hardcoded bind patterns | **QUALITY** | 30 min | ? OPEN | None |
-| 11 | GitHub repo visibility finalization — set license, CONTRIBUTING.md, issue templates, CI workflow badges | **OPS** | 1 hr | ? OPEN | #7 |
+| # | Item | Status | Fix |
+|---|------|--------|-----|
+| 1 | Hardcoded credentials in kanban.rs | âœ… FIXED | `PlankaConfig::default()` returns error; test email changed to `test@example.com` |
+| 2 | `dev-token` fallback | âœ… SECURED | Gated behind `dev-mode` feature flag (NOT in default features) |
+| 3 | Debug derives on secret structs | âœ… FIXED | Manual Debug impls redact tokens/passwords in all identified structs |
+| 4 | prompt_guard sanitize | âœ… RESOLVED | Static lazy regex patterns, 80+ direct patterns, 60+ leaking patterns |
+
+### âœ… DONE â€” Core Features
+
+| Feature | Status |
+|---------|--------|
+| SQLite-vec memory store | âœ… v1.0 |
+| gllm embeddings (bge-small-en-v1.5, 384d) | âœ… In-process, no deps |
+| /v1/embeddings endpoint (OpenAI-compatible) | âœ… Dual auth |
+| Systemd service | âœ… Running on :8006 |
+| Auth middleware (X-Xavier-Token + Bearer) | âœ… |
+| CLI / MCP / TUI | âœ… |
+| Security scanner + Belief Graph | âœ… |
+| Docker + CI/CD | âœ… 11 workflows |
+
+### ðŸ†• v1.0 â€” Enterprise Features (NEW â€” migrated from Cortex)
+
+| Feature | Status |
+|---------|--------|
+| RBAC (Role-based access control) | âœ… Migrated |
+| Multi-tenancy (Tenant/Plan) | âœ… Migrated |
+| API Key management | âœ… Migrated |
+| Audit logging | âœ… Migrated |
+| Rate limiting (governor) | âœ… Migrated |
+
+### ðŸ†• v1.0 â€” PGHEART Integration
+
+| Feature | Status |
+|---------|--------|
+| PgHeart plugin (heartbeat) | âœ… Http handler |
+| PGHEART_EMBEDDER_URL | âœ… Xavier as embedding provider |
+| INSERT to Supabase | âœ… Functional |
+| LIST from Supabase | âœ… Fixed (`user_id` â†’ `agent_id`) |
+| db::listener supabase skip | âœ… Fixed |
 
 ---
 
-## 2. Showstoppers & Quick Wins
+## 2. Enterprise Features (migrated from Cortex)
 
-### ?? Showstoppers (Block Public Release)
+Enterprise features were migrated from the deprecated `cortex` repository:
 
-| Item | Why It Blocks | Fix |
-|------|---------------|-----|
-| Hardcoded credentials in kanban.rs | Any public user can `git grep` and see `swaladmin2026` + `admin@swal.ai` + internal IP — instant compromise | ? Env vars only, panic on missing; remove Default impl |
-| `dev-token` fallback | Every user who pulls and runs without XAVIER_TOKEN gets `dev-token` as auth — trivial auth bypass | ? Unconditional env check, fail with clear error |
-| Debug derive on sensitive structs | `std::fmt::Debug` leaks secrets to logs, error messages, and debug output | ? Manual Debug impl that redacts fields |
-| prompt_guard incomplete | Sanitize misses contextual attacks, LLM-escaped payloads, and advanced jailbreak patterns | ? Add missing patterns, contextual detection |
+| Module | Source | Target |
+|--------|--------|--------|
+| `src/enterprise/rbac.rs` | cortex | xavier |
+| `src/enterprise/tenancy.rs` | cortex | xavier |
+| `src/enterprise/audit.rs` | cortex | xavier |
+| `src/enterprise/keys.rs` | cortex | xavier |
+| `src/enterprise/rate_limit.rs` | cortex | xavier |
 
-### ? Quick Wins (< 1 hour)
-
-| Item | Time |
-|------|------|
-| Remove PlankaConfig Default impl (hardcoded creds) | 30 min |
-| Remove `dev-token` default in env var parsing | 20 min |
-| Add `.cargo/config.toml` deny of sensitive derives | 15 min |
-| Fix HTTP binding to respect XAVIER_HOST properly | 30 min |
-| Add SECURITY.md banner pointing to docs | 15 min |
-| Create `.gitignore` for any credential artifacts | 5 min |
-| Pin Rust edition/MSRV in Cargo.toml | 10 min |
-| Add CI badge scans (cargo audit, clippy) | 30 min |
+Enable with:
+```bash
+cargo build --features enterprise
+```
 
 ---
 
-## 3. v0.5 — Minimal Public-Ready Release
+## 3. PGHEART Integration
+
+PGHEART is a standalone binary that uses Xavier as its embedding provider:
+
+```
+Xavier (:8006) â”€â”€PGHEART_EMBEDDER_URLâ”€â”€â–º PgHeart (:8080) â”€â”€RESTâ”€â”€â–º Supabase
+```
+
+- Xavier provides `/v1/embeddings` (OpenAI-compatible)
+- PgHeart uses Supabase REST API for persistence
+- Xavier's PgHeart plugin sends heartbeats
+
+---
+
+## 4. Known Issues
+
+- enterprise HTTP routes (api/enterprise_http.rs) not yet wired â€” pending feature flag activation
+- Some pre-existing dead_code warnings across codebase
+- CI-safe test features may exclude enterprise tests
+
+---
+
+## 5. Risk Matrix
+
+| Risk | Probability | Impact | Mitigation |
+|------|------------|--------|------------|
+| SQLite-vec vs PostgreSQL data drift | Medium | High | Sync mechanisms in both tools |
+| gllm model compatibility | Low | Medium | Pinned version 0.10.6 |
+| enterprise features untested in Xavier | Medium | Medium | Feature flag; CI-safe mode |
 
 > **Goal:** Ship something safe, documented, and usable. Security + Docs + Basic CLI.
 > **Target effort:** ~2-3 days
@@ -76,16 +120,16 @@
 
 | Priority | Item | Category | Effort | Depends On |
 |----------|------|----------|--------|------------|
-| **P0** | Fix kanban.rs hardcoded credentials | Security | 30 min | — |
-| **P0** | Fix dev-token fallback everywhere (search all `unwrap_or`/`unwrap_or_else` for token patterns) | Security | 1 hr | — |
-| **P0** | Audit and fix Debug on sensitive structs | Security | 1 hr | — |
-| **P1** | Complete prompt_guard sanitize patterns | Security | 2 hr | — |
-| **P1** | Create public-facing README revision | Docs | 1 hr | — |
-| **P1** | Create docs/ entry point (ARCHITECTURE.md, API.md, QUICKSTART.md) | Docs | 4 hr | — |
+| **P0** | Fix kanban.rs hardcoded credentials | Security | 30 min | ï¿½ |
+| **P0** | Fix dev-token fallback everywhere (search all `unwrap_or`/`unwrap_or_else` for token patterns) | Security | 1 hr | ï¿½ |
+| **P0** | Audit and fix Debug on sensitive structs | Security | 1 hr | ï¿½ |
+| **P1** | Complete prompt_guard sanitize patterns | Security | 2 hr | ï¿½ |
+| **P1** | Create public-facing README revision | Docs | 1 hr | ï¿½ |
+| **P1** | Create docs/ entry point (ARCHITECTURE.md, API.md, QUICKSTART.md) | Docs | 4 hr | ï¿½ |
 | **P1** | Create examples/ with CLI, HTTP, MCP examples | Docs | 2 hr | #1 docs |
-| **P2** | Add cargo-audit to CI | Quality | 30 min | — |
-| **P2** | Fix all panicking unwraps in public API paths | Quality | 2 hr | — |
-| **P2** | Add issue/PR templates | Ops | 30 min | — |
+| **P2** | Add cargo-audit to CI | Quality | 30 min | ï¿½ |
+| **P2** | Fix all panicking unwraps in public API paths | Quality | 2 hr | ï¿½ |
+| **P2** | Add issue/PR templates | Ops | 30 min | ï¿½ |
 | **P3** | Add CHANGELOG.md for v0.5 | Docs | 30 min | All above |
 | **P3** | Tag v0.5.0 release in GitHub | Release | 15 min | All above |
 
@@ -103,7 +147,7 @@
 
 ```
 ? No hardcoded credentials in source code
-? No dev-token fallback — env var required or fail fast
+? No dev-token fallback ï¿½ env var required or fail fast
 ? No Debug leaks of passwords/tokens in production paths
 ? Prompt guard meets basic injection detection and sanitization
 ? README is public-ready (no internal secrets, CEO concept explained accessibly)
@@ -115,7 +159,7 @@
 
 ---
 
-## 4. v1.0 — Full Feature Parity
+## 4. v1.0 ï¿½ Full Feature Parity
 
 > **Goal:** Production-grade memory system with multi-tier architecture, proper MCP, split System modules.
 > **Target effort:** ~3-4 weeks
@@ -125,11 +169,11 @@
 
 | Priority | Item | Category | Effort | Depends On |
 |----------|------|----------|--------|------------|
-| **P0** | Implement reasoning chain in System2 — currently `reasoning_chain: vec![]` (empty stub) | Architecture | 4 hr | v0.5 |
-| **P0** | Refactor System3 god object (900+ lines ? max 200-300 per module) — split LLMs, caches, formatting into sub-modules | Architecture | 8 hr | v0.5 |
-| **P0** | Wire MCP through agent pipeline — currently MCP bypasses System1/2/3 entirely | Architecture | 6 hr | v0.5 |
+| **P0** | Implement reasoning chain in System2 ï¿½ currently `reasoning_chain: vec![]` (empty stub) | Architecture | 4 hr | v0.5 |
+| **P0** | Refactor System3 god object (900+ lines ? max 200-300 per module) ï¿½ split LLMs, caches, formatting into sub-modules | Architecture | 8 hr | v0.5 |
+| **P0** | Wire MCP through agent pipeline ï¿½ currently MCP bypasses System1/2/3 entirely | Architecture | 6 hr | v0.5 |
 | **P0** | Break QmdMemory into focused modules (3000+ lines ? max 500 per file) | Architecture | 10 hr | v0.5 |
-| **P0** | Finish consolidation engine — current implementation in `consolidation/` has real logic but needs scheduler, triggers, and proper integration | Architecture | 4 hr | v0.5 |
+| **P0** | Finish consolidation engine ï¿½ current implementation in `consolidation/` has real logic but needs scheduler, triggers, and proper integration | Architecture | 4 hr | v0.5 |
 | **P1** | Add memory tiers (Working ? Archival), auto-migration | Feature | 6 hr | #4 (QmdMemory split) |
 | **P1** | Add memory importance scoring (recency + access + novelty) | Feature | 4 hr | #4 |
 | **P1** | Add structured memory types (episodic, semantic, procedural, declarative) | Feature | 3 hr | v0.5 |
@@ -172,13 +216,13 @@
 
 ---
 
-## 5. v1.1+ — Nice-to-Have Improvements
+## 5. v1.1+ ï¿½ Nice-to-Have Improvements
 
 > **Goal:** Differentiators, enterprise features, ecosystem growth.
 > **Target effort:** 2-4 weeks per sub-release
 > **Prerequisite:** v1.0 released
 
-### 5.1 v1.1 — Production Hardening
+### 5.1 v1.1 ï¿½ Production Hardening
 
 | Priority | Item | Effort | Quality |
 |----------|------|--------|---------|
@@ -190,7 +234,7 @@
 | P2 | WASM-based prompt_guard cross-platform | 5 hr | Reach |
 | P3 | Memory sharing between agents (team knowledge base) | 4 hr | Enterprise |
 
-### 5.2 v1.2 — Ecosystem & Performance
+### 5.2 v1.2 ï¿½ Ecosystem & Performance
 
 | Priority | Item | Effort | Quality |
 |----------|------|--------|---------|
@@ -203,7 +247,7 @@
 | P3 | Python SDK package | 5 hr | Ecosystem |
 | P3 | JavaScript/Typescript SDK package | 5 hr | Ecosystem |
 
-### 5.3 v2.0 — Enterprise Features
+### 5.3 v2.0 ï¿½ Enterprise Features
 
 | Priority | Item | Effort | Quality |
 |----------|------|--------|---------|
@@ -227,37 +271,37 @@
     +-- public README                      - No deps
     +-- docs/ + examples/                  - No deps
     +-- CI/packaging                       - No deps
-          ¦
+          ï¿½
     +-----+
     ?
     v1.0 (Architecture + Features)         ?-- PARALLEL WAVES
-    ¦
+    ï¿½
     +-- Phase A: Core Architecture
-    ¦   +-- System2 reasoning chain        - Depends on: v0.5
-    ¦   +-- System3 refactor               - Depends on: v0.5
-    ¦   +-- MCP agent pipeline             - Depends on: v0.5
-    ¦
+    ï¿½   +-- System2 reasoning chain        - Depends on: v0.5
+    ï¿½   +-- System3 refactor               - Depends on: v0.5
+    ï¿½   +-- MCP agent pipeline             - Depends on: v0.5
+    ï¿½
     +-- Phase B: Storage Refactor
-    ¦   +-- QmdMemory split                - Depends on: v0.5
-    ¦         ¦
-    ¦         +-- Memory tiers             - Depends on: QmdMemory split
-    ¦         +-- Memory importance scoring - Depends on: QmdMemory split
-    ¦         +-- Memory graph             - Depends on: QmdMemory split
-    ¦
+    ï¿½   +-- QmdMemory split                - Depends on: v0.5
+    ï¿½         ï¿½
+    ï¿½         +-- Memory tiers             - Depends on: QmdMemory split
+    ï¿½         +-- Memory importance scoring - Depends on: QmdMemory split
+    ï¿½         +-- Memory graph             - Depends on: QmdMemory split
+    ï¿½
     +-- Phase C: Feature Parity
-    ¦   +-- Consolidation scheduler         - Depends on: v0.5 + QmdMemory split
-    ¦   +-- Structured memory types         - Depends on: v0.5
-    ¦   +-- Enhanced CLI                    - Depends on: v0.5
-    ¦   +-- Memory summarization            - Depends on: consolidation
-    ¦   +-- Context optimization            - Depends on: memory summarization
-    ¦
+    ï¿½   +-- Consolidation scheduler         - Depends on: v0.5 + QmdMemory split
+    ï¿½   +-- Structured memory types         - Depends on: v0.5
+    ï¿½   +-- Enhanced CLI                    - Depends on: v0.5
+    ï¿½   +-- Memory summarization            - Depends on: consolidation
+    ï¿½   +-- Context optimization            - Depends on: memory summarization
+    ï¿½
     +-- Phase D: Polish
         +-- Memory TTL/expiry              - Depends on: structured types
         +-- Memory tags                    - Depends on: QmdMemory split
         +-- Memory versioning              - Depends on: QmdMemory split
         +-- Memory analytics               - Depends on: QmdMemory split
         +-- E2E encryption                 - Depends on: v0.5
-              ¦
+              ï¿½
          +----+
          ?
     v1.1+ (Nice-to-Have)                   ?-- NON-BLOCKING
@@ -272,7 +316,7 @@
 
 ```
 v0.5 (2 days) ? Phase A (3 days) ? Phase B (3 days) ? Phase C (5 days) ? Phase D (4 days) ? v1.0 Release
-                                                                                                    ¦
+                                                                                                    ï¿½
                                                                                                     ?
                                                                                              v1.1+ (ongoing)
 ```
@@ -325,7 +369,7 @@ If all 8 items in **MUST PASS** are green and you have at least 2 of the **NICE 
 
 ---
 
-## Appendix A: Quick Reference — Key Files to Fix
+## Appendix A: Quick Reference ï¿½ Key Files to Fix
 
 | File | Issue | Action |
 |------|-------|--------|
@@ -346,12 +390,12 @@ If all 8 items in **MUST PASS** are green and you have at least 2 of the **NICE 
 | Phase | Calendar Time | Parallelizable? | Team Size |
 |-------|--------------|----------------|-----------|
 | v0.5 Pre-release | 2-3 days | ? (security + docs parallel) | 1-2 |
-| v0.5 Release | — | — | — |
+| v0.5 Release | ï¿½ | ï¿½ | ï¿½ |
 | v1.0 Phase A | 3-4 days | ? (System2/3 vs QmdMemory split) | 2 |
 | v1.0 Phase B | 3-4 days | ? (depends on A) | 1-2 |
 | v1.0 Phase C | 4-5 days | Partially | 1-2 |
 | v1.0 Phase D | 3-4 days | ? (parallel with testing) | 1-2 |
-| v1.0 Release | — | — | — |
+| v1.0 Release | ï¿½ | ï¿½ | ï¿½ |
 | v1.1+ ongoing | 2-4 weeks each | ? (items parallel) | 1-2 |
 
 **Total to v1.0:** ~3-5 weeks from today
@@ -359,4 +403,4 @@ If all 8 items in **MUST PASS** are green and you have at least 2 of the **NICE 
 
 ---
 
-*Xavier CEO — Construyendo el futuro con memoria.*
+*Xavier CEO ï¿½ Construyendo el futuro con memoria.*

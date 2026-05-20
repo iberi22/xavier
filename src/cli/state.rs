@@ -8,11 +8,12 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use xavier::agents::rate_limit::RateLimitManager;
 use xavier::app::proxy_use_case::ProxyUseCase;
+use xavier::app::security_service::SecurityService;
 use xavier::coordination::{KeyLendingEngine, XavierEventBus};
+use xavier::embedding::Embedder;
 use xavier::memory::session_store::SessionStore;
 use xavier::memory::store::MemoryStore;
 use xavier::ports::inbound::{AgentLifecyclePort, MemoryQueryPort};
-use xavier::app::security_service::SecurityService;
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
 
@@ -45,7 +46,8 @@ pub struct CliState {
     // TODO: use for background provider health checks
     pub http_client: reqwest::Client,
     pub proxy_use_case: Arc<ProxyUseCase>,
-
+    #[allow(dead_code)]
+    pub embedder: Arc<dyn Embedder>,
 }
 
 #[derive(Parser)]

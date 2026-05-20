@@ -1,3 +1,4 @@
+use std::fmt;
 use std::{fs, path::PathBuf};
 
 use anyhow::{Context, Result};
@@ -5,7 +6,7 @@ use serde::Deserialize;
 
 const DEFAULT_CONFIG_PATH: &str = "config/xavier.config.json";
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Clone, Deserialize, Default)]
 pub struct XavierSettings {
     #[serde(default)]
     pub server: ServerSettings,
@@ -21,6 +22,20 @@ pub struct XavierSettings {
     pub sync: SyncSettings,
     #[serde(skip)]
     pub auth_token: Option<String>,
+}
+
+impl fmt::Debug for XavierSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("XavierSettings")
+            .field("server", &self.server)
+            .field("workspace", &self.workspace)
+            .field("memory", &self.memory)
+            .field("models", &self.models)
+            .field("retrieval", &self.retrieval)
+            .field("sync", &self.sync)
+            .field("auth_token", &"[REDACTED]")
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
