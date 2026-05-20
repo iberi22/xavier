@@ -335,7 +335,20 @@ impl VerificationCycle {
     pub fn from_env() -> Result<Self, String> {
         let url_str = std::env::var("XAVIER_URL")
             .or_else(|_| std::env::var("XAVIER_API_URL"))
-            .unwrap_or_else(|_| crate::settings::XavierSettings::current().client_base_url());
+            .unwrap_or_else(|_| {
+                // Fallback: assemble from XAVIER_HOST + XAVIER_PORT or settings defaults
+                let host = std::env::var("XAVIER_HOST")
+                    .unwrap_or_else(|_| crate::settings::XavierSettings::current().server.host);
+                let port = std::env::var("XAVIER_PORT")
+                    .ok()
+                    .and_then(|v| v.parse::<u16>().ok())
+                    .unwrap_or_else(|| crate::settings::XavierSettings::current().server.port);
+                let connect_host = match host.as_str() {
+                    "0.0.0.0" | "::" => "127.0.0.1",
+                    other => other,
+                };
+                format!("http://{}:{}", connect_host, port)
+            });
 
         // Validate internal URL to prevent SSRF
         let validated_url = crate::security::url_validator::validate_internal_url(&url_str)

@@ -15,11 +15,29 @@ pub struct XavierSettings {
     #[serde(default)]
     pub memory: MemorySettings,
     #[serde(default)]
+    pub memory_layers: MemoryLayersSettings,
+    #[serde(default)]
     pub models: ModelSettings,
     #[serde(default)]
     pub retrieval: RetrievalSettings,
     #[serde(default)]
     pub sync: SyncSettings,
+    #[serde(default)]
+    pub embedding: EmbeddingSettings,
+    #[serde(default)]
+    pub security: SecuritySettings,
+    #[serde(default)]
+    pub telegram: TelegramSettings,
+    #[serde(default)]
+    pub router: RouterSettings,
+    #[serde(default)]
+    pub chronicle: ChronicleSettings,
+    #[serde(default)]
+    pub enterprise: EnterpriseSettings,
+    #[serde(default)]
+    pub agents: AgentSettings,
+    #[serde(default)]
+    pub advanced: AdvancedSettings,
     #[serde(skip)]
     pub auth_token: Option<String>,
 }
@@ -30,9 +48,18 @@ impl fmt::Debug for XavierSettings {
             .field("server", &self.server)
             .field("workspace", &self.workspace)
             .field("memory", &self.memory)
+            .field("memory_layers", &self.memory_layers)
             .field("models", &self.models)
             .field("retrieval", &self.retrieval)
             .field("sync", &self.sync)
+            .field("embedding", &self.embedding)
+            .field("security", &self.security)
+            .field("telegram", &self.telegram)
+            .field("router", &self.router)
+            .field("chronicle", &self.chronicle)
+            .field("enterprise", &self.enterprise)
+            .field("agents", &self.agents)
+            .field("advanced", &self.advanced)
             .field("auth_token", &"[REDACTED]")
             .finish()
     }
@@ -44,6 +71,7 @@ pub struct ServerSettings {
     pub port: u16,
     pub log_level: String,
     pub code_graph_db_path: String,
+    pub url: String,
 }
 
 impl Default for ServerSettings {
@@ -53,6 +81,7 @@ impl Default for ServerSettings {
             port: 8006,
             log_level: "info".to_string(),
             code_graph_db_path: "data/code_graph.db".to_string(),
+            url: String::new(),
         }
     }
 }
@@ -116,6 +145,57 @@ impl Default for MemorySettings {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct WorkingMemoryLayerConfig {
+    pub capacity: usize,
+    pub lru_exempt_access_threshold: u32,
+    pub bm25_k1: f32,
+    pub bm25_b: f32,
+}
+
+impl Default for WorkingMemoryLayerConfig {
+    fn default() -> Self {
+        Self {
+            capacity: 100,
+            lru_exempt_access_threshold: 2,
+            bm25_k1: 1.5,
+            bm25_b: 0.75,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EpisodicMemoryLayerConfig {
+    pub summary_window: usize,
+    pub max_sessions: usize,
+    pub min_event_importance: f32,
+}
+
+impl Default for EpisodicMemoryLayerConfig {
+    fn default() -> Self {
+        Self {
+            summary_window: 10,
+            max_sessions: 50,
+            min_event_importance: 0.5,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct MemoryLayersSettings {
+    pub working: WorkingMemoryLayerConfig,
+    pub episodic: EpisodicMemoryLayerConfig,
+}
+
+impl Default for MemoryLayersSettings {
+    fn default() -> Self {
+        Self {
+            working: WorkingMemoryLayerConfig::default(),
+            episodic: EpisodicMemoryLayerConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct ModelSettings {
     pub provider: String,
     pub api_flavor: String,
@@ -174,6 +254,122 @@ impl Default for SyncSettings {
             save_ok_rate_threshold: 0.95,
             max_retries: 3,
             retry_delay_ms: 1_000,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EmbeddingSettings {
+    pub endpoint: String,
+    pub embedder: String,
+    pub gllm_model: String,
+    pub api_flavor: String,
+}
+
+impl Default for EmbeddingSettings {
+    fn default() -> Self {
+        Self {
+            endpoint: String::new(),
+            embedder: String::new(),
+            gllm_model: String::new(),
+            api_flavor: "openai-compatible".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SecuritySettings {
+    pub allowed_domains: String,
+}
+
+impl Default for SecuritySettings {
+    fn default() -> Self {
+        Self {
+            allowed_domains: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TelegramSettings {
+    pub enabled: bool,
+}
+
+impl Default for TelegramSettings {
+    fn default() -> Self {
+        Self { enabled: false }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RouterSettings {
+    pub policy_path: String,
+    pub policy_refresh_secs: u64,
+}
+
+impl Default for RouterSettings {
+    fn default() -> Self {
+        Self {
+            policy_path: String::new(),
+            policy_refresh_secs: 300,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ChronicleSettings {
+    pub model: String,
+}
+
+impl Default for ChronicleSettings {
+    fn default() -> Self {
+        Self {
+            model: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct EnterpriseSettings {
+    pub db_path: String,
+}
+
+impl Default for EnterpriseSettings {
+    fn default() -> Self {
+        Self {
+            db_path: "data/enterprise.db".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AgentSettings {
+    pub weekly_budget: Option<u64>,
+}
+
+impl Default for AgentSettings {
+    fn default() -> Self {
+        Self { weekly_budget: None }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct AdvancedSettings {
+    pub qjl_threshold: usize,
+    pub rrf_k: usize,
+    pub entity_extraction_enabled: bool,
+    pub audit_chain_enabled: bool,
+    pub panel_store_dir: String,
+}
+
+impl Default for AdvancedSettings {
+    fn default() -> Self {
+        Self {
+            qjl_threshold: 500,
+            rrf_k: 60,
+            entity_extraction_enabled: true,
+            audit_chain_enabled: true,
+            panel_store_dir: String::new(),
         }
     }
 }
@@ -245,6 +441,7 @@ impl XavierSettings {
         set_if_absent("XAVIER_PORT", &self.server.port.to_string());
         set_if_absent("XAVIER_LOG_LEVEL", &self.server.log_level);
         set_if_absent("XAVIER_CODE_GRAPH_DB_PATH", &self.server.code_graph_db_path);
+        set_optional_if_absent("XAVIER_URL", non_empty(&self.server.url));
 
         set_if_absent(
             "XAVIER_DEFAULT_WORKSPACE_ID",
@@ -287,6 +484,36 @@ impl XavierSettings {
         set_if_absent("XAVIER_MEMORY_FILE_PATH", &self.memory.file_path);
         set_if_absent("XAVIER_MEMORY_SQLITE_PATH", &self.memory.sqlite_path);
         set_if_absent("XAVIER_MEMORY_VEC_PATH", &self.memory.vec_path);
+
+        // Memory layers
+        set_if_absent(
+            "XAVIER_WORKING_MEMORY_CAPACITY",
+            &self.memory_layers.working.capacity.to_string(),
+        );
+        set_if_absent(
+            "XAVIER_WORKING_LRU_THRESHOLD",
+            &self.memory_layers.working.lru_exempt_access_threshold.to_string(),
+        );
+        set_if_absent(
+            "XAVIER_WORKING_BM25_K1",
+            &self.memory_layers.working.bm25_k1.to_string(),
+        );
+        set_if_absent(
+            "XAVIER_WORKING_BM25_B",
+            &self.memory_layers.working.bm25_b.to_string(),
+        );
+        set_if_absent(
+            "XAVIER_EPISODIC_SUMMARY_WINDOW",
+            &self.memory_layers.episodic.summary_window.to_string(),
+        );
+        set_if_absent(
+            "XAVIER_MAX_EPISODIC_SESSIONS",
+            &self.memory_layers.episodic.max_sessions.to_string(),
+        );
+        set_if_absent(
+            "XAVIER_EPISODIC_MIN_EVENT_IMPORTANCE",
+            &self.memory_layers.episodic.min_event_importance.to_string(),
+        );
 
         set_if_absent("XAVIER_MODEL_PROVIDER", &self.models.provider);
         set_if_absent("XAVIER_API_FLAVOR", &self.models.api_flavor);
@@ -334,6 +561,64 @@ impl XavierSettings {
             "XAVIER_SYNC_RETRY_DELAY_MS",
             &self.sync.retry_delay_ms.to_string(),
         );
+
+        // Embedding settings
+        set_optional_if_absent("XAVIER_EMBEDDING_ENDPOINT", non_empty(&self.embedding.endpoint));
+        set_optional_if_absent("XAVIER_EMBEDDER", non_empty(&self.embedding.embedder));
+        set_optional_if_absent("XAVIER_GLLM_MODEL", non_empty(&self.embedding.gllm_model));
+        set_optional_if_absent("XAVIER_EMBEDDING_API_FLAVOR", non_empty(&self.embedding.api_flavor));
+
+        // Security settings
+        set_optional_if_absent("XAVIER_ALLOWED_DOMAINS", non_empty(&self.security.allowed_domains));
+
+        // Telegram settings
+        set_if_absent("XAVIER_TELEGRAM_ENABLED", if self.telegram.enabled { "true" } else { "false" });
+
+        // Router settings
+        set_optional_if_absent("XAVIER_ROUTER_POLICY_PATH", non_empty(&self.router.policy_path));
+        set_if_absent(
+            "XAVIER_ROUTER_POLICY_REFRESH_SECS",
+            &self.router.policy_refresh_secs.to_string(),
+        );
+
+        // Chronicle settings
+        set_optional_if_absent("XAVIER2_CHRONICLE_MODEL", non_empty(&self.chronicle.model));
+
+        // Enterprise settings
+        set_if_absent("XAVIER_ENTERPRISE_DB_PATH", &self.enterprise.db_path);
+
+        // Agent settings
+        set_optional_if_absent(
+            "XAVIER_WEEKLY_BUDGET",
+            self.agents.weekly_budget.map(|v| v.to_string()),
+        );
+
+        // Advanced settings
+        set_if_absent(
+            "XAVIER_QJL_THRESHOLD",
+            &self.advanced.qjl_threshold.to_string(),
+        );
+        set_if_absent("XAVIER_RRF_K", &self.advanced.rrf_k.to_string());
+        set_if_absent(
+            "XAVIER_ENTITY_EXTRACTION_ENABLED",
+            if self.advanced.entity_extraction_enabled {
+                "1"
+            } else {
+                "0"
+            },
+        );
+        set_if_absent(
+            "XAVIER_AUDIT_CHAIN_ENABLED",
+            if self.advanced.audit_chain_enabled {
+                "1"
+            } else {
+                "0"
+            },
+        );
+        set_optional_if_absent(
+            "XAVIER_PANEL_STORE_DIR",
+            non_empty(&self.advanced.panel_store_dir),
+        );
     }
 
     pub fn current() -> Self {
@@ -369,5 +654,186 @@ fn non_empty(value: &str) -> Option<String> {
         None
     } else {
         Some(trimmed.to_string())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{LazyLock, Mutex};
+
+    static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    #[test]
+    fn test_default_settings() {
+        let settings = XavierSettings::default();
+        assert_eq!(settings.server.port, 8006);
+        assert_eq!(settings.server.host, "127.0.0.1");
+        assert_eq!(settings.workspace.default_workspace_id, "default");
+        assert_eq!(settings.memory.backend, "vec");
+        assert_eq!(settings.models.provider, "local");
+        assert_eq!(settings.retrieval.disable_hyde, true);
+        assert_eq!(settings.sync.interval_ms, 300_000);
+        assert_eq!(settings.advanced.qjl_threshold, 500);
+        assert_eq!(settings.advanced.rrf_k, 60);
+        assert!(settings.advanced.entity_extraction_enabled);
+        assert!(settings.advanced.audit_chain_enabled);
+        assert_eq!(settings.memory_layers.working.capacity, 100);
+        assert_eq!(settings.memory_layers.episodic.max_sessions, 50);
+        assert!(!settings.telegram.enabled);
+        assert_eq!(settings.enterprise.db_path, "data/enterprise.db");
+    }
+
+    #[test]
+    fn test_apply_to_env_sets_vars() {
+        let _guard = ENV_LOCK.lock().expect("test assertion");
+
+        // Clean env
+        for (key, _) in std::env::vars() {
+            if key.starts_with("XAVIER_") || key == "STRIPE_SECRET_KEY" {
+                std::env::remove_var(&key);
+            }
+        }
+
+        let settings = XavierSettings::default();
+        settings.apply_to_env();
+
+        assert_eq!(std::env::var("XAVIER_HOST").unwrap(), "127.0.0.1");
+        assert_eq!(std::env::var("XAVIER_PORT").unwrap(), "8006");
+        assert_eq!(std::env::var("XAVIER_WORKING_MEMORY_CAPACITY").unwrap(), "100");
+        assert_eq!(std::env::var("XAVIER_RRF_K").unwrap(), "60");
+        assert_eq!(std::env::var("XAVIER_QJL_THRESHOLD").unwrap(), "500");
+        assert_eq!(std::env::var("XAVIER_TELEGRAM_ENABLED").unwrap(), "false");
+        assert_eq!(std::env::var("XAVIER_ENTERPRISE_DB_PATH").unwrap(), "data/enterprise.db");
+
+        // Clean up
+        for (key, _) in std::env::vars() {
+            if key.starts_with("XAVIER_") {
+                std::env::remove_var(&key);
+            }
+        }
+    }
+
+    #[test]
+    fn test_apply_to_env_respects_existing_vars() {
+        let _guard = ENV_LOCK.lock().expect("test assertion");
+
+        // Set an override
+        std::env::set_var("XAVIER_PORT", "9999");
+        std::env::set_var("XAVIER_RRF_K", "100");
+        std::env::remove_var("XAVIER_HOST");
+
+        let settings = XavierSettings::default();
+        settings.apply_to_env();
+
+        // Existing vars should NOT be overwritten
+        assert_eq!(std::env::var("XAVIER_PORT").unwrap(), "9999");
+        assert_eq!(std::env::var("XAVIER_RRF_K").unwrap(), "100");
+        // Missing vars should be set
+        assert_eq!(std::env::var("XAVIER_HOST").unwrap(), "127.0.0.1");
+
+        // Clean up
+        std::env::remove_var("XAVIER_HOST");
+        std::env::remove_var("XAVIER_PORT");
+        std::env::remove_var("XAVIER_RRF_K");
+    }
+
+    #[test]
+    fn test_config_file_missing_returns_none() {
+        let path = std::env::temp_dir().join("nonexistent_xavier_config.json");
+        // Ensure it doesn't exist
+        let _ = std::fs::remove_file(&path);
+
+        let _old_path = XavierSettings::resolve_config_path();
+
+        // Temporarily redirect config path
+        std::env::set_var("XAVIER_CONFIG_PATH", path.to_str().unwrap());
+        let result = XavierSettings::load().unwrap();
+        assert!(result.is_none());
+        std::env::remove_var("XAVIER_CONFIG_PATH");
+    }
+
+    #[test]
+    fn test_current_falls_back_to_defaults() {
+        let _guard = ENV_LOCK.lock().expect("test assertion");
+
+        // Remove XAVIER_TOKEN if present
+        std::env::remove_var("XAVIER_TOKEN");
+
+        // Temporarily point config to a nonexistent path so defaults are used
+        std::env::set_var("XAVIER_CONFIG_PATH", "/tmp/nonexistent-xavier-config.json");
+        let settings = XavierSettings::current();
+        // Without a real config file, host falls to default (127.0.0.1)
+        assert_eq!(settings.server.host, "127.0.0.1");
+        assert_eq!(settings.server.port, 8006);
+        assert!(settings.auth_token.is_none());
+        std::env::remove_var("XAVIER_CONFIG_PATH");
+    }
+
+    #[test]
+    fn test_non_empty_helper() {
+        assert_eq!(non_empty(""), None);
+        assert_eq!(non_empty("   "), None);
+        assert_eq!(non_empty("hello"), Some("hello".to_string()));
+        assert_eq!(non_empty("  world  "), Some("world".to_string()));
+    }
+
+    #[test]
+    fn test_client_base_url() {
+        let settings = XavierSettings::default();
+        let url = settings.client_base_url();
+        assert!(url.starts_with("http://"));
+        assert!(url.contains("127.0.0.1"));
+        assert!(url.contains("8006"));
+    }
+
+    #[test]
+    fn test_resolve_data_dir() {
+        // Without env var, should return platform data dir or "data"
+        let data_dir = XavierSettings::resolve_data_dir();
+        assert!(!data_dir.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn test_apply_to_env_all_new_sections() {
+        let _guard = ENV_LOCK.lock().expect("test assertion");
+
+        // Clean all XAVIER_ vars
+        for (key, _) in std::env::vars() {
+            if key.starts_with("XAVIER_") {
+                std::env::remove_var(&key);
+            }
+        }
+
+        let settings = XavierSettings::default();
+        settings.apply_to_env();
+
+        // Memory layers
+        assert_eq!(std::env::var("XAVIER_WORKING_MEMORY_CAPACITY").unwrap(), "100");
+        assert_eq!(std::env::var("XAVIER_WORKING_LRU_THRESHOLD").unwrap(), "2");
+        assert_eq!(std::env::var("XAVIER_WORKING_BM25_K1").unwrap(), "1.5");
+        assert_eq!(std::env::var("XAVIER_WORKING_BM25_B").unwrap(), "0.75");
+        assert_eq!(std::env::var("XAVIER_EPISODIC_SUMMARY_WINDOW").unwrap(), "10");
+        assert_eq!(std::env::var("XAVIER_MAX_EPISODIC_SESSIONS").unwrap(), "50");
+        assert_eq!(std::env::var("XAVIER_EPISODIC_MIN_EVENT_IMPORTANCE").unwrap(), "0.5");
+
+        // Advanced
+        assert_eq!(std::env::var("XAVIER_QJL_THRESHOLD").unwrap(), "500");
+        assert_eq!(std::env::var("XAVIER_RRF_K").unwrap(), "60");
+        assert_eq!(std::env::var("XAVIER_ENTITY_EXTRACTION_ENABLED").unwrap(), "1");
+        assert_eq!(std::env::var("XAVIER_AUDIT_CHAIN_ENABLED").unwrap(), "1");
+
+        // Router
+        assert_eq!(std::env::var("XAVIER_ROUTER_POLICY_REFRESH_SECS").unwrap(), "300");
+
+        // Enterprise
+        assert_eq!(std::env::var("XAVIER_ENTERPRISE_DB_PATH").unwrap(), "data/enterprise.db");
+
+        // Clean up
+        for (key, _) in std::env::vars() {
+            if key.starts_with("XAVIER_") {
+                std::env::remove_var(&key);
+            }
+        }
     }
 }

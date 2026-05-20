@@ -1,0 +1,172 @@
+# Xavier 1.0 MCP Contract
+
+**Last Updated:** 2026-05-20
+**Protocol Version:** 2025-03-26
+**Server Name:** `xavier-memory`
+
+## Overview
+
+Xavier exposes a unified MCP (Model Context Protocol) interface over two transports:
+
+- **HTTP:** `POST /mcp` on the main HTTP server (default :8006)
+- **STDIO:** `xavier mcp` CLI command
+
+Both transports use the same `dispatch_mcp_value` dispatcher and expose the identical tool set.
+
+### Transport Details
+
+| Feature | HTTP | STDIO |
+|---------|------|-------|
+| Endpoint | `POST http://localhost:8006/mcp` | `xavier mcp` |
+| JSON-RPC Batch | ✅ Yes | Line-delimited JSON |
+| Session Header | `mcp-session-id` | N/A |
+| Auth | `X-Xavier-Token` header | Inherits from env |
+
+## MCP Protocol Handshake
+
+### initialize
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "initialize",
+  "params": {
+    "protocolVersion": "2025-03-26",
+    "capabilities": {},
+    "clientInfo": { "name": "...", "version": "..." }
+  }
+}
+```
+
+**Response** includes `serverInfo.name: "xavier-memory"` and `capabilities.tools: {}`.
+
+### notifications/initialized
+
+When the client has completed initialization, send as a notification (no `id` field).
+
+## Tools — Xavier 1.0 Contract
+
+### Canonical Memory Tools
+
+| Tool | Description | Required Params |
+|------|-------------|-----------------|
+| `create_memory` | Create a new memory document | `path`, `content` |
+| `search_memory` | Search memory documents | `query` |
+| `get_memory` | Get a specific memory by ID | `id` |
+| `stats` | Get Xavier memory statistics | _(none)_ |
+
+### Project Tools
+
+| Tool | Description | Required Params |
+|------|-------------|-----------------|
+| `list_projects` | List all projects | _(none)_ |
+| `get_project_context` | Get full context for a project | `project_id` |
+
+### Utility Tools
+
+| Tool | Description | Required Params |
+|------|-------------|-----------------|
+| `sync_gitcore` | Sync docs from a GitCore project | `project_path` |
+
+### Gestalt MemoryFragment Tools
+
+These tools provide compatibility with the Gestalt MCP protocol. Each has a canonical short name and a `memoryfragment_*` alias.
+
+| Tool | Alias | Description | Required Params |
+|------|-------|-------------|-----------------|
+| `save_fragment` | `memoryfragment_save` | Save a memory fragment | `agent_id`, `content`, `context` |
+| `search_fragments` | `memoryfragment_search` | Search memory fragments | `query` |
+| `get_recent_fragments` | `memoryfragment_recent` | Get recent fragments for agent | `agent_id` |
+| `memoryfragment_get` | — | Get a specific fragment by ID | `id` |
+| `memoryfragment_delete` | — | Delete a fragment by ID | `id` |
+
+## Security Scanning
+
+All MCP tool inputs (string arguments) are scanned for prompt injection and security threats before execution. Two scanning layers are applied:
+
+1. **Generic pre-scan** (all tools): Every string argument is checked by `SecurityService.scan()`. Arguments named `id` are exempt (safe identifiers).
+2. **Dedicated content scan** (MemoryFragment tools only): The `content` and `query` fields get a second scan via `secure_mcp_external_input()` which returns rich blocked responses with detection details.
+
+If a security violation is detected, the tool returns an MCP error `-32000` with a description of the violation.
+
+## Example: create_memory
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "create_memory",
+    "arguments": {
+      "path": "projects/my-project/notes",
+      "content": "Important observation about the architecture",
+      "kind": "semantic",
+      "evidence_kind": "observation",
+      "namespace": {
+        "project": "my-project",
+        "agent_id": "agent-1"
+      },
+      "provenance": {
+        "source_app": "my-app",
+        "source_type": "chat"
+      }
+    }
+  }
+}
+```
+
+## Example: search_memory
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "search_memory",
+    "arguments": {
+      "query": "architecture patterns",
+      "limit": 5,
+      "filters": {
+        "project": "my-project"
+      }
+    }
+  }
+}
+```
+
+## Example: save_fragment
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "method": "tools/call",
+  "params": {
+    "name": "save_fragment",
+    "arguments": {
+      "agent_id": "agent-1",
+      "content": "Observed that the authentication module uses JWT tokens",
+      "context": "observation",
+      "tags": ["auth", "security"],
+      "importance": 0.8
+    }
+  }
+}
+```
+
+## Validation Rules
+
+MemoryFragment inputs enforce strict validation:
+
+| Field | Max Length | Allowed Characters |
+|-------|-----------|-------------------|
+| `agent_id` | 128 chars | ASCII alphanumeric, `.`, `_`, `-` |
+| `context` | 128 chars | ASCII alphanumeric, `.`, `_`, `-` |
+| Tags (each) | 64 chars | ASCII alphanumeric, `.`, `_`, `-` |
+| Tags (count) | 32 tags | — |
+| `repo_url` / `file_path` / `chunk_id` | 2048 chars | No control characters |
+| `importance` | — | Float 0.0–1.0 (default 0.5) |
+| `limit` | — | Integer 1–100 (default 10) |

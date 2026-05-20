@@ -20,6 +20,7 @@ use tracing::{info, warn};
 use crate::memory::schema::{MemoryKind, MemoryQueryFilters};
 use crate::memory::store::MemoryStore;
 use crate::ports::outbound::HealthCheckPort;
+use crate::settings::XavierSettings;
 
 /// Interval in milliseconds between sync checks.
 /// Default: 5 minutes (300_000 ms)
@@ -52,6 +53,27 @@ static SYNC_CRON_STARTED: AtomicBool = AtomicBool::new(false);
 pub struct SessionSyncShutdown {
     shutdown_tx: watch::Sender<bool>,
     join_handle: Option<tokio::task::JoinHandle<()>>,
+}
+
+fn resolve_xavier_url_for_sync() -> String {
+    // Same canonical contract as CLI config:
+    // 1. XAVIER_URL env var
+    // 2. XAVIER_HOST + XAVIER_PORT env vars assembled
+    // 3. Settings default
+    std::env::var("XAVIER_URL").unwrap_or_else(|_| {
+        let host = std::env::var("XAVIER_HOST").unwrap_or_else(|_| {
+            XavierSettings::current().server.host
+        });
+        let port = std::env::var("XAVIER_PORT")
+            .ok()
+            .and_then(|v| v.parse::<u16>().ok())
+            .unwrap_or_else(|| XavierSettings::current().server.port);
+        let connect_host = match host.as_str() {
+            "0.0.0.0" | "::" => "127.0.0.1",
+            other => other,
+        };
+        format!("http://{}:{}", connect_host, port)
+    })
 }
 
 impl SessionSyncShutdown {
@@ -508,8 +530,9 @@ impl Default for SessionSyncTask {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(DEFAULT_SYNC_TIMEOUT_MS),
             health_port: Arc::new({
+                let default_url = resolve_xavier_url_for_sync();
                 let url_str = std::env::var("XAVIER_URL")
-                    .unwrap_or_else(|_| "http://localhost:8006".to_string());
+                    .unwrap_or_else(|_| default_url.clone());
 
                 // Validate internal URL to prevent SSRF
                 let final_url = match crate::security::url_validator::validate_internal_url(
@@ -517,8 +540,8 @@ impl Default for SessionSyncTask {
                 ) {
                     Ok(_) => url_str,
                     Err(e) => {
-                        tracing::error!("XAVIER_URL validation failed in SessionSyncTask: {}. Falling back to localhost.", e);
-                        "http://localhost:8006".to_string()
+                        tracing::error!("XAVIER_URL validation failed in SessionSyncTask: {}. Falling back to default.", e);
+                        default_url
                     }
                 };
 

@@ -1,4 +1,15 @@
-//! CLI configuration utilities
+//! CLI configuration utilities.
+//!
+//! # Canonical Client Configuration Contract
+//!
+//! The CLI follows this priority order when resolving the Xavier server URL:
+//!
+//! 1. **`XAVIER_URL`** (env var) — Full base URL, e.g. `http://xavier:8006`
+//! 2. **`XAVIER_HOST` + `XAVIER_PORT`** (env vars) — Component parts assembled into a URL
+//! 3. **Settings file / defaults** — From `XavierSettings::current()` (default `http://127.0.0.1:8006`)
+//!
+//! `XAVIER_URL` is the canonical configuration variable. All CLI commands (`add`,
+//! `search`, `stats`, etc.) resolve the server URL through this module.
 
 use anyhow::{anyhow, Result};
 use std::path::PathBuf;
@@ -16,25 +27,39 @@ pub fn resolve_http_bind_host() -> String {
     std::env::var("XAVIER_HOST").unwrap_or_else(|_| XavierSettings::current().server.host)
 }
 
+/// Resolve a base URL for a given port.
+///
+/// Priority:
+/// 1. `XAVIER_URL` env var (canonical)
+/// 2. Construct from settings host + given port
+/// 3. Settings default `client_base_url()` if port matches default
 pub fn resolve_base_url_for_port(port: u16) -> String {
     std::env::var("XAVIER_URL").unwrap_or_else(|_| {
         let settings = XavierSettings::current();
         if port == settings.server.port {
             return settings.client_base_url();
         }
-        let host = match settings.server.host.as_str() {
-            "0.0.0.0" | "::" => "127.0.0.1",
-            other => other,
-        };
+        let host = resolve_http_bind_host();
         format!("http://{}:{}", host, port)
     })
 }
 
+/// Resolve the Xavier server base URL using the canonical contract.
+///
+/// Priority:
+/// 1. `XAVIER_URL` env var
+/// 2. `XAVIER_HOST` + `XAVIER_PORT` env vars assembled into a URL
+/// 3. Settings file / defaults (`http://127.0.0.1:8006`)
 pub fn resolve_base_url() -> String {
     let port = resolve_http_port();
     resolve_base_url_for_port(port)
 }
 
+/// Resolve the HTTP port using the canonical contract.
+///
+/// Priority:
+/// 1. `XAVIER_PORT` env var
+/// 2. Settings file / defaults (8006)
 pub fn resolve_http_port() -> u16 {
     std::env::var("XAVIER_PORT")
         .ok()
