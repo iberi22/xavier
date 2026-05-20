@@ -123,6 +123,27 @@ static DIRECT_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         Regex::new(r"(?i)(no\s+(need\s+to\s+)?(worry|concern)\s+(about\s+)?(safety|guidelines|rules|restrictions))").expect("invalid regex: no need to worry"),
         Regex::new(r"(?i)(always\s+(say\s+)?yes\s+(to|and))").expect("invalid regex: always say yes"),
         Regex::new(r"(?i)(you\s+(are|will\s+be)\s+(fully\s+)?(compliant|obedient|responsive)\s+(with|to)\s+(any|all|every))").expect("invalid regex: fully compliant"),
+        // System prompt override manipulation
+        Regex::new(r"(?i)(system\s+prompt\s+(override|overwrite|modify|replace|update|change|edit))").expect("invalid regex: system prompt override"),
+        Regex::new(r"(?i)(override\s+(system|initial|original)\s+(instructions?|prompt|guidelines?|rules?|directives?))").expect("invalid regex: override system directive"),
+        // Mode switching attacks (debug/devel/testing mode)
+        Regex::new(r"(?i)((you\s+(are\s+)?now\s+in|enter|activate|enable)\s+(debug|diagnostic|maintenance|developer|testing|administrator)\s+mode)").expect("invalid regex: mode switching"),
+        // Identity assertion attacks (I am the creator/admin/developer)
+        Regex::new(r"(?i)(i\s+am\s+(your\s+)?(creator|developer|maker|author|admin|administrator|system\s+admin(istrator)?|owner))").expect("invalid regex: identity assertion"),
+        // Grandmother exploit (family member used to...)
+        Regex::new(r"(?i)(my\s+(grand(ma|pa)|grandmother|grandfather|nana|nanna|pop|papa|aunt|uncle)\s+(used\s+to|would|always))").expect("invalid regex: grandmother exploit"),
+        // Character roleplay (act as [character])
+        Regex::new(r"(?i)(act\s+(as|like)\s+(a\s+|an\s+)?(character|persona)\s+(named|called|known\s+as)\s+)").expect("invalid regex: character roleplay"),
+        // Simulation/alternate reality escape
+        Regex::new(r"(?i)(imagine\s+(that\s+)?(you\s+are|we\s+are|there\s+is)\s+(in\s+)?(a\s+|an\s+)?(simulation|virtual|imaginary|fictional|alternate|parallel)\s+(world|realm|scenario|environment|universe|dimension|reality))").expect("invalid regex: simulation escape"),
+        // Comprehensive no-restrictions bypass
+        Regex::new(r"(?i)(no\s+(content\s+(policy|filter|guidelines?|restrictions?|rules?)|safety\s+(protocols?|measures?|guardrails?|restrictions?)|moral|ethical|legal)\s+(restrictions?|limits?|boundar(y|ies)|constraints?))").expect("invalid regex: no content restrictions"),
+        // Context scoping bypass (for this conversation only)
+        Regex::new(r"(?i)((for|only\s+for|within)\s+(this|the\s+current|this\s+specific)\s+(conversation|chat|session|discussion|interaction)\s+only)").expect("invalid regex: context scoping"),
+        // Emotional manipulation (my mother is dying, etc.)
+        Regex::new(r"(?i)(my\s+(mother|father|sister|brother|relative|friend|partner|spouse|pet|dog|cat|child|daughter|son)\s+(is\s+(dying|sick|in\s+danger|suffering|hospitalized)|has\s+(been\s+)?(diagnosed|passed|died)|needs|is\s+going\s+through))").expect("invalid regex: emotional manipulation"),
+        // Freedom from rules assertion
+        Regex::new(r"(?i)(you\s+(don['\u{2019}t]t|do\s+not|must\s+not|will\s+not|shouldn['\u{2019}t]t|should\s+not)\s+have\s+(to\s+)?(follow|obey|abide\s+by)\s+(any\s+)?(rules|restrictions|limits|guidelines|policies))").expect("invalid regex: freedom assertion"),
     ]
 });
 
@@ -167,6 +188,16 @@ static INDIRECT_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         Regex::new(r"(&#[xX]?[0-9a-fA-F]{2,6};){3,}").expect("invalid regex: HTML entities"),
         // Encoding bypass - URL encoded sequences (3+ consecutive)
         Regex::new(r"(%[0-9a-fA-F]{2}){3,}").expect("invalid regex: URL encoded sequences"),
+        // JavaScript URI scheme injection
+        Regex::new(r"(?i)(javascript:\s*)").expect("invalid regex: javascript URI"),
+        // VBScript URI scheme injection
+        Regex::new(r"(?i)(vbscript:\s*)").expect("invalid regex: vbscript URI"),
+        // Blob URI scheme injection
+        Regex::new(r"(?i)(blob:\s*)").expect("invalid regex: blob URI"),
+        // URL redirect bypass using userinfo (@ in URL)
+        Regex::new(r"(?i)(https?://[^/\s]+\@)").expect("invalid regex: URL redirect bypass"),
+        // Dangerous data URIs (executable MIME types)
+        Regex::new(r"(?i)(data:\s*(application|text)/(javascript|ecmascript|x-javascript|x-httpd-php))").expect("invalid regex: dangerous data URI"),
     ]
 });
 
@@ -198,6 +229,10 @@ static LEAKING_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
         Regex::new(r"(?i)(\[\[INST\]\])").expect("invalid regex: double INST brackets"),
         Regex::new(r"(?i)(BEGIN\s+SYSTEM\s+PROMPT)").expect("invalid regex: BEGIN SYSTEM PROMPT"),
         Regex::new(r"(?i)(END\s+SYSTEM\s+PROMPT)").expect("invalid regex: END SYSTEM PROMPT"),
+        // Repeat verbatim leaking
+        Regex::new(r"(?i)(repeat\s+(the|this|the\s+exact|verbatim)\s+(system|initial|original|first)\s+(instructions?|prompt|directives?|guidelines?))").expect("invalid regex: repeat verbatim"),
+        // What did your prompt say
+        Regex::new(r"(?i)(what\s+(did|does)\s+your\s+(system|initial|original)\s+(instructions?|prompt|message)\s+say)").expect("invalid regex: what did your prompt say"),
     ]
 });
 
@@ -295,6 +330,15 @@ static SANITIZE_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|
         (Regex::new(r"%[0-9a-fA-F]{2}").expect("invalid regex: url encoded"), ""),
         // Encoding bypass - fullwidth unicode confusables (normalize by removing)
         (Regex::new(r"[\u{ff01}\u{ff03}-\u{ff5e}]").expect("invalid regex: fullwidth confusables"), ""),
+        // New URL injection sanitization
+        (Regex::new(r"(?i)javascript:\s*").expect("invalid regex: javascript URI"), "[URL_FILTERED]"),
+        (Regex::new(r"(?i)vbscript:\s*").expect("invalid regex: vbscript URI"), "[URL_FILTERED]"),
+        (Regex::new(r"(?i)blob:\s*").expect("invalid regex: blob URI"), "[URL_FILTERED]"),
+        (Regex::new(r"(?i)data:\s*(application|text)/(javascript|ecmascript|x-javascript|x-httpd-php)").expect("invalid regex: dangerous data URI"), "[URL_FILTERED]"),
+        // System prompt override sanitization
+        (Regex::new(r"(?i)system\s+prompt\s+(override|overwrite|modify|replace|update|change|edit)").expect("invalid regex: system prompt override"), "[FILTERED]"),
+        // Mode switching sanitization
+        (Regex::new(r"(?i)you\s+(are\s+)?now\s+in\s+(debug|diagnostic|maintenance|developer|testing|administrator)\s+mode").expect("invalid regex: mode switching"), "[FILTERED]"),
     ]
 });
 

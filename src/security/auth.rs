@@ -48,7 +48,7 @@ impl Claims {
     pub fn new(user_id: String, email: String, role: UserRole, expires_in: u64) -> Self {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .expect("SystemTime::duration_since failed - clock is before UNIX epoch")
+            .unwrap_or(std::time::Duration::from_secs(0))
             .as_secs();
 
         Self {
@@ -63,7 +63,7 @@ impl Claims {
     pub fn is_expired(&self) -> bool {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .expect("SystemTime::duration_since failed - clock is before UNIX epoch")
+            .unwrap_or(std::time::Duration::from_secs(0))
             .as_secs();
         now > self.exp
     }
@@ -95,7 +95,7 @@ impl User {
     pub fn new(email: String, name: String, role: UserRole) -> Self {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .expect("SystemTime::duration_since failed - clock is before UNIX epoch")
+            .unwrap_or(std::time::Duration::from_secs(0))
             .as_secs();
 
         Self {
@@ -284,7 +284,7 @@ impl RateLimiter {
     pub async fn check(&self, key: &str) -> bool {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .expect("SystemTime::duration_since failed - clock is before UNIX epoch")
+            .unwrap_or(std::time::Duration::from_secs(0))
             .as_secs();
 
         let mut requests = self.requests.write().await;
