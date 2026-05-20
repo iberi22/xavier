@@ -339,13 +339,12 @@ impl HttpConfig {
 }
 
 pub struct HttpServer {
-    #[allow(dead_code)]
-    config: HttpConfig,
+    _config: HttpConfig,
 }
 
 impl HttpServer {
     pub fn new(config: HttpConfig) -> Self {
-        Self { config }
+        Self { _config: config }
     }
 
     pub async fn serve(&self) {
@@ -964,34 +963,48 @@ pub async fn memory_add(
 pub async fn memory_search(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<SearchRequest>,
-) -> impl IntoResponse {
+) -> Json<serde_json::Value> {
     info!(
         query_fingerprint = %query_fingerprint(&payload.query),
         "memory_search"
     );
 
-    let results = workspace
+    let results = match workspace
         .workspace
         .memory
         .search_filtered(&payload.query, payload.limit, payload.filters.as_ref())
         .await
-        .unwrap_or_default()
-        .into_iter()
-        .map(|doc: MemoryDocument| {
-            serde_json::json!({
-                "id": doc.id,
-                "path": doc.path,
-                "content": doc.content,
-                "metadata": doc.metadata,
+    {
+        Ok(docs) => docs
+            .into_iter()
+            .map(|doc: MemoryDocument| {
+                serde_json::json!({
+                    "id": doc.id,
+                    "path": doc.path,
+                    "content": doc.content,
+                    "metadata": doc.metadata,
+                })
             })
-        })
-        .collect();
+            .collect(),
+        Err(error) => {
+            tracing::error!(
+                %error,
+                workspace_id = %workspace.workspace_id,
+                "memory_search failed"
+            );
+            return Json(serde_json::json!({
+                "status": "error",
+                "message": format!("memory search failed: {}", error),
+                "workspace_id": workspace.workspace_id,
+            }));
+        }
+    };
 
-    Json(SearchResponse {
+    Json(serde_json::json!(SearchResponse {
         status: "ok".to_string(),
         results,
         query: payload.query,
-    })
+    }))
 }
 
 pub async fn memory_hybrid_search(

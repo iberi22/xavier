@@ -201,6 +201,7 @@ Runtime configuration lives in [config/xavier.config.json](config/xavier.config.
 
 ## Documentation
 
+- [Agent Rules](AGENTS.md) — Canonical instructions for optimal agent memory integration
 - [Installer &amp; Setup](docs/screenshots/) — TUI wizard screenshots and install guide
 - [Feature Status](docs/FEATURE_STATUS.md) — Current verified surface and 1.0 gaps
 - [CLI Reference](docs/guides/CLI_REFERENCE.md) — Full command documentation
