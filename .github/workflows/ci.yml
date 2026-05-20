@@ -39,6 +39,18 @@ jobs:
       - name: Run cargo check
         run: cargo check --workspace --all-targets --features ci-safe --exclude xavier-web
 
+  enterprise-check:
+    name: Enterprise Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6.0.2
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      - name: Run cargo check (enterprise)
+        run: cargo check --features enterprise
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest

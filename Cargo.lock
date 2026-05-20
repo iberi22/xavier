@@ -9577,6 +9577,7 @@ dependencies = [
  "serde_yaml",
  "sha2",
  "sqlite-vec",
+ "subtle",
  "teloxide",
  "tempfile",
  "thiserror 2.0.18",
