@@ -7,7 +7,7 @@ Xavier es el **Memory Core** (núcleo de memoria) de toda la operación de bots.
 - **Enterprise Plugin**: Cortex (Sync & Cloud).
 - **Core Function**: Contextual engine, semantic memory, and task verification.
 - **Service URL**: `http://localhost:8003` (Standard).
-- **Token**: `dev-token`.
+- **Token**: `tu-token-seguro`.
 
 ## 🌊 Cascade Flow Integration
 Xavier debe integrarse completamente en los flujos de **Cascade** (Antigravity Agentic Mode):
@@ -41,7 +41,7 @@ Xavier acts as a shared brain. If a pattern (e.g., "how to stabilize a Rust CI")
 ## ⚠️ Mandatory Alignment
 - **No Placeholders**: Never store "TODO" items in Xavier; only verified state or deep research.
 - **Privacy**: Never store secrets (keys, tokens) in Xavier memory.
-- **Token Header**: Always include `X-Cortex-Token: dev-token`.
+- **Token Header**: Always include `X-Xavier-Token: tu-token-seguro`.
 
 ---
 *Generated for Google Antigravity IDE integration.*

@@ -93,7 +93,7 @@ READ: "client profile and history"
 | Variable | Default | Description |
 |----------|---------|-------------|
 | XAVIER_URL | http://localhost:8003 | Xavier API URL |
-| XAVIER_TOKEN | dev-token | API authentication token |
+| XAVIER_TOKEN | <your-token> | API authentication token |
 
 ## Pricing
 
