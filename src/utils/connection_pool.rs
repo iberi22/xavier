@@ -28,8 +28,7 @@ impl Default for PoolConfig {
 
 /// A simple connection pool wrapper for SQLite connections
 pub struct ConnectionPool {
-    #[allow(dead_code)]
-    config: PoolConfig,
+    _config: PoolConfig,
     connection: Connection,
 }
 
@@ -47,7 +46,7 @@ impl ConnectionPool {
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
 
         Ok(Self {
-            config,
+            _config: config,
             connection: conn,
         })
     }
