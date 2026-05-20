@@ -5,19 +5,21 @@ use tokio::sync::RwLock as AsyncRwLock;
 
 use std::fmt;
 
-pub mod cache;
-pub mod index;
+pub mod config;
+pub mod query_builder;
+pub mod reader;
 pub mod search;
-pub mod storage;
 pub mod types;
 pub mod utils;
+pub mod writer;
 
-pub use cache::*;
-pub use index::*;
+pub use config::*;
+pub use query_builder::*;
+pub use reader::*;
 pub use search::*;
-pub use storage::*;
 pub use types::*;
 pub use utils::*;
+pub use writer::*;
 
 use crate::memory::schema::{MemoryQueryFilters, TypedMemoryPayload, matches_filters};
 use crate::memory::store::MemoryStore;
@@ -70,9 +72,10 @@ impl QmdMemory {
     }
 
     /// Load workspace state from persistent store on startup.
-    /// This is CRITICAL for persistence - without this, data written to the configured store before a restart would be lost on restart.
+    /// This is CRITICAL for persistence - without this, data written to the configured store
+    /// before a restart would be lost on restart.
     pub async fn init(&self) -> Result<()> {
-        storage::init(self).await
+        reader::init(self).await
     }
 
     pub async fn search(&self, query_text: &str, limit: usize) -> Result<Vec<MemoryDocument>> {
@@ -166,7 +169,7 @@ impl QmdMemory {
     }
 
     pub async fn export(&self, public_only: bool) -> Result<Vec<MemoryDocument>> {
-        storage::export(self, public_only).await
+        reader::export(self, public_only).await
     }
 
     pub async fn search_with_cache(
@@ -184,7 +187,7 @@ impl QmdMemory {
         limit: usize,
         filters: Option<&MemoryQueryFilters>,
     ) -> Result<CachedSearchResult> {
-        cache::search_with_cache_filtered(self, query_text, limit, filters).await
+        reader::search_with_cache_filtered(self, query_text, limit, filters).await
     }
 
     pub async fn vsearch(
@@ -225,15 +228,15 @@ impl QmdMemory {
     }
 
     pub async fn get(&self, path_or_id: &str) -> Result<Option<MemoryDocument>> {
-        storage::get(self, path_or_id).await
+        reader::get(self, path_or_id).await
     }
 
     pub async fn add(&self, doc: MemoryDocument) -> Result<()> {
-        storage::add(self, doc).await
+        writer::add(self, doc).await
     }
 
     pub async fn update(&self, doc: MemoryDocument) -> Result<()> {
-        storage::update(self, doc).await
+        writer::update(self, doc).await
     }
 
     pub async fn add_document(
@@ -242,7 +245,7 @@ impl QmdMemory {
         content: String,
         metadata: serde_json::Value,
     ) -> Result<String> {
-        index::add_document(self, path, content, metadata).await
+        writer::add_document(self, path, content, metadata).await
     }
 
     pub async fn add_document_typed(
@@ -252,7 +255,7 @@ impl QmdMemory {
         metadata: serde_json::Value,
         typed: Option<TypedMemoryPayload>,
     ) -> Result<String> {
-        index::add_document_typed(self, path, content, metadata, typed).await
+        writer::add_document_typed(self, path, content, metadata, typed).await
     }
 
     pub async fn add_document_typed_with_embedding(
@@ -263,16 +266,16 @@ impl QmdMemory {
         typed: Option<TypedMemoryPayload>,
         embedding: Option<Vec<f32>>,
     ) -> Result<String> {
-        index::add_document_typed_with_embedding(self, path, content, metadata, typed, embedding)
+        writer::add_document_typed_with_embedding(self, path, content, metadata, typed, embedding)
             .await
     }
 
     pub async fn delete(&self, path_or_id: &str) -> Result<Option<MemoryDocument>> {
-        storage::delete(self, path_or_id).await
+        writer::delete(self, path_or_id).await
     }
 
     pub async fn clear(&self) -> Result<usize> {
-        storage::clear(self).await
+        writer::clear(self).await
     }
 
     pub async fn count(&self) -> Result<usize> {
@@ -284,11 +287,11 @@ impl QmdMemory {
     }
 
     pub async fn usage(&self) -> MemoryUsage {
-        storage::usage(self).await
+        reader::usage(self).await
     }
 
     pub async fn cache_metrics(&self) -> CacheMetrics {
-        storage::cache_metrics(self).await
+        reader::cache_metrics(self).await
     }
 
     pub async fn multi_hop_context(
@@ -301,9 +304,11 @@ impl QmdMemory {
     }
 
     pub async fn invalidate_cache(&self) {
-        cache::invalidate_cache(self).await
+        reader::invalidate_cache(self).await
     }
 }
+
+// ── Free functions ──────────────────────────────────────────────────
 
 pub async fn query_with_embedding(
     memory: &QmdMemory,
@@ -321,6 +326,8 @@ pub async fn query_with_embedding_filtered(
 ) -> Result<Vec<MemoryDocument>> {
     search::query_with_embedding_filtered(memory, query_text, limit, filters).await
 }
+
+// ── Tests ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -563,7 +570,8 @@ mod tests {
             .add(MemoryDocument {
                 id: Some("kw-doc".to_string()),
                 path: "docs/keyword".to_string(),
-                content: "Alice moved to Paris in 2020 to work as a software engineer.".to_string(),
+                content: "Alice moved to Paris in 2020 to work as a software engineer."
+                    .to_string(),
                 metadata: serde_json::json!({}),
                 content_vector: Some(vec![0.0, 1.0]),
                 embedding: vec![0.0, 1.0],

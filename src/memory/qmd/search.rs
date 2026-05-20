@@ -1,112 +1,18 @@
 use regex::Regex;
+use std::collections::HashMap;
 use std::sync::LazyLock;
 
-use crate::memory::qmd_memory::cache::generate_embedding;
-use crate::memory::qmd_memory::index;
+use crate::memory::qmd_memory::config::*;
+use crate::memory::qmd_memory::query_builder::{extract_candidate_terms_internal, normalize_query};
+use crate::memory::qmd_memory::reader::generate_embedding;
 use crate::memory::qmd_memory::types::MemoryDocument;
 use crate::memory::qmd_memory::utils::*;
+use crate::memory::qmd_memory::query_builder;
 use crate::memory::qmd_memory::QmdMemory;
 use crate::memory::schema::{EvidenceKind, MemoryKind, MemoryQueryFilters, matches_filters};
 use anyhow::Result;
-use std::collections::HashMap;
 
-pub async fn search_hybrid_optimized(
-    memory: &QmdMemory,
-    query_text: &str,
-    limit: usize,
-    filters: Option<&MemoryQueryFilters>,
-) -> Result<Vec<MemoryDocument>> {
-    let query_bundle = index::build_query_bundle_internal(query_text);
-    let mut candidate_scores: HashMap<String, (f32, MemoryDocument, f32)> = HashMap::new();
-
-    for expanded_query in &query_bundle.variants {
-        let cache_hit = memory
-            .search_with_cache_filtered(expanded_query, limit.max(3), filters)
-            .await?;
-        merge_ranked_candidates(
-            &mut candidate_scores,
-            cache_hit.documents,
-            expanded_query,
-            query_bundle.weight_for(expanded_query),
-        );
-    }
-
-    if candidate_scores.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    let mut candidates: Vec<(f32, MemoryDocument, f32)> =
-        candidate_scores.values().cloned().collect();
-    candidates.sort_by(|left, right| {
-        right
-            .0
-            .partial_cmp(&left.0)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| left.1.path.cmp(&right.1.path))
-    });
-
-    let seed_docs: Vec<MemoryDocument> = candidates
-        .iter()
-        .take(limit.max(3))
-        .map(|(_, doc, _)| doc.clone())
-        .collect();
-
-    let multi_hop_docs = memory
-        .multi_hop_context(query_text, &seed_docs, filters)
-        .await;
-
-    for doc in multi_hop_docs {
-        let score = contextual_boost(&query_bundle.normalized_query, &doc, 0.45);
-        candidate_scores
-            .entry(doc.id.clone().unwrap_or_else(|| doc.path.clone()))
-            .and_modify(|entry| entry.0 += score)
-            .or_insert((score, doc, 0.45));
-    }
-
-    let mut reranked: Vec<(f32, MemoryDocument, f32)> =
-        candidate_scores.values().cloned().collect();
-    reranked.truncate(MAX_RERANK_CANDIDATES.max(limit));
-    reranked.sort_by(|left, right| {
-        right
-            .0
-            .partial_cmp(&left.0)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| {
-                right
-                    .2
-                    .partial_cmp(&left.2)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-            })
-            .then_with(|| left.1.path.cmp(&right.1.path))
-    });
-
-    Ok(reranked
-        .into_iter()
-        .take(limit)
-        .map(|(_, doc, _)| doc)
-        .collect())
-}
-
-pub fn merge_ranked_candidates(
-    candidate_scores: &mut HashMap<String, (f32, MemoryDocument, f32)>,
-    documents: Vec<MemoryDocument>,
-    query: &str,
-    query_weight: f32,
-) {
-    for (rank, doc) in documents.into_iter().enumerate() {
-        let key = doc.id.clone().unwrap_or_else(|| doc.path.clone());
-        let rrf_score = 1.0 / (RRF_K + (rank as f32) + 1.0);
-        let rerank = contextual_boost(query, &doc, query_weight);
-        let combined = (rrf_score * query_weight) + rerank;
-        candidate_scores
-            .entry(key)
-            .and_modify(|entry| {
-                entry.0 += combined;
-                entry.2 = entry.2.max(query_weight);
-            })
-            .or_insert((combined, doc, query_weight));
-    }
-}
+// ── Lexical scoring ───────────────────────────────────────────────────
 
 pub fn lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32 {
     if normalized_query.is_empty() {
@@ -344,25 +250,19 @@ pub fn locomo_lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32
     }
 
     // Generic context-agnostic scoring patterns
-    // For "shared/common" queries, prioritize documents with matching subjects
     if is_shared_query {
-        // Boost documents with structured facts (fact_atom, entity_state) for shared queries
         if matches!(memory_kind, "fact_atom" | "entity_state") {
             score += 35.0;
         }
-        // Prioritize normalized_value and answer_span which contain extracted facts
         if !normalized_value.is_empty() || !answer_span.is_empty() {
             score += 25.0;
         }
-        // Penalize summaries for shared queries (prefer primary sources)
         if memory_kind == "summary_fact" {
             score *= 0.15;
         }
     }
 
-    // For "why" queries, prioritize documents with reason/explanation patterns
     if is_why_query {
-        // Boost documents that contain causal language
         let has_reason = content.contains("because")
             || content.contains("'cause")
             || content.contains("since")
@@ -374,19 +274,15 @@ pub fn locomo_lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32
         if has_reason {
             score += 30.0;
         }
-        // Boost structured facts with clear values
         if !normalized_value.is_empty() {
             score += 20.0;
         }
-        // Penalize summaries for why queries
         if memory_kind == "summary_fact" {
             score *= 0.2;
         }
     }
 
-    // For "what think/opinion" queries, prioritize sentiment/opinion content
     if is_what_think_query {
-        // Boost documents with opinion markers
         let has_opinion = content.contains("think")
             || content.contains("believe")
             || content.contains("feel")
@@ -397,11 +293,9 @@ pub fn locomo_lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32
         if has_opinion {
             score += 25.0;
         }
-        // Boost documents with extracted values
         if !normalized_value.is_empty() || !answer_span.is_empty() {
             score += 15.0;
         }
-        // Penalize summaries for opinion queries
         if memory_kind == "summary_fact" {
             score *= 0.2;
         }
@@ -482,7 +376,6 @@ pub fn locomo_lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32
     }
 
     // LOCOMO fix: Boost structured data (pricing, numbers) for factuality queries
-    // Detect pricing/cost/value queries in both English and Spanish
     let pricing_query = normalized_query.contains("pricing")
         || normalized_query.contains("price")
         || normalized_query.contains("precios")
@@ -492,13 +385,11 @@ pub fn locomo_lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32
         || normalized_query.contains("valor")
         || normalized_query.contains("fee")
         || normalized_query.contains("tarifa")
-        || normalized_query.contains("cuanto")  // Spanish "how much"
-        || normalized_query.contains("cuál")     // Spanish "which"
-        || normalized_query.contains("cuáles"); // Spanish "which" plural
+        || normalized_query.contains("cuanto")
+        || normalized_query.contains("cuál")
+        || normalized_query.contains("cuáles");
 
     if pricing_query {
-        // Boost documents that contain numeric values (likely pricing facts)
-        // Patterns: $499, 499, 499.99, etc.
         let has_numeric = content.contains('$')
             || content.contains("/mes")
             || content.contains("/mo")
@@ -514,13 +405,10 @@ pub fn locomo_lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32
             score += 30.0;
         }
 
-        // Extra boost for fact_atom/entity_state with normalized_value
-        // These are extracted structured facts that are most reliable
         if !normalized_value.is_empty() && has_numeric {
             score += 25.0;
         }
 
-        // Boost for tier/version terms (Starter, Pro, Enterprise, etc.)
         let tier_terms = [
             "starter",
             "pro",
@@ -539,6 +427,8 @@ pub fn locomo_lexical_score(doc: &MemoryDocument, normalized_query: &str) -> f32
 
     score.max(0.0)
 }
+
+// ── Contextual boosting / decay ───────────────────────────────────────
 
 pub fn contextual_boost(query: &str, document: &MemoryDocument, weight: f32) -> f32 {
     let doc_text = format!(
@@ -597,6 +487,8 @@ pub fn memory_decay_penalty(document: &MemoryDocument) -> f32 {
     -(age_days / 365.0).min(1.0) * 0.15
 }
 
+// ── Metadata resolution ──────────────────────────────────────────────
+
 pub fn resolved_doc_metadata(
     doc: &MemoryDocument,
 ) -> Option<crate::memory::schema::ResolvedMemoryMetadata> {
@@ -613,6 +505,8 @@ pub fn resolved_doc_metadata(
         .unwrap_or("default");
     crate::memory::schema::resolve_metadata(&doc.path, &doc.metadata, workspace_id, None).ok()
 }
+
+// ── Answer extraction ─────────────────────────────────────────────────
 
 pub fn extract_answer(content: &str, category: &str) -> Option<String> {
     let text = content.trim();
@@ -703,6 +597,8 @@ pub fn extract_answer(content: &str, category: &str) -> Option<String> {
     }
 }
 
+// ── Vector search ─────────────────────────────────────────────────────
+
 pub async fn vsearch(
     memory: &QmdMemory,
     query_vector: Vec<f32>,
@@ -743,6 +639,106 @@ pub async fn vsearch(
         .map(|(_, doc)| doc)
         .take(limit)
         .collect())
+}
+
+// ── Hybrid search ─────────────────────────────────────────────────────
+
+pub async fn search_hybrid_optimized(
+    memory: &QmdMemory,
+    query_text: &str,
+    limit: usize,
+    filters: Option<&MemoryQueryFilters>,
+) -> Result<Vec<MemoryDocument>> {
+    let query_bundle = query_builder::build_query_bundle_internal(query_text);
+    let mut candidate_scores: HashMap<String, (f32, MemoryDocument, f32)> = HashMap::new();
+
+    for expanded_query in &query_bundle.variants {
+        let cache_hit = memory
+            .search_with_cache_filtered(expanded_query, limit.max(3), filters)
+            .await?;
+        merge_ranked_candidates(
+            &mut candidate_scores,
+            cache_hit.documents,
+            expanded_query,
+            query_bundle.weight_for(expanded_query),
+        );
+    }
+
+    if candidate_scores.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut candidates: Vec<(f32, MemoryDocument, f32)> =
+        candidate_scores.values().cloned().collect();
+    candidates.sort_by(|left, right| {
+        right
+            .0
+            .partial_cmp(&left.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.1.path.cmp(&right.1.path))
+    });
+
+    let seed_docs: Vec<MemoryDocument> = candidates
+        .iter()
+        .take(limit.max(3))
+        .map(|(_, doc, _)| doc.clone())
+        .collect();
+
+    let multi_hop_docs = memory
+        .multi_hop_context(query_text, &seed_docs, filters)
+        .await;
+
+    for doc in multi_hop_docs {
+        let score = contextual_boost(&query_bundle.normalized_query, &doc, 0.45);
+        candidate_scores
+            .entry(doc.id.clone().unwrap_or_else(|| doc.path.clone()))
+            .and_modify(|entry| entry.0 += score)
+            .or_insert((score, doc, 0.45));
+    }
+
+    let mut reranked: Vec<(f32, MemoryDocument, f32)> =
+        candidate_scores.values().cloned().collect();
+    reranked.truncate(MAX_RERANK_CANDIDATES.max(limit));
+    reranked.sort_by(|left, right| {
+        right
+            .0
+            .partial_cmp(&left.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| {
+                right
+                    .2
+                    .partial_cmp(&left.2)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| left.1.path.cmp(&right.1.path))
+    });
+
+    Ok(reranked
+        .into_iter()
+        .take(limit)
+        .map(|(_, doc, _)| doc)
+        .collect())
+}
+
+pub fn merge_ranked_candidates(
+    candidate_scores: &mut HashMap<String, (f32, MemoryDocument, f32)>,
+    documents: Vec<MemoryDocument>,
+    query: &str,
+    query_weight: f32,
+) {
+    for (rank, doc) in documents.into_iter().enumerate() {
+        let key = doc.id.clone().unwrap_or_else(|| doc.path.clone());
+        let rrf_score = 1.0 / (RRF_K + (rank as f32) + 1.0);
+        let rerank = contextual_boost(query, &doc, query_weight);
+        let combined = (rrf_score * query_weight) + rerank;
+        candidate_scores
+            .entry(key)
+            .and_modify(|entry| {
+                entry.0 += combined;
+                entry.2 = entry.2.max(query_weight);
+            })
+            .or_insert((combined, doc, query_weight));
+    }
 }
 
 pub async fn query_with_hybrid_search(
@@ -792,7 +788,7 @@ pub async fn query_filtered(
         .search_with_cache_filtered(query_text, limit, filters)
         .await?
         .documents;
-    
+
     let locomo_only = !keyword_results.is_empty()
         && keyword_results
             .iter()
@@ -913,8 +909,8 @@ pub async fn multi_hop_context(
     let query_terms = normalize_query(query_text);
 
     for doc in seed_docs.iter().take(MAX_MULTI_HOP_DEPTH) {
-        let mut extracted = index::extract_candidate_terms_internal(&doc.content);
-        extracted.extend(index::extract_candidate_terms_internal(&doc.path));
+        let mut extracted = extract_candidate_terms_internal(&doc.content);
+        extracted.extend(extract_candidate_terms_internal(&doc.path));
         extracted.sort();
         extracted.dedup();
         for term in extracted.into_iter().take(MAX_EXPANSIONS) {
@@ -989,14 +985,15 @@ pub async fn query_with_embedding_filtered(
     if !initial_results.is_empty() {
         let mut context_terms = Vec::new();
 
-        let common_words: std::collections::HashSet<&str> = std::collections::HashSet::from_iter([
-            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has",
-            "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "must",
-            "shall", "can", "need", "dare", "to", "of", "in", "for", "on", "with", "at", "by",
-            "from", "as", "into", "through", "during", "before", "after", "above", "below", "that",
-            "this", "these", "those", "it", "its", "they", "them", "what", "which", "who", "whom",
-            "whose", "where", "when", "why", "how",
-        ]);
+        let common_words: std::collections::HashSet<&str> =
+            std::collections::HashSet::from_iter([
+                "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have",
+                "has", "had", "do", "does", "did", "will", "would", "could", "should", "may",
+                "might", "must", "shall", "can", "need", "dare", "to", "of", "in", "for", "on",
+                "with", "at", "by", "from", "as", "into", "through", "during", "before", "after",
+                "above", "below", "that", "this", "these", "those", "it", "its", "they", "them",
+                "what", "which", "who", "whom", "whose", "where", "when", "why", "how",
+            ]);
 
         for doc in initial_results.iter().take(2) {
             for word in doc.content.split_whitespace() {
@@ -1013,11 +1010,18 @@ pub async fn query_with_embedding_filtered(
         }
 
         if context_terms.len() >= 2 {
-            let expanded_query = format!("{} {}", processed_query, context_terms.join(" "));
+            let expanded_query =
+                format!("{} {}", processed_query, context_terms.join(" "));
             if let Ok(expanded_vector) = generate_embedding(&expanded_query).await {
                 if !expanded_vector.is_empty() {
-                    return query_filtered(memory, &expanded_query, expanded_vector, limit, filters)
-                        .await;
+                    return query_filtered(
+                        memory,
+                        &expanded_query,
+                        expanded_vector,
+                        limit,
+                        filters,
+                    )
+                    .await;
                 }
             }
         }
