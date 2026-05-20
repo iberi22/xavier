@@ -1,5 +1,6 @@
 //! Telegram Bot for Xavier Management
 
+use std::fmt;
 use serde::{Deserialize, Serialize};
 use teloxide::prelude::*;
 use teloxide::types::ParseMode;
@@ -26,11 +27,21 @@ pub enum Command {
     Help,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct TelegramConfig {
     pub bot_token: String,
     pub admin_ids: Vec<u64>,
     pub enabled: bool,
+}
+
+impl fmt::Debug for TelegramConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TelegramConfig")
+            .field("bot_token", &"[REDACTED]")
+            .field("admin_ids", &self.admin_ids)
+            .field("enabled", &self.enabled)
+            .finish()
+    }
 }
 
 impl Default for TelegramConfig {

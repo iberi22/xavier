@@ -68,4 +68,14 @@ impl MemoryQueryPort for QmdMemoryAdapter {
             .map(|doc| MemoryRecord::from_document(workspace_id, &doc, true, None))
             .collect())
     }
+
+    async fn export(&self, public_only: bool) -> anyhow::Result<Vec<MemoryRecord>> {
+        let workspace_id = self.inner.workspace_id();
+        let results = self.inner.export(public_only).await?;
+
+        Ok(results
+            .into_iter()
+            .map(|doc| MemoryRecord::from_document(workspace_id, &doc, true, None))
+            .collect())
+    }
 }

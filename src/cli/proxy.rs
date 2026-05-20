@@ -13,9 +13,7 @@ use xavier::domain::proxy::ProxyChatCommand;
 pub struct ProxyChatRequest {
     pub model: String,
     pub messages: Vec<serde_json::Value>,
-    #[allow(dead_code)]
     pub temperature: Option<f32>,
-    #[allow(dead_code)]
     pub max_tokens: Option<usize>,
 }
 

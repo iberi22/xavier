@@ -4,6 +4,7 @@
 //! - KEK (Key Encryption Key): Derived from user password using Argon2id
 //! - DEK (Data Encryption Key): Per-document key, encrypted with KEK
 
+use std::fmt;
 use argon2::Argon2;
 use rand::rngs::OsRng as RandOsRng;
 use rand::RngCore;
@@ -36,8 +37,16 @@ impl From<argon2::password_hash::Error> for KeyError {
 }
 
 /// Salt for Argon2 key derivation
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct KeySalt(pub [u8; SALT_SIZE]);
+
+impl fmt::Debug for KeySalt {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("KeySalt")
+            .field(&"[REDACTED]")
+            .finish()
+    }
+}
 
 impl KeySalt {
     /// Generate a new random salt
@@ -59,8 +68,16 @@ impl KeySalt {
 }
 
 /// KEK (Key Encryption Key) derived from password via Argon2id
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct KEK(pub [u8; DEK_SIZE]);
+
+impl fmt::Debug for KEK {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("KEK")
+            .field(&"[REDACTED]")
+            .finish()
+    }
+}
 
 impl KEK {
     /// Derive KEK from password and salt using Argon2id
@@ -99,8 +116,16 @@ impl KEK {
 }
 
 /// DEK (Data Encryption Key) - per-document random key
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct DEK(pub [u8; DEK_SIZE]);
+
+impl fmt::Debug for DEK {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("DEK")
+            .field(&"[REDACTED]")
+            .finish()
+    }
+}
 
 impl DEK {
     /// Generate a new random DEK

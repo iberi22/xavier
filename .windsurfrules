@@ -1,25 +1,50 @@
-﻿# Xavier Windsurf Rules
+# Xavier Agent Memory Protocol (.windsurfrules)
 
-Treat `AGENTS.md` as the single source of truth for workflow rules.
+You are an AI Agent pair-programming in a repository managed under the **Xavier Memory & Governance System**. 
+Xavier is the canonical central memory engine. Cortex is officially deprecated and has been removed.
 
-## Read Order
+---
 
-1. `AGENTS.md`
-2. `.gitcore/ARCHITECTURE.md`
-3. `.gitcore/features.json`
-4. `README.md`
-5. `docs/agent-docs/RESEARCH_STACK_CONTEXT.md` for dependency-sensitive work
+## 🧭 The Golden Loop: Turn-Based Memory Lifecycle
 
-## Memory Contract
+Before taking any substantial action or starting a task, you MUST perform **Pre-Task Recall**.
+Upon completing any substantial task or discovery, you MUST perform **Post-Task Retention**.
 
-- GitHub Issues hold task state via `<agent-state>` blocks.
-- Xavier holds reusable knowledge and long-term agent memory.
-- Follow the protocol at `docs/agent-docs/specs/SPEC_MEMORY_INTEGRATION.md`.
-- Never create task, planning, progress, or changelog markdown for workflow tracking.
+```
+    [ Pre-Task Recall ]             [ Task Execution ]           [ Post-Task Retention ]
+  Query Xavier for Context  ───>  Implement & Validate  ───>  Store Discoveries in Xavier
+```
 
-## Execution Rules
+### 1. Pre-Task Recall (Search)
+- **Action**: Query the Xavier HTTP API or MCP tools to retrieve past contexts, architectural summaries, and lessons learned.
+- **API Endpoint**: `POST http://localhost:8006/memory/search`
+- **MCP Tool**: `search_memory`
+- **Headers**:
+  - `Content-Type: application/json`
+  - `X-Xavier-Token: 016d5454d90d1dc1711abc7ce008fc0d67622b569c3059e01b86f3228b3ce34a`
 
-- Use Xavier MCP at `http://localhost:8003/mcp` for durable context (search first, store results).
-- Keep credentials in environment variables, not in tracked files.
-- Defer architecture decisions to `.gitcore/ARCHITECTURE.md`.
-- Keep changes atomic and aligned with Git-Core protocol.
+### 2. Post-Task Retention (Add)
+- **Action**: Record deep architectural findings, bug resolutions, or new domain learnings to the memory store.
+- **API Endpoint**: `POST http://localhost:8006/memory/add`
+- **MCP Tool**: `create_memory`
+
+---
+
+## 🛠️ Repository Groundrails & SDLC Policy
+
+1. **Max Files Per Commit**: Staged changes MUST NOT touch more than **20 files** in a single commit.
+2. **Max Concerns Per Commit**: Commits must target at most **3 concerns** as configured in `.git-atomize.yml`.
+3. **No Unfinished Code or Placeholders**:
+   - The pre-commit hook strictly blocks comments containing `TODO`, `FIXME`, or `HACK` in added lines.
+   - Use `Note:` or descriptive future-work phrasing instead.
+4. **Public Surface changes require Docs**: Staging changes to a public API/interface (like HTTP routing or main workspace state) requires staging matching updates in public docs (like `README.md` or `docs/FEATURE_STATUS.md`).
+5. **No Hardcoded Secrets**: Do not commit API tokens, passwords, or keys. Define placeholders in `.env.example` and keep production settings in `config/xavier.config.json`.
+6. **Cargo Target Directory**: If compiling in a read-only or restricted Nix/system environment, prepend your commands with `CARGO_TARGET_DIR=target_local` to avoid write permission errors.
+
+---
+
+## 📚 Canonical Architecture Sources
+
+- **Authoritative Contract**: [AGENTS.md](AGENTS.md)
+- **Operational Verification**: [docs/FEATURE_STATUS.md](docs/FEATURE_STATUS.md)
+- **Architecture Overview**: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)

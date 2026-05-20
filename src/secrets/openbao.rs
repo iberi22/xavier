@@ -4,15 +4,15 @@ use std::future::Future;
 use std::pin::Pin;
 
 pub struct OpenBaoSecretStore {
-    address: String,
-    token: String,
+    _address: String,
+    _token: String,
 }
 
 impl OpenBaoSecretStore {
     pub fn new(address: &str, token: &str) -> Self {
         Self {
-            address: address.to_string(),
-            token: token.to_string(),
+            _address: address.to_string(),
+            _token: token.to_string(),
         }
     }
 }

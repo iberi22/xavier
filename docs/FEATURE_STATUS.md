@@ -16,7 +16,7 @@ This matrix is the operational truth for the repository as of the latest Xavier 
 | MCP stdio | Beta usable | `initialize`, `tools/list`, `tools/call create_memory`, `tools/call search_memory`, and legacy aliases `add`/`search` work. |
 | Panel shell/API | Experimental | The CLI server exposes authenticated `/panel/api/threads` and `/panel/api/chat` routes backed by the panel thread store. The shell still requires built frontend assets and is not yet marked release-ready. |
 | Release smoke scripts | Unstable | Current smoke scripts still assume endpoints and defaults that do not always match the running server. |
-| Workspace/storage isolation | Needs hardening | Local usage review showed memory results bleeding into the default workspace instead of staying fully isolated under the intended temporary test setup. |
+| Workspace/storage isolation | Beta usable | Hardened and stabilized multi-tenant workspace registry and isolated workspace storage state. |
 | Public docs consistency | Needs hardening | README, CLI docs, smoke scripts, and server behavior are not fully aligned yet. |
 
 ## What Was Verified

@@ -1,7 +1,7 @@
 {
   "server": {
     "host": "0.0.0.0",
-    "port": 8003,
+    "port": 8006,
     "log_level": "info",
     "code_graph_db_path": "data/code_graph.db"
   },
@@ -11,7 +11,7 @@
     "storage_limit_bytes": null,
     "request_limit": null,
     "request_unit_limit": null,
-    "embedding_provider_mode": "bring_your_own",
+    "embedding_provider_mode": "gllm",
     "managed_google_embeddings": false,
     "sync_policy": "local_only"
   },
@@ -29,10 +29,12 @@
     "api_flavor": "openai-compatible",
     "local_llm_url": "http://localhost:11434/v1",
     "local_llm_model": "qwen3-coder",
-    "embedding_url": "http://localhost:11434/v1",
-    "embedding_model": "embeddinggemma",
+    "embedding_url": "http://localhost:8006/v1",
+    "embedding_model": "bge-small-en",
     "router_retrieved_model": "",
-    "router_complex_model": ""
+    "router_complex_model": "",
+    "router_fast_model": "opencode/minimax-m2.7",
+    "router_quality_model": "opencode/deepseek-v4-pro"
   },
   "retrieval": {
     "disable_hyde": true

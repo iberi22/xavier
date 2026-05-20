@@ -28,8 +28,8 @@ impl XavierEventBus {
     pub fn publish(
         &self,
         event: XavierEvent,
-    ) -> Result<usize, broadcast::error::SendError<XavierEvent>> {
-        self.sender.send(event)
+    ) -> Result<usize, Box<broadcast::error::SendError<XavierEvent>>> {
+        self.sender.send(event).map_err(Box::new)
     }
 }
 

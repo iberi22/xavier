@@ -4,7 +4,7 @@
 //! used by concrete store implementations (SqliteMemoryStore in sqlite_store.rs,
 //! VecSqliteMemoryStore in sqlite_vec_store.rs, etc.).
 
-use std::{any::Any as StdAny, collections::HashMap, path::PathBuf, sync::Arc};
+use std::{any::Any as StdAny, collections::HashMap, fmt, path::PathBuf, sync::Arc};
 
 use anyhow::Result;
 use async_trait::async_trait;
@@ -131,11 +131,21 @@ pub struct GraphHopResult {
     pub paths: Vec<GraphHopPath>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SessionTokenRecord {
     pub token: String,
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
+}
+
+impl fmt::Debug for SessionTokenRecord {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SessionTokenRecord")
+            .field("token", &"[REDACTED]")
+            .field("created_at", &self.created_at)
+            .field("expires_at", &self.expires_at)
+            .finish()
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
