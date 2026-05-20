@@ -40,22 +40,29 @@ cargo test test_name
 cargo test --features enterprise
 ```
 
-### Environment Variables
+### Configuration
 
-Copy `.env.example` to `.env` and configure:
+Copy `.env.example` to `.env` and set your secrets/credentials:
 
 ```bash
 cp .env.example .env
-# Edit .env with your configuration
+# Edit .env with your API keys and secrets
 ```
 
-Key environment variables:
+All **non-secret** runtime settings are managed via `config/xavier.config.json`:
+
+```bash
+# Edit config/xavier.config.json to change host, port, memory paths, models, etc.
+```
+
+**Override precedence** — env vars take priority over config file values. Set any
+`XAVIER_*` variable in your shell or `.env` to override the corresponding config
+key at runtime. The only required secret is `XAVIER_TOKEN`.
 
 | Variable           | Description                        | Default            |
 | ------------------ | ---------------------------------- | ------------------ |
-| `XAVIER_HOST`      | HTTP server host                   | `127.0.0.1`       |
-| `XAVIER_PORT`      | HTTP server port                   | `8003`             |
-| `XAVIER_DATA_DIR`  | Data directory for memory storage  | `~/.xavier`        |
+| `XAVIER_TOKEN`     | API token (required)               | —                  |
+| `XAVIER_CONFIG_PATH` | Path to config file             | `config/xavier.config.json` |
 | `RUST_LOG`         | Log level (tracing)                | `info`             |
 
 ## Code Style

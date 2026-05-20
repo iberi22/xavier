@@ -3,7 +3,8 @@
     "host": "0.0.0.0",
     "port": 8006,
     "log_level": "info",
-    "code_graph_db_path": "data/code_graph.db"
+    "code_graph_db_path": "data/code_graph.db",
+    "url": ""
   },
   "workspace": {
     "default_workspace_id": "default",
@@ -23,6 +24,19 @@
     "file_path": "data/workspaces/default/memory-store.json",
     "sqlite_path": "data/memory-store.sqlite3",
     "vec_path": "data/vec-store.sqlite3"
+  },
+  "memory_layers": {
+    "working": {
+      "capacity": 100,
+      "lru_exempt_access_threshold": 2,
+      "bm25_k1": 1.5,
+      "bm25_b": 0.75
+    },
+    "episodic": {
+      "summary_window": 10,
+      "max_sessions": 50,
+      "min_event_importance": 0.5
+    }
   },
   "models": {
     "provider": "local",
@@ -45,5 +59,37 @@
     "save_ok_rate_threshold": 0.95,
     "max_retries": 3,
     "retry_delay_ms": 1000
+  },
+  "embedding": {
+    "endpoint": "",
+    "embedder": "",
+    "gllm_model": "",
+    "api_flavor": "openai-compatible"
+  },
+  "security": {
+    "allowed_domains": ""
+  },
+  "telegram": {
+    "enabled": false
+  },
+  "router": {
+    "policy_path": "",
+    "policy_refresh_secs": 300
+  },
+  "chronicle": {
+    "model": ""
+  },
+  "enterprise": {
+    "db_path": "data/enterprise.db"
+  },
+  "agents": {
+    "weekly_budget": null
+  },
+  "advanced": {
+    "qjl_threshold": 500,
+    "rrf_k": 60,
+    "entity_extraction_enabled": true,
+    "audit_chain_enabled": true,
+    "panel_store_dir": ""
   }
 }
