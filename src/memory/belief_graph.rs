@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, RwLock};
 use tokio::sync::RwLock as AsyncRwLock;
 use tracing::info;
+use aho_corasick::AhoCorasick;
 use chrono::Utc;
 
 use crate::domain::memory::belief::{BeliefEdge, BeliefNode};
@@ -357,10 +358,30 @@ impl BeliefGraph {
 
     /// Validates if a list of documents are grounded in the belief graph.
     /// Returns a list of (memory_id, is_grounded, explanation)
-    pub async fn validate_grounding(&self, documents: &[crate::memory::qmd_memory::MemoryDocument]) -> Vec<(String, bool, String)> {
+    pub async fn validate_grounding(
+        &self,
+        documents: &[crate::memory::qmd_memory::MemoryDocument],
+        min_confidence: f32,
+    ) -> Vec<(String, bool, String)> {
         let mut results = Vec::new();
         let edges = self.get_edges();
-        let nodes = self.list_nodes(); // Hoisted outside loop: O(N) once, not O(D*N)
+        let nodes = self.list_nodes();
+
+        // Performance Optimization: Filter eligible nodes and build Aho-Corasick automaton
+        let eligible_nodes: Vec<_> = nodes
+            .into_iter()
+            .filter(|n| n.confidence >= min_confidence)
+            .collect();
+
+        let ac = if !eligible_nodes.is_empty() {
+            let patterns: Vec<String> = eligible_nodes
+                .iter()
+                .map(|n| n.concept.to_lowercase())
+                .collect();
+            AhoCorasick::new(patterns).ok()
+        } else {
+            None
+        };
 
         for doc in documents {
             let memory_id = doc.id.clone().unwrap_or_else(|| doc.path.clone());
@@ -369,28 +390,36 @@ impl BeliefGraph {
             let has_belief = edges.iter().any(|e| e.provenance_id == memory_id);
 
             if has_belief {
-                results.push((memory_id, true, "Directly grounded in belief graph".to_string()));
-                continue;
-            }
-
-            // Semantic grounding: check if key terms in content match established nodes
-            let content_lower = doc.content.to_lowercase();
-            let matching_nodes: Vec<_> = nodes.iter()
-                .filter(|n| content_lower.contains(&n.concept.to_lowercase()))
-                .collect();
-
-            if !matching_nodes.is_empty() {
-                let node_names: Vec<_> = matching_nodes.iter().map(|n| &n.concept).collect();
                 results.push((
                     memory_id,
                     true,
-                    format!("Semantically grounded through concepts: {:?}", node_names)
+                    "Directly grounded in belief graph".to_string(),
+                ));
+                continue;
+            }
+
+            // Semantic grounding: check if key terms in content match established nodes above threshold
+            let mut matched_concepts = HashSet::new();
+            if let Some(ref ac_idx) = ac {
+                let content_lower = doc.content.to_lowercase();
+                for mat in ac_idx.find_iter(&content_lower) {
+                    matched_concepts.insert(eligible_nodes[mat.pattern().as_usize()].concept.clone());
+                }
+            }
+
+            if !matched_concepts.is_empty() {
+                let mut node_names: Vec<_> = matched_concepts.into_iter().collect();
+                node_names.sort();
+                results.push((
+                    memory_id,
+                    true,
+                    format!("Semantically grounded through concepts: {:?}", node_names),
                 ));
             } else {
                 results.push((
                     memory_id,
                     false,
-                    "No supporting beliefs or nodes found in graph".to_string()
+                    "No supporting beliefs or nodes found in graph".to_string(),
                 ));
             }
         }
@@ -406,3 +435,83 @@ impl Default for BeliefGraph {
 }
 
 pub type SharedBeliefGraph = Arc<AsyncRwLock<BeliefGraph>>;
+
+#[cfg(test)]
+mod grounding_tests {
+    use super::*;
+    use crate::memory::qmd_memory::MemoryDocument;
+
+    #[tokio::test]
+    async fn test_validate_grounding_direct() {
+        let graph = BeliefGraph::new();
+        let memory_id = "mem-1".to_string();
+
+        // Add a relation with provenance_id
+        graph.add_relation(
+            "Xavier".to_string(),
+            "Memory".to_string(),
+            "is_a".to_string(),
+            Some(memory_id.clone()),
+            None
+        ).await.unwrap();
+
+        let docs = vec![
+            MemoryDocument {
+                id: Some(memory_id.clone()),
+                content: "Something about Xavier".to_string(),
+                ..Default::default()
+            }
+        ];
+
+        let results = graph.validate_grounding(&docs, 0.5).await;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, memory_id);
+        assert_eq!(results[0].1, true);
+        assert!(results[0].2.contains("Directly grounded"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_grounding_semantic() {
+        let graph = BeliefGraph::new();
+        graph.add_node("Xavier".to_string(), 0.9);
+        graph.add_node("Rust".to_string(), 0.4);
+
+        let docs = vec![
+            MemoryDocument {
+                id: Some("doc-1".to_string()),
+                content: "Xavier is written in Rust".to_string(),
+                ..Default::default()
+            }
+        ];
+
+        // With min_confidence 0.5, only "Xavier" should match
+        let results = graph.validate_grounding(&docs, 0.5).await;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1, true);
+        assert!(results[0].2.contains("Xavier"));
+        assert!(!results[0].2.contains("Rust"));
+
+        // With min_confidence 0.3, both should match
+        let results = graph.validate_grounding(&docs, 0.3).await;
+        assert!(results[0].2.contains("Xavier"));
+        assert!(results[0].2.contains("Rust"));
+    }
+
+    #[tokio::test]
+    async fn test_validate_grounding_no_match() {
+        let graph = BeliefGraph::new();
+        graph.add_node("Xavier".to_string(), 0.9);
+
+        let docs = vec![
+            MemoryDocument {
+                id: Some("doc-1".to_string()),
+                content: "Something unrelated".to_string(),
+                ..Default::default()
+            }
+        ];
+
+        let results = graph.validate_grounding(&docs, 0.5).await;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].1, false);
+    }
+}
