@@ -75,7 +75,7 @@ impl VecSqliteMemoryStore {
                 record.id.clone(),
                 next_sequence,
                 timestamp.clone(),
-                operation.clone(),
+                operation,
                 format!("{} {}", operation, record.path),
                 serde_json::to_string(&record.metadata).unwrap_or_default(),
                 agent_id.clone(),
