@@ -7,9 +7,9 @@ pub const DEFAULT_RELEVANCE_THRESHOLD: f32 = 0.5;
 pub const DEFAULT_RRF_K: u32 = 60;
 
 pub fn configured_rrf_k() -> u32 {
-    std::env::var("XAVIER_RRF_K")
-        .ok()
-        .and_then(|value| value.parse::<u32>().ok())
+    crate::settings::XavierSettings::current()
+        .retrieval
+        .rrf_k
         .unwrap_or(DEFAULT_RRF_K)
 }
 
