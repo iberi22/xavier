@@ -2,7 +2,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use thiserror::Error;
+use tracing::info;
 
+pub mod cache;
 pub mod gllm;
 pub mod openai;
 
@@ -217,7 +219,27 @@ impl EmbedderConfig {
 }
 
 pub async fn build_embedder_from_env() -> Result<Arc<dyn Embedder>, EmbeddingError> {
-    EmbedderConfig::from_env().build().await
+    let embedder = EmbedderConfig::from_env().build().await?;
+
+    // Wrap in the persistent cache if enabled.
+    let cache_config = cache::EmbeddingCacheConfig::from_env();
+    if cache_config.enabled && embedder.dimension() > 0 {
+        info!(
+            capacity = cache_config.max_capacity,
+            ttl_hours = cache_config.ttl_hours,
+            db = %cache_config.db_path.display(),
+            "embedding cache enabled"
+        );
+        Ok(Arc::new(cache::CachedEmbedder::new(
+            embedder,
+            Arc::new(cache::EmbeddingCache::new(cache_config)),
+        )))
+    } else if cache_config.enabled && embedder.dimension() == 0 {
+        info!("embedding cache skipped: noop embedder (dimension=0)");
+        Ok(embedder)
+    } else {
+        Ok(embedder)
+    }
 }
 
 #[derive(Debug, Default)]
