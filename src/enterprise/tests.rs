@@ -4,7 +4,7 @@
 //! All tests are gated behind `#[cfg(test)]`.
 
 use crate::enterprise::{
-    audit::{AuditAction, AuditEntry, AuditLog, AuditQuery},
+    audit::{AuditAction, AuditEntry, AuditLog},
     keys::{ApiKeyStore, ApiKeyType},
     rate_limit::{RateLimitConfig, RateLimiter, RateLimitKey},
     tenancy::{Plan, TenantStore},
@@ -70,7 +70,7 @@ fn test_api_key_validation() {
     let mut store = ApiKeyStore::new();
     let tenant_id = Uuid::new_v4();
 
-    let (raw_key, key) = store.create(tenant_id, "valid-key", ApiKeyType::Live);
+    let (raw_key, _key) = store.create(tenant_id, "valid-key", ApiKeyType::Live);
 
     // Validate with correct key
     let valid = store.validate(&raw_key);

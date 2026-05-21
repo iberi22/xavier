@@ -9,25 +9,20 @@ mod tests {
     };
     use tower::ServiceExt;
 
-    use crate::cli::code_graph::{
-        best_symbol_query_token, code_find_symbols, filter_symbols_by_query,
-        is_supported_code_pattern, search_code_symbols_with_fallback, symbols_for_kind,
-    };
-    use crate::cli::commands::Command;
+    use crate::cli::code_graph::code_find_symbols;
+    
     use crate::cli::config::{
-        code_graph_db_path,
-        require_xavier_token, resolve_base_url, resolve_base_url_for_port, resolve_http_bind_host,
-        resolve_http_port, resolve_http_token, state_panel_root, xavier_token,
+        resolve_base_url, resolve_base_url_for_port,
+        resolve_http_port,
     };
     use crate::cli::security::{
-        blocked_external_input_response, secure_cli_input, secure_external_input,
-        secure_optional_request_field,
+        secure_cli_input, secure_external_input,
     };
     use crate::cli::server::auth_middleware;
-    use crate::cli::state::CliState;
-    use crate::cli::utils::estimate_tokens;
-    use crate::cli::server::json_response;
-    use crate::cli::commands::load_skill;
+    
+    
+    
+    
 
     use crate::cli::proxy::ProxyChatRequest;
     use code_graph::types::{Language, Symbol, SymbolKind};
@@ -326,8 +321,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_chat_batch_proxy_ordering() {
-        let requests = vec![
-            ProxyChatRequest {
+        let requests = [ProxyChatRequest {
                 model: "model-1".to_string(),
                 messages: vec![serde_json::json!({"role": "user", "content": "ping 1"})],
                 temperature: None,
@@ -338,8 +332,7 @@ mod tests {
                 messages: vec![serde_json::json!({"role": "user", "content": "ping 2"})],
                 temperature: None,
                 max_tokens: None,
-            },
-        ];
+            }];
 
         // Verify the ordering logic used in the handler:
         let mut results = vec![serde_json::json!(null); requests.len()];
