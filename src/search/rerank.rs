@@ -109,6 +109,39 @@ impl Reranker for HttpReranker {
     }
 }
 
+pub struct RerankHook {
+    reranker: Arc<dyn Reranker>,
+}
+
+impl RerankHook {
+    pub fn new(reranker: Arc<dyn Reranker>) -> Self {
+        Self { reranker }
+    }
+
+    pub fn from_env() -> Option<Self> {
+        HttpReranker::from_env().map(|r| Self::new(Arc::new(r)))
+    }
+}
+
+#[async_trait]
+impl SearchHook for RerankHook {
+    fn name(&self) -> &str {
+        "rerank"
+    }
+
+    async fn post_query(&self, query: &str, results: &mut Vec<ScoredResult>) -> anyhow::Result<()> {
+        self.reranker.rerank(query, results).await
+    }
+
+    async fn pre_query(
+        &self,
+        _query: &mut String,
+        _filters: &mut Option<MemoryQueryFilters>,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -155,38 +188,5 @@ mod tests {
         assert_eq!(results[0].score, 2.0);
         assert_eq!(results[1].id, "2");
         assert_eq!(results[1].score, 1.0);
-    }
-}
-
-pub struct RerankHook {
-    reranker: Arc<dyn Reranker>,
-}
-
-impl RerankHook {
-    pub fn new(reranker: Arc<dyn Reranker>) -> Self {
-        Self { reranker }
-    }
-
-    pub fn from_env() -> Option<Self> {
-        HttpReranker::from_env().map(|r| Self::new(Arc::new(r)))
-    }
-}
-
-#[async_trait]
-impl SearchHook for RerankHook {
-    fn name(&self) -> &str {
-        "rerank"
-    }
-
-    async fn post_query(&self, query: &str, results: &mut Vec<ScoredResult>) -> anyhow::Result<()> {
-        self.reranker.rerank(query, results).await
-    }
-
-    async fn pre_query(
-        &self,
-        _query: &mut String,
-        _filters: &mut Option<MemoryQueryFilters>,
-    ) -> anyhow::Result<()> {
-        Ok(())
     }
 }

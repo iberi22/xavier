@@ -466,7 +466,7 @@ mod grounding_tests {
         let results = graph.validate_grounding(&docs, 0.5).await;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, memory_id);
-        assert_eq!(results[0].1, true);
+        assert!(results[0].1);
         assert!(results[0].2.contains("Directly grounded"));
     }
 
@@ -487,7 +487,7 @@ mod grounding_tests {
         // With min_confidence 0.5, only "Xavier" should match
         let results = graph.validate_grounding(&docs, 0.5).await;
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].1, true);
+        assert!(results[0].1);
         assert!(results[0].2.contains("Xavier"));
         assert!(!results[0].2.contains("Rust"));
 
@@ -512,6 +512,6 @@ mod grounding_tests {
 
         let results = graph.validate_grounding(&docs, 0.5).await;
         assert_eq!(results.len(), 1);
-        assert_eq!(results[0].1, false);
+        assert!(!results[0].1);
     }
 }

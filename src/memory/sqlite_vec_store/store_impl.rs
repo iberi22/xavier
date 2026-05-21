@@ -53,7 +53,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         // Store in main table first
         {
             let embedding_blob = if !record.embedding.is_empty()
-                && Self::qjl_enabled_for_workspace(&*conn, &record.workspace_id).await
+                && Self::qjl_enabled_for_workspace(&conn, &record.workspace_id).await
             {
                 vector::serialize_embedding_qjl(&record.embedding)
             } else {
@@ -93,7 +93,7 @@ impl MemoryStore for VecSqliteMemoryStore {
                 params![record.id.clone(), record.path.clone(), record.content.clone(), code_tokens],
             ).await?;
 
-            Self::sync_memory_entities(&*conn, &record.workspace_id, &record).await?;
+            Self::sync_memory_entities(&conn, &record.workspace_id, &record).await?;
 
             // Add to hash chain
             let chain_id = ulid::Ulid::new().to_string();
@@ -102,7 +102,7 @@ impl MemoryStore for VecSqliteMemoryStore {
                 params![chain_id, prev_hash, content_hash],
             ).await?;
 
-            self.append_timeline_event(&*conn, &record.workspace_id, &record).await?;
+            self.append_timeline_event(&conn, &record.workspace_id, &record).await?;
         }
 
         // Store vector in native vector search table
