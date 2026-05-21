@@ -72,6 +72,10 @@ pub struct GatingConfig {
     pub max_results: usize,
     /// Targeted zones for the retrieval
     pub active_zones: Option<Vec<ContextZone>>,
+    /// Whether to enable belief graph grounding validation
+    pub grounding_enabled: bool,
+    /// Minimum confidence for semantic grounding
+    pub grounding_min_confidence: f32,
 }
 
 impl Default for GatingConfig {
@@ -82,6 +86,8 @@ impl Default for GatingConfig {
             rrf_k: config::DEFAULT_RRF_K,
             max_results: config::DEFAULT_MAX_RESULTS,
             active_zones: None,
+            grounding_enabled: true,
+            grounding_min_confidence: 0.5,
         }
     }
 }
@@ -112,12 +118,13 @@ impl AdaptiveGating {
     }
 
     /// Retrieve from all memory layers and fuse results
-    pub fn retrieve(
+    pub async fn retrieve(
         &self,
         working: &[MemoryDocument],
         episodic: &[SessionSummary],
         semantic: &[EntityRecord],
         query: &str,
+        belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
     ) -> Vec<ScoredResult> {
         // 1. Score each layer independently
         let working_results = self.score_working_layer(working, query);
@@ -138,12 +145,44 @@ impl AdaptiveGating {
             self.config.rrf_k,
         );
 
-        // 4. Filter by threshold and limit results
-        fused
+        // 4. Filter by threshold
+        let mut results: Vec<ScoredResult> = fused
             .into_iter()
             .filter(|r| r.score >= self.config.relevance_threshold)
-            .take(self.config.max_results)
-            .collect()
+            .collect();
+
+        // 5. Apply grounding validation if enabled
+        if self.config.grounding_enabled {
+            if let Some(graph_lock) = belief_graph {
+                let graph = graph_lock.read().await;
+                // Convert ScoredResult back to MemoryDocument for validate_grounding
+                // Note: We only have content/id, so we build partial documents
+                let docs_to_validate: Vec<MemoryDocument> = results
+                    .iter()
+                    .map(|r| MemoryDocument {
+                        id: Some(r.id.clone()),
+                        content: r.content.clone(),
+                        path: r.path.clone(),
+                        ..Default::default()
+                    })
+                    .collect();
+
+                let grounding = graph
+                    .validate_grounding(&docs_to_validate, self.config.grounding_min_confidence)
+                    .await;
+
+                results.retain(|r| {
+                    grounding
+                        .iter()
+                        .find(|(id, _, _)| id == &r.id)
+                        .map(|(_, grounded, _)| *grounded)
+                        .unwrap_or(false)
+                });
+            }
+        }
+
+        // 6. Limit results
+        results.into_iter().take(self.config.max_results).collect()
     }
 
     /// Retrieve only from working memory
@@ -522,8 +561,8 @@ mod tests {
         assert_eq!(results[0].score, 0.5);
     }
 
-    #[test]
-    fn test_multi_layer_retrieval() {
+    #[tokio::test]
+    async fn test_multi_layer_retrieval() {
         let mut gating = AdaptiveGating::with_defaults();
         gating.set_threshold(0.0);
         let docs = vec![MemoryDocument {
@@ -538,7 +577,7 @@ mod tests {
         let sessions: Vec<SessionSummary> = vec![];
         let entities: Vec<EntityRecord> = vec![];
 
-        let results = gating.retrieve(&docs, &sessions, &entities, "BELA");
+        let results = gating.retrieve(&docs, &sessions, &entities, "BELA", None).await;
         assert!(!results.is_empty());
         assert_eq!(results[0].source, "hybrid");
     }
