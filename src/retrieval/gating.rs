@@ -112,7 +112,7 @@ impl AdaptiveGating {
     }
 
     /// Retrieve from all memory layers and fuse results
-    pub fn retrieve(
+    pub async fn retrieve(
         &self,
         working: &[MemoryDocument],
         episodic: &[SessionSummary],
@@ -133,12 +133,26 @@ impl AdaptiveGating {
             self.apply_weights(semantic_results, self.config.layer_weights.semantic);
 
         // 3. Fuse with RRF
-        let fused = reciprocal_rank_fusion(
+        let mut fused = reciprocal_rank_fusion(
             vec![weighted_working, weighted_episodic, weighted_semantic],
             self.config.rrf_k,
         );
 
-        // 4. Filter by threshold and limit results
+        // 4. Optional Reranking for precision boost
+        if let Some(hook) = crate::search::rerank::RerankHook::from_env() {
+            let rerank_limit = crate::retrieval::config::DEFAULT_RERANK_LIMIT;
+            if fused.len() > rerank_limit {
+                fused.truncate(rerank_limit);
+            }
+
+            let _ = crate::search::hooks::SearchHook::post_query(
+                &hook,
+                query,
+                &mut fused,
+            ).await;
+        }
+
+        // 5. Filter by threshold and limit results
         fused
             .into_iter()
             .filter(|r| r.score >= self.config.relevance_threshold)
@@ -522,8 +536,8 @@ mod tests {
         assert_eq!(results[0].score, 0.5);
     }
 
-    #[test]
-    fn test_multi_layer_retrieval() {
+    #[tokio::test]
+    async fn test_multi_layer_retrieval() {
         let mut gating = AdaptiveGating::with_defaults();
         gating.set_threshold(0.0);
         let docs = vec![MemoryDocument {
@@ -538,7 +552,7 @@ mod tests {
         let sessions: Vec<SessionSummary> = vec![];
         let entities: Vec<EntityRecord> = vec![];
 
-        let results = gating.retrieve(&docs, &sessions, &entities, "BELA");
+        let results = gating.retrieve(&docs, &sessions, &entities, "BELA").await;
         assert!(!results.is_empty());
         assert_eq!(results[0].source, "hybrid");
     }

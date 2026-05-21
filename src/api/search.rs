@@ -58,14 +58,12 @@ pub async fn hybrid_search(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(request): Json<HybridSearchRequest>,
 ) -> impl IntoResponse {
-    let searcher = HybridSearcher {
-        keyword_weight: request.keyword_weight,
-        vector_weight: request.vector_weight,
-        rrf_k: request
-            .rrf_k
-            .unwrap_or_else(crate::search::hybrid::configured_rrf_k),
-        hooks: crate::search::hooks::HookRegistry::new(),
-    };
+    let mut searcher = HybridSearcher::new();
+    searcher.keyword_weight = request.keyword_weight;
+    searcher.vector_weight = request.vector_weight;
+    if let Some(rrf_k) = request.rrf_k {
+        searcher.rrf_k = rrf_k;
+    }
 
     let results = searcher
         .search(
