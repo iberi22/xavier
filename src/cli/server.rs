@@ -247,6 +247,15 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/memory/delete", post(delete_handler))
         .route("/memory/stats", get(stats_handler))
         .route("/memory/export", get(export_handler))
+        // v1 API aliases for compatibility
+        .route("/v1/memories", post(add_handler).get(stats_handler))
+        .route("/v1/memories/search", post(search_handler))
+        // Agent listing endpoint
+        .route("/agents", get(agent_list_handler))
+        // Workspace info
+        .route("/workspace/default", get(workspace_info_handler))
+        // MCP tools listing
+        .route("/mcp/tools", get(mcp_tools_handler))
         .route("/code/scan", post(code_scan_handler))
         .route("/code/find", post(code_find_handler))
         .route("/code/context", post(code_context_handler))
@@ -2634,4 +2643,51 @@ pub async fn usage_cooldown_handler(
             serde_json::json!({ "error": e.to_string() }),
         ),
     }
+}
+
+/// GET /agents — List active agents
+pub async fn agent_list_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    let agents = state.agent_registry.get_active_agents().await;
+    Json(serde_json::json!({
+        "agents": agents.iter().map(|a| serde_json::json!({
+            "id": a.agent_id,
+            "session_id": a.session_id,
+            "last_heartbeat": a.last_heartbeat,
+        })).collect::<Vec<_>>(),
+        "count": agents.len()
+    }))
+}
+
+/// GET /workspace/default — Workspace info
+pub async fn workspace_info_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    Json(serde_json::json!({
+        "workspace_id": state.workspace_id,
+        "workspace_dir": state.workspace_dir.to_string_lossy(),
+    }))
+}
+
+/// GET /mcp/tools — List available MCP tools
+pub async fn mcp_tools_handler() -> impl axum::response::IntoResponse {
+    Json(serde_json::json!({
+        "tools": [
+            {"name": "memory_search", "description": "Search memory with semantic + lexical hybrid search"},
+            {"name": "memory_add", "description": "Add a new memory entry with metadata and zone tagging"},
+            {"name": "memory_delete", "description": "Delete a memory entry by path"},
+            {"name": "memory_stats", "description": "Get memory statistics and counts"},
+            {"name": "memory_export", "description": "Export all memories as JSON"},
+            {"name": "code_scan", "description": "Scan a codebase and index symbols into the code graph"},
+            {"name": "code_find", "description": "Find code symbols by name, kind, or file path"},
+            {"name": "code_context", "description": "Get surrounding context for a code symbol"},
+            {"name": "code_stats", "description": "Get code graph statistics"},
+            {"name": "agent_register", "description": "Register a new AI agent"},
+            {"name": "agent_list", "description": "List active agents"},
+            {"name": "agent_heartbeat", "description": "Send heartbeat for an agent"},
+            {"name": "agent_push_context", "description": "Push context document to an agent"},
+            {"name": "agent_unregister", "description": "Unregister an agent"},
+        ]
+    }))
 }
