@@ -279,7 +279,7 @@ fn local_embedding_signal_present() -> bool {
 
 fn cloud_embedding_signal_present() -> bool {
     std::env::var("OPENAI_API_KEY").is_ok()
-        || std::env::var("XAVIER_EMBEDDING_API_KEY").is_ok()
+        || crate::settings::XavierSettings::current().embedding.api_key.is_some()
         || std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
             .map(|value| value.eq_ignore_ascii_case("cloud"))
             .unwrap_or(false)
@@ -303,19 +303,21 @@ fn build_backend(config: EmbedderBackendConfig) -> Result<Arc<dyn Embedder>, Emb
 }
 
 fn gllm_config() -> GllmConfig {
+    let settings = crate::settings::XavierSettings::current();
     let raw_model =
         std::env::var("XAVIER_GLLM_MODEL").unwrap_or_else(|_| gllm::DEFAULT_GLLM_MODEL.to_string());
     let model = gllm::normalize_model_name(&raw_model);
-    let dimension = std::env::var("XAVIER_GLLM_DIMENSION")
-        .ok()
-        .and_then(|value| value.parse::<usize>().ok())
-        .filter(|dimension| *dimension > 0)
+    let dimension = settings
+        .embedding
+        .gllm_dimension
+        .filter(|d| *d > 0)
         .unwrap_or_else(|| gllm::dimension_for_model(&model));
 
     GllmConfig { model, dimension }
 }
 
 fn local_config() -> OpenAICompatibleConfig {
+    let settings = crate::settings::XavierSettings::current();
     let endpoint = std::env::var("XAVIER_EMBEDDING_ENDPOINT")
         .or_else(|_| std::env::var("XAVIER_EMBEDDING_URL"))
         .map(|value| normalize_openai_embeddings_endpoint(&value))
@@ -325,8 +327,10 @@ fn local_config() -> OpenAICompatibleConfig {
         .unwrap_or_else(|_| DEFAULT_LOCAL_EMBEDDING_MODEL.to_string());
 
     OpenAICompatibleConfig {
-        api_key: std::env::var("XAVIER_EMBEDDING_API_KEY")
-            .ok()
+        api_key: settings
+            .embedding
+            .api_key
+            .clone()
             .or_else(|| Some("ollama".to_string())),
         endpoint,
         dimension: embedding_dimension_for_model(&model),
@@ -335,6 +339,7 @@ fn local_config() -> OpenAICompatibleConfig {
 }
 
 fn cloud_config() -> OpenAICompatibleConfig {
+    let settings = crate::settings::XavierSettings::current();
     let endpoint = std::env::var("XAVIER_EMBEDDING_ENDPOINT")
         .or_else(|_| std::env::var("XAVIER_EMBEDDING_URL"))
         .map(|value| normalize_openai_embeddings_endpoint(&value))
@@ -344,8 +349,10 @@ fn cloud_config() -> OpenAICompatibleConfig {
         .unwrap_or_else(|_| DEFAULT_CLOUD_EMBEDDING_MODEL.to_string());
 
     OpenAICompatibleConfig {
-        api_key: std::env::var("XAVIER_EMBEDDING_API_KEY")
-            .ok()
+        api_key: settings
+            .embedding
+            .api_key
+            .clone()
             .or_else(|| std::env::var("OPENAI_API_KEY").ok()),
         endpoint,
         dimension: embedding_dimension_for_model(&model),

@@ -46,12 +46,11 @@ impl fmt::Debug for TelegramConfig {
 
 impl Default for TelegramConfig {
     fn default() -> Self {
+        let settings = crate::settings::XavierSettings::current();
         Self {
-            bot_token: std::env::var("XAVIER_TELEGRAM_TOKEN").unwrap_or_default(),
+            bot_token: settings.telegram.bot_token.unwrap_or_default(),
             admin_ids: Vec::new(),
-            enabled: std::env::var("XAVIER_TELEGRAM_ENABLED")
-                .map(|v| v == "true")
-                .unwrap_or(false),
+            enabled: settings.telegram.enabled,
         }
     }
 }

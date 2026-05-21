@@ -131,8 +131,10 @@ impl SecurityManager {
     }
 
     pub fn generate_token(&self, user_id: &str) -> Result<String> {
-        let secret = std::env::var("XAVIER_TOKEN_SECRET")
-            .map_err(|_| anyhow!("XAVIER_TOKEN_SECRET environment variable is not set"))?;
+        let secret = crate::settings::XavierSettings::current()
+            .security
+            .token_secret
+            .ok_or_else(|| anyhow!("XAVIER_TOKEN_SECRET is not configured"))?;
         let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
             .map_err(|e| anyhow!("hmac error: {}", e))?;
 
@@ -168,8 +170,10 @@ impl SecurityManager {
             .parse()
             .map_err(|_| anyhow!("invalid timestamp in token"))?;
 
-        let secret = std::env::var("XAVIER_TOKEN_SECRET")
-            .map_err(|_| anyhow!("XAVIER_TOKEN_SECRET environment variable is not set"))?;
+        let secret = crate::settings::XavierSettings::current()
+            .security
+            .token_secret
+            .ok_or_else(|| anyhow!("XAVIER_TOKEN_SECRET is not configured"))?;
         let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
             .map_err(|e| anyhow!("hmac error: {}", e))?;
 
