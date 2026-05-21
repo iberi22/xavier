@@ -72,6 +72,10 @@ pub struct GatingConfig {
     pub max_results: usize,
     /// Targeted zones for the retrieval
     pub active_zones: Option<Vec<ContextZone>>,
+    /// Weight for recency boosting (0.0 to 1.0)
+    pub recency_weight: f32,
+    /// Half-life in hours for recency decay
+    pub half_life_hours: f32,
 }
 
 impl Default for GatingConfig {
@@ -82,6 +86,8 @@ impl Default for GatingConfig {
             rrf_k: config::DEFAULT_RRF_K,
             max_results: config::DEFAULT_MAX_RESULTS,
             active_zones: None,
+            recency_weight: config::DEFAULT_RECENCY_WEIGHT,
+            half_life_hours: config::DEFAULT_HALF_LIFE_HOURS,
         }
     }
 }
@@ -119,10 +125,11 @@ impl AdaptiveGating {
         semantic: &[EntityRecord],
         query: &str,
     ) -> Vec<ScoredResult> {
+        let now = chrono::Utc::now();
         // 1. Score each layer independently
-        let working_results = self.score_working_layer(working, query);
-        let episodic_results = self.score_episodic_layer(episodic, query);
-        let semantic_results = self.score_semantic_layer(semantic, query);
+        let working_results = self.score_working_layer_at(working, query, now);
+        let episodic_results = self.score_episodic_layer_at(episodic, query, now);
+        let semantic_results = self.score_semantic_layer_at(semantic, query, now);
 
         // 2. Apply layer weights to scores
         let weighted_working =
@@ -148,21 +155,26 @@ impl AdaptiveGating {
 
     /// Retrieve only from working memory
     pub fn retrieve_working(&self, working: &[MemoryDocument], query: &str) -> Vec<ScoredResult> {
-        self.score_working_layer(working, query)
+        self.score_working_layer_at(working, query, chrono::Utc::now())
     }
 
     /// Retrieve only from episodic memory
     pub fn retrieve_episodic(&self, episodic: &[SessionSummary], query: &str) -> Vec<ScoredResult> {
-        self.score_episodic_layer(episodic, query)
+        self.score_episodic_layer_at(episodic, query, chrono::Utc::now())
     }
 
     /// Retrieve only from semantic memory
     pub fn retrieve_semantic(&self, semantic: &[EntityRecord], query: &str) -> Vec<ScoredResult> {
-        self.score_semantic_layer(semantic, query)
+        self.score_semantic_layer_at(semantic, query, chrono::Utc::now())
     }
 
     /// Score working memory layer using keyword matching
-    fn score_working_layer(&self, working: &[MemoryDocument], query: &str) -> Vec<ScoredResult> {
+    fn score_working_layer_at(
+        &self,
+        working: &[MemoryDocument],
+        query: &str,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Vec<ScoredResult> {
         let query_lower = query.to_lowercase();
         let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
 
@@ -205,18 +217,23 @@ impl AdaptiveGating {
                         }
                     }
 
+                    let updated_at_ms = doc
+                        .metadata
+                        .get("updated_at")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                        .map(|dt| dt.timestamp_millis());
+
+                    // Apply recency boost
+                    final_score *= self.calculate_recency_boost(updated_at_ms, now);
+
                     Some(ScoredResult {
                         id: doc.id.clone().unwrap_or_default(),
                         content: doc.content.clone(),
                         score: final_score,
                         source: "working".to_string(),
                         path: doc.path.clone(),
-                        updated_at: doc
-                            .metadata
-                            .get("updated_at")
-                            .and_then(|v| v.as_str())
-                            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                            .map(|dt| dt.timestamp_millis()),
+                        updated_at: updated_at_ms,
                     })
                 } else {
                     None
@@ -234,7 +251,12 @@ impl AdaptiveGating {
     }
 
     /// Score episodic memory layer using summary and event matching
-    fn score_episodic_layer(&self, episodic: &[SessionSummary], query: &str) -> Vec<ScoredResult> {
+    fn score_episodic_layer_at(
+        &self,
+        episodic: &[SessionSummary],
+        query: &str,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Vec<ScoredResult> {
         let query_lower = query.to_lowercase();
         let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
 
@@ -273,13 +295,19 @@ impl AdaptiveGating {
                 }
 
                 if score > 0.0 {
+                    let mut final_score = score.min(1.0);
+                    let updated_at_ms = Some(session.start_time.timestamp_millis());
+
+                    // Apply recency boost
+                    final_score *= self.calculate_recency_boost(updated_at_ms, now);
+
                     Some(ScoredResult {
                         id: session.session_id.clone(),
                         content: session.summary.clone(),
-                        score: score.min(1.0),
+                        score: final_score,
                         source: "episodic".to_string(),
                         path: format!("sessions/{}", session.session_id),
-                        updated_at: Some(session.start_time.timestamp_millis()),
+                        updated_at: updated_at_ms,
                     })
                 } else {
                     None
@@ -296,7 +324,12 @@ impl AdaptiveGating {
     }
 
     /// Score semantic memory layer using entity matching
-    fn score_semantic_layer(&self, semantic: &[EntityRecord], query: &str) -> Vec<ScoredResult> {
+    fn score_semantic_layer_at(
+        &self,
+        semantic: &[EntityRecord],
+        query: &str,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Vec<ScoredResult> {
         let query_lower = query.to_lowercase();
 
         let mut results: Vec<ScoredResult> = semantic
@@ -338,16 +371,21 @@ impl AdaptiveGating {
                 }
 
                 // Boost by confirmation count (normalized)
-                let final_score = score * config::SEMANTIC_CONFIDENCE_MULTIPLIER;
+                let mut final_score = (score * config::SEMANTIC_CONFIDENCE_MULTIPLIER).min(1.0);
 
                 if final_score > 0.0 {
+                    let updated_at_ms = Some(entity.last_seen.timestamp_millis());
+
+                    // Apply recency boost
+                    final_score *= self.calculate_recency_boost(updated_at_ms, now);
+
                     Some(ScoredResult {
                         id: entity.id.clone(),
                         content: entity.name.clone(),
-                        score: final_score.min(1.0),
+                        score: final_score,
                         source: "semantic".to_string(),
                         path: format!("entities/{}", entity.id),
-                        updated_at: Some(entity.last_seen.timestamp_millis()),
+                        updated_at: updated_at_ms,
                     })
                 } else {
                     None
@@ -361,6 +399,33 @@ impl AdaptiveGating {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         results
+    }
+
+    /// Calculate recency boost based on age
+    fn calculate_recency_boost(
+        &self,
+        updated_at_ms: Option<i64>,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> f32 {
+        if self.config.recency_weight <= 0.0 {
+            return 1.0;
+        }
+
+        let Some(updated_at_ms) = updated_at_ms else {
+            return 1.0;
+        };
+
+        let updated_at = chrono::DateTime::from_timestamp_millis(updated_at_ms)
+            .unwrap_or_else(|| now);
+        let age_hours = (now - updated_at).num_hours() as f32;
+        let age_hours = age_hours.max(0.0);
+
+        if self.config.half_life_hours <= 0.0 {
+            return 1.0 + self.config.recency_weight;
+        }
+
+        // Exponential decay: boost = 1.0 + weight * exp(-age / half_life)
+        1.0 + (self.config.recency_weight * (-age_hours / self.config.half_life_hours).exp())
     }
 
     /// Apply layer weight to all scores in a result set
@@ -473,7 +538,7 @@ mod tests {
             },
         ];
 
-        let results = gating.score_working_layer(&docs, "BELA");
+        let results = gating.score_working_layer_at(&docs, "BELA", chrono::Utc::now());
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "doc1");
         assert!(results[0].score > 0.0);
@@ -515,11 +580,11 @@ mod tests {
             },
         ];
 
-        let results = gating.score_semantic_layer(&entities, "BELA");
+        let results = gating.score_semantic_layer_at(&entities, "BELA", chrono::Utc::now());
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "entity1");
-        // Exact matches are scaled by the fixed semantic confidence multiplier.
-        assert_eq!(results[0].score, 0.5);
+        // Exact matches (0.5) are boosted by recency (1.3) = 0.65
+        assert_eq!(results[0].score, 0.65);
     }
 
     #[test]
@@ -541,5 +606,39 @@ mod tests {
         let results = gating.retrieve(&docs, &sessions, &entities, "BELA");
         assert!(!results.is_empty());
         assert_eq!(results[0].source, "hybrid");
+    }
+
+    #[test]
+    fn test_recency_bias() {
+        let gating = AdaptiveGating::with_defaults();
+        let now = chrono::Utc::now();
+        let yesterday = now - chrono::Duration::days(1);
+        let last_month = now - chrono::Duration::days(30);
+
+        let docs = vec![
+            MemoryDocument {
+                id: Some("recent".to_string()),
+                path: "test/recent".to_string(),
+                content: "BELA works at SWAL".to_string(),
+                metadata: serde_json::json!({
+                    "updated_at": yesterday.to_rfc3339()
+                }),
+                ..Default::default()
+            },
+            MemoryDocument {
+                id: Some("old".to_string()),
+                path: "test/old".to_string(),
+                content: "BELA works at SWAL".to_string(),
+                metadata: serde_json::json!({
+                    "updated_at": last_month.to_rfc3339()
+                }),
+                ..Default::default()
+            },
+        ];
+
+        let results = gating.score_working_layer_at(&docs, "BELA", now);
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].id, "recent");
+        assert!(results[0].score > results[1].score);
     }
 }
