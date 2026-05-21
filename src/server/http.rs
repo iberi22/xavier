@@ -1157,7 +1157,7 @@ async fn build_multi_layer_retrieve_response(
         &episodic_summaries,
         &semantic_entities,
         &payload.query,
-    );
+    ).await;
 
     let total_results = results.len();
 
