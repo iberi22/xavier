@@ -24,6 +24,7 @@ use crate::{
     memory::schema::{ContextZone, MemoryQueryFilters, TypedMemoryPayload},
     memory::sqlite_vec_store::VecSqliteMemoryStore,
     memory::store::{GraphHopResult, HybridSearchMode},
+    context::ContextClassifier,
     retrieval::gating::{AdaptiveGating, LayerWeights, SessionSummary},
     server::events::{WsEvent, WsMessage},
     utils::crypto::sha256_hex,
@@ -1095,13 +1096,20 @@ async fn build_multi_layer_retrieve_response(
     workspace: &WorkspaceContext,
     payload: &MultiLayerRetrieveRequest,
 ) -> MultiLayerRetrieveResponse {
-    let weights = payload.layer_weights.unwrap_or_default();
     let settings = crate::settings::XavierSettings::current();
 
     let active_zones = payload
         .active_zones
         .clone()
         .unwrap_or_else(|| crate::memory::schema::parse_zones_from_prompt(&payload.query));
+
+    let weights = if let Some(w) = payload.layer_weights {
+        w
+    } else {
+        let classifier = ContextClassifier::new();
+        let level = classifier.classify(&payload.query);
+        LayerWeights::adaptive(&payload.query, level, &[])
+    };
 
     let gating = AdaptiveGating::new(crate::retrieval::gating::GatingConfig {
         layer_weights: weights,
