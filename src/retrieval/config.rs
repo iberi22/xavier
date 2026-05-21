@@ -35,3 +35,20 @@ pub const ENTITY_DESCRIPTION_MATCH_SCORE: f32 = 0.4;
 pub const ENTITY_DESCRIPTION_TERM_BONUS: f32 = 0.1;
 pub const ENTITY_ALIAS_MATCH_SCORE: f32 = 0.6;
 pub const SEMANTIC_CONFIDENCE_MULTIPLIER: f32 = 0.5;
+
+pub const DEFAULT_ZONE_BOOST_MULTIPLIER: f32 = 1.5;
+pub const DEFAULT_ZONE_PENALTY_MULTIPLIER: f32 = 0.5;
+
+pub fn configured_zone_boost() -> f32 {
+    std::env::var("XAVIER_ZONE_BOOST")
+        .ok()
+        .and_then(|value| value.parse::<f32>().ok())
+        .unwrap_or(DEFAULT_ZONE_BOOST_MULTIPLIER)
+}
+
+pub fn configured_zone_penalty() -> f32 {
+    std::env::var("XAVIER_ZONE_PENALTY")
+        .ok()
+        .and_then(|value| value.parse::<f32>().ok())
+        .unwrap_or(DEFAULT_ZONE_PENALTY_MULTIPLIER)
+}
