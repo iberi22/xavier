@@ -8,7 +8,7 @@
 
 | # | Task | Priority | Status |
 |---|------|----------|--------|
-| 1 | Fix data race en `get_last_sync_result()` — leer todos los campos bajo un lock | 🔴 CRITICAL | **PENDIENTE** |
+| 1 | Fix data race en `get_last_sync_result()` — leer todos los campos bajo un lock | 🔴 CRITICAL | ✅ **COMPLETADO** |
 | 2 | Wire `SecurityScanPort` en `cli.rs` O eliminarlo | 🔴 CRITICAL | **PENDIENTE** |
 | 3 | Eliminar `app/` services muertos (`todo!()`) | 🟡 MEDIUM | **PENDIENTE** |
 | 4 | Push a GitHub (GROQ_API_KEY secret blockage) | 🔴 CRITICAL | **BLOQUEADO** |
@@ -33,7 +33,7 @@
 
 - [ ] `cargo check --lib` → 0 errors
 - [ ] Todos los endpoints SEVIER verificados con curl
-- [ ] Data race fix commiteado
+- [x] Data race fix commiteado
 - [ ] Dead code ports eliminados
 - [ ] docs/ADR/ creado y commiteado
 - [ ] GitHub push exitoso
