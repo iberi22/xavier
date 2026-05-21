@@ -320,7 +320,20 @@ pub struct EmbeddingSettings {
     pub api_key: Option<String>,
     #[serde(default)]
     pub gllm_dimension: Option<usize>,
+    #[serde(default = "default_cache_enabled")]
+    pub cache_enabled: bool,
+    #[serde(default = "default_cache_size")]
+    pub cache_size: u64,
+    #[serde(default = "default_cache_ttl_hours")]
+    pub cache_ttl_hours: u64,
+    #[serde(default = "default_cache_db_path")]
+    pub cache_db_path: String,
 }
+
+fn default_cache_enabled() -> bool { true }
+fn default_cache_size() -> u64 { 10_000 }
+fn default_cache_ttl_hours() -> u64 { 24 }
+fn default_cache_db_path() -> String { "data/embedding_cache.db".to_string() }
 
 impl fmt::Debug for EmbeddingSettings {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -344,6 +357,10 @@ impl Default for EmbeddingSettings {
             api_flavor: "openai-compatible".to_string(),
             api_key: None,
             gllm_dimension: None,
+            cache_enabled: true,
+            cache_size: 10_000,
+            cache_ttl_hours: 24,
+            cache_db_path: "data/embedding_cache.db".to_string(),
         }
     }
 }
@@ -693,6 +710,24 @@ impl XavierSettings {
         set_optional_if_absent(
             "XAVIER_GLLM_DIMENSION",
             self.embedding.gllm_dimension.map(|v| v.to_string()),
+        );
+
+        // Embedding cache settings
+        set_if_absent(
+            "XAVIER_EMBEDDING_CACHE_ENABLED",
+            if self.embedding.cache_enabled { "true" } else { "false" },
+        );
+        set_if_absent(
+            "XAVIER_EMBEDDING_CACHE_SIZE",
+            &self.embedding.cache_size.to_string(),
+        );
+        set_if_absent(
+            "XAVIER_EMBEDDING_CACHE_TTL_HOURS",
+            &self.embedding.cache_ttl_hours.to_string(),
+        );
+        set_optional_if_absent(
+            "XAVIER_EMBEDDING_CACHE_DB_PATH",
+            non_empty(&self.embedding.cache_db_path),
         );
 
         // Security settings
