@@ -10,6 +10,7 @@ pub mod indexer;
 pub mod manager;
 pub mod monitoring;
 pub mod orchestrator;
+pub mod query_processor;
 pub mod skills;
 
 use chrono::{DateTime, Utc};
@@ -22,6 +23,7 @@ pub use indexer::ContextIndexer;
 pub use manager::ContextManager;
 pub use monitoring::ContextMetrics;
 pub use orchestrator::{ContextBudgetConfig, ExecutionPlan, HookKind, Orchestrator};
+pub use query_processor::QueryProcessor;
 pub use skills::{Skill, SkillLoader};
 
 /// Canonical unit used by context regeneration.
