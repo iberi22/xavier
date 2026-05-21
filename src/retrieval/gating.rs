@@ -72,6 +72,10 @@ pub struct GatingConfig {
     pub max_results: usize,
     /// Targeted zones for the retrieval
     pub active_zones: Option<Vec<ContextZone>>,
+    /// Multiplier for targeted zones (default 1.5)
+    pub zone_boost_multiplier: f32,
+    /// Multiplier for non-targeted zones (default 0.5)
+    pub zone_penalty_multiplier: f32,
 }
 
 impl Default for GatingConfig {
@@ -82,6 +86,8 @@ impl Default for GatingConfig {
             rrf_k: config::DEFAULT_RRF_K,
             max_results: config::DEFAULT_MAX_RESULTS,
             active_zones: None,
+            zone_boost_multiplier: config::configured_zone_boost(),
+            zone_penalty_multiplier: config::configured_zone_penalty(),
         }
     }
 }
@@ -199,9 +205,9 @@ impl AdaptiveGating {
                     // Apply zone-based boosting
                     if let Some(active) = &self.config.active_zones {
                         if active.contains(&doc_zone) {
-                            final_score *= 1.5; // Boost targeted zones
+                            final_score *= self.config.zone_boost_multiplier; // Boost targeted zones
                         } else {
-                            final_score *= 0.5; // Penalize non-targeted zones
+                            final_score *= self.config.zone_penalty_multiplier; // Penalize non-targeted zones
                         }
                     }
 
@@ -541,5 +547,49 @@ mod tests {
         let results = gating.retrieve(&docs, &sessions, &entities, "BELA");
         assert!(!results.is_empty());
         assert_eq!(results[0].source, "hybrid");
+    }
+
+    #[test]
+    fn test_zone_multipliers() {
+        let mut config = GatingConfig::default();
+        config.zone_boost_multiplier = 2.0;
+        config.zone_penalty_multiplier = 0.1;
+        config.active_zones = Some(vec![ContextZone::Global]);
+
+        let gating = AdaptiveGating::new(config);
+
+        let docs = vec![
+            MemoryDocument {
+                id: Some("doc1".to_string()),
+                path: "test1".to_string(),
+                content: "search term".to_string(),
+                metadata: serde_json::json!({"zone": "global"}),
+                ..Default::default()
+            },
+            MemoryDocument {
+                id: Some("doc2".to_string()),
+                path: "test2".to_string(),
+                content: "search term".to_string(),
+                metadata: serde_json::json!({"zone": "atomic"}),
+                ..Default::default()
+            },
+        ];
+
+        let results = gating.score_working_layer(&docs, "search term");
+
+        assert_eq!(results.len(), 2);
+
+        let res1 = results.iter().find(|r| r.id == "doc1").unwrap();
+        let res2 = results.iter().find(|r| r.id == "doc2").unwrap();
+
+        // Base score for "search term" (two terms)
+        // EXACT_PHRASE_MATCH_BONUS = 0.5
+        // TERM_MATCH_BONUS = 0.1 (x2)
+        // TERM_OCCURRENCE_BONUS = 0.05 (x2)
+        // Total base score = 0.5 + 0.2 + 0.1 = 0.8
+        // doc1 (boost 2.0): 0.8 * 2.0 = 1.6
+        // doc2 (penalty 0.1): 0.8 * 0.1 = 0.08
+        assert!((res1.score - 1.6).abs() < 0.001);
+        assert!((res2.score - 0.08).abs() < 0.001);
     }
 }

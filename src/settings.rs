@@ -274,8 +274,8 @@ impl Default for ModelSettings {
 pub struct RetrievalSettings {
     pub disable_hyde: bool,
     pub rrf_k: Option<u32>,        // XAVIER_RRF_K
-    pub zone_boost: Option<f32>,   // XAVIER_ZONE_BOOST
-    pub zone_penalty: Option<f32>, // XAVIER_ZONE_PENALTY
+    pub zone_boost_multiplier: Option<f32>,
+    pub zone_penalty_multiplier: Option<f32>,
 }
 
 impl Default for RetrievalSettings {
@@ -283,8 +283,8 @@ impl Default for RetrievalSettings {
         Self {
             disable_hyde: true,
             rrf_k: None,
-            zone_boost: None,
-            zone_penalty: None,
+            zone_boost_multiplier: None,
+            zone_penalty_multiplier: None,
         }
     }
 }
@@ -654,6 +654,14 @@ impl XavierSettings {
                 "0"
             },
         );
+        set_optional_if_absent(
+            "XAVIER_ZONE_BOOST",
+            self.retrieval.zone_boost_multiplier.map(|v| v.to_string()),
+        );
+        set_optional_if_absent(
+            "XAVIER_ZONE_PENALTY",
+            self.retrieval.zone_penalty_multiplier.map(|v| v.to_string()),
+        );
 
         set_if_absent(
             "XAVIER_SYNC_INTERVAL_MS",
@@ -767,24 +775,22 @@ impl XavierSettings {
         if settings.embedding.api_key.is_none() {
             settings.embedding.api_key = std::env::var("XAVIER_EMBEDDING_API_KEY").ok();
         }
-
         // Retrieval fallbacks
         if settings.retrieval.rrf_k.is_none() {
             settings.retrieval.rrf_k = std::env::var("XAVIER_RRF_K")
                 .ok()
                 .and_then(|v| v.parse().ok());
         }
-        if settings.retrieval.zone_boost.is_none() {
-            settings.retrieval.zone_boost = std::env::var("XAVIER_ZONE_BOOST")
+        if settings.retrieval.zone_boost_multiplier.is_none() {
+            settings.retrieval.zone_boost_multiplier = std::env::var("XAVIER_ZONE_BOOST")
                 .ok()
                 .and_then(|v| v.parse().ok());
         }
-        if settings.retrieval.zone_penalty.is_none() {
-            settings.retrieval.zone_penalty = std::env::var("XAVIER_ZONE_PENALTY")
+        if settings.retrieval.zone_penalty_multiplier.is_none() {
+            settings.retrieval.zone_penalty_multiplier = std::env::var("XAVIER_ZONE_PENALTY")
                 .ok()
                 .and_then(|v| v.parse().ok());
         }
-
         settings
     }
 
