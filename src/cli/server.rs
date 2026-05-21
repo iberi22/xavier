@@ -71,51 +71,22 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     let token = resolve_http_token()?;
     std::env::set_var("XAVIER_TOKEN", &token);
 
-    // Initialize the SQLite connection
+    // Initialize components
     let config = VecSqliteStoreConfig::from_env();
     if let Some(parent) = config.path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
-    // Register sqlite-vec extension (needs to be done before opening connection)
-    // Actually VecSqliteMemoryStore::new does it, but we'll do it manually here to be safe
-    // as we are opening the connection ourselves.
-    use rusqlite::ffi::sqlite3_auto_extension;
-    static SQLITE_VEC_EXTENSION_INIT: std::sync::Once = std::sync::Once::new();
-    SQLITE_VEC_EXTENSION_INIT.call_once(|| {
-        unsafe {
-            type SqliteExtFn = unsafe extern "C" fn(
-                *mut rusqlite::ffi::sqlite3,
-                *mut *mut i8,
-                *const rusqlite::ffi::sqlite3_api_routines,
-            ) -> i32;
-            let entry: SqliteExtFn =
-                std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
-            sqlite3_auto_extension(Some(entry));
-        }
-    });
-
-    let conn = rusqlite::Connection::open(&config.path)?;
-    conn.execute_batch(
-        "PRAGMA journal_mode=WAL; \
-         PRAGMA synchronous=NORMAL; \
-         PRAGMA wal_autocheckpoint=1000; \
-         PRAGMA cache_size=-32768; \
-         PRAGMA mmap_size=268435456; \
-         PRAGMA temp_store=MEMORY; \
-         PRAGMA foreign_keys=ON;",
-    )?;
-    let shared_conn = Arc::new(parking_lot::Mutex::new(conn));
-
-    // Initialize components
-    let mut store_inner = VecSqliteMemoryStore::new_with_conn(shared_conn.clone(), config.clone());
+    let mut store_inner = VecSqliteMemoryStore::new(config.clone()).await?;
     let (event_tx, _) = tokio::sync::broadcast::channel(100);
     store_inner.set_event_tx(event_tx);
     let store = Arc::new(store_inner);
 
-    let time_store = Arc::new(TimeMetricsStore::new(shared_conn.clone()));
-    let audit_logger = Arc::new(xavier::secrets::audit::QmdAuditLogger::new(shared_conn.clone()));
-    let rate_manager = Arc::new(RateLimitManager::new(shared_conn.clone()));
-    let threat_store = Arc::new(SecurityThreatStore::new(shared_conn.clone()));
+    let libsql_pool = store.get_pool();
+
+    let time_store = Arc::new(TimeMetricsStore::new(libsql_pool.clone()));
+    let audit_logger = Arc::new(xavier::secrets::audit::QmdAuditLogger::new(libsql_pool.clone()));
+    let rate_manager = Arc::new(RateLimitManager::new(libsql_pool.clone()));
+    let threat_store = Arc::new(SecurityThreatStore::new(libsql_pool.clone()));
 
     // Initialize schemas
     store.init_schema()?;
@@ -123,6 +94,17 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     audit_logger.init_schema()?;
     rate_manager.init_schema()?;
     threat_store.init_schema()?;
+
+    // Schedule background task for Periodic Garbage Collection (incremental_vacuum) using the pool
+    let gc_pool = libsql_pool.clone();
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+            if let Ok(conn) = gc_pool.get().await {
+                let _ = conn.execute("PRAGMA incremental_vacuum(100)", ()).await;
+            }
+        }
+    });
 
     let workspace_id = XavierSettings::current().workspace.default_workspace_id;
     let durable_state = store.load_workspace_state(&workspace_id).await?;
@@ -186,7 +168,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             .with_threat_detector(security_service.clone()),
     );
     let secrets_engine = Arc::new(KeyLendingEngine::new(Box::new(
-        xavier::secrets::audit::QmdAuditLogger::new(shared_conn.clone()),
+        xavier::secrets::audit::QmdAuditLogger::new(libsql_pool.clone()),
     )));
     let event_bus = XavierEventBus::new(100);
     let tasks = Arc::new(

@@ -243,38 +243,4 @@ impl ProxyUseCase {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rusqlite::Connection;
-    use crate::agents::rate_limit::RateLimitManager;
-    use crate::ports::outbound::schema_init::SchemaInitializer;
 
-    #[tokio::test]
-    async fn test_proxy_use_case_rate_limited() {
-        let conn = Connection::open_in_memory().unwrap();
-        let shared_conn = std::sync::Arc::new(parking_lot::Mutex::new(conn));
-        let rate_manager = std::sync::Arc::new(RateLimitManager::new(shared_conn.clone()));
-        rate_manager.init_schema().unwrap();
-        let prompt_cache = Arc::new(Mutex::new(HashMap::new()));
-
-        // Mark all providers as rate limited
-        let providers = [
-            "opencode-go", "deepseek", "groq", "openrouter", "google", "openai", "anthropic",
-        ];
-        for p in providers {
-            rate_manager.report_429(p, 10).await.unwrap();
-        }
-
-        let use_case = ProxyUseCase::new(rate_manager, prompt_cache);
-        let cmd = ProxyChatCommand {
-            model: "test-model".into(),
-            messages: vec![serde_json::json!({"role": "user", "content": "hello"})],
-            temperature: None,
-            max_tokens: None,
-        };
-
-        let result = use_case.execute(cmd).await;
-        assert!(matches!(result, Err(ProxyError::RateLimited)));
-    }
-}

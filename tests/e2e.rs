@@ -28,6 +28,10 @@ async fn test_health_endpoint_via_xavier_binary() {
                 "XAVIER_CODE_GRAPH_DB_PATH",
                 format!("data/e2e-code-graph-{port}.db"),
             )
+            .env(
+                "XAVIER_MEMORY_VEC_PATH",
+                format!("data/e2e-memory-vec-{port}.db"),
+            )
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()

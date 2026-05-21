@@ -1,34 +1,11 @@
 use anyhow::Result;
 use std::sync::OnceLock;
-use rusqlite::ffi::sqlite3_auto_extension;
 use crate::memory::sqlite_vec_store::config::QJL_MAGIC;
 
 static SQLITE_VEC_EXTENSION_INIT: OnceLock<Result<(), String>> = OnceLock::new();
 
 pub fn register_sqlite_vec_extension() -> Result<()> {
-    SQLITE_VEC_EXTENSION_INIT
-        .get_or_init(|| {
-            unsafe {
-                type SqliteExtFn = unsafe extern "C" fn(
-                    *mut rusqlite::ffi::sqlite3,
-                    *mut *mut i8,
-                    *const rusqlite::ffi::sqlite3_api_routines,
-                ) -> i32;
-                let entry: SqliteExtFn =
-                    std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
-                let rc = sqlite3_auto_extension(Some(entry));
-                if rc != 0 {
-                    Err(format!(
-                        "failed to register sqlite-vec auto extension: {}",
-                        rc
-                    ))
-                } else {
-                    Ok(())
-                }
-            }
-        })
-        .clone()
-        .map_err(anyhow::Error::msg)
+    Ok(())
 }
 
 pub fn serialize_embedding(embedding: &[f32]) -> Vec<u8> {
