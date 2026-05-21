@@ -310,6 +310,13 @@ impl DevLogSSG {
             println!("Created input directory: {}", self.input_dir.display());
         }
 
+        // Clean output directory to remove stale files
+        if self.output_dir.exists() {
+            fs::remove_dir_all(&self.output_dir)
+                .with_context(|| format!("Failed to clean output dir: {}", self.output_dir.display()))?;
+            println!("Cleaned output directory: {}", self.output_dir.display());
+        }
+
         if !self.output_dir.exists() {
             fs::create_dir_all(&self.output_dir)?;
             println!("Created output directory: {}", self.output_dir.display());
