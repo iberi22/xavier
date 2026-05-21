@@ -46,7 +46,9 @@ echo "Setup Complete!"
 echo "====================================="
 echo ""
 echo "Xavier is running at:"
-echo "  - Local: http://localhost:8003"
+# ⚠️ DEPRECATED: Cortex has been removed from the SWAL stack (May 2026).
+# This setup script is kept for historical reference but will not work.
+echo "CORTEX REMOVED — este script ya no funciona"
 echo "  - Cloudflare: https://xavier.swallowai.com (when DNS propagates)"
 echo ""
 echo "API Key: $XAVIER_API_KEY"

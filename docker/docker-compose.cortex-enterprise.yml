@@ -1,3 +1,13 @@
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  DEPRECATED — CORTEX REMOVED (May 2026)                    ║
+# ║  This is a legacy enterprise compose file. The Cortex      ║
+# ║  project has been fully removed from the SWAL stack.       ║
+# ║  Xavier now runs on port 8006. This file is kept for       ║
+# ║  historical reference only — do not use in production.     ║
+# ╚══════════════════════════════════════════════════════════════╝
+#
+# NOTE: This file previously configured "Cortex Enterprise" (port 8003).
+# The only active project is Xavier (:8006). Cortex has been removed.
 version: '3.8'
 
 services:
@@ -5,7 +15,7 @@ services:
     image: xavier:${XAVIER_IMAGE_TAG:-0.4.1}
     container_name: xavier-enterprise
     ports:
-      - "8003:8003"
+      - "8006:8006"
     environment:
       - XAVIER_MODE=enterprise
       - XAVIER_AUTH_ENABLED=true
@@ -25,7 +35,7 @@ services:
         max-size: "10m"
         max-file: "5"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
       interval: 30s
       timeout: 10s
       retries: 3

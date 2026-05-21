@@ -1,8 +1,16 @@
 /**
+ * ╔══════════════════════════════════════════════════════════════╗
+ * ║  DEPRECATED — CORTEX REMOVED (May 2026)                    ║
+ * ║  This client previously targeted Cortex (port 8003).       ║
+ * ║  Cortex has been fully removed from the SWAL stack.        ║
+ * ║  Xavier now runs on port 8006. Update the base URL when    ║
+ * ║  constructing a new XavierClient.                          ║
+ * ╚══════════════════════════════════════════════════════════════╝
+ *
  * Xavier Client - Simple REST client for Xavier memory system
  *
  * Usage:
- * const xavier = new XavierClient('http://localhost:8003', process.env.XAVIER_TOKEN);
+ * const xavier = new XavierClient('http://localhost:8006', process.env.XAVIER_TOKEN);
  * await xavier.add({ content: '...', metadata: {...} });
  * const results = await xavier.search({ query: '...' });
  */
@@ -16,7 +24,7 @@ function getRequiredXavierToken() {
 }
 
 class XavierClient {
-  constructor(baseUrl = 'http://localhost:8003', token = getRequiredXavierToken()) {
+  constructor(baseUrl = 'http://localhost:8006', token = getRequiredXavierToken()) {
     this.baseUrl = baseUrl;
     this.token = token;
   }

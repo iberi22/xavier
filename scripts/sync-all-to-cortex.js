@@ -1,5 +1,13 @@
 #!/usr/bin/env node
 /**
+ * ╔══════════════════════════════════════════════════════════════╗
+ * ║  DEPRECATED — CORTEX REMOVED (May 2026)                    ║
+ * ║  This script previously synced data to/from Cortex.        ║
+ * ║  Cortex has been fully removed from the SWAL stack.        ║
+ * ║  Xavier now runs on port 8006. Use sync-all-to-xavier.js   ║
+ * ║  or equivalent tools targeting http://localhost:8006.      ║
+ * ╚══════════════════════════════════════════════════════════════╝
+ *
  * SWAL Xavier - Minimal Robust Sync
  * Key principle: finish within 100s, don't hang, skip problematic items
  */
@@ -8,7 +16,7 @@
 // NOTE: Must be set via NODE_OPTIONS env var, not here. Use the .bat launcher or set system env.
 const HEAP_LIMIT = 128; // MB - match NODE_OPTIONS externally set
 
-const XAVIER_URL = process.env.XAVIER_URL || 'http://localhost:8003';
+const XAVIER_URL = process.env.XAVIER_URL || 'http://localhost:8006';
 const fs = require('fs');
 const path = require('path');
 const { setTimeout: delay } = require('timers/promises');

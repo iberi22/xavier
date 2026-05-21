@@ -17,7 +17,7 @@ elease/ - Release and deployment scripts
 | xavier_client.ps1 | Client/CLI testing |
 | xavier-optimizer.ps1 | Performance optimization |
 | locomo_benchmark*.ps1 | LOCOMO benchmark suite |
-| cortex_cli.py | Cortex CLI utilities |
+| cortex_cli.py | Cortex CLI utilities (⚠️ deprecated, project removed) |
 | enchmark_*.py | Various benchmark scripts |
 
 ## Usage

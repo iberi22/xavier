@@ -5,4 +5,4 @@ scrape_configs:
   - job_name: "xavier-health"
     metrics_path: /health
     static_configs:
-      - targets: ["xavier:8003"]
+      - targets: ["xavier:8006"]

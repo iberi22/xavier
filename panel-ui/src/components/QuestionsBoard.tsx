@@ -22,7 +22,7 @@ const defaultFilters: FilterState = {
   project: "",
 };
 
-export function QuestionsBoard({ token, xavierUrl = "http://localhost:8003" }: QuestionsBoardProps) {
+export function QuestionsBoard({ token, xavierUrl = "http://localhost:8006" }: QuestionsBoardProps) {
   const [questions, setQuestions] = useState<Question[]>([]);
   const [filters, setFilters] = useState<FilterState>(defaultFilters);
   const [showForm, setShowForm] = useState(false);
