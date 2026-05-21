@@ -41,8 +41,7 @@ use xavier::coordination::SimpleAgentRegistry;
 use xavier::coordination::{KeyLendingEngine, XavierEventBus};
 use xavier::memory::qmd_memory::{MemoryDocument, QmdMemory};
 use xavier::app::security_service::SecurityService as AppSecurityService;
-use xavier::memory::schema::MemoryLevel;
-use xavier::memory::schema::MemoryQueryFilters;
+use xavier::memory::schema::{ContextZone, MemoryLevel, MemoryQueryFilters};
 use xavier::memory::session_store::{PanelMessage, SessionStore};
 use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
 use xavier::memory::store::{MemoryRecord, MemoryStore};
@@ -917,7 +916,13 @@ pub async fn search_handler(
     let limit = payload.limit.clamp(1, 100);
     info!("Search request: query={}, limit={}", effective_query, limit);
 
-    let filters = payload.filters.clone().unwrap_or_default();
+    let mut filters = payload.filters.clone().unwrap_or_default();
+    let zones = payload
+        .active_zones
+        .clone()
+        .unwrap_or_else(|| xavier::memory::schema::parse_zones_from_prompt(effective_query));
+    filters.zones = Some(zones);
+
     let results: Vec<MemoryRecord> = match state.memory.search(effective_query, Some(filters)).await {
         Ok(results) => results,
         Err(e) => {
@@ -2280,6 +2285,8 @@ pub(crate) struct SearchPayload {
     limit: usize,
     #[serde(default, rename = "filters")]
     filters: Option<MemoryQueryFilters>,
+    #[serde(default)]
+    active_zones: Option<Vec<ContextZone>>,
 }
 
 #[derive(Debug, Deserialize)]
