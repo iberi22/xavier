@@ -12,8 +12,8 @@ use crate::{
     memory::{
         qmd_memory::query_with_embedding_filtered,
         schema::{
-            EvidenceKind, MemoryKind, MemoryNamespace, MemoryProvenance, MemoryQueryFilters,
-            TypedMemoryPayload,
+            ContextZone, EvidenceKind, MemoryKind, MemoryNamespace, MemoryProvenance,
+            MemoryQueryFilters, TypedMemoryPayload,
         },
     },
     workspace::WorkspaceContext,
@@ -69,6 +69,7 @@ pub struct V1SearchRequest {
     pub query: String,
     pub limit: Option<usize>,
     pub filters: Option<MemoryQueryFilters>,
+    pub active_zones: Option<Vec<ContextZone>>,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -202,11 +203,19 @@ pub async fn v1_memories_search(
     Json(payload): Json<V1SearchRequest>,
 ) -> impl IntoResponse {
     let limit = payload.limit.unwrap_or(10);
+
+    let mut filters = payload.filters.clone().unwrap_or_default();
+    let zones = payload
+        .active_zones
+        .clone()
+        .unwrap_or_else(|| crate::memory::schema::parse_zones_from_prompt(&payload.query));
+    filters.zones = Some(zones);
+
     let results = query_with_embedding_filtered(
         &workspace.workspace.memory,
         &payload.query,
         limit,
-        payload.filters.as_ref(),
+        Some(&filters),
     )
     .await
     .unwrap_or_default()
