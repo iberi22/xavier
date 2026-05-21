@@ -3,6 +3,7 @@
 //! Implements adaptive gating that scores and fuses results from Working, Episodic,
 //! and Semantic memory layers using RRF (Reciprocal Rank Fusion).
 
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::memory::entity_graph::EntityRecord;
@@ -100,6 +101,174 @@ pub struct AdaptiveGating {
     config: GatingConfig,
 }
 
+/// Score a single working memory document
+fn score_single_working(
+    doc: &MemoryDocument,
+    query_lower: &str,
+    query_terms: &[&str],
+    active_zones: Option<&Vec<ContextZone>>,
+) -> Option<ScoredResult> {
+    let content_lower = doc.content.to_lowercase();
+    let mut score = 0.0_f32;
+
+    // Exact phrase match bonus
+    if content_lower.contains(query_lower) {
+        score += config::EXACT_PHRASE_MATCH_BONUS;
+    }
+
+    // Term frequency scoring
+    for term in query_terms {
+        if content_lower.contains(term) {
+            score += config::TERM_MATCH_BONUS;
+            // Additional bonus for multiple occurrences
+            let count = content_lower.matches(term).count() as f32;
+            score += (count * config::TERM_OCCURRENCE_BONUS)
+                .min(config::MAX_TERM_OCCURRENCE_BONUS);
+        }
+    }
+
+    if score > 0.0 {
+        let doc_zone = doc
+            .metadata
+            .get("zone")
+            .and_then(|v| v.as_str())
+            .map(ContextZone::parse)
+            .unwrap_or(ContextZone::Atomic);
+
+        let mut final_score = score.min(1.0);
+
+        // Apply zone-based boosting
+        if let Some(active) = active_zones {
+            if active.contains(&doc_zone) {
+                final_score *= 1.5; // Boost targeted zones
+            } else {
+                final_score *= 0.5; // Penalize non-targeted zones
+            }
+        }
+
+        Some(ScoredResult {
+            id: doc.id.clone().unwrap_or_default(),
+            content: doc.content.clone(),
+            score: final_score,
+            source: "working".to_string(),
+            path: doc.path.clone(),
+            updated_at: doc
+                .metadata
+                .get("updated_at")
+                .and_then(|v| v.as_str())
+                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                .map(|dt| dt.timestamp_millis()),
+        })
+    } else {
+        None
+    }
+}
+
+/// Score a single episodic memory session
+fn score_single_episodic(
+    session: &SessionSummary,
+    query_lower: &str,
+    query_terms: &[&str],
+) -> Option<ScoredResult> {
+    let summary_lower = session.summary.to_lowercase();
+    let mut score = 0.0_f32;
+
+    // Summary match
+    if summary_lower.contains(query_lower) {
+        score += config::EXACT_PHRASE_MATCH_BONUS;
+    }
+
+    // Term frequency in summary
+    for term in query_terms {
+        if summary_lower.contains(term) {
+            score += config::TERM_MATCH_BONUS;
+            let count = summary_lower.matches(term).count() as f32;
+            score += (count * config::TERM_OCCURRENCE_BONUS)
+                .min(config::MAX_TERM_OCCURRENCE_BONUS);
+        }
+    }
+
+    // Event matching
+    for event in &session.key_events {
+        let event_lower = event.description.to_lowercase();
+        if event_lower.contains(query_lower) {
+            score += config::EVENT_PHRASE_MATCH_BONUS;
+        }
+        for term in query_terms {
+            if event_lower.contains(term) {
+                score += config::EVENT_TERM_MATCH_BONUS;
+            }
+        }
+    }
+
+    if score > 0.0 {
+        Some(ScoredResult {
+            id: session.session_id.clone(),
+            content: session.summary.clone(),
+            score: score.min(1.0),
+            source: "episodic".to_string(),
+            path: format!("sessions/{}", session.session_id),
+            updated_at: Some(session.start_time.timestamp_millis()),
+        })
+    } else {
+        None
+    }
+}
+
+/// Score a single semantic memory entity
+fn score_single_semantic(entity: &EntityRecord, query_lower: &str) -> Option<ScoredResult> {
+    let name_lower = entity.name.to_lowercase();
+    let normalized_lower = entity.normalized_name.to_lowercase();
+    let mut score = 0.0_f32;
+
+    // Exact name match
+    if name_lower == query_lower || normalized_lower == query_lower {
+        score = config::EXACT_ENTITY_MATCH_SCORE;
+    }
+    // Partial name match
+    else if name_lower.contains(query_lower) || query_lower.contains(&name_lower) {
+        score = config::PARTIAL_ENTITY_MATCH_SCORE;
+    }
+    // Description match
+    else if let Some(desc) = &entity.description {
+        let desc_lower = desc.to_lowercase();
+        if desc_lower.contains(query_lower) {
+            score = config::ENTITY_DESCRIPTION_MATCH_SCORE;
+        }
+        let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
+        for term in &query_terms {
+            if desc_lower.contains(term) {
+                score += config::ENTITY_DESCRIPTION_TERM_BONUS;
+            }
+        }
+    }
+    // Alias matching
+    else {
+        for alias in &entity.aliases {
+            if alias.to_lowercase().contains(query_lower) {
+                score = config::ENTITY_ALIAS_MATCH_SCORE;
+                break;
+            }
+        }
+    }
+
+    // Boost by confirmation count (normalized)
+    let final_score = score * config::SEMANTIC_CONFIDENCE_MULTIPLIER;
+
+    if final_score > 0.0 {
+        Some(ScoredResult {
+            id: entity.id.clone(),
+            content: entity.name.clone(),
+            score: final_score.min(1.0),
+            source: "semantic".to_string(),
+            path: format!("entities/{}", entity.id),
+            updated_at: Some(entity.last_seen.timestamp_millis()),
+        })
+    } else {
+        None
+    }
+}
+
 impl AdaptiveGating {
     pub fn new(config: GatingConfig) -> Self {
         Self { config }
@@ -112,7 +281,7 @@ impl AdaptiveGating {
     }
 
     /// Retrieve from all memory layers and fuse results
-    pub fn retrieve(
+    pub async fn retrieve(
         &self,
         working: &[MemoryDocument],
         episodic: &[SessionSummary],
@@ -120,9 +289,9 @@ impl AdaptiveGating {
         query: &str,
     ) -> Vec<ScoredResult> {
         // 1. Score each layer independently
-        let working_results = self.score_working_layer(working, query);
-        let episodic_results = self.score_episodic_layer(episodic, query);
-        let semantic_results = self.score_semantic_layer(semantic, query);
+        let working_results = self.score_working_layer(working, query).await;
+        let episodic_results = self.score_episodic_layer(episodic, query).await;
+        let semantic_results = self.score_semantic_layer(semantic, query).await;
 
         // 2. Apply layer weights to scores
         let weighted_working =
@@ -147,82 +316,44 @@ impl AdaptiveGating {
     }
 
     /// Retrieve only from working memory
-    pub fn retrieve_working(&self, working: &[MemoryDocument], query: &str) -> Vec<ScoredResult> {
-        self.score_working_layer(working, query)
+    pub async fn retrieve_working(&self, working: &[MemoryDocument], query: &str) -> Vec<ScoredResult> {
+        self.score_working_layer(working, query).await
     }
 
     /// Retrieve only from episodic memory
-    pub fn retrieve_episodic(&self, episodic: &[SessionSummary], query: &str) -> Vec<ScoredResult> {
-        self.score_episodic_layer(episodic, query)
+    pub async fn retrieve_episodic(&self, episodic: &[SessionSummary], query: &str) -> Vec<ScoredResult> {
+        self.score_episodic_layer(episodic, query).await
     }
 
     /// Retrieve only from semantic memory
-    pub fn retrieve_semantic(&self, semantic: &[EntityRecord], query: &str) -> Vec<ScoredResult> {
-        self.score_semantic_layer(semantic, query)
+    pub async fn retrieve_semantic(&self, semantic: &[EntityRecord], query: &str) -> Vec<ScoredResult> {
+        self.score_semantic_layer(semantic, query).await
     }
 
     /// Score working memory layer using keyword matching
-    fn score_working_layer(&self, working: &[MemoryDocument], query: &str) -> Vec<ScoredResult> {
+    pub async fn score_working_layer(&self, working: &[MemoryDocument], query: &str) -> Vec<ScoredResult> {
         let query_lower = query.to_lowercase();
-        let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
+        let query_terms_owned: Vec<String> = query_lower.split_whitespace().map(|s| s.to_string()).collect();
 
-        let mut results: Vec<ScoredResult> = working
-            .iter()
-            .filter_map(|doc| {
-                let content_lower = doc.content.to_lowercase();
-                let mut score = 0.0_f32;
-
-                // Exact phrase match bonus
-                if content_lower.contains(&query_lower) {
-                    score += config::EXACT_PHRASE_MATCH_BONUS;
-                }
-
-                // Term frequency scoring
-                for term in &query_terms {
-                    if content_lower.contains(term) {
-                        score += config::TERM_MATCH_BONUS;
-                        // Additional bonus for multiple occurrences
-                        let count = content_lower.matches(term).count() as f32;
-                        score += (count * config::TERM_OCCURRENCE_BONUS)
-                            .min(config::MAX_TERM_OCCURRENCE_BONUS);
-                    }
-                }
-
-                if score > 0.0 {
-                    let doc_zone = doc.metadata.get("zone")
-                        .and_then(|v| v.as_str())
-                        .map(ContextZone::parse)
-                        .unwrap_or(ContextZone::Atomic);
-
-                    let mut final_score = score.min(1.0);
-
-                    // Apply zone-based boosting
-                    if let Some(active) = &self.config.active_zones {
-                        if active.contains(&doc_zone) {
-                            final_score *= 1.5; // Boost targeted zones
-                        } else {
-                            final_score *= 0.5; // Penalize non-targeted zones
-                        }
-                    }
-
-                    Some(ScoredResult {
-                        id: doc.id.clone().unwrap_or_default(),
-                        content: doc.content.clone(),
-                        score: final_score,
-                        source: "working".to_string(),
-                        path: doc.path.clone(),
-                        updated_at: doc
-                            .metadata
-                            .get("updated_at")
-                            .and_then(|v| v.as_str())
-                            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                            .map(|dt| dt.timestamp_millis()),
-                    })
-                } else {
-                    None
-                }
+        let mut results: Vec<ScoredResult> = if working.len() > 100 {
+            let working = working.to_vec();
+            let active_zones = self.config.active_zones.clone();
+            tokio::task::spawn_blocking(move || {
+                let query_terms: Vec<&str> = query_terms_owned.iter().map(|s| s.as_str()).collect();
+                working
+                    .par_iter()
+                    .filter_map(|doc| score_single_working(doc, &query_lower, &query_terms, active_zones.as_ref()))
+                    .collect()
             })
-            .collect();
+            .await
+            .unwrap_or_default()
+        } else {
+            let query_terms: Vec<&str> = query_terms_owned.iter().map(|s| s.as_str()).collect();
+            working
+                .iter()
+                .filter_map(|doc| score_single_working(doc, &query_lower, &query_terms, self.config.active_zones.as_ref()))
+                .collect()
+        };
 
         // Sort by score descending
         results.sort_by(|a, b| {
@@ -234,58 +365,28 @@ impl AdaptiveGating {
     }
 
     /// Score episodic memory layer using summary and event matching
-    fn score_episodic_layer(&self, episodic: &[SessionSummary], query: &str) -> Vec<ScoredResult> {
+    pub async fn score_episodic_layer(&self, episodic: &[SessionSummary], query: &str) -> Vec<ScoredResult> {
         let query_lower = query.to_lowercase();
-        let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
+        let query_terms_owned: Vec<String> = query_lower.split_whitespace().map(|s| s.to_string()).collect();
 
-        let mut results: Vec<ScoredResult> = episodic
-            .iter()
-            .filter_map(|session| {
-                let summary_lower = session.summary.to_lowercase();
-                let mut score = 0.0_f32;
-
-                // Summary match
-                if summary_lower.contains(&query_lower) {
-                    score += config::EXACT_PHRASE_MATCH_BONUS;
-                }
-
-                // Term frequency in summary
-                for term in &query_terms {
-                    if summary_lower.contains(term) {
-                        score += config::TERM_MATCH_BONUS;
-                        let count = summary_lower.matches(term).count() as f32;
-                        score += (count * config::TERM_OCCURRENCE_BONUS)
-                            .min(config::MAX_TERM_OCCURRENCE_BONUS);
-                    }
-                }
-
-                // Event matching
-                for event in &session.key_events {
-                    let event_lower = event.description.to_lowercase();
-                    if event_lower.contains(&query_lower) {
-                        score += config::EVENT_PHRASE_MATCH_BONUS;
-                    }
-                    for term in &query_terms {
-                        if event_lower.contains(term) {
-                            score += config::EVENT_TERM_MATCH_BONUS;
-                        }
-                    }
-                }
-
-                if score > 0.0 {
-                    Some(ScoredResult {
-                        id: session.session_id.clone(),
-                        content: session.summary.clone(),
-                        score: score.min(1.0),
-                        source: "episodic".to_string(),
-                        path: format!("sessions/{}", session.session_id),
-                        updated_at: Some(session.start_time.timestamp_millis()),
-                    })
-                } else {
-                    None
-                }
+        let mut results: Vec<ScoredResult> = if episodic.len() > 100 {
+            let episodic = episodic.to_vec();
+            tokio::task::spawn_blocking(move || {
+                let query_terms: Vec<&str> = query_terms_owned.iter().map(|s| s.as_str()).collect();
+                episodic
+                    .par_iter()
+                    .filter_map(|session| score_single_episodic(session, &query_lower, &query_terms))
+                    .collect()
             })
-            .collect();
+            .await
+            .unwrap_or_default()
+        } else {
+            let query_terms: Vec<&str> = query_terms_owned.iter().map(|s| s.as_str()).collect();
+            episodic
+                .iter()
+                .filter_map(|session| score_single_episodic(session, &query_lower, &query_terms))
+                .collect()
+        };
 
         results.sort_by(|a, b| {
             b.score
@@ -296,64 +397,25 @@ impl AdaptiveGating {
     }
 
     /// Score semantic memory layer using entity matching
-    fn score_semantic_layer(&self, semantic: &[EntityRecord], query: &str) -> Vec<ScoredResult> {
+    pub async fn score_semantic_layer(&self, semantic: &[EntityRecord], query: &str) -> Vec<ScoredResult> {
         let query_lower = query.to_lowercase();
 
-        let mut results: Vec<ScoredResult> = semantic
-            .iter()
-            .filter_map(|entity| {
-                let name_lower = entity.name.to_lowercase();
-                let normalized_lower = entity.normalized_name.to_lowercase();
-                let mut score = 0.0_f32;
-
-                // Exact name match
-                if name_lower == query_lower || normalized_lower == query_lower {
-                    score = config::EXACT_ENTITY_MATCH_SCORE;
-                }
-                // Partial name match
-                else if name_lower.contains(&query_lower) || query_lower.contains(&name_lower) {
-                    score = config::PARTIAL_ENTITY_MATCH_SCORE;
-                }
-                // Description match
-                else if let Some(desc) = &entity.description {
-                    let desc_lower = desc.to_lowercase();
-                    if desc_lower.contains(&query_lower) {
-                        score = config::ENTITY_DESCRIPTION_MATCH_SCORE;
-                    }
-                    let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
-                    for term in &query_terms {
-                        if desc_lower.contains(term) {
-                            score += config::ENTITY_DESCRIPTION_TERM_BONUS;
-                        }
-                    }
-                }
-                // Alias matching
-                else {
-                    for alias in &entity.aliases {
-                        if alias.to_lowercase().contains(&query_lower) {
-                            score = config::ENTITY_ALIAS_MATCH_SCORE;
-                            break;
-                        }
-                    }
-                }
-
-                // Boost by confirmation count (normalized)
-                let final_score = score * config::SEMANTIC_CONFIDENCE_MULTIPLIER;
-
-                if final_score > 0.0 {
-                    Some(ScoredResult {
-                        id: entity.id.clone(),
-                        content: entity.name.clone(),
-                        score: final_score.min(1.0),
-                        source: "semantic".to_string(),
-                        path: format!("entities/{}", entity.id),
-                        updated_at: Some(entity.last_seen.timestamp_millis()),
-                    })
-                } else {
-                    None
-                }
+        let mut results: Vec<ScoredResult> = if semantic.len() > 100 {
+            let semantic = semantic.to_vec();
+            tokio::task::spawn_blocking(move || {
+                semantic
+                    .par_iter()
+                    .filter_map(|entity| score_single_semantic(entity, &query_lower))
+                    .collect()
             })
-            .collect();
+            .await
+            .unwrap_or_default()
+        } else {
+            semantic
+                .iter()
+                .filter_map(|entity| score_single_semantic(entity, &query_lower))
+                .collect()
+        };
 
         results.sort_by(|a, b| {
             b.score
@@ -449,8 +511,8 @@ mod tests {
         assert!((weights.weight_for("unknown")).abs() < 0.001);
     }
 
-    #[test]
-    fn test_working_layer_scoring() {
+    #[tokio::test]
+    async fn test_working_layer_scoring() {
         let gating = AdaptiveGating::with_defaults();
         let docs = vec![
             MemoryDocument {
@@ -473,14 +535,14 @@ mod tests {
             },
         ];
 
-        let results = gating.score_working_layer(&docs, "BELA");
+        let results = gating.score_working_layer(&docs, "BELA").await;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "doc1");
         assert!(results[0].score > 0.0);
     }
 
-    #[test]
-    fn test_semantic_layer_scoring() {
+    #[tokio::test]
+    async fn test_semantic_layer_scoring() {
         let gating = AdaptiveGating::with_defaults();
         let entities = vec![
             EntityRecord {
@@ -515,15 +577,15 @@ mod tests {
             },
         ];
 
-        let results = gating.score_semantic_layer(&entities, "BELA");
+        let results = gating.score_semantic_layer(&entities, "BELA").await;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "entity1");
         // Exact matches are scaled by the fixed semantic confidence multiplier.
         assert_eq!(results[0].score, 0.5);
     }
 
-    #[test]
-    fn test_multi_layer_retrieval() {
+    #[tokio::test]
+    async fn test_multi_layer_retrieval() {
         let mut gating = AdaptiveGating::with_defaults();
         gating.set_threshold(0.0);
         let docs = vec![MemoryDocument {
@@ -538,8 +600,44 @@ mod tests {
         let sessions: Vec<SessionSummary> = vec![];
         let entities: Vec<EntityRecord> = vec![];
 
-        let results = gating.retrieve(&docs, &sessions, &entities, "BELA");
+        let results = gating.retrieve(&docs, &sessions, &entities, "BELA").await;
         assert!(!results.is_empty());
         assert_eq!(results[0].source, "hybrid");
+    }
+
+    #[tokio::test]
+    async fn test_score_documents_parallel_equals_sequential() {
+        let gating = AdaptiveGating::with_defaults();
+        let mut docs = Vec::new();
+        for i in 0..150 {
+            docs.push(MemoryDocument {
+                id: Some(format!("doc{}", i)),
+                path: format!("test/path{}", i),
+                content: format!("BELA works at SWAL in office {}", i),
+                metadata: serde_json::json!({}),
+                ..Default::default()
+            });
+        }
+
+        // Test working layer
+        let sequential_results: Vec<ScoredResult> = docs
+            .iter()
+            .filter_map(|doc| {
+                score_single_working(
+                    doc,
+                    "bela",
+                    &["bela"],
+                    None,
+                )
+            })
+            .collect();
+
+        let parallel_results = gating.score_working_layer(&docs, "bela").await;
+
+        assert_eq!(sequential_results.len(), parallel_results.len());
+        for (s, p) in sequential_results.iter().zip(parallel_results.iter()) {
+            assert_eq!(s.id, p.id);
+            assert!((s.score - p.score).abs() < 0.0001);
+        }
     }
 }
