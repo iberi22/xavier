@@ -129,9 +129,38 @@ impl Orchestrator {
         // 2. Probabilistic Retrieval (Hybrid Search) - Fill remaining budget
         let remaining_limit = config.max_documents.saturating_sub(selected_document_ids.len());
         if remaining_limit > 0 {
-            let hybrid_hits = self
+            let mut hybrid_hits = self
                 .search
                 .search(&session_documents, &query, remaining_limit);
+
+            // Integrate Grounding Validation for Hybrid Search
+            if let Some(graph_lock) = &self.belief_graph {
+                let graph = graph_lock.read().await;
+                let docs_to_validate: Vec<_> = hybrid_hits
+                    .iter()
+                    .map(|hit| crate::memory::qmd_memory::MemoryDocument {
+                        id: Some(hit.document.id.clone()),
+                        content: hit.document.content.clone(),
+                        path: hit.document.metadata["path"]
+                            .as_str()
+                            .unwrap_or("unknown")
+                            .to_string(),
+                        ..Default::default()
+                    })
+                    .collect();
+
+                // Use default threshold 0.5 for now, could be made configurable in Orchestrator
+                let grounding = graph.validate_grounding(&docs_to_validate, 0.5).await;
+
+                hybrid_hits.retain(|hit| {
+                    grounding
+                        .iter()
+                        .find(|(id, _, _)| id == &hit.document.id)
+                        .map(|(_, grounded, _)| *grounded)
+                        .unwrap_or(false)
+                });
+            }
+
             for hit in hybrid_hits {
                 if !selected_document_ids.contains(&hit.document.id) {
                     selected_document_ids.push(hit.document.id);

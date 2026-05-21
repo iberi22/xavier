@@ -516,6 +516,20 @@ pub struct MultiLayerRetrieveRequest {
     /// Include coherence report
     #[serde(default)]
     pub include_coherence: bool,
+    /// Whether to enable belief graph grounding validation
+    #[serde(default = "default_true")]
+    pub grounding_enabled: bool,
+    /// Minimum confidence for semantic grounding
+    #[serde(default = "default_grounding_threshold")]
+    pub grounding_min_confidence: f32,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_grounding_threshold() -> f32 {
+    0.5
 }
 
 fn default_relevance_threshold() -> f32 {
@@ -1088,6 +1102,8 @@ async fn build_multi_layer_retrieve_response(
         rrf_k: payload.rrf_k,
         max_results: payload.limit.max(1),
         active_zones: None,
+        grounding_enabled: payload.grounding_enabled,
+        grounding_min_confidence: payload.grounding_min_confidence,
     });
 
     let working_docs = workspace.workspace.memory.all_documents().await;
@@ -1113,12 +1129,15 @@ async fn build_multi_layer_retrieve_response(
         workspace.workspace.entity_graph.all_entities().await;
     let semantic_count = semantic_entities.len();
 
-    let results = gating.retrieve(
-        &working_docs,
-        &episodic_summaries,
-        &semantic_entities,
-        &payload.query,
-    );
+    let results = gating
+        .retrieve(
+            &working_docs,
+            &episodic_summaries,
+            &semantic_entities,
+            &payload.query,
+            Some(Arc::clone(&workspace.workspace.belief_graph)),
+        )
+        .await;
 
     let total_results = results.len();
 
@@ -1131,7 +1150,6 @@ async fn build_multi_layer_retrieve_response(
 
     let retrieved: Vec<RetrievedMemory> = results
         .into_iter()
-        .take(payload.limit)
         .map(|r| {
             let crate::search::rrf::ScoredResult {
                 id,
