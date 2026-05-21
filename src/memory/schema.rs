@@ -105,6 +105,24 @@ pub enum EvidenceKind {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum RetrievalScope {
+    Global,
+    Zone,
+    Detailed,
+}
+
+impl RetrievalScope {
+    pub fn to_levels(&self) -> Vec<MemoryLevel> {
+        match self {
+            Self::Global => vec![MemoryLevel::Belief, MemoryLevel::Extracted],
+            Self::Zone => vec![MemoryLevel::Processed, MemoryLevel::Extracted],
+            Self::Detailed => vec![MemoryLevel::Raw],
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 #[derive(Default)]
 pub enum MemoryLevel {
     #[default]
@@ -228,6 +246,7 @@ pub struct MemoryQueryFilters {
     pub session_id: Option<String>,
     pub project: Option<String>,
     pub scope: Option<String>,
+    pub retrieval_scope: Option<RetrievalScope>,
     pub source_app: Option<String>,
     pub source_type: Option<String>,
     pub repo_url: Option<String>,

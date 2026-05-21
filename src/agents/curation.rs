@@ -1,10 +1,12 @@
 use anyhow::Result;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
 use crate::agents::provider::ModelProviderClient;
-
 use crate::memory::belief_graph::Belief;
+use crate::memory::schema::MemoryLevel;
+use crate::memory::store::MemoryRecord;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CurationResult {
@@ -62,6 +64,57 @@ impl CurationAgent {
 
         let result: CurationResult = serde_json::from_str(json_str)?;
         Ok(result)
+    }
+
+    /// Aggregates multiple detailed (Raw) memories into a summarized "Zone" memory.
+    /// The generated memory will have `MemoryLevel::Extracted`, linking back to its
+    /// children via its cluster ID, enabling traversal up/down the hierarchy tree.
+    pub async fn group_into_zone(
+        &self,
+        cluster_id: &str,
+        workspace_id: &str,
+        memories: &[MemoryRecord],
+    ) -> Result<MemoryRecord> {
+        info!("🧠 Grouping {} memories into zone/cluster {}...", memories.len(), cluster_id);
+
+        let contents = memories
+            .iter()
+            .map(|m| m.content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n\n---\n\n");
+
+        let prompt = format!(
+            "You are aggregating a cluster of related information from a knowledge graph.\n\
+             Read the following memory snippets and generate a comprehensive but concise summary \n\
+             that represents the overarching 'Zone' or parent concept they all belong to.\n\n\
+             Memories:\n\"\"\"\n{}\n\"\"\"\n\n\
+             Return ONLY the summary text.",
+            contents
+        );
+
+        let summary = self.client.generate_response(&prompt, &[]).await?;
+
+        let now = Utc::now();
+        Ok(MemoryRecord {
+            id: uuid::Uuid::new_v4().to_string(),
+            workspace_id: workspace_id.to_string(),
+            path: format!("zone_summary/{}", cluster_id),
+            content: summary.trim().to_string(),
+            metadata: serde_json::json!({
+                "type": "zone_summary",
+                "aggregated_count": memories.len(),
+            }),
+            embedding: Vec::new(), // To be embedded later by the indexing pipeline
+            created_at: now,
+            updated_at: now,
+            revision: 1,
+            primary: true,
+            parent_id: None, // This is the parent for the cluster
+            cluster_id: Some(cluster_id.to_string()),
+            level: MemoryLevel::Extracted,
+            relation: None,
+            revisions: Vec::new(),
+        })
     }
 }
 

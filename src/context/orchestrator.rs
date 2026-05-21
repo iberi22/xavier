@@ -10,6 +10,7 @@ use super::{
 use crate::memory::belief_graph::SharedBeliefGraph;
 use crate::memory::qmd_memory::QmdMemory;
 use crate::memory::virtual_memory::{VirtualMemory, VirtualMemoryEntry};
+use crate::memory::schema::RetrievalScope;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HookKind {
@@ -27,6 +28,7 @@ pub struct ExecutionPlan {
     pub include_tool_calls: bool,
     pub include_metadata: bool,
     pub selected_document_ids: Vec<String>,
+    pub retrieval_scope: Option<RetrievalScope>,
 }
 
 #[derive(Debug, Clone)]
@@ -105,6 +107,12 @@ impl Orchestrator {
             .cloned()
             .collect();
 
+        let retrieval_scope = match level {
+            ContextLevel::Maximum => RetrievalScope::Global,
+            ContextLevel::Medium => RetrievalScope::Zone,
+            ContextLevel::Minimal => RetrievalScope::Detailed,
+        };
+
         let config = self.budgets.plan(hook, level);
         let query = build_query(prompt, level, hook);
 
@@ -126,6 +134,9 @@ impl Orchestrator {
         // 2. Probabilistic Retrieval (Hybrid Search) - Fill remaining budget
         let remaining_limit = config.max_documents.saturating_sub(selected_document_ids.len());
         if remaining_limit > 0 {
+            // Apply the scope logic directly into the Hybrid Search logic or orchestrator plan
+            // The Orchestrator's internal search only uses existing ContextDocuments, not QmdMemory directly,
+            // but we can pass the scope as part of the execution plan
             let hybrid_hits = self
                 .search
                 .search(&session_documents, &query, remaining_limit);
@@ -145,6 +156,7 @@ impl Orchestrator {
             include_tool_calls: config.include_tool_calls,
             include_metadata: config.include_metadata,
             selected_document_ids,
+            retrieval_scope: Some(retrieval_scope),
         }
     }
 
@@ -480,6 +492,7 @@ mod tests {
             include_tool_calls: false,
             include_metadata: false,
             selected_document_ids: vec!["1".to_string(), "2".to_string()],
+            retrieval_scope: None,
         };
 
         let selected = orchestrator.execute(&plan, &documents, "s-1").await;

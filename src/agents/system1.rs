@@ -146,6 +146,14 @@ impl System1Retriever {
     ) -> Result<RetrievalResult> {
         let start = std::time::Instant::now();
 
+        let mut actual_filters = filters.cloned().unwrap_or_default();
+        if let Some(scope) = &actual_filters.retrieval_scope {
+            let mut levels = actual_filters.levels.unwrap_or_default();
+            levels.extend(scope.to_levels());
+            actual_filters.levels = Some(levels);
+        }
+        let filters = Some(&actual_filters);
+
         info!("🔍 System1 starting retrieval for query: {}", query);
 
         let search_query = if self.config.use_hyde {
