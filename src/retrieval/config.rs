@@ -15,6 +15,7 @@ pub fn configured_rrf_k() -> u32 {
 
 pub const DEFAULT_MAX_RESULTS: usize = 20;
 pub const DEFAULT_SEARCH_LIMIT: usize = 10;
+pub const DEFAULT_RERANK_LIMIT: usize = 50;
 pub const DEFAULT_KEYWORD_WEIGHT: f32 = 0.5;
 pub const DEFAULT_VECTOR_WEIGHT: f32 = 0.5;
 
