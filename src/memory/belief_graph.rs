@@ -354,6 +354,49 @@ impl BeliefGraph {
             .iter()
             .any(|e| e.provenance_id == memory_id)
     }
+
+    /// Validates if a list of documents are grounded in the belief graph.
+    /// Returns a list of (memory_id, is_grounded, explanation)
+    pub async fn validate_grounding(&self, documents: &[crate::memory::qmd_memory::MemoryDocument]) -> Vec<(String, bool, String)> {
+        let mut results = Vec::new();
+        let edges = self.get_edges();
+        let nodes = self.list_nodes(); // Hoisted outside loop: O(N) once, not O(D*N)
+
+        for doc in documents {
+            let memory_id = doc.id.clone().unwrap_or_else(|| doc.path.clone());
+
+            // Check if this specific memory ID is a provenance for any belief
+            let has_belief = edges.iter().any(|e| e.provenance_id == memory_id);
+
+            if has_belief {
+                results.push((memory_id, true, "Directly grounded in belief graph".to_string()));
+                continue;
+            }
+
+            // Semantic grounding: check if key terms in content match established nodes
+            let content_lower = doc.content.to_lowercase();
+            let matching_nodes: Vec<_> = nodes.iter()
+                .filter(|n| content_lower.contains(&n.concept.to_lowercase()))
+                .collect();
+
+            if !matching_nodes.is_empty() {
+                let node_names: Vec<_> = matching_nodes.iter().map(|n| &n.concept).collect();
+                results.push((
+                    memory_id,
+                    true,
+                    format!("Semantically grounded through concepts: {:?}", node_names)
+                ));
+            } else {
+                results.push((
+                    memory_id,
+                    false,
+                    "No supporting beliefs or nodes found in graph".to_string()
+                ));
+            }
+        }
+
+        results
+    }
 }
 
 impl Default for BeliefGraph {

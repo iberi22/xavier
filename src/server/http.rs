@@ -901,6 +901,7 @@ pub async fn memory_add(
         provenance: payload.provenance,
         cluster_id: payload.cluster_id,
         level: payload.level,
+        zone: None,
         relation: payload.relation,
     };
     let content_vector = match embedding::build_embedder_from_env().await {
@@ -1086,6 +1087,7 @@ async fn build_multi_layer_retrieve_response(
         relevance_threshold: payload.relevance_threshold.clamp(0.0, 1.0),
         rrf_k: payload.rrf_k,
         max_results: payload.limit.max(1),
+        active_zones: None,
     });
 
     let working_docs = workspace.workspace.memory.all_documents().await;

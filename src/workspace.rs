@@ -1084,6 +1084,7 @@ impl WorkspaceState {
             content_vector: Some(existing.embedding.clone()),
             embedding: existing.embedding.clone(),
             cluster_id: typed.as_ref().and_then(|t| t.cluster_id.clone()),
+            parent_id: None,
             level: typed
                 .as_ref()
                 .and_then(|t| t.level)
@@ -1479,6 +1480,7 @@ async fn seed_workspace(workspace: &WorkspaceState) -> Result<()> {
                 metadata: normalized,
                 content_vector: Some(Vec::new()),
                 embedding: Vec::new(),
+                parent_id: None,
                 ..Default::default()
             })
             .await?;

@@ -114,6 +114,36 @@ pub enum MemoryLevel {
     Belief,     // Validated belief
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+#[derive(Default)]
+pub enum ContextZone {
+    #[default]
+    Atomic,      // Raw fragments, atomic facts
+    Cluster,     // Summaries of groups of related memories
+    Global,      // High-level strategic summaries
+    Relational,  // Beliefs and knowledge graph relations
+}
+
+impl ContextZone {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Atomic => "atomic",
+            Self::Cluster => "cluster",
+            Self::Global => "global",
+            Self::Relational => "relational",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "cluster" => Self::Cluster,
+            "global" => Self::Global,
+            "relational" => Self::Relational,
+            _ => Self::Atomic,
+        }
+    }
+}
 
 impl MemoryLevel {
     pub fn as_str(&self) -> &'static str {
@@ -214,6 +244,7 @@ pub struct TypedMemoryPayload {
     pub provenance: Option<MemoryProvenance>,
     pub cluster_id: Option<String>,
     pub level: Option<MemoryLevel>,
+    pub zone: Option<ContextZone>,
     pub relation: Option<RelationKind>,
 }
 
@@ -242,12 +273,14 @@ pub struct MemoryQueryFilters {
     pub recorded_before: Option<String>,
     pub cluster_ids: Option<Vec<String>>,
     pub levels: Option<Vec<MemoryLevel>>,
+    pub zones: Option<Vec<ContextZone>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedMemoryMetadata {
     pub kind: MemoryKind,
     pub evidence_kind: Option<EvidenceKind>,
+    pub zone: ContextZone,
     pub namespace: MemoryNamespace,
     pub provenance: MemoryProvenance,
 }
@@ -267,9 +300,21 @@ pub fn normalize_metadata(
             metadata["memory_kind"] = json!(evidence_kind.as_str());
         }
     }
+    metadata["zone"] = json!(resolved.zone.as_str());
     metadata["namespace"] = serde_json::to_value(&resolved.namespace)?;
     metadata["provenance"] = serde_json::to_value(&resolved.provenance)?;
     Ok(metadata)
+}
+
+fn infer_zone_from_kind_and_level(kind: MemoryKind, level: Option<MemoryLevel>) -> ContextZone {
+    match kind {
+        MemoryKind::Belief => ContextZone::Relational,
+        _ => match level {
+            Some(MemoryLevel::Belief) => ContextZone::Relational,
+            Some(MemoryLevel::Extracted) => ContextZone::Cluster,
+            _ => ContextZone::Atomic,
+        },
+    }
 }
 
 pub fn resolve_metadata(
@@ -313,9 +358,20 @@ pub fn resolve_metadata(
         .or_else(|| infer_kind_from_path(path))
         .unwrap_or(MemoryKind::Document);
 
+    let zone = typed
+        .zone
+        .or_else(|| {
+            metadata
+                .get("zone")
+                .and_then(|v| v.as_str())
+                .map(ContextZone::parse)
+        })
+        .unwrap_or_else(|| infer_zone_from_kind_and_level(kind, typed.level));
+
     Ok(ResolvedMemoryMetadata {
         kind,
         evidence_kind,
+        zone,
         namespace,
         provenance,
     })
@@ -466,6 +522,12 @@ pub fn matches_filters(
             .and_then(|v| v.as_str())
             .map(MemoryLevel::parse);
         if !actual_level.is_some_and(|level| levels.contains(&level)) {
+            return false;
+        }
+    }
+
+    if let Some(zones) = &filters.zones {
+        if !zones.contains(&resolved.zone) {
             return false;
         }
     }
