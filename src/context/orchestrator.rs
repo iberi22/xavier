@@ -7,6 +7,7 @@ use super::{
     hybrid::{ContextSearchHit, HybridContextSearch},
     ContextDocument,
 };
+use crate::memory::schema::ContextZone;
 use crate::memory::belief_graph::SharedBeliefGraph;
 use crate::memory::qmd_memory::QmdMemory;
 use crate::memory::virtual_memory::{VirtualMemory, VirtualMemoryEntry};
@@ -22,6 +23,7 @@ pub struct ExecutionPlan {
     pub hook: HookKind,
     pub level: ContextLevel,
     pub query: String,
+    pub active_zones: Vec<ContextZone>,
     pub max_documents: usize,
     pub max_tokens: usize,
     pub include_tool_calls: bool,
@@ -99,6 +101,7 @@ impl Orchestrator {
         documents: &[ContextDocument],
     ) -> ExecutionPlan {
         let level = self.classifier.classify(prompt);
+        let active_zones = parse_zones_from_prompt(prompt);
         let session_documents: Vec<_> = documents
             .iter()
             .filter(|document| document.session_id == session_id)
@@ -140,6 +143,7 @@ impl Orchestrator {
             hook,
             level,
             query,
+            active_zones,
             max_documents: config.max_documents,
             max_tokens: config.max_tokens,
             include_tool_calls: config.include_tool_calls,
@@ -376,6 +380,32 @@ struct PlanConfig {
     include_metadata: bool,
 }
 
+fn parse_zones_from_prompt(prompt: &str) -> Vec<ContextZone> {
+    let lowered = prompt.to_lowercase();
+    let mut zones = Vec::new();
+
+    if lowered.contains("detalle") || lowered.contains("atómico") || lowered.contains("atomic") {
+        zones.push(ContextZone::Atomic);
+    }
+    if lowered.contains("resumen") || lowered.contains("cluster") || lowered.contains("agrupar") {
+        zones.push(ContextZone::Cluster);
+    }
+    if lowered.contains("general") || lowered.contains("global") || lowered.contains("estrategia") {
+        zones.push(ContextZone::Global);
+    }
+    if lowered.contains("relación") || lowered.contains("vínculo") || lowered.contains("grafo") || lowered.contains("belief") {
+        zones.push(ContextZone::Relational);
+    }
+
+    if zones.is_empty() {
+        // Default zones based on implicit intent if none specified
+        zones.push(ContextZone::Atomic);
+        zones.push(ContextZone::Cluster);
+    }
+
+    zones
+}
+
 fn build_query(prompt: &str, level: ContextLevel, hook: HookKind) -> String {
     match (hook, level) {
         (HookKind::SessionStart, ContextLevel::Minimal) => prompt.to_string(),
@@ -475,6 +505,7 @@ mod tests {
             hook: HookKind::SessionStart,
             level: ContextLevel::Minimal,
             query: "build".to_string(),
+            active_zones: vec![ContextZone::Atomic],
             max_documents: 2,
             max_tokens: 800,
             include_tool_calls: false,

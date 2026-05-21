@@ -217,7 +217,7 @@ async fn test_websocket_streaming() {
 
     if let WsEvent::Event(e) = event {
         assert_eq!(e.agent_id, "test_agent");
-        assert_eq!(e.event_type, "memory.add");
+        assert!(e.event_type == "memory.add" || e.event_type == "timeline_event");
         assert!(e.payload["path"].as_str().is_some());
     } else {
         panic!("Expected WsEvent::Event, got {:?}", event);

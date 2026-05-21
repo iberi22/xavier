@@ -188,6 +188,7 @@ pub async fn add_document_typed_with_embedding(
                 content_vector: Some(variant_embedding.clone()),
                 embedding: variant_embedding,
                 cluster_id: typed.as_ref().and_then(|t| t.cluster_id.clone()),
+                parent_id: None,
                 level: typed
                     .as_ref()
                     .and_then(|t| t.level)

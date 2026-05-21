@@ -22,6 +22,7 @@ pub struct MemoryDocument {
     pub embedding: Vec<f32>,
     #[serde(default)]
     pub cluster_id: Option<String>,
+    pub parent_id: Option<String>,
     #[serde(default)]
     pub level: crate::memory::schema::MemoryLevel,
     #[serde(default)]
@@ -38,6 +39,7 @@ impl Default for MemoryDocument {
             content_vector: None,
             embedding: Vec::new(),
             cluster_id: None,
+            parent_id: None,
             level: crate::memory::schema::MemoryLevel::Raw,
             relation: None,
         }
@@ -60,6 +62,7 @@ impl MemoryDocument {
                 .unwrap_or_default() as u64
             + (self.embedding.len() * std::mem::size_of::<f32>()) as u64
             + self.cluster_id.as_ref().map(|s| s.len()).unwrap_or(0) as u64
+            + self.parent_id.as_ref().map(|s| s.len()).unwrap_or(0) as u64
             + 1 // level enum size estimate
             + self.relation.as_ref().map(|r| r.name.len()).unwrap_or(0) as u64
     }

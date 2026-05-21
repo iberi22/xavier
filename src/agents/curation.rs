@@ -2,9 +2,12 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
+use std::sync::Arc;
 use crate::agents::provider::ModelProviderClient;
 
 use crate::memory::belief_graph::Belief;
+use crate::memory::qmd_memory::QmdMemory;
+use crate::memory::schema::{ContextZone, MemoryLevel, TypedMemoryPayload};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CurationResult {
@@ -17,13 +20,20 @@ pub struct CurationResult {
 
 pub struct CurationAgent {
     client: ModelProviderClient,
+    memory: Option<Arc<QmdMemory>>,
 }
 
 impl CurationAgent {
     pub fn new() -> Self {
         Self {
             client: ModelProviderClient::from_env(),
+            memory: None,
         }
+    }
+
+    pub fn with_memory(mut self, memory: Arc<QmdMemory>) -> Self {
+        self.memory = Some(memory);
+        self
     }
 
     pub async fn curate(&self, content: &str) -> Result<CurationResult> {
@@ -62,6 +72,67 @@ impl CurationAgent {
 
         let result: CurationResult = serde_json::from_str(json_str)?;
         Ok(result)
+    }
+
+    /// Implement recursive summarization for memory clusters (RAPTOR style)
+    pub async fn summarize_cluster(&self, cluster_id: &str) -> Result<Option<String>> {
+        let Some(memory) = &self.memory else {
+            return Ok(None);
+        };
+
+        let filters = crate::memory::schema::MemoryQueryFilters {
+            cluster_ids: Some(vec![cluster_id.to_string()]),
+            ..Default::default()
+        };
+
+        let docs = memory.search_filtered("", 100, Some(&filters)).await?;
+        if docs.is_empty() {
+            return Ok(None);
+        }
+
+        let combined_content = docs
+            .iter()
+            .map(|d| d.content.as_str())
+            .collect::<Vec<_>>()
+            .join("\n\n---\n\n");
+
+        info!("🌳 Summarizing cluster {} ({} docs)", cluster_id, docs.len());
+
+        let prompt = format!(
+            "Sintetiza la siguiente colección de fragmentos de memoria en un resumen ejecutivo coherente.\n\
+             Este resumen actuará como el nodo padre en una jerarquía de información.\n\n\
+             Fragmentos:\n\"\"\"\n{}\n\"\"\"",
+            combined_content
+        );
+
+        let summary = self.client.generate_response(&prompt, &[]).await?;
+
+        let parent_id = ulid::Ulid::new().to_string();
+        let path = format!("clusters/{}/summary", cluster_id);
+
+        memory.add_document_typed(
+            path,
+            summary.clone(),
+            serde_json::json!({
+                "cluster_id": cluster_id,
+                "is_parent": true,
+                "child_count": docs.len()
+            }),
+            Some(TypedMemoryPayload {
+                level: Some(MemoryLevel::Extracted),
+                zone: Some(ContextZone::Cluster),
+                cluster_id: Some(cluster_id.to_string()),
+                ..Default::default()
+            })
+        ).await?;
+
+        // Assign parent_id to children
+        for mut doc in docs {
+            doc.parent_id = Some(parent_id.clone());
+            memory.update(doc).await?;
+        }
+
+        Ok(Some(parent_id))
     }
 }
 

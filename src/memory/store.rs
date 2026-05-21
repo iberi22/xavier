@@ -257,6 +257,7 @@ impl MemoryRecord {
             content_vector: Some(self.embedding.clone()),
             embedding: self.embedding.clone(),
             cluster_id: self.cluster_id.clone(),
+            parent_id: self.parent_id.clone(),
             level: self.level,
             relation: self.relation.clone(),
         }

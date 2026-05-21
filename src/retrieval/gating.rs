@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::memory::entity_graph::EntityRecord;
 use crate::memory::qmd_memory::MemoryDocument;
+use crate::memory::schema::ContextZone;
 use crate::retrieval::config;
 use crate::search::rrf::{reciprocal_rank_fusion, ScoredResult};
 
@@ -69,6 +70,8 @@ pub struct GatingConfig {
     pub rrf_k: u32,
     /// Maximum results to return
     pub max_results: usize,
+    /// Targeted zones for the retrieval
+    pub active_zones: Option<Vec<ContextZone>>,
 }
 
 impl Default for GatingConfig {
@@ -78,6 +81,7 @@ impl Default for GatingConfig {
             relevance_threshold: config::DEFAULT_RELEVANCE_THRESHOLD,
             rrf_k: config::DEFAULT_RRF_K,
             max_results: config::DEFAULT_MAX_RESULTS,
+            active_zones: None,
         }
     }
 }
@@ -185,10 +189,26 @@ impl AdaptiveGating {
                 }
 
                 if score > 0.0 {
+                    let doc_zone = doc.metadata.get("zone")
+                        .and_then(|v| v.as_str())
+                        .map(ContextZone::parse)
+                        .unwrap_or(ContextZone::Atomic);
+
+                    let mut final_score = score.min(1.0);
+
+                    // Apply zone-based boosting
+                    if let Some(active) = &self.config.active_zones {
+                        if active.contains(&doc_zone) {
+                            final_score *= 1.5; // Boost targeted zones
+                        } else {
+                            final_score *= 0.5; // Penalize non-targeted zones
+                        }
+                    }
+
                     Some(ScoredResult {
                         id: doc.id.clone().unwrap_or_default(),
                         content: doc.content.clone(),
-                        score: score.min(1.0),
+                        score: final_score,
                         source: "working".to_string(),
                         path: doc.path.clone(),
                         updated_at: doc
