@@ -72,6 +72,8 @@ pub struct ServerSettings {
     pub log_level: String,
     pub code_graph_db_path: String,
     pub url: String,
+    #[serde(default)]
+    pub config_path: Option<String>,
 }
 
 impl Default for ServerSettings {
@@ -82,6 +84,7 @@ impl Default for ServerSettings {
             log_level: "info".to_string(),
             code_graph_db_path: "data/code_graph.db".to_string(),
             url: String::new(),
+            config_path: None,
         }
     }
 }
@@ -195,7 +198,7 @@ impl Default for MemoryLayersSettings {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct ModelSettings {
     pub provider: String,
     pub api_flavor: String,
@@ -207,6 +210,41 @@ pub struct ModelSettings {
     pub router_complex_model: String,
     pub router_fast_model: String,
     pub router_quality_model: String,
+    #[serde(default)]
+    pub llm_model: Option<String>,
+    #[serde(default)]
+    pub llm_api_key: Option<String>,
+    #[serde(default)]
+    pub cloud_llm_model: Option<String>,
+    #[serde(default)]
+    pub cloud_llm_url: Option<String>,
+    #[serde(default)]
+    pub local_llm_api_key: Option<String>,
+    #[serde(default)]
+    pub local_anthropic_url: Option<String>,
+}
+
+impl fmt::Debug for ModelSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ModelSettings")
+            .field("provider", &self.provider)
+            .field("api_flavor", &self.api_flavor)
+            .field("local_llm_url", &self.local_llm_url)
+            .field("local_llm_model", &self.local_llm_model)
+            .field("embedding_url", &self.embedding_url)
+            .field("embedding_model", &self.embedding_model)
+            .field("router_retrieved_model", &self.router_retrieved_model)
+            .field("router_complex_model", &self.router_complex_model)
+            .field("router_fast_model", &self.router_fast_model)
+            .field("router_quality_model", &self.router_quality_model)
+            .field("llm_model", &self.llm_model)
+            .field("llm_api_key", &"[REDACTED]")
+            .field("cloud_llm_model", &self.cloud_llm_model)
+            .field("cloud_llm_url", &self.cloud_llm_url)
+            .field("local_llm_api_key", &"[REDACTED]")
+            .field("local_anthropic_url", &self.local_anthropic_url)
+            .finish()
+    }
 }
 
 impl Default for ModelSettings {
@@ -222,6 +260,12 @@ impl Default for ModelSettings {
             router_complex_model: String::new(),
             router_fast_model: "opencode/minimax-m2.7".to_string(),
             router_quality_model: "opencode/deepseek-v4-pro".to_string(),
+            llm_model: None,
+            llm_api_key: None,
+            cloud_llm_model: None,
+            cloud_llm_url: None,
+            local_llm_api_key: None,
+            local_anthropic_url: None,
         }
     }
 }
@@ -258,12 +302,29 @@ impl Default for SyncSettings {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct EmbeddingSettings {
     pub endpoint: String,
     pub embedder: String,
     pub gllm_model: String,
     pub api_flavor: String,
+    #[serde(default)]
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub gllm_dimension: Option<usize>,
+}
+
+impl fmt::Debug for EmbeddingSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("EmbeddingSettings")
+            .field("endpoint", &self.endpoint)
+            .field("embedder", &self.embedder)
+            .field("gllm_model", &self.gllm_model)
+            .field("api_flavor", &self.api_flavor)
+            .field("api_key", &"[REDACTED]")
+            .field("gllm_dimension", &self.gllm_dimension)
+            .finish()
+    }
 }
 
 impl Default for EmbeddingSettings {
@@ -273,31 +334,59 @@ impl Default for EmbeddingSettings {
             embedder: String::new(),
             gllm_model: String::new(),
             api_flavor: "openai-compatible".to_string(),
+            api_key: None,
+            gllm_dimension: None,
         }
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct SecuritySettings {
     pub allowed_domains: String,
+    #[serde(default)]
+    pub token_secret: Option<String>,
+}
+
+impl fmt::Debug for SecuritySettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SecuritySettings")
+            .field("allowed_domains", &self.allowed_domains)
+            .field("token_secret", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl Default for SecuritySettings {
     fn default() -> Self {
         Self {
             allowed_domains: String::new(),
+            token_secret: None,
         }
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Clone, Deserialize)]
 pub struct TelegramSettings {
     pub enabled: bool,
+    #[serde(default)]
+    pub bot_token: Option<String>,
+}
+
+impl fmt::Debug for TelegramSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TelegramSettings")
+            .field("enabled", &self.enabled)
+            .field("bot_token", &"[REDACTED]")
+            .finish()
+    }
 }
 
 impl Default for TelegramSettings {
     fn default() -> Self {
-        Self { enabled: false }
+        Self {
+            enabled: false,
+            bot_token: None,
+        }
     }
 }
 
@@ -442,6 +531,7 @@ impl XavierSettings {
         set_if_absent("XAVIER_LOG_LEVEL", &self.server.log_level);
         set_if_absent("XAVIER_CODE_GRAPH_DB_PATH", &self.server.code_graph_db_path);
         set_optional_if_absent("XAVIER_URL", non_empty(&self.server.url));
+        set_optional_if_absent("XAVIER_CONFIG_PATH", self.server.config_path.clone());
 
         set_if_absent(
             "XAVIER_DEFAULT_WORKSPACE_ID",
@@ -531,6 +621,12 @@ impl XavierSettings {
         );
         set_if_absent("XAVIER_ROUTER_FAST_MODEL", &self.models.router_fast_model);
         set_if_absent("XAVIER_ROUTER_QUALITY_MODEL", &self.models.router_quality_model);
+        set_optional_if_absent("XAVIER_LLM_MODEL", self.models.llm_model.clone());
+        set_optional_if_absent("XAVIER_LLM_API_KEY", self.models.llm_api_key.clone());
+        set_optional_if_absent("XAVIER_CLOUD_LLM_MODEL", self.models.cloud_llm_model.clone());
+        set_optional_if_absent("XAVIER_CLOUD_LLM_URL", self.models.cloud_llm_url.clone());
+        set_optional_if_absent("XAVIER_LOCAL_LLM_API_KEY", self.models.local_llm_api_key.clone());
+        set_optional_if_absent("XAVIER_LOCAL_ANTHROPIC_URL", self.models.local_anthropic_url.clone());
 
         set_if_absent(
             "XAVIER_DISABLE_HYDE",
@@ -567,12 +663,19 @@ impl XavierSettings {
         set_optional_if_absent("XAVIER_EMBEDDER", non_empty(&self.embedding.embedder));
         set_optional_if_absent("XAVIER_GLLM_MODEL", non_empty(&self.embedding.gllm_model));
         set_optional_if_absent("XAVIER_EMBEDDING_API_FLAVOR", non_empty(&self.embedding.api_flavor));
+        set_optional_if_absent("XAVIER_EMBEDDING_API_KEY", self.embedding.api_key.clone());
+        set_optional_if_absent(
+            "XAVIER_GLLM_DIMENSION",
+            self.embedding.gllm_dimension.map(|v| v.to_string()),
+        );
 
         // Security settings
         set_optional_if_absent("XAVIER_ALLOWED_DOMAINS", non_empty(&self.security.allowed_domains));
+        set_optional_if_absent("XAVIER_TOKEN_SECRET", self.security.token_secret.clone());
 
         // Telegram settings
         set_if_absent("XAVIER_TELEGRAM_ENABLED", if self.telegram.enabled { "true" } else { "false" });
+        set_optional_if_absent("XAVIER_TELEGRAM_TOKEN", self.telegram.bot_token.clone());
 
         // Router settings
         set_optional_if_absent("XAVIER_ROUTER_POLICY_PATH", non_empty(&self.router.policy_path));
@@ -619,11 +722,34 @@ impl XavierSettings {
             "XAVIER_PANEL_STORE_DIR",
             non_empty(&self.advanced.panel_store_dir),
         );
+
+        // Aliases for backward compatibility
+        set_optional_if_absent("XAVIER_API_URL", non_empty(&self.server.url));
+        if let Some(token) = &self.auth_token {
+            set_if_absent("XAVIER_AUTH_TOKEN", token);
+        }
+        set_if_absent("XAVIER_WORKSPACE_ID", &self.workspace.default_workspace_id);
     }
 
     pub fn current() -> Self {
         let mut settings = Self::load().ok().flatten().unwrap_or_default();
         settings.auth_token = std::env::var("XAVIER_TOKEN").ok();
+        // Populate sensitive fields from env if not set via config file
+        if settings.security.token_secret.is_none() {
+            settings.security.token_secret = std::env::var("XAVIER_TOKEN_SECRET").ok();
+        }
+        if settings.telegram.bot_token.is_none() {
+            settings.telegram.bot_token = std::env::var("XAVIER_TELEGRAM_TOKEN").ok();
+        }
+        if settings.models.llm_api_key.is_none() {
+            settings.models.llm_api_key = std::env::var("XAVIER_LLM_API_KEY").ok();
+        }
+        if settings.models.local_llm_api_key.is_none() {
+            settings.models.local_llm_api_key = std::env::var("XAVIER_LOCAL_LLM_API_KEY").ok();
+        }
+        if settings.embedding.api_key.is_none() {
+            settings.embedding.api_key = std::env::var("XAVIER_EMBEDDING_API_KEY").ok();
+        }
         settings
     }
 
