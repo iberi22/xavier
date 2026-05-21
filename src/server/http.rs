@@ -526,12 +526,28 @@ pub struct MultiLayerRetrieveRequest {
     /// Half-life in hours for recency decay
     #[serde(default = "default_half_life_hours")]
     pub half_life_hours: f32,
+    /// Whether to enable belief graph grounding validation
+    #[serde(default = "default_true")]
+    pub grounding_enabled: bool,
+    /// Minimum confidence for semantic grounding
+    #[serde(default = "default_grounding_threshold")]
+    pub grounding_min_confidence: f32,
 }
+
 fn default_recency_weight() -> f32 {
     crate::retrieval::config::DEFAULT_RECENCY_WEIGHT
 }
+
 fn default_half_life_hours() -> f32 {
     crate::retrieval::config::DEFAULT_HALF_LIFE_HOURS
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_grounding_threshold() -> f32 {
+    0.5
 }
 
 fn default_relevance_threshold() -> f32 {
@@ -1127,6 +1143,8 @@ async fn build_multi_layer_retrieve_response(
             .unwrap_or_else(crate::retrieval::config::configured_zone_penalty),
         recency_weight: payload.recency_weight,
         half_life_hours: payload.half_life_hours,
+        grounding_enabled: payload.grounding_enabled,
+        grounding_min_confidence: payload.grounding_min_confidence,
     });
 
     let working_docs = workspace.workspace.memory.all_documents().await;
@@ -1152,12 +1170,15 @@ async fn build_multi_layer_retrieve_response(
         workspace.workspace.entity_graph.all_entities().await;
     let semantic_count = semantic_entities.len();
 
-    let results = gating.retrieve(
-        &working_docs,
-        &episodic_summaries,
-        &semantic_entities,
-        &payload.query,
-    ).await;
+    let results = gating
+        .retrieve(
+            &working_docs,
+            &episodic_summaries,
+            &semantic_entities,
+            &payload.query,
+            Some(std::sync::Arc::clone(&workspace.workspace.belief_graph)),
+        )
+        .await;
 
     let total_results = results.len();
 
@@ -1170,7 +1191,6 @@ async fn build_multi_layer_retrieve_response(
 
     let retrieved: Vec<RetrievedMemory> = results
         .into_iter()
-        .take(payload.limit)
         .map(|r| {
             let crate::search::rrf::ScoredResult {
                 id,

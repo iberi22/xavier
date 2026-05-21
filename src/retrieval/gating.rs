@@ -101,6 +101,10 @@ pub struct GatingConfig {
     pub recency_weight: f32,
     /// Half-life in hours for recency decay
     pub half_life_hours: f32,
+    /// Whether to enable belief graph grounding validation
+    pub grounding_enabled: bool,
+    /// Minimum confidence for semantic grounding
+    pub grounding_min_confidence: f32,
 }
 
 impl Default for GatingConfig {
@@ -115,6 +119,8 @@ impl Default for GatingConfig {
             zone_penalty_multiplier: config::configured_zone_penalty(),
             recency_weight: config::DEFAULT_RECENCY_WEIGHT,
             half_life_hours: config::DEFAULT_HALF_LIFE_HOURS,
+            grounding_enabled: true,
+            grounding_min_confidence: 0.5,
         }
     }
 }
@@ -388,6 +394,7 @@ impl AdaptiveGating {
         episodic: &[SessionSummary],
         semantic: &[EntityRecord],
         query: &str,
+        belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
     ) -> Vec<ScoredResult> {
         let now = chrono::Utc::now();
         // 1. Score each layer independently (may use parallel execution internally)
@@ -409,12 +416,44 @@ impl AdaptiveGating {
             self.config.rrf_k,
         );
 
-        // 4. Filter by threshold and limit results
-        fused
+        // 4. Filter by threshold
+        let mut results: Vec<ScoredResult> = fused
             .into_iter()
             .filter(|r| r.score >= self.config.relevance_threshold)
-            .take(self.config.max_results)
-            .collect()
+            .collect();
+
+        // 5. Apply grounding validation if enabled
+        if self.config.grounding_enabled {
+            if let Some(graph_lock) = belief_graph {
+                let graph = graph_lock.read().await;
+                // Convert ScoredResult back to MemoryDocument for validate_grounding
+                // Note: We only have content/id, so we build partial documents
+                let docs_to_validate: Vec<MemoryDocument> = results
+                    .iter()
+                    .map(|r| MemoryDocument {
+                        id: Some(r.id.clone()),
+                        content: r.content.clone(),
+                        path: r.path.clone(),
+                        ..Default::default()
+                    })
+                    .collect();
+
+                let grounding = graph
+                    .validate_grounding(&docs_to_validate, self.config.grounding_min_confidence)
+                    .await;
+
+                results.retain(|r| {
+                    grounding
+                        .iter()
+                        .find(|(id, _, _)| id == &r.id)
+                        .map(|(_, grounded, _)| *grounded)
+                        .unwrap_or(false)
+                });
+            }
+        }
+
+        // 6. Limit results
+        results.into_iter().take(self.config.max_results).collect()
     }
 
     /// Retrieve only from working memory
@@ -796,7 +835,7 @@ mod tests {
         let sessions: Vec<SessionSummary> = vec![];
         let entities: Vec<EntityRecord> = vec![];
 
-        let results = gating.retrieve(&docs, &sessions, &entities, "BELA").await;
+        let results = gating.retrieve(&docs, &sessions, &entities, "BELA", None).await;
         assert!(!results.is_empty());
         assert_eq!(results[0].source, "hybrid");
     }
