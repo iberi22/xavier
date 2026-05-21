@@ -20,11 +20,11 @@ $body = @{
     }
 } | ConvertTo-Json
 
-$R = Invoke-RestMethod -Method Post -Uri "http://localhost:8003/memory/add" -ContentType "application/json" -Headers @{"X-Xavier-Token"=$TOKEN} -Body $body
+$R = Invoke-RestMethod -Method Post -Uri "http://localhost:8006/memory/add" -ContentType "application/json" -Headers @{"X-Xavier-Token"=$TOKEN} -Body $body
 Write-Output "Response: $($R | ConvertTo-Json -Depth 3)"
 
 Start-Sleep 5
 
 Write-Output "`nVerificando persistencia..."
-$MEMS = Invoke-RestMethod -Uri "http://localhost:8003/v1/memories?limit=200" -Headers @{"X-Xavier-Token"=$TOKEN}
+$MEMS = Invoke-RestMethod -Uri "http://localhost:8006/v1/memories?limit=200" -Headers @{"X-Xavier-Token"=$TOKEN}
 $MEMS.memories | Where-Object { $_.content -like "*SURREALDB_TEST*$TS*" } | ForEach-Object { Write-Output "FOUND: $($_.content)" }

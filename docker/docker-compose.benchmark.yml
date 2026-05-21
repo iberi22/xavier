@@ -21,7 +21,8 @@ services:
       retries: 3
       start_period: 40s
 
-  # Cortex - Already running on host (port 8003)
+  # Cortex (REMOVED) - Previously on port 8003. Cortex has been fully
+  # removed from the SWAL stack. Only Xavier (:8006) is active.
   # To run in Docker uncomment below:
   # cortex:
   #   image: iberi22/cortex:latest

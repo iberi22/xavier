@@ -22,7 +22,7 @@ from typing import Optional
 import requests
 
 # Configuration
-XAVIER_URL = "http://localhost:8003"
+XAVIER_URL = "http://localhost:8006"
 
 
 def get_required_xavier_token() -> str:

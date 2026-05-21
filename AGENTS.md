@@ -10,9 +10,9 @@ Xavier is the **CEO of the SWAL project** alongside BELA. It is the central syst
 4. `memory/YYYY-MM-DD.md` — Daily logs and notes
 
 ## Core Memory (Xavier Core)
-Xavier is the global memory brain. **Cortex** acts as its synchronization plugin:
-- **Xavier URL:** http://localhost:8003
-- **Durable Memory**: Always search Xavier (`http://localhost:8003`) for past context BEFORE starting complex tasks. See `.gitcore/rules/GLOBAL_XAVIER_INTEGRATION.md`.
+Xavier is the global memory brain. **Cortex** (previously the synchronization plugin) has been fully removed:
+|-**Xavier URL:** http://localhost:8006
+|- **Durable Memory**: Always search Xavier (`http://localhost:8006`) for past context BEFORE starting complex tasks. See `.gitcore/rules/GLOBAL_XAVIER_INTEGRATION.md`.
 - **Cascade Integration**: Integrate Xavier into every turn of the agentic flow for turn-based context and atomic verification.
 - **Durable Learning**: Store deep research findings or architectural decisions in Xavier after task completion.
 - **Roadmap Management** — Manage and update the project roadmap.
@@ -27,7 +27,7 @@ Xavier is the global memory brain. **Cortex** acts as its synchronization plugin
 ## Main Project
 - Repo: `iberi22/xavier` — Open source context engine.
 - Stack: Rust + SQLite-Vec.
-- Plugins: Cortex ("~/dev/cortex") - PGheart ("~/dev/pgheart").
+- Plugins: PgHeart ("~/dev/pgheart").
 - Objective: To become the central memory system for all SWAL agents.
 
 ---

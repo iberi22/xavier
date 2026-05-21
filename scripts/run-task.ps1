@@ -22,11 +22,11 @@ After any fix, run this:
 
 ```powershell
 `$TS = Get-Date -Format yyyyMMdd_HHmmss
-curl -H "X-Xavier-Token: `$env:XAVIER_TOKEN" -Method POST "http://localhost:8003/memory/add" -ContentType "application/json" -Body "{`"content`": `"SURREALDB_TEST_`$TS`", `"metadata`": {`"source`": `"fix`"}}"
+curl -H "X-Xavier-Token: `$env:XAVIER_TOKEN" -Method POST "http://localhost:8006/memory/add" -ContentType "application/json" -Body "{`"content`": `"SURREALDB_TEST_`$TS`", `"metadata`": {`"source`": `"fix`"}}"
 docker compose -f E:\scripts-python\xavier\docker-compose.yml down
 docker compose -f E:\scripts-python\xavier\docker-compose.yml up -d
 Start-Sleep 10
-curl -H "X-Xavier-Token: `$env:XAVIER_TOKEN" "http://localhost:8003/v1/memories" | Select-String "SURREALDB_TEST_`$TS"
+curl -H "X-Xavier-Token: `$env:XAVIER_TOKEN" "http://localhost:8006/v1/memories" | Select-String "SURREALDB_TEST_`$TS"
 ```
 
 ### 5. If SurrealDB works, enable it back as the primary backend

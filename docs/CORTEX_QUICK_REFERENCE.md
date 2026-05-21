@@ -1,6 +1,14 @@
+# ╔══════════════════════════════════════════════════════════════╗
+# ║  CORTEX REMOVED (May 2026)                                 ║
+# ║  This file was previously named after the Cortex project.  ║
+# ║  Cortex has been fully removed from the SWAL stack.        ║
+# ║  Xavier (the only memory service) now runs on port 8006.   ║
+# ║  See xavier_quick_reference.md for current docs.           ║
+# ╚══════════════════════════════════════════════════════════════╝
+#
 # Xavier Quick Reference
 
-**Base:** `http://localhost:8003` | **Token:** Set `XAVIER_TOKEN` env var (required)
+**Base:** `http://localhost:8006` | **Token:** Set `XAVIER_TOKEN` env var (required)
 
 ## Backends
 

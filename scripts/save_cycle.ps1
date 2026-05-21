@@ -1,4 +1,4 @@
-$XAVIER_URL = "http://localhost:8003"
+$XAVIER_URL = "http://localhost:8006"
 function Get-XavierToken {
   $token = $env:XAVIER_TOKEN
   if (-not $token) { $token = $env:XAVIER_API_KEY }

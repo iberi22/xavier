@@ -1,4 +1,12 @@
-# Xavier / Cortex / Engram — Architecture
+# Xavier / Cortex / Engram â€” Architecture
+
+> **âš ï¸ HISTORICAL NOTE (May 2026):** Cortex has been fully removed from the SWAL stack.
+> This document describes the original three-component architecture (Xavier + Cortex + Engram).
+> Cortex is no longer active. Xavier (:8006) is the only remaining memory service.
+> PgHeart (:8080) handles the persistence layer. This document is kept for historical
+> reference of the architectural decisions made during the Cortex period.
+>
+> **Current stack:** Xavier (:8006) + PgHeart (:8080)
 
 > **Goal:** Stable, dogfooded, green. Xavier as open core, Cortex as enterprise layer, Engram as design reference only.
 
@@ -8,32 +16,32 @@
 
 ```
 +-------------------------------------------------------------+
-¦                     SWAL Memory Stack                       ¦
-+-------------------------------------------------------------¦
-¦                                                             ¦
-¦  +-------------+    +-------------------------------------+¦
-¦  ¦   Engram    ¦    ¦              Cortex                  ¦¦
-¦  ¦ (reference) ¦    ¦        (enterprise layer)          ¦¦
-¦  ¦             ¦    ¦                                     ¦¦
-¦  ¦ - Ideas     ¦    ¦  - Multi-tenancy (RBAC)            ¦¦
-¦  ¦ - Patterns   ¦    ¦  - Audit logging                   ¦¦
-¦  ¦ - DesignRef ¦    ¦  - API keys (pk_live_xxx)          ¦¦
-¦  ¦ NOT runtime ¦    ¦  - Rate limiting                    ¦¦
-¦  +-------------+    ¦  - Security governance              ¦¦
-¦         ?           ¦  - Docker container                 ¦¦
-¦         ¦ design    +-------------------------------------+¦
-¦         ¦ reference                     ¦                  ¦
-¦         ¦                    +----------?---------------+  ¦
-¦         ¦                    ¦        Xavier             ¦  ¦
-¦         ¦                    ¦     (open core engine)      ¦  ¦
-¦         ¦                    ¦                            ¦  ¦
-¦         ¦                    ¦  - HTTP API (:8006)       ¦  ¦
-¦         ¦                    ¦  - VecSqliteMemoryStore    ¦  ¦
-¦         ¦                    ¦  - QmdMemory (in-memory)   ¦  ¦
-¦         ¦                    ¦  - Hybrid search (RAG)     ¦  ¦
-¦         ¦                    ¦  - Code graph (180 files)  ¦  ¦
-¦         ¦                    ¦  - MCP-stdio mode          ¦  ¦
-¦         ¦                    +----------------------------+  ¦
+ï¿½                     SWAL Memory Stack                       ï¿½
++-------------------------------------------------------------ï¿½
+ï¿½                                                             ï¿½
+ï¿½  +-------------+    +-------------------------------------+ï¿½
+ï¿½  ï¿½   Engram    ï¿½    ï¿½              Cortex                  ï¿½ï¿½
+ï¿½  ï¿½ (reference) ï¿½    ï¿½        (enterprise layer)          ï¿½ï¿½
+ï¿½  ï¿½             ï¿½    ï¿½                                     ï¿½ï¿½
+ï¿½  ï¿½ - Ideas     ï¿½    ï¿½  - Multi-tenancy (RBAC)            ï¿½ï¿½
+ï¿½  ï¿½ - Patterns   ï¿½    ï¿½  - Audit logging                   ï¿½ï¿½
+ï¿½  ï¿½ - DesignRef ï¿½    ï¿½  - API keys (pk_live_xxx)          ï¿½ï¿½
+ï¿½  ï¿½ NOT runtime ï¿½    ï¿½  - Rate limiting                    ï¿½ï¿½
+ï¿½  +-------------+    ï¿½  - Security governance              ï¿½ï¿½
+ï¿½         ?           ï¿½  - Docker container                 ï¿½ï¿½
+ï¿½         ï¿½ design    +-------------------------------------+ï¿½
+ï¿½         ï¿½ reference                     ï¿½                  ï¿½
+ï¿½         ï¿½                    +----------?---------------+  ï¿½
+ï¿½         ï¿½                    ï¿½        Xavier             ï¿½  ï¿½
+ï¿½         ï¿½                    ï¿½     (open core engine)      ï¿½  ï¿½
+ï¿½         ï¿½                    ï¿½                            ï¿½  ï¿½
+ï¿½         ï¿½                    ï¿½  - HTTP API (:8006)       ï¿½  ï¿½
+ï¿½         ï¿½                    ï¿½  - VecSqliteMemoryStore    ï¿½  ï¿½
+ï¿½         ï¿½                    ï¿½  - QmdMemory (in-memory)   ï¿½  ï¿½
+ï¿½         ï¿½                    ï¿½  - Hybrid search (RAG)     ï¿½  ï¿½
+ï¿½         ï¿½                    ï¿½  - Code graph (180 files)  ï¿½  ï¿½
+ï¿½         ï¿½                    ï¿½  - MCP-stdio mode          ï¿½  ï¿½
+ï¿½         ï¿½                    +----------------------------+  ï¿½
 +-------------------------------------------------------------+
 ```
 
@@ -41,7 +49,7 @@
 
 ## Component Roles
 
-### Xavier — Core Open Source Engine
+### Xavier ï¿½ Core Open Source Engine
 - **Role:** Primary memory and code graph engine
 - **Repo:** `E:\scripts-python\xavier`
 - **Binary:** `C:\Users\belal\.cargo\target_global\release\xavier.exe`
@@ -50,7 +58,7 @@
 - **Build:** `cargo build --release -p xavier --bin xavier`
 - **Check:** `cargo check -p xavier --bin xavier` (exit 0, zero warnings)
 
-### Cortex — Enterprise / Security / Governance
+### Cortex ï¿½ Enterprise / Security / Governance
 - **Role:** Multi-tenant enterprise layer with audit, RBAC, rate limiting
 - **Repo:** `E:\scripts-python\cortex`
 - **Runs:** Docker (`docker compose up -d cortex`)
@@ -58,36 +66,36 @@
 - **Token:** `dev-token`
 - **Storage:** `/data/` inside container (persisted via volume)
 
-### Engram — Design Reference Only
+### Engram ï¿½ Design Reference Only
 - **Role:** Inspirational reference for patterns, NOT a runtime dependency
 - **Binary:** `C:\Users\belal\AppData\Local\Temp\engram\engram.exe`
-- **Status:** Available but 0/3 memory matches in benchmarks — not comparable
+- **Status:** Available but 0/3 memory matches in benchmarks ï¿½ not comparable
 - **Note:** Treat as documentation, not infrastructure
 
 ---
 
 ## Current Status (2026-04-20)
 
-### ? Green — Loop watchdog active
+### ? Green ï¿½ Loop watchdog active
 - **Script:** `E:\scripts-python\xavier\scripts\memory_triad_loop.ps1`
 - **Interval:** 900 seconds (15 min)
 - **Latest cycles (all green):**
-  - `20260420_124447` — 5/5 steps exit=0
-  - `20260420_122928` — 5/5 steps exit=0
-  - `20260420_121409` — 5/5 steps exit=0
+  - `20260420_124447` ï¿½ 5/5 steps exit=0
+  - `20260420_122928` ï¿½ 5/5 steps exit=0
+  - `20260420_121409` ï¿½ 5/5 steps exit=0
 
-### ? Verified — Xavier
+### ? Verified ï¿½ Xavier
 - Memory: 3/3 matches
 - Code graph: 5/5 queries, 180 files, 2919 symbols
 - Avg search: ~24ms
 - Binary: fresh build, zero Rust warnings
 
-### ?? Issue — Cortex (embedding dimension mismatch)
+### ?? Issue ï¿½ Cortex (embedding dimension mismatch)
 - **Error:** `Dimension mismatch: expected 768, received 1024` in `memory_embeddings`
 - **Impact:** Cortex container restarting, unavailable for memory triad
 - **Fix needed:** Align embedding model dimensions between xavier (1024) and cortex vec store (768)
 
-### ? Verified — Engram
+### ? Verified ï¿½ Engram
 - Runs fine, ~315ms avg latency
 - 0/3 memory matches (not a match for SWAL data)
 - Not comparable for code graph
@@ -107,24 +115,24 @@
 ## Key Files
 
 ### Xavier
-- `src/cli.rs` — HTTP + CLI commands
-- `src/memory/qmd_memory.rs` — QmdMemory with VecSqliteMemoryStore
-- `src/search/hybrid.rs` — RAG hybrid search
-- `scripts/memory_triad_loop.ps1` — Watchdog loop
-- `scripts/memory_triad_benchmark.py` — Benchmark runner
+- `src/cli.rs` ï¿½ HTTP + CLI commands
+- `src/memory/qmd_memory.rs` ï¿½ QmdMemory with VecSqliteMemoryStore
+- `src/search/hybrid.rs` ï¿½ RAG hybrid search
+- `scripts/memory_triad_loop.ps1` ï¿½ Watchdog loop
+- `scripts/memory_triad_benchmark.py` ï¿½ Benchmark runner
 
 ### Cortex
-- `src/api/enterprise_http.rs` — Enterprise HTTP routes
-- `src/app/memory_service.rs` — Memory with storage + embedding
-- `src/enterprise/` — tenancy, rbac, audit, keys, rate_limit
-- `docker-compose.yml` — Docker config
+- `src/api/enterprise_http.rs` ï¿½ Enterprise HTTP routes
+- `src/app/memory_service.rs` ï¿½ Memory with storage + embedding
+- `src/enterprise/` ï¿½ tenancy, rbac, audit, keys, rate_limit
+- `docker-compose.yml` ï¿½ Docker config
 
 ---
 
 ## Architecture Principles
 
-1. **Xavier is the open core** — public, community-facing, simple deploy
-2. **Cortex is the enterprise overlay** — security, governance, multi-tenant
-3. **Engram is a design mirror** — reference patterns, not runtime dependency
-4. **No tight coupling** — each system has its own storage, own API
-5. **Dogfood first** — SWAL uses Xavier for its own code/graph before selling it
+1. **Xavier is the open core** ï¿½ public, community-facing, simple deploy
+2. **Cortex is the enterprise overlay** ï¿½ security, governance, multi-tenant
+3. **Engram is a design mirror** ï¿½ reference patterns, not runtime dependency
+4. **No tight coupling** ï¿½ each system has its own storage, own API
+5. **Dogfood first** ï¿½ SWAL uses Xavier for its own code/graph before selling it

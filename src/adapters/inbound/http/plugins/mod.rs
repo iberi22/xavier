@@ -1,11 +1,10 @@
-//! Plugin system for Xavier Enterprise
+//! Plugin system for Xavier
 //!
 //! Provides a trait-based plugin architecture for integrating external systems
-//! like Cortex Enterprise Cloud.
+//! like PgHeart.
 
 use async_trait::async_trait;
 
-pub mod cortex;
 pub mod pgheart;
 use std::future::Future;
 use std::pin::Pin;

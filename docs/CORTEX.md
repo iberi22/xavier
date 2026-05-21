@@ -1,5 +1,13 @@
 # Xavier
 
+> ╔══════════════════════════════════════════════════════════════╗
+> ║  CORTEX REMOVED (May 2026)                                 ║
+> ║  This document previously referenced the Cortex project.   ║
+> ║  Cortex has been fully removed from the SWAL stack.        ║
+> ║  Xavier (the only memory service) now runs on port 8006.   ║
+> ║  References to port 8003 have been updated to 8006.        ║
+> ╚══════════════════════════════════════════════════════════════╝
+
 > Cognitive memory infrastructure for agent workflows.
 
 Xavier is a Rust-native memory system for AI agents. It combines hybrid retrieval, long-horizon context, code indexing, and authenticated HTTP access so agents can reuse knowledge across sessions, tasks, and repositories.
@@ -66,7 +74,7 @@ All HTTP endpoints except `/health` and `/readiness` require `X-Xavier-Token`, a
 ### Example
 
 ```bash
-curl -X POST http://localhost:8003/memory/search \
+curl -X POST http://localhost:8006/memory/search \
   -H "X-Xavier-Token: dev-token" \
   -H "Content-Type: application/json" \
   -d '{"query":"xavier memory","limit":5}'
@@ -147,13 +155,13 @@ Each backend exposes health via the HTTP API:
 
 ```bash
 # Check which backend is active
-curl http://localhost:8003/build | jq .backend
+curl http://localhost:8006/build | jq .backend
 
 # File backend - check workspace disk space
-curl http://localhost:8003/readiness | jq .workspace
+curl http://localhost:8006/readiness | jq .workspace
 
 # SurrealDB backend - check DB connectivity
-curl http://localhost:8003/readiness | jq .surrealdb
+curl http://localhost:8006/readiness | jq .surrealdb
 
 # SQLite backend - check DB file size
 ls -lh ./data/workspaces/default/memory-store.sqlite3
