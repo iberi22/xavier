@@ -273,11 +273,19 @@ impl Default for ModelSettings {
 #[derive(Debug, Clone, Deserialize)]
 pub struct RetrievalSettings {
     pub disable_hyde: bool,
+    pub rrf_k: Option<u32>,        // XAVIER_RRF_K
+    pub zone_boost: Option<f32>,   // XAVIER_ZONE_BOOST
+    pub zone_penalty: Option<f32>, // XAVIER_ZONE_PENALTY
 }
 
 impl Default for RetrievalSettings {
     fn default() -> Self {
-        Self { disable_hyde: true }
+        Self {
+            disable_hyde: true,
+            rrf_k: None,
+            zone_boost: None,
+            zone_penalty: None,
+        }
     }
 }
 
@@ -445,7 +453,6 @@ impl Default for AgentSettings {
 #[derive(Debug, Clone, Deserialize)]
 pub struct AdvancedSettings {
     pub qjl_threshold: usize,
-    pub rrf_k: usize,
     pub entity_extraction_enabled: bool,
     pub audit_chain_enabled: bool,
     pub panel_store_dir: String,
@@ -455,7 +462,6 @@ impl Default for AdvancedSettings {
     fn default() -> Self {
         Self {
             qjl_threshold: 500,
-            rrf_k: 60,
             entity_extraction_enabled: true,
             audit_chain_enabled: true,
             panel_store_dir: String::new(),
@@ -561,6 +567,18 @@ impl XavierSettings {
             } else {
                 "0"
             },
+        );
+        set_optional_if_absent(
+            "XAVIER_RRF_K",
+            self.retrieval.rrf_k.map(|v| v.to_string()),
+        );
+        set_optional_if_absent(
+            "XAVIER_ZONE_BOOST",
+            self.retrieval.zone_boost.map(|v| v.to_string()),
+        );
+        set_optional_if_absent(
+            "XAVIER_ZONE_PENALTY",
+            self.retrieval.zone_penalty.map(|v| v.to_string()),
         );
         set_if_absent("XAVIER_SYNC_POLICY", &self.workspace.sync_policy);
 
@@ -701,7 +719,6 @@ impl XavierSettings {
             "XAVIER_QJL_THRESHOLD",
             &self.advanced.qjl_threshold.to_string(),
         );
-        set_if_absent("XAVIER_RRF_K", &self.advanced.rrf_k.to_string());
         set_if_absent(
             "XAVIER_ENTITY_EXTRACTION_ENABLED",
             if self.advanced.entity_extraction_enabled {
@@ -750,6 +767,24 @@ impl XavierSettings {
         if settings.embedding.api_key.is_none() {
             settings.embedding.api_key = std::env::var("XAVIER_EMBEDDING_API_KEY").ok();
         }
+
+        // Retrieval fallbacks
+        if settings.retrieval.rrf_k.is_none() {
+            settings.retrieval.rrf_k = std::env::var("XAVIER_RRF_K")
+                .ok()
+                .and_then(|v| v.parse().ok());
+        }
+        if settings.retrieval.zone_boost.is_none() {
+            settings.retrieval.zone_boost = std::env::var("XAVIER_ZONE_BOOST")
+                .ok()
+                .and_then(|v| v.parse().ok());
+        }
+        if settings.retrieval.zone_penalty.is_none() {
+            settings.retrieval.zone_penalty = std::env::var("XAVIER_ZONE_PENALTY")
+                .ok()
+                .and_then(|v| v.parse().ok());
+        }
+
         settings
     }
 
@@ -801,7 +836,6 @@ mod tests {
         assert_eq!(settings.retrieval.disable_hyde, true);
         assert_eq!(settings.sync.interval_ms, 300_000);
         assert_eq!(settings.advanced.qjl_threshold, 500);
-        assert_eq!(settings.advanced.rrf_k, 60);
         assert!(settings.advanced.entity_extraction_enabled);
         assert!(settings.advanced.audit_chain_enabled);
         assert_eq!(settings.memory_layers.working.capacity, 100);
@@ -827,7 +861,6 @@ mod tests {
         assert_eq!(std::env::var("XAVIER_HOST").unwrap(), "127.0.0.1");
         assert_eq!(std::env::var("XAVIER_PORT").unwrap(), "8006");
         assert_eq!(std::env::var("XAVIER_WORKING_MEMORY_CAPACITY").unwrap(), "100");
-        assert_eq!(std::env::var("XAVIER_RRF_K").unwrap(), "60");
         assert_eq!(std::env::var("XAVIER_QJL_THRESHOLD").unwrap(), "500");
         assert_eq!(std::env::var("XAVIER_TELEGRAM_ENABLED").unwrap(), "false");
         assert_eq!(std::env::var("XAVIER_ENTERPRISE_DB_PATH").unwrap(), "data/enterprise.db");
@@ -945,7 +978,6 @@ mod tests {
 
         // Advanced
         assert_eq!(std::env::var("XAVIER_QJL_THRESHOLD").unwrap(), "500");
-        assert_eq!(std::env::var("XAVIER_RRF_K").unwrap(), "60");
         assert_eq!(std::env::var("XAVIER_ENTITY_EXTRACTION_ENABLED").unwrap(), "1");
         assert_eq!(std::env::var("XAVIER_AUDIT_CHAIN_ENABLED").unwrap(), "1");
 

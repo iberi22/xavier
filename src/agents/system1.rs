@@ -84,15 +84,9 @@ impl Default for RetrieverConfig {
 }
 
 fn hyde_enabled_from_env() -> bool {
-    std::env::var("XAVIER_DISABLE_HYDE")
-        .ok()
-        .map(|value| {
-            !matches!(
-                value.trim().to_ascii_lowercase().as_str(),
-                "1" | "true" | "yes" | "on"
-            )
-        })
-        .unwrap_or(true)
+    !crate::settings::XavierSettings::current()
+        .retrieval
+        .disable_hyde
 }
 
 /// System 1 - Retriever Agent (simplificado para compilación)
@@ -588,7 +582,8 @@ mod tests {
         assert_eq!(config.max_results, 10);
         assert_eq!(config.min_relevance_score, 0.3);
         assert!(matches!(config.default_search_type, SearchType::Hybrid));
-        assert!(config.use_hyde);
+        // Default in settings is now disable_hyde: true, so use_hyde should be false
+        assert!(!config.use_hyde);
     }
 
     #[test]
