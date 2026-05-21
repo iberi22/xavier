@@ -171,28 +171,33 @@ fn calculate_recency_boost_factor(
     1.0 + (recency_weight * (-age_hours / half_life_hours).exp())
 }
 
-/// Score a single working memory document.
-fn score_single_working(
-    doc: &MemoryDocument,
-    query_lower: &str,
-    query_terms: &[&str],
-    active_zones: Option<&Vec<ContextZone>>,
+/// Parameters for scoring a single working memory document.
+struct WorkingScoringParams<'a> {
+    query_lower: &'a str,
+    query_terms: &'a [&'a str],
+    active_zones: Option<&'a Vec<ContextZone>>,
     zone_boost_multiplier: f32,
     zone_penalty_multiplier: f32,
     now: chrono::DateTime<chrono::Utc>,
     recency_weight: f32,
     half_life_hours: f32,
+}
+
+/// Score a single working memory document.
+fn score_single_working(
+    doc: &MemoryDocument,
+    params: &WorkingScoringParams<'_>,
 ) -> Option<ScoredResult> {
     let content_lower = doc.content.to_lowercase();
     let mut score = 0.0_f32;
 
     // Exact phrase match bonus
-    if content_lower.contains(query_lower) {
+    if content_lower.contains(params.query_lower) {
         score += config::EXACT_PHRASE_MATCH_BONUS;
     }
 
     // Term frequency scoring
-    for term in query_terms {
+    for term in params.query_terms {
         if content_lower.contains(term) {
             score += config::TERM_MATCH_BONUS;
             // Additional bonus for multiple occurrences
@@ -213,11 +218,11 @@ fn score_single_working(
         let mut final_score = score.min(1.0);
 
         // Apply zone-based boosting
-        if let Some(active) = active_zones {
+        if let Some(active) = params.active_zones {
             if active.contains(&doc_zone) {
-                final_score *= zone_boost_multiplier; // Boost targeted zones
+                final_score *= params.zone_boost_multiplier; // Boost targeted zones
             } else {
-                final_score *= zone_penalty_multiplier; // Penalize non-targeted zones
+                final_score *= params.zone_penalty_multiplier; // Penalize non-targeted zones
             }
         }
 
@@ -229,7 +234,12 @@ fn score_single_working(
             .map(|dt| dt.timestamp_millis());
 
         // Apply recency boost
-        let recency = calculate_recency_boost_factor(updated_at_ms, now, recency_weight, half_life_hours);
+        let recency = calculate_recency_boost_factor(
+            updated_at_ms,
+            params.now,
+            params.recency_weight,
+            params.half_life_hours,
+        );
         final_score *= recency;
 
         Some(ScoredResult {
@@ -510,14 +520,16 @@ impl AdaptiveGating {
                     .filter_map(|doc| {
                         score_single_working(
                             doc,
-                            &query_lower,
-                            &query_terms,
-                            active_zones.as_ref(),
-                            zone_boost,
-                            zone_penalty,
-                            now,
-                            recency_weight,
-                            half_life,
+                            &WorkingScoringParams {
+                                query_lower: &query_lower,
+                                query_terms: &query_terms,
+                                active_zones: active_zones.as_ref(),
+                                zone_boost_multiplier: zone_boost,
+                                zone_penalty_multiplier: zone_penalty,
+                                now,
+                                recency_weight,
+                                half_life_hours: half_life,
+                            },
                         )
                     })
                     .collect()
@@ -531,14 +543,16 @@ impl AdaptiveGating {
                 .filter_map(|doc| {
                     score_single_working(
                         doc,
-                        &query_lower,
-                        &query_terms,
-                        self.config.active_zones.as_ref(),
-                        self.config.zone_boost_multiplier,
-                        self.config.zone_penalty_multiplier,
-                        now,
-                        self.config.recency_weight,
-                        self.config.half_life_hours,
+                        &WorkingScoringParams {
+                            query_lower: &query_lower,
+                            query_terms: &query_terms,
+                            active_zones: self.config.active_zones.as_ref(),
+                            zone_boost_multiplier: self.config.zone_boost_multiplier,
+                            zone_penalty_multiplier: self.config.zone_penalty_multiplier,
+                            now,
+                            recency_weight: self.config.recency_weight,
+                            half_life_hours: self.config.half_life_hours,
+                        },
                     )
                 })
                 .collect()
@@ -856,10 +870,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_zone_multipliers() {
-        let mut config = GatingConfig::default();
-        config.zone_boost_multiplier = 2.0;
-        config.zone_penalty_multiplier = 0.1;
-        config.active_zones = Some(vec![ContextZone::Global]);
+        let config = GatingConfig {
+            zone_boost_multiplier: 2.0,
+            zone_penalty_multiplier: 0.1,
+            active_zones: Some(vec![ContextZone::Global]),
+            ..Default::default()
+        };
 
         let gating = AdaptiveGating::new(config);
 
@@ -989,14 +1005,16 @@ mod tests {
             .filter_map(|doc| {
                 score_single_working(
                     doc,
-                    "bela",
-                    &["bela"],
-                    None,
-                    1.5,
-                    0.5,
-                    chrono::Utc::now(),
-                    0.3,
-                    168.0,
+                    &WorkingScoringParams {
+                        query_lower: "bela",
+                        query_terms: &["bela"],
+                        active_zones: None,
+                        zone_boost_multiplier: 1.5,
+                        zone_penalty_multiplier: 0.5,
+                        now: chrono::Utc::now(),
+                        recency_weight: 0.3,
+                        half_life_hours: 168.0,
+                    },
                 )
             })
             .collect();

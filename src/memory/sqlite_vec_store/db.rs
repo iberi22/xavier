@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
 use libsql::{Builder, Connection};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tokio::fs;
 use crate::utils::connection_pool::{LibsqlConnectionPool, PoolConfig};
 
-pub(crate) async fn open_pool(path: &PathBuf) -> Result<LibsqlConnectionPool> {
+pub(crate) async fn open_pool(path: &Path) -> Result<LibsqlConnectionPool> {
     let path_str = path.to_string_lossy().to_string();
     let db = Builder::new_local(&path_str)
         .build()
@@ -20,7 +20,7 @@ pub(crate) async fn open_pool(path: &PathBuf) -> Result<LibsqlConnectionPool> {
     Ok(pool)
 }
 
-pub(crate) async fn open_connection(path: &PathBuf) -> Result<Connection> {
+pub(crate) async fn open_connection(path: &Path) -> Result<Connection> {
     let path_str = path.to_string_lossy().to_string();
     let db = Builder::new_local(&path_str)
         .build()
