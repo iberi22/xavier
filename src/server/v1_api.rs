@@ -678,6 +678,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_v1_memories_search_supports_typed_filters_and_user_namespace() {
+        // Isolate from parallel tests that may set embedding env vars
+        let _prev_emb = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE").ok();
+        let _prev_url = std::env::var("XAVIER_EMBEDDING_URL").ok();
+        let _prev_emb2 = std::env::var("XAVIER_EMBEDDER").ok();
+        let _prev_key = std::env::var("OPENAI_API_KEY").ok();
+        let _prev_model = std::env::var("XAVIER_MODEL_PROVIDER").ok();
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
+        std::env::remove_var("XAVIER_EMBEDDING_URL");
+        std::env::remove_var("XAVIER_EMBEDDER");
+        std::env::remove_var("OPENAI_API_KEY");
+        std::env::remove_var("XAVIER_MODEL_PROVIDER");
+
         let (state, workspace) = test_state().await;
         let app = test_router(state, workspace);
 
