@@ -125,6 +125,32 @@ pub enum ContextZone {
     Relational,  // Beliefs and knowledge graph relations
 }
 
+pub fn parse_zones_from_prompt(prompt: &str) -> Vec<ContextZone> {
+    let lowered = prompt.to_lowercase();
+    let mut zones = Vec::new();
+
+    if lowered.contains("detalle") || lowered.contains("atómico") || lowered.contains("atomic") {
+        zones.push(ContextZone::Atomic);
+    }
+    if lowered.contains("resumen") || lowered.contains("cluster") || lowered.contains("agrupar") {
+        zones.push(ContextZone::Cluster);
+    }
+    if lowered.contains("general") || lowered.contains("global") || lowered.contains("estrategia") {
+        zones.push(ContextZone::Global);
+    }
+    if lowered.contains("relación") || lowered.contains("vínculo") || lowered.contains("grafo") || lowered.contains("belief") {
+        zones.push(ContextZone::Relational);
+    }
+
+    if zones.is_empty() {
+        // Default zones based on implicit intent if none specified
+        zones.push(ContextZone::Atomic);
+        zones.push(ContextZone::Cluster);
+    }
+
+    zones
+}
+
 impl ContextZone {
     pub fn as_str(&self) -> &'static str {
         match self {

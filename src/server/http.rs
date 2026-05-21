@@ -21,7 +21,7 @@ use crate::{
     domain::memory::belief::{BeliefNode, BeliefEdge},
     memory::entity_graph::EntityRecord,
     memory::qmd_memory::MemoryDocument,
-    memory::schema::{MemoryQueryFilters, TypedMemoryPayload},
+    memory::schema::{ContextZone, MemoryQueryFilters, TypedMemoryPayload},
     memory::sqlite_vec_store::VecSqliteMemoryStore,
     memory::store::{GraphHopResult, HybridSearchMode},
     retrieval::gating::{AdaptiveGating, LayerWeights, SessionSummary},
@@ -516,6 +516,9 @@ pub struct MultiLayerRetrieveRequest {
     /// Include coherence report
     #[serde(default)]
     pub include_coherence: bool,
+    /// Targeted zones for retrieval (optional, falls back to prompt keywords)
+    #[serde(default)]
+    pub active_zones: Option<Vec<ContextZone>>,
 }
 
 fn default_relevance_threshold() -> f32 {
@@ -1082,12 +1085,17 @@ async fn build_multi_layer_retrieve_response(
 ) -> MultiLayerRetrieveResponse {
     let weights = payload.layer_weights.unwrap_or_default();
 
+    let active_zones = payload
+        .active_zones
+        .clone()
+        .unwrap_or_else(|| crate::memory::schema::parse_zones_from_prompt(&payload.query));
+
     let gating = AdaptiveGating::new(crate::retrieval::gating::GatingConfig {
         layer_weights: weights,
         relevance_threshold: payload.relevance_threshold.clamp(0.0, 1.0),
         rrf_k: payload.rrf_k,
         max_results: payload.limit.max(1),
-        active_zones: None,
+        active_zones: Some(active_zones),
     });
 
     let working_docs = workspace.workspace.memory.all_documents().await;
