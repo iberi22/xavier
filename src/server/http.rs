@@ -519,6 +519,18 @@ pub struct MultiLayerRetrieveRequest {
     /// Targeted zones for retrieval (optional, falls back to prompt keywords)
     #[serde(default)]
     pub active_zones: Option<Vec<ContextZone>>,
+    /// Weight for recency boosting (0.0 to 1.0)
+    #[serde(default = "default_recency_weight")]
+    pub recency_weight: f32,
+    /// Half-life in hours for recency decay
+    #[serde(default = "default_half_life_hours")]
+    pub half_life_hours: f32,
+}
+fn default_recency_weight() -> f32 {
+    crate::retrieval::config::DEFAULT_RECENCY_WEIGHT
+}
+fn default_half_life_hours() -> f32 {
+    crate::retrieval::config::DEFAULT_HALF_LIFE_HOURS
 }
 
 fn default_relevance_threshold() -> f32 {
@@ -1105,6 +1117,8 @@ async fn build_multi_layer_retrieve_response(
             .retrieval
             .zone_penalty_multiplier
             .unwrap_or_else(crate::retrieval::config::configured_zone_penalty),
+        recency_weight: payload.recency_weight,
+        half_life_hours: payload.half_life_hours,
     });
 
     let working_docs = workspace.workspace.memory.all_documents().await;

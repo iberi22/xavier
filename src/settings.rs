@@ -574,11 +574,11 @@ impl XavierSettings {
         );
         set_optional_if_absent(
             "XAVIER_ZONE_BOOST",
-            self.retrieval.zone_boost.map(|v| v.to_string()),
+            self.retrieval.zone_boost_multiplier.map(|v| v.to_string()),
         );
         set_optional_if_absent(
             "XAVIER_ZONE_PENALTY",
-            self.retrieval.zone_penalty.map(|v| v.to_string()),
+            self.retrieval.zone_penalty_multiplier.map(|v| v.to_string()),
         );
         set_if_absent("XAVIER_SYNC_POLICY", &self.workspace.sync_policy);
 
