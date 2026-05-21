@@ -134,7 +134,7 @@ impl ThreatDetectionPort for SecurityService {
         if !result.clean {
             if let Some(ref store) = self.threat_store {
                 for threat in &result.threats {
-                    let _ = store.save_threat(threat, component);
+                    let _ = store.save_threat(threat, component).await;
                 }
             }
         }

@@ -2,28 +2,26 @@
 //!
 //! Stores TimeMetric records to SQLite at path: metrics/time/{YYYY-MM-DD}/{metric_type}/{agent_id}
 
-use std::sync::Arc;
-
 use anyhow::Result;
 use chrono::Utc;
-use parking_lot::Mutex;
-use rusqlite::params;
 
 use crate::adapters::inbound::http::dto::TimeMetricDto;
 use crate::ports::outbound::schema_init::SchemaInitializer;
+
+use crate::utils::connection_pool::LibsqlConnectionPool;
 
 /// Table name for time metrics
 const TABLE_TIME_METRICS: &str = "time_metrics";
 
 /// Time metrics storage adapter
 pub struct TimeMetricsStore {
-    pub conn: Arc<Mutex<rusqlite::Connection>>,
+    pub pool: LibsqlConnectionPool,
 }
 
 impl TimeMetricsStore {
-    /// Create a new TimeMetricsStore with the given SQLite connection
-    pub fn new(conn: Arc<Mutex<rusqlite::Connection>>) -> Self {
-        Self { conn }
+    /// Create a new TimeMetricsStore with the given libSQL connection pool
+    pub fn new(pool: LibsqlConnectionPool) -> Self {
+        Self { pool }
     }
 
     /// Save a TimeMetric to the store
@@ -44,7 +42,7 @@ impl TimeMetricsStore {
 
         let metadata_json = serde_json::to_string(&metric.metadata).map_err(|e| e.to_string())?;
 
-        let conn = self.conn.lock();
+        let conn = self.pool.get().await.map_err(|e| e.to_string())?;
         conn.execute(
             &format!(
                 "INSERT INTO {} (id, workspace_id, path, metric_type, agent_id, task_id, \
@@ -53,35 +51,33 @@ impl TimeMetricsStore {
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
                 TABLE_TIME_METRICS
             ),
-            params![
+            (
                 id,
-                workspace_id,
+                workspace_id.to_string(),
                 path,
-                metric.metric_type,
-                metric.agent_id,
-                metric.task_id,
-                metric.started_at,
-                metric.completed_at,
+                metric.metric_type.to_string(),
+                metric.agent_id.to_string(),
+                metric.task_id.clone(),
+                metric.started_at.to_string(),
+                metric.completed_at.to_string(),
                 metric.duration_ms,
-                metric.status,
-                metric.error_message,
-                metric.provider,
-                metric.model,
-                metric.tokens_used,
-                metric.task_category,
+                metric.status.to_string(),
+                metric.error_message.clone(),
+                metric.provider.clone(),
+                metric.model.clone(),
+                metric.tokens_used.map(|t| t as i64),
+                metric.task_category.clone(),
                 metadata_json,
-            ],
+            ),
         )
+        .await
         .map_err(|e| e.to_string())?;
 
         Ok(())
     }
-}
 
-impl SchemaInitializer for TimeMetricsStore {
-    /// Initialize the time_metrics table schema
-    fn init_schema(&self) -> Result<()> {
-        let conn = self.conn.lock();
+    pub async fn init_schema_async(&self) -> Result<()> {
+        let conn = self.pool.get().await?;
         conn.execute_batch(&format!(
             r#"
             CREATE TABLE IF NOT EXISTS {} (
@@ -114,7 +110,24 @@ impl SchemaInitializer for TimeMetricsStore {
             TABLE_TIME_METRICS,
             TABLE_TIME_METRICS,
             TABLE_TIME_METRICS
-        ))?;
+        )).await?;
         Ok(())
+    }
+}
+
+impl SchemaInitializer for TimeMetricsStore {
+    /// Initialize the time_metrics table schema
+    fn init_schema(&self) -> Result<()> {
+        std::thread::scope(|s| {
+            s.spawn(|| {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|e| anyhow::anyhow!("failed to build runtime for time schema: {}", e))?;
+                rt.block_on(self.init_schema_async())
+            })
+            .join()
+            .map_err(|_| anyhow::anyhow!("time schema thread panicked"))?
+        })
     }
 }
