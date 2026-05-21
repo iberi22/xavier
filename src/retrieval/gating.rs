@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::context::ContextLevel;
 use crate::memory::entity_graph::EntityRecord;
 use crate::memory::qmd_memory::MemoryDocument;
 use crate::memory::schema::ContextZone;
@@ -34,6 +35,25 @@ impl Default for LayerWeights {
 }
 
 impl LayerWeights {
+    /// Adjust weights dynamically based on query characteristics
+    pub fn adaptive(query: &str, context_level: ContextLevel, _active_zones: &[ContextZone]) -> Self {
+        let factual_score = query_factuality_score(query);
+        let procedural_score = query_procedural_score(query);
+
+        if factual_score > 0.7 {
+            // Factual queries -> more weight to semantic/long-term
+            Self::new(0.2, 0.2, 0.6)
+        } else if procedural_score > 0.7 {
+            // Procedural queries -> more weight to episodic/sessions
+            Self::new(0.2, 0.6, 0.2)
+        } else if context_level == ContextLevel::Minimal {
+            // Immediate/minimal context -> more weight to working/recent
+            Self::new(0.6, 0.3, 0.1)
+        } else {
+            Self::default()
+        }
+    }
+
     pub fn new(working: f32, episodic: f32, semantic: f32) -> Self {
         Self {
             working,
@@ -390,6 +410,42 @@ impl AdaptiveGating {
     }
 }
 
+/// Score how "factual" a query is (e.g., "what is", "how does it work")
+fn query_factuality_score(query: &str) -> f32 {
+    let query = query.to_lowercase();
+    let keywords = [
+        "what is", "who is", "define", "explain", "meaning",
+        "how does", "what are", "list of", "fact", "describe",
+        "qué es", "quién es", "cómo funciona", "qué son", "definir"
+    ];
+
+    let mut score = 0.0_f32;
+    for &kw in &keywords {
+        if query.contains(kw) {
+            score += 0.4;
+        }
+    }
+    score.min(1.0)
+}
+
+/// Score how "procedural" a query is (e.g., "how did we do", "steps for")
+fn query_procedural_score(query: &str) -> f32 {
+    let query = query.to_lowercase();
+    let keywords = [
+        "how to", "steps", "procedure", "process", "guide",
+        "how did we", "instructions", "workflow", "method",
+        "cómo hicimos", "pasos", "procedimiento", "instrucciones"
+    ];
+
+    let mut score = 0.0_f32;
+    for &kw in &keywords {
+        if query.contains(kw) {
+            score += 0.4;
+        }
+    }
+    score.min(1.0)
+}
+
 /// Session summary for episodic memory layer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionSummary {
@@ -541,5 +597,42 @@ mod tests {
         let results = gating.retrieve(&docs, &sessions, &entities, "BELA");
         assert!(!results.is_empty());
         assert_eq!(results[0].source, "hybrid");
+    }
+
+    #[test]
+    fn test_query_factuality_score() {
+        assert!(query_factuality_score("What is the capital of France?") >= 0.4);
+        assert!(query_factuality_score("How does photosynthesis work?") >= 0.4);
+        assert_eq!(query_factuality_score("Hello world"), 0.0);
+    }
+
+    #[test]
+    fn test_query_procedural_score() {
+        assert!(query_procedural_score("How to bake a cake") >= 0.4);
+        assert!(query_procedural_score("Steps for deploying a server") >= 0.4);
+        assert_eq!(query_procedural_score("What is a server"), 0.0);
+    }
+
+    #[test]
+    fn test_layer_weights_adaptive() {
+        // Factual query
+        let weights = LayerWeights::adaptive("What is the meaning of life?", ContextLevel::Medium, &[]);
+        assert!(weights.semantic > weights.working);
+        assert!(weights.semantic > weights.episodic);
+
+        // Procedural query
+        let weights = LayerWeights::adaptive("How did we implement the auth system? Give me the steps.", ContextLevel::Medium, &[]);
+        assert!(weights.episodic > weights.working);
+        assert!(weights.episodic > weights.semantic);
+
+        // Minimal context query
+        let weights = LayerWeights::adaptive("status", ContextLevel::Minimal, &[]);
+        assert!(weights.working > weights.episodic);
+        assert!(weights.working > weights.semantic);
+
+        // Default case
+        let weights = LayerWeights::adaptive("Hello", ContextLevel::Medium, &[]);
+        let default = LayerWeights::default();
+        assert!((weights.working - default.working).abs() < 0.001);
     }
 }
