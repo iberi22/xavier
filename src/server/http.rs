@@ -1081,6 +1081,7 @@ async fn build_multi_layer_retrieve_response(
     payload: &MultiLayerRetrieveRequest,
 ) -> MultiLayerRetrieveResponse {
     let weights = payload.layer_weights.unwrap_or_default();
+    let settings = crate::settings::XavierSettings::current();
 
     let gating = AdaptiveGating::new(crate::retrieval::gating::GatingConfig {
         layer_weights: weights,
@@ -1088,6 +1089,14 @@ async fn build_multi_layer_retrieve_response(
         rrf_k: payload.rrf_k,
         max_results: payload.limit.max(1),
         active_zones: None,
+        zone_boost_multiplier: settings
+            .retrieval
+            .zone_boost_multiplier
+            .unwrap_or_else(crate::retrieval::config::configured_zone_boost),
+        zone_penalty_multiplier: settings
+            .retrieval
+            .zone_penalty_multiplier
+            .unwrap_or_else(crate::retrieval::config::configured_zone_penalty),
     });
 
     let working_docs = workspace.workspace.memory.all_documents().await;
