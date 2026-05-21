@@ -89,6 +89,7 @@ fn bench_v1_api(c: &mut Criterion) {
                     query: "benchmark document content".to_string(),
                     limit: Some(5),
                     filters: None,
+                    active_zones: None,
                 };
                 v1_memories_search(Extension(context.clone()), Json(payload)).await
             })
