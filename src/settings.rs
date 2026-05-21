@@ -273,11 +273,17 @@ impl Default for ModelSettings {
 #[derive(Debug, Clone, Deserialize)]
 pub struct RetrievalSettings {
     pub disable_hyde: bool,
+    pub zone_boost_multiplier: Option<f32>,
+    pub zone_penalty_multiplier: Option<f32>,
 }
 
 impl Default for RetrievalSettings {
     fn default() -> Self {
-        Self { disable_hyde: true }
+        Self {
+            disable_hyde: true,
+            zone_boost_multiplier: None,
+            zone_penalty_multiplier: None,
+        }
     }
 }
 
@@ -636,6 +642,14 @@ impl XavierSettings {
                 "0"
             },
         );
+        set_optional_if_absent(
+            "XAVIER_ZONE_BOOST",
+            self.retrieval.zone_boost_multiplier.map(|v| v.to_string()),
+        );
+        set_optional_if_absent(
+            "XAVIER_ZONE_PENALTY",
+            self.retrieval.zone_penalty_multiplier.map(|v| v.to_string()),
+        );
 
         set_if_absent(
             "XAVIER_SYNC_INTERVAL_MS",
@@ -749,6 +763,16 @@ impl XavierSettings {
         }
         if settings.embedding.api_key.is_none() {
             settings.embedding.api_key = std::env::var("XAVIER_EMBEDDING_API_KEY").ok();
+        }
+        if settings.retrieval.zone_boost_multiplier.is_none() {
+            settings.retrieval.zone_boost_multiplier = std::env::var("XAVIER_ZONE_BOOST")
+                .ok()
+                .and_then(|v| v.parse().ok());
+        }
+        if settings.retrieval.zone_penalty_multiplier.is_none() {
+            settings.retrieval.zone_penalty_multiplier = std::env::var("XAVIER_ZONE_PENALTY")
+                .ok()
+                .and_then(|v| v.parse().ok());
         }
         settings
     }
