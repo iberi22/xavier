@@ -10,8 +10,6 @@
 
 use axum::{body::Body, http::Request, http::StatusCode};
 use http_body_util::BodyExt;
-use parking_lot::Mutex;
-use rusqlite::Connection;
 use std::sync::Arc;
 use tower::ServiceExt;
 
@@ -29,13 +27,12 @@ fn build_router() -> axum::Router {
     create_router()
 }
 
-/// Create an in-memory SQLite DB with the time_metrics schema initialized.
-fn in_memory_db() -> Arc<Mutex<Connection>> {
-    let conn = Connection::open_in_memory().expect("open in-memory DB");
-    let db = Arc::new(Mutex::new(conn));
-    let store = TimeMetricsStore::new(db.clone());
+async fn in_memory_db() -> xavier::utils::connection_pool::LibsqlConnectionPool {
+    let db = libsql::Builder::new_local(":memory:").build().await.expect("open in-memory DB");
+    let pool = xavier::utils::connection_pool::LibsqlConnectionPool::new(db, Default::default());
+    let store = TimeMetricsStore::new(pool.clone());
     store.init_schema().expect("init time_metrics schema");
-    db
+    pool
 }
 
 /// Build a JSON POST request with a serde_json::Value body.
@@ -98,7 +95,7 @@ async fn test_health_get() {
 #[tokio::test]
 #[ignore = "requires running xavier server on port 8006"]
 async fn test_time_metric_save_and_retrieve() {
-    let db = in_memory_db();
+    let db = in_memory_db().await;
     let store = Arc::new(TimeMetricsStore::new(db.clone()));
 
     let metric = TimeMetricDto {
@@ -124,14 +121,20 @@ async fn test_time_metric_save_and_retrieve() {
         .expect("save should succeed");
 
     // Verify row exists in SQLite
-    let conn = db.lock();
-    let count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM time_metrics WHERE agent_id = ?1",
-            [&metric.agent_id],
-            |row| row.get(0),
-        )
+    let conn = db.get().await.expect("get connection from pool");
+    let mut stmt = conn
+        .prepare("SELECT COUNT(*) FROM time_metrics WHERE agent_id = ?1")
+        .await
+        .expect("prepare should succeed");
+    let mut rows = stmt
+        .query([metric.agent_id.clone()])
+        .await
         .expect("query should succeed");
+    let count: i64 = if let Some(row) = rows.next().await.unwrap() {
+        row.get(0).unwrap()
+    } else {
+        0
+    };
 
     assert_eq!(count, 1, "Expected 1 row for agent_id=test-agent-001");
 }

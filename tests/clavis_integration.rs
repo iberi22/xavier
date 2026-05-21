@@ -1,6 +1,4 @@
 use anyhow::Result;
-use parking_lot::Mutex;
-use rusqlite::Connection;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
 use xavier::agents::system3::{ActorConfig, System3Actor};
@@ -11,15 +9,15 @@ use xavier::tasks::models::{Task, TaskStatus};
 
 #[tokio::test]
 async fn test_clavis_persistence_and_revocation() -> Result<()> {
-    // 1. Setup SQLite database
+    // 1. Setup SQLite database and pool
     let db_file = NamedTempFile::new()?;
-    let conn = Connection::open(db_file.path())?;
-    let shared_conn = Arc::new(Mutex::new(conn));
-    let logger = QmdAuditLogger::new(shared_conn.clone());
+    let db = libsql::Builder::new_local(db_file.path().to_str().unwrap()).build().await?;
+    let pool = xavier::utils::connection_pool::LibsqlConnectionPool::new(db, Default::default());
+    let logger = QmdAuditLogger::new(pool.clone());
     logger.init_schema()?;
 
     // 2. Setup Clavis Engine with Persistent Logger
-    let audit_logger = Box::new(QmdAuditLogger::new(shared_conn.clone()));
+    let audit_logger = Box::new(QmdAuditLogger::new(pool.clone()));
     let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger));
 
     // 3. Setup Event Bus and Runtime Hook
@@ -58,8 +56,8 @@ async fn test_clavis_persistence_and_revocation() -> Result<()> {
 
     event_bus.publish(XavierEvent::TaskCompleted { task })?;
 
-    // Give it a small time to process the async event
-    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+    // Give it a small time to process the async event and background DB writes
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
     // 6. VERIFY Revocation
     let revoked_lease = secrets_engine.get_lease(&token).await;
@@ -69,12 +67,18 @@ async fn test_clavis_persistence_and_revocation() -> Result<()> {
     );
 
     // 7. VERIFY Persistence in SQLite
-    let conn = shared_conn.lock();
-    let mut stmt =
-        conn.prepare("SELECT event_type, agent_id, reason FROM secret_audit_logs ORDER BY id ASC")?;
-    let logs: Vec<(String, String, Option<String>)> = stmt
-        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
-        .collect::<Result<Vec<_>, _>>()?;
+    let conn = pool.get().await?;
+    let mut stmt = conn
+        .prepare("SELECT event_type, agent_id, reason FROM secret_audit_logs ORDER BY id ASC")
+        .await?;
+    let mut rows = stmt.query(()).await?;
+    let mut logs = Vec::new();
+    while let Some(row) = rows.next().await? {
+        let event_type: String = row.get(0)?;
+        let agent_id: String = row.get(1)?;
+        let reason: Option<String> = row.get(2)?;
+        logs.push((event_type, agent_id, reason));
+    }
 
     assert_eq!(logs.len(), 2);
     assert_eq!(logs[0].0, "LEND");

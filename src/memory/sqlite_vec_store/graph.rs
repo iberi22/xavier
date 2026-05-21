@@ -1,7 +1,11 @@
 use regex::Regex;
 use std::collections::HashSet;
 use std::sync::OnceLock;
+use anyhow::Result;
+use libsql::params;
 use crate::memory::sqlite_vec_store::types::ExtractedEntity;
+use crate::memory::store::{MemoryRecord, stable_key, GraphHopPath};
+use crate::memory::sqlite_vec_store::utils;
 
 pub fn extract_entities(content: &str) -> Vec<ExtractedEntity> {
     static MENTION_RE: OnceLock<Regex> = OnceLock::new();
@@ -61,8 +65,8 @@ pub fn entity_node_id(workspace_id: &str, entity_type: &str, value: &str) -> Str
     )
 }
 
-pub fn sync_memory_entities(
-    conn: &rusqlite::Connection,
+pub async fn sync_memory_entities(
+    conn: &libsql::Connection,
     workspace_id: &str,
     record: &MemoryRecord,
 ) -> Result<()> {
@@ -74,34 +78,34 @@ pub fn sync_memory_entities(
     conn.execute(
         "INSERT OR REPLACE INTO entities (id, name, entity_type, properties) VALUES (?, ?, ?, ?)",
         params![
-            &memory_node_id,
-            &record.path,
+            memory_node_id.clone(),
+            record.path.clone(),
             "memory",
             serde_json::json!({
-                "memory_id": record.id,
-                "path": record.path,
+                "memory_id": record.id.clone(),
+                "path": record.path.clone(),
                 "workspace_id": workspace_id,
             })
             .to_string()
         ],
-    )?;
+    ).await?;
 
     conn.execute(
         "DELETE FROM memory_entities WHERE workspace_id = ? AND memory_id = ?",
-        params![workspace_id, &record.id],
-    )?;
+        params![workspace_id, record.id.clone()],
+    ).await?;
     conn.execute(
         "DELETE FROM relations WHERE source_id = ?",
-        params![&memory_node_id],
-    )?;
+        params![memory_node_id.clone()],
+    ).await?;
 
     for entity in extract_entities(&record.content) {
         let entity_id = entity_node_id(workspace_id, entity.entity_type, &entity.value);
         conn.execute(
             "INSERT OR REPLACE INTO entities (id, name, entity_type, properties) VALUES (?, ?, ?, ?)",
             params![
-                &entity_id,
-                &entity.value,
+                entity_id.clone(),
+                entity.value.clone(),
                 entity.entity_type,
                 serde_json::json!({
                     "workspace_id": workspace_id,
@@ -109,41 +113,41 @@ pub fn sync_memory_entities(
                 })
                 .to_string()
             ],
-        )?;
+        ).await?;
         conn.execute(
             "INSERT OR REPLACE INTO memory_entities (id, workspace_id, memory_id, entity_id, relation_type) VALUES (?, ?, ?, ?, ?)",
             params![
                 stable_key("memory_entity_link", &[workspace_id, &record.id, &entity_id]),
                 workspace_id,
-                &record.id,
-                &entity_id,
+                record.id.clone(),
+                entity_id.clone(),
                 entity.relation_type,
             ],
-        )?;
+        ).await?;
         conn.execute(
             "INSERT OR REPLACE INTO relations (id, source_id, target_id, relation_type, properties, confidence_score, provenance_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
             params![
                 stable_key("memory_relation", &[workspace_id, &memory_node_id, &entity_id, entity.relation_type]),
-                &memory_node_id,
-                &entity_id,
+                memory_node_id.clone(),
+                entity_id.clone(),
                 entity.relation_type,
                 serde_json::json!({
-                    "memory_id": record.id,
-                    "path": record.path,
+                    "memory_id": record.id.clone(),
+                    "path": record.path.clone(),
                     "entity_type": entity.entity_type,
                 })
                 .to_string(),
                 1.0,
-                record.id
+                record.id.clone()
             ],
-        )?;
+        ).await?;
     }
 
     Ok(())
 }
 
-pub fn resolve_graph_seed_entities(
-    conn: &rusqlite::Connection,
+pub async fn resolve_graph_seed_entities(
+    conn: &libsql::Connection,
     workspace_id: &str,
     source: &MemoryRecord,
     query: &str,
@@ -153,19 +157,19 @@ pub fn resolve_graph_seed_entities(
 
     // Also seed from entities mentioned in the query
     let terms = utils::search_tokens(query);
-    let mut entity_stmt = conn.prepare("SELECT id FROM entities WHERE name LIKE ?")?;
+    let mut entity_stmt = conn.prepare("SELECT id FROM entities WHERE name LIKE ?").await?;
     for term in terms {
-        let mut entity_rows = entity_stmt.query(params![format!("%{term}%")])?;
-        while let Some(row) = entity_rows.next()? {
-            seeds.insert(row.get(0)?);
+        let mut entity_rows = entity_stmt.query(params![format!("%{term}%")]).await?;
+        while let Some(row) = entity_rows.next().await? {
+            seeds.insert(row.get(0).map_err(anyhow::Error::msg)?);
         }
     }
 
     Ok(seeds)
 }
 
-pub fn traverse_recursive(
-    _conn: &rusqlite::Connection,
+pub async fn traverse_recursive(
+    _conn: &libsql::Connection,
     _workspace_id: &str,
     _seeds: HashSet<String>,
     _hops: usize,
@@ -174,8 +178,3 @@ pub fn traverse_recursive(
     // Unused: Recursive traversal is currently handled via CTE in backend_impl.rs
     Ok(Vec::new())
 }
-
-use anyhow::Result;
-use rusqlite::params;
-use crate::memory::store::{MemoryRecord, stable_key, GraphHopPath};
-use crate::memory::sqlite_vec_store::utils;
