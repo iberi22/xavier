@@ -69,7 +69,7 @@ impl HybridSearcher {
             .map_err(|e| SearchError::Hook(e.to_string()))?;
 
         // Use a larger candidate pool if reranking is likely to be involved
-        let candidate_limit = if self.hooks.len() > 0 { limit * 3 } else { limit * 2 };
+        let candidate_limit = if !self.hooks.is_empty() { limit * 3 } else { limit * 2 };
 
         let keyword_results = self
             .keyword_search(memory, &query, candidate_limit, filters.as_ref())

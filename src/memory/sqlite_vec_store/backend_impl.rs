@@ -142,7 +142,7 @@ impl VecSqliteMemoryStore {
                             while let Some(mem_row) = mem_rows.next().await? {
                                 let memory_id: String = mem_row.get(0).map_err(anyhow::Error::msg)?;
                                 if seen_ids.insert(memory_id.clone()) {
-                                    if let Some(record) = Self::load_record_by_id(&*conn, workspace_id, &memory_id).await? {
+                                    if let Some(record) = Self::load_record_by_id(&conn, workspace_id, &memory_id).await? {
                                         if Self::row_matches_filters(workspace_id, &record, filters) {
                                             kg_rank += 1;
                                             search::merge_rrf_result(
@@ -208,7 +208,7 @@ impl VecSqliteMemoryStore {
             .await?
             .with_context(|| format!("memory not found for graph traversal: {path_or_id}"))?;
         let conn = self.pool.get().await?;
-        let seed_ids = self.resolve_graph_seed_entities(&*conn, workspace_id, &source, query).await?;
+        let seed_ids = self.resolve_graph_seed_entities(&conn, workspace_id, &source, query).await?;
 
         if seed_ids.is_empty() {
             return Ok(GraphHopResult {
@@ -219,7 +219,7 @@ impl VecSqliteMemoryStore {
             });
         }
 
-        let sql_params = std::iter::repeat("?").take(seed_ids.len())
+        let sql_params = std::iter::repeat_n("?", seed_ids.len())
             .collect::<Vec<_>>()
             .join(", ");
         let sql = format!(
