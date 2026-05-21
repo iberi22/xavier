@@ -664,7 +664,7 @@ mod budget_tests {
             .unwrap();
         let total_tokens: usize = result.documents.iter().map(|d| d.token_count).sum();
         assert!(total_tokens <= 5);
-        assert!(result.documents.len() >= 1);
+        assert!(!result.documents.is_empty());
 
         // Budget of 2 tokens: doc 1 is 3 tokens, so it should be skipped if we follow "skip if it blows the budget"
         // But if it's the only one and we want "at least one", it might be different.

@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use xavier::agents::rate_limit::RateLimitManager;
 use xavier::ports::outbound::schema_init::SchemaInitializer;
 

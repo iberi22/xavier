@@ -159,7 +159,7 @@ fn calculate_recency_boost_factor(
     };
 
     let updated_at = chrono::DateTime::from_timestamp_millis(updated_at_ms)
-        .unwrap_or_else(|| now);
+        .unwrap_or(now);
     let age_hours = (now - updated_at).num_hours() as f32;
     let age_hours = age_hours.max(0.0);
 

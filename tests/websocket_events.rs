@@ -206,20 +206,27 @@ async fn test_websocket_streaming() {
 
     assert_eq!(add_res.status(), StatusCode::OK);
 
-    // Wait for the event
-    let msg = ws_stream
-        .next()
-        .await
-        .expect("test assertion")
-        .expect("test assertion");
-    let event: WsEvent =
-        serde_json::from_str(msg.to_text().expect("test assertion")).expect("test assertion");
+    // Wait for the memory.add event, ignoring others (like timeline_event)
+    let mut found_memory_add = false;
+    // We expect at most a few events (timeline_event, then memory.add)
+    for _ in 0..5 {
+        let msg = tokio::time::timeout(std::time::Duration::from_secs(5), ws_stream.next())
+            .await
+            .expect("timeout waiting for websocket message")
+            .expect("test assertion")
+            .expect("test assertion");
 
-    if let WsEvent::Event(e) = event {
-        assert_eq!(e.agent_id, "test_agent");
-        assert!(e.event_type == "memory.add" || e.event_type == "timeline_event");
-        assert!(e.payload["path"].as_str().is_some());
-    } else {
-        panic!("Expected WsEvent::Event, got {:?}", event);
+        let event: WsEvent =
+            serde_json::from_str(msg.to_text().expect("test assertion")).expect("test assertion");
+
+        if let WsEvent::Event(e) = event {
+            if e.event_type == "memory.add" {
+                assert_eq!(e.agent_id, "test_agent");
+                assert!(e.payload["path"].as_str().is_some());
+                found_memory_add = true;
+                break;
+            }
+        }
     }
+    assert!(found_memory_add, "Did not receive memory.add event");
 }

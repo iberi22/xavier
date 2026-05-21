@@ -170,8 +170,7 @@ impl Default for TenantStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use uuid::Uuid;
-
+    
     #[test]
     fn test_tenant_creation() {
         let mut store = TenantStore::new();
