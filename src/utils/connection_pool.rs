@@ -150,11 +150,7 @@ impl LibsqlConnectionPool {
     pub fn active_connections(&self) -> usize {
         let max_size = self.inner.config.max_size;
         let available = self.inner.semaphore.available_permits();
-        if max_size >= available {
-            max_size - available
-        } else {
-            0
-        }
+        max_size.saturating_sub(available)
     }
 
     /// Get the number of idle (cached) connections

@@ -184,19 +184,12 @@ impl Default for EpisodicMemoryLayerConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[derive(Default)]
 pub struct MemoryLayersSettings {
     pub working: WorkingMemoryLayerConfig,
     pub episodic: EpisodicMemoryLayerConfig,
 }
 
-impl Default for MemoryLayersSettings {
-    fn default() -> Self {
-        Self {
-            working: WorkingMemoryLayerConfig::default(),
-            episodic: EpisodicMemoryLayerConfig::default(),
-        }
-    }
-}
 
 #[derive(Clone, Deserialize)]
 pub struct ModelSettings {
@@ -366,6 +359,7 @@ impl Default for EmbeddingSettings {
 }
 
 #[derive(Clone, Deserialize)]
+#[derive(Default)]
 pub struct SecuritySettings {
     pub allowed_domains: String,
     #[serde(default)]
@@ -381,16 +375,9 @@ impl fmt::Debug for SecuritySettings {
     }
 }
 
-impl Default for SecuritySettings {
-    fn default() -> Self {
-        Self {
-            allowed_domains: String::new(),
-            token_secret: None,
-        }
-    }
-}
 
 #[derive(Clone, Deserialize)]
+#[derive(Default)]
 pub struct TelegramSettings {
     pub enabled: bool,
     #[serde(default)]
@@ -406,14 +393,6 @@ impl fmt::Debug for TelegramSettings {
     }
 }
 
-impl Default for TelegramSettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            bot_token: None,
-        }
-    }
-}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RouterSettings {
@@ -431,17 +410,11 @@ impl Default for RouterSettings {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[derive(Default)]
 pub struct ChronicleSettings {
     pub model: String,
 }
 
-impl Default for ChronicleSettings {
-    fn default() -> Self {
-        Self {
-            model: String::new(),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct EnterpriseSettings {
@@ -457,15 +430,11 @@ impl Default for EnterpriseSettings {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[derive(Default)]
 pub struct AgentSettings {
     pub weekly_budget: Option<u64>,
 }
 
-impl Default for AgentSettings {
-    fn default() -> Self {
-        Self { weekly_budget: None }
-    }
-}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AdvancedSettings {
@@ -874,7 +843,7 @@ mod tests {
         assert_eq!(settings.workspace.default_workspace_id, "default");
         assert_eq!(settings.memory.backend, "vec");
         assert_eq!(settings.models.provider, "local");
-        assert_eq!(settings.retrieval.disable_hyde, true);
+        assert!(settings.retrieval.disable_hyde);
         assert_eq!(settings.sync.interval_ms, 300_000);
         assert_eq!(settings.advanced.qjl_threshold, 500);
         assert!(settings.advanced.entity_extraction_enabled);
