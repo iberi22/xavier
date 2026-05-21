@@ -5,6 +5,7 @@ use std::sync::Arc;
 use super::{
     classifier::{ContextClassifier, ContextLevel},
     hybrid::{ContextSearchHit, HybridContextSearch},
+    query_processor::QueryProcessor,
     ContextDocument,
 };
 use crate::memory::schema::ContextZone;
@@ -35,6 +36,7 @@ pub struct ExecutionPlan {
 pub struct Orchestrator {
     classifier: ContextClassifier,
     search: HybridContextSearch,
+    processor: QueryProcessor,
     budgets: ContextBudgetConfig,
     belief_graph: Option<SharedBeliefGraph>,
     memory: Option<Arc<QmdMemory>>,
@@ -51,6 +53,7 @@ impl Orchestrator {
         Self {
             classifier: ContextClassifier::new(),
             search: HybridContextSearch::default(),
+            processor: QueryProcessor::new(),
             budgets: ContextBudgetConfig::from_env(),
             belief_graph: None,
             memory: None,
@@ -61,6 +64,7 @@ impl Orchestrator {
         Self {
             classifier: ContextClassifier::new(),
             search: HybridContextSearch::default(),
+            processor: QueryProcessor::new(),
             budgets,
             belief_graph: None,
             memory: None,
@@ -111,22 +115,75 @@ impl Orchestrator {
         let config = self.budgets.plan(hook, level);
         let query = build_query(prompt, level, hook);
 
+        let expanded_queries = self
+            .processor
+            .expand_and_decompose(prompt, &active_zones)
+            .await;
+
         let mut selected_document_ids = Vec::new();
 
-        // 1. Prioritize Deterministic Retrieval (Belief Graph)
-        if let (Some(memory), Some(graph)) = (&self.memory, &self.belief_graph) {
-            let vm = VirtualMemory::new(Arc::clone(memory), Some(Arc::clone(graph)));
-            if let Ok(graph_entries) = vm.page_in(&query, config.max_documents).await {
-                for entry in graph_entries {
-                    // Prioritize deterministic nodes by placing them at the beginning
-                    if !selected_document_ids.contains(&entry.id) {
-                        selected_document_ids.push(entry.id.clone());
+        for zone in &active_zones {
+            if selected_document_ids.len() >= config.max_documents {
+                break;
+            }
+
+            let queries = expanded_queries
+                .get(zone)
+                .cloned()
+                .unwrap_or_else(|| vec![query.clone()]);
+
+            for z_query in queries {
+                let remaining_limit = config
+                    .max_documents
+                    .saturating_sub(selected_document_ids.len());
+                if remaining_limit == 0 {
+                    break;
+                }
+
+                match zone {
+                    ContextZone::Relational => {
+                        if let (Some(memory), Some(graph)) = (&self.memory, &self.belief_graph) {
+                            let vm = VirtualMemory::new(Arc::clone(memory), Some(Arc::clone(graph)));
+                            let filters = crate::memory::schema::MemoryQueryFilters {
+                                zones: Some(vec![ContextZone::Relational]),
+                                ..Default::default()
+                            };
+
+                            if let Ok(graph_entries) =
+                                vm.page_in_filtered(&z_query, remaining_limit, Some(&filters)).await
+                            {
+                                for entry in graph_entries {
+                                    if !selected_document_ids.contains(&entry.id) {
+                                        selected_document_ids.push(entry.id.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        if let Some(memory) = &self.memory {
+                            let filters = crate::memory::schema::MemoryQueryFilters {
+                                zones: Some(vec![*zone]),
+                                ..Default::default()
+                            };
+                            if let Ok(docs) = memory
+                                .search_filtered(&z_query, remaining_limit, Some(&filters))
+                                .await
+                            {
+                                for doc in docs {
+                                    let doc_id = doc.id.unwrap_or(doc.path);
+                                    if !selected_document_ids.contains(&doc_id) {
+                                        selected_document_ids.push(doc_id);
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
 
-        // 2. Probabilistic Retrieval (Hybrid Search) - Fill remaining budget
+        // 3. Probabilistic Retrieval (Hybrid Search) - Fill remaining budget with general query if needed
         let remaining_limit = config.max_documents.saturating_sub(selected_document_ids.len());
         if remaining_limit > 0 {
             let hybrid_hits = self
