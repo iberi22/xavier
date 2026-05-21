@@ -411,12 +411,26 @@ impl AdaptiveGating {
             self.apply_weights(semantic_results, self.config.layer_weights.semantic);
 
         // 3. Fuse with RRF
-        let fused = reciprocal_rank_fusion(
+        let mut fused = reciprocal_rank_fusion(
             vec![weighted_working, weighted_episodic, weighted_semantic],
             self.config.rrf_k,
         );
 
-        // 4. Filter by threshold
+        // 4. Optional Reranking for precision boost
+        if let Some(hook) = crate::search::rerank::RerankHook::from_env() {
+            let rerank_limit = crate::retrieval::config::DEFAULT_RERANK_LIMIT;
+            if fused.len() > rerank_limit {
+                fused.truncate(rerank_limit);
+            }
+
+            let _ = crate::search::hooks::SearchHook::post_query(
+                &hook,
+                query,
+                &mut fused,
+            ).await;
+        }
+
+        // 5. Filter by threshold
         let mut results: Vec<ScoredResult> = fused
             .into_iter()
             .filter(|r| r.score >= self.config.relevance_threshold)

@@ -29,11 +29,16 @@ pub struct HybridSearcher {
 
 impl Default for HybridSearcher {
     fn default() -> Self {
+        let mut hooks = HookRegistry::new();
+        if let Some(rerank_hook) = crate::search::rerank::RerankHook::from_env() {
+            hooks.add_hook(std::sync::Arc::new(rerank_hook));
+        }
+
         Self {
             keyword_weight: 0.5,
             vector_weight: 0.5,
             rrf_k: configured_rrf_k(),
-            hooks: HookRegistry::new(),
+            hooks,
         }
     }
 }
@@ -63,11 +68,14 @@ impl HybridSearcher {
             .await
             .map_err(|e| SearchError::Hook(e.to_string()))?;
 
+        // Use a larger candidate pool if reranking is likely to be involved
+        let candidate_limit = if self.hooks.len() > 0 { limit * 3 } else { limit * 2 };
+
         let keyword_results = self
-            .keyword_search(memory, &query, limit * 2, filters.as_ref())
+            .keyword_search(memory, &query, candidate_limit, filters.as_ref())
             .await?;
         let vector_results = self
-            .vector_search(memory, &query, limit * 2, filters.as_ref())
+            .vector_search(memory, &query, candidate_limit, filters.as_ref())
             .await
             .unwrap_or_default();
 
