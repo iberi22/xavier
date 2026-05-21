@@ -91,6 +91,7 @@ crossterm = { version = "0.28", optional = true }
 chrono = { version = "0.4", features = ["serde"] }
 cron = "0.15"
 # State management
+rayon = "1.10"
 parking_lot = "0.12"
 rusqlite = { version = "0.32.0", features = ["bundled", "load_extension", "chrono"] }
 libsql = { version = "0.6.0" }
