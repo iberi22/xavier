@@ -634,7 +634,7 @@ mod budget_tests {
 
     #[tokio::test]
     async fn test_truncation_logic() {
-        let docs = vec![
+        let docs = [
             mock_doc("1", "one two three"),        // 3 tokens
             mock_doc("2", "four five"),            // 2 tokens
             mock_doc("3", "six seven eight nine"), // 4 tokens
