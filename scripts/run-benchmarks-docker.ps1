@@ -2,7 +2,7 @@ param(
     [int]$SampleLimit = 10,
     [int]$QuestionLimit = 5,
     [string]$OutputDir = "benchmark-results/locomo-docker",
-    [int]$HostPort = 8003,
+    [int]$HostPort = 8006,
     [switch]$SWEbench
 )
 
@@ -40,7 +40,7 @@ try {
         "python",
         "scripts/benchmarks/run_locomo_benchmark.py",
         "--base-url",
-        "http://xavier-benchmark:8003",
+        "http://xavier-benchmark:8006",
         "--output-dir",
         $OutputDir,
         "--sample-limit",

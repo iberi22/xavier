@@ -115,26 +115,26 @@ $ErrorActionPreference = "Stop"
 Write-Host "🧪 Xavier Validation" -ForegroundColor Cyan
 
 # 1. Health
-$h = Invoke-RestMethod http://localhost:8003/health
+$h = Invoke-RestMethod http://localhost:8006/health
 if ($h.status -ne "ok") { throw "Health check failed" }
 Write-Host "✅ Health: $($h.version)"
 
 # 2. Add memory
-$add = Invoke-RestMethod http://localhost:8003/memory/add -Method Post `
+$add = Invoke-RestMethod http://localhost:8006/memory/add -Method Post `
   -Body (@{content="Test $(Get-Random)"; metadata=@{source="validation"}} | ConvertTo-Json) `
   -ContentType "application/json"
 if ($add.status -ne "ok") { throw "Add failed" }
 Write-Host "✅ Add memory: $($add.workspace_id)"
 
 # 3. Search
-$search = Invoke-RestMethod http://localhost:8003/memory/search -Method Post `
+$search = Invoke-RestMethod http://localhost:8006/memory/search -Method Post `
   -Body (@{query="Test"; limit=5} | ConvertTo-Json) `
   -ContentType "application/json"
 if ($search.results.Count -eq 0) { throw "Search returned no results" }
 Write-Host "✅ Search: $($search.results.Count) results"
 
 # 4. Stats
-$stats = Invoke-RestMethod http://localhost:8003/memory/stats
+$stats = Invoke-RestMethod http://localhost:8006/memory/stats
 Write-Host "✅ Stats: $($stats.total_documents) documents"
 
 Write-Host "`n🎉 All validations passed!" -ForegroundColor Green

@@ -6,6 +6,6 @@ if (-not $TOKEN) {
 }
 
 $body = @{"content"="test123"; "path"="test/debug"} | ConvertTo-Json
-$result = Invoke-WebRequest -Uri 'http://localhost:8003/memory/add' -Method POST -ContentType 'application/json' -Headers @{'X-Xavier-Token' = $TOKEN} -Body $body -UseBasicParsing
+$result = Invoke-WebRequest -Uri 'http://localhost:8006/memory/add' -Method POST -ContentType 'application/json' -Headers @{'X-Xavier-Token' = $TOKEN} -Body $body -UseBasicParsing
 Write-Host "Status: $($result.StatusCode)"
 Write-Host "Body: $($result.Content)"

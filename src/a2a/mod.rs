@@ -537,7 +537,7 @@ pub fn create_xavier_agent_card() -> types::AgentCard {
     types::AgentCard {
         name: "Xavier".to_string(),
         description: "Cognitive Memory System with A2A Protocol support".to_string(),
-        url: "http://localhost:8003".to_string(),
+        url: "http://localhost:8006".to_string(),
         version: env!("CARGO_PKG_VERSION").to_string(),
         capabilities: types::AgentCapabilities {
             streaming: true,

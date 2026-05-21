@@ -305,31 +305,14 @@ static PLUGIN_REGISTRY: std::sync::OnceLock<
     std::sync::Arc<tokio::sync::RwLock<crate::adapters::inbound::http::plugins::PluginRegistry>>,
 > = std::sync::OnceLock::new();
 
-/// Initialize the plugin registry with Cortex plugin if configured
+/// Initialize the plugin registry (currently no plugins auto-registered)
 #[cfg(feature = "enterprise")]
 pub fn init_plugin_registry() {
-    use crate::adapters::inbound::http::plugins::{
-        cortex::{CortexConfig, CortexPlugin},
-        PluginRegistry,
-    };
+    use crate::adapters::inbound::http::plugins::PluginRegistry;
 
     let registry = PluginRegistry::new();
 
-    // Try to initialize Cortex plugin if env vars are set
-    if CortexConfig::is_configured() {
-        tracing::info!("Initializing Cortex Enterprise plugin");
-
-        // We need to spawn this because we can't await in init
-        tokio::spawn(async move {
-            if let Some(plugin) = CortexPlugin::from_env() {
-                let registry = get_plugin_registry();
-                registry.write().await.register(Box::new(plugin));
-                tracing::info!("Cortex Enterprise plugin registered");
-            }
-        });
-    } else {
-        tracing::debug!("Cortex Enterprise not configured (missing env vars)");
-    }
+    tracing::debug!("Plugin registry initialized (no auto-registered plugins)");
 
     let registry_arc = std::sync::Arc::new(tokio::sync::RwLock::new(registry));
     if PLUGIN_REGISTRY.set(registry_arc).is_err() {

@@ -20,14 +20,14 @@ $body = @{
     metadata = @{ source = "persist-final-test" }
 } | ConvertTo-Json
 
-$R = Invoke-RestMethod -Method Post -Uri "http://localhost:8003/memory/add" -ContentType "application/json" -Headers @{"X-Xavier-Token"=$TOKEN} -Body $body
+$R = Invoke-RestMethod -Method Post -Uri "http://localhost:8006/memory/add" -ContentType "application/json" -Headers @{"X-Xavier-Token"=$TOKEN} -Body $body
 Write-Output "Added: $($R.status) - $($R.message)"
 
 Start-Sleep 3
 
 # Verify it exists
 Write-Output "`n--- Before restart ---"
-$MEMS = Invoke-RestMethod -Uri "http://localhost:8003/v1/memories?limit=200" -Headers @{"X-Xavier-Token"=$TOKEN}
+$MEMS = Invoke-RestMethod -Uri "http://localhost:8006/v1/memories?limit=200" -Headers @{"X-Xavier-Token"=$TOKEN}
 $FOUND_BEFORE = $MEMS.memories | Where-Object { $_.content -like "*SURREALDB_PERSIST_TEST*$TS*" }
 Write-Output "Found before restart: $($FOUND_BEFORE.content)"
 
@@ -40,7 +40,7 @@ Start-Sleep 20
 
 # Check health
 try {
-    $H = Invoke-RestMethod -Uri "http://localhost:8003/health" -Headers @{"X-Xavier-Token"=$TOKEN} -TimeoutSec 5
+    $H = Invoke-RestMethod -Uri "http://localhost:8006/health" -Headers @{"X-Xavier-Token"=$TOKEN} -TimeoutSec 5
     Write-Output "Health after restart: $($H | ConvertTo-Json)"
 } catch {
     Write-Output "Health check failed: $_"
@@ -48,7 +48,7 @@ try {
 
 # Verify persists
 Write-Output "`n--- After restart ---"
-$MEMS = Invoke-RestMethod -Uri "http://localhost:8003/v1/memories?limit=200" -Headers @{"X-Xavier-Token"=$TOKEN}
+$MEMS = Invoke-RestMethod -Uri "http://localhost:8006/v1/memories?limit=200" -Headers @{"X-Xavier-Token"=$TOKEN}
 $FOUND_AFTER = $MEMS.memories | Where-Object { $_.content -like "*SURREALDB_PERSIST_TEST*$TS*" }
 if ($FOUND_AFTER) {
     Write-Output "SUCCESS! Memory persisted: $($FOUND_AFTER.content)"

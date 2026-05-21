@@ -9,7 +9,7 @@
  * The SWAL repos are mounted at /mnt/swal/ inside the container.
  */
 
-const XAVIER_URL = process.env.XAVIER_URL || 'http://localhost:8003';
+const XAVIER_URL = process.env.XAVIER_URL || 'http://localhost:8006';
 
 function getRequiredXavierToken() {
   const token = process.env.XAVIER_TOKEN || process.env.XAVIER_API_KEY || process.env.XAVIER_TOKEN;

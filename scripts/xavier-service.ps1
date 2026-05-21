@@ -25,7 +25,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $PROJECT_ROOT = 'E:\scripts-python\xavier'
-$env:XAVIER_PORT = '8003'
+$env:XAVIER_PORT = '8006'
 $env:XAVIER_DEV_MODE = 'true'
 $env:XAVIER_TOKEN = if ($env:XAVIER_TOKEN) { $env:XAVIER_TOKEN } else {
     Write-Warning "XAVIER_TOKEN not set. Set env:XAVIER_TOKEN to a secure random value before running in production."
@@ -38,7 +38,7 @@ $BINARY = "C:\Users\belal\.cargo\target_global\release\xavier.exe"
 $PID_FILE = "$PROJECT_ROOT\data\xavier.pid"
 $LOG_DIR = "$PROJECT_ROOT\logs"
 $LOG_FILE = "$LOG_DIR\xavier.log"
-$PORT = if ($env:XAVIER_PORT) { $env:XAVIER_PORT } else { 8003 }
+$PORT = if ($env:XAVIER_PORT) { $env:XAVIER_PORT } else { 8006 }
 $HEALTH_URL = "http://localhost:$PORT/health"
 $READY_URL = "http://localhost:$PORT/ready"
 $MAX_LOG_BYTES = 5MB

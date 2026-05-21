@@ -36,5 +36,5 @@ python project_status_agent.py --poll --interval 600  # cada 10 minutos
 
 - Python 3.8+
 - requests library
-- Acceso a Xavier en localhost:8003
+- Acceso a Xavier en localhost:8006
 - GitHub API token (opcional, para mayor rate limit)

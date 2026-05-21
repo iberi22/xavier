@@ -51,41 +51,8 @@ curl -fsSL https://raw.githubusercontent.com/iberi22/xavier/main/install.sh | ba
 - **TUI Setup Wizard** — Interactive installer (6 steps) for Windows, Linux, and macOS.
 - **Service & Daemon Support** — systemd (Linux) and Scheduled Tasks (Windows) for background execution.
 - **Chronicle Workflow** — Automated harvesting of project activity to generate technical documentation.
-- **Plugin System** — Extensible enterprise integrations (Cortex, PgHeart).
+- **Plugin System** — Extensible enterprise integrations (PgHeart).
 
-## Enterprise Plugins
-
-Xavier supports enterprise integrations via the plugin system:
-
-### Cortex Enterprise
-Bidirectional sync with Cortex Enterprise Cloud.
-
-```bash
-# Configure via environment
-export CORTEX_ENTERPRISE_URL=https://cortex.example.com
-export CORTEX_TOKEN=your-token
-
-# Sync manually
-xavier plugin sync cortex push
-```
-
-### PgHeart
-PostgreSQL monitoring and heartbeat.
-
-```bash
-# Configure via environment
-export PGHEART_URL=https://pgheart.example.com
-export PGHEART_TOKEN=your-token
-export PGHEART_INSTANCE_ID=instance-123
-
-# Sync manually
-xavier plugin sync pgheart push
-```
-
-### Automated Sync
-Cron jobs run every 15 minutes for automatic sync. Configure secrets in GitHub Actions:
-- `CORTEX_ENTERPRISE_URL` / `CORTEX_TOKEN`
-- `PGHEART_URL` / `PGHEART_TOKEN` / `PGHEART_INSTANCE_ID`
 
 ```
 ┌─────────────┐  ┌──────────┐  ┌──────────┐

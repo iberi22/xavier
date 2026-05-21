@@ -10,7 +10,7 @@
 ## Table of Contents
 
 1. [v1.0 Status Summary](#1-v10-status-summary)
-2. [Enterprise Features (migrated from Cortex)](#2-enterprise-features-migrated-from-cortex)
+2. [Enterprise Features (migrated from Cortex — fully removed)](#2-enterprise-features-migrated-from-cortex-fully-removed)
 3. [PGHEART Integration](#3-pgheart-integration)
 4. [Known Issues](#4-known-issues)
 5. [Risk Matrix](#5-risk-matrix)
@@ -41,7 +41,7 @@
 | Security scanner + Belief Graph | ✅ |
 | Docker + CI/CD | ✅ 11 workflows |
 
-### 🆕 v1.0 — Enterprise Features (NEW — migrated from Cortex)
+### 🆕 v1.0 — Enterprise Features (fully migrated from Cortex)
 
 | Feature | Status |
 |---------|--------|
@@ -63,9 +63,9 @@
 
 ---
 
-## 2. Enterprise Features (migrated from Cortex)
+## 2. Enterprise Features (migrated from Cortex — fully removed)
 
-Enterprise features were migrated from the deprecated `cortex` repository:
+Enterprise features were migrated from the fully removed `cortex` repository:
 
 | Module | Source | Target |
 |--------|--------|--------|

@@ -1,10 +1,18 @@
 #!/usr/bin/env node
 /**
+ * ╔══════════════════════════════════════════════════════════════╗
+ * ║  DEPRECATED — CORTEX REMOVED (May 2026)                    ║
+ * ║  This script previously synced operations to Cortex.       ║
+ * ║  Cortex has been fully removed from the SWAL stack.        ║
+ * ║  Xavier now runs on port 8006. Use tools targeting         ║
+ * ║  http://localhost:8006 instead.                            ║
+ * ╚══════════════════════════════════════════════════════════════╝
+ *
  * SWAL Operations Dashboard - Xavier Sync
  * Sincroniza Questions, Decisions y Projects con Xavier
  */
 
-const XAVIER_URL = process.env.XAVIER_URL || 'http://localhost:8003';
+const XAVIER_URL = process.env.XAVIER_URL || 'http://localhost:8006';
 const fs = require('fs');
 const path = require('path');
 

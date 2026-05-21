@@ -1,4 +1,4 @@
-$BaseUrl = "http://localhost:8003/mcp"
+$BaseUrl = "http://localhost:8006/mcp"
 
 function Test-MCPMethod {
     param($Method, $Params = @{})

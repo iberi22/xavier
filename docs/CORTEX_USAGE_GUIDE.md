@@ -69,7 +69,7 @@ If you need 3 things about the same topic, one query is better than 3.
 
 ### Base URL
 ```
-http://localhost:8003
+http://localhost:8006
 Header: X-Xavier-Token: <your-token>
 ```
 

@@ -40,7 +40,7 @@ mod http_server_tests {
         // Using reqwest to test actual endpoint
         let client = reqwest::Client::new();
 
-        let result = client.get("http://localhost:8003/health").send().await;
+        let result = client.get("http://localhost:8006/health").send().await;
 
         // May fail if server not running - that's OK for test
         match result {

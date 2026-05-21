@@ -3,7 +3,7 @@
 # Simple, robust, easy to adopt
 #
 # Usage: docker build -t xavier .
-#        docker run -p 8003:8003 xavier
+#        docker run -p 8006:8006 xavier
 
 # Stage 1: Build (using multi-platform rust base)
 FROM rust:1.89-bookworm AS builder
@@ -44,15 +44,15 @@ RUN chmod 0755 /usr/local/bin/xavier-bin /usr/local/bin/xavier-tui /usr/local/bi
 
 WORKDIR /app
 
-ENV XAVIER_PORT=8003 \
+ENV XAVIER_PORT=8006 \
     XAVIER_HOST=0.0.0.0 \
     XAVIER_BACKEND=vec \
     XAVIER_VERSION=${XAVIER_VERSION} \
     RUST_LOG=info
 
-EXPOSE 8003
+EXPOSE 8006
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -fsS http://localhost:8003/health > /dev/null || exit 1
+    CMD curl -fsS http://localhost:8006/health > /dev/null || exit 1
 
 ENTRYPOINT ["/usr/local/bin/xavier-launcher"]
