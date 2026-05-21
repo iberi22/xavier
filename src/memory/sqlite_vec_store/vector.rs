@@ -1,8 +1,5 @@
 use anyhow::Result;
-use std::sync::OnceLock;
 use crate::memory::sqlite_vec_store::config::QJL_MAGIC;
-
-static SQLITE_VEC_EXTENSION_INIT: OnceLock<Result<(), String>> = OnceLock::new();
 
 pub fn register_sqlite_vec_extension() -> Result<()> {
     Ok(())
