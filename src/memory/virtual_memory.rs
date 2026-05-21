@@ -41,6 +41,16 @@ impl VirtualMemory {
     /// Retrieve context using deterministic graph traversal (Belief paths)
     /// alongside vector similarity search and hierarchical cluster expansion.
     pub async fn page_in(&self, query: &str, limit: usize) -> Result<Vec<VirtualMemoryEntry>> {
+        self.page_in_filtered(query, limit, None).await
+    }
+
+    /// Retrieve context with optional filtering
+    pub async fn page_in_filtered(
+        &self,
+        query: &str,
+        limit: usize,
+        filters: Option<&crate::memory::schema::MemoryQueryFilters>,
+    ) -> Result<Vec<VirtualMemoryEntry>> {
         let mut entries = Vec::new();
         let mut seen_ids = std::collections::HashSet::new();
 
@@ -61,11 +71,14 @@ impl VirtualMemory {
                         if let Ok(Some(doc)) = self.memory.get(&source_id).await {
                             // Expansion: If this belongs to a cluster, pull cluster siblings
                             if let Some(cluster_id) = &doc.cluster_id {
-                                let filters = crate::memory::schema::MemoryQueryFilters {
-                                    cluster_ids: Some(vec![cluster_id.clone()]),
-                                    ..Default::default()
-                                };
-                                if let Ok(siblings) = self.memory.search_filtered(query, 5, Some(&filters)).await {
+                                let mut sibling_filters = filters.cloned().unwrap_or_default();
+                                sibling_filters.cluster_ids = Some(vec![cluster_id.clone()]);
+
+                                if let Ok(siblings) = self
+                                    .memory
+                                    .search_filtered(query, 5, Some(&sibling_filters))
+                                    .await
+                                {
                                     for sibling in siblings {
                                         let sibling_id = sibling.id.clone().unwrap_or_else(|| sibling.path.clone());
                                         if !seen_ids.contains(&sibling_id) {
@@ -115,22 +128,31 @@ impl VirtualMemory {
         // 2. Tandem Vector Search (Probabilistic) - if we still need more context
         if entries.len() < limit {
             let remaining = limit - entries.len();
-            if let Ok(docs) = self.memory.search(query, remaining).await {
+            if let Ok(docs) = self.memory.search_filtered(query, remaining, filters).await {
                 for doc in docs {
                     let doc_id = doc.id.clone().unwrap_or_else(|| doc.path.clone());
                     // Avoid duplicates
                     if !seen_ids.contains(&doc_id) {
                         // Expansion: If this belongs to a cluster, pull cluster siblings
                         if let Some(cluster_id) = &doc.cluster_id {
-                            let filters = crate::memory::schema::MemoryQueryFilters {
-                                cluster_ids: Some(vec![cluster_id.clone()]),
-                                ..Default::default()
-                            };
-                            if let Ok(siblings) = self.memory.search_filtered(query, 3, Some(&filters)).await {
+                            let mut sibling_filters =
+                                filters.cloned().unwrap_or_default();
+                            sibling_filters.cluster_ids = Some(vec![cluster_id.clone()]);
+
+                            if let Ok(siblings) = self
+                                .memory
+                                .search_filtered(query, 3, Some(&sibling_filters))
+                                .await
+                            {
                                 for sibling in siblings {
-                                    let sibling_id = sibling.id.clone().unwrap_or_else(|| sibling.path.clone());
+                                    let sibling_id =
+                                        sibling.id.clone().unwrap_or_else(|| sibling.path.clone());
                                     if !seen_ids.contains(&sibling_id) {
-                                        let mut entry = VirtualMemoryEntry::new(sibling.path, sibling.content, sibling.metadata);
+                                        let mut entry = VirtualMemoryEntry::new(
+                                            sibling.path,
+                                            sibling.content,
+                                            sibling.metadata,
+                                        );
                                         if let Some(id) = sibling.id {
                                             entry.id = id;
                                         }
@@ -142,7 +164,8 @@ impl VirtualMemory {
                         }
 
                         if !seen_ids.contains(&doc_id) {
-                            let mut entry = VirtualMemoryEntry::new(doc.path, doc.content, doc.metadata);
+                            let mut entry =
+                                VirtualMemoryEntry::new(doc.path, doc.content, doc.metadata);
                             if let Some(id) = doc.id {
                                 entry.id = id;
                             }
