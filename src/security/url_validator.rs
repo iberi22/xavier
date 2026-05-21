@@ -68,43 +68,32 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_validate_valid_urls() {
+    fn test_url_validator_all() {
+        // Test valid URLs
         assert!(validate_internal_url("http://localhost:8006").is_ok());
         assert!(validate_internal_url("https://example.com").is_ok());
         assert!(validate_internal_url("http://127.0.0.1:8006").is_ok());
-    }
 
-    #[test]
-    fn test_validate_invalid_format() {
+        // Test invalid format
         assert!(validate_internal_url("not-a-url").is_err());
-    }
 
-    #[test]
-    fn test_validate_unsupported_scheme() {
+        // Test unsupported scheme
         assert!(validate_internal_url("ftp://localhost").is_err());
         assert!(validate_internal_url("file:///etc/passwd").is_err());
-    }
 
-    #[test]
-    fn test_validate_forbidden_hosts() {
+        // Test forbidden hosts
         assert!(validate_internal_url("http://169.254.169.254").is_err());
         assert!(validate_internal_url("http://metadata.google.internal").is_err());
         assert!(validate_internal_url("http://METADATA").is_err());
-    }
 
-    #[test]
-    fn test_validate_link_local() {
+        // Test link-local
         assert!(validate_internal_url("http://169.254.1.1").is_err());
-    }
 
-    #[test]
-    fn test_validate_allowlist() {
+        // Test allowlist
         std::env::set_var("XAVIER_ALLOWED_DOMAINS", "local.host, internal.corp");
-
         assert!(validate_internal_url("http://local.host").is_ok());
         assert!(validate_internal_url("http://internal.corp").is_ok());
         assert!(validate_internal_url("http://example.com").is_err());
-
         std::env::remove_var("XAVIER_ALLOWED_DOMAINS");
     }
 }
