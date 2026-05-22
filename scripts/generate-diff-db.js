@@ -24,8 +24,8 @@ function generateDatabase() {
     mainBranch = runGit('git rev-parse --abbrev-ref HEAD');
   }
 
-  // Get the last 25 commits on main
-  const logOutput = runGit(`git log ${mainBranch} -n 25 --pretty=format:"%H|%an|%ae|%ad|%s" --date=short`);
+  // Get all commits on main
+  const logOutput = runGit(`git log ${mainBranch} --pretty=format:"%H|%an|%ae|%ad|%s" --date=short`);
   if (!logOutput) {
     console.error('❌ No se pudieron recuperar los commits de Git.');
     return;
