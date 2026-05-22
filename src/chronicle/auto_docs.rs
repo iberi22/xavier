@@ -226,7 +226,7 @@ impl AutoDocsGenerator {
                 if path.is_file() {
                     if let Some(ext) = path.extension() {
                         if ext == "rs" {
-                            if let Ok(rel) = path.strip_prefix(&self.config.source_root.parent().unwrap_or(Path::new(""))) {
+                            if let Ok(rel) = path.strip_prefix(self.config.source_root.parent().unwrap_or(Path::new(""))) {
                                 files.push(rel.to_string_lossy().to_string());
                             } else {
                                 files.push(path.to_string_lossy().to_string());
@@ -352,7 +352,7 @@ impl AutoDocsGenerator {
         md.push_str(&format!("| Enums | {} |\n", stats.enums));
         md.push_str(&format!("| Traits | {} |\n", stats.traits));
         md.push_str(&format!("| Source files | {} |\n", stats.total_files));
-        md.push_str("\n");
+        md.push('\n');
 
         // Source files
         if !file_list.is_empty() {
@@ -373,7 +373,7 @@ impl AutoDocsGenerator {
                     .unwrap_or_default();
                 md.push_str(&format!("| `{}` | {} |\n", sym_name, kind));
             }
-            md.push_str("\n");
+            md.push('\n');
         }
 
         // Key functions
@@ -388,7 +388,7 @@ impl AutoDocsGenerator {
                     .unwrap_or_else(|| "-".to_string());
                 md.push_str(&format!("| `{}` | {} |\n", sym_name, complexity));
             }
-            md.push_str("\n");
+            md.push('\n');
         }
 
         // Complexity hotspots
@@ -399,7 +399,7 @@ impl AutoDocsGenerator {
             for (name, score) in &stats.complexity_hotspots {
                 md.push_str(&format!("| `{}` | {:.1} |\n", name, score));
             }
-            md.push_str("\n");
+            md.push('\n');
         }
 
         // Full symbol listing
@@ -425,7 +425,7 @@ impl AutoDocsGenerator {
                     symbols.len() - 50
                 ));
             }
-            md.push_str("\n");
+            md.push('\n');
         }
 
         // Auto-generated notice
@@ -485,7 +485,6 @@ fn capitalize(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use code_graph::types::SymbolKind;
 
     #[test]
     fn test_capitalize() {
@@ -505,7 +504,6 @@ pub mod security;
 pub mod search;
         "#;
 
-        let gen = AutoDocsGenerator::new(AutoDocsConfig::default());
         // We test the module discovery indirectly via the parsing logic
         // that reads lib.rs module declarations
         let modules: Vec<&str> = lib_content
