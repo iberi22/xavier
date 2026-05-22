@@ -47,7 +47,6 @@ use std::sync::Arc;
 use memory::file_indexer::FileIndexer;
 use workspace::WorkspaceRegistry;
 
-use crate::adapters::outbound::vec::pattern_adapter::PatternAdapter;
 use crate::app::security_service::SecurityService;
 
 /// Application state for HTTP server
@@ -58,6 +57,5 @@ pub struct AppState {
     pub code_query: Arc<code_graph::query::QueryEngine>,
     pub code_db: Arc<code_graph::db::CodeGraphDB>,
     pub indexer: FileIndexer,
-    pub pattern_adapter: Arc<PatternAdapter>,
     pub security_service: Arc<SecurityService>,
 }
