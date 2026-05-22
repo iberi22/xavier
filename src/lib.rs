@@ -14,7 +14,6 @@ pub mod consolidation;
 pub mod context;
 pub mod coordination;
 pub mod crypto;
-pub mod devlog;
 pub mod embedding;
 pub mod memory;
 pub mod retrieval;
