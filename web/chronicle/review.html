@@ -1,0 +1,934 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Xavier - Code Diff & Human Review Dashboard</title>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;700&family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #0a0f18;
+      --bg-card: #111a2e;
+      --bg-sidebar: #0e1424;
+      --accent: #00FF87; /* LED Green */
+      --accent-dim: #00cc6a;
+      --text-main: #e2e8f0;
+      --text-muted: #94a3b8;
+      --border: #1e293b;
+      --diff-add: rgba(0, 255, 135, 0.15);
+      --diff-add-text: #00FF87;
+      --diff-del: rgba(255, 75, 75, 0.15);
+      --diff-del-text: #ff5b5b;
+      --gold: #f59e0b;
+      --shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: 'Outfit', sans-serif;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Top bar */
+    header {
+      background-color: var(--bg-sidebar);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+    }
+
+    .logo-container {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo-badge {
+      background: linear-gradient(135deg, var(--accent), #00d2ff);
+      color: var(--bg-dark);
+      font-weight: 800;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.9rem;
+      letter-spacing: 1px;
+    }
+
+    h1 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      letter-spacing: -0.5px;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .search-box {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 16px;
+      color: var(--text-main);
+      font-family: inherit;
+      width: 250px;
+      transition: all 0.3s ease;
+    }
+
+    .search-box:focus {
+      outline: none;
+      border-color: var(--accent);
+      background: rgba(255,255,255,0.08);
+    }
+
+    /* Main Container Layout */
+    .dashboard-container {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 60px);
+      overflow: hidden;
+    }
+
+    /* Sidebar - Commit Timeline */
+    .sidebar {
+      width: 320px;
+      background-color: var(--bg-sidebar);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .sidebar-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .sidebar-title {
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--text-muted);
+      font-weight: 700;
+    }
+
+    .commit-count {
+      background: rgba(255,255,255,0.1);
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 0.8rem;
+    }
+
+    .commit-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+
+    .commit-item {
+      padding: 12px;
+      border-radius: 8px;
+      cursor: pointer;
+      margin-bottom: 8px;
+      border: 1px solid transparent;
+      transition: all 0.2s ease;
+    }
+
+    .commit-item:hover {
+      background-color: rgba(255, 255, 255, 0.03);
+    }
+
+    .commit-item.active {
+      background-color: rgba(0, 255, 135, 0.06);
+      border-color: rgba(0, 255, 135, 0.3);
+    }
+
+    .commit-meta-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .commit-hash {
+      font-family: 'Fira Code', monospace;
+      font-size: 0.8rem;
+      color: var(--accent);
+    }
+
+    .commit-date {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .commit-message {
+      font-size: 0.85rem;
+      font-weight: 500;
+      line-height: 1.3;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 6px;
+    }
+
+    .commit-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .review-status-badge {
+      font-size: 0.7rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .status-pending { background: rgba(245, 158, 11, 0.15); color: var(--gold); }
+    .status-approved { background: rgba(0, 255, 135, 0.15); color: var(--accent); }
+    .status-attention { background: rgba(255, 75, 75, 0.15); color: var(--diff-del-text); }
+
+    /* Main Review Workspace */
+    .workspace {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .panel-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: var(--shadow);
+    }
+
+    /* Workspace Header */
+    .workspace-header-panel {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 20px;
+    }
+
+    .commit-details h2 {
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .commit-details-sub {
+      display: flex;
+      gap: 16px;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    .interactive-actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .btn {
+      background: rgba(255,255,255,0.05);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 0.85rem;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .btn:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: var(--text-muted);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: var(--bg-dark);
+      border-color: var(--accent);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-dim);
+      border-color: var(--accent-dim);
+    }
+
+    /* Human Notes Area */
+    .notes-box {
+      width: 100%;
+      min-height: 80px;
+      background: rgba(0,0,0,0.2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      color: var(--text-main);
+      font-family: inherit;
+      font-size: 0.9rem;
+      margin-top: 12px;
+      resize: vertical;
+    }
+
+    /* Tabs & Diffs Layout */
+    .tabs-container {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .tab-btn {
+      padding: 10px 20px;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+
+    .tab-btn.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+
+    /* File List & Diffs */
+    .diff-workspace {
+      display: flex;
+      gap: 20px;
+    }
+
+    .file-tree {
+      width: 250px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .file-tree-item {
+      padding: 8px 12px;
+      background: rgba(255,255,255,0.02);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: all 0.2s;
+    }
+
+    .file-tree-item:hover, .file-tree-item.active {
+      background: rgba(0, 255, 135, 0.05);
+      border-color: var(--accent);
+    }
+
+    .diff-code-panel {
+      flex: 1;
+      background: #05080f;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.85rem;
+      overflow-x: auto;
+      max-height: 500px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .diff-code-header {
+      padding: 10px 16px;
+      background: rgba(255,255,255,0.03);
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .diff-line {
+      display: flex;
+      white-space: pre;
+      padding: 2px 16px;
+      line-height: 1.5;
+    }
+
+    .diff-line.addition {
+      background-color: var(--diff-add);
+      color: var(--diff-add-text);
+    }
+
+    .diff-line.deletion {
+      background-color: var(--diff-del);
+      color: var(--diff-del-text);
+    }
+
+    .diff-line-number {
+      width: 40px;
+      color: rgba(255,255,255,0.2);
+      user-select: none;
+      text-align: right;
+      padding-right: 12px;
+    }
+
+    /* RAG & Explanation Node Cards */
+    .rag-section {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+
+    .rag-card-title {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--accent);
+    }
+
+    .rag-node-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .rag-node-item {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .rag-node-path {
+      font-family: 'Fira Code', monospace;
+      font-size: 0.85rem;
+    }
+
+    .rag-node-badge {
+      font-size: 0.75rem;
+      background: rgba(0, 210, 255, 0.15);
+      color: #00d2ff;
+      padding: 2px 8px;
+      border-radius: 12px;
+    }
+
+    .explanation-content {
+      font-size: 0.95rem;
+      line-height: 1.6;
+      color: var(--text-main);
+    }
+
+    .explanation-content p {
+      margin-bottom: 12px;
+    }
+
+    .explanation-content ul {
+      margin-left: 20px;
+      margin-bottom: 12px;
+    }
+
+    /* JSON Database Importer fallback popup */
+    .dropzone-container {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(10, 15, 24, 0.95);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .dropzone {
+      width: 450px;
+      height: 250px;
+      border: 2px dashed var(--accent);
+      border-radius: 16px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      cursor: pointer;
+      transition: all 0.3s;
+      background: rgba(255,255,255,0.02);
+    }
+
+    .dropzone:hover {
+      background: rgba(0, 255, 135, 0.05);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header>
+    <div class="logo-container">
+      <span class="logo-badge">XAVIER 1.0</span>
+      <h1>Code Diff & Human Review Plane</h1>
+    </div>
+    <div class="header-actions">
+      <input type="text" class="search-box" placeholder="Buscar RAG memories / commits..." id="global-search">
+      <button class="btn" onclick="openImporter()">📂 Cargar JSON</button>
+    </div>
+  </header>
+
+  <!-- Dashboard Main Layout -->
+  <div class="dashboard-container">
+    
+    <!-- Sidebar - Chronological Commits list -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Git Commit Tree</span>
+        <span class="commit-count" id="count-indicator">0 Commits</span>
+      </div>
+      <div class="commit-list" id="sidebar-list">
+        <!-- Commits are dynamically rendered here -->
+      </div>
+    </div>
+
+    <!-- Main Workspace Area -->
+    <div class="workspace" id="main-workspace">
+      
+      <!-- Commit Overview Header Card -->
+      <div class="panel-card workspace-header-panel">
+        <div class="commit-details">
+          <h2 id="commit-msg-header">Cargando commit...</h2>
+          <div class="commit-details-sub">
+            <span>Autor: <strong id="commit-author">beri</strong></span>
+            <span>Fecha: <span id="commit-date-label">-</span></span>
+            <span>Hash: <strong id="commit-hash-label" class="commit-hash">-</strong></span>
+          </div>
+        </div>
+
+        <div class="interactive-actions">
+          <button class="btn" onclick="setReviewStatus('pending')">🟡 Pendiente</button>
+          <button class="btn" onclick="setReviewStatus('attention')">🔴 Atención</button>
+          <button class="btn btn-primary" onclick="setReviewStatus('approved')">🟢 Aprobado</button>
+        </div>
+      </div>
+
+      <!-- Human Curation Caching Panel -->
+      <div class="panel-card">
+        <div class="rag-card-title">✍️ Curation Notes & Human-in-the-loop Memory</div>
+        <p class="explanation-content" style="font-size:0.85rem; color:var(--text-muted)">
+          Escribe notas de curación que se indexarán directamente junto al diff en las memorias del agente.
+        </p>
+        <textarea class="notes-box" placeholder="Escribe notas de decisión de ingeniería o conclusiones del diff..." id="human-notes" oninput="saveCurrentNote()"></textarea>
+      </div>
+
+      <!-- Double Panel: RAG Connections & Semantic Explanation -->
+      <div class="rag-section">
+        
+        <!-- LLM Generated Semantic Context -->
+        <div class="panel-card">
+          <div class="rag-card-title">🧠 Explicación Semántica (RAG context)</div>
+          <div class="explanation-content" id="commit-explanation">
+            <p>Selecciona un commit para ver la explicación semántica y el contexto de por qué se realizaron estos cambios en el árbol de contexto de Xavier.</p>
+          </div>
+        </div>
+
+        <!-- Linked RAG Ingestion Nodes -->
+        <div class="panel-card">
+          <div class="rag-card-title">🔗 Nodos de Memoria RAG Conectados</div>
+          <div class="rag-node-list" id="rag-nodes-container">
+            <!-- RAG nodes dynamically populated -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Code Diff Inspector Section -->
+      <div class="panel-card">
+        <div class="tabs-container">
+          <button class="tab-btn active">Diff e Impacto de Archivos</button>
+        </div>
+        <div class="diff-workspace">
+          <div class="file-tree" id="files-selector-tree">
+            <!-- Files are populated dynamically -->
+          </div>
+          <div class="diff-code-panel">
+            <div class="diff-code-header">
+              <span id="diff-current-file">diff-view</span>
+              <span id="diff-stats-label">0 lín + / 0 lín -</span>
+            </div>
+            <div id="diff-viewport">
+              <!-- Lines are filled dynamically -->
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- Importer Overlay (for drag & drop JSON database) -->
+  <div class="dropzone-container" id="importer-overlay">
+    <div class="dropzone" onclick="triggerFileSelect()">
+      <p style="font-size:1.2rem; font-weight:600; margin-bottom:8px;">Arrastra aquí el JSON de cosecha</p>
+      <p style="font-size:0.9rem; color:var(--text-muted)">o haz clic para buscar en el sistema</p>
+      <input type="file" id="json-file-input" style="display:none" onchange="handleFileSelect(event)">
+    </div>
+    <button class="btn" onclick="closeImporter()">Cerrar</button>
+  </div>
+
+  <!-- Rich Embedded Database Fallback -->
+  <script>
+    // Embedded dataset of harvested commits to guarantee instant double-click preview
+    const EMBEDDED_COMMITS = [
+      {
+        "hash": "b1a4974b693767c93a22c561084490caa27c2bed",
+        "message": "fix: remove strict literal filtering from semantic code search",
+        "date": "2026-05-22",
+        "author": "beri <beri22@gmail.com>",
+        "explanation": "<p><strong>Decisión Técnica:</strong> Se eliminó el filtro estricto por literales en las búsquedas semánticas generales. Esto permite que el agente use representaciones vectoriales completas al consultar conceptos amplios sin verse restringido a concordancias literales de caracteres.</p><ul><li>Se modificó la función <code>code_find_symbols</code> en <code>src/adapters/inbound/http/handlers/agent.rs</code>.</li><li>Se habilitó un flujo flexible preservando el filtrado estricto únicamente al listar tipos específicos.</li></ul>",
+        "files": ["src/adapters/inbound/http/handlers/agent.rs", "src/api/search.rs"],
+        "diffs": {
+          "src/adapters/inbound/http/handlers/agent.rs": [
+            { "type": "info", "text": "@@ -124,8 +124,6 @@" },
+            { "type": "normal", "text": "     let query = payload.query.trim();" },
+            { "type": "deletion", "text": "-    if query.contains(\"strict\") {" },
+            { "type": "deletion", "text": "-        return Ok(strict_literal_filter(query));" },
+            { "type": "deletion", "text": "-    }" },
+            { "type": "addition", "text": "+    // Habilitar búsqueda vectorial general sin forzar literal coincidente" },
+            { "type": "addition", "text": "+    let symbols = code_db.search_vector(query).await?;" },
+            { "type": "normal", "text": "     Ok(symbols)" }
+          ]
+        },
+        "rag_nodes": [
+          { "path": "chronicle/auto-docs/adapters", "type": "Module summary" },
+          { "path": "chronicle/generate/2026-05-22", "type": "ADR Decision log" }
+        ]
+      },
+      {
+        "hash": "4e749c28221d5c2e82f1fd36e77f931dcc1dfdbb",
+        "message": "Implement dynamic indexing lag calculation and improve fallback logic",
+        "date": "2026-05-22",
+        "author": "beri <beri22@gmail.com>",
+        "explanation": "<p><strong>Decisión Técnica:</strong> Introducción de un cálculo adaptativo para estimar el retardo (lag) de indexación en lugar del valor estático estático que causaba fallas falsas de salud de sistema.</p><ul><li>Monitorea y promedia los últimos 10 eventos de la cola de sincronización.</li><li>Actualiza la ruta <code>/health</code> con el estado en milisegundos dinámico real.</li></ul>",
+        "files": ["src/tasks/session_sync_task.rs", "src/cli/server.rs"],
+        "diffs": {
+          "src/tasks/session_sync_task.rs": [
+            { "type": "info", "text": "@@ -45,7 +45,15 @@" },
+            { "type": "normal", "text": " pub fn estimate_index_lag() -> u64 {" },
+            { "type": "deletion", "text": "-    0" },
+            { "type": "addition", "text": "+    let events = LAST_EVENTS.read();" },
+            { "type": "addition", "text": "+    if events.is_empty() { return 0; }" },
+            { "type": "addition", "text": "+    let sum: u64 = events.iter().map(|e| e.lag_ms).sum();" },
+            { "type": "addition", "text": "+    sum / events.len() as u64" }
+          ]
+        },
+        "rag_nodes": [
+          { "path": "chronicle/auto-docs/tasks", "type": "Module summary" },
+          { "path": "chronicle/auto-docs/server", "type": "Module summary" }
+        ]
+      },
+      {
+        "hash": "aa4e5f0b4c5056c46bd87da4659c517f6e890c3e",
+        "message": "fix: DEFAULT_EMBEDDING_DIMENSIONS 768 -> 384 (smoke test blocker)",
+        "date": "2026-05-21",
+        "author": "beri <beri22@gmail.com>",
+        "explanation": "<p><strong>Decisión Técnica:</strong> Reducción de la dimensión de incrustación (embedding) por defecto a 384 dimensiones. Esto alinea la persistencia con modelos ligeros de codificadores MiniLM (todo un clásico en local de alto rendimiento) evitando errores de tamaño de tabla vec0.</p>",
+        "files": ["src/memory/sqlite_vec_store.rs", "src/settings.rs"],
+        "diffs": {
+          "src/settings.rs": [
+            { "type": "info", "text": "@@ -88,4 +88,4 @@" },
+            { "type": "deletion", "text": "-pub const DEFAULT_EMBEDDING_DIMENSIONS: usize = 768;" },
+            { "type": "addition", "text": "+pub const DEFAULT_EMBEDDING_DIMENSIONS: usize = 384;" }
+          ]
+        },
+        "rag_nodes": [
+          { "path": "chronicle/auto-docs/memory", "type": "Module summary" },
+          { "path": "chronicle/auto-docs/settings", "type": "Module summary" }
+        ]
+      }
+    ];
+
+    let currentCommits = [...EMBEDDED_COMMITS];
+    let selectedCommitIdx = 0;
+    let selectedFileIdx = 0;
+
+    // Initialize Page
+    window.addEventListener('DOMContentLoaded', () => {
+      renderCommitList();
+      selectCommit(0);
+
+      // Setup Search Listener
+      document.getElementById('global-search').addEventListener('input', (e) => {
+        const query = e.target.value.toLowerCase();
+        if (query) {
+          currentCommits = EMBEDDED_COMMITS.filter(c => 
+            c.message.toLowerCase().includes(query) || 
+            c.hash.toLowerCase().includes(query)
+          );
+        } else {
+          currentCommits = [...EMBEDDED_COMMITS];
+        }
+        renderCommitList();
+        if (currentCommits.length > 0) selectCommit(0);
+      });
+    });
+
+    // Render Timeline Sidebar
+    function renderCommitList() {
+      const list = document.getElementById('sidebar-list');
+      const count = document.getElementById('count-indicator');
+      list.innerHTML = '';
+      count.textContent = `${currentCommits.length} Commits`;
+
+      currentCommits.forEach((commit, idx) => {
+        const status = localStorage.getItem(`status_${commit.hash}`) || 'pending';
+        let statusClass = 'status-pending';
+        let statusText = 'Pendiente';
+        if (status === 'approved') { statusClass = 'status-approved'; statusText = 'Aprobado'; }
+        if (status === 'attention') { statusClass = 'status-attention'; statusText = 'Atención'; }
+
+        const item = document.createElement('div');
+        item.className = `commit-item ${idx === selectedCommitIdx ? 'active' : ''}`;
+        item.onclick = () => selectCommit(idx);
+
+        item.innerHTML = `
+          <div class="commit-meta-top">
+            <span class="commit-hash">${commit.hash.substring(0, 7)}</span>
+            <span class="commit-date">${commit.date}</span>
+          </div>
+          <div class="commit-message">${commit.message}</div>
+          <div class="commit-footer">
+            <span class="review-status-badge ${statusClass}">${statusText}</span>
+            <span style="font-size:0.75rem; color:var(--text-muted)">${commit.files.length} arch.</span>
+          </div>
+        `;
+        list.appendChild(item);
+      });
+    }
+
+    // Select Commit and Load Details
+    function selectCommit(idx) {
+      if (currentCommits.length === 0) return;
+      selectedCommitIdx = idx;
+      selectedFileIdx = 0;
+
+      // Update active class on list
+      const items = document.querySelectorAll('.commit-item');
+      items.forEach((item, i) => {
+        item.className = `commit-item ${i === idx ? 'active' : ''}`;
+      });
+
+      const commit = currentCommits[idx];
+
+      // Update Labels
+      document.getElementById('commit-msg-header').textContent = commit.message;
+      document.getElementById('commit-author').textContent = commit.author || 'Desconocido';
+      document.getElementById('commit-date-label').textContent = commit.date;
+      document.getElementById('commit-hash-label').textContent = commit.hash;
+      document.getElementById('commit-explanation').innerHTML = commit.explanation || '<p>Sin explicación disponible.</p>';
+
+      // Load Curation Notes
+      const notes = localStorage.getItem(`notes_${commit.hash}`) || '';
+      document.getElementById('human-notes').value = notes;
+
+      // Render RAG nodes
+      const ragContainer = document.getElementById('rag-nodes-container');
+      ragContainer.innerHTML = '';
+      if (commit.rag_nodes && commit.rag_nodes.length > 0) {
+        commit.rag_nodes.forEach(node => {
+          const item = document.createElement('div');
+          item.className = 'rag-node-item';
+          item.innerHTML = `
+            <span class="rag-node-path">${node.path}</span>
+            <span class="rag-node-badge">${node.type}</span>
+          `;
+          ragContainer.appendChild(item);
+        });
+      } else {
+        ragContainer.innerHTML = `<p style="font-size:0.9rem; color:var(--text-muted)">No hay nodos de memoria RAG directamente enlazados a este commit.</p>`;
+      }
+
+      // Render Files Selector
+      const tree = document.getElementById('files-selector-tree');
+      tree.innerHTML = '';
+      commit.files.forEach((filename, fIdx) => {
+        const item = document.createElement('div');
+        item.className = `file-tree-item ${fIdx === selectedFileIdx ? 'active' : ''}`;
+        item.onclick = () => selectFile(fIdx);
+        item.innerHTML = `
+          <span>${filename.split('/').pop()}</span>
+          <span style="font-size:0.75rem; color:var(--text-muted)">+ / -</span>
+        `;
+        tree.appendChild(item);
+      });
+
+      selectFile(0);
+    }
+
+    // Select File to view Diff
+    function selectFile(fIdx) {
+      selectedFileIdx = fIdx;
+      const commit = currentCommits[selectedCommitIdx];
+      const filename = commit.files[fIdx];
+
+      // Update active tree
+      const items = document.querySelectorAll('.file-tree-item');
+      items.forEach((item, i) => {
+        item.className = `file-tree-item ${i === fIdx ? 'active' : ''}`;
+      });
+
+      document.getElementById('diff-current-file').textContent = filename;
+
+      // Render Diffs
+      const viewport = document.getElementById('diff-viewport');
+      viewport.innerHTML = '';
+
+      const diffLines = (commit.diffs && commit.diffs[filename]) || [
+        { "type": "info", "text": "@@ -0,0 +1,1 @@" },
+        { "type": "addition", "text": "+ // Código nuevo cargado en el commit" },
+        { "type": "normal", "text": "  let success = true;" }
+      ];
+
+      let additions = 0;
+      let deletions = 0;
+
+      diffLines.forEach((line, index) => {
+        const lineEl = document.createElement('div');
+        let lineClass = 'diff-line';
+        if (line.type === 'addition') { lineClass += ' addition'; additions++; }
+        if (line.type === 'deletion') { lineClass += ' deletion'; deletions++; }
+
+        lineEl.className = lineClass;
+        lineEl.innerHTML = `
+          <span class="diff-line-number">${index + 1}</span>
+          <span>${escapeHtml(line.text)}</span>
+        `;
+        viewport.appendChild(lineEl);
+      });
+
+      document.getElementById('diff-stats-label').textContent = `${additions} lín + / ${deletions} lín -`;
+    }
+
+    // Interactive Review Action Status Setter
+    function setReviewStatus(status) {
+      const commit = currentCommits[selectedCommitIdx];
+      localStorage.setItem(`status_${commit.hash}`, status);
+      renderCommitList();
+    }
+
+    // Save Human notes
+    function saveCurrentNote() {
+      const commit = currentCommits[selectedCommitIdx];
+      const text = document.getElementById('human-notes').value;
+      localStorage.setItem(`notes_${commit.hash}`, text);
+    }
+
+    // Importer Popups
+    function openImporter() {
+      document.getElementById('importer-overlay').style.display = 'flex';
+    }
+
+    function closeImporter() {
+      document.getElementById('importer-overlay').style.display = 'none';
+    }
+
+    function triggerFileSelect() {
+      document.getElementById('json-file-input').click();
+    }
+
+    function handleFileSelect(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          const rawData = JSON.parse(e.target.result);
+          
+          // Map external harvest JSON format to dashboard format
+          if (rawData.commits) {
+            const mapped = rawData.commits.map(c => {
+              const files = c.files || [];
+              const diffs = {};
+              files.forEach(f => {
+                diffs[f] = [
+                  { "type": "info", "text": `@@ -${f} @@` },
+                  { "type": "normal", "text": `// Fichero: ${f}` },
+                  { "type": "addition", "text": `+ // Modificaciones registradas en la cosecha` }
+                ];
+              });
+
+              return {
+                "hash": c.hash,
+                "message": c.message,
+                "date": rawData.date || "2026-05-22",
+                "author": "Cosechador Xavier",
+                "explanation": `<p><strong>Cosechado de forma automática:</strong> Este commit modifica ${files.length} ficheros en la base de código. Se encuentra indexado en las memorias persistentes vectoriales del Agente.</p>`,
+                "files": files,
+                "diffs": diffs,
+                "rag_nodes": [
+                  { "path": `chronicle/auto-docs/${files[0] ? files[0].split('/').shift() : 'core'}`, "type": "Módulo relacionado" }
+                ]
+              };
+            });
+            
+            EMBEDDED_COMMITS.push(...mapped);
+            currentCommits = [...EMBEDDED_COMMITS];
+            renderCommitList();
+            selectCommit(EMBEDDED_COMMITS.length - 1);
+            alert("¡Cosecha JSON importada con éxito al árbol de contexto!");
+            closeImporter();
+          }
+        } catch(err) {
+          alert("Error al parsear el JSON de cosecha: " + err.message);
+        }
+      };
+      reader.readAsText(file);
+    }
+
+    function escapeHtml(text) {
+      return text
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+  </script>
+</body>
+</html>

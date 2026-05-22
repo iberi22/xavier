@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DevLog — Xavier DevLog</title>
+    <meta name="description" content="Xavier Cognitive Memory Runtime - Technical deep-dive narratives about architecture, decisions, and internals.">
+    <meta property="og:title" content="DevLog — Xavier DevLog">
+    <meta property="og:description" content="Xavier Cognitive Memory Runtime - Technical deep-dive narratives about architecture, decisions, and internals.">
+    <meta property="og:type" content="article">
+    <meta name="color-scheme" content="dark light">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to content</a>
+    <header class="site-header">
+        <div class="container header-inner">
+            <div class="logo-area">
+                <h1 class="site-title"><a href="index.html">Xavier DevLog</a></h1>
+                <p class="tagline">Cognitive Memory Runtime — Technical Logs</p>
+            </div>
+            <nav class="site-nav" aria-label="Main navigation">
+                <a href="index.html" class="nav-link">DevLog</a>
+                <a href="https://southwest-ai-labs.github.io/xavier/" class="nav-link" target="_blank" rel="noopener">Docs</a>
+                <a href="https://github.com/iberi22/xavier" class="nav-link" target="_blank" rel="noopener">GitHub</a>
+                <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark/light mode">
+                    <span class="icon-light">&#9728;</span>
+                    <span class="icon-dark">&#9790;</span>
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <main id="main-content" class="container main-content">
+        <h1>Technical Logs</h1>
+                <p style="color: var(--text-secondary); font-size: 1.05rem; margin-bottom: 24px;">
+                Deep-dive technical narratives about Xavier architecture, decisions, and internals.</p>
+                <input type="search" id="post-search" class="search-box"
+                       placeholder="Search posts by title, tag, or keyword..." aria-label="Search posts">
+                <ul class="post-list" id="post-list">
+                    <li>
+                    <span class="post-date">2026-05-10</span>
+                    <div class="post-title-wrap">
+                        <a href="2026-05-10-hexagonal-architecture.html" class="post-title">Hexagonal Architecture in Rust CLI — Why Ports &amp; Adapters Matter</a>
+                        <div class="post-desc">Xavier is built using **Hexagonal Architecture** (Ports &amp; Adapters). By decoupling our core memory logic (the Domain) from the outside world (Adapters like SQLite, Axum, or MCP), we ensure that Xavier is future-proof, easily testable, and highly portable across different execution environments (CLI, TUI, and Web).</div>
+                        <span class="post-tags-inline"><span class="tag-mini">rust</span><span class="tag-mini">architecture</span><span class="tag-mini">hexagonal</span><span class="tag-mini">ports-adapters</span><span class="tag-mini">maintainability</span></span>
+                    </div>
+                </li><li>
+                    <span class="post-date">2026-05-10</span>
+                    <div class="post-title-wrap">
+                        <a href="2026-05-10-prompt-injection-detector.html" class="post-title">Built-in Prompt Injection Defense — Securing the Memory Layer</a>
+                        <div class="post-desc">AI memory systems are a prime target for &quot;indirect prompt injection&quot;. Xavier mitigates this by integrating a multi-layer **PromptInjectionDetector** directly into the memory ingestion and retrieval pipeline. We treat memory not as passive storage, but as untrusted input that must be sanitized before it ever reaches an agent&#39;s context.</div>
+                        <span class="post-tags-inline"><span class="tag-mini">security</span><span class="tag-mini">prompt-injection</span><span class="tag-mini">defense-in-depth</span><span class="tag-mini">agent-safety</span></span>
+                    </div>
+                </li><li>
+                    <span class="post-date">2026-05-10</span>
+                    <div class="post-title-wrap">
+                        <a href="2026-05-10-why-sqlite-vec.html" class="post-title">Why SQLite-Vec? — The Case for Embedded Vector Search</a>
+                        <div class="post-desc">Xavier uses `sqlite-vec` to provide high-performance, embedded vector search with no external dependencies. By combining vector similarity, Full-Text Search (FTS5), and Knowledge Graph traversal via Reciprocal Rank Fusion (RRF), we achieve superior retrieval relevance in a single, portable binary.</div>
+                        <span class="post-tags-inline"><span class="tag-mini">sqlite-vec</span><span class="tag-mini">storage</span><span class="tag-mini">vector-search</span><span class="tag-mini">rrf</span><span class="tag-mini">performance</span></span>
+                    </div>
+                </li>
+                </ul>
+                <div id="no-results" class="empty-state" style="display:none;">
+                    <p>No posts match your search.</p>
+                    <p class="hint">Try a different keyword or browse all posts above.</p>
+                </div>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-inner">
+            <p>&copy; 2026 Xavier Project. Generated by <a href="https://github.com/iberi22/xavier">Xavier Chronicle SSG</a>.</p>
+            <p class="footer-links">
+                <a href="https://github.com/iberi22/xavier" target="_blank" rel="noopener">GitHub</a>
+                <span class="sep">.</span>
+                <a href="https://southwest-ai-labs.github.io/xavier/" target="_blank" rel="noopener">Documentation</a>
+            </p>
+        </div>
+    </footer>
+    <script src="main.js"></script>
+</body>
+</html>
