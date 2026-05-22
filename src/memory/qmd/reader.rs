@@ -55,8 +55,7 @@ pub async fn generate_embedding(text: &str) -> Result<Vec<f32>> {
     let mut delay_ms: u64 = 100;
     let max_delay_ms: u64 = 2000;
 
-    let embedder =
-        crate::adapters::outbound::embedding::embedding_adapter::build_embedding_port_from_env()?;
+    let embedder = crate::memory::embedder::EmbeddingClient::from_env()?;
     for attempt in 0..3 {
         match embedder.embed(&preprocessed).await {
             Ok(vector) => {
