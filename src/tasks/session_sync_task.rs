@@ -328,7 +328,12 @@ impl SessionSyncTask {
         let active_agents = health_status.active_agents as u64;
 
         // 2. Calculate index lag from storage (actual session record timestamps)
-        let lag_ms = self.estimate_index_lag().await;
+        let mut lag_ms = self.estimate_index_lag().await;
+
+        // Fallback to health status lag if local estimation is 0 (e.g. no local storage configured)
+        if lag_ms == 0 && health_status.lag_ms > 0 {
+            lag_ms = health_status.lag_ms;
+        }
 
         if health_status.status != "ok" && health_status.status != "degraded" {
             alerts.push(format!("Xavier health status: {}", health_status.status));
@@ -443,29 +448,7 @@ impl SessionSyncTask {
         if let Some(ref storage) = self.memory_store {
             let workspace_id = std::env::var("XAVIER_DEFAULT_WORKSPACE_ID")
                 .unwrap_or_else(|_| "default".to_string());
-            let filters = MemoryQueryFilters {
-                kinds: Some(vec![MemoryKind::Session]),
-                ..MemoryQueryFilters::default()
-            };
-
-            let records = match storage.list_filtered(&workspace_id, &filters, 100).await {
-                Ok(recs) => recs,
-                Err(e) => {
-                    tracing::warn!(error = %e, "Failed to list session records for lag estimation");
-                    return 0;
-                }
-            };
-
-            if let Some((event_ts, indexed_ts)) = records
-                .iter()
-                .filter_map(|record| {
-                    session_event_timestamp_ms(&record.content)
-                        .map(|ts| (ts, record.updated_at.timestamp_millis()))
-                })
-                .max_by_key(|(event_ts, _)| *event_ts)
-            {
-                return indexed_ts.saturating_sub(event_ts).max(0) as u64;
-            }
+            return calculate_indexing_lag(storage.as_ref(), &workspace_id).await;
         }
 
         0
@@ -566,6 +549,49 @@ pub fn get_last_sync_result() -> SyncCheckResult {
         .read()
         .map(|r| r.clone())
         .unwrap_or_default()
+}
+
+/// Calculate dynamic indexing lag by comparing original event timestamps
+/// with actual SQLite commit times (updated_at) for recent session records.
+/// Returns the average lag in milliseconds.
+pub async fn calculate_indexing_lag(storage: &dyn MemoryStore, workspace_id: &str) -> u64 {
+    let filters = MemoryQueryFilters {
+        kinds: Some(vec![MemoryKind::Session]),
+        ..MemoryQueryFilters::default()
+    };
+
+    // Fetch the last 10 session records for a representative sample
+    let records = match storage.list_filtered(workspace_id, &filters, 10).await {
+        Ok(recs) => recs,
+        Err(e) => {
+            tracing::warn!(error = %e, "Failed to list session records for lag estimation");
+            return 0;
+        }
+    };
+
+    if records.is_empty() {
+        return 0;
+    }
+
+    let mut total_lag = 0;
+    let mut count = 0;
+
+    for record in records {
+        if let Some(event_ts) = session_event_timestamp_ms(&record.content) {
+            let indexed_ts = record.updated_at.timestamp_millis();
+            let lag = indexed_ts.saturating_sub(event_ts);
+            if lag >= 0 {
+                total_lag += lag;
+                count += 1;
+            }
+        }
+    }
+
+    if count > 0 {
+        (total_lag / count) as u64
+    } else {
+        0
+    }
 }
 
 fn read_env_or_legacy(primary: &str, legacy: &str) -> Option<String> {

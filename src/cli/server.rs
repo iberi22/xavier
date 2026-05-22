@@ -368,7 +368,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     }
 
     // Start session sync task cron (M5)
-    let sync_task = SessionSyncTask::new(health_adapter);
+    let sync_task = SessionSyncTask::with_storage(health_adapter, Some(dyn_store));
     let sync_shutdown = sync_task.spawn_cron_once();
     if sync_shutdown.is_some() {
         info!("SessionSyncTask cron started");
@@ -395,9 +395,15 @@ pub async fn start_http_server(port: u16) -> Result<()> {
 /// Server startup time for uptime tracking
 static START_TIME: once_cell::sync::Lazy<Instant> = once_cell::sync::Lazy::new(Instant::now);
 
-pub async fn health_handler() -> Response {
+pub async fn health_handler(State(state): State<CliState>) -> Response {
     // Uptime in seconds since startup
     let uptime_secs = START_TIME.elapsed().as_secs();
+
+    let lag_ms = xavier::tasks::session_sync_task::calculate_indexing_lag(
+        state.store.as_ref(),
+        &state.workspace_id,
+    )
+    .await;
 
     // Determine embedding provider mode from env
     let embedding_provider = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
@@ -432,6 +438,7 @@ pub async fn health_handler() -> Response {
             "embedding_provider": embedding_provider,
             "sqlite_db_size": sqlite_db_size,
             "uptime": uptime_secs,
+            "lag_ms": lag_ms,
         }),
     )
 }
