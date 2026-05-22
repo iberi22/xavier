@@ -1,8 +1,8 @@
-//! Outbound port interfaces
-//!
-//! Aggregates and re-exports the sub-modules within this module,
-//! providing the public API surface for module consumers.
+pub mod embedding_port;
+pub mod health_check_port;
 pub mod schema_init;
 pub mod threat_detection_port;
 
+pub use embedding_port::EmbeddingPort;
+pub use health_check_port::HealthCheckPort;
 pub use threat_detection_port::ThreatDetectionPort;
