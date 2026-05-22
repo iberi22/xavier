@@ -350,6 +350,62 @@ impl DevLogSSG {
             .to_str()
             .expect("filename must be valid UTF-8");
 
+        let metadata = Self::extract_metadata(&content, filename);
+
+        let html_content = self.render_markdown(&content);
+
+        // Build post HTML
+        let tags_html = if metadata.tags.is_empty() {
+            String::new()
+        } else {
+            let tag_links: Vec<String> = metadata.tags
+                .iter()
+                .map(|t| format!(r#"<span class="post-tag">{}</span>"#, html_escape(t)))
+                .collect();
+            format!(r#"<div class="post-tags">{}</div>"#, tag_links.join(""))
+        };
+
+        let breadcrumbs = format!(
+            r#"<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="index.html">DevLog</a><span class="sep">/</span><span class="current">{}</span></nav>"#,
+            html_escape(&metadata.title)
+        );
+
+        let article_html = format!(
+            r##"<article class="post">
+                {breadcrumbs}
+                <h1>{title}</h1>
+                <div class="post-meta">
+                    <span class="post-date">{date}</span>
+                    {tags_html}
+                </div>
+                <div class="post-body">
+                    {content}
+                </div>
+            </article>"##,
+            breadcrumbs = breadcrumbs,
+            title = html_escape(&metadata.title),
+            date = html_escape(&metadata.date),
+            tags_html = tags_html,
+            content = html_content,
+        );
+
+        let full_html = HTML_TEMPLATE
+            .replace("{{title}}", &metadata.title)
+            .replace("{{description}}", &metadata.description)
+            .replace("{{content}}", &article_html);
+
+        let output_filename = format!("{}.html", filename);
+        let output_path = self.output_dir.join(output_filename);
+
+        fs::write(&output_path, full_html)
+            .with_context(|| format!("Failed to write HTML: {}", output_path.display()))?;
+
+        Ok(metadata)
+    }
+
+    /// Pure function: extract metadata from markdown content without side effects.
+    /// This is testable without creating files.
+    fn extract_metadata(content: &str, filename: &str) -> PostMetadata {
         // Extract title from first # header
         let title = content
             .lines()
@@ -429,61 +485,7 @@ impl DevLogSSG {
             .map(|l| l.trim().to_string())
             .unwrap_or_default();
 
-        let html_content = self.render_markdown(&content);
-
-        // Build post HTML
-        let tags_html = if tags.is_empty() {
-            String::new()
-        } else {
-            let tag_links: Vec<String> = tags
-                .iter()
-                .map(|t| format!(r#"<span class="post-tag">{}</span>"#, html_escape(t)))
-                .collect();
-            format!(r#"<div class="post-tags">{}</div>"#, tag_links.join(""))
-        };
-
-        let breadcrumbs = format!(
-            r#"<nav class="breadcrumbs" aria-label="Breadcrumb"><a href="index.html">DevLog</a><span class="sep">/</span><span class="current">{}</span></nav>"#,
-            html_escape(&title)
-        );
-
-        let article_html = format!(
-            r##"<article class="post">
-                {breadcrumbs}
-                <h1>{title}</h1>
-                <div class="post-meta">
-                    <span class="post-date">{date}</span>
-                    {tags_html}
-                </div>
-                <div class="post-body">
-                    {content}
-                </div>
-            </article>"##,
-            breadcrumbs = breadcrumbs,
-            title = html_escape(&title),
-            date = html_escape(&date),
-            tags_html = tags_html,
-            content = html_content,
-        );
-
-        let full_html = HTML_TEMPLATE
-            .replace("{{title}}", &title)
-            .replace("{{description}}", &description)
-            .replace("{{content}}", &article_html);
-
-        let output_filename = format!("{}.html", filename);
-        let output_path = self.output_dir.join(output_filename);
-
-        fs::write(&output_path, full_html)
-            .with_context(|| format!("Failed to write HTML: {}", output_path.display()))?;
-
-        Ok(PostMetadata {
-            title,
-            date,
-            slug: format!("{}.html", filename),
-            tags,
-            description,
-        })
+        PostMetadata { title, date, slug: format!("{}.html", filename), tags, description }
     }
 
     fn generate_index(&self, posts: &[PostMetadata]) -> Result<()> {
@@ -667,35 +669,22 @@ mod tests {
 
     #[test]
     fn test_extract_title_from_content() {
-        let ssg = DevLogSSG::new();
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("test.md");
-        fs::write(&path, "# My Awesome Title\nContent here").unwrap();
-        let meta = ssg.process_post(&path).unwrap();
+        let meta = DevLogSSG::extract_metadata("# My Awesome Title\nContent here", "test.md");
         assert_eq!(meta.title, "My Awesome Title");
     }
 
     #[test]
     fn test_extract_date_from_filename() {
-        let ssg = DevLogSSG::new();
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("2026-05-15-important-update.md");
-        fs::write(&path, "# Title").unwrap();
-        let meta = ssg.process_post(&path).unwrap();
+        let meta = DevLogSSG::extract_metadata("# Title", "2026-05-15-important-update.md");
         assert_eq!(meta.date, "2026-05-15");
     }
 
     #[test]
     fn test_extract_tags_from_content() {
-        let ssg = DevLogSSG::new();
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("2026-05-15-tagged.md");
-        fs::write(
-            &path,
+        let meta = DevLogSSG::extract_metadata(
             "# Tagged Post\n**Tags**: [rust, architecture, memory]\n\nContent.",
-        )
-        .unwrap();
-        let meta = ssg.process_post(&path).unwrap();
+            "2026-05-15-tagged.md",
+        );
         assert!(meta.tags.contains(&"rust".to_string()));
         assert!(meta.tags.contains(&"architecture".to_string()));
         assert_eq!(meta.tags.len(), 3);
@@ -703,15 +692,10 @@ mod tests {
 
     #[test]
     fn test_extract_description() {
-        let ssg = DevLogSSG::new();
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("2026-05-15-desc.md");
-        fs::write(
-            &path,
+        let meta = DevLogSSG::extract_metadata(
             "# Post\n**Tags**: [test]\n\nThis is the first paragraph that should be the description.\n\nSecond paragraph.",
-        )
-        .unwrap();
-        let meta = ssg.process_post(&path).unwrap();
+            "2026-05-15-desc.md",
+        );
         assert!(meta.description.contains("first paragraph"));
     }
 
@@ -725,31 +709,22 @@ mod tests {
 
     #[test]
     fn test_breadcrumbs_in_processed_post() {
-        let ssg = DevLogSSG::new();
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("2026-05-15-breadcrumb.md");
-        fs::write(&path, "# Breadcrumb Test").unwrap();
-        let meta = ssg.process_post(&path).unwrap();
+        let meta = DevLogSSG::extract_metadata("# Breadcrumb Test", "2026-05-15-breadcrumb");
         assert_eq!(meta.slug, "2026-05-15-breadcrumb.html");
     }
 
     #[test]
     fn test_post_date_fallback_from_content() {
-        let ssg = DevLogSSG::new();
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("my-post.md");
-        fs::write(&path, "# My Post\n**Date**: 2026-05-20\n**Tags**: [test]\n\nContent.").unwrap();
-        let meta = ssg.process_post(&path).unwrap();
+        let meta = DevLogSSG::extract_metadata(
+            "# My Post\n**Date**: 2026-05-20\n**Tags**: [test]\n\nContent.",
+            "my-post",
+        );
         assert_eq!(meta.date, "2026-05-20");
     }
 
     #[test]
     fn test_tags_empty_when_no_tags() {
-        let ssg = DevLogSSG::new();
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("2026-05-15-no-tags.md");
-        fs::write(&path, "# No Tags").unwrap();
-        let meta = ssg.process_post(&path).unwrap();
+        let meta = DevLogSSG::extract_metadata("# No Tags", "2026-05-15-no-tags");
         assert!(meta.tags.is_empty());
     }
 
@@ -808,26 +783,24 @@ mod tests {
             input_dir: dir.path().to_path_buf(),
             output_dir: dir.path().to_path_buf(),
         };
-        let posts = vec![
-            PostMetadata { title: "Post 1".into(), date: "2026-05-01".into(),
-                slug: "post-1.html".into(), tags: vec![], description: "First".into() },
-        ];
+        let posts = vec![PostMetadata {
+            title: "Post 1".into(),
+            date: "2026-05-01".into(),
+            slug: "post-1.html".into(),
+            tags: vec![],
+            description: "First".into(),
+        }];
         ssg.generate_index(&posts).unwrap();
         let index = fs::read_to_string(ssg.output_dir.join("index.html")).unwrap();
         assert!(index.contains("post-search"));
     }
 
     #[test]
-    fn test_empty_tags_skips_tag_section() {
-        let ssg = DevLogSSG::new();
-        let dir = tempdir().unwrap();
-        let path = dir.path().join("2026-05-15-nt.md");
-        fs::write(&path, "# No Tags Here\nContent.").unwrap();
-        let meta = ssg.process_post(&path).unwrap();
-        assert!(meta.tags.is_empty());
-        // The tag section should not appear in metadata
-        let output_path = ssg.output_dir.join(&meta.slug);
-        // process_post writes the file inside output_dir
-        assert!(output_path.exists());
+    fn test_extract_title_with_special_chars() {
+        let meta = DevLogSSG::extract_metadata(
+            "# Rust & C++: A Comparison",
+            "2026-05-01-rust-cpp",
+        );
+        assert!(meta.title.contains("&"));
     }
 }

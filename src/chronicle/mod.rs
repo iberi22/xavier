@@ -2,7 +2,9 @@
 //!
 //! Chronicle provides harvesting, redaction, generation, publishing, and CLI
 //! primitives for Xavier's daily technical log workflow.
+//! Also provides auto-documentation generation from code-graph data.
 
+pub mod auto_docs;
 pub mod cli;
 pub mod generate;
 pub mod harvest;

@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock as AsyncRwLock;
 
+use crate::chronicle::auto_docs::{AutoDocsConfig, AutoDocsGenerator};
 use crate::chronicle::generate::{ChronicleGenerator, ChronicleInput};
 use crate::chronicle::harvest::{HarvestOutput, Harvester};
 use crate::chronicle::publish::{
@@ -54,6 +55,15 @@ pub enum ChronicleCommand {
     },
     /// Generates the static blog from docs/devlog/*.md
     Build,
+    /// Generates auto-documentation for all modules using code-graph data
+    AutoDocs {
+        /// Specific module to document (optional: documents all)
+        #[arg(long)]
+        module: Option<String>,
+        /// Output directory for generated markdown files
+        #[arg(long, default_value = "docs/auto-docs")]
+        output: String,
+    },
 }
 
 pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
@@ -128,6 +138,19 @@ pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
         ChronicleCommand::Build => {
             DevLogSSG::new().build()?;
             println!("DevLog static blog built successfully in public/devlog/");
+        }
+        ChronicleCommand::AutoDocs { module, output } => {
+            let config = AutoDocsConfig {
+                output_dir: PathBuf::from(output),
+                module_filter: module,
+                ..Default::default()
+            };
+            let mut gen = AutoDocsGenerator::new(config);
+            let docs = gen.generate_all()?;
+            println!("Auto-documentation generated for {} modules", docs.len());
+            for doc in &docs {
+                println!("  ✓ {} → {}", doc.module, doc.output_path.display());
+            }
         }
     }
     Ok(())
