@@ -2,7 +2,6 @@
 
 use axum::{
     extract::{ws::Message, ws::WebSocket, State, WebSocketUpgrade},
-    http::StatusCode,
     response::IntoResponse,
     Extension, Json,
 };
@@ -689,29 +688,24 @@ pub struct ResetMemoryResponse {
 /// Basic liveness probe — returns 200 if the process is alive.
 /// Does NOT check dependencies. Fast and cheap; suitable for
 /// Kubernetes liveness probes.
-pub async fn health() -> impl IntoResponse {
-    const HEALTH_JSON: &str = concat!(
-        "{\"status\":\"ok\",\"service\":\"xavier\",\"version\":\"",
-        env!("CARGO_PKG_VERSION"),
-        "\"}"
-    );
-    match axum::response::Response::builder()
-        .header("Content-Type", "application/json")
-        .body(axum::body::Body::from(HEALTH_JSON))
-    {
-        Ok(response) => response,
-        Err(error) => {
-            error!(%error, "failed to build health response");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(serde_json::json!({
-                    "status": "error",
-                    "message": "failed to build health response"
-                })),
-            )
-                .into_response()
-        }
-    }
+pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
+    let workspace = state.workspace_registry.default_context().await;
+    let lag_ms = if let Some(ref context) = workspace {
+        crate::tasks::session_sync_task::calculate_indexing_lag(
+            context.workspace.durable_store().as_ref(),
+            &context.workspace_id,
+        )
+        .await
+    } else {
+        0
+    };
+
+    Json(serde_json::json!({
+        "status": "ok",
+        "service": "xavier",
+        "version": env!("CARGO_PKG_VERSION"),
+        "lag_ms": lag_ms,
+    }))
 }
 
 /// Detailed liveness + readiness probe for orchestration systems.
