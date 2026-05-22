@@ -689,8 +689,25 @@
 
     // Initialize Page
     window.addEventListener('DOMContentLoaded', () => {
+      // First render embedded commits
       renderCommitList();
       selectCommit(0);
+
+      // Attempt to fetch real commits from main
+      fetch('./commits-db.json')
+        .then(res => res.json())
+        .then(data => {
+          if (data && data.length > 0) {
+            console.log('🟢 Real main branch git commits-db.json loaded successfully.');
+            // Replace with real database
+            currentCommits = data;
+            renderCommitList();
+            selectCommit(0);
+          }
+        })
+        .catch(err => {
+          console.warn('⚠️ No dynamic commits-db.json found, or CORS is blocking it. Running in offline/fallback mode with preview commits.', err);
+        });
 
       // Setup Search Listener
       document.getElementById('global-search').addEventListener('input', (e) => {

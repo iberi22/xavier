@@ -43,6 +43,12 @@ if [ -f web/chronicle/review.html ]; then
   cp web/chronicle/review.html public/devlog/review.html
 fi
 
+# Generate real commit/diff JSON database for the main branch
+if [ -f scripts/generate-diff-db.js ]; then
+  echo "📊 Extracting real main branch git diffs and commit histories..."
+  node scripts/generate-diff-db.js
+fi
+
 # Establish the communal Maloca human portal link
 echo "🛖 Establishing communal Maloca human documentation portal link..."
 ln -sfn devlog public/maloca
