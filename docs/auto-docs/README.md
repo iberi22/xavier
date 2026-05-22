@@ -24,7 +24,7 @@ This directory contains automatically generated documentation for each module in
 | [embedding](embedding-module.md) | 0 | 4 |  |
 | [enterprise](enterprise-module.md) | 0 | 9 |  |
 | [memory](memory-module.md) | 0 | 47 |  |
-| [ports](ports-module.md) | 0 | 18 |  |
+| [ports](ports-module.md) | 0 | 17 |  |
 | [retrieval](retrieval-module.md) | 0 | 3 |  |
 | [scheduler](scheduler-module.md) | 0 | 2 |  |
 | [search](search-module.md) | 0 | 6 |  |

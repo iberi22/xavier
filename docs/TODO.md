@@ -34,7 +34,7 @@
 - [x] `cargo check --lib` → 0 errors
 - [ ] Todos los endpoints SEVIER verificados con curl
 - [x] Data race fix commiteado
-- [ ] Dead code ports eliminados
+- [x] Dead code ports eliminados
 - [ ] docs/ADR/ creado y commiteado
 - [x] GitHub push exitoso
 - [ ] Docker image build + run exitoso
