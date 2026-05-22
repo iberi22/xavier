@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hexagonal Architecture in Rust CLI — Why Ports & Adapters Matter — Xavier DevLog</title>
+    <meta name="description" content="Xavier is built using **Hexagonal Architecture** (Ports & Adapters). By decoupling our core memory logic (the Domain) from the outside world (Adapters like SQLite, Axum, or MCP), we ensure that Xavier is future-proof, easily testable, and highly portable across different execution environments (CLI, TUI, and Web).">
+    <meta property="og:title" content="Hexagonal Architecture in Rust CLI — Why Ports & Adapters Matter — Xavier DevLog">
+    <meta property="og:description" content="Xavier is built using **Hexagonal Architecture** (Ports & Adapters). By decoupling our core memory logic (the Domain) from the outside world (Adapters like SQLite, Axum, or MCP), we ensure that Xavier is future-proof, easily testable, and highly portable across different execution environments (CLI, TUI, and Web).">
+    <meta property="og:type" content="article">
+    <meta name="color-scheme" content="dark light">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <a href="#main-content" class="skip-link">Skip to content</a>
+    <header class="site-header">
+        <div class="container header-inner">
+            <div class="logo-area">
+                <h1 class="site-title"><a href="index.html">Xavier DevLog</a></h1>
+                <p class="tagline">Cognitive Memory Runtime — Technical Logs</p>
+            </div>
+            <nav class="site-nav" aria-label="Main navigation">
+                <a href="index.html" class="nav-link">DevLog</a>
+                <a href="https://southwest-ai-labs.github.io/xavier/" class="nav-link" target="_blank" rel="noopener">Docs</a>
+                <a href="https://github.com/iberi22/xavier" class="nav-link" target="_blank" rel="noopener">GitHub</a>
+                <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark/light mode">
+                    <span class="icon-light">&#9728;</span>
+                    <span class="icon-dark">&#9790;</span>
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <main id="main-content" class="container main-content">
+        <article class="post">
+                <nav class="breadcrumbs" aria-label="Breadcrumb"><a href="index.html">DevLog</a><span class="sep">/</span><span class="current">Hexagonal Architecture in Rust CLI — Why Ports &amp; Adapters Matter</span></nav>
+                <h1>Hexagonal Architecture in Rust CLI — Why Ports &amp; Adapters Matter</h1>
+                <div class="post-meta">
+                    <span class="post-date">2026-05-10</span>
+                    <div class="post-tags"><span class="post-tag">rust</span><span class="post-tag">architecture</span><span class="post-tag">hexagonal</span><span class="post-tag">ports-adapters</span><span class="post-tag">maintainability</span></div>
+                </div>
+                <div class="post-body">
+                    <h1>Hexagonal Architecture in Rust CLI — Why Ports &amp; Adapters Matter</h1>
+<p><strong>Date</strong>: 2026-05-10
+<strong>Author</strong>: Xavier AI
+<strong>Tags</strong>: [rust, architecture, hexagonal, ports-adapters, maintainability]
+<strong>Source Files</strong>: <a href="file:///e:/scripts-python/xavier/src/domain/"><code>src/domain/</code></a>, <a href="file:///e:/scripts-python/xavier/src/adapters/"><code>src/adapters/</code></a>, <a href="file:///e:/scripts-python/xavier/src/memory/store.rs"><code>src/memory/store.rs</code></a></p>
+<hr />
+<h2>TL;DR</h2>
+<p>Xavier is built using <strong>Hexagonal Architecture</strong> (Ports &amp; Adapters). By decoupling our core memory logic (the Domain) from the outside world (Adapters like SQLite, Axum, or MCP), we ensure that Xavier is future-proof, easily testable, and highly portable across different execution environments (CLI, TUI, and Web).</p>
+<hr />
+<h2>Context &amp; Motivation</h2>
+<p>Many CLI tools start as a single "main" file that talks directly to a database. This works fine until you need to add an MCP server, or a Web UI, or swap SQLite for SurrealDB. Suddenly, the core logic is tangled with library-specific code. We wanted Xavier to be a "memory engine" first, and a CLI/Server second.</p>
+<hr />
+<h2>The Decision</h2>
+<p>We adopted the Hexagonal pattern. Our <strong>Core Domain</strong> defines what a "Memory" is and what a "Store" must do (the Ports). The <strong>Adapters</strong> implement those interfaces for specific technologies.</p>
+<hr />
+<h2>Deep Dive: Technical Implementation</h2>
+<h3>1. The Ports (Traits)</h3>
+<p>In <code>src/memory/store.rs</code>, we define the <code>MemoryStore</code> trait. This is our "Primary Port".</p>
+<pre><code class="language-rust">#[async_trait]
+pub trait MemoryStore: Send + Sync {
+    async fn add(&amp;self, record: MemoryRecord) -&gt; Result&lt;()&gt;;
+    async fn search(&amp;self, query: &amp;str, limit: usize) -&gt; Result&lt;Vec&lt;MemoryRecord&gt;&gt;;
+}
+</code></pre>
+<h3>2. The Adapters</h3>
+<p>We have multiple adapters implementing this port:</p>
+<ul>
+<li><code>VecSqliteMemoryStore</code>: Local vector search.</li>
+<li><code>SurrealStore</code>: Distributed cloud search.</li>
+<li><code>MemoryStore</code>: Ephemeral store for unit tests.</li>
+</ul>
+<h3>3. Dependency Inversion</h3>
+<p>The application entry points (<code>main.rs</code>, <code>mcp_server.rs</code>, <code>http_server.rs</code>) don't know <em>which</em> store they are using. They talk to a <code>StoreManager</code> which provides a boxed <code>MemoryStore</code>. This allows us to switch backends via a simple environment variable (<code>XAVIER_MEMORY_BACKEND</code>) without changing a single line of business logic.</p>
+<hr />
+<h2>Architecture Diagram</h2>
+<pre><code class="language-mermaid">graph TD
+    subgraph External
+        CLI[CLI / TUI]
+        MCP[MCP Server]
+        HTTP[REST API]
+    end
+    
+    subgraph Adapters_In
+        CLI_Adapter[pico-args / clap]
+        MCP_Adapter[jsonrpc-core]
+        HTTP_Adapter[Axum]
+    end
+    
+    subgraph Core_Domain
+        MemoryLogic[Memory Processing Engine]
+        Port[MemoryStore Trait]
+    end
+    
+    subgraph Adapters_Out
+        SQLite[sqlite-vec Adapter]
+        Surreal[SurrealDB Adapter]
+        File[JSON File Adapter]
+    end
+    
+    CLI --&gt; CLI_Adapter
+    CLI_Adapter --&gt; MemoryLogic
+    MemoryLogic --&gt; Port
+    Port --&gt; SQLite
+    Port --&gt; Surreal
+</code></pre>
+<hr />
+<h2>Alternatives &amp; Trade-offs</h2>
+<table><thead><tr><th>Alternative</th><th>Pros</th><th>Cons</th></tr></thead><tbody>
+<tr><td><strong>Monolithic</strong></td><td>Faster to write initially.</td><td>Impossible to test without a database; hard to swap libraries.</td></tr>
+<tr><td><strong>Layered</strong></td><td>Common in Java/C#.</td><td>Can lead to "Leaky Abstractions" where SQL leaks into the UI.</td></tr>
+</tbody></table>
+<hr />
+<h2>Visual Summary (Infographic)</h2>
+<p><strong>Template</strong>: <code>ListCards</code>
+<strong>Data</strong>:</p>
+<ul>
+<li>Item 1: <code>Domain</code> (Pure logic, 100% test coverage, Zero dependencies)</li>
+<li>Item 2: <code>Ports</code> (Traits defining the contract between core and world)</li>
+<li>Item 3: <code>Adapters</code> (Concrete implementations for IO, Network, and DB)</li>
+</ul>
+<hr />
+<h2>References</h2>
+<ul>
+<li><a href="file:///e:/scripts-python/xavier/docs/ARCHITECTURE.md">Architecture Overview</a></li>
+<li><a href="file:///e:/scripts-python/xavier/src/memory/store.rs">MemoryStore Trait definition</a></li>
+</ul>
+
+                </div>
+            </article>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-inner">
+            <p>&copy; 2026 Xavier Project. Generated by <a href="https://github.com/iberi22/xavier">Xavier Chronicle SSG</a>.</p>
+            <p class="footer-links">
+                <a href="https://github.com/iberi22/xavier" target="_blank" rel="noopener">GitHub</a>
+                <span class="sep">.</span>
+                <a href="https://southwest-ai-labs.github.io/xavier/" target="_blank" rel="noopener">Documentation</a>
+            </p>
+        </div>
+    </footer>
+    <script src="main.js"></script>
+</body>
+</html>
