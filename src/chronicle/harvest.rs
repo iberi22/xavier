@@ -140,7 +140,9 @@ impl Harvester {
 
         let mut revwalk = repo.revwalk()?;
         revwalk.set_sorting(Sort::TIME | Sort::REVERSE)?;
-        revwalk.push_head()?;
+        if revwalk.push_ref("refs/heads/main").is_err() {
+            revwalk.push_head()?;
+        }
 
         let mut commit_infos = Vec::new();
         let mut aggregated_changes: HashMap<String, FileChange> = HashMap::new();
