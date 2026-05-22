@@ -1,5 +1,9 @@
-use crate::ports::outbound::health_check_port::{HealthCheckPort, HealthStatus};
-use async_trait::async_trait;
+#[derive(Debug, Clone)]
+pub struct HealthStatus {
+    pub status: String,
+    pub lag_ms: u64,
+    pub active_agents: usize,
+}
 
 /// HTTP adapter that calls the /xavier/health endpoint on the remote Xavier instance.
 pub struct HttpHealthAdapter {
@@ -9,14 +13,10 @@ pub struct HttpHealthAdapter {
 
 impl HttpHealthAdapter {
     pub fn new(base_url: String, client: reqwest::Client) -> Self {
-
         Self { base_url, client }
     }
-}
 
-#[async_trait]
-impl HealthCheckPort for HttpHealthAdapter {
-    async fn check_health(&self) -> anyhow::Result<HealthStatus> {
+    pub async fn check_health(&self) -> anyhow::Result<HealthStatus> {
         let url = format!("{}/health", self.base_url);
 
         let response = self.client.get(&url).send().await?;

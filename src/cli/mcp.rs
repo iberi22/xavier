@@ -50,9 +50,6 @@ pub async fn start_mcp_stdio() -> Result<()> {
             xavier::memory::file_indexer::FileIndexerConfig::default(),
             None,
         ),
-        pattern_adapter: Arc::new(
-            xavier::adapters::outbound::vec::pattern_adapter::PatternAdapter::new(),
-        ),
         security_service,
     };
 
