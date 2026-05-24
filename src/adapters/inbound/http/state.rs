@@ -28,16 +28,28 @@ pub struct AppState {
     pub code_query: Arc<code_graph::query::QueryEngine>,
 }
 
-/// Check that the `X-Xavier-Token` header matches the configured auth token.
+/// Check that the `X-Xavier-Token` or `Authorization: Bearer <token>` header matches.
 pub fn check_auth(headers: &HeaderMap, state: &AppState) -> Result<(), (StatusCode, Json<Value>)> {
-    match headers.get("X-Xavier-Token").and_then(|v| v.to_str().ok()) {
-        Some(token) if token == state.auth_token => Ok(()),
-        _ => Err((
-            StatusCode::UNAUTHORIZED,
-            Json(serde_json::json!({
-                "status": "error",
-                "message": "Unauthorized",
-            })),
-        )),
+    // Try X-Xavier-Token first (Xavier2 compatible)
+    if let Some(token) = headers.get("X-Xavier-Token").and_then(|v| v.to_str().ok()) {
+        if token == state.auth_token {
+            return Ok(());
+        }
     }
+    // Fallback to Authorization: Bearer <token>
+    if let Some(auth) = headers.get("Authorization").and_then(|v| v.to_str().ok()) {
+        if auth.starts_with("Bearer ") {
+            let token = auth.trim_start_matches("Bearer ").trim();
+            if token == state.auth_token {
+                return Ok(());
+            }
+        }
+    }
+    Err((
+        StatusCode::UNAUTHORIZED,
+        Json(serde_json::json!({
+            "status": "error",
+            "message": "Unauthorized",
+        })),
+    ))
 }
