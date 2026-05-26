@@ -3,7 +3,7 @@
 use anyhow::{anyhow, Result};
 use axum::{
     body::Body,
-    extract::{Path as AxumPath, State},
+    extract::{DefaultBodyLimit, Path as AxumPath, State},
     http::{HeaderMap, Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -315,6 +315,8 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/v1/usage/cooldown", post(usage_cooldown_handler))
         .route("/v1/usage/track", post(usage_track_handler))
         .route("/v1/usage/summary/{provider}", get(usage_summary_handler))
+        // FIX A006: Increase body size limit to 10MB for large documents
+        .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(state.clone(), rate_limit_middleware))
         .layer(middleware::from_fn(auth_middleware));
 
@@ -909,6 +911,7 @@ pub async fn panel_process_chat_inner(
         role: "user".to_string(),
         plain_text: payload.message.clone(),
         openui_lang: None,
+        xui_json: None,
         created_at: chrono::Utc::now(),
         metadata: serde_json::json!({}),
     };
@@ -928,6 +931,7 @@ pub async fn panel_process_chat_inner(
             "<SectionBlock title=\"Xavier\" description=\"{}\"><InfoCard title=\"Status\" value=\"Ready\" /></SectionBlock>",
             payload.message.replace('"', "'")
         )),
+        xui_json: None,
         created_at: chrono::Utc::now(),
         metadata: serde_json::json!({
             "rules": ["deterministic", "ci-safe"],
