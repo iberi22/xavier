@@ -319,6 +319,8 @@ pub struct MemoryQueryFilters {
     pub cluster_ids: Option<Vec<String>>,
     pub levels: Option<Vec<MemoryLevel>>,
     pub zones: Option<Vec<ContextZone>>,
+    #[serde(default)]
+    pub path_prefix: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -574,6 +576,21 @@ pub fn matches_filters(
     if let Some(zones) = &filters.zones {
         if !zones.contains(&resolved.zone) {
             return false;
+        }
+    }
+
+    // FIX A003: Path prefix filter with segment-aware matching
+    // Ensures "docs/api" matches "docs/api/foo" but NOT "docs/apispec/foo"
+    if let Some(path_prefix) = &filters.path_prefix {
+        let prefix_segments: Vec<&str> = path_prefix.trim_end_matches('/').split('/').collect();
+        let path_segments: Vec<&str> = path.trim_end_matches('/').split('/').collect();
+        if path_segments.len() < prefix_segments.len() {
+            return false;
+        }
+        for (i, prefix_seg) in prefix_segments.iter().enumerate() {
+            if path_segments[i] != *prefix_seg {
+                return false;
+            }
         }
     }
 
