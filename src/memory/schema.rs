@@ -319,6 +319,8 @@ pub struct MemoryQueryFilters {
     pub cluster_ids: Option<Vec<String>>,
     pub levels: Option<Vec<MemoryLevel>>,
     pub zones: Option<Vec<ContextZone>>,
+    #[serde(default)]
+    pub path_prefix: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -573,6 +575,13 @@ pub fn matches_filters(
 
     if let Some(zones) = &filters.zones {
         if !zones.contains(&resolved.zone) {
+            return false;
+        }
+    }
+
+    // FIX A003: Path prefix filter
+    if let Some(path_prefix) = &filters.path_prefix {
+        if !path.starts_with(path_prefix) {
             return false;
         }
     }
