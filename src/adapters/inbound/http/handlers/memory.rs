@@ -9,6 +9,26 @@ use crate::adapters::inbound::http::AppState;
 use crate::domain::memory::{MemoryQueryFilters, MemoryRecord as DomainMemoryRecord};
 use tracing::info;
 
+/// Sanitize unicode text by removing control characters and invalid surrogates.
+/// This prevents JSON serialization errors from invalid UTF-8 sequences.
+fn sanitize_unicode(input: &str) -> String {
+    input
+        .chars()
+        .filter(|c| {
+            // Allow printable ASCII, extended ASCII, and valid Unicode
+            // Remove control chars (except tab, newline, carriage return)
+            // Remove surrogate pairs (U+D800-U=DFFF) using numeric comparison
+            let code = *c as u32;
+            match code {
+                0x09 | 0x0A | 0x0D => true, // tab, newline, carriage return
+                0x00..=0x08 | 0x0B | 0x0C | 0x0E..=0x1F | 0x7F => false, // control chars
+                0xD800..=0xDFFF => false, // surrogate pairs
+                _ => true,
+            }
+        })
+        .collect()
+}
+
 #[derive(Debug, Deserialize)]
 pub struct SearchPayload {
     pub query: String,
@@ -86,9 +106,12 @@ pub async fn search_handler(
             let documents: Vec<_> = results
                 .into_iter()
                 .map(|doc| {
+                    // FIX A007: Include path and metadata in search results
                     serde_json::json!({
                         "id": doc.id,
+                        "path": doc.path,
                         "content": doc.content,
+                        "metadata": doc.metadata,
                         "embedding": doc.embedding,
                     })
                 })
@@ -119,11 +142,14 @@ pub async fn add_handler(
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     check_auth(&headers, &state)?;
     let now = chrono::Utc::now();
+    // FIX A001: Sanitize unicode to prevent JSON serialization errors
+    let sanitized_content = sanitize_unicode(&payload.content);
+    let sanitized_path = sanitize_unicode(&payload.path);
     let record = DomainMemoryRecord {
         id: String::new(),
         workspace_id: state.workspace_id.clone(),
-        path: payload.path.clone(),
-        content: payload.content,
+        path: sanitized_path.clone(),
+        content: sanitized_content,
         metadata: payload.metadata,
         embedding: Vec::new(),
         created_at: now,
@@ -197,9 +223,12 @@ pub async fn memory_query_handler(
             let documents: Vec<_> = results
                 .into_iter()
                 .map(|doc| {
+                    // FIX A007: Include path and metadata in search results
                     serde_json::json!({
                         "id": doc.id,
+                        "path": doc.path,
                         "content": doc.content,
+                        "metadata": doc.metadata,
                         "embedding": doc.embedding,
                     })
                 })
