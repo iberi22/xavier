@@ -242,8 +242,6 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     // Build router with state-aware routes
     let protected_routes = Router::new()
         .route("/memory/search", post(search_handler))
-        .route("/memory/export-pack", post(export_pack_handler))
-        .route("/memory/add", post(add_handler))
         .route("/memory/delete", post(delete_handler))
         .route("/memory/stats", get(stats_handler))
         .route("/memory/export", get(export_handler))
@@ -256,7 +254,6 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/workspace/default", get(workspace_info_handler))
         // MCP tools listing
         .route("/mcp/tools", get(mcp_tools_handler))
-        .route("/code/scan", post(code_scan_handler))
         .route("/code/find", post(code_find_handler))
         .route("/code/context", post(code_context_handler))
         .route("/code/stats", get(code_stats_handler))
@@ -297,7 +294,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             "/panel/api/threads/{thread_id}",
             get(panel_get_thread).delete(panel_delete_thread),
         )
-        .route("/panel/api/chat", post(panel_process_chat))
+        // /panel/api/chat moved to large_body_routes for 10MB body limit
         .route("/secrets/lend", post(lend_handler))
         .route("/secrets/leases", get(leases_handler))
         .route("/secrets/revoke", post(revoke_handler))
@@ -316,6 +313,16 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/v1/usage/track", post(usage_track_handler))
         .route("/v1/usage/summary/{provider}", get(usage_summary_handler))
         // FIX A006: Increase body size limit to 10MB for large documents
+        .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
+        .layer(middleware::from_fn_with_state(state.clone(), rate_limit_middleware))
+        .layer(middleware::from_fn(auth_middleware));
+
+    // FIX A006: Apply 10MB body limit only to routes that ingest large documents
+    let large_body_routes = Router::new()
+        .route("/memory/add", post(add_handler))
+        .route("/memory/export-pack", post(export_pack_handler))
+        .route("/panel/api/chat", post(panel_process_chat))
+        .route("/code/scan", post(code_scan_handler))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(state.clone(), rate_limit_middleware))
         .layer(middleware::from_fn(auth_middleware));
@@ -340,6 +347,8 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/panel", get(panel_index))
         .route("/panel/assets/{*path}", get(panel_asset))
         .merge(protected_routes)
+        // Merge large-body routes so they take priority over protected_routes
+        .merge(large_body_routes)
         .with_state(state);
 
     // Merge enterprise HTTP API routes when feature is enabled, under auth
