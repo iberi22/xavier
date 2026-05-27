@@ -94,7 +94,7 @@ cron = "0.15"
 rayon = "1.10"
 parking_lot = "0.12"
 rusqlite = { version = "0.32.0", features = ["bundled", "load_extension", "chrono"] }
-libsql = { version = "0.6.0" }
+libsql = { version = "0.9", default-features = false, features = ["core"] }
 zerocopy = "0.8"
 
 # File traversal
