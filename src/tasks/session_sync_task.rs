@@ -17,9 +17,9 @@ use tokio::sync::{watch, RwLock as TokioRwLock};
 use tokio::time::{interval, sleep, timeout};
 use tracing::{info, warn};
 
+use crate::adapters::outbound::http_health_adapter::HttpHealthAdapter;
 use crate::memory::schema::{MemoryKind, MemoryQueryFilters};
 use crate::memory::store::MemoryStore;
-use crate::ports::outbound::HealthCheckPort;
 use crate::settings::XavierSettings;
 
 /// Interval in milliseconds between sync checks.
@@ -133,7 +133,7 @@ pub struct SessionSyncTask {
     /// Interval between sync checks (in ms)
     interval_ms: u64,
     /// Health check port for Xavier
-    health_port: Arc<dyn HealthCheckPort>,
+    health_port: Arc<HttpHealthAdapter>,
     /// Memory store for querying memory records (optional, falls back if None)
     memory_store: Option<Arc<dyn MemoryStore>>,
     /// Last successful check timestamp
@@ -154,13 +154,13 @@ pub struct SessionSyncTask {
 
 impl SessionSyncTask {
     /// Create a new SessionSyncTask with the given health check port.
-    pub fn new(health_port: Arc<dyn HealthCheckPort>) -> Self {
+    pub fn new(health_port: Arc<HttpHealthAdapter>) -> Self {
         Self::with_storage(health_port, None)
     }
 
     /// Create a new SessionSyncTask with the given health and optional memory store.
     pub fn with_storage(
-        health_port: Arc<dyn HealthCheckPort>,
+        health_port: Arc<HttpHealthAdapter>,
         memory_store: Option<Arc<dyn MemoryStore>>,
     ) -> Self {
         let interval_ms = read_env_or_legacy("XAVIER_SYNC_INTERVAL_MS", "SEVIER_SYNC_INTERVAL_MS")
@@ -534,7 +534,7 @@ impl Default for SessionSyncTask {
                     .build()
                     .expect("failed to build sync task HTTP client");
 
-                crate::adapters::outbound::http_health_adapter::HttpHealthAdapter::new(final_url, client)
+                HttpHealthAdapter::new(final_url, client)
             }),
             memory_store: None,
             last_check: Arc::new(TokioRwLock::new(Instant::now())),

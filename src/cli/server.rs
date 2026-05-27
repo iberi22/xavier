@@ -47,7 +47,6 @@ use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfi
 use xavier::memory::store::{MemoryRecord, MemoryStore};
 use xavier::ports::inbound::input_security_port::SecureInputResult;
 use xavier::ports::inbound::{AgentLifecyclePort, InputSecurityPort, MemoryQueryPort, TimeMetricsPort};
-use xavier::ports::outbound::HealthCheckPort;
 use xavier::ports::outbound::schema_init::SchemaInitializer;
 use xavier::security::threat_store::SecurityThreatStore;
 use xavier::server::panel::{
@@ -136,7 +135,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     let health_adapter = Arc::new(HttpHealthAdapter::new(
         resolve_base_url_for_port(port),
         http_client.clone(),
-    )) as Arc<dyn HealthCheckPort>;
+    ));
     let time_adapter =
         Arc::new(TimeMetricsAdapter::new(Arc::clone(&time_store))) as Arc<dyn TimeMetricsPort>;
     init_time_store(time_adapter);
