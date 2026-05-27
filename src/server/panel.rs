@@ -162,6 +162,7 @@ async fn process_chat_inner(
         role: "user".to_string(),
         plain_text: payload.message.clone(),
         openui_lang: None,
+        xui_json: None,
         created_at: Utc::now(),
         metadata: json!({}),
     };
@@ -185,6 +186,7 @@ async fn process_chat_inner(
         role: "assistant".to_string(),
         plain_text: ui_render.plain_text,
         openui_lang: Some(ui_render.openui_lang),
+        xui_json: None,
         created_at: Utc::now(),
         metadata: json!({
             "confidence": trace.agent.confidence,

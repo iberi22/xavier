@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+    <?define ProductName = "Xavier" ?>
+    <?define ProductManufacturer = "SouthWest AI Labs" ?>
+    <?define ProductVersion = "1.0.0" ?>
+    <?define ProductUpgradeCode = "e6e6e6e6-e6e6-e6e6-e6e6-e6e6e6e6e6e6" ?>
+
+    <Product Id="*" Name="$(var.ProductName)" Language="1033" Version="$(var.ProductVersion)" Manufacturer="$(var.ProductManufacturer)" UpgradeCode="$(var.ProductUpgradeCode)">
+        <Package InstallerVersion="200" Compressed="yes" InstallScope="perMachine" />
+
+        <MajorUpgrade DowngradeErrorMessage="A newer version of [ProductName] is already installed." />
+        <MediaTemplate EmbedCab="yes" />
+
+        <Feature Id="ProductFeature" Title="Xavier" Level="1">
+            <ComponentGroupRef Id="ProductComponents" />
+            <ComponentGroupRef Id="PanelUIComponents" />
+            <ComponentRef Id="ApplicationShortcut" />
+            <ComponentRef Id="ApplicationShortcutTUI" />
+            <ComponentRef Id="PathEnvironmentVariable" />
+        </Feature>
+    </Product>
+
+    <Fragment>
+        <Directory Id="TARGETDIR" Name="SourceDir">
+            <Directory Id="ProgramFiles64Folder">
+                <Directory Id="ManufacturerFolder" Name="$(var.ProductManufacturer)">
+                    <Directory Id="INSTALLFOLDER" Name="$(var.ProductName)">
+                        <Directory Id="PANELUIFOLDER" Name="panel-ui" />
+                    </Directory>
+                </Directory>
+            </Directory>
+            <Directory Id="ProgramMenuFolder">
+                <Directory Id="ApplicationProgramsFolder" Name="$(var.ProductName)"/>
+            </Directory>
+        </Directory>
+    </Fragment>
+
+    <Fragment>
+        <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+            <Component Id="XavierExe" Guid="*">
+                <File Id="XavierExe" Source="..\target\release\xavier.exe" KeyPath="yes" />
+            </Component>
+            <Component Id="XavierTuiExe" Guid="*">
+                <File Id="XavierTuiExe" Source="..\target\release\xavier-tui.exe" />
+            </Component>
+            <Component Id="XavierGuiExe" Guid="*">
+                <File Id="XavierGuiExe" Source="..\target\release\xavier-gui.exe" />
+            </Component>
+            <Component Id="DefaultConfig" Guid="*">
+                <File Id="DefaultConfig" Source="..\config\xavier.config.json" />
+            </Component>
+        </ComponentGroup>
+
+        <!-- Note: Panel UI files would typically be harvested using heat.exe -->
+        <!-- For this template, we'll assume a simplified structure or manual entry if few files -->
+        <ComponentGroup Id="PanelUIComponents" Directory="PANELUIFOLDER">
+            <!-- Heat.exe output should be integrated here during build -->
+            <Component Id="PanelPlaceholder" Guid="6b4d3f3f-3f3f-4f3f-8f3f-3f3f3f3f3f3f">
+                <CreateFolder />
+            </Component>
+        </ComponentGroup>
+
+        <DirectoryRef Id="ApplicationProgramsFolder">
+            <Component Id="ApplicationShortcut" Guid="*">
+                <Shortcut Id="ApplicationStartMenuShortcut"
+                          Name="Xavier GUI"
+                          Description="Xavier Cognitive Memory Runtime GUI"
+                          Target="[INSTALLFOLDER]xavier-gui.exe"
+                          WorkingDirectory="INSTALLFOLDER"/>
+                <RemoveFolder Id="CleanUpShortCut" On="uninstall"/>
+                <RegistryValue Root="HKCU" Key="Software\$(var.ProductManufacturer)\$(var.ProductName)" Name="installed" Type="integer" Value="1" KeyPath="yes"/>
+            </Component>
+            <Component Id="ApplicationShortcutTUI" Guid="*">
+                <Shortcut Id="ApplicationStartMenuShortcutTUI"
+                          Name="Xavier TUI"
+                          Description="Xavier Cognitive Memory Runtime TUI"
+                          Target="[INSTALLFOLDER]xavier-tui.exe"
+                          WorkingDirectory="INSTALLFOLDER"/>
+                <RegistryValue Root="HKCU" Key="Software\$(var.ProductManufacturer)\$(var.ProductName)" Name="tui_installed" Type="integer" Value="1" KeyPath="yes"/>
+            </Component>
+        </DirectoryRef>
+
+        <DirectoryRef Id="INSTALLFOLDER">
+            <Component Id="PathEnvironmentVariable" Guid="{A6C3B7E3-1E1C-4B9E-9E1A-E8E8E8E8E8E8}">
+                <Environment Id="PATH" Name="PATH" Value="[INSTALLFOLDER]" Permanent="no" Part="last" Action="set" System="yes" />
+                <RegistryValue Root="HKLM" Key="Software\$(var.ProductManufacturer)\$(var.ProductName)" Name="PathSet" Type="integer" Value="1" KeyPath="yes" />
+            </Component>
+        </DirectoryRef>
+    </Fragment>
+</Wix>
