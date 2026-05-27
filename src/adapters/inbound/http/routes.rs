@@ -8,10 +8,10 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use crate::adapters::inbound::http::dto::TimeMetricDto;
+use crate::adapters::outbound::http_health_adapter::HttpHealthAdapter;
 use crate::agents::unregister_agent_handler;
 use crate::coordination::SimpleAgentRegistry;
 use crate::ports::inbound::{AgentLifecyclePort, TimeMetricsPort};
-use crate::ports::outbound::HealthCheckPort;
 use crate::security::SecurityService;
 use crate::session::event_mapper::PanelThreadEntry;
 use crate::session::types::SessionEvent;
@@ -32,8 +32,8 @@ pub static LIB_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 // ─── Module-level TimeMetricsPort (initialized by CLI) ────────────────────────
 static TIME_STORE: std::sync::OnceLock<Arc<dyn TimeMetricsPort>> = std::sync::OnceLock::new();
 
-/// Module-level HealthCheckPort (initialized by CLI)
-static HEALTH_PORT: std::sync::OnceLock<Arc<dyn HealthCheckPort>> = std::sync::OnceLock::new();
+/// Module-level HttpHealthAdapter (initialized by CLI)
+static HEALTH_PORT: std::sync::OnceLock<Arc<HttpHealthAdapter>> = std::sync::OnceLock::new();
 
 /// Initialize the global time metrics port (call once at startup)
 pub fn init_time_store(port: Arc<dyn TimeMetricsPort>) {
@@ -43,7 +43,7 @@ pub fn init_time_store(port: Arc<dyn TimeMetricsPort>) {
 }
 
 /// Initialize the global health check port (call once at startup)
-pub fn init_health_port(port: Arc<dyn HealthCheckPort>) {
+pub fn init_health_port(port: Arc<HttpHealthAdapter>) {
     if HEALTH_PORT.set(port).is_err() {
         tracing::error!("HEALTH_PORT global already initialized (called init_health_port twice)");
     }
