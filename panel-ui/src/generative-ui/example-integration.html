@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Xavier2 — Generative UI Demo</title>
+  <style>
+    body {
+      margin: 0;
+      background: #0a0e1a;
+      color: #f9fafb;
+      font-family: system-ui, -apple-system, sans-serif;
+      padding: 2rem;
+    }
+    .chat-container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    .message {
+      margin-bottom: 1rem;
+      padding: 1rem;
+      border-radius: 12px;
+      background: #1f2937;
+    }
+    .message.user {
+      background: #374151;
+      margin-left: 20%;
+    }
+    .message.agent {
+      margin-right: 20%;
+    }
+    #xavier-ui {
+      margin-top: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="chat-container">
+    <div class="message user">
+      <strong>Tú:</strong> Muestra los proyectos activos
+    </div>
+    <div class="message agent">
+      <strong>Xavier2:</strong> Aquí están los proyectos activos:
+      <div id="xavier-ui"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { XavierUIRenderer } from './renderer.js';
+
+    const ui = new XavierUIRenderer('xavier-ui', {
+      theme: 'dark',
+      onAction: (event) => {
+        console.log('Acción:', event);
+        alert(`Acción: ${event.action} en fila ${event.rowIndex}`);
+      }
+    });
+
+    // Ejemplo: Respuesta del agente (JSON generado por LLM)
+    const agentResponse = {
+      component: "data-table",
+      title: "Proyectos Activos",
+      columns: [
+        { key: "name", label: "Nombre", width: "30%" },
+        { key: "status", label: "Estado", width: "20%" },
+        { key: "progress", label: "Progreso", width: "20%" },
+        { key: "actions", label: "Acciones", width: "30%" }
+      ],
+      rows: [
+        { name: "Xavier2", status: "ACTIVE", progress: 85, actions: ["Ver", "Editar"] },
+        { name: "OrionHealth", status: "IN_PROGRESS", progress: 30, actions: ["Ver"] },
+        { name: "WorldExams", status: "ACTIVE", progress: 55, actions: ["Ver", "Editar"] }
+      ]
+    };
+
+    ui.render(agentResponse);
+  </script>
+</body>
+</html>
