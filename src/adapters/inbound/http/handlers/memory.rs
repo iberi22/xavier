@@ -168,7 +168,8 @@ pub async fn add_handler(
         Ok(id) => Ok(Json(serde_json::json!({
             "status": "ok",
             "id": id,
-            "path": payload.path,
+            // FIX: Return sanitized_path (the actual persisted value), not payload.path
+            "path": sanitized_path,
             "workspace_id": state.workspace_id,
         }))),
         Err(e) => Ok(Json(serde_json::json!({

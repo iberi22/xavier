@@ -16,6 +16,7 @@ pub struct PanelMessage {
     pub role: String,
     pub plain_text: String,
     pub openui_lang: Option<String>,
+    pub xui_json: Option<String>,
     pub created_at: DateTime<Utc>,
     pub metadata: serde_json::Value,
 }
@@ -239,6 +240,7 @@ mod tests {
             role: "user".to_string(),
             plain_text: "Hello from the panel".to_string(),
             openui_lang: None,
+            xui_json: None,
             created_at: Utc::now(),
             metadata: serde_json::json!({}),
         };
@@ -287,6 +289,7 @@ mod tests {
             role: "user".to_string(),
             plain_text: "Explain xavier memory and show a structured UI.".to_string(),
             openui_lang: None,
+            xui_json: None,
             created_at: Utc::now(),
             metadata: serde_json::json!({}),
         };
