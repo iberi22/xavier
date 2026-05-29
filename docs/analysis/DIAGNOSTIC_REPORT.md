@@ -37,13 +37,13 @@ Scanning dependencies for vulnerabilities...
 
 ## ✅ Strict Analysis
 ```
-Checking xavier v1.0.0-rc.1 (E:\scripts-python\xavier)
+Checking xavier v0.6.1-beta (E:\scripts-python\xavier)
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.46s
 ```
 
 ## ✅ Cargo Check
 ```
-Checking xavier v1.0.0-rc.1 (E:\scripts-python\xavier)
+Checking xavier v0.6.1-beta (E:\scripts-python\xavier)
     Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.99s
 ```
 

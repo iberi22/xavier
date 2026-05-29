@@ -2,7 +2,7 @@
 <Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
     <?define ProductName = "Xavier" ?>
     <?define ProductManufacturer = "SouthWest AI Labs" ?>
-    <?define ProductVersion = "1.0.0" ?>
+    <?define ProductVersion = "0.6.1-beta" ?>
     <?define ProductUpgradeCode = "e6e6e6e6-e6e6-e6e6-e6e6-e6e6e6e6e6e6" ?>
 
     <Product Id="*" Name="$(var.ProductName)" Language="1033" Version="$(var.ProductVersion)" Manufacturer="$(var.ProductManufacturer)" UpgradeCode="$(var.ProductUpgradeCode)">

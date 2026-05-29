@@ -1,8 +1,8 @@
 # Xavier Feature Status
 
-Current product label: `1.0.0`
+Current product label: `0.6.1-beta`
 
-This matrix is the operational truth for the repository as of v1.0 release stabilization.
+This matrix is the operational truth for the repository as of v0.6.1-beta stabilization.
 
 ## Release Status
 
