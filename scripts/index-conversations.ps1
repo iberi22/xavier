@@ -3,10 +3,19 @@
 
 param(
     [string]$XavierUrl = "http://localhost:8006",
-    [string]$XavierToken = ($env:XAVIER_TOKEN, "dev-token" -ne $null)[0],
+    [string]$XavierToken = $env:XAVIER_TOKEN,
     [int]$MaxChunkSize = 15000,
     [int]$MaxSessionsPerTool = 10
 )
+
+if (-not $XavierToken) {
+    if ($env:XAVIER_DEV_MODE -eq "true" -or $env:XAVIER_DEV_MODE -eq "1") {
+        $XavierToken = "dev-token"
+    } else {
+        Write-Error "XAVIER_TOKEN environment variable is not set. For development, set XAVIER_DEV_MODE=true to use the default dev-token."
+        exit 1
+    }
+}
 
 $headers = @{
     "X-Xavier-Token" = $XavierToken
