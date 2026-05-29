@@ -242,6 +242,28 @@ impl TuiAppState for TuiApp {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    let dump_mode = std::env::var("XAVIER_TUI_DUMP").is_ok();
+
+    if dump_mode {
+        let backend = ratatui::backend::TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend)?;
+        let mut app = TuiApp::new();
+
+        app.current_tab = std::env::var("XAVIER_TUI_TAB")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(0);
+        app.on_tick().await;
+
+        terminal.draw(|f| {
+            xavier::ui::dashboard::render_tui(f, &app);
+        })?;
+
+        let buffer = terminal.backend().buffer();
+        println!("{}", serde_json::to_string(buffer)?);
+        return Ok(());
+    }
+
     // Setup terminal
     enable_raw_mode()?;
     let mut stdout = io::stdout();
