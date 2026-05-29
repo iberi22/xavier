@@ -1,7 +1,7 @@
 # Xavier — Fast Vector Memory for AI Agents
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Version](https://img.shields.io/badge/version-1.0.0--rc.1-blue.svg)](https://github.com/iberi22/xavier)
+[![Version](https://img.shields.io/badge/version-0.6.1--beta-blue.svg)](https://github.com/iberi22/xavier)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 [![CI](https://img.shields.io/badge/CI-passing-brightgreen.svg)](https://github.com/iberi22/xavier/actions)
 
@@ -178,7 +178,7 @@ Runtime configuration lives in [config/xavier.config.json](config/xavier.config.
 
 ## Status
 
-Current release: **1.0.0-rc.1 (Production Ready)**. All core systems (Security, Belief Graph, Hierarchical Memory) are stabilized and verified.
+Current release: **0.6.1-beta (Development)**. All core systems (Security, Belief Graph, Hierarchical Memory) are stabilized and verified.
 
 ## License
 
