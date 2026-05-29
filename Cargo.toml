@@ -50,7 +50,7 @@ enterprise = []
 [dependencies]
 code-graph = { path = "./code-graph" }
 anyhow = "1.0.102"
-git2 = { version = "0.20", features = ["vendored-openssl"] }
+git2 = { version = "0.21", features = ["vendored-openssl"] }
 async-trait = "0.1"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 gllm = { version = "0.10.6", default-features = false, features = ["cpu"], optional = true }
