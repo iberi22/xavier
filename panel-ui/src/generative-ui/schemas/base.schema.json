@@ -19,7 +19,12 @@
         "confirm-dialog",
         "status-badge",
         "chart-bar",
-        "list-group"
+        "list-group",
+        "graph",
+        "memory-card",
+        "metric-dashboard",
+        "log-viewer",
+        "session-list"
       ],
       "description": "Tipo de componente UI a renderizar"
     },
