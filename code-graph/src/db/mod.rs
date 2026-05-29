@@ -515,7 +515,7 @@ impl CodeGraphDB {
 
         let kind_str = format!("{:?}", kind);
         let symbols = stmt
-            .query_map(params![kind_str, limit], |row| {
+            .query_map(params![kind_str, limit as isize], |row| {
                 Ok(Symbol {
                     id: Some(row.get(0)?),
                     stable_id: Some(row.get(1)?),
@@ -548,19 +548,19 @@ impl CodeGraphDB {
 
         let total_files: u64 = conn
             .query_row("SELECT COUNT(DISTINCT file_path) FROM symbols", [], |row| {
-                row.get(0)
+                row.get::<_, i64>(0).map(|v| v as u64)
             })
             .unwrap_or(0);
 
         let total_symbols: u64 = conn
-            .query_row("SELECT COUNT(*) FROM symbols", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM symbols", [], |row| row.get::<_, i64>(0).map(|v| v as u64))
             .unwrap_or(0);
 
         let total_imports: u64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM edges WHERE edge_type = 'Imports'",
                 [],
-                |row| row.get(0),
+                |row| row.get::<_, i64>(0).map(|v| v as u64),
             )
             .unwrap_or(0);
 
@@ -571,7 +571,7 @@ impl CodeGraphDB {
         let languages = stmt
             .query_map([], |row| {
                 let lang_str: String = row.get(0)?;
-                let count: u64 = row.get(1)?;
+                let count: u64 = row.get::<_, i64>(1)? as u64;
                 Ok(LanguageCount {
                     lang: parse_language(&lang_str),
                     count,
@@ -670,10 +670,10 @@ impl CodeGraphDB {
             .prepare(sql)
             .map_err(|e| GraphError::Database(e.to_string()))?;
         let rows = if let Some(edge_type) = edge_type {
-            stmt.query_map(params![from_symbol, edge_type, limit], edge_from_row)
+            stmt.query_map(params![from_symbol, edge_type, limit as isize], edge_from_row)
                 .map_err(|e| GraphError::Database(e.to_string()))?
         } else {
-            stmt.query_map(params![from_symbol, limit], edge_from_row)
+            stmt.query_map(params![from_symbol, limit as isize], edge_from_row)
                 .map_err(|e| GraphError::Database(e.to_string()))?
         };
         Ok(rows.filter_map(|row| row.ok()).collect())
@@ -701,10 +701,10 @@ impl CodeGraphDB {
             .prepare(sql)
             .map_err(|e| GraphError::Database(e.to_string()))?;
         let rows = if let Some(edge_type) = edge_type {
-            stmt.query_map(params![to_symbol, edge_type, limit], edge_from_row)
+            stmt.query_map(params![to_symbol, edge_type, limit as isize], edge_from_row)
                 .map_err(|e| GraphError::Database(e.to_string()))?
         } else {
-            stmt.query_map(params![to_symbol, limit], edge_from_row)
+            stmt.query_map(params![to_symbol, limit as isize], edge_from_row)
                 .map_err(|e| GraphError::Database(e.to_string()))?
         };
         Ok(rows.filter_map(|row| row.ok()).collect())
@@ -766,8 +766,8 @@ impl CodeGraphDB {
             )
             .map_err(|e| GraphError::Database(e.to_string()))?;
         let ids: Vec<(String, u64, u64)> = stmt
-            .query_map(params![min_degree, limit], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+            .query_map(params![min_degree as i64, limit as isize], |row| {
+                Ok((row.get(0)?, row.get::<_, i64>(1)? as u64, row.get::<_, i64>(2)? as u64))
             })
             .map_err(|e| GraphError::Database(e.to_string()))?
             .filter_map(|row| row.ok())
@@ -817,8 +817,8 @@ impl CodeGraphDB {
             )
             .map_err(|e| GraphError::Database(e.to_string()))?;
         let rows: Vec<(String, u64, u64, f32)> = stmt
-            .query_map(params![min_complexity, limit], |row| {
-                Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+            .query_map(params![min_complexity, limit as isize], |row| {
+                Ok((row.get(0)?, row.get::<_, i64>(1)? as u64, row.get::<_, i64>(2)? as u64, row.get(3)?))
             })
             .map_err(|e| GraphError::Database(e.to_string()))?
             .filter_map(|row| row.ok())
