@@ -58,6 +58,8 @@ pub fn create_router() -> Router {
 pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecyclePort>) -> Router {
     let router = Router::new()
         .route("/health", get(health_handler))
+        .route("/readiness", get(readiness_handler))
+        .route("/build", get(build_handler))
         .route(
             "/xavier/agents/{id}/unregister",
             post(unregister_agent_handler),
@@ -76,8 +78,26 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
     router.with_state(agent_registry)
 }
 
-async fn health_handler() -> &'static str {
-    "ok"
+async fn health_handler() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "status": "ok",
+        "service": "xavier",
+        "version": env!("CARGO_PKG_VERSION"),
+    }))
+}
+
+async fn readiness_handler() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "status": "ok",
+        "service": "xavier",
+    }))
+}
+
+async fn build_handler() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "service": "xavier",
+        "version": env!("CARGO_PKG_VERSION"),
+    }))
 }
 
 pub async fn session_event_handler(Json(event): Json<SessionEvent>) -> Json<serde_json::Value> {
@@ -452,7 +472,7 @@ mod route_tests {
     use http_body_util::BodyExt;
     use tower::util::ServiceExt;
 
-    use super::create_router_with_agent_registry;
+    use super::{create_router, create_router_with_agent_registry};
     use crate::coordination::SimpleAgentRegistry;
 
     fn post_request(uri: &str) -> Request<Body> {
@@ -515,6 +535,95 @@ mod route_tests {
         assert_eq!(parsed["status"], "error");
         assert_eq!(parsed["agent_id"], "missing-agent");
         assert_eq!(parsed["message"], "Agent not found or already unregistered");
+    }
+
+    #[tokio::test]
+    async fn health_route_returns_json_ok() {
+        use axum::response::Response;
+        use tower::ServiceExt;
+        use http_body_util::BodyExt;
+        let response: Response = create_router()
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .method(Method::GET)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let parsed: serde_json::Value = serde_json::from_slice(&body).expect("parse health response");
+
+        assert_eq!(parsed["status"], "ok");
+        assert_eq!(parsed["service"], "xavier");
+        assert!(parsed.get("version").is_some());
+    }
+
+    #[tokio::test]
+    async fn readiness_route_returns_json_ok() {
+        use axum::response::Response;
+        use tower::ServiceExt;
+        use http_body_util::BodyExt;
+        let response: Response = create_router()
+            .oneshot(
+                Request::builder()
+                    .uri("/readiness")
+                    .method(Method::GET)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&body).expect("parse readiness response");
+
+        assert_eq!(parsed["status"], "ok");
+        assert_eq!(parsed["service"], "xavier");
+    }
+
+    #[tokio::test]
+    async fn build_route_returns_json_info() {
+        use axum::response::Response;
+        use tower::ServiceExt;
+        use http_body_util::BodyExt;
+        let response: Response = create_router()
+            .oneshot(
+                Request::builder()
+                    .uri("/build")
+                    .method(Method::GET)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("request should complete");
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = response
+            .into_body()
+            .collect()
+            .await
+            .expect("collect body")
+            .to_bytes();
+        let parsed: serde_json::Value = serde_json::from_slice(&body).expect("parse build response");
+
+        assert_eq!(parsed["service"], "xavier");
+        assert!(parsed.get("version").is_some());
     }
 }
 
