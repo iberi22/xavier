@@ -43,4 +43,8 @@ impl eframe::App for XavierApp {
         // Request repaint for animations
         ctx.request_repaint();
     }
+
+    fn ui(&mut self, _ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        // No-op, we use update() for full control
+    }
 }
