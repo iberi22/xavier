@@ -141,7 +141,9 @@ mod integration {
     async fn test_verify_save_endpoint() {
         let server = spawn_test_server().await;
         std::env::set_var("XAVIER_URL", &server.base_url);
-        std::env::set_var("X-CORTEX-TOKEN", "dev-token");
+        if std::env::var("X-CORTEX-TOKEN").is_err() {
+            std::env::set_var("X-CORTEX-TOKEN", "dev-token");
+        }
 
         let response = post_json(
             &server,

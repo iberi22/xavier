@@ -13,7 +13,7 @@ services:
       - XAVIER_PORT=8003
       - XAVIER_HOST=0.0.0.0
       - XAVIER_CODE_GRAPH_DB_PATH=/data/code_graph.db
-      - XAVIER_TOKEN=${XAVIER_TOKEN:-dev-token}
+      - XAVIER_TOKEN=${XAVIER_TOKEN}
       # FIXED: Using file backend for reliable local persistence
       # SurrealDB integration disabled due to persistent write failures (see BENCHMARKS.md)
       - XAVIER_MEMORY_BACKEND=file
