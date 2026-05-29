@@ -176,52 +176,43 @@ impl fmt::Debug for WorkspaceConfig {
 impl WorkspaceConfig {
     pub fn from_env() -> Self {
         let settings = XavierSettings::current();
-        let plan = std::env::var("XAVIER_DEFAULT_PLAN")
-            .ok()
-            .unwrap_or_else(|| settings.workspace.default_plan.clone());
-        let plan = PlanTier::from_env(&plan);
+        let plan = PlanTier::from_env(&settings.workspace.default_plan);
 
-        let storage_limit_bytes = std::env::var("XAVIER_STORAGE_LIMIT_BYTES")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .or(settings.workspace.storage_limit_bytes)
+        let storage_limit_bytes = settings
+            .workspace
+            .storage_limit_bytes
             .or_else(|| plan.default_storage_limit_bytes());
 
-        let request_limit = std::env::var("XAVIER_REQUEST_LIMIT")
-            .ok()
-            .and_then(|value| value.parse::<usize>().ok())
-            .or(settings.workspace.request_limit)
+        let request_limit = settings
+            .workspace
+            .request_limit
             .or_else(|| plan.default_request_limit());
-        let request_unit_limit = std::env::var("XAVIER_REQUEST_UNIT_LIMIT")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .or(settings.workspace.request_unit_limit)
+        let request_unit_limit = settings
+            .workspace
+            .request_unit_limit
             .or_else(|| request_limit.map(|value| value as u64 * 2));
 
         Self {
-            id: std::env::var("XAVIER_DEFAULT_WORKSPACE_ID")
-                .unwrap_or_else(|_| settings.workspace.default_workspace_id.clone()),
-            token: std::env::var("XAVIER_TOKEN")
-                .expect("XAVIER_TOKEN environment variable must be set"),
+            id: settings.workspace.default_workspace_id.clone(),
+            token: settings
+                .auth_token
+                .clone()
+                .or_else(|| {
+                    std::env::var("XAVIER_TOKEN")
+                        .ok()
+                        .or_else(|| std::env::var("XAVIER_AUTH_TOKEN").ok())
+                })
+                .expect("XAVIER_TOKEN / XAVIER_AUTH_TOKEN must be set (via env, config, or XavierSettings.init())"),
             plan,
-            memory_backend: std::env::var("XAVIER_MEMORY_BACKEND")
-                .map(|value| MemoryBackend::from_env(&value))
-                .unwrap_or_else(|_| MemoryBackend::from_env(&settings.memory.backend)),
+            memory_backend: MemoryBackend::from_env(&settings.memory.backend),
             storage_limit_bytes,
             request_limit,
             request_unit_limit,
-            embedding_provider_mode: std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
-                .map(|value| EmbeddingProviderMode::from_env(&value))
-                .unwrap_or_else(|_| {
-                    EmbeddingProviderMode::from_env(&settings.workspace.embedding_provider_mode)
-                }),
-            managed_google_embeddings: std::env::var("XAVIER_MANAGED_GOOGLE_EMBEDDINGS")
-                .ok()
-                .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE"))
-                .unwrap_or(settings.workspace.managed_google_embeddings),
-            sync_policy: std::env::var("XAVIER_SYNC_POLICY")
-                .map(|value| SyncPolicy::from_env(&value))
-                .unwrap_or_else(|_| SyncPolicy::from_env(&settings.workspace.sync_policy)),
+            embedding_provider_mode: EmbeddingProviderMode::from_env(
+                &settings.workspace.embedding_provider_mode,
+            ),
+            managed_google_embeddings: settings.workspace.managed_google_embeddings,
+            sync_policy: SyncPolicy::from_env(&settings.workspace.sync_policy),
         }
     }
 }
@@ -865,10 +856,21 @@ impl WorkspaceState {
     }
 
     pub async fn embedding_provider_snapshot(&self) -> EmbeddingProviderSnapshot {
-        let configured_url = std::env::var("XAVIER_EMBEDDING_ENDPOINT")
-            .ok()
-            .or_else(|| std::env::var("XAVIER_EMBEDDING_URL").ok());
-        let configured_model = std::env::var("XAVIER_EMBEDDING_MODEL").ok();
+        let settings = XavierSettings::current();
+        let configured_url = if settings.models.embedding_url.is_empty() {
+            if settings.embedding.endpoint.is_empty() {
+                None
+            } else {
+                Some(settings.embedding.endpoint.clone())
+            }
+        } else {
+            Some(settings.models.embedding_url.clone())
+        };
+        let configured_model = if settings.models.embedding_model.is_empty() {
+            None
+        } else {
+            Some(settings.models.embedding_model.clone())
+        };
         let configured = crate::memory::embedder::EmbeddingClient::is_configured_from_env();
         let (available, last_error) = if configured {
             match EmbeddingClient::from_env() {
@@ -1169,9 +1171,13 @@ struct FileMigrationResult {
 }
 
 fn resolve_file_store_path(workspace_root: &std::path::Path) -> PathBuf {
-    std::env::var("XAVIER_MEMORY_FILE_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| workspace_root.join("memory-store.json"))
+    let settings = XavierSettings::current();
+    let path = PathBuf::from(&settings.memory.file_path);
+    if path.is_absolute() {
+        path
+    } else {
+        workspace_root.join(&settings.memory.file_path)
+    }
 }
 
 fn durable_migration_marker_path(file_store_path: &std::path::Path) -> PathBuf {
@@ -1388,8 +1394,8 @@ impl WorkspaceRegistry {
     }
 
     pub async fn default_context(&self) -> Option<WorkspaceContext> {
-        let preferred_id =
-            std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string());
+        let settings = XavierSettings::current();
+        let preferred_id = settings.workspace.default_workspace_id.clone();
         let workspaces = self.workspaces.read().await;
 
         if let Some(workspace) = workspaces.get(&preferred_id).cloned() {
@@ -1409,8 +1415,8 @@ impl WorkspaceRegistry {
     }
 
     pub fn default_context_sync(&self) -> Option<WorkspaceContext> {
-        let preferred_id =
-            std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string());
+        let settings = XavierSettings::current();
+        let preferred_id = settings.workspace.default_workspace_id.clone();
         let workspaces = self.workspaces.blocking_read();
 
         if let Some(workspace) = workspaces.get(&preferred_id).cloned() {
@@ -1432,13 +1438,8 @@ impl WorkspaceRegistry {
     pub async fn default_from_env(runtime_config: RuntimeConfig) -> Result<Self> {
         let registry = Self::new();
         let config = WorkspaceConfig::from_env();
-        let panel_root = match std::env::var("XAVIER_WORKSPACE_DIR") {
-            Ok(dir) => PathBuf::from(dir).join(&config.id),
-            Err(_) => match std::env::var("XAVIER_DATA_DIR") {
-                Ok(dir) => PathBuf::from(dir).join("workspaces").join(&config.id),
-                Err(_) => PathBuf::from("data").join("workspaces").join(&config.id),
-            },
-        };
+        let settings = XavierSettings::current();
+        let panel_root = PathBuf::from(&settings.memory.workspace_dir).join(&config.id);
         let workspace = WorkspaceState::new(config, runtime_config, panel_root).await?;
         seed_workspace(&workspace).await?;
         registry.insert(workspace).await?;
