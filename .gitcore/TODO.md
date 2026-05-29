@@ -77,7 +77,7 @@
 
 ---
 
-## 1.0.0 Release Checklist
+## 0.6.1-beta Release Checklist
 
 ### Must Have
 - [x] Core memory system stable

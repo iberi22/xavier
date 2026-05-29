@@ -1,6 +1,6 @@
 # Xavier Architecture
 
-**Version:** 1.0.0-rc.1
+**Version:** 0.6.1-beta
 **Last Updated:** 2026-05-20
 
 ---
