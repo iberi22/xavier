@@ -1,4 +1,4 @@
-# Xavier v1.0 - Windows Installation Guide
+# Xavier v0.6.1-beta - Windows Installation Guide
 
 > ⚡ **One-liner install** (PowerShell as Administrator):
 > ```powershell
@@ -7,9 +7,9 @@
 
 ---
 
-## What's New in v1.0 (vs Xavier2)
+## What's New in v0.6.1-beta (vs Xavier2)
 
-Xavier v1.0 is the evolution of Xavier2, now with enterprise-grade features while maintaining full backward compatibility.
+Xavier v0.6.1-beta is the evolution of Xavier2, now with enterprise-grade features while maintaining full backward compatibility.
 
 ### New Features
 - **Context Regeneration** — Multi-phase context rebuilding (Phase 0, 1, 2)
@@ -131,7 +131,7 @@ $env:XAVIER_PORT = 9000
 
 Expected output:
 ```
-=== Xavier v1.0 Verification ===
+=== Xavier v0.6.1-beta Verification ===
 
 [1/5] Health check...
   Health: ok
@@ -157,7 +157,7 @@ Expected output:
 Or manually:
 ```powershell
 sc create Xavier binPath= "C:\Users\<you>\.xavier\xavier.exe http --config C:\Users\<you>\.xavier\config\xavier.config.json" start= auto
-sc description Xavier "Xavier v1.0 - AI Agent Memory Runtime"
+sc description Xavier "Xavier v0.6.1-beta - AI Agent Memory Runtime"
 sc start Xavier
 ```
 
@@ -260,7 +260,7 @@ Get-EventLog -LogName Application -Source "Xavier" -Newest 10
 Xavier2 data is fully compatible. The migration path:
 
 1. Stop Xavier2 (if running)
-2. Run the v1.0 installer
+2. Run the v0.6.1-beta installer
 3. Point config to old data directory:
    ```json
    {
@@ -269,7 +269,7 @@ Xavier2 data is fully compatible. The migration path:
      }
    }
    ```
-4. Start v1.0 — all memories preserved
+4. Start v0.6.1-beta — all memories preserved
 
 ---
 
@@ -295,4 +295,4 @@ Xavier2 data is fully compatible. The migration path:
 
 ---
 
-*Xavier v1.0.0 — Built with Rust, powered by SWAL*
+*Xavier v0.6.1-beta — Built with Rust, powered by SWAL*
