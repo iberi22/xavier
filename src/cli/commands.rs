@@ -135,6 +135,12 @@ pub enum Command {
         #[command(subcommand)]
         cmd: UsageCommand,
     },
+    /// Scan system and auto-configure Xavier optimally
+    Onboard {
+        /// Auto-apply generated config to xavier.config.json
+        #[arg(long)]
+        apply: bool,
+    },
     /// Export memories to JSON
     Export {
         /// Export only public memories (exclude is_private: true)
@@ -397,6 +403,7 @@ impl Cli {
             Command::Chronicle { cmd } => {
                 xavier::chronicle::cli::handle_chronicle_command(cmd.clone()).await
             }
+            Command::Onboard { apply } => handle_onboard(*apply).await,
             Command::Secrets { cmd } => handle_secrets_command(cmd.clone()).await,
             Command::Export { public, output } => {
                 let base_url = resolve_base_url();
@@ -966,6 +973,43 @@ pub fn load_skill(skill_name: &str) -> Option<String> {
     }
     None
 }
+async fn handle_onboard(apply: bool) -> Result<()> {
+    use xavier::onboarding::OnboardingEngine;
+
+    println!("🔍 Xavier System Scan...");
+    let engine = OnboardingEngine { auto_apply: apply };
+    let report = engine.scan_and_configure().await
+        .map_err(|e| anyhow::anyhow!("Onboarding failed: {e}"))?;
+
+    println!("{report}");
+
+    if !apply {
+        println!();
+        println!("ℹ️  Run with --apply to write config to xavier.config.json");
+    }
+
+    // Guardar report en Xavier memory
+    if let Ok(token) = std::env::var("XAVIER_TOKEN") {
+        let base_url = resolve_base_url();
+        let client = CLI_HTTP_CLIENT.clone();
+        let summary = format!(
+            "Onboarding: {} cores, {:.1}GB RAM, {:.1}GB disk, embedder: {}",
+            report.system.cpu_cores, report.system.ram_gb, report.system.disk_free_gb, report.embedder
+        );
+        let _ = client
+            .post(format!("{}/memory/add", base_url))
+            .header("X-Xavier-Token", &token)
+            .json(&serde_json::json!({
+                "path": format!("diagnostics/onboarding/{}", chrono::Local::now().format("%Y-%m-%d")),
+                "content": summary
+            }))
+            .send()
+            .await;
+    }
+
+    Ok(())
+}
+
 async fn handle_secrets_command(cmd: SecretsCommand) -> Result<()> {
     match cmd {
         SecretsCommand::Lend {

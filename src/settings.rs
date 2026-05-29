@@ -67,10 +67,15 @@ impl fmt::Debug for XavierSettings {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerSettings {
+    #[serde(default = "XavierSettings::default_host")]
     pub host: String,
+    #[serde(default = "XavierSettings::default_port")]
     pub port: u16,
+    #[serde(default = "XavierSettings::default_log_level")]
     pub log_level: String,
+    #[serde(default = "XavierSettings::default_code_graph_db_path")]
     pub code_graph_db_path: String,
+    #[serde(default)]
     pub url: String,
     #[serde(default)]
     pub config_path: Option<String>,
@@ -305,9 +310,13 @@ impl Default for SyncSettings {
 
 #[derive(Clone, Deserialize)]
 pub struct EmbeddingSettings {
+    #[serde(default)]
     pub endpoint: String,
+    #[serde(default)]
     pub embedder: String,
+    #[serde(default)]
     pub gllm_model: String,
+    #[serde(default)]
     pub api_flavor: String,
     #[serde(default)]
     pub api_key: Option<String>,
@@ -456,6 +465,12 @@ impl Default for AdvancedSettings {
 }
 
 impl XavierSettings {
+    /// Default values for serde field defaults
+    fn default_host() -> String { "127.0.0.1".into() }
+    fn default_port() -> u16 { 8006 }
+    fn default_log_level() -> String { "info".into() }
+    fn default_code_graph_db_path() -> String { "data/code_graph.db".into() }
+
     pub fn resolve_config_path() -> PathBuf {
         if let Ok(env_path) = std::env::var("XAVIER_CONFIG_PATH") {
             return PathBuf::from(env_path);
@@ -715,7 +730,7 @@ impl XavierSettings {
         );
 
         // Chronicle settings
-        set_optional_if_absent("XAVIER2_CHRONICLE_MODEL", non_empty(&self.chronicle.model));
+        set_optional_if_absent("Xavier_CHRONICLE_MODEL", non_empty(&self.chronicle.model));
 
         // Enterprise settings
         set_if_absent("XAVIER_ENTERPRISE_DB_PATH", &self.enterprise.db_path);
@@ -1005,3 +1020,4 @@ mod tests {
         }
     }
 }
+
