@@ -1,25 +1,6 @@
-//! Kanban UI - Native egui-based kanban board for Xavier
+//! UI modules for Xavier
 //!
-//! This provides a native kanban UI that can run:
-//! - As a desktop app (via eframe)
-//! - In the browser (via WASM + web_sys)
-//! - Embedded in the Xavier HTTP server
-//!
-//! ## Usage
-//!
-//! ```rust,ignore
-//! use xavier::ui::KanbanState;
-//!
-//! let app = KanbanState::new();
-//! ```
-
-// UI modules - only compile with egui feature
-#[cfg(feature = "egui")]
-pub mod board;
-#[cfg(feature = "egui")]
-pub mod card;
-#[cfg(feature = "egui")]
-pub mod state;
+//! This provides various UI components for different interfaces.
 
 #[cfg(feature = "cli-interactive")]
 pub mod dashboard;
@@ -27,10 +8,3 @@ pub mod dashboard;
 pub mod log_stream;
 #[cfg(feature = "cli-interactive")]
 pub mod memory_view;
-
-#[cfg(feature = "egui")]
-pub use board::BoardView;
-#[cfg(feature = "egui")]
-pub use card::CardView;
-#[cfg(feature = "egui")]
-pub use state::{EguiState, KanbanState};

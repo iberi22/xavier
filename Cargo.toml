@@ -35,9 +35,6 @@ members = ["code-graph"]
 [features]
 default = ["cli-interactive", "local-gllm"]
 cli-interactive = ["ratatui", "crossterm"]
-egui = ["dep:egui", "dep:eframe", "dep:egui_extras"]
-egui-standalone = ["egui"]
-wasm = ["dep:wasm-bindgen", "dep:web-sys", "dep:js-sys", "dep:egui", "dep:eframe"]
 # All features that are safe to run on host CI (no GUI/Winit issues)
 ci-safe = []
 bench-runners = []
@@ -100,10 +97,6 @@ zerocopy = "0.8"
 # File traversal
 walkdir = "2"
 
-# egui - Native UI (optional, for web UI)
-egui = { version = "0.34.2", optional = true }
-eframe = { version = "0.34.2", default-features = false, optional = true, features = ["default_fonts", "wgpu", "x11", "wayland"] }
-egui_extras = { version = "0.34.2", optional = true, features = ["image", "serde"] }
 
 # For WASM web deployment
 wasm-bindgen = { version = "0.2", optional = true }
@@ -153,11 +146,6 @@ futures-util = "0.3"
 name = "xavier"
 path = "src/main.rs"
 test = false
-
-[[bin]]
-name = "xavier-gui"
-path = "src/main_egui.rs"
-required-features = ["egui-standalone"]
 
 [[bin]]
 name = "xavier-tui"

@@ -35,6 +35,11 @@ class XavierUIRenderer {
     this.components.set('status-badge', this.renderStatusBadge.bind(this));
     this.components.set('chart-bar', this.renderChartBar.bind(this));
     this.components.set('list-group', this.renderListGroup.bind(this));
+    this.components.set('graph', this.renderGraph.bind(this));
+    this.components.set('memory-card', this.renderMemoryCard.bind(this));
+    this.components.set('metric-dashboard', this.renderMetricDashboard.bind(this));
+    this.components.set('log-viewer', this.renderLogViewer.bind(this));
+    this.components.set('session-list', this.renderSessionList.bind(this));
   }
 
   // ── Main Render ─────────────────────────────────────────────
@@ -308,6 +313,196 @@ class XavierUIRenderer {
     return el;
   }
 
+  // ── Component: graph ────────────────────────────────────────
+  renderGraph(data) {
+    const el = document.createElement('div');
+    el.className = 'xui-graph-container';
+
+    if (data.title) {
+      const title = document.createElement('h3');
+      title.textContent = data.title;
+      el.appendChild(title);
+    }
+
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute('width', '100%');
+    svg.setAttribute('height', '300');
+    svg.style.background = 'var(--xui-bg)';
+    svg.style.borderRadius = 'var(--xui-radius)';
+
+    // Basic visualization of nodes and edges
+    const nodes = data.nodes || [];
+    const edges = data.links || data.edges || [];
+
+    // Simple layout if no positions provided
+    const nodeMap = new Map();
+    nodes.forEach((node, i) => {
+      const x = node.x || (50 + Math.random() * 300);
+      const y = node.y || (50 + Math.random() * 200);
+      nodeMap.set(node.id, { x, y });
+    });
+
+    // Draw edges
+    edges.forEach(edge => {
+      const source = nodeMap.get(edge.source);
+      const target = nodeMap.get(edge.target);
+
+      if (source && target) {
+        const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        line.setAttribute("x1", source.x);
+        line.setAttribute("y1", source.y);
+        line.setAttribute("x2", target.x);
+        line.setAttribute("y2", target.y);
+        line.setAttribute("stroke", edge.color || "var(--xui-border)");
+        line.setAttribute("stroke-width", "1");
+        svg.appendChild(line);
+      }
+    });
+
+    // Draw nodes
+    nodes.forEach((node, i) => {
+      const { x, y } = nodeMap.get(node.id);
+
+      const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+      circle.setAttribute("cx", x);
+      circle.setAttribute("cy", y);
+      circle.setAttribute("r", "15");
+      circle.setAttribute("fill", node.color || "var(--xui-blue)");
+      svg.appendChild(circle);
+
+      const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+      text.setAttribute("x", x);
+      text.setAttribute("y", y + 25);
+      text.setAttribute("text-anchor", "middle");
+      text.setAttribute("fill", "var(--xui-text)");
+      text.setAttribute("font-size", "10");
+      text.textContent = node.label || node.id;
+      svg.appendChild(text);
+    });
+
+    el.appendChild(svg);
+    return el;
+  }
+
+  // ── Component: memory-card ──────────────────────────────────
+  renderMemoryCard(data) {
+    const el = document.createElement('div');
+    el.className = 'xui-memory-card';
+
+    el.innerHTML = `
+      <div class="xui-memory-header">
+        <span class="xui-memory-type xui-badge xui-badge-default">${data.type || 'Atomic'}</span>
+        <span class="xui-memory-date">${data.date || ''}</span>
+      </div>
+      <div class="xui-memory-body">
+        <p class="xui-memory-content">${this.escapeHtml(data.content)}</p>
+      </div>
+      ${data.tags ? `
+      <div class="xui-memory-tags">
+        ${data.tags.map(tag => `<span class="xui-tag">#${tag}</span>`).join('')}
+      </div>` : ''}
+      <div class="xui-memory-footer">
+        <button class="xui-btn xui-btn-sm xui-btn-outline xui-view-mem">Ver detalles</button>
+      </div>
+    `;
+
+    el.querySelector('.xui-view-mem').onclick = () => {
+      this.options.onAction({ type: 'view-memory', memoryId: data.id });
+    };
+
+    return el;
+  }
+
+  // ── Component: metric-dashboard ─────────────────────────────
+  renderMetricDashboard(data) {
+    const el = document.createElement('div');
+    el.className = 'xui-metric-dashboard';
+
+    if (data.title) {
+      const title = document.createElement('h3');
+      title.textContent = data.title;
+      el.appendChild(title);
+    }
+
+    const grid = document.createElement('div');
+    grid.className = 'xui-metric-grid';
+
+    data.metrics.forEach(metric => {
+      const card = document.createElement('div');
+      card.className = 'xui-metric-card';
+      card.innerHTML = `
+        <div class="xui-metric-label">${metric.label}</div>
+        <div class="xui-metric-value">${metric.value}</div>
+        <div class="xui-metric-change ${metric.trend === 'up' ? 'text-green' : 'text-red'}">
+          ${metric.change || ''}
+        </div>
+      `;
+      grid.appendChild(card);
+    });
+
+    el.appendChild(grid);
+    return el;
+  }
+
+  // ── Component: log-viewer ───────────────────────────────────
+  renderLogViewer(data) {
+    const el = document.createElement('div');
+    el.className = 'xui-log-viewer';
+
+    const header = document.createElement('div');
+    header.className = 'xui-log-header';
+    header.innerHTML = `<span>Logs: ${data.stream || 'System'}</span>`;
+    el.appendChild(header);
+
+    const body = document.createElement('div');
+    body.className = 'xui-log-body';
+
+    data.logs.forEach(log => {
+      const line = document.createElement('div');
+      line.className = `xui-log-line xui-log-${log.level || 'info'}`;
+      line.innerHTML = `
+        <span class="xui-log-time">[${log.time || ''}]</span>
+        <span class="xui-log-msg">${this.escapeHtml(log.message)}</span>
+      `;
+      body.appendChild(line);
+    });
+
+    el.appendChild(body);
+    return el;
+  }
+
+  // ── Component: session-list ─────────────────────────────────
+  renderSessionList(data) {
+    const el = document.createElement('div');
+    el.className = 'xui-session-list';
+
+    if (data.title) {
+      const title = document.createElement('h3');
+      title.textContent = data.title;
+      el.appendChild(title);
+    }
+
+    const list = document.createElement('div');
+    list.className = 'xui-list';
+
+    data.sessions.forEach(session => {
+      const row = document.createElement('div');
+      row.className = 'xui-session-item';
+      row.innerHTML = `
+        <div class="xui-session-info">
+          <div class="xui-session-title">${this.escapeHtml(session.title)}</div>
+          <div class="xui-session-meta">${session.date} • ${session.messages} msgs</div>
+        </div>
+        <button class="xui-btn xui-btn-sm xui-btn-ghost">Abrir</button>
+      `;
+      row.onclick = () => this.options.onAction({ type: 'open-session', sessionId: session.id });
+      list.appendChild(row);
+    });
+
+    el.appendChild(list);
+    return el;
+  }
+
   // ── Component: confirm-dialog ───────────────────────────────
   renderConfirmDialog(data) {
     const el = document.createElement('div');
@@ -516,6 +711,29 @@ class XavierUIRenderer {
       .xui-chart-bar-visual { width: 100%; border-radius: 4px 4px 0 0; min-height: 4px; }
       .xui-mini-progress { height: 4px; background: var(--xui-border); border-radius: 2px; width: 60px; }
       .xui-mini-progress-fill { height: 100%; background: var(--xui-blue); border-radius: 2px; }
+
+      .xui-metric-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 1rem; }
+      .xui-metric-card { background: var(--xui-bg); padding: 1rem; border-radius: 6px; border: 1px solid var(--xui-border); }
+      .xui-metric-label { font-size: 0.75rem; color: var(--xui-text-secondary); margin-bottom: 0.5rem; }
+      .xui-metric-value { font-size: 1.25rem; font-weight: 700; }
+
+      .xui-log-body { background: #000; padding: 0.5rem; border-radius: 4px; font-family: monospace; font-size: 0.8rem; max-height: 200px; overflow-y: auto; }
+      .xui-log-line { margin-bottom: 0.25rem; }
+      .xui-log-info { color: #fff; }
+      .xui-log-warn { color: var(--xui-yellow); }
+      .xui-log-error { color: var(--xui-red); }
+      .xui-log-time { color: var(--xui-gray); margin-right: 0.5rem; }
+
+      .xui-session-item { display: flex; justify-content: space-between; align-items: center; padding: 0.75rem; border-bottom: 1px solid var(--xui-border); cursor: pointer; }
+      .xui-session-item:hover { background: rgba(255,255,255,0.05); }
+      .xui-session-title { font-weight: 500; font-size: 0.9rem; }
+      .xui-session-meta { font-size: 0.75rem; color: var(--xui-text-secondary); }
+
+      .xui-memory-card { background: var(--xui-surface); border: 1px solid var(--xui-border); border-radius: var(--xui-radius); padding: 1rem; }
+      .xui-memory-header { display: flex; justify-content: space-between; margin-bottom: 0.75rem; }
+      .xui-memory-date { font-size: 0.75rem; color: var(--xui-text-secondary); }
+      .xui-memory-content { font-size: 0.9rem; margin-bottom: 1rem; line-height: 1.5; }
+      .xui-tag { font-size: 0.75rem; color: var(--xui-blue); margin-right: 0.5rem; }
     `;
     document.head.appendChild(styles);
   }
