@@ -137,7 +137,7 @@ impl Harvester {
                     // Initial commit
                     let tree = commit.tree()?;
                     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
-                        if let Some(name) = entry.name() {
+                        if let Ok(name) = entry.name() {
                             files.push(format!("{}{}", root, name));
                         }
                         git2::TreeWalkResult::Ok
