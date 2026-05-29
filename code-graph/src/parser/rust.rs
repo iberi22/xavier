@@ -10,13 +10,13 @@ pub struct RustParser {
 }
 
 impl RustParser {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self> {
         let mut parser = Parser::new();
         let lang = tree_sitter_rust::LANGUAGE.into();
         parser
             .set_language(&lang)
-            .expect("failed to set Rust tree-sitter language");
-        Self { parser }
+            .map_err(|e| GraphError::TreeSitter(format!("failed to set Rust language: {}", e)))?;
+        Ok(Self { parser })
     }
 
     pub fn parse(&mut self, source: &str, file_path: &str) -> Result<Vec<Symbol>> {
@@ -145,7 +145,7 @@ impl RustParser {
 
 impl Default for RustParser {
     fn default() -> Self {
-        Self::new()
+        Self::new().expect("failed to initialize Rust parser")
     }
 }
 
@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     fn extracts_compact_function_signature_without_body() {
-        let mut parser = RustParser::new();
+        let mut parser = RustParser::new().unwrap();
         let symbols = parser
             .parse(
                 r#"
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn extracts_struct_signature_without_fields() {
-        let mut parser = RustParser::new();
+        let mut parser = RustParser::new().unwrap();
         let symbols = parser
             .parse(
                 r#"
@@ -213,7 +213,7 @@ mod tests {
     fn truncates_long_unicode_signature_on_char_boundary() {
         let long_name = "á".repeat(450);
         let source = format!("pub fn {long_name}() {{}}");
-        let mut parser = RustParser::new();
+        let mut parser = RustParser::new().unwrap();
         let symbols = parser.parse(&source, "unicode.rs").expect("test assertion");
         let signature = symbols[0].signature.as_deref().expect("test assertion");
 
