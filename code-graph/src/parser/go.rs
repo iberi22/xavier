@@ -11,18 +11,18 @@ pub struct GoParser {
 
 impl Default for GoParser {
     fn default() -> Self {
-        Self::new()
+        Self::new().expect("failed to initialize Go parser")
     }
 }
 
 impl GoParser {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self> {
         let mut parser = Parser::new();
         let language = tree_sitter_go::LANGUAGE.into();
         parser
             .set_language(&language)
-            .expect("failed to set Go tree-sitter language");
-        Self { parser }
+            .map_err(|e| GraphError::TreeSitter(format!("failed to set Go language: {}", e)))?;
+        Ok(Self { parser })
     }
 
     pub fn parse(&mut self, source: &str, file_path: &str) -> Result<Vec<Symbol>> {
