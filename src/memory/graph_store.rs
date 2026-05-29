@@ -1,14 +1,14 @@
 //! SQLite storage implementation for Xavier's Belief Graph.
 
 use anyhow::Result;
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 use std::sync::Arc;
-use async_trait::async_trait;
 
-use crate::domain::memory::graph::{GraphEntity, GraphEntityType, GraphRelationship};
 use crate::domain::memory::belief::{BeliefEdge, BeliefNode};
+use crate::domain::memory::graph::{GraphEntity, GraphEntityType, GraphRelationship};
 
 pub const TABLE_GRAPH_NODES: &str = "graph_nodes";
 pub const TABLE_GRAPH_EDGES: &str = "graph_edges";
@@ -92,10 +92,12 @@ impl SqliteGraphStore {
             TABLE_GRAPH_NODES
         ))?;
 
-        let existing_id: Option<String> = stmt.query_row(
-            params![entity.normalized_name, entity.entity_type.as_str()],
-            |row| row.get(0)
-        ).ok();
+        let existing_id: Option<String> = stmt
+            .query_row(
+                params![entity.normalized_name, entity.entity_type.as_str()],
+                |row| row.get(0),
+            )
+            .ok();
 
         if let Some(id) = existing_id {
             // Update existing entity
@@ -141,10 +143,12 @@ impl SqliteGraphStore {
             TABLE_GRAPH_EDGES
         ))?;
 
-        let existing_id: Option<String> = stmt.query_row(
-            params![rel.source_id, rel.target_id, rel.relation_type.as_str()],
-            |row| row.get(0)
-        ).ok();
+        let existing_id: Option<String> = stmt
+            .query_row(
+                params![rel.source_id, rel.target_id, rel.relation_type.as_str()],
+                |row| row.get(0),
+            )
+            .ok();
 
         if let Some(id) = existing_id {
             // Update existing relationship
@@ -186,29 +190,32 @@ impl SqliteGraphStore {
             TABLE_GRAPH_NODES
         ))?;
 
-        let entity = stmt.query_row([id], |row| {
-            let entity_type_str: String = row.get(3)?;
-            let aliases_str: String = row.get(4)?;
-            let metadata_str: String = row.get(8)?;
+        let entity = stmt
+            .query_row([id], |row| {
+                let entity_type_str: String = row.get(3)?;
+                let aliases_str: String = row.get(4)?;
+                let metadata_str: String = row.get(8)?;
 
-            Ok(GraphEntity {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                normalized_name: row.get(2)?,
-                entity_type: GraphEntityType::parse(&entity_type_str).unwrap_or(GraphEntityType::Concept),
-                aliases: serde_json::from_str(&aliases_str).unwrap_or_default(),
-                description: row.get(5)?,
-                trust_score: row.get(6)?,
-                confirmation_count: row.get(7)?,
-                metadata: serde_json::from_str(&metadata_str).unwrap_or_default(),
-                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(9)?)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .unwrap_or_else(|_| Utc::now()),
-                updated_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(10)?)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .unwrap_or_else(|_| Utc::now()),
+                Ok(GraphEntity {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    normalized_name: row.get(2)?,
+                    entity_type: GraphEntityType::parse(&entity_type_str)
+                        .unwrap_or(GraphEntityType::Concept),
+                    aliases: serde_json::from_str(&aliases_str).unwrap_or_default(),
+                    description: row.get(5)?,
+                    trust_score: row.get(6)?,
+                    confirmation_count: row.get(7)?,
+                    metadata: serde_json::from_str(&metadata_str).unwrap_or_default(),
+                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(9)?)
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .unwrap_or_else(|_| Utc::now()),
+                    updated_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(10)?)
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .unwrap_or_else(|_| Utc::now()),
+                })
             })
-        }).ok();
+            .ok();
 
         Ok(entity)
     }
@@ -229,7 +236,8 @@ impl SqliteGraphStore {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 normalized_name: row.get(2)?,
-                entity_type: GraphEntityType::parse(&entity_type_str).unwrap_or(GraphEntityType::Concept),
+                entity_type: GraphEntityType::parse(&entity_type_str)
+                    .unwrap_or(GraphEntityType::Concept),
                 aliases: serde_json::from_str(&aliases_str).unwrap_or_default(),
                 description: row.get(5)?,
                 trust_score: row.get(6)?,
@@ -287,18 +295,22 @@ impl GraphStorePort for SqliteGraphStore {
 
     async fn list_nodes(&self, _workspace_id: &str) -> Result<Vec<BeliefNode>> {
         let entities = self.list_entities()?;
-        Ok(entities.into_iter().map(|e| BeliefNode {
-            id: e.id,
-            concept: e.name,
-            confidence: e.trust_score,
-            created_at: e.created_at,
-        }).collect())
+        Ok(entities
+            .into_iter()
+            .map(|e| BeliefNode {
+                id: e.id,
+                concept: e.name,
+                confidence: e.trust_score,
+                created_at: e.created_at,
+            })
+            .collect())
     }
 
     async fn put_edge(&self, _workspace_id: &str, edge: BeliefEdge) -> Result<()> {
         use crate::domain::memory::graph::GraphRelationshipType;
-        let rel_type = GraphRelationshipType::parse(&edge.relation_type).unwrap_or(GraphRelationshipType::RelatedTo);
-        
+        let rel_type = GraphRelationshipType::parse(&edge.relation_type)
+            .unwrap_or(GraphRelationshipType::RelatedTo);
+
         let rel = GraphRelationship {
             id: edge.id,
             source_id: edge.source,
@@ -356,26 +368,28 @@ impl GraphStorePort for SqliteGraphStore {
             TABLE_GRAPH_EDGES
         ))?;
 
-        let edge = stmt.query_row([edge_id], |row| {
-             let rel_type_str: String = row.get(3)?;
+        let edge = stmt
+            .query_row([edge_id], |row| {
+                let rel_type_str: String = row.get(3)?;
 
-            Ok(BeliefEdge {
-                id: row.get(0)?,
-                source: row.get(1)?,
-                target: row.get(2)?,
-                relation_type: rel_type_str,
-                weight: row.get(4)?,
-                confidence_score: row.get(4)?,
-                provenance_id: "unknown".to_string(),
-                contradicts_edge_id: None,
-                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(7)?)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .unwrap_or_else(|_| Utc::now()),
-                updated_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .unwrap_or_else(|_| Utc::now()),
+                Ok(BeliefEdge {
+                    id: row.get(0)?,
+                    source: row.get(1)?,
+                    target: row.get(2)?,
+                    relation_type: rel_type_str,
+                    weight: row.get(4)?,
+                    confidence_score: row.get(4)?,
+                    provenance_id: "unknown".to_string(),
+                    contradicts_edge_id: None,
+                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(7)?)
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .unwrap_or_else(|_| Utc::now()),
+                    updated_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .unwrap_or_else(|_| Utc::now()),
+                })
             })
-        }).ok();
+            .ok();
 
         Ok(edge)
     }

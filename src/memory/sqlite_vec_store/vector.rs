@@ -1,5 +1,5 @@
-use anyhow::Result;
 use crate::memory::sqlite_vec_store::config::QJL_MAGIC;
+use anyhow::Result;
 
 pub fn register_sqlite_vec_extension() -> Result<()> {
     Ok(())

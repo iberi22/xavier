@@ -66,7 +66,10 @@ pub async fn update(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
     memory.invalidate_cache().await;
     if let Some(store) = memory.store().await {
         store
-            .update(memory_record_from_document(&memory.workspace_id, &persisted))
+            .update(memory_record_from_document(
+                &memory.workspace_id,
+                &persisted,
+            ))
             .await?;
     }
     Ok(())

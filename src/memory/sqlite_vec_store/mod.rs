@@ -3,37 +3,29 @@
 //! Uses native approximate nearest neighbor search via libSQL
 //! for semantic similarity matching on memory embeddings.
 
-use std::{
-    collections::HashSet,
-    sync::Arc,
-};
+use std::{collections::HashSet, sync::Arc};
 
-use anyhow::{Result};
+use anyhow::Result;
 use libsql::{params, Connection};
 use tokio::sync::broadcast;
 
 use crate::memory::schema::{MemoryLevel, MemoryQueryFilters};
-use crate::memory::sqlite_store::{
-    TABLE_MEMORIES,
-};
-use crate::memory::store::{
-    stable_key, HybridSearchMode,
-    HybridSearchResult, MemoryRecord,
-};
+use crate::memory::sqlite_store::TABLE_MEMORIES;
+use crate::memory::store::{stable_key, HybridSearchMode, HybridSearchResult, MemoryRecord};
 use crate::ports::outbound::schema_init::SchemaInitializer;
 
+pub mod audit;
+pub mod backend_impl;
 pub mod config;
 pub mod db;
 pub mod fts;
 pub mod graph;
-pub mod search;
-pub mod types;
-pub mod vector;
-pub mod store_impl;
 pub mod schema_impl;
-pub mod audit;
-pub mod backend_impl;
+pub mod search;
+pub mod store_impl;
+pub mod types;
 pub mod utils;
+pub mod vector;
 
 pub use config::*;
 pub use types::*;
@@ -126,22 +118,28 @@ impl VecSqliteMemoryStore {
             content: row.get(3).map_err(anyhow::Error::msg)?,
             metadata: serde_json::from_str(&metadata_str).unwrap_or_default(),
             embedding: vector::deserialize_embedding(&embedding_blob),
-            created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<String>(6).map_err(anyhow::Error::msg)?)
-                .map(|dt| dt.with_timezone(&chrono::Utc))
-                .unwrap_or_else(|_| chrono::Utc::now()),
-            updated_at: chrono::DateTime::parse_from_rfc3339(&row.get::<String>(7).map_err(anyhow::Error::msg)?)
-                .map(|dt| dt.with_timezone(&chrono::Utc))
-                .unwrap_or_else(|_| chrono::Utc::now()),
+            created_at: chrono::DateTime::parse_from_rfc3339(
+                &row.get::<String>(6).map_err(anyhow::Error::msg)?,
+            )
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .unwrap_or_else(|_| chrono::Utc::now()),
+            updated_at: chrono::DateTime::parse_from_rfc3339(
+                &row.get::<String>(7).map_err(anyhow::Error::msg)?,
+            )
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+            .unwrap_or_else(|_| chrono::Utc::now()),
             revision: row.get(8).map_err(anyhow::Error::msg)?,
             primary: row.get::<i32>(9).map_err(anyhow::Error::msg)? != 0,
             parent_id: row.get::<Option<String>>(10).ok().flatten(),
             cluster_id: row.get::<Option<String>>(11).ok().flatten(),
             level: MemoryLevel::parse(&row.get::<String>(12).map_err(anyhow::Error::msg)?),
-            relation: row.get::<Option<String>>(13)
+            relation: row
+                .get::<Option<String>>(13)
                 .ok()
                 .flatten()
                 .and_then(|s| serde_json::from_str(&s).ok()),
-            revisions: row.get::<Option<String>>(14)
+            revisions: row
+                .get::<Option<String>>(14)
                 .ok()
                 .flatten()
                 .and_then(|s| serde_json::from_str(&s).ok())
@@ -171,7 +169,10 @@ impl VecSqliteMemoryStore {
 
     pub(crate) async fn qjl_enabled_for_workspace(conn: &Connection, workspace_id: &str) -> bool {
         let threshold = Self::configured_qjl_threshold();
-        let mut stmt = match conn.prepare("SELECT COUNT(*) FROM memory_embeddings WHERE workspace_id = ?").await {
+        let stmt = match conn
+            .prepare("SELECT COUNT(*) FROM memory_embeddings WHERE workspace_id = ?")
+            .await
+        {
             Ok(stmt) => stmt,
             Err(_) => return false,
         };
@@ -225,7 +226,7 @@ impl VecSqliteMemoryStore {
         workspace_id: &str,
         memory_id: &str,
     ) -> Result<Option<MemoryRecord>> {
-        let mut stmt = conn.prepare(&format!(
+        let stmt = conn.prepare(&format!(
             "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE id = ? AND workspace_id = ?",
             TABLE_MEMORIES
         )).await?;
@@ -265,6 +266,14 @@ impl VecSqliteMemoryStore {
         filters: Option<&MemoryQueryFilters>,
         limit: usize,
     ) -> Result<Vec<HybridSearchResult>> {
-        self.perform_hybrid_search(workspace_id, query, HybridSearchMode::Both, filters, limit, Some(embedding)).await
+        self.perform_hybrid_search(
+            workspace_id,
+            query,
+            HybridSearchMode::Both,
+            filters,
+            limit,
+            Some(embedding),
+        )
+        .await
     }
 }

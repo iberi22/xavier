@@ -26,7 +26,8 @@ impl QmdAuditLogger {
                 reason TEXT
             )",
             (),
-        ).await?;
+        )
+        .await?;
         Ok(())
     }
 }
@@ -38,7 +39,9 @@ impl SchemaInitializer for QmdAuditLogger {
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
-                    .map_err(|e| anyhow::anyhow!("failed to build runtime for audit schema: {}", e))?;
+                    .map_err(|e| {
+                        anyhow::anyhow!("failed to build runtime for audit schema: {}", e)
+                    })?;
                 rt.block_on(self.init_schema_async())
             })
             .join()

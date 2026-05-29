@@ -1,8 +1,8 @@
-use std::sync::Arc;
-use async_trait::async_trait;
 use crate::domain::memory::{MemoryQueryFilters, MemoryRecord};
 use crate::ports::inbound::MemoryQueryPort;
 use crate::ports::outbound::ThreatDetectionPort;
+use async_trait::async_trait;
+use std::sync::Arc;
 use tracing::warn;
 
 pub struct MemoryUseCase {
@@ -11,7 +11,10 @@ pub struct MemoryUseCase {
 }
 
 impl MemoryUseCase {
-    pub fn new(inner: Arc<dyn MemoryQueryPort>, threat_detector: Option<Arc<dyn ThreatDetectionPort>>) -> Self {
+    pub fn new(
+        inner: Arc<dyn MemoryQueryPort>,
+        threat_detector: Option<Arc<dyn ThreatDetectionPort>>,
+    ) -> Self {
         Self {
             inner,
             threat_detector,
@@ -30,7 +33,9 @@ impl MemoryQueryPort for MemoryUseCase {
             let clean = detector.scan_and_log(query, "memory_search").await?;
             if !clean {
                 warn!("Memory search blocked: security threat detected in query");
-                return Err(anyhow::anyhow!("Security policy violation detected in search query"));
+                return Err(anyhow::anyhow!(
+                    "Security policy violation detected in search query"
+                ));
             }
         }
         self.inner.search(query, filters).await
@@ -41,7 +46,9 @@ impl MemoryQueryPort for MemoryUseCase {
             let clean = detector.scan_and_log(&record.content, "memory_add").await?;
             if !clean {
                 warn!("Memory add blocked: security threat detected in content");
-                return Err(anyhow::anyhow!("Security policy violation detected in memory content"));
+                return Err(anyhow::anyhow!(
+                    "Security policy violation detected in memory content"
+                ));
             }
         }
         self.inner.add(record).await

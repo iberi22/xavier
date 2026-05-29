@@ -134,8 +134,8 @@ impl EnterpriseDb {
 
     /// Insert or update a tenant in the database.
     pub fn save_tenant(&self, tenant: &Tenant) -> Result<()> {
-        let metadata_json =
-            serde_json::to_string(&tenant.metadata).context("failed to serialize tenant metadata")?;
+        let metadata_json = serde_json::to_string(&tenant.metadata)
+            .context("failed to serialize tenant metadata")?;
         let plan_str = plan_to_string(&tenant.plan);
         let conn = self.conn.lock().expect("poisoned lock in save_tenant");
         conn.execute(
@@ -159,8 +159,8 @@ impl EnterpriseDb {
     /// Load all tenants from the database into a HashMap keyed by TenantId.
     pub fn load_all_tenants(&self) -> Result<HashMap<TenantId, Tenant>> {
         let conn = self.conn.lock().expect("poisoned lock in load_all_tenants");
-        let mut stmt = conn
-            .prepare("SELECT id, name, plan, created_at, metadata FROM enterprise_tenants")?;
+        let mut stmt =
+            conn.prepare("SELECT id, name, plan, created_at, metadata FROM enterprise_tenants")?;
         let rows = stmt.query_map([], |row| {
             let id_str: String = row.get(0)?;
             let name: String = row.get(1)?;
@@ -244,7 +244,10 @@ impl EnterpriseDb {
 
     /// Load all API keys from the database.
     pub fn load_all_api_keys(&self) -> Result<Vec<ApiKey>> {
-        let conn = self.conn.lock().expect("poisoned lock in load_all_api_keys");
+        let conn = self
+            .conn
+            .lock()
+            .expect("poisoned lock in load_all_api_keys");
         let mut stmt = conn.prepare(
             "SELECT id, hash, tenant_id, name, key_type, rate_limit,
                     created_at, last_used, expires_at, revoked, metadata
@@ -387,12 +390,19 @@ impl EnterpriseDb {
             sql.to_string()
         };
 
-        let conn = self.conn.lock().expect("poisoned lock in load_audit_entries");
+        let conn = self
+            .conn
+            .lock()
+            .expect("poisoned lock in load_audit_entries");
         let mut stmt = conn.prepare(&sql)?;
 
         if has_tenant_filter {
             let rows = stmt.query_map(
-                params![tenant_id.expect("load_audit_entries: tenant_id must be set when has_tenant_filter is true").to_string()],
+                params![tenant_id
+                    .expect(
+                        "load_audit_entries: tenant_id must be set when has_tenant_filter is true"
+                    )
+                    .to_string()],
                 row_to_audit_entry,
             )?;
             Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
@@ -424,7 +434,10 @@ impl EnterpriseDb {
         config: &RateLimitConfig,
     ) -> Result<()> {
         let (key_type, key_value) = rate_limit_key_to_parts(key);
-        let conn = self.conn.lock().expect("poisoned lock in save_rate_limit_config");
+        let conn = self
+            .conn
+            .lock()
+            .expect("poisoned lock in save_rate_limit_config");
         conn.execute(
             "INSERT INTO enterprise_rate_limits (key_type, key_value, rpm, burst)
              VALUES (?1, ?2, ?3, ?4)
@@ -438,9 +451,12 @@ impl EnterpriseDb {
 
     /// Load all rate limit configurations from the database.
     pub fn load_all_rate_limit_configs(&self) -> Result<Vec<(RateLimitKey, RateLimitConfig)>> {
-        let conn = self.conn.lock().expect("poisoned lock in load_all_rate_limit_configs");
-        let mut stmt = conn
-            .prepare("SELECT key_type, key_value, rpm, burst FROM enterprise_rate_limits")?;
+        let conn = self
+            .conn
+            .lock()
+            .expect("poisoned lock in load_all_rate_limit_configs");
+        let mut stmt =
+            conn.prepare("SELECT key_type, key_value, rpm, burst FROM enterprise_rate_limits")?;
         let rows = stmt.query_map([], |row| {
             let key_type: String = row.get(0)?;
             let key_value: String = row.get(1)?;
@@ -465,7 +481,10 @@ impl EnterpriseDb {
     /// Delete a rate limit configuration.
     pub fn delete_rate_limit_config(&self, key: &RateLimitKey) -> Result<()> {
         let (key_type, key_value) = rate_limit_key_to_parts(key);
-        let conn = self.conn.lock().expect("poisoned lock in delete_rate_limit_config");
+        let conn = self
+            .conn
+            .lock()
+            .expect("poisoned lock in delete_rate_limit_config");
         conn.execute(
             "DELETE FROM enterprise_rate_limits WHERE key_type = ?1 AND key_value = ?2",
             params![key_type, key_value],

@@ -109,7 +109,11 @@ impl ExtractionService {
         }
     }
 
-    fn resolve_entity_id(&self, name: &str, entity_type: Option<GraphEntityType>) -> Result<Option<String>> {
+    fn resolve_entity_id(
+        &self,
+        name: &str,
+        entity_type: Option<GraphEntityType>,
+    ) -> Result<Option<String>> {
         let normalized = GraphEntity::normalize(name);
         let entities = self.graph_store.list_entities()?;
 

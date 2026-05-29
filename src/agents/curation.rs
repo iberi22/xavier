@@ -3,12 +3,12 @@ use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use std::sync::Arc;
 use crate::agents::provider::ModelProviderClient;
 use crate::memory::belief_graph::Belief;
 use crate::memory::qmd_memory::QmdMemory;
 use crate::memory::schema::{ContextZone, MemoryLevel, TypedMemoryPayload};
 use crate::memory::store::MemoryRecord;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CurationResult {
@@ -97,7 +97,11 @@ impl CurationAgent {
             .collect::<Vec<_>>()
             .join("\n\n---\n\n");
 
-        info!("🌳 Summarizing cluster {} ({} docs)", cluster_id, docs.len());
+        info!(
+            "🌳 Summarizing cluster {} ({} docs)",
+            cluster_id,
+            docs.len()
+        );
 
         let prompt = format!(
             "Sintetiza la siguiente colección de fragmentos de memoria en un resumen ejecutivo coherente.\n\
@@ -111,21 +115,23 @@ impl CurationAgent {
         let parent_id = ulid::Ulid::new().to_string();
         let path = format!("clusters/{}/summary", cluster_id);
 
-        memory.add_document_typed(
-            path,
-            summary.clone(),
-            serde_json::json!({
-                "cluster_id": cluster_id,
-                "is_parent": true,
-                "child_count": docs.len()
-            }),
-            Some(TypedMemoryPayload {
-                level: Some(MemoryLevel::Extracted),
-                zone: Some(ContextZone::Cluster),
-                cluster_id: Some(cluster_id.to_string()),
-                ..Default::default()
-            })
-        ).await?;
+        memory
+            .add_document_typed(
+                path,
+                summary.clone(),
+                serde_json::json!({
+                    "cluster_id": cluster_id,
+                    "is_parent": true,
+                    "child_count": docs.len()
+                }),
+                Some(TypedMemoryPayload {
+                    level: Some(MemoryLevel::Extracted),
+                    zone: Some(ContextZone::Cluster),
+                    cluster_id: Some(cluster_id.to_string()),
+                    ..Default::default()
+                }),
+            )
+            .await?;
 
         // Assign parent_id to children
         for mut doc in docs {
@@ -145,7 +151,11 @@ impl CurationAgent {
         workspace_id: &str,
         memories: &[MemoryRecord],
     ) -> Result<MemoryRecord> {
-        info!("🧠 Grouping {} memories into zone/cluster {}...", memories.len(), cluster_id);
+        info!(
+            "🧠 Grouping {} memories into zone/cluster {}...",
+            memories.len(),
+            cluster_id
+        );
 
         let contents = memories
             .iter()

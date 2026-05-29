@@ -1,7 +1,7 @@
+use crate::memory::store::SessionTokenRecord;
+use regex::Regex;
 use std::collections::HashSet;
 use std::sync::OnceLock;
-use regex::Regex;
-use crate::memory::store::SessionTokenRecord;
 
 pub struct SessionTokenRow {
     pub token: String,

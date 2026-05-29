@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use super::rrf::ScoredResult;
-use crate::search::hooks::SearchHook;
 use crate::memory::schema::MemoryQueryFilters;
+use crate::search::hooks::SearchHook;
 
 #[async_trait]
 pub trait Reranker: Send + Sync {
@@ -103,7 +103,11 @@ impl Reranker for HttpReranker {
         }
 
         // Sort by new score
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         Ok(())
     }
@@ -149,13 +153,21 @@ mod tests {
     struct MockReranker;
     #[async_trait]
     impl Reranker for MockReranker {
-        async fn rerank(&self, _query: &str, results: &mut Vec<ScoredResult>) -> anyhow::Result<()> {
+        async fn rerank(
+            &self,
+            _query: &str,
+            results: &mut Vec<ScoredResult>,
+        ) -> anyhow::Result<()> {
             // Reverse scores for testing
             let len = results.len();
             for (i, res) in results.iter_mut().enumerate() {
                 res.score = (len - i) as f32;
             }
-            results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+            results.sort_by(|a, b| {
+                b.score
+                    .partial_cmp(&a.score)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
             Ok(())
         }
     }

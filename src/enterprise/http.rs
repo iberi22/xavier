@@ -20,7 +20,7 @@ use crate::enterprise::{
     audit::{AuditAction, AuditEntry, AuditLog, AuditQuery},
     keys::{ApiKey, ApiKeyStore, ApiKeyType},
     persistence::{populate_stores_from_db, EnterpriseDb},
-    rate_limit::{RateLimitConfig, RateLimiter, RateLimitKey},
+    rate_limit::{RateLimitConfig, RateLimitKey, RateLimiter},
     tenancy::{Plan, Tenant, TenantId, TenantStore},
 };
 
@@ -128,9 +128,7 @@ pub enum EnterpriseError {
         message: String,
     },
     #[error("{message}")]
-    Generic {
-        message: String,
-    },
+    Generic { message: String },
 }
 
 impl EnterpriseError {
@@ -198,8 +196,12 @@ pub(crate) async fn create_tenant(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
     Json(payload): Json<CreateTenant>,
 ) -> Result<Json<TenantResponse>, EnterpriseError> {
-    let mut state = state.lock().expect("poisoned lock: enterprise_create_tenant");
-    let tenant = state.tenant_store.create(payload.name.clone(), payload.plan);
+    let mut state = state
+        .lock()
+        .expect("poisoned lock: enterprise_create_tenant");
+    let tenant = state
+        .tenant_store
+        .create(payload.name.clone(), payload.plan);
 
     // Persist to database if available
     if let Some(ref db) = state.db {
@@ -227,7 +229,9 @@ pub(crate) async fn create_tenant(
 pub(crate) async fn list_tenants(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
 ) -> Result<Json<Vec<TenantResponse>>, StatusCode> {
-    let state = state.lock().expect("poisoned lock: enterprise_list_tenants");
+    let state = state
+        .lock()
+        .expect("poisoned lock: enterprise_list_tenants");
     let tenants: Vec<TenantResponse> = state
         .tenant_store
         .list()
@@ -286,13 +290,17 @@ pub(crate) async fn create_key(
     if !state.tenant_store.exists(&payload.tenant_id) {
         return Err(EnterpriseError::NotFound {
             tenant_id: Some(payload.tenant_id),
-            message: format!("tenant not found for key creation: tenant_id={}", payload.tenant_id),
+            message: format!(
+                "tenant not found for key creation: tenant_id={}",
+                payload.tenant_id
+            ),
         });
     }
 
-    let (raw_key, key) = state
-        .api_key_store
-        .create(payload.tenant_id, payload.name.clone(), payload.key_type);
+    let (raw_key, key) =
+        state
+            .api_key_store
+            .create(payload.tenant_id, payload.name.clone(), payload.key_type);
 
     // Persist to database if available
     if let Some(ref db) = state.db {
@@ -307,7 +315,11 @@ pub(crate) async fn create_key(
     }
 
     // Log audit event
-    let entry = AuditEntry::new(payload.tenant_id, AuditAction::ApiKeyCreate, format!("api_key:{}", key.id));
+    let entry = AuditEntry::new(
+        payload.tenant_id,
+        AuditAction::ApiKeyCreate,
+        format!("api_key:{}", key.id),
+    );
     state.audit_log.log(entry.clone());
     if let Some(ref db) = state.db {
         if let Err(e) = db.save_audit_entry(&entry) {
@@ -381,7 +393,11 @@ pub(crate) async fn revoke_key(
     }
 
     // Log audit event
-    let entry = AuditEntry::new(tenant_id, AuditAction::ApiKeyRevoke, format!("api_key:{}", key_id));
+    let entry = AuditEntry::new(
+        tenant_id,
+        AuditAction::ApiKeyRevoke,
+        format!("api_key:{}", key_id),
+    );
     state.audit_log.log(entry.clone());
     if let Some(ref db) = state.db {
         if let Err(e) = db.save_audit_entry(&entry) {
@@ -462,10 +478,14 @@ pub(crate) async fn update_rate_limits(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
     Json(payload): Json<UpdateRateLimits>,
 ) -> Result<StatusCode, StatusCode> {
-    let mut state = state.lock().expect("poisoned lock: enterprise_update_rate_limits");
+    let mut state = state
+        .lock()
+        .expect("poisoned lock: enterprise_update_rate_limits");
     if let Some(tenant_id) = payload.tenant_id {
         let key = RateLimitKey::Tenant(tenant_id);
-        state.rate_limiter.set_config(key.clone(), payload.config.clone());
+        state
+            .rate_limiter
+            .set_config(key.clone(), payload.config.clone());
 
         // Persist to database if available
         if let Some(ref db) = state.db {

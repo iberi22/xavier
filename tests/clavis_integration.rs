@@ -11,7 +11,9 @@ use xavier::tasks::models::{Task, TaskStatus};
 async fn test_clavis_persistence_and_revocation() -> Result<()> {
     // 1. Setup SQLite database and pool
     let db_file = NamedTempFile::new()?;
-    let db = libsql::Builder::new_local(db_file.path().to_str().unwrap()).build().await?;
+    let db = libsql::Builder::new_local(db_file.path().to_str().unwrap())
+        .build()
+        .await?;
     let pool = xavier::utils::connection_pool::LibsqlConnectionPool::new(db, Default::default());
     let logger = QmdAuditLogger::new(pool.clone());
     logger.init_schema()?;

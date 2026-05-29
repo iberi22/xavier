@@ -10,13 +10,20 @@ pub fn generate_xcp(result: LayeredSearchResult, max_level: usize) -> String {
         xml,
         "<xavier_context_pack topic=\"{}\" generated=\"{}\">",
         topic_escaped, result.timestamp
-    ).unwrap();
+    )
+    .unwrap();
 
     // Level 0: Working Memory
     {
         writeln!(xml, "  <level_0_working_memory>").unwrap();
         for r in result.level_0_working {
-            writeln!(xml, "    <item score=\"{:.3}\" path=\"{}\">", r.score, escape_xml(&r.path)).unwrap();
+            writeln!(
+                xml,
+                "    <item score=\"{:.3}\" path=\"{}\">",
+                r.score,
+                escape_xml(&r.path)
+            )
+            .unwrap();
             writeln!(xml, "      {}", escape_xml(&r.content)).unwrap();
             writeln!(xml, "    </item>").unwrap();
         }
@@ -27,7 +34,13 @@ pub fn generate_xcp(result: LayeredSearchResult, max_level: usize) -> String {
     if max_level >= 1 {
         writeln!(xml, "  <level_1_entity_graph>").unwrap();
         for r in result.level_1_entity_graph {
-            writeln!(xml, "    <node score=\"{:.3}\" path=\"{}\">", r.score, escape_xml(&r.path)).unwrap();
+            writeln!(
+                xml,
+                "    <node score=\"{:.3}\" path=\"{}\">",
+                r.score,
+                escape_xml(&r.path)
+            )
+            .unwrap();
             writeln!(xml, "      {}", escape_xml(&r.content)).unwrap();
             writeln!(xml, "    </node>").unwrap();
         }
@@ -38,7 +51,13 @@ pub fn generate_xcp(result: LayeredSearchResult, max_level: usize) -> String {
     if max_level >= 2 {
         writeln!(xml, "  <level_2_semantic>").unwrap();
         for r in result.level_2_semantic {
-            writeln!(xml, "    <definition score=\"{:.3}\" path=\"{}\">", r.score, escape_xml(&r.path)).unwrap();
+            writeln!(
+                xml,
+                "    <definition score=\"{:.3}\" path=\"{}\">",
+                r.score,
+                escape_xml(&r.path)
+            )
+            .unwrap();
             writeln!(xml, "      {}", escape_xml(&r.content)).unwrap();
             writeln!(xml, "    </definition>").unwrap();
         }
@@ -49,7 +68,13 @@ pub fn generate_xcp(result: LayeredSearchResult, max_level: usize) -> String {
     if max_level >= 3 {
         writeln!(xml, "  <level_3_episodic>").unwrap();
         for r in result.level_3_episodic {
-            writeln!(xml, "    <event score=\"{:.3}\" path=\"{}\">", r.score, escape_xml(&r.path)).unwrap();
+            writeln!(
+                xml,
+                "    <event score=\"{:.3}\" path=\"{}\">",
+                r.score,
+                escape_xml(&r.path)
+            )
+            .unwrap();
             writeln!(xml, "      {}", escape_xml(&r.content)).unwrap();
             writeln!(xml, "    </event>").unwrap();
         }

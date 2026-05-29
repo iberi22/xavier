@@ -1,7 +1,7 @@
-use axum::{extract::State, Json};
-use serde::{Deserialize, Serialize};
 use crate::adapters::inbound::http::AppState;
 use crate::coordination::agent_registry::AgentMetadata;
+use axum::{extract::State, Json};
+use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct AgentRegisterPayload {
@@ -84,7 +84,7 @@ pub struct AgentPushContextPayload {
 }
 
 pub async fn agent_push_context_handler(
-    State(state): State<AppState>,
+    State(_state): State<AppState>,
     axum::extract::Path(agent_id): axum::extract::Path<String>,
     Json(payload): Json<AgentPushContextPayload>,
 ) -> Json<serde_json::Value> {

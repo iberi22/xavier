@@ -9,7 +9,6 @@ pub struct VerificationService {
 impl VerificationService {
     pub fn new(client: reqwest::Client) -> Self {
         Self { client }
-
     }
 }
 

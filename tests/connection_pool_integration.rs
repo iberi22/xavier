@@ -1,5 +1,5 @@
-use xavier::utils::connection_pool::{LibsqlConnectionPool, PoolConfig};
 use libsql::Builder;
+use xavier::utils::connection_pool::{LibsqlConnectionPool, PoolConfig};
 
 async fn setup_test_pool() -> (LibsqlConnectionPool, tempfile::NamedTempFile) {
     let temp_file = tempfile::NamedTempFile::new().unwrap();
@@ -7,7 +7,10 @@ async fn setup_test_pool() -> (LibsqlConnectionPool, tempfile::NamedTempFile) {
         .build()
         .await
         .unwrap();
-    (LibsqlConnectionPool::new(db, PoolConfig::default()), temp_file)
+    (
+        LibsqlConnectionPool::new(db, PoolConfig::default()),
+        temp_file,
+    )
 }
 
 #[tokio::test]

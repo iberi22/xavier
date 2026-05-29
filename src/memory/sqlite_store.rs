@@ -197,9 +197,11 @@ impl SqliteMemoryStore {
             parent_id: row.get(10)?,
             cluster_id: row.get(11)?,
             level: MemoryLevel::parse(&row.get::<_, String>(12)?),
-            relation: row.get::<_, Option<String>>(13)?
+            relation: row
+                .get::<_, Option<String>>(13)?
                 .and_then(|s| serde_json::from_str(&s).ok()),
-            revisions: row.get::<_, Option<String>>(14)?
+            revisions: row
+                .get::<_, Option<String>>(14)?
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or_default(),
         })

@@ -2,9 +2,9 @@ use chrono::{Datelike, Duration, NaiveDate};
 use regex::Regex;
 use std::sync::OnceLock;
 
-use crate::agents::system1::RetrievedDocument;
 use super::nlp::*;
 use super::text::*;
+use crate::agents::system1::RetrievedDocument;
 
 pub(crate) fn clean_date(text: &str) -> String {
     let trimmed = text.trim();
@@ -61,11 +61,14 @@ pub(crate) fn extract_date_answer(text: &str) -> Option<String> {
     let expanded_patterns = EXPANDED_DATE_PATTERNS
         .get_or_init(|| {
             vec![
-                Regex::new(r"(?i)\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b").expect("invalid regex: day month year"),
-                Regex::new(r"(?i)\b[A-Za-z]+\s+\d{1,2},\s+\d{4}\b").expect("invalid regex: month day year"),
+                Regex::new(r"(?i)\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b")
+                    .expect("invalid regex: day month year"),
+                Regex::new(r"(?i)\b[A-Za-z]+\s+\d{1,2},\s+\d{4}\b")
+                    .expect("invalid regex: month day year"),
                 Regex::new(r"\b\d{4}-\d{2}-\d{2}\b").expect("invalid regex: ISO date"),
                 Regex::new(r"(?i)\b[A-Za-z]+\s+\d{4}\b").expect("invalid regex: month year"),
-                Regex::new(r"(?i)\b(yesterday|last\s+(week|month|year))\b").expect("invalid regex: relative date"),
+                Regex::new(r"(?i)\b(yesterday|last\s+(week|month|year))\b")
+                    .expect("invalid regex: relative date"),
                 Regex::new(r"\b(19|20)\d{2}\b").expect("invalid regex: year"),
             ]
         })
@@ -98,10 +101,16 @@ pub(crate) fn date_granularity_rank(text: &str) -> usize {
 
     let trimmed = text.trim();
     if DAY_MONTH_YEAR
-        .get_or_init(|| Regex::new(r"(?i)\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b").expect("invalid regex: day month year"))
+        .get_or_init(|| {
+            Regex::new(r"(?i)\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b")
+                .expect("invalid regex: day month year")
+        })
         .is_match(trimmed)
         || MONTH_DAY_YEAR
-            .get_or_init(|| Regex::new(r"(?i)\b[A-Za-z]+\s+\d{1,2},\s+\d{4}\b").expect("invalid regex: month day year"))
+            .get_or_init(|| {
+                Regex::new(r"(?i)\b[A-Za-z]+\s+\d{1,2},\s+\d{4}\b")
+                    .expect("invalid regex: month day year")
+            })
             .is_match(trimmed)
         || ISO_DATE
             .get_or_init(|| Regex::new(r"\b\d{4}-\d{2}-\d{2}\b").expect("invalid regex: ISO date"))
@@ -111,7 +120,9 @@ pub(crate) fn date_granularity_rank(text: &str) -> usize {
     }
 
     if MONTH_YEAR
-        .get_or_init(|| Regex::new(r"(?i)\b[A-Za-z]+\s+\d{4}\b").expect("invalid regex: month year"))
+        .get_or_init(|| {
+            Regex::new(r"(?i)\b[A-Za-z]+\s+\d{4}\b").expect("invalid regex: month year")
+        })
         .is_match(trimmed)
     {
         return 2;

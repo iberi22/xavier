@@ -540,8 +540,8 @@ mod route_tests {
     #[tokio::test]
     async fn health_route_returns_json_ok() {
         use axum::response::Response;
-        use tower::ServiceExt;
         use http_body_util::BodyExt;
+        use tower::ServiceExt;
         let response: Response = create_router()
             .oneshot(
                 Request::builder()
@@ -560,7 +560,8 @@ mod route_tests {
             .await
             .expect("collect body")
             .to_bytes();
-        let parsed: serde_json::Value = serde_json::from_slice(&body).expect("parse health response");
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&body).expect("parse health response");
 
         assert_eq!(parsed["status"], "ok");
         assert_eq!(parsed["service"], "xavier");
@@ -570,8 +571,8 @@ mod route_tests {
     #[tokio::test]
     async fn readiness_route_returns_json_ok() {
         use axum::response::Response;
-        use tower::ServiceExt;
         use http_body_util::BodyExt;
+        use tower::ServiceExt;
         let response: Response = create_router()
             .oneshot(
                 Request::builder()
@@ -600,8 +601,8 @@ mod route_tests {
     #[tokio::test]
     async fn build_route_returns_json_info() {
         use axum::response::Response;
-        use tower::ServiceExt;
         use http_body_util::BodyExt;
+        use tower::ServiceExt;
         let response: Response = create_router()
             .oneshot(
                 Request::builder()
@@ -620,7 +621,8 @@ mod route_tests {
             .await
             .expect("collect body")
             .to_bytes();
-        let parsed: serde_json::Value = serde_json::from_slice(&body).expect("parse build response");
+        let parsed: serde_json::Value =
+            serde_json::from_slice(&body).expect("parse build response");
 
         assert_eq!(parsed["service"], "xavier");
         assert!(parsed.get("version").is_some());

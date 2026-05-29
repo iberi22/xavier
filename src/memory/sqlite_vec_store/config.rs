@@ -1,7 +1,7 @@
+use crate::settings::XavierSettings;
+use anyhow::Result;
 use std::path::PathBuf;
 use std::sync::OnceLock;
-use anyhow::Result;
-use crate::settings::XavierSettings;
 
 pub const DB_FILENAME: &str = "xavier_memory_vec.db";
 pub const DEFAULT_EMBEDDING_DIMENSIONS: usize = 768;

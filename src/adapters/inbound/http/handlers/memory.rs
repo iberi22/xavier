@@ -1,12 +1,12 @@
+use crate::adapters::inbound::http::state::check_auth;
+use crate::adapters::inbound::http::AppState;
+use crate::domain::memory::{MemoryQueryFilters, MemoryRecord as DomainMemoryRecord};
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
     Json,
 };
-use serde::{Deserialize, Serialize};
-use crate::adapters::inbound::http::state::check_auth;
-use crate::adapters::inbound::http::AppState;
-use crate::domain::memory::{MemoryQueryFilters, MemoryRecord as DomainMemoryRecord};
+use serde::Deserialize;
 use tracing::info;
 
 /// Sanitize unicode text by removing control characters and invalid surrogates.
@@ -22,7 +22,7 @@ fn sanitize_unicode(input: &str) -> String {
             match code {
                 0x09 | 0x0A | 0x0D => true, // tab, newline, carriage return
                 0x00..=0x08 | 0x0B | 0x0C | 0x0E..=0x1F | 0x7F => false, // control chars
-                0xD800..=0xDFFF => false, // surrogate pairs
+                0xD800..=0xDFFF => false,   // surrogate pairs
                 _ => true,
             }
         })
@@ -97,7 +97,10 @@ pub async fn search_handler(
         })));
     }
 
-    let effective_query = sec_result.sanitized_input.as_deref().unwrap_or(&sec_result.original_input);
+    let effective_query = sec_result
+        .sanitized_input
+        .as_deref()
+        .unwrap_or(&sec_result.original_input);
     let limit = payload.limit.max(1).min(100);
     info!("Search request: query={}, limit={}", effective_query, limit);
 
@@ -216,8 +219,11 @@ pub async fn memory_query_handler(
         }));
     }
 
-    let limit = payload.limit.unwrap_or(10).max(1).min(100);
-    let effective_query = sec_result.sanitized_input.as_deref().unwrap_or(&sec_result.original_input);
+    let _limit = payload.limit.unwrap_or(10).max(1).min(100);
+    let effective_query = sec_result
+        .sanitized_input
+        .as_deref()
+        .unwrap_or(&sec_result.original_input);
 
     match state.memory.search(effective_query, None).await {
         Ok(results) => {

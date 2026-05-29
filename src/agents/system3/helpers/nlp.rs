@@ -275,7 +275,10 @@ pub(crate) fn doc_subject(doc: &RetrievedDocument) -> String {
         .unwrap_or_default()
 }
 
-pub(crate) fn top_ranked_docs<'a>(query: &str, docs: &'a [RetrievedDocument]) -> Vec<&'a RetrievedDocument> {
+pub(crate) fn top_ranked_docs<'a>(
+    query: &str,
+    docs: &'a [RetrievedDocument],
+) -> Vec<&'a RetrievedDocument> {
     let terms = query_terms(query);
     let mut ranked: Vec<&RetrievedDocument> = docs.iter().collect();
     ranked.sort_by_key(|doc| std::cmp::Reverse(score_doc_for_query(doc, &terms)));
@@ -556,7 +559,10 @@ pub(crate) fn best_category_answer(
         .map(|(_, answer)| answer)
 }
 
-pub(crate) fn best_structured_fact_answer(query: &str, docs: &[RetrievedDocument]) -> Option<String> {
+pub(crate) fn best_structured_fact_answer(
+    query: &str,
+    docs: &[RetrievedDocument],
+) -> Option<String> {
     let query_lower = query.to_lowercase();
     let target_fact_type = if query_lower.contains("identity") {
         Some("identity")

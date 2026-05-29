@@ -9,16 +9,9 @@ use tower::ServiceExt;
 
 use crate::cli::code_graph::code_find_symbols;
 
-use crate::cli::config::{
-    resolve_base_url, resolve_base_url_for_port,
-    resolve_http_port,
-};
-use crate::cli::security::{
-    secure_cli_input, secure_external_input,
-};
+use crate::cli::config::{resolve_base_url, resolve_base_url_for_port, resolve_http_port};
+use crate::cli::security::{secure_cli_input, secure_external_input};
 use crate::cli::server::auth_middleware;
-
-
 
 use crate::cli::proxy::ProxyChatRequest;
 use code_graph::types::{Language, Symbol, SymbolKind};
@@ -44,7 +37,6 @@ fn test_code_query() -> code_graph::query::QueryEngine {
         ),
         parent: None,
         complexity: Some(1.0),
-
     })
     .unwrap();
     db.insert_symbol(&Symbol {
@@ -271,9 +263,21 @@ fn config_resolve_url_uses_xavier_url_when_set() {
     std::env::remove_var("XAVIER_PORT");
     assert_eq!(resolve_base_url(), "http://myhost:9090");
     // Restore
-    if let Some(v) = orig_url { std::env::set_var("XAVIER_URL", v); } else { std::env::remove_var("XAVIER_URL"); }
-    if let Some(v) = orig_host { std::env::set_var("XAVIER_HOST", v); } else { std::env::remove_var("XAVIER_HOST"); }
-    if let Some(v) = orig_port { std::env::set_var("XAVIER_PORT", v); } else { std::env::remove_var("XAVIER_PORT"); }
+    if let Some(v) = orig_url {
+        std::env::set_var("XAVIER_URL", v);
+    } else {
+        std::env::remove_var("XAVIER_URL");
+    }
+    if let Some(v) = orig_host {
+        std::env::set_var("XAVIER_HOST", v);
+    } else {
+        std::env::remove_var("XAVIER_HOST");
+    }
+    if let Some(v) = orig_port {
+        std::env::set_var("XAVIER_PORT", v);
+    } else {
+        std::env::remove_var("XAVIER_PORT");
+    }
 }
 
 #[test]
@@ -286,9 +290,21 @@ fn config_resolve_url_uses_host_and_port_when_url_not_set() {
     std::env::set_var("XAVIER_PORT", "8016");
     assert_eq!(resolve_base_url(), "http://192.168.1.100:8016");
     // Restore
-    if let Some(v) = orig_url { std::env::set_var("XAVIER_URL", v); } else { std::env::remove_var("XAVIER_URL"); }
-    if let Some(v) = orig_host { std::env::set_var("XAVIER_HOST", v); } else { std::env::remove_var("XAVIER_HOST"); }
-    if let Some(v) = orig_port { std::env::set_var("XAVIER_PORT", v); } else { std::env::remove_var("XAVIER_PORT"); }
+    if let Some(v) = orig_url {
+        std::env::set_var("XAVIER_URL", v);
+    } else {
+        std::env::remove_var("XAVIER_URL");
+    }
+    if let Some(v) = orig_host {
+        std::env::set_var("XAVIER_HOST", v);
+    } else {
+        std::env::remove_var("XAVIER_HOST");
+    }
+    if let Some(v) = orig_port {
+        std::env::set_var("XAVIER_PORT", v);
+    } else {
+        std::env::remove_var("XAVIER_PORT");
+    }
 }
 
 #[test]
@@ -300,8 +316,16 @@ fn config_resolve_url_favors_xavier_url_over_host_port() {
     // XAVIER_URL should take precedence even if XAVIER_PORT is different
     assert_eq!(resolve_base_url(), "http://primary:8006");
     // Restore
-    if let Some(v) = orig_url { std::env::set_var("XAVIER_URL", v); } else { std::env::remove_var("XAVIER_URL"); }
-    if let Some(v) = orig_port { std::env::set_var("XAVIER_PORT", v); } else { std::env::remove_var("XAVIER_PORT"); }
+    if let Some(v) = orig_url {
+        std::env::set_var("XAVIER_URL", v);
+    } else {
+        std::env::remove_var("XAVIER_URL");
+    }
+    if let Some(v) = orig_port {
+        std::env::set_var("XAVIER_PORT", v);
+    } else {
+        std::env::remove_var("XAVIER_PORT");
+    }
 }
 
 #[test]
@@ -310,14 +334,23 @@ fn config_resolve_base_url_for_port_respects_custom_port() {
     std::env::remove_var("XAVIER_URL");
     // When port differs from settings default, it should be reflected in URL
     let url = resolve_base_url_for_port(8016);
-    assert!(url.contains(":8016"), "URL should contain the custom port: {}", url);
+    assert!(
+        url.contains(":8016"),
+        "URL should contain the custom port: {}",
+        url
+    );
     // Restore
-    if let Some(v) = orig_url { std::env::set_var("XAVIER_URL", v); } else { std::env::remove_var("XAVIER_URL"); }
+    if let Some(v) = orig_url {
+        std::env::set_var("XAVIER_URL", v);
+    } else {
+        std::env::remove_var("XAVIER_URL");
+    }
 }
 
 #[tokio::test]
 async fn test_chat_batch_proxy_ordering() {
-    let requests = [ProxyChatRequest {
+    let requests = [
+        ProxyChatRequest {
             model: "model-1".to_string(),
             messages: vec![serde_json::json!({"role": "user", "content": "ping 1"})],
             temperature: None,
@@ -328,7 +361,8 @@ async fn test_chat_batch_proxy_ordering() {
             messages: vec![serde_json::json!({"role": "user", "content": "ping 2"})],
             temperature: None,
             max_tokens: None,
-        }];
+        },
+    ];
 
     // Verify the ordering logic used in the handler:
     let mut results = vec![serde_json::json!(null); requests.len()];

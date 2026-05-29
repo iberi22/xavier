@@ -53,4 +53,3 @@ pub fn check_auth(headers: &HeaderMap, state: &AppState) -> Result<(), (StatusCo
         })),
     ))
 }
-

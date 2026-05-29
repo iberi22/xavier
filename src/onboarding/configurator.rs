@@ -54,7 +54,9 @@ impl Default for ServerConfig {
     }
 }
 
-fn default_log_level() -> String { "info".into() }
+fn default_log_level() -> String {
+    "info".into()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingConfig {
@@ -74,7 +76,9 @@ impl Default for EmbeddingConfig {
     }
 }
 
-fn default_gllm_model() -> String { "all-MiniLM-L6-v2".into() }
+fn default_gllm_model() -> String {
+    "all-MiniLM-L6-v2".into()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MemoryConfig {
@@ -85,7 +89,9 @@ pub struct MemoryConfig {
     pub data_dir: String,
 }
 
-fn default_data_dir() -> String { "data/memory".into() }
+fn default_data_dir() -> String {
+    "data/memory".into()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkspaceConfig {
@@ -95,7 +101,9 @@ pub struct WorkspaceConfig {
     pub storage_limit_bytes: Option<u64>,
 }
 
-fn default_plan() -> String { "standard".into() }
+fn default_plan() -> String {
+    "standard".into()
+}
 
 impl AutoConfig {
     pub fn summary(&self) -> String {
@@ -123,10 +131,15 @@ fn embedder_dimensions(provider: &str) -> usize {
 
 /// Optimal batch size based on RAM
 fn optimal_batch_size(ram_gb: f64) -> usize {
-    if ram_gb >= 32.0 { 64 }
-    else if ram_gb >= 16.0 { 32 }
-    else if ram_gb >= 8.0 { 16 }
-    else { 8 }
+    if ram_gb >= 32.0 {
+        64
+    } else if ram_gb >= 16.0 {
+        32
+    } else if ram_gb >= 8.0 {
+        16
+    } else {
+        8
+    }
 }
 
 /// Max memories based on RAM and disk
@@ -134,7 +147,9 @@ fn max_memories(ram_gb: f64, disk_gb: f64) -> usize {
     let base = 10_000;
     let ram_factor = (ram_gb / 4.0) as usize;
     let disk_factor = (disk_gb / 10.0) as usize;
-    (base * ram_factor.max(1)).min(base * disk_factor.max(1)).min(1_000_000)
+    (base * ram_factor.max(1))
+        .min(base * disk_factor.max(1))
+        .min(1_000_000)
 }
 
 /// Generate optimal config based on system scan
@@ -158,7 +173,10 @@ pub fn generate_config(
         }
         "ollama" => ("ollama", "http://localhost:11434".into()),
         s if s.contains("openai") => ("openai", "https://api.openai.com/v1".into()),
-        s if s.contains("google") => ("google-gemini", "https://generativelanguage.googleapis.com".into()),
+        s if s.contains("google") => (
+            "google-gemini",
+            "https://generativelanguage.googleapis.com".into(),
+        ),
         "local-embed-server" => ("local-embed-server", "http://localhost:8080".into()),
         _ => ("bring_your_own", "".into()),
     };
