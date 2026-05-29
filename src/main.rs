@@ -8,6 +8,7 @@ extern crate xavier as xavier_lib;
 // Re-export memory types for binary crate access
 pub use xavier_lib::memory;
 pub use xavier_lib::workspace;
+pub use xavier_lib::onboarding;
 
 use crate::settings::XavierSettings;
 use anyhow::Result;

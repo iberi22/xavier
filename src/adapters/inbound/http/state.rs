@@ -30,7 +30,7 @@ pub struct AppState {
 
 /// Check that the `X-Xavier-Token` or `Authorization: Bearer <token>` header matches.
 pub fn check_auth(headers: &HeaderMap, state: &AppState) -> Result<(), (StatusCode, Json<Value>)> {
-    // Try X-Xavier-Token first (Xavier2 compatible)
+    // Try X-Xavier-Token first (xavier compatible)
     if let Some(token) = headers.get("X-Xavier-Token").and_then(|v| v.to_str().ok()) {
         if token == state.auth_token {
             return Ok(());
@@ -53,3 +53,4 @@ pub fn check_auth(headers: &HeaderMap, state: &AppState) -> Result<(), (StatusCo
         })),
     ))
 }
+
