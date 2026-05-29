@@ -176,11 +176,7 @@ pub struct GraphRelationship {
 }
 
 impl GraphRelationship {
-    pub fn new(
-        source_id: String,
-        target_id: String,
-        relation_type: GraphRelationshipType,
-    ) -> Self {
+    pub fn new(source_id: String, target_id: String, relation_type: GraphRelationshipType) -> Self {
         let now = Utc::now();
         Self {
             id: ulid::Ulid::new().to_string(),

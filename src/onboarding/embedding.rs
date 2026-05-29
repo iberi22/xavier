@@ -111,19 +111,29 @@ mod tests {
 
     fn make_system(avx2: bool) -> SystemCapabilities {
         SystemCapabilities {
-            cpu_cores: 8, ram_gb: 16.0, disk_free_gb: 100.0,
-            has_avx2: avx2, has_avx512: false,
-            has_cuda: false, has_vulkan: false, has_metal: false,
-            is_windows: true, is_linux: false, is_macos: false,
+            cpu_cores: 8,
+            ram_gb: 16.0,
+            disk_free_gb: 100.0,
+            has_avx2: avx2,
+            has_avx512: false,
+            has_cuda: false,
+            has_vulkan: false,
+            has_metal: false,
+            is_windows: true,
+            is_linux: false,
+            is_macos: false,
         }
     }
 
     fn make_providers(names: &[&str]) -> Vec<ProviderStatus> {
-        names.iter().map(|&name| ProviderStatus {
-            name: name.to_string(),
-            available: true,
-            reason: String::new(),
-        }).collect()
+        names
+            .iter()
+            .map(|&name| ProviderStatus {
+                name: name.to_string(),
+                available: true,
+                reason: String::new(),
+            })
+            .collect()
     }
 
     #[test]

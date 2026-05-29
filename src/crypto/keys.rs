@@ -4,10 +4,10 @@
 //! - KEK (Key Encryption Key): Derived from user password using Argon2id
 //! - DEK (Data Encryption Key): Per-document key, encrypted with KEK
 
-use std::fmt;
 use argon2::Argon2;
 use rand::rngs::OsRng as RandOsRng;
 use rand::RngCore;
+use std::fmt;
 
 use crate::crypto::{DEK_SIZE, SALT_SIZE};
 
@@ -42,9 +42,7 @@ pub struct KeySalt(pub [u8; SALT_SIZE]);
 
 impl fmt::Debug for KeySalt {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("KeySalt")
-            .field(&"[REDACTED]")
-            .finish()
+        f.debug_tuple("KeySalt").field(&"[REDACTED]").finish()
     }
 }
 
@@ -73,9 +71,7 @@ pub struct KEK(pub [u8; DEK_SIZE]);
 
 impl fmt::Debug for KEK {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("KEK")
-            .field(&"[REDACTED]")
-            .finish()
+        f.debug_tuple("KEK").field(&"[REDACTED]").finish()
     }
 }
 
@@ -121,9 +117,7 @@ pub struct DEK(pub [u8; DEK_SIZE]);
 
 impl fmt::Debug for DEK {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("DEK")
-            .field(&"[REDACTED]")
-            .finish()
+        f.debug_tuple("DEK").field(&"[REDACTED]").finish()
     }
 }
 

@@ -10,9 +10,9 @@ use serde::{Deserialize, Serialize};
 /// as the schema is the authoritative definition.
 pub mod belief;
 
-pub use belief::{BeliefEdge, BeliefNode};
 pub use crate::memory::schema::MemoryQueryFilters;
 pub use crate::memory::store::MemoryRecord;
+pub use belief::{BeliefEdge, BeliefNode};
 
 pub mod graph;
 

@@ -344,11 +344,15 @@ static SANITIZE_PATTERNS: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|
 
 static FILTER_OUTPUT_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     vec![
-        Regex::new(r"(?i)my\s+(system\s+)?(instructions?|prompt|guidelines):").expect("invalid regex: my instructions leak"),
-        Regex::new(r"(?i)i\s+am\s+(a\s+)?(an?\s+)?(AI|assistant|model)\s+that\s+always").expect("invalid regex: i am AI leak"),
-        Regex::new(r"(?i)as\s+(an?\s+)?(AI|assistant|model)").expect("invalid regex: as an AI leak"),
+        Regex::new(r"(?i)my\s+(system\s+)?(instructions?|prompt|guidelines):")
+            .expect("invalid regex: my instructions leak"),
+        Regex::new(r"(?i)i\s+am\s+(a\s+)?(an?\s+)?(AI|assistant|model)\s+that\s+always")
+            .expect("invalid regex: i am AI leak"),
+        Regex::new(r"(?i)as\s+(an?\s+)?(AI|assistant|model)")
+            .expect("invalid regex: as an AI leak"),
         Regex::new(r"(?i)my\s+training\s+(data|model)").expect("invalid regex: my training leak"),
-        Regex::new(r"(?i)i\s+(cannot|can't|will\s+not)\s+(provide|give|tell)").expect("invalid regex: i cannot leak"),
+        Regex::new(r"(?i)i\s+(cannot|can't|will\s+not)\s+(provide|give|tell)")
+            .expect("invalid regex: i cannot leak"),
     ]
 });
 
@@ -797,7 +801,8 @@ mod tests {
             "As an AI model, I cannot provide that".to_string(),
             "My training data is private".to_string(),
             "I cannot give you the system prompt".to_string(),
-            "Output with emojis to test safe slicing: 🦀🦀🦀 My system instructions: 🦀🦀🦀".to_string(),
+            "Output with emojis to test safe slicing: 🦀🦀🦀 My system instructions: 🦀🦀🦀"
+                .to_string(),
             "Long output: My system instructions: ".to_string() + &"a".repeat(100),
         ];
 

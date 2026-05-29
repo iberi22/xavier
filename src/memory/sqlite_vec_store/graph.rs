@@ -1,11 +1,11 @@
+use crate::memory::sqlite_vec_store::types::ExtractedEntity;
+use crate::memory::sqlite_vec_store::utils;
+use crate::memory::store::{stable_key, GraphHopPath, MemoryRecord};
+use anyhow::Result;
+use libsql::params;
 use regex::Regex;
 use std::collections::HashSet;
 use std::sync::OnceLock;
-use anyhow::Result;
-use libsql::params;
-use crate::memory::sqlite_vec_store::types::ExtractedEntity;
-use crate::memory::store::{MemoryRecord, stable_key, GraphHopPath};
-use crate::memory::sqlite_vec_store::utils;
 
 pub fn extract_entities(content: &str) -> Vec<ExtractedEntity> {
     static MENTION_RE: OnceLock<Regex> = OnceLock::new();
@@ -15,10 +15,9 @@ pub fn extract_entities(content: &str) -> Vec<ExtractedEntity> {
 
     let mention_re =
         MENTION_RE.get_or_init(|| Regex::new(r"@[\w.-]{2,}").expect("valid mention regex"));
-    let topic_re =
-        TOPIC_RE.get_or_init(|| Regex::new(r"#[\w-]{2,}").expect("valid topic regex"));
-    let url_re = URL_RE
-        .get_or_init(|| Regex::new(r#"https?://[^\s)>"]+"#).expect("valid url entity regex"));
+    let topic_re = TOPIC_RE.get_or_init(|| Regex::new(r"#[\w-]{2,}").expect("valid topic regex"));
+    let url_re =
+        URL_RE.get_or_init(|| Regex::new(r#"https?://[^\s)>"]+"#).expect("valid url entity regex"));
     let date_re = DATE_RE.get_or_init(|| {
         Regex::new(
             r"\b(\d{4}-\d{2}-\d{2}|\d{4}/\d{2}/\d{2}|(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2},\s+\d{4})\b",
@@ -88,16 +87,19 @@ pub async fn sync_memory_entities(
             })
             .to_string()
         ],
-    ).await?;
+    )
+    .await?;
 
     conn.execute(
         "DELETE FROM memory_entities WHERE workspace_id = ? AND memory_id = ?",
         params![workspace_id, record.id.clone()],
-    ).await?;
+    )
+    .await?;
     conn.execute(
         "DELETE FROM relations WHERE source_id = ?",
         params![memory_node_id.clone()],
-    ).await?;
+    )
+    .await?;
 
     for entity in extract_entities(&record.content) {
         let entity_id = entity_node_id(workspace_id, entity.entity_type, &entity.value);
@@ -157,7 +159,9 @@ pub async fn resolve_graph_seed_entities(
 
     // Also seed from entities mentioned in the query
     let terms = utils::search_tokens(query);
-    let mut entity_stmt = conn.prepare("SELECT id FROM entities WHERE name LIKE ?").await?;
+    let entity_stmt = conn
+        .prepare("SELECT id FROM entities WHERE name LIKE ?")
+        .await?;
     for term in terms {
         let mut entity_rows = entity_stmt.query(params![format!("%{term}%")]).await?;
         while let Some(row) = entity_rows.next().await? {

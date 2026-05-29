@@ -2,9 +2,9 @@
 
 pub mod bm25;
 pub mod builder;
-pub mod graph_retriever;
 pub mod classifier;
 pub mod executor;
+pub mod graph_retriever;
 pub mod hybrid;
 pub mod indexer;
 pub mod manager;

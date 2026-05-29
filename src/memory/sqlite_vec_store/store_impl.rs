@@ -1,21 +1,19 @@
-use std::any::Any;
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use libsql::params;
 use sha2::{Digest, Sha256};
+use std::any::Any;
 
 use crate::checkpoint::Checkpoint;
 use crate::domain::memory::belief::BeliefEdge;
 use crate::memory::schema::MemoryQueryFilters;
+use crate::memory::sqlite_store::{TABLE_CHECKPOINTS, TABLE_MEMORIES};
 use crate::memory::store::{
-    DurableWorkspaceState, GraphHopResult, HybridSearchMode,
-    HybridSearchResult, MemoryBackend, MemoryRecord, MemoryStore, SessionTokenRecord,
-};
-use crate::memory::sqlite_store::{
-    TABLE_CHECKPOINTS, TABLE_MEMORIES,
+    DurableWorkspaceState, GraphHopResult, HybridSearchMode, HybridSearchResult, MemoryBackend,
+    MemoryRecord, MemoryStore, SessionTokenRecord,
 };
 
-use super::{VecSqliteMemoryStore, vector, graph};
+use super::{graph, vector, VecSqliteMemoryStore};
 
 #[async_trait]
 impl MemoryStore for VecSqliteMemoryStore {
@@ -41,7 +39,9 @@ impl MemoryStore for VecSqliteMemoryStore {
 
         // Get the previous hash for chain linking
         let prev_hash: Option<String> = {
-            let mut stmt = conn.prepare("SELECT content_hash FROM memory_chain ORDER BY created_at DESC LIMIT 1").await?;
+            let stmt = conn
+                .prepare("SELECT content_hash FROM memory_chain ORDER BY created_at DESC LIMIT 1")
+                .await?;
             let mut rows = stmt.query(()).await?;
             if let Some(row) = rows.next().await? {
                 row.get::<Option<String>>(0).ok().flatten()
@@ -85,13 +85,23 @@ impl MemoryStore for VecSqliteMemoryStore {
             ).await?;
 
             // Sync to FTS5
-            conn.execute("DELETE FROM memory_fts WHERE id = ?", params![record.id.clone()]).await?;
+            conn.execute(
+                "DELETE FROM memory_fts WHERE id = ?",
+                params![record.id.clone()],
+            )
+            .await?;
             let code_tokens =
                 super::fts::code_tokens(&format!("{} {}", &record.path, &record.content)).join(" ");
             conn.execute(
                 "INSERT INTO memory_fts(id, path, content, code_tokens) VALUES (?, ?, ?, ?)",
-                params![record.id.clone(), record.path.clone(), record.content.clone(), code_tokens],
-            ).await?;
+                params![
+                    record.id.clone(),
+                    record.path.clone(),
+                    record.content.clone(),
+                    code_tokens
+                ],
+            )
+            .await?;
 
             Self::sync_memory_entities(&conn, &record.workspace_id, &record).await?;
 
@@ -100,14 +110,17 @@ impl MemoryStore for VecSqliteMemoryStore {
             conn.execute(
                 "INSERT INTO memory_chain (id, prev_hash, content_hash) VALUES (?, ?, ?)",
                 params![chain_id, prev_hash, content_hash],
-            ).await?;
+            )
+            .await?;
 
-            self.append_timeline_event(&conn, &record.workspace_id, &record).await?;
+            self.append_timeline_event(&conn, &record.workspace_id, &record)
+                .await?;
         }
 
         // Store vector in native vector search table
         if !record.embedding.is_empty() {
-            self.upsert_vector(&record.id, &record.workspace_id, &record.embedding).await?;
+            self.upsert_vector(&record.id, &record.workspace_id, &record.embedding)
+                .await?;
         }
 
         Ok(())
@@ -118,7 +131,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
         // Try by id first (O(1) lookup)
         let key = Self::row_key(workspace_id, id_or_path);
-        let mut stmt = conn.prepare(&format!(
+        let stmt = conn.prepare(&format!(
             "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE id = ? LIMIT 1",
             TABLE_MEMORIES
         )).await?;
@@ -129,7 +142,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         }
 
         // Fallback: try by path
-        let mut stmt = conn.prepare(&format!(
+        let stmt = conn.prepare(&format!(
             "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE workspace_id = ? AND path = ?",
             TABLE_MEMORIES
         )).await?;
@@ -194,9 +207,12 @@ impl MemoryStore for VecSqliteMemoryStore {
             .context("delete memory_embeddings for child records")?;
 
             // Delete from FTS5
-            tx.execute("DELETE FROM memory_fts WHERE id = ?", params![record.id.clone()])
-                .await
-                .context("delete memory_fts for parent record")?;
+            tx.execute(
+                "DELETE FROM memory_fts WHERE id = ?",
+                params![record.id.clone()],
+            )
+            .await
+            .context("delete memory_fts for parent record")?;
 
             tx.execute(
                 "DELETE FROM memory_fts WHERE id IN (
@@ -251,14 +267,16 @@ impl MemoryStore for VecSqliteMemoryStore {
             .await
             .context("delete parent memory record")?;
 
-            tx.commit().await.context("commit memory delete transaction")?;
+            tx.commit()
+                .await
+                .context("commit memory delete transaction")?;
         }
         Ok(removed)
     }
 
     async fn list(&self, workspace_id: &str) -> Result<Vec<MemoryRecord>> {
         let conn = self.pool.get().await?;
-        let mut stmt = conn.prepare(&format!(
+        let stmt = conn.prepare(&format!(
             "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE workspace_id = ?",
             TABLE_MEMORIES
         )).await?;
@@ -278,7 +296,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         filters: Option<&MemoryQueryFilters>,
     ) -> Result<Vec<MemoryRecord>> {
         let conn = self.pool.get().await?;
-        let mut stmt = conn.prepare(&format!(
+        let stmt = conn.prepare(&format!(
             "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE workspace_id = ?",
             TABLE_MEMORIES
         )).await?;
@@ -287,7 +305,9 @@ impl MemoryStore for VecSqliteMemoryStore {
         let mut records = Vec::new();
         while let Some(row) = rows.next().await? {
             let record = Self::deserialize_record(&row)?;
-            if Self::row_matches_filters(workspace_id, &record, filters) && record.matches_query(query) {
+            if Self::row_matches_filters(workspace_id, &record, filters)
+                && record.matches_query(query)
+            {
                 records.push(record);
             }
         }
@@ -302,7 +322,8 @@ impl MemoryStore for VecSqliteMemoryStore {
         filters: Option<&MemoryQueryFilters>,
         limit: usize,
     ) -> Result<Vec<HybridSearchResult>> {
-        self.perform_hybrid_search(workspace_id, query, mode, filters, limit, None).await
+        self.perform_hybrid_search(workspace_id, query, mode, filters, limit, None)
+            .await
     }
 
     async fn graph_hops(
@@ -312,16 +333,19 @@ impl MemoryStore for VecSqliteMemoryStore {
         hops: usize,
         query: &str,
     ) -> Result<GraphHopResult> {
-        self.perform_graph_hops(workspace_id, path_or_id, hops, query).await
+        self.perform_graph_hops(workspace_id, path_or_id, hops, query)
+            .await
     }
 
     async fn load_workspace_state(&self, workspace_id: &str) -> Result<DurableWorkspaceState> {
         let memories = self.list(workspace_id).await?;
         let conn = self.pool.get().await?;
 
-        let mut stmt = conn.prepare(&format!("SELECT id, source_id, target_id, relation_type, weight, confidence_score, provenance_id, contradicts_edge_id, created_at, updated_at FROM {} WHERE source_id LIKE ? OR target_id LIKE ?", "relations")).await?;
+        let stmt = conn.prepare(&format!("SELECT id, source_id, target_id, relation_type, weight, confidence_score, provenance_id, contradicts_edge_id, created_at, updated_at FROM {} WHERE source_id LIKE ? OR target_id LIKE ?", "relations")).await?;
         let workspace_prefix = format!("entity:{}%", workspace_id);
-        let mut rows = stmt.query(params![workspace_prefix.clone(), workspace_prefix.clone()]).await?;
+        let mut rows = stmt
+            .query(params![workspace_prefix.clone(), workspace_prefix.clone()])
+            .await?;
 
         let mut beliefs = Vec::new();
         while let Some(row) = rows.next().await? {
@@ -338,12 +362,16 @@ impl MemoryStore for VecSqliteMemoryStore {
                 confidence_score,
                 provenance_id,
                 contradicts_edge_id,
-                created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<String>(8).map_err(anyhow::Error::msg)?)
-                    .map(|dt| dt.with_timezone(&chrono::Utc))
-                    .unwrap_or_else(|_| chrono::Utc::now()),
-                updated_at: chrono::DateTime::parse_from_rfc3339(&row.get::<String>(9).map_err(anyhow::Error::msg)?)
-                    .map(|dt| dt.with_timezone(&chrono::Utc))
-                    .unwrap_or_else(|_| chrono::Utc::now()),
+                created_at: chrono::DateTime::parse_from_rfc3339(
+                    &row.get::<String>(8).map_err(anyhow::Error::msg)?,
+                )
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .unwrap_or_else(|_| chrono::Utc::now()),
+                updated_at: chrono::DateTime::parse_from_rfc3339(
+                    &row.get::<String>(9).map_err(anyhow::Error::msg)?,
+                )
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .unwrap_or_else(|_| chrono::Utc::now()),
             });
         }
 
@@ -397,8 +425,14 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     async fn is_session_token_valid(&self, workspace_id: &str, token: &str) -> Result<bool> {
         let conn = self.pool.get().await?;
-        let mut stmt = conn.prepare("SELECT COUNT(*) FROM session_tokens WHERE token = ? AND workspace_id = ? AND expires_at > ?").await?;
-        let mut rows = stmt.query(params![token, workspace_id, chrono::Utc::now().to_rfc3339()]).await?;
+        let stmt = conn.prepare("SELECT COUNT(*) FROM session_tokens WHERE token = ? AND workspace_id = ? AND expires_at > ?").await?;
+        let mut rows = stmt
+            .query(params![
+                token,
+                workspace_id,
+                chrono::Utc::now().to_rfc3339()
+            ])
+            .await?;
         let valid = if let Some(row) = rows.next().await? {
             row.get::<i64>(0).unwrap_or(0) > 0
         } else {
@@ -433,7 +467,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         name: &str,
     ) -> Result<Option<Checkpoint>> {
         let conn = self.pool.get().await?;
-        let mut stmt = conn.prepare(&format!(
+        let stmt = conn.prepare(&format!(
             "SELECT id, task_id, name, data, created_at FROM {} WHERE workspace_id = ? AND task_id = ? AND name = ?",
             TABLE_CHECKPOINTS
         )).await?;
@@ -443,7 +477,8 @@ impl MemoryStore for VecSqliteMemoryStore {
             Ok(Some(Checkpoint {
                 task_id: row.get(1).map_err(anyhow::Error::msg)?,
                 name: row.get(2).map_err(anyhow::Error::msg)?,
-                data: serde_json::from_str(&row.get::<String>(3).map_err(anyhow::Error::msg)?).unwrap_or_default(),
+                data: serde_json::from_str(&row.get::<String>(3).map_err(anyhow::Error::msg)?)
+                    .unwrap_or_default(),
             }))
         } else {
             Ok(None)
@@ -452,7 +487,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     async fn list_checkpoints(&self, workspace_id: &str, task_id: &str) -> Result<Vec<Checkpoint>> {
         let conn = self.pool.get().await?;
-        let mut stmt = conn.prepare(&format!(
+        let stmt = conn.prepare(&format!(
             "SELECT id, task_id, name, data, created_at FROM {} WHERE workspace_id = ? AND task_id = ?",
             TABLE_CHECKPOINTS
         )).await?;
@@ -463,7 +498,8 @@ impl MemoryStore for VecSqliteMemoryStore {
             result.push(Checkpoint {
                 task_id: row.get(1).map_err(anyhow::Error::msg)?,
                 name: row.get(2).map_err(anyhow::Error::msg)?,
-                data: serde_json::from_str(&row.get::<String>(3).map_err(anyhow::Error::msg)?).unwrap_or_default(),
+                data: serde_json::from_str(&row.get::<String>(3).map_err(anyhow::Error::msg)?)
+                    .unwrap_or_default(),
             });
         }
         Ok(result)
@@ -472,9 +508,13 @@ impl MemoryStore for VecSqliteMemoryStore {
     async fn delete_checkpoint(&self, workspace_id: &str, task_id: &str, name: &str) -> Result<()> {
         let conn = self.pool.get().await?;
         conn.execute(
-            &format!("DELETE FROM {} WHERE workspace_id = ? AND task_id = ? AND name = ?", TABLE_CHECKPOINTS),
+            &format!(
+                "DELETE FROM {} WHERE workspace_id = ? AND task_id = ? AND name = ?",
+                TABLE_CHECKPOINTS
+            ),
             params![workspace_id, task_id, name],
-        ).await?;
+        )
+        .await?;
         Ok(())
     }
 

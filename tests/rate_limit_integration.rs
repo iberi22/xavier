@@ -3,7 +3,10 @@ use xavier::ports::outbound::schema_init::SchemaInitializer;
 
 async fn setup_manager() -> (RateLimitManager, tempfile::NamedTempFile) {
     let temp_file = tempfile::NamedTempFile::new().unwrap();
-    let db = libsql::Builder::new_local(temp_file.path().to_str().unwrap()).build().await.unwrap();
+    let db = libsql::Builder::new_local(temp_file.path().to_str().unwrap())
+        .build()
+        .await
+        .unwrap();
     let pool = xavier::utils::connection_pool::LibsqlConnectionPool::new(db, Default::default());
     let manager = RateLimitManager::new(pool);
     manager.init_schema().unwrap();

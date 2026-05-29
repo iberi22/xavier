@@ -1,8 +1,8 @@
-use anyhow::Result;
 use crate::ports::outbound::schema_init::SchemaInitializer;
 use crate::security::detections::Threat;
-use sha2::{Digest, Sha256};
+use anyhow::Result;
 use chrono::Utc;
+use sha2::{Digest, Sha256};
 
 use crate::utils::connection_pool::LibsqlConnectionPool;
 
@@ -19,9 +19,11 @@ impl SecurityThreatStore {
         let conn = self.pool.get().await?;
 
         // 1. Get previous hash from the chain
-        let mut stmt = conn.prepare(
-            "SELECT threat_hash FROM security_threat_chain ORDER BY created_at DESC LIMIT 1"
-        ).await?;
+        let stmt = conn
+            .prepare(
+                "SELECT threat_hash FROM security_threat_chain ORDER BY created_at DESC LIMIT 1",
+            )
+            .await?;
         let mut rows = stmt.query(()).await?;
         let prev_hash = if let Some(row) = rows.next().await? {
             row.get::<String>(0).ok()
@@ -66,7 +68,8 @@ impl SecurityThreatStore {
             "INSERT INTO security_threat_chain (id, prev_hash, threat_hash, created_at)
              VALUES (?, ?, ?, ?)",
             (id, prev_hash, threat_hash, now),
-        ).await?;
+        )
+        .await?;
 
         tx.commit().await?;
 
@@ -111,7 +114,9 @@ impl SchemaInitializer for SecurityThreatStore {
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
-                    .map_err(|e| anyhow::anyhow!("failed to build runtime for threat schema: {}", e))?;
+                    .map_err(|e| {
+                        anyhow::anyhow!("failed to build runtime for threat schema: {}", e)
+                    })?;
                 rt.block_on(self.init_schema_async())
             })
             .join()

@@ -126,10 +126,10 @@ impl RetrievalScope {
 #[derive(Default)]
 pub enum MemoryLevel {
     #[default]
-    Raw,        // Original raw memory
-    Processed,  // Cleaned/standardized
-    Extracted,  // Entity/relationship extracted
-    Belief,     // Validated belief
+    Raw, // Original raw memory
+    Processed, // Cleaned/standardized
+    Extracted, // Entity/relationship extracted
+    Belief,    // Validated belief
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -137,10 +137,10 @@ pub enum MemoryLevel {
 #[derive(Default)]
 pub enum ContextZone {
     #[default]
-    Atomic,      // Raw fragments, atomic facts
-    Cluster,     // Summaries of groups of related memories
-    Global,      // High-level strategic summaries
-    Relational,  // Beliefs and knowledge graph relations
+    Atomic, // Raw fragments, atomic facts
+    Cluster,    // Summaries of groups of related memories
+    Global,     // High-level strategic summaries
+    Relational, // Beliefs and knowledge graph relations
 }
 
 pub fn parse_zones_from_prompt(prompt: &str) -> Vec<ContextZone> {
@@ -156,7 +156,11 @@ pub fn parse_zones_from_prompt(prompt: &str) -> Vec<ContextZone> {
     if lowered.contains("general") || lowered.contains("global") || lowered.contains("estrategia") {
         zones.push(ContextZone::Global);
     }
-    if lowered.contains("relación") || lowered.contains("vínculo") || lowered.contains("grafo") || lowered.contains("belief") {
+    if lowered.contains("relación")
+        || lowered.contains("vínculo")
+        || lowered.contains("grafo")
+        || lowered.contains("belief")
+    {
         zones.push(ContextZone::Relational);
     }
 

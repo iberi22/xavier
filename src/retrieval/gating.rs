@@ -37,7 +37,11 @@ impl Default for LayerWeights {
 
 impl LayerWeights {
     /// Adjust weights dynamically based on query characteristics
-    pub fn adaptive(query: &str, context_level: ContextLevel, _active_zones: &[ContextZone]) -> Self {
+    pub fn adaptive(
+        query: &str,
+        context_level: ContextLevel,
+        _active_zones: &[ContextZone],
+    ) -> Self {
         let factual_score = query_factuality_score(query);
         let procedural_score = query_procedural_score(query);
 
@@ -169,8 +173,7 @@ fn calculate_recency_boost_factor(
         return 1.0;
     };
 
-    let updated_at = chrono::DateTime::from_timestamp_millis(updated_at_ms)
-        .unwrap_or(now);
+    let updated_at = chrono::DateTime::from_timestamp_millis(updated_at_ms).unwrap_or(now);
     let age_hours = (now - updated_at).num_hours() as f32;
     let age_hours = age_hours.max(0.0);
 
@@ -213,8 +216,7 @@ fn score_single_working(
             score += config::TERM_MATCH_BONUS;
             // Additional bonus for multiple occurrences
             let count = content_lower.matches(term).count() as f32;
-            score += (count * config::TERM_OCCURRENCE_BONUS)
-                .min(config::MAX_TERM_OCCURRENCE_BONUS);
+            score += (count * config::TERM_OCCURRENCE_BONUS).min(config::MAX_TERM_OCCURRENCE_BONUS);
         }
     }
 
@@ -288,8 +290,7 @@ fn score_single_episodic(
         if summary_lower.contains(term) {
             score += config::TERM_MATCH_BONUS;
             let count = summary_lower.matches(term).count() as f32;
-            score += (count * config::TERM_OCCURRENCE_BONUS)
-                .min(config::MAX_TERM_OCCURRENCE_BONUS);
+            score += (count * config::TERM_OCCURRENCE_BONUS).min(config::MAX_TERM_OCCURRENCE_BONUS);
         }
     }
 
@@ -311,7 +312,8 @@ fn score_single_episodic(
         let updated_at_ms = Some(session.start_time.timestamp_millis());
 
         // Apply recency boost
-        let recency = calculate_recency_boost_factor(updated_at_ms, now, recency_weight, half_life_hours);
+        let recency =
+            calculate_recency_boost_factor(updated_at_ms, now, recency_weight, half_life_hours);
         final_score *= recency;
 
         Some(ScoredResult {
@@ -377,7 +379,8 @@ fn score_single_semantic(
         let updated_at_ms = Some(entity.last_seen.timestamp_millis());
 
         // Apply recency boost
-        let recency = calculate_recency_boost_factor(updated_at_ms, now, recency_weight, half_life_hours);
+        let recency =
+            calculate_recency_boost_factor(updated_at_ms, now, recency_weight, half_life_hours);
         final_score *= recency;
 
         Some(ScoredResult {
@@ -444,11 +447,7 @@ impl AdaptiveGating {
                 fused.truncate(rerank_limit);
             }
 
-            let _ = crate::search::hooks::SearchHook::post_query(
-                &hook,
-                query,
-                &mut fused,
-            ).await;
+            let _ = crate::search::hooks::SearchHook::post_query(&hook, query, &mut fused).await;
         }
 
         // 5. Filter by threshold
@@ -492,18 +491,33 @@ impl AdaptiveGating {
     }
 
     /// Retrieve only from working memory
-    pub async fn retrieve_working(&self, working: &[MemoryDocument], query: &str) -> Vec<ScoredResult> {
-        self.score_working_layer_at(working, query, chrono::Utc::now()).await
+    pub async fn retrieve_working(
+        &self,
+        working: &[MemoryDocument],
+        query: &str,
+    ) -> Vec<ScoredResult> {
+        self.score_working_layer_at(working, query, chrono::Utc::now())
+            .await
     }
 
     /// Retrieve only from episodic memory
-    pub async fn retrieve_episodic(&self, episodic: &[SessionSummary], query: &str) -> Vec<ScoredResult> {
-        self.score_episodic_layer_at(episodic, query, chrono::Utc::now()).await
+    pub async fn retrieve_episodic(
+        &self,
+        episodic: &[SessionSummary],
+        query: &str,
+    ) -> Vec<ScoredResult> {
+        self.score_episodic_layer_at(episodic, query, chrono::Utc::now())
+            .await
     }
 
     /// Retrieve only from semantic memory
-    pub async fn retrieve_semantic(&self, semantic: &[EntityRecord], query: &str) -> Vec<ScoredResult> {
-        self.score_semantic_layer_at(semantic, query, chrono::Utc::now()).await
+    pub async fn retrieve_semantic(
+        &self,
+        semantic: &[EntityRecord],
+        query: &str,
+    ) -> Vec<ScoredResult> {
+        self.score_semantic_layer_at(semantic, query, chrono::Utc::now())
+            .await
     }
 
     /// Score working memory layer using keyword matching (with parallelism for large sets).
@@ -514,7 +528,10 @@ impl AdaptiveGating {
         now: chrono::DateTime<chrono::Utc>,
     ) -> Vec<ScoredResult> {
         let query_lower = query.to_lowercase();
-        let query_terms_owned: Vec<String> = query_lower.split_whitespace().map(|s| s.to_string()).collect();
+        let query_terms_owned: Vec<String> = query_lower
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
 
         let mut results: Vec<ScoredResult> = if working.len() > 100 {
             let working = working.to_vec();
@@ -586,7 +603,10 @@ impl AdaptiveGating {
         now: chrono::DateTime<chrono::Utc>,
     ) -> Vec<ScoredResult> {
         let query_lower = query.to_lowercase();
-        let query_terms_owned: Vec<String> = query_lower.split_whitespace().map(|s| s.to_string()).collect();
+        let query_terms_owned: Vec<String> = query_lower
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
 
         let mut results: Vec<ScoredResult> = if episodic.len() > 100 {
             let episodic = episodic.to_vec();
@@ -598,7 +618,14 @@ impl AdaptiveGating {
                 episodic
                     .par_iter()
                     .filter_map(|session| {
-                        score_single_episodic(session, &query_lower, &query_terms, now, recency_weight, half_life)
+                        score_single_episodic(
+                            session,
+                            &query_lower,
+                            &query_terms,
+                            now,
+                            recency_weight,
+                            half_life,
+                        )
                     })
                     .collect()
             })
@@ -609,7 +636,14 @@ impl AdaptiveGating {
             episodic
                 .iter()
                 .filter_map(|session| {
-                    score_single_episodic(session, &query_lower, &query_terms, now, self.config.recency_weight, self.config.half_life_hours)
+                    score_single_episodic(
+                        session,
+                        &query_lower,
+                        &query_terms,
+                        now,
+                        self.config.recency_weight,
+                        self.config.half_life_hours,
+                    )
                 })
                 .collect()
         };
@@ -650,7 +684,13 @@ impl AdaptiveGating {
             semantic
                 .iter()
                 .filter_map(|entity| {
-                    score_single_semantic(entity, &query_lower, now, self.config.recency_weight, self.config.half_life_hours)
+                    score_single_semantic(
+                        entity,
+                        &query_lower,
+                        now,
+                        self.config.recency_weight,
+                        self.config.half_life_hours,
+                    )
                 })
                 .collect()
         };
@@ -742,7 +782,10 @@ impl AdaptiveGating {
         source: &str,
     ) -> Vec<ScoredResult> {
         let query_lower = query.to_lowercase();
-        let query_terms_owned: Vec<String> = query_lower.split_whitespace().map(|s| s.to_string()).collect();
+        let query_terms_owned: Vec<String> = query_lower
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect();
 
         let mut results: Vec<ScoredResult> = documents
             .iter()
@@ -783,7 +826,11 @@ impl AdaptiveGating {
             })
             .collect();
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(self.config.max_results);
         results
     }
@@ -793,9 +840,21 @@ impl AdaptiveGating {
 fn query_factuality_score(query: &str) -> f32 {
     let query = query.to_lowercase();
     let keywords = [
-        "what is", "who is", "define", "explain", "meaning",
-        "how does", "what are", "list of", "fact", "describe",
-        "qué es", "quién es", "cómo funciona", "qué son", "definir",
+        "what is",
+        "who is",
+        "define",
+        "explain",
+        "meaning",
+        "how does",
+        "what are",
+        "list of",
+        "fact",
+        "describe",
+        "qué es",
+        "quién es",
+        "cómo funciona",
+        "qué son",
+        "definir",
     ];
 
     let mut score = 0.0_f32;
@@ -811,9 +870,19 @@ fn query_factuality_score(query: &str) -> f32 {
 fn query_procedural_score(query: &str) -> f32 {
     let query = query.to_lowercase();
     let keywords = [
-        "how to", "steps", "procedure", "process", "guide",
-        "how did we", "instructions", "workflow", "method",
-        "cómo hicimos", "pasos", "procedimiento", "instrucciones",
+        "how to",
+        "steps",
+        "procedure",
+        "process",
+        "guide",
+        "how did we",
+        "instructions",
+        "workflow",
+        "method",
+        "cómo hicimos",
+        "pasos",
+        "procedimiento",
+        "instrucciones",
     ];
 
     let mut score = 0.0_f32;
@@ -908,7 +977,9 @@ mod tests {
             },
         ];
 
-        let results = gating.score_working_layer_at(&docs, "BELA", chrono::Utc::now()).await;
+        let results = gating
+            .score_working_layer_at(&docs, "BELA", chrono::Utc::now())
+            .await;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "doc1");
         assert!(results[0].score > 0.0);
@@ -950,7 +1021,9 @@ mod tests {
             },
         ];
 
-        let results = gating.score_semantic_layer_at(&entities, "BELA", chrono::Utc::now()).await;
+        let results = gating
+            .score_semantic_layer_at(&entities, "BELA", chrono::Utc::now())
+            .await;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "entity1");
         // Exact matches (0.5) are boosted by recency (1.3) = 0.65
@@ -973,7 +1046,9 @@ mod tests {
         let sessions: Vec<SessionSummary> = vec![];
         let entities: Vec<EntityRecord> = vec![];
 
-        let results = gating.retrieve(&docs, &sessions, &entities, "BELA", None).await;
+        let results = gating
+            .retrieve(&docs, &sessions, &entities, "BELA", None)
+            .await;
         assert!(!results.is_empty());
         assert_eq!(results[0].source, "hybrid");
     }
@@ -1006,7 +1081,9 @@ mod tests {
             },
         ];
 
-        let results = gating.score_working_layer_at(&docs, "search term", chrono::Utc::now()).await;
+        let results = gating
+            .score_working_layer_at(&docs, "search term", chrono::Utc::now())
+            .await;
 
         assert_eq!(results.len(), 2);
 
@@ -1075,12 +1152,17 @@ mod tests {
     #[test]
     fn test_layer_weights_adaptive() {
         // Factual query
-        let weights = LayerWeights::adaptive("What is the meaning of life?", ContextLevel::Medium, &[]);
+        let weights =
+            LayerWeights::adaptive("What is the meaning of life?", ContextLevel::Medium, &[]);
         assert!(weights.semantic > weights.working);
         assert!(weights.semantic > weights.episodic);
 
         // Procedural query
-        let weights = LayerWeights::adaptive("How did we implement the auth system? Give me the steps.", ContextLevel::Medium, &[]);
+        let weights = LayerWeights::adaptive(
+            "How did we implement the auth system? Give me the steps.",
+            ContextLevel::Medium,
+            &[],
+        );
         assert!(weights.episodic > weights.working);
         assert!(weights.episodic > weights.semantic);
 
@@ -1129,7 +1211,9 @@ mod tests {
             })
             .collect();
 
-        let parallel_results = gating.score_working_layer_at(&docs, "bela", chrono::Utc::now()).await;
+        let parallel_results = gating
+            .score_working_layer_at(&docs, "bela", chrono::Utc::now())
+            .await;
 
         assert_eq!(sequential_results.len(), parallel_results.len());
         for (s, p) in sequential_results.iter().zip(parallel_results.iter()) {

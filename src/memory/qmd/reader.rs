@@ -12,8 +12,8 @@ use crate::memory::qmd_memory::types::{
 };
 use crate::memory::qmd_memory::utils::extract_speakers;
 use crate::memory::qmd_memory::QmdMemory;
-use crate::memory::schema::MemoryQueryFilters;
 use crate::memory::schema::matches_filters;
+use crate::memory::schema::MemoryQueryFilters;
 use crate::utils::crypto::hex_encode;
 
 // ── Embedding cache operations ───────────────────────────────────────

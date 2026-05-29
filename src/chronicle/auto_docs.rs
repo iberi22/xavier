@@ -76,8 +76,12 @@ impl AutoDocsGenerator {
     /// Open the code-graph database
     pub fn open_db(&mut self) -> Result<()> {
         if self.config.code_graph_db.exists() {
-            let db = CodeGraphDB::new(&self.config.code_graph_db)
-                .with_context(|| format!("Failed to open code-graph DB at {:?}", self.config.code_graph_db))?;
+            let db = CodeGraphDB::new(&self.config.code_graph_db).with_context(|| {
+                format!(
+                    "Failed to open code-graph DB at {:?}",
+                    self.config.code_graph_db
+                )
+            })?;
             self.db = Some(db);
             Ok(())
         } else {
@@ -123,7 +127,10 @@ impl AutoDocsGenerator {
 
     /// Generate documentation for a single module
     pub fn generate_for_module(&self, module_name: &str) -> Result<ModuleDoc> {
-        let db = self.db.as_ref().ok_or_else(|| anyhow::anyhow!("DB not opened"))?;
+        let db = self
+            .db
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("DB not opened"))?;
 
         let module_path = self.config.source_root.join(module_name);
         if !module_path.exists() {
@@ -149,7 +156,10 @@ impl AutoDocsGenerator {
         let markdown = self.render_module_doc(module_name, &stats, &all_symbols);
 
         // Write output
-        let output_path = self.config.output_dir.join(format!("{}-module.md", module_name));
+        let output_path = self
+            .config
+            .output_dir
+            .join(format!("{}-module.md", module_name));
         if let Some(parent) = output_path.parent() {
             fs::create_dir_all(parent)
                 .with_context(|| format!("Failed to create output dir: {:?}", parent))?;
@@ -171,7 +181,10 @@ impl AutoDocsGenerator {
 
         let src_path = &self.config.source_root;
         if !src_path.exists() {
-            return Err(anyhow::anyhow!("Source directory not found: {:?}", src_path));
+            return Err(anyhow::anyhow!(
+                "Source directory not found: {:?}",
+                src_path
+            ));
         }
 
         // Read lib.rs to find module declarations
@@ -226,7 +239,9 @@ impl AutoDocsGenerator {
                 if path.is_file() {
                     if let Some(ext) = path.extension() {
                         if ext == "rs" {
-                            if let Ok(rel) = path.strip_prefix(self.config.source_root.parent().unwrap_or(Path::new(""))) {
+                            if let Ok(rel) = path.strip_prefix(
+                                self.config.source_root.parent().unwrap_or(Path::new("")),
+                            ) {
                                 files.push(rel.to_string_lossy().to_string());
                             } else {
                                 files.push(path.to_string_lossy().to_string());
@@ -282,7 +297,9 @@ impl AutoDocsGenerator {
                 _ => {}
             }
             // Count public symbols (heuristic: contains "pub" in signature or starts with pub_)
-            if sym.name.starts_with("pub_") || sym.signature.as_deref().unwrap_or("").contains("pub ") {
+            if sym.name.starts_with("pub_")
+                || sym.signature.as_deref().unwrap_or("").contains("pub ")
+            {
                 public += 1;
             }
         }
@@ -315,7 +332,12 @@ impl AutoDocsGenerator {
     }
 
     /// Render a module's documentation as markdown
-    fn render_module_doc(&self, module_name: &str, stats: &ModuleStats, symbols: &[Symbol]) -> String {
+    fn render_module_doc(
+        &self,
+        module_name: &str,
+        stats: &ModuleStats,
+        symbols: &[Symbol],
+    ) -> String {
         let title = format!("{} Module", capitalize(module_name));
         // Avoid "Module Module" duplication (e.g., "Memory Module" not "Memory Module Module")
         let title = if title.ends_with(" Module Module") {
@@ -323,7 +345,8 @@ impl AutoDocsGenerator {
         } else {
             title
         };
-        let file_list = self.collect_module_files(module_name)
+        let file_list = self
+            .collect_module_files(module_name)
             .unwrap_or_default()
             .iter()
             .map(|f| format!("- `{}`", f))
@@ -367,7 +390,8 @@ impl AutoDocsGenerator {
             md.push_str("| Type | Kind |\n");
             md.push_str("|------|------|\n");
             for sym_name in &stats.key_types {
-                let kind = symbols.iter()
+                let kind = symbols
+                    .iter()
                     .find(|s| s.name == *sym_name)
                     .map(|s| format!("{:?}", s.kind))
                     .unwrap_or_default();
@@ -382,7 +406,8 @@ impl AutoDocsGenerator {
             md.push_str("| Function | Complexity |\n");
             md.push_str("|----------|-----------|\n");
             for sym_name in &stats.key_functions {
-                let complexity = symbols.iter()
+                let complexity = symbols
+                    .iter()
                     .find(|s| s.name == *sym_name)
                     .map(|s| format!("{:.1}", s.complexity.unwrap_or(0.0)))
                     .unwrap_or_else(|| "-".to_string());
@@ -410,13 +435,13 @@ impl AutoDocsGenerator {
             md.push_str("| Name | Kind | File | Complexity |\n");
             md.push_str("|------|------|------|-----------|\n");
             for sym in symbols.iter().take(50) {
-                let short_file = sym.file_path
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or(&sym.file_path);
+                let short_file = sym.file_path.rsplit('/').next().unwrap_or(&sym.file_path);
                 md.push_str(&format!(
                     "| `{}` | {:?} | `{}` | {:.1} |\n",
-                    sym.name, sym.kind, short_file, sym.complexity.unwrap_or(0.0)
+                    sym.name,
+                    sym.kind,
+                    short_file,
+                    sym.complexity.unwrap_or(0.0)
                 ));
             }
             if symbols.len() > 50 {
@@ -431,7 +456,10 @@ impl AutoDocsGenerator {
         // Auto-generated notice
         md.push_str("---\n");
         md.push_str("> _This documentation was auto-generated by `xavier chronicle auto-docs`._\n");
-        md.push_str(&format!("> _Generated on: {}_\n", chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")));
+        md.push_str(&format!(
+            "> _Generated on: {}_\n",
+            chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
+        ));
         md.push_str("> _Run `xavier chronicle auto-docs` to regenerate._\n");
 
         md
@@ -452,11 +480,7 @@ impl AutoDocsGenerator {
             let types_str = doc.stats.key_types.join(", ");
             md.push_str(&format!(
                 "| [{}]({}-module.md) | {} | {} | {} |\n",
-                doc.module,
-                doc.module,
-                doc.stats.total_symbols,
-                doc.stats.total_files,
-                types_str
+                doc.module, doc.module, doc.stats.total_symbols, doc.stats.total_files, types_str
             ));
         }
 
@@ -464,8 +488,9 @@ impl AutoDocsGenerator {
         md.push_str("_Auto-generated. Regenerate with `xavier chronicle auto-docs`._\n");
 
         let output_path = self.config.output_dir.join("README.md");
-        fs::create_dir_all(&self.config.output_dir)
-            .with_context(|| format!("Failed to create output dir: {:?}", self.config.output_dir))?;
+        fs::create_dir_all(&self.config.output_dir).with_context(|| {
+            format!("Failed to create output dir: {:?}", self.config.output_dir)
+        })?;
         fs::write(&output_path, &md)
             .with_context(|| format!("Failed to write index: {:?}", output_path))?;
 
@@ -617,9 +642,14 @@ pub mod search;
                 module: "memory".into(),
                 stats: ModuleStats {
                     module: "memory".into(),
-                    total_symbols: 42, public_symbols: 12,
-                    structs: 5, functions: 20, enums: 2, traits: 3,
-                    total_files: 8, loc_estimate: 1200,
+                    total_symbols: 42,
+                    public_symbols: 12,
+                    structs: 5,
+                    functions: 20,
+                    enums: 2,
+                    traits: 3,
+                    total_files: 8,
+                    loc_estimate: 1200,
                     complexity_hotspots: vec![],
                     key_functions: vec![],
                     key_types: vec!["MemoryItem".into()],
@@ -631,9 +661,14 @@ pub mod search;
                 module: "security".into(),
                 stats: ModuleStats {
                     module: "security".into(),
-                    total_symbols: 18, public_symbols: 6,
-                    structs: 2, functions: 10, enums: 1, traits: 1,
-                    total_files: 4, loc_estimate: 600,
+                    total_symbols: 18,
+                    public_symbols: 6,
+                    structs: 2,
+                    functions: 10,
+                    enums: 1,
+                    traits: 1,
+                    total_files: 4,
+                    loc_estimate: 600,
                     complexity_hotspots: vec![],
                     key_functions: vec![],
                     key_types: vec!["SecurityFilter".into()],

@@ -43,12 +43,32 @@ impl fmt::Display for SystemCapabilities {
         writeln!(f, "  RAM: {:.1} GB", self.ram_gb)?;
         writeln!(f, "  Disk Free: {:.1} GB", self.disk_free_gb)?;
         writeln!(f, "  AVX2: {}", if self.has_avx2 { "✅" } else { "❌" })?;
-        writeln!(f, "  AVX-512: {}", if self.has_avx512 { "✅" } else { "❌" })?;
+        writeln!(
+            f,
+            "  AVX-512: {}",
+            if self.has_avx512 { "✅" } else { "❌" }
+        )?;
         writeln!(f, "  CUDA: {}", if self.has_cuda { "✅" } else { "❌" })?;
-        writeln!(f, "  NVIDIA GPU: {}", if self.has_nvidia_gpu { "✅" } else { "❌" })?;
+        writeln!(
+            f,
+            "  NVIDIA GPU: {}",
+            if self.has_nvidia_gpu { "✅" } else { "❌" }
+        )?;
         writeln!(f, "  Vulkan: {}", if self.has_vulkan { "✅" } else { "❌" })?;
         writeln!(f, "  Metal: {}", if self.has_metal { "✅" } else { "❌" })?;
-        writeln!(f, "  OS: {}", if self.is_windows { "Windows" } else if self.is_linux { "Linux" } else if self.is_macos { "macOS" } else { "Unknown" })
+        writeln!(
+            f,
+            "  OS: {}",
+            if self.is_windows {
+                "Windows"
+            } else if self.is_linux {
+                "Linux"
+            } else if self.is_macos {
+                "macOS"
+            } else {
+                "Unknown"
+            }
+        )
     }
 }
 
@@ -134,9 +154,15 @@ mod cpu_features {
 // Fallback for unknown targets
 #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
 mod cpu_features {
-    pub fn has_avx2() -> bool { false }
-    pub fn has_avx512() -> bool { false }
-    pub fn has_vulkan_gpu() -> bool { false }
+    pub fn has_avx2() -> bool {
+        false
+    }
+    pub fn has_avx512() -> bool {
+        false
+    }
+    pub fn has_vulkan_gpu() -> bool {
+        false
+    }
 }
 
 /// Detect CUDA availability
@@ -269,7 +295,9 @@ fn detect_ram_gb() -> f64 {
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-fn detect_ram_gb() -> f64 { 8.0 }
+fn detect_ram_gb() -> f64 {
+    8.0
+}
 
 /// Detect free disk space using OS-specific APIs
 #[cfg(target_os = "windows")]
@@ -296,7 +324,13 @@ fn detect_disk_free_gb() -> f64 {
         let mut free_bytes: u64 = 0;
         let mut _total_bytes: u64 = 0;
         let mut _total_free: u64 = 0;
-        if GetDiskFreeSpaceExW(path.as_ptr(), &mut free_bytes, &mut _total_bytes, &mut _total_free) != 0 {
+        if GetDiskFreeSpaceExW(
+            path.as_ptr(),
+            &mut free_bytes,
+            &mut _total_bytes,
+            &mut _total_free,
+        ) != 0
+        {
             free_bytes as f64 / (1024.0 * 1024.0 * 1024.0)
         } else {
             10.0
@@ -332,7 +366,8 @@ fn detect_disk_free_gb() -> f64 {
         .ok()
         .and_then(|o| String::from_utf8(o.stdout).ok())
         .and_then(|s| {
-            s.lines().nth(1)
+            s.lines()
+                .nth(1)
                 .and_then(|l| l.split_whitespace().nth(3))
                 .and_then(|v| v.parse::<f64>().ok())
         })
@@ -341,7 +376,9 @@ fn detect_disk_free_gb() -> f64 {
 }
 
 #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
-fn detect_disk_free_gb() -> f64 { 10.0 }
+fn detect_disk_free_gb() -> f64 {
+    10.0
+}
 
 /// Provider status after probing
 #[derive(Debug, Clone)]
@@ -436,10 +473,7 @@ pub async fn probe_providers() -> Vec<ProviderStatus> {
     });
 
     // 5. Check local embedding server (e.g., text-embeddings-inference)
-    let local_embed = HTTP_CLIENT
-        .get("http://localhost:8080/health")
-        .send()
-        .await;
+    let local_embed = HTTP_CLIENT.get("http://localhost:8080/health").send().await;
     providers.push(match local_embed {
         Ok(r) if r.status().is_success() => ProviderStatus {
             name: "local-embed-server".into(),

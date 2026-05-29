@@ -1076,8 +1076,12 @@ impl WorkspaceState {
             return Ok(None);
         };
 
-        let normalized =
-            crate::memory::schema::normalize_metadata(&path, metadata, &self.config.id, typed.as_ref())?;
+        let normalized = crate::memory::schema::normalize_metadata(
+            &path,
+            metadata,
+            &self.config.id,
+            typed.as_ref(),
+        )?;
         let mut document = crate::memory::qmd_memory::MemoryDocument {
             id: existing.id.clone(),
             path,

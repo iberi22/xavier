@@ -69,11 +69,7 @@ pub struct AuditEntry {
 }
 
 impl AuditEntry {
-    pub fn new(
-        tenant_id: TenantId,
-        action: AuditAction,
-        resource: impl Into<String>,
-    ) -> Self {
+    pub fn new(tenant_id: TenantId, action: AuditAction, resource: impl Into<String>) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
@@ -155,7 +151,9 @@ impl AuditLog {
     ) -> &AuditEntry {
         let entry = AuditEntry::new(tenant_id, action, resource);
         self.log(entry);
-        self.entries.back().expect("audit_log: record called on empty log after push")
+        self.entries
+            .back()
+            .expect("audit_log: record called on empty log after push")
     }
 
     /// Get entries for a tenant
@@ -191,9 +189,7 @@ impl AuditLog {
     ) -> Vec<&AuditEntry> {
         self.entries
             .iter()
-            .filter(|e| {
-                e.tenant_id == *tenant_id && e.timestamp >= start && e.timestamp <= end
-            })
+            .filter(|e| e.tenant_id == *tenant_id && e.timestamp >= start && e.timestamp <= end)
             .collect()
     }
 

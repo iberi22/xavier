@@ -61,9 +61,8 @@ fn resolve_xavier_url_for_sync() -> String {
     // 2. XAVIER_HOST + XAVIER_PORT env vars assembled
     // 3. Settings default
     std::env::var("XAVIER_URL").unwrap_or_else(|_| {
-        let host = std::env::var("XAVIER_HOST").unwrap_or_else(|_| {
-            XavierSettings::current().server.host
-        });
+        let host =
+            std::env::var("XAVIER_HOST").unwrap_or_else(|_| XavierSettings::current().server.host);
         let port = std::env::var("XAVIER_PORT")
             .ok()
             .and_then(|v| v.parse::<u16>().ok())
@@ -514,8 +513,7 @@ impl Default for SessionSyncTask {
                 .unwrap_or(DEFAULT_SYNC_TIMEOUT_MS),
             health_port: Arc::new({
                 let default_url = resolve_xavier_url_for_sync();
-                let url_str = std::env::var("XAVIER_URL")
-                    .unwrap_or_else(|_| default_url.clone());
+                let url_str = std::env::var("XAVIER_URL").unwrap_or_else(|_| default_url.clone());
 
                 // Validate internal URL to prevent SSRF
                 let final_url = match crate::security::url_validator::validate_internal_url(

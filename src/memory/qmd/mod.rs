@@ -21,7 +21,7 @@ pub use types::*;
 pub use utils::*;
 pub use writer::*;
 
-use crate::memory::schema::{MemoryQueryFilters, TypedMemoryPayload, matches_filters};
+use crate::memory::schema::{matches_filters, MemoryQueryFilters, TypedMemoryPayload};
 use crate::memory::store::MemoryStore;
 
 #[derive(Clone)]
@@ -570,8 +570,7 @@ mod tests {
             .add(MemoryDocument {
                 id: Some("kw-doc".to_string()),
                 path: "docs/keyword".to_string(),
-                content: "Alice moved to Paris in 2020 to work as a software engineer."
-                    .to_string(),
+                content: "Alice moved to Paris in 2020 to work as a software engineer.".to_string(),
                 metadata: serde_json::json!({}),
                 content_vector: Some(vec![0.0, 1.0]),
                 embedding: vec![0.0, 1.0],

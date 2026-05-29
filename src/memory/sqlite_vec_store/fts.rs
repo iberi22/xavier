@@ -38,9 +38,7 @@ pub fn build_fts_query(query: &str) -> Option<String> {
             .filter_map(|token| {
                 let escaped = token
                     .chars()
-                    .filter(|ch| {
-                        ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/')
-                    })
+                    .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/'))
                     .collect::<String>();
                 if escaped.is_empty() {
                     None

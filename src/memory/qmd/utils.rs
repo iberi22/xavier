@@ -155,9 +155,7 @@ pub fn resolve_pronouns(query: &str, speakers: &[String]) -> String {
     if query.to_lowercase().contains("he") {
         let male_candidates: Vec<_> = speakers.iter().filter(|s| is_male_name(s)).collect();
         if male_candidates.len() == 1 {
-            resolved = HE_RE
-                .replace_all(&resolved, male_candidates[0])
-                .to_string();
+            resolved = HE_RE.replace_all(&resolved, male_candidates[0]).to_string();
         }
     }
 

@@ -66,44 +66,48 @@ impl VirtualMemory {
 
             while let Some((rel, depth)) = queue.pop_front() {
                 let source_id = rel.provenance_id.clone();
-                if source_id != "unknown"
-                    && !seen_ids.contains(&source_id) {
-                        if let Ok(Some(doc)) = self.memory.get(&source_id).await {
-                            // Expansion: If this belongs to a cluster, pull cluster siblings
-                            if let Some(cluster_id) = &doc.cluster_id {
-                                let mut sibling_filters = filters.cloned().unwrap_or_default();
-                                sibling_filters.cluster_ids = Some(vec![cluster_id.clone()]);
+                if source_id != "unknown" && !seen_ids.contains(&source_id) {
+                    if let Ok(Some(doc)) = self.memory.get(&source_id).await {
+                        // Expansion: If this belongs to a cluster, pull cluster siblings
+                        if let Some(cluster_id) = &doc.cluster_id {
+                            let mut sibling_filters = filters.cloned().unwrap_or_default();
+                            sibling_filters.cluster_ids = Some(vec![cluster_id.clone()]);
 
-                                if let Ok(siblings) = self
-                                    .memory
-                                    .search_filtered(query, 5, Some(&sibling_filters))
-                                    .await
-                                {
-                                    for sibling in siblings {
-                                        let sibling_id = sibling.id.clone().unwrap_or_else(|| sibling.path.clone());
-                                        if !seen_ids.contains(&sibling_id) {
-                                            let mut entry = VirtualMemoryEntry::new(sibling.path, sibling.content, sibling.metadata);
-                                            if let Some(id) = sibling.id {
-                                                entry.id = id;
-                                            }
-                                            entries.push(entry);
-                                            seen_ids.insert(sibling_id);
+                            if let Ok(siblings) = self
+                                .memory
+                                .search_filtered(query, 5, Some(&sibling_filters))
+                                .await
+                            {
+                                for sibling in siblings {
+                                    let sibling_id =
+                                        sibling.id.clone().unwrap_or_else(|| sibling.path.clone());
+                                    if !seen_ids.contains(&sibling_id) {
+                                        let mut entry = VirtualMemoryEntry::new(
+                                            sibling.path,
+                                            sibling.content,
+                                            sibling.metadata,
+                                        );
+                                        if let Some(id) = sibling.id {
+                                            entry.id = id;
                                         }
+                                        entries.push(entry);
+                                        seen_ids.insert(sibling_id);
                                     }
                                 }
                             }
+                        }
 
-                            if !seen_ids.contains(&source_id) {
-                                let mut entry =
-                                    VirtualMemoryEntry::new(doc.path, doc.content, doc.metadata);
-                                if let Some(doc_id) = doc.id.clone() {
-                                    entry.id = doc_id;
-                                }
-                                entries.push(entry);
-                                seen_ids.insert(source_id);
+                        if !seen_ids.contains(&source_id) {
+                            let mut entry =
+                                VirtualMemoryEntry::new(doc.path, doc.content, doc.metadata);
+                            if let Some(doc_id) = doc.id.clone() {
+                                entry.id = doc_id;
                             }
+                            entries.push(entry);
+                            seen_ids.insert(source_id);
                         }
                     }
+                }
 
                 if entries.len() >= limit {
                     break;
@@ -135,8 +139,7 @@ impl VirtualMemory {
                     if !seen_ids.contains(&doc_id) {
                         // Expansion: If this belongs to a cluster, pull cluster siblings
                         if let Some(cluster_id) = &doc.cluster_id {
-                            let mut sibling_filters =
-                                filters.cloned().unwrap_or_default();
+                            let mut sibling_filters = filters.cloned().unwrap_or_default();
                             sibling_filters.cluster_ids = Some(vec![cluster_id.clone()]);
 
                             if let Ok(siblings) = self
@@ -389,6 +392,10 @@ mod tests {
 
         let savings = TokenSavings::calculate(&original, &entry);
 
-        assert!(savings.reduction_percent > 90.0, "Should save >90% tokens, got {}", savings.reduction_percent);
+        assert!(
+            savings.reduction_percent > 90.0,
+            "Should save >90% tokens, got {}",
+            savings.reduction_percent
+        );
     }
 }

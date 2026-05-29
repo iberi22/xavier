@@ -7,13 +7,13 @@
 //! - API key management
 //! - Rate limiting
 
-pub mod tenancy;
-pub mod rbac;
 pub mod audit;
-pub mod keys;
-pub mod rate_limit;
 #[cfg(feature = "enterprise")]
 pub mod http;
+pub mod keys;
+pub mod rate_limit;
+pub mod rbac;
+pub mod tenancy;
 #[cfg(not(feature = "enterprise"))]
 pub mod http {
     pub fn enterprise_router() -> axum::Router {
@@ -24,8 +24,8 @@ pub mod persistence;
 #[cfg(test)]
 pub mod tests;
 
-pub use tenancy::{Tenant, TenantId, Plan, TenantStore};
-pub use rbac::{Permission, Role, RoleGuard, PermissionCheck};
-pub use audit::{AuditEntry, AuditLog, AuditAction};
+pub use audit::{AuditAction, AuditEntry, AuditLog};
 pub use keys::{ApiKey, ApiKeyStore, ApiKeyType};
-pub use rate_limit::{RateLimiter, RateLimitConfig, RateLimitResult, RateLimitKey};
+pub use rate_limit::{RateLimitConfig, RateLimitKey, RateLimitResult, RateLimiter};
+pub use rbac::{Permission, PermissionCheck, Role, RoleGuard};
+pub use tenancy::{Plan, Tenant, TenantId, TenantStore};

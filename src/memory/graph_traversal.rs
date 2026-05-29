@@ -1,5 +1,5 @@
-use crate::memory::belief_graph::BeliefGraph;
 use crate::domain::memory::belief::BeliefEdge;
+use crate::memory::belief_graph::BeliefGraph;
 
 pub struct Pathfinder<'a> {
     graph: &'a BeliefGraph,
@@ -28,13 +28,12 @@ impl<'a> Pathfinder<'a> {
             }
 
             for relation in &relations {
-                if relation.source == current
-                    && !visited.contains(&relation.target) {
-                        visited.insert(relation.target.clone());
-                        let mut new_path = path.clone();
-                        new_path.push(relation.clone());
-                        queue.push_back((relation.target.clone(), new_path));
-                    }
+                if relation.source == current && !visited.contains(&relation.target) {
+                    visited.insert(relation.target.clone());
+                    let mut new_path = path.clone();
+                    new_path.push(relation.clone());
+                    queue.push_back((relation.target.clone(), new_path));
+                }
             }
         }
 
@@ -141,10 +140,46 @@ mod tests {
         graph.add_node("C".to_string(), 1.0);
         graph.add_node("D".to_string(), 1.0);
 
-        graph.add_relation("A".to_string(), "B".to_string(), "related_to".to_string(), Some("mem1".to_string()), None).await.unwrap();
-        graph.add_relation("B".to_string(), "C".to_string(), "related_to".to_string(), Some("mem2".to_string()), None).await.unwrap();
-        graph.add_relation("A".to_string(), "D".to_string(), "related_to".to_string(), Some("mem3".to_string()), None).await.unwrap();
-        graph.add_relation("D".to_string(), "C".to_string(), "related_to".to_string(), Some("mem4".to_string()), None).await.unwrap();
+        graph
+            .add_relation(
+                "A".to_string(),
+                "B".to_string(),
+                "related_to".to_string(),
+                Some("mem1".to_string()),
+                None,
+            )
+            .await
+            .unwrap();
+        graph
+            .add_relation(
+                "B".to_string(),
+                "C".to_string(),
+                "related_to".to_string(),
+                Some("mem2".to_string()),
+                None,
+            )
+            .await
+            .unwrap();
+        graph
+            .add_relation(
+                "A".to_string(),
+                "D".to_string(),
+                "related_to".to_string(),
+                Some("mem3".to_string()),
+                None,
+            )
+            .await
+            .unwrap();
+        graph
+            .add_relation(
+                "D".to_string(),
+                "C".to_string(),
+                "related_to".to_string(),
+                Some("mem4".to_string()),
+                None,
+            )
+            .await
+            .unwrap();
 
         let pathfinder = Pathfinder::new(&graph);
 

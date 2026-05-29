@@ -1,13 +1,15 @@
-use std::sync::Arc;
 use parking_lot::Mutex;
-use std::collections::HashMap;
-use tracing::{info, warn};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tracing::{info, warn};
 
-use crate::domain::proxy::{ChatChoice, ChatCompletion, ChatMessage, ProxyChatCommand, ProxyError, Usage};
+use crate::agents::provider::{ModelProviderClient, ModelProviderConfig, LLM_TIMEOUT};
 use crate::agents::rate_limit::RateLimitManager;
 use crate::agents::router::{load_routing_policy, RouteCategory, Router};
-use crate::agents::provider::{ModelProviderClient, ModelProviderConfig, LLM_TIMEOUT};
+use crate::domain::proxy::{
+    ChatChoice, ChatCompletion, ChatMessage, ProxyChatCommand, ProxyError, Usage,
+};
 use crate::ports::outbound::ThreatDetectionPort;
 
 pub struct ProxyUseCase {
@@ -40,12 +42,15 @@ impl ProxyUseCase {
         if let Some(ref detector) = self.threat_detector {
             for msg in &cmd.messages {
                 if let Some(content) = msg["content"].as_str() {
-                    let clean = detector.scan_and_log(content, "proxy").await
-                        .map_err(|e| ProxyError::ProviderError(format!("Security check failed: {}", e)))?;
+                    let clean = detector.scan_and_log(content, "proxy").await.map_err(|e| {
+                        ProxyError::ProviderError(format!("Security check failed: {}", e))
+                    })?;
 
                     if !clean {
                         warn!("Proxy request blocked: security threat detected");
-                        return Err(ProxyError::ProviderError("Security policy violation detected".to_string()));
+                        return Err(ProxyError::ProviderError(
+                            "Security policy violation detected".to_string(),
+                        ));
                     }
                 }
             }
@@ -119,14 +124,17 @@ impl ProxyUseCase {
 
         let user_msg = cmd
             .messages
-            .iter().rfind(|m| m["role"] == "user")
+            .iter()
+            .rfind(|m| m["role"] == "user")
             .and_then(|m| m["content"].as_str())
             .unwrap_or("");
 
         let policy = load_routing_policy();
         let decision = self.router.classify(user_msg);
 
-        if decision.category == RouteCategory::Direct || decision.category == RouteCategory::Retrieved {
+        if decision.category == RouteCategory::Direct
+            || decision.category == RouteCategory::Retrieved
+        {
             if let Some(ref p) = policy {
                 let quality_model = p.models.quality.first().map(|m| m.name.clone());
                 let fast_model = p.models.fast.first().map(|m| m.name.clone());
@@ -160,7 +168,8 @@ impl ProxyUseCase {
 
                 let mut cost_usd = 0.0;
                 if let Some(ref p) = policy {
-                    let matched_policy = if p.models.fast.iter().any(|m| m.name == requested_model) {
+                    let matched_policy = if p.models.fast.iter().any(|m| m.name == requested_model)
+                    {
                         p.models.fast.first()
                     } else if p.models.quality.iter().any(|m| m.name == requested_model) {
                         p.models.quality.first()
@@ -215,7 +224,11 @@ impl ProxyUseCase {
                     {
                         warn!("Failed to track timeout request: {}", track_err);
                     }
-                    Err(ProxyError::ProviderError(format!("Provider {} timed out after {}s", provider_name, LLM_TIMEOUT.as_secs())))
+                    Err(ProxyError::ProviderError(format!(
+                        "Provider {} timed out after {}s",
+                        provider_name,
+                        LLM_TIMEOUT.as_secs()
+                    )))
                 } else {
                     warn!("Provider {} failed: {}", provider_name, e);
                     if let Err(track_err) = self
@@ -237,10 +250,12 @@ impl ProxyUseCase {
                 {
                     warn!("Failed to track timeout request: {}", track_err);
                 }
-                Err(ProxyError::ProviderError(format!("Provider {} timed out after {}s", provider_name, LLM_TIMEOUT.as_secs())))
+                Err(ProxyError::ProviderError(format!(
+                    "Provider {} timed out after {}s",
+                    provider_name,
+                    LLM_TIMEOUT.as_secs()
+                )))
             }
         }
     }
 }
-
-

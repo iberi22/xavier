@@ -137,9 +137,7 @@ impl TenantStore {
 
     /// Delete tenant
     pub fn delete(&mut self, id: &TenantId) -> Result<Tenant, TenantError> {
-        self.tenants
-            .remove(id)
-            .ok_or(TenantError::NotFound(*id))
+        self.tenants.remove(id).ok_or(TenantError::NotFound(*id))
     }
 
     /// Check if tenant exists
@@ -170,12 +168,12 @@ impl Default for TenantStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_tenant_creation() {
         let mut store = TenantStore::new();
         let tenant = store.create("Test Tenant", Plan::Pro);
-        
+
         assert_eq!(tenant.name, "Test Tenant");
         assert_eq!(tenant.plan, Plan::Pro);
         assert!(store.exists(&tenant.id));
@@ -186,7 +184,7 @@ mod tests {
         assert_eq!(Plan::Free.memory_limit(), 100);
         assert_eq!(Plan::Pro.memory_limit(), 10_000);
         assert_eq!(Plan::Enterprise.memory_limit(), usize::MAX);
-        
+
         assert_eq!(Plan::Free.rate_limit_rpm(), 30);
         assert_eq!(Plan::Pro.rate_limit_rpm(), 120);
         assert_eq!(Plan::Enterprise.rate_limit_rpm(), 1000);

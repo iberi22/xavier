@@ -1,8 +1,8 @@
-use anyhow::{Result};
-use libsql::{params, Connection};
-use sha2::{Digest, Sha256};
 use crate::memory::store::MemoryRecord;
 use crate::server::events::RealtimeEvent;
+use anyhow::Result;
+use libsql::{params, Connection};
+use sha2::{Digest, Sha256};
 
 use super::VecSqliteMemoryStore;
 
@@ -17,7 +17,11 @@ impl VecSqliteMemoryStore {
             return Ok(());
         }
 
-        let mut seq_stmt = conn.prepare("SELECT COALESCE(MAX(sequence), 0) + 1 FROM timeline_events WHERE workspace_id = ?").await?;
+        let seq_stmt = conn
+            .prepare(
+                "SELECT COALESCE(MAX(sequence), 0) + 1 FROM timeline_events WHERE workspace_id = ?",
+            )
+            .await?;
         let mut seq_rows = seq_stmt.query(params![workspace_id]).await?;
         let next_sequence: i64 = if let Some(row) = seq_rows.next().await? {
             row.get::<i64>(0).unwrap_or(1)
@@ -25,13 +29,17 @@ impl VecSqliteMemoryStore {
             1
         };
 
-        let mut hash_stmt = conn.prepare("SELECT id, curr_hash FROM timeline_events WHERE workspace_id = ? ORDER BY sequence DESC, id DESC LIMIT 1").await?;
+        let hash_stmt = conn.prepare("SELECT id, curr_hash FROM timeline_events WHERE workspace_id = ? ORDER BY sequence DESC, id DESC LIMIT 1").await?;
         let mut hash_rows = hash_stmt.query(params![workspace_id]).await?;
-        let (previous_event_id, previous_hash): (Option<String>, Option<String>) = if let Some(row) = hash_rows.next().await? {
-            (row.get::<Option<String>>(0).ok().flatten(), row.get::<Option<String>>(1).ok().flatten())
-        } else {
-            (None, None)
-        };
+        let (previous_event_id, previous_hash): (Option<String>, Option<String>) =
+            if let Some(row) = hash_rows.next().await? {
+                (
+                    row.get::<Option<String>>(0).ok().flatten(),
+                    row.get::<Option<String>>(1).ok().flatten(),
+                )
+            } else {
+                (None, None)
+            };
 
         let event_id = ulid::Ulid::new().to_string();
         let timestamp = chrono::Utc::now().to_rfc3339();
@@ -49,7 +57,11 @@ impl VecSqliteMemoryStore {
             .unwrap_or("unknown")
             .to_string();
 
-        let operation = if record.revision > 1 { "update" } else { "create" };
+        let operation = if record.revision > 1 {
+            "update"
+        } else {
+            "create"
+        };
         let content_hash = format!("{:x}", Sha256::digest(record.content.as_bytes()));
         let curr_hash = format!(
             "{:x}",
@@ -112,7 +124,7 @@ impl VecSqliteMemoryStore {
         since: &str,
     ) -> Result<Vec<RealtimeEvent>> {
         let conn = self.pool.get().await?;
-        let mut stmt = conn.prepare(
+        let stmt = conn.prepare(
             "SELECT id, memory_id, sequence, timestamp, operation, summary, details, agent_id FROM timeline_events 
              WHERE workspace_id = ? AND timestamp > ? ORDER BY sequence ASC",
         ).await?;

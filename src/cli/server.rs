@@ -3,12 +3,13 @@
 use anyhow::{anyhow, Result};
 use axum::{
     body::Body,
+    extract::Query,
     extract::{DefaultBodyLimit, Path as AxumPath, State},
     http::{HeaderMap, Request, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router, extract::Query,
+    Json, Router,
 };
 
 use serde::{Deserialize, Serialize};
@@ -24,13 +25,13 @@ use super::code_graph::{code_find_symbols, filter_symbols_by_query};
 use super::security::{secure_cli_input, secure_external_input, secure_optional_request_field};
 use super::utils::estimate_tokens;
 use crate::cli::config::{
-    code_graph_db_path, resolve_base_url, resolve_base_url_for_port, resolve_http_bind_host, resolve_http_token, state_panel_root, xavier_token,
+    code_graph_db_path, resolve_base_url, resolve_base_url_for_port, resolve_http_bind_host,
+    resolve_http_token, state_panel_root, xavier_token,
 };
-use std::time::Instant;
-use crate::settings::XavierSettings;
 use crate::cli::state::CliState;
 use crate::onboarding;
-use xavier::embedding::build_embedder_from_env;
+use crate::settings::XavierSettings;
+use std::time::Instant;
 use xavier::adapters::inbound::http::routes::{
     sync_check_handler, time_metric_handler, verify_save_handler,
 };
@@ -38,16 +39,19 @@ use xavier::adapters::outbound::http_health_adapter::HttpHealthAdapter;
 use xavier::agents::rate_limit::RateLimitManager;
 use xavier::app::proxy_use_case::ProxyUseCase;
 use xavier::app::qmd_memory_adapter::QmdMemoryAdapter;
+use xavier::app::security_service::SecurityService as AppSecurityService;
 use xavier::coordination::SimpleAgentRegistry;
 use xavier::coordination::{KeyLendingEngine, XavierEventBus};
+use xavier::embedding::build_embedder_from_env;
 use xavier::memory::qmd_memory::{MemoryDocument, QmdMemory};
-use xavier::app::security_service::SecurityService as AppSecurityService;
 use xavier::memory::schema::{ContextZone, MemoryLevel, MemoryQueryFilters};
 use xavier::memory::session_store::{PanelMessage, SessionStore};
 use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
 use xavier::memory::store::{MemoryRecord, MemoryStore};
 use xavier::ports::inbound::input_security_port::SecureInputResult;
-use xavier::ports::inbound::{AgentLifecyclePort, InputSecurityPort, MemoryQueryPort, TimeMetricsPort};
+use xavier::ports::inbound::{
+    AgentLifecyclePort, InputSecurityPort, MemoryQueryPort, TimeMetricsPort,
+};
 use xavier::ports::outbound::schema_init::SchemaInitializer;
 use xavier::security::threat_store::SecurityThreatStore;
 use xavier::server::panel::{
@@ -70,8 +74,10 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         info!("No config found — running auto-onboarding scan...");
         let engine = onboarding::OnboardingEngine { auto_apply: true };
         match engine.scan_and_configure().await {
-            Ok(report) => info!("Auto-onboard complete: embedder={}, {} cores, {:.1}GB RAM",
-                report.embedder, report.system.cpu_cores, report.system.ram_gb),
+            Ok(report) => info!(
+                "Auto-onboard complete: embedder={}, {} cores, {:.1}GB RAM",
+                report.embedder, report.system.cpu_cores, report.system.ram_gb
+            ),
             Err(e) => warn!("Auto-onboard failed (continuing anyway): {}", e),
         }
     } else {
@@ -98,7 +104,9 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     let libsql_pool = store.get_pool();
 
     let time_store = Arc::new(TimeMetricsStore::new(libsql_pool.clone()));
-    let audit_logger = Arc::new(xavier::secrets::audit::QmdAuditLogger::new(libsql_pool.clone()));
+    let audit_logger = Arc::new(xavier::secrets::audit::QmdAuditLogger::new(
+        libsql_pool.clone(),
+    ));
     let rate_manager = Arc::new(RateLimitManager::new(libsql_pool.clone()));
     let threat_store = Arc::new(SecurityThreatStore::new(libsql_pool.clone()));
 
@@ -142,7 +150,8 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .build()
         .map_err(|e| anyhow!("Failed to build HTTP client: {}", e))?;
 
-    let embedder = build_embedder_from_env().await
+    let embedder = build_embedder_from_env()
+        .await
         .map_err(|e| anyhow!("Failed to build embedder: {}", e))?;
 
     // Register global time metrics port for HTTP handler (wrap in adapter)
@@ -329,7 +338,10 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/v1/usage/summary/{provider}", get(usage_summary_handler))
         // FIX A006: Increase body size limit to 10MB for large documents
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
-        .layer(middleware::from_fn_with_state(state.clone(), rate_limit_middleware))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit_middleware,
+        ))
         .layer(middleware::from_fn(auth_middleware));
 
     // FIX A006: Apply 10MB body limit only to routes that ingest large documents
@@ -339,7 +351,10 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/panel/api/chat", post(panel_process_chat))
         .route("/code/scan", post(code_scan_handler))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
-        .layer(middleware::from_fn_with_state(state.clone(), rate_limit_middleware))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit_middleware,
+        ))
         .layer(middleware::from_fn(auth_middleware));
 
     // Add enterprise plugin routes if feature is enabled
@@ -369,13 +384,10 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     // Merge enterprise HTTP API routes when feature is enabled, under auth
     #[cfg(feature = "enterprise")]
     let app = {
-        use xavier::enterprise::http::{enterprise_router, EnterpriseState};
         use std::sync::{Arc, Mutex};
+        use xavier::enterprise::http::{enterprise_router, EnterpriseState};
         let enterprise_state = Arc::new(Mutex::new(EnterpriseState::init_default()));
-        app.merge(
-            enterprise_router(enterprise_state)
-                .layer(middleware::from_fn(auth_middleware))
-        )
+        app.merge(enterprise_router(enterprise_state).layer(middleware::from_fn(auth_middleware)))
     };
 
     let listener = TcpListener::bind(&bind_addr).await?;
@@ -438,8 +450,11 @@ pub async fn health_handler(State(state): State<CliState>) -> Response {
         .filter(|v| !v.is_empty())
         .unwrap_or_else(|| {
             // Auto-detect based on configured env vars
-            if std::env::var("XAVIER_EMBEDDER").ok().map(|v| v.trim().to_ascii_lowercase())
-                .as_deref() == Some("gllm")
+            if std::env::var("XAVIER_EMBEDDER")
+                .ok()
+                .map(|v| v.trim().to_ascii_lowercase())
+                .as_deref()
+                == Some("gllm")
                 || std::env::var("XAVIER_GLLM_MODEL").is_ok()
             {
                 "gllm".to_string()
@@ -644,15 +659,12 @@ async fn embed_handler(
     State(state): State<CliState>,
     Json(body): Json<serde_json::Value>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
-    let input = body
-        .get("input")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| {
-            (
-                StatusCode::BAD_REQUEST,
-                Json(serde_json::json!({"error": "Missing 'input' field"})),
-            )
-        })?;
+    let input = body.get("input").and_then(|v| v.as_str()).ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "Missing 'input' field"})),
+        )
+    })?;
 
     let model = body
         .get("model")
@@ -826,8 +838,16 @@ pub async fn export_pack_handler(
 
     // In CLI server mode, we need to gather all documents from the memory port
     let all_docs = match state.store.list(&state.workspace_id).await {
-        Ok(records) => records.into_iter().map(|r| r.to_document()).collect::<Vec<_>>(),
-        Err(e) => return json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({ "error": e.to_string() })),
+        Ok(records) => records
+            .into_iter()
+            .map(|r| r.to_document())
+            .collect::<Vec<_>>(),
+        Err(e) => {
+            return json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "error": e.to_string() }),
+            )
+        }
     };
 
     let episodic_summaries = state
@@ -850,21 +870,26 @@ pub async fn export_pack_handler(
     // Let's see if we can get entities.
     let semantic_entities = Vec::new(); // Fallback for now if not easily available in CliState
 
-    let layered_result = gating.retrieve_layered(
-        &all_docs,
-        &episodic_summaries,
-        &semantic_entities,
-        &payload.topic,
-    ).await;
+    let layered_result = gating
+        .retrieve_layered(
+            &all_docs,
+            &episodic_summaries,
+            &semantic_entities,
+            &payload.topic,
+        )
+        .await;
 
     let xml = xavier::memory::pack::generate_xcp(layered_result, payload.max_level);
     let filename = format!("context-{}.xcp", payload.topic.replace(" ", "_"));
 
-    json_response(StatusCode::OK, serde_json::json!({
-        "status": "ok",
-        "xml": xml,
-        "filename": filename,
-    }))
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "status": "ok",
+            "xml": xml,
+            "filename": filename,
+        }),
+    )
 }
 
 pub async fn panel_get_thread(
@@ -1024,7 +1049,8 @@ pub async fn search_handler(
         .unwrap_or_else(|| xavier::memory::schema::parse_zones_from_prompt(effective_query));
     filters.zones = Some(zones);
 
-    let results: Vec<MemoryRecord> = match state.memory.search(effective_query, Some(filters)).await {
+    let results: Vec<MemoryRecord> = match state.memory.search(effective_query, Some(filters)).await
+    {
         Ok(results) => results,
         Err(e) => {
             info!("Search error: {}", e);
@@ -1109,9 +1135,16 @@ pub async fn add_handler(
     // Hierarchical fields
     let cluster_id = payload.cluster_id.clone();
     let level = payload
-        .level.map(|l| xavier::memory::schema::MemoryLevel::parse(&l))
+        .level
+        .map(|l| xavier::memory::schema::MemoryLevel::parse(&l))
         .unwrap_or(MemoryLevel::Raw);
-    let relation = payload.relation.clone().map(|r| xavier::memory::schema::RelationKind { name: r, inverse: None });
+    let relation = payload
+        .relation
+        .clone()
+        .map(|r| xavier::memory::schema::RelationKind {
+            name: r,
+            inverse: None,
+        });
 
     // Add title to metadata if provided
     if let Some(title) = payload.title {
@@ -1156,7 +1189,8 @@ pub async fn add_handler(
                     "sanitized": sec_result.sanitized_input.is_some(),
                     "attack_type": sec_result.attack_type,
                 }
-            })).into_response()
+            }))
+            .into_response()
         }
         Err(e) => {
             info!("Add memory error: {}", e);
@@ -2183,16 +2217,13 @@ pub async fn agent_push_context_handler(
         }));
     }
 
-    let context = match secure_external_input(
-        state.security.as_ref(),
-        "agent context",
-        &payload.context,
-    )
-    .await
-    {
-        Ok(context) => context,
-        Err(response) => return axum::Json(response),
-    };
+    let context =
+        match secure_external_input(state.security.as_ref(), "agent context", &payload.context)
+            .await
+        {
+            Ok(context) => context,
+            Err(response) => return axum::Json(response),
+        };
 
     // Store context in memory at agents/{id}/context
     let path = format!("agents/{}/context", agent_id);
@@ -2492,7 +2523,6 @@ pub(crate) struct AgentPushContextPayload {
     context: String,
     metadata: Option<serde_json::Value>,
 }
-
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ExportPayload {

@@ -220,8 +220,7 @@ impl EmbeddingCache {
         let (blob, created_at) = row.ok()?;
 
         // Check TTL expiry.
-        if let Ok(parsed) =
-            chrono::NaiveDateTime::parse_from_str(&created_at, "%Y-%m-%d %H:%M:%S")
+        if let Ok(parsed) = chrono::NaiveDateTime::parse_from_str(&created_at, "%Y-%m-%d %H:%M:%S")
         {
             let now = chrono::Utc::now().naive_utc();
             let ttl_secs = (self.config.ttl_hours as i64) * 3600;
@@ -256,10 +255,7 @@ impl EmbeddingCache {
         }
 
         // Convert the embedding to a byte blob.
-        let blob: Vec<u8> = embedding
-            .iter()
-            .flat_map(|v| v.to_le_bytes())
-            .collect();
+        let blob: Vec<u8> = embedding.iter().flat_map(|v| v.to_le_bytes()).collect();
 
         let mut guard = self.db.lock();
 
@@ -328,7 +324,10 @@ impl CachedEmbedder {
 
     /// Wrap `embedder` with a specific cache configuration.
     pub fn new(embedder: Arc<dyn Embedder>, cache: Arc<EmbeddingCache>) -> Self {
-        Self { inner: embedder, cache }
+        Self {
+            inner: embedder,
+            cache,
+        }
     }
 
     /// Return a reference to the underlying cache (for diagnostics / admin).

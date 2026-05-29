@@ -144,4 +144,3 @@ mod tests {
         assert!(output.contains("[internal-service]"));
     }
 }
-

@@ -6,12 +6,12 @@
 
 use anyhow::{anyhow, Context, Result};
 use libsql::{Connection, Database};
+use parking_lot::Mutex;
 use std::collections::VecDeque;
 use std::ops::Deref;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-use parking_lot::Mutex;
 
 /// Configuration for the libSQL connection pool
 #[derive(Debug, Clone)]
@@ -175,5 +175,3 @@ impl Drop for PooledConnection {
         }
     }
 }
-
-

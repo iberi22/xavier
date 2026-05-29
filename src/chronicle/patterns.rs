@@ -36,4 +36,3 @@ pub const REDACTION_PATTERNS: &[(&str, &str)] = &[
         "[vulnerability-patched]",
     ),
 ];
-

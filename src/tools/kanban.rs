@@ -713,9 +713,15 @@ mod tests {
         }
 
         // Restore env vars
-        if let Some(v) = prev_host { std::env::set_var("PLANKKA_HOST", v); }
-        if let Some(v) = prev_email { std::env::set_var("PLANKKA_EMAIL", v); }
-        if let Some(v) = prev_pass { std::env::set_var("PLANKKA_PASSWORD", v); }
+        if let Some(v) = prev_host {
+            std::env::set_var("PLANKKA_HOST", v);
+        }
+        if let Some(v) = prev_email {
+            std::env::set_var("PLANKKA_EMAIL", v);
+        }
+        if let Some(v) = prev_pass {
+            std::env::set_var("PLANKKA_PASSWORD", v);
+        }
     }
 
     #[test]

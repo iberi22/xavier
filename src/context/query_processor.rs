@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use crate::memory::schema::ContextZone;
 use crate::agents::provider::ModelProviderClient;
+use crate::memory::schema::ContextZone;
 use anyhow::Result;
+use std::collections::HashMap;
 
 #[derive(Clone)]
 pub struct QueryProcessor {
@@ -27,7 +27,11 @@ impl QueryProcessor {
         }
     }
 
-    pub async fn expand_and_decompose(&self, prompt: &str, zones: &[ContextZone]) -> HashMap<ContextZone, Vec<String>> {
+    pub async fn expand_and_decompose(
+        &self,
+        prompt: &str,
+        zones: &[ContextZone],
+    ) -> HashMap<ContextZone, Vec<String>> {
         if zones.is_empty() {
             return HashMap::new();
         }
@@ -45,8 +49,16 @@ impl QueryProcessor {
         }
     }
 
-    async fn expand_with_llm(&self, prompt: &str, zones: &[ContextZone]) -> Result<HashMap<ContextZone, Vec<String>>> {
-        let zones_str = zones.iter().map(|z| z.as_str()).collect::<Vec<_>>().join(", ");
+    async fn expand_with_llm(
+        &self,
+        prompt: &str,
+        zones: &[ContextZone],
+    ) -> Result<HashMap<ContextZone, Vec<String>>> {
+        let zones_str = zones
+            .iter()
+            .map(|z| z.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
         let system_prompt = format!(
             "You are a query expansion and decomposition assistant. \
              Active zones: [{}]. \

@@ -29,7 +29,6 @@ use xavier::memory::qmd_memory::{MemoryDocument, QmdMemory};
 use xavier::memory::sqlite_vec_store::VecSqliteMemoryStore;
 use xavier::memory::store::{MemoryRecord, MemoryStore};
 
-
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
     /// Start Xavier HTTP server
@@ -245,13 +244,7 @@ impl Cli {
                 let base_url = resolve_base_url();
                 println!("Searching memories via HTTP API on {}", base_url);
                 let lim = limit.unwrap_or(10);
-                search_memories_filtered(
-                    query,
-                    lim,
-                    cluster.clone(),
-                    level.clone(),
-                )
-                .await
+                search_memories_filtered(query, lim, cluster.clone(), level.clone()).await
             }
             Command::Usage { cmd } => {
                 let base_url = resolve_base_url();
@@ -409,18 +402,18 @@ impl Cli {
                 let base_url = resolve_base_url();
                 let token = require_xavier_token()?;
                 let client = CLI_HTTP_CLIENT.clone();
-                
+
                 println!("Exporting memories (public_only={})...", public);
                 let resp = client
                     .get(format!("{}/memory/export?public={}", base_url, public))
                     .header("X-Xavier-Token", &token)
                     .send()
                     .await?;
-                
+
                 if resp.status().is_success() {
                     let docs: Vec<MemoryDocument> = resp.json().await?;
                     let json = serde_json::to_string_pretty(&docs)?;
-                    
+
                     if let Some(path) = output {
                         std::fs::write(path, json)?;
                         println!("✅ Exported {} memories to {}", docs.len(), path.display());
@@ -437,8 +430,11 @@ impl Cli {
     }
 }
 
-
-pub async fn export_context_pack(topic: &str, max_level: usize, out: &std::path::Path) -> Result<()> {
+pub async fn export_context_pack(
+    topic: &str,
+    max_level: usize,
+    out: &std::path::Path,
+) -> Result<()> {
     let token = xavier_token();
     let base_url = resolve_base_url();
     let url = format!("{}/memory/export-pack", base_url);
@@ -568,7 +564,6 @@ async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
     let token = require_xavier_token()?;
     let base_url = resolve_base_url();
     let client = CLI_HTTP_CLIENT.clone();
-
 
     let response = match cmd {
         CodeCommand::Scan { path } => {
@@ -978,7 +973,9 @@ async fn handle_onboard(apply: bool) -> Result<()> {
 
     println!("🔍 Xavier System Scan...");
     let engine = OnboardingEngine { auto_apply: apply };
-    let report = engine.scan_and_configure().await
+    let report = engine
+        .scan_and_configure()
+        .await
         .map_err(|e| anyhow::anyhow!("Onboarding failed: {e}"))?;
 
     println!("{report}");
@@ -994,7 +991,10 @@ async fn handle_onboard(apply: bool) -> Result<()> {
         let client = CLI_HTTP_CLIENT.clone();
         let summary = format!(
             "Onboarding: {} cores, {:.1}GB RAM, {:.1}GB disk, embedder: {}",
-            report.system.cpu_cores, report.system.ram_gb, report.system.disk_free_gb, report.embedder
+            report.system.cpu_cores,
+            report.system.ram_gb,
+            report.system.disk_free_gb,
+            report.embedder
         );
         let _ = client
             .post(format!("{}/memory/add", base_url))
@@ -1028,7 +1028,6 @@ async fn lend_secret(name: &str, agent: &str, ttl: u64) -> Result<()> {
     let url = format!("{}/secrets/lend", resolve_base_url());
     let client = CLI_HTTP_CLIENT.clone();
 
-
     let response = client
         .post(&url)
         .header("X-Xavier-Token", &token)
@@ -1055,7 +1054,6 @@ async fn list_leases() -> Result<()> {
     let token = xavier_token();
     let url = format!("{}/secrets/leases", resolve_base_url());
     let client = CLI_HTTP_CLIENT.clone();
-
 
     let response = client
         .get(&url)
@@ -1093,7 +1091,6 @@ async fn revoke_lease(token_str: &str) -> Result<()> {
     let url = format!("{}/secrets/revoke", resolve_base_url());
     let client = CLI_HTTP_CLIENT.clone();
 
-
     let response = client
         .post(&url)
         .header("X-Xavier-Token", &token)
@@ -1113,7 +1110,6 @@ async fn check_lease_status(token_str: &str) -> Result<()> {
     let token = xavier_token();
     let url = format!("{}/secrets/status/{}", resolve_base_url(), token_str);
     let client = CLI_HTTP_CLIENT.clone();
-
 
     let response = client
         .get(&url)

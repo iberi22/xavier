@@ -146,8 +146,14 @@ impl Default for MemorySettings {
                 .join("memory-store.json")
                 .to_string_lossy()
                 .to_string(),
-            sqlite_path: data_dir.join("memory-store.sqlite3").to_string_lossy().to_string(),
-            vec_path: data_dir.join("vec-store.sqlite3").to_string_lossy().to_string(),
+            sqlite_path: data_dir
+                .join("memory-store.sqlite3")
+                .to_string_lossy()
+                .to_string(),
+            vec_path: data_dir
+                .join("vec-store.sqlite3")
+                .to_string_lossy()
+                .to_string(),
         }
     }
 }
@@ -188,13 +194,11 @@ impl Default for EpisodicMemoryLayerConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct MemoryLayersSettings {
     pub working: WorkingMemoryLayerConfig,
     pub episodic: EpisodicMemoryLayerConfig,
 }
-
 
 #[derive(Clone, Deserialize)]
 pub struct ModelSettings {
@@ -271,7 +275,7 @@ impl Default for ModelSettings {
 #[derive(Debug, Clone, Deserialize)]
 pub struct RetrievalSettings {
     pub disable_hyde: bool,
-    pub rrf_k: Option<u32>,        // XAVIER_RRF_K
+    pub rrf_k: Option<u32>, // XAVIER_RRF_K
     pub zone_boost_multiplier: Option<f32>,
     pub zone_penalty_multiplier: Option<f32>,
 }
@@ -332,10 +336,18 @@ pub struct EmbeddingSettings {
     pub cache_db_path: String,
 }
 
-fn default_cache_enabled() -> bool { true }
-fn default_cache_size() -> u64 { 10_000 }
-fn default_cache_ttl_hours() -> u64 { 24 }
-fn default_cache_db_path() -> String { "data/embedding_cache.db".to_string() }
+fn default_cache_enabled() -> bool {
+    true
+}
+fn default_cache_size() -> u64 {
+    10_000
+}
+fn default_cache_ttl_hours() -> u64 {
+    24
+}
+fn default_cache_db_path() -> String {
+    "data/embedding_cache.db".to_string()
+}
 
 impl fmt::Debug for EmbeddingSettings {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -367,8 +379,7 @@ impl Default for EmbeddingSettings {
     }
 }
 
-#[derive(Clone, Deserialize)]
-#[derive(Default)]
+#[derive(Clone, Deserialize, Default)]
 pub struct SecuritySettings {
     pub allowed_domains: String,
     #[serde(default)]
@@ -384,9 +395,7 @@ impl fmt::Debug for SecuritySettings {
     }
 }
 
-
-#[derive(Clone, Deserialize)]
-#[derive(Default)]
+#[derive(Clone, Deserialize, Default)]
 pub struct TelegramSettings {
     pub enabled: bool,
     #[serde(default)]
@@ -401,7 +410,6 @@ impl fmt::Debug for TelegramSettings {
             .finish()
     }
 }
-
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct RouterSettings {
@@ -418,12 +426,10 @@ impl Default for RouterSettings {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct ChronicleSettings {
     pub model: String,
 }
-
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct EnterpriseSettings {
@@ -438,12 +444,10 @@ impl Default for EnterpriseSettings {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct AgentSettings {
     pub weekly_budget: Option<u64>,
 }
-
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AdvancedSettings {
@@ -466,10 +470,18 @@ impl Default for AdvancedSettings {
 
 impl XavierSettings {
     /// Default values for serde field defaults
-    fn default_host() -> String { "127.0.0.1".into() }
-    fn default_port() -> u16 { 8006 }
-    fn default_log_level() -> String { "info".into() }
-    fn default_code_graph_db_path() -> String { "data/code_graph.db".into() }
+    fn default_host() -> String {
+        "127.0.0.1".into()
+    }
+    fn default_port() -> u16 {
+        8006
+    }
+    fn default_log_level() -> String {
+        "info".into()
+    }
+    fn default_code_graph_db_path() -> String {
+        "data/code_graph.db".into()
+    }
 
     pub fn resolve_config_path() -> PathBuf {
         if let Ok(env_path) = std::env::var("XAVIER_CONFIG_PATH") {
@@ -514,13 +526,17 @@ impl XavierSettings {
 
         let raw = fs::read_to_string(&path)
             .with_context(|| format!("failed to read config file at {}", path.display()))?;
-        
+
         // Handle both JSON and YAML/TOML if we want, but for now stick to what we have
         let parsed = if path.extension().is_some_and(|ext| ext == "toml") {
             // We need a TOML parser if we want to support .toml
             // But for now, let's assume JSON as per current implementation
-            serde_json::from_str::<Self>(&raw)
-                .with_context(|| format!("failed to parse TOML config (as JSON) at {}", path.display()))?
+            serde_json::from_str::<Self>(&raw).with_context(|| {
+                format!(
+                    "failed to parse TOML config (as JSON) at {}",
+                    path.display()
+                )
+            })?
         } else {
             serde_json::from_str::<Self>(&raw)
                 .with_context(|| format!("failed to parse config file at {}", path.display()))?
@@ -569,17 +585,16 @@ impl XavierSettings {
                 "0"
             },
         );
-        set_optional_if_absent(
-            "XAVIER_RRF_K",
-            self.retrieval.rrf_k.map(|v| v.to_string()),
-        );
+        set_optional_if_absent("XAVIER_RRF_K", self.retrieval.rrf_k.map(|v| v.to_string()));
         set_optional_if_absent(
             "XAVIER_ZONE_BOOST",
             self.retrieval.zone_boost_multiplier.map(|v| v.to_string()),
         );
         set_optional_if_absent(
             "XAVIER_ZONE_PENALTY",
-            self.retrieval.zone_penalty_multiplier.map(|v| v.to_string()),
+            self.retrieval
+                .zone_penalty_multiplier
+                .map(|v| v.to_string()),
         );
         set_if_absent("XAVIER_SYNC_POLICY", &self.workspace.sync_policy);
 
@@ -601,7 +616,11 @@ impl XavierSettings {
         );
         set_if_absent(
             "XAVIER_WORKING_LRU_THRESHOLD",
-            &self.memory_layers.working.lru_exempt_access_threshold.to_string(),
+            &self
+                .memory_layers
+                .working
+                .lru_exempt_access_threshold
+                .to_string(),
         );
         set_if_absent(
             "XAVIER_WORKING_BM25_K1",
@@ -639,13 +658,25 @@ impl XavierSettings {
             non_empty(&self.models.router_complex_model),
         );
         set_if_absent("XAVIER_ROUTER_FAST_MODEL", &self.models.router_fast_model);
-        set_if_absent("XAVIER_ROUTER_QUALITY_MODEL", &self.models.router_quality_model);
+        set_if_absent(
+            "XAVIER_ROUTER_QUALITY_MODEL",
+            &self.models.router_quality_model,
+        );
         set_optional_if_absent("XAVIER_LLM_MODEL", self.models.llm_model.clone());
         set_optional_if_absent("XAVIER_LLM_API_KEY", self.models.llm_api_key.clone());
-        set_optional_if_absent("XAVIER_CLOUD_LLM_MODEL", self.models.cloud_llm_model.clone());
+        set_optional_if_absent(
+            "XAVIER_CLOUD_LLM_MODEL",
+            self.models.cloud_llm_model.clone(),
+        );
         set_optional_if_absent("XAVIER_CLOUD_LLM_URL", self.models.cloud_llm_url.clone());
-        set_optional_if_absent("XAVIER_LOCAL_LLM_API_KEY", self.models.local_llm_api_key.clone());
-        set_optional_if_absent("XAVIER_LOCAL_ANTHROPIC_URL", self.models.local_anthropic_url.clone());
+        set_optional_if_absent(
+            "XAVIER_LOCAL_LLM_API_KEY",
+            self.models.local_llm_api_key.clone(),
+        );
+        set_optional_if_absent(
+            "XAVIER_LOCAL_ANTHROPIC_URL",
+            self.models.local_anthropic_url.clone(),
+        );
 
         set_if_absent(
             "XAVIER_DISABLE_HYDE",
@@ -661,7 +692,9 @@ impl XavierSettings {
         );
         set_optional_if_absent(
             "XAVIER_ZONE_PENALTY",
-            self.retrieval.zone_penalty_multiplier.map(|v| v.to_string()),
+            self.retrieval
+                .zone_penalty_multiplier
+                .map(|v| v.to_string()),
         );
 
         set_if_absent(
@@ -686,10 +719,16 @@ impl XavierSettings {
         );
 
         // Embedding settings
-        set_optional_if_absent("XAVIER_EMBEDDING_ENDPOINT", non_empty(&self.embedding.endpoint));
+        set_optional_if_absent(
+            "XAVIER_EMBEDDING_ENDPOINT",
+            non_empty(&self.embedding.endpoint),
+        );
         set_optional_if_absent("XAVIER_EMBEDDER", non_empty(&self.embedding.embedder));
         set_optional_if_absent("XAVIER_GLLM_MODEL", non_empty(&self.embedding.gllm_model));
-        set_optional_if_absent("XAVIER_EMBEDDING_API_FLAVOR", non_empty(&self.embedding.api_flavor));
+        set_optional_if_absent(
+            "XAVIER_EMBEDDING_API_FLAVOR",
+            non_empty(&self.embedding.api_flavor),
+        );
         set_optional_if_absent("XAVIER_EMBEDDING_API_KEY", self.embedding.api_key.clone());
         set_optional_if_absent(
             "XAVIER_GLLM_DIMENSION",
@@ -699,7 +738,11 @@ impl XavierSettings {
         // Embedding cache settings
         set_if_absent(
             "XAVIER_EMBEDDING_CACHE_ENABLED",
-            if self.embedding.cache_enabled { "true" } else { "false" },
+            if self.embedding.cache_enabled {
+                "true"
+            } else {
+                "false"
+            },
         );
         set_if_absent(
             "XAVIER_EMBEDDING_CACHE_SIZE",
@@ -715,15 +758,28 @@ impl XavierSettings {
         );
 
         // Security settings
-        set_optional_if_absent("XAVIER_ALLOWED_DOMAINS", non_empty(&self.security.allowed_domains));
+        set_optional_if_absent(
+            "XAVIER_ALLOWED_DOMAINS",
+            non_empty(&self.security.allowed_domains),
+        );
         set_optional_if_absent("XAVIER_TOKEN_SECRET", self.security.token_secret.clone());
 
         // Telegram settings
-        set_if_absent("XAVIER_TELEGRAM_ENABLED", if self.telegram.enabled { "true" } else { "false" });
+        set_if_absent(
+            "XAVIER_TELEGRAM_ENABLED",
+            if self.telegram.enabled {
+                "true"
+            } else {
+                "false"
+            },
+        );
         set_optional_if_absent("XAVIER_TELEGRAM_TOKEN", self.telegram.bot_token.clone());
 
         // Router settings
-        set_optional_if_absent("XAVIER_ROUTER_POLICY_PATH", non_empty(&self.router.policy_path));
+        set_optional_if_absent(
+            "XAVIER_ROUTER_POLICY_PATH",
+            non_empty(&self.router.policy_path),
+        );
         set_if_absent(
             "XAVIER_ROUTER_POLICY_REFRESH_SECS",
             &self.router.policy_refresh_secs.to_string(),
@@ -885,10 +941,16 @@ mod tests {
 
         assert_eq!(std::env::var("XAVIER_HOST").unwrap(), "127.0.0.1");
         assert_eq!(std::env::var("XAVIER_PORT").unwrap(), "8006");
-        assert_eq!(std::env::var("XAVIER_WORKING_MEMORY_CAPACITY").unwrap(), "100");
+        assert_eq!(
+            std::env::var("XAVIER_WORKING_MEMORY_CAPACITY").unwrap(),
+            "100"
+        );
         assert_eq!(std::env::var("XAVIER_QJL_THRESHOLD").unwrap(), "500");
         assert_eq!(std::env::var("XAVIER_TELEGRAM_ENABLED").unwrap(), "false");
-        assert_eq!(std::env::var("XAVIER_ENTERPRISE_DB_PATH").unwrap(), "data/enterprise.db");
+        assert_eq!(
+            std::env::var("XAVIER_ENTERPRISE_DB_PATH").unwrap(),
+            "data/enterprise.db"
+        );
 
         // Clean up
         for (key, _) in std::env::vars() {
@@ -993,24 +1055,42 @@ mod tests {
         settings.apply_to_env();
 
         // Memory layers
-        assert_eq!(std::env::var("XAVIER_WORKING_MEMORY_CAPACITY").unwrap(), "100");
+        assert_eq!(
+            std::env::var("XAVIER_WORKING_MEMORY_CAPACITY").unwrap(),
+            "100"
+        );
         assert_eq!(std::env::var("XAVIER_WORKING_LRU_THRESHOLD").unwrap(), "2");
         assert_eq!(std::env::var("XAVIER_WORKING_BM25_K1").unwrap(), "1.5");
         assert_eq!(std::env::var("XAVIER_WORKING_BM25_B").unwrap(), "0.75");
-        assert_eq!(std::env::var("XAVIER_EPISODIC_SUMMARY_WINDOW").unwrap(), "10");
+        assert_eq!(
+            std::env::var("XAVIER_EPISODIC_SUMMARY_WINDOW").unwrap(),
+            "10"
+        );
         assert_eq!(std::env::var("XAVIER_MAX_EPISODIC_SESSIONS").unwrap(), "50");
-        assert_eq!(std::env::var("XAVIER_EPISODIC_MIN_EVENT_IMPORTANCE").unwrap(), "0.5");
+        assert_eq!(
+            std::env::var("XAVIER_EPISODIC_MIN_EVENT_IMPORTANCE").unwrap(),
+            "0.5"
+        );
 
         // Advanced
         assert_eq!(std::env::var("XAVIER_QJL_THRESHOLD").unwrap(), "500");
-        assert_eq!(std::env::var("XAVIER_ENTITY_EXTRACTION_ENABLED").unwrap(), "1");
+        assert_eq!(
+            std::env::var("XAVIER_ENTITY_EXTRACTION_ENABLED").unwrap(),
+            "1"
+        );
         assert_eq!(std::env::var("XAVIER_AUDIT_CHAIN_ENABLED").unwrap(), "1");
 
         // Router
-        assert_eq!(std::env::var("XAVIER_ROUTER_POLICY_REFRESH_SECS").unwrap(), "300");
+        assert_eq!(
+            std::env::var("XAVIER_ROUTER_POLICY_REFRESH_SECS").unwrap(),
+            "300"
+        );
 
         // Enterprise
-        assert_eq!(std::env::var("XAVIER_ENTERPRISE_DB_PATH").unwrap(), "data/enterprise.db");
+        assert_eq!(
+            std::env::var("XAVIER_ENTERPRISE_DB_PATH").unwrap(),
+            "data/enterprise.db"
+        );
 
         // Clean up
         for (key, _) in std::env::vars() {
@@ -1020,4 +1100,3 @@ mod tests {
         }
     }
 }
-

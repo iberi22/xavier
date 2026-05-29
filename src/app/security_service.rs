@@ -3,12 +3,15 @@
 //! This implements both `SecurityScanPort` and `InputSecurityPort` by wrapping the concrete `security::SecurityService`.
 //! Handlers should use these through port traits, not call `security::SecurityService` directly.
 /// NOTE: HexArch improvement — depends on concrete crate::security::SecurityService, should use a port abstraction
-use crate::domain::security::{ScanResult, Severity as DomainSeverity, Threat as DomainThreat, ThreatCategory as DomainThreatCategory, ThreatLevel as DomainThreatLevel};
+use crate::domain::security::{
+    ScanResult, Severity as DomainSeverity, Threat as DomainThreat,
+    ThreatCategory as DomainThreatCategory, ThreatLevel as DomainThreatLevel,
+};
 use crate::ports::inbound::security_port::SecureInputResult;
 use crate::ports::inbound::{InputSecurityPort, SecurityScanPort};
 use crate::ports::outbound::ThreatDetectionPort;
-use crate::security::{self, Anticipator};
 use crate::security::threat_store::SecurityThreatStore;
+use crate::security::{self, Anticipator};
 use async_trait::async_trait;
 use chrono::Utc;
 use std::sync::Arc;
@@ -46,7 +49,11 @@ impl SecurityService {
 impl SecurityScanPort for SecurityService {
     /// Scans the given target for security threats.
     /// Delegates to `security::SecurityService::process_input()`.
-    async fn scan(&self, target: &str, _level: Option<DomainThreatLevel>) -> anyhow::Result<ScanResult> {
+    async fn scan(
+        &self,
+        target: &str,
+        _level: Option<DomainThreatLevel>,
+    ) -> anyhow::Result<ScanResult> {
         let start = Instant::now();
 
         // The underlying service is sync; run it on the blocking thread pool.

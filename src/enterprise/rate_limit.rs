@@ -2,8 +2,8 @@
 //!
 //! Per-tenant, per-API-key, and per-IP rate limiting with governor library.
 
-use governor::{Quota, RateLimiter as GovRateLimiter};
 use governor::middleware::StateInformationMiddleware;
+use governor::{Quota, RateLimiter as GovRateLimiter};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::num::NonZeroU32;
@@ -80,7 +80,17 @@ pub enum RateLimitKey {
 
 /// Token bucket rate limiter
 pub struct RateLimiter {
-    limiters: HashMap<RateLimitKey, Arc<GovRateLimiter<governor::state::direct::NotKeyed, governor::state::InMemoryState, governor::clock::DefaultClock, StateInformationMiddleware>>>,
+    limiters: HashMap<
+        RateLimitKey,
+        Arc<
+            GovRateLimiter<
+                governor::state::direct::NotKeyed,
+                governor::state::InMemoryState,
+                governor::clock::DefaultClock,
+                StateInformationMiddleware,
+            >,
+        >,
+    >,
     config: HashMap<RateLimitKey, RateLimitConfig>,
 }
 
@@ -93,7 +103,17 @@ impl RateLimiter {
     }
 
     /// Get or create a limiter for a key
-    fn get_limiter(&mut self, key: RateLimitKey) -> Arc<GovRateLimiter<governor::state::direct::NotKeyed, governor::state::InMemoryState, governor::clock::DefaultClock, StateInformationMiddleware>> {
+    fn get_limiter(
+        &mut self,
+        key: RateLimitKey,
+    ) -> Arc<
+        GovRateLimiter<
+            governor::state::direct::NotKeyed,
+            governor::state::InMemoryState,
+            governor::clock::DefaultClock,
+            StateInformationMiddleware,
+        >,
+    > {
         // Check if limiter already exists
         if let Some(existing) = self.limiters.get(&key) {
             return existing.clone();
@@ -210,7 +230,7 @@ mod tests {
         let mut limiter = RateLimiter::new();
         let tenant_id = Uuid::new_v4();
         let key = RateLimitKey::Tenant(tenant_id);
-        
+
         // Should not panic
         let result = limiter.check(key);
         assert!(result.allowed);

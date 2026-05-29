@@ -2,8 +2,8 @@
 
 #[cfg(test)]
 mod belief_graph_tests {
-    use xavier::memory::belief_graph::{Belief, Confidence, BeliefGraph};
     use xavier::domain::memory::belief::BeliefEdge;
+    use xavier::memory::belief_graph::{Belief, BeliefGraph, Confidence};
 
     #[test]
     fn test_belief_creation() {

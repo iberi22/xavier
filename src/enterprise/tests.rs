@@ -6,7 +6,7 @@
 use crate::enterprise::{
     audit::{AuditAction, AuditEntry, AuditLog},
     keys::{ApiKeyStore, ApiKeyType},
-    rate_limit::{RateLimitConfig, RateLimiter, RateLimitKey},
+    rate_limit::{RateLimitConfig, RateLimitKey, RateLimiter},
     tenancy::{Plan, TenantStore},
 };
 use uuid::Uuid;
@@ -281,8 +281,7 @@ mod http_tests {
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
             db: None,
         }));
-        let app = enterprise_router(state.clone())
-;
+        let app = enterprise_router(state.clone());
         // Create tenant first
         let create_resp = app
             .clone()
@@ -295,10 +294,7 @@ mod http_tests {
         assert_eq!(create_resp.status(), StatusCode::OK);
 
         // Now list
-        let list_resp = app
-            .oneshot(authed_get("/v1/tenants"))
-            .await
-            .expect("list");
+        let list_resp = app.oneshot(authed_get("/v1/tenants")).await.expect("list");
         let body = to_bytes(list_resp.into_body(), usize::MAX)
             .await
             .expect("collect body");
@@ -319,8 +315,7 @@ mod http_tests {
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
             db: None,
         }));
-        let app = enterprise_router(state.clone())
-;
+        let app = enterprise_router(state.clone());
         // Create
         let create_resp = app
             .clone()
@@ -374,8 +369,7 @@ mod http_tests {
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
             db: None,
         }));
-        let app = enterprise_router(state.clone())
-;
+        let app = enterprise_router(state.clone());
         // Create tenant first
         let create_resp = app
             .clone()
@@ -410,7 +404,10 @@ mod http_tests {
         assert_eq!(key_json["tenant_id"], tenant_id);
         // raw_key must be present (only shown once at creation)
         assert!(
-            key_json["raw_key"].as_str().map(|s| !s.is_empty()).unwrap_or(false),
+            key_json["raw_key"]
+                .as_str()
+                .map(|s| !s.is_empty())
+                .unwrap_or(false),
             "raw_key must be non-empty"
         );
     }
@@ -441,8 +438,7 @@ mod http_tests {
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
             db: None,
         }));
-        let app = enterprise_router(state.clone())
-;
+        let app = enterprise_router(state.clone());
         // Setup: tenant + key
         let t_resp = app
             .clone()
@@ -452,7 +448,9 @@ mod http_tests {
             ))
             .await
             .expect("create tenant");
-        let t_body = to_bytes(t_resp.into_body(), usize::MAX).await.expect("body");
+        let t_body = to_bytes(t_resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
         let tenant: serde_json::Value = serde_json::from_slice(&t_body).expect("parse");
         let tenant_id = tenant["id"].as_str().expect("id").to_string();
 
@@ -460,11 +458,16 @@ mod http_tests {
             .clone()
             .oneshot(authed_post(
                 "/v1/keys",
-                &format!(r#"{{"tenant_id":"{}","name":"revoke-me","key_type":"Live"}}"#, tenant_id),
+                &format!(
+                    r#"{{"tenant_id":"{}","name":"revoke-me","key_type":"Live"}}"#,
+                    tenant_id
+                ),
             ))
             .await
             .expect("create key");
-        let k_body = to_bytes(k_resp.into_body(), usize::MAX).await.expect("body");
+        let k_body = to_bytes(k_resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
         let key: serde_json::Value = serde_json::from_slice(&k_body).expect("parse");
         let key_id = key["id"].as_str().expect("key id").to_string();
 
@@ -488,8 +491,7 @@ mod http_tests {
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
             db: None,
         }));
-        let app = enterprise_router(state.clone())
-;
+        let app = enterprise_router(state.clone());
         // Create tenant
         let t_resp = app
             .clone()
@@ -499,7 +501,9 @@ mod http_tests {
             ))
             .await
             .expect("create tenant");
-        let t_body = to_bytes(t_resp.into_body(), usize::MAX).await.expect("body");
+        let t_body = to_bytes(t_resp.into_body(), usize::MAX)
+            .await
+            .expect("body");
         let tenant: serde_json::Value = serde_json::from_slice(&t_body).expect("parse");
         let tenant_id = tenant["id"].as_str().expect("id").to_string();
 
@@ -529,8 +533,10 @@ mod http_tests {
         let arr = entries.as_array().expect("entries should be array");
         // Should have at least the ApiKeyCreate entry
         assert!(
-            arr.iter().any(|e| e["action"].as_str() == Some("ApiKeyCreate")),
-            "expected ApiKeyCreate entry in audit log, got: {:?}", arr
+            arr.iter()
+                .any(|e| e["action"].as_str() == Some("ApiKeyCreate")),
+            "expected ApiKeyCreate entry in audit log, got: {:?}",
+            arr
         );
     }
 
@@ -557,8 +563,7 @@ mod http_tests {
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
             db: None,
         }));
-        let app = enterprise_router(state.clone())
-;
+        let app = enterprise_router(state.clone());
         let tenant_id = uuid::Uuid::new_v4();
         let body = format!(
             r#"{{"tenant_id":"{}","config":{{"rpm":120,"burst":60}}}}"#,
@@ -576,4 +581,3 @@ mod http_tests {
         assert_eq!(resp.status(), StatusCode::OK);
     }
 }
-

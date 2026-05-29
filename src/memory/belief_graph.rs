@@ -1,16 +1,16 @@
 //! Belief Graph - conceptual graph used by the Xavier reasoning layers.
 
+use aho_corasick::AhoCorasick;
 use anyhow::Result;
+use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, RwLock};
 use tokio::sync::RwLock as AsyncRwLock;
 use tracing::info;
-use aho_corasick::AhoCorasick;
-use chrono::Utc;
 
-use crate::domain::memory::belief::{BeliefEdge, BeliefNode};
 use crate::agents::belief_evaluator::BeliefEvaluator;
+use crate::domain::memory::belief::{BeliefEdge, BeliefNode};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Confidence {
@@ -102,7 +102,10 @@ impl BeliefGraph {
         source_type: Option<&str>,
     ) -> Result<()> {
         let provenance_id = provenance_id.unwrap_or_else(|| "unknown".to_string());
-        let confidence_score = self.evaluator.evaluate_confidence(source_type.unwrap_or("unknown"), &relation_type).await;
+        let confidence_score = self
+            .evaluator
+            .evaluate_confidence(source_type.unwrap_or("unknown"), &relation_type)
+            .await;
 
         let mut new_edge = BeliefEdge::new(
             source.clone(),
@@ -113,9 +116,15 @@ impl BeliefGraph {
         );
 
         let existing_edges = self.get_edges_async().await;
-        if let Some(contradicts_id) = self.evaluator.find_contradiction(&new_edge, &existing_edges) {
+        if let Some(contradicts_id) = self
+            .evaluator
+            .find_contradiction(&new_edge, &existing_edges)
+        {
             new_edge.contradicts_edge_id = Some(contradicts_id);
-            info!("Contradiction detected for {} -> {} ({}). Adding competing belief.", source, target, new_edge.relation_type);
+            info!(
+                "Contradiction detected for {} -> {} ({}). Adding competing belief.",
+                source, target, new_edge.relation_type
+            );
         }
 
         self.edges
@@ -222,11 +231,7 @@ impl BeliefGraph {
             .expect("belief_graph: edges write lock poisoned") = edges;
     }
 
-    pub async fn add_belief(
-        &self,
-        belief: Belief,
-        source_memory_id: Option<String>,
-    ) -> Result<()> {
+    pub async fn add_belief(&self, belief: Belief, source_memory_id: Option<String>) -> Result<()> {
         let confidence_score = belief.confidence.score();
 
         if self.get_node(&belief.subject).is_none() {
@@ -243,7 +248,8 @@ impl BeliefGraph {
             belief.predicate,
             source_memory_id,
             None,
-        ).await
+        )
+        .await
     }
 
     /// Returns the highest-confidence paths or multiple beliefs if ambiguity exists.
@@ -258,7 +264,8 @@ impl BeliefGraph {
             return Vec::new();
         }
 
-        let mut results = self.get_edges()
+        let mut results = self
+            .get_edges()
             .into_iter()
             .filter(|edge| {
                 let s = edge.source.to_lowercase();
@@ -271,7 +278,11 @@ impl BeliefGraph {
             })
             .collect::<Vec<_>>();
 
-        results.sort_by(|a, b| b.confidence_score.partial_cmp(&a.confidence_score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.confidence_score
+                .partial_cmp(&a.confidence_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results
     }
 
@@ -318,11 +329,15 @@ impl BeliefGraph {
 
         // Simple Dijkstra-like approach using confidence as weight (higher is better, so we use 1.0 - confidence as cost)
         while !queue.is_empty() {
-            let current = queue.iter().min_by(|a, b| {
-                let da = distances.get(*a).unwrap_or(&f32::INFINITY);
-                let db = distances.get(*b).unwrap_or(&f32::INFINITY);
-                da.partial_cmp(db).unwrap_or(std::cmp::Ordering::Equal)
-            }).cloned().expect("belief_graph: find_highest_confidence_path had empty queue");
+            let current = queue
+                .iter()
+                .min_by(|a, b| {
+                    let da = distances.get(*a).unwrap_or(&f32::INFINITY);
+                    let db = distances.get(*b).unwrap_or(&f32::INFINITY);
+                    da.partial_cmp(db).unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .cloned()
+                .expect("belief_graph: find_highest_confidence_path had empty queue");
 
             queue.remove(&current);
 
@@ -331,7 +346,8 @@ impl BeliefGraph {
             }
 
             for edge in edges.iter().filter(|e| e.source == current) {
-                let alt = distances.get(&current).unwrap_or(&f32::INFINITY) + (1.0 - edge.confidence_score);
+                let alt = distances.get(&current).unwrap_or(&f32::INFINITY)
+                    + (1.0 - edge.confidence_score);
                 if alt < *distances.get(&edge.target).unwrap_or(&f32::INFINITY) {
                     distances.insert(edge.target.clone(), alt);
                     previous.insert(edge.target.clone(), edge.clone());
@@ -403,7 +419,8 @@ impl BeliefGraph {
             if let Some(ref ac_idx) = ac {
                 let content_lower = doc.content.to_lowercase();
                 for mat in ac_idx.find_iter(&content_lower) {
-                    matched_concepts.insert(eligible_nodes[mat.pattern().as_usize()].concept.clone());
+                    matched_concepts
+                        .insert(eligible_nodes[mat.pattern().as_usize()].concept.clone());
                 }
             }
 
@@ -447,21 +464,22 @@ mod grounding_tests {
         let memory_id = "mem-1".to_string();
 
         // Add a relation with provenance_id
-        graph.add_relation(
-            "Xavier".to_string(),
-            "Memory".to_string(),
-            "is_a".to_string(),
-            Some(memory_id.clone()),
-            None
-        ).await.unwrap();
+        graph
+            .add_relation(
+                "Xavier".to_string(),
+                "Memory".to_string(),
+                "is_a".to_string(),
+                Some(memory_id.clone()),
+                None,
+            )
+            .await
+            .unwrap();
 
-        let docs = vec![
-            MemoryDocument {
-                id: Some(memory_id.clone()),
-                content: "Something about Xavier".to_string(),
-                ..Default::default()
-            }
-        ];
+        let docs = vec![MemoryDocument {
+            id: Some(memory_id.clone()),
+            content: "Something about Xavier".to_string(),
+            ..Default::default()
+        }];
 
         let results = graph.validate_grounding(&docs, 0.5).await;
         assert_eq!(results.len(), 1);
@@ -476,13 +494,11 @@ mod grounding_tests {
         graph.add_node("Xavier".to_string(), 0.9);
         graph.add_node("Rust".to_string(), 0.4);
 
-        let docs = vec![
-            MemoryDocument {
-                id: Some("doc-1".to_string()),
-                content: "Xavier is written in Rust".to_string(),
-                ..Default::default()
-            }
-        ];
+        let docs = vec![MemoryDocument {
+            id: Some("doc-1".to_string()),
+            content: "Xavier is written in Rust".to_string(),
+            ..Default::default()
+        }];
 
         // With min_confidence 0.5, only "Xavier" should match
         let results = graph.validate_grounding(&docs, 0.5).await;
@@ -502,13 +518,11 @@ mod grounding_tests {
         let graph = BeliefGraph::new();
         graph.add_node("Xavier".to_string(), 0.9);
 
-        let docs = vec![
-            MemoryDocument {
-                id: Some("doc-1".to_string()),
-                content: "Something unrelated".to_string(),
-                ..Default::default()
-            }
-        ];
+        let docs = vec![MemoryDocument {
+            id: Some("doc-1".to_string()),
+            content: "Something unrelated".to_string(),
+            ..Default::default()
+        }];
 
         let results = graph.validate_grounding(&docs, 0.5).await;
         assert_eq!(results.len(), 1);

@@ -54,17 +54,18 @@ pub async fn secure_optional_request_field(
 ) -> std::result::Result<Option<String>, SecureInputResult> {
     match value {
         Some(value) if !value.trim().is_empty() => {
-            let result = security
-                .process_input(value)
-                .await
-                .unwrap_or_else(|_| SecureInputResult {
-                    allowed: false,
-                    sanitized_input: None,
-                    original_input: value.to_string(),
-                    detection_confidence: 1.0,
-                    is_injection: true,
-                    attack_type: "unknown".to_string(),
-                });
+            let result =
+                security
+                    .process_input(value)
+                    .await
+                    .unwrap_or_else(|_| SecureInputResult {
+                        allowed: false,
+                        sanitized_input: None,
+                        original_input: value.to_string(),
+                        detection_confidence: 1.0,
+                        is_injection: true,
+                        attack_type: "unknown".to_string(),
+                    });
             if result.allowed {
                 Ok(Some(
                     result
