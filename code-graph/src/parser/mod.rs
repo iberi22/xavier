@@ -19,23 +19,23 @@ pub mod typescript;
 pub fn parse_source(source: &str, lang: &Language, file_path: &str) -> Result<Vec<Symbol>> {
     match lang {
         Language::Rust => {
-            let mut parser = RustParser::new();
+            let mut parser = RustParser::new()?;
             parser.parse(source, file_path)
         }
         Language::TypeScript | Language::JavaScript => {
-            let mut parser = TypeScriptParser::new(lang.clone());
+            let mut parser = TypeScriptParser::new(lang.clone())?;
             parser.parse(source, file_path)
         }
         Language::Python => {
-            let mut parser = PythonParser::new();
+            let mut parser = PythonParser::new()?;
             parser.parse(source, file_path)
         }
         Language::Go => {
-            let mut parser = GoParser::new();
+            let mut parser = GoParser::new()?;
             parser.parse(source, file_path)
         }
         Language::Java => {
-            let mut parser = JavaParser::new();
+            let mut parser = JavaParser::new()?;
             parser.parse(source, file_path)
         }
         _ => Ok(vec![]),
@@ -83,9 +83,10 @@ pub struct PushSymbolArgs<'src> {
 }
 
 pub(crate) fn cyclomatic_complexity(node: Node, source: &str) -> f32 {
-    fn count(node: Node, source: &str) -> usize {
+    fn count(node: Node, _source: &str) -> usize {
+        let kind = node.kind();
         let mut total = if matches!(
-            node.kind(),
+            kind,
             "if_expression"
                 | "if_statement"
                 | "elif_clause"
@@ -110,18 +111,19 @@ pub(crate) fn cyclomatic_complexity(node: Node, source: &str) -> f32 {
             0
         };
 
-        if matches!(node.kind(), "binary_expression" | "boolean_operator") {
-            if let Ok(text) = node.utf8_text(source.as_bytes()) {
-                total += text.matches("&&").count();
-                total += text.matches("||").count();
-                total += text.matches(" and ").count();
-                total += text.matches(" or ").count();
+        if kind == "binary_expression" || kind == "boolean_operator" {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                let ck = child.kind();
+                if ck == "&&" || ck == "||" || ck == "and" || ck == "or" {
+                    total += 1;
+                }
             }
         }
 
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
-            total += count(child, source);
+            total += count(child, _source);
         }
         total
     }

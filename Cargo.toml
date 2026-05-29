@@ -96,6 +96,7 @@ zerocopy = "0.8"
 
 # File traversal
 walkdir = "2"
+libc = "0.2"
 
 
 # For WASM web deployment

@@ -11,18 +11,18 @@ pub struct JavaParser {
 
 impl Default for JavaParser {
     fn default() -> Self {
-        Self::new()
+        Self::new().expect("failed to initialize Java parser")
     }
 }
 
 impl JavaParser {
-    pub fn new() -> Self {
+    pub fn new() -> Result<Self> {
         let mut parser = Parser::new();
         let language = tree_sitter_java::LANGUAGE.into();
         parser
             .set_language(&language)
-            .expect("failed to set Java tree-sitter language");
-        Self { parser }
+            .map_err(|e| GraphError::TreeSitter(format!("failed to set Java language: {}", e)))?;
+        Ok(Self { parser })
     }
 
     pub fn parse(&mut self, source: &str, file_path: &str) -> Result<Vec<Symbol>> {

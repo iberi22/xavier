@@ -12,18 +12,18 @@ pub struct TypeScriptParser {
 
 impl Default for TypeScriptParser {
     fn default() -> Self {
-        Self::new(Language::TypeScript)
+        Self::new(Language::TypeScript).expect("failed to initialize TypeScript parser")
     }
 }
 
 impl TypeScriptParser {
-    pub fn new(lang: Language) -> Self {
+    pub fn new(lang: Language) -> Result<Self> {
         let mut parser = Parser::new();
         let grammar = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
         parser
             .set_language(&grammar)
-            .expect("failed to set TypeScript tree-sitter language");
-        Self { parser, lang }
+            .map_err(|e| GraphError::TreeSitter(format!("failed to set TypeScript language: {}", e)))?;
+        Ok(Self { parser, lang })
     }
 
     pub fn parse(&mut self, source: &str, file_path: &str) -> Result<Vec<Symbol>> {

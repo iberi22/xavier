@@ -119,6 +119,7 @@ mod tests {
             has_cuda: false,
             has_vulkan: false,
             has_metal: false,
+            has_nvidia_gpu: false,
             is_windows: true,
             is_linux: false,
             is_macos: false,
