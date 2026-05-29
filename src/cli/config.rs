@@ -11,15 +11,13 @@
 //! `XAVIER_URL` is the canonical configuration variable. All CLI commands (`add`,
 //! `search`, `stats`, etc.) resolve the server URL through this module.
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use std::path::PathBuf;
 
 use crate::settings::XavierSettings;
 
 pub fn resolve_http_token() -> Result<String> {
-    XavierSettings::current().auth_token.ok_or_else(|| {
-        anyhow!("XAVIER_TOKEN environment variable must be set to start the HTTP server.")
-    })
+    xavier::security::auth::resolve_xavier_token()
 }
 
 
@@ -68,15 +66,11 @@ pub fn resolve_http_port() -> u16 {
 }
 
 pub fn xavier_token() -> String {
-    XavierSettings::current()
-        .auth_token
-        .expect("XAVIER_TOKEN environment variable must be set for CLI client commands")
+    xavier::security::auth::resolve_xavier_token().expect("XAVIER_TOKEN environment variable must be set for CLI client commands")
 }
 
 pub fn require_xavier_token() -> Result<String> {
-    XavierSettings::current()
-        .auth_token
-        .ok_or_else(|| anyhow!("XAVIER_TOKEN environment variable must be set for CLI client commands"))
+    xavier::security::auth::resolve_xavier_token()
 }
 
 pub fn code_graph_db_path() -> PathBuf {

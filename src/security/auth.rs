@@ -14,23 +14,25 @@ use tokio::sync::RwLock;
 /// If `XAVIER_TOKEN` is set, returns its value.
 ///
 /// If `XAVIER_TOKEN` is unset:
-/// - With the `dev-mode` feature enabled, falls back to `"dev-token"`.
-/// - Without `dev-mode` (the default), returns an error.
+/// - With the `dev-mode` feature enabled OR `XAVIER_DEV_MODE=true`, falls back to `"dev-token"`.
+/// - Without dev mode (the default), returns an error.
 pub fn resolve_xavier_token() -> Result<String> {
-    match std::env::var("XAVIER_TOKEN") {
-        Ok(token) => Ok(token),
-        Err(_) => {
-            #[cfg(feature = "dev-mode")]
-            {
-                Ok("dev-token".to_string())
-            }
-            #[cfg(not(feature = "dev-mode"))]
-            {
-                Err(anyhow!(
-                    "XAVIER_TOKEN environment variable is not set"
-                ))
-            }
-        }
+    if let Ok(token) = std::env::var("XAVIER_TOKEN") {
+        return Ok(token);
+    }
+
+    let dev_mode_env = std::env::var("XAVIER_DEV_MODE")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
+
+    let dev_mode_feat = cfg!(feature = "dev-mode");
+
+    if dev_mode_env || dev_mode_feat {
+        Ok("dev-token".to_string())
+    } else {
+        Err(anyhow!(
+            "XAVIER_TOKEN environment variable is not set. For development, set XAVIER_DEV_MODE=true to use the default dev-token."
+        ))
     }
 }
 
@@ -345,5 +347,47 @@ mod tests {
 
         let found = store.get_by_email("test@example.com").await;
         assert!(found.is_some());
+    }
+
+    #[test]
+    fn test_resolve_xavier_token() {
+        // Clean environment
+        std::env::remove_var("XAVIER_TOKEN");
+        std::env::remove_var("XAVIER_DEV_MODE");
+
+        // Case 1: No token, no dev mode
+        let result = resolve_xavier_token();
+        #[cfg(not(feature = "dev-mode"))]
+        assert!(result.is_err());
+        #[cfg(feature = "dev-mode")]
+        assert_eq!(result.unwrap(), "dev-token");
+
+        // Case 2: XAVIER_TOKEN set
+        std::env::set_var("XAVIER_TOKEN", "secure-token");
+        let result = resolve_xavier_token();
+        assert_eq!(result.unwrap(), "secure-token");
+
+        // Case 3: XAVIER_DEV_MODE=true
+        std::env::remove_var("XAVIER_TOKEN");
+        std::env::set_var("XAVIER_DEV_MODE", "true");
+        let result = resolve_xavier_token();
+        assert_eq!(result.unwrap(), "dev-token");
+
+        // Case 4: XAVIER_DEV_MODE=1
+        std::env::set_var("XAVIER_DEV_MODE", "1");
+        let result = resolve_xavier_token();
+        assert_eq!(result.unwrap(), "dev-token");
+
+        // Case 5: XAVIER_DEV_MODE=false
+        std::env::set_var("XAVIER_DEV_MODE", "false");
+        let result = resolve_xavier_token();
+        #[cfg(not(feature = "dev-mode"))]
+        assert!(result.is_err());
+        #[cfg(feature = "dev-mode")]
+        assert_eq!(result.unwrap(), "dev-token");
+
+        // Cleanup
+        std::env::remove_var("XAVIER_TOKEN");
+        std::env::remove_var("XAVIER_DEV_MODE");
     }
 }
