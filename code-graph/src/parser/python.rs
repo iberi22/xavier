@@ -144,8 +144,8 @@ impl PythonParser {
     fn push_symbol(&self, symbols: &mut Vec<Symbol>, args: PushSymbolArgs<'_>) {
         let start = args.node.start_position();
         let end = args.node.end_position();
-        let complexity =
-            (args.kind == SymbolKind::Function).then(|| cyclomatic_complexity(args.node, args.source));
+        let complexity = (args.kind == SymbolKind::Function)
+            .then(|| cyclomatic_complexity(args.node, args.source));
         symbols.push(Symbol {
             id: None,
             stable_id: None,

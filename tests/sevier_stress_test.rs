@@ -18,8 +18,8 @@ use xavier::adapters::inbound::http::routes::create_router;
 use xavier::adapters::inbound::http::routes::create_router_with_agent_registry;
 use xavier::coordination::SimpleAgentRegistry;
 use xavier::domain::agent::AgentMetadata;
-use xavier::time::TimeMetricsStore;
 use xavier::ports::outbound::schema_init::SchemaInitializer;
+use xavier::time::TimeMetricsStore;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -28,7 +28,10 @@ fn build_router() -> axum::Router {
 }
 
 async fn in_memory_db() -> xavier::utils::connection_pool::LibsqlConnectionPool {
-    let db = libsql::Builder::new_local(":memory:").build().await.expect("open in-memory DB");
+    let db = libsql::Builder::new_local(":memory:")
+        .build()
+        .await
+        .expect("open in-memory DB");
     let pool = xavier::utils::connection_pool::LibsqlConnectionPool::new(db, Default::default());
     let store = TimeMetricsStore::new(pool.clone());
     store.init_schema().expect("init time_metrics schema");

@@ -207,7 +207,8 @@ impl AgentRuntime {
         config: RuntimeConfig,
     ) -> Result<Self> {
         let semantic_cache = Arc::new(SemanticCache::new(0.95)?);
-        let orchestrator = Orchestrator::new().with_memory(Arc::clone(&memory), belief_graph.clone());
+        let orchestrator =
+            Orchestrator::new().with_memory(Arc::clone(&memory), belief_graph.clone());
         Ok(Self {
             system1: System1Retriever::new(
                 Arc::clone(&memory),

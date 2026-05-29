@@ -17,7 +17,6 @@ use xavier::ports::inbound::{AgentLifecyclePort, MemoryQueryPort};
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
 
-
 #[derive(Clone)]
 pub struct CliState {
     pub memory: Arc<dyn MemoryQueryPort>,

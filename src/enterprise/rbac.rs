@@ -232,11 +232,11 @@ mod tests {
     #[test]
     fn test_role_guard() {
         let guard = RoleGuard::new(Role::Editor, uuid::Uuid::new_v4());
-        
+
         assert!(guard.can(Permission::MemoryRead));
         assert!(guard.can(Permission::MemoryWrite));
         assert!(!guard.can(Permission::MemoryDelete));
-        
+
         assert!(guard.require(Permission::MemoryRead).is_ok());
         assert!(guard.require(Permission::MemoryDelete).is_err());
     }

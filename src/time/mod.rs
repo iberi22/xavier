@@ -110,7 +110,8 @@ impl TimeMetricsStore {
             TABLE_TIME_METRICS,
             TABLE_TIME_METRICS,
             TABLE_TIME_METRICS
-        )).await?;
+        ))
+        .await?;
         Ok(())
     }
 }
@@ -123,7 +124,9 @@ impl SchemaInitializer for TimeMetricsStore {
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
-                    .map_err(|e| anyhow::anyhow!("failed to build runtime for time schema: {}", e))?;
+                    .map_err(|e| {
+                        anyhow::anyhow!("failed to build runtime for time schema: {}", e)
+                    })?;
                 rt.block_on(self.init_schema_async())
             })
             .join()

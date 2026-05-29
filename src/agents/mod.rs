@@ -1,3 +1,4 @@
+pub mod belief_evaluator;
 pub mod curation;
 pub mod extraction;
 pub mod provider;
@@ -6,7 +7,6 @@ pub mod router;
 pub mod runtime;
 pub mod supervisor;
 pub mod system1;
-pub mod belief_evaluator;
 pub mod system2;
 pub mod system3;
 pub mod ui_render;

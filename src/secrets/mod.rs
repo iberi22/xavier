@@ -1,5 +1,5 @@
-use std::fmt;
 use std::collections::HashMap;
+use std::fmt;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

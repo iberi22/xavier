@@ -1,12 +1,12 @@
+use axum::{routing::get, Json, Router};
 use image::{Rgb, RgbImage};
 use ratatui::buffer::Buffer;
 use ratatui::style::Color;
+use serde_json::json;
 use std::fs;
 use std::path::Path;
 use std::process::Command;
 use tokio::net::TcpListener;
-use axum::{routing::get, Json, Router};
-use serde_json::json;
 
 const FONT_WIDTH: u32 = 8;
 const FONT_HEIGHT: u32 = 8;

@@ -1359,7 +1359,8 @@ pub async fn handle_tool_call(
                         "total_entities": entity_count,
                         "semantic_entities": semantic_stats.total_entities,
                         "semantic_relations": semantic_stats.total_relations,
-                    }).to_string(),
+                    })
+                    .to_string(),
                 }],
                 is_error: Some(false),
             })?)

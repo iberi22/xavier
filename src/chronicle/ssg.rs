@@ -312,8 +312,9 @@ impl DevLogSSG {
 
         // Clean output directory to remove stale files
         if self.output_dir.exists() {
-            fs::remove_dir_all(&self.output_dir)
-                .with_context(|| format!("Failed to clean output dir: {}", self.output_dir.display()))?;
+            fs::remove_dir_all(&self.output_dir).with_context(|| {
+                format!("Failed to clean output dir: {}", self.output_dir.display())
+            })?;
             println!("Cleaned output directory: {}", self.output_dir.display());
         }
 
@@ -358,7 +359,8 @@ impl DevLogSSG {
         let tags_html = if metadata.tags.is_empty() {
             String::new()
         } else {
-            let tag_links: Vec<String> = metadata.tags
+            let tag_links: Vec<String> = metadata
+                .tags
                 .iter()
                 .map(|t| format!(r#"<span class="post-tag">{}</span>"#, html_escape(t)))
                 .collect();
@@ -438,9 +440,7 @@ impl DevLogSSG {
                         .trim_matches(|c: char| c == '*' || c == ':' || c == ' ');
                     cleaned.to_string()
                 });
-            date_line.unwrap_or_else(|| {
-                chrono::Utc::now().format("%Y-%m-%d").to_string()
-            })
+            date_line.unwrap_or_else(|| chrono::Utc::now().format("%Y-%m-%d").to_string())
         };
 
         // Extract tags from content
@@ -485,7 +485,13 @@ impl DevLogSSG {
             .map(|l| l.trim().to_string())
             .unwrap_or_default();
 
-        PostMetadata { title, date, slug: format!("{}.html", filename), tags, description }
+        PostMetadata {
+            title,
+            date,
+            slug: format!("{}.html", filename),
+            tags,
+            description,
+        }
     }
 
     fn generate_index(&self, posts: &[PostMetadata]) -> Result<()> {
@@ -503,7 +509,10 @@ impl DevLogSSG {
                     .iter()
                     .map(|t| format!(r#"<span class="tag-mini">{}</span>"#, html_escape(t)))
                     .collect();
-                format!(r#"<span class="post-tags-inline">{}</span>"#, mini_tags.join(""))
+                format!(
+                    r#"<span class="post-tags-inline">{}</span>"#,
+                    mini_tags.join("")
+                )
             };
 
             let desc_html = if post.description.is_empty() {
@@ -580,10 +589,7 @@ impl DevLogSSG {
             let entry = entry?;
             let path = entry.path();
             if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
-                let filename = path
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("");
+                let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
                 if SKIP_FILES.contains(&filename) {
                     continue;
                 }
@@ -651,7 +657,10 @@ mod tests {
         let output_dir = tempdir()?;
         fs::write(input_dir.path().join("INDEX.md"), "# Index")?;
         fs::write(input_dir.path().join("README.md"), "# Readme")?;
-        fs::write(input_dir.path().join("2026-05-10-real-post.md"), "# Real Post")?;
+        fs::write(
+            input_dir.path().join("2026-05-10-real-post.md"),
+            "# Real Post",
+        )?;
         let ssg = DevLogSSG {
             input_dir: input_dir.path().to_path_buf(),
             output_dir: output_dir.path().to_path_buf(),
@@ -732,12 +741,27 @@ mod tests {
     fn test_index_sorts_posts_by_date_desc() {
         let _ssg = DevLogSSG::new();
         let posts = vec![
-            PostMetadata { title: "Old".into(), date: "2026-05-01".into(),
-                slug: "old.html".into(), tags: vec![], description: String::new() },
-            PostMetadata { title: "New".into(), date: "2026-05-15".into(),
-                slug: "new.html".into(), tags: vec![], description: String::new() },
-            PostMetadata { title: "Middle".into(), date: "2026-05-10".into(),
-                slug: "middle.html".into(), tags: vec![], description: String::new() },
+            PostMetadata {
+                title: "Old".into(),
+                date: "2026-05-01".into(),
+                slug: "old.html".into(),
+                tags: vec![],
+                description: String::new(),
+            },
+            PostMetadata {
+                title: "New".into(),
+                date: "2026-05-15".into(),
+                slug: "new.html".into(),
+                tags: vec![],
+                description: String::new(),
+            },
+            PostMetadata {
+                title: "Middle".into(),
+                date: "2026-05-10".into(),
+                slug: "middle.html".into(),
+                tags: vec![],
+                description: String::new(),
+            },
         ];
         let dir = tempdir().unwrap();
         let ssg = DevLogSSG {
@@ -797,10 +821,7 @@ mod tests {
 
     #[test]
     fn test_extract_title_with_special_chars() {
-        let meta = DevLogSSG::extract_metadata(
-            "# Rust & C++: A Comparison",
-            "2026-05-01-rust-cpp",
-        );
+        let meta = DevLogSSG::extract_metadata("# Rust & C++: A Comparison", "2026-05-01-rust-cpp");
         assert!(meta.title.contains("&"));
     }
 }

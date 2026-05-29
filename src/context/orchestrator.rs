@@ -8,11 +8,11 @@ use super::{
     query_processor::QueryProcessor,
     ContextDocument,
 };
-use crate::memory::schema::ContextZone;
 use crate::memory::belief_graph::SharedBeliefGraph;
 use crate::memory::qmd_memory::QmdMemory;
-use crate::memory::virtual_memory::{VirtualMemory, VirtualMemoryEntry};
+use crate::memory::schema::ContextZone;
 use crate::memory::schema::RetrievalScope;
+use crate::memory::virtual_memory::{VirtualMemory, VirtualMemoryEntry};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HookKind {
@@ -151,14 +151,16 @@ impl Orchestrator {
                 match zone {
                     ContextZone::Relational => {
                         if let (Some(memory), Some(graph)) = (&self.memory, &self.belief_graph) {
-                            let vm = VirtualMemory::new(Arc::clone(memory), Some(Arc::clone(graph)));
+                            let vm =
+                                VirtualMemory::new(Arc::clone(memory), Some(Arc::clone(graph)));
                             let filters = crate::memory::schema::MemoryQueryFilters {
                                 zones: Some(vec![ContextZone::Relational]),
                                 ..Default::default()
                             };
 
-                            if let Ok(graph_entries) =
-                                vm.page_in_filtered(&z_query, remaining_limit, Some(&filters)).await
+                            if let Ok(graph_entries) = vm
+                                .page_in_filtered(&z_query, remaining_limit, Some(&filters))
+                                .await
                             {
                                 for entry in graph_entries {
                                     if !selected_document_ids.contains(&entry.id) {
@@ -192,7 +194,9 @@ impl Orchestrator {
         }
 
         // 3. Probabilistic Retrieval (Hybrid Search) - Fill remaining budget with general query if needed
-        let remaining_limit = config.max_documents.saturating_sub(selected_document_ids.len());
+        let remaining_limit = config
+            .max_documents
+            .saturating_sub(selected_document_ids.len());
         if remaining_limit > 0 {
             // Apply the scope logic directly into the Hybrid Search logic or orchestrator plan
             // The Orchestrator's internal search only uses existing ContextDocuments, not QmdMemory directly,
@@ -537,7 +541,9 @@ mod tests {
             ),
         ];
 
-        let plan = orchestrator.session_start("s-1", "debug the build regression", &documents).await;
+        let plan = orchestrator
+            .session_start("s-1", "debug the build regression", &documents)
+            .await;
 
         assert_eq!(plan.hook, HookKind::SessionStart);
         assert_eq!(plan.level, ContextLevel::Maximum);
@@ -550,8 +556,12 @@ mod tests {
         let orchestrator = Orchestrator::new();
         let documents = vec![doc("1", "s-1", "assistant", "quick build summary", 100, 1)];
 
-        let start = orchestrator.session_start("s-1", "continue from previous context", &documents).await;
-        let compact = orchestrator.precompact("s-1", "continue from previous context", &documents).await;
+        let start = orchestrator
+            .session_start("s-1", "continue from previous context", &documents)
+            .await;
+        let compact = orchestrator
+            .precompact("s-1", "continue from previous context", &documents)
+            .await;
 
         assert!(compact.max_documents > start.max_documents);
         assert!(compact.max_tokens > start.max_tokens);

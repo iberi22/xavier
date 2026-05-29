@@ -1,6 +1,6 @@
-use std::fmt;
 use super::SecretError;
 use std::collections::HashMap;
+use std::fmt;
 use std::time::{Duration, SystemTime};
 use uuid::Uuid;
 

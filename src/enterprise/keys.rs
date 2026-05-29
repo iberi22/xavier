@@ -184,11 +184,7 @@ impl ApiKeyStore {
     pub fn list_for_tenant(&self, tenant_id: &TenantId) -> Vec<&ApiKey> {
         self.tenant_keys
             .get(tenant_id)
-            .map(|ids| {
-                ids.iter()
-                    .filter_map(|id| self.keys.get(id))
-                    .collect()
-            })
+            .map(|ids| ids.iter().filter_map(|id| self.keys.get(id)).collect())
             .unwrap_or_default()
     }
 
@@ -220,10 +216,7 @@ impl ApiKeyStore {
         let id = key.id.clone();
         let tenant_id = key.tenant_id;
         self.keys.insert(id.clone(), key);
-        self.tenant_keys
-            .entry(tenant_id)
-            .or_default()
-            .push(id);
+        self.tenant_keys.entry(tenant_id).or_default().push(id);
     }
 
     /// Bulk insert API keys from persistence.
@@ -232,10 +225,7 @@ impl ApiKeyStore {
             let id = key.id.clone();
             let tenant_id = key.tenant_id;
             self.keys.insert(id.clone(), key);
-            self.tenant_keys
-                .entry(tenant_id)
-                .or_default()
-                .push(id);
+            self.tenant_keys.entry(tenant_id).or_default().push(id);
         }
     }
 }
@@ -294,9 +284,9 @@ mod tests {
     fn test_api_key_generation() {
         let mut store = ApiKeyStore::new();
         let tenant_id = Uuid::new_v4();
-        
+
         let (raw_key, key) = store.create(tenant_id, "Test Key", ApiKeyType::Live);
-        
+
         assert!(raw_key.starts_with(|c: char| c.is_ascii_hexdigit()));
         assert_eq!(key.tenant_id, tenant_id);
         assert!(!key.revoked);
@@ -306,15 +296,15 @@ mod tests {
     fn test_api_key_validation() {
         let mut store = ApiKeyStore::new();
         let tenant_id = Uuid::new_v4();
-        
+
         let (raw_key, key) = store.create(tenant_id, "Test Key", ApiKeyType::Live);
-        
+
         // Valid
         assert!(store.validate_key(&key.id, &raw_key).is_some());
-        
+
         // Invalid raw key
         assert!(store.validate_key(&key.id, "wrong").is_none());
-        
+
         // Revoke and test
         store.revoke(&key.id).unwrap();
         assert!(store.validate_key(&key.id, &raw_key).is_none());

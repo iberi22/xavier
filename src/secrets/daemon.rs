@@ -1,8 +1,8 @@
-use std::fmt;
 use super::store::SecretStore;
 use super::SecretError;
 use super::SecretResult;
 use std::collections::HashSet;
+use std::fmt;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Clone)]

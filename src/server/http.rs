@@ -16,14 +16,14 @@ use crate::{
     agents::runtime::System3Mode,
     consistency::regularization::{CoherenceReport, RetentionRegularizer},
     consolidation::ConsolidationTask,
+    context::ContextClassifier,
+    domain::memory::belief::{BeliefEdge, BeliefNode},
     embedding,
-    domain::memory::belief::{BeliefNode, BeliefEdge},
     memory::entity_graph::EntityRecord,
     memory::qmd_memory::MemoryDocument,
     memory::schema::{ContextZone, MemoryQueryFilters, TypedMemoryPayload},
     memory::sqlite_vec_store::VecSqliteMemoryStore,
     memory::store::{GraphHopResult, HybridSearchMode},
-    context::ContextClassifier,
     retrieval::gating::{AdaptiveGating, LayerWeights, SessionSummary},
     server::events::{WsEvent, WsMessage},
     utils::crypto::sha256_hex,
@@ -1151,12 +1151,14 @@ pub async fn memory_export_pack(
     let semantic_entities: Vec<EntityRecord> =
         workspace.workspace.entity_graph.all_entities().await;
 
-    let layered_result = gating.retrieve_layered(
-        &all_docs,
-        &episodic_summaries,
-        &semantic_entities,
-        &payload.topic,
-    ).await;
+    let layered_result = gating
+        .retrieve_layered(
+            &all_docs,
+            &episodic_summaries,
+            &semantic_entities,
+            &payload.topic,
+        )
+        .await;
 
     let xml = crate::memory::pack::generate_xcp(layered_result, payload.max_level);
     let filename = format!("context-{}.xcp", payload.topic.replace(" ", "_"));

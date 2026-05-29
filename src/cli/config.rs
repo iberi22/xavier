@@ -20,7 +20,6 @@ pub fn resolve_http_token() -> Result<String> {
     xavier::security::auth::resolve_xavier_token()
 }
 
-
 pub fn resolve_http_bind_host() -> String {
     std::env::var("XAVIER_HOST").unwrap_or_else(|_| XavierSettings::current().server.host)
 }
@@ -66,7 +65,8 @@ pub fn resolve_http_port() -> u16 {
 }
 
 pub fn xavier_token() -> String {
-    xavier::security::auth::resolve_xavier_token().expect("XAVIER_TOKEN environment variable must be set for CLI client commands")
+    xavier::security::auth::resolve_xavier_token()
+        .expect("XAVIER_TOKEN environment variable must be set for CLI client commands")
 }
 
 pub fn require_xavier_token() -> Result<String> {
@@ -90,4 +90,3 @@ pub fn state_panel_root(workspace_dir: &std::path::Path, workspace_id: &str) -> 
                 .join("panel_threads")
         })
 }
-

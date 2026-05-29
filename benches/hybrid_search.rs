@@ -131,13 +131,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
 
         for (query, embedding, expected_path) in &cases {
             let vector_results = store
-                .hybrid_search_with_embedding(
-                    workspace_id,
-                    query,
-                    embedding.to_vec(),
-                    None,
-                    3,
-                )
+                .hybrid_search_with_embedding(workspace_id, query, embedding.to_vec(), None, 3)
                 .await
                 .expect("vector results");
             if vector_results
@@ -148,13 +142,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
             }
 
             let hybrid_results = store
-                .hybrid_search_with_embedding(
-                    workspace_id,
-                    query,
-                    embedding.to_vec(),
-                    None,
-                    3,
-                )
+                .hybrid_search_with_embedding(workspace_id, query, embedding.to_vec(), None, 3)
                 .await
                 .expect("hybrid results");
             if hybrid_results

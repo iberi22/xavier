@@ -1,19 +1,24 @@
-use std::collections::{HashMap, HashSet};
+use crate::memory::schema::MemoryQueryFilters;
+use crate::memory::sqlite_store::TABLE_MEMORIES;
+use crate::memory::store::{
+    filter_records, GraphHopPath, GraphHopResult, HybridSearchMode, HybridSearchResult, MemoryStore,
+};
 use anyhow::{Context, Result};
 use libsql::params;
-use crate::memory::schema::MemoryQueryFilters;
-use crate::memory::store::{
-    GraphHopResult, HybridSearchMode,
-    HybridSearchResult, GraphHopPath, filter_records, MemoryStore,
-};
-use crate::memory::sqlite_store::TABLE_MEMORIES;
+use std::collections::{HashMap, HashSet};
 
-use super::{VecSqliteMemoryStore, search, fts, utils, FusionSource};
+use super::{fts, search, utils, FusionSource, VecSqliteMemoryStore};
 
 impl VecSqliteMemoryStore {
-    pub(crate) async fn upsert_vector(&self, memory_id: &str, workspace_id: &str, embedding: &[f32]) -> Result<()> {
+    pub(crate) async fn upsert_vector(
+        &self,
+        memory_id: &str,
+        workspace_id: &str,
+        embedding: &[f32],
+    ) -> Result<()> {
         let conn = self.pool.get().await?;
-        let embedding_json = serde_json::to_string(embedding).context("failed to serialize embedding")?;
+        let embedding_json =
+            serde_json::to_string(embedding).context("failed to serialize embedding")?;
 
         conn.execute(
             "INSERT OR REPLACE INTO memory_embeddings(id, workspace_id, embedding) VALUES (?1, ?2, vector32(?3))",
@@ -42,10 +47,12 @@ impl VecSqliteMemoryStore {
         {
             let conn = self.pool.get().await?;
             let dataset_size = {
-                let mut stmt = conn.prepare(&format!(
-                    "SELECT COUNT(*) FROM {} WHERE workspace_id = ?",
-                    TABLE_MEMORIES
-                )).await?;
+                let stmt = conn
+                    .prepare(&format!(
+                        "SELECT COUNT(*) FROM {} WHERE workspace_id = ?",
+                        TABLE_MEMORIES
+                    ))
+                    .await?;
                 let mut rows = stmt.query(params![workspace_id]).await?;
                 if let Some(row) = rows.next().await? {
                     row.get::<i64>(0).unwrap_or(0).max(0) as usize
@@ -70,8 +77,14 @@ impl VecSqliteMemoryStore {
                         LIMIT ?3
                     "#;
 
-                    let mut stmt = conn.prepare(vector_sql).await?;
-                    let mut rows = stmt.query(params![embedding_json, workspace_id, candidate_limit as i64]).await?;
+                    let stmt = conn.prepare(vector_sql).await?;
+                    let mut rows = stmt
+                        .query(params![
+                            embedding_json,
+                            workspace_id,
+                            candidate_limit as i64
+                        ])
+                        .await?;
                     let mut rank = 0usize;
                     while let Some(row) = rows.next().await? {
                         let distance = row.get::<f64>(15).map_err(anyhow::Error::msg)? as f32;
@@ -105,8 +118,10 @@ impl VecSqliteMemoryStore {
                         LIMIT ?
                     "#;
 
-                    let mut stmt = conn.prepare(fts_sql).await?;
-                    let mut rows = stmt.query(params![workspace_id, fts_query, candidate_limit as i64]).await?;
+                    let stmt = conn.prepare(fts_sql).await?;
+                    let mut rows = stmt
+                        .query(params![workspace_id, fts_query, candidate_limit as i64])
+                        .await?;
                     let mut rank = 0usize;
                     while let Some(row) = rows.next().await? {
                         let bm25_score = row.get::<f64>(15).ok().map(|v| v as f32);
@@ -131,19 +146,28 @@ impl VecSqliteMemoryStore {
                     let mut seen_ids = HashSet::<String>::new();
 
                     // Seed from entities mentioned in the query
-                    let mut entity_stmt = conn.prepare("SELECT id FROM entities WHERE name LIKE ?").await?;
+                    let entity_stmt = conn
+                        .prepare("SELECT id FROM entities WHERE name LIKE ?")
+                        .await?;
                     for term in entity_terms {
-                        let mut entity_rows = entity_stmt.query(params![format!("%{term}%")]).await?;
+                        let mut entity_rows =
+                            entity_stmt.query(params![format!("%{term}%")]).await?;
                         while let Some(row) = entity_rows.next().await? {
                             let entity_id: String = row.get(0).map_err(anyhow::Error::msg)?;
                             // Find memories linked to this entity
-                            let mut mem_stmt = conn.prepare("SELECT memory_id FROM memory_entities WHERE entity_id = ? AND workspace_id = ?").await?;
-                            let mut mem_rows = mem_stmt.query(params![entity_id, workspace_id]).await?;
+                            let mem_stmt = conn.prepare("SELECT memory_id FROM memory_entities WHERE entity_id = ? AND workspace_id = ?").await?;
+                            let mut mem_rows =
+                                mem_stmt.query(params![entity_id, workspace_id]).await?;
                             while let Some(mem_row) = mem_rows.next().await? {
-                                let memory_id: String = mem_row.get(0).map_err(anyhow::Error::msg)?;
+                                let memory_id: String =
+                                    mem_row.get(0).map_err(anyhow::Error::msg)?;
                                 if seen_ids.insert(memory_id.clone()) {
-                                    if let Some(record) = Self::load_record_by_id(&conn, workspace_id, &memory_id).await? {
-                                        if Self::row_matches_filters(workspace_id, &record, filters) {
+                                    if let Some(record) =
+                                        Self::load_record_by_id(&conn, workspace_id, &memory_id)
+                                            .await?
+                                    {
+                                        if Self::row_matches_filters(workspace_id, &record, filters)
+                                        {
                                             kg_rank += 1;
                                             search::merge_rrf_result(
                                                 &mut scored,
@@ -172,24 +196,21 @@ impl VecSqliteMemoryStore {
 
         if results.is_empty() && include_text && !trimmed_query.is_empty() {
             let memories = self.list(workspace_id).await?;
-            return Ok(filter_records(
-                memories,
-                workspace_id,
-                trimmed_query,
-                filters,
-            )?
-            .into_iter()
-            .take(limit)
-            .enumerate()
-            .map(|(idx, record)| HybridSearchResult {
-                record,
-                score: 1.0 / (Self::configured_rrf_k() as f32 + (idx + 1) as f32),
-                vector_score: 0.0,
-                lexical_score: 0.0,
-                kg_score: 0.0,
-                bm25: None,
-            })
-            .collect());
+            return Ok(
+                filter_records(memories, workspace_id, trimmed_query, filters)?
+                    .into_iter()
+                    .take(limit)
+                    .enumerate()
+                    .map(|(idx, record)| HybridSearchResult {
+                        record,
+                        score: 1.0 / (Self::configured_rrf_k() as f32 + (idx + 1) as f32),
+                        vector_score: 0.0,
+                        lexical_score: 0.0,
+                        kg_score: 0.0,
+                        bm25: None,
+                    })
+                    .collect(),
+            );
         }
 
         results.truncate(limit);
@@ -208,7 +229,9 @@ impl VecSqliteMemoryStore {
             .await?
             .with_context(|| format!("memory not found for graph traversal: {path_or_id}"))?;
         let conn = self.pool.get().await?;
-        let seed_ids = self.resolve_graph_seed_entities(&conn, workspace_id, &source, query).await?;
+        let seed_ids = self
+            .resolve_graph_seed_entities(&conn, workspace_id, &source, query)
+            .await?;
 
         if seed_ids.is_empty() {
             return Ok(GraphHopResult {
@@ -252,13 +275,14 @@ impl VecSqliteMemoryStore {
             "#
         );
 
-        let mut params_vec: Vec<libsql::Value> = seed_ids
-            .into_iter()
-            .map(libsql::Value::Text)
-            .collect();
+        let mut params_vec: Vec<libsql::Value> =
+            seed_ids.into_iter().map(libsql::Value::Text).collect();
         params_vec.push(libsql::Value::Integer(max_hops as i64));
 
-        let mut stmt = conn.prepare(&sql).await.context("graph_hops prepare failed")?;
+        let stmt = conn
+            .prepare(&sql)
+            .await
+            .context("graph_hops prepare failed")?;
         let mut rows = stmt.query(params_vec).await?;
         let mut paths = Vec::new();
 
@@ -269,7 +293,7 @@ impl VecSqliteMemoryStore {
             let entity_path: String = row.get(3).map_err(anyhow::Error::msg)?;
             let relation_path: String = row.get(4).map_err(anyhow::Error::msg)?;
 
-            let mut hit_stmt = conn.prepare(&format!(
+            let hit_stmt = conn.prepare(&format!(
                 "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions
                  FROM {}
                  WHERE workspace_id = ?
@@ -278,7 +302,9 @@ impl VecSqliteMemoryStore {
                  LIMIT 3",
                 TABLE_MEMORIES
             )).await?;
-            let mut hit_rows = hit_stmt.query(params![workspace_id, entity_name.clone()]).await?;
+            let mut hit_rows = hit_stmt
+                .query(params![workspace_id, entity_name.clone()])
+                .await?;
             let mut memory_hits = Vec::new();
             while let Some(hit_row) = hit_rows.next().await? {
                 if let Ok(record) = Self::deserialize_record(&hit_row) {

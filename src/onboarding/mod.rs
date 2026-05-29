@@ -16,13 +16,13 @@
 //! println!("{}", report.summary());
 //! ```
 
-pub mod scanner;
 pub mod configurator;
 pub mod embedding;
+pub mod scanner;
 
-use scanner::{SystemCapabilities, ProviderStatus};
 use configurator::AutoConfig;
 use embedding::AutoEmbedder;
+use scanner::{ProviderStatus, SystemCapabilities};
 
 use std::fmt;
 
@@ -69,8 +69,7 @@ impl OnboardingEngine {
         let config = configurator::generate_config(&system, &providers, &best_embedder);
 
         if self.auto_apply {
-            configurator::apply_config(&config)
-                .map_err(|e| format!("Config apply failed: {e}"))?;
+            configurator::apply_config(&config).map_err(|e| format!("Config apply failed: {e}"))?;
         }
 
         Ok(OnboardingReport {

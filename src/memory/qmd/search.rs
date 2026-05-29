@@ -3,13 +3,13 @@ use std::collections::HashMap;
 use std::sync::LazyLock;
 
 use crate::memory::qmd_memory::config::*;
+use crate::memory::qmd_memory::query_builder;
 use crate::memory::qmd_memory::query_builder::{extract_candidate_terms_internal, normalize_query};
 use crate::memory::qmd_memory::reader::generate_embedding;
 use crate::memory::qmd_memory::types::MemoryDocument;
 use crate::memory::qmd_memory::utils::*;
-use crate::memory::qmd_memory::query_builder;
 use crate::memory::qmd_memory::QmdMemory;
-use crate::memory::schema::{EvidenceKind, MemoryKind, MemoryQueryFilters, matches_filters};
+use crate::memory::schema::{matches_filters, EvidenceKind, MemoryKind, MemoryQueryFilters};
 use anyhow::Result;
 
 // ── Lexical scoring ───────────────────────────────────────────────────
@@ -749,16 +749,24 @@ pub async fn query_with_hybrid_search(
 ) -> Result<Vec<MemoryDocument>> {
     let mut scores: HashMap<String, (f32, MemoryDocument)> = HashMap::new();
 
-    let keyword_hits = memory.search_with_cache_filtered(query_text, limit, None).await?;
+    let keyword_hits = memory
+        .search_with_cache_filtered(query_text, limit, None)
+        .await?;
     for (rank, doc) in keyword_hits.documents.into_iter().enumerate() {
-        let key = doc.id.clone().unwrap_or_else(|| format!("path:{}", doc.path));
+        let key = doc
+            .id
+            .clone()
+            .unwrap_or_else(|| format!("path:{}", doc.path));
         let rrf_score = 1.0 / (RRF_K + rank as f32 + 1.0);
         scores.insert(key, (rrf_score * KEYWORD_WEIGHT, doc));
     }
 
     let vector_hits = vsearch(memory, query_vector, limit).await?;
     for (rank, doc) in vector_hits.into_iter().enumerate() {
-        let key = doc.id.clone().unwrap_or_else(|| format!("path:{}", doc.path));
+        let key = doc
+            .id
+            .clone()
+            .unwrap_or_else(|| format!("path:{}", doc.path));
         let rrf_score = 1.0 / (RRF_K + rank as f32 + 1.0);
         if let Some((existing, _)) = scores.get_mut(&key) {
             *existing += rrf_score * SEMANTIC_WEIGHT;
@@ -809,7 +817,9 @@ pub async fn query_filtered(
     if let Some(top_doc) = expansion_seed {
         let query_lower = query_text.to_lowercase();
         for w in top_doc.content.split_whitespace() {
-            let w_clean = w.trim_matches(|c: char| !c.is_alphanumeric()).to_lowercase();
+            let w_clean = w
+                .trim_matches(|c: char| !c.is_alphanumeric())
+                .to_lowercase();
             if w_clean.len() >= 3 && !query_lower.contains(&w_clean) {
                 expanded_terms.push(w_clean);
             }
@@ -853,13 +863,19 @@ pub async fn query_filtered(
     let mut scores: HashMap<String, (f32, MemoryDocument)> = HashMap::new();
 
     for (rank, doc) in keyword_results.into_iter().enumerate() {
-        let key = doc.id.clone().unwrap_or_else(|| format!("path:{}", doc.path));
+        let key = doc
+            .id
+            .clone()
+            .unwrap_or_else(|| format!("path:{}", doc.path));
         let rrf_score = 1.0 / (RRF_K + rank as f32 + 1.0);
         scores.insert(key, (rrf_score * KEYWORD_WEIGHT, doc));
     }
 
     for (rank, doc) in vector_results.into_iter().enumerate() {
-        let key = doc.id.clone().unwrap_or_else(|| format!("path:{}", doc.path));
+        let key = doc
+            .id
+            .clone()
+            .unwrap_or_else(|| format!("path:{}", doc.path));
         let rrf_score = 1.0 / (RRF_K + rank as f32 + 1.0);
         if let Some((existing, _)) = scores.get_mut(&key) {
             *existing += rrf_score * SEMANTIC_WEIGHT;
@@ -985,15 +1001,14 @@ pub async fn query_with_embedding_filtered(
     if !initial_results.is_empty() {
         let mut context_terms = Vec::new();
 
-        let common_words: std::collections::HashSet<&str> =
-            std::collections::HashSet::from_iter([
-                "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have",
-                "has", "had", "do", "does", "did", "will", "would", "could", "should", "may",
-                "might", "must", "shall", "can", "need", "dare", "to", "of", "in", "for", "on",
-                "with", "at", "by", "from", "as", "into", "through", "during", "before", "after",
-                "above", "below", "that", "this", "these", "those", "it", "its", "they", "them",
-                "what", "which", "who", "whom", "whose", "where", "when", "why", "how",
-            ]);
+        let common_words: std::collections::HashSet<&str> = std::collections::HashSet::from_iter([
+            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has",
+            "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "must",
+            "shall", "can", "need", "dare", "to", "of", "in", "for", "on", "with", "at", "by",
+            "from", "as", "into", "through", "during", "before", "after", "above", "below", "that",
+            "this", "these", "those", "it", "its", "they", "them", "what", "which", "who", "whom",
+            "whose", "where", "when", "why", "how",
+        ]);
 
         for doc in initial_results.iter().take(2) {
             for word in doc.content.split_whitespace() {
@@ -1010,8 +1025,7 @@ pub async fn query_with_embedding_filtered(
         }
 
         if context_terms.len() >= 2 {
-            let expanded_query =
-                format!("{} {}", processed_query, context_terms.join(" "));
+            let expanded_query = format!("{} {}", processed_query, context_terms.join(" "));
             if let Ok(expanded_vector) = generate_embedding(&expanded_query).await {
                 if !expanded_vector.is_empty() {
                     return query_filtered(

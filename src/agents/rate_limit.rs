@@ -44,8 +44,15 @@ impl RateLimitManager {
         conn.execute(
             "INSERT INTO rate_limit_usage (provider, tokens_used, cost_usd, status_code, is_error)
              VALUES (?1, ?2, ?3, ?4, ?5)",
-            (provider.to_string(), tokens as i64, cost_usd, status as i64, (status >= 400) as i64),
-        ).await?;
+            (
+                provider.to_string(),
+                tokens as i64,
+                cost_usd,
+                status as i64,
+                (status >= 400) as i64,
+            ),
+        )
+        .await?;
 
         if is_cache_hit {
             conn.execute(
@@ -62,7 +69,8 @@ impl RateLimitManager {
                  VALUES (?1, ?2)
                  ON CONFLICT(provider) DO UPDATE SET rate_limited_until = ?2",
                 (provider.to_string(), until.to_rfc3339()),
-            ).await?;
+            )
+            .await?;
         }
 
         Ok(())
@@ -76,8 +84,9 @@ impl RateLimitManager {
         let month_ago = now - Duration::days(30);
 
         let conn = self.db.get().await?;
-        let mut stmt = conn.prepare(
-            "SELECT
+        let stmt = conn
+            .prepare(
+                "SELECT
                 COALESCE(SUM(CASE WHEN timestamp > ?1 THEN tokens_used ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN timestamp > ?2 THEN tokens_used ELSE 0 END), 0),
                 COALESCE(SUM(CASE WHEN timestamp > ?3 THEN tokens_used ELSE 0 END), 0),
@@ -85,29 +94,33 @@ impl RateLimitManager {
                 COALESCE(SUM(cache_hits), 0)
              FROM rate_limit_usage
              WHERE provider = ?5",
-        ).await?;
-
-        let mut rows = stmt.query((
-            hour_ago.format("%Y-%m-%d %H:%M:%f").to_string(),
-            day_ago.format("%Y-%m-%d %H:%M:%f").to_string(),
-            week_ago.format("%Y-%m-%d %H:%M:%f").to_string(),
-            month_ago.format("%Y-%m-%d %H:%M:%f").to_string(),
-            provider.to_string(),
-        )).await?;
-
-        let (used_hourly, used_today, used_weekly, used_monthly, cache_hits) = if let Some(row) = rows.next().await? {
-            (
-                row.get::<i64>(0).unwrap_or(0),
-                row.get::<i64>(1).unwrap_or(0),
-                row.get::<i64>(2).unwrap_or(0),
-                row.get::<i64>(3).unwrap_or(0),
-                row.get::<i64>(4).unwrap_or(0),
             )
-        } else {
-            (0, 0, 0, 0, 0)
-        };
+            .await?;
 
-        let mut quota_stmt = conn.prepare(
+        let mut rows = stmt
+            .query((
+                hour_ago.format("%Y-%m-%d %H:%M:%f").to_string(),
+                day_ago.format("%Y-%m-%d %H:%M:%f").to_string(),
+                week_ago.format("%Y-%m-%d %H:%M:%f").to_string(),
+                month_ago.format("%Y-%m-%d %H:%M:%f").to_string(),
+                provider.to_string(),
+            ))
+            .await?;
+
+        let (used_hourly, used_today, used_weekly, used_monthly, cache_hits) =
+            if let Some(row) = rows.next().await? {
+                (
+                    row.get::<i64>(0).unwrap_or(0),
+                    row.get::<i64>(1).unwrap_or(0),
+                    row.get::<i64>(2).unwrap_or(0),
+                    row.get::<i64>(3).unwrap_or(0),
+                    row.get::<i64>(4).unwrap_or(0),
+                )
+            } else {
+                (0, 0, 0, 0, 0)
+            };
+
+        let quota_stmt = conn.prepare(
             "SELECT rate_limited_until, COALESCE(weekly_quota, 1000000) FROM provider_quotas WHERE provider = ?1"
         ).await?;
         let mut quota_rows = quota_stmt.query([provider.to_string()]).await?;
@@ -143,13 +156,17 @@ impl RateLimitManager {
         let day_ago = now - Duration::days(1);
 
         let conn = self.db.get().await?;
-        let mut stmt = conn.prepare(
-            "SELECT timestamp, tokens_used, status_code FROM rate_limit_usage
+        let stmt = conn
+            .prepare(
+                "SELECT timestamp, tokens_used, status_code FROM rate_limit_usage
              WHERE provider = ?1 AND timestamp > ?2
              ORDER BY timestamp ASC",
-        ).await?;
+            )
+            .await?;
 
-        let mut rows = stmt.query((provider.to_string(), day_ago.to_rfc3339())).await?;
+        let mut rows = stmt
+            .query((provider.to_string(), day_ago.to_rfc3339()))
+            .await?;
         let mut requests = Vec::new();
 
         while let Some(row) = rows.next().await? {
@@ -207,13 +224,16 @@ impl RateLimitManager {
              VALUES (?1, ?2)
              ON CONFLICT(provider) DO UPDATE SET rate_limited_until = ?2",
             (provider.to_string(), until.to_rfc3339()),
-        ).await?;
+        )
+        .await?;
         Ok(())
     }
 
     pub async fn get_all_providers(&self) -> Result<Vec<String>> {
         let conn = self.db.get().await?;
-        let mut stmt = conn.prepare("SELECT DISTINCT provider FROM rate_limit_usage").await?;
+        let stmt = conn
+            .prepare("SELECT DISTINCT provider FROM rate_limit_usage")
+            .await?;
         let mut rows = stmt.query(()).await?;
         let mut providers = Vec::new();
         while let Some(row) = rows.next().await? {
@@ -254,13 +274,29 @@ impl RateLimitManager {
                 manual_limit_percentage REAL DEFAULT 0.0,
                 last_manual_update DATETIME,
                 weekly_quota INTEGER DEFAULT 1000000
-            );"
-        ).await?;
+            );",
+        )
+        .await?;
 
         // Defensive column migrations
-        let _ = conn.execute("ALTER TABLE rate_limit_usage ADD COLUMN cache_hits INTEGER DEFAULT 0", ()).await;
-        let _ = conn.execute("ALTER TABLE rate_limit_usage ADD COLUMN cost_usd REAL DEFAULT 0.0", ()).await;
-        let _ = conn.execute("ALTER TABLE provider_quotas ADD COLUMN weekly_quota INTEGER DEFAULT 1000000", ()).await;
+        let _ = conn
+            .execute(
+                "ALTER TABLE rate_limit_usage ADD COLUMN cache_hits INTEGER DEFAULT 0",
+                (),
+            )
+            .await;
+        let _ = conn
+            .execute(
+                "ALTER TABLE rate_limit_usage ADD COLUMN cost_usd REAL DEFAULT 0.0",
+                (),
+            )
+            .await;
+        let _ = conn
+            .execute(
+                "ALTER TABLE provider_quotas ADD COLUMN weekly_quota INTEGER DEFAULT 1000000",
+                (),
+            )
+            .await;
 
         Ok(())
     }
@@ -273,7 +309,9 @@ impl SchemaInitializer for RateLimitManager {
                 let rt = tokio::runtime::Builder::new_current_thread()
                     .enable_all()
                     .build()
-                    .map_err(|e| anyhow::anyhow!("failed to build runtime for rate limit schema: {}", e))?;
+                    .map_err(|e| {
+                        anyhow::anyhow!("failed to build runtime for rate limit schema: {}", e)
+                    })?;
                 rt.block_on(self.init_schema_async())
             })
             .join()
@@ -281,5 +319,3 @@ impl SchemaInitializer for RateLimitManager {
         })
     }
 }
-
-

@@ -1,11 +1,11 @@
+use crate::adapters::inbound::http::state::check_auth;
+use crate::adapters::inbound::http::AppState;
 use axum::{
     extract::State,
     http::{HeaderMap, StatusCode},
     Json,
 };
 use serde::Deserialize;
-use crate::adapters::inbound::http::state::check_auth;
-use crate::adapters::inbound::http::AppState;
 use std::path::Path;
 
 #[derive(Debug, Deserialize)]
@@ -57,7 +57,11 @@ pub async fn code_scan_handler(
     // Security scan on path
     let sec_result = match state.security.process_input(&requested_path).await {
         Ok(res) => res,
-        Err(e) => return Ok(Json(serde_json::json!({ "status": "error", "message": e.to_string() }))),
+        Err(e) => {
+            return Ok(Json(
+                serde_json::json!({ "status": "error", "message": e.to_string() }),
+            ))
+        }
     };
 
     if !sec_result.allowed {
@@ -105,7 +109,11 @@ pub async fn code_find_handler(
     check_auth(&headers, &state)?;
     let sec_result = match state.security.process_input(&payload.query).await {
         Ok(res) => res,
-        Err(e) => return Ok(Json(serde_json::json!({ "status": "error", "message": e.to_string() }))),
+        Err(e) => {
+            return Ok(Json(
+                serde_json::json!({ "status": "error", "message": e.to_string() }),
+            ))
+        }
     };
 
     if !sec_result.allowed {
@@ -120,7 +128,11 @@ pub async fn code_find_handler(
         })));
     }
 
-    let query = sec_result.sanitized_input.as_deref().unwrap_or(&sec_result.original_input).to_string();
+    let query = sec_result
+        .sanitized_input
+        .as_deref()
+        .unwrap_or(&sec_result.original_input)
+        .to_string();
     let limit = payload.limit.max(1).min(100);
 
     let symbols = code_find_symbols(
@@ -184,7 +196,11 @@ pub async fn code_context_handler(
     check_auth(&headers, &state)?;
     let sec_result = match state.security.process_input(&payload.query).await {
         Ok(res) => res,
-        Err(e) => return Ok(Json(serde_json::json!({ "status": "error", "message": e.to_string() }))),
+        Err(e) => {
+            return Ok(Json(
+                serde_json::json!({ "status": "error", "message": e.to_string() }),
+            ))
+        }
     };
 
     if !sec_result.allowed {
@@ -200,19 +216,46 @@ pub async fn code_context_handler(
     }
 
     let limit = payload.limit.max(1).min(100);
-    let kind_limit = if payload.query.trim().is_empty() { limit } else { 10_000 };
+    let kind_limit = if payload.query.trim().is_empty() {
+        limit
+    } else {
+        10_000
+    };
     let budget_tokens = payload.budget_tokens.max(100).min(8000);
 
     let (mut symbols, is_listing) = if let Some(kind) = payload.kind.as_deref() {
         match kind.to_ascii_lowercase().as_str() {
-            "function" | "fn" => (state.code_query.functions(kind_limit).unwrap_or_default(), true),
-            "struct" => (state.code_query.structs(kind_limit).unwrap_or_default(), true),
-            "class" => (state.code_query.classes(kind_limit).unwrap_or_default(), true),
+            "function" | "fn" => (
+                state.code_query.functions(kind_limit).unwrap_or_default(),
+                true,
+            ),
+            "struct" => (
+                state.code_query.structs(kind_limit).unwrap_or_default(),
+                true,
+            ),
+            "class" => (
+                state.code_query.classes(kind_limit).unwrap_or_default(),
+                true,
+            ),
             "enum" => (state.code_query.enums(kind_limit).unwrap_or_default(), true),
-            _ => (state.code_query.search(&payload.query, limit).map(|result| result.symbols).unwrap_or_default(), false),
+            _ => (
+                state
+                    .code_query
+                    .search(&payload.query, limit)
+                    .map(|result| result.symbols)
+                    .unwrap_or_default(),
+                false,
+            ),
         }
     } else {
-        (state.code_query.search(&payload.query, limit).map(|result| result.symbols).unwrap_or_default(), false)
+        (
+            state
+                .code_query
+                .search(&payload.query, limit)
+                .map(|result| result.symbols)
+                .unwrap_or_default(),
+            false,
+        )
     };
 
     if is_listing {
@@ -263,13 +306,26 @@ fn code_find_symbols(
     limit: usize,
 ) -> Vec<code_graph::types::Symbol> {
     let limit = limit.max(1).min(100);
-    let broad_limit = if query.trim().is_empty() { limit } else { 10_000 };
+    let broad_limit = if query.trim().is_empty() {
+        limit
+    } else {
+        10_000
+    };
 
-    let (mut symbols, is_listing) = if let Some(pattern) = pattern.filter(|p| !p.trim().is_empty()) {
+    let (mut symbols, is_listing) = if let Some(pattern) = pattern.filter(|p| !p.trim().is_empty())
+    {
         if is_supported_code_pattern(pattern) {
-            (code_query.search_by_pattern(pattern, broad_limit).unwrap_or_default(), true)
+            (
+                code_query
+                    .search_by_pattern(pattern, broad_limit)
+                    .unwrap_or_default(),
+                true,
+            )
         } else {
-            (search_code_symbols_with_fallback(code_query, pattern, broad_limit), false)
+            (
+                search_code_symbols_with_fallback(code_query, pattern, broad_limit),
+                false,
+            )
         }
     } else if let Some(kind) = kind.filter(|k| !k.trim().is_empty()) {
         match kind.to_ascii_lowercase().as_str() {
@@ -277,10 +333,16 @@ fn code_find_symbols(
             "struct" => (code_query.structs(broad_limit).unwrap_or_default(), true),
             "class" => (code_query.classes(broad_limit).unwrap_or_default(), true),
             "enum" => (code_query.enums(broad_limit).unwrap_or_default(), true),
-            _ => (search_code_symbols_with_fallback(code_query, query, broad_limit), false),
+            _ => (
+                search_code_symbols_with_fallback(code_query, query, broad_limit),
+                false,
+            ),
         }
     } else {
-        (search_code_symbols_with_fallback(code_query, query, broad_limit), false)
+        (
+            search_code_symbols_with_fallback(code_query, query, broad_limit),
+            false,
+        )
     };
 
     if is_listing {
@@ -294,7 +356,18 @@ fn code_find_symbols(
 fn is_supported_code_pattern(pattern: &str) -> bool {
     matches!(
         pattern,
-        "function_call" | "function_definition" | "struct_definition" | "struct" | "class_definition" | "class" | "enum_definition" | "enum" | "module_definition" | "module" | "import" | "use_statement"
+        "function_call"
+            | "function_definition"
+            | "struct_definition"
+            | "struct"
+            | "class_definition"
+            | "class"
+            | "enum_definition"
+            | "enum"
+            | "module_definition"
+            | "module"
+            | "import"
+            | "use_statement"
     )
 }
 
@@ -304,12 +377,18 @@ fn search_code_symbols_with_fallback(
     limit: usize,
 ) -> Vec<code_graph::types::Symbol> {
     let query = query.trim();
-    let mut symbols = code_query.search(query, limit).map(|result| result.symbols).unwrap_or_default();
+    let mut symbols = code_query
+        .search(query, limit)
+        .map(|result| result.symbols)
+        .unwrap_or_default();
 
     if symbols.is_empty() {
         if let Some(token) = best_symbol_query_token(query) {
             if token != query {
-                symbols = code_query.search(token, limit).map(|result| result.symbols).unwrap_or_default();
+                symbols = code_query
+                    .search(token, limit)
+                    .map(|result| result.symbols)
+                    .unwrap_or_default();
             }
         }
     }
@@ -331,11 +410,18 @@ fn best_symbol_query_token(query: &str) -> Option<&str> {
 
 fn filter_symbols_by_query(symbols: &mut Vec<code_graph::types::Symbol>, query: &str) {
     let query = query.trim().to_ascii_lowercase();
-    if query.is_empty() { return; }
+    if query.is_empty() {
+        return;
+    }
 
     symbols.retain(|symbol| {
         symbol.name.to_ascii_lowercase().contains(&query)
-            || symbol.signature.as_deref().unwrap_or_default().to_ascii_lowercase().contains(&query)
+            || symbol
+                .signature
+                .as_deref()
+                .unwrap_or_default()
+                .to_ascii_lowercase()
+                .contains(&query)
             || symbol.file_path.to_ascii_lowercase().contains(&query)
     });
 }
@@ -343,27 +429,25 @@ fn filter_symbols_by_query(symbols: &mut Vec<code_graph::types::Symbol>, query: 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use code_graph::types::{Symbol, SymbolKind, Language};
+    use code_graph::types::{Language, Symbol, SymbolKind};
 
     #[test]
     fn test_filter_symbols_by_query_strict_filtering_bug_fixed_fixed() {
-        let mut symbols = vec![
-            Symbol {
-                id: None,
-                stable_id: None,
-                name: "CacheStore".to_string(),
-                kind: SymbolKind::Struct,
-                lang: Language::Rust,
-                file_path: "src/cache.rs".to_string(),
-                start_line: 1,
-                end_line: 10,
-                start_col: 0,
-                end_col: 0,
-                signature: Some("struct CacheStore".to_string()),
-                parent: None,
-                complexity: None,
-            }
-        ];
+        let mut symbols = vec![Symbol {
+            id: None,
+            stable_id: None,
+            name: "CacheStore".to_string(),
+            kind: SymbolKind::Struct,
+            lang: Language::Rust,
+            file_path: "src/cache.rs".to_string(),
+            start_line: 1,
+            end_line: 10,
+            start_col: 0,
+            end_col: 0,
+            signature: Some("struct CacheStore".to_string()),
+            parent: None,
+            complexity: None,
+        }];
 
         // The query "memory storage" doesn't literally appear in "CacheStore"
         // In search mode (which is what we want to fix), we should NOT apply filter_symbols_by_query
@@ -380,23 +464,21 @@ mod tests {
 
     #[test]
     fn test_filter_symbols_by_query_case_insensitive() {
-        let mut symbols = vec![
-            Symbol {
-                id: None,
-                stable_id: None,
-                name: "CacheStore".to_string(),
-                kind: SymbolKind::Struct,
-                lang: Language::Rust,
-                file_path: "src/cache.rs".to_string(),
-                start_line: 1,
-                end_line: 10,
-                start_col: 0,
-                end_col: 0,
-                signature: Some("struct CacheStore".to_string()),
-                parent: None,
-                complexity: None,
-            }
-        ];
+        let mut symbols = vec![Symbol {
+            id: None,
+            stable_id: None,
+            name: "CacheStore".to_string(),
+            kind: SymbolKind::Struct,
+            lang: Language::Rust,
+            file_path: "src/cache.rs".to_string(),
+            start_line: 1,
+            end_line: 10,
+            start_col: 0,
+            end_col: 0,
+            signature: Some("struct CacheStore".to_string()),
+            parent: None,
+            complexity: None,
+        }];
 
         filter_symbols_by_query(&mut symbols, "cache");
         assert_eq!(symbols.len(), 1);
