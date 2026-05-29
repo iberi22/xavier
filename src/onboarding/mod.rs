@@ -56,6 +56,12 @@ pub struct OnboardingEngine {
     pub auto_apply: bool,
 }
 
+impl Default for OnboardingEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OnboardingEngine {
     pub fn new() -> Self {
         Self { auto_apply: false }
