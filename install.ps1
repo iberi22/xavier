@@ -1,11 +1,11 @@
 #!/usr/bin/env pwsh
 #requires -Version 5.1
-# Xavier v1.0 - Windows Installer
+# Xavier v0.6.1-beta - Windows Installer
 # One-liner: irm https://raw.githubusercontent.com/iberi22/xavier/main/install.ps1 | iex
 
 param(
     [string]$InstallDir = "$env:USERPROFILE\.xavier",
-    [string]$Version = "1.0.0",
+    [string]$Version = "0.6.1-beta",
     [string]$Token = "",
     [int]$Port = 8006,
     [switch]$SkipRustCheck,
@@ -26,7 +26,7 @@ function Write-Err($msg) { Write-Host "  [ERR]  $msg" -ForegroundColor Red }
 # ─── Banner ───────────────────────────────────────────────────────────────
 Write-Host ""
 Write-Host "╔══════════════════════════════════════════════════════════════╗" -ForegroundColor Cyan
-Write-Host "║  Xavier v1.0 - Fast Vector Memory for AI Agents              ║" -ForegroundColor Cyan
+Write-Host "║  Xavier v0.6.1-beta - Fast Vector Memory for AI Agents       ║" -ForegroundColor Cyan
 Write-Host "║  Windows Installer                                           ║" -ForegroundColor Cyan
 Write-Host "╚══════════════════════════════════════════════════════════════╝" -ForegroundColor Cyan
 Write-Host ""
@@ -245,7 +245,7 @@ set XAVIER_PORT=$Port
 
 if exist "$InstallDir\xavier.exe" (
     sc create Xavier binPath= "$InstallDir\xavier.exe http --config $configPath" start= auto
-    sc description Xavier "Xavier v1.0 - AI Agent Memory Runtime"
+    sc description Xavier "Xavier v0.6.1-beta - AI Agent Memory Runtime"
     sc start Xavier
     echo Xavier service installed and started
 ) else (
@@ -276,7 +276,7 @@ if (-not $Token) { Write-Error "XAVIER_TOKEN not set"; exit 1 }
 
 $headers = @{ "X-Xavier-Token" = $Token; "Content-Type" = "application/json" }
 
-Write-Host "=== Xavier v1.0 Verification ===" -ForegroundColor Cyan
+Write-Host "=== Xavier v0.6.1-beta Verification ===" -ForegroundColor Cyan
 Write-Host "URL: $BaseUrl" -ForegroundColor Gray
 
 # Health check

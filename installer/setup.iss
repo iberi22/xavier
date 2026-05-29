@@ -1,6 +1,6 @@
 ; Inno Setup Script for Xavier
 #define MyAppName "Xavier"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "0.6.1-beta"
 #define MyAppPublisher "SouthWest AI Labs"
 #define MyAppURL "https://github.com/iberi22/xavier"
 #define MyAppExeName "xavier-gui.exe"

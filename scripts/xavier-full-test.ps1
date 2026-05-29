@@ -35,7 +35,7 @@ function Test-Step($name, $scriptblock) {
 
 Test-Step "Health endpoint" {
     $r = Invoke-RestMethod -Uri "$XavierUrl/health" -Method GET -TimeoutSec 10
-    return ($r.status -eq "ok" -and $r.version -eq "1.0.0")
+    return ($r.status -eq "ok" -and $r.version -eq "0.6.1-beta")
 }
 
 Test-Step "Memory add" {
