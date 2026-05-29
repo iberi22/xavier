@@ -93,6 +93,7 @@ jobs:
     needs: [panel-check]
     env:
       XAVIER_TOKEN: dev-token
+      XAVIER_DEV_MODE: 1
       XAVIER_URL: http://127.0.0.1:8003
       XAVIER_HOST: 127.0.0.1
       XAVIER_PORT: 8003
@@ -140,6 +141,7 @@ jobs:
     needs: [panel-check, check, clippy, test, build, panel-e2e]
     env:
       XAVIER_TOKEN: dev-token
+      XAVIER_DEV_MODE: 1
       XAVIER_URL: http://127.0.0.1:8003
       XAVIER_HOST: 127.0.0.1
       XAVIER_PORT: 8003

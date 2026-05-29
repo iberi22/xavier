@@ -4,6 +4,7 @@ const appPath = process.env.PANEL_UI_APP_PATH ?? "/";
 const panelApiRoot = "/panel/api";
 const assetRoot =
   appPath === "/" ? "/assets" : `${appPath.replace(/\/$/, "")}/assets`;
+const testToken = process.env.XAVIER_TOKEN || "dev-token";
 const prompts = [
   "Explain xavier memory and show the answer as a structured UI.",
   "Summarize the current agent workflow as cards with supporting details.",
@@ -16,7 +17,7 @@ async function enterPanel(page: Page) {
     page.getByText("OpenUI cockpit for the internal agent"),
   ).toBeVisible();
 
-  await page.getByPlaceholder("XAVIER_TOKEN").fill("dev-token");
+  await page.getByPlaceholder("XAVIER_TOKEN").fill(testToken);
   await page.getByRole("button", { name: "Enter panel" }).click();
 
   await expect(page.getByRole("button", { name: "New thread" })).toBeVisible();
@@ -45,7 +46,7 @@ test.describe("Xavier generative panel", () => {
     const authorizedThreadsResponse = await request.get(
       `${panelApiRoot}/threads`,
       {
-        headers: { "X-Xavier-Token": "dev-token" },
+        headers: { "X-Xavier-Token": testToken },
       },
     );
     expect(authorizedThreadsResponse.status()).toBe(200);
@@ -95,7 +96,7 @@ test.describe("Xavier generative panel", () => {
     await expect(page.locator(".topbar h1")).not.toHaveText("New Thread");
 
     const threadsResponse = await request.get(`${panelApiRoot}/threads`, {
-      headers: { "X-Xavier-Token": "dev-token" },
+      headers: { "X-Xavier-Token": testToken },
     });
     const threads = (await threadsResponse.json()) as Array<{
       id: string;
@@ -108,7 +109,7 @@ test.describe("Xavier generative panel", () => {
     const detailResponse = await request.get(
       `${panelApiRoot}/threads/${activeThread?.id}`,
       {
-        headers: { "X-Xavier-Token": "dev-token" },
+        headers: { "X-Xavier-Token": testToken },
       },
     );
     expect(detailResponse.status()).toBe(200);
