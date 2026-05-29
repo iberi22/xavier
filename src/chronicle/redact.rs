@@ -85,7 +85,7 @@ mod tests {
 
     #[test]
     fn test_redact_core_names() {
-        let input = "Xavier2 is powered by Cortex";
+        let input = "xavier is powered by Cortex";
         let output = redact(input);
         assert_eq!(output, "[memory-core] is powered by [memory-core]");
     }
@@ -113,11 +113,11 @@ mod tests {
 
     #[test]
     fn test_redact_workspace() {
-        let input = "Repo path: /home/user/projects/xavier2/src";
+        let input = "Repo path: /home/user/projects/xavier/src";
         let output = redact(input);
         assert_eq!(output, "Repo path: [workspace]");
 
-        let input2 = "Windows path: C:\\Work\\xavier2\\README.md";
+        let input2 = "Windows path: C:\\Work\\xavier\\README.md";
         let output2 = redact(input2);
         assert_eq!(output2, "Windows path: [workspace]");
     }
@@ -144,3 +144,4 @@ mod tests {
         assert!(output.contains("[internal-service]"));
     }
 }
+

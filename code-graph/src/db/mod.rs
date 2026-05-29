@@ -1,4 +1,5 @@
 //! SQLite database for storing code graph
+// Build force-recompile 2026-05-27
 
 pub mod benchmarks;
 

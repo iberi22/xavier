@@ -1,0 +1,109 @@
+{
+  "date": "2026-05-26",
+  "investigator": "BELA (Claw)",
+  "report_type": "fixes_implementation_and_pr",
+  "pr_url": "https://github.com/iberi22/xavier/pull/387",
+  "branch": "fix/memory-anomalies-2026-05-25",
+
+  "fixes_applied": [
+    {
+      "id": "A001",
+      "title": "Unicode Sanitization",
+      "status": "IMPLEMENTED",
+      "file": "src/adapters/inbound/http/handlers/memory.rs",
+      "description": "Added sanitize_unicode() function that strips control characters (0x00-0x1F) and surrogate pairs (0xD800-0xDFFF) before saving to memory",
+      "verification": "Content accepted without JSON serialization errors",
+      "notes": "Uses numeric char code comparison to avoid Rust unicode escape errors"
+    },
+    {
+      "id": "A003",
+      "title": "Path Prefix Search Filter",
+      "status": "VERIFIED_WORKING",
+      "file": "src/memory/schema.rs",
+      "description": "Added path_prefix field to MemoryQueryFilters and implemented filtering in matches_filters()",
+      "verification": "Search with path_prefix filter returns only matching paths",
+      "test_result": "PASS - Filter correctly narrows results"
+    },
+    {
+      "id": "A006",
+      "title": "HTTP Body Size Limit",
+      "status": "IMPLEMENTED",
+      "file": "src/cli/server.rs",
+      "description": "Added DefaultBodyLimit::max(10MB) to protected routes layer",
+      "verification": "Allows larger request bodies for batch operations",
+      "notes": "Applied before rate_limit and auth middleware"
+    },
+    {
+      "id": "A007",
+      "title": "Path Field in Search Results",
+      "status": "IMPLEMENTED_NOT_VERIFIED",
+      "file": "src/adapters/inbound/http/handlers/memory.rs",
+      "description": "Added path and metadata fields to search result JSON in both search_handler and memory_query_handler",
+      "verification": "Code changes present but API response still missing path field",
+      "issue": "Possible serialization layer or cache issue preventing path from appearing in response",
+      "notes": "Requires further investigation - may be in DTO mapping or response middleware"
+    }
+  ],
+
+  "compilation": {
+    "status": "SUCCESS",
+    "target": "x86_64-pc-windows-gnu",
+    "toolchain": "MinGW-w64 (MSYS2)",
+    "features": "cli-interactive",
+    "exe_size_mb": 36.7,
+    "warnings": 5,
+    "errors": 0
+  },
+
+  "benchmark_v2_rerun": {
+    "date": "2026-05-26T04:33:45Z",
+    "tests": 5,
+    "passed": 5,
+    "failed": 0,
+    "precision": "100%",
+    "avg_latency_ms": 32,
+    "categories_tested": ["unicode", "code", "path_concept", "business", "technical"]
+  },
+
+  "anomalies_remaining": [
+    {
+      "id": "A004",
+      "title": "False Positive Security Scanner",
+      "status": "NOT_ADDRESSED",
+      "notes": "Requires ML model tuning or whitelist configuration - beyond current scope"
+    },
+    {
+      "id": "A007-followup",
+      "title": "Path Field Serialization",
+      "status": "INVESTIGATION_NEEDED",
+      "notes": "Code changes applied but API response missing path. Possible causes: DTO filter, middleware transform, or store not returning field"
+    }
+  ],
+
+  "git_changes": {
+    "branch": "fix/memory-anomalies-2026-05-25",
+    "commit": "71a1393",
+    "files_changed": [
+      "src/adapters/inbound/http/handlers/memory.rs",
+      "src/memory/schema.rs",
+      "src/cli/server.rs"
+    ],
+    "insertions": 45,
+    "deletions": 3
+  },
+
+  "recommendations": [
+    "Merge PR #387 after review",
+    "Investigate A007 path serialization in API response layer",
+    "Address A004 security scanner false positives in separate PR",
+    "Add integration tests for path_prefix filter",
+    "Add unit tests for unicode sanitization function"
+  ],
+
+  "next_steps": [
+    "Review PR #387: https://github.com/iberi22/xavier/pull/387",
+    "Debug A007 path field issue (check DTO serialization)",
+    "Re-run full test suite after merge",
+    "Create follow-up PR for A004 security scanner tuning"
+  ]
+}

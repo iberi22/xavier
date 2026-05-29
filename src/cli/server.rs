@@ -29,6 +29,7 @@ use crate::cli::config::{
 use std::time::Instant;
 use crate::settings::XavierSettings;
 use crate::cli::state::CliState;
+use crate::onboarding;
 use xavier::embedding::build_embedder_from_env;
 use xavier::adapters::inbound::http::routes::{
     sync_check_handler, time_metric_handler, verify_save_handler,
@@ -62,6 +63,21 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     let settings = XavierSettings::current();
     settings.apply_to_env();
     std::env::set_var("XAVIER_PORT", port.to_string());
+
+    // --- Auto-onboarding: scan system and configure if no prior config ---
+    let config_path = std::path::Path::new("config/xavier.config.json");
+    if !config_path.exists() {
+        info!("No config found — running auto-onboarding scan...");
+        let engine = onboarding::OnboardingEngine { auto_apply: true };
+        match engine.scan_and_configure().await {
+            Ok(report) => info!("Auto-onboard complete: embedder={}, {} cores, {:.1}GB RAM",
+                report.embedder, report.system.cpu_cores, report.system.ram_gb),
+            Err(e) => warn!("Auto-onboard failed (continuing anyway): {}", e),
+        }
+    } else {
+        info!("Config exists at config/xavier.config.json — skipping auto-onboard");
+    }
+    // --- end auto-onboarding ---
 
     let bind_host = resolve_http_bind_host();
     let bind_addr = format!("{}:{}", bind_host, port);

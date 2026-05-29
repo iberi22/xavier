@@ -7,7 +7,7 @@
 pub const REDACTION_PATTERNS: &[(&str, &str)] = &[
     // Internal repository paths (must be before core names to avoid partial redaction)
     (
-        r"(?i)(?:/|[a-zA-Z]:\\)(?:[^/\\\s]+[/\\])*xavier2(?:[/\\][^/\\\s]+)*",
+        r"(?i)(?:/|[a-zA-Z]:\\)(?:[^/\\\s]+[/\\])*xavier(?:[/\\][^/\\\s]+)*",
         "[workspace]",
     ),
     // Project scripts path
@@ -24,7 +24,7 @@ pub const REDACTION_PATTERNS: &[(&str, &str)] = &[
     // Stakeholder names (must be before core names if they overlap, like "Cortex Team")
     (r"(?i)\b(Cortex Team|Belal|Xavier)\b", "[team-member]"),
     // Core system names
-    (r"(?i)\b(Xavier2|Cortex)\b", "[memory-core]"),
+    (r"(?i)\b(xavier|Cortex)\b", "[memory-core]"),
     // Credentials and Secrets
     (
         r"(?i)(api[_-]?key|token|password|secret|credential)[ \t]*[:=][ \t]*[a-zA-Z0-9_\-\.]{8,}",
@@ -36,3 +36,4 @@ pub const REDACTION_PATTERNS: &[(&str, &str)] = &[
         "[vulnerability-patched]",
     ),
 ];
+
