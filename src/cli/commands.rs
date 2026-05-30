@@ -495,32 +495,52 @@ pub async fn recall_memories(query: &str, limit: usize) -> Result<()> {
         .await;
 
     match response {
-        Ok(resp) => {
-            if resp.status().is_success() {
-                let json: serde_json::Value = resp.json().await.unwrap_or_default();
-                let results = json["results"].as_array().map(|r| r.len()).unwrap_or(0);
-                println!("Found {} results for \"{}\":", results, query);
-                if let Some(items) = json["results"].as_array() {
-                    for (i, item) in items.iter().enumerate() {
-                        let content = item["content"].as_str().unwrap_or("(no content)");
-                        let kind = item["metadata"]["kind"].as_str().unwrap_or("unknown");
-                        let score = item["score"].as_f64().unwrap_or(0.0);
-                        let preview = if content.len() > 120 {
-                            format!("{}...", &content[..120])
-                        } else {
-                            content.to_string()
-                        };
-                        println!("{:>3}. [{:>12}] σ={:.3}  {}", i + 1, kind, score, preview);
-                    }
+        Ok(resp) if resp.status().is_success() => {
+            let json: serde_json::Value = resp.json().await.unwrap_or_default();
+            let results = json["results"].as_array().map(|r| r.len()).unwrap_or(0);
+            println!("Found {} results for \"{}\":", results, query);
+            if let Some(items) = json["results"].as_array() {
+                for (i, item) in items.iter().enumerate() {
+                    let content = item["content"].as_str().unwrap_or("(no content)");
+                    let kind = item["metadata"]["kind"].as_str().unwrap_or("unknown");
+                    let score = item["score"].as_f64().unwrap_or(0.0);
+                    let preview = if content.len() > 120 {
+                        format!("{}...", &content[..120])
+                    } else {
+                        content.to_string()
+                    };
+                    println!("{:>3}. [{:>12}] σ={:.3}  {}", i + 1, kind, score, preview);
                 }
-            } else {
-                let status = resp.status();
-                let text = resp.text().await.unwrap_or_default();
-                println!("Recall failed ({}): {}", status, text);
             }
         }
-        Err(e) => {
-            println!("Error connecting to Xavier server: {}", e);
+        _ => {
+            println!("⚠️ Server offline or request failed. Falling back to local offline database index...");
+            match load_spawn_memory().await {
+                Ok(memory) => {
+                    match memory.search(&query, limit).await {
+                        Ok(docs) => {
+                            println!("Found {} results offline for \"{}\":", docs.len(), query);
+                            for (i, doc) in docs.iter().enumerate() {
+                                let content = &doc.content;
+                                let kind = doc.metadata.get("kind").and_then(|v| v.as_str()).unwrap_or("unknown");
+                                let score = doc.metadata.get("score").and_then(|v| v.as_f64()).unwrap_or(1.0);
+                                let preview = if content.len() > 120 {
+                                    format!("{}...", &content[..120])
+                                } else {
+                                    content.to_string()
+                                };
+                                println!("{:>3}. [{:>12}] σ={:.3}  {}", i + 1, kind, score, preview);
+                            }
+                        }
+                        Err(e) => {
+                            println!("❌ Local search failed: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Failed to initialize local offline database store: {}", e);
+                }
+            }
         }
     }
 
@@ -541,19 +561,28 @@ pub async fn show_stats() -> Result<()> {
         .await;
 
     match response {
-        Ok(resp) => {
-            if resp.status().is_success() {
-                let body: serde_json::Value = resp.json().await.unwrap_or_default();
-                println!("\nXavier Statistics:");
-                println!("{}", serde_json::to_string_pretty(&body)?);
-            } else {
-                println!("Failed to get stats: {}", resp.status());
-            }
+        Ok(resp) if resp.status().is_success() => {
+            let body: serde_json::Value = resp.json().await.unwrap_or_default();
+            println!("\nXavier Statistics:");
+            println!("{}", serde_json::to_string_pretty(&body)?);
         }
-        Err(e) => {
-            println!("Error connecting to Xavier server: {}", e);
-            println!("Configured endpoint: {}", base_url);
-            println!("Is the server running? (xavier http)");
+        _ => {
+            println!("⚠️ Server offline or request failed. Falling back to local offline database statistics...");
+            match load_spawn_memory().await {
+                Ok(memory) => {
+                    match memory.usage().await {
+                        usage => {
+                            println!("\nXavier Offline Statistics:");
+                            println!("  Workspace: {}", memory.workspace_id());
+                            println!("  Document Count: {}", usage.document_count);
+                            println!("  Storage (Estimated Bytes): {}", usage.storage_bytes);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Failed to initialize local offline database store: {}", e);
+                }
+            }
         }
     }
 

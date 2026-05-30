@@ -8,12 +8,11 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use xavier::agents::rate_limit::RateLimitManager;
 use xavier::app::proxy_use_case::ProxyUseCase;
-use xavier::app::security_service::SecurityService;
 use xavier::coordination::{KeyLendingEngine, XavierEventBus};
 use xavier::embedding::Embedder;
 use xavier::memory::session_store::SessionStore;
 use xavier::memory::store::MemoryStore;
-use xavier::ports::inbound::{AgentLifecyclePort, MemoryQueryPort};
+use xavier::ports::inbound::{AgentLifecyclePort, MemoryQueryPort, InputSecurityPort, SecurityScanPort};
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
 
@@ -26,7 +25,9 @@ pub struct CliState {
     pub code_db: Arc<::code_graph::db::CodeGraphDB>,
     pub code_indexer: Arc<::code_graph::indexer::Indexer>,
     pub code_query: Arc<::code_graph::query::QueryEngine>,
-    pub security: Arc<SecurityService>,
+    pub security: Arc<dyn InputSecurityPort>,
+    #[allow(dead_code)]
+    pub security_scan: Arc<dyn SecurityScanPort>,
     pub _time_store: Option<Arc<TimeMetricsStore>>,
     pub agent_registry: Arc<dyn AgentLifecyclePort>,
     pub panel_store: Arc<SessionStore>,

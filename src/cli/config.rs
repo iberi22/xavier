@@ -65,8 +65,7 @@ pub fn resolve_http_port() -> u16 {
 }
 
 pub fn xavier_token() -> String {
-    xavier::security::auth::resolve_xavier_token()
-        .expect("XAVIER_TOKEN environment variable must be set for CLI client commands")
+    xavier::security::auth::resolve_xavier_token().unwrap_or_default()
 }
 
 pub fn require_xavier_token() -> Result<String> {

@@ -50,7 +50,7 @@ use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfi
 use xavier::memory::store::{MemoryRecord, MemoryStore};
 use xavier::ports::inbound::input_security_port::SecureInputResult;
 use xavier::ports::inbound::{
-    AgentLifecyclePort, InputSecurityPort, MemoryQueryPort, TimeMetricsPort,
+    AgentLifecyclePort, InputSecurityPort, MemoryQueryPort, SecurityScanPort, TimeMetricsPort,
 };
 use xavier::ports::outbound::schema_init::SchemaInitializer;
 use xavier::security::threat_store::SecurityThreatStore;
@@ -239,7 +239,8 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         code_db,
         code_indexer,
         code_query,
-        security: security_service,
+        security: security_service.clone() as Arc<dyn InputSecurityPort>,
+        security_scan: security_service.clone() as Arc<dyn SecurityScanPort>,
         _time_store: Some(time_store),
         agent_registry: SimpleAgentRegistry::new() as Arc<dyn AgentLifecyclePort>,
         panel_store,
@@ -2325,19 +2326,40 @@ pub async fn search_memories_filtered(
         .await;
 
     match response {
-        Ok(resp) => {
-            if resp.status().is_success() {
-                let body: serde_json::Value = resp.json().await.unwrap_or_default();
-                println!("\nSearch results for: {}", query);
-                println!("{}", serde_json::to_string_pretty(&body)?);
-            } else {
-                println!("Search failed with status: {}", resp.status());
-            }
+        Ok(resp) if resp.status().is_success() => {
+            let body: serde_json::Value = resp.json().await.unwrap_or_default();
+            println!("\nSearch results for: {}", query);
+            println!("{}", serde_json::to_string_pretty(&body)?);
         }
-        Err(e) => {
-            println!("Error connecting to Xavier server: {}", e);
-            println!("Configured endpoint: {}", base_url);
-            println!("Is the server running? (xavier http)");
+        _ => {
+            println!("⚠️ Server offline or request failed. Falling back to local offline database index...");
+            match crate::cli::commands::load_spawn_memory().await {
+                Ok(memory) => {
+                    match memory.search_filtered(&query, limit, Some(&filters)).await {
+                        Ok(docs) => {
+                            println!("\n[OFFLINE] Search results for: {}", query);
+                            let json_results = serde_json::json!({
+                                "results": docs.iter().map(|doc| {
+                                    serde_json::json!({
+                                        "id": doc.id,
+                                        "path": doc.path,
+                                        "content": doc.content,
+                                        "metadata": doc.metadata,
+                                        "score": doc.metadata.get("score").and_then(|v| v.as_f64()).unwrap_or(1.0),
+                                    })
+                                }).collect::<Vec<_>>()
+                            });
+                            println!("{}", serde_json::to_string_pretty(&json_results)?);
+                        }
+                        Err(e) => {
+                            println!("❌ Local search failed: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Failed to initialize local offline database store: {}", e);
+                }
+            }
         }
     }
 
@@ -2391,17 +2413,43 @@ pub async fn add_memory_hierarchical(
         .await;
 
     match response {
-        Ok(resp) => {
-            if resp.status().is_success() {
-                println!("Memory added successfully!");
-            } else {
-                println!("Failed to add memory: {}", resp.status());
-            }
+        Ok(resp) if resp.status().is_success() => {
+            println!("Memory added successfully via HTTP API!");
         }
-        Err(e) => {
-            println!("Error connecting to Xavier server: {}", e);
-            println!("Configured endpoint: {}", base_url);
-            println!("Is the server running? (xavier http)");
+        _ => {
+            println!("⚠️ Server offline or request failed. Falling back to local offline database write...");
+            match crate::cli::commands::load_spawn_memory().await {
+                Ok(memory) => {
+                    let path = format!("cli/add/{}", chrono::Utc::now().timestamp());
+                    let mut metadata = serde_json::json!({});
+                    if let Some(t) = title {
+                        metadata["title"] = serde_json::json!(t);
+                    }
+                    if let Some(k) = kind {
+                        metadata["kind"] = serde_json::json!(k);
+                    }
+
+                    let typed_payload = xavier::memory::schema::TypedMemoryPayload {
+                        cluster_id: cluster_id.map(|s| s.to_string()),
+                        level: level.map(|l| xavier::memory::schema::MemoryLevel::parse(l)),
+                        relation: relation.map(|r| xavier::memory::schema::RelationKind::new(r)),
+                        ..Default::default()
+                    };
+
+                    match memory.add_document_typed(path, content.to_string(), metadata, Some(typed_payload)).await {
+                        Ok(id) => {
+                            println!("✅ Memory added successfully offline to local SQLite-Vec database!");
+                            println!("Document ID: {id}");
+                        }
+                        Err(err) => {
+                            println!("❌ Local write failed: {}", err);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Failed to initialize local offline database store: {}", e);
+                }
+            }
         }
     }
 
