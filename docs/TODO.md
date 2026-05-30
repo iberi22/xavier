@@ -9,9 +9,9 @@
 | # | Task | Priority | Status |
 |---|------|----------|--------|
 | 1 | Fix data race en `get_last_sync_result()` — leer todos los campos bajo un lock | 🔴 CRITICAL | ✅ **COMPLETADO** |
-| 2 | Wire `SecurityScanPort` en `cli.rs` O eliminarlo | 🔴 CRITICAL | **PENDIENTE** |
-| 3 | Eliminar `app/` services muertos (`todo!()`) | 🟡 MEDIUM | **PENDIENTE** |
-| 4 | Push a GitHub (GROQ_API_KEY secret blockage) | 🔴 CRITICAL | **BLOQUEADO** |
+| 2 | Wire `SecurityScanPort` en `cli.rs` O eliminarlo | 🔴 CRITICAL | ✅ **COMPLETADO** |
+| 3 | Eliminar `app/` services muertos (`todo!()`) | 🟡 MEDIUM | ✅ **COMPLETADO** |
+| 4 | Push a GitHub (GROQ_API_KEY secret blockage) | 🔴 CRITICAL | ✅ **COMPLETADO** |
 
 ---
 
@@ -31,12 +31,12 @@
 
 ## v1.0 Release Criteria
 
-- [ ] `cargo check --lib` → 0 errors
+- [x] `cargo check --lib` → 0 errors
 - [ ] Todos los endpoints SEVIER verificados con curl
 - [x] Data race fix commiteado
 - [ ] Dead code ports eliminados
 - [ ] docs/ADR/ creado y commiteado
-- [ ] GitHub push exitoso
+- [x] GitHub push exitoso
 - [ ] Docker image build + run exitoso
 - [ ] Integration tests compilan (ignore=True)
 
