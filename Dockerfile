@@ -1,9 +1,17 @@
-﻿# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1
 # Xavier - Optimized Multi-Stage Docker Build
 # Target: < 100MB production image
 #
 # Usage: docker build --build-arg FEATURES="local-gllm,cli-interactive" -t xavier .
 #        docker run -p 8006:8006 xavier
+
+# Stage 0: Frontend Builder
+FROM node:20-bookworm-slim AS frontend-builder
+WORKDIR /app/panel-ui
+COPY panel-ui/package.json panel-ui/package-lock.json* ./
+RUN npm install
+COPY panel-ui/ ./
+RUN npm run build
 
 # Stage 1: Builder
 # Using slim variant to keep final image small (~500MB vs ~800MB for full)
@@ -43,7 +51,7 @@ RUN strip -s /app/target/release/xavier
 # Minimal Debian-based runtime with only essential libs
 FROM debian:bookworm-slim
 
-ARG XAVIER_VERSION=0.4.1
+ARG XAVIER_VERSION=0.6.1-beta
 
 # Runtime dependencies:
 # - ca-certificates: for HTTPS/TLS certificate validation
@@ -62,6 +70,9 @@ WORKDIR /app
 
 # Copy binary from builder stage
 COPY --from=builder /app/target/release/xavier /usr/local/bin/xavier
+
+# Copy frontend assets from frontend-builder stage
+COPY --from=frontend-builder /app/panel-ui/build /app/panel-ui/build
 
 EXPOSE 8006
 

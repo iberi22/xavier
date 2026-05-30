@@ -38,19 +38,26 @@ impl PgHeartConfig {
     /// - PGHEART_SYNC_INTERVAL_MS: Sync interval (default: 60000 = 1 minute)
     /// - PGHEART_AUTO_HEARTBEAT: Enable auto-heartbeat (default: true)
     pub fn from_env() -> Option<Self> {
-        let url = std::env::var("PGHEART_URL").ok()?;
-        let token = std::env::var("PGHEART_TOKEN").ok()?;
-        let instance_id = std::env::var("PGHEART_INSTANCE_ID").ok()?;
+        let settings = crate::settings::XavierSettings::current();
+        let url = std::env::var("PGHEART_URL")
+            .ok()
+            .or_else(|| settings.pgheart.url.clone())?;
+        let token = std::env::var("PGHEART_TOKEN")
+            .ok()
+            .or_else(|| settings.pgheart.token.clone())?;
+        let instance_id = std::env::var("PGHEART_INSTANCE_ID")
+            .ok()
+            .or_else(|| settings.pgheart.instance_id.clone())?;
 
         let sync_interval_ms = std::env::var("PGHEART_SYNC_INTERVAL_MS")
             .ok()
             .and_then(|s| s.parse().ok())
-            .unwrap_or(60000);
+            .unwrap_or(settings.pgheart.sync_interval_ms);
 
         let auto_heartbeat = std::env::var("PGHEART_AUTO_HEARTBEAT")
             .ok()
             .map(|s| s.to_lowercase() == "true" || s == "1")
-            .unwrap_or(true);
+            .unwrap_or(settings.pgheart.auto_heartbeat);
 
         Some(Self {
             url,
@@ -63,9 +70,10 @@ impl PgHeartConfig {
 
     /// Check if PgHeart is configured (required env vars are set)
     pub fn is_configured() -> bool {
-        std::env::var("PGHEART_URL").is_ok()
-            && std::env::var("PGHEART_TOKEN").is_ok()
-            && std::env::var("PGHEART_INSTANCE_ID").is_ok()
+        let settings = crate::settings::XavierSettings::current();
+        (std::env::var("PGHEART_URL").is_ok() || settings.pgheart.url.is_some())
+            && (std::env::var("PGHEART_TOKEN").is_ok() || settings.pgheart.token.is_some())
+            && (std::env::var("PGHEART_INSTANCE_ID").is_ok() || settings.pgheart.instance_id.is_some())
     }
 }
 
