@@ -13,11 +13,11 @@ Usage testing showed memory search results leaking existing workspace content wh
 
 ## Acceptance Criteria
 
-- [ ] define the canonical environment variables for all memory and workspace storage paths
-- [ ] verify those variables fully isolate a fresh runtime from previous local data
-- [ ] document which paths belong to code graph, vector memory, workspace state, and panel threads
-- [ ] add an automated test proving an isolated temporary workspace stays isolated
-- [ ] remove or explain any implicit seeding that makes empty-state testing ambiguous
+- [x] define the canonical environment variables for all memory and workspace storage paths
+- [x] verify those variables fully isolate a fresh runtime from previous local data
+- [x] document which paths belong to code graph, vector memory, workspace state, and panel threads
+- [x] add an automated test proving an isolated temporary workspace stays isolated
+- [x] remove or explain any implicit seeding that makes empty-state testing ambiguous
 
 ## Evidence
 

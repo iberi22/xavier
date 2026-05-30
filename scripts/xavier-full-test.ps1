@@ -7,12 +7,8 @@ param(
 )
 
 if (-not $XavierToken) {
-    if ($env:XAVIER_DEV_MODE -eq "true" -or $env:XAVIER_DEV_MODE -eq "1") {
-        $XavierToken = "dev-token"
-    } else {
-        Write-Error "XAVIER_TOKEN environment variable is not set. For development, set XAVIER_DEV_MODE=true to use the default dev-token."
-        exit 1
-    }
+    Write-Error "XAVIER_TOKEN environment variable is not set. A secure token is required for all operations."
+    exit 1
 }
 
 $headers = @{

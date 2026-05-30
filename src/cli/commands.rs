@@ -517,7 +517,7 @@ pub async fn recall_memories(query: &str, limit: usize) -> Result<()> {
             println!("⚠️ Server offline or request failed. Falling back to local offline database index...");
             match load_spawn_memory().await {
                 Ok(memory) => {
-                    match memory.search(&query, limit).await {
+                        match memory.search(query, limit).await {
                         Ok(docs) => {
                             println!("Found {} results offline for \"{}\":", docs.len(), query);
                             for (i, doc) in docs.iter().enumerate() {
@@ -570,14 +570,11 @@ pub async fn show_stats() -> Result<()> {
             println!("⚠️ Server offline or request failed. Falling back to local offline database statistics...");
             match load_spawn_memory().await {
                 Ok(memory) => {
-                    match memory.usage().await {
-                        usage => {
-                            println!("\nXavier Offline Statistics:");
-                            println!("  Workspace: {}", memory.workspace_id());
-                            println!("  Document Count: {}", usage.document_count);
-                            println!("  Storage (Estimated Bytes): {}", usage.storage_bytes);
-                        }
-                    }
+                    let usage = memory.usage().await;
+                    println!("\nXavier Offline Statistics:");
+                    println!("  Workspace: {}", memory.workspace_id());
+                    println!("  Document Count: {}", usage.document_count);
+                    println!("  Storage (Estimated Bytes): {}", usage.storage_bytes);
                 }
                 Err(e) => {
                     println!("❌ Failed to initialize local offline database store: {}", e);

@@ -161,8 +161,7 @@ Runtime configuration lives in [config/xavier.config.json](config/xavier.config.
 
 | Variable | Default | Description |
 |---|---|---|
-| `XAVIER_TOKEN` | auto-generated | Authentication token for HTTP API |
-| `XAVIER_DEV_MODE` | `false` | Skip auth in development scenarios |
+| `XAVIER_TOKEN` | required | Authentication token for HTTP API |
 | `XAVIER_CONFIG_PATH` | auto-resolved | Path to `xavier.toml`. Defaults to `XDG_CONFIG_HOME/xavier/xavier.toml` or `config/xavier.config.json`. |
 | Provider keys | unset | External API credentials (e.g. embedding providers) |
 

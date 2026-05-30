@@ -349,7 +349,7 @@ fn detect_disk_free_gb() -> f64 {
             unsafe {
                 let mut stat: libc::statvfs = std::mem::zeroed();
                 if libc::statvfs(cstr.as_ptr(), &mut stat) == 0 {
-                    Some((stat.f_bsize as u64 * stat.f_bavail) as f64 / (1024.0 * 1024.0 * 1024.0))
+                    Some((stat.f_bsize * stat.f_bavail) as f64 / (1024.0 * 1024.0 * 1024.0))
                 } else {
                     None
                 }
