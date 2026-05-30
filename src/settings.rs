@@ -38,6 +38,8 @@ pub struct XavierSettings {
     pub agents: AgentSettings,
     #[serde(default)]
     pub advanced: AdvancedSettings,
+    #[serde(default)]
+    pub pgheart: PgHeartSettings,
     #[serde(skip)]
     pub auth_token: Option<String>,
 }
@@ -60,12 +62,14 @@ impl fmt::Debug for XavierSettings {
             .field("enterprise", &self.enterprise)
             .field("agents", &self.agents)
             .field("advanced", &self.advanced)
+            .field("pgheart", &self.pgheart)
             .field("auth_token", &"[REDACTED]")
             .finish()
     }
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct ServerSettings {
     #[serde(default = "XavierSettings::default_host")]
     pub host: String,
@@ -95,6 +99,7 @@ impl Default for ServerSettings {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct WorkspaceSettings {
     pub default_workspace_id: String,
     pub default_plan: String,
@@ -122,6 +127,7 @@ impl Default for WorkspaceSettings {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct MemorySettings {
     pub backend: String,
     pub data_dir: String,
@@ -159,6 +165,7 @@ impl Default for MemorySettings {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct WorkingMemoryLayerConfig {
     pub capacity: usize,
     pub lru_exempt_access_threshold: u32,
@@ -178,6 +185,7 @@ impl Default for WorkingMemoryLayerConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct EpisodicMemoryLayerConfig {
     pub summary_window: usize,
     pub max_sessions: usize,
@@ -195,12 +203,14 @@ impl Default for EpisodicMemoryLayerConfig {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
 pub struct MemoryLayersSettings {
     pub working: WorkingMemoryLayerConfig,
     pub episodic: EpisodicMemoryLayerConfig,
 }
 
 #[derive(Clone, Deserialize)]
+#[serde(default)]
 pub struct ModelSettings {
     pub provider: String,
     pub api_flavor: String,
@@ -273,6 +283,7 @@ impl Default for ModelSettings {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct RetrievalSettings {
     pub disable_hyde: bool,
     pub rrf_k: Option<u32>, // XAVIER_RRF_K
@@ -292,6 +303,7 @@ impl Default for RetrievalSettings {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct SyncSettings {
     pub interval_ms: u64,
     pub lag_threshold_ms: u64,
@@ -313,6 +325,7 @@ impl Default for SyncSettings {
 }
 
 #[derive(Clone, Deserialize)]
+#[serde(default)]
 pub struct EmbeddingSettings {
     #[serde(default)]
     pub endpoint: String,
@@ -380,6 +393,7 @@ impl Default for EmbeddingSettings {
 }
 
 #[derive(Clone, Deserialize, Default)]
+#[serde(default)]
 pub struct SecuritySettings {
     pub allowed_domains: String,
     #[serde(default)]
@@ -396,6 +410,7 @@ impl fmt::Debug for SecuritySettings {
 }
 
 #[derive(Clone, Deserialize, Default)]
+#[serde(default)]
 pub struct TelegramSettings {
     pub enabled: bool,
     #[serde(default)]
@@ -412,6 +427,7 @@ impl fmt::Debug for TelegramSettings {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct RouterSettings {
     pub policy_path: String,
     pub policy_refresh_secs: u64,
@@ -427,11 +443,13 @@ impl Default for RouterSettings {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
 pub struct ChronicleSettings {
     pub model: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct EnterpriseSettings {
     pub db_path: String,
 }
@@ -445,11 +463,13 @@ impl Default for EnterpriseSettings {
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
 pub struct AgentSettings {
     pub weekly_budget: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct AdvancedSettings {
     pub qjl_threshold: usize,
     pub entity_extraction_enabled: bool,
@@ -464,6 +484,28 @@ impl Default for AdvancedSettings {
             entity_extraction_enabled: true,
             audit_chain_enabled: true,
             panel_store_dir: String::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct PgHeartSettings {
+    pub url: Option<String>,
+    pub token: Option<String>,
+    pub instance_id: Option<String>,
+    pub sync_interval_ms: u64,
+    pub auto_heartbeat: bool,
+}
+
+impl Default for PgHeartSettings {
+    fn default() -> Self {
+        Self {
+            url: None,
+            token: None,
+            instance_id: None,
+            sync_interval_ms: 60000,
+            auto_heartbeat: true,
         }
     }
 }
@@ -823,6 +865,20 @@ impl XavierSettings {
             non_empty(&self.advanced.panel_store_dir),
         );
 
+        // PgHeart settings
+        set_optional_if_absent("PGHEART_URL", self.pgheart.url.clone());
+        set_optional_if_absent("PGHEART_TOKEN", self.pgheart.token.clone());
+        set_optional_if_absent("PGHEART_INSTANCE_ID", self.pgheart.instance_id.clone());
+        set_if_absent("PGHEART_SYNC_INTERVAL_MS", &self.pgheart.sync_interval_ms.to_string());
+        set_if_absent(
+            "PGHEART_AUTO_HEARTBEAT",
+            if self.pgheart.auto_heartbeat {
+                "true"
+            } else {
+                "false"
+            },
+        );
+
         // Aliases for backward compatibility
         set_optional_if_absent("XAVIER_API_URL", non_empty(&self.server.url));
         if let Some(token) = &self.auth_token {
@@ -840,6 +896,15 @@ impl XavierSettings {
         }
         if settings.telegram.bot_token.is_none() {
             settings.telegram.bot_token = std::env::var("XAVIER_TELEGRAM_TOKEN").ok();
+        }
+        if settings.pgheart.url.is_none() {
+            settings.pgheart.url = std::env::var("PGHEART_URL").ok();
+        }
+        if settings.pgheart.token.is_none() {
+            settings.pgheart.token = std::env::var("PGHEART_TOKEN").ok();
+        }
+        if settings.pgheart.instance_id.is_none() {
+            settings.pgheart.instance_id = std::env::var("PGHEART_INSTANCE_ID").ok();
         }
         if settings.models.llm_api_key.is_none() {
             settings.models.llm_api_key = std::env::var("XAVIER_LLM_API_KEY").ok();

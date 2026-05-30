@@ -69,8 +69,10 @@ pub struct ModelProviderConfig {
 
 impl ModelProviderConfig {
     pub fn from_env() -> Self {
+        let settings = crate::settings::XavierSettings::current();
         let provider = std::env::var("XAVIER_MODEL_PROVIDER")
             .ok()
+            .or_else(|| Some(settings.models.provider.clone()))
             .map(|value| value.trim().to_ascii_lowercase());
 
         Self::from_label(provider.as_deref().unwrap_or("local"))
@@ -108,10 +110,14 @@ impl ModelProviderConfig {
     }
 
     fn local_from_env() -> Self {
+        let settings = crate::settings::XavierSettings::current();
         let api_flavor = std::env::var("XAVIER_API_FLAVOR")
             .ok()
             .and_then(|value| ApiFlavor::from_env(&value))
-            .unwrap_or(ApiFlavor::OpenAICompatible);
+            .unwrap_or_else(|| {
+                ApiFlavor::from_env(&settings.models.api_flavor)
+                    .unwrap_or(ApiFlavor::OpenAICompatible)
+            });
 
         match api_flavor {
             ApiFlavor::OpenAICompatible => Self {
@@ -120,13 +126,19 @@ impl ModelProviderConfig {
                 provider_label: "local".to_string(),
                 model: std::env::var("XAVIER_LOCAL_LLM_MODEL")
                     .or_else(|_| std::env::var("XAVIER_LLM_MODEL"))
-                    .unwrap_or_else(|_| DEFAULT_LOCAL_MODEL.to_string()),
+                    .ok()
+                    .or_else(|| Some(settings.models.local_llm_model.clone()))
+                    .or_else(|| settings.models.llm_model.clone())
+                    .unwrap_or_else(|| DEFAULT_LOCAL_MODEL.to_string()),
                 api_key: std::env::var("XAVIER_LOCAL_LLM_API_KEY")
                     .ok()
+                    .or_else(|| settings.models.local_llm_api_key.clone())
                     .or_else(|| Some("ollama".to_string())),
                 base_url: Some(
                     std::env::var("XAVIER_LOCAL_LLM_URL")
-                        .unwrap_or_else(|_| DEFAULT_LOCAL_BASE_URL.to_string()),
+                        .ok()
+                        .or_else(|| Some(settings.models.local_llm_url.clone()))
+                        .unwrap_or_else(|| DEFAULT_LOCAL_BASE_URL.to_string()),
                 ),
                 target: ProviderTarget::GenericOpenAICompatible,
             },
@@ -136,14 +148,21 @@ impl ModelProviderConfig {
                 provider_label: "local".to_string(),
                 model: std::env::var("XAVIER_LOCAL_LLM_MODEL")
                     .or_else(|_| std::env::var("XAVIER_LLM_MODEL"))
-                    .unwrap_or_else(|_| DEFAULT_LOCAL_MODEL.to_string()),
+                    .ok()
+                    .or_else(|| Some(settings.models.local_llm_model.clone()))
+                    .or_else(|| settings.models.llm_model.clone())
+                    .unwrap_or_else(|| DEFAULT_LOCAL_MODEL.to_string()),
                 api_key: std::env::var("XAVIER_LOCAL_LLM_API_KEY")
                     .ok()
+                    .or_else(|| settings.models.local_llm_api_key.clone())
                     .or_else(|| Some("ollama".to_string())),
                 base_url: Some(
                     std::env::var("XAVIER_LOCAL_ANTHROPIC_URL")
                         .or_else(|_| std::env::var("XAVIER_LOCAL_LLM_URL"))
-                        .unwrap_or_else(|_| DEFAULT_LOCAL_ANTHROPIC_BASE_URL.to_string()),
+                        .ok()
+                        .or_else(|| settings.models.local_anthropic_url.clone())
+                        .or_else(|| Some(settings.models.local_llm_url.clone()))
+                        .unwrap_or_else(|| DEFAULT_LOCAL_ANTHROPIC_BASE_URL.to_string()),
                 ),
                 target: ProviderTarget::AnthropicMessages,
             },
@@ -151,10 +170,14 @@ impl ModelProviderConfig {
     }
 
     fn cloud_from_env() -> Self {
+        let settings = crate::settings::XavierSettings::current();
         let api_flavor = std::env::var("XAVIER_API_FLAVOR")
             .ok()
             .and_then(|value| ApiFlavor::from_env(&value))
-            .unwrap_or(ApiFlavor::OpenAICompatible);
+            .unwrap_or_else(|| {
+                ApiFlavor::from_env(&settings.models.api_flavor)
+                    .unwrap_or(ApiFlavor::OpenAICompatible)
+            });
 
         match api_flavor {
             ApiFlavor::OpenAICompatible => Self {
@@ -163,14 +186,20 @@ impl ModelProviderConfig {
                 provider_label: "cloud".to_string(),
                 model: std::env::var("XAVIER_CLOUD_LLM_MODEL")
                     .or_else(|_| std::env::var("XAVIER_LLM_MODEL"))
-                    .unwrap_or_else(|_| "gpt-4o-mini".to_string()),
+                    .ok()
+                    .or_else(|| settings.models.cloud_llm_model.clone())
+                    .or_else(|| settings.models.llm_model.clone())
+                    .unwrap_or_else(|| "gpt-4o-mini".to_string()),
                 api_key: std::env::var("XAVIER_LLM_API_KEY")
                     .ok()
-                    .or_else(|| std::env::var("OPENAI_API_KEY").ok()),
+                    .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+                    .or_else(|| settings.models.llm_api_key.clone()),
                 base_url: Some(
                     std::env::var("XAVIER_CLOUD_LLM_URL")
                         .or_else(|_| std::env::var("OPENAI_BASE_URL"))
-                        .unwrap_or_else(|_| DEFAULT_OPENAI_BASE_URL.to_string()),
+                        .ok()
+                        .or_else(|| settings.models.cloud_llm_url.clone())
+                        .unwrap_or_else(|| DEFAULT_OPENAI_BASE_URL.to_string()),
                 ),
                 target: ProviderTarget::GenericOpenAICompatible,
             },
@@ -179,102 +208,138 @@ impl ModelProviderConfig {
     }
 
     fn openai_cloud_from_env() -> Self {
+        let settings = crate::settings::XavierSettings::current();
         Self {
             provider_mode: ProviderMode::Cloud,
             api_flavor: ApiFlavor::OpenAICompatible,
             provider_label: "openai".to_string(),
             model: std::env::var("XAVIER_LLM_MODEL")
                 .or_else(|_| std::env::var("OPENAI_MODEL"))
-                .unwrap_or_else(|_| "gpt-4o-mini".to_string()),
-            api_key: std::env::var("OPENAI_API_KEY").ok(),
+                .ok()
+                .or_else(|| settings.models.llm_model.clone())
+                .unwrap_or_else(|| "gpt-4o-mini".to_string()),
+            api_key: std::env::var("OPENAI_API_KEY")
+                .ok()
+                .or_else(|| settings.models.llm_api_key.clone()),
             base_url: Some(
                 std::env::var("OPENAI_BASE_URL")
-                    .unwrap_or_else(|_| DEFAULT_OPENAI_BASE_URL.to_string()),
+                    .ok()
+                    .or_else(|| settings.models.cloud_llm_url.clone())
+                    .unwrap_or_else(|| DEFAULT_OPENAI_BASE_URL.to_string()),
             ),
             target: ProviderTarget::GenericOpenAICompatible,
         }
     }
 
     fn groq_cloud_from_env() -> Self {
+        let settings = crate::settings::XavierSettings::current();
         Self {
             provider_mode: ProviderMode::Cloud,
             api_flavor: ApiFlavor::OpenAICompatible,
             provider_label: "groq".to_string(),
             model: std::env::var("XAVIER_LLM_MODEL")
                 .or_else(|_| std::env::var("GROQ_MODEL"))
-                .unwrap_or_else(|_| "llama-3.3-70b-versatile".to_string()),
-            api_key: std::env::var("GROQ_API_KEY").ok(),
+                .ok()
+                .or_else(|| settings.models.llm_model.clone())
+                .unwrap_or_else(|| "llama-3.3-70b-versatile".to_string()),
+            api_key: std::env::var("GROQ_API_KEY")
+                .ok()
+                .or_else(|| settings.models.llm_api_key.clone()),
             base_url: Some(
                 std::env::var("GROQ_BASE_URL")
-                    .unwrap_or_else(|_| DEFAULT_GROQ_BASE_URL.to_string()),
+                    .ok()
+                    .unwrap_or_else(|| DEFAULT_GROQ_BASE_URL.to_string()),
             ),
             target: ProviderTarget::GenericOpenAICompatible,
         }
     }
 
     fn deepseek_cloud_from_env() -> Self {
+        let settings = crate::settings::XavierSettings::current();
         Self {
             provider_mode: ProviderMode::Cloud,
             api_flavor: ApiFlavor::OpenAICompatible,
             provider_label: "deepseek".to_string(),
             model: std::env::var("XAVIER_LLM_MODEL")
                 .or_else(|_| std::env::var("DEEPSEEK_MODEL"))
-                .unwrap_or_else(|_| "deepseek-chat".to_string()),
-            api_key: std::env::var("DEEPSEEK_API_KEY").ok(),
+                .ok()
+                .or_else(|| settings.models.llm_model.clone())
+                .unwrap_or_else(|| "deepseek-chat".to_string()),
+            api_key: std::env::var("DEEPSEEK_API_KEY")
+                .ok()
+                .or_else(|| settings.models.llm_api_key.clone()),
             base_url: Some(
                 std::env::var("DEEPSEEK_BASE_URL")
-                    .unwrap_or_else(|_| DEFAULT_DEEPSEEK_BASE_URL.to_string()),
+                    .ok()
+                    .unwrap_or_else(|| DEFAULT_DEEPSEEK_BASE_URL.to_string()),
             ),
             target: ProviderTarget::GenericOpenAICompatible,
         }
     }
 
     fn anthropic_cloud_from_env() -> Self {
+        let settings = crate::settings::XavierSettings::current();
         Self {
             provider_mode: ProviderMode::Cloud,
             api_flavor: ApiFlavor::AnthropicCompatible,
             provider_label: "anthropic".to_string(),
             model: std::env::var("XAVIER_LLM_MODEL")
                 .or_else(|_| std::env::var("ANTHROPIC_MODEL"))
-                .unwrap_or_else(|_| "claude-3-5-sonnet-latest".to_string()),
+                .ok()
+                .or_else(|| settings.models.llm_model.clone())
+                .unwrap_or_else(|| "claude-3-5-sonnet-latest".to_string()),
             api_key: std::env::var("ANTHROPIC_API_KEY")
                 .ok()
-                .or_else(|| std::env::var("XAVIER_LLM_API_KEY").ok()),
+                .or_else(|| std::env::var("XAVIER_LLM_API_KEY").ok())
+                .or_else(|| settings.models.llm_api_key.clone()),
             base_url: Some(
                 std::env::var("ANTHROPIC_BASE_URL")
                     .or_else(|_| std::env::var("XAVIER_CLOUD_LLM_URL"))
-                    .unwrap_or_else(|_| DEFAULT_ANTHROPIC_BASE_URL.to_string()),
+                    .ok()
+                    .or_else(|| settings.models.cloud_llm_url.clone())
+                    .unwrap_or_else(|| DEFAULT_ANTHROPIC_BASE_URL.to_string()),
             ),
             target: ProviderTarget::AnthropicMessages,
         }
     }
 
     fn minimax_cloud_from_env() -> Self {
+        let settings = crate::settings::XavierSettings::current();
         Self {
             provider_mode: ProviderMode::Cloud,
             api_flavor: ApiFlavor::OpenAICompatible,
             provider_label: "minimax".to_string(),
             model: std::env::var("XAVIER_LLM_MODEL")
                 .or_else(|_| std::env::var("MINIMAX_MODEL"))
-                .unwrap_or_else(|_| "MiniMax-Text-01".to_string()),
-            api_key: std::env::var("MINIMAX_API_KEY").ok(),
+                .ok()
+                .or_else(|| settings.models.llm_model.clone())
+                .unwrap_or_else(|| "MiniMax-Text-01".to_string()),
+            api_key: std::env::var("MINIMAX_API_KEY")
+                .ok()
+                .or_else(|| settings.models.llm_api_key.clone()),
             base_url: Some(
                 std::env::var("MINIMAX_BASE_URL")
-                    .unwrap_or_else(|_| DEFAULT_MINIMAX_BASE_URL.to_string()),
+                    .ok()
+                    .unwrap_or_else(|| DEFAULT_MINIMAX_BASE_URL.to_string()),
             ),
             target: ProviderTarget::MiniMaxLegacy,
         }
     }
 
     fn gemini_cloud_from_env() -> Self {
+        let settings = crate::settings::XavierSettings::current();
         Self {
             provider_mode: ProviderMode::Cloud,
             api_flavor: ApiFlavor::OpenAICompatible,
             provider_label: "gemini".to_string(),
             model: std::env::var("XAVIER_LLM_MODEL")
                 .or_else(|_| std::env::var("GEMINI_MODEL"))
-                .unwrap_or_else(|_| "gemini-2.0-flash".to_string()),
-            api_key: std::env::var("GEMINI_API_KEY").ok(),
+                .ok()
+                .or_else(|| settings.models.llm_model.clone())
+                .unwrap_or_else(|| "gemini-2.0-flash".to_string()),
+            api_key: std::env::var("GEMINI_API_KEY")
+                .ok()
+                .or_else(|| settings.models.llm_api_key.clone()),
             base_url: None,
             target: ProviderTarget::GeminiLegacy,
         }
