@@ -4,12 +4,12 @@ const readline = require('readline');
 const http = require('http');
 
 const XAVIER_URL = 'http://localhost:8006';
-const XAVIER_TOKEN = process.env.XAVIER_TOKEN || (['true', '1'].includes(process.env.XAVIER_DEV_MODE) ? 'dev-token' : null);
+const XAVIER_TOKEN = process.env.XAVIER_TOKEN;
 const MAX_CHUNK_SIZE = 12000;
 
 if (!XAVIER_TOKEN) {
   console.error("Error: XAVIER_TOKEN environment variable is not set.");
-  console.error("For development, set XAVIER_DEV_MODE=true to use the default dev-token.");
+  console.error("A secure token is required for all operations.");
   process.exit(1);
 }
 const MAX_SESSIONS = 8;

@@ -4,12 +4,12 @@
 
 ### From Source
 
-\\\ash
+```bash
 git clone https://github.com/iberi22/xavier.git
 cd xavier
 cargo build --release
 ./target/release/xavier http
-\\\
+```
 
 ### From Binary
 
@@ -17,31 +17,31 @@ Download from GitHub Releases for your platform.
 
 ### Docker
 
-\\\ash
+```bash
 docker run -p 8006:8006 ghcr.io/iberi22/xavier:latest
-\\\
+```
 
 ## First Steps
 
 1. **Start the server:**
-   \\\ash
+   ```bash
    xavier http
-   \\\
+   ```
 
 2. **Add your first memory:**
-   \\\ash
-   xavier add "Hello Xavier!" --title "First Memory"
-   \\\
+   ```bash
+   xavier add "Hello Xavier!" "First Memory"
+   ```
 
 3. **Search:**
-   \\\ash
+   ```bash
    xavier search "hello"
-   \\\
+   ```
 
 4. **Check stats:**
-   \\\ash
+   ```bash
    xavier stats
-   \\\
+   ```
 
 ## Next Steps
 

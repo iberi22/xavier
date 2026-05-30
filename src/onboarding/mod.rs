@@ -39,12 +39,12 @@ impl fmt::Display for OnboardingReport {
         writeln!(f, "🔍 Xavier Onboarding Report")?;
         writeln!(f, "━━━━━━━━━━━━━━━━━━━━━━━━")?;
         writeln!(f, "{}", self.system)?;
-        writeln!(f, "")?;
+        writeln!(f)?;
         writeln!(f, "📡 Providers Detected:")?;
         for p in &self.providers {
             writeln!(f, "  {}: {}", p.name, if p.available { "✅" } else { "❌" })?;
         }
-        writeln!(f, "")?;
+        writeln!(f)?;
         writeln!(f, "⚙️  Embedder: {}", self.embedder)?;
         writeln!(f, "📝 Config: {}", self.config.summary())?;
         Ok(())

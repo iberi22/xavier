@@ -75,7 +75,7 @@ All HTTP endpoints except `/health` and `/readiness` require `X-Xavier-Token`, a
 
 ```bash
 curl -X POST http://localhost:8006/memory/search \
-  -H "X-Xavier-Token: dev-token" \
+  -H "X-Xavier-Token: $XAVIER_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"query":"xavier memory","limit":5}'
 ```

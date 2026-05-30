@@ -2431,8 +2431,8 @@ pub async fn add_memory_hierarchical(
 
                     let typed_payload = xavier::memory::schema::TypedMemoryPayload {
                         cluster_id: cluster_id.map(|s| s.to_string()),
-                        level: level.map(|l| xavier::memory::schema::MemoryLevel::parse(l)),
-                        relation: relation.map(|r| xavier::memory::schema::RelationKind::new(r)),
+                        level: level.map(xavier::memory::schema::MemoryLevel::parse),
+                        relation: relation.map(xavier::memory::schema::RelationKind::new),
                         ..Default::default()
                     };
 
