@@ -13,11 +13,11 @@ The repository still contains widespread production-facing references to `dev-to
 
 ## Acceptance Criteria
 
-- [ ] remove `dev-token` defaults from production-facing scripts and public docs
-- [ ] replace insecure examples with required secure-token setup
-- [ ] keep any intentionally insecure examples isolated to explicit local-development notes only
-- [ ] add guardrails so new insecure defaults cannot be committed again
-- [ ] audit benchmark and migration scripts for stale auth defaults
+- [x] remove `dev-token` defaults from production-facing scripts and public docs
+- [x] replace insecure examples with required secure-token setup
+- [x] keep any intentionally insecure examples isolated to explicit local-development notes only
+- [x] add guardrails so new insecure defaults cannot be committed again
+- [x] audit benchmark and migration scripts for stale auth defaults
 
 ## Evidence
 

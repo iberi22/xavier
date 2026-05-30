@@ -13,10 +13,10 @@ The repository is not `1.0`-ready while `cargo clippy -- -D warnings` and doctes
 
 ## Acceptance Criteria
 
-- [ ] eliminate the current `clippy -D warnings` failures without papering over them
-- [ ] fix stale doctests such as the `WorkingMemory::new(10)` example
-- [ ] keep `cargo check`, `cargo test`, and `cargo build --release` green after cleanup
-- [ ] record any justified suppressions with narrow scope and explanation
+- [x] eliminate the current `clippy -D warnings` failures without papering over them
+- [x] fix stale doctests such as the `WorkingMemory::new(10)` example
+- [x] keep `cargo check`, `cargo test`, and `cargo build --release` green after cleanup
+- [x] record any justified suppressions with narrow scope and explanation
 
 ## Evidence
 
