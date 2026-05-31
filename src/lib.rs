@@ -57,5 +57,6 @@ pub struct AppState {
     pub code_query: Arc<code_graph::query::QueryEngine>,
     pub code_db: Arc<code_graph::db::CodeGraphDB>,
     pub indexer: FileIndexer,
+    pub agent_indexer: crate::memory::agent_indexer::AgentIndexer,
     pub security_service: Arc<SecurityService>,
 }
