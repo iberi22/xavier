@@ -37,18 +37,24 @@ pub async fn start_mcp_stdio() -> Result<()> {
     let security_service = Arc::new(SecurityService::new());
     let workspace_registry = Arc::new(WorkspaceRegistry::new());
 
+    let code_db = Arc::new(code_graph::db::CodeGraphDB::in_memory()?);
+    let code_indexer = Arc::new(code_graph::indexer::Indexer::new(Arc::clone(&code_db)));
+    let code_query = Arc::new(code_graph::query::QueryEngine::new(Arc::clone(&code_db)));
+
     let state = AppState {
         workspace_registry: Arc::clone(&workspace_registry),
-        code_indexer: Arc::new(code_graph::indexer::Indexer::new(Arc::new(
-            code_graph::db::CodeGraphDB::in_memory()?,
-        ))),
-        code_query: Arc::new(code_graph::query::QueryEngine::new(Arc::new(
-            code_graph::db::CodeGraphDB::in_memory()?,
-        ))),
-        code_db: Arc::new(code_graph::db::CodeGraphDB::in_memory()?),
+        code_indexer: Arc::clone(&code_indexer),
+        code_query,
+        code_db,
         indexer: xavier::memory::file_indexer::FileIndexer::new(
             xavier::memory::file_indexer::FileIndexerConfig::default(),
-            None,
+            Some(code_indexer.clone()),
+        ),
+        agent_indexer: xavier::memory::agent_indexer::AgentIndexer::new(
+            xavier::memory::file_indexer::FileIndexer::new(
+                xavier::memory::file_indexer::FileIndexerConfig::default(),
+                Some(code_indexer.clone()),
+            ),
         ),
         security_service,
     };
