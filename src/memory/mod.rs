@@ -1,3 +1,5 @@
+pub mod agent_indexer;
+pub mod agent_scanner;
 pub mod belief_graph;
 pub mod bridge;
 pub mod checkpoint_summary;

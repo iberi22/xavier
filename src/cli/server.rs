@@ -236,8 +236,8 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         store,
         workspace_id,
         workspace_dir,
-        code_db,
-        code_indexer,
+        code_db: code_db.clone(),
+        code_indexer: code_indexer.clone(),
         code_query,
         security: security_service.clone() as Arc<dyn InputSecurityPort>,
         security_scan: security_service.clone() as Arc<dyn SecurityScanPort>,
@@ -252,6 +252,12 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         proxy_use_case,
         http_client,
         embedder,
+        agent_indexer: Arc::new(crate::memory::agent_indexer::AgentIndexer::new(
+            crate::memory::file_indexer::FileIndexer::new(
+                crate::memory::file_indexer::FileIndexerConfig::default(),
+                Some(code_indexer.clone())
+            )
+        )),
     };
 
     info!(
@@ -379,8 +385,13 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/panel/assets/{*path}", get(panel_asset))
         .merge(protected_routes)
         // Merge large-body routes so they take priority over protected_routes
-        .merge(large_body_routes)
-        .with_state(state);
+        .merge(large_body_routes);
+
+    // Extract cron states before `state` is moved
+    let agent_indexer_cron = state.agent_indexer.clone();
+    let memory_port_cron = state.memory.clone();
+
+    let app = app.with_state(state);
 
     // Merge enterprise HTTP API routes when feature is enabled, under auth
     #[cfg(feature = "enterprise")]
@@ -414,6 +425,42 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     } else {
         info!("SessionSyncTask cron already running; skipped duplicate start");
     }
+
+    // Start Agentic Scanner background cron
+    tokio::spawn(async move {
+        // Run every 6 hours
+        let mut interval = tokio::time::interval(Duration::from_secs(6 * 3600));
+        loop {
+            interval.tick().await;
+            info!("Running scheduled Agentic Scanner pass...");
+            if let Ok(indexed_files) = agent_indexer_cron.index_agents().await {
+                for file in indexed_files {
+                    let record = xavier::memory::store::MemoryRecord {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        workspace_id: "default".to_string(),
+                        path: file.path,
+                        content: file.content,
+                        metadata: serde_json::json!({
+                            "source": "agent_scanner",
+                            "last_modified": file.last_modified,
+                            "size": file.size,
+                        }),
+                        embedding: vec![],
+                        created_at: chrono::Utc::now(),
+                        updated_at: chrono::Utc::now(),
+                        revision: 1,
+                        primary: true,
+                        parent_id: None,
+                        cluster_id: None,
+                        level: Default::default(),
+                        relation: None,
+                        revisions: vec![],
+                    };
+                    let _ = memory_port_cron.add(record).await;
+                }
+            }
+        }
+    });
 
     axum::serve(listener, app)
         .with_graceful_shutdown(async move {

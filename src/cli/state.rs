@@ -49,6 +49,7 @@ pub struct CliState {
     #[allow(dead_code)]
     // Note: Wire embedder into memory embedding pipeline (currently unused)
     pub embedder: Arc<dyn Embedder>,
+    pub agent_indexer: Arc<crate::memory::agent_indexer::AgentIndexer>,
 }
 
 #[derive(Parser)]
