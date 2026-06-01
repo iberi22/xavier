@@ -4,32 +4,68 @@ Professional-grade Python SDK for interacting with Xavier's high-performance mem
 
 ## Installation
 
+Desde tu repo local (editable para desarrollo):
+
+```bash
+cd clients/python
+pip install -e .
+```
+
+O desde PyPI cuando esté publicado:
+
 ```bash
 pip install xavier-py
 ```
 
 ## Quickstart
 
-### Synchronous Usage
+### Configurar token
+
+```powershell
+# Windows PowerShell
+$env:XAVIER_TOKEN = "dev-token"
+```
+
+```bash
+# Linux/Mac
+export XAVIER_TOKEN="your-token"
+```
+
+> ⚠️ Siempre usa un token real en producción. Sin token el cliente lanza una advertencia.
+
+### Uso sincrónico
 
 ```python
 from xavier_py import XavierClient
 
-# Auto-resolves XAVIER_TOKEN from environment (default port: 8006)
+# Conecta a localhost:8006 por defecto
 client = XavierClient()
-# Or specify custom URL:
-# client = XavierClient(base_url="http://localhost:8006")
 
-# Add a memory
-client.add("Xavier is a high-performance memory engine.", path="docs/intro")
+# 1. Ver estado del servidor
+stats = client.stats()
+print(f"Xavier v{stats.version} — workspace: {stats.workspace_id}")
+# → Xavier v0.4.1 — workspace: default
 
-# Search
-results = client.search("What is Xavier?", limit=5)
+# 2. Agregar un documento a memoria
+result = client.add(
+    "Xavier soporta búsqueda híbrida semántica + lexical con RRF fusion.",
+    path="docs/retrieval",
+    metadata={"author": "swal", "type": "technical"}
+)
+print(f"Agregado: id={result['id']}")
+# → Agregado: id=01KT2CTM4Z7DW732G1QFGXNPQ5
+
+# 3. Buscar en memoria
+results = client.search("búsqueda híbrida", limit=5)
+print(f"Resultados: {results.count}")
 for doc in results.results:
-    print(f"[{doc.path}] {doc.content}")
+    print(f"  [{doc.id[:8]}] {doc.content[:80]}...")
+
+# 4. Eliminar por ID
+client.delete(id=result["id"])
 ```
 
-### Asynchronous Usage
+### Uso asincrónico
 
 ```python
 import asyncio
@@ -38,46 +74,123 @@ from xavier_py import XavierClient
 async def main():
     client = XavierClient()
 
-    # Add memory asynchronously
-    await client.add_async("Episodic memory stores session history.", path="docs/episodic")
+    # Operaciones async
+    r = await client.add_async(
+        "Xavier implementa retrieval multi-capa con working, episodic y semantic memory.",
+        path="docs/memory-layers"
+    )
+    print(f"Memoria agregada: {r['id']}")
 
-    # Retrieve across layers
-    response = await client.retrieve_async("Tell me about episodic memory")
-    print(f"Found {len(response.results)} results across {response.layers_used.total_results} total items.")
+    resp = await client.retrieve_async("memory layers", limit=3)
+    print(f"Retrieved {len(resp.results)} results")
+    for m in resp.results:
+        print(f"  [{m.source_layer}] score={m.score:.3f}: {m.content[:60]}")
+
+    stats = await client.stats_async()
+    print(f"Verificación: Xavier v{stats.version} alive")
 
 asyncio.run(main())
 ```
 
-## Configuration
+## API Reference
 
-### Token
+### `XavierClient(base_url, token)`
 
-Set the `XAVIER_TOKEN` environment variable before using the client:
+| Parámetro | Default | Descripción |
+|-----------|---------|-------------|
+| `base_url` | `"http://localhost:8006"` | URL del servidor Xavier |
+| `token` | `XAVIER_TOKEN` env var | Token de autenticación |
 
-```bash
-export XAVIER_TOKEN=your-xavier-token
+### Métodos sincrónicos
+
+| Método | Endpoint | Descripción |
+|--------|----------|-------------|
+| `stats()` | `GET /memory/stats` | Estado y versión del servidor |
+| `add(content, path?, metadata?, **kwargs)` | `POST /memory/add` | Agregar documento a memoria |
+| `search(query, limit=10, filters?)` | `POST /memory/search` | Búsqueda híbrida semántica + lexical |
+| `retrieve(query, limit=10, **kwargs)` | `POST /memory/retrieve` | Retrieval multi-capa |
+| `delete(id?, path?)` | `POST /memory/delete` | Eliminar por ID o path |
+
+Mismos métodos con sufijo `_async` para versión asincrónica (ej: `stats_async()`, `add_async()`).
+
+### Manejo de errores
+
+```python
+from xavier_py import XavierClient
+
+client = XavierClient()
+
+# Error de autenticación
+try:
+    client.stats()
+except Exception as e:
+    print(f"Error: {e}")
+
+# Delete sin parámetros
+try:
+    client.delete()
+except ValueError as e:
+    print(f"Validación: {e}")
+    # → Either 'id' or 'path' must be provided.
+
+# Delete de ID inexistente (devuelve status not_found, no exception)
+result = client.delete(id="nonexistent")
+print(result["status"])  # → not_found
 ```
 
-On Windows:
-```powershell
-$env:XAVIER_TOKEN="your-xavier-token"
+## Ejemplos de uso real
+
+### Pipeline típico
+
+```python
+from xavier_py import XavierClient
+import time
+
+client = XavierClient()
+
+# 1. Guardar documentos
+docs = [
+    ("Xavier usa SQLite con FTS5 y vectores embedding para búsqueda híbrida.", "docs/search"),
+    ("El retrieval multi-capa combina working, episodic y semantic memory.", "docs/layers"),
+    ("RRF fusion rankea resultados combinando scores semánticos y léxicos.", "docs/ranking"),
+]
+for content, path in docs:
+    r = client.add(content, path=path)
+    print(f"✓ {path} → id={r['id'][:8]}")
+
+# 2. Buscar
+results = client.search("cómo funciona la búsqueda en Xavier", limit=3)
+print(f"\nResultados ({results.count} total):")
+for doc in results.results:
+    print(f"  {doc.content[:70]}...")
 ```
 
-> ⚠️ **Security**: Always set `XAVIER_TOKEN` in production. The client will warn
-> if no token is provided.
+### Verificar conectividad
 
-### Default URL
+```python
+from xavier_py import XavierClient
 
-The client defaults to `http://localhost:8006`, Xavier's standard port.
-Override via `base_url` for remote or custom deployments.
+def check_xavier_health(url="http://localhost:8006"):
+    """Health check rápido para Xavier."""
+    try:
+        client = XavierClient(base_url=url)
+        s = client.stats()
+        return {"status": "ok", "version": s.version}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+
+print(check_xavier_health())
+# → {'status': 'ok', 'version': '0.4.1'}
+```
 
 ## Features
 
-- **Sync & Async**: Built-in support for both `requests` and `aiohttp`.
-- **Type Safety**: Fully validated responses using Pydantic models.
-- **Auto-Auth**: Automatically picks up `XAVIER_TOKEN` from the environment.
-- **Multi-layer Retrieval**: Easy access to Xavier's hybrid retrieval system.
-- **Timeouts**: All requests have a 30-second timeout to prevent hangs.
+- **Sync & Async**: Soporte dual con `requests` (sync) y `aiohttp` (async)
+- **Type Safety**: Respuestas validadas con Pydantic v2
+- **Auto-Auth**: Toma `XAVIER_TOKEN` del environment automáticamente
+- **Timeouts**: 30 segundos en todas las requests
+- **404 Graceful**: Delete devuelve `not_found` en vez de exception
+- **Multi-layer**: Acceso directo al sistema de retrieval híbrido de Xavier
 
 ## License
 
