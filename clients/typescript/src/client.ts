@@ -11,10 +11,12 @@ import {
 export class XavierClient {
   private baseUrl: string;
   private token: string;
+  private timeoutMs: number;
 
   constructor(options: ClientOptions = {}) {
     this.baseUrl = (options.baseUrl || 'http://localhost:8006').replace(/\/$/, '');
     this.token = options.token || process.env.XAVIER_TOKEN || '';
+    this.timeoutMs = options.timeoutMs ?? 30000;
     if (!this.token) {
       console.warn('[xavier] No XAVIER_TOKEN set. Set the XAVIER_TOKEN environment variable or pass token in options.');
     }
@@ -28,70 +30,76 @@ export class XavierClient {
   }
 
   /**
+   * Fetch wrapper with AbortController timeout.
+   */
+  private async fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+
+  /**
+   * Universal error handler: throws on non-OK except 404 (handled by caller).
+   */
+  private async handleResponse(response: Response): Promise<any> {
+    if (response.status === 404) {
+      return response.json();
+    }
+    if (!response.ok) {
+      throw new Error(`Xavier error: ${response.status} ${response.statusText}`);
+    }
+    return response.json();
+  }
+
+  /**
    * Add a document to memory.
    */
   async add(payload: AddMemoryRequest): Promise<AddMemoryResponse> {
-    const response = await fetch(`${this.baseUrl}/memory/add`, {
+    const response = await this.fetchWithTimeout(`${this.baseUrl}/memory/add`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(payload),
     });
-
-    if (!response.ok) {
-      throw new Error(`Xavier error: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json() as Promise<AddMemoryResponse>;
+    return this.handleResponse(response) as Promise<AddMemoryResponse>;
   }
 
   /**
    * Search memory with semantic + lexical hybrid search.
    */
-  async search(query: string, limit = 10, filters?: any): Promise<SearchResponse> {
-    const response = await fetch(`${this.baseUrl}/memory/search`, {
+  async search(query: string, limit = 10, filters?: Record<string, any>): Promise<SearchResponse> {
+    const response = await this.fetchWithTimeout(`${this.baseUrl}/memory/search`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({ query, limit, filters }),
     });
-
-    if (!response.ok) {
-      throw new Error(`Xavier error: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json() as Promise<SearchResponse>;
+    return this.handleResponse(response) as Promise<SearchResponse>;
   }
 
   /**
    * Perform multi-layer memory retrieval.
    */
-  async retrieve(query: string, limit = 10, options: any = {}): Promise<RetrieveResponse> {
-    const response = await fetch(`${this.baseUrl}/memory/retrieve`, {
+  async retrieve(query: string, limit = 10, options: Record<string, any> = {}): Promise<RetrieveResponse> {
+    const response = await this.fetchWithTimeout(`${this.baseUrl}/memory/retrieve`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({ query, limit, ...options }),
     });
-
-    if (!response.ok) {
-      throw new Error(`Xavier error: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json() as Promise<RetrieveResponse>;
+    return this.handleResponse(response) as Promise<RetrieveResponse>;
   }
 
   /**
    * Get memory statistics.
    */
   async stats(): Promise<StatsResponse> {
-    const response = await fetch(`${this.baseUrl}/memory/stats`, {
+    const response = await this.fetchWithTimeout(`${this.baseUrl}/memory/stats`, {
       method: 'GET',
       headers: this.getHeaders(),
     });
-
-    if (!response.ok) {
-      throw new Error(`Xavier error: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json() as Promise<StatsResponse>;
+    return this.handleResponse(response) as Promise<StatsResponse>;
   }
 
   /**
@@ -101,16 +109,11 @@ export class XavierClient {
     if (!options.id && !options.path) {
       throw new Error('Xavier error: Either id or path must be provided for delete.');
     }
-    const response = await fetch(`${this.baseUrl}/memory/delete`, {
+    const response = await this.fetchWithTimeout(`${this.baseUrl}/memory/delete`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify(options),
     });
-
-    if (!response.ok) {
-      throw new Error(`Xavier error: ${response.status} ${response.statusText}`);
-    }
-
-    return response.json() as Promise<DeleteResponse>;
+    return this.handleResponse(response) as Promise<DeleteResponse>;
   }
 }

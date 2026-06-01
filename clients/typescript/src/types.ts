@@ -64,4 +64,6 @@ export interface DeleteResponse {
 export interface ClientOptions {
   baseUrl?: string;
   token?: string;
+  /** Request timeout in milliseconds (default: 30000) */
+  timeoutMs?: number;
 }

@@ -187,5 +187,7 @@ class XavierClient:
         payload = {"id": id, "path": path}
         async with aiohttp.ClientSession() as session:
             async with session.post(url, json=payload, headers=self._get_headers()) as response:
+                if response.status == 404:
+                    return await response.json()
                 response.raise_for_status()
                 return await response.json()
