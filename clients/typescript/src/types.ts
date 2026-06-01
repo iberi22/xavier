@@ -48,6 +48,12 @@ export interface AddMemoryRequest {
   [key: string]: any;
 }
 
+export interface AddMemoryResponse {
+  status: string;
+  id: string;
+  [key: string]: any;
+}
+
 export interface DeleteResponse {
   status: string;
   deleted: boolean;
