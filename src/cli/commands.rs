@@ -140,6 +140,11 @@ pub enum Command {
         #[arg(long)]
         apply: bool,
     },
+    /// Generate authentication tokens
+    Token {
+        #[command(subcommand)]
+        cmd: TokenCommand,
+    },
     /// Export memories to JSON
     Export {
         /// Export only public memories (exclude is_private: true)
@@ -207,6 +212,14 @@ pub enum CodeCommand {
     Hotspots,
     /// Show code graph stats
     Stats,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum TokenCommand {
+    /// Generate a new random token for XAVIER_TOKEN
+    New,
+    /// Generate a signed HMAC token for a user
+    Gen { user_id: String },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -397,6 +410,7 @@ impl Cli {
                 xavier::chronicle::cli::handle_chronicle_command(cmd.clone()).await
             }
             Command::Onboard { apply } => handle_onboard(*apply).await,
+            Command::Token { cmd } => handle_token_command(cmd.clone()).await,
             Command::Secrets { cmd } => handle_secrets_command(cmd.clone()).await,
             Command::Export { public, output } => {
                 let base_url = resolve_base_url();
@@ -471,6 +485,31 @@ pub async fn export_context_pack(
         }
     }
 
+    Ok(())
+}
+
+async fn handle_token_command(cmd: TokenCommand) -> Result<()> {
+    match cmd {
+        TokenCommand::New => {
+            use rand::RngCore;
+            let mut bytes = [0u8; 32];
+            rand::rngs::OsRng.fill_bytes(&mut bytes);
+            let token = xavier::utils::crypto::hex_encode(&bytes);
+            println!("New random token generated:");
+            println!("{}", token);
+            eprintln!("\nAdd this to your env: set XAVIER_TOKEN={}", token);
+        }
+        TokenCommand::Gen { user_id } => {
+            if user_id.trim().is_empty() {
+                anyhow::bail!("user_id must not be empty");
+            }
+            let manager = xavier::security::SecurityManager::new();
+            let token = manager.generate_token(&user_id)
+                .map_err(|e| anyhow::anyhow!("Failed to generate HMAC token: {}. Ensure XAVIER_TOKEN_SECRET is set.", e))?;
+            println!("Signed HMAC token for {}:", user_id);
+            println!("{}", token);
+        }
+    }
     Ok(())
 }
 
