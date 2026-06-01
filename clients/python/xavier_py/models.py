@@ -4,9 +4,10 @@ from pydantic import BaseModel, Field
 
 class MemoryNode(BaseModel):
     id: str
-    path: str
+    path: Optional[str] = None
     content: str
     metadata: Dict[str, Any] = Field(default_factory=dict)
+    embedding: Optional[List[float]] = None
 
 class RetrievedMemory(BaseModel):
     id: str
@@ -22,9 +23,11 @@ class LayerStats(BaseModel):
     total_results: int
 
 class SearchResponse(BaseModel):
-    status: str
+    status: str = "ok"
+    count: int = 0
     results: List[MemoryNode]
     query: str
+    workspace_id: Optional[str] = None
 
 class RetrieveResponse(BaseModel):
     status: str

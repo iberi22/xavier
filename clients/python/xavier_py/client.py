@@ -1,13 +1,12 @@
 import os
+import warnings
 import requests
 import aiohttp
-import asyncio
-from typing import Optional, List, Dict, Any, Union
+from typing import Optional, Dict, Any
 from .models import (
     SearchResponse,
     RetrieveResponse,
     StatsResponse,
-    GraphResponse
 )
 
 class XavierClient:
@@ -18,15 +17,17 @@ class XavierClient:
 
     def __init__(
         self,
-        base_url: str = "http://localhost:8080",
+        base_url: str = "http://localhost:8006",
         token: Optional[str] = None
     ):
         self.base_url = base_url.rstrip("/")
         self.token = token or os.environ.get("XAVIER_TOKEN")
 
         if not self.token:
-            # Fallback to dev-token if not provided and not in production
-            self.token = "dev-token"
+            warnings.warn(
+                "No XAVIER_TOKEN set. Set the XAVIER_TOKEN environment variable or pass token= explicitly.",
+                stacklevel=2
+            )
 
     def _get_headers(self) -> Dict[str, str]:
         return {
@@ -51,7 +52,7 @@ class XavierClient:
             "metadata": metadata,
             **kwargs
         }
-        response = requests.post(url, json=payload, headers=self._get_headers())
+        response = requests.post(url, json=payload, headers=self._get_headers(), timeout=30)
         response.raise_for_status()
         return response.json()
 
@@ -68,7 +69,7 @@ class XavierClient:
             "limit": limit,
             "filters": filters
         }
-        response = requests.post(url, json=payload, headers=self._get_headers())
+        response = requests.post(url, json=payload, headers=self._get_headers(), timeout=30)
         response.raise_for_status()
         return SearchResponse(**response.json())
 
@@ -85,22 +86,27 @@ class XavierClient:
             "limit": limit,
             **kwargs
         }
-        response = requests.post(url, json=payload, headers=self._get_headers())
+        response = requests.post(url, json=payload, headers=self._get_headers(), timeout=30)
         response.raise_for_status()
         return RetrieveResponse(**response.json())
 
     def stats(self) -> StatsResponse:
         """Get memory statistics."""
         url = f"{self.base_url}/memory/stats"
-        response = requests.get(url, headers=self._get_headers())
+        response = requests.get(url, headers=self._get_headers(), timeout=30)
         response.raise_for_status()
         return StatsResponse(**response.json())
 
     def delete(self, id: Optional[str] = None, path: Optional[str] = None) -> Dict[str, Any]:
         """Delete a memory entry by id or path."""
+        if id is None and path is None:
+            raise ValueError("Either 'id' or 'path' must be provided.")
         url = f"{self.base_url}/memory/delete"
         payload = {"id": id, "path": path}
-        response = requests.post(url, json=payload, headers=self._get_headers())
+        response = requests.post(url, json=payload, headers=self._get_headers(), timeout=30)
+        # Xavier returns 404 with JSON body for not-found entries
+        if response.status_code == 404:
+            return response.json()
         response.raise_for_status()
         return response.json()
 
@@ -175,6 +181,8 @@ class XavierClient:
 
     async def delete_async(self, id: Optional[str] = None, path: Optional[str] = None) -> Dict[str, Any]:
         """Delete entry (Async)."""
+        if id is None and path is None:
+            raise ValueError("Either 'id' or 'path' must be provided.")
         url = f"{self.base_url}/memory/delete"
         payload = {"id": id, "path": path}
         async with aiohttp.ClientSession() as session:

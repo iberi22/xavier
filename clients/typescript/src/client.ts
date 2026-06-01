@@ -1,5 +1,6 @@
 import {
   AddMemoryRequest,
+  AddMemoryResponse,
   ClientOptions,
   DeleteResponse,
   RetrieveResponse,
@@ -12,8 +13,11 @@ export class XavierClient {
   private token: string;
 
   constructor(options: ClientOptions = {}) {
-    this.baseUrl = (options.baseUrl || 'http://localhost:8080').replace(/\/$/, '');
-    this.token = options.token || process.env.XAVIER_TOKEN || 'dev-token';
+    this.baseUrl = (options.baseUrl || 'http://localhost:8006').replace(/\/$/, '');
+    this.token = options.token || process.env.XAVIER_TOKEN || '';
+    if (!this.token) {
+      console.warn('[xavier] No XAVIER_TOKEN set. Set the XAVIER_TOKEN environment variable or pass token in options.');
+    }
   }
 
   private getHeaders(): Record<string, string> {
@@ -26,7 +30,7 @@ export class XavierClient {
   /**
    * Add a document to memory.
    */
-  async add(payload: AddMemoryRequest): Promise<any> {
+  async add(payload: AddMemoryRequest): Promise<AddMemoryResponse> {
     const response = await fetch(`${this.baseUrl}/memory/add`, {
       method: 'POST',
       headers: this.getHeaders(),
@@ -37,7 +41,7 @@ export class XavierClient {
       throw new Error(`Xavier error: ${response.status} ${response.statusText}`);
     }
 
-    return response.json();
+    return response.json() as Promise<AddMemoryResponse>;
   }
 
   /**
@@ -94,6 +98,9 @@ export class XavierClient {
    * Delete a memory entry by ID or path.
    */
   async delete(options: { id?: string; path?: string }): Promise<DeleteResponse> {
+    if (!options.id && !options.path) {
+      throw new Error('Xavier error: Either id or path must be provided for delete.');
+    }
     const response = await fetch(`${this.baseUrl}/memory/delete`, {
       method: 'POST',
       headers: this.getHeaders(),
