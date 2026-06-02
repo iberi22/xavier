@@ -197,6 +197,6 @@ async fn sync_check_handler_returns_cached_result_from_session_sync_task() {
     assert_eq!(response.save_ok_rate, 1.0); // Default if check fails or not updated
     assert_eq!(response.match_score, 1.0);
     assert_eq!(response.timestamp_ms, sync_result.timestamp_ms);
-    assert!(response.alerts.len() >= 1);
+    assert!(!response.alerts.is_empty());
     assert!(response.alerts.iter().any(|a| a.contains("unreachable")));
 }

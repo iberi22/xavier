@@ -125,7 +125,7 @@ async fn test_time_metric_save_and_retrieve() {
 
     // Verify row exists in SQLite
     let conn = db.get().await.expect("get connection from pool");
-    let mut stmt = conn
+    let stmt = conn
         .prepare("SELECT COUNT(*) FROM time_metrics WHERE agent_id = ?1")
         .await
         .expect("prepare should succeed");
