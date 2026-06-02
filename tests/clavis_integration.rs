@@ -70,7 +70,7 @@ async fn test_clavis_persistence_and_revocation() -> Result<()> {
 
     // 7. VERIFY Persistence in SQLite
     let conn = pool.get().await?;
-    let mut stmt = conn
+    let stmt = conn
         .prepare("SELECT event_type, agent_id, reason FROM secret_audit_logs ORDER BY id ASC")
         .await?;
     let mut rows = stmt.query(()).await?;

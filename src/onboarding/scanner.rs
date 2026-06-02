@@ -231,6 +231,7 @@ pub fn scan_system() -> Result<SystemCapabilities, String> {
 #[cfg(target_os = "windows")]
 fn detect_ram_gb() -> f64 {
     #[repr(C)]
+    #[allow(non_snake_case)]
     struct MEMORYSTATUSEX {
         dwLength: u32,
         dwMemoryLoad: u32,

@@ -27,6 +27,12 @@ pub struct AgentScanner {
     search_paths: Vec<PathBuf>,
 }
 
+impl Default for AgentScanner {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AgentScanner {
     pub fn new() -> Self {
         let mut paths = Vec::new();
@@ -172,11 +178,10 @@ impl AgentScanner {
         // Naive heuristic for JSON that looks like chat history
         if content.contains("\"role\"") && content.contains("\"content\"") && content.contains("\"user\"") {
             // Attempt generic parsing
-            let mut messages = Vec::new();
-            messages.push(AgentMessage {
+            let messages = vec![AgentMessage {
                 role: "raw_json_extract".to_string(),
                 content: content.chars().take(3000).collect::<String>(), // Limit size
-            });
+            }];
 
             Ok(Some(AgentSession {
                 ide: "JSON_Agent".to_string(),

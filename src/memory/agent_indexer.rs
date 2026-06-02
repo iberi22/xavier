@@ -54,7 +54,7 @@ impl AgentIndexer {
 
     fn format_session_to_markdown(&self, session: &AgentSession) -> String {
         let mut md = String::new();
-        md.push_str(&format!("# Agent Conversation Session\n"));
+        md.push_str("# Agent Conversation Session\n");
         md.push_str(&format!("- **IDE/Tool**: {}\n", session.ide));
         if let Some(ref proj) = session.project_path {
             md.push_str(&format!("- **Project**: {}\n", proj));
