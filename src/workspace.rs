@@ -18,6 +18,7 @@ use tokio::{
 use crate::{
     agents::{router::RouteCategory, AgentRuntime, RuntimeConfig},
     checkpoint::CheckpointManager,
+    codebase::conversations_db::ConversationsDb,
     memory::{
         belief_graph::{BeliefGraph, SharedBeliefGraph},
         embedder::EmbeddingClient,
@@ -25,7 +26,6 @@ use crate::{
         qmd_memory::{estimate_document_bytes, MemoryUsage, QmdMemory},
         schema::MemoryQueryFilters,
         semantic::SemanticMemory,
-        session_store::SessionStore,
         sqlite_store::SqliteMemoryStore,
         sqlite_vec_store::VecSqliteMemoryStore,
         store::{
@@ -573,8 +573,8 @@ pub struct WorkspaceState {
     pub entity_graph: SharedEntityGraph,
     pub semantic_memory: Arc<SemanticMemory>,
     pub memory_manager: Arc<crate::memory::manager::MemoryManager>,
-    pub panel_store: Arc<SessionStore>,
     pub checkpoint_manager: Arc<CheckpointManager>,
+    pub conversations_db: Arc<ConversationsDb>,
     store: Arc<dyn MemoryStore>,
     store_migrated_from_file: bool,
     store_migration_detail: String,
@@ -602,7 +602,6 @@ impl WorkspaceState {
     ) -> Result<Self> {
         let workspace_root = workspace_root.into();
         fs::create_dir_all(&workspace_root).await?;
-        let panel_root = workspace_root.join("panel_threads");
         let usage_state_path = workspace_root.join("usage.json");
         let file_store_path = resolve_file_store_path(&workspace_root);
         let migration_marker_path = durable_migration_marker_path(&file_store_path);
@@ -685,6 +684,9 @@ impl WorkspaceState {
             Arc::clone(&store),
         ));
 
+        let conversations_db = Arc::new(ConversationsDb::open(&config.id).await?);
+        conversations_db.create_schema().await?;
+
         let state = Self {
             runtime: Arc::new(
                 AgentRuntime::new(
@@ -698,8 +700,8 @@ impl WorkspaceState {
             entity_graph,
             semantic_memory,
             memory_manager,
-            panel_store: Arc::new(SessionStore::new(panel_root).await?),
             checkpoint_manager,
+            conversations_db,
             store,
             store_migrated_from_file,
             store_migration_detail,
@@ -1443,8 +1445,8 @@ impl WorkspaceRegistry {
         let registry = Self::new();
         let config = WorkspaceConfig::from_env();
         let settings = XavierSettings::current();
-        let panel_root = PathBuf::from(&settings.memory.workspace_dir).join(&config.id);
-        let workspace = WorkspaceState::new(config, runtime_config, panel_root).await?;
+        let workspace_root = PathBuf::from(&settings.memory.workspace_dir).join(&config.id);
+        let workspace = WorkspaceState::new(config, runtime_config, workspace_root).await?;
         seed_workspace(&workspace).await?;
         registry.insert(workspace).await?;
         Ok(registry)
