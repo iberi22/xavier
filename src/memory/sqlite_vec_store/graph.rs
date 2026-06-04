@@ -2,7 +2,7 @@ use crate::memory::sqlite_vec_store::types::ExtractedEntity;
 use crate::memory::sqlite_vec_store::utils;
 use crate::memory::store::{stable_key, GraphHopPath, MemoryRecord};
 use anyhow::Result;
-use libsql::params;
+use rusqlite::{params, Connection};
 use regex::Regex;
 use std::collections::HashSet;
 use std::sync::OnceLock;
@@ -14,8 +14,8 @@ pub fn extract_entities(content: &str) -> Vec<ExtractedEntity> {
     static DATE_RE: OnceLock<Regex> = OnceLock::new();
 
     let mention_re =
-        MENTION_RE.get_or_init(|| Regex::new(r"@[\w.-]{2,}").expect("valid mention regex"));
-    let topic_re = TOPIC_RE.get_or_init(|| Regex::new(r"#[\w-]{2,}").expect("valid topic regex"));
+        MENTION_RE.get_or_init(|| Regex::new(r"@[\w.-]{2?}").expect("valid mention regex"));
+    let topic_re = TOPIC_RE.get_or_init(|| Regex::new(r"#[\w-]{2?}").expect("valid topic regex"));
     let url_re =
         URL_RE.get_or_init(|| Regex::new(r#"https?://[^\s)>"]+"#).expect("valid url entity regex"));
     let date_re = DATE_RE.get_or_init(|| {
@@ -64,8 +64,8 @@ pub fn entity_node_id(workspace_id: &str, entity_type: &str, value: &str) -> Str
     )
 }
 
-pub async fn sync_memory_entities(
-    conn: &libsql::Connection,
+pub fn sync_memory_entities(
+    conn: &Connection,
     workspace_id: &str,
     record: &MemoryRecord,
 ) -> Result<()> {
@@ -77,37 +77,34 @@ pub async fn sync_memory_entities(
     conn.execute(
         "INSERT OR REPLACE INTO entities (id, name, entity_type, properties) VALUES (?, ?, ?, ?)",
         params![
-            memory_node_id.clone(),
-            record.path.clone(),
+            memory_node_id,
+            record.path,
             "memory",
             serde_json::json!({
-                "memory_id": record.id.clone(),
-                "path": record.path.clone(),
+                "memory_id": record.id,
+                "path": record.path,
                 "workspace_id": workspace_id,
             })
             .to_string()
         ],
-    )
-    .await?;
+    )?;
 
     conn.execute(
         "DELETE FROM memory_entities WHERE workspace_id = ? AND memory_id = ?",
-        params![workspace_id, record.id.clone()],
-    )
-    .await?;
+        params![workspace_id, record.id],
+    )?;
     conn.execute(
         "DELETE FROM relations WHERE source_id = ?",
-        params![memory_node_id.clone()],
-    )
-    .await?;
+        params![memory_node_id],
+    )?;
 
     for entity in extract_entities(&record.content) {
         let entity_id = entity_node_id(workspace_id, entity.entity_type, &entity.value);
         conn.execute(
             "INSERT OR REPLACE INTO entities (id, name, entity_type, properties) VALUES (?, ?, ?, ?)",
             params![
-                entity_id.clone(),
-                entity.value.clone(),
+                entity_id,
+                entity.value,
                 entity.entity_type,
                 serde_json::json!({
                     "workspace_id": workspace_id,
@@ -115,41 +112,41 @@ pub async fn sync_memory_entities(
                 })
                 .to_string()
             ],
-        ).await?;
+        )?;
         conn.execute(
             "INSERT OR REPLACE INTO memory_entities (id, workspace_id, memory_id, entity_id, relation_type) VALUES (?, ?, ?, ?, ?)",
             params![
                 stable_key("memory_entity_link", &[workspace_id, &record.id, &entity_id]),
                 workspace_id,
-                record.id.clone(),
-                entity_id.clone(),
+                record.id,
+                entity_id,
                 entity.relation_type,
             ],
-        ).await?;
+        )?;
         conn.execute(
             "INSERT OR REPLACE INTO relations (id, source_id, target_id, relation_type, properties, confidence_score, provenance_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
             params![
                 stable_key("memory_relation", &[workspace_id, &memory_node_id, &entity_id, entity.relation_type]),
-                memory_node_id.clone(),
-                entity_id.clone(),
+                memory_node_id,
+                entity_id,
                 entity.relation_type,
                 serde_json::json!({
-                    "memory_id": record.id.clone(),
-                    "path": record.path.clone(),
+                    "memory_id": record.id,
+                    "path": record.path,
                     "entity_type": entity.entity_type,
                 })
                 .to_string(),
                 1.0,
-                record.id.clone()
+                record.id
             ],
-        ).await?;
+        )?;
     }
 
     Ok(())
 }
 
-pub async fn resolve_graph_seed_entities(
-    conn: &libsql::Connection,
+pub fn resolve_graph_seed_entities(
+    conn: &Connection,
     workspace_id: &str,
     source: &MemoryRecord,
     query: &str,
@@ -159,21 +156,20 @@ pub async fn resolve_graph_seed_entities(
 
     // Also seed from entities mentioned in the query
     let terms = utils::search_tokens(query);
-    let entity_stmt = conn
-        .prepare("SELECT id FROM entities WHERE name LIKE ?")
-        .await?;
+    let mut entity_stmt = conn
+        .prepare("SELECT id FROM entities WHERE name LIKE ?")?;
     for term in terms {
-        let mut entity_rows = entity_stmt.query(params![format!("%{term}%")]).await?;
-        while let Some(row) = entity_rows.next().await? {
-            seeds.insert(row.get(0).map_err(anyhow::Error::msg)?);
+        let mut entity_rows = entity_stmt.query(params![format!("%{term}%")])?;
+        while let Some(row) = entity_rows.next()? {
+            seeds.insert(row.get(0)?);
         }
     }
 
     Ok(seeds)
 }
 
-pub async fn traverse_recursive(
-    _conn: &libsql::Connection,
+pub fn traverse_recursive(
+    _conn: &Connection,
     _workspace_id: &str,
     _seeds: HashSet<String>,
     _hops: usize,
