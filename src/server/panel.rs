@@ -6,7 +6,6 @@ use axum::{
     response::{Html, IntoResponse, Response},
     Extension, Json,
 };
-use chrono::Utc;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use ulid::Ulid;
@@ -153,8 +152,8 @@ pub async fn get_thread(
 }
 
 pub async fn delete_thread(
-    Extension(workspace): Extension<WorkspaceContext>,
-    AxumPath(thread_id): AxumPath<String>,
+    Extension(_workspace): Extension<WorkspaceContext>,
+    AxumPath(_thread_id): AxumPath<String>,
 ) -> impl IntoResponse {
     // Note: This logic for deletion should be implemented in ConversationsDb if needed.
     // For now, we only have placeholders.

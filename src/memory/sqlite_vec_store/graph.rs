@@ -14,8 +14,8 @@ pub fn extract_entities(content: &str) -> Vec<ExtractedEntity> {
     static DATE_RE: OnceLock<Regex> = OnceLock::new();
 
     let mention_re =
-        MENTION_RE.get_or_init(|| Regex::new(r"@[\w.-]{2?}").expect("valid mention regex"));
-    let topic_re = TOPIC_RE.get_or_init(|| Regex::new(r"#[\w-]{2?}").expect("valid topic regex"));
+        MENTION_RE.get_or_init(|| Regex::new(r"@[\w.-]{2,}").expect("valid mention regex"));
+    let topic_re = TOPIC_RE.get_or_init(|| Regex::new(r"#[\w-]{2,}").expect("valid topic regex"));
     let url_re =
         URL_RE.get_or_init(|| Regex::new(r#"https?://[^\s)>"]+"#).expect("valid url entity regex"));
     let date_re = DATE_RE.get_or_init(|| {

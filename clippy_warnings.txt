@@ -1,0 +1,42 @@
+﻿
+warning: unused import: `Connection`
+warning: unused import: `Connection`
+warning: unused import: `Context`
+warning: unused import: `Connection`
+warning: unused import: `sync::Arc`
+warning: unused import: `Connection`
+warning: unused import: `Connection`
+warning: unused import: `Context`
+warning: unused import: `Context`
+warning: unused import: `std::collections::HashMap`
+warning: unused import: `chrono::Utc`
+warning: unused import: `ulid::Ulid`
+warning: use of deprecated struct `secrets::SecretsManager`: SecretsManager is deprecated. Use Clavis or another 
+secure provider.
+warning: unused variable: `now_c`
+warning: unused variable: `now_c2`
+warning: unused variable: `workspace`
+warning: unused variable: `thread_id`
+warning: field `schema_initialized` is never read
+warning: method `ensure_schema` is never used
+warning: associated items `row_key`, `qjl_enabled_for_workspace`, `load_record_by_id`, `sync_memory_entities`, and 
+`resolve_graph_seed_entities` are never used
+warning: method `upsert_vector` is never used
+warning: function `open_pool` is never used
+warning: function `open_connection` is never used
+warning: you should consider adding a `Default` implementation for `RateLimitManager`
+warning: useless use of `format!`
+warning: useless use of `format!`
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+warning: this `repeat().take()` can be written more concisely
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+warning: you should consider adding a `Default` implementation for `QmdAuditLogger`
+warning: the loop variable `j` is used to index `dist`
+warning: you should consider adding a `Default` implementation for `SecurityThreatStore`
+warning: you should consider adding a `Default` implementation for `TimeMetricsStore`
+warning: `xavier` (lib) generated 36 warnings
+
+

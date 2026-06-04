@@ -24,15 +24,21 @@ pub struct RateLimitManager {
     project_id: String,
 }
 
-impl RateLimitManager {
-    /// Creates a new RateLimitManager, connecting to the metrics database.
-    /// Logs a warning if the connection fails (non-fatal for rate limiting).
-    pub fn new() -> Self {
+impl Default for RateLimitManager {
+    fn default() -> Self {
         let project_id = "metrics";
         if let Err(e) = ConnectionManager::global().connect(project_id, ".") {
             warn!("RateLimitManager failed to connect to metrics DB: {}", e);
         }
         Self { project_id: project_id.to_string() }
+    }
+}
+
+impl RateLimitManager {
+    /// Creates a new RateLimitManager, connecting to the metrics database.
+    /// Logs a warning if the connection fails (non-fatal for rate limiting).
+    pub fn new() -> Self {
+        Self::default()
     }
 
     pub async fn track_request(

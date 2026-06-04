@@ -4,10 +4,10 @@
 
 use std::{any::Any, path::PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use tokio::fs;
 
 use crate::checkpoint::Checkpoint;
