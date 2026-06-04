@@ -298,9 +298,9 @@ impl CodebaseDb {
     pub async fn insert_symbols_batch(&self, symbols: &[SymbolInput]) -> Result<()> {
         let symbols = symbols.to_vec();
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let tx = conn.transaction().context("failed to start transaction for symbols batch")?;
+            conn.execute_batch("BEGIN TRANSACTION").context("failed to start symbols batch transaction")?;
             for s in &symbols {
-                tx.execute(
+                conn.execute(
                     "INSERT OR REPLACE INTO symbols
                      (id, name, kind, file_path, line_start, line_end, signature, visibility, doc_comment, language, module_path, complexity)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
@@ -311,7 +311,7 @@ impl CodebaseDb {
                     ],
                 ).context("failed to insert symbol in batch")?;
             }
-            tx.commit().context("failed to commit symbols batch")?;
+            conn.execute_batch("COMMIT").context("failed to commit symbols batch")?;
             Ok(())
         }).await
     }
@@ -320,15 +320,15 @@ impl CodebaseDb {
     pub async fn insert_chunks_batch(&self, chunks: &[ChunkInput]) -> Result<()> {
         let chunks = chunks.to_vec();
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let tx = conn.transaction().context("failed to start transaction for chunks batch")?;
+            conn.execute_batch("BEGIN TRANSACTION").context("failed to start chunks batch transaction")?;
             for c in &chunks {
-                tx.execute(
+                conn.execute(
                     "INSERT OR REPLACE INTO code_chunks (id, path, content, language, symbol_id, tokens)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                     params![c.id, c.path, c.content, c.language, c.symbol_id, c.tokens],
                 ).context("failed to insert chunk in batch")?;
             }
-            tx.commit().context("failed to commit chunks batch")?;
+            conn.execute_batch("COMMIT").context("failed to commit chunks batch")?;
             Ok(())
         }).await
     }
@@ -354,14 +354,14 @@ impl CodebaseDb {
         };
 
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let tx = conn.transaction().context("failed to start transaction for embeddings batch")?;
+            conn.execute_batch("BEGIN TRANSACTION").context("failed to start embeddings batch transaction")?;
             for (id, blob) in &embeddings_with_blobs {
-                tx.execute(
+                conn.execute(
                     "INSERT INTO code_embeddings (id, embedding) VALUES (?1, ?2)",
                     params![id, blob],
                 ).context("failed to insert embedding in batch")?;
             }
-            tx.commit().context("failed to commit embeddings batch")?;
+            conn.execute_batch("COMMIT").context("failed to commit embeddings batch")?;
             Ok(())
         }).await
     }
