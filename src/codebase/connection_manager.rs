@@ -1,30 +1,58 @@
 use anyhow::{Context, Result};
-use libsql::Connection;
+use dashmap::DashMap;
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite::Connection;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
-use moka::future::Cache;
+use std::time::Instant;
 
 pub static INSTANCE: once_cell::sync::OnceCell<ConnectionManager> = once_cell::sync::OnceCell::new();
 
+/// Unified SQLite connection manager for Xavier.
+/// Manages connection pools by project_id with LRU eviction and PRAGMA optimizations.
 pub struct ConnectionManager {
-    cache: Cache<String, Connection>,
+    pools: DashMap<String, ProjectPool>,
     active: Arc<tokio::sync::RwLock<Option<String>>>,
+    idle_timeout_secs: u64,
+}
+
+struct ProjectPool {
+    pool: Arc<Pool<SqliteConnectionManager>>,
+    activated_at: Instant,
+}
+
+#[derive(Debug)]
+struct PragmaCustomizer;
+
+impl r2d2::CustomizeConnection<Connection, rusqlite::Error> for PragmaCustomizer {
+    fn on_acquire(&self, conn: &mut Connection) -> std::result::Result<(), rusqlite::Error> {
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL; \
+             PRAGMA busy_timeout=5000; \
+             PRAGMA synchronous=NORMAL;",
+        )
+        .map_err(|e| {
+            eprintln!("PragmaCustomizer: PRAGMA error: {}", e);
+            e
+        })
+    }
 }
 
 impl ConnectionManager {
+    /// Get the global singleton instance.
     pub fn global() -> &'static Self {
         INSTANCE.get_or_init(|| Self {
-            cache: Cache::builder()
-                .max_capacity(10)
-                .time_to_idle(Duration::from_secs(1800))
-                .build(),
+            pools: DashMap::new(),
             active: Arc::new(tokio::sync::RwLock::new(None)),
+            idle_timeout_secs: 1800, // 30 minutes
         })
     }
 
-    pub async fn connect(&self, project_id: &str, project_root: &str) -> Result<()> {
-        if !self.cache.contains_key(project_id) {
+    /// Connect to a database by project_id.
+    /// If the pool doesn't exist, it is created lazily.
+    pub fn connect(&self, project_id: &str, project_root: &str) -> Result<()> {
+        if !self.pools.contains_key(project_id) {
             let db_path = if project_id == "memory" {
                 PathBuf::from(project_root).join("xavier_memory.db")
             } else if project_id == "vec_store" {
@@ -47,67 +75,118 @@ impl ConnectionManager {
                     .with_context(|| format!("failed to create parent dir for {:?}", db_path))?;
             }
 
-            let path_str = db_path.to_str()
-                .ok_or_else(|| anyhow::anyhow!("invalid db path: {:?}", db_path))?;
+            let manager = SqliteConnectionManager::file(db_path);
+            let pool = Pool::builder()
+                .max_size(10)
+                .connection_customizer(Box::new(PragmaCustomizer))
+                .build(manager)
+                .context("failed to build r2d2 SQLite pool")?;
 
-            let db = libsql::Builder::new_local(path_str)
-                .build()
-                .await
-                .context("failed to build libSQL database")?;
+            self.evict_if_needed();
 
-            let conn = db.connect().context("failed to connect to libSQL database")?;
-
-            conn.execute_batch(
-                "PRAGMA journal_mode=WAL; \
-                 PRAGMA synchronous=NORMAL;",
-            ).await.context("failed to set pragmas")?;
-
-            self.cache.insert(project_id.to_string(), conn).await;
+            self.pools.insert(
+                project_id.to_string(),
+                ProjectPool {
+                    pool: Arc::new(pool),
+                    activated_at: Instant::now(),
+                },
+            );
+        } else {
+            // Update last accessed time
+            if let Some(mut entry) = self.pools.get_mut(project_id) {
+                entry.activated_at = Instant::now();
+            }
         }
-
         Ok(())
     }
 
-    pub async fn disconnect(&self, project_id: &str) {
-        self.cache.invalidate(project_id).await;
+    /// Manually disconnect and drop a pool.
+    pub fn disconnect(&self, project_id: &str) {
+        self.pools.remove(project_id);
     }
 
+    /// Set a project as active.
     pub async fn set_active(&self, project_id: &str, project_root: &str) -> Result<()> {
-        self.connect(project_id, project_root).await?;
+        self.connect(project_id, project_root)?;
         let mut active = self.active.write().await;
         *active = Some(project_id.to_string());
         Ok(())
     }
 
-    pub async fn with_active<F, Fut, T>(&self, f: F) -> Result<T>
+    /// Execute a query closure using a connection from the active pool.
+    pub async fn with_active<F, T>(&self, f: F) -> Result<T>
     where
-        F: FnOnce(Connection) -> Fut + Send + 'static,
-        Fut: std::future::Future<Output = Result<T>> + Send + 'static,
+        F: FnOnce(&Connection) -> Result<T> + Send + 'static,
         T: Send + 'static,
     {
-        let active_id = self.active.read().await;
-        let project_id = active_id
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("no active project set"))?
-            .clone();
-        drop(active_id);
+        let active_id = {
+            let active = self.active.read().await;
+            active.clone().ok_or_else(|| anyhow::anyhow!("no active project set"))?
+        };
 
-        let conn = self.cache.get(&project_id).await
-            .ok_or_else(|| anyhow::anyhow!("connection for {} not found in cache", project_id))?;
-
-        f(conn).await
+        self.with_conn(&active_id, f).await
     }
 
-    pub async fn with_conn<F, Fut, T>(&self, project_id: &str, f: F) -> Result<T>
+    /// Execute a query closure using a connection from a specific project's pool.
+    pub async fn with_conn<F, T>(&self, project_id: &str, f: F) -> Result<T>
     where
-        F: FnOnce(Connection) -> Fut + Send + 'static,
-        Fut: std::future::Future<Output = Result<T>> + Send + 'static,
+        F: FnOnce(&Connection) -> Result<T> + Send + 'static,
         T: Send + 'static,
     {
-        let conn = self.cache.get(project_id).await
-            .ok_or_else(|| anyhow::anyhow!("connection for {} not found in cache", project_id))?;
+        let pool = {
+            let mut entry = self.pools.get_mut(project_id)
+                .ok_or_else(|| anyhow::anyhow!("pool for {} not found", project_id))?;
+            entry.activated_at = Instant::now();
+            entry.pool.clone()
+        };
 
-        f(conn).await
+        tokio::task::spawn_blocking(move || {
+            let conn = pool.get().context("failed to get connection from pool")?;
+            f(&conn)
+        })
+        .await
+        .context("blocking task panicked")?
+    }
+
+    /// Access the underlying pool for a specific project.
+    pub async fn with_pool<F, T>(&self, project_id: &str, f: F) -> Result<T>
+    where
+        F: FnOnce(&Pool<SqliteConnectionManager>) -> Result<T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let pool = {
+            let mut entry = self.pools.get_mut(project_id)
+                .ok_or_else(|| anyhow::anyhow!("pool for {} not found", project_id))?;
+            entry.activated_at = Instant::now();
+            entry.pool.clone()
+        };
+
+        tokio::task::spawn_blocking(move || f(&pool))
+            .await
+            .context("blocking task panicked")?
+    }
+
+    /// Evict pools that are idle for too long or if we exceed the max capacity (10).
+    fn evict_if_needed(&self) {
+        let now = Instant::now();
+
+        // 1. Remove expired pools
+        self.pools.retain(|_, pool| {
+            now.duration_since(pool.activated_at).as_secs() < self.idle_timeout_secs
+        });
+
+        // 2. If still too many, remove least recently used
+        while self.pools.len() >= 10 {
+            let oldest = self.pools.iter()
+                .map(|e| (e.key().clone(), e.activated_at))
+                .min_by_key(|e| e.1);
+
+            if let Some((key, _)) = oldest {
+                self.pools.remove(&key);
+            } else {
+                break;
+            }
+        }
     }
 }
 
@@ -118,39 +197,27 @@ mod tests {
 
     #[tokio::test]
     async fn test_connection_manager() {
+        let cm = ConnectionManager::global();
         let dir = tempdir().unwrap();
         let project_root = dir.path().to_str().unwrap();
-        let cm = ConnectionManager {
-            cache: Cache::builder().max_capacity(2).build(),
-            active: Arc::new(tokio::sync::RwLock::new(None)),
-        };
 
-        cm.connect("p1", project_root).await.unwrap();
-        cm.connect("p2", project_root).await.unwrap();
-
-        cm.cache.run_pending_tasks().await;
-        assert_eq!(cm.cache.entry_count(), 2);
-
-        cm.connect("p3", project_root).await.unwrap();
-        // Moka eviction is eventual, but it should happen
-        tokio::time::sleep(Duration::from_millis(100)).await;
-        cm.cache.run_pending_tasks().await;
-        assert!(cm.cache.entry_count() <= 2);
+        cm.connect("p1", project_root).unwrap();
+        cm.connect("p2", project_root).unwrap();
+        assert_eq!(cm.pools.len(), 2);
+        assert!(cm.pools.contains_key("p1"));
+        assert!(cm.pools.contains_key("p2"));
     }
 
     #[tokio::test]
     async fn test_active_project() {
+        let cm = ConnectionManager::global();
         let dir = tempdir().unwrap();
         let project_root = dir.path().to_str().unwrap();
-        let cm = ConnectionManager {
-            cache: Cache::builder().max_capacity(10).build(),
-            active: Arc::new(tokio::sync::RwLock::new(None)),
-        };
 
         cm.set_active("p1", project_root).await.unwrap();
 
-        let res = cm.with_active(|conn| async move {
-            conn.execute("CREATE TABLE t(id INT)", ()).await.unwrap();
+        let res = cm.with_active(|conn| {
+            conn.execute("CREATE TABLE IF NOT EXISTS t(id INT)", [])?;
             Ok(())
         }).await;
 
