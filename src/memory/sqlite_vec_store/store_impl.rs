@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use async_trait::async_trait;
 use rusqlite::params;
 use sha2::{Digest, Sha256};

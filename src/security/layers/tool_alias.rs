@@ -78,9 +78,7 @@ fn levenshtein(a: &str, b: &str) -> usize {
     for (i, row) in dist.iter_mut().enumerate().skip(1).take(m) {
         row[0] = i;
     }
-    for j in 0..=n {
-        dist[0][j] = j;
-    }
+    dist[0] = (0..=n).collect();
 
     for i in 1..=m {
         for j in 1..=n {
