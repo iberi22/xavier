@@ -503,14 +503,32 @@ impl ConversationsDb {
 
     /// Get the filesystem path for this project's conversations DB.
     pub fn db_path(project_id: &str) -> PathBuf {
+        // Sanitize: only alphanumeric + hyphens/underscores
+        let sanitized: String = project_id
+            .chars()
+            .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
+            .collect();
+        assert!(!sanitized.is_empty(), "Invalid project_id: must contain at least one alphanumeric character, hyphen, or underscore");
+
         let home = std::env::var("HOME")
             .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_else(|_| ".".to_string());
         let mut path = PathBuf::from(home);
         path.push(".xavier");
         path.push(CONVERSATIONS_DIR);
-        path.push(format!("{}.db", project_id));
-        path
+
+        let mut db_file = path.clone();
+        db_file.push(format!("{}.db", sanitized));
+
+        // Verify that the resolved path is within the expected directory
+        if let Ok(canonical_base) = std::fs::canonicalize(&path) {
+            // Note: we only check if the base exists. The file itself might not exist yet.
+            // Since we sanitized the filename, joining it to a canonical path should be safe.
+            let resolved = canonical_base.join(format!("{}.db", sanitized));
+            assert!(resolved.starts_with(&canonical_base), "Path escape detected");
+        }
+
+        db_file
     }
 }
 
@@ -648,5 +666,22 @@ mod tests {
 
         assert_eq!(db1.list_beliefs(10).await.unwrap().len(), 1);
         assert_eq!(db2.list_beliefs(10).await.unwrap().len(), 1);
+    }
+
+    #[test]
+    fn test_db_path_traversal() {
+        let malicious_id = "../../etc/passwd";
+        let path = ConversationsDb::db_path(malicious_id);
+
+        let home = std::env::var("HOME")
+            .or_else(|_| std::env::var("USERPROFILE"))
+            .unwrap_or_else(|_| ".".to_string());
+        let mut expected_base = PathBuf::from(home);
+        expected_base.push(".xavier");
+        expected_base.push(CONVERSATIONS_DIR);
+
+        assert!(path.starts_with(&expected_base), "Path traversal detected: {:?}", path);
+        assert!(!path.to_string_lossy().contains(".."), "Path contains '..': {:?}", path);
+        assert!(path.to_string_lossy().contains("etcpasswd.db"), "Sanitization failed: {:?}", path);
     }
 }
