@@ -89,10 +89,7 @@ cron = "0.15"
 # State management
 rayon = "1.10"
 parking_lot = "0.12"
-sqlite-vec = "0.1"
 rusqlite = { version = "0.32.0", features = ["bundled", "load_extension", "chrono"] }
-r2d2 = "0.8"
-r2d2_sqlite = "0.25"
 libsql = { version = "0.9", default-features = false, features = ["core"] }
 zerocopy = "0.8"
 
@@ -132,7 +129,6 @@ governor = { version = "0.10", default-features = false, features = ["std", "jit
 
 # HMAC for webhook signature verification
 hmac = "0.12"
-dashmap = "6.0"
 
 # HTTP body utilities for webhook handling
 http-body-util = "0.1"

@@ -5,12 +5,8 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use once_cell::sync::OnceCell;
-use rusqlite::{params, Connection};
+use libsql::{params, Connection};
 use serde::{Deserialize, Serialize};
-
-/// Global flag ensuring the sqlite-vec extension is registered exactly once.
-static SQLITE_VEC_EXTENSION_INIT: OnceCell<Result<(), String>> = OnceCell::new();
 
 // ---------------------------------------------------------------------------
 // Result types
@@ -46,81 +42,66 @@ pub struct HybridResult {
 // CodebaseDb
 // ---------------------------------------------------------------------------
 
-use super::connection_manager::ConnectionManager;
-use r2d2::PooledConnection;
-use r2d2_sqlite::SqliteConnectionManager;
-
-/// Manages the per-project codebase SQLite database.
+/// Manages the per-project codebase libSQL database.
 pub struct CodebaseDb {
-    pool: std::sync::Arc<r2d2::Pool<SqliteConnectionManager>>,
+    conn: Connection,
 }
 
 impl CodebaseDb {
-    /// Open (or create) the codebase database for a project.
-    pub fn open(project_id: &str, project_root: &Path) -> Result<Self> {
-        let manager = ConnectionManager::global();
-        manager.connect(project_id, project_root.to_path_buf())?;
-        let pool = manager.get_pool(project_id)?;
+    /// Open (or create) the codebase database at `path`.
+    pub async fn open(path: &Path) -> Result<Self> {
+        let path_str = path.to_string_lossy().to_string();
+        let db = libsql::Builder::new_local(&path_str)
+            .build()
+            .await
+            .with_context(|| format!("failed to open codebase database at {}", path.display()))?;
 
-        let db = Self { pool };
-        let conn = db.connection()?;
-        Self::register_sqlite_vec_extension()?;
-        Self::verify_vec_extension_active(&conn)?;
-
-        Ok(db)
+        let conn = db.connect().context("failed to connect to libSQL database")?;
+        Self::enable_pragmas(&conn).await?;
+        Ok(Self { conn })
     }
 
     /// Open an in-memory database (for testing).
-    pub fn open_in_memory() -> Result<Self> {
-        let manager = SqliteConnectionManager::memory();
-        let pool = r2d2::Pool::new(manager)?;
-        let db = Self { pool: std::sync::Arc::new(pool) };
-        let conn = db.connection()?;
-        Self::enable_pragmas(&conn)?;
-        Self::register_sqlite_vec_extension()?;
-        Self::verify_vec_extension_active(&conn)?;
-        Ok(db)
+    pub async fn open_in_memory() -> Result<Self> {
+        let db = libsql::Builder::new_local(":memory:")
+            .build()
+            .await
+            .context("failed to build in-memory libSQL database")?;
+        let conn = db.connect().context("failed to connect to in-memory libSQL database")?;
+        Self::enable_pragmas(&conn).await?;
+        Ok(Self { conn })
     }
 
     /// Create (or migrate) the schema.
     ///
-    /// ALL tables are created as privacy settings are now managed by the user
-    /// outside of Xavier.
-    pub fn create_schema(&self) -> Result<()> {
-        let mut stmts = Vec::new();
-
-        // Essential metadata.
-        stmts.push(create_repo_meta_table());
-
-        // Git tables.
-        stmts.push(create_git_commits_table());
-        stmts.push(create_git_blame_table());
-        stmts.push(create_git_files_table());
-
-        // Code-analysis tables.
-        stmts.push(create_symbols_table());
-        stmts.push(create_symbol_relations_table());
-        stmts.push(create_imports_table());
-        stmts.push(create_patterns_table());
-
-        // code_chunks is needed for both FTS5 and vec0.
-        stmts.push(create_code_chunks_table());
-
-        // Virtual tables
-        stmts.push(create_code_embeddings_table());
-        stmts.push(create_code_fts_table());
+    /// All tables are created regardless of any external configuration.
+    pub async fn create_schema(&self) -> Result<()> {
+        let stmts = vec![
+            create_repo_meta_table(),
+            create_git_commits_table(),
+            create_git_files_table(),
+            create_git_blame_table(),
+            create_symbols_table(),
+            create_symbol_relations_table(),
+            create_imports_table(),
+            create_patterns_table(),
+            create_code_chunks_table(),
+            create_code_embeddings_table(),
+            create_code_fts_table(),
+        ];
 
         for stmt in &stmts {
-            self.connection()?
+            self.conn
                 .execute_batch(stmt)
+                .await
                 .with_context(|| format!("failed to execute schema SQL:\n{}", stmt))?;
         }
         Ok(())
     }
 
-    /// Return a pooled connection.
-    pub fn connection(&self) -> Result<PooledConnection<SqliteConnectionManager>> {
-        self.pool.get().context("failed to get connection from pool")
+    /// Return a reference to the underlying connection.
+    pub fn connection(&self) -> &Connection {
+        &self.conn
     }
 
     // ------------------------------------------------------------------
@@ -128,110 +109,108 @@ impl CodebaseDb {
     // ------------------------------------------------------------------
 
     /// Insert a single git commit record.
-    pub fn insert_commit(
+    pub async fn insert_commit(
         &self, hash: &str, author: &str, date: &str, message: &str,
         branch: Option<&str>, parents: &[&str],
     ) -> Result<()> {
         let parents_json = serde_json::to_string(parents)?;
-        self.connection()?.execute(
+        self.conn.execute(
             "INSERT OR REPLACE INTO git_commits (hash, author, date, message, branch, parents)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![hash, author, date, message, branch, parents_json],
-        ).context("failed to insert git commit")?;
+        ).await.context("failed to insert git commit")?;
         Ok(())
     }
 
     /// Insert or update a file record.
-    pub fn insert_file(
+    pub async fn insert_file(
         &self, path: &str, added_at: Option<&str>, last_modified: Option<&str>,
         loc: i64, language: Option<&str>, module_path: Option<&str>,
     ) -> Result<()> {
-        self.connection()?.execute(
+        self.conn.execute(
             "INSERT OR REPLACE INTO git_files (path, added_at, last_modified, loc, language, module_path)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![path, added_at, last_modified, loc, language, module_path],
-        ).context("failed to insert file record")?;
+        ).await.context("failed to insert file record")?;
         Ok(())
     }
 
     /// Insert a blame line range.
-    pub fn insert_blame(
+    pub async fn insert_blame(
         &self, file_path: &str, line_start: i64, line_end: i64,
         commit_hash: &str, author: &str, date: &str,
     ) -> Result<()> {
-        self.connection()?.execute(
+        self.conn.execute(
             "INSERT OR REPLACE INTO git_blame (file_path, line_start, line_end, commit_hash, author, date)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![file_path, line_start, line_end, commit_hash, author, date],
-        ).context("failed to insert git blame")?;
+        ).await.context("failed to insert git blame")?;
         Ok(())
     }
 
     /// Insert a code symbol.
     #[allow(clippy::too_many_arguments)]
-    pub fn insert_symbol(
+    pub async fn insert_symbol(
         &self, id: &str, name: &str, kind: &str, file_path: &str,
         line_start: i64, line_end: i64, signature: Option<&str>,
         visibility: Option<&str>, doc_comment: Option<&str>,
         language: &str, module_path: Option<&str>, complexity: Option<f64>,
     ) -> Result<()> {
-        self.connection()?.execute(
+        self.conn.execute(
             "INSERT OR REPLACE INTO symbols
              (id, name, kind, file_path, line_start, line_end, signature, visibility, doc_comment, language, module_path, complexity)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
             params![id, name, kind, file_path, line_start, line_end, signature, visibility, doc_comment, language, module_path, complexity],
-        ).context("failed to insert symbol")?;
+        ).await.context("failed to insert symbol")?;
         Ok(())
     }
 
     /// Insert a symbol-to-symbol relation.
-    pub fn insert_relation(
+    pub async fn insert_relation(
         &self, source_id: &str, target_id: &str, relation: &str, file_path: Option<&str>,
     ) -> Result<()> {
-        self.connection()?.execute(
+        self.conn.execute(
             "INSERT OR REPLACE INTO symbol_relations (source_id, target_id, relation, file_path)
              VALUES (?1, ?2, ?3, ?4)",
             params![source_id, target_id, relation, file_path],
-        ).context("failed to insert symbol relation")?;
+        ).await.context("failed to insert symbol relation")?;
         Ok(())
     }
 
     /// Insert a code chunk with optional embedding and FTS index content.
-    pub fn insert_chunk(
+    pub async fn insert_chunk(
         &self, id: &str, path: &str, content: &str,
         language: Option<&str>, symbol_id: Option<&str>, tokens: Option<i64>,
     ) -> Result<()> {
-        self.connection()?.execute(
+        self.conn.execute(
             "INSERT OR REPLACE INTO code_chunks (id, path, content, language, symbol_id, tokens)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             params![id, path, content, language, symbol_id, tokens],
-        ).context("failed to insert code chunk")?;
+        ).await.context("failed to insert code chunk")?;
         Ok(())
     }
 
-    /// Insert an embedding vector into the vec0 virtual table.
-    ///
-    /// The `embedding` slice must have exactly 384 elements.
-    pub fn insert_embedding(&self, id: &str, embedding: &[f32]) -> Result<()> {
-        let embedding_json = serde_json::to_string(embedding)?;
-        self.connection()?.execute(
+    /// Insert an embedding vector.
+    pub async fn insert_embedding(&self, id: &str, embedding: &[f32]) -> Result<()> {
+        let embedding_blob = crate::memory::sqlite_vec_store::vector::serialize_embedding(embedding);
+        self.conn.execute(
             "INSERT INTO code_embeddings (id, embedding) VALUES (?1, ?2)",
-            params![id, embedding_json],
-        ).context("failed to insert embedding")?;
+            params![id, embedding_blob],
+        ).await.context("failed to insert embedding")?;
         Ok(())
     }
 
     /// Insert a pattern record.
     #[allow(clippy::too_many_arguments)]
-    pub fn insert_pattern(
+    pub async fn insert_pattern(
         &self, id: &str, category: &str, pattern: &str, confidence: f64,
         discovered_by: Option<&str>, source_file: Option<&str>, source_snippet: Option<&str>,
     ) -> Result<()> {
-        self.connection()?.execute(
+        self.conn.execute(
             "INSERT OR REPLACE INTO patterns (id, category, pattern, confidence, discovered_by, source_file, source_snippet)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
             params![id, category, pattern, confidence, discovered_by, source_file, source_snippet],
-        ).context("failed to insert pattern")?;
+        ).await.context("failed to insert pattern")?;
         Ok(())
     }
 
@@ -240,70 +219,54 @@ impl CodebaseDb {
     // ------------------------------------------------------------------
 
     /// Full-text search over code via the FTS5 virtual table.
-    ///
-    /// Returns at most `limit` results, ordered by rank (best match first).
-    pub fn search_code(&self, query: &str, limit: usize) -> Result<Vec<CodeSearchResult>> {
+    pub async fn search_code(&self, query: &str, limit: usize) -> Result<Vec<CodeSearchResult>> {
         let sql = format!(
-            "SELECT c.path, c.content, c.code_tokens, rank
+            "SELECT path, content, code_tokens, rank
              FROM code_fts
-             JOIN code_chunks c ON c.id = code_fts.rowid
              WHERE code_fts MATCH ?1
              ORDER BY rank
              LIMIT ?2"
         );
-        let conn = self.connection()?;
-        let mut stmt = conn.prepare(&sql)?;
-        let results = stmt
-            .query_map(params![query, limit as i64], |row| {
-                Ok(CodeSearchResult {
-                    path: row.get(0)?, content: row.get(1)?,
-                    code_tokens: row.get(2)?, rank: row.get(3)?,
-                })
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .context("failed to query code_fts")?;
+        let mut rows = self.conn.query(&sql, params![query, limit as i64]).await?;
+        let mut results = Vec::new();
+        while let Some(row) = rows.next().await? {
+            results.push(CodeSearchResult {
+                path: row.get(0)?, content: row.get(1)?,
+                code_tokens: row.get(2)?, rank: row.get(3)?,
+            });
+        }
         Ok(results)
     }
 
-    /// Semantic (vector) similarity search via the vec0 virtual table.
-    ///
-    /// `embedding` must be a slice of 384 f32 values.
-    pub fn search_semantic(&self, embedding: &[f32], limit: usize) -> Result<Vec<SemanticSearchResult>> {
-        let embedding_json = serde_json::to_string(embedding)?;
+    /// Semantic (vector) similarity search.
+    pub async fn search_semantic(&self, embedding: &[f32], limit: usize) -> Result<Vec<SemanticSearchResult>> {
+        let embedding_blob = crate::memory::sqlite_vec_store::vector::serialize_embedding(embedding);
         let sql = format!(
-            "SELECT ce.id, cc.path, cc.content, ce.distance
+            "SELECT ce.id, cc.path, cc.content, vector_distance_cos(ce.embedding, ?1) as distance
              FROM code_embeddings ce
              JOIN code_chunks cc ON cc.id = ce.id
-             WHERE ce.embedding MATCH ?1
-             ORDER BY ce.distance
+             ORDER BY distance
              LIMIT ?2"
         );
-        let conn = self.connection()?;
-        let mut stmt = conn.prepare(&sql)?;
-        let results = stmt
-            .query_map(params![embedding_json, limit as i64], |row| {
-                Ok(SemanticSearchResult {
-                    id: row.get(0)?, path: row.get(1)?,
-                    content: row.get(2)?, distance: row.get(3)?,
-                })
-            })?
-            .collect::<std::result::Result<Vec<_>, _>>()
-            .context("failed to query code_embeddings")?;
+        let mut rows = self.conn.query(&sql, params![embedding_blob, limit as i64]).await?;
+        let mut results = Vec::new();
+        while let Some(row) = rows.next().await? {
+            results.push(SemanticSearchResult {
+                id: row.get(0)?, path: row.get(1)?,
+                content: row.get(2)?, distance: row.get(3)?,
+            });
+        }
         Ok(results)
     }
 
     /// Hybrid search combining FTS5 and vector results (RRF-style).
-    ///
-    /// Returns at most `limit` results sorted by combined relevance.
-    /// The FTS and vector searches are run independently and fused
-    /// using a simple reciprocal rank.
-    pub fn hybrid_search(
+    pub async fn hybrid_search(
         &self, text_query: &str, embedding: &[f32], limit: usize, rrf_k: usize,
     ) -> Result<Vec<HybridResult>> {
         use std::collections::HashMap;
         let mut scores: HashMap<String, HybridResult> = HashMap::new();
 
-        let fts_results = self.search_code(text_query, limit * 2)?;
+        let fts_results = self.search_code(text_query, limit * 2).await?;
         for (rank, result) in fts_results.iter().enumerate() {
             let rr = 1.0 / (rrf_k as f64 + rank as f64 + 1.0);
             scores.entry(result.path.clone())
@@ -311,7 +274,7 @@ impl CodebaseDb {
                 .or_insert(HybridResult { path: result.path.clone(), content: result.content.clone(), score: rr });
         }
 
-        let vec_results = self.search_semantic(embedding, limit * 2)?;
+        let vec_results = self.search_semantic(embedding, limit * 2).await?;
         for (rank, result) in vec_results.iter().enumerate() {
             let rr = 1.0 / (rrf_k as f64 + rank as f64 + 1.0);
             scores.entry(result.path.clone())
@@ -329,47 +292,12 @@ impl CodebaseDb {
     // Private helpers
     // ------------------------------------------------------------------
 
-    fn enable_pragmas(conn: &Connection) -> Result<()> {
+    async fn enable_pragmas(conn: &Connection) -> Result<()> {
         conn.execute_batch(
             "PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
              PRAGMA foreign_keys = ON;",
-        ).context("failed to set PRAGMAs")?;
-        Ok(())
-    }
-
-    fn register_sqlite_vec_extension() -> Result<()> {
-        SQLITE_VEC_EXTENSION_INIT
-            .get_or_init(|| unsafe {
-                type SqliteExtFn = unsafe extern "C" fn(
-                    *mut rusqlite::ffi::sqlite3, *mut *mut i8,
-                    *const rusqlite::ffi::sqlite3_api_routines,
-                ) -> i32;
-                let entry: SqliteExtFn =
-                    std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
-                let rc = rusqlite::ffi::sqlite3_auto_extension(Some(entry));
-                if rc != 0 { Err(format!("failed to register sqlite-vec auto extension: {}", rc)) }
-                else { Ok(()) }
-            })
-            .clone()
-            .map_err(anyhow::Error::msg)
-    }
-
-    fn verify_vec_extension_active(conn: &Connection) -> Result<()> {
-        let is_active: bool = conn
-            .query_row(
-                "SELECT 1 FROM pragma_compile_options WHERE compile_options LIKE 'sqlite-vec%'",
-                [],
-                |row| row.get(0),
-            ).unwrap_or(false);
-        if !is_active {
-            let test = conn.execute_batch(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS _xavier_vec_check USING vec0(embedding float[1]); DROP TABLE IF EXISTS _xavier_vec_check;",
-            );
-            if test.is_err() {
-                anyhow::bail!("sqlite-vec extension is not active on this connection");
-            }
-        }
+        ).await.context("failed to set PRAGMAs")?;
         Ok(())
     }
 }
@@ -415,7 +343,7 @@ fn create_code_chunks_table() -> String {
 }
 
 fn create_code_embeddings_table() -> String {
-    "CREATE VIRTUAL TABLE IF NOT EXISTS code_embeddings USING vec0(embedding float[384], id TEXT);".to_string()
+    "CREATE TABLE IF NOT EXISTS code_embeddings (id TEXT PRIMARY KEY, embedding F32_BLOB(384));".to_string()
 }
 
 fn create_code_fts_table() -> String {
@@ -424,7 +352,7 @@ fn create_code_fts_table() -> String {
 
 /// Populate code_fts from code_chunks (used after batch insert).
 pub fn populate_fts_from_chunks_sql() -> String {
-    "INSERT OR IGNORE INTO code_fts (rowid, path, content, code_tokens) SELECT rowid, path, content, '' FROM code_chunks;".to_string()
+    "INSERT OR IGNORE INTO code_fts (path, content, code_tokens) SELECT path, content, '' FROM code_chunks;".to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -435,21 +363,23 @@ pub fn populate_fts_from_chunks_sql() -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_open_in_memory() {
-        let db = CodebaseDb::open_in_memory().unwrap();
-        db.create_schema().unwrap();
-        let count: i64 = db.connection()?
-            .query_row("SELECT COUNT(*) FROM repo_meta", [], |row| row.get(0))
+    #[tokio::test]
+    async fn test_open_in_memory() {
+        let db = CodebaseDb::open_in_memory().await.unwrap();
+        db.create_schema().await.unwrap();
+        let mut rows = db.conn
+            .query("SELECT COUNT(*) FROM repo_meta", ())
+            .await
             .unwrap();
+        let count: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(count, 0);
     }
 
-    #[test]
-    fn test_create_schema_all_tables() {
-        let db = CodebaseDb::open_in_memory().unwrap();
-        db.create_schema().unwrap();
-        let tables = get_table_names(&db.connection()?);
+    #[tokio::test]
+    async fn test_create_schema_all_tables() {
+        let db = CodebaseDb::open_in_memory().await.unwrap();
+        db.create_schema().await.unwrap();
+        let tables = get_table_names(&db.conn).await;
         assert!(tables.contains(&"repo_meta".to_string()));
         assert!(tables.contains(&"git_commits".to_string()));
         assert!(tables.contains(&"git_files".to_string()));
@@ -459,92 +389,102 @@ mod tests {
         assert!(tables.contains(&"imports".to_string()));
         assert!(tables.contains(&"patterns".to_string()));
         assert!(tables.contains(&"code_chunks".to_string()));
-        assert!(has_table_ish(&db.connection()?, "code_embeddings"));
-        assert!(has_table_ish(&db.connection()?, "code_fts"));
+        assert!(tables.contains(&"code_embeddings".to_string()));
+        assert!(has_table_ish(&db.conn, "code_fts").await);
     }
 
-    #[test]
-    fn test_insert_and_search_code() {
-        let db = CodebaseDb::open_in_memory().unwrap();
-        db.create_schema().unwrap();
+    #[tokio::test]
+    async fn test_insert_and_search_code() {
+        let db = CodebaseDb::open_in_memory().await.unwrap();
+        db.create_schema().await.unwrap();
         db.insert_chunk("chunk1", "src/main.rs", "fn hello() { println!(\"hello\"); }",
-            Some("rust"), None, Some(10)).unwrap();
-        db.connection()?.execute_batch(&populate_fts_from_chunks_sql()).unwrap();
-        let results = db.search_code("hello", 10).unwrap();
+            Some("rust"), None, Some(10)).await.unwrap();
+        db.conn.execute_batch(&populate_fts_from_chunks_sql()).await.unwrap();
+        let results = db.search_code("hello", 10).await.unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].path, "src/main.rs");
     }
 
-    #[test]
-    fn test_insert_commit_and_file() {
-        let db = CodebaseDb::open_in_memory().unwrap();
-        db.create_schema().unwrap();
+    #[tokio::test]
+    async fn test_insert_commit_and_file() {
+        let db = CodebaseDb::open_in_memory().await.unwrap();
+        db.create_schema().await.unwrap();
         db.insert_commit("abc123", "author@example.com", "2026-01-15T10:00:00Z",
-            "Initial commit", Some("main"), &[]).unwrap();
+            "Initial commit", Some("main"), &[]).await.unwrap();
         db.insert_file("src/lib.rs", Some("2026-01-15"), Some("2026-01-15"),
-            120, Some("rust"), Some("crate")).unwrap();
-        let c1: i64 = db.connection()?.query_row("SELECT COUNT(*) FROM git_commits", [], |row| row.get(0)).unwrap();
-        let c2: i64 = db.connection()?.query_row("SELECT COUNT(*) FROM git_files", [], |row| row.get(0)).unwrap();
+            120, Some("rust"), Some("crate")).await.unwrap();
+        let mut rows = db.conn.query("SELECT COUNT(*) FROM git_commits", ()).await.unwrap();
+        let c1: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+        let mut rows = db.conn.query("SELECT COUNT(*) FROM git_files", ()).await.unwrap();
+        let c2: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(c1, 1);
         assert_eq!(c2, 1);
     }
 
-    #[test]
-    fn test_insert_symbol_and_relation() {
-        let db = CodebaseDb::open_in_memory().unwrap();
-        db.create_schema().unwrap();
+    #[tokio::test]
+    async fn test_insert_symbol_and_relation() {
+        let db = CodebaseDb::open_in_memory().await.unwrap();
+        db.create_schema().await.unwrap();
         db.insert_symbol("sym1", "hello", "function", "src/main.rs",
             10, 20, Some("fn hello()"), Some("pub"), Some("Says hello"),
-            "rust", Some("main"), Some(1.0)).unwrap();
+            "rust", Some("main"), Some(1.0)).await.unwrap();
         db.insert_symbol("sym2", "world", "struct", "src/lib.rs",
-            5, 15, None, None, None, "rust", None, None).unwrap();
-        db.insert_relation("sym1", "sym2", "calls", Some("src/main.rs")).unwrap();
-        let c1: i64 = db.connection()?.query_row("SELECT COUNT(*) FROM symbols", [], |row| row.get(0)).unwrap();
-        let c2: i64 = db.connection()?.query_row("SELECT COUNT(*) FROM symbol_relations", [], |row| row.get(0)).unwrap();
+            5, 15, None, None, None, "rust", None, None).await.unwrap();
+        db.insert_relation("sym1", "sym2", "calls", Some("src/main.rs")).await.unwrap();
+        let mut rows = db.conn.query("SELECT COUNT(*) FROM symbols", ()).await.unwrap();
+        let c1: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
+        let mut rows = db.conn.query("SELECT COUNT(*) FROM symbol_relations", ()).await.unwrap();
+        let c2: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(c1, 2);
         assert_eq!(c2, 1);
     }
 
-    #[test]
-    fn test_insert_blame_record() {
-        let db = CodebaseDb::open_in_memory().unwrap();
-        db.create_schema().unwrap();
-        db.insert_commit("abc", "alice", "2026-01-01", "first", Some("main"), &[]).unwrap();
-        db.insert_blame("src/main.rs", 1, 10, "abc", "alice", "2026-01-01").unwrap();
-        let c: i64 = db.connection()?.query_row("SELECT COUNT(*) FROM git_blame", [], |row| row.get(0)).unwrap();
+    #[tokio::test]
+    async fn test_insert_blame_record() {
+        let db = CodebaseDb::open_in_memory().await.unwrap();
+        db.create_schema().await.unwrap();
+        db.insert_commit("abc", "alice", "2026-01-01", "first", Some("main"), &[]).await.unwrap();
+        db.insert_blame("src/main.rs", 1, 10, "abc", "alice", "2026-01-01").await.unwrap();
+        let mut rows = db.conn.query("SELECT COUNT(*) FROM git_blame", ()).await.unwrap();
+        let c: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(c, 1);
     }
 
-    #[test]
-    fn test_hybrid_search_no_data() {
-        let db = CodebaseDb::open_in_memory().unwrap();
-        db.create_schema().unwrap();
+    #[tokio::test]
+    async fn test_hybrid_search_no_data() {
+        let db = CodebaseDb::open_in_memory().await.unwrap();
+        db.create_schema().await.unwrap();
         let embedding = vec![0.0f32; 384];
-        let results = db.hybrid_search("nonexistent", &embedding, 10, 60).unwrap();
+        let results = db.hybrid_search("nonexistent", &embedding, 10, 60).await.unwrap();
         assert!(results.is_empty());
     }
 
-    #[test]
-    fn test_insert_pattern() {
-        let db = CodebaseDb::open_in_memory().unwrap();
-        db.create_schema().unwrap();
+    #[tokio::test]
+    async fn test_insert_pattern() {
+        let db = CodebaseDb::open_in_memory().await.unwrap();
+        db.create_schema().await.unwrap();
         db.insert_pattern("pat1", "error-handling", "if_let_ok() pattern",
-            0.9, Some("auto"), Some("src/errors.rs"), Some("if let Ok(v) = result")).unwrap();
-        let c: i64 = db.connection()?.query_row("SELECT COUNT(*) FROM patterns", [], |row| row.get(0)).unwrap();
+            0.9, Some("auto"), Some("src/errors.rs"), Some("if let Ok(v) = result")).await.unwrap();
+        let mut rows = db.conn.query("SELECT COUNT(*) FROM patterns", ()).await.unwrap();
+        let c: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(c, 1);
     }
 
-    fn get_table_names(conn: &Connection) -> Vec<String> {
-        let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").unwrap();
-        stmt.query_map([], |row| row.get(0)).unwrap().filter_map(|r| r.ok()).collect()
+    async fn get_table_names(conn: &Connection) -> Vec<String> {
+        let mut rows = conn.query("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name", ()).await.unwrap();
+        let mut results = Vec::new();
+        while let Some(row) = rows.next().await.unwrap() {
+            results.push(row.get(0).unwrap());
+        }
+        results
     }
 
-    fn has_table_ish(conn: &Connection, name: &str) -> bool {
-        let count: i64 = conn.query_row(
+    async fn has_table_ish(conn: &Connection, name: &str) -> bool {
+        let mut rows = conn.query(
             "SELECT COUNT(*) FROM sqlite_master WHERE name LIKE ?1 AND (type='table' OR type='virtual')",
             params![format!("%{}%", name)],
-            |row| row.get(0),
-        ).unwrap_or(0);
+        ).await.unwrap();
+        let count: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
         count > 0
     }
 }
