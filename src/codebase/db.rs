@@ -65,7 +65,7 @@ impl CodebaseDb {
 
     /// Create (or migrate) the schema.
     ///
-    /// All tables are created regardless of any external configuration.
+    /// All tables are created for the per-project codebase database.
     pub async fn create_schema(&self) -> Result<()> {
         let stmts = vec![
             create_repo_meta_table(),
