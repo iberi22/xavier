@@ -126,6 +126,9 @@ aes-gcm = "0.10"
 argon2 = "0.5"
 rand = "0.8"
 governor = { version = "0.10", default-features = false, features = ["std", "jitter", "dashmap"] }
+dashmap = "6.1"
+r2d2 = "0.8"
+r2d2_sqlite = "0.25"
 
 # HMAC for webhook signature verification
 hmac = "0.12"
