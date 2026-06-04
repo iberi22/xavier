@@ -32,6 +32,7 @@ impl Default for PoolConfig {
 }
 
 /// A highly-optimized, fully asynchronous connection pool for libSQL.
+#[deprecated(note = "LibsqlConnectionPool is deprecated and will be replaced by a unified connection manager.")]
 #[derive(Clone)]
 pub struct LibsqlConnectionPool {
     inner: Arc<PoolInner>,
