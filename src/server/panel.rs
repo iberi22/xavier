@@ -13,7 +13,7 @@ use ulid::Ulid;
 
 use crate::{
     agents::ui_render::UiRenderAgent,
-    memory::session_store::{PanelMessage, SessionStore, ThreadDetail, ThreadSummary},
+    codebase::conversations_db::{ConversationsDb, Message, ThreadDetail, ThreadSummary},
     workspace::WorkspaceContext,
 };
 
@@ -34,7 +34,7 @@ pub struct PanelChatRequest {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PanelChatResponse {
     pub thread: ThreadSummary,
-    pub messages: Vec<PanelMessage>,
+    pub messages: Vec<Message>,
 }
 
 pub async fn panel_index() -> impl IntoResponse {
@@ -57,7 +57,29 @@ pub async fn panel_asset(AxumPath(path): AxumPath<String>) -> impl IntoResponse 
 }
 
 pub async fn list_threads(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
-    Json(workspace.workspace.panel_store.list_threads().await)
+    match workspace.workspace.conversations_db.list_threads(50).await {
+        Ok(threads) => {
+            let mut summaries = Vec::new();
+            for t in threads {
+                let mut summary = ThreadSummary::from(&t);
+                if let Ok(messages) = workspace
+                    .workspace
+                    .conversations_db
+                    .get_thread_messages(&t.id)
+                    .await
+                {
+                    summary.message_count = messages.len();
+                }
+                summaries.push(summary);
+            }
+            Json(summaries).into_response()
+        }
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
+    }
 }
 
 pub async fn create_thread(
@@ -71,8 +93,8 @@ pub async fn create_thread(
 
     match workspace
         .workspace
-        .panel_store
-        .create_thread(&title_hint)
+        .conversations_db
+        .create_thread(Some(&title_hint), None, Some("panel"))
         .await
     {
         Ok(thread) => Json(ThreadSummary::from(&thread)).into_response(),
@@ -88,28 +110,36 @@ pub async fn get_thread(
     Extension(workspace): Extension<WorkspaceContext>,
     AxumPath(thread_id): AxumPath<String>,
 ) -> impl IntoResponse {
-    match workspace.workspace.panel_store.get_thread(&thread_id).await {
-        Some(thread) => Json(ThreadDetail::from_thread(thread)).into_response(),
-        None => (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "thread not found" })),
-        )
-            .into_response(),
-    }
-}
-
-pub async fn delete_thread(
-    Extension(workspace): Extension<WorkspaceContext>,
-    AxumPath(thread_id): AxumPath<String>,
-) -> impl IntoResponse {
     match workspace
         .workspace
-        .panel_store
-        .delete_thread(&thread_id)
+        .conversations_db
+        .get_thread(&thread_id)
         .await
     {
-        Ok(true) => Json(json!({ "deleted": true })).into_response(),
-        Ok(false) => (
+        Ok(Some(thread)) => {
+            match workspace
+                .workspace
+                .conversations_db
+                .get_thread_messages(&thread_id)
+                .await
+            {
+                Ok(messages) => {
+                    let mut summary = ThreadSummary::from(&thread);
+                    summary.message_count = messages.len();
+                    Json(ThreadDetail {
+                        thread: summary,
+                        messages,
+                    })
+                    .into_response()
+                }
+                Err(error) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": error.to_string() })),
+                )
+                    .into_response(),
+            }
+        }
+        Ok(None) => (
             StatusCode::NOT_FOUND,
             Json(json!({ "error": "thread not found" })),
         )
@@ -122,12 +152,25 @@ pub async fn delete_thread(
     }
 }
 
+pub async fn delete_thread(
+    Extension(workspace): Extension<WorkspaceContext>,
+    AxumPath(thread_id): AxumPath<String>,
+) -> impl IntoResponse {
+    // Note: This logic for deletion should be implemented in ConversationsDb if needed.
+    // For now, we only have placeholders.
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(json!({ "error": "thread deletion not implemented" })),
+    )
+        .into_response()
+}
+
 pub async fn process_chat(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<PanelChatRequest>,
 ) -> impl IntoResponse {
     match process_chat_inner(
-        &workspace.workspace.panel_store,
+        &workspace.workspace.conversations_db,
         &workspace.workspace.runtime,
         &workspace,
         payload,
@@ -144,29 +187,30 @@ pub async fn process_chat(
 }
 
 async fn process_chat_inner(
-    store: &SessionStore,
+    db: &ConversationsDb,
     runtime: &std::sync::Arc<crate::agents::AgentRuntime>,
     workspace: &WorkspaceContext,
     payload: PanelChatRequest,
 ) -> anyhow::Result<PanelChatResponse> {
     let thread = match payload.thread_id {
-        Some(thread_id) => match store.get_thread(&thread_id).await {
+        Some(thread_id) => match db.get_thread(&thread_id).await? {
             Some(thread) => thread,
-            None => store.create_thread(&payload.message).await?,
+            None => db.create_thread(Some(&payload.message), None, Some("panel")).await?,
         },
-        None => store.create_thread(&payload.message).await?,
+        None => db.create_thread(Some(&payload.message), None, Some("panel")).await?,
     };
 
-    let user_message = PanelMessage {
-        id: Ulid::new().to_string(),
-        role: "user".to_string(),
-        plain_text: payload.message.clone(),
-        openui_lang: None,
-        xui_json: None,
-        created_at: Utc::now(),
-        metadata: json!({}),
-    };
-    store.append_message(&thread.id, user_message).await?;
+    db.store_message(
+        &thread.id,
+        "user",
+        &payload.message,
+        None,
+        None,
+        None,
+        Some("{}"),
+        None,
+    )
+    .await?;
 
     let trace = runtime
         .run_with_trace(&payload.message, Some(thread.id.clone()), None)
@@ -181,32 +225,41 @@ async fn process_chat_inner(
         )
         .await?;
     let ui_render = UiRenderAgent::new().render(&trace);
-    let assistant_message = PanelMessage {
-        id: Ulid::new().to_string(),
-        role: "assistant".to_string(),
-        plain_text: ui_render.plain_text,
-        openui_lang: Some(ui_render.openui_lang),
-        xui_json: None,
-        created_at: Utc::now(),
-        metadata: json!({
-            "confidence": trace.agent.confidence,
-            "timings": trace.agent.system_timings,
-            "components": ui_render.components,
-            "rules": ui_render.rules_applied,
-            "documents": trace.retrieval.total_results,
-            "evidence": trace.reasoning.supporting_evidence.len(),
-            "optimization": trace.optimization,
-        }),
-    };
-    let updated = store.append_message(&thread.id, assistant_message).await?;
+
+    let metadata = json!({
+        "confidence": trace.agent.confidence,
+        "timings": trace.agent.system_timings,
+        "components": ui_render.components,
+        "rules": ui_render.rules_applied,
+        "documents": trace.retrieval.total_results,
+        "evidence": trace.reasoning.supporting_evidence.len(),
+        "optimization": trace.optimization,
+    });
+
+    db.store_message(
+        &thread.id,
+        "assistant",
+        &ui_render.plain_text,
+        None,
+        Some(&ui_render.openui_lang),
+        None,
+        Some(&metadata.to_string()),
+        None,
+    )
+    .await?;
+
     workspace
         .workspace
         .record_session_exchange(&thread.id, "panel", &payload.message, &trace.agent.response)
         .await?;
 
+    let messages = db.get_thread_messages(&thread.id).await?;
+    let mut summary = ThreadSummary::from(&thread);
+    summary.message_count = messages.len();
+
     Ok(PanelChatResponse {
-        thread: ThreadSummary::from(&updated),
-        messages: updated.messages,
+        thread: summary,
+        messages,
     })
 }
 
@@ -234,15 +287,6 @@ fn asset_response(bytes: Vec<u8>, content_type: &'static str) -> Response {
         .expect("test assertion")
 }
 
-trait ThreadDetailExt {
-    fn from_thread(thread: crate::memory::session_store::PanelThread) -> ThreadDetail;
-}
-
-impl ThreadDetailExt for ThreadDetail {
-    fn from_thread(thread: crate::memory::session_store::PanelThread) -> ThreadDetail {
-        SessionStore::detail_from_thread(thread)
-    }
-}
 
 #[cfg(test)]
 mod tests {
