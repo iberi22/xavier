@@ -24,9 +24,13 @@ pub struct RateLimitManager {
 }
 
 impl RateLimitManager {
+    /// Creates a new RateLimitManager, connecting to the metrics database.
+    /// Logs a warning if the connection fails (non-fatal for rate limiting).
     pub fn new() -> Self {
         let project_id = "metrics";
-        ConnectionManager::global().connect(project_id, ".").unwrap();
+        if let Err(e) = ConnectionManager::global().connect(project_id, ".") {
+            warn!("RateLimitManager failed to connect to metrics DB: {}", e);
+        }
         Self { project_id: project_id.to_string() }
     }
 
