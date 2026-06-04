@@ -588,9 +588,6 @@ impl XavierSettings {
     }
 
     pub fn apply_to_env(&self) {
-        if let Some(token) = &self.auth_token {
-            set_if_absent("XAVIER_TOKEN", token);
-        }
         set_if_absent("XAVIER_HOST", &self.server.host);
         set_if_absent("XAVIER_PORT", &self.server.port.to_string());
         set_if_absent("XAVIER_LOG_LEVEL", &self.server.log_level);
@@ -687,9 +684,7 @@ impl XavierSettings {
 
         set_if_absent("XAVIER_MODEL_PROVIDER", &self.models.provider);
         set_if_absent("XAVIER_API_FLAVOR", &self.models.api_flavor);
-        set_if_absent("XAVIER_LOCAL_LLM_URL", &self.models.local_llm_url);
         set_if_absent("XAVIER_LOCAL_LLM_MODEL", &self.models.local_llm_model);
-        set_if_absent("XAVIER_EMBEDDING_URL", &self.models.embedding_url);
         set_if_absent("XAVIER_EMBEDDING_MODEL", &self.models.embedding_model);
         set_optional_if_absent(
             "XAVIER_ROUTER_RETRIEVED_MODEL",
@@ -705,19 +700,9 @@ impl XavierSettings {
             &self.models.router_quality_model,
         );
         set_optional_if_absent("XAVIER_LLM_MODEL", self.models.llm_model.clone());
-        set_optional_if_absent("XAVIER_LLM_API_KEY", self.models.llm_api_key.clone());
         set_optional_if_absent(
             "XAVIER_CLOUD_LLM_MODEL",
             self.models.cloud_llm_model.clone(),
-        );
-        set_optional_if_absent("XAVIER_CLOUD_LLM_URL", self.models.cloud_llm_url.clone());
-        set_optional_if_absent(
-            "XAVIER_LOCAL_LLM_API_KEY",
-            self.models.local_llm_api_key.clone(),
-        );
-        set_optional_if_absent(
-            "XAVIER_LOCAL_ANTHROPIC_URL",
-            self.models.local_anthropic_url.clone(),
         );
 
         set_if_absent(
@@ -761,17 +746,12 @@ impl XavierSettings {
         );
 
         // Embedding settings
-        set_optional_if_absent(
-            "XAVIER_EMBEDDING_ENDPOINT",
-            non_empty(&self.embedding.endpoint),
-        );
         set_optional_if_absent("XAVIER_EMBEDDER", non_empty(&self.embedding.embedder));
         set_optional_if_absent("XAVIER_GLLM_MODEL", non_empty(&self.embedding.gllm_model));
         set_optional_if_absent(
             "XAVIER_EMBEDDING_API_FLAVOR",
             non_empty(&self.embedding.api_flavor),
         );
-        set_optional_if_absent("XAVIER_EMBEDDING_API_KEY", self.embedding.api_key.clone());
         set_optional_if_absent(
             "XAVIER_GLLM_DIMENSION",
             self.embedding.gllm_dimension.map(|v| v.to_string()),
@@ -804,7 +784,6 @@ impl XavierSettings {
             "XAVIER_ALLOWED_DOMAINS",
             non_empty(&self.security.allowed_domains),
         );
-        set_optional_if_absent("XAVIER_TOKEN_SECRET", self.security.token_secret.clone());
 
         // Telegram settings
         set_if_absent(
@@ -815,7 +794,6 @@ impl XavierSettings {
                 "false"
             },
         );
-        set_optional_if_absent("XAVIER_TELEGRAM_TOKEN", self.telegram.bot_token.clone());
 
         // Router settings
         set_optional_if_absent(
@@ -866,8 +844,6 @@ impl XavierSettings {
         );
 
         // PgHeart settings
-        set_optional_if_absent("PGHEART_URL", self.pgheart.url.clone());
-        set_optional_if_absent("PGHEART_TOKEN", self.pgheart.token.clone());
         set_optional_if_absent("PGHEART_INSTANCE_ID", self.pgheart.instance_id.clone());
         set_if_absent("PGHEART_SYNC_INTERVAL_MS", &self.pgheart.sync_interval_ms.to_string());
         set_if_absent(
@@ -880,10 +856,6 @@ impl XavierSettings {
         );
 
         // Aliases for backward compatibility
-        set_optional_if_absent("XAVIER_API_URL", non_empty(&self.server.url));
-        if let Some(token) = &self.auth_token {
-            set_if_absent("XAVIER_AUTH_TOKEN", token);
-        }
         set_if_absent("XAVIER_WORKSPACE_ID", &self.workspace.default_workspace_id);
     }
 
