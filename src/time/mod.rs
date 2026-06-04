@@ -2,26 +2,39 @@
 //!
 //! Stores TimeMetric records to SQLite at path: metrics/time/{YYYY-MM-DD}/{metric_type}/{agent_id}
 
+use std::sync::Arc;
+
 use anyhow::Result;
 use chrono::Utc;
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
 
 use crate::adapters::inbound::http::dto::TimeMetricDto;
+use crate::codebase::connection_manager::ConnectionManager;
 use crate::ports::outbound::schema_init::SchemaInitializer;
-
-use crate::utils::connection_pool::LibsqlConnectionPool;
 
 /// Table name for time metrics
 const TABLE_TIME_METRICS: &str = "time_metrics";
 
 /// Time metrics storage adapter
 pub struct TimeMetricsStore {
-    pub pool: LibsqlConnectionPool,
+    pub pool: Arc<Pool<SqliteConnectionManager>>,
 }
 
 impl TimeMetricsStore {
-    /// Create a new TimeMetricsStore with the given libSQL connection pool
-    pub fn new(pool: LibsqlConnectionPool) -> Self {
+    /// Create a new TimeMetricsStore with the given connection pool
+    pub fn new(pool: Arc<Pool<SqliteConnectionManager>>) -> Self {
         Self { pool }
+    }
+
+    /// Create a new TimeMetricsStore from environment settings
+    pub fn from_env() -> Result<Self> {
+        let manager = ConnectionManager::global();
+        // Use a default path for metrics if not specified
+        let settings = crate::settings::XavierSettings::current();
+        manager.connect("metrics", &settings.memory.data_dir)?;
+        let pool = manager.get_pool("metrics")?;
+        Ok(Self { pool })
     }
 
     /// Save a TimeMetric to the store
@@ -42,7 +55,7 @@ impl TimeMetricsStore {
 
         let metadata_json = serde_json::to_string(&metric.metadata).map_err(|e| e.to_string())?;
 
-        let conn = self.pool.get().await.map_err(|e| e.to_string())?;
+        let conn = self.pool.get().map_err(|e| e.to_string())?;
         conn.execute(
             &format!(
                 "INSERT INTO {} (id, workspace_id, path, metric_type, agent_id, task_id, \
@@ -70,14 +83,13 @@ impl TimeMetricsStore {
                 metadata_json,
             ),
         )
-        .await
         .map_err(|e| e.to_string())?;
 
         Ok(())
     }
 
-    pub async fn init_schema_async(&self) -> Result<()> {
-        let conn = self.pool.get().await?;
+    pub fn init_schema_internal(&self) -> Result<()> {
+        let conn = self.pool.get()?;
         conn.execute_batch(&format!(
             r#"
             CREATE TABLE IF NOT EXISTS {} (
@@ -110,8 +122,7 @@ impl TimeMetricsStore {
             TABLE_TIME_METRICS,
             TABLE_TIME_METRICS,
             TABLE_TIME_METRICS
-        ))
-        .await?;
+        ))?;
         Ok(())
     }
 }
@@ -119,18 +130,6 @@ impl TimeMetricsStore {
 impl SchemaInitializer for TimeMetricsStore {
     /// Initialize the time_metrics table schema
     fn init_schema(&self) -> Result<()> {
-        std::thread::scope(|s| {
-            s.spawn(|| {
-                let rt = tokio::runtime::Builder::new_current_thread()
-                    .enable_all()
-                    .build()
-                    .map_err(|e| {
-                        anyhow::anyhow!("failed to build runtime for time schema: {}", e)
-                    })?;
-                rt.block_on(self.init_schema_async())
-            })
-            .join()
-            .map_err(|_| anyhow::anyhow!("time schema thread panicked"))?
-        })
+        self.init_schema_internal()
     }
 }
