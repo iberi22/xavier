@@ -47,6 +47,7 @@ pub struct ThreadDetail {
     pub messages: Vec<PanelMessage>,
 }
 
+#[deprecated(note = "SessionStore is deprecated and will be consolidated into conversations_db.")]
 #[derive(Clone)]
 pub struct SessionStore {
     root: PathBuf,
