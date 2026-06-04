@@ -4,7 +4,7 @@ use crate::memory::store::{
     filter_records, GraphHopPath, GraphHopResult, HybridSearchMode, HybridSearchResult, MemoryStore,
 };
 use anyhow::{Context, Result};
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use std::collections::{HashMap, HashSet};
 use crate::codebase::connection_manager::ConnectionManager;
 
@@ -91,7 +91,7 @@ impl VecSqliteMemoryStore {
                     while let Some(row) = rows.next()? {
                         let distance = row.get::<_, f64>(15)? as f32;
                         let similarity = 1.0 - distance;
-                        let record = Self::deserialize_record(&row)?;
+                        let record = Self::deserialize_record(row)?;
                         if Self::row_matches_filters(&workspace_id_c, &record, filters_c.as_ref()) {
                             rank += 1;
                             search::merge_rrf_result(
@@ -126,7 +126,7 @@ impl VecSqliteMemoryStore {
                     let mut rank = 0usize;
                     while let Some(row) = rows.next()? {
                         let bm25_score = row.get::<_, f64>(15).ok().map(|v| v as f32);
-                        let record = Self::deserialize_record(&row)?;
+                        let record = Self::deserialize_record(row)?;
                         if Self::row_matches_filters(&workspace_id_c, &record, filters_c.as_ref()) {
                             rank += 1;
                             search::merge_rrf_result(
@@ -166,7 +166,7 @@ impl VecSqliteMemoryStore {
                                     let mut stmt = conn.prepare("SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM memory_records WHERE id = ? AND workspace_id = ?")?;
                                     let mut rows = stmt.query(params![memory_id, workspace_id_c])?;
                                     if let Some(row) = rows.next()? {
-                                        let record = Self::deserialize_record(&row)?;
+                                        let record = Self::deserialize_record(row)?;
                                         if Self::row_matches_filters(&workspace_id_c, &record, filters_c.as_ref())
                                         {
                                             kg_rank += 1;
@@ -242,10 +242,7 @@ impl VecSqliteMemoryStore {
                 return Ok(Vec::new());
             }
 
-            let sql_params = std::iter::repeat("?")
-                .take(seed_ids.len())
-                .collect::<Vec<_>>()
-                .join(", ");
+            let sql_params = vec!["?"; seed_ids.len()].join(", ");
             let sql = format!(
                 r#"
                 WITH RECURSIVE graph_walk(root_id, current_id, current_name, depth, entity_path, relation_path) AS (

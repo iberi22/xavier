@@ -5,7 +5,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
 use crate::codebase::connection_manager::ConnectionManager;
@@ -417,14 +417,12 @@ impl CodebaseDb {
     pub async fn search_code(&self, query: &str, limit: usize) -> Result<Vec<CodeSearchResult>> {
         let query = query.to_string();
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let sql = format!(
-                "SELECT path, content, code_tokens, rank
+            let sql = "SELECT path, content, code_tokens, rank
                  FROM code_fts
                  WHERE code_fts MATCH ?1
                  ORDER BY rank
-                 LIMIT ?2"
-            );
-            let mut stmt = conn.prepare(&sql)?;
+                 LIMIT ?2";
+            let mut stmt = conn.prepare(sql)?;
             let mut rows = stmt.query(params![query, limit as i64])?;
             let mut results = Vec::new();
             while let Some(row) = rows.next()? {
@@ -442,14 +440,12 @@ impl CodebaseDb {
         let embedding_blob = crate::memory::sqlite_vec_store::vector::serialize_embedding(embedding);
         let ebook = embedding_blob.clone();
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let sql = format!(
-                "SELECT ce.id, cc.path, cc.content, vector_distance_cos(ce.embedding, ?1) as distance
+            let sql = "SELECT ce.id, cc.path, cc.content, vector_distance_cos(ce.embedding, ?1) as distance
                  FROM code_embeddings ce
                  JOIN code_chunks cc ON cc.id = ce.id
                  ORDER BY distance
-                 LIMIT ?2"
-            );
-            let mut stmt = conn.prepare(&sql)?;
+                 LIMIT ?2";
+            let mut stmt = conn.prepare(sql)?;
             let mut rows = stmt.query(params![ebook, limit as i64])?;
             let mut results = Vec::new();
             while let Some(row) = rows.next()? {

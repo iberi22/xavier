@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
 use uuid::Uuid;
@@ -267,7 +267,6 @@ impl ConversationsDb {
         let model_for_return = model_c.clone();
         let source_for_return = source_c.clone();
         let pid_for_return = pid.clone();
-        let now_c = now.clone();
 
         ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
             conn.execute(
@@ -535,7 +534,6 @@ impl ConversationsDb {
         let provenance_id_c = provenance_id.map(|s| s.to_string());
         let contradicts_id_c = contradicts_id.map(|s| s.to_string());
         let now_c = now.clone();
-        let now_c2 = now.clone();
 
         let id = ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
             // Check if a belief with this subject and relation/object or proposition already exists

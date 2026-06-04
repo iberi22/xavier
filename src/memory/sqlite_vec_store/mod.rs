@@ -3,10 +3,10 @@
 //! Uses native approximate nearest neighbor search via libSQL
 //! for semantic similarity matching on memory embeddings.
 
-use std::{collections::HashSet, sync::Arc};
+use std::collections::HashSet;
 
 use anyhow::Result;
-use rusqlite::{params, Connection};
+use rusqlite::params;
 use tokio::sync::broadcast;
 
 use crate::memory::schema::{MemoryLevel, MemoryQueryFilters};
@@ -202,7 +202,7 @@ impl VecSqliteMemoryStore {
 
             let mut rows = stmt.query(params![memory_id, workspace_id])?;
             if let Some(row) = rows.next()? {
-                let record = Self::deserialize_record(&row)?;
+                let record = Self::deserialize_record(row)?;
                 Ok(Some(record))
             } else {
                 Ok(None)
