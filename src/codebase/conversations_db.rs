@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use libsql::{params, Connection};
 use serde::{Deserialize, Serialize};
+use tokio::sync::OnceCell;
 use uuid::Uuid;
 
 const CONVERSATIONS_DIR: &str = "conversations";
@@ -129,6 +130,7 @@ pub struct Checkpoint {
 pub struct ConversationsDb {
     conn: Connection,
     project_id: String,
+    schema_initialized: OnceCell<()>,
 }
 
 impl ConversationsDb {
@@ -154,7 +156,7 @@ impl ConversationsDb {
              PRAGMA synchronous = NORMAL;
              PRAGMA foreign_keys = ON;",
         ).await.context("failed to set PRAGMAs")?;
-        Ok(Self { conn, project_id: project_id.to_string() })
+        Ok(Self { conn, project_id: project_id.to_string(), schema_initialized: OnceCell::new() })
     }
 
     /// Open an in-memory conversations database (for testing).
@@ -167,7 +169,15 @@ impl ConversationsDb {
         conn.execute_batch(
             "PRAGMA foreign_keys = ON;",
         ).await.context("failed to set PRAGMAs")?;
-        Ok(Self { conn, project_id: project_id.to_string() })
+        Ok(Self { conn, project_id: project_id.to_string(), schema_initialized: OnceCell::new() })
+    }
+
+    /// Ensure the schema is created.
+    async fn ensure_schema(&self) -> Result<()> {
+        self.schema_initialized.get_or_try_init(|| async {
+            self.create_schema().await
+        }).await?;
+        Ok(())
     }
 
     /// Create all tables for the conversations database.
@@ -257,6 +267,7 @@ impl ConversationsDb {
 
     /// Create a new conversation thread.
     pub async fn create_thread(&self, title: Option<&str>, model: Option<&str>, source: Option<&str>) -> Result<Thread> {
+        self.ensure_schema().await?;
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
@@ -276,6 +287,7 @@ impl ConversationsDb {
 
     /// Get a thread by ID.
     pub async fn get_thread(&self, thread_id: &str) -> Result<Option<Thread>> {
+        self.ensure_schema().await?;
         let mut rows = self.conn.query(
             "SELECT id, project_id, title, started_at, updated_at, last_preview, model, source
              FROM conversation_threads WHERE id = ?1",
@@ -300,6 +312,7 @@ impl ConversationsDb {
 
     /// List all threads for a project.
     pub async fn list_threads(&self, limit: usize) -> Result<Vec<Thread>> {
+        self.ensure_schema().await?;
         let mut rows = self.conn.query(
             "SELECT id, project_id, title, started_at, updated_at, last_preview, model, source
              FROM conversation_threads
@@ -340,6 +353,7 @@ impl ConversationsDb {
         metadata: Option<&str>,
         tokens: Option<i64>,
     ) -> Result<Message> {
+        self.ensure_schema().await?;
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
@@ -368,6 +382,7 @@ impl ConversationsDb {
 
     /// Get all messages for a thread, ordered by creation time.
     pub async fn get_thread_messages(&self, thread_id: &str) -> Result<Vec<Message>> {
+        self.ensure_schema().await?;
         let mut rows = self.conn.query(
             "SELECT id, thread_id, role, content, tool_calls, openui_lang, xui_json, metadata, created_at, tokens
              FROM conversation_messages
@@ -401,6 +416,7 @@ impl ConversationsDb {
         &self, deduction_text: &str, confidence: f64,
         category: Option<&str>, source_thread: Option<&str>,
     ) -> Result<Deduction> {
+        self.ensure_schema().await?;
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
@@ -419,6 +435,7 @@ impl ConversationsDb {
 
     /// List deductions for this project.
     pub async fn list_deductions(&self, limit: usize) -> Result<Vec<Deduction>> {
+        self.ensure_schema().await?;
         let mut rows = self.conn.query(
             "SELECT id, project_id, source_thread, deduction, confidence, created_at, last_accessed, category
              FROM deductions WHERE project_id = ?1 ORDER BY created_at DESC LIMIT ?2",
@@ -457,6 +474,7 @@ impl ConversationsDb {
         provenance_id: Option<&str>,
         contradicts_id: Option<&str>,
     ) -> Result<Belief> {
+        self.ensure_schema().await?;
         let now = Utc::now().to_rfc3339();
 
         // Check if a belief with this subject and relation/object or proposition already exists
@@ -525,6 +543,7 @@ impl ConversationsDb {
 
     /// Get a belief by ID.
     pub async fn get_belief(&self, id: &str) -> Result<Option<Belief>> {
+        self.ensure_schema().await?;
         let mut rows = self.conn.query(
             "SELECT id, project_id, subject, relation, object, proposition, confidence, weight, source, provenance_id, contradicts_id, created_at, updated_at
              FROM beliefs WHERE id = ?1",
@@ -554,6 +573,7 @@ impl ConversationsDb {
 
     /// List all beliefs for this project.
     pub async fn list_beliefs(&self, limit: usize) -> Result<Vec<Belief>> {
+        self.ensure_schema().await?;
         let mut rows = self.conn.query(
             "SELECT id, project_id, subject, relation, object, proposition, confidence, weight, source, provenance_id, contradicts_id, created_at, updated_at
              FROM beliefs WHERE project_id = ?1 ORDER BY updated_at DESC LIMIT ?2",
@@ -597,6 +617,7 @@ impl ConversationsDb {
         expires_at: Option<DateTime<Utc>>,
         kind: Option<&str>,
     ) -> Result<Checkpoint> {
+        self.ensure_schema().await?;
         let now = Utc::now().to_rfc3339();
         let expires = expires_at.map(|dt| dt.to_rfc3339());
 
@@ -654,6 +675,7 @@ impl ConversationsDb {
 
     /// Get a checkpoint by ID.
     pub async fn get_checkpoint_by_id(&self, id: &str) -> Result<Option<Checkpoint>> {
+        self.ensure_schema().await?;
         let mut rows = self.conn.query(
             "SELECT id, project_id, workspace_id, session_id, task_id, name, state, created_at, expires_at, kind
              FROM checkpoints WHERE id = ?1",
@@ -708,6 +730,7 @@ impl ConversationsDb {
 
     /// Get a checkpoint by workspace+task+name.
     pub async fn get_task_checkpoint(&self, workspace_id: &str, task_id: &str, name: &str) -> Result<Option<Checkpoint>> {
+        self.ensure_schema().await?;
         let mut rows = self.conn.query(
             "SELECT id, project_id, workspace_id, session_id, task_id, name, state, created_at, expires_at, kind
              FROM checkpoints
@@ -736,6 +759,7 @@ impl ConversationsDb {
 
     /// List checkpoints for a task.
     pub async fn list_checkpoints(&self, workspace_id: &str, task_id: &str) -> Result<Vec<Checkpoint>> {
+        self.ensure_schema().await?;
         let mut rows = self.conn.query(
             "SELECT id, project_id, workspace_id, session_id, task_id, name, state, created_at, expires_at, kind
              FROM checkpoints
@@ -764,6 +788,7 @@ impl ConversationsDb {
 
     /// Delete a checkpoint by workspace+task+name.
     pub async fn delete_checkpoint(&self, workspace_id: &str, task_id: &str, name: &str) -> Result<bool> {
+        self.ensure_schema().await?;
         let affected = self.conn.execute(
             "DELETE FROM checkpoints WHERE workspace_id = ?1 AND task_id = ?2 AND name = ?3 AND project_id = ?4",
             params![workspace_id, task_id, name, self.project_id.clone()],
@@ -807,6 +832,7 @@ impl ConversationsDb {
 
     /// Migrate legacy JSON session files to the database.
     pub async fn migrate_legacy_sessions(&self, sessions_dir: &Path) -> Result<usize> {
+        self.ensure_schema().await?;
         if !sessions_dir.exists() {
             return Ok(0);
         }
