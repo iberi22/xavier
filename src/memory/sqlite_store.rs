@@ -7,12 +7,10 @@ use std::{any::Any, path::PathBuf, sync::Arc};
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use r2d2::Pool;
-use r2d2_sqlite::SqliteConnectionManager;
+use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 use tokio::fs;
 
-use crate::codebase::connection_manager::ConnectionManager;
 use crate::checkpoint::Checkpoint;
 use crate::domain::memory::belief::BeliefEdge;
 use crate::memory::schema::{MemoryLevel, MemoryQueryFilters};
@@ -72,7 +70,7 @@ impl SqliteStoreConfig {
 
 #[derive(Clone)]
 pub struct SqliteMemoryStore {
-    pool: Arc<Pool<SqliteConnectionManager>>,
+    conn: Arc<Mutex<Connection>>,
     config: SqliteStoreConfig,
 }
 
@@ -82,18 +80,21 @@ impl SqliteMemoryStore {
     }
 
     pub async fn new(config: SqliteStoreConfig) -> Result<Self> {
-        let manager = ConnectionManager::global();
-        let db_key = format!("sqlite_memory_{}", config.path.display());
-        manager.connect_path(&db_key, config.path.clone())?;
-        let pool = manager.get_pool(&db_key)?;
+        if let Some(parent) = config.path.parent() {
+            fs::create_dir_all(parent).await?;
+        }
 
-        let store = Self {
-            pool,
-            config,
-        };
+        let conn = Connection::open(&config.path).with_context(|| {
+            format!(
+                "failed to open SQLite database at {}",
+                config.path.display()
+            )
+        })?;
+
+        // Enable WAL mode for better concurrency
+        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
 
         // Initialize schema
-        let conn = store.pool.get()?;
         conn.execute_batch(&format!(
             r#"
             CREATE TABLE IF NOT EXISTS {} (
@@ -154,7 +155,10 @@ impl SqliteMemoryStore {
             TABLE_CHECKPOINTS
         ))?;
 
-        Ok(store)
+        Ok(Self {
+            conn: Arc::new(Mutex::new(conn)),
+            config,
+        })
     }
 
     fn serialize_embedding(embedding: &[f32]) -> Vec<u8> {
@@ -215,13 +219,13 @@ impl MemoryStore for SqliteMemoryStore {
     }
 
     async fn health(&self) -> Result<String> {
-        let conn = self.pool.get()?;
+        let conn = self.conn.lock();
         conn.query_row("SELECT 1", [], |_row| Ok(()))?;
         Ok(format!("sqlite {}", self.config.detail()))
     }
 
     async fn put(&self, record: MemoryRecord) -> Result<()> {
-        let conn = self.pool.get()?;
+        let conn = self.conn.lock();
         conn.execute(
             &format!(
                 "INSERT OR REPLACE INTO {} (id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
@@ -249,7 +253,7 @@ impl MemoryStore for SqliteMemoryStore {
     }
 
     async fn get(&self, workspace_id: &str, id_or_path: &str) -> Result<Option<MemoryRecord>> {
-        let conn = self.pool.get()?;
+        let conn = self.conn.lock();
 
         // Try by id first (O(1) lookup)
         let key = Self::row_key(workspace_id, id_or_path);
@@ -294,7 +298,7 @@ impl MemoryStore for SqliteMemoryStore {
         let removed = self.get(workspace_id, id_or_path).await?;
         if let Some(record) = &removed {
             let key = Self::row_key(workspace_id, &record.id);
-            let conn = self.pool.get()?;
+            let conn = self.conn.lock();
             conn.execute(
                 &format!("DELETE FROM {} WHERE id = ?", TABLE_MEMORIES),
                 [&key],
@@ -313,7 +317,7 @@ impl MemoryStore for SqliteMemoryStore {
     }
 
     async fn list(&self, workspace_id: &str) -> Result<Vec<MemoryRecord>> {
-        let conn = self.pool.get()?;
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(&format!(
             "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE workspace_id = ?",
             TABLE_MEMORIES
@@ -352,7 +356,7 @@ impl MemoryStore for SqliteMemoryStore {
     }
 
     async fn load_workspace_state(&self, workspace_id: &str) -> Result<DurableWorkspaceState> {
-        let conn = self.pool.get()?;
+        let conn = self.conn.lock();
 
         // Load memories
         let mut memories = Vec::new();
@@ -397,10 +401,10 @@ impl MemoryStore for SqliteMemoryStore {
             while let Some(row) = rows.next()? {
                 let token_row = SessionTokenRow {
                     token: row.get(2)?,
-                    created_at: DateTime::parse_from_rfc3339(&row.get::<String>(3)?)
+                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
                         .map(|dt| dt.with_timezone(&Utc))
                         .unwrap_or_else(|_| Utc::now()),
-                    expires_at: DateTime::parse_from_rfc3339(&row.get::<String>(4)?)
+                    expires_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
                         .map(|dt| dt.with_timezone(&Utc))
                         .unwrap_or_else(|_| Utc::now()),
                 };
@@ -423,7 +427,7 @@ impl MemoryStore for SqliteMemoryStore {
                 checkpoints.push(Checkpoint {
                     task_id: row.get(0)?,
                     name: row.get(1)?,
-                    data: serde_json::from_str(&row.get::<String>(2)?).unwrap_or_default(),
+                    data: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
                 });
             }
             checkpoints
@@ -439,7 +443,7 @@ impl MemoryStore for SqliteMemoryStore {
 
     async fn save_beliefs(&self, workspace_id: &str, beliefs: Vec<BeliefEdge>) -> Result<()> {
         let belief_key = stable_key("belief_row", &[workspace_id]);
-        let conn = self.pool.get()?;
+        let conn = self.conn.lock();
         let beliefs_json = serde_json::to_string(&beliefs)?;
 
         conn.execute(
@@ -458,7 +462,7 @@ impl MemoryStore for SqliteMemoryStore {
         token: SessionTokenRecord,
     ) -> Result<()> {
         let token_key = stable_key("session_token_row", &[workspace_id, &token.token]);
-        let conn = self.pool.get()?;
+        let conn = self.conn.lock();
 
         // Delete expired tokens first
         conn.execute(
@@ -488,7 +492,7 @@ impl MemoryStore for SqliteMemoryStore {
 
     async fn is_session_token_valid(&self, workspace_id: &str, token: &str) -> Result<bool> {
         let token_key = stable_key("session_token_row", &[workspace_id, token]);
-        let conn = self.pool.get()?;
+        let conn = self.conn.lock();
         let now = Utc::now().to_rfc3339();
 
         let count: i32 = conn.query_row(
@@ -508,7 +512,7 @@ impl MemoryStore for SqliteMemoryStore {
             "checkpoint_row",
             &[workspace_id, &checkpoint.task_id, &checkpoint.name],
         );
-        let conn = self.pool.get()?;
+        let conn = self.conn.lock();
         let data_json = serde_json::to_string(&checkpoint.data)?;
 
         conn.execute(
@@ -527,7 +531,7 @@ impl MemoryStore for SqliteMemoryStore {
         task_id: &str,
         name: &str,
     ) -> Result<Option<Checkpoint>> {
-        let conn = self.pool.get()?;
+        let conn = self.conn.lock();
 
         let mut stmt = conn.prepare(&format!(
             "SELECT data FROM {} WHERE workspace_id = ? AND task_id = ? AND name = ?",
@@ -549,7 +553,7 @@ impl MemoryStore for SqliteMemoryStore {
     }
 
     async fn list_checkpoints(&self, workspace_id: &str, task_id: &str) -> Result<Vec<Checkpoint>> {
-        let conn = self.pool.get()?;
+        let conn = self.conn.lock();
         let mut stmt = conn.prepare(&format!(
             "SELECT task_id, name, data FROM {} WHERE workspace_id = ? AND task_id = ?",
             TABLE_CHECKPOINTS
@@ -561,7 +565,7 @@ impl MemoryStore for SqliteMemoryStore {
             checkpoints.push(Checkpoint {
                 task_id: row.get(0)?,
                 name: row.get(1)?,
-                data: serde_json::from_str(&row.get::<String>(2)?).unwrap_or_default(),
+                data: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
             });
         }
         Ok(checkpoints)
@@ -569,7 +573,7 @@ impl MemoryStore for SqliteMemoryStore {
 
     async fn delete_checkpoint(&self, workspace_id: &str, task_id: &str, name: &str) -> Result<()> {
         let checkpoint_key = stable_key("checkpoint_row", &[workspace_id, task_id, name]);
-        let conn = self.pool.get()?;
+        let conn = self.conn.lock();
         conn.execute(
             &format!("DELETE FROM {} WHERE id = ?", TABLE_CHECKPOINTS),
             [&checkpoint_key],
