@@ -2,6 +2,7 @@ use crate::ports::outbound::schema_init::SchemaInitializer;
 use crate::security::detections::Threat;
 use anyhow::Result;
 use chrono::Utc;
+use tracing::log::warn;
 use sha2::{Digest, Sha256};
 use rusqlite::params;
 use crate::codebase::connection_manager::ConnectionManager;
