@@ -1133,16 +1133,13 @@ pub async fn memory_export_pack(
     let gating = AdaptiveGating::with_defaults();
     let all_docs = workspace.workspace.memory.all_documents().await;
 
-    let episodic_summaries = workspace
-        .workspace
-        .panel_store
-        .list_threads()
-        .await
+    let threads = workspace.workspace.conversations_db.list_threads(50).await.unwrap_or_default();
+    let episodic_summaries = threads
         .into_iter()
         .map(|s| SessionSummary {
             session_id: s.id.clone(),
-            start_time: s.created_at,
-            summary: s.last_preview.clone(),
+            start_time: s.started_at,
+            summary: s.last_preview.unwrap_or_default(),
             key_events: vec![],
             sentiment_timeline: vec![],
         })
@@ -1212,16 +1209,13 @@ async fn build_multi_layer_retrieve_response(
     let working_docs = workspace.workspace.memory.all_documents().await;
     let working_count = working_docs.len();
 
-    let episodic_summaries = workspace
-        .workspace
-        .panel_store
-        .list_threads()
-        .await
+    let threads = workspace.workspace.conversations_db.list_threads(50).await.unwrap_or_default();
+    let episodic_summaries = threads
         .into_iter()
         .map(|s| SessionSummary {
             session_id: s.id.clone(),
-            start_time: s.created_at,
-            summary: s.last_preview.clone(),
+            start_time: s.started_at,
+            summary: s.last_preview.unwrap_or_default(),
             key_events: vec![],
             sentiment_timeline: vec![],
         })

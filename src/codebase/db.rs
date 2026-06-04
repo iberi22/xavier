@@ -203,13 +203,27 @@ impl CodebaseDb {
     /// Insert a pattern record.
     #[allow(clippy::too_many_arguments)]
     pub async fn insert_pattern(
-        &self, id: &str, category: &str, pattern: &str, confidence: f64,
-        discovered_by: Option<&str>, source_file: Option<&str>, source_snippet: Option<&str>,
+        &self,
+        id: &str,
+        category: &str,
+        pattern: &str,
+        project: &str,
+        discovered_by: &str,
+        confidence: f64,
+        source_file: Option<&str>,
+        source_occurrences: i64,
+        source_snippet: Option<&str>,
+        verification: &str,
     ) -> Result<()> {
+        let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
-            "INSERT OR REPLACE INTO patterns (id, category, pattern, confidence, discovered_by, source_file, source_snippet)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![id, category, pattern, confidence, discovered_by, source_file, source_snippet],
+            "INSERT OR REPLACE INTO code_patterns (id, category, pattern, project, discovered_by, confidence, \
+             source_file, source_occurrences, source_snippet, created_at, updated_at, usage_count, verification)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            params![
+                id, category, pattern, project, discovered_by, confidence,
+                source_file, source_occurrences, source_snippet, now.clone(), now, 0, verification
+            ],
         ).await.context("failed to insert pattern")?;
         Ok(())
     }
@@ -335,7 +349,21 @@ fn create_imports_table() -> String {
 }
 
 fn create_patterns_table() -> String {
-    "CREATE TABLE IF NOT EXISTS patterns (id TEXT PRIMARY KEY, category TEXT NOT NULL, pattern TEXT NOT NULL, confidence REAL DEFAULT 0.5, discovered_by TEXT DEFAULT 'auto', source_file TEXT, source_snippet TEXT);".to_string()
+    "CREATE TABLE IF NOT EXISTS code_patterns (
+        id TEXT PRIMARY KEY,
+        category TEXT NOT NULL,
+        pattern TEXT NOT NULL,
+        project TEXT NOT NULL,
+        discovered_by TEXT NOT NULL DEFAULT 'auto',
+        confidence REAL NOT NULL DEFAULT 0.5,
+        source_file TEXT DEFAULT '',
+        source_occurrences INTEGER DEFAULT 0,
+        source_snippet TEXT DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        usage_count INTEGER DEFAULT 0,
+        verification TEXT DEFAULT 'pending'
+    );".to_string()
 }
 
 fn create_code_chunks_table() -> String {
@@ -387,7 +415,7 @@ mod tests {
         assert!(tables.contains(&"symbols".to_string()));
         assert!(tables.contains(&"symbol_relations".to_string()));
         assert!(tables.contains(&"imports".to_string()));
-        assert!(tables.contains(&"patterns".to_string()));
+        assert!(tables.contains(&"code_patterns".to_string()));
         assert!(tables.contains(&"code_chunks".to_string()));
         assert!(tables.contains(&"code_embeddings".to_string()));
         assert!(has_table_ish(&db.conn, "code_fts").await);
@@ -463,9 +491,9 @@ mod tests {
     async fn test_insert_pattern() {
         let db = CodebaseDb::open_in_memory().await.unwrap();
         db.create_schema().await.unwrap();
-        db.insert_pattern("pat1", "error-handling", "if_let_ok() pattern",
-            0.9, Some("auto"), Some("src/errors.rs"), Some("if let Ok(v) = result")).await.unwrap();
-        let mut rows = db.conn.query("SELECT COUNT(*) FROM patterns", ()).await.unwrap();
+        db.insert_pattern("pat1", "error-handling", "if_let_ok() pattern", "project-a", "auto",
+            0.9, Some("src/errors.rs"), 1, Some("if let Ok(v) = result"), "verified").await.unwrap();
+        let mut rows = db.conn.query("SELECT COUNT(*) FROM code_patterns", ()).await.unwrap();
         let c: i64 = rows.next().await.unwrap().unwrap().get(0).unwrap();
         assert_eq!(c, 1);
     }
