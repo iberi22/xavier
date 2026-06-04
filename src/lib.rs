@@ -38,6 +38,7 @@ pub mod workspace;
 // Hexagonal architecture modules
 pub mod adapters;
 pub mod app;
+pub mod codebase;
 pub mod domain;
 pub mod ports;
 pub mod time;
