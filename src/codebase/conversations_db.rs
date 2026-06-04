@@ -4,7 +4,7 @@
 //! AI conversation threads, messages, deductions, agent beliefs, and
 //! session checkpoints. It is never committed to a repository.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
@@ -26,6 +26,7 @@ pub struct Thread {
     pub title: Option<String>,
     pub started_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    pub last_preview: Option<String>,
     pub model: Option<String>,
     pub source: Option<String>,
 }
@@ -38,8 +39,40 @@ pub struct Message {
     pub role: String,
     pub content: String,
     pub tool_calls: Option<String>,
+    pub openui_lang: Option<String>,
+    pub xui_json: Option<String>,
+    pub metadata: Option<String>,
     pub created_at: DateTime<Utc>,
     pub tokens: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThreadSummary {
+    pub id: String,
+    pub title: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub last_preview: String,
+    pub message_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ThreadDetail {
+    pub thread: ThreadSummary,
+    pub messages: Vec<Message>,
+}
+
+impl From<&Thread> for ThreadSummary {
+    fn from(t: &Thread) -> Self {
+        Self {
+            id: t.id.clone(),
+            title: t.title.clone().unwrap_or_else(|| "Untitled".to_string()),
+            created_at: t.started_at,
+            updated_at: t.updated_at,
+            last_preview: t.last_preview.clone().unwrap_or_default(),
+            message_count: 0, // Should be populated by caller
+        }
+    }
 }
 
 /// A deduction derived from conversations.
@@ -61,9 +94,14 @@ pub struct Belief {
     pub id: String,
     pub project_id: Option<String>,
     pub subject: String,
-    pub proposition: String,
+    pub relation: Option<String>,
+    pub object: Option<String>,
+    pub proposition: Option<String>,
     pub confidence: f64,
+    pub weight: f64,
     pub source: Option<String>,
+    pub provenance_id: Option<String>,
+    pub contradicts_id: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -73,7 +111,10 @@ pub struct Belief {
 pub struct Checkpoint {
     pub id: String,
     pub project_id: Option<String>,
+    pub workspace_id: Option<String>,
     pub session_id: Option<String>,
+    pub task_id: Option<String>,
+    pub name: Option<String>,
     pub state: String,
     pub created_at: DateTime<Utc>,
     pub expires_at: Option<DateTime<Utc>>,
@@ -138,6 +179,7 @@ impl ConversationsDb {
                 title TEXT,
                 started_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
+                last_preview TEXT,
                 model TEXT,
                 source TEXT
             );
@@ -148,6 +190,9 @@ impl ConversationsDb {
                 role TEXT NOT NULL,
                 content TEXT NOT NULL,
                 tool_calls TEXT,
+                openui_lang TEXT,
+                xui_json TEXT,
+                metadata TEXT,
                 created_at TEXT NOT NULL,
                 tokens INTEGER,
                 FOREIGN KEY (thread_id) REFERENCES conversation_threads(id)
@@ -164,21 +209,29 @@ impl ConversationsDb {
                 category TEXT
             );
 
-            CREATE TABLE IF NOT EXISTS agent_beliefs (
+            CREATE TABLE IF NOT EXISTS beliefs (
                 id TEXT PRIMARY KEY,
                 project_id TEXT,
                 subject TEXT NOT NULL,
-                proposition TEXT NOT NULL,
+                relation TEXT,
+                object TEXT,
+                proposition TEXT,
                 confidence REAL DEFAULT 0.0,
+                weight REAL DEFAULT 0.0,
                 source TEXT,
+                provenance_id TEXT,
+                contradicts_id TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             );
 
-            CREATE TABLE IF NOT EXISTS session_checkpoints (
+            CREATE TABLE IF NOT EXISTS checkpoints (
                 id TEXT PRIMARY KEY,
                 project_id TEXT,
+                workspace_id TEXT,
                 session_id TEXT,
+                task_id TEXT,
+                name TEXT,
                 state TEXT NOT NULL,
                 created_at TEXT NOT NULL,
                 expires_at TEXT,
@@ -215,6 +268,7 @@ impl ConversationsDb {
             id, project_id: Some(self.project_id.clone()),
             title: title.map(|s| s.to_string()),
             started_at: Utc::now(), updated_at: Utc::now(),
+            last_preview: None,
             model: model.map(|s| s.to_string()),
             source: source.map(|s| s.to_string()),
         })
@@ -223,7 +277,7 @@ impl ConversationsDb {
     /// Get a thread by ID.
     pub async fn get_thread(&self, thread_id: &str) -> Result<Option<Thread>> {
         let mut rows = self.conn.query(
-            "SELECT id, project_id, title, started_at, updated_at, model, source
+            "SELECT id, project_id, title, started_at, updated_at, last_preview, model, source
              FROM conversation_threads WHERE id = ?1",
             params![thread_id],
         ).await?;
@@ -235,8 +289,9 @@ impl ConversationsDb {
                 title: row.get(2)?,
                 started_at: parse_datetime(&row.get::<String>(3)?),
                 updated_at: parse_datetime(&row.get::<String>(4)?),
-                model: row.get(5)?,
-                source: row.get(6)?,
+                last_preview: row.get(5)?,
+                model: row.get(6)?,
+                source: row.get(7)?,
             }))
         } else {
             Ok(None)
@@ -246,7 +301,7 @@ impl ConversationsDb {
     /// List all threads for a project.
     pub async fn list_threads(&self, limit: usize) -> Result<Vec<Thread>> {
         let mut rows = self.conn.query(
-            "SELECT id, project_id, title, started_at, updated_at, model, source
+            "SELECT id, project_id, title, started_at, updated_at, last_preview, model, source
              FROM conversation_threads
              WHERE project_id = ?1
              ORDER BY updated_at DESC
@@ -261,7 +316,8 @@ impl ConversationsDb {
                 title: row.get(2)?,
                 started_at: parse_datetime(&row.get::<String>(3)?),
                 updated_at: parse_datetime(&row.get::<String>(4)?),
-                model: row.get(5)?, source: row.get(6)?,
+                last_preview: row.get(5)?,
+                model: row.get(6)?, source: row.get(7)?,
             });
         }
         Ok(results)
@@ -272,28 +328,40 @@ impl ConversationsDb {
     // ------------------------------------------------------------------
 
     /// Store a message in a thread.
+    #[allow(clippy::too_many_arguments)]
     pub async fn store_message(
-        &self, thread_id: &str, role: &str, content: &str,
-        tool_calls: Option<&str>, tokens: Option<i64>,
+        &self,
+        thread_id: &str,
+        role: &str,
+        content: &str,
+        tool_calls: Option<&str>,
+        openui_lang: Option<&str>,
+        xui_json: Option<&str>,
+        metadata: Option<&str>,
+        tokens: Option<i64>,
     ) -> Result<Message> {
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
-            "INSERT INTO conversation_messages (id, thread_id, role, content, tool_calls, created_at, tokens)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![id.clone(), thread_id, role, content, tool_calls, now.clone(), tokens],
+            "INSERT INTO conversation_messages (id, thread_id, role, content, tool_calls, openui_lang, xui_json, metadata, created_at, tokens)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![id.clone(), thread_id, role, content, tool_calls, openui_lang, xui_json, metadata, now.clone(), tokens],
         ).await.context("failed to store message")?;
 
-        // Update thread's updated_at timestamp
+        // Update thread's updated_at timestamp and last_preview
+        let preview = if content.len() > 120 { &content[..120] } else { content };
         let _ = self.conn.execute(
-            "UPDATE conversation_threads SET updated_at = ?1 WHERE id = ?2",
-            params![now, thread_id],
+            "UPDATE conversation_threads SET updated_at = ?1, last_preview = ?2 WHERE id = ?3",
+            params![now, preview, thread_id],
         ).await;
 
         Ok(Message {
             id, thread_id: thread_id.to_string(),
             role: role.to_string(), content: content.to_string(),
             tool_calls: tool_calls.map(|s| s.to_string()),
+            openui_lang: openui_lang.map(|s| s.to_string()),
+            xui_json: xui_json.map(|s| s.to_string()),
+            metadata: metadata.map(|s| s.to_string()),
             created_at: Utc::now(), tokens,
         })
     }
@@ -301,7 +369,7 @@ impl ConversationsDb {
     /// Get all messages for a thread, ordered by creation time.
     pub async fn get_thread_messages(&self, thread_id: &str) -> Result<Vec<Message>> {
         let mut rows = self.conn.query(
-            "SELECT id, thread_id, role, content, tool_calls, created_at, tokens
+            "SELECT id, thread_id, role, content, tool_calls, openui_lang, xui_json, metadata, created_at, tokens
              FROM conversation_messages
              WHERE thread_id = ?1
              ORDER BY created_at ASC",
@@ -314,8 +382,11 @@ impl ConversationsDb {
                 id: row.get(0)?, thread_id: row.get(1)?,
                 role: row.get(2)?, content: row.get(3)?,
                 tool_calls: row.get(4)?,
-                created_at: parse_datetime(&row.get::<String>(5)?),
-                tokens: row.get(6)?,
+                openui_lang: row.get(5)?,
+                xui_json: row.get(6)?,
+                metadata: row.get(7)?,
+                created_at: parse_datetime(&row.get::<String>(8)?),
+                tokens: row.get(9)?,
             });
         }
         Ok(results)
@@ -372,78 +443,139 @@ impl ConversationsDb {
     // Belief CRUD
     // ------------------------------------------------------------------
 
-    /// Upsert a belief (create or update by subject+proposition).
+    /// Upsert a belief (create or update by subject+relation+object or subject+proposition).
+    #[allow(clippy::too_many_arguments)]
     pub async fn upsert_belief(
-        &self, subject: &str, proposition: &str, confidence: f64, source: Option<&str>,
+        &self,
+        subject: &str,
+        relation: Option<&str>,
+        object: Option<&str>,
+        proposition: Option<&str>,
+        confidence: f64,
+        weight: f64,
+        source: Option<&str>,
+        provenance_id: Option<&str>,
+        contradicts_id: Option<&str>,
     ) -> Result<Belief> {
         let now = Utc::now().to_rfc3339();
 
-        // Check if a belief with this subject and proposition already exists
-        let mut rows = self.conn.query(
-            "SELECT id FROM agent_beliefs WHERE subject = ?1 AND proposition = ?2 AND project_id = ?3",
-            params![subject, proposition, self.project_id.clone()],
-        ).await?;
-
-        let existing_id = if let Some(row) = rows.next().await? {
-            Some(row.get::<String>(0)?)
+        // Check if a belief with this subject and relation/object or proposition already exists
+        let existing_id = if let (Some(rel), Some(obj)) = (relation, object) {
+            let mut rows = self.conn.query(
+                "SELECT id FROM beliefs WHERE subject = ?1 AND relation = ?2 AND object = ?3 AND project_id = ?4",
+                params![subject, rel, obj, self.project_id.clone()],
+            ).await?;
+            if let Some(row) = rows.next().await? {
+                Some(row.get::<String>(0)?)
+            } else {
+                None
+            }
+        } else if let Some(prop) = proposition {
+            let mut rows = self.conn.query(
+                "SELECT id FROM beliefs WHERE subject = ?1 AND proposition = ?2 AND project_id = ?3",
+                params![subject, prop, self.project_id.clone()],
+            ).await?;
+            if let Some(row) = rows.next().await? {
+                Some(row.get::<String>(0)?)
+            } else {
+                None
+            }
         } else {
-            None
+            let mut rows = self.conn.query(
+                "SELECT id FROM beliefs WHERE subject = ?1 AND project_id = ?2 LIMIT 1",
+                params![subject, self.project_id.clone()],
+            ).await?;
+            if let Some(row) = rows.next().await? {
+                Some(row.get::<String>(0)?)
+            } else {
+                None
+            }
         };
 
         let id = match existing_id {
             Some(id) => {
                 self.conn.execute(
-                    "UPDATE agent_beliefs SET confidence = ?1, source = ?2, updated_at = ?3 WHERE id = ?4",
-                    params![confidence, source, now, id.clone()],
+                    "UPDATE beliefs SET relation = ?1, object = ?2, proposition = ?3, confidence = ?4, \
+                     weight = ?5, source = ?6, provenance_id = ?7, contradicts_id = ?8, updated_at = ?9 WHERE id = ?10",
+                    params![
+                        relation, object, proposition, confidence,
+                        weight, source, provenance_id, contradicts_id,
+                        now, id.clone()
+                    ],
                 ).await.context("failed to update belief")?;
                 id
             }
             None => {
                 let new_id = Uuid::new_v4().to_string();
                 self.conn.execute(
-                    "INSERT INTO agent_beliefs (id, project_id, subject, proposition, confidence, source, created_at, updated_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                    params![new_id.clone(), self.project_id.clone(), subject, proposition, confidence, source, now.clone(), now],
+                    "INSERT INTO beliefs (id, project_id, subject, relation, object, proposition, \
+                     confidence, weight, source, provenance_id, contradicts_id, created_at, updated_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                    params![
+                        new_id.clone(), self.project_id.clone(), subject, relation, object, proposition,
+                        confidence, weight, source, provenance_id, contradicts_id, now.clone(), now
+                    ],
                 ).await.context("failed to insert belief")?;
                 new_id
             }
         };
 
+        self.get_belief(&id).await?.ok_or_else(|| anyhow::anyhow!("failed to retrieve upserted belief"))
+    }
+
+    /// Get a belief by ID.
+    pub async fn get_belief(&self, id: &str) -> Result<Option<Belief>> {
         let mut rows = self.conn.query(
-            "SELECT id, project_id, subject, proposition, confidence, source, created_at, updated_at
-             FROM agent_beliefs WHERE id = ?1",
+            "SELECT id, project_id, subject, relation, object, proposition, confidence, weight, source, provenance_id, contradicts_id, created_at, updated_at
+             FROM beliefs WHERE id = ?1",
             params![id],
         ).await?;
 
         if let Some(row) = rows.next().await? {
-            Ok(Belief {
-                id: row.get(0)?, project_id: row.get(1)?,
-                subject: row.get(2)?, proposition: row.get(3)?,
-                confidence: row.get(4)?, source: row.get(5)?,
-                created_at: parse_datetime(&row.get::<String>(6)?),
-                updated_at: parse_datetime(&row.get::<String>(7)?),
-            })
+            Ok(Some(Belief {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                subject: row.get(2)?,
+                relation: row.get(3)?,
+                object: row.get(4)?,
+                proposition: row.get(5)?,
+                confidence: row.get(6)?,
+                weight: row.get(7)?,
+                source: row.get(8)?,
+                provenance_id: row.get(9)?,
+                contradicts_id: row.get(10)?,
+                created_at: parse_datetime(&row.get::<String>(11)?),
+                updated_at: parse_datetime(&row.get::<String>(12)?),
+            }))
         } else {
-            anyhow::bail!("Failed to retrieve upserted belief")
+            Ok(None)
         }
     }
 
     /// List all beliefs for this project.
     pub async fn list_beliefs(&self, limit: usize) -> Result<Vec<Belief>> {
         let mut rows = self.conn.query(
-            "SELECT id, project_id, subject, proposition, confidence, source, created_at, updated_at
-             FROM agent_beliefs WHERE project_id = ?1 ORDER BY updated_at DESC LIMIT ?2",
+            "SELECT id, project_id, subject, relation, object, proposition, confidence, weight, source, provenance_id, contradicts_id, created_at, updated_at
+             FROM beliefs WHERE project_id = ?1 ORDER BY updated_at DESC LIMIT ?2",
             params![self.project_id.clone(), limit as i64],
         ).await?;
 
         let mut results = Vec::new();
         while let Some(row) = rows.next().await? {
             results.push(Belief {
-                id: row.get(0)?, project_id: row.get(1)?,
-                subject: row.get(2)?, proposition: row.get(3)?,
-                confidence: row.get(4)?, source: row.get(5)?,
-                created_at: parse_datetime(&row.get::<String>(6)?),
-                updated_at: parse_datetime(&row.get::<String>(7)?),
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                subject: row.get(2)?,
+                relation: row.get(3)?,
+                object: row.get(4)?,
+                proposition: row.get(5)?,
+                confidence: row.get(6)?,
+                weight: row.get(7)?,
+                source: row.get(8)?,
+                provenance_id: row.get(9)?,
+                contradicts_id: row.get(10)?,
+                created_at: parse_datetime(&row.get::<String>(11)?),
+                updated_at: parse_datetime(&row.get::<String>(12)?),
             });
         }
         Ok(results)
@@ -453,32 +585,104 @@ impl ConversationsDb {
     // Checkpoint CRUD
     // ------------------------------------------------------------------
 
-    /// Create a session checkpoint.
-    pub async fn create_checkpoint(
-        &self, session_id: &str, state: &str,
-        expires_at: Option<DateTime<Utc>>, kind: Option<&str>,
+    /// Create or update a checkpoint.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn upsert_checkpoint(
+        &self,
+        workspace_id: Option<&str>,
+        session_id: Option<&str>,
+        task_id: Option<&str>,
+        name: Option<&str>,
+        state: &str,
+        expires_at: Option<DateTime<Utc>>,
+        kind: Option<&str>,
     ) -> Result<Checkpoint> {
-        let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
         let expires = expires_at.map(|dt| dt.to_rfc3339());
-        self.conn.execute(
-            "INSERT INTO session_checkpoints (id, project_id, session_id, state, created_at, expires_at, kind)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![id.clone(), self.project_id.clone(), session_id, state, now, expires, kind],
-        ).await.context("failed to create checkpoint")?;
-        Ok(Checkpoint {
-            id, project_id: Some(self.project_id.clone()),
-            session_id: Some(session_id.to_string()),
-            state: state.to_string(),
-            created_at: Utc::now(), expires_at, kind: kind.map(|s| s.to_string()),
-        })
+
+        // Try to find existing by workspace+task+name or session
+        let existing_id = if let (Some(ws), Some(task), Some(n)) = (workspace_id, task_id, name) {
+            let mut rows = self.conn.query(
+                "SELECT id FROM checkpoints WHERE workspace_id = ?1 AND task_id = ?2 AND name = ?3 AND project_id = ?4",
+                params![ws, task, n, self.project_id.clone()],
+            ).await?;
+            if let Some(row) = rows.next().await? {
+                Some(row.get::<String>(0)?)
+            } else {
+                None
+            }
+        } else if let Some(sess) = session_id {
+            let mut rows = self.conn.query(
+                "SELECT id FROM checkpoints WHERE session_id = ?1 AND project_id = ?2 ORDER BY created_at DESC LIMIT 1",
+                params![sess, self.project_id.clone()],
+            ).await?;
+            if let Some(row) = rows.next().await? {
+                Some(row.get::<String>(0)?)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let id = match existing_id {
+            Some(id) => {
+                self.conn.execute(
+                    "UPDATE checkpoints SET workspace_id = ?1, session_id = ?2, task_id = ?3, name = ?4, \
+                     state = ?5, expires_at = ?6, kind = ?7, created_at = ?8 WHERE id = ?9",
+                    params![workspace_id, session_id, task_id, name, state, expires, kind, now, id.clone()],
+                ).await.context("failed to update checkpoint")?;
+                id
+            }
+            None => {
+                let new_id = Uuid::new_v4().to_string();
+                self.conn.execute(
+                    "INSERT INTO checkpoints (id, project_id, workspace_id, session_id, task_id, name, \
+                     state, created_at, expires_at, kind)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+                    params![
+                        new_id.clone(), self.project_id.clone(), workspace_id, session_id, task_id, name,
+                        state, now, expires, kind
+                    ],
+                ).await.context("failed to insert checkpoint")?;
+                new_id
+            }
+        };
+
+        self.get_checkpoint_by_id(&id).await?.ok_or_else(|| anyhow::anyhow!("failed to retrieve upserted checkpoint"))
+    }
+
+    /// Get a checkpoint by ID.
+    pub async fn get_checkpoint_by_id(&self, id: &str) -> Result<Option<Checkpoint>> {
+        let mut rows = self.conn.query(
+            "SELECT id, project_id, workspace_id, session_id, task_id, name, state, created_at, expires_at, kind
+             FROM checkpoints WHERE id = ?1",
+            params![id],
+        ).await?;
+
+        if let Some(row) = rows.next().await? {
+            Ok(Some(Checkpoint {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                workspace_id: row.get::<Option<String>>(2).ok().flatten(),
+                session_id: row.get::<Option<String>>(3).ok().flatten(),
+                task_id: row.get::<Option<String>>(4).ok().flatten(),
+                name: row.get::<Option<String>>(5).ok().flatten(),
+                state: row.get(6)?,
+                created_at: parse_datetime(&row.get::<String>(7)?),
+                expires_at: row.get::<Option<String>>(8).ok().flatten().map(|s| parse_datetime(&s)),
+                kind: row.get(9)?,
+            }))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Get the most recent checkpoint for a session.
     pub async fn get_checkpoint(&self, session_id: &str) -> Result<Option<Checkpoint>> {
         let mut rows = self.conn.query(
-            "SELECT id, project_id, session_id, state, created_at, expires_at, kind
-             FROM session_checkpoints
+            "SELECT id, project_id, workspace_id, session_id, task_id, name, state, created_at, expires_at, kind
+             FROM checkpoints
              WHERE session_id = ?1 AND project_id = ?2
              ORDER BY created_at DESC LIMIT 1",
             params![session_id, self.project_id.clone()],
@@ -486,15 +690,85 @@ impl ConversationsDb {
 
         if let Some(row) = rows.next().await? {
             Ok(Some(Checkpoint {
-                id: row.get(0)?, project_id: row.get(1)?,
-                session_id: row.get(2)?, state: row.get(3)?,
-                created_at: parse_datetime(&row.get::<String>(4)?),
-                expires_at: row.get::<Option<String>>(5)?.map(|s| parse_datetime(&s)),
-                kind: row.get(6)?,
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                workspace_id: row.get::<Option<String>>(2).ok().flatten(),
+                session_id: row.get::<Option<String>>(3).ok().flatten(),
+                task_id: row.get::<Option<String>>(4).ok().flatten(),
+                name: row.get::<Option<String>>(5).ok().flatten(),
+                state: row.get(6)?,
+                created_at: parse_datetime(&row.get::<String>(7)?),
+                expires_at: row.get::<Option<String>>(8).ok().flatten().map(|s| parse_datetime(&s)),
+                kind: row.get(9)?,
             }))
         } else {
             Ok(None)
         }
+    }
+
+    /// Get a checkpoint by workspace+task+name.
+    pub async fn get_task_checkpoint(&self, workspace_id: &str, task_id: &str, name: &str) -> Result<Option<Checkpoint>> {
+        let mut rows = self.conn.query(
+            "SELECT id, project_id, workspace_id, session_id, task_id, name, state, created_at, expires_at, kind
+             FROM checkpoints
+             WHERE workspace_id = ?1 AND task_id = ?2 AND name = ?3 AND project_id = ?4
+             ORDER BY created_at DESC LIMIT 1",
+            params![workspace_id, task_id, name, self.project_id.clone()],
+        ).await?;
+
+        if let Some(row) = rows.next().await? {
+            Ok(Some(Checkpoint {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                workspace_id: row.get::<Option<String>>(2).ok().flatten(),
+                session_id: row.get::<Option<String>>(3).ok().flatten(),
+                task_id: row.get::<Option<String>>(4).ok().flatten(),
+                name: row.get::<Option<String>>(5).ok().flatten(),
+                state: row.get(6)?,
+                created_at: parse_datetime(&row.get::<String>(7)?),
+                expires_at: row.get::<Option<String>>(8).ok().flatten().map(|s| parse_datetime(&s)),
+                kind: row.get(9)?,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// List checkpoints for a task.
+    pub async fn list_checkpoints(&self, workspace_id: &str, task_id: &str) -> Result<Vec<Checkpoint>> {
+        let mut rows = self.conn.query(
+            "SELECT id, project_id, workspace_id, session_id, task_id, name, state, created_at, expires_at, kind
+             FROM checkpoints
+             WHERE workspace_id = ?1 AND task_id = ?2 AND project_id = ?3
+             ORDER BY created_at DESC",
+            params![workspace_id, task_id, self.project_id.clone()],
+        ).await?;
+
+        let mut results = Vec::new();
+        while let Some(row) = rows.next().await? {
+            results.push(Checkpoint {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                workspace_id: row.get::<Option<String>>(2).ok().flatten(),
+                session_id: row.get::<Option<String>>(3).ok().flatten(),
+                task_id: row.get::<Option<String>>(4).ok().flatten(),
+                name: row.get::<Option<String>>(5).ok().flatten(),
+                state: row.get(6)?,
+                created_at: parse_datetime(&row.get::<String>(7)?),
+                expires_at: row.get::<Option<String>>(8).ok().flatten().map(|s| parse_datetime(&s)),
+                kind: row.get(9)?,
+            });
+        }
+        Ok(results)
+    }
+
+    /// Delete a checkpoint by workspace+task+name.
+    pub async fn delete_checkpoint(&self, workspace_id: &str, task_id: &str, name: &str) -> Result<bool> {
+        let affected = self.conn.execute(
+            "DELETE FROM checkpoints WHERE workspace_id = ?1 AND task_id = ?2 AND name = ?3 AND project_id = ?4",
+            params![workspace_id, task_id, name, self.project_id.clone()],
+        ).await?;
+        Ok(affected > 0)
     }
 
     // ------------------------------------------------------------------
@@ -529,6 +803,69 @@ impl ConversationsDb {
         }
 
         db_file
+    }
+
+    /// Migrate legacy JSON session files to the database.
+    pub async fn migrate_legacy_sessions(&self, sessions_dir: &Path) -> Result<usize> {
+        if !sessions_dir.exists() {
+            return Ok(0);
+        }
+
+        let mut entries = tokio::fs::read_dir(sessions_dir).await?;
+        let mut count = 0;
+
+        while let Some(entry) = entries.next_entry().await? {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+
+            let content = tokio::fs::read_to_string(&path).await?;
+            let thread_data: serde_json::Value = serde_json::from_str(&content)?;
+
+            let id = thread_data["id"].as_str().unwrap_or_default().to_string();
+            if id.is_empty() {
+                continue;
+            }
+
+            // Check if thread already exists
+            if self.get_thread(&id).await?.is_some() {
+                continue;
+            }
+
+            let title = thread_data["title"].as_str();
+            let started_at = thread_data["created_at"].as_str().unwrap_or_default();
+            let updated_at = thread_data["updated_at"].as_str().unwrap_or_default();
+            let last_preview = thread_data["last_preview"].as_str();
+
+            self.conn.execute(
+                "INSERT INTO conversation_threads (id, project_id, title, started_at, updated_at, last_preview)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                params![id.clone(), self.project_id.clone(), title, started_at, updated_at, last_preview],
+            ).await?;
+
+            if let Some(messages) = thread_data["messages"].as_array() {
+                for msg in messages {
+                    let msg_id = msg["id"].as_str().unwrap_or_default().to_string();
+                    let role = msg["role"].as_str().unwrap_or("user");
+                    let content = msg["plain_text"].as_str().unwrap_or("");
+                    let created_at = msg["created_at"].as_str().unwrap_or_default();
+                    let xui_json = msg["xui_json"].as_str();
+                    let openui_lang = msg["openui_lang"].as_str();
+                    let metadata = msg["metadata"].to_string();
+
+                    self.conn.execute(
+                        "INSERT INTO conversation_messages (id, thread_id, role, content, xui_json, openui_lang, metadata, created_at)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                        params![msg_id, id.clone(), role, content, xui_json, openui_lang, metadata, created_at],
+                    ).await?;
+                }
+            }
+
+            count += 1;
+        }
+
+        Ok(count)
     }
 }
 
@@ -582,8 +919,8 @@ mod tests {
         let db = setup_db().await;
         let thread = db.create_thread(Some("Test"), None, None).await.unwrap();
 
-        db.store_message(&thread.id, "user", "Hello!", None, Some(10)).await.unwrap();
-        db.store_message(&thread.id, "assistant", "Hi there!", None, Some(15)).await.unwrap();
+        db.store_message(&thread.id, "user", "Hello!", None, None, None, None, Some(10)).await.unwrap();
+        db.store_message(&thread.id, "assistant", "Hi there!", None, None, None, None, Some(15)).await.unwrap();
 
         let messages = db.get_thread_messages(&thread.id).await.unwrap();
         assert_eq!(messages.len(), 2);
@@ -607,11 +944,11 @@ mod tests {
         let db = setup_db().await;
 
         // Create
-        let belief = db.upsert_belief("xavier", "is a memory system", 0.7, Some("chat")).await.unwrap();
+        let belief = db.upsert_belief("xavier", None, None, Some("is a memory system"), 0.7, 0.7, Some("chat"), None, None).await.unwrap();
         assert_eq!(belief.subject, "xavier");
 
         // Update — same subject and proposition should upsert
-        let updated = db.upsert_belief("xavier", "is a memory system", 0.95, Some("code")).await.unwrap();
+        let updated = db.upsert_belief("xavier", None, None, Some("is a memory system"), 0.95, 0.95, Some("code"), None, None).await.unwrap();
         assert_eq!(updated.id, belief.id);
         assert!((updated.confidence - 0.95).abs() < 0.01);
 
@@ -623,7 +960,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_and_get_checkpoint() {
         let db = setup_db().await;
-        let cp = db.create_checkpoint("sess-1", "{\"state\": \"idle\"}", None, Some("work")).await.unwrap();
+        let cp = db.upsert_checkpoint(None, Some("sess-1"), None, None, "{\"state\": \"idle\"}", None, Some("work")).await.unwrap();
         assert_eq!(cp.state, "{\"state\": \"idle\"}");
 
         let fetched = db.get_checkpoint("sess-1").await.unwrap().expect("checkpoint should exist");
@@ -647,7 +984,7 @@ mod tests {
         // Small delay to ensure timestamp changes
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
 
-        db.store_message(&thread.id, "user", "msg", None, None).await.unwrap();
+        db.store_message(&thread.id, "user", "msg", None, None, None, None, None).await.unwrap();
 
         // Re-fetch the thread
         let fetched = db.get_thread(&thread.id).await.unwrap().unwrap();
@@ -658,11 +995,11 @@ mod tests {
     async fn test_beliefs_are_per_project() {
         let db1 = ConversationsDb::open_in_memory("proj-a").await.unwrap();
         db1.create_schema().await.unwrap();
-        db1.upsert_belief("rust", "is great", 0.9, None).await.unwrap();
+        db1.upsert_belief("rust", None, None, Some("is great"), 0.9, 0.9, None, None, None).await.unwrap();
 
         let db2 = ConversationsDb::open_in_memory("proj-b").await.unwrap();
         db2.create_schema().await.unwrap();
-        db2.upsert_belief("python", "is great", 0.8, None).await.unwrap();
+        db2.upsert_belief("python", None, None, Some("is great"), 0.8, 0.8, None, None, None).await.unwrap();
 
         assert_eq!(db1.list_beliefs(10).await.unwrap().len(), 1);
         assert_eq!(db2.list_beliefs(10).await.unwrap().len(), 1);
