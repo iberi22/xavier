@@ -44,7 +44,7 @@ use xavier::coordination::{KeyLendingEngine, XavierEventBus};
 use xavier::embedding::build_embedder_from_env;
 use xavier::memory::qmd_memory::{MemoryDocument, QmdMemory};
 use xavier::memory::schema::{ContextZone, MemoryLevel, MemoryQueryFilters};
-use xavier::memory::session_store::{PanelMessage, SessionStore};
+use xavier::codebase::conversations_db::ConversationsDb;
 use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
 use xavier::memory::store::{MemoryRecord, MemoryStore};
 use xavier::ports::inbound::input_security_port::SecureInputResult;
@@ -164,7 +164,9 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     );
 
     let panel_root = state_panel_root(&workspace_dir, &workspace_id);
-    let panel_store = Arc::new(SessionStore::new(panel_root).await?);
+    let panel_store = Arc::new(ConversationsDb::open("default").await?);
+    panel_store.create_schema().await?;
+    panel_store.migrate_legacy_sessions(&panel_root).await?;
 
     let prompt_cache = Arc::new(parking_lot::Mutex::new(HashMap::new()));
     let security_service = Arc::new(AppSecurityService::new());
@@ -816,10 +818,23 @@ pub async fn rate_limit_middleware(
 }
 
 pub async fn panel_list_threads(State(state): State<CliState>) -> Response {
-    json_response(
-        StatusCode::OK,
-        serde_json::json!(state.panel_store.list_threads().await),
-    )
+    match state.panel_store.list_threads(50).await {
+        Ok(threads) => {
+            let mut summaries = Vec::new();
+            for t in threads {
+                let mut summary = xavier::codebase::conversations_db::ThreadSummary::from(&t);
+                if let Ok(messages) = state.panel_store.get_thread_messages(&t.id).await {
+                    summary.message_count = messages.len();
+                }
+                summaries.push(summary);
+            }
+            json_response(StatusCode::OK, serde_json::json!(summaries))
+        }
+        Err(error) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": error.to_string() }),
+        ),
+    }
 }
 
 pub async fn panel_create_thread(
@@ -831,10 +846,10 @@ pub async fn panel_create_thread(
         .or(payload.message)
         .unwrap_or_else(|| "New Thread".to_string());
 
-    match state.panel_store.create_thread(&title_hint).await {
+    match state.panel_store.create_thread(Some(&title_hint), None, Some("cli")).await {
         Ok(thread) => json_response(
             StatusCode::OK,
-            serde_json::to_value(xavier::memory::session_store::ThreadSummary::from(&thread))
+            serde_json::to_value(xavier::codebase::conversations_db::ThreadSummary::from(&thread))
                 .unwrap_or_else(|_| serde_json::json!({})),
         ),
         Err(error) => json_response(
@@ -880,15 +895,13 @@ pub async fn export_pack_handler(
         }
     };
 
-    let episodic_summaries = state
-        .panel_store
-        .list_threads()
-        .await
+    let threads = state.panel_store.list_threads(50).await.unwrap_or_default();
+    let episodic_summaries = threads
         .into_iter()
         .map(|s| xavier::retrieval::gating::SessionSummary {
             session_id: s.id.clone(),
-            start_time: s.created_at,
-            summary: s.last_preview.clone(),
+            start_time: s.started_at,
+            summary: s.last_preview.unwrap_or_default(),
             key_events: vec![],
             sentiment_timeline: vec![],
         })
@@ -927,25 +940,25 @@ pub async fn panel_get_thread(
     AxumPath(thread_id): AxumPath<String>,
 ) -> Response {
     match state.panel_store.get_thread(&thread_id).await {
-        Some(thread) => json_response(
-            StatusCode::OK,
-            serde_json::to_value(SessionStore::detail_from_thread(thread))
-                .unwrap_or_else(|_| serde_json::json!({})),
-        ),
-        None => json_response(
-            StatusCode::NOT_FOUND,
-            serde_json::json!({ "error": "thread not found" }),
-        ),
-    }
-}
-
-pub async fn panel_delete_thread(
-    State(state): State<CliState>,
-    AxumPath(thread_id): AxumPath<String>,
-) -> Response {
-    match state.panel_store.delete_thread(&thread_id).await {
-        Ok(true) => json_response(StatusCode::OK, serde_json::json!({ "deleted": true })),
-        Ok(false) => json_response(
+        Ok(Some(thread)) => match state.panel_store.get_thread_messages(&thread_id).await {
+            Ok(messages) => {
+                let mut summary = xavier::codebase::conversations_db::ThreadSummary::from(&thread);
+                summary.message_count = messages.len();
+                json_response(
+                    StatusCode::OK,
+                    serde_json::to_value(xavier::codebase::conversations_db::ThreadDetail {
+                        thread: summary,
+                        messages,
+                    })
+                    .unwrap_or_else(|_| serde_json::json!({})),
+                )
+            }
+            Err(error) => json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "error": error.to_string() }),
+            ),
+        },
+        Ok(None) => json_response(
             StatusCode::NOT_FOUND,
             serde_json::json!({ "error": "thread not found" }),
         ),
@@ -954,6 +967,16 @@ pub async fn panel_delete_thread(
             serde_json::json!({ "error": error.to_string() }),
         ),
     }
+}
+
+pub async fn panel_delete_thread(
+    State(_state): State<CliState>,
+    AxumPath(_thread_id): AxumPath<String>,
+) -> Response {
+    json_response(
+        StatusCode::NOT_IMPLEMENTED,
+        serde_json::json!({ "error": "thread deletion not implemented" }),
+    )
 }
 
 pub async fn panel_process_chat(
@@ -980,53 +1003,54 @@ pub async fn panel_process_chat_inner(
         Some(thread_id) => state
             .panel_store
             .get_thread(thread_id)
-            .await
+            .await?
             .ok_or_else(|| anyhow!("thread {thread_id} not found"))?,
-        None => state.panel_store.create_thread(&payload.message).await?,
+        None => state.panel_store.create_thread(Some(&payload.message), None, Some("cli")).await?,
     };
 
-    let user_message = PanelMessage {
-        id: ulid::Ulid::new().to_string(),
-        role: "user".to_string(),
-        plain_text: payload.message.clone(),
-        openui_lang: None,
-        xui_json: None,
-        created_at: chrono::Utc::now(),
-        metadata: serde_json::json!({}),
-    };
-    state
-        .panel_store
-        .append_message(&thread.id, user_message)
-        .await?;
+    state.panel_store.store_message(
+        &thread.id,
+        "user",
+        &payload.message,
+        None,
+        None,
+        None,
+        Some("{}"),
+        None,
+    ).await?;
 
-    let assistant_message = PanelMessage {
-        id: ulid::Ulid::new().to_string(),
-        role: "assistant".to_string(),
-        plain_text: format!(
-            "Structured Xavier response for: {}",
-            payload.message.trim()
-        ),
-        openui_lang: Some(format!(
-            "<SectionBlock title=\"Xavier\" description=\"{}\"><InfoCard title=\"Status\" value=\"Ready\" /></SectionBlock>",
-            payload.message.replace('"', "'")
-        )),
-        xui_json: None,
-        created_at: chrono::Utc::now(),
-        metadata: serde_json::json!({
-            "rules": ["deterministic", "ci-safe"],
-            "components": ["SectionBlock", "InfoCard"],
-            "timings": { "total_ms": 0 }
-        }),
-    };
+    let assistant_content = format!(
+        "Structured Xavier response for: {}",
+        payload.message.trim()
+    );
+    let openui_lang = format!(
+        "<SectionBlock title=\"Xavier\" description=\"{}\"><InfoCard title=\"Status\" value=\"Ready\" /></SectionBlock>",
+        payload.message.replace('"', "'")
+    );
+    let metadata = serde_json::json!({
+        "rules": ["deterministic", "ci-safe"],
+        "components": ["SectionBlock", "InfoCard"],
+        "timings": { "total_ms": 0 }
+    });
 
-    let updated = state
-        .panel_store
-        .append_message(&thread.id, assistant_message)
-        .await?;
+    state.panel_store.store_message(
+        &thread.id,
+        "assistant",
+        &assistant_content,
+        None,
+        Some(&openui_lang),
+        None,
+        Some(&metadata.to_string()),
+        None,
+    ).await?;
+
+    let messages = state.panel_store.get_thread_messages(&thread.id).await?;
+    let mut summary = xavier::codebase::conversations_db::ThreadSummary::from(&thread);
+    summary.message_count = messages.len();
 
     Ok(PanelChatResponse {
-        thread: xavier::memory::session_store::ThreadSummary::from(&updated),
-        messages: updated.messages,
+        thread: summary,
+        messages,
     })
 }
 

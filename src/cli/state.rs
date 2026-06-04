@@ -10,7 +10,7 @@ use xavier::agents::rate_limit::RateLimitManager;
 use xavier::app::proxy_use_case::ProxyUseCase;
 use xavier::coordination::{KeyLendingEngine, XavierEventBus};
 use xavier::embedding::Embedder;
-use xavier::memory::session_store::SessionStore;
+use xavier::codebase::conversations_db::ConversationsDb;
 use xavier::memory::store::MemoryStore;
 use xavier::ports::inbound::{AgentLifecyclePort, MemoryQueryPort, InputSecurityPort, SecurityScanPort};
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
@@ -30,7 +30,7 @@ pub struct CliState {
     pub security_scan: Arc<dyn SecurityScanPort>,
     pub _time_store: Option<Arc<TimeMetricsStore>>,
     pub agent_registry: Arc<dyn AgentLifecyclePort>,
-    pub panel_store: Arc<SessionStore>,
+    pub panel_store: Arc<ConversationsDb>,
     pub secrets_engine: Arc<KeyLendingEngine>,
     #[allow(dead_code)]
     // Note: Wire event_bus into event-driven architecture (e.g. system3 event bus integration)
