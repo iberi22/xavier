@@ -33,49 +33,39 @@ impl fmt::Debug for Secret {
     }
 }
 
+#[deprecated(note = "SecretsManager is deprecated. Use Clavis or another secure provider.")]
 #[derive(Default)]
-pub struct SecretsManager {
-    secrets: HashMap<String, String>,
-}
+pub struct SecretsManager;
 
 impl SecretsManager {
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 
     pub fn is_empty(&self) -> bool {
-        self.secrets.is_empty()
+        true
     }
 
-    pub fn store(&mut self, key: String, value: String) -> SecretResult<()> {
-        self.secrets.insert(key, value);
+    pub fn store(&mut self, _key: String, _value: String) -> SecretResult<()> {
         Ok(())
     }
 
     pub fn get(&self, key: &str) -> SecretResult<String> {
-        self.secrets
-            .get(key)
-            .cloned()
-            .ok_or_else(|| SecretError::NotFound(key.to_string()))
+        Err(SecretError::NotFound(key.to_string()))
     }
 
-    pub fn delete(&mut self, key: &str) -> SecretResult<()> {
-        self.secrets.remove(key);
+    pub fn delete(&mut self, _key: &str) -> SecretResult<()> {
         Ok(())
     }
 
-    pub fn exists(&self, key: &str) -> bool {
-        self.secrets.contains_key(key)
+    pub fn exists(&self, _key: &str) -> bool {
+        false
     }
 }
 
 // Lending engine
 pub mod audit;
 pub mod lending;
-
-// Note: Wire secret daemon into production runtime
-#[allow(dead_code)]
-pub mod daemon;
 pub mod local;
 pub mod openbao;
 pub mod store;
