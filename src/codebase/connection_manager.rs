@@ -9,6 +9,8 @@ use std::time::Instant;
 
 pub static INSTANCE: once_cell::sync::OnceCell<ConnectionManager> = once_cell::sync::OnceCell::new();
 
+/// Unified SQLite connection manager for Xavier.
+/// Manages connection pools by project_id with LRU eviction and PRAGMA optimizations.
 pub struct ConnectionManager {
     pools: DashMap<String, ProjectPool>,
     active: Arc<tokio::sync::RwLock<Option<String>>>,
@@ -38,14 +40,17 @@ impl r2d2::CustomizeConnection<Connection, rusqlite::Error> for PragmaCustomizer
 }
 
 impl ConnectionManager {
+    /// Get the global singleton instance.
     pub fn global() -> &'static Self {
         INSTANCE.get_or_init(|| Self {
             pools: DashMap::new(),
             active: Arc::new(tokio::sync::RwLock::new(None)),
-            idle_timeout_secs: 1800,
+            idle_timeout_secs: 1800, // 30 minutes
         })
     }
 
+    /// Connect to a database by project_id.
+    /// If the pool doesn't exist, it is created lazily.
     pub fn connect(&self, project_id: &str, project_root: &str) -> Result<()> {
         if !self.pools.contains_key(project_id) {
             let db_path = if project_id == "memory" {
@@ -72,6 +77,7 @@ impl ConnectionManager {
 
             let manager = SqliteConnectionManager::file(db_path);
             let pool = Pool::builder()
+                .max_size(10)
                 .connection_customizer(Box::new(PragmaCustomizer))
                 .build(manager)
                 .context("failed to build r2d2 SQLite pool")?;
@@ -86,17 +92,20 @@ impl ConnectionManager {
                 },
             );
         } else {
-            if let Some(mut pool) = self.pools.get_mut(project_id) {
-                pool.activated_at = Instant::now();
+            // Update last accessed time
+            if let Some(mut entry) = self.pools.get_mut(project_id) {
+                entry.activated_at = Instant::now();
             }
         }
         Ok(())
     }
 
+    /// Manually disconnect and drop a pool.
     pub fn disconnect(&self, project_id: &str) {
         self.pools.remove(project_id);
     }
 
+    /// Set a project as active.
     pub async fn set_active(&self, project_id: &str, project_root: &str) -> Result<()> {
         self.connect(project_id, project_root)?;
         let mut active = self.active.write().await;
@@ -104,73 +113,78 @@ impl ConnectionManager {
         Ok(())
     }
 
+    /// Execute a query closure using a connection from the active pool.
     pub async fn with_active<F, T>(&self, f: F) -> Result<T>
     where
         F: FnOnce(&Connection) -> Result<T> + Send + 'static,
         T: Send + 'static,
     {
-        let active_id = self.active.read().await;
-        let project_id = active_id
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("no active project set"))?
-            .clone();
-        drop(active_id);
+        let active_id = {
+            let active = self.active.read().await;
+            active.clone().ok_or_else(|| anyhow::anyhow!("no active project set"))?
+        };
 
-        let entry = self
-            .pools
-            .get(&project_id)
-            .ok_or_else(|| anyhow::anyhow!("pool for {} not found", project_id))?;
+        self.with_conn(&active_id, f).await
+    }
 
-        let pool = entry.pool.clone();
-        drop(entry);
+    /// Execute a query closure using a connection from a specific project's pool.
+    pub async fn with_conn<F, T>(&self, project_id: &str, f: F) -> Result<T>
+    where
+        F: FnOnce(&Connection) -> Result<T> + Send + 'static,
+        T: Send + 'static,
+    {
+        let pool = {
+            let mut entry = self.pools.get_mut(project_id)
+                .ok_or_else(|| anyhow::anyhow!("pool for {} not found", project_id))?;
+            entry.activated_at = Instant::now();
+            entry.pool.clone()
+        };
 
-        // r2d2 is sync — use spawn_blocking for async interop
-        let result = tokio::task::spawn_blocking(move || {
-            let conn = pool
-                .get()
-                .map_err(|e| anyhow::anyhow!("failed to get connection: {}", e))?;
+        tokio::task::spawn_blocking(move || {
+            let conn = pool.get().context("failed to get connection from pool")?;
             f(&conn)
         })
         .await
-        .context("blocking task panicked")??;
-
-        Ok(result)
+        .context("blocking task panicked")?
     }
 
+    /// Access the underlying pool for a specific project.
     pub async fn with_pool<F, T>(&self, project_id: &str, f: F) -> Result<T>
     where
         F: FnOnce(&Pool<SqliteConnectionManager>) -> Result<T> + Send + 'static,
         T: Send + 'static,
     {
-        let entry = self
-            .pools
-            .get(project_id)
-            .ok_or_else(|| anyhow::anyhow!("pool for {} not found", project_id))?;
-        let pool = entry.pool.clone();
-        drop(entry);
+        let pool = {
+            let mut entry = self.pools.get_mut(project_id)
+                .ok_or_else(|| anyhow::anyhow!("pool for {} not found", project_id))?;
+            entry.activated_at = Instant::now();
+            entry.pool.clone()
+        };
 
-        let result = tokio::task::spawn_blocking(move || f(&pool))
+        tokio::task::spawn_blocking(move || f(&pool))
             .await
-            .context("blocking task panicked")??;
-        Ok(result)
+            .context("blocking task panicked")?
     }
 
+    /// Evict pools that are idle for too long or if we exceed the max capacity (10).
     fn evict_if_needed(&self) {
         let now = Instant::now();
 
+        // 1. Remove expired pools
         self.pools.retain(|_, pool| {
             now.duration_since(pool.activated_at).as_secs() < self.idle_timeout_secs
         });
 
-        if self.pools.len() >= 10 {
-            let mut entries: Vec<_> = self
-                .pools
-                .iter()
+        // 2. If still too many, remove least recently used
+        while self.pools.len() >= 10 {
+            let oldest = self.pools.iter()
                 .map(|e| (e.key().clone(), e.activated_at))
-                .collect();
-            entries.sort_by_key(|e| e.1);
-            if let Some((key, _)) = entries.first() {
-                self.pools.remove(key);
+                .min_by_key(|e| e.1);
+
+            if let Some((key, _)) = oldest {
+                self.pools.remove(&key);
+            } else {
+                break;
             }
         }
     }
