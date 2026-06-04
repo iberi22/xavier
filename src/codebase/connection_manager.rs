@@ -189,3 +189,38 @@ impl ConnectionManager {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_connection_manager() {
+        let cm = ConnectionManager::global();
+        let dir = tempdir().unwrap();
+        let project_root = dir.path().to_str().unwrap();
+
+        cm.connect("p1", project_root).unwrap();
+        cm.connect("p2", project_root).unwrap();
+        assert_eq!(cm.pools.len(), 2);
+        assert!(cm.pools.contains_key("p1"));
+        assert!(cm.pools.contains_key("p2"));
+    }
+
+    #[tokio::test]
+    async fn test_active_project() {
+        let cm = ConnectionManager::global();
+        let dir = tempdir().unwrap();
+        let project_root = dir.path().to_str().unwrap();
+
+        cm.set_active("p1", project_root).await.unwrap();
+
+        let res = cm.with_active(|conn| {
+            conn.execute("CREATE TABLE IF NOT EXISTS t(id INT)", [])?;
+            Ok(())
+        }).await;
+
+        assert!(res.is_ok());
+    }
+}

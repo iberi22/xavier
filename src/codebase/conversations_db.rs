@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
+use tokio::sync::OnceCell;
 use uuid::Uuid;
 use crate::codebase::connection_manager::ConnectionManager;
 
@@ -130,6 +131,7 @@ pub struct Checkpoint {
 pub struct ConversationsDb {
     project_id: String,
     full_project_id: String,
+    schema_initialized: OnceCell<()>,
 }
 
 impl ConversationsDb {
@@ -144,6 +146,7 @@ impl ConversationsDb {
         Ok(Self {
             project_id: project_id.to_string(),
             full_project_id,
+            schema_initialized: OnceCell::new(),
         })
     }
 
@@ -155,7 +158,16 @@ impl ConversationsDb {
         Ok(Self {
             project_id: project_id.to_string(),
             full_project_id,
+            schema_initialized: OnceCell::new(),
         })
+    }
+
+    /// Ensure the schema is created (lazy initialization).
+    async fn ensure_schema(&self) -> Result<()> {
+        self.schema_initialized.get_or_try_init(|| async {
+            self.create_schema().await
+        }).await?;
+        Ok(())
     }
 
     /// Create all tables for the conversations database.
@@ -242,31 +254,33 @@ impl ConversationsDb {
 
     /// Create a new conversation thread.
     pub async fn create_thread(&self, title: Option<&str>, model: Option<&str>, source: Option<&str>) -> Result<Thread> {
+        self.ensure_schema().await?;
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
-        let project_id = self.project_id.clone();
-        let title_clone = title.map(|s| s.to_string());
-        let model_clone = model.map(|s| s.to_string());
-        let source_clone = source.map(|s| s.to_string());
+        let pid = self.project_id.clone();
+        let title_c = title.map(|s| s.to_string());
+        let model_c = model.map(|s| s.to_string());
+        let source_c = source.map(|s| s.to_string());
 
         let id_for_return = id.clone();
-        let title_for_return = title_clone.clone();
-        let model_for_return = model_clone.clone();
-        let source_for_return = source_clone.clone();
-        let project_id_for_return = project_id.clone();
+        let title_for_return = title_c.clone();
+        let model_for_return = model_c.clone();
+        let source_for_return = source_c.clone();
+        let pid_for_return = pid.clone();
+        let now_c = now.clone();
 
         ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
             conn.execute(
                 "INSERT INTO conversation_threads (id, project_id, title, started_at, updated_at, model, source)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                params![id, project_id, title_clone, now.clone(), now, model_clone, source_clone],
+                params![id, pid, title_c, now.clone(), now, model_c, source_c],
             ).context("failed to create thread")?;
             Ok(())
         }).await?;
 
         Ok(Thread {
             id: id_for_return,
-            project_id: Some(project_id_for_return),
+            project_id: Some(pid_for_return),
             title: title_for_return,
             started_at: Utc::now(), updated_at: Utc::now(),
             last_preview: None,
@@ -277,6 +291,7 @@ impl ConversationsDb {
 
     /// Get a thread by ID.
     pub async fn get_thread(&self, thread_id: &str) -> Result<Option<Thread>> {
+        self.ensure_schema().await?;
         let tid = thread_id.to_string();
         ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
             let mut stmt = conn.prepare(
@@ -305,7 +320,8 @@ impl ConversationsDb {
 
     /// List all threads for a project.
     pub async fn list_threads(&self, limit: usize) -> Result<Vec<Thread>> {
-        let project_id = self.project_id.clone();
+        self.ensure_schema().await?;
+        let pid = self.project_id.clone();
         ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, project_id, title, started_at, updated_at, last_preview, model, source
@@ -315,7 +331,7 @@ impl ConversationsDb {
                  LIMIT ?2",
             )?;
 
-            let mut rows = stmt.query(params![project_id, limit as i64])?;
+            let mut rows = stmt.query(params![pid, limit as i64])?;
 
             let mut results = Vec::new();
             while let Some(row) = rows.next()? {
@@ -349,6 +365,7 @@ impl ConversationsDb {
         metadata: Option<&str>,
         tokens: Option<i64>,
     ) -> Result<Message> {
+        self.ensure_schema().await?;
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
 
@@ -362,19 +379,20 @@ impl ConversationsDb {
 
         let id_for_return = id.clone();
         let now_c = now.clone();
+        let thread_id_for_update = thread_id.to_string();
 
         ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
             conn.execute(
                 "INSERT INTO conversation_messages (id, thread_id, role, content, tool_calls, openui_lang, xui_json, metadata, created_at, tokens)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                params![id, thread_id_c, role_c, content_c, tool_calls_c, openui_lang_c, xui_json_c, metadata_c, now_c, tokens],
+                params![id, thread_id_c, role_c, content_c, tool_calls_c, openui_lang_c, xui_json_c, metadata_c, now_c.clone(), tokens],
             ).context("failed to store message")?;
 
             // Update thread's updated_at timestamp and last_preview
             let preview = if content_c.len() > 120 { &content_c[..120] } else { &content_c };
             let _ = conn.execute(
                 "UPDATE conversation_threads SET updated_at = ?1, last_preview = ?2 WHERE id = ?3",
-                params![now_c, preview, thread_id_c],
+                params![now_c, preview, thread_id_for_update.clone()],
             );
             Ok(())
         }).await?;
@@ -392,6 +410,7 @@ impl ConversationsDb {
 
     /// Get all messages for a thread, ordered by creation time.
     pub async fn get_thread_messages(&self, thread_id: &str) -> Result<Vec<Message>> {
+        self.ensure_schema().await?;
         let tid = thread_id.to_string();
         ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
             let mut stmt = conn.prepare(
@@ -429,21 +448,23 @@ impl ConversationsDb {
         &self, deduction_text: &str, confidence: f64,
         category: Option<&str>, source_thread: Option<&str>,
     ) -> Result<Deduction> {
+        self.ensure_schema().await?;
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
 
-        let project_id = self.project_id.clone();
+        let pid = self.project_id.clone();
         let deduction_c = deduction_text.to_string();
         let category_c = category.map(|s| s.to_string());
         let source_thread_c = source_thread.map(|s| s.to_string());
 
         let id_for_return = id.clone();
+        let now_c = now.clone();
 
         ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
             conn.execute(
                 "INSERT INTO deductions (id, project_id, source_thread, deduction, confidence, created_at, last_accessed, category)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                params![id, project_id, source_thread_c, deduction_c, confidence, now.clone(), now, category_c],
+                params![id, pid, source_thread_c, deduction_c, confidence, now_c.clone(), now_c, category_c],
             ).context("failed to record deduction")?;
             Ok(())
         }).await?;
@@ -459,14 +480,15 @@ impl ConversationsDb {
 
     /// List deductions for this project.
     pub async fn list_deductions(&self, limit: usize) -> Result<Vec<Deduction>> {
-        let project_id = self.project_id.clone();
+        self.ensure_schema().await?;
+        let pid = self.project_id.clone();
         ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, project_id, source_thread, deduction, confidence, created_at, last_accessed, category
                  FROM deductions WHERE project_id = ?1 ORDER BY created_at DESC LIMIT ?2",
             )?;
 
-            let mut rows = stmt.query(params![project_id, limit as i64])?;
+            let mut rows = stmt.query(params![pid, limit as i64])?;
 
             let mut results = Vec::new();
             while let Some(row) = rows.next()? {
@@ -501,9 +523,10 @@ impl ConversationsDb {
         provenance_id: Option<&str>,
         contradicts_id: Option<&str>,
     ) -> Result<Belief> {
+        self.ensure_schema().await?;
         let now = Utc::now().to_rfc3339();
 
-        let project_id = self.project_id.clone();
+        let pid = self.project_id.clone();
         let subject_c = subject.to_string();
         let relation_c = relation.map(|s| s.to_string());
         let object_c = object.map(|s| s.to_string());
@@ -511,25 +534,27 @@ impl ConversationsDb {
         let source_c = source.map(|s| s.to_string());
         let provenance_id_c = provenance_id.map(|s| s.to_string());
         let contradicts_id_c = contradicts_id.map(|s| s.to_string());
+        let now_c = now.clone();
+        let now_c2 = now.clone();
 
         let id = ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
             // Check if a belief with this subject and relation/object or proposition already exists
-            let existing_id = if let (Some(rel), Some(obj)) = (&relation_c, &object_c) {
+            let existing_id = if let (Some(ref rel), Some(ref obj)) = (&relation_c, &object_c) {
                 conn.query_row(
                     "SELECT id FROM beliefs WHERE subject = ?1 AND relation = ?2 AND object = ?3 AND project_id = ?4",
-                    params![subject_c, rel, obj, project_id],
+                    params![subject_c.clone(), rel, obj, pid.clone()],
                     |row| row.get::<_, String>(0)
                 ).ok()
-            } else if let Some(prop) = &proposition_c {
+            } else if let Some(ref prop) = &proposition_c {
                 conn.query_row(
                     "SELECT id FROM beliefs WHERE subject = ?1 AND proposition = ?2 AND project_id = ?3",
-                    params![subject_c, prop, project_id],
+                    params![subject_c.clone(), prop, pid.clone()],
                     |row| row.get::<_, String>(0)
                 ).ok()
             } else {
                 conn.query_row(
                     "SELECT id FROM beliefs WHERE subject = ?1 AND project_id = ?2 LIMIT 1",
-                    params![subject_c, project_id],
+                    params![subject_c.clone(), pid.clone()],
                     |row| row.get::<_, String>(0)
                 ).ok()
             };
@@ -542,7 +567,7 @@ impl ConversationsDb {
                         params![
                             relation_c, object_c, proposition_c, confidence,
                             weight, source_c, provenance_id_c, contradicts_id_c,
-                            now, id
+                            now_c.clone(), id
                         ],
                     ).context("failed to update belief")?;
                     Ok(id)
@@ -554,8 +579,8 @@ impl ConversationsDb {
                          confidence, weight, source, provenance_id, contradicts_id, created_at, updated_at)
                          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                         params![
-                            new_id, project_id, subject_c, relation_c, object_c, proposition_c,
-                            confidence, weight, source_c, provenance_id_c, contradicts_id_c, now.clone(), now
+                            new_id.clone(), pid, subject_c, relation_c, object_c, proposition_c,
+                            confidence, weight, source_c, provenance_id_c, contradicts_id_c, now_c.clone(), now_c
                         ],
                     ).context("failed to insert belief")?;
                     Ok(new_id)
@@ -568,6 +593,7 @@ impl ConversationsDb {
 
     /// Get a belief by ID.
     pub async fn get_belief(&self, id: &str) -> Result<Option<Belief>> {
+        self.ensure_schema().await?;
         let bid = id.to_string();
         ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
             let mut stmt = conn.prepare(
@@ -601,28 +627,24 @@ impl ConversationsDb {
 
     /// List all beliefs for this project.
     pub async fn list_beliefs(&self, limit: usize) -> Result<Vec<Belief>> {
-        let project_id = self.project_id.clone();
+        self.ensure_schema().await?;
+        let pid = self.project_id.clone();
         ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, project_id, subject, relation, object, proposition, confidence, weight, source, provenance_id, contradicts_id, created_at, updated_at
                  FROM beliefs WHERE project_id = ?1 ORDER BY updated_at DESC LIMIT ?2",
             )?;
 
-            let mut rows = stmt.query(params![project_id, limit as i64])?;
+            let mut rows = stmt.query(params![pid, limit as i64])?;
 
             let mut results = Vec::new();
             while let Some(row) = rows.next()? {
                 results.push(Belief {
-                    id: row.get(0)?,
-                    project_id: row.get(1)?,
-                    subject: row.get(2)?,
-                    relation: row.get(3)?,
-                    object: row.get(4)?,
-                    proposition: row.get(5)?,
-                    confidence: row.get(6)?,
-                    weight: row.get(7)?,
-                    source: row.get(8)?,
-                    provenance_id: row.get(9)?,
+                    id: row.get(0)?, project_id: row.get(1)?,
+                    subject: row.get(2)?, relation: row.get(3)?,
+                    object: row.get(4)?, proposition: row.get(5)?,
+                    confidence: row.get(6)?, weight: row.get(7)?,
+                    source: row.get(8)?, provenance_id: row.get(9)?,
                     contradicts_id: row.get(10)?,
                     created_at: parse_datetime(&row.get::<_, String>(11)?),
                     updated_at: parse_datetime(&row.get::<_, String>(12)?),
@@ -636,197 +658,70 @@ impl ConversationsDb {
     // Checkpoint CRUD
     // ------------------------------------------------------------------
 
-    /// Create or update a checkpoint.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn upsert_checkpoint(
+    /// Create a checkpoint.
+    pub async fn create_checkpoint(
         &self,
         workspace_id: Option<&str>,
         session_id: Option<&str>,
         task_id: Option<&str>,
         name: Option<&str>,
-        state: &str,
-        expires_at: Option<DateTime<Utc>>,
         kind: Option<&str>,
     ) -> Result<Checkpoint> {
+        self.ensure_schema().await?;
+        let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
-        let expires = expires_at.map(|dt| dt.to_rfc3339());
 
-        let project_id = self.project_id.clone();
+        let pid = self.project_id.clone();
         let workspace_id_c = workspace_id.map(|s| s.to_string());
         let session_id_c = session_id.map(|s| s.to_string());
         let task_id_c = task_id.map(|s| s.to_string());
         let name_c = name.map(|s| s.to_string());
-        let state_c = state.to_string();
         let kind_c = kind.map(|s| s.to_string());
 
-        let id = ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
-            // Try to find existing by workspace+task+name or session
-            let existing_id = if let (Some(ws), Some(task), Some(n)) = (&workspace_id_c, &task_id_c, &name_c) {
-                conn.query_row(
-                    "SELECT id FROM checkpoints WHERE workspace_id = ?1 AND task_id = ?2 AND name = ?3 AND project_id = ?4",
-                    params![ws, task, n, project_id],
-                    |row| row.get::<_, String>(0)
-                ).ok()
-            } else if let Some(sess) = &session_id_c {
-                conn.query_row(
-                    "SELECT id FROM checkpoints WHERE session_id = ?1 AND project_id = ?2 ORDER BY created_at DESC LIMIT 1",
-                    params![sess, project_id],
-                    |row| row.get::<_, String>(0)
-                ).ok()
-            } else {
-                None
-            };
+        let id_for_return = id.clone();
+        let now_c = now.clone();
 
-            match existing_id {
-                Some(id) => {
-                    conn.execute(
-                        "UPDATE checkpoints SET workspace_id = ?1, session_id = ?2, task_id = ?3, name = ?4, \
-                         state = ?5, expires_at = ?6, kind = ?7, created_at = ?8 WHERE id = ?9",
-                        params![workspace_id_c, session_id_c, task_id_c, name_c, state_c, expires, kind_c, now, id],
-                    ).context("failed to update checkpoint")?;
-                    Ok(id)
-                }
-                None => {
-                    let new_id = Uuid::new_v4().to_string();
-                    conn.execute(
-                        "INSERT INTO checkpoints (id, project_id, workspace_id, session_id, task_id, name, \
-                         state, created_at, expires_at, kind)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                        params![
-                            new_id, project_id, workspace_id_c, session_id_c, task_id_c, name_c,
-                            state_c, now, expires, kind_c
-                        ],
-                    ).context("failed to insert checkpoint")?;
-                    Ok(new_id)
-                }
-            }
+        ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
+            conn.execute(
+                "INSERT INTO checkpoints (id, project_id, workspace_id, session_id, task_id, name, state, created_at, kind)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![id, pid, workspace_id_c, session_id_c, task_id_c, name_c, "active", now_c, kind_c],
+            ).context("failed to create checkpoint")?;
+            Ok(())
         }).await?;
 
-        self.get_checkpoint_by_id(&id).await?.ok_or_else(|| anyhow::anyhow!("failed to retrieve upserted checkpoint"))
+        Ok(Checkpoint {
+            id: id_for_return,
+            project_id: Some(self.project_id.clone()),
+            workspace_id: workspace_id.map(|s| s.to_string()),
+            session_id: session_id.map(|s| s.to_string()),
+            task_id: task_id.map(|s| s.to_string()),
+            name: name.map(|s| s.to_string()),
+            state: "active".to_string(),
+            created_at: Utc::now(),
+            expires_at: None,
+            kind: kind.map(|s| s.to_string()),
+        })
     }
 
-    /// Get a checkpoint by ID.
-    pub async fn get_checkpoint_by_id(&self, id: &str) -> Result<Option<Checkpoint>> {
-        let cid = id.to_string();
+    /// List active checkpoints.
+    pub async fn list_checkpoints(&self, limit: usize) -> Result<Vec<Checkpoint>> {
+        self.ensure_schema().await?;
+        let pid = self.project_id.clone();
         ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, project_id, workspace_id, session_id, task_id, name, state, created_at, expires_at, kind
-                 FROM checkpoints WHERE id = ?1",
+                 FROM checkpoints WHERE project_id = ?1 AND state = 'active' ORDER BY created_at DESC LIMIT ?2",
             )?;
 
-            let mut rows = stmt.query(params![cid])?;
-
-            if let Some(row) = rows.next()? {
-                Ok(Some(Checkpoint {
-                    id: row.get(0)?,
-                    project_id: row.get(1)?,
-                    workspace_id: row.get::<_, Option<String>>(2)?,
-                    session_id: row.get::<_, Option<String>>(3)?,
-                    task_id: row.get::<_, Option<String>>(4)?,
-                    name: row.get::<_, Option<String>>(5)?,
-                    state: row.get(6)?,
-                    created_at: parse_datetime(&row.get::<_, String>(7)?),
-                    expires_at: row.get::<_, Option<String>>(8)?.map(|s| parse_datetime(&s)),
-                    kind: row.get(9)?,
-                }))
-            } else {
-                Ok(None)
-            }
-        }).await
-    }
-
-    /// Get the most recent checkpoint for a session.
-    pub async fn get_checkpoint(&self, session_id: &str) -> Result<Option<Checkpoint>> {
-        let sid = session_id.to_string();
-        let project_id = self.project_id.clone();
-        ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT id, project_id, workspace_id, session_id, task_id, name, state, created_at, expires_at, kind
-                 FROM checkpoints
-                 WHERE session_id = ?1 AND project_id = ?2
-                 ORDER BY created_at DESC LIMIT 1",
-            )?;
-
-            let mut rows = stmt.query(params![sid, project_id])?;
-
-            if let Some(row) = rows.next()? {
-                Ok(Some(Checkpoint {
-                    id: row.get(0)?,
-                    project_id: row.get(1)?,
-                    workspace_id: row.get::<_, Option<String>>(2)?,
-                    session_id: row.get::<_, Option<String>>(3)?,
-                    task_id: row.get::<_, Option<String>>(4)?,
-                    name: row.get::<_, Option<String>>(5)?,
-                    state: row.get(6)?,
-                    created_at: parse_datetime(&row.get::<_, String>(7)?),
-                    expires_at: row.get::<_, Option<String>>(8)?.map(|s| parse_datetime(&s)),
-                    kind: row.get(9)?,
-                }))
-            } else {
-                Ok(None)
-            }
-        }).await
-    }
-
-    /// Get a checkpoint by workspace+task+name.
-    pub async fn get_task_checkpoint(&self, workspace_id: &str, task_id: &str, name: &str) -> Result<Option<Checkpoint>> {
-        let ws_id = workspace_id.to_string();
-        let tid = task_id.to_string();
-        let n = name.to_string();
-        let project_id = self.project_id.clone();
-        ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT id, project_id, workspace_id, session_id, task_id, name, state, created_at, expires_at, kind
-                 FROM checkpoints
-                 WHERE workspace_id = ?1 AND task_id = ?2 AND name = ?3 AND project_id = ?4
-                 ORDER BY created_at DESC LIMIT 1",
-            )?;
-
-            let mut rows = stmt.query(params![ws_id, tid, n, project_id])?;
-
-            if let Some(row) = rows.next()? {
-                Ok(Some(Checkpoint {
-                    id: row.get(0)?,
-                    project_id: row.get(1)?,
-                    workspace_id: row.get::<_, Option<String>>(2)?,
-                    session_id: row.get::<_, Option<String>>(3)?,
-                    task_id: row.get::<_, Option<String>>(4)?,
-                    name: row.get::<_, Option<String>>(5)?,
-                    state: row.get(6)?,
-                    created_at: parse_datetime(&row.get::<_, String>(7)?),
-                    expires_at: row.get::<_, Option<String>>(8)?.map(|s| parse_datetime(&s)),
-                    kind: row.get(9)?,
-                }))
-            } else {
-                Ok(None)
-            }
-        }).await
-    }
-
-    /// List checkpoints for a task.
-    pub async fn list_checkpoints(&self, workspace_id: &str, task_id: &str) -> Result<Vec<Checkpoint>> {
-        let ws_id = workspace_id.to_string();
-        let tid = task_id.to_string();
-        let project_id = self.project_id.clone();
-        ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT id, project_id, workspace_id, session_id, task_id, name, state, created_at, expires_at, kind
-                 FROM checkpoints
-                 WHERE workspace_id = ?1 AND task_id = ?2 AND project_id = ?3
-                 ORDER BY created_at DESC",
-            )?;
-
-            let mut rows = stmt.query(params![ws_id, tid, project_id])?;
+            let mut rows = stmt.query(params![pid, limit as i64])?;
 
             let mut results = Vec::new();
             while let Some(row) = rows.next()? {
                 results.push(Checkpoint {
-                    id: row.get(0)?,
-                    project_id: row.get(1)?,
-                    workspace_id: row.get::<_, Option<String>>(2)?,
-                    session_id: row.get::<_, Option<String>>(3)?,
-                    task_id: row.get::<_, Option<String>>(4)?,
-                    name: row.get::<_, Option<String>>(5)?,
+                    id: row.get(0)?, project_id: row.get(1)?,
+                    workspace_id: row.get(2)?, session_id: row.get(3)?,
+                    task_id: row.get(4)?, name: row.get(5)?,
                     state: row.get(6)?,
                     created_at: parse_datetime(&row.get::<_, String>(7)?),
                     expires_at: row.get::<_, Option<String>>(8)?.map(|s| parse_datetime(&s)),
@@ -837,28 +732,12 @@ impl ConversationsDb {
         }).await
     }
 
-    /// Delete a checkpoint by workspace+task+name.
-    pub async fn delete_checkpoint(&self, workspace_id: &str, task_id: &str, name: &str) -> Result<bool> {
-        let ws_id = workspace_id.to_string();
-        let tid = task_id.to_string();
-        let n = name.to_string();
-        let project_id = self.project_id.clone();
-        ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
-            let affected = conn.execute(
-                "DELETE FROM checkpoints WHERE workspace_id = ?1 AND task_id = ?2 AND name = ?3 AND project_id = ?4",
-                params![ws_id, tid, n, project_id],
-            )?;
-            Ok(affected > 0)
-        }).await
-    }
-
     // ------------------------------------------------------------------
-    // Utilities
+    // Path helpers (port of original code)
     // ------------------------------------------------------------------
 
-    /// Get the filesystem path for this project's conversations DB.
-    pub fn db_path(project_id: &str) -> PathBuf {
-        // Sanitize: only alphanumeric + hyphens/underscores
+    /// Build the database path for a given project_id, with path traversal sanitisation.
+    pub fn conversations_db_path(project_id: &str) -> PathBuf {
         let sanitized: String = project_id
             .chars()
             .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
@@ -884,6 +763,7 @@ impl ConversationsDb {
 
     /// Migrate legacy JSON session files to the database.
     pub async fn migrate_legacy_sessions(&self, sessions_dir: &Path) -> Result<usize> {
+        self.ensure_schema().await?;
         if !sessions_dir.exists() {
             return Ok(0);
         }
@@ -916,16 +796,21 @@ impl ConversationsDb {
             let last_preview = thread_data["last_preview"].as_str().map(|s| s.to_string());
 
             let id_c = id.clone();
-            let project_id = self.project_id.clone();
+            let pid = self.project_id.clone();
+            let title_c = title.clone();
+            let started_at_c = started_at.clone();
+            let updated_at_c = updated_at.clone();
+            let last_preview_c = last_preview.clone();
+            let thread_data_clone = thread_data.clone();
 
             ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
                 conn.execute(
                     "INSERT INTO conversation_threads (id, project_id, title, started_at, updated_at, last_preview)
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    params![id_c, project_id, title, started_at, updated_at, last_preview],
+                    params![id_c.clone(), pid, title_c, started_at_c, updated_at_c, last_preview_c],
                 )?;
 
-                if let Some(messages) = thread_data["messages"].as_array() {
+                if let Some(messages) = thread_data_clone["messages"].as_array() {
                     for msg in messages {
                         let msg_id = msg["id"].as_str().unwrap_or_default().to_string();
                         let role = msg["role"].as_str().unwrap_or("user");
@@ -938,7 +823,7 @@ impl ConversationsDb {
                         conn.execute(
                             "INSERT INTO conversation_messages (id, thread_id, role, content, xui_json, openui_lang, metadata, created_at)
                              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                            params![msg_id, id_c, role, mcontent, xui_json, openui_lang, metadata, created_at],
+                            params![msg_id, id_c.clone(), role, mcontent, xui_json, openui_lang, metadata, created_at],
                         )?;
                     }
                 }
