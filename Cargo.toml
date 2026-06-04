@@ -130,11 +130,6 @@ governor = { version = "0.10", default-features = false, features = ["std", "jit
 # HMAC for webhook signature verification
 hmac = "0.12"
 
-dashmap = "6.1"
-r2d2 = "0.8"
-r2d2_sqlite = "0.25"
-sqlite-vec = "0.1"
-
 # HTTP body utilities for webhook handling
 http-body-util = "0.1"
 
