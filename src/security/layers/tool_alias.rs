@@ -75,11 +75,9 @@ fn levenshtein(a: &str, b: &str) -> usize {
 
     let mut dist = vec![vec![0usize; n + 1]; m + 1];
 
-    #[allow(clippy::needless_range_loop)]
-    for i in 1..=m {
-        dist[i][0] = i;
+    for (i, row) in dist.iter_mut().enumerate().skip(1).take(m) {
+        row[0] = i;
     }
-    #[allow(clippy::needless_range_loop)]
     for j in 0..=n {
         dist[0][j] = j;
     }

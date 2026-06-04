@@ -12,8 +12,15 @@ pub fn hex_encode(data: &[u8]) -> String {
         result.push(HEX_CHARS[(byte >> 4) as usize]);
         result.push(HEX_CHARS[(byte & 0xf) as usize]);
     }
-    // SAFETY: `result` only contains bytes from HEX_CHARS ("0123456789abcdef"),
-    //         which are all valid ASCII and therefore valid UTF-8.
+    // SAFETY:
+    // - `result` only contains bytes from HEX_CHARS (b"0123456789abcdef"),
+    //   which are all valid ASCII and therefore valid UTF-8.
+    // - `HEX_CHARS` is a const array, never modified.
+    // - The loop writes exactly `data.len() * 2` bytes, all from HEX_CHARS.
+    // - Invariant: every byte in result is in {0x30-0x39, 0x61-0x66} (ASCII digits and a-f).
+    //
+    // If HEX_CHARS is ever changed to contain non-ASCII bytes, this safety
+    // justification becomes invalid and must be replaced with from_utf8(...).unwrap().
     unsafe { String::from_utf8_unchecked(result) }
 }
 

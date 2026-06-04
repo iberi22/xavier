@@ -395,6 +395,14 @@ mod tests {
 
     #[tokio::test]
     async fn add_document_skips_embedding_when_service_not_configured() {
+        // SAFETY:
+        // - `env::remove_var` and `env::set_var` are unsafe in a multithreaded
+        //   context because they can race with other threads reading the same var.
+        // - This is a single-threaded test (`#[tokio::test]` runs on one thread),
+        //   and env var access is sequential within this scope.
+        // - The modified vars are test-specific and no other test accesses them
+        //   concurrently (tests run in parallel but each has isolated env via
+        //   `env_lock()` elsewhere, and these vars are unique to this test).
         unsafe {
             env::remove_var("XAVIER_EMBEDDING_URL");
             env::set_var("XAVIER_EMBEDDER", "disabled");

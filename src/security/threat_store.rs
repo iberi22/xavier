@@ -11,9 +11,13 @@ pub struct SecurityThreatStore {
 }
 
 impl SecurityThreatStore {
+    /// Creates a new SecurityThreatStore, connecting to the security database.
+    /// Logs a warning if the connection fails (non-fatal for threat store startup).
     pub fn new() -> Self {
         let project_id = "metrics";
-        ConnectionManager::global().connect(project_id, ".").unwrap();
+        if let Err(e) = ConnectionManager::global().connect(project_id, ".") {
+            warn!("SecurityThreatStore failed to connect: {}", e);
+        }
         Self { project_id: project_id.to_string() }
     }
 

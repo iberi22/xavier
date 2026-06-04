@@ -214,6 +214,11 @@ pub(crate) fn extract_relative_date_answer(text: &str, session_time: &str) -> Op
     None
 }
 
+/// Checks if text contains temporal signals (date references, relative time keywords).
+/// Used by time-aware retrieval reranking when temporal filtering is enabled.
+/// Currently reserved for future integration with temporal query expansion.
+///
+/// TODO: Wire into reranking pipeline when temporal signals are needed.
 #[allow(dead_code)]
 pub(crate) fn has_temporal_signal(text: &str) -> bool {
     let lowered = text.to_lowercase();
