@@ -6,13 +6,14 @@
 use std::{collections::HashSet, sync::Arc};
 
 use anyhow::Result;
-use libsql::{params, Connection};
+use rusqlite::{params, Connection};
 use tokio::sync::broadcast;
 
 use crate::memory::schema::{MemoryLevel, MemoryQueryFilters};
 use crate::memory::sqlite_store::TABLE_MEMORIES;
 use crate::memory::store::{stable_key, HybridSearchMode, HybridSearchResult, MemoryRecord};
 use crate::ports::outbound::schema_init::SchemaInitializer;
+use crate::codebase::connection_manager::ConnectionManager;
 
 pub mod audit;
 pub mod backend_impl;
@@ -33,8 +34,7 @@ pub use types::*;
 /// Vector-enabled SQLite memory store using libSQL for HNSW-like similarity search.
 #[derive(Clone)]
 pub struct VecSqliteMemoryStore {
-    pub(crate) conn: Arc<Connection>,
-    pub(crate) pool: crate::utils::connection_pool::LibsqlConnectionPool,
+    pub(crate) project_id: String,
     pub(crate) config: VecSqliteStoreConfig,
     pub(crate) event_tx: Option<broadcast::Sender<crate::server::events::RealtimeEvent>>,
 }
@@ -48,14 +48,6 @@ impl VecSqliteMemoryStore {
         self.event_tx = Some(tx);
     }
 
-    pub fn get_conn(&self) -> Arc<Connection> {
-        self.conn.clone()
-    }
-
-    pub fn get_pool(&self) -> crate::utils::connection_pool::LibsqlConnectionPool {
-        self.pool.clone()
-    }
-
     /// Get a reference to the event broadcast sender if available
     pub fn event_tx_ref(&self) -> Option<&broadcast::Sender<crate::server::events::RealtimeEvent>> {
         self.event_tx.as_ref()
@@ -65,12 +57,11 @@ impl VecSqliteMemoryStore {
         db::ensure_dir(&config.path).await?;
         vector::register_sqlite_vec_extension()?;
 
-        let pool = db::open_pool(&config.path).await?;
-        let conn = db::open_connection(&config.path).await?;
+        let project_id = "vec_store";
+        ConnectionManager::global().connect(project_id, ".")?;
 
         let store = Self {
-            conn: Arc::new(conn),
-            pool,
+            project_id: project_id.to_string(),
             config,
             event_tx: None,
         };
@@ -79,20 +70,6 @@ impl VecSqliteMemoryStore {
         store.init_schema()?;
 
         Ok(store)
-    }
-
-    pub fn new_with_pool(
-        conn: Arc<Connection>,
-        pool: crate::utils::connection_pool::LibsqlConnectionPool,
-        config: VecSqliteStoreConfig,
-    ) -> Self {
-        let _ = vector::register_sqlite_vec_extension();
-        Self {
-            conn,
-            pool,
-            config,
-            event_tx: None,
-        }
     }
 
     pub fn register_sqlite_vec_extension() -> Result<()> {
@@ -107,41 +84,37 @@ impl VecSqliteMemoryStore {
         stable_key("sqlite_mem", &[workspace_id, memory_id])
     }
 
-    pub(crate) fn deserialize_record(row: &libsql::Row) -> Result<MemoryRecord> {
-        let metadata_str: String = row.get(4).map_err(anyhow::Error::msg)?;
-        let embedding_blob: Vec<u8> = row.get(5).map_err(anyhow::Error::msg)?;
+    pub(crate) fn deserialize_record(row: &rusqlite::Row) -> Result<MemoryRecord> {
+        let metadata_str: String = row.get(4)?;
+        let embedding_blob: Vec<u8> = row.get(5)?;
 
         Ok(MemoryRecord {
-            id: row.get(0).map_err(anyhow::Error::msg)?,
-            workspace_id: row.get(1).map_err(anyhow::Error::msg)?,
-            path: row.get(2).map_err(anyhow::Error::msg)?,
-            content: row.get(3).map_err(anyhow::Error::msg)?,
+            id: row.get(0)?,
+            workspace_id: row.get(1)?,
+            path: row.get(2)?,
+            content: row.get(3)?,
             metadata: serde_json::from_str(&metadata_str).unwrap_or_default(),
             embedding: vector::deserialize_embedding(&embedding_blob),
             created_at: chrono::DateTime::parse_from_rfc3339(
-                &row.get::<String>(6).map_err(anyhow::Error::msg)?,
+                &row.get::<_, String>(6)?,
             )
             .map(|dt| dt.with_timezone(&chrono::Utc))
             .unwrap_or_else(|_| chrono::Utc::now()),
             updated_at: chrono::DateTime::parse_from_rfc3339(
-                &row.get::<String>(7).map_err(anyhow::Error::msg)?,
+                &row.get::<_, String>(7)?,
             )
             .map(|dt| dt.with_timezone(&chrono::Utc))
             .unwrap_or_else(|_| chrono::Utc::now()),
-            revision: row.get(8).map_err(anyhow::Error::msg)?,
-            primary: row.get::<i32>(9).map_err(anyhow::Error::msg)? != 0,
-            parent_id: row.get::<Option<String>>(10).ok().flatten(),
-            cluster_id: row.get::<Option<String>>(11).ok().flatten(),
-            level: MemoryLevel::parse(&row.get::<String>(12).map_err(anyhow::Error::msg)?),
+            revision: row.get(8)?,
+            primary: row.get::<_, i32>(9)? != 0,
+            parent_id: row.get::<_, Option<String>>(10)?,
+            cluster_id: row.get::<_, Option<String>>(11)?,
+            level: MemoryLevel::parse(&row.get::<_, String>(12)?),
             relation: row
-                .get::<Option<String>>(13)
-                .ok()
-                .flatten()
+                .get::<_, Option<String>>(13)?
                 .and_then(|s| serde_json::from_str(&s).ok()),
             revisions: row
-                .get::<Option<String>>(14)
-                .ok()
-                .flatten()
+                .get::<_, Option<String>>(14)?
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or_default(),
         })
@@ -167,24 +140,17 @@ impl VecSqliteMemoryStore {
         utils::audit_chain_enabled()
     }
 
-    pub(crate) async fn qjl_enabled_for_workspace(conn: &Connection, workspace_id: &str) -> bool {
+    pub(crate) async fn qjl_enabled_for_workspace(workspace_id: &str) -> bool {
         let threshold = Self::configured_qjl_threshold();
-        let stmt = match conn
-            .prepare("SELECT COUNT(*) FROM memory_embeddings WHERE workspace_id = ?")
-            .await
-        {
-            Ok(stmt) => stmt,
-            Err(_) => return false,
-        };
-        let mut rows = match stmt.query(params![workspace_id]).await {
-            Ok(rows) => rows,
-            Err(_) => return false,
-        };
-        let current_vectors = match rows.next().await {
-            Ok(Some(row)) => row.get::<i64>(0).unwrap_or_default().max(0) as usize,
-            _ => 0,
-        };
-        current_vectors >= threshold
+        let workspace_id = workspace_id.to_string();
+
+        let result = ConnectionManager::global().with_conn("vec_store", move |conn| {
+            let mut stmt = conn.prepare("SELECT COUNT(*) FROM memory_embeddings WHERE workspace_id = ?")?;
+            let current_vectors: usize = stmt.query_row(params![workspace_id], |row| row.get(0))?;
+            Ok(current_vectors >= threshold)
+        }).await;
+
+        result.unwrap_or(false)
     }
 
     pub(crate) fn row_matches_filters(
@@ -222,40 +188,51 @@ impl VecSqliteMemoryStore {
     }
 
     pub(crate) async fn load_record_by_id(
-        conn: &Connection,
         workspace_id: &str,
         memory_id: &str,
     ) -> Result<Option<MemoryRecord>> {
-        let stmt = conn.prepare(&format!(
-            "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE id = ? AND workspace_id = ?",
-            TABLE_MEMORIES
-        )).await?;
+        let workspace_id = workspace_id.to_string();
+        let memory_id = memory_id.to_string();
 
-        let mut rows = stmt.query(params![memory_id, workspace_id]).await?;
-        if let Some(row) = rows.next().await? {
-            let record = Self::deserialize_record(&row)?;
-            Ok(Some(record))
-        } else {
-            Ok(None)
-        }
+        ConnectionManager::global().with_conn("vec_store", move |conn| {
+            let mut stmt = conn.prepare(&format!(
+                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE id = ? AND workspace_id = ?",
+                TABLE_MEMORIES
+            ))?;
+
+            let mut rows = stmt.query(params![memory_id, workspace_id])?;
+            if let Some(row) = rows.next()? {
+                let record = Self::deserialize_record(&row)?;
+                Ok(Some(record))
+            } else {
+                Ok(None)
+            }
+        }).await
     }
 
     pub(crate) async fn sync_memory_entities(
-        conn: &Connection,
         workspace_id: &str,
         record: &MemoryRecord,
     ) -> Result<()> {
-        graph::sync_memory_entities(conn, workspace_id, record).await
+        let workspace_id = workspace_id.to_string();
+        let record = record.clone();
+        ConnectionManager::global().with_conn("vec_store", move |conn| {
+            graph::sync_memory_entities(conn, &workspace_id, &record)
+        }).await
     }
 
     pub(crate) async fn resolve_graph_seed_entities(
         &self,
-        conn: &Connection,
         workspace_id: &str,
         source: &MemoryRecord,
         query: &str,
     ) -> Result<HashSet<String>> {
-        graph::resolve_graph_seed_entities(conn, workspace_id, source, query).await
+        let workspace_id = workspace_id.to_string();
+        let source = source.clone();
+        let query = query.to_string();
+        ConnectionManager::global().with_conn("vec_store", move |conn| {
+            graph::resolve_graph_seed_entities(conn, &workspace_id, &source, &query)
+        }).await
     }
 
     pub async fn hybrid_search_with_embedding(

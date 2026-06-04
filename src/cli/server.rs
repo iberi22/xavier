@@ -61,6 +61,7 @@ use xavier::session::types::SessionEvent;
 use xavier::tasks::session_sync_task::SessionSyncTask;
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
+use xavier::codebase::connection_manager::ConnectionManager;
 
 pub async fn start_http_server(port: u16) -> Result<()> {
     let settings = XavierSettings::current();
@@ -73,24 +74,30 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     let token = resolve_http_token()?;
     std::env::set_var("XAVIER_TOKEN", &token);
 
+    // Initialize ConnectionManager singleton
+    let cm = ConnectionManager::global();
+
     // Initialize components
     let config = VecSqliteStoreConfig::from_env();
     if let Some(parent) = config.path.parent() {
         tokio::fs::create_dir_all(parent).await?;
     }
+
+    // Connect standard pools
+    cm.connect("memory", ".")?;
+    cm.connect("vec_store", ".")?;
+    cm.connect("metrics", ".")?;
+    cm.set_active("default", ".").await?;
+
     let mut store_inner = VecSqliteMemoryStore::new(config.clone()).await?;
     let (event_tx, _) = tokio::sync::broadcast::channel(100);
     store_inner.set_event_tx(event_tx);
     let store = Arc::new(store_inner);
 
-    let libsql_pool = store.get_pool();
-
-    let time_store = Arc::new(TimeMetricsStore::new(libsql_pool.clone()));
-    let audit_logger = Arc::new(xavier::secrets::audit::QmdAuditLogger::new(
-        libsql_pool.clone(),
-    ));
-    let rate_manager = Arc::new(RateLimitManager::new(libsql_pool.clone()));
-    let threat_store = Arc::new(SecurityThreatStore::new(libsql_pool.clone()));
+    let time_store = Arc::new(TimeMetricsStore::new());
+    let audit_logger = Arc::new(xavier::secrets::audit::QmdAuditLogger::new());
+    let rate_manager = Arc::new(RateLimitManager::new());
+    let threat_store = Arc::new(SecurityThreatStore::new());
 
     // Initialize schemas
     store.init_schema()?;
@@ -99,14 +106,14 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     rate_manager.init_schema()?;
     threat_store.init_schema()?;
 
-    // Schedule background task for Periodic Garbage Collection (incremental_vacuum) using the pool
-    let gc_pool = libsql_pool.clone();
+    // Schedule background task for Periodic Garbage Collection (incremental_vacuum) using the manager
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
-            if let Ok(conn) = gc_pool.get().await {
-                let _ = conn.execute("PRAGMA incremental_vacuum(100)", ()).await;
-            }
+            let _ = ConnectionManager::global().with_conn("vec_store", |conn| {
+                conn.execute("PRAGMA incremental_vacuum(100)", ())?;
+                Ok(())
+            }).await;
         }
     });
 
@@ -175,7 +182,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             .with_threat_detector(security_service.clone()),
     );
     let secrets_engine = Arc::new(KeyLendingEngine::new(Box::new(
-        xavier::secrets::audit::QmdAuditLogger::new(libsql_pool.clone()),
+        xavier::secrets::audit::QmdAuditLogger::new(),
     )));
     let event_bus = XavierEventBus::new(100);
     let tasks = Arc::new(
