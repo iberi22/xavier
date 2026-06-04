@@ -2,12 +2,11 @@
 //!
 //! Provides a persistent, ACID-compliant storage layer using SQLite.
 
-use std::{any::Any, path::PathBuf, sync::Arc};
+use std::{any::Any, path::PathBuf};
 
 use anyhow::{Context, Result};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use parking_lot::Mutex;
 use rusqlite::{params, Connection};
 use tokio::fs;
 
@@ -19,6 +18,7 @@ use crate::memory::store::{
     MemoryRecord, MemoryStore, SessionTokenRecord,
 };
 use crate::settings::XavierSettings;
+use crate::codebase::connection_manager::ConnectionManager;
 
 const DB_FILENAME: &str = "xavier_memory.db";
 pub(crate) const TABLE_MEMORIES: &str = "memory_records";
@@ -70,8 +70,8 @@ impl SqliteStoreConfig {
 
 #[derive(Clone)]
 pub struct SqliteMemoryStore {
-    conn: Arc<Mutex<Connection>>,
     config: SqliteStoreConfig,
+    project_id: String,
 }
 
 impl SqliteMemoryStore {
@@ -84,81 +84,79 @@ impl SqliteMemoryStore {
             fs::create_dir_all(parent).await?;
         }
 
-        let conn = Connection::open(&config.path).with_context(|| {
-            format!(
-                "failed to open SQLite database at {}",
-                config.path.display()
-            )
-        })?;
+        let project_id = "memory";
+        ConnectionManager::global().connect(project_id, ".")?; // Manager handles path resolution for "memory"
 
-        // Enable WAL mode for better concurrency
-        conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;")?;
+        let store = Self {
+            config,
+            project_id: project_id.to_string(),
+        };
 
         // Initialize schema
-        conn.execute_batch(&format!(
-            r#"
-            CREATE TABLE IF NOT EXISTS {} (
-                id TEXT PRIMARY KEY,
-                workspace_id TEXT NOT NULL,
-                path TEXT NOT NULL,
-                content TEXT NOT NULL,
-                metadata TEXT NOT NULL DEFAULT '{{}}',
-                embedding BLOB,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                revision INTEGER NOT NULL DEFAULT 1,
-                primary_flag INTEGER DEFAULT 0,
-                parent_id TEXT,
-                cluster_id TEXT,
-                level TEXT DEFAULT 'raw',
-                relation TEXT,
-                revisions TEXT
-            );
+        ConnectionManager::global().with_conn(project_id, move |conn| {
+            conn.execute_batch(&format!(
+                r#"
+                CREATE TABLE IF NOT EXISTS {} (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    metadata TEXT NOT NULL DEFAULT '{{}}',
+                    embedding BLOB,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    revision INTEGER NOT NULL DEFAULT 1,
+                    primary_flag INTEGER DEFAULT 0,
+                    parent_id TEXT,
+                    cluster_id TEXT,
+                    level TEXT DEFAULT 'raw',
+                    relation TEXT,
+                    revisions TEXT
+                );
 
-            CREATE TABLE IF NOT EXISTS {} (
-                id TEXT PRIMARY KEY,
-                workspace_id TEXT NOT NULL,
-                beliefs TEXT NOT NULL DEFAULT '[]',
-                updated_at TEXT NOT NULL
-            );
+                CREATE TABLE IF NOT EXISTS {} (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    beliefs TEXT NOT NULL DEFAULT '[]',
+                    updated_at TEXT NOT NULL
+                );
 
-            CREATE TABLE IF NOT EXISTS {} (
-                id TEXT PRIMARY KEY,
-                workspace_id TEXT NOT NULL,
-                token TEXT NOT NULL,
-                created_at TEXT NOT NULL,
-                expires_at TEXT NOT NULL
-            );
+                CREATE TABLE IF NOT EXISTS {} (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    token TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    expires_at TEXT NOT NULL
+                );
 
-            CREATE TABLE IF NOT EXISTS {} (
-                id TEXT PRIMARY KEY,
-                workspace_id TEXT NOT NULL,
-                task_id TEXT NOT NULL,
-                name TEXT NOT NULL,
-                data TEXT NOT NULL
-            );
+                CREATE TABLE IF NOT EXISTS {} (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    task_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    data TEXT NOT NULL
+                );
 
-            CREATE INDEX IF NOT EXISTS idx_memories_workspace ON {}(workspace_id);
-            CREATE INDEX IF NOT EXISTS idx_memories_path ON {}(workspace_id, path);
-            CREATE INDEX IF NOT EXISTS idx_session_tokens_workspace ON {}(workspace_id);
-            CREATE INDEX IF NOT EXISTS idx_checkpoints_workspace ON {}(workspace_id);
-            CREATE INDEX IF NOT EXISTS idx_checkpoints_task ON {}(workspace_id, task_id);
-            "#,
-            TABLE_MEMORIES,
-            TABLE_BELIEFS,
-            TABLE_SESSION_TOKENS,
-            TABLE_CHECKPOINTS,
-            TABLE_MEMORIES,
-            TABLE_MEMORIES,
-            TABLE_SESSION_TOKENS,
-            TABLE_CHECKPOINTS,
-            TABLE_CHECKPOINTS
-        ))?;
+                CREATE INDEX IF NOT EXISTS idx_memories_workspace ON {}(workspace_id);
+                CREATE INDEX IF NOT EXISTS idx_memories_path ON {}(workspace_id, path);
+                CREATE INDEX IF NOT EXISTS idx_session_tokens_workspace ON {}(workspace_id);
+                CREATE INDEX IF NOT EXISTS idx_checkpoints_workspace ON {}(workspace_id);
+                CREATE INDEX IF NOT EXISTS idx_checkpoints_task ON {}(workspace_id, task_id);
+                "#,
+                TABLE_MEMORIES,
+                TABLE_BELIEFS,
+                TABLE_SESSION_TOKENS,
+                TABLE_CHECKPOINTS,
+                TABLE_MEMORIES,
+                TABLE_MEMORIES,
+                TABLE_SESSION_TOKENS,
+                TABLE_CHECKPOINTS,
+                TABLE_CHECKPOINTS
+            ))?;
+            Ok(())
+        }).await?;
 
-        Ok(Self {
-            conn: Arc::new(Mutex::new(conn)),
-            config,
-        })
+        Ok(store)
     }
 
     fn serialize_embedding(embedding: &[f32]) -> Vec<u8> {
@@ -219,68 +217,74 @@ impl MemoryStore for SqliteMemoryStore {
     }
 
     async fn health(&self) -> Result<String> {
-        let conn = self.conn.lock();
-        conn.query_row("SELECT 1", [], |_row| Ok(()))?;
-        Ok(format!("sqlite {}", self.config.detail()))
+        let detail = self.config.detail();
+        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+            conn.query_row("SELECT 1", [], |_row| Ok(()))?;
+            Ok(format!("sqlite {}", detail))
+        }).await
     }
 
     async fn put(&self, record: MemoryRecord) -> Result<()> {
-        let conn = self.conn.lock();
-        conn.execute(
-            &format!(
-                "INSERT OR REPLACE INTO {} (id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
-                TABLE_MEMORIES
-            ),
-            params![
-                record.id,
-                record.workspace_id,
-                record.path,
-                record.content,
-                serde_json::to_string(&record.metadata).unwrap_or_default(),
-                Self::serialize_embedding(&record.embedding),
-                record.created_at.to_rfc3339(),
-                record.updated_at.to_rfc3339(),
-                record.revision,
-                record.primary as i32,
-                record.parent_id,
-                record.cluster_id,
-                record.level.as_str(),
-                serde_json::to_string(&record.relation).unwrap_or_default(),
-                serde_json::to_string(&record.revisions).unwrap_or_default(),
-            ],
-        )?;
-        Ok(())
+        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+            conn.execute(
+                &format!(
+                    "INSERT OR REPLACE INTO {} (id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                    TABLE_MEMORIES
+                ),
+                params![
+                    record.id,
+                    record.workspace_id,
+                    record.path,
+                    record.content,
+                    serde_json::to_string(&record.metadata).unwrap_or_default(),
+                    Self::serialize_embedding(&record.embedding),
+                    record.created_at.to_rfc3339(),
+                    record.updated_at.to_rfc3339(),
+                    record.revision,
+                    record.primary as i32,
+                    record.parent_id,
+                    record.cluster_id,
+                    record.level.as_str(),
+                    serde_json::to_string(&record.relation).unwrap_or_default(),
+                    serde_json::to_string(&record.revisions).unwrap_or_default(),
+                ],
+            )?;
+            Ok(())
+        }).await
     }
 
     async fn get(&self, workspace_id: &str, id_or_path: &str) -> Result<Option<MemoryRecord>> {
-        let conn = self.conn.lock();
+        let workspace_id = workspace_id.to_string();
+        let id_or_path = id_or_path.to_string();
 
-        // Try by id first (O(1) lookup)
-        let key = Self::row_key(workspace_id, id_or_path);
-        let mut stmt = conn.prepare(&format!(
-            "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE id = ?",
-            TABLE_MEMORIES
-        ))?;
+        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+            // Try by id first (O(1) lookup)
+            let key = Self::row_key(&workspace_id, &id_or_path);
+            let mut stmt = conn.prepare(&format!(
+                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE id = ?",
+                TABLE_MEMORIES
+            ))?;
 
-        let mut rows = stmt.query([&key])?;
-        if let Some(row) = rows.next()? {
-            return Ok(Some(Self::deserialize_record(row)?));
-        }
-        drop(rows);
-        drop(stmt);
+            let mut rows = stmt.query([&key])?;
+            if let Some(row) = rows.next()? {
+                return Ok(Some(Self::deserialize_record(row)?));
+            }
+            drop(rows);
+            drop(stmt);
 
-        // Fallback: try by path
-        let mut stmt = conn.prepare(&format!(
-            "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE workspace_id = ? AND path = ?",
-            TABLE_MEMORIES
-        ))?;
+            // Fallback: try by path
+            let mut stmt = conn.prepare(&format!(
+                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE workspace_id = ? AND path = ?",
+                TABLE_MEMORIES
+            ))?;
 
-        let mut rows = stmt.query(params![workspace_id, id_or_path])?;
-        if let Some(row) = rows.next()? {
-            Ok(Some(Self::deserialize_record(row)?))
-        } else {
-            Ok(None)
-        }
+            let mut rows = stmt.query(params![workspace_id, id_or_path])?;
+            if let Some(row) = rows.next()? {
+                Ok(Some(Self::deserialize_record(row)?))
+            } else {
+                Ok(None)
+            }
+        }).await
     }
 
     async fn update(&self, record: MemoryRecord) -> Result<()> {
@@ -298,39 +302,46 @@ impl MemoryStore for SqliteMemoryStore {
         let removed = self.get(workspace_id, id_or_path).await?;
         if let Some(record) = &removed {
             let key = Self::row_key(workspace_id, &record.id);
-            let conn = self.conn.lock();
-            conn.execute(
-                &format!("DELETE FROM {} WHERE id = ?", TABLE_MEMORIES),
-                [&key],
-            )?;
+            let workspace_id = workspace_id.to_string();
+            let record_id = record.id.clone();
 
-            // Also delete children
-            conn.execute(
-                &format!(
-                    "DELETE FROM {} WHERE workspace_id = ? AND parent_id = ?",
-                    TABLE_MEMORIES
-                ),
-                params![workspace_id, &record.id],
-            )?;
+            ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+                conn.execute(
+                    &format!("DELETE FROM {} WHERE id = ?", TABLE_MEMORIES),
+                    [&key],
+                )?;
+
+                // Also delete children
+                conn.execute(
+                    &format!(
+                        "DELETE FROM {} WHERE workspace_id = ? AND parent_id = ?",
+                        TABLE_MEMORIES
+                    ),
+                    params![workspace_id, record_id],
+                )?;
+                Ok(())
+            }).await?;
         }
         Ok(removed)
     }
 
     async fn list(&self, workspace_id: &str) -> Result<Vec<MemoryRecord>> {
-        let conn = self.conn.lock();
-        let mut stmt = conn.prepare(&format!(
-            "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE workspace_id = ?",
-            TABLE_MEMORIES
-        ))?;
+        let workspace_id = workspace_id.to_string();
+        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+            let mut stmt = conn.prepare(&format!(
+                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE workspace_id = ?",
+                TABLE_MEMORIES
+            ))?;
 
-        let mut rows = stmt.query([workspace_id])?;
-        let mut records = Vec::new();
-        while let Some(row) = rows.next()? {
-            if let Ok(record) = Self::deserialize_record(row) {
-                records.push(record);
+            let mut rows = stmt.query([workspace_id])?;
+            let mut records = Vec::new();
+            while let Some(row) = rows.next()? {
+                if let Ok(record) = Self::deserialize_record(row) {
+                    records.push(record);
+                }
             }
-        }
-        Ok(records)
+            Ok(records)
+        }).await
     }
 
     async fn list_filtered(
@@ -356,104 +367,108 @@ impl MemoryStore for SqliteMemoryStore {
     }
 
     async fn load_workspace_state(&self, workspace_id: &str) -> Result<DurableWorkspaceState> {
-        let conn = self.conn.lock();
+        let workspace_id_c = workspace_id.to_string();
 
-        // Load memories
-        let mut memories = Vec::new();
-        {
-            let mut stmt = conn.prepare(&format!(
-                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE workspace_id = ?",
-                TABLE_MEMORIES
-            ))?;
-            let mut rows = stmt.query([workspace_id])?;
-            while let Some(row) = rows.next()? {
-                if let Ok(record) = Self::deserialize_record(row) {
-                    memories.push(record);
+        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+            // Load memories
+            let mut memories = Vec::new();
+            {
+                let mut stmt = conn.prepare(&format!(
+                    "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE workspace_id = ?",
+                    TABLE_MEMORIES
+                ))?;
+                let mut rows = stmt.query([&workspace_id_c])?;
+                while let Some(row) = rows.next()? {
+                    if let Ok(record) = Self::deserialize_record(row) {
+                        memories.push(record);
+                    }
                 }
             }
-        }
 
-        // Load beliefs
-        let beliefs = {
-            let belief_key = stable_key("belief_row", &[workspace_id]);
-            let mut stmt = conn.prepare(&format!(
-                "SELECT beliefs FROM {} WHERE id = ?",
-                TABLE_BELIEFS
-            ))?;
-            match stmt.query_row([&belief_key], |row| {
-                let beliefs_str: String = row.get(0)?;
-                Ok(beliefs_str)
-            }) {
-                Ok(beliefs_str) => serde_json::from_str(&beliefs_str).unwrap_or_default(),
-                Err(_) => Vec::new(),
-            }
-        };
-
-        // Load session tokens (filter expired)
-        let now = Utc::now();
-        let session_tokens = {
-            let mut stmt = conn.prepare(&format!(
-                "SELECT id, workspace_id, token, created_at, expires_at FROM {} WHERE workspace_id = ?",
-                TABLE_SESSION_TOKENS
-            ))?;
-            let mut rows = stmt.query([workspace_id])?;
-            let mut tokens = Vec::new();
-            while let Some(row) = rows.next()? {
-                let token_row = SessionTokenRow {
-                    token: row.get(2)?,
-                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
-                        .map(|dt| dt.with_timezone(&Utc))
-                        .unwrap_or_else(|_| Utc::now()),
-                    expires_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
-                        .map(|dt| dt.with_timezone(&Utc))
-                        .unwrap_or_else(|_| Utc::now()),
-                };
-                if token_row.expires_at > now {
-                    tokens.push(SessionTokenRecord::from(token_row));
+            // Load beliefs
+            let beliefs = {
+                let belief_key = stable_key("belief_row", &[&workspace_id_c]);
+                let mut stmt = conn.prepare(&format!(
+                    "SELECT beliefs FROM {} WHERE id = ?",
+                    TABLE_BELIEFS
+                ))?;
+                match stmt.query_row([&belief_key], |row| {
+                    let beliefs_str: String = row.get(0)?;
+                    Ok(beliefs_str)
+                }) {
+                    Ok(beliefs_str) => serde_json::from_str(&beliefs_str).unwrap_or_default(),
+                    Err(_) => Vec::new(),
                 }
-            }
-            tokens
-        };
+            };
 
-        // Load checkpoints
-        let checkpoints = {
-            let mut stmt = conn.prepare(&format!(
-                "SELECT task_id, name, data FROM {} WHERE workspace_id = ?",
-                TABLE_CHECKPOINTS
-            ))?;
-            let mut rows = stmt.query([workspace_id])?;
-            let mut checkpoints = Vec::new();
-            while let Some(row) = rows.next()? {
-                checkpoints.push(Checkpoint {
-                    task_id: row.get(0)?,
-                    name: row.get(1)?,
-                    data: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
-                });
-            }
-            checkpoints
-        };
+            // Load session tokens (filter expired)
+            let now = Utc::now();
+            let session_tokens = {
+                let mut stmt = conn.prepare(&format!(
+                    "SELECT id, workspace_id, token, created_at, expires_at FROM {} WHERE workspace_id = ?",
+                    TABLE_SESSION_TOKENS
+                ))?;
+                let mut rows = stmt.query([&workspace_id_c])?;
+                let mut tokens = Vec::new();
+                while let Some(row) = rows.next()? {
+                    let token_row = SessionTokenRow {
+                        token: row.get(2)?,
+                        created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
+                            .map(|dt| dt.with_timezone(&Utc))
+                            .unwrap_or_else(|_| Utc::now()),
+                        expires_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                            .map(|dt| dt.with_timezone(&Utc))
+                            .unwrap_or_else(|_| Utc::now()),
+                    };
+                    if token_row.expires_at > now {
+                        tokens.push(SessionTokenRecord::from(token_row));
+                    }
+                }
+                tokens
+            };
 
-        Ok(DurableWorkspaceState {
-            memories,
-            beliefs,
-            session_tokens,
-            checkpoints,
-        })
+            // Load checkpoints
+            let checkpoints = {
+                let mut stmt = conn.prepare(&format!(
+                    "SELECT task_id, name, data FROM {} WHERE workspace_id = ?",
+                    TABLE_CHECKPOINTS
+                ))?;
+                let mut rows = stmt.query([&workspace_id_c])?;
+                let mut checkpoints = Vec::new();
+                while let Some(row) = rows.next()? {
+                    checkpoints.push(Checkpoint {
+                        task_id: row.get(0)?,
+                        name: row.get(1)?,
+                        data: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
+                    });
+                }
+                checkpoints
+            };
+
+            Ok(DurableWorkspaceState {
+                memories,
+                beliefs,
+                session_tokens,
+                checkpoints,
+            })
+        }).await
     }
 
     async fn save_beliefs(&self, workspace_id: &str, beliefs: Vec<BeliefEdge>) -> Result<()> {
-        let belief_key = stable_key("belief_row", &[workspace_id]);
-        let conn = self.conn.lock();
+        let workspace_id = workspace_id.to_string();
+        let belief_key = stable_key("belief_row", &[&workspace_id]);
         let beliefs_json = serde_json::to_string(&beliefs)?;
 
-        conn.execute(
-            &format!(
-                "INSERT OR REPLACE INTO {} (id, workspace_id, beliefs, updated_at) VALUES (?, ?, ?, ?)",
-                TABLE_BELIEFS
-            ),
-            params![belief_key, workspace_id, beliefs_json, Utc::now().to_rfc3339()],
-        )?;
-        Ok(())
+        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+            conn.execute(
+                &format!(
+                    "INSERT OR REPLACE INTO {} (id, workspace_id, beliefs, updated_at) VALUES (?, ?, ?, ?)",
+                    TABLE_BELIEFS
+                ),
+                params![belief_key, workspace_id, beliefs_json, Utc::now().to_rfc3339()],
+            )?;
+            Ok(())
+        }).await
     }
 
     async fn save_session_token(
@@ -461,68 +476,81 @@ impl MemoryStore for SqliteMemoryStore {
         workspace_id: &str,
         token: SessionTokenRecord,
     ) -> Result<()> {
-        let token_key = stable_key("session_token_row", &[workspace_id, &token.token]);
-        let conn = self.conn.lock();
+        let workspace_id = workspace_id.to_string();
+        let token_key = stable_key("session_token_row", &[&workspace_id, &token.token]);
+        let token_val = token.token;
+        let created_at = token.created_at.to_rfc3339();
+        let expires_at = token.expires_at.to_rfc3339();
 
-        // Delete expired tokens first
-        conn.execute(
-            &format!(
-                "DELETE FROM {} WHERE workspace_id = ? AND expires_at <= ?",
-                TABLE_SESSION_TOKENS
-            ),
-            params![workspace_id, Utc::now().to_rfc3339()],
-        )?;
+        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+            // Delete expired tokens first
+            conn.execute(
+                &format!(
+                    "DELETE FROM {} WHERE workspace_id = ? AND expires_at <= ?",
+                    TABLE_SESSION_TOKENS
+                ),
+                params![workspace_id, Utc::now().to_rfc3339()],
+            )?;
 
-        // Insert new token
-        conn.execute(
-            &format!(
-                "INSERT OR REPLACE INTO {} (id, workspace_id, token, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
-                TABLE_SESSION_TOKENS
-            ),
-            params![
-                token_key,
-                workspace_id,
-                token.token,
-                token.created_at.to_rfc3339(),
-                token.expires_at.to_rfc3339(),
-            ],
-        )?;
-        Ok(())
+            // Insert new token
+            conn.execute(
+                &format!(
+                    "INSERT OR REPLACE INTO {} (id, workspace_id, token, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
+                    TABLE_SESSION_TOKENS
+                ),
+                params![
+                    token_key,
+                    workspace_id,
+                    token_val,
+                    created_at,
+                    expires_at,
+                ],
+            )?;
+            Ok(())
+        }).await
     }
 
     async fn is_session_token_valid(&self, workspace_id: &str, token: &str) -> Result<bool> {
-        let token_key = stable_key("session_token_row", &[workspace_id, token]);
-        let conn = self.conn.lock();
-        let now = Utc::now().to_rfc3339();
+        let workspace_id = workspace_id.to_string();
+        let token = token.to_string();
 
-        let count: i32 = conn.query_row(
-            &format!(
-                "SELECT COUNT(*) FROM {} WHERE id = ? AND expires_at > ?",
-                TABLE_SESSION_TOKENS
-            ),
-            params![token_key, now],
-            |row| row.get(0),
-        )?;
+        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+            let token_key = stable_key("session_token_row", &[&workspace_id, &token]);
+            let now = Utc::now().to_rfc3339();
 
-        Ok(count > 0)
+            let count: i32 = conn.query_row(
+                &format!(
+                    "SELECT COUNT(*) FROM {} WHERE id = ? AND expires_at > ?",
+                    TABLE_SESSION_TOKENS
+                ),
+                params![token_key, now],
+                |row| row.get(0),
+            )?;
+
+            Ok(count > 0)
+        }).await
     }
 
     async fn save_checkpoint(&self, workspace_id: &str, checkpoint: Checkpoint) -> Result<()> {
+        let workspace_id = workspace_id.to_string();
         let checkpoint_key = stable_key(
             "checkpoint_row",
-            &[workspace_id, &checkpoint.task_id, &checkpoint.name],
+            &[&workspace_id, &checkpoint.task_id, &checkpoint.name],
         );
-        let conn = self.conn.lock();
+        let task_id = checkpoint.task_id;
+        let name = checkpoint.name;
         let data_json = serde_json::to_string(&checkpoint.data)?;
 
-        conn.execute(
-            &format!(
-                "INSERT OR REPLACE INTO {} (id, workspace_id, task_id, name, data) VALUES (?, ?, ?, ?, ?)",
-                TABLE_CHECKPOINTS
-            ),
-            params![checkpoint_key, workspace_id, checkpoint.task_id, checkpoint.name, data_json],
-        )?;
-        Ok(())
+        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+            conn.execute(
+                &format!(
+                    "INSERT OR REPLACE INTO {} (id, workspace_id, task_id, name, data) VALUES (?, ?, ?, ?, ?)",
+                    TABLE_CHECKPOINTS
+                ),
+                params![checkpoint_key, workspace_id, task_id, name, data_json],
+            )?;
+            Ok(())
+        }).await
     }
 
     async fn load_checkpoint(
@@ -531,53 +559,66 @@ impl MemoryStore for SqliteMemoryStore {
         task_id: &str,
         name: &str,
     ) -> Result<Option<Checkpoint>> {
-        let conn = self.conn.lock();
+        let workspace_id = workspace_id.to_string();
+        let task_id = task_id.to_string();
+        let name = name.to_string();
 
-        let mut stmt = conn.prepare(&format!(
-            "SELECT data FROM {} WHERE workspace_id = ? AND task_id = ? AND name = ?",
-            TABLE_CHECKPOINTS
-        ))?;
+        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+            let mut stmt = conn.prepare(&format!(
+                "SELECT data FROM {} WHERE workspace_id = ? AND task_id = ? AND name = ?",
+                TABLE_CHECKPOINTS
+            ))?;
 
-        match stmt.query_row(params![workspace_id, task_id, name], |row| {
-            let data_str: String = row.get(0)?;
-            Ok(serde_json::from_str(&data_str).unwrap_or_default())
-        }) {
-            Ok(data) => Ok(Some(Checkpoint {
-                task_id: task_id.to_string(),
-                name: name.to_string(),
-                data,
-            })),
-            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-            Err(e) => Err(anyhow::anyhow!("SQLite query failed: {}", e)),
-        }
+            match stmt.query_row(params![workspace_id, task_id, name], |row| {
+                let data_str: String = row.get(0)?;
+                Ok(serde_json::from_str(&data_str).unwrap_or_default())
+            }) {
+                Ok(data) => Ok(Some(Checkpoint {
+                    task_id,
+                    name,
+                    data,
+                })),
+                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                Err(e) => Err(anyhow::anyhow!("SQLite query failed: {}", e)),
+            }
+        }).await
     }
 
     async fn list_checkpoints(&self, workspace_id: &str, task_id: &str) -> Result<Vec<Checkpoint>> {
-        let conn = self.conn.lock();
-        let mut stmt = conn.prepare(&format!(
-            "SELECT task_id, name, data FROM {} WHERE workspace_id = ? AND task_id = ?",
-            TABLE_CHECKPOINTS
-        ))?;
+        let workspace_id = workspace_id.to_string();
+        let task_id = task_id.to_string();
 
-        let mut rows = stmt.query(params![workspace_id, task_id])?;
-        let mut checkpoints = Vec::new();
-        while let Some(row) = rows.next()? {
-            checkpoints.push(Checkpoint {
-                task_id: row.get(0)?,
-                name: row.get(1)?,
-                data: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
-            });
-        }
-        Ok(checkpoints)
+        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+            let mut stmt = conn.prepare(&format!(
+                "SELECT task_id, name, data FROM {} WHERE workspace_id = ? AND task_id = ?",
+                TABLE_CHECKPOINTS
+            ))?;
+
+            let mut rows = stmt.query(params![workspace_id, task_id])?;
+            let mut checkpoints = Vec::new();
+            while let Some(row) = rows.next()? {
+                checkpoints.push(Checkpoint {
+                    task_id: row.get(0)?,
+                    name: row.get(1)?,
+                    data: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
+                });
+            }
+            Ok(checkpoints)
+        }).await
     }
 
     async fn delete_checkpoint(&self, workspace_id: &str, task_id: &str, name: &str) -> Result<()> {
-        let checkpoint_key = stable_key("checkpoint_row", &[workspace_id, task_id, name]);
-        let conn = self.conn.lock();
-        conn.execute(
-            &format!("DELETE FROM {} WHERE id = ?", TABLE_CHECKPOINTS),
-            [&checkpoint_key],
-        )?;
-        Ok(())
+        let workspace_id = workspace_id.to_string();
+        let task_id = task_id.to_string();
+        let name = name.to_string();
+
+        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+            let checkpoint_key = stable_key("checkpoint_row", &[&workspace_id, &task_id, &name]);
+            conn.execute(
+                &format!("DELETE FROM {} WHERE id = ?", TABLE_CHECKPOINTS),
+                [&checkpoint_key],
+            )?;
+            Ok(())
+        }).await
     }
 }
