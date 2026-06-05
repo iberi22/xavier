@@ -60,7 +60,8 @@ impl ConnectionManager {
             } else if project_id == "metrics" {
                 PathBuf::from(project_root).join("metrics.db")
             } else if project_id.starts_with("conv_") {
-                let pid = project_id.strip_prefix("conv_").unwrap();
+                let pid = project_id.strip_prefix("conv_")
+                    .ok_or_else(|| anyhow::anyhow!("invalid conversation prefix"))?;
                 dirs::home_dir()
                     .ok_or_else(|| anyhow::anyhow!("could not find home directory"))?
                     .join(".xavier")

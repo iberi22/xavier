@@ -300,8 +300,14 @@ impl RateLimitManager {
 
 impl SchemaInitializer for RateLimitManager {
     fn init_schema(&self) -> Result<()> {
-        let rt = tokio::runtime::Handle::try_current()
-            .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+        let rt = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => handle,
+            Err(_) => {
+                let runtime = tokio::runtime::Runtime::new()
+                    .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;
+                runtime.handle().clone()
+            }
+        };
         rt.block_on(self.init_schema_async())
     }
 }
