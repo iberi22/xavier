@@ -1,3 +1,8 @@
+//! API handlers for memory and workspace operations.
+//!
+//! This module provides endpoints for multi-layer memory retrieval, context export,
+//! memory curation, and automated background maintenance tasks like decay and consolidation.
+
 use axum::{extract::Json, response::IntoResponse, Extension};
 use crate::workspace::WorkspaceContext;
 use crate::server::http::types::*;
