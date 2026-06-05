@@ -2,7 +2,6 @@ use axum::extract::State;
 use tracing::info;
 use crate::cli::state::CliState;
 use crate::cli::types::{SessionCompactPayload};
-use crate::cli::handlers::json_response;
 use xavier::session::event_mapper::PanelThreadEntry;
 use xavier::session::types::SessionEvent;
 use crate::cli::security::secure_external_input;

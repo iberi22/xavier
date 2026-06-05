@@ -1,0 +1,545 @@
+//! Code handlers for scanning, searching, and analyzing codebases.
+
+use std::path::PathBuf;
+use axum::{
+    extract::State,
+    Json,
+};
+use tracing::{info, warn};
+use serde::Serialize;
+
+use crate::cli::state::CliState;
+use crate::cli::types::*;
+use crate::cli::code_graph::{code_find_symbols, filter_symbols_by_query};
+use crate::cli::utils::estimate_tokens;
+use crate::cli::security::{secure_optional_request_field};
+
+use xavier::ports::inbound::input_security_port::SecureInputResult;
+
+pub async fn code_scan_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<CodeScanPayload>,
+) -> impl axum::response::IntoResponse {
+    let requested_path = payload.path.unwrap_or_else(|| ".".to_string());
+
+    let sec_result = state
+        .security
+        .process_input(&requested_path)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: requested_path.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    if !sec_result.allowed {
+        info!(
+            "code/scan blocked by security: injection detected (confidence={})",
+            sec_result.detection_confidence
+        );
+        return axum::Json(serde_json::json!({
+            "status": "blocked",
+            "reason": "security_policy_violation",
+            "detection": {
+                "is_injection": sec_result.is_injection,
+                "confidence": sec_result.detection_confidence,
+                "attack_type": sec_result.attack_type,
+            }
+        }));
+    }
+
+    let workspace_root =
+        std::path::absolute(&state.workspace_dir).unwrap_or_else(|_| PathBuf::from("."));
+    let Ok(abs_path) = std::path::absolute(&requested_path) else {
+        return axum::Json(serde_json::json!({
+            "status": "error",
+            "message": "invalid path",
+            "indexed_files": 0,
+        }));
+    };
+    if !abs_path.starts_with(&workspace_root) {
+        warn!(
+            "Path traversal blocked: {} is outside workspace root {}",
+            abs_path.display(),
+            workspace_root.display()
+        );
+        return axum::Json(serde_json::json!({
+            "status": "error",
+            "message": "path outside workspace not allowed",
+            "indexed_files": 0,
+        }));
+    }
+
+    let path = requested_path;
+    info!("Code scan request: path={}", path);
+
+    match state.code_indexer.index(std::path::Path::new(&path)).await {
+        Ok(stats) => axum::Json(serde_json::json!({
+            "status": "ok",
+            "indexed_files": stats.total_files,
+            "indexed_symbols": stats.total_symbols,
+            "indexed_imports": stats.total_imports,
+            "duration_ms": stats.duration_ms,
+            "paths": [path],
+            "languages": stats.languages,
+        })),
+        Err(error) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": error.to_string(),
+            "indexed_files": 0,
+            "indexed_symbols": 0,
+            "indexed_imports": 0,
+            "paths": [path],
+        })),
+    }
+}
+
+pub async fn code_find_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<CodeFindPayload>,
+) -> impl axum::response::IntoResponse {
+    let sec_result = state
+        .security
+        .process_input(&payload.query)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: payload.query.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    if !sec_result.allowed {
+        info!(
+            "code/find blocked by security: injection detected (confidence={})",
+            sec_result.detection_confidence
+        );
+        return axum::Json(serde_json::json!({
+            "status": "blocked",
+            "reason": "security_policy_violation",
+            "blocked": true,
+            "detection": {
+                "is_injection": sec_result.is_injection,
+                "confidence": sec_result.detection_confidence,
+                "attack_type": sec_result.attack_type,
+            }
+        }));
+    }
+
+    let query = sec_result
+        .sanitized_input
+        .as_deref()
+        .unwrap_or(&sec_result.original_input)
+        .to_string();
+    let pattern = match secure_optional_request_field(
+        state.security.as_ref(),
+        "code/find pattern",
+        payload.pattern.as_deref(),
+    )
+    .await
+    {
+        Ok(pattern) => pattern,
+        Err(sec_result) => {
+            info!(
+                "code/find blocked by security: pattern rejected (confidence={})",
+                sec_result.detection_confidence
+            );
+            return axum::Json(serde_json::json!({
+                "status": "blocked",
+                "reason": "security_policy_violation",
+                "blocked": true,
+                "field": "pattern",
+                "detection": {
+                    "is_injection": sec_result.is_injection,
+                    "confidence": sec_result.detection_confidence,
+                    "attack_type": sec_result.attack_type,
+                }
+            }));
+        }
+    };
+    let kind = match secure_optional_request_field(
+        state.security.as_ref(),
+        "code/find kind",
+        payload.kind.as_deref(),
+    )
+    .await
+    {
+        Ok(kind) => kind,
+        Err(sec_result) => {
+            info!(
+                "code/find blocked by security: kind rejected (confidence={})",
+                sec_result.detection_confidence
+            );
+            return axum::Json(serde_json::json!({
+                "status": "blocked",
+                "reason": "security_policy_violation",
+                "blocked": true,
+                "field": "kind",
+                "detection": {
+                    "is_injection": sec_result.is_injection,
+                    "confidence": sec_result.detection_confidence,
+                    "attack_type": sec_result.attack_type,
+                }
+            }));
+        }
+    };
+    let limit = payload.limit.clamp(1, 100);
+    info!(
+        "Code find request: query={}, limit={}, kind={:?}, pattern={:?}",
+        query, limit, kind, pattern
+    );
+
+    let symbols = code_find_symbols(
+        &state.code_query,
+        &query,
+        kind.as_deref(),
+        pattern.as_deref(),
+        limit,
+    );
+
+    let results: Vec<_> = symbols
+        .into_iter()
+        .map(|symbol| {
+            serde_json::json!({
+                "id": symbol.id,
+                "stable_id": symbol.stable_id,
+                "path": symbol.file_path,
+                "symbol": symbol.name,
+                "symbol_type": format!("{:?}", symbol.kind),
+                "language": format!("{:?}", symbol.lang),
+                "line": symbol.start_line,
+                "end_line": symbol.end_line,
+                "signature": symbol.signature,
+                "parent": symbol.parent,
+                "complexity": symbol.complexity,
+            })
+        })
+        .collect();
+
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "query": query,
+        "count": results.len(),
+        "results": results,
+    }))
+}
+
+pub async fn code_stats_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    match state.code_db.stats() {
+        Ok(stats) => axum::Json(serde_json::json!({
+            "status": "ok",
+            "total_files": stats.total_files,
+            "total_symbols": stats.total_symbols,
+            "total_imports": stats.total_imports,
+            "languages": stats.languages,
+        })),
+        Err(error) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": error.to_string(),
+            "total_files": 0,
+            "total_symbols": 0,
+            "total_imports": 0,
+        })),
+    }
+}
+
+pub async fn code_context_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<CodeContextPayload>,
+) -> impl axum::response::IntoResponse {
+    let sec_result = state
+        .security
+        .process_input(&payload.query)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: payload.query.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    if !sec_result.allowed {
+        info!(
+            "code/context blocked by security: injection detected (confidence={})",
+            sec_result.detection_confidence
+        );
+        return axum::Json(serde_json::json!({
+            "status": "blocked",
+            "reason": "security_policy_violation",
+            "blocked": true,
+            "detection": {
+                "is_injection": sec_result.is_injection,
+                "confidence": sec_result.detection_confidence,
+                "attack_type": sec_result.attack_type,
+            }
+        }));
+    }
+
+    let limit = payload.limit.clamp(1, 100);
+    let kind_limit = if payload.query.trim().is_empty() {
+        limit
+    } else {
+        10_000
+    };
+    let budget_tokens = payload.budget_tokens.clamp(100, 8000);
+
+    let mut symbols = if let Some(kind) = payload.kind.as_deref() {
+        match kind.to_ascii_lowercase().as_str() {
+            "function" | "fn" => state.code_query.functions(kind_limit).unwrap_or_default(),
+            "struct" => state.code_query.structs(kind_limit).unwrap_or_default(),
+            "class" => state.code_query.classes(kind_limit).unwrap_or_default(),
+            "enum" => state.code_query.enums(kind_limit).unwrap_or_default(),
+            _ => state
+                .code_query
+                .search(&payload.query, limit)
+                .map(|result| result.symbols)
+                .unwrap_or_default(),
+        }
+    } else {
+        state
+            .code_query
+            .search(&payload.query, limit)
+            .map(|result| result.symbols)
+            .unwrap_or_default()
+    };
+    filter_symbols_by_query(&mut symbols, &payload.query);
+    symbols.truncate(limit);
+
+    let mut used_tokens = 0usize;
+    let mut context = Vec::new();
+
+    for symbol in symbols {
+        let signature = symbol.signature.clone().unwrap_or_default();
+        let compact = serde_json::json!({
+            "symbol": symbol.name,
+            "symbol_type": format!("{:?}", symbol.kind),
+            "language": format!("{:?}", symbol.lang),
+            "path": symbol.file_path,
+            "line": symbol.start_line,
+            "end_line": symbol.end_line,
+            "signature": signature,
+            "stable_id": symbol.stable_id,
+            "complexity": symbol.complexity,
+        });
+        let estimated = estimate_tokens(&compact.to_string());
+        if used_tokens + estimated > budget_tokens && !context.is_empty() {
+            break;
+        }
+        used_tokens += estimated;
+        context.push(compact);
+    }
+
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "query": payload.query,
+        "budget_tokens": budget_tokens,
+        "estimated_tokens": used_tokens,
+        "count": context.len(),
+        "context": context,
+    }))
+}
+
+pub async fn code_dependencies_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<CodeGraphQueryPayload>,
+) -> impl axum::response::IntoResponse {
+    code_graph_edges_response(&state, payload, false, false).await
+}
+
+pub async fn code_reverse_dependencies_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<CodeGraphQueryPayload>,
+) -> impl axum::response::IntoResponse {
+    code_graph_edges_response(&state, payload, true, false).await
+}
+
+pub async fn code_call_chain_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<CodeGraphQueryPayload>,
+) -> impl axum::response::IntoResponse {
+    code_graph_edges_response(&state, payload, false, true).await
+}
+
+pub async fn code_hubs_handler(State(state): State<CliState>) -> impl axum::response::IntoResponse {
+    match state
+        .code_query
+        .hubs(default_min_degree(), default_graph_limit())
+    {
+        Ok(hubs) => {
+            let (items, truncated, estimated_tokens) =
+                truncate_json_items(hubs, default_graph_budget());
+            axum::Json(serde_json::json!({
+                "status": "ok",
+                "count": items.len(),
+                "min_degree": default_min_degree(),
+                "estimated_tokens": estimated_tokens,
+                "_truncated": truncated,
+                "results": items,
+            }))
+        }
+        Err(error) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": error.to_string(),
+        })),
+    }
+}
+
+pub async fn code_hotspots_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    match state
+        .code_query
+        .hotspots(default_min_complexity(), default_graph_limit())
+    {
+        Ok(hotspots) => {
+            let (items, truncated, estimated_tokens) =
+                truncate_json_items(hotspots, default_graph_budget());
+            axum::Json(serde_json::json!({
+                "status": "ok",
+                "count": items.len(),
+                "min_complexity": default_min_complexity(),
+                "estimated_tokens": estimated_tokens,
+                "_truncated": truncated,
+                "results": items,
+            }))
+        }
+        Err(error) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": error.to_string(),
+        })),
+    }
+}
+
+async fn code_graph_edges_response(
+    state: &CliState,
+    payload: CodeGraphQueryPayload,
+    reverse: bool,
+    call_chain: bool,
+) -> axum::Json<serde_json::Value> {
+    let sec_result = state
+        .security
+        .process_input(&payload.query)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: payload.query.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    if !sec_result.allowed {
+        return axum::Json(serde_json::json!({
+            "status": "blocked",
+            "reason": "security_policy_violation",
+            "blocked": true,
+            "detection": {
+                "is_injection": sec_result.is_injection,
+                "confidence": sec_result.detection_confidence,
+                "attack_type": sec_result.attack_type,
+            }
+        }));
+    }
+
+    let query = sec_result
+        .sanitized_input
+        .unwrap_or_else(|| sec_result.original_input.clone());
+    let edge_type = if call_chain {
+        Some(::code_graph::types::EdgeType::Calls)
+    } else {
+        match parse_code_edge_type(payload.edge_type.as_deref()) {
+            Ok(edge_type) => edge_type,
+            Err(message) => {
+                return axum::Json(serde_json::json!({
+                    "status": "error",
+                    "message": message,
+                }))
+            }
+        }
+    };
+    let depth = payload.depth.clamp(1, 8);
+    let limit = payload.limit.clamp(1, 1000);
+    let budget_tokens = payload.budget_tokens.clamp(100, 16_000);
+
+    let result = if call_chain {
+        state.code_query.call_chain(&query, depth, limit)
+    } else if reverse {
+        state
+            .code_query
+            .reverse_dependencies(&query, edge_type, depth, limit)
+    } else {
+        state
+            .code_query
+            .dependencies(&query, edge_type, depth, limit)
+    };
+
+    match result {
+        Ok(edges) => {
+            let (items, truncated, estimated_tokens) = truncate_json_items(edges, budget_tokens);
+            axum::Json(serde_json::json!({
+                "status": "ok",
+                "query": query,
+                "depth": depth,
+                "limit": limit,
+                "budget_tokens": budget_tokens,
+                "estimated_tokens": estimated_tokens,
+                "count": items.len(),
+                "_truncated": truncated,
+                "results": items,
+            }))
+        }
+        Err(error) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": error.to_string(),
+        })),
+    }
+}
+
+fn parse_code_edge_type(
+    value: Option<&str>,
+) -> std::result::Result<Option<::code_graph::types::EdgeType>, String> {
+    let Some(value) = value.filter(|value| !value.trim().is_empty()) else {
+        return Ok(None);
+    };
+    match value.to_ascii_lowercase().as_str() {
+        "calls" | "call" => Ok(Some(::code_graph::types::EdgeType::Calls)),
+        "defines" | "define" => Ok(Some(::code_graph::types::EdgeType::Defines)),
+        "uses" | "use" => Ok(Some(::code_graph::types::EdgeType::Uses)),
+        "imports" | "import" => Ok(Some(::code_graph::types::EdgeType::Imports)),
+        "contains" | "contain" => Ok(Some(::code_graph::types::EdgeType::Contains)),
+        "references" | "reference" | "refs" => Ok(Some(::code_graph::types::EdgeType::References)),
+        _ => Err(format!("unsupported edge_type: {}", value)),
+    }
+}
+
+fn truncate_json_items<T: Serialize>(
+    items: Vec<T>,
+    budget_tokens: usize,
+) -> (Vec<serde_json::Value>, bool, usize) {
+    let mut output = Vec::new();
+    let mut used_tokens = 0usize;
+    let mut truncated = false;
+
+    for item in items {
+        let value = serde_json::to_value(item).unwrap_or_else(|_| serde_json::json!({}));
+        let estimated = estimate_tokens(&value.to_string());
+        if used_tokens + estimated > budget_tokens && !output.is_empty() {
+            truncated = true;
+            break;
+        }
+        used_tokens += estimated;
+        output.push(value);
+    }
+
+    (output, truncated, used_tokens)
+}
