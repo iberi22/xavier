@@ -9,6 +9,7 @@ use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
 use crate::codebase::connection_manager::ConnectionManager;
+use crate::codebase::validate_project_id;
 
 // ---------------------------------------------------------------------------
 // Result types
@@ -89,6 +90,7 @@ impl CodebaseDb {
     /// Open (or create) the codebase database at `project_root`.
     pub async fn open(project_root: &Path) -> Result<Self> {
         let project_id = "default"; // Or derive from path
+        validate_project_id(project_id)?;
         ConnectionManager::global().connect(project_id, &project_root.to_string_lossy())?;
         Ok(Self {
             project_id: project_id.to_string(),
@@ -99,6 +101,7 @@ impl CodebaseDb {
     /// Open an in-memory database (for testing).
     pub async fn open_in_memory() -> Result<Self> {
         let project_id = "test_in_memory";
+        validate_project_id(project_id)?;
         ConnectionManager::global().connect(project_id, ".")?;
         Ok(Self {
             project_id: project_id.to_string(),
@@ -573,6 +576,15 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn test_open_with_malicious_project_id() {
+        let mal_ids = vec!["../etc/passwd", "my/project", "project\\name", "~", " ", ""];
+        for id in mal_ids {
+            // codebase::validate_project_id is already tested in mod.rs
+            assert!(validate_project_id(id).is_err());
+        }
+    }
+
+    #[tokio::test]
     async fn test_open_in_memory() {
         let db = CodebaseDb::open_in_memory().await.unwrap();
         db.create_schema().await.unwrap();
@@ -666,6 +678,12 @@ mod tests {
             0.9, Some("src/errors.rs"), 1, Some("if let Ok(v) = result"), "verified").await.unwrap();
         let c = count_rows(&db, "code_patterns").await;
         assert_eq!(c, 1);
+    }
+
+    #[tokio::test]
+    async fn test_open_valid_project_id() {
+        let db = CodebaseDb::open_in_memory().await.unwrap();
+        assert_eq!(db.project_id, "test_in_memory");
     }
 
     #[tokio::test]
