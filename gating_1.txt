@@ -1,0 +1,500 @@
+//! Adaptive Retrieval Gating - Multi-layer memory retrieval with weighted fusion
+//!
+//! Implements adaptive gating that scores and fuses results from Working, Episodic,
+//! and Semantic memory layers using RRF (Reciprocal Rank Fusion).
+
+use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
+
+use crate::context::ContextLevel;
+use crate::memory::entity_graph::EntityRecord;
+use crate::memory::qmd_memory::MemoryDocument;
+use crate::memory::schema::ContextZone;
+use crate::retrieval::config;
+use crate::search::rrf::{reciprocal_rank_fusion, ScoredResult};
+
+/// Layer weights for multi-layer retrieval fusion.
+/// These control how much each memory layer contributes to final results.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub struct LayerWeights {
+    /// Weight for working memory layer (default 0.3)
+    pub working: f32,
+    /// Weight for episodic memory layer (default 0.3)
+    pub episodic: f32,
+    /// Weight for semantic memory layer (default 0.4)
+    pub semantic: f32,
+}
+
+impl Default for LayerWeights {
+    fn default() -> Self {
+        Self {
+            working: config::DEFAULT_WORKING_WEIGHT,
+            episodic: config::DEFAULT_EPISODIC_WEIGHT,
+            semantic: config::DEFAULT_SEMANTIC_WEIGHT,
+        }
+    }
+}
+
+impl LayerWeights {
+    /// Adjust weights dynamically based on query characteristics
+    pub fn adaptive(
+        query: &str,
+        context_level: ContextLevel,
+        _active_zones: &[ContextZone],
+    ) -> Self {
+        let factual_score = query_factuality_score(query);
+        let procedural_score = query_procedural_score(query);
+
+        if factual_score > 0.7 {
+            // Factual queries -> more weight to semantic/long-term
+            Self::new(0.2, 0.2, 0.6)
+        } else if procedural_score > 0.7 {
+            // Procedural queries -> more weight to episodic/sessions
+            Self::new(0.2, 0.6, 0.2)
+        } else if context_level == ContextLevel::Minimal {
+            // Immediate/minimal context -> more weight to working/recent
+            Self::new(0.6, 0.3, 0.1)
+        } else {
+            Self::default()
+        }
+    }
+
+    pub fn new(working: f32, episodic: f32, semantic: f32) -> Self {
+        Self {
+            working,
+            episodic,
+            semantic,
+        }
+    }
+
+    /// Validate that weights sum to approximately 1.0
+    pub fn is_valid(&self) -> bool {
+        let sum = self.working + self.episodic + self.semantic;
+        (sum - 1.0).abs() < config::WEIGHT_SUM_TOLERANCE
+    }
+
+    /// Get weight for a specific layer by name
+    pub fn weight_for(&self, layer: &str) -> f32 {
+        match layer {
+            "working" => self.working,
+            "episodic" => self.episodic,
+            "semantic" => self.semantic,
+            _ => 0.0,
+        }
+    }
+}
+
+/// Configuration for adaptive gating
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GatingConfig {
+    /// Layer weights for fusion
+    pub layer_weights: LayerWeights,
+    /// Minimum relevance score threshold (0.0-1.0)
+    pub relevance_threshold: f32,
+    /// RRF k parameter (default 60)
+    pub rrf_k: u32,
+    /// Maximum results to return
+    pub max_results: usize,
+    /// Targeted zones for the retrieval
+    pub active_zones: Option<Vec<ContextZone>>,
+    /// Multiplier for targeted zones (default 1.5)
+    pub zone_boost_multiplier: f32,
+    /// Multiplier for non-targeted zones (default 0.5)
+    pub zone_penalty_multiplier: f32,
+    /// Weight for recency boosting (0.0 to 1.0)
+    pub recency_weight: f32,
+    /// Half-life in hours for recency decay
+    pub half_life_hours: f32,
+    /// Whether to enable belief graph grounding validation
+    pub grounding_enabled: bool,
+    /// Minimum confidence for semantic grounding
+    pub grounding_min_confidence: f32,
+}
+
+impl Default for GatingConfig {
+    fn default() -> Self {
+        Self {
+            layer_weights: LayerWeights::default(),
+            relevance_threshold: config::DEFAULT_RELEVANCE_THRESHOLD,
+            rrf_k: config::DEFAULT_RRF_K,
+            max_results: config::DEFAULT_MAX_RESULTS,
+            active_zones: None,
+            zone_boost_multiplier: config::configured_zone_boost(),
+            zone_penalty_multiplier: config::configured_zone_penalty(),
+            recency_weight: config::DEFAULT_RECENCY_WEIGHT,
+            half_life_hours: config::DEFAULT_HALF_LIFE_HOURS,
+            grounding_enabled: true,
+            grounding_min_confidence: 0.5,
+        }
+    }
+}
+
+/// Result from a single layer's search
+#[derive(Debug, Clone)]
+pub struct LayerSearchResult {
+    pub layer: &'static str,
+    pub results: Vec<ScoredResult>,
+    pub scores: Vec<f32>,
+}
+
+/// Result from a multi-layer search (for context pack export)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LayeredSearchResult {
+    pub topic: String,
+    pub timestamp: String,
+    pub level_0_working: Vec<ScoredResult>,
+    pub level_1_entity_graph: Vec<ScoredResult>,
+    pub level_2_semantic: Vec<ScoredResult>,
+    pub level_3_episodic: Vec<ScoredResult>,
+}
+
+/// Adaptive gating for multi-layer memory retrieval
+#[derive(Debug, Clone)]
+pub struct AdaptiveGating {
+    config: GatingConfig,
+}
+
+// ---------------------------------------------------------------------------
+// Helper functions — used in both parallel and sequential scoring paths
+// ---------------------------------------------------------------------------
+
+/// Calculate recency boost factor based on age.
+fn calculate_recency_boost_factor(
+    updated_at_ms: Option<i64>,
+    now: chrono::DateTime<chrono::Utc>,
+    recency_weight: f32,
+    half_life_hours: f32,
+) -> f32 {
+    if recency_weight <= 0.0 {
+        return 1.0;
+    }
+
+    let Some(updated_at_ms) = updated_at_ms else {
+        return 1.0;
+    };
+
+    let updated_at = chrono::DateTime::from_timestamp_millis(updated_at_ms).unwrap_or(now);
+    let age_hours = (now - updated_at).num_hours() as f32;
+    let age_hours = age_hours.max(0.0);
+
+    if half_life_hours <= 0.0 {
+        return 1.0 + recency_weight;
+    }
+
+    // Exponential decay: boost = 1.0 + weight * exp(-age / half_life)
+    1.0 + (recency_weight * (-age_hours / half_life_hours).exp())
+}
+
+/// Parameters for scoring a single working memory document.
+struct WorkingScoringParams<'a> {
+    query_lower: &'a str,
+    query_terms: &'a [&'a str],
+    active_zones: Option<&'a Vec<ContextZone>>,
+    zone_boost_multiplier: f32,
+    zone_penalty_multiplier: f32,
+    now: chrono::DateTime<chrono::Utc>,
+    recency_weight: f32,
+    half_life_hours: f32,
+}
+
+/// Score a single working memory document.
+fn score_single_working(
+    doc: &MemoryDocument,
+    params: &WorkingScoringParams<'_>,
+) -> Option<ScoredResult> {
+    let content_lower = doc.content.to_lowercase();
+    let mut score = 0.0_f32;
+
+    // Exact phrase match bonus
+    if content_lower.contains(params.query_lower) {
+        score += config::EXACT_PHRASE_MATCH_BONUS;
+    }
+
+    // Term frequency scoring
+    for term in params.query_terms {
+        if content_lower.contains(term) {
+            score += config::TERM_MATCH_BONUS;
+            // Additional bonus for multiple occurrences
+            let count = content_lower.matches(term).count() as f32;
+            score += (count * config::TERM_OCCURRENCE_BONUS).min(config::MAX_TERM_OCCURRENCE_BONUS);
+        }
+    }
+
+    if score > 0.0 {
+        let doc_zone = doc
+            .metadata
+            .get("zone")
+            .and_then(|v| v.as_str())
+            .map(ContextZone::parse)
+            .unwrap_or(ContextZone::Atomic);
+
+        let mut final_score = score.min(1.0);
+
+        // Apply zone-based boosting
+        if let Some(active) = params.active_zones {
+            if active.contains(&doc_zone) {
+                final_score *= params.zone_boost_multiplier; // Boost targeted zones
+            } else {
+                final_score *= params.zone_penalty_multiplier; // Penalize non-targeted zones
+            }
+        }
+
+        let updated_at_ms = doc
+            .metadata
+            .get("updated_at")
+            .and_then(|v| v.as_str())
+            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.timestamp_millis());
+
+        // Apply recency boost
+        let recency = calculate_recency_boost_factor(
+            updated_at_ms,
+            params.now,
+            params.recency_weight,
+            params.half_life_hours,
+        );
+        final_score *= recency;
+
+        Some(ScoredResult {
+            id: doc.id.clone().unwrap_or_default(),
+            content: doc.content.clone(),
+            score: final_score,
+            source: "working".to_string(),
+            path: doc.path.clone(),
+            updated_at: updated_at_ms,
+        })
+    } else {
+        None
+    }
+}
+
+/// Score a single episodic memory session.
+fn score_single_episodic(
+    session: &SessionSummary,
+    query_lower: &str,
+    query_terms: &[&str],
+    now: chrono::DateTime<chrono::Utc>,
+    recency_weight: f32,
+    half_life_hours: f32,
+) -> Option<ScoredResult> {
+    let summary_lower = session.summary.to_lowercase();
+    let mut score = 0.0_f32;
+
+    // Summary match
+    if summary_lower.contains(query_lower) {
+        score += config::EXACT_PHRASE_MATCH_BONUS;
+    }
+
+    // Term frequency in summary
+    for term in query_terms {
+        if summary_lower.contains(term) {
+            score += config::TERM_MATCH_BONUS;
+            let count = summary_lower.matches(term).count() as f32;
+            score += (count * config::TERM_OCCURRENCE_BONUS).min(config::MAX_TERM_OCCURRENCE_BONUS);
+        }
+    }
+
+    // Event matching
+    for event in &session.key_events {
+        let event_lower = event.description.to_lowercase();
+        if event_lower.contains(query_lower) {
+            score += config::EVENT_PHRASE_MATCH_BONUS;
+        }
+        for term in query_terms {
+            if event_lower.contains(term) {
+                score += config::EVENT_TERM_MATCH_BONUS;
+            }
+        }
+    }
+
+    if score > 0.0 {
+        let mut final_score = score.min(1.0);
+        let updated_at_ms = Some(session.start_time.timestamp_millis());
+
+        // Apply recency boost
+        let recency =
+            calculate_recency_boost_factor(updated_at_ms, now, recency_weight, half_life_hours);
+        final_score *= recency;
+
+        Some(ScoredResult {
+            id: session.session_id.clone(),
+            content: session.summary.clone(),
+            score: final_score,
+            source: "episodic".to_string(),
+            path: format!("sessions/{}", session.session_id),
+            updated_at: updated_at_ms,
+        })
+    } else {
+        None
+    }
+}
+
+/// Score a single semantic memory entity.
+fn score_single_semantic(
+    entity: &EntityRecord,
+    query_lower: &str,
+    now: chrono::DateTime<chrono::Utc>,
+    recency_weight: f32,
+    half_life_hours: f32,
+) -> Option<ScoredResult> {
+    let name_lower = entity.name.to_lowercase();
+    let normalized_lower = entity.normalized_name.to_lowercase();
+    let mut score = 0.0_f32;
+
+    // Exact name match
+    if name_lower == query_lower || normalized_lower == query_lower {
+        score = config::EXACT_ENTITY_MATCH_SCORE;
+    }
+    // Partial name match
+    else if name_lower.contains(query_lower) || query_lower.contains(&name_lower) {
+        score = config::PARTIAL_ENTITY_MATCH_SCORE;
+    }
+    // Description match
+    else if let Some(desc) = &entity.description {
+        let desc_lower = desc.to_lowercase();
+        if desc_lower.contains(query_lower) {
+            score = config::ENTITY_DESCRIPTION_MATCH_SCORE;
+        }
+        let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
+        for term in &query_terms {
+            if desc_lower.contains(term) {
+                score += config::ENTITY_DESCRIPTION_TERM_BONUS;
+            }
+        }
+    }
+    // Alias matching
+    else {
+        for alias in &entity.aliases {
+            if alias.to_lowercase().contains(query_lower) {
+                score = config::ENTITY_ALIAS_MATCH_SCORE;
+                break;
+            }
+        }
+    }
+
+    // Boost by confirmation count (normalized)
+    let mut final_score = (score * config::SEMANTIC_CONFIDENCE_MULTIPLIER).min(1.0);
+
+    if final_score > 0.0 {
+        let updated_at_ms = Some(entity.last_seen.timestamp_millis());
+
+        // Apply recency boost
+        let recency =
+            calculate_recency_boost_factor(updated_at_ms, now, recency_weight, half_life_hours);
+        final_score *= recency;
+
+        Some(ScoredResult {
+            id: entity.id.clone(),
+            content: entity.name.clone(),
+            score: final_score,
+            source: "semantic".to_string(),
+            path: format!("entities/{}", entity.id),
+            updated_at: updated_at_ms,
+        })
+    } else {
+        None
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AdaptiveGating implementation
+// ---------------------------------------------------------------------------
+
+impl AdaptiveGating {
+    pub fn new(config: GatingConfig) -> Self {
+        Self { config }
+    }
+
+    pub fn with_defaults() -> Self {
+        Self {
+            config: GatingConfig::default(),
+        }
+    }
+
+    /// Retrieve from all memory layers and fuse results
+    pub async fn retrieve(
+        &self,
+        working: &[MemoryDocument],
+        episodic: &[SessionSummary],
+        semantic: &[EntityRecord],
+        query: &str,
+        belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
+    ) -> Vec<ScoredResult> {
+        let now = chrono::Utc::now();
+        // 1. Score each layer independently (may use parallel execution internally)
+        let working_results = self.score_working_layer_at(working, query, now).await;
+        let episodic_results = self.score_episodic_layer_at(episodic, query, now).await;
+        let semantic_results = self.score_semantic_layer_at(semantic, query, now).await;
+
+        // 2. Apply layer weights to scores
+        let weighted_working =
+            self.apply_weights(working_results, self.config.layer_weights.working);
+        let weighted_episodic =
+            self.apply_weights(episodic_results, self.config.layer_weights.episodic);
+        let weighted_semantic =
+            self.apply_weights(semantic_results, self.config.layer_weights.semantic);
+
+        // 3. Fuse with RRF
+        let mut fused = reciprocal_rank_fusion(
+            vec![weighted_working, weighted_episodic, weighted_semantic],
+            self.config.rrf_k,
+        );
+
+        // 4. Optional Reranking for precision boost
+        if let Some(hook) = crate::search::rerank::RerankHook::from_env() {
+            let rerank_limit = crate::retrieval::config::DEFAULT_RERANK_LIMIT;
+            if fused.len() > rerank_limit {
+                fused.truncate(rerank_limit);
+            }
+
+            let _ = crate::search::hooks::SearchHook::post_query(&hook, query, &mut fused).await;
+        }
+
+        // 5. Filter by threshold
+        let mut results: Vec<ScoredResult> = fused
+            .into_iter()
+            .filter(|r| r.score >= self.config.relevance_threshold)
+            .collect();
+
+        // 5. Apply grounding validation if enabled
+        if self.config.grounding_enabled {
+            if let Some(graph_lock) = belief_graph {
+                let graph = graph_lock.read().await;
+                // Convert ScoredResult back to MemoryDocument for validate_grounding
+                // Note: We only have content/id, so we build partial documents
+                let docs_to_validate: Vec<MemoryDocument> = results
+                    .iter()
+                    .map(|r| MemoryDocument {
+                        id: Some(r.id.clone()),
+                        content: r.content.clone(),
+                        path: r.path.clone(),
+                        ..Default::default()
+                    })
+                    .collect();
+
+                let grounding = graph
+                    .validate_grounding(&docs_to_validate, self.config.grounding_min_confidence)
+                    .await;
+
+                results.retain(|r| {
+                    grounding
+                        .iter()
+                        .find(|(id, _, _)| id == &r.id)
+                        .map(|(_, grounded, _)| *grounded)
+                        .unwrap_or(false)
+                });
+            }
+        }
+
+        // 6. Limit results
+        results.into_iter().take(self.config.max_results).collect()
+    }
+
+    /// Retrieve only from working memory
+    pub async fn retrieve_working(
+        &self,
+        working: &[MemoryDocument],
+        query: &str,
+    ) -> Vec<ScoredResult> {
+        self.score_working_layer_at(working, query, chrono::Utc::now())
+            .await

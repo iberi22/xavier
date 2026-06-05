@@ -1,0 +1,500 @@
+
+            Ok(serde_json::to_value(MCPToolResult {
+                content: vec![MCPTextContent {
+                    content_type: "text".to_string(),
+                    text: if matching.is_empty() {
+                        format!("No context found for project {project_id}.")
+                    } else {
+                        matching.join("\n\n---\n\n")
+                    },
+                }],
+                is_error: Some(false),
+            })?)
+        }
+        "sync_gitcore" => {
+            let project_path = arguments
+                .get("project_path")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing project_path"))?;
+            let root = std::path::PathBuf::from(project_path);
+            let mut created = 0usize;
+            let mut updated = 0usize;
+            let mut unchanged = 0usize;
+            let mut skipped = 0usize;
+
+            for relative in ["AGENTS.md", ".gitcore/ARCHITECTURE.md", "README.md"] {
+                let candidate = root.join(relative);
+                if !tokio::fs::try_exists(&candidate).await.unwrap_or(false) {
+                    skipped += 1;
+                    continue;
+                }
+
+                let content = tokio::fs::read_to_string(&candidate).await?;
+                let project = root
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or("gitcore");
+                let path = format!("gitcore/{project}/{}", relative.replace('\\', "/"));
+                let content_hash = hex_encode(&Sha256::digest(content.as_bytes()));
+                let metadata = json!({
+                    "synced_from": candidate.display().to_string(),
+                    "content_hash": content_hash,
+                });
+                let typed = Some(TypedMemoryPayload {
+                    kind: Some(MemoryKind::Document),
+                    evidence_kind: Some(EvidenceKind::Observation),
+                    namespace: Some(MemoryNamespace {
+                        project: Some(project.to_string()),
+                        ..MemoryNamespace::default()
+                    }),
+                    provenance: Some(MemoryProvenance {
+                        source_app: Some("gitcore".to_string()),
+                        source_type: Some("repository_doc".to_string()),
+                        file_path: Some(relative.replace('\\', "/")),
+                        ..MemoryProvenance::default()
+                    }),
+                    ..Default::default()
+                });
+
+                if let Some(existing) = workspace.workspace.get_memory_record(&path).await? {
+                    let existing_hash = existing
+                        .metadata
+                        .get("content_hash")
+                        .and_then(|value| value.as_str())
+                        .unwrap_or_default();
+                    if existing_hash == content_hash && existing.content == content {
+                        unchanged += 1;
+                        continue;
+                    }
+
+                    workspace
+                        .workspace
+                        .update_primary_memory(&existing.id, path, content, metadata, typed)
+                        .await?;
+                    updated += 1;
+                    continue;
+                }
+
+                workspace
+                    .workspace
+                    .ingest_typed(path, content, metadata, typed, None, false)
+                    .await?;
+                created += 1;
+            }
+
+            Ok(serde_json::to_value(MCPToolResult {
+                content: vec![MCPTextContent {
+                    content_type: "text".to_string(),
+                    text: format!(
+                        "Synced GitCore documents from {project_path}\ncreated={created}\nupdated={updated}\nunchanged={unchanged}\nskipped={skipped}"
+                    ),
+                }],
+                is_error: Some(false),
+            })?)
+        }
+        // ============================================================================
+        // Gestalt MemoryFragment Tools
+        // ============================================================================
+        "save_fragment" | "memoryfragment_save" => {
+            let agent_id = require_memoryfragment_component(&arguments, "agent_id")?;
+            let content = arguments
+                .get("content")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing content"))?;
+            let content =
+                match secure_mcp_external_input(&state, "memoryfragment content", content).await? {
+                    Ok(content) => content,
+                    Err(blocked) => return Ok(blocked),
+                };
+            let context =
+                optional_memoryfragment_component(&arguments, "context", Some("observation"))?
+                    .expect("default context is always present");
+            let tags = memoryfragment_tags(&arguments)?;
+            let importance = memoryfragment_importance(&arguments)?;
+            let repo_url = validate_memoryfragment_provenance(&arguments, "repo_url")?;
+            let file_path = validate_memoryfragment_provenance(&arguments, "file_path")?;
+            let chunk_id = validate_memoryfragment_provenance(&arguments, "chunk_id")?;
+
+            let unique_id = Ulid::new().to_string();
+            let path = format!("gestalt/{}/{}/{}", agent_id, context, unique_id);
+            let mut metadata = serde_json::json!({
+                "gestalt_context": context,
+                "importance": importance,
+            });
+            if !tags.is_empty() {
+                metadata["tags"] = serde_json::json!(tags);
+            }
+            if let Some(url) = &repo_url {
+                metadata["repo_url"] = serde_json::json!(url);
+            }
+            if let Some(fp) = &file_path {
+                metadata["source_file_path"] = serde_json::json!(fp);
+            }
+            if let Some(cid) = &chunk_id {
+                metadata["chunk_id"] = serde_json::json!(cid);
+            }
+
+            let typed = Some(TypedMemoryPayload {
+                kind: Some(MemoryKind::Document),
+                evidence_kind: Some(EvidenceKind::Observation),
+                namespace: Some(MemoryNamespace {
+                    agent_id: Some(agent_id.to_string()),
+                    ..MemoryNamespace::default()
+                }),
+                provenance: Some(MemoryProvenance {
+                    source_app: Some("gestalt".to_string()),
+                    source_type: Some(context.to_string()),
+                    repo_url,
+                    file_path,
+                    ..MemoryProvenance::default()
+                }),
+                ..Default::default()
+            });
+
+            workspace
+                .workspace
+                .ingest_typed(path, content, metadata, typed, None, false)
+                .await?;
+
+            Ok(serde_json::to_value(MCPToolResult {
+                content: vec![MCPTextContent {
+                    content_type: "text".to_string(),
+                    text: format!("MemoryFragment saved successfully for agent {}", agent_id),
+                }],
+                is_error: Some(false),
+            })?)
+        }
+        "search_fragments" | "memoryfragment_search" => {
+            let query = arguments
+                .get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let query =
+                match secure_mcp_external_input(&state, "memoryfragment query", query).await? {
+                    Ok(query) => query,
+                    Err(blocked) => return Ok(blocked),
+                };
+            let agent_id = optional_memoryfragment_component(&arguments, "agent_id", None)?;
+            let context = optional_memoryfragment_component(&arguments, "context", None)?;
+            let tags = memoryfragment_tags(&arguments)?;
+            let limit = memoryfragment_limit(&arguments);
+
+            let mut filters = MemoryQueryFilters::default();
+            if let Some(aid) = agent_id {
+                filters.agent_id = Some(aid);
+            }
+            if let Some(ctx) = context {
+                filters.scope = Some(ctx);
+            }
+
+            let results = workspace
+                .workspace
+                .memory
+                .search_filtered(&query, limit, Some(&filters))
+                .await?;
+
+            let filtered: Vec<_> = results
+                .into_iter()
+                .filter(|doc| {
+                    if !tags.is_empty() {
+                        let doc_tags: Vec<String> = doc
+                            .metadata
+                            .get("tags")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|v| v.as_str().map(String::from))
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        if !tags.iter().any(|t| doc_tags.contains(t)) {
+                            return false;
+                        }
+                    }
+                    true
+                })
+                .collect();
+
+            let content = filtered
+                .into_iter()
+                .map(|doc| MCPTextContent {
+                    content_type: "text".to_string(),
+                    text: format!(
+                        "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
+                        doc.id.as_deref().unwrap_or("none"),
+                        doc.path,
+                        doc.content,
+                        doc.metadata.get("gestalt_context"),
+                        doc.metadata.get("tags")
+                    ),
+                })
+                .collect();
+
+            Ok(serde_json::to_value(MCPToolResult {
+                content,
+                is_error: Some(false),
+            })?)
+        }
+        "get_recent_fragments" | "memoryfragment_recent" => {
+            let agent_id = require_memoryfragment_component(&arguments, "agent_id")?;
+            let context = optional_memoryfragment_component(&arguments, "context", None)?;
+            let limit = memoryfragment_limit(&arguments);
+
+            let records = workspace
+                .workspace
+                .list_memory_records_filtered(
+                    MemoryQueryFilters {
+                        agent_id: Some(agent_id.to_string()),
+                        scope: context,
+                        ..Default::default()
+                    },
+                    limit,
+                )
+                .await?;
+
+            let content = records
+                .into_iter()
+                .map(|record| MCPTextContent {
+                    content_type: "text".to_string(),
+                    text: format!(
+                        "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
+                        record.id,
+                        record.path,
+                        record.content,
+                        record.metadata.get("gestalt_context"),
+                        record.metadata.get("tags")
+                    ),
+                })
+                .collect();
+
+            Ok(serde_json::to_value(MCPToolResult {
+                content,
+                is_error: Some(false),
+            })?)
+        }
+        "memoryfragment_get" => {
+            let id = arguments
+                .get("id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing id"))?;
+            let record = workspace
+                .workspace
+                .get_memory_record(id)
+                .await?
+                .ok_or_else(|| anyhow::anyhow!("Memory not found: {}", id))?;
+
+            Ok(serde_json::to_value(MCPToolResult {
+                content: vec![MCPTextContent {
+                    content_type: "text".to_string(),
+                    text: format!(
+                        "Id: {}\nPath: {}\nRevision: {}\nContent: {}\nContext: {:?}\nTags: {:?}\nMetadata: {}",
+                        record.id,
+                        record.path,
+                        record.revision,
+                        record.content,
+                        record.metadata.get("gestalt_context"),
+                        record.metadata.get("tags"),
+                        serde_json::to_string_pretty(&record.metadata)?
+                    ),
+                }],
+                is_error: Some(false),
+            })?)
+        }
+        "memoryfragment_delete" => {
+            let id = arguments
+                .get("id")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing id"))?;
+
+            let record = workspace.workspace.delete_memory_record(id).await?;
+
+            let message = if let Some(r) = record {
+                format!("Deleted memory fragment: {} (path: {})", r.id, r.path)
+            } else {
+                format!("Memory fragment not found: {}", id)
+            };
+
+            Ok(serde_json::to_value(MCPToolResult {
+                content: vec![MCPTextContent {
+                    content_type: "text".to_string(),
+                    text: message,
+                }],
+                is_error: Some(false),
+            })?)
+        }
+        "stats" => {
+            let records = workspace.workspace.list_memory_records().await?;
+            let total = records.len();
+            let projects = records
+                .iter()
+                .filter_map(|r| {
+                    r.metadata
+                        .get("namespace")
+                        .and_then(|n| n.get("project"))
+                        .and_then(|p| p.as_str())
+                        .map(|p| p.to_string())
+                })
+                .collect::<std::collections::HashSet<_>>();
+            let agents = records
+                .iter()
+                .filter_map(|r| {
+                    r.metadata
+                        .get("namespace")
+                        .and_then(|n| n.get("agent_id"))
+                        .and_then(|a| a.as_str())
+                        .map(|a| a.to_string())
+                })
+                .collect::<std::collections::HashSet<_>>();
+
+            let entity_count = workspace.workspace.entity_graph.all_entities().await.len();
+            let semantic_stats = workspace.workspace.semantic_memory.stats().await;
+
+            Ok(serde_json::to_value(MCPToolResult {
+                content: vec![MCPTextContent {
+                    content_type: "text".to_string(),
+                    text: serde_json::json!({
+                        "total_memories": total,
+                        "projects": projects.len(),
+                        "agents": agents.len(),
+                        "total_entities": entity_count,
+                        "semantic_entities": semantic_stats.total_entities,
+                        "semantic_relations": semantic_stats.total_relations,
+                    })
+                    .to_string(),
+                }],
+                is_error: Some(false),
+            })?)
+        }
+        _ => Err(anyhow::anyhow!("Tool not implemented: {}", name)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::{to_bytes, Body},
+        http::{Method, Request},
+        routing::post,
+        Router,
+    };
+    use std::path::PathBuf;
+    use std::sync::Arc;
+    use std::time::Duration;
+    use std::time::{SystemTime, UNIX_EPOCH};
+    use tower::util::ServiceExt;
+
+    use crate::{
+        agents::RuntimeConfig,
+        memory::file_indexer::{FileIndexer, FileIndexerConfig},
+        workspace::{WorkspaceConfig, WorkspaceRegistry, WorkspaceState},
+        AppState,
+    };
+
+    fn unique_test_path(prefix: &str, suffix: &str) -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("SystemTime before UNIX_EPOCH")
+            .as_nanos();
+        std::env::temp_dir().join(format!("{prefix}-{unique}-{suffix}"))
+    }
+
+    async fn test_state() -> (AppState, WorkspaceContext) {
+        let db_path = unique_test_path("xavier-code-mcp", "code_graph.db");
+        let code_db = Arc::new(
+            code_graph::db::CodeGraphDB::new(&db_path)
+                .expect("CodeGraphDB creation failed for test"),
+        );
+        let code_indexer = Arc::new(code_graph::indexer::Indexer::new(Arc::clone(&code_db)));
+        let code_query = Arc::new(code_graph::query::QueryEngine::new(Arc::clone(&code_db)));
+        let workspace_registry = Arc::new(WorkspaceRegistry::new());
+        let workspace = WorkspaceState::new(
+            WorkspaceConfig {
+                id: "test".to_string(),
+                token: "test-token".to_string(),
+                plan: crate::workspace::PlanTier::Personal,
+                memory_backend: crate::memory::store::MemoryBackend::File,
+                storage_limit_bytes: Some(10 * 1024 * 1024),
+                request_limit: Some(10_000),
+                request_unit_limit: Some(20_000),
+                embedding_provider_mode: crate::workspace::EmbeddingProviderMode::BringYourOwn,
+                managed_google_embeddings: false,
+                sync_policy: crate::workspace::SyncPolicy::CloudMirror,
+            },
+            RuntimeConfig::default(),
+            unique_test_path("xavier-mcp-store", "threads"),
+        )
+        .await
+        .expect("WorkspaceState creation failed for test");
+        workspace_registry
+            .insert(workspace)
+            .await
+            .expect("insert workspace into registry failed");
+        let workspace = workspace_registry
+            .authenticate("test-token")
+            .await
+            .expect("authenticate failed for test workspace");
+
+        (
+            AppState {
+                workspace_registry,
+                indexer: FileIndexer::new(FileIndexerConfig::default(), Some(code_indexer.clone())),
+                agent_indexer: crate::memory::agent_indexer::AgentIndexer::new(
+                    FileIndexer::new(FileIndexerConfig::default(), Some(code_indexer.clone()))
+                ),
+                code_indexer,
+                code_query,
+                code_db,
+                security_service: Arc::new(crate::app::security_service::SecurityService::new()),
+            },
+            workspace,
+        )
+    }
+
+    fn test_router(state: AppState, workspace: WorkspaceContext) -> Router {
+        Router::new()
+            .route(
+                "/mcp",
+                post(mcp_post_handler)
+                    .get(mcp_get_handler)
+                    .delete(mcp_delete_handler),
+            )
+            .layer(Extension(workspace))
+            .with_state(state)
+    }
+
+    async fn post_json(app: Router, body: Value) -> Response {
+        app.oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/mcp")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::to_vec(&body).expect("serialize json body failed"),
+                ))
+                .expect("build POST request failed"),
+        )
+        .await
+        .expect("POST request to MCP endpoint failed")
+    }
+
+    async fn post_json_with_headers(
+        app: Router,
+        body: Value,
+        headers: &[(&str, &str)],
+    ) -> Response {
+        let mut request = Request::builder()
+            .method(Method::POST)
+            .uri("/mcp")
+            .header("content-type", "application/json");
+        for (name, value) in headers {
+            request = request.header(*name, *value);
+        }
+        app.oneshot(
+            request
+                .body(Body::from(
+                    serde_json::to_vec(&body).expect("serialize json body failed"),
+                ))
+                .expect("build POST request failed"),
+        )
+        .await

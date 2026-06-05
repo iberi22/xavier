@@ -1,0 +1,707 @@
+            };
+            let _ = self.memory_manager.execute_actions(vec![action]).await;
+        }
+
+        Ok(doc_id)
+    }
+
+    pub async fn persist_beliefs(&self) -> Result<()> {
+        let beliefs = self.belief_graph.read().await.get_relations();
+        self.store.save_beliefs(&self.config.id, beliefs).await
+    }
+
+    pub async fn index_memory_entities(
+        &self,
+        memory_id: &str,
+        content: &str,
+        metadata: &serde_json::Value,
+    ) -> Result<()> {
+        self.entity_graph
+            .upsert_memory(memory_id, content, Some(metadata))
+            .await
+            .map(|_| ())
+    }
+
+    pub async fn index_memory_layers(
+        &self,
+        memory_id: &str,
+        content: &str,
+        metadata: &serde_json::Value,
+    ) {
+        if let Err(error) = self
+            .index_memory_entities(memory_id, content, metadata)
+            .await
+        {
+            tracing::warn!(%error, memory_id = %memory_id, "failed to index memory entities");
+        }
+
+        if let Err(error) = self.semantic_memory.index_memory(memory_id, content).await {
+            tracing::warn!(%error, memory_id = %memory_id, "failed to index semantic memory");
+        }
+    }
+
+    pub async fn remove_memory_entities(&self, memory_id: &str) -> Result<()> {
+        self.entity_graph.remove_memory(memory_id).await
+    }
+
+    pub async fn list_memory_records(&self) -> Result<Vec<MemoryRecord>> {
+        self.store.list(&self.config.id).await
+    }
+
+    pub async fn list_memory_records_filtered(
+        &self,
+        filters: MemoryQueryFilters,
+        limit: usize,
+    ) -> Result<Vec<MemoryRecord>> {
+        self.store
+            .list_filtered(&self.config.id, &filters, limit)
+            .await
+    }
+
+    pub async fn get_memory_record(&self, id_or_path: &str) -> Result<Option<MemoryRecord>> {
+        self.store.get(&self.config.id, id_or_path).await
+    }
+
+    pub async fn delete_memory_record(&self, id: &str) -> Result<Option<MemoryRecord>> {
+        self.store.delete(&self.config.id, id).await
+    }
+
+    pub async fn update_primary_memory(
+        &self,
+        id: &str,
+        path: String,
+        content: String,
+        metadata: serde_json::Value,
+        typed: Option<crate::memory::schema::TypedMemoryPayload>,
+    ) -> Result<Option<String>> {
+        let Some(existing) = self.memory.get(id).await? else {
+            return Ok(None);
+        };
+
+        let normalized = crate::memory::schema::normalize_metadata(
+            &path,
+            metadata,
+            &self.config.id,
+            typed.as_ref(),
+        )?;
+        let mut document = crate::memory::qmd_memory::MemoryDocument {
+            id: existing.id.clone(),
+            path,
+            content,
+            metadata: normalized,
+            content_vector: Some(existing.embedding.clone()),
+            embedding: existing.embedding.clone(),
+            cluster_id: typed.as_ref().and_then(|t| t.cluster_id.clone()),
+            parent_id: None,
+            level: typed
+                .as_ref()
+                .and_then(|t| t.level)
+                .unwrap_or(existing.level),
+            relation: typed.as_ref().and_then(|t| t.relation.clone()),
+        };
+
+        if let Some(object) = document.metadata.as_object_mut() {
+            let revision = existing
+                .metadata
+                .get("revision")
+                .and_then(|value| value.as_u64())
+                .unwrap_or(1)
+                + 1;
+            let created_at = existing
+                .metadata
+                .get("created_at")
+                .cloned()
+                .unwrap_or_else(|| serde_json::json!(Utc::now().to_rfc3339()));
+            object.insert("revision".to_string(), serde_json::json!(revision));
+            object.insert("created_at".to_string(), created_at);
+            object.insert(
+                "updated_at".to_string(),
+                serde_json::json!(Utc::now().to_rfc3339()),
+            );
+        }
+
+        self.memory.update(document.clone()).await?;
+        let memory_id = document.id.clone().unwrap_or_else(|| document.path.clone());
+        self.index_memory_layers(&memory_id, &document.content, &document.metadata)
+            .await;
+        Ok(document.id)
+    }
+
+    pub async fn record_session_exchange(
+        &self,
+        session_id: &str,
+        source_app: &str,
+        user_message: &str,
+        assistant_message: &str,
+    ) -> Result<String> {
+        let timestamp = Utc::now();
+        let path = format!(
+            "sessions/{}/{}",
+            session_id,
+            timestamp.format("%Y%m%dT%H%M%S%.3fZ")
+        );
+        let content = format!("User: {user_message}\nAssistant: {assistant_message}");
+
+        self.memory
+            .add_document_typed(
+                path,
+                content,
+                serde_json::json!({
+                    "session_time": timestamp.to_rfc3339(),
+                    "source": source_app,
+                }),
+                Some(crate::memory::schema::TypedMemoryPayload {
+                    kind: Some(crate::memory::schema::MemoryKind::Episodic),
+                    evidence_kind: Some(crate::memory::schema::EvidenceKind::SessionSummary),
+                    namespace: Some(crate::memory::schema::MemoryNamespace {
+                        session_id: Some(session_id.to_string()),
+                        ..crate::memory::schema::MemoryNamespace::default()
+                    }),
+                    provenance: Some(crate::memory::schema::MemoryProvenance {
+                        source_app: Some(source_app.to_string()),
+                        source_type: Some("session_exchange".to_string()),
+                        recorded_at: Some(timestamp.to_rfc3339()),
+                        ..crate::memory::schema::MemoryProvenance::default()
+                    }),
+                    ..crate::memory::schema::TypedMemoryPayload::default()
+                }),
+            )
+            .await
+    }
+}
+
+#[derive(Debug)]
+struct FileMigrationResult {
+    migrated: bool,
+    detail: String,
+}
+
+fn resolve_file_store_path(workspace_root: &std::path::Path) -> PathBuf {
+    let settings = XavierSettings::current();
+    let path = PathBuf::from(&settings.memory.file_path);
+    if path.is_absolute() {
+        path
+    } else {
+        workspace_root.join(&settings.memory.file_path)
+    }
+}
+
+fn durable_migration_marker_path(file_store_path: &std::path::Path) -> PathBuf {
+    file_store_path.with_extension("durable.migrated.json")
+}
+
+async fn migrate_file_store_if_needed(
+    workspace_id: &str,
+    file_store_path: &std::path::Path,
+    marker_path: &std::path::Path,
+    target_store: Arc<dyn MemoryStore>,
+) -> Result<FileMigrationResult> {
+    let legacy_marker_path = file_store_path.with_extension("surreal.migrated.json");
+    let active_marker_path = if fs::try_exists(marker_path).await.unwrap_or(false) {
+        marker_path.to_path_buf()
+    } else if fs::try_exists(&legacy_marker_path).await.unwrap_or(false) {
+        legacy_marker_path
+    } else {
+        marker_path.to_path_buf()
+    };
+
+    if fs::try_exists(&active_marker_path).await.unwrap_or(false) {
+        let detail = match fs::read_to_string(&active_marker_path).await {
+            Ok(detail) => detail,
+            Err(_) => "legacy durable-store migration already recorded".to_string(),
+        };
+        return Ok(FileMigrationResult {
+            migrated: detail.contains("\"migrated\":true"),
+            detail,
+        });
+    }
+
+    if !fs::try_exists(file_store_path).await.unwrap_or(false) {
+        return Ok(FileMigrationResult {
+            migrated: false,
+            detail: "no legacy file store found".to_string(),
+        });
+    }
+
+    let legacy_store = FileMemoryStore::new(file_store_path).await?;
+    let legacy_state = legacy_store.load_workspace_state(workspace_id).await?;
+    let target_state = target_store.load_workspace_state(workspace_id).await?;
+
+    let should_import = target_state.memories.is_empty()
+        && target_state.beliefs.is_empty()
+        && target_state.session_tokens.is_empty()
+        && target_state.checkpoints.is_empty()
+        && (!legacy_state.memories.is_empty()
+            || !legacy_state.beliefs.is_empty()
+            || !legacy_state.session_tokens.is_empty()
+            || !legacy_state.checkpoints.is_empty());
+
+    if should_import {
+        for record in legacy_state.memories.clone() {
+            target_store.put(record).await?;
+        }
+        target_store
+            .save_beliefs(workspace_id, legacy_state.beliefs.clone())
+            .await?;
+        for token in legacy_state.session_tokens.clone() {
+            target_store.save_session_token(workspace_id, token).await?;
+        }
+        for checkpoint in legacy_state.checkpoints.clone() {
+            target_store
+                .save_checkpoint(workspace_id, checkpoint)
+                .await?;
+        }
+    }
+
+    let detail = serde_json::json!({
+        "migrated": should_import,
+        "source": file_store_path.display().to_string(),
+        "legacy_memories": legacy_state.memories.len(),
+        "legacy_beliefs": legacy_state.beliefs.len(),
+        "legacy_session_tokens": legacy_state.session_tokens.len(),
+        "legacy_checkpoints": legacy_state.checkpoints.len(),
+        "reason": if should_import {
+            format!("imported legacy file store into {}", target_store.backend().as_str())
+        } else {
+            "skipped legacy import because target store already contained data or file was empty".to_string()
+        }
+    })
+    .to_string();
+    fs::write(marker_path, &detail).await?;
+
+    Ok(FileMigrationResult {
+        migrated: should_import,
+        detail,
+    })
+}
+
+impl WorkspaceState {
+    async fn load_usage_state(&self) -> Result<()> {
+        if !fs::try_exists(&self.usage_state_path)
+            .await
+            .unwrap_or(false)
+        {
+            return Ok(());
+        }
+
+        let payload = fs::read_to_string(&self.usage_state_path).await?;
+        let persisted: PersistedUsageState = serde_json::from_str(&payload)?;
+        self.requests_used
+            .store(persisted.requests_used, Ordering::Relaxed);
+        self.usage_metrics
+            .hydrate(persisted.total_units, &persisted.counters);
+        self.optimization_metrics
+            .hydrate(&persisted.optimization)
+            .await;
+        Ok(())
+    }
+
+    async fn persist_usage_state(&self) -> Result<()> {
+        let _guard = self.persist_lock.lock().await;
+        let snapshot = PersistedUsageState {
+            requests_used: self.requests_used.load(Ordering::Relaxed),
+            total_units: self.usage_metrics.total_units(),
+            counters: self.usage_metrics.snapshots(),
+            optimization: self.optimization_metrics.snapshot().await,
+        };
+        let payload = serde_json::to_vec_pretty(&snapshot)?;
+        fs::write(&self.usage_state_path, payload).await?;
+        Ok(())
+    }
+
+    pub async fn generate_session_token(&self) -> Result<String> {
+        let token = ulid::Ulid::new().to_string();
+        let now = Utc::now();
+        let expires_at = now + Duration::hours(12);
+
+        let session = SessionToken {
+            token: token.clone(),
+            created_at: now,
+            expires_at,
+        };
+        self.store
+            .save_session_token(
+                &self.config.id,
+                SessionTokenRecord {
+                    token: session.token,
+                    created_at: session.created_at,
+                    expires_at: session.expires_at,
+                },
+            )
+            .await?;
+
+        Ok(token)
+    }
+
+    pub async fn is_session_token_valid(&self, token_str: &str) -> bool {
+        self.store
+            .is_session_token_valid(&self.config.id, token_str)
+            .await
+            .unwrap_or(false)
+    }
+}
+
+#[derive(Clone)]
+pub struct WorkspaceContext {
+    pub workspace_id: String,
+    pub workspace: Arc<WorkspaceState>,
+}
+
+#[derive(Clone, Default)]
+pub struct WorkspaceRegistry {
+    workspaces: Arc<RwLock<HashMap<String, Arc<WorkspaceState>>>>,
+    token_map: Arc<RwLock<HashMap<String, String>>>,
+}
+
+impl WorkspaceRegistry {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub async fn insert(&self, workspace: WorkspaceState) -> Result<()> {
+        let workspace = Arc::new(workspace);
+        let workspace_id = workspace.config.id.clone();
+        let token = workspace.config.token.clone();
+
+        self.token_map
+            .write()
+            .await
+            .insert(token, workspace_id.clone());
+        self.workspaces
+            .write()
+            .await
+            .insert(workspace_id, workspace);
+        Ok(())
+    }
+
+    pub async fn authenticate(&self, token: &str) -> Option<WorkspaceContext> {
+        // 1. Check static tokens (token_map)
+        if let Some(workspace_id) = self.token_map.read().await.get(token).cloned() {
+            if let Some(workspace) = self.workspaces.read().await.get(&workspace_id).cloned() {
+                return Some(WorkspaceContext {
+                    workspace_id,
+                    workspace,
+                });
+            }
+        }
+
+        // 2. Check dynamic session tokens in all workspaces
+        let workspaces = self.workspaces.read().await;
+        for (id, workspace) in workspaces.iter() {
+            if workspace.is_session_token_valid(token).await {
+                return Some(WorkspaceContext {
+                    workspace_id: id.clone(),
+                    workspace: workspace.clone(),
+                });
+            }
+        }
+
+        None
+    }
+
+    pub async fn default_context(&self) -> Option<WorkspaceContext> {
+        let settings = XavierSettings::current();
+        let preferred_id = settings.workspace.default_workspace_id.clone();
+        let workspaces = self.workspaces.read().await;
+
+        if let Some(workspace) = workspaces.get(&preferred_id).cloned() {
+            return Some(WorkspaceContext {
+                workspace_id: preferred_id,
+                workspace,
+            });
+        }
+
+        workspaces
+            .iter()
+            .next()
+            .map(|(id, workspace)| WorkspaceContext {
+                workspace_id: id.clone(),
+                workspace: workspace.clone(),
+            })
+    }
+
+    pub fn default_context_sync(&self) -> Option<WorkspaceContext> {
+        let settings = XavierSettings::current();
+        let preferred_id = settings.workspace.default_workspace_id.clone();
+        let workspaces = self.workspaces.blocking_read();
+
+        if let Some(workspace) = workspaces.get(&preferred_id).cloned() {
+            return Some(WorkspaceContext {
+                workspace_id: preferred_id,
+                workspace,
+            });
+        }
+
+        workspaces
+            .iter()
+            .next()
+            .map(|(id, workspace)| WorkspaceContext {
+                workspace_id: id.clone(),
+                workspace: workspace.clone(),
+            })
+    }
+
+    pub async fn default_from_env(runtime_config: RuntimeConfig) -> Result<Self> {
+        let registry = Self::new();
+        let config = WorkspaceConfig::from_env();
+        let settings = XavierSettings::current();
+        let workspace_root = PathBuf::from(&settings.memory.workspace_dir).join(&config.id);
+        let workspace = WorkspaceState::new(config, runtime_config, workspace_root).await?;
+        seed_workspace(&workspace).await?;
+        registry.insert(workspace).await?;
+        Ok(registry)
+    }
+}
+
+async fn seed_workspace(workspace: &WorkspaceState) -> Result<()> {
+    let seed_docs = [
+        (
+            "system/xavier",
+            "Xavier is the central memory system for SWAL agents. Use /memory/add to store, /memory/search to find, /memory/query for AI responses.",
+            serde_json::json!({"type": "system", "tags": ["xavier", "memory"]}),
+        ),
+        (
+            "system/swal",
+            "SouthWest AI Labs (SWAL) builds AI agents. BELA is the developer. Projects: Xavier (memory), ZeroClaw (runtime), ManteniApp (SaaS), Trading Bot.",
+            serde_json::json!({"type": "company", "tags": ["swal", "company"]}),
+        ),
+        (
+            "docs/api",
+            "Xavier API: POST /memory/add (content, path, metadata), POST /memory/search (query, limit), POST /memory/query (query). Auth: X-Xavier-Token header.",
+            serde_json::json!({"type": "docs", "tags": ["api"]}),
+        ),
+    ];
+
+    for (path, content, metadata) in seed_docs {
+        if workspace.memory.get(path).await?.is_some() {
+            continue;
+        }
+        let normalized =
+            crate::memory::schema::normalize_metadata(path, metadata, &workspace.config.id, None)?;
+        workspace
+            .memory
+            .add(crate::memory::qmd_memory::MemoryDocument {
+                id: Some(ulid::Ulid::new().to_string()),
+                path: path.to_string(),
+                content: content.to_string(),
+                metadata: normalized,
+                content_vector: Some(Vec::new()),
+                embedding: Vec::new(),
+                parent_id: None,
+                ..Default::default()
+            })
+            .await?;
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn personal_plan_defaults_to_500mb() {
+        let config = WorkspaceConfig {
+            id: "ws".to_string(),
+            token: "token".to_string(),
+            plan: PlanTier::Personal,
+            memory_backend: MemoryBackend::File,
+            storage_limit_bytes: PlanTier::Personal.default_storage_limit_bytes(),
+            request_limit: PlanTier::Personal.default_request_limit(),
+            request_unit_limit: Some(100_000),
+            embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
+            managed_google_embeddings: false,
+            sync_policy: SyncPolicy::CloudMirror,
+        };
+
+        let workspace = WorkspaceState::new(
+            config,
+            RuntimeConfig::default(),
+            std::env::temp_dir().join(format!("xavier-ws-{}", ulid::Ulid::new())),
+        )
+        .await
+        .expect("test assertion");
+
+        assert_eq!(workspace.config.storage_limit_bytes, Some(500 * MB));
+        assert_eq!(workspace.config.request_limit, Some(50_000));
+    }
+
+    #[test]
+    fn usage_event_weights_sync_and_agent_calls_higher() {
+        let sync = UsageEvent::from_request("POST", "/sync");
+        let agent = UsageEvent::from_request("POST", "/agents/run");
+        let read = UsageEvent::from_request("POST", "/memory/search");
+
+        assert_eq!(sync.category, UsageCategory::Sync);
+        assert_eq!(sync.units, 5);
+        assert_eq!(agent.category, UsageCategory::AgentRun);
+        assert_eq!(agent.units, 10);
+        assert_eq!(read.category, UsageCategory::Read);
+        assert_eq!(read.units, 1);
+    }
+
+    #[tokio::test]
+    async fn usage_state_persists_between_workspace_reloads() {
+        let root = std::env::temp_dir().join(format!("xavier-usage-{}", ulid::Ulid::new()));
+        let workspace = WorkspaceState::new(
+            WorkspaceConfig {
+                id: "persist".to_string(),
+                token: "token".to_string(),
+                plan: PlanTier::Personal,
+                memory_backend: MemoryBackend::File,
+                storage_limit_bytes: Some(500 * MB),
+                request_limit: Some(50_000),
+                request_unit_limit: Some(100_000),
+                embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
+                managed_google_embeddings: false,
+                sync_policy: SyncPolicy::CloudMirror,
+            },
+            RuntimeConfig::default(),
+            &root,
+        )
+        .await
+        .expect("test assertion");
+
+        workspace
+            .record_request(UsageEvent::from_request("POST", "/sync"))
+            .await
+            .expect("test assertion");
+        workspace
+            .record_request(UsageEvent::from_request("POST", "/agents/run"))
+            .await
+            .expect("test assertion");
+
+        let reloaded = WorkspaceState::new(
+            WorkspaceConfig {
+                id: "persist".to_string(),
+                token: "token".to_string(),
+                plan: PlanTier::Personal,
+                memory_backend: MemoryBackend::File,
+                storage_limit_bytes: Some(500 * MB),
+                request_limit: Some(50_000),
+                request_unit_limit: Some(100_000),
+                embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
+                managed_google_embeddings: false,
+                sync_policy: SyncPolicy::CloudMirror,
+            },
+            RuntimeConfig::default(),
+            &root,
+        )
+        .await
+        .expect("test assertion");
+
+        let usage = reloaded.usage_snapshot().await;
+        assert_eq!(usage.requests_used, 2);
+        assert_eq!(usage.request_units_used, 15);
+    }
+
+    #[tokio::test]
+    async fn durable_memory_rehydrates_between_workspace_reloads() {
+        let root = std::env::temp_dir().join(format!("xavier-memory-{}", ulid::Ulid::new()));
+        let config = WorkspaceConfig {
+            id: "persist-memory".to_string(),
+            token: "token".to_string(),
+            plan: PlanTier::Personal,
+            memory_backend: MemoryBackend::File,
+            storage_limit_bytes: Some(500 * MB),
+            request_limit: Some(50_000),
+            request_unit_limit: Some(100_000),
+            embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
+            managed_google_embeddings: false,
+            sync_policy: SyncPolicy::CloudMirror,
+        };
+
+        let workspace = WorkspaceState::new(config.clone(), RuntimeConfig::default(), &root)
+            .await
+            .expect("test assertion");
+        let doc_id = workspace
+            .memory
+            .add_document_typed(
+                "projects/xavier/core".to_string(),
+                "Durable memory survives restarts.".to_string(),
+                serde_json::json!({"project":"xavier"}),
+                Some(crate::memory::schema::TypedMemoryPayload {
+                    kind: Some(crate::memory::schema::MemoryKind::Semantic),
+                    evidence_kind: Some(crate::memory::schema::EvidenceKind::Observation),
+                    namespace: Some(crate::memory::schema::MemoryNamespace {
+                        project: Some("xavier".to_string()),
+                        ..crate::memory::schema::MemoryNamespace::default()
+                    }),
+                    provenance: None,
+                    ..crate::memory::schema::TypedMemoryPayload::default()
+                }),
+            )
+            .await
+            .expect("test assertion");
+
+        let reloaded = WorkspaceState::new(config, RuntimeConfig::default(), &root)
+            .await
+            .expect("test assertion");
+        let doc = reloaded
+            .memory
+            .get(&doc_id)
+            .await
+            .expect("test assertion")
+            .expect("test assertion");
+        assert_eq!(doc.content, "Durable memory survives restarts.");
+        assert_eq!(doc.metadata["kind"].as_str(), Some("semantic"));
+    }
+
+    #[tokio::test]
+    async fn session_tokens_beliefs_and_checkpoints_persist_between_reloads() {
+        let root = std::env::temp_dir().join(format!("xavier-state-{}", ulid::Ulid::new()));
+        let config = WorkspaceConfig {
+            id: "persist-state".to_string(),
+            token: "token".to_string(),
+            plan: PlanTier::Personal,
+            memory_backend: MemoryBackend::File,
+            storage_limit_bytes: Some(500 * MB),
+            request_limit: Some(50_000),
+            request_unit_limit: Some(100_000),
+            embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
+            managed_google_embeddings: false,
+            sync_policy: SyncPolicy::CloudMirror,
+        };
+
+        let workspace = WorkspaceState::new(config.clone(), RuntimeConfig::default(), &root)
+            .await
+            .expect("test assertion");
+        let session_token = workspace
+            .generate_session_token()
+            .await
+            .expect("test assertion");
+        workspace
+            .belief_graph
+            .read()
+            .await
+            .add_edge(
+                "xavier".to_string(),
+                "memory".to_string(),
+                "is_a".to_string(),
+            )
+            .await;
+        workspace.persist_beliefs().await.expect("test assertion");
+        workspace
+            .checkpoint_manager
+            .save(crate::checkpoint::Checkpoint::new(
+                "task-1".to_string(),
+                "restore".to_string(),
+                serde_json::json!({"ok": true}),
+            ))
+            .await
+            .expect("test assertion");
+
+        let reloaded = WorkspaceState::new(config, RuntimeConfig::default(), &root)
+            .await
+            .expect("test assertion");
+        assert!(reloaded.is_session_token_valid(&session_token).await);
+        assert_eq!(reloaded.belief_graph.read().await.get_relations().len(), 1);
+        let checkpoint = reloaded
+            .checkpoint_manager
+            .load("task-1".to_string(), "restore".to_string())
+            .await
+            .expect("test assertion");
+        assert!(checkpoint.is_some());
+    }
+}

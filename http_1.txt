@@ -1,0 +1,499 @@
+//! HTTP handlers for the minimal Xavier vertical slice.
+
+use axum::{
+    extract::{ws::Message, ws::WebSocket, State, WebSocketUpgrade},
+    response::IntoResponse,
+    Extension, Json,
+};
+use serde::{Deserialize, Serialize};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use tokio::sync::broadcast;
+use tracing::{error, info};
+
+use crate::{
+    agents::provider::ModelProviderClient,
+    agents::runtime::System3Mode,
+    consistency::regularization::{CoherenceReport, RetentionRegularizer},
+    consolidation::ConsolidationTask,
+    context::ContextClassifier,
+    domain::memory::belief::{BeliefEdge, BeliefNode},
+    embedding,
+    memory::entity_graph::EntityRecord,
+    memory::qmd_memory::MemoryDocument,
+    memory::schema::{ContextZone, MemoryQueryFilters, TypedMemoryPayload},
+    memory::sqlite_vec_store::VecSqliteMemoryStore,
+    memory::store::{GraphHopResult, HybridSearchMode},
+    retrieval::gating::{AdaptiveGating, LayerWeights, SessionSummary},
+    server::events::{WsEvent, WsMessage},
+    utils::crypto::sha256_hex,
+    workspace::WorkspaceContext,
+    AppState,
+};
+
+// ============================================================
+// Graceful Shutdown Infrastructure
+// ============================================================
+
+/// Global shutdown tracker shared across the application.
+/// All components that need to cooperate with graceful shutdown
+/// (the HTTP server, background tasks, etc.) share this state.
+#[derive(Clone)]
+pub struct ShutdownState {
+    /// Signal received — server should stop accepting new connections.
+    pub shutdown_signalled: Arc<AtomicU64>,
+    /// Broadcast channel for notifying all subsystems.
+    /// All components that hold a Sender can signal shutdown.
+    shutdown_tx: Arc<broadcast::Sender<()>>,
+}
+
+impl ShutdownState {
+    pub fn new() -> Self {
+        let (shutdown_tx, _) = broadcast::channel(1);
+        Self {
+            shutdown_signalled: Arc::new(AtomicU64::new(0)),
+            shutdown_tx: Arc::new(shutdown_tx),
+        }
+    }
+
+    /// Request graceful shutdown. Idempotent — multiple calls are fine.
+    pub fn request_shutdown(&self, reason: &'static str) {
+        let prev = self.shutdown_signalled.fetch_add(1, Ordering::SeqCst);
+        if prev == 0 {
+            info!("Shutdown requested: {}", reason);
+            // Ignore send error — receivers may have already dropped.
+            let _ = self.shutdown_tx.send(());
+        }
+    }
+
+    /// Returns true if shutdown has been requested.
+    pub fn is_shutdown_requested(&self) -> bool {
+        self.shutdown_signalled.load(Ordering::SeqCst) > 0
+    }
+
+    /// Subscribe to shutdown signals. The returned Receiver fires
+    /// when shutdown is requested.
+    pub fn subscribe(&self) -> broadcast::Receiver<()> {
+        self.shutdown_tx.subscribe()
+    }
+
+    /// Number of seconds since shutdown was signalled.
+    /// Returns 0 if not yet signalled.
+    pub fn seconds_since_shutdown(&self) -> u64 {
+        let val = self.shutdown_signalled.load(Ordering::SeqCst);
+        if val == 0 {
+            0
+        } else {
+            // We store the timestamp in the atomic as seconds-since-epoch.
+            val
+        }
+    }
+}
+
+// ============================================================
+// Real-time Event Streaming (WebSocket)
+// ============================================================
+
+#[derive(Debug, Default, Clone)]
+struct WsSubscriptions {
+    agent_ids: std::collections::HashSet<String>,
+    project_ids: std::collections::HashSet<String>,
+    event_types: std::collections::HashSet<String>,
+}
+
+impl WsSubscriptions {
+    fn matches(&self, event: &crate::server::events::RealtimeEvent) -> bool {
+        // If no subscriptions, match nothing
+        if self.agent_ids.is_empty() && self.project_ids.is_empty() && self.event_types.is_empty() {
+            return false;
+        }
+
+        if !self.agent_ids.is_empty() && !self.agent_ids.contains(&event.agent_id) {
+            return false;
+        }
+
+        if !self.project_ids.is_empty() {
+            match &event.project_id {
+                Some(p) if self.project_ids.contains(p) => {}
+                _ => return false,
+            }
+        }
+
+        if !self.event_types.is_empty() && !self.event_types.contains(&event.event_type) {
+            return false;
+        }
+
+        true
+    }
+}
+
+pub async fn ws_events_handler(
+    ws: WebSocketUpgrade,
+    State(state): State<AppState>,
+) -> impl IntoResponse {
+    let rx = state
+        .workspace_registry
+        .default_context_sync()
+        .and_then(|ctx| ctx.workspace.event_tx_channel().map(|tx| tx.subscribe()));
+
+    ws.on_upgrade(move |socket| handle_ws_socket(socket, rx))
+}
+
+async fn handle_ws_socket(
+    mut socket: WebSocket,
+    mut event_rx: Option<broadcast::Receiver<crate::server::events::RealtimeEvent>>,
+) {
+    let mut subscriptions = WsSubscriptions::default();
+
+    loop {
+        tokio::select! {
+            msg = socket.recv() => {
+                match msg {
+                    Some(Ok(Message::Text(text))) => {
+                        if let Ok(ws_msg) = serde_json::from_str::<WsMessage>(&text) {
+                            match ws_msg {
+                                WsMessage::Subscribe { agent_id, project_id, event_type } => {
+                                    if let Some(id) = agent_id { subscriptions.agent_ids.insert(id); }
+                                    if let Some(id) = project_id { subscriptions.project_ids.insert(id); }
+                                    if let Some(id) = event_type { subscriptions.event_types.insert(id); }
+
+                                    let _ = socket.send(Message::Text(
+                                        serde_json::to_string(&WsEvent::SubscriptionConfirmed).unwrap_or_default().into()
+                                    )).await;
+                                }
+                                WsMessage::Unsubscribe { agent_id, project_id, event_type } => {
+                                    if let Some(id) = agent_id { subscriptions.agent_ids.remove(&id); }
+                                    if let Some(id) = project_id { subscriptions.project_ids.remove(&id); }
+                                    if let Some(id) = event_type { subscriptions.event_types.remove(&id); }
+
+                                    let _ = socket.send(Message::Text(
+                                        serde_json::to_string(&WsEvent::SubscriptionConfirmed).unwrap_or_default().into()
+                                    )).await;
+                                }
+                            }
+                        }
+                    }
+                    Some(Ok(Message::Close(_))) | None => break,
+                    _ => {}
+                }
+            }
+            event_res = async {
+                if let Some(rx) = &mut event_rx {
+                    rx.recv().await.ok()
+                } else {
+                    None
+                }
+            } => {
+                if let Some(event) = event_res {
+                    if subscriptions.matches(&event) {
+                        let _ = socket.send(Message::Text(
+                            serde_json::to_string(&WsEvent::Event(event)).unwrap_or_default().into()
+                        )).await;
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl Default for ShutdownState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Starts a background task that listens for OS signals (SIGTERM, SIGINT)
+/// and translates them into graceful shutdown requests.
+/// On Windows this watches Ctrl+C / console events.
+/// Returns a handle to the task; dropping the handle does NOT cancel the task.
+pub async fn start_signal_handler(state: ShutdownState) {
+    tokio::spawn(async move {
+        #[cfg(windows)]
+        use tokio::signal::windows::ctrl_c;
+
+        // Unix signals (SIGTERM / SIGINT)
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix::{signal, SignalKind};
+            let mut sigterm = match signal(SignalKind::terminate()) {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("Failed to register SIGTERM handler: {}", e);
+                    return;
+                }
+            };
+            let mut sigint = match signal(SignalKind::interrupt()) {
+                Ok(s) => s,
+                Err(e) => {
+                    error!("Failed to register SIGINT handler: {}", e);
+                    return;
+                }
+            };
+
+            tokio::select! {
+                _ = sigterm.recv() => state.request_shutdown("SIGTERM"),
+                _ = sigint.recv() => state.request_shutdown("SIGINT"),
+            }
+        }
+
+        // Windows console events
+        #[cfg(windows)]
+        {
+            let ctrl_events = async {
+                match ctrl_c() {
+                    Ok(mut rx) => rx.recv().await,
+                    Err(error) => {
+                        error!(%error, "Failed to register Ctrl+C handler");
+                        None
+                    }
+                }
+            };
+
+            let reason = ctrl_events.await;
+            if let Some(()) = reason {
+                state.request_shutdown("Ctrl+C / console close");
+            }
+        }
+    });
+}
+
+// ============================================================
+// Global Panic Hook
+// ============================================================
+
+/// Installs a global panic hook that logs panics with stack traces
+/// before the process exits. This ensures panics are never silently
+/// swallowed by tokio's default handler.
+pub fn install_panic_hook() {
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        // Log to stderr so it appears in logs even if stdout is redirected.
+        let msg = if let Some(s) = panic_info.payload().downcast_ref::<&str>() {
+            s.to_string()
+        } else if let Some(s) = panic_info.payload().downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "Unknown panic payload".to_string()
+        };
+
+        let location = panic_info
+            .location()
+            .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
+            .unwrap_or_else(|| "unknown location".to_string());
+
+        // Format thread name if available
+        let thread = std::thread::current();
+        let thread_name = thread.name().map(|n| format!("[{n}] ")).unwrap_or_default();
+
+        eprintln!(
+            "--------------------------------------------------\n  PANIC in Xavier ({})\n  Thread: {}\n  Location: {}\n--------------------------------------------------\n",
+            chrono::Utc::now().to_rfc3339(),
+            thread_name,
+            location
+        );
+
+        // Also emit a structured log event so aggregators catch it.
+        error!(
+            panic_message = %msg,
+            panic_location = %location,
+            thread_name = %thread.name().unwrap_or("unknown"),
+            "xavier_panic"
+        );
+
+        // Call the original hook (default prints to stderr) so we don't
+        // suppress the standard panic output.
+        default_hook(panic_info);
+    }));
+}
+
+// ============================================================
+// HTTP Config & Server
+// ============================================================
+
+#[derive(Debug, Clone)]
+pub struct HttpConfig {
+    pub host: String,
+    pub port: u16,
+    pub tls_enabled: bool,
+    pub tls_cert_path: Option<String>,
+    pub tls_key_path: Option<String>,
+}
+
+impl HttpConfig {
+    pub fn new(host: String, port: u16) -> Self {
+        Self {
+            host,
+            port,
+            tls_enabled: false,
+            tls_cert_path: None,
+            tls_key_path: None,
+        }
+    }
+
+    pub fn with_tls(mut self, cert_path: String, key_path: String) -> Self {
+        self.tls_enabled = true;
+        self.tls_cert_path = Some(cert_path);
+        self.tls_key_path = Some(key_path);
+        self
+    }
+}
+
+pub struct HttpServer {
+    _config: HttpConfig,
+}
+
+impl HttpServer {
+    pub fn new(config: HttpConfig) -> Self {
+        Self { _config: config }
+    }
+
+    pub async fn serve(&self) {
+        tracing::warn!("HttpServer::serve() is a stub - does not actually start a server");
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+}
+
+// ============================================================
+// Request/Response Types
+// ============================================================
+
+#[derive(Debug, Deserialize)]
+pub struct CodeScanRequest {
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CodeFindRequest {
+    #[serde(default)]
+    pub query: String,
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+    #[serde(default)]
+    pub kind: Option<String>,
+    #[serde(default)]
+    pub pattern: Option<String>,
+}
+
+fn default_limit() -> usize {
+    10
+}
+
+fn query_fingerprint(query: &str) -> String {
+    sha256_hex(query.as_bytes())[..12].to_string()
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CodeScanResponse {
+    pub status: String,
+    pub indexed_files: usize,
+    pub indexed_chunks: usize,
+    pub paths: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CodeFindResponse {
+    pub status: String,
+    pub results: Vec<CodeSymbol>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CodeSymbol {
+    pub path: String,
+    pub symbol: String,
+    pub symbol_type: String,
+    pub line: usize,
+    pub content: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CodeStatsResponse {
+    pub status: String,
+    pub total_files: usize,
+    pub total_chunks: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SearchRequest {
+    pub query: String,
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub filters: Option<MemoryQueryFilters>,
+    #[serde(default)]
+    pub system3_mode: Option<System3Mode>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct HybridSearchRequest {
+    pub query: String,
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+    #[serde(default, rename = "type")]
+    pub search_type: Option<HybridSearchMode>,
+    #[serde(default)]
+    pub filters: Option<MemoryQueryFilters>,
+    #[serde(default = "default_weight")]
+    pub keyword_weight: f32,
+    #[serde(default = "default_weight")]
+    pub vector_weight: f32,
+}
+
+fn default_weight() -> f32 {
+    0.5
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddMemoryRequest {
+    pub content: String,
+    pub path: Option<String>,
+    pub metadata: Option<serde_json::Value>,
+    #[serde(default)]
+    pub kind: Option<crate::memory::schema::MemoryKind>,
+    #[serde(default)]
+    pub evidence_kind: Option<crate::memory::schema::EvidenceKind>,
+    #[serde(default)]
+    pub namespace: Option<crate::memory::schema::MemoryNamespace>,
+    #[serde(default)]
+    pub provenance: Option<crate::memory::schema::MemoryProvenance>,
+    #[serde(default)]
+    pub cluster_id: Option<String>,
+    #[serde(default)]
+    pub level: Option<crate::memory::schema::MemoryLevel>,
+    #[serde(default)]
+    pub relation: Option<crate::memory::schema::RelationKind>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeleteMemoryRequest {
+    pub id: Option<String>,
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AgentRunRequest {
+    pub query: String,
+    pub session_id: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
+    #[serde(default)]
+    pub filters: Option<MemoryQueryFilters>,
+    #[serde(default)]
+    pub system3_mode: Option<System3Mode>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SearchResponse {
+    pub status: String,
+    pub results: Vec<serde_json::Value>,
+    pub query: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HybridSearchResponse {
+    pub status: String,
+    pub results: Vec<serde_json::Value>,
+    pub query: String,
+    pub mode: HybridSearchMode,
+}

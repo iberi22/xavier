@@ -1,0 +1,499 @@
+/// Request for multi-layer memory retrieval
+#[derive(Debug, Deserialize)]
+pub struct MultiLayerRetrieveRequest {
+    pub query: String,
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+    /// Layer weights as JSON string: {"working":0.3,"episodic":0.3,"semantic":0.4}
+    #[serde(default)]
+    pub layer_weights: Option<LayerWeights>,
+    /// Relevance threshold (0.0-1.0)
+    #[serde(default = "default_relevance_threshold")]
+    pub relevance_threshold: f32,
+    /// RRF k parameter
+    #[serde(default = "default_rrf_k")]
+    pub rrf_k: u32,
+    /// Include coherence report
+    #[serde(default)]
+    pub include_coherence: bool,
+    /// Targeted zones for retrieval (optional, falls back to prompt keywords)
+    #[serde(default)]
+    pub active_zones: Option<Vec<ContextZone>>,
+    /// Weight for recency boosting (0.0 to 1.0)
+    #[serde(default = "default_recency_weight")]
+    pub recency_weight: f32,
+    /// Half-life in hours for recency decay
+    #[serde(default = "default_half_life_hours")]
+    pub half_life_hours: f32,
+    /// Whether to enable belief graph grounding validation
+    #[serde(default = "default_true")]
+    pub grounding_enabled: bool,
+    /// Minimum confidence for semantic grounding
+    #[serde(default = "default_grounding_threshold")]
+    pub grounding_min_confidence: f32,
+}
+
+fn default_recency_weight() -> f32 {
+    crate::retrieval::config::DEFAULT_RECENCY_WEIGHT
+}
+
+fn default_half_life_hours() -> f32 {
+    crate::retrieval::config::DEFAULT_HALF_LIFE_HOURS
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_grounding_threshold() -> f32 {
+    0.5
+}
+
+fn default_relevance_threshold() -> f32 {
+    0.5
+}
+
+fn default_rrf_k() -> u32 {
+    crate::search::hybrid::configured_rrf_k()
+}
+
+/// Response for multi-layer memory retrieval
+#[derive(Debug, Serialize)]
+pub struct MultiLayerRetrieveResponse {
+    pub status: String,
+    pub results: Vec<RetrievedMemory>,
+    pub query: String,
+    pub layers_used: LayerStatsJson,
+    pub coherence_report: Option<CoherenceReport>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExportPackRequest {
+    pub topic: String,
+    #[serde(default = "default_max_level")]
+    pub max_level: usize,
+}
+
+fn default_max_level() -> usize {
+    3
+}
+
+#[derive(Debug, Serialize)]
+pub struct ExportPackResponse {
+    pub status: String,
+    pub xml: String,
+    pub filename: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RetrievedMemory {
+    pub id: String,
+    pub content: String,
+    pub score: f32,
+    pub source_layer: String,
+    pub path: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct LayerStatsJson {
+    pub working_count: usize,
+    pub episodic_count: usize,
+    pub semantic_count: usize,
+    pub total_results: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct QueryResponse {
+    pub status: String,
+    pub response: String,
+    pub confidence: f32,
+    pub session_id: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GraphResponse {
+    pub status: String,
+    pub nodes: Vec<BeliefNode>,
+    pub edges: Vec<BeliefEdge>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GraphHopsRequest {
+    pub path: String,
+    pub hops: usize,
+    #[serde(default)]
+    pub query: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct GraphHopsResponse {
+    pub status: String,
+    pub result: GraphHopResult,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AgentResponse {
+    pub status: String,
+    pub session_id: String,
+    pub response: String,
+    pub confidence: f32,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SyncResponse {
+    pub status: String,
+    pub synced: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BridgeImportRequest {
+    pub source: crate::memory::bridge::BridgeSource,
+    pub path: String,
+    #[serde(default)]
+    pub project: Option<String>,
+    #[serde(default)]
+    pub scope: Option<String>,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default)]
+    pub session_id: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BridgeImportResponse {
+    pub status: String,
+    pub source: String,
+    pub imported: usize,
+    pub skipped: usize,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeleteMemoryResponse {
+    pub status: String,
+    pub deleted: bool,
+    pub id: Option<String>,
+    pub path: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ResetMemoryResponse {
+    pub status: String,
+    pub removed: usize,
+}
+
+// ============================================================
+// Health & Readiness Endpoints
+// ============================================================
+
+/// Basic liveness probe — returns 200 if the process is alive.
+/// Does NOT check dependencies. Fast and cheap; suitable for
+/// Kubernetes liveness probes.
+pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
+    let workspace = state.workspace_registry.default_context().await;
+    let lag_ms = if let Some(ref context) = workspace {
+        crate::tasks::session_sync_task::calculate_indexing_lag(
+            context.workspace.durable_store().as_ref(),
+            &context.workspace_id,
+        )
+        .await
+    } else {
+        0
+    };
+
+    Json(serde_json::json!({
+        "status": "ok",
+        "service": "xavier",
+        "version": env!("CARGO_PKG_VERSION"),
+        "lag_ms": lag_ms,
+    }))
+}
+
+/// Detailed liveness + readiness probe for orchestration systems.
+/// Checks workspace, memory store, code graph, embeddings, and LLM.
+/// Suitable for Kubernetes readiness probes and load balancer health checks.
+pub async fn readiness(State(state): State<AppState>) -> impl IntoResponse {
+    let workspace_context = state.workspace_registry.default_context().await;
+    let workspace_ready = workspace_context.is_some();
+    let embedding_configured = crate::memory::embedder::EmbeddingClient::is_configured_from_env();
+    let embeddings = match crate::memory::embedder::EmbeddingClient::from_env() {
+        Ok(client) if embedding_configured => match client.health().await {
+            Ok(true) => ReadinessComponent {
+                configured: true,
+                ready: true,
+                detail: "embedding service reachable".to_string(),
+            },
+            Ok(false) => ReadinessComponent {
+                configured: true,
+                ready: false,
+                detail: "embedding service responded without vectors".to_string(),
+            },
+            Err(error) => ReadinessComponent {
+                configured: true,
+                ready: false,
+                detail: error.to_string(),
+            },
+        },
+        Ok(_) => ReadinessComponent {
+            configured: false,
+            ready: true,
+            detail: "embedding service not configured".to_string(),
+        },
+        Err(error) if embedding_configured => ReadinessComponent {
+            configured: true,
+            ready: false,
+            detail: error.to_string(),
+        },
+        Err(_) => ReadinessComponent {
+            configured: false,
+            ready: true,
+            detail: "embedding service not configured".to_string(),
+        },
+    };
+
+    let llm_status = ModelProviderClient::from_env().status();
+    let llm = ReadinessComponent {
+        configured: llm_status.configured,
+        ready: llm_status.configured,
+        detail: format!(
+            "provider={} model={}",
+            llm_status.provider, llm_status.model
+        ),
+    };
+
+    let workspace = ReadinessComponent {
+        configured: true,
+        ready: workspace_ready,
+        detail: if workspace_ready {
+            "default workspace loaded".to_string()
+        } else {
+            "default workspace is not available".to_string()
+        },
+    };
+
+    let memory_store = match workspace_context {
+        Some(workspace) => match workspace.workspace.durable_store_health().await {
+            Ok(detail) => ReadinessComponent {
+                configured: true,
+                ready: true,
+                detail: format!(
+                    "{detail}; migration={}",
+                    workspace.workspace.durable_store_migration_detail()
+                ),
+            },
+            Err(error) => ReadinessComponent {
+                configured: true,
+                ready: false,
+                detail: error.to_string(),
+            },
+        },
+        None => ReadinessComponent {
+            configured: true,
+            ready: false,
+            detail: "default workspace is not available".to_string(),
+        },
+    };
+
+    let code_graph = ReadinessComponent {
+        configured: false,
+        ready: true,
+        detail: "code graph not available in CLI mode".to_string(),
+    };
+
+    let ready = workspace.ready
+        && memory_store.ready
+        && code_graph.ready
+        && (!embeddings.configured || embeddings.ready)
+        && (!llm.configured || llm.ready);
+
+    Json(ReadinessResponse {
+        status: if ready { "ok" } else { "degraded" }.to_string(),
+        service: "xavier".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        workspace,
+        memory_store,
+        code_graph,
+        embeddings,
+        llm,
+    })
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReadinessComponent {
+    pub configured: bool,
+    pub ready: bool,
+    pub detail: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ReadinessResponse {
+    pub status: String,
+    pub service: String,
+    pub version: String,
+    pub workspace: ReadinessComponent,
+    pub memory_store: ReadinessComponent,
+    pub code_graph: ReadinessComponent,
+    pub embeddings: ReadinessComponent,
+    pub llm: ReadinessComponent,
+}
+
+// ============================================================
+// Build Info
+// ============================================================
+
+#[derive(Debug, Serialize)]
+pub struct MemoryStoreBuildInfo {
+    pub selected_backend: String,
+    pub backend: String,
+    pub migrated_from_file: bool,
+    pub migration_detail: String,
+    pub rrf_k: usize,
+    pub entity_extraction_enabled: bool,
+    pub qjl_threshold: usize,
+    pub audit_chain_enabled: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct BuildInfoResponse {
+    pub service: String,
+    pub version: String,
+    pub rust_log: Option<String>,
+    pub xavier_log_level: Option<String>,
+    pub model_provider: crate::agents::provider::ModelProviderStatus,
+    pub memory_store: MemoryStoreBuildInfo,
+}
+
+pub async fn build_info(State(state): State<AppState>) -> impl IntoResponse {
+    let workspace = state.workspace_registry.default_context().await;
+
+    Json(BuildInfoResponse {
+        service: "xavier".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        rust_log: std::env::var("RUST_LOG").ok(),
+        xavier_log_level: std::env::var("XAVIER_LOG_LEVEL").ok(),
+        model_provider: ModelProviderClient::from_env().status(),
+        memory_store: workspace
+            .map(|workspace| MemoryStoreBuildInfo {
+                selected_backend: workspace
+                    .workspace
+                    .config()
+                    .memory_backend
+                    .as_str()
+                    .to_string(),
+                backend: workspace.workspace.durable_store_backend().to_string(),
+                migrated_from_file: workspace.workspace.durable_store_migrated_from_file(),
+                migration_detail: workspace
+                    .workspace
+                    .durable_store_migration_detail()
+                    .to_string(),
+                rrf_k: VecSqliteMemoryStore::configured_rrf_k(),
+                entity_extraction_enabled: VecSqliteMemoryStore::entity_extraction_enabled(),
+                qjl_threshold: VecSqliteMemoryStore::configured_qjl_threshold(),
+                audit_chain_enabled: VecSqliteMemoryStore::audit_chain_enabled(),
+            })
+            .unwrap_or(MemoryStoreBuildInfo {
+                selected_backend: std::env::var("XAVIER_MEMORY_BACKEND")
+                    .map(|value| {
+                        crate::memory::store::MemoryBackend::from_env(&value)
+                            .as_str()
+                            .to_string()
+                    })
+                    .unwrap_or_else(|_| "vec".to_string()),
+                backend: "unavailable".to_string(),
+                migrated_from_file: false,
+                migration_detail: "default workspace is not available".to_string(),
+                rrf_k: VecSqliteMemoryStore::configured_rrf_k(),
+                entity_extraction_enabled: VecSqliteMemoryStore::entity_extraction_enabled(),
+                qjl_threshold: VecSqliteMemoryStore::configured_qjl_threshold(),
+                audit_chain_enabled: VecSqliteMemoryStore::audit_chain_enabled(),
+            }),
+    })
+}
+
+// ============================================================
+// Memory Endpoints
+// ============================================================
+
+pub async fn memory_add(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Json(payload): Json<AddMemoryRequest>,
+) -> impl IntoResponse {
+    info!(
+        path = payload.path.as_deref().unwrap_or("default"),
+        "memory_add"
+    );
+
+    let path = payload.path.unwrap_or_else(|| "default".to_string());
+    let content = payload.content;
+    let mut metadata = payload.metadata.unwrap_or(serde_json::json!({}));
+    if let Some(object) = metadata.as_object_mut() {
+        let agent_id = object
+            .get("agent_id")
+            .and_then(|value| value.as_str())
+            .unwrap_or("http");
+        object.insert(
+            "_audit".to_string(),
+            serde_json::json!({
+                "agent_id": agent_id,
+                "operation": "memory.add"
+            }),
+        );
+    }
+    let typed = TypedMemoryPayload {
+        kind: payload.kind,
+        evidence_kind: payload.evidence_kind,
+        namespace: payload.namespace,
+        provenance: payload.provenance,
+        cluster_id: payload.cluster_id,
+        level: payload.level,
+        zone: None,
+        relation: payload.relation,
+    };
+    let content_vector = match embedding::build_embedder_from_env().await {
+        Ok(embedder) => match embedder.encode(&content).await {
+            Ok(vector) if !vector.is_empty() => Some(vector),
+            Ok(_) => None,
+            Err(error) => {
+                tracing::warn!(%error, "embedding generation failed; storing memory without vector");
+                None
+            }
+        },
+        Err(error) => {
+            tracing::warn!(%error, "embedding provider unavailable; storing memory without vector");
+            None
+        }
+    };
+
+    if let Err(error) = workspace
+        .workspace
+        .ensure_within_storage_limit(&path, &content, &metadata)
+        .await
+    {
+        return Json(serde_json::json!({
+            "status": "error",
+            "message": error.to_string(),
+            "workspace_id": workspace.workspace_id,
+        }));
+    }
+
+    match workspace
+        .workspace
+        .ingest_typed(
+            path,
+            content.clone(),
+            metadata.clone(),
+            Some(typed),
+            content_vector,
+            false,
+        )
+        .await
+    {
+        Ok(_) => {}
+        Err(error) => {
+            tracing::error!(%error, workspace_id = %workspace.workspace_id, "failed to add memory document");
+            return Json(serde_json::json!({
+                "status": "error",
+                "message": format!("failed to add memory: {}", error),
+                "workspace_id": workspace.workspace_id,
+            }));
+        }
+    };
