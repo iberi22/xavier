@@ -4,85 +4,91 @@ use std::fmt::Write;
 /// Generates a Context Pack (.xcp) in XML format from layered search results.
 pub fn generate_xcp(result: LayeredSearchResult, max_level: usize) -> String {
     let mut xml = String::new();
+    if let Err(e) = generate_xcp_to_writer(&mut xml, result, max_level) {
+        tracing::error!("Failed to generate XCP: {}", e);
+    }
+    xml
+}
+
+fn generate_xcp_to_writer(
+    xml: &mut String,
+    result: LayeredSearchResult,
+    max_level: usize,
+) -> std::fmt::Result {
     let topic_escaped = escape_xml(&result.topic);
 
     writeln!(
         xml,
         "<xavier_context_pack topic=\"{}\" generated=\"{}\">",
         topic_escaped, result.timestamp
-    )
-    .unwrap();
+    )?;
 
     // Level 0: Working Memory
     {
-        writeln!(xml, "  <level_0_working_memory>").unwrap();
+        writeln!(xml, "  <level_0_working_memory>")?;
         for r in result.level_0_working {
             writeln!(
                 xml,
                 "    <item score=\"{:.3}\" path=\"{}\">",
                 r.score,
                 escape_xml(&r.path)
-            )
-            .unwrap();
-            writeln!(xml, "      {}", escape_xml(&r.content)).unwrap();
-            writeln!(xml, "    </item>").unwrap();
+            )?;
+            writeln!(xml, "      {}", escape_xml(&r.content))?;
+            writeln!(xml, "    </item>")?;
         }
-        writeln!(xml, "  </level_0_working_memory>").unwrap();
+        writeln!(xml, "  </level_0_working_memory>")?;
     }
 
     // Level 1: Entity Graph
     if max_level >= 1 {
-        writeln!(xml, "  <level_1_entity_graph>").unwrap();
+        writeln!(xml, "  <level_1_entity_graph>")?;
         for r in result.level_1_entity_graph {
             writeln!(
                 xml,
                 "    <node score=\"{:.3}\" path=\"{}\">",
                 r.score,
                 escape_xml(&r.path)
-            )
-            .unwrap();
-            writeln!(xml, "      {}", escape_xml(&r.content)).unwrap();
-            writeln!(xml, "    </node>").unwrap();
+            )?;
+            writeln!(xml, "      {}", escape_xml(&r.content))?;
+            writeln!(xml, "    </node>")?;
         }
-        writeln!(xml, "  </level_1_entity_graph>").unwrap();
+        writeln!(xml, "  </level_1_entity_graph>")?;
     }
 
     // Level 2: Semantic (Rules/Definitions)
     if max_level >= 2 {
-        writeln!(xml, "  <level_2_semantic>").unwrap();
+        writeln!(xml, "  <level_2_semantic>")?;
         for r in result.level_2_semantic {
             writeln!(
                 xml,
                 "    <definition score=\"{:.3}\" path=\"{}\">",
                 r.score,
                 escape_xml(&r.path)
-            )
-            .unwrap();
-            writeln!(xml, "      {}", escape_xml(&r.content)).unwrap();
-            writeln!(xml, "    </definition>").unwrap();
+            )?;
+            writeln!(xml, "      {}", escape_xml(&r.content))?;
+            writeln!(xml, "    </definition>")?;
         }
-        writeln!(xml, "  </level_2_semantic>").unwrap();
+        writeln!(xml, "  </level_2_semantic>")?;
     }
 
     // Level 3: Episodic (History/Logs)
     if max_level >= 3 {
-        writeln!(xml, "  <level_3_episodic>").unwrap();
+        writeln!(xml, "  <level_3_episodic>")?;
         for r in result.level_3_episodic {
             writeln!(
                 xml,
                 "    <event score=\"{:.3}\" path=\"{}\">",
                 r.score,
                 escape_xml(&r.path)
-            )
-            .unwrap();
-            writeln!(xml, "      {}", escape_xml(&r.content)).unwrap();
-            writeln!(xml, "    </event>").unwrap();
+            )?;
+            writeln!(xml, "      {}", escape_xml(&r.content))?;
+            writeln!(xml, "    </event>")?;
         }
-        writeln!(xml, "  </level_3_episodic>").unwrap();
+        writeln!(xml, "  </level_3_episodic>")?;
     }
 
-    writeln!(xml, "</xavier_context_pack>").unwrap();
-    xml
+    writeln!(xml, "</xavier_context_pack>")?;
+    Ok(())
 }
 
 fn escape_xml(s: &str) -> String {

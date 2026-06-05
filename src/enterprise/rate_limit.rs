@@ -122,7 +122,7 @@ impl RateLimiter {
         let config = self.config.get(&key).cloned().unwrap_or_default();
 
         // Create quota based on config
-        let rpm = NonZeroU32::new(config.rpm).unwrap_or(NonZeroU32::new(1).unwrap());
+        let rpm = NonZeroU32::new(config.rpm).unwrap_or(unsafe { NonZeroU32::new_unchecked(1) });
         let burst = NonZeroU32::new(config.burst).unwrap_or(rpm);
 
         // Validate: burst should not exceed rpm (per minute quota)
