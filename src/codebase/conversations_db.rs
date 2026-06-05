@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
 use uuid::Uuid;
 use crate::codebase::connection_manager::ConnectionManager;
+use crate::codebase::validate_project_id;
 
 const CONVERSATIONS_DIR: &str = "conversations";
 
@@ -140,6 +141,7 @@ impl ConversationsDb {
     /// The database is stored at `~/.xavier/conversations/{project_id}.db`.
     /// The directory is created if it doesn't exist.
     pub async fn open(project_id: &str) -> Result<Self> {
+        validate_project_id(project_id)?;
         let full_project_id = format!("conv_{}", project_id);
         ConnectionManager::global().connect(&full_project_id, ".")?;
 
@@ -152,6 +154,7 @@ impl ConversationsDb {
 
     /// Open an in-memory conversations database (for testing).
     pub async fn open_in_memory(project_id: &str) -> Result<Self> {
+        validate_project_id(project_id)?;
         let full_project_id = format!("conv_test_{}", project_id);
         ConnectionManager::global().connect(&full_project_id, ".")?;
 
@@ -734,13 +737,9 @@ impl ConversationsDb {
     // Path helpers (port of original code)
     // ------------------------------------------------------------------
 
-    /// Build the database path for a given project_id, with path traversal sanitisation.
+    /// Build the database path for a given project_id, with path traversal validation.
     pub fn conversations_db_path(project_id: &str) -> PathBuf {
-        let sanitized: String = project_id
-            .chars()
-            .filter(|c| c.is_alphanumeric() || *c == '-' || *c == '_')
-            .collect();
-        assert!(!sanitized.is_empty(), "Invalid project_id: must contain at least one alphanumeric character, hyphen, or underscore");
+        validate_project_id(project_id).expect("Invalid project_id");
 
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
         let mut path = home;
@@ -748,11 +747,11 @@ impl ConversationsDb {
         path.push(CONVERSATIONS_DIR);
 
         let mut db_file = path.clone();
-        db_file.push(format!("{}.db", sanitized));
+        db_file.push(format!("{}.db", project_id));
 
         // Verify that the resolved path is within the expected directory
         if let Ok(canonical_base) = std::fs::canonicalize(&path) {
-            let resolved = canonical_base.join(format!("{}.db", sanitized));
+            let resolved = canonical_base.join(format!("{}.db", project_id));
             assert!(resolved.starts_with(&canonical_base), "Path escape detected");
         }
 
@@ -838,4 +837,42 @@ impl ConversationsDb {
 /// Parse an RFC 3339 datetime string.
 fn parse_datetime(s: &str) -> DateTime<Utc> {
     s.parse::<DateTime<Utc>>().unwrap_or_else(|_| Utc::now())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_open_with_malicious_project_id() {
+        let mal_ids = vec!["../etc/passwd", "my/project", "project\\name", "~", " ", ""];
+        for id in mal_ids {
+            let res = ConversationsDb::open(id).await;
+            assert!(res.is_err(), "project_id '{}' should have been rejected", id);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_open_in_memory_with_malicious_project_id() {
+        let mal_ids = vec!["../etc/passwd", "my/project", "project\\name", "~", " ", ""];
+        for id in mal_ids {
+            let res = ConversationsDb::open_in_memory(id).await;
+            assert!(res.is_err(), "project_id '{}' should have been rejected", id);
+        }
+    }
+
+    #[test]
+    fn test_conversations_db_path_with_malicious_project_id() {
+        let mal_ids = vec!["../etc/passwd", "my/project", "project\\name", "~", " ", ""];
+        for id in mal_ids {
+            let res = std::panic::catch_unwind(|| ConversationsDb::conversations_db_path(id));
+            assert!(res.is_err(), "conversations_db_path should have panicked for project_id '{}'", id);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_open_valid_project_id() {
+        let db = ConversationsDb::open_in_memory("valid-project_123").await.unwrap();
+        assert_eq!(db.project_id(), "valid-project_123");
+    }
 }
