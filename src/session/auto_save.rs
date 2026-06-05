@@ -299,7 +299,10 @@ async fn record_failed_sync(
         "latency_ms": latency_ms,
     });
     
-    fs::write(&filepath, serde_json::to_string_pretty(&record).unwrap())
+    let json = serde_json::to_string_pretty(&record)
+        .map_err(|e| format!("failed to serialize failed-sync record: {}", e))?;
+
+    fs::write(&filepath, json)
         .await
         .map_err(|e| format!("failed to write failed-sync record: {}", e))?;
     
