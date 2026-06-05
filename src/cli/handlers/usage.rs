@@ -1,0 +1,161 @@
+//! Usage handlers for tracking and managing provider quotas.
+
+use axum::{
+    extract::{Path as AxumPath, State},
+    http::{HeaderMap, StatusCode},
+    response::Response,
+    Json,
+};
+use tracing::warn;
+
+use crate::cli::state::CliState;
+use crate::cli::types::*;
+use crate::cli::config::resolve_http_token;
+use crate::cli::handlers::json_response;
+
+pub async fn account_usage_handler(State(state): State<CliState>, headers: HeaderMap) -> Response {
+    let expected_token = match resolve_http_token() {
+        Ok(token) => token,
+        Err(e) => {
+            return json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({
+                    "status": "error",
+                    "message": format!("Token resolution failed: {e}"),
+                }),
+            )
+        }
+    };
+
+    let provided_token = headers
+        .get("X-Xavier-Token")
+        .and_then(|value| value.to_str().ok());
+    if provided_token != Some(expected_token.as_str()) {
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            serde_json::json!({
+                "status": "error",
+                "message": "Unauthorized",
+            }),
+        );
+    }
+
+    let mut provider_quotas = serde_json::Map::new();
+    match state.rate_manager.get_all_providers().await {
+        Ok(providers) => {
+            for p in providers {
+                if let Ok(status) = state.rate_manager.get_status(&p).await {
+                    if let Ok(val) = serde_json::to_value(&status) {
+                        provider_quotas.insert(p, val);
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            warn!("Failed to list providers for quotas: {e}");
+        }
+    }
+
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "status": "ok",
+            "document_count": 0,
+            "requests_used": 0,
+            "storage_bytes_used": 0,
+            "storage_bytes_limit": 0,
+            "provider_quotas": provider_quotas,
+            "optimization": {
+                "router_direct_count": 0,
+                "semantic_cache_hits": 0,
+                "semantic_cache_misses": 0,
+            },
+        }),
+    )
+}
+
+pub async fn usage_status_handler(
+    State(state): State<CliState>,
+    AxumPath(provider): AxumPath<String>,
+) -> Response {
+    match state.rate_manager.get_status(&provider).await {
+        Ok(status) => json_response(
+            StatusCode::OK,
+            serde_json::to_value(status).unwrap_or_default(),
+        ),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": e.to_string() }),
+        ),
+    }
+}
+
+pub async fn usage_track_handler(
+    State(state): State<CliState>,
+    Json(payload): Json<UsageTrackPayload>,
+) -> Response {
+    match state
+        .rate_manager
+        .track_request(
+            &payload.provider,
+            payload.tokens,
+            payload.status,
+            payload.cost_usd,
+            payload.is_cache_hit,
+        )
+        .await
+    {
+        Ok(_) => json_response(StatusCode::OK, serde_json::json!({ "status": "ok" })),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": e.to_string() }),
+        ),
+    }
+}
+
+pub async fn usage_summary_handler(
+    State(state): State<CliState>,
+    AxumPath(provider): AxumPath<String>,
+) -> Response {
+    match state.rate_manager.get_daily_summary(&provider).await {
+        Ok(summary) => json_response(StatusCode::OK, summary),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": e.to_string() }),
+        ),
+    }
+}
+
+pub async fn usage_update_handler(
+    State(state): State<CliState>,
+    Json(payload): Json<UsageUpdatePayload>,
+) -> Response {
+    match state
+        .rate_manager
+        .update_manual_limit(&payload.provider, payload.percentage)
+        .await
+    {
+        Ok(_) => json_response(StatusCode::OK, serde_json::json!({ "status": "ok" })),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": e.to_string() }),
+        ),
+    }
+}
+
+pub async fn usage_cooldown_handler(
+    State(state): State<CliState>,
+    Json(payload): Json<UsageCooldownPayload>,
+) -> Response {
+    match state
+        .rate_manager
+        .report_429(&payload.provider, payload.minutes)
+        .await
+    {
+        Ok(_) => json_response(StatusCode::OK, serde_json::json!({ "status": "ok" })),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": e.to_string() }),
+        ),
+    }
+}

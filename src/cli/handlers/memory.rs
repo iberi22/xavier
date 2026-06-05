@@ -1,0 +1,648 @@
+//! Memory handlers for search, addition, deletion, and management of memories.
+
+use axum::{
+    extract::{Query, State},
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Response},
+    Json,
+};
+use tracing::info;
+
+use crate::cli::state::CliState;
+use crate::cli::types::*;
+use crate::cli::config::{resolve_http_token, xavier_token, resolve_base_url};
+use crate::cli::handlers::json_response;
+use crate::cli::security::secure_cli_input;
+
+use xavier::memory::schema::MemoryLevel;
+use xavier::memory::store::MemoryRecord;
+use xavier::ports::inbound::input_security_port::SecureInputResult;
+
+pub async fn embed_handler(
+    State(state): State<CliState>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let input = body.get("input").and_then(|v| v.as_str()).ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "Missing 'input' field"})),
+        )
+    })?;
+
+    let model = body
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("all-MiniLM-L6-v2");
+
+    match state.embedder.encode(input).await {
+        Ok(embedding) => Ok(Json(serde_json::json!({
+            "object": "list",
+            "data": [{
+                "object": "embedding",
+                "index": 0,
+                "embedding": embedding,
+            }],
+            "model": model,
+            "usage": {
+                "prompt_tokens": input.len(),
+                "total_tokens": input.len(),
+            }
+        }))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("Embedding failed: {}", e)})),
+        )),
+    }
+}
+
+pub async fn export_pack_handler(
+    State(state): State<CliState>,
+    Json(payload): Json<ExportPackPayload>,
+) -> Response {
+    info!(
+        "Export context pack request: topic={}, max_level={}",
+        payload.topic, payload.max_level
+    );
+
+    let gating = xavier::retrieval::gating::AdaptiveGating::with_defaults();
+
+    let all_docs = match state.store.list(&state.workspace_id).await {
+        Ok(records) => records
+            .into_iter()
+            .map(|r| r.to_document())
+            .collect::<Vec<_>>(),
+        Err(e) => {
+            return json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "error": e.to_string() }),
+            )
+        }
+    };
+
+    let threads = state.panel_store.list_threads(50).await.unwrap_or_default();
+    let episodic_summaries = threads
+        .into_iter()
+        .map(|s| xavier::retrieval::gating::SessionSummary {
+            session_id: s.id.clone(),
+            start_time: s.started_at,
+            summary: s.last_preview.unwrap_or_default(),
+            key_events: vec![],
+            sentiment_timeline: vec![],
+        })
+        .collect::<Vec<_>>();
+
+    let semantic_entities = Vec::new();
+
+    let layered_result = gating
+        .retrieve_layered(
+            &all_docs,
+            &episodic_summaries,
+            &semantic_entities,
+            &payload.topic,
+        )
+        .await;
+
+    let xml = xavier::memory::pack::generate_xcp(layered_result, payload.max_level);
+    let filename = format!("context-{}.xcp", payload.topic.replace(" ", "_"));
+
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "status": "ok",
+            "xml": xml,
+            "filename": filename,
+        }),
+    )
+}
+
+pub async fn search_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<SearchPayload>,
+) -> impl axum::response::IntoResponse {
+    let sec_result = state
+        .security
+        .process_input(&payload.query)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: payload.query.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    if !sec_result.allowed {
+        info!(
+            "Search blocked by security: injection detected (confidence={})",
+            sec_result.detection_confidence
+        );
+        return axum::Json(serde_json::json!({
+            "results": <Vec<serde_json::Value>>::new(),
+            "query": payload.query,
+            "count": 0,
+            "blocked": true,
+            "reason": "security_policy_violation",
+            "detection": {
+                "is_injection": sec_result.is_injection,
+                "confidence": sec_result.detection_confidence,
+                "attack_type": sec_result.attack_type,
+            },
+            "workspace_id": state.workspace_id,
+        }));
+    }
+
+    let effective_query = sec_result.effective_input();
+    let limit = payload.limit.clamp(1, 100);
+    info!("Search request: query={}, limit={}", effective_query, limit);
+
+    let mut filters = payload.filters.clone().unwrap_or_default();
+    let zones = payload
+        .active_zones
+        .clone()
+        .unwrap_or_else(|| xavier::memory::schema::parse_zones_from_prompt(effective_query));
+    filters.zones = Some(zones);
+
+    let results: Vec<MemoryRecord> = match state.memory.search(effective_query, Some(filters)).await
+    {
+        Ok(results) => results,
+        Err(e) => {
+            info!("Search error: {}", e);
+            return axum::Json(serde_json::json!({
+                "results": [],
+                "query": payload.query,
+                "count": 0,
+                "error": e.to_string(),
+                "workspace_id": state.workspace_id,
+            }));
+        }
+    };
+
+    let search_results: Vec<serde_json::Value> = results
+        .into_iter()
+        .map(|document| {
+            serde_json::json!({
+                "id": document.id,
+                "content": document.content,
+                "embedding": document.embedding,
+            })
+        })
+        .collect();
+
+    axum::Json(serde_json::json!({
+        "results": search_results,
+        "query": payload.query,
+        "count": search_results.len(),
+        "workspace_id": state.workspace_id,
+    }))
+}
+
+pub async fn add_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<AddPayload>,
+) -> impl axum::response::IntoResponse {
+    let sec_result = state
+        .security
+        .process_input(&payload.content)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: payload.content.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    if !sec_result.allowed {
+        info!(
+            "Add blocked by security: injection detected (confidence={})",
+            sec_result.detection_confidence
+        );
+        return axum::Json(serde_json::json!({
+            "status": "blocked",
+            "reason": "security_policy_violation",
+            "detection": {
+                "is_injection": sec_result.is_injection,
+                "confidence": sec_result.detection_confidence,
+                "attack_type": sec_result.attack_type,
+            }
+        }))
+        .into_response();
+    }
+
+    let effective_content = sec_result
+        .sanitized_input
+        .as_deref()
+        .unwrap_or(&sec_result.original_input);
+
+    let path = payload
+        .path
+        .unwrap_or_else(|| format!("memory/{}", ulid::Ulid::new()));
+    let mut metadata = payload.metadata.unwrap_or(serde_json::json!({}));
+
+    let cluster_id = payload.cluster_id.clone();
+    let level = payload
+        .level
+        .map(|l| xavier::memory::schema::MemoryLevel::parse(&l))
+        .unwrap_or(MemoryLevel::Raw);
+    let relation = payload
+        .relation
+        .clone()
+        .map(|r| xavier::memory::schema::RelationKind {
+            name: r,
+            inverse: None,
+        });
+
+    if let Some(title) = payload.title {
+        if let Some(obj) = metadata.as_object_mut() {
+            obj.insert("title".to_string(), serde_json::json!(title));
+        }
+    }
+
+    info!(
+        "Add memory request: path={}, content_len={}",
+        path,
+        effective_content.len()
+    );
+
+    let record = MemoryRecord {
+        id: String::new(),
+        workspace_id: state.workspace_id.clone(),
+        path: path.clone(),
+        content: effective_content.to_string(),
+        metadata: serde_json::json!({"kind": "Context", "namespace": "Global"}),
+        embedding: vec![],
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+        revision: 1,
+        primary: true,
+        parent_id: None,
+        cluster_id,
+        level,
+        relation,
+        revisions: vec![],
+    };
+    match state.memory.add(record).await {
+        Ok(id) => {
+            info!("Memory added successfully: {}", path);
+            axum::Json(serde_json::json!({
+                "status": "ok",
+                "message": "Memory added",
+                "path": path,
+                "id": id,
+                "security": {
+                    "scanned": true,
+                    "sanitized": sec_result.sanitized_input.is_some(),
+                    "attack_type": sec_result.attack_type,
+                }
+            }))
+            .into_response()
+        }
+        Err(e) => {
+            info!("Add memory error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(serde_json::json!({
+                    "status": "error",
+                    "message": e.to_string(),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+pub async fn delete_handler(
+    State(state): State<CliState>,
+    headers: HeaderMap,
+    axum::extract::Json(payload): axum::extract::Json<DeleteMemoryRequest>,
+) -> Response {
+    let expected_token = match resolve_http_token() {
+        Ok(token) => token,
+        Err(e) => {
+            return json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({"status":"error","message": format!("Token resolution failed: {e}")}),
+            );
+        }
+    };
+
+    match headers
+        .get("X-Xavier-Token")
+        .and_then(|value| value.to_str().ok())
+    {
+        Some(token) if token == expected_token => {}
+        _ => {
+            return json_response(
+                StatusCode::UNAUTHORIZED,
+                serde_json::json!({"status":"error","message":"Unauthorized"}),
+            );
+        }
+    }
+
+    let id_or_path = payload
+        .id
+        .or(payload.path)
+        .filter(|value| !value.trim().is_empty());
+    let Some(id_or_path_str) = id_or_path.as_deref() else {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({"status":"error","message":"Provide either id or path"}),
+        );
+    };
+
+    match state.store.delete(&state.workspace_id, id_or_path_str).await {
+        Ok(Some(record)) => json_response(
+            StatusCode::OK,
+            serde_json::json!({
+                "status": "ok",
+                "deleted": true,
+                "id": record.id,
+                "path": record.path,
+            }),
+        ),
+        Ok(None) => json_response(
+            StatusCode::NOT_FOUND,
+            serde_json::json!({
+                "status": "not_found",
+                "deleted": false,
+                "id_or_path": id_or_path_str,
+            }),
+        ),
+        Err(error) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({
+                "status": "error",
+                "message": error.to_string(),
+            }),
+        ),
+    }
+}
+
+pub async fn stats_handler(State(state): State<CliState>) -> impl axum::response::IntoResponse {
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "workspace_id": state.workspace_id,
+        "version": "0.4.1",
+    }))
+}
+
+pub async fn memory_query_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<MemoryQueryPayload>,
+) -> impl axum::response::IntoResponse {
+    let sec_result = state
+        .security
+        .process_input(&payload.query)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: payload.query.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    if !sec_result.allowed {
+        return axum::Json(serde_json::json!({
+            "status": "blocked",
+            "reason": "security_policy_violation",
+            "detection": {
+                "is_injection": sec_result.is_injection,
+                "confidence": sec_result.detection_confidence,
+                "attack_type": sec_result.attack_type,
+            }
+        }));
+    }
+
+    let limit = payload.limit.unwrap_or(10).clamp(1, 100);
+    info!(
+        "Memory query request: query={}, limit={}",
+        payload.query, limit
+    );
+
+    match state.memory.search(&payload.query, None).await {
+        Ok(results) => {
+            let documents: Vec<_> = results
+                .into_iter()
+                .map(|doc| {
+                    serde_json::json!({
+                        "id": doc.id,
+                        "content": doc.content,
+                        "embedding": doc.embedding,
+                    })
+                })
+                .collect();
+
+            axum::Json(serde_json::json!({
+                "status": "ok",
+                "query": payload.query,
+                "count": documents.len(),
+                "results": documents,
+                "workspace_id": state.workspace_id,
+            }))
+        }
+        Err(e) => {
+            info!("Memory query error: {}", e);
+            axum::Json(serde_json::json!({
+                "status": "error",
+                "message": e.to_string(),
+            }))
+        }
+    }
+}
+
+pub async fn search_memories_filtered(
+    query: &str,
+    limit: usize,
+    clusters: Vec<String>,
+    levels: Vec<String>,
+) -> anyhow::Result<()> {
+    let query = secure_cli_input("search query", query, 4_096)?;
+    let limit = limit.clamp(1, 100);
+    let token = xavier_token();
+    let base_url = resolve_base_url();
+    let url = format!("{}/memory/search", base_url);
+
+    let parsed_levels = levels
+        .iter()
+        .map(|l| xavier::memory::schema::MemoryLevel::parse(l))
+        .collect::<Vec<_>>();
+
+    let filters = xavier::memory::schema::MemoryQueryFilters {
+        cluster_ids: if clusters.is_empty() {
+            None
+        } else {
+            Some(clusters)
+        },
+        levels: if parsed_levels.is_empty() {
+            None
+        } else {
+            Some(parsed_levels)
+        },
+        ..xavier::memory::schema::MemoryQueryFilters::default()
+    };
+
+    let client = crate::cli::commands::CLI_HTTP_CLIENT.clone();
+
+    let response = client
+        .post(&url)
+        .header("X-Xavier-Token", &token)
+        .json(&serde_json::json!({
+            "query": query,
+            "limit": limit,
+            "filters": filters
+        }))
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            let body: serde_json::Value = resp.json().await.unwrap_or_default();
+            println!("\nSearch results for: {}", query);
+            println!("{}", serde_json::to_string_pretty(&body)?);
+        }
+        _ => {
+            println!("⚠️ Server offline or request failed. Falling back to local offline database index...");
+            match crate::cli::commands::load_spawn_memory().await {
+                Ok(memory) => {
+                    match memory.search_filtered(&query, limit, Some(&filters)).await {
+                        Ok(docs) => {
+                            println!("\n[OFFLINE] Search results for: {}", query);
+                            let json_results = serde_json::json!({
+                                "results": docs.iter().map(|doc| {
+                                    serde_json::json!({
+                                        "id": doc.id,
+                                        "path": doc.path,
+                                        "content": doc.content,
+                                        "metadata": doc.metadata,
+                                        "score": doc.metadata.get("score").and_then(|v| v.as_f64()).unwrap_or(1.0),
+                                    })
+                                }).collect::<Vec<_>>()
+                            });
+                            println!("{}", serde_json::to_string_pretty(&json_results)?);
+                        }
+                        Err(e) => {
+                            println!("❌ Local search failed: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Failed to initialize local offline database store: {}", e);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn add_memory_hierarchical(
+    content: &str,
+    title: Option<&str>,
+    kind: Option<&str>,
+    cluster_id: Option<&str>,
+    level: Option<&str>,
+    relation: Option<&str>,
+) -> anyhow::Result<()> {
+    let content = secure_cli_input("memory content", content, 1_000_000)?;
+    let title = title
+        .map(|title| secure_cli_input("memory title", title, 512))
+        .transpose()?;
+    let token = xavier_token();
+    let base_url = resolve_base_url();
+    let url = format!("{}/memory/add", base_url);
+
+    let mut body = serde_json::json!({
+        "content": content,
+        "metadata": {}
+    });
+
+    if let Some(t) = title.as_deref() {
+        body["metadata"]["title"] = serde_json::json!(t);
+    }
+    if let Some(k) = kind {
+        body["metadata"]["kind"] = serde_json::json!(k);
+    }
+    if let Some(c) = cluster_id {
+        body["cluster_id"] = serde_json::json!(c);
+    }
+    if let Some(l) = level {
+        body["level"] = serde_json::json!(l);
+    }
+    if let Some(r) = relation {
+        body["relation"] = serde_json::json!(r);
+    }
+
+    let client = crate::cli::commands::CLI_HTTP_CLIENT.clone();
+
+    let response = client
+        .post(&url)
+        .header("X-Xavier-Token", &token)
+        .json(&body)
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            println!("Memory added successfully via HTTP API!");
+        }
+        _ => {
+            println!("⚠️ Server offline or request failed. Falling back to local offline database write...");
+            match crate::cli::commands::load_spawn_memory().await {
+                Ok(memory) => {
+                    let path = format!("cli/add/{}", chrono::Utc::now().timestamp());
+                    let mut metadata = serde_json::json!({});
+                    if let Some(t) = title {
+                        metadata["title"] = serde_json::json!(t);
+                    }
+                    if let Some(k) = kind {
+                        metadata["kind"] = serde_json::json!(k);
+                    }
+
+                    let typed_payload = xavier::memory::schema::TypedMemoryPayload {
+                        cluster_id: cluster_id.map(|s| s.to_string()),
+                        level: level.map(xavier::memory::schema::MemoryLevel::parse),
+                        relation: relation.map(xavier::memory::schema::RelationKind::new),
+                        ..Default::default()
+                    };
+
+                    match memory.add_document_typed(path, content.to_string(), metadata, Some(typed_payload)).await {
+                        Ok(id) => {
+                            println!("✅ Memory added successfully offline to local SQLite-Vec database!");
+                            println!("Document ID: {id}");
+                        }
+                        Err(err) => {
+                            println!("❌ Local write failed: {}", err);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Failed to initialize local offline database store: {}", e);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn export_handler(
+    State(state): State<CliState>,
+    Query(params): Query<ExportPayload>,
+) -> impl IntoResponse {
+    let public_only = params.public.unwrap_or(false);
+    match state.memory.export(public_only).await {
+        Ok(docs) => Json(docs).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": e.to_string()
+            })),
+        )
+            .into_response(),
+    }
+}
