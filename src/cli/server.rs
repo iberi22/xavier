@@ -2937,3 +2937,76 @@ pub async fn mcp_tools_handler() -> impl axum::response::IntoResponse {
         ]
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use tower::ServiceExt;
+    use xavier::ports::inbound::MemoryQueryPort;
+
+    struct MockMemoryPort;
+    #[async_trait::async_trait]
+    impl MemoryQueryPort for MockMemoryPort {
+        async fn search(&self, _query: &str, _filters: Option<MemoryQueryFilters>) -> Result<Vec<MemoryRecord>> {
+            Ok(vec![])
+        }
+        async fn add(&self, _record: MemoryRecord) -> Result<String> {
+            Ok("test-id".to_string())
+        }
+        async fn get(&self, _id_or_path: &str) -> Result<Option<MemoryRecord>> {
+            Ok(None)
+        }
+        async fn list(&self, _workspace_id: &str) -> Result<Vec<MemoryRecord>> {
+            Ok(vec![])
+        }
+        async fn usage(&self) -> xavier::memory::store::MemoryUsage {
+            xavier::memory::store::MemoryUsage { document_count: 0, storage_bytes: 0 }
+        }
+        async fn export(&self, _public_only: bool) -> Result<Vec<MemoryDocument>> {
+            Ok(vec![])
+        }
+    }
+
+    #[tokio::test]
+    async fn test_version_handler() {
+        let response = version_handler().await;
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_health_handler() {
+        let store = Arc::new(xavier::memory::sqlite_vec_store::VecSqliteMemoryStore::in_memory().await.unwrap());
+        let code_db = Arc::new(code_graph::db::CodeGraphDB::in_memory().unwrap());
+        let security = Arc::new(xavier::app::security_service::SecurityService::new());
+        let state = CliState {
+            memory: Arc::new(MockMemoryPort),
+            store: store.clone(),
+            workspace_id: "default".to_string(),
+            workspace_dir: PathBuf::from("."),
+            code_db: code_db.clone(),
+            code_indexer: Arc::new(code_graph::indexer::Indexer::new(code_db.clone())),
+            code_query: Arc::new(code_graph::query::QueryEngine::new(code_db)),
+            security: security.clone(),
+            security_scan: security,
+            _time_store: None,
+            agent_registry: Arc::new(SimpleAgentRegistry::default()),
+            panel_store: Arc::new(ConversationsDb::open_in_memory().await.unwrap()),
+            secrets_engine: Arc::new(KeyLendingEngine::new(Box::new(xavier::secrets::audit::QmdAuditLogger::new()))),
+            event_bus: XavierEventBus::new(1),
+            tasks: Arc::new(TaskService::new(Arc::new(InMemoryTaskStore::new()))),
+            rate_manager: Arc::new(RateLimitManager::new()),
+            prompt_cache: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+            proxy_use_case: Arc::new(ProxyUseCase::new(Arc::new(RateLimitManager::new()), Arc::new(parking_lot::Mutex::new(HashMap::new())))),
+            http_client: reqwest::Client::new(),
+            embedder: Arc::new(xavier::embedding::MockEmbedder::new()),
+            agent_indexer: Arc::new(crate::memory::agent_indexer::AgentIndexer::new(crate::memory::file_indexer::FileIndexer::new(crate::memory::file_indexer::FileIndexerConfig::default(), None))),
+        };
+
+        let response = health_handler(State(state)).await;
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+}
