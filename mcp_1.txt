@@ -1,0 +1,500 @@
+use crate::{
+    memory::schema::{
+        EvidenceKind, MemoryKind, MemoryNamespace, MemoryProvenance, MemoryQueryFilters,
+        TypedMemoryPayload,
+    },
+    ports::inbound::{InputSecurityPort, SecurityScanPort},
+    utils::crypto::hex_encode,
+    workspace::WorkspaceContext,
+    AppState,
+};
+use axum::{
+    body::Bytes,
+    extract::State,
+    http::{header::HeaderName, HeaderMap, HeaderValue, StatusCode},
+    response::{IntoResponse, Response},
+    Extension, Json,
+};
+use serde::{Deserialize, Serialize};
+use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
+use tracing::info;
+use ulid::Ulid;
+
+const MEMORYFRAGMENT_MAX_LIMIT: usize = 100;
+const MEMORYFRAGMENT_MAX_COMPONENT_CHARS: usize = 128;
+const MEMORYFRAGMENT_MAX_TAGS: usize = 32;
+const MEMORYFRAGMENT_MAX_TAG_CHARS: usize = 64;
+const MEMORYFRAGMENT_MAX_PROVENANCE_CHARS: usize = 2048;
+
+// ============================================================================
+// MCP JSON-RPC Types
+// ============================================================================
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct MCPRequest {
+    pub jsonrpc: String,
+    #[serde(default)]
+    pub id: Option<Value>,
+    pub method: String,
+    #[serde(default)]
+    pub params: Option<Value>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct MCPResponse {
+    pub jsonrpc: String,
+    pub id: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub result: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<MCPError>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct MCPError {
+    pub code: i32,
+    pub message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<Value>,
+}
+
+// ============================================================================
+// MCP Payload Types
+// ============================================================================
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MCPTool {
+    pub name: String,
+    pub description: String,
+    pub input_schema: Value,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MCPResource {
+    pub uri: String,
+    pub name: String,
+    pub mime_type: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MCPToolResult {
+    pub content: Vec<MCPTextContent>,
+    pub is_error: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct MCPTextContent {
+    #[serde(rename = "type")]
+    pub content_type: String,
+    pub text: String,
+}
+
+fn mcp_text_result(text: impl Into<String>, is_error: bool) -> anyhow::Result<Value> {
+    Ok(serde_json::to_value(MCPToolResult {
+        content: vec![MCPTextContent {
+            content_type: "text".to_string(),
+            text: text.into(),
+        }],
+        is_error: Some(is_error),
+    })?)
+}
+
+fn is_safe_memoryfragment_component(value: &str) -> bool {
+    !value.is_empty()
+        && value.chars().count() <= MEMORYFRAGMENT_MAX_COMPONENT_CHARS
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-'))
+}
+
+fn require_memoryfragment_component(arguments: &Value, field: &str) -> anyhow::Result<String> {
+    let value = arguments
+        .get(field)
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("Missing {field}"))?;
+    validate_memoryfragment_component(field, value)
+}
+
+fn optional_memoryfragment_component(
+    arguments: &Value,
+    field: &str,
+    default: Option<&str>,
+) -> anyhow::Result<Option<String>> {
+    let value = arguments.get(field).and_then(|v| v.as_str()).or(default);
+    value
+        .map(|value| validate_memoryfragment_component(field, value))
+        .transpose()
+}
+
+fn validate_memoryfragment_component(field: &str, value: &str) -> anyhow::Result<String> {
+    if is_safe_memoryfragment_component(value) {
+        Ok(value.to_string())
+    } else {
+        Err(anyhow::anyhow!(
+            "{field} must be 1-{MEMORYFRAGMENT_MAX_COMPONENT_CHARS} ASCII alphanumeric/dot/underscore/dash characters"
+        ))
+    }
+}
+
+fn validate_memoryfragment_provenance(
+    arguments: &Value,
+    field: &str,
+) -> anyhow::Result<Option<String>> {
+    let Some(value) = arguments.get(field).and_then(|v| v.as_str()) else {
+        return Ok(None);
+    };
+    if value.chars().count() > MEMORYFRAGMENT_MAX_PROVENANCE_CHARS
+        || value.chars().any(char::is_control)
+    {
+        return Err(anyhow::anyhow!(
+            "{field} must be at most {MEMORYFRAGMENT_MAX_PROVENANCE_CHARS} characters and contain no control characters"
+        ));
+    }
+    Ok(Some(value.to_string()))
+}
+
+fn memoryfragment_limit(arguments: &Value) -> usize {
+    arguments
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(10)
+        .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize
+}
+
+fn memoryfragment_importance(arguments: &Value) -> anyhow::Result<f32> {
+    let importance = arguments
+        .get("importance")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.5);
+    if !(0.0..=1.0).contains(&importance) {
+        return Err(anyhow::anyhow!("importance must be between 0.0 and 1.0"));
+    }
+    Ok(importance as f32)
+}
+
+fn memoryfragment_tags(arguments: &Value) -> anyhow::Result<Vec<String>> {
+    let Some(tags) = arguments.get("tags").and_then(|v| v.as_array()) else {
+        return Ok(Vec::new());
+    };
+    if tags.len() > MEMORYFRAGMENT_MAX_TAGS {
+        return Err(anyhow::anyhow!(
+            "tags must contain at most {MEMORYFRAGMENT_MAX_TAGS} entries"
+        ));
+    }
+    tags.iter()
+        .map(|value| {
+            let tag = value
+                .as_str()
+                .ok_or_else(|| anyhow::anyhow!("tags must be strings"))?;
+            if tag.is_empty()
+                || tag.chars().count() > MEMORYFRAGMENT_MAX_TAG_CHARS
+                || !tag.chars().all(|ch| {
+                    ch.is_ascii_alphanumeric() || matches!(ch, '.' | '_' | '-')
+                })
+            {
+                return Err(anyhow::anyhow!(
+                    "tags must be 1-{MEMORYFRAGMENT_MAX_TAG_CHARS} ASCII alphanumeric/dot/underscore/dash characters"
+                ));
+            }
+            Ok(tag.to_string())
+        })
+        .collect()
+}
+
+async fn secure_mcp_external_input(
+    state: &AppState,
+    label: &str,
+    input: &str,
+) -> anyhow::Result<std::result::Result<String, Value>> {
+    let result = state.security_service.process_input(input).await?;
+    if !result.allowed {
+        return Ok(Err(mcp_text_result(
+            serde_json::json!({
+                "status": "blocked",
+                "blocked": true,
+                "reason": "security_policy_violation",
+                "message": format!("{label} blocked by security policy"),
+                "detection": {
+                    "is_injection": result.is_injection,
+                    "confidence": result.detection_confidence,
+                    "attack_type": result.attack_type,
+                }
+            })
+            .to_string(),
+            true,
+        )?));
+    }
+
+    Ok(Ok(result.sanitized_input.unwrap_or(result.original_input)))
+}
+
+fn should_prescan_tool_argument(tool_name: &str, argument_name: &str) -> bool {
+    let _ = tool_name; // unused — all tools get scanned equally
+    argument_name != "id"
+}
+
+// ============================================================================
+// Xavier MCP Tools
+// ============================================================================
+
+pub fn get_xavier_tools() -> Vec<MCPTool> {
+    vec![
+        MCPTool {
+            name: "create_memory".to_string(),
+            description: "Create a new memory document in Xavier".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path/identifier for the memory"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Content of the memory"
+                    },
+                    "metadata": {
+                        "type": "object",
+                        "description": "Optional metadata"
+                    },
+                    "kind": {
+                        "type": "string",
+                        "description": "Canonical memory kind"
+                    },
+                    "evidence_kind": {
+                        "type": "string",
+                        "description": "Optional retrieval evidence kind"
+                    },
+                    "namespace": {
+                        "type": "object",
+                        "description": "Namespace fields for org/workspace/user/agent/session"
+                    },
+                    "provenance": {
+                        "type": "object",
+                        "description": "Source and provenance fields"
+                    }
+                },
+                "required": ["path", "content"]
+            }),
+        },
+        MCPTool {
+            name: "search_memory".to_string(),
+            description: "Search memory documents in Xavier".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Maximum results",
+                        "default": 10
+                    },
+                    "filters": {
+                        "type": "object",
+                        "description": "Optional namespace/provenance filters"
+                    }
+                },
+                "required": ["query"]
+            }),
+        },
+        MCPTool {
+            name: "get_memory".to_string(),
+            description: "Get a specific memory by ID".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Memory ID"
+                    }
+                },
+                "required": ["id"]
+            }),
+        },
+        MCPTool {
+            name: "list_projects".to_string(),
+            description: "List all projects in Xavier".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {}
+            }),
+        },
+        MCPTool {
+            name: "get_project_context".to_string(),
+            description: "Get full context for a project".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "project_id": {
+                        "type": "string",
+                        "description": "Project identifier"
+                    }
+                },
+                "required": ["project_id"]
+            }),
+        },
+        MCPTool {
+            name: "sync_gitcore".to_string(),
+            description: "Sync documentation from GitCore project".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "project_path": {
+                        "type": "string",
+                        "description": "Path to GitCore project"
+                    }
+                },
+                "required": ["project_path"]
+            }),
+        },
+        // ============================================================================
+        // Gestalt MemoryFragment Tools (compatible with Gestalt MCP protocol)
+        // ============================================================================
+        MCPTool {
+            name: "save_fragment".to_string(),
+            description: "Save a new memory fragment (Gestalt MemoryFragment compatible)".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "agent_id": {
+                        "type": "string",
+                        "description": "Agent identifier"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Content of the memory fragment"
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "Category: conversation, task_result, observation"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional tags for this fragment"
+                    },
+                    "importance": {
+                        "type": "number",
+                        "description": "Importance score 0.0-1.0 for compaction"
+                    },
+                    "repo_url": {
+                        "type": "string",
+                        "description": "Optional repository URL"
+                    },
+                    "file_path": {
+                        "type": "string",
+                        "description": "Optional file path"
+                    },
+                    "chunk_id": {
+                        "type": "string",
+                        "description": "Optional chunk identifier"
+                    }
+                },
+                "required": ["agent_id", "content", "context"]
+            }),
+        },
+        MCPTool {
+            name: "memoryfragment_save".to_string(),
+            description: "Alias for save_fragment".to_string(),
+            input_schema: json!({ "type": "object" }),
+        },
+        MCPTool {
+            name: "search_fragments".to_string(),
+            description: "Search memory fragments by content/tags/agent_id (Gestalt MemoryFragment compatible)".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query"
+                    },
+                    "agent_id": {
+                        "type": "string",
+                        "description": "Optional agent ID filter"
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "Optional context filter (conversation, task_result, observation)"
+                    },
+                    "tags": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional tag filters"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Maximum results",
+                        "default": 10
+                    }
+                },
+                "required": ["query"]
+            }),
+        },
+        MCPTool {
+            name: "memoryfragment_search".to_string(),
+            description: "Alias for search_fragments".to_string(),
+            input_schema: json!({ "type": "object" }),
+        },
+        MCPTool {
+            name: "get_recent_fragments".to_string(),
+            description: "Get recent memories for an agent (Gestalt MemoryFragment compatible)".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "agent_id": {
+                        "type": "string",
+                        "description": "Agent identifier"
+                    },
+                    "context": {
+                        "type": "string",
+                        "description": "Optional context filter"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Maximum results",
+                        "default": 10
+                    }
+                },
+                "required": ["agent_id"]
+            }),
+        },
+        MCPTool {
+            name: "memoryfragment_recent".to_string(),
+            description: "Alias for get_recent_fragments".to_string(),
+            input_schema: json!({ "type": "object" }),
+        },
+        MCPTool {
+            name: "memoryfragment_get".to_string(),
+            description: "Get a specific memory fragment by ID (Gestalt MemoryFragment compatible)".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Memory fragment ID"
+                    }
+                },
+                "required": ["id"]
+            }),
+        },
+        MCPTool {
+            name: "memoryfragment_delete".to_string(),
+            description: "Delete a specific memory fragment by ID".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "string",
+                        "description": "Memory fragment ID"
+                    }
+                },
+                "required": ["id"]
+            }),
+        },
+        MCPTool {
+            name: "stats".to_string(),
+            description: "Get Xavier memory statistics".to_string(),

@@ -1,0 +1,599 @@
+    }))
+}
+
+pub async fn search_memories_filtered(
+    query: &str,
+    limit: usize,
+    clusters: Vec<String>,
+    levels: Vec<String>,
+) -> Result<()> {
+    let query = secure_cli_input("search query", query, 4_096)?;
+    let limit = limit.clamp(1, 100);
+    let token = xavier_token();
+    let base_url = resolve_base_url();
+    let url = format!("{}/memory/search", base_url);
+
+    let parsed_levels = levels
+        .iter()
+        .map(|l| xavier::memory::schema::MemoryLevel::parse(l))
+        .collect::<Vec<_>>();
+
+    let filters = xavier::memory::schema::MemoryQueryFilters {
+        cluster_ids: if clusters.is_empty() {
+            None
+        } else {
+            Some(clusters)
+        },
+        levels: if parsed_levels.is_empty() {
+            None
+        } else {
+            Some(parsed_levels)
+        },
+        ..xavier::memory::schema::MemoryQueryFilters::default()
+    };
+
+    let client = crate::cli::commands::CLI_HTTP_CLIENT.clone();
+
+    let response = client
+        .post(&url)
+        .header("X-Xavier-Token", &token)
+        .json(&serde_json::json!({
+            "query": query,
+            "limit": limit,
+            "filters": filters
+        }))
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            let body: serde_json::Value = resp.json().await.unwrap_or_default();
+            println!("\nSearch results for: {}", query);
+            println!("{}", serde_json::to_string_pretty(&body)?);
+        }
+        _ => {
+            println!("⚠️ Server offline or request failed. Falling back to local offline database index...");
+            match crate::cli::commands::load_spawn_memory().await {
+                Ok(memory) => {
+                    match memory.search_filtered(&query, limit, Some(&filters)).await {
+                        Ok(docs) => {
+                            println!("\n[OFFLINE] Search results for: {}", query);
+                            let json_results = serde_json::json!({
+                                "results": docs.iter().map(|doc| {
+                                    serde_json::json!({
+                                        "id": doc.id,
+                                        "path": doc.path,
+                                        "content": doc.content,
+                                        "metadata": doc.metadata,
+                                        "score": doc.metadata.get("score").and_then(|v| v.as_f64()).unwrap_or(1.0),
+                                    })
+                                }).collect::<Vec<_>>()
+                            });
+                            println!("{}", serde_json::to_string_pretty(&json_results)?);
+                        }
+                        Err(e) => {
+                            println!("❌ Local search failed: {}", e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Failed to initialize local offline database store: {}", e);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn add_memory_hierarchical(
+    content: &str,
+    title: Option<&str>,
+    kind: Option<&str>,
+    cluster_id: Option<&str>,
+    level: Option<&str>,
+    relation: Option<&str>,
+) -> Result<()> {
+    let content = secure_cli_input("memory content", content, 1_000_000)?;
+    let title = title
+        .map(|title| secure_cli_input("memory title", title, 512))
+        .transpose()?;
+    let token = xavier_token();
+    let base_url = resolve_base_url();
+    let url = format!("{}/memory/add", base_url);
+
+    let mut body = serde_json::json!({
+        "content": content,
+        "metadata": {}
+    });
+
+    if let Some(t) = title.as_deref() {
+        body["metadata"]["title"] = serde_json::json!(t);
+    }
+    if let Some(k) = kind {
+        body["metadata"]["kind"] = serde_json::json!(k);
+    }
+    if let Some(c) = cluster_id {
+        body["cluster_id"] = serde_json::json!(c);
+    }
+    if let Some(l) = level {
+        body["level"] = serde_json::json!(l);
+    }
+    if let Some(r) = relation {
+        body["relation"] = serde_json::json!(r);
+    }
+
+    let client = crate::cli::commands::CLI_HTTP_CLIENT.clone();
+
+    let response = client
+        .post(&url)
+        .header("X-Xavier-Token", &token)
+        .json(&body)
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            println!("Memory added successfully via HTTP API!");
+        }
+        _ => {
+            println!("⚠️ Server offline or request failed. Falling back to local offline database write...");
+            match crate::cli::commands::load_spawn_memory().await {
+                Ok(memory) => {
+                    let path = format!("cli/add/{}", chrono::Utc::now().timestamp());
+                    let mut metadata = serde_json::json!({});
+                    if let Some(t) = title {
+                        metadata["title"] = serde_json::json!(t);
+                    }
+                    if let Some(k) = kind {
+                        metadata["kind"] = serde_json::json!(k);
+                    }
+
+                    let typed_payload = xavier::memory::schema::TypedMemoryPayload {
+                        cluster_id: cluster_id.map(|s| s.to_string()),
+                        level: level.map(xavier::memory::schema::MemoryLevel::parse),
+                        relation: relation.map(xavier::memory::schema::RelationKind::new),
+                        ..Default::default()
+                    };
+
+                    match memory.add_document_typed(path, content.to_string(), metadata, Some(typed_payload)).await {
+                        Ok(id) => {
+                            println!("✅ Memory added successfully offline to local SQLite-Vec database!");
+                            println!("Document ID: {id}");
+                        }
+                        Err(err) => {
+                            println!("❌ Local write failed: {}", err);
+                        }
+                    }
+                }
+                Err(e) => {
+                    println!("❌ Failed to initialize local offline database store: {}", e);
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// ── Payload structs ──────────────────────────────────────────
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct SearchPayload {
+    query: String,
+    #[serde(default = "default_limit")]
+    limit: usize,
+    #[serde(default, rename = "filters")]
+    filters: Option<MemoryQueryFilters>,
+    #[serde(default)]
+    active_zones: Option<Vec<ContextZone>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct CodeScanPayload {
+    #[serde(default)]
+    path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct CodeFindPayload {
+    query: String,
+    #[serde(default = "default_limit")]
+    limit: usize,
+    #[serde(default)]
+    kind: Option<String>,
+    #[serde(default)]
+    pattern: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct CodeContextPayload {
+    #[serde(default)]
+    query: String,
+    #[serde(default = "default_limit")]
+    limit: usize,
+    #[serde(default = "default_token_budget")]
+    budget_tokens: usize,
+    #[serde(default)]
+    kind: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct CodeGraphQueryPayload {
+    query: String,
+    #[serde(default = "default_graph_depth")]
+    depth: usize,
+    #[serde(default = "default_graph_limit")]
+    limit: usize,
+    #[serde(default)]
+    edge_type: Option<String>,
+    #[serde(default = "default_graph_budget")]
+    budget_tokens: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct AddPayload {
+    content: String,
+    #[serde(default)]
+    path: Option<String>,
+    #[serde(default)]
+    metadata: Option<serde_json::Value>,
+    #[serde(default)]
+    title: Option<String>,
+    #[serde(default)]
+    cluster_id: Option<String>,
+    #[serde(default)]
+    level: Option<String>,
+    #[serde(default)]
+    relation: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct DeleteMemoryRequest {
+    id: Option<String>,
+    path: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct SecurityScanPayload {
+    input: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct MemoryQueryPayload {
+    query: String,
+    limit: Option<usize>,
+    #[serde(default, rename = "filters")]
+    _filters: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct SessionCompactPayload {
+    session_id: String,
+    #[serde(default)]
+    current_tokens: Option<usize>,
+    #[serde(default = "default_compaction_threshold")]
+    threshold_percent: f64,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct AgentRegisterPayload {
+    agent_id: String,
+    session_id: Option<String>,
+    name: Option<String>,
+    capabilities: Option<Vec<String>>,
+    role: Option<String>,
+    endpoint: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct AgentPushContextPayload {
+    context: String,
+    metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ExportPayload {
+    pub public: Option<bool>,
+}
+
+pub async fn export_handler(
+    State(state): State<CliState>,
+    Query(params): Query<ExportPayload>,
+) -> impl IntoResponse {
+    let public_only = params.public.unwrap_or(false);
+    match state.memory.export(public_only).await {
+        Ok(docs) => Json(docs).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": e.to_string()
+            })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SwarmConfig {
+    pub agents: Vec<SwarmAgentConfig>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SwarmAgentConfig {
+    pub name: String,
+    pub provider: String,
+    pub model: Option<String>,
+    pub skills: Option<Vec<String>>,
+    pub context: Option<HashMap<String, String>>,
+    pub task: String,
+}
+
+pub fn default_limit() -> usize {
+    10
+}
+
+pub fn default_token_budget() -> usize {
+    800
+}
+
+pub fn default_graph_depth() -> usize {
+    3
+}
+
+pub fn default_graph_limit() -> usize {
+    50
+}
+
+pub fn default_graph_budget() -> usize {
+    1200
+}
+
+pub fn default_min_degree() -> u64 {
+    3
+}
+
+pub fn default_min_complexity() -> f32 {
+    5.0
+}
+
+pub fn default_compaction_threshold() -> f64 {
+    80.0
+}
+
+// Secrets Handlers
+#[derive(Debug, Deserialize)]
+pub struct LendSecretPayload {
+    pub secret_name: String,
+    pub secret_value: String,
+    pub agent_id: String,
+    pub ttl_seconds: u64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RevokeLeasePayload {
+    pub token: String,
+}
+
+pub async fn lend_handler(
+    State(state): State<CliState>,
+    Json(payload): Json<LendSecretPayload>,
+) -> Response {
+    match state
+        .secrets_engine
+        .lend(
+            &payload.secret_name,
+            &payload.secret_value,
+            &payload.agent_id,
+            payload.ttl_seconds,
+        )
+        .await
+    {
+        Ok(lease) => json_response(
+            StatusCode::OK,
+            serde_json::to_value(lease).unwrap_or_default(),
+        ),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": e.to_string() }),
+        ),
+    }
+}
+
+pub async fn leases_handler(State(state): State<CliState>) -> Response {
+    let leases = state.secrets_engine.list_leases().await;
+    json_response(
+        StatusCode::OK,
+        serde_json::to_value(leases).unwrap_or_default(),
+    )
+}
+
+pub async fn revoke_handler(
+    State(state): State<CliState>,
+    Json(payload): Json<RevokeLeasePayload>,
+) -> Response {
+    match state
+        .secrets_engine
+        .revoke(&payload.token, "Manual API Call")
+        .await
+    {
+        Ok(_) => json_response(StatusCode::OK, serde_json::json!({ "status": "revoked" })),
+        Err(e) => json_response(
+            StatusCode::NOT_FOUND,
+            serde_json::json!({ "error": e.to_string() }),
+        ),
+    }
+}
+
+pub async fn status_handler(
+    State(state): State<CliState>,
+    AxumPath(token): AxumPath<String>,
+) -> Response {
+    match state.secrets_engine.get_lease(&token).await {
+        Some(status) => json_response(
+            StatusCode::OK,
+            serde_json::to_value(status).unwrap_or_default(),
+        ),
+        None => json_response(
+            StatusCode::NOT_FOUND,
+            serde_json::json!({ "error": "Lease not found" }),
+        ),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UsageUpdatePayload {
+    pub provider: String,
+    pub percentage: f32,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UsageCooldownPayload {
+    pub provider: String,
+    pub minutes: i64,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UsageTrackPayload {
+    pub provider: String,
+    pub tokens: usize,
+    pub status: u16,
+    #[serde(default)]
+    pub cost_usd: f64,
+    #[serde(default)]
+    pub is_cache_hit: bool,
+}
+
+pub async fn usage_status_handler(
+    State(state): State<CliState>,
+    AxumPath(provider): AxumPath<String>,
+) -> Response {
+    match state.rate_manager.get_status(&provider).await {
+        Ok(status) => json_response(
+            StatusCode::OK,
+            serde_json::to_value(status).unwrap_or_default(),
+        ),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": e.to_string() }),
+        ),
+    }
+}
+
+pub async fn usage_track_handler(
+    State(state): State<CliState>,
+    Json(payload): Json<UsageTrackPayload>,
+) -> Response {
+    match state
+        .rate_manager
+        .track_request(
+            &payload.provider,
+            payload.tokens,
+            payload.status,
+            payload.cost_usd,
+            payload.is_cache_hit,
+        )
+        .await
+    {
+        Ok(_) => json_response(StatusCode::OK, serde_json::json!({ "status": "ok" })),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": e.to_string() }),
+        ),
+    }
+}
+
+pub async fn usage_summary_handler(
+    State(state): State<CliState>,
+    AxumPath(provider): AxumPath<String>,
+) -> Response {
+    match state.rate_manager.get_daily_summary(&provider).await {
+        Ok(summary) => json_response(StatusCode::OK, summary),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": e.to_string() }),
+        ),
+    }
+}
+
+pub async fn usage_update_handler(
+    State(state): State<CliState>,
+    Json(payload): Json<UsageUpdatePayload>,
+) -> Response {
+    match state
+        .rate_manager
+        .update_manual_limit(&payload.provider, payload.percentage)
+        .await
+    {
+        Ok(_) => json_response(StatusCode::OK, serde_json::json!({ "status": "ok" })),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": e.to_string() }),
+        ),
+    }
+}
+
+pub async fn usage_cooldown_handler(
+    State(state): State<CliState>,
+    Json(payload): Json<UsageCooldownPayload>,
+) -> Response {
+    match state
+        .rate_manager
+        .report_429(&payload.provider, payload.minutes)
+        .await
+    {
+        Ok(_) => json_response(StatusCode::OK, serde_json::json!({ "status": "ok" })),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": e.to_string() }),
+        ),
+    }
+}
+
+/// GET /agents — List active agents
+pub async fn agent_list_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    let agents = state.agent_registry.get_active_agents().await;
+    Json(serde_json::json!({
+        "agents": agents.iter().map(|a| serde_json::json!({
+            "id": a.agent_id,
+            "session_id": a.session_id,
+            "last_heartbeat": a.last_heartbeat,
+        })).collect::<Vec<_>>(),
+        "count": agents.len()
+    }))
+}
+
+/// GET /workspace/default — Workspace info
+pub async fn workspace_info_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    Json(serde_json::json!({
+        "workspace_id": state.workspace_id,
+        "workspace_dir": state.workspace_dir.to_string_lossy(),
+    }))
+}
+
+/// GET /mcp/tools — List available MCP tools
+pub async fn mcp_tools_handler() -> impl axum::response::IntoResponse {
+    Json(serde_json::json!({
+        "tools": [
+            {"name": "memory_search", "description": "Search memory with semantic + lexical hybrid search"},
+            {"name": "memory_add", "description": "Add a new memory entry with metadata and zone tagging"},
+            {"name": "memory_delete", "description": "Delete a memory entry by path"},
+            {"name": "memory_stats", "description": "Get memory statistics and counts"},
+            {"name": "memory_export", "description": "Export all memories as JSON"},
+            {"name": "code_scan", "description": "Scan a codebase and index symbols into the code graph"},
+            {"name": "code_find", "description": "Find code symbols by name, kind, or file path"},
+            {"name": "code_context", "description": "Get surrounding context for a code symbol"},
+            {"name": "code_stats", "description": "Get code graph statistics"},
+            {"name": "agent_register", "description": "Register a new AI agent"},
+            {"name": "agent_list", "description": "List active agents"},
+            {"name": "agent_heartbeat", "description": "Send heartbeat for an agent"},
+            {"name": "agent_push_context", "description": "Push context document to an agent"},
+            {"name": "agent_unregister", "description": "Unregister an agent"},
+        ]
+    }))
+}

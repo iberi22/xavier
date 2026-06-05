@@ -1,0 +1,1030 @@
+
+/// Server startup time for uptime tracking
+static START_TIME: once_cell::sync::Lazy<Instant> = once_cell::sync::Lazy::new(Instant::now);
+
+pub async fn health_handler(State(state): State<CliState>) -> Response {
+    // Uptime in seconds since startup
+    let uptime_secs = START_TIME.elapsed().as_secs();
+
+    let lag_ms = xavier::tasks::session_sync_task::calculate_indexing_lag(
+        state.store.as_ref(),
+        &state.workspace_id,
+    )
+    .await;
+
+    // Determine embedding provider mode from env
+    let embedding_provider = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
+        .ok()
+        .map(|v| v.trim().to_ascii_lowercase())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| {
+            // Auto-detect based on configured env vars
+            if std::env::var("XAVIER_EMBEDDER")
+                .ok()
+                .map(|v| v.trim().to_ascii_lowercase())
+                .as_deref()
+                == Some("gllm")
+                || std::env::var("XAVIER_GLLM_MODEL").is_ok()
+            {
+                "gllm".to_string()
+            } else if std::env::var("OPENAI_API_KEY").is_ok()
+                || std::env::var("XAVIER_EMBEDDING_API_KEY").is_ok()
+            {
+                "openai".to_string()
+            } else {
+                "none".to_string()
+            }
+        });
+
+    // Calculate size of data/ directory
+    let sqlite_db_size = calculate_data_dir_size().unwrap_or(0);
+
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "status": "ok",
+            "service": "xavier",
+            "version": env!("CARGO_PKG_VERSION"),
+            "embedding_provider": embedding_provider,
+            "sqlite_db_size": sqlite_db_size,
+            "uptime": uptime_secs,
+            "lag_ms": lag_ms,
+        }),
+    )
+}
+
+/// Calculate the total size (in bytes) of the data/ directory
+fn calculate_data_dir_size() -> Option<u64> {
+    let data_dir = std::path::Path::new("data");
+    if !data_dir.is_dir() {
+        return None;
+    }
+    let mut total_size = 0u64;
+    if let Ok(entries) = std::fs::read_dir(data_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                total_size += std::fs::metadata(&path).ok()?.len();
+            } else if path.is_dir() {
+                if let Ok(sub_entries) = std::fs::read_dir(&path) {
+                    for sub_entry in sub_entries.flatten() {
+                        if sub_entry.path().is_file() {
+                            total_size += std::fs::metadata(sub_entry.path()).ok()?.len();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Some(total_size)
+}
+
+/// GET /v1/version — Service version info
+pub async fn version_handler() -> Response {
+    let features = if cfg!(feature = "enterprise") {
+        vec!["gllm-embeddings", "enterprise"]
+    } else {
+        vec!["gllm-embeddings"]
+    };
+
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "service": "xavier",
+            "version": env!("CARGO_PKG_VERSION"),
+            "features": features,
+            "build": env!("CARGO_PKG_VERSION"),
+        }),
+    )
+}
+
+pub async fn readiness_handler(State(state): State<CliState>) -> Response {
+    let memory_store = match state.store.health().await {
+        Ok(detail) => serde_json::json!({
+            "ready": true,
+            "detail": detail,
+        }),
+        Err(error) => serde_json::json!({
+            "ready": false,
+            "detail": error.to_string(),
+        }),
+    };
+    let code_graph = state
+        .code_db
+        .stats()
+        .map(|stats| {
+            serde_json::json!({
+                "ready": true,
+                "total_files": stats.total_files,
+                "total_symbols": stats.total_symbols,
+                "total_imports": stats.total_imports,
+            })
+        })
+        .unwrap_or_else(|error| {
+            serde_json::json!({
+                "ready": false,
+                "error": error.to_string(),
+            })
+        });
+
+    let ready = memory_store["ready"].as_bool().unwrap_or(false)
+        && code_graph["ready"].as_bool().unwrap_or(false);
+
+    json_response(
+        if ready {
+            StatusCode::OK
+        } else {
+            StatusCode::SERVICE_UNAVAILABLE
+        },
+        serde_json::json!({
+            "status": if ready { "ok" } else { "degraded" },
+            "service": "xavier",
+            "workspace_id": state.workspace_id,
+            "memory_store": memory_store,
+            "code_graph": code_graph,
+        }),
+    )
+}
+
+pub async fn build_handler(State(state): State<CliState>) -> Response {
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "service": "xavier",
+            "version": env!("CARGO_PKG_VERSION"),
+            "workspace_id": state.workspace_id,
+            "base_url": resolve_base_url(),
+            "memory_backend": XavierSettings::current().memory.backend,
+            "code_graph_db_path": code_graph_db_path(),
+        }),
+    )
+}
+
+pub async fn account_usage_handler(State(state): State<CliState>, headers: HeaderMap) -> Response {
+    let expected_token = match resolve_http_token() {
+        Ok(token) => token,
+        Err(e) => {
+            return json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({
+                    "status": "error",
+                    "message": format!("Token resolution failed: {e}"),
+                }),
+            )
+        }
+    };
+
+    let provided_token = headers
+        .get("X-Xavier-Token")
+        .and_then(|value| value.to_str().ok());
+    if provided_token != Some(expected_token.as_str()) {
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            serde_json::json!({
+                "status": "error",
+                "message": "Unauthorized",
+            }),
+        );
+    }
+
+    // Collect provider quotas from RateLimitManager
+    let mut provider_quotas = serde_json::Map::new();
+    match state.rate_manager.get_all_providers().await {
+        Ok(providers) => {
+            for p in providers {
+                if let Ok(status) = state.rate_manager.get_status(&p).await {
+                    if let Ok(val) = serde_json::to_value(&status) {
+                        provider_quotas.insert(p, val);
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Failed to list providers for quotas: {e}");
+        }
+    }
+
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "status": "ok",
+            "document_count": 0,
+            "requests_used": 0,
+            "storage_bytes_used": 0,
+            "storage_bytes_limit": 0,
+            "provider_quotas": provider_quotas,
+            "optimization": {
+                "router_direct_count": 0,
+                "semantic_cache_hits": 0,
+                "semantic_cache_misses": 0,
+            },
+        }),
+    )
+}
+
+/// POST /v1/embeddings — OpenAI-compatible embedding endpoint
+/// Uses Xavier's gllm native embedder (no external server needed)
+async fn embed_handler(
+    State(state): State<CliState>,
+    Json(body): Json<serde_json::Value>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let input = body.get("input").and_then(|v| v.as_str()).ok_or_else(|| {
+        (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "Missing 'input' field"})),
+        )
+    })?;
+
+    let model = body
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("all-MiniLM-L6-v2");
+
+    match state.embedder.encode(input).await {
+        Ok(embedding) => Ok(Json(serde_json::json!({
+            "object": "list",
+            "data": [{
+                "object": "embedding",
+                "index": 0,
+                "embedding": embedding,
+            }],
+            "model": model,
+            "usage": {
+                "prompt_tokens": input.len(),
+                "total_tokens": input.len(),
+            }
+        }))),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": format!("Embedding failed: {}", e)})),
+        )),
+    }
+}
+
+pub fn json_response(status: StatusCode, body: serde_json::Value) -> Response {
+    Response::builder()
+        .status(status)
+        .header("content-type", "application/json")
+        .header("x-request-id", uuid::Uuid::new_v4().to_string())
+        .body(axum::body::Body::from(body.to_string()))
+        .unwrap_or_else(|_| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({"status":"error"}).to_string(),
+            )
+                .into_response()
+        })
+}
+
+pub async fn auth_middleware(req: Request<Body>, next: Next) -> Response {
+    let expected_token = match resolve_http_token() {
+        Ok(token) => token,
+        Err(e) => {
+            return json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({"status":"error","message": format!("Token resolution failed: {e}")}),
+            );
+        }
+    };
+
+    let provided_token = req
+        .headers()
+        .get("X-Xavier-Token")
+        .and_then(|value| value.to_str().ok())
+        .or_else(|| {
+            req.headers()
+                .get("Authorization")
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.strip_prefix("Bearer "))
+        });
+
+    // Constant-time comparison to prevent timing attacks
+    use subtle::ConstantTimeEq;
+    let provided_bytes = provided_token.unwrap_or("").as_bytes();
+    let expected_bytes = expected_token.as_bytes();
+    let is_match: bool = provided_bytes.ct_eq(expected_bytes).into();
+    if !is_match {
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            serde_json::json!({"status":"error","message":"Unauthorized"}),
+        );
+    }
+
+    next.run(req).await
+}
+
+pub async fn rate_limit_middleware(
+    State(state): State<CliState>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
+    let provider = "api_gateway";
+    match state.rate_manager.get_status(provider).await {
+        Ok(status) => {
+            if let Some(until) = status.rate_limited_until {
+                if until > chrono::Utc::now() {
+                    warn!("Global rate limit reached, blocking request");
+                    return json_response(
+                        StatusCode::TOO_MANY_REQUESTS,
+                        serde_json::json!({
+                            "status": "error",
+                            "message": "Rate limit exceeded. Please try again later.",
+                            "retry_after": until.to_rfc3339()
+                        }),
+                    );
+                }
+            }
+        }
+        Err(e) => {
+            warn!("Failed to check rate limit: {}", e);
+        }
+    }
+
+    let response = next.run(req).await;
+
+    // Track usage (simple 1 unit per request)
+    if let Err(e) = state
+        .rate_manager
+        .track_request(provider, 1, response.status().as_u16(), 0.0, false)
+        .await
+    {
+        warn!("Failed to track rate limit usage: {}", e);
+    }
+
+    response
+}
+
+pub async fn panel_list_threads(State(state): State<CliState>) -> Response {
+    match state.panel_store.list_threads(50).await {
+        Ok(threads) => {
+            let mut summaries = Vec::new();
+            for t in threads {
+                let mut summary = xavier::codebase::conversations_db::ThreadSummary::from(&t);
+                if let Ok(messages) = state.panel_store.get_thread_messages(&t.id).await {
+                    summary.message_count = messages.len();
+                }
+                summaries.push(summary);
+            }
+            json_response(StatusCode::OK, serde_json::json!(summaries))
+        }
+        Err(error) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": error.to_string() }),
+        ),
+    }
+}
+
+pub async fn panel_create_thread(
+    State(state): State<CliState>,
+    Json(payload): Json<CreateThreadRequest>,
+) -> Response {
+    let title_hint = payload
+        .title
+        .or(payload.message)
+        .unwrap_or_else(|| "New Thread".to_string());
+
+    match state.panel_store.create_thread(Some(&title_hint), None, Some("cli")).await {
+        Ok(thread) => json_response(
+            StatusCode::OK,
+            serde_json::to_value(xavier::codebase::conversations_db::ThreadSummary::from(&thread))
+                .unwrap_or_else(|_| serde_json::json!({})),
+        ),
+        Err(error) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": error.to_string() }),
+        ),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ExportPackPayload {
+    pub topic: String,
+    #[serde(default = "default_max_level_val")]
+    pub max_level: usize,
+}
+
+fn default_max_level_val() -> usize {
+    3
+}
+
+pub async fn export_pack_handler(
+    State(state): State<CliState>,
+    Json(payload): Json<ExportPackPayload>,
+) -> Response {
+    info!(
+        "Export context pack request: topic={}, max_level={}",
+        payload.topic, payload.max_level
+    );
+
+    let gating = xavier::retrieval::gating::AdaptiveGating::with_defaults();
+
+    // In CLI server mode, we need to gather all documents from the memory port
+    let all_docs = match state.store.list(&state.workspace_id).await {
+        Ok(records) => records
+            .into_iter()
+            .map(|r| r.to_document())
+            .collect::<Vec<_>>(),
+        Err(e) => {
+            return json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "error": e.to_string() }),
+            )
+        }
+    };
+
+    let threads = state.panel_store.list_threads(50).await.unwrap_or_default();
+    let episodic_summaries = threads
+        .into_iter()
+        .map(|s| xavier::retrieval::gating::SessionSummary {
+            session_id: s.id.clone(),
+            start_time: s.started_at,
+            summary: s.last_preview.unwrap_or_default(),
+            key_events: vec![],
+            sentiment_timeline: vec![],
+        })
+        .collect::<Vec<_>>();
+
+    // We don't have a direct entity_graph in CliState for now that is easily accessible like in WorkspaceState,
+    // but we can try to use what we have or a mock for now if it's not fully wired.
+    // Actually, EntityGraph is used in WorkspaceState.
+    // Let's see if we can get entities.
+    let semantic_entities = Vec::new(); // Fallback for now if not easily available in CliState
+
+    let layered_result = gating
+        .retrieve_layered(
+            &all_docs,
+            &episodic_summaries,
+            &semantic_entities,
+            &payload.topic,
+        )
+        .await;
+
+    let xml = xavier::memory::pack::generate_xcp(layered_result, payload.max_level);
+    let filename = format!("context-{}.xcp", payload.topic.replace(" ", "_"));
+
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "status": "ok",
+            "xml": xml,
+            "filename": filename,
+        }),
+    )
+}
+
+pub async fn panel_get_thread(
+    State(state): State<CliState>,
+    AxumPath(thread_id): AxumPath<String>,
+) -> Response {
+    match state.panel_store.get_thread(&thread_id).await {
+        Ok(Some(thread)) => match state.panel_store.get_thread_messages(&thread_id).await {
+            Ok(messages) => {
+                let mut summary = xavier::codebase::conversations_db::ThreadSummary::from(&thread);
+                summary.message_count = messages.len();
+                json_response(
+                    StatusCode::OK,
+                    serde_json::to_value(xavier::codebase::conversations_db::ThreadDetail {
+                        thread: summary,
+                        messages,
+                    })
+                    .unwrap_or_else(|_| serde_json::json!({})),
+                )
+            }
+            Err(error) => json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({ "error": error.to_string() }),
+            ),
+        },
+        Ok(None) => json_response(
+            StatusCode::NOT_FOUND,
+            serde_json::json!({ "error": "thread not found" }),
+        ),
+        Err(error) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": error.to_string() }),
+        ),
+    }
+}
+
+pub async fn panel_delete_thread(
+    State(_state): State<CliState>,
+    AxumPath(_thread_id): AxumPath<String>,
+) -> Response {
+    json_response(
+        StatusCode::NOT_IMPLEMENTED,
+        serde_json::json!({ "error": "thread deletion not implemented" }),
+    )
+}
+
+pub async fn panel_process_chat(
+    State(state): State<CliState>,
+    Json(payload): Json<PanelChatRequest>,
+) -> Response {
+    match panel_process_chat_inner(&state, payload).await {
+        Ok(response) => json_response(
+            StatusCode::OK,
+            serde_json::to_value(response).unwrap_or_else(|_| serde_json::json!({})),
+        ),
+        Err(error) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": error.to_string() }),
+        ),
+    }
+}
+
+pub async fn panel_process_chat_inner(
+    state: &CliState,
+    payload: PanelChatRequest,
+) -> Result<PanelChatResponse> {
+    let thread = match payload.thread_id.as_deref() {
+        Some(thread_id) => state
+            .panel_store
+            .get_thread(thread_id)
+            .await?
+            .ok_or_else(|| anyhow!("thread {thread_id} not found"))?,
+        None => state.panel_store.create_thread(Some(&payload.message), None, Some("cli")).await?,
+    };
+
+    state.panel_store.store_message(
+        &thread.id,
+        "user",
+        &payload.message,
+        None,
+        None,
+        None,
+        Some("{}"),
+        None,
+    ).await?;
+
+    let assistant_content = format!(
+        "Structured Xavier response for: {}",
+        payload.message.trim()
+    );
+    let openui_lang = format!(
+        "<SectionBlock title=\"Xavier\" description=\"{}\"><InfoCard title=\"Status\" value=\"Ready\" /></SectionBlock>",
+        payload.message.replace('"', "'")
+    );
+    let metadata = serde_json::json!({
+        "rules": ["deterministic", "ci-safe"],
+        "components": ["SectionBlock", "InfoCard"],
+        "timings": { "total_ms": 0 }
+    });
+
+    state.panel_store.store_message(
+        &thread.id,
+        "assistant",
+        &assistant_content,
+        None,
+        Some(&openui_lang),
+        None,
+        Some(&metadata.to_string()),
+        None,
+    ).await?;
+
+    let messages = state.panel_store.get_thread_messages(&thread.id).await?;
+    let mut summary = xavier::codebase::conversations_db::ThreadSummary::from(&thread);
+    summary.message_count = messages.len();
+
+    Ok(PanelChatResponse {
+        thread: summary,
+        messages,
+    })
+}
+
+pub async fn search_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<SearchPayload>,
+) -> impl axum::response::IntoResponse {
+    // Security scan on query before searching
+    let sec_result = state
+        .security
+        .process_input(&payload.query)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: payload.query.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    if !sec_result.allowed {
+        info!(
+            "Search blocked by security: injection detected (confidence={})",
+            sec_result.detection_confidence
+        );
+        return axum::Json(serde_json::json!({
+            "results": <Vec<serde_json::Value>>::new(),
+            "query": payload.query,
+            "count": 0,
+            "blocked": true,
+            "reason": "security_policy_violation",
+            "detection": {
+                "is_injection": sec_result.is_injection,
+                "confidence": sec_result.detection_confidence,
+                "attack_type": sec_result.attack_type,
+            },
+            "workspace_id": state.workspace_id,
+        }));
+    }
+
+    let effective_query = sec_result.effective_input();
+    let limit = payload.limit.clamp(1, 100);
+    info!("Search request: query={}, limit={}", effective_query, limit);
+
+    let mut filters = payload.filters.clone().unwrap_or_default();
+    let zones = payload
+        .active_zones
+        .clone()
+        .unwrap_or_else(|| xavier::memory::schema::parse_zones_from_prompt(effective_query));
+    filters.zones = Some(zones);
+
+    let results: Vec<MemoryRecord> = match state.memory.search(effective_query, Some(filters)).await
+    {
+        Ok(results) => results,
+        Err(e) => {
+            info!("Search error: {}", e);
+            return axum::Json(serde_json::json!({
+                "results": [],
+                "query": payload.query,
+                "count": 0,
+                "error": e.to_string(),
+                "workspace_id": state.workspace_id,
+            }));
+        }
+    };
+
+    {
+        // Deduplicate results by content hash, keeping most recent by updated_at
+        // NOTE: deduplicate_by_content_hash was removed - results passed through
+        let search_results: Vec<serde_json::Value> = results
+            .into_iter()
+            .map(|document| {
+                serde_json::json!({
+                    "id": document.id,
+                    "content": document.content,
+                    "embedding": document.embedding,
+                })
+            })
+            .collect();
+
+        axum::Json(serde_json::json!({
+            "results": search_results,
+            "query": payload.query,
+            "count": search_results.len(),
+            "workspace_id": state.workspace_id,
+        }))
+    }
+}
+
+pub async fn add_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<AddPayload>,
+) -> impl axum::response::IntoResponse {
+    // Security scan on content before adding
+    let sec_result = state
+        .security
+        .process_input(&payload.content)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: payload.content.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    if !sec_result.allowed {
+        info!(
+            "Add blocked by security: injection detected (confidence={})",
+            sec_result.detection_confidence
+        );
+        return axum::Json(serde_json::json!({
+            "status": "blocked",
+            "reason": "security_policy_violation",
+            "detection": {
+                "is_injection": sec_result.is_injection,
+                "confidence": sec_result.detection_confidence,
+                "attack_type": sec_result.attack_type,
+            }
+        }))
+        .into_response();
+    }
+
+    let effective_content = sec_result
+        .sanitized_input
+        .as_deref()
+        .unwrap_or(&sec_result.original_input);
+
+    let path = payload
+        .path
+        .unwrap_or_else(|| format!("memory/{}", ulid::Ulid::new()));
+    let mut metadata = payload.metadata.unwrap_or(serde_json::json!({}));
+
+    // Hierarchical fields
+    let cluster_id = payload.cluster_id.clone();
+    let level = payload
+        .level
+        .map(|l| xavier::memory::schema::MemoryLevel::parse(&l))
+        .unwrap_or(MemoryLevel::Raw);
+    let relation = payload
+        .relation
+        .clone()
+        .map(|r| xavier::memory::schema::RelationKind {
+            name: r,
+            inverse: None,
+        });
+
+    // Add title to metadata if provided
+    if let Some(title) = payload.title {
+        if let Some(obj) = metadata.as_object_mut() {
+            obj.insert("title".to_string(), serde_json::json!(title));
+        }
+    }
+
+    info!(
+        "Add memory request: path={}, content_len={}",
+        path,
+        effective_content.len()
+    );
+
+    let record = MemoryRecord {
+        id: String::new(),
+        workspace_id: state.workspace_id.clone(),
+        path: path.clone(),
+        content: effective_content.to_string(),
+        metadata: serde_json::json!({"kind": "Context", "namespace": "Global"}),
+        embedding: vec![],
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+        revision: 1,
+        primary: true,
+        parent_id: None,
+        cluster_id,
+        level,
+        relation,
+        revisions: vec![],
+    };
+    match state.memory.add(record).await {
+        Ok(id) => {
+            info!("Memory added successfully: {}", path);
+            axum::Json(serde_json::json!({
+                "status": "ok",
+                "message": "Memory added",
+                "path": path,
+                "id": id,
+                "security": {
+                    "scanned": true,
+                    "sanitized": sec_result.sanitized_input.is_some(),
+                    "attack_type": sec_result.attack_type,
+                }
+            }))
+            .into_response()
+        }
+        Err(e) => {
+            info!("Add memory error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(serde_json::json!({
+                    "status": "error",
+                    "message": e.to_string(),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+pub async fn delete_handler(
+    State(state): State<CliState>,
+    headers: HeaderMap,
+    axum::extract::Json(payload): axum::extract::Json<DeleteMemoryRequest>,
+) -> Response {
+    let expected_token = match resolve_http_token() {
+        Ok(token) => token,
+        Err(e) => {
+            return json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({"status":"error","message": format!("Token resolution failed: {e}")}),
+            );
+        }
+    };
+
+    match headers
+        .get("X-Xavier-Token")
+        .and_then(|value| value.to_str().ok())
+    {
+        Some(token) if token == expected_token => {}
+        _ => {
+            return json_response(
+                StatusCode::UNAUTHORIZED,
+                serde_json::json!({"status":"error","message":"Unauthorized"}),
+            );
+        }
+    }
+
+    let id_or_path = payload
+        .id
+        .or(payload.path)
+        .filter(|value| !value.trim().is_empty());
+    let Some(id_or_path) = id_or_path else {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({"status":"error","message":"Provide either id or path"}),
+        );
+    };
+
+    match state.store.delete(&state.workspace_id, &id_or_path).await {
+        Ok(Some(record)) => json_response(
+            StatusCode::OK,
+            serde_json::json!({
+                "status": "ok",
+                "deleted": true,
+                "id": record.id,
+                "path": record.path,
+            }),
+        ),
+        Ok(None) => json_response(
+            StatusCode::NOT_FOUND,
+            serde_json::json!({
+                "status": "not_found",
+                "deleted": false,
+                "id_or_path": id_or_path,
+            }),
+        ),
+        Err(error) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({
+                "status": "error",
+                "message": error.to_string(),
+            }),
+        ),
+    }
+}
+
+pub async fn stats_handler(State(state): State<CliState>) -> impl axum::response::IntoResponse {
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "workspace_id": state.workspace_id,
+        "version": "0.4.1",
+    }))
+}
+
+pub async fn security_scan_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<SecurityScanPayload>,
+) -> impl axum::response::IntoResponse {
+    let result = state
+        .security
+        .process_input(&payload.input)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: payload.input.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    axum::Json(serde_json::json!({
+        "status": if result.allowed { "allowed" } else { "blocked" },
+        "allowed": result.allowed,
+        "detection": {
+            "is_injection": result.is_injection,
+            "confidence": result.detection_confidence,
+            "attack_type": result.attack_type,
+        },
+        "sanitized_input": result.sanitized_input,
+        "original_input": result.original_input,
+    }))
+}
+
+pub async fn memory_query_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<MemoryQueryPayload>,
+) -> impl axum::response::IntoResponse {
+    // Security scan on query
+    let sec_result = state
+        .security
+        .process_input(&payload.query)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: payload.query.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    if !sec_result.allowed {
+        return axum::Json(serde_json::json!({
+            "status": "blocked",
+            "reason": "security_policy_violation",
+            "detection": {
+                "is_injection": sec_result.is_injection,
+                "confidence": sec_result.detection_confidence,
+                "attack_type": sec_result.attack_type,
+            }
+        }));
+    }
+
+    let limit = payload.limit.unwrap_or(10).clamp(1, 100);
+    info!(
+        "Memory query request: query={}, limit={}",
+        payload.query, limit
+    );
+
+    // Use search (equivalent to hybrid search)
+    match state.memory.search(&payload.query, None).await {
+        Ok(results) => {
+            let documents: Vec<_> = results
+                .into_iter()
+                .map(|doc| {
+                    serde_json::json!({
+                        "id": doc.id,
+                        "content": doc.content,
+                        "embedding": doc.embedding,
+                    })
+                })
+                .collect();
+
+            axum::Json(serde_json::json!({
+                "status": "ok",
+                "query": payload.query,
+                "count": documents.len(),
+                "results": documents,
+                "workspace_id": state.workspace_id,
+            }))
+        }
+        Err(e) => {
+            info!("Memory query error: {}", e);
+            axum::Json(serde_json::json!({
+                "status": "error",
+                "message": e.to_string(),
+            }))
+        }
+    }
+}
+
+pub async fn code_scan_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<CodeScanPayload>,
+) -> impl axum::response::IntoResponse {
+    // Security: validate path to prevent path traversal
+    let requested_path = payload.path.unwrap_or_else(|| ".".to_string());
+
+    // Security scan on path
+    let sec_result = state
+        .security
+        .process_input(&requested_path)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: requested_path.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    if !sec_result.allowed {
+        info!(
+            "code/scan blocked by security: injection detected (confidence={})",
+            sec_result.detection_confidence
+        );
+        return axum::Json(serde_json::json!({
+            "status": "blocked",
+            "reason": "security_policy_violation",
+            "detection": {
+                "is_injection": sec_result.is_injection,
+                "confidence": sec_result.detection_confidence,
+                "attack_type": sec_result.attack_type,
+            }
+        }));
+    }
+
+    // Path traversal protection via canonicalization
+    let workspace_root =
+        std::path::absolute(&state.workspace_dir).unwrap_or_else(|_| PathBuf::from("."));
+    let Ok(abs_path) = std::path::absolute(&requested_path) else {
+        return axum::Json(serde_json::json!({
+            "status": "error",
+            "message": "invalid path",
+            "indexed_files": 0,
+        }));
+    };
+    if !abs_path.starts_with(&workspace_root) {
+        warn!(
+            "Path traversal blocked: {} is outside workspace root {}",
+            abs_path.display(),
+            workspace_root.display()
+        );
+        return axum::Json(serde_json::json!({
+            "status": "error",
+            "message": "path outside workspace not allowed",
+            "indexed_files": 0,
+        }));

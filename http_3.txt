@@ -1,0 +1,407 @@
+    Json(serde_json::json!({
+        "status": "ok",
+        "message": "Document added to memory",
+        "workspace_id": workspace.workspace_id,
+    }))
+}
+
+pub async fn memory_search(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Json(payload): Json<SearchRequest>,
+) -> Json<serde_json::Value> {
+    info!(
+        query_fingerprint = %query_fingerprint(&payload.query),
+        "memory_search"
+    );
+
+    let results = match workspace
+        .workspace
+        .memory
+        .search_filtered(&payload.query, payload.limit, payload.filters.as_ref())
+        .await
+    {
+        Ok(docs) => docs
+            .into_iter()
+            .map(|doc: MemoryDocument| {
+                serde_json::json!({
+                    "id": doc.id,
+                    "path": doc.path,
+                    "content": doc.content,
+                    "metadata": doc.metadata,
+                })
+            })
+            .collect(),
+        Err(error) => {
+            tracing::error!(
+                %error,
+                workspace_id = %workspace.workspace_id,
+                "memory_search failed"
+            );
+            return Json(serde_json::json!({
+                "status": "error",
+                "message": format!("memory search failed: {}", error),
+                "workspace_id": workspace.workspace_id,
+            }));
+        }
+    };
+
+    Json(serde_json::json!(SearchResponse {
+        status: "ok".to_string(),
+        results,
+        query: payload.query,
+    }))
+}
+
+pub async fn memory_hybrid_search(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Json(payload): Json<HybridSearchRequest>,
+) -> impl IntoResponse {
+    let mode = payload.search_type.unwrap_or_default();
+    info!(
+        query_fingerprint = %query_fingerprint(&payload.query),
+        mode = ?mode,
+        "memory_hybrid_search"
+    );
+
+    match workspace
+        .workspace
+        .durable_store()
+        .hybrid_search(
+            &workspace.workspace_id,
+            &payload.query,
+            mode,
+            payload.filters.as_ref(),
+            payload.limit,
+        )
+        .await
+    {
+        Ok(results) => Json(HybridSearchResponse {
+            status: "ok".to_string(),
+            results: results
+                .into_iter()
+                .map(|result| {
+                    serde_json::json!({
+                        "id": result.record.id,
+                        "path": result.record.path,
+                        "content": result.record.content,
+                        "metadata": result.record.metadata,
+                        "score": result.score,
+                        "vector_score": result.vector_score,
+                        "lexical_score": result.lexical_score,
+                        "kg_score": result.kg_score,
+                        "bm25": result.bm25,
+                    })
+                })
+                .collect(),
+            query: payload.query,
+            mode,
+        })
+        .into_response(),
+        Err(error) => Json(serde_json::json!({
+            "status": "error",
+            "message": error.to_string(),
+            "query": payload.query,
+            "mode": mode,
+        }))
+        .into_response(),
+    }
+}
+
+pub async fn memory_retrieve(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Json(payload): Json<MultiLayerRetrieveRequest>,
+) -> impl IntoResponse {
+    info!(
+        query_fingerprint = %query_fingerprint(&payload.query),
+        limit = payload.limit,
+        "memory_retrieve"
+    );
+
+    Json(build_multi_layer_retrieve_response(&workspace, &payload).await)
+}
+
+pub async fn memory_export_pack(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Json(payload): Json<ExportPackRequest>,
+) -> impl IntoResponse {
+    info!(
+        topic = %payload.topic,
+        max_level = payload.max_level,
+        "memory_export_pack"
+    );
+
+    let gating = AdaptiveGating::with_defaults();
+    let all_docs = workspace.workspace.memory.all_documents().await;
+
+    let threads = workspace.workspace.conversations_db.list_threads(50).await.unwrap_or_default();
+    let episodic_summaries = threads
+        .into_iter()
+        .map(|s| SessionSummary {
+            session_id: s.id.clone(),
+            start_time: s.started_at,
+            summary: s.last_preview.unwrap_or_default(),
+            key_events: vec![],
+            sentiment_timeline: vec![],
+        })
+        .collect::<Vec<_>>();
+
+    let semantic_entities: Vec<EntityRecord> =
+        workspace.workspace.entity_graph.all_entities().await;
+
+    let layered_result = gating
+        .retrieve_layered(
+            &all_docs,
+            &episodic_summaries,
+            &semantic_entities,
+            &payload.topic,
+        )
+        .await;
+
+    let xml = crate::memory::pack::generate_xcp(layered_result, payload.max_level);
+    let filename = format!("context-{}.xcp", payload.topic.replace(" ", "_"));
+
+    Json(ExportPackResponse {
+        status: "ok".to_string(),
+        xml,
+        filename,
+    })
+}
+
+async fn build_multi_layer_retrieve_response(
+    workspace: &WorkspaceContext,
+    payload: &MultiLayerRetrieveRequest,
+) -> MultiLayerRetrieveResponse {
+    let settings = crate::settings::XavierSettings::current();
+
+    let active_zones = payload
+        .active_zones
+        .clone()
+        .unwrap_or_else(|| crate::memory::schema::parse_zones_from_prompt(&payload.query));
+
+    let weights = if let Some(w) = payload.layer_weights {
+        w
+    } else {
+        let classifier = ContextClassifier::new();
+        let level = classifier.classify(&payload.query);
+        LayerWeights::adaptive(&payload.query, level, &[])
+    };
+
+    let gating = AdaptiveGating::new(crate::retrieval::gating::GatingConfig {
+        layer_weights: weights,
+        relevance_threshold: payload.relevance_threshold.clamp(0.0, 1.0),
+        rrf_k: payload.rrf_k,
+        max_results: payload.limit.max(1),
+        active_zones: Some(active_zones),
+        zone_boost_multiplier: settings
+            .retrieval
+            .zone_boost_multiplier
+            .unwrap_or_else(crate::retrieval::config::configured_zone_boost),
+        zone_penalty_multiplier: settings
+            .retrieval
+            .zone_penalty_multiplier
+            .unwrap_or_else(crate::retrieval::config::configured_zone_penalty),
+        recency_weight: payload.recency_weight,
+        half_life_hours: payload.half_life_hours,
+        grounding_enabled: payload.grounding_enabled,
+        grounding_min_confidence: payload.grounding_min_confidence,
+    });
+
+    let working_docs = workspace.workspace.memory.all_documents().await;
+    let working_count = working_docs.len();
+
+    let threads = workspace.workspace.conversations_db.list_threads(50).await.unwrap_or_default();
+    let episodic_summaries = threads
+        .into_iter()
+        .map(|s| SessionSummary {
+            session_id: s.id.clone(),
+            start_time: s.started_at,
+            summary: s.last_preview.unwrap_or_default(),
+            key_events: vec![],
+            sentiment_timeline: vec![],
+        })
+        .collect::<Vec<_>>();
+    let episodic_count = episodic_summaries.len();
+
+    let semantic_entities: Vec<EntityRecord> =
+        workspace.workspace.entity_graph.all_entities().await;
+    let semantic_count = semantic_entities.len();
+
+    let results = gating
+        .retrieve(
+            &working_docs,
+            &episodic_summaries,
+            &semantic_entities,
+            &payload.query,
+            Some(std::sync::Arc::clone(&workspace.workspace.belief_graph)),
+        )
+        .await;
+
+    let total_results = results.len();
+
+    let coherence_report = if payload.include_coherence {
+        let regularizer = RetentionRegularizer::with_defaults();
+        Some(regularizer.check_coherence_with_entities(&working_docs, &semantic_entities))
+    } else {
+        None
+    };
+
+    let retrieved: Vec<RetrievedMemory> = results
+        .into_iter()
+        .map(|r| {
+            let crate::search::rrf::ScoredResult {
+                id,
+                content,
+                score,
+                source,
+                path: _,
+                updated_at: _,
+            } = r;
+
+            RetrievedMemory {
+                path: retrieved_path_for_result(&working_docs, &id, &source),
+                id,
+                content,
+                score,
+                source_layer: source,
+            }
+        })
+        .collect();
+
+    MultiLayerRetrieveResponse {
+        status: "ok".to_string(),
+        results: retrieved,
+        query: payload.query.clone(),
+        layers_used: LayerStatsJson {
+            working_count,
+            episodic_count,
+            semantic_count,
+            total_results,
+        },
+        coherence_report,
+    }
+}
+
+fn retrieved_path_for_result(
+    working_docs: &[MemoryDocument],
+    result_id: &str,
+    source_layer: &str,
+) -> String {
+    if let Some(path) = working_docs
+        .iter()
+        .find(|document| document.id.as_deref() == Some(result_id))
+        .map(|document| document.path.clone())
+    {
+        return path;
+    }
+
+    match source_layer {
+        "episodic" => format!("panel/threads/{result_id}"),
+        "semantic" => format!("semantic/entities/{result_id}"),
+        _ => result_id.to_string(),
+    }
+}
+
+pub async fn memory_curate(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Json(payload): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    let doc_id = payload
+        .get("id")
+        .and_then(|id| id.as_str())
+        .map(|s| s.to_string());
+
+    if let Some(id) = doc_id {
+        info!("🧠 Manual curation request for doc: {}", id);
+        let action = crate::memory::manager::MemoryAction::Curate { doc_id: id };
+        match workspace
+            .workspace
+            .memory_manager
+            .execute_actions(vec![action])
+            .await
+        {
+            Ok(_) => {
+                if let Err(error) = workspace.workspace.persist_beliefs().await {
+                    return Json(serde_json::json!({
+                        "status": "error",
+                        "message": error.to_string(),
+                    }));
+                }
+                Json(serde_json::json!({ "status": "ok", "message": "Curation completed" }))
+            }
+            Err(e) => Json(serde_json::json!({ "status": "error", "message": e.to_string() })),
+        }
+    } else {
+        Json(serde_json::json!({ "status": "error", "message": "Missing 'id' in request body" }))
+    }
+}
+
+pub async fn memory_manage(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
+    info!("⚙️ Memory management auto-run requested");
+    match workspace.workspace.memory_manager.auto_manage().await {
+        Ok(count) => {
+            if let Err(error) = workspace.workspace.persist_beliefs().await {
+                return Json(serde_json::json!({
+                    "status": "error",
+                    "message": error.to_string(),
+                }));
+            }
+            Json(serde_json::json!({ "status": "ok", "actions_executed": count }))
+        }
+        Err(e) => Json(serde_json::json!({ "status": "error", "message": e.to_string() })),
+    }
+}
+
+pub async fn memory_decay(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
+    info!("📉 Memory decay request");
+    match workspace.workspace.memory_manager.decay_memories().await {
+        Ok(result) => {
+            if let Err(error) = workspace.workspace.persist_beliefs().await {
+                return Json(serde_json::json!({
+                    "status": "error",
+                    "message": error.to_string(),
+                }));
+            }
+            Json(serde_json::json!({
+                "status": "ok",
+                "documents_affected": result.documents_affected,
+                "actions": result.actions.len(),
+                "bytes_freed": result.bytes_freed,
+            }))
+        }
+        Err(e) => Json(serde_json::json!({"status": "error", "message": e.to_string() })),
+    }
+}
+
+pub async fn memory_consolidate(
+    Extension(workspace): Extension<WorkspaceContext>,
+) -> impl IntoResponse {
+    info!("🔗 Memory consolidation request");
+    let task = ConsolidationTask::default();
+    match task.consolidate(&workspace).await {
+        Ok(stats) => Json(serde_json::json!({
+            "status": "ok",
+            "stats": stats,
+        })),
+        Err(e) => Json(serde_json::json!({"status": "error", "message": e.to_string() })),
+    }
+}
+
+pub async fn memory_reflect(
+    Extension(workspace): Extension<WorkspaceContext>,
+) -> impl IntoResponse {
+    info!("?? Memory reflection request");
+    let task = ConsolidationTask::default();
+    match task.reflect(&workspace).await {
+        Ok(result) => Json(serde_json::json!({
+            "status": "ok",
+            "data": result,
+        })),
+        Err(e) => {
+            error!("Memory reflect error: {:?}", e);
+            Json(serde_json::json!({
+                "status": "error",
+                "error": e.to_string(),
+            }))
+        }
+    }
+}

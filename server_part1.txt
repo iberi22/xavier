@@ -1,0 +1,220 @@
+        )),
+    };
+
+    info!(
+        "Memory store initialized for workspace: {}",
+        state.workspace_id
+    );
+    println!(
+        "Memory store initialized for workspace: {}",
+        state.workspace_id
+    );
+    println!("Code graph DB: {}", code_db_path.display());
+
+    // Build router with state-aware routes
+    let protected_routes = Router::new()
+        .route("/memory/search", post(search_handler))
+        .route("/memory/delete", post(delete_handler))
+        .route("/memory/stats", get(stats_handler))
+        .route("/memory/export", get(export_handler))
+        // v1 API aliases for compatibility
+        .route("/v1/memories", post(add_handler).get(stats_handler))
+        .route("/v1/memories/search", post(search_handler))
+        // Agent listing endpoint
+        .route("/agents", get(agent_list_handler))
+        // Workspace info
+        .route("/workspace/default", get(workspace_info_handler))
+        // MCP tools listing
+        .route("/mcp/tools", get(mcp_tools_handler))
+        .route("/code/find", post(code_find_handler))
+        .route("/code/context", post(code_context_handler))
+        .route("/code/stats", get(code_stats_handler))
+        .route("/code/dependencies", post(code_dependencies_handler))
+        .route(
+            "/code/reverse-dependencies",
+            post(code_reverse_dependencies_handler),
+        )
+        .route("/code/call-chain", post(code_call_chain_handler))
+        .route("/code/hubs", get(code_hubs_handler))
+        .route("/code/hotspots", get(code_hotspots_handler))
+        .route("/v1/account/usage", get(account_usage_handler))
+        .route("/v1/embeddings", post(embed_handler))
+        .route("/security/scan", post(security_scan_handler))
+        .route("/memory/query", post(memory_query_handler))
+        .route("/session/compact", post(session_compact_handler))
+        .route("/xavier/events/session", post(session_event_handler))
+        .route("/xavier/time/metric", post(time_metric_handler))
+        .route("/xavier/agents/register", post(agent_register_handler))
+        .route("/xavier/agents/active", get(agent_active_handler))
+        .route(
+            "/xavier/agents/{id}/heartbeat",
+            post(agent_heartbeat_handler),
+        )
+        .route("/xavier/agents/{id}/push", post(agent_push_context_handler))
+        .route(
+            "/xavier/agents/{id}/unregister",
+            post(agent_unregister_handler),
+        )
+        .route("/xavier/sync/check", post(sync_check_handler))
+        .route("/xavier/sync/check", get(sync_check_handler))
+        .route("/xavier/verify/save", post(verify_save_handler))
+        .route(
+            "/panel/api/threads",
+            get(panel_list_threads).post(panel_create_thread),
+        )
+        .route(
+            "/panel/api/threads/{thread_id}",
+            get(panel_get_thread).delete(panel_delete_thread),
+        )
+        // /panel/api/chat moved to large_body_routes for 10MB body limit
+        .route("/secrets/lend", post(lend_handler))
+        .route("/secrets/leases", get(leases_handler))
+        .route("/secrets/revoke", post(revoke_handler))
+        .route("/secrets/status/{token}", get(status_handler))
+        .route(
+            "/v1/proxy/chat/completions",
+            post(crate::cli::proxy::chat_proxy),
+        )
+        .route(
+            "/v1/proxy/chat/completions/batch",
+            post(crate::cli::proxy::chat_batch_proxy),
+        )
+        .route("/v1/usage/status/{provider}", get(usage_status_handler))
+        .route("/v1/usage/update", post(usage_update_handler))
+        .route("/v1/usage/cooldown", post(usage_cooldown_handler))
+        .route("/v1/usage/track", post(usage_track_handler))
+        .route("/v1/usage/summary/{provider}", get(usage_summary_handler))
+        // FIX A006: Increase body size limit to 10MB for large documents
+        .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit_middleware,
+        ))
+        .layer(middleware::from_fn(auth_middleware));
+
+    // FIX A006: Apply 10MB body limit only to routes that ingest large documents
+    let large_body_routes = Router::new()
+        .route("/memory/add", post(add_handler))
+        .route("/memory/export-pack", post(export_pack_handler))
+        .route("/panel/api/chat", post(panel_process_chat))
+        .route("/code/scan", post(code_scan_handler))
+        .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit_middleware,
+        ))
+        .layer(middleware::from_fn(auth_middleware));
+
+    // Add enterprise plugin routes if feature is enabled
+    #[cfg(feature = "enterprise")]
+    let protected_routes = {
+        use xavier::adapters::inbound::http::routes::{
+            plugins_health_handler, plugins_sync_handler,
+        };
+        protected_routes
+            .route("/plugins/health", get(plugins_health_handler))
+            .route("/plugins/sync", post(plugins_sync_handler))
+    };
+
+    let app = Router::new()
+        .route("/health", get(health_handler))
+        .route("/v1/version", get(version_handler))
+        .route("/build", get(build_handler))
+        .route("/ready", get(readiness_handler))
+        .route("/readiness", get(readiness_handler))
+        .route("/panel", get(panel_index))
+        .route("/panel/assets/{*path}", get(panel_asset))
+        .merge(protected_routes)
+        // Merge large-body routes so they take priority over protected_routes
+        .merge(large_body_routes);
+
+    // Extract cron states before `state` is moved
+    let agent_indexer_cron = state.agent_indexer.clone();
+    let memory_port_cron = state.memory.clone();
+
+    let app = app.with_state(state);
+
+    // Merge enterprise HTTP API routes when feature is enabled, under auth
+    #[cfg(feature = "enterprise")]
+    let app = {
+        use std::sync::{Arc, Mutex};
+        use xavier::enterprise::http::{enterprise_router, EnterpriseState};
+        let enterprise_state = Arc::new(Mutex::new(EnterpriseState::init_default()));
+        app.merge(enterprise_router(enterprise_state).layer(middleware::from_fn(auth_middleware)))
+    };
+
+    let listener = TcpListener::bind(&bind_addr).await?;
+    let bound_addr = listener.local_addr()?;
+
+    info!("Xavier HTTP server listening on http://{}", bound_addr);
+    println!("Xavier HTTP server listening on http://{}", bound_addr);
+    println!("Press Ctrl+C to stop");
+
+    // Initialize enterprise plugin registry if feature is enabled
+    #[cfg(feature = "enterprise")]
+    {
+        use xavier::adapters::inbound::http::routes::init_plugin_registry;
+        init_plugin_registry();
+        info!("Enterprise plugin system initialized");
+    }
+
+    // Start session sync task cron (M5)
+    let sync_task = SessionSyncTask::with_storage(health_adapter, Some(dyn_store));
+    let sync_shutdown = sync_task.spawn_cron_once();
+    if sync_shutdown.is_some() {
+        info!("SessionSyncTask cron started");
+    } else {
+        info!("SessionSyncTask cron already running; skipped duplicate start");
+    }
+
+    // Start Agentic Scanner background cron
+    tokio::spawn(async move {
+        // Run every 6 hours
+        let mut interval = tokio::time::interval(Duration::from_secs(6 * 3600));
+        loop {
+            interval.tick().await;
+            info!("Running scheduled Agentic Scanner pass...");
+            if let Ok(indexed_files) = agent_indexer_cron.index_agents().await {
+                for file in indexed_files {
+                    let record = xavier::memory::store::MemoryRecord {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        workspace_id: "default".to_string(),
+                        path: file.path,
+                        content: file.content,
+                        metadata: serde_json::json!({
+                            "source": "agent_scanner",
+                            "last_modified": file.last_modified,
+                            "size": file.size,
+                        }),
+                        embedding: vec![],
+                        created_at: chrono::Utc::now(),
+                        updated_at: chrono::Utc::now(),
+                        revision: 1,
+                        primary: true,
+                        parent_id: None,
+                        cluster_id: None,
+                        level: Default::default(),
+                        relation: None,
+                        revisions: vec![],
+                    };
+                    let _ = memory_port_cron.add(record).await;
+                }
+            }
+        }
+    });
+
+    axum::serve(listener, app)
+        .with_graceful_shutdown(async move {
+            if let Err(error) = tokio::signal::ctrl_c().await {
+                info!("Failed to listen for Ctrl+C shutdown signal: {}", error);
+            }
+            if let Some(shutdown) = sync_shutdown {
+                shutdown.shutdown();
+                // Await the cron task to finish with a 5-second timeout
+                shutdown.wait_for_shutdown(Duration::from_secs(5)).await;
+            }
+        })
+        .await?;
+
+    Ok(())
+}

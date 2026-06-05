@@ -1,0 +1,250 @@
+//! HTTP server and WebSocket handlers
+
+use anyhow::{anyhow, Result};
+use axum::{
+    body::Body,
+    extract::Query,
+    extract::{DefaultBodyLimit, Path as AxumPath, State},
+    http::{HeaderMap, Request, StatusCode},
+    middleware::{self, Next},
+    response::{IntoResponse, Response},
+    routing::{get, post},
+    Json, Router,
+};
+
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::net::TcpListener;
+use tokio::sync::RwLock;
+use tracing::{info, warn};
+
+use super::code_graph::{code_find_symbols, filter_symbols_by_query};
+use super::security::{secure_cli_input, secure_external_input, secure_optional_request_field};
+use super::utils::estimate_tokens;
+use crate::cli::config::{
+    code_graph_db_path, resolve_base_url, resolve_base_url_for_port, resolve_http_bind_host,
+    resolve_http_token, state_panel_root, xavier_token,
+};
+use crate::cli::state::CliState;
+use crate::settings::XavierSettings;
+use std::time::Instant;
+use xavier::adapters::inbound::http::routes::{
+    sync_check_handler, time_metric_handler, verify_save_handler,
+};
+use xavier::adapters::outbound::http_health_adapter::HttpHealthAdapter;
+use xavier::agents::rate_limit::RateLimitManager;
+use xavier::app::proxy_use_case::ProxyUseCase;
+use xavier::app::qmd_memory_adapter::QmdMemoryAdapter;
+use xavier::app::security_service::SecurityService as AppSecurityService;
+use xavier::coordination::SimpleAgentRegistry;
+use xavier::coordination::{KeyLendingEngine, XavierEventBus};
+use xavier::embedding::build_embedder_from_env;
+use xavier::memory::qmd_memory::{MemoryDocument, QmdMemory};
+use xavier::memory::schema::{ContextZone, MemoryLevel, MemoryQueryFilters};
+use xavier::codebase::conversations_db::ConversationsDb;
+use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
+use xavier::memory::store::{MemoryRecord, MemoryStore};
+use xavier::ports::inbound::input_security_port::SecureInputResult;
+use xavier::ports::inbound::{
+    AgentLifecyclePort, InputSecurityPort, MemoryQueryPort, SecurityScanPort, TimeMetricsPort,
+};
+use xavier::ports::outbound::schema_init::SchemaInitializer;
+use xavier::security::threat_store::SecurityThreatStore;
+use xavier::server::panel::{
+    panel_asset, panel_index, CreateThreadRequest, PanelChatRequest, PanelChatResponse,
+};
+use xavier::session::event_mapper::PanelThreadEntry;
+use xavier::session::types::SessionEvent;
+use xavier::tasks::session_sync_task::SessionSyncTask;
+use xavier::tasks::store::{InMemoryTaskStore, TaskService};
+use xavier::time::TimeMetricsStore;
+use xavier::codebase::connection_manager::ConnectionManager;
+
+pub async fn start_http_server(port: u16) -> Result<()> {
+    let settings = XavierSettings::current();
+    settings.apply_to_env();
+    std::env::set_var("XAVIER_PORT", port.to_string());
+
+    let bind_host = resolve_http_bind_host();
+    let bind_addr = format!("{}:{}", bind_host, port);
+    info!("Starting Xavier HTTP server on {}", bind_addr);
+    let token = resolve_http_token()?;
+    std::env::set_var("XAVIER_TOKEN", &token);
+
+    // Initialize ConnectionManager singleton
+    let cm = ConnectionManager::global();
+
+    // Initialize components
+    let config = VecSqliteStoreConfig::from_env();
+    if let Some(parent) = config.path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+
+    // Connect standard pools
+    cm.connect("memory", ".")?;
+    cm.connect("vec_store", ".")?;
+    cm.connect("metrics", ".")?;
+    cm.set_active("default", ".").await?;
+
+    let mut store_inner = VecSqliteMemoryStore::new(config.clone()).await?;
+    let (event_tx, _) = tokio::sync::broadcast::channel(100);
+    store_inner.set_event_tx(event_tx);
+    let store = Arc::new(store_inner);
+
+    let time_store = Arc::new(TimeMetricsStore::new());
+    let audit_logger = Arc::new(xavier::secrets::audit::QmdAuditLogger::new());
+    let rate_manager = Arc::new(RateLimitManager::new());
+    let threat_store = Arc::new(SecurityThreatStore::new());
+
+    // Initialize schemas
+    store.init_schema()?;
+    time_store.init_schema()?;
+    audit_logger.init_schema()?;
+    rate_manager.init_schema()?;
+    threat_store.init_schema()?;
+
+    // Schedule background task for Periodic Garbage Collection (incremental_vacuum) using the manager
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
+            let _ = ConnectionManager::global().with_conn("vec_store", |conn| {
+                conn.execute("PRAGMA incremental_vacuum(100)", ())?;
+                Ok(())
+            }).await;
+        }
+    });
+
+    let workspace_id = XavierSettings::current().workspace.default_workspace_id;
+    let durable_state = store.load_workspace_state(&workspace_id).await?;
+    let docs = Arc::new(RwLock::new(
+        durable_state
+            .memories
+            .iter()
+            .map(MemoryRecord::to_document)
+            .collect::<Vec<MemoryDocument>>(),
+    ));
+    let memory = Arc::new(QmdMemory::new_with_workspace(docs, workspace_id.clone()));
+    let dyn_store: Arc<dyn MemoryStore> = store.clone();
+    memory.set_store(dyn_store.clone()).await;
+    memory.init().await?;
+    let memory_port =
+        Arc::new(QmdMemoryAdapter::new(Arc::clone(&memory))) as Arc<dyn MemoryQueryPort>;
+
+    let http_client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .user_agent(concat!("xavier-server/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .map_err(|e| anyhow!("Failed to build HTTP client: {}", e))?;
+
+    let embedder = build_embedder_from_env()
+        .await
+        .map_err(|e| anyhow!("Failed to build embedder: {}", e))?;
+
+    // Register global time metrics port for HTTP handler (wrap in adapter)
+    use xavier::adapters::inbound::http::routes::{init_health_port, init_time_store};
+    use xavier::adapters::inbound::http::time_metrics_adapter::TimeMetricsAdapter;
+    let health_adapter = Arc::new(HttpHealthAdapter::new(
+        resolve_base_url_for_port(port),
+        http_client.clone(),
+    ));
+    let time_adapter =
+        Arc::new(TimeMetricsAdapter::new(Arc::clone(&time_store))) as Arc<dyn TimeMetricsPort>;
+    init_time_store(time_adapter);
+    init_health_port(health_adapter.clone());
+
+    let code_db_path = code_graph_db_path();
+    if let Some(parent) = code_db_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let code_db = Arc::new(::code_graph::db::CodeGraphDB::new(&code_db_path)?);
+    let code_indexer = Arc::new(::code_graph::indexer::Indexer::new(Arc::clone(&code_db)));
+    let code_query = Arc::new(::code_graph::query::QueryEngine::new(Arc::clone(&code_db)));
+
+    // Determine workspace root for path traversal protection
+    let workspace_dir = PathBuf::from(XavierSettings::current().memory.workspace_dir);
+    info!(
+        "Workspace root for path security: {}",
+        workspace_dir.display()
+    );
+
+    let panel_root = state_panel_root(&workspace_dir, &workspace_id);
+    let panel_store = Arc::new(ConversationsDb::open("default").await?);
+    panel_store.create_schema().await?;
+    panel_store.migrate_legacy_sessions(&panel_root).await?;
+
+    let prompt_cache = Arc::new(parking_lot::Mutex::new(HashMap::new()));
+    let security_service = Arc::new(AppSecurityService::new());
+    let proxy_use_case = Arc::new(
+        ProxyUseCase::new(rate_manager.clone(), prompt_cache.clone())
+            .with_threat_detector(security_service.clone()),
+    );
+    let secrets_engine = Arc::new(KeyLendingEngine::new(Box::new(
+        xavier::secrets::audit::QmdAuditLogger::new(),
+    )));
+    let event_bus = XavierEventBus::new(100);
+    let tasks = Arc::new(
+        TaskService::new(Arc::new(InMemoryTaskStore::new())).with_event_bus(event_bus.clone()),
+    );
+
+    // Subscribe secrets engine to task completion events
+    let secrets_engine_for_bus = secrets_engine.clone();
+    let mut receiver = event_bus.subscribe();
+    tokio::spawn(async move {
+        info!("Secrets engine listening for task events...");
+        while let Ok(event) = receiver.recv().await {
+            if let xavier::coordination::events::XavierEvent::TaskCompleted { task } = event {
+                if let Some(agent_id) = &task.assignee {
+                    info!(
+                        "Task {} completed by agent {}. Revoking ephemeral keys...",
+                        task.id, agent_id
+                    );
+                    secrets_engine_for_bus
+                        .revoke_for_agent(agent_id, "Task Completed")
+                        .await;
+                }
+            }
+        }
+    });
+
+    // Periodically cleanup expired secrets
+    let secrets_engine_for_cleanup = secrets_engine.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            let removed = secrets_engine_for_cleanup.cleanup_expired().await;
+            if removed > 0 {
+                info!("Cleaned up {} expired secret leases", removed);
+            }
+        }
+    });
+
+    let state = CliState {
+        memory: memory_port,
+        store,
+        workspace_id,
+        workspace_dir,
+        code_db: code_db.clone(),
+        code_indexer: code_indexer.clone(),
+        code_query,
+        security: security_service.clone() as Arc<dyn InputSecurityPort>,
+        security_scan: security_service.clone() as Arc<dyn SecurityScanPort>,
+        _time_store: Some(time_store),
+        agent_registry: SimpleAgentRegistry::new() as Arc<dyn AgentLifecyclePort>,
+        panel_store,
+        secrets_engine,
+        event_bus,
+        tasks,
+        rate_manager: rate_manager.clone(),
+        prompt_cache,
+        proxy_use_case,
+        http_client,
+        embedder,
+        agent_indexer: Arc::new(crate::memory::agent_indexer::AgentIndexer::new(
+            crate::memory::file_indexer::FileIndexer::new(
+                crate::memory::file_indexer::FileIndexerConfig::default(),
+                Some(code_indexer.clone())
+            )
