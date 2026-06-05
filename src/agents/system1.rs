@@ -685,3 +685,75 @@ mod budget_tests {
         assert!(total_tokens <= 2);
     }
 }
+
+#[cfg(test)]
+mod ranking_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn mock_doc(path: &str, content: &str, metadata: serde_json::Value) -> RetrievedDocument {
+        RetrievedDocument {
+            id: path.to_string(),
+            path: path.to_string(),
+            content: content.to_string(),
+            relevance_score: 1.0,
+            token_count: content.len() / 4,
+            metadata,
+        }
+    }
+
+    #[test]
+    fn test_ranking_by_terms() {
+        let mut docs = vec![
+            mock_doc("doc1", "nothing relevant here", json!({})),
+            mock_doc("doc2", "this has the word rust", json!({})),
+        ];
+
+        rank_documents_for_query("rust", &mut docs);
+
+        assert_eq!(docs[0].path, "doc2");
+        assert_eq!(docs[1].path, "doc1");
+    }
+
+    #[test]
+    fn test_ranking_prefers_speaker_match() {
+        let mut docs = vec![
+            mock_doc("doc1", "content about rust", json!({"speaker": "bela"})),
+            mock_doc("doc2", "content about rust", json!({"speaker": "xavier"})),
+        ];
+
+        // Query mentions xavier
+        rank_documents_for_query("what did xavier say about rust", &mut docs);
+
+        assert_eq!(docs[0].path, "doc2");
+    }
+
+    #[test]
+    fn test_ranking_temporal_query() {
+        let mut docs = vec![
+            mock_doc("doc1", "fact about rust", json!({"memory_kind": "fact_atom"})),
+            mock_doc("doc2", "event happened", json!({"resolved_date": "2023-01-01"})),
+        ];
+
+        rank_documents_for_query("when did it happen", &mut docs);
+
+        assert_eq!(docs[0].path, "doc2");
+    }
+
+    #[test]
+    fn test_ranking_prefers_provenance_match() {
+        let mut docs = vec![
+            mock_doc("doc1", "rust code", json!({})),
+            mock_doc("doc2", "rust code", json!({
+                "provenance": {
+                    "file_path": "src/main.rs"
+                }
+            })),
+        ];
+
+        // The current implementation checks if the query contains the provenance path
+        rank_documents_for_query("Tell me about src/main.rs", &mut docs);
+
+        assert_eq!(docs[0].path, "doc2");
+    }
+}
