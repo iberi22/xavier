@@ -47,7 +47,7 @@ jobs:
         run: cargo build --package xavier 2>&1 | tail -20
 
       - name: Run plugin tests
-        run: cargo test --lib -- plugins:: 2>&1 | tail -20
+        run: "cargo test --lib -- plugins:: 2>&1 | tail -20"
 
       - name: Sync to Cortex Enterprise
         if: inputs.plugin == 'cortex' || inputs.plugin == 'all' || github.event_name == 'schedule'
