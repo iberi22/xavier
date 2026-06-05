@@ -896,4 +896,28 @@ mod tests {
         assert!(decision.should_skip_retrieval);
         assert!(decision.should_skip_reasoning);
     }
+
+    #[test]
+    fn test_runtime_builder() {
+        let docs = Arc::new(tokio::sync::RwLock::new(vec![]));
+        let memory = Arc::new(QmdMemory::new_with_workspace(docs, "test".to_string()));
+
+        let builder = RuntimeBuilder::new()
+            .with_memory(memory)
+            .with_timeout(10);
+
+        let runtime = builder.build().unwrap();
+        assert_eq!(runtime.config.timeout_seconds, 10);
+    }
+
+    #[test]
+    fn test_runtime_config_from_env_with_local_url() {
+        let config = RuntimeConfig::from_env_with(|name| match name {
+            "XAVIER_LOCAL_LLM_URL" => Some("http://localhost:1234/v1".to_string()),
+            _ => None,
+        });
+
+        assert_eq!(config.model_provider.as_deref(), Some("local"));
+        assert_eq!(config.model_url.as_deref(), Some("http://localhost:1234/v1"));
+    }
 }
