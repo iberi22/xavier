@@ -11,7 +11,9 @@ pub struct QmdAuditLogger {
 impl QmdAuditLogger {
     pub fn new() -> Self {
         let project_id = "metrics";
-        ConnectionManager::global().connect(project_id, ".").unwrap();
+        if let Err(e) = ConnectionManager::global().connect(project_id, ".") {
+            tracing::warn!("QmdAuditLogger failed to connect to metrics database: {}", e);
+        }
         Self { project_id: project_id.to_string() }
     }
 
@@ -36,8 +38,14 @@ impl QmdAuditLogger {
 
 impl SchemaInitializer for QmdAuditLogger {
     fn init_schema(&self) -> anyhow::Result<()> {
-        let rt = tokio::runtime::Handle::try_current()
-            .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+        let rt = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => handle,
+            Err(_) => {
+                let runtime = tokio::runtime::Runtime::new()
+                    .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;
+                runtime.handle().clone()
+            }
+        };
         rt.block_on(self.init_schema_async())
     }
 }
