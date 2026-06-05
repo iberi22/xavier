@@ -1,4 +1,4 @@
-use crate::server::mcp_server::dispatch_mcp_value;
+use crate::server::mcp::session::dispatch_mcp_value;
 use crate::{workspace::WorkspaceContext, AppState};
 use anyhow::Result;
 use std::io::{self, BufRead, Write};
