@@ -17,7 +17,9 @@
     "node": ">=22.12.0"
   },
   "devDependencies": {
+    "cron-validator": "^1.4.0",
     "eslint": "^10.1.0",
-    "eslint-config-prettier": "^10.1.8"
+    "eslint-config-prettier": "^10.1.8",
+    "js-yaml": "^4.2.0"
   }
 }
