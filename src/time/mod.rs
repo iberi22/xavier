@@ -22,7 +22,9 @@ impl TimeMetricsStore {
     /// Create a new TimeMetricsStore
     pub fn new() -> Self {
         let project_id = "metrics";
-        ConnectionManager::global().connect(project_id, ".").unwrap(); // Use default path logic in manager
+        if let Err(e) = ConnectionManager::global().connect(project_id, ".") {
+            tracing::warn!("TimeMetricsStore failed to connect to metrics database: {}", e);
+        }
         Self { project_id: project_id.to_string() }
     }
 
@@ -134,8 +136,14 @@ impl SchemaInitializer for TimeMetricsStore {
     /// Initialize the time_metrics table schema
     fn init_schema(&self) -> Result<()> {
         // We can now run this directly since init_schema_async uses spawn_blocking internally via ConnectionManager
-        let rt = tokio::runtime::Handle::try_current()
-            .unwrap_or_else(|_| tokio::runtime::Runtime::new().unwrap().handle().clone());
+        let rt = match tokio::runtime::Handle::try_current() {
+            Ok(handle) => handle,
+            Err(_) => {
+                let runtime = tokio::runtime::Runtime::new()
+                    .context("failed to create tokio runtime for schema initialization")?;
+                runtime.handle().clone()
+            }
+        };
 
         rt.block_on(self.init_schema_async())
     }
