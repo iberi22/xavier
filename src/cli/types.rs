@@ -1,3 +1,8 @@
+//! Request and response types for the CLI HTTP API.
+//!
+//! This module defines the data structures used for communication between the
+//! CLI and external clients, covering memory search, code analysis, and agent management.
+
 use serde::Deserialize;
 use std::collections::HashMap;
 use xavier::memory::schema::{ContextZone, MemoryQueryFilters};

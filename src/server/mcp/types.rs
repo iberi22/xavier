@@ -1,3 +1,9 @@
+//! Type definitions for the Model Context Protocol (MCP).
+//!
+//! This module implements the core data structures for MCP communication,
+//! including JSON-RPC request/response envelopes, tool definitions, and
+//! resource schemas.
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

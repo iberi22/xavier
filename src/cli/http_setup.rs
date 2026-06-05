@@ -1,3 +1,9 @@
+//! Middleware and setup for the CLI HTTP server.
+//!
+//! This module implements authentication and rate-limiting middleware used by the
+//! CLI's HTTP API. It ensures secure access via token validation and prevents
+//! resource exhaustion through global rate limits.
+
 use axum::{
     body::Body,
     http::{Request, StatusCode},

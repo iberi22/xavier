@@ -1,3 +1,8 @@
+//! Handlers for session events and memory compaction.
+//!
+//! This module manages session-related events, including indexing chat entries
+//! into memory and performing periodic compaction to optimize context storage.
+
 use axum::extract::State;
 use tracing::info;
 use crate::cli::state::CliState;

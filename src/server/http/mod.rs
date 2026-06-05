@@ -1,3 +1,9 @@
+//! HTTP server implementation for Xavier.
+//!
+//! This module provides the core HTTP server infrastructure, including configuration,
+//! lifecycle management (startup/shutdown), and various API endpoints organized into
+//! submodules for health monitoring, memory management, and real-time communication.
+
 pub mod health;
 pub mod v1;
 pub mod api;

@@ -1,3 +1,9 @@
+//! Shared types and schemas for the HTTP API.
+//!
+//! This module defines the request and response structures used across different
+//! HTTP modules, ensuring a consistent data format for searches, memory updates,
+//! and retrieval operations.
+
 use serde::{Deserialize, Serialize};
 use crate::memory::schema::{MemoryQueryFilters, MemoryKind, EvidenceKind, MemoryNamespace, MemoryProvenance, MemoryLevel, RelationKind, ContextZone};
 use crate::memory::store::HybridSearchMode;

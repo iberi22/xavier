@@ -1,3 +1,9 @@
+//! Health and build information endpoints.
+//!
+//! This module provides diagnostic endpoints to monitor the server's status,
+//! verify readiness of various components (embeddings, LLM, storage), and retrieve
+//! build-time metadata.
+
 use axum::{extract::State, response::IntoResponse, Json};
 use serde::Serialize;
 use crate::AppState;
