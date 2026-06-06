@@ -2,6 +2,7 @@
 //!
 //! Creates and manages tables in `.xavier/codebase.db`.
 
+use anyhow::Context;
 use std::path::Path;
 
 use anyhow::{Context, Result};
