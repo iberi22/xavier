@@ -8,14 +8,10 @@ use xavier::ports::outbound::schema_init::SchemaInitializer;
 
 #[tokio::test]
 async fn test_proxy_use_case_rate_limited() {
-    let temp_file = tempfile::NamedTempFile::new().unwrap();
-    let db = libsql::Builder::new_local(temp_file.path().to_str().unwrap())
-        .build()
-        .await
-        .unwrap();
-    let pool = xavier::utils::connection_pool::LibsqlConnectionPool::new(db, Default::default());
-    let rate_manager = std::sync::Arc::new(RateLimitManager::new(pool));
-    rate_manager.init_schema().unwrap();
+    let temp_dir = tempfile::tempdir().unwrap();
+    std::env::set_var("XAVIER_DATA_DIR", temp_dir.path());
+    let rate_manager = std::sync::Arc::new(RateLimitManager::new());
+    rate_manager.init_schema_async().await.unwrap();
     let prompt_cache = Arc::new(Mutex::new(HashMap::new()));
 
     // Mark all providers as rate limited

@@ -76,8 +76,10 @@ impl ConnectionManager {
             };
 
             if let Some(parent) = db_path.parent() {
-                std::fs::create_dir_all(parent)
-                    .with_context(|| format!("failed to create parent dir for {:?}", db_path))?;
+                if !parent.exists() {
+                    std::fs::create_dir_all(parent)
+                        .with_context(|| format!("failed to create parent dir for {:?}", db_path))?;
+                }
             }
 
             let manager = SqliteConnectionManager::file(db_path);
