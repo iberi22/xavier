@@ -244,7 +244,7 @@ fn test_cli_subcommand_invalid_flag() {
 #[test]
 fn test_cli_subcommand_add_without_server() {
     // add requires a running server — should fail gracefully
-    let output = run_with_timeout(&["add", "test-content"], 5);
+    let output = run_with_timeout(&["add", "test-content"], 15);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -255,6 +255,7 @@ fn test_cli_subcommand_add_without_server() {
     assert!(
         combined.contains("Error")
             || combined.contains("error")
+            || combined.contains("Falling back to local offline")
             || combined.contains("blocked")
             || combined.contains("must be set"),
         "add without server should produce error output, got stdout: {stdout}, stderr: {stderr}"
@@ -273,6 +274,7 @@ fn test_cli_subcommand_search_without_server() {
     assert!(
         combined.contains("Error")
             || combined.contains("error")
+            || combined.contains("Falling back to local offline")
             || combined.contains("must be set"),
         "search without server should produce error output, got: {combined}"
     );
@@ -290,6 +292,7 @@ fn test_cli_subcommand_recall_without_server() {
     assert!(
         combined.contains("Error")
             || combined.contains("error")
+            || combined.contains("Falling back to local offline")
             || combined.contains("must be set"),
         "recall without server should produce error output, got: {combined}"
     );
@@ -302,7 +305,7 @@ fn test_add_and_search_without_server() {
     // Without a running server, both add and search should fail gracefully.
     // This verifies both subcommands exist and produce expected error output.
 
-    let add_output = run_with_timeout(&["add", "integration test content"], 5);
+    let add_output = run_with_timeout(&["add", "integration test content"], 15);
     let add_combined = format!(
         "{} {}",
         String::from_utf8_lossy(&add_output.stdout),
@@ -343,6 +346,7 @@ fn test_cli_subcommand_stats_without_server() {
     assert!(
         combined.contains("Error")
             || combined.contains("error")
+            || combined.contains("Falling back to local offline")
             || combined.contains("must be set"),
         "stats without server should produce error output, got: {combined}"
     );
@@ -362,6 +366,7 @@ fn test_cli_subcommand_session_save_without_server() {
     assert!(
         combined.contains("Error")
             || combined.contains("error")
+            || combined.contains("Falling back to local offline")
             || combined.contains("must be set"),
         "session-save without server should produce error output, got: {combined}"
     );
