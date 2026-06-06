@@ -5,14 +5,11 @@
 
 use std::collections::HashMap;
 use anyhow::Result;
-use chrono::Utc;
 use tracing::info;
-
-use crate::memory::qmd_memory::MemoryDocument;
 
 use super::core::MemoryManager;
 use super::types::{
-    ManagedMemory, MemoryAction, MemoryManagementAction, MemoryManagerConfig, MemoryPriority,
+    ManagedMemory, MemoryAction, MemoryPriority,
     MemoryQuality, MemoryStats,
 };
 
