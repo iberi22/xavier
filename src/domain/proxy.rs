@@ -1,3 +1,7 @@
+//! Domain model for proxy configuration
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 

@@ -1,3 +1,7 @@
+//! Shared application state for HTTP handlers
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use axum::http::{HeaderMap, StatusCode};
 use axum::Json;
 use serde_json::Value;

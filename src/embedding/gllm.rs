@@ -1,3 +1,7 @@
+//! Local LLM embedding generation
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use std::fmt;
 #[cfg(feature = "local-gllm")]
 use std::sync::Arc;

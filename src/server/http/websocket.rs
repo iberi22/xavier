@@ -1,3 +1,7 @@
+//! WebSocket server for real-time communication
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use axum::{extract::{ws::Message, ws::WebSocket, State, WebSocketUpgrade}, response::IntoResponse};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};

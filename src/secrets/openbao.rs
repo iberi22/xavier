@@ -1,3 +1,7 @@
+//! OpenBao/Vault secrets backend
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::secrets::store::SecretStore;
 use crate::secrets::{SecretError, SecretResult};
 use std::future::Future;

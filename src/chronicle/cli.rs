@@ -1,3 +1,7 @@
+//! Chronicle CLI interface
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use anyhow::{anyhow, Context, Result};
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use clap::Subcommand;

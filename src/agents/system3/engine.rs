@@ -1,3 +1,7 @@
+//! System3 reasoning engine core
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use super::client::LlmClient;
 use super::helpers::*;
 use super::types::{ActionResult, ActorConfig};

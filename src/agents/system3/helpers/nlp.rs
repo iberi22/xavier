@@ -1,3 +1,7 @@
+//! Natural language processing helpers for System3
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::agents::system1::RetrievedDocument;
 use std::collections::{HashMap, HashSet};
 

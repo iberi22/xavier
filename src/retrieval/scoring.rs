@@ -1,3 +1,7 @@
+//! Retrieval scoring and ranking algorithms
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::memory::qmd_memory::MemoryDocument;
 use crate::memory::schema::ContextZone;
 use crate::retrieval::config;

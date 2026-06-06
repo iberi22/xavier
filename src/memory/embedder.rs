@@ -1,3 +1,7 @@
+//! Memory embedding generator
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use std::sync::Arc;
 
 use anyhow::{anyhow, Result};

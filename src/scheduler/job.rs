@@ -1,3 +1,7 @@
+//! Job types and scheduling logic
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use std::future::Future;
 use std::str::FromStr;
 

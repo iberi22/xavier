@@ -1,3 +1,7 @@
+//! Workspace templates for project scaffolding
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use anyhow::Result;
 use super::state::WorkspaceState;
 

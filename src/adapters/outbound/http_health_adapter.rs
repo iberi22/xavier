@@ -1,3 +1,7 @@
+//! HTTP health check adapter for external services
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 #[derive(Debug, Clone)]
 pub struct HealthStatus {
     pub status: String,

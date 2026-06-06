@@ -1,3 +1,7 @@
+//! Inbound port for security operations
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::domain::security::{ScanResult, ThreatLevel};
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};

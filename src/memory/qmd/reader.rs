@@ -1,3 +1,7 @@
+//! QMD document reader
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use anyhow::Result;
 use sha2::{Digest, Sha256};
 use std::sync::atomic::Ordering as AtomicOrdering;

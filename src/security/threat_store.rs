@@ -1,3 +1,7 @@
+//! Threat intelligence storage
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::ports::outbound::schema_init::SchemaInitializer;
 use crate::security::detections::Threat;
 use anyhow::Result;
