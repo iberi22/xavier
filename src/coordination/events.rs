@@ -1,3 +1,7 @@
+//! Event coordination and dispatch
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::tasks::models::Task;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};

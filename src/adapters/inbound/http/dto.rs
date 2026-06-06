@@ -1,3 +1,7 @@
+//! Data Transfer Objects for HTTP API communication
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::domain::pattern::{PatternCategory, PatternVerification};
 use crate::domain::security::ThreatLevel;
 use serde::{Deserialize, Serialize};

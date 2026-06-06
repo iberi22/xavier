@@ -1,3 +1,7 @@
+//! Context executor for action planning
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::context::skills::Skill;
 use anyhow::Result;
 use std::time::Duration;

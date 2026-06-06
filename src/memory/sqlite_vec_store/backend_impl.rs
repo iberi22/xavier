@@ -1,3 +1,7 @@
+//! SQLite vector store backend implementation
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::memory::schema::MemoryQueryFilters;
 use crate::memory::sqlite_store::TABLE_MEMORIES;
 use crate::memory::store::{

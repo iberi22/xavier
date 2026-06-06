@@ -1,3 +1,7 @@
+//! CLI commands for proxy management
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::cli::state::CliState;
 use crate::cli::utils::ProxyErrorWrapper;
 use axum::{

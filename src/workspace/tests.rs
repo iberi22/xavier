@@ -1,3 +1,7 @@
+//! Tests for workspace module
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use super::*;
 use crate::agents::RuntimeConfig;
 use crate::memory::store::MemoryBackend;

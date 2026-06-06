@@ -1,3 +1,7 @@
+//! CLI commands for code graph analysis
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 pub fn code_find_symbols(
     code_query: &::code_graph::query::QueryEngine,
     query: &str,

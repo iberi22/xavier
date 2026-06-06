@@ -1,3 +1,7 @@
+//! Codebase connection manager
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use anyhow::{Context, Result};
 use dashmap::DashMap;
 use r2d2::Pool;

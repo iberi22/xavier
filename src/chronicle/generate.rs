@@ -1,3 +1,7 @@
+//! Chronicle changelog generation logic
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};

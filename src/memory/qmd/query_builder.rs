@@ -1,3 +1,7 @@
+//! QMD query builder
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::memory::qmd_memory::config::{MAX_EXPANSIONS, SYNONYM_MAP};
 use crate::memory::qmd_memory::types::QueryBundle;
 use std::collections::HashMap;

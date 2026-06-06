@@ -1,3 +1,7 @@
+//! Workspace operations and utilities
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use std::path::{Path, PathBuf};
 use anyhow::{Result};
 use std::sync::Arc;

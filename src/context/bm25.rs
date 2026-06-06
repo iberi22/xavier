@@ -1,3 +1,7 @@
+//! BM25 ranking algorithm for context retrieval
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use std::collections::{HashMap, HashSet};
 
 use super::ContextDocument;

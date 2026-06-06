@@ -1,3 +1,7 @@
+//! HTTP route definitions for the Xavier API
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use axum::{
     extract::Json,
     routing::{get, post},

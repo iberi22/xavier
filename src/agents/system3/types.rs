@@ -1,3 +1,7 @@
+//! Type definitions for System3
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::memory::semantic_cache::SemanticCache;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;

@@ -1,3 +1,7 @@
+//! Session event mapping
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::session::types::{SessionEvent, SessionEventType};
 use chrono::{DateTime, Utc};
 use tracing::info;

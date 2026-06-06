@@ -1,3 +1,7 @@
+//! Core memory module for cognitive storage
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
 pub mod agent_indexer;
 pub mod agent_scanner;
 pub mod belief_graph;
