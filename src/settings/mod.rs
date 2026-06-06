@@ -1,0 +1,247 @@
+//! Logical concern: Xavier settings module entry point.
+//!
+//! This module re-exports sub-modules and defines the main interface for settings.
+
+use std::path::PathBuf;
+use anyhow::Result;
+
+pub mod types;
+pub mod defaults;
+pub mod env;
+pub mod serialization;
+pub mod validation;
+
+pub use types::*;
+
+impl XavierSettings {
+    pub fn resolve_config_path() -> PathBuf {
+        serialization::resolve_config_path()
+    }
+
+    pub fn resolve_data_dir() -> PathBuf {
+        serialization::resolve_data_dir()
+    }
+
+    pub fn load() -> Result<Option<Self>> {
+        serialization::load()
+    }
+
+    pub fn apply_to_env(&self) {
+        env::apply_to_env_impl(self);
+    }
+
+    pub fn current() -> Self {
+        serialization::current()
+    }
+
+    pub fn client_base_url(&self) -> String {
+        let host = match self.server.host.as_str() {
+            "0.0.0.0" | "::" => "127.0.0.1",
+            other => other,
+        };
+        format!("http://{}:{}", host, self.server.port)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use super::validation::non_empty;
+    use std::sync::{LazyLock, Mutex};
+
+    static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    #[test]
+    fn test_default_settings() {
+        let settings = XavierSettings::default();
+        assert_eq!(settings.server.port, 8006);
+        assert_eq!(settings.server.host, "127.0.0.1");
+        assert_eq!(settings.workspace.default_workspace_id, "default");
+        assert_eq!(settings.memory.backend, "vec");
+        assert_eq!(settings.models.provider, "local");
+        assert!(settings.retrieval.disable_hyde);
+        assert_eq!(settings.sync.interval_ms, 300_000);
+        assert_eq!(settings.advanced.qjl_threshold, 500);
+        assert!(settings.advanced.entity_extraction_enabled);
+        assert!(settings.advanced.audit_chain_enabled);
+        assert_eq!(settings.memory_layers.working.capacity, 100);
+        assert_eq!(settings.memory_layers.episodic.max_sessions, 50);
+        assert!(!settings.telegram.enabled);
+        assert_eq!(settings.enterprise.db_path, "data/enterprise.db");
+    }
+
+    #[test]
+    fn test_apply_to_env_sets_vars() {
+        let _guard = ENV_LOCK.lock().expect("test assertion");
+
+        // Clean env
+        for (key, _) in std::env::vars() {
+            if key.starts_with("XAVIER_") || key == "STRIPE_SECRET_KEY" {
+                std::env::remove_var(&key);
+            }
+        }
+
+        let settings = XavierSettings::default();
+        settings.apply_to_env();
+
+        assert_eq!(std::env::var("XAVIER_HOST").unwrap(), "127.0.0.1");
+        assert_eq!(std::env::var("XAVIER_PORT").unwrap(), "8006");
+        assert_eq!(
+            std::env::var("XAVIER_WORKING_MEMORY_CAPACITY").unwrap(),
+            "100"
+        );
+        assert_eq!(std::env::var("XAVIER_QJL_THRESHOLD").unwrap(), "500");
+        assert_eq!(std::env::var("XAVIER_TELEGRAM_ENABLED").unwrap(), "false");
+        assert_eq!(
+            std::env::var("XAVIER_ENTERPRISE_DB_PATH").unwrap(),
+            "data/enterprise.db"
+        );
+
+        // Clean up
+        for (key, _) in std::env::vars() {
+            if key.starts_with("XAVIER_") {
+                std::env::remove_var(&key);
+            }
+        }
+    }
+
+    #[test]
+    fn test_apply_to_env_respects_existing_vars() {
+        let _guard = ENV_LOCK.lock().expect("test assertion");
+
+        // Set an override
+        std::env::set_var("XAVIER_PORT", "9999");
+        std::env::set_var("XAVIER_RRF_K", "100");
+        std::env::remove_var("XAVIER_HOST");
+
+        let settings = XavierSettings::default();
+        settings.apply_to_env();
+
+        // Existing vars should NOT be overwritten
+        assert_eq!(std::env::var("XAVIER_PORT").unwrap(), "9999");
+        assert_eq!(std::env::var("XAVIER_RRF_K").unwrap(), "100");
+        // Missing vars should be set
+        assert_eq!(std::env::var("XAVIER_HOST").unwrap(), "127.0.0.1");
+
+        // Clean up
+        std::env::remove_var("XAVIER_HOST");
+        std::env::remove_var("XAVIER_PORT");
+        std::env::remove_var("XAVIER_RRF_K");
+    }
+
+    #[test]
+    fn test_config_file_missing_returns_none() {
+        let path = std::env::temp_dir().join("nonexistent_xavier_config.json");
+        // Ensure it doesn't exist
+        let _ = std::fs::remove_file(&path);
+
+        let _old_path = XavierSettings::resolve_config_path();
+
+        // Temporarily redirect config path
+        std::env::set_var("XAVIER_CONFIG_PATH", path.to_str().unwrap());
+        let result = XavierSettings::load().unwrap();
+        assert!(result.is_none());
+        std::env::remove_var("XAVIER_CONFIG_PATH");
+    }
+
+    #[test]
+    fn test_current_falls_back_to_defaults() {
+        let _guard = ENV_LOCK.lock().expect("test assertion");
+
+        // Remove XAVIER_TOKEN if present
+        std::env::remove_var("XAVIER_TOKEN");
+
+        // Temporarily point config to a nonexistent path so defaults are used
+        std::env::set_var("XAVIER_CONFIG_PATH", "/tmp/nonexistent-xavier-config.json");
+        let settings = XavierSettings::current();
+        // Without a real config file, host falls to default (127.0.0.1)
+        assert_eq!(settings.server.host, "127.0.0.1");
+        assert_eq!(settings.server.port, 8006);
+        assert!(settings.auth_token.is_none());
+        std::env::remove_var("XAVIER_CONFIG_PATH");
+    }
+
+    #[test]
+    fn test_non_empty_helper() {
+        assert_eq!(non_empty(""), None);
+        assert_eq!(non_empty("   "), None);
+        assert_eq!(non_empty("hello"), Some("hello".to_string()));
+        assert_eq!(non_empty("  world  "), Some("world".to_string()));
+    }
+
+    #[test]
+    fn test_client_base_url() {
+        let settings = XavierSettings::default();
+        let url = settings.client_base_url();
+        assert!(url.starts_with("http://"));
+        assert!(url.contains("127.0.0.1"));
+        assert!(url.contains("8006"));
+    }
+
+    #[test]
+    fn test_resolve_data_dir() {
+        // Without env var, should return platform data dir or "data"
+        let data_dir = XavierSettings::resolve_data_dir();
+        assert!(!data_dir.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn test_apply_to_env_all_new_sections() {
+        let _guard = ENV_LOCK.lock().expect("test assertion");
+
+        // Clean all XAVIER_ vars
+        for (key, _) in std::env::vars() {
+            if key.starts_with("XAVIER_") {
+                std::env::remove_var(&key);
+            }
+        }
+
+        let settings = XavierSettings::default();
+        settings.apply_to_env();
+
+        // Memory layers
+        assert_eq!(
+            std::env::var("XAVIER_WORKING_MEMORY_CAPACITY").unwrap(),
+            "100"
+        );
+        assert_eq!(std::env::var("XAVIER_WORKING_LRU_THRESHOLD").unwrap(), "2");
+        assert_eq!(std::env::var("XAVIER_WORKING_BM25_K1").unwrap(), "1.5");
+        assert_eq!(std::env::var("XAVIER_WORKING_BM25_B").unwrap(), "0.75");
+        assert_eq!(
+            std::env::var("XAVIER_EPISODIC_SUMMARY_WINDOW").unwrap(),
+            "10"
+        );
+        assert_eq!(std::env::var("XAVIER_MAX_EPISODIC_SESSIONS").unwrap(), "50");
+        assert_eq!(
+            std::env::var("XAVIER_EPISODIC_MIN_EVENT_IMPORTANCE").unwrap(),
+            "0.5"
+        );
+
+        // Advanced
+        assert_eq!(std::env::var("XAVIER_QJL_THRESHOLD").unwrap(), "500");
+        assert_eq!(
+            std::env::var("XAVIER_ENTITY_EXTRACTION_ENABLED").unwrap(),
+            "1"
+        );
+        assert_eq!(std::env::var("XAVIER_AUDIT_CHAIN_ENABLED").unwrap(), "1");
+
+        // Router
+        assert_eq!(
+            std::env::var("XAVIER_ROUTER_POLICY_REFRESH_SECS").unwrap(),
+            "300"
+        );
+
+        // Enterprise
+        assert_eq!(
+            std::env::var("XAVIER_ENTERPRISE_DB_PATH").unwrap(),
+            "data/enterprise.db"
+        );
+
+        // Clean up
+        for (key, _) in std::env::vars() {
+            if key.starts_with("XAVIER_") {
+                std::env::remove_var(&key);
+            }
+        }
+    }
+}
