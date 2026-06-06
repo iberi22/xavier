@@ -32,8 +32,11 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets --features ci-safe --exclude xavier-web -- -D warnings
 
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked
+
       - name: Test
-        run: cargo test --workspace --features ci-safe --exclude xavier-web
+        run: cargo nextest run --workspace --features ci-safe --exclude xavier-web
 
       - name: Build
         run: cargo build --release --bin xavier --bin xavier-tui

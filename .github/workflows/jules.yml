@@ -52,21 +52,24 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked
+
       # Run tests and collect results
       - name: Run Unit Tests
         run: |
           echo "Running unit tests with Jules agent..."
-          cargo test --workspace --lib --features ci-safe --exclude xavier-web -- --nocapture 2>&1 | tee test_results.txt
+          cargo nextest run --workspace --lib --features ci-safe --exclude xavier-web 2>&1 | tee test_results.txt
 
       - name: Run Integration Tests
         run: |
           echo "Running integration tests..."
-          cargo test --workspace --test integration --features ci-safe --exclude xavier-web 2>&1 | tee integration_results.txt
+          cargo nextest run --workspace --test integration --features ci-safe --exclude xavier-web 2>&1 | tee integration_results.txt
 
       - name: Run E2E Tests
         run: |
           echo "Running E2E tests..."
-          cargo test --workspace --test e2e --features ci-safe --exclude xavier-web 2>&1 | tee e2e_results.txt
+          cargo nextest run --workspace --test e2e --features ci-safe --exclude xavier-web 2>&1 | tee e2e_results.txt
 
       # Analyze and improve tests with Jules
       - name: Jules Test Analysis
@@ -120,17 +123,20 @@ jobs:
       matrix:
         include:
           - name: lib
-            command: cargo test --workspace --lib --features ci-safe --exclude xavier-web -- --nocapture
+            command: cargo nextest run --workspace --lib --features ci-safe --exclude xavier-web
           - name: integration
-            command: cargo test --workspace --test integration --features ci-safe --exclude xavier-web
+            command: cargo nextest run --workspace --test integration --features ci-safe --exclude xavier-web
           - name: e2e
-            command: cargo test --workspace --test e2e --features ci-safe --exclude xavier-web
+            command: cargo nextest run --workspace --test e2e --features ci-safe --exclude xavier-web
       fail-fast: false
     steps:
       - uses: actions/checkout@v6.0.2
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2

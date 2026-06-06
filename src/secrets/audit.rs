@@ -41,7 +41,7 @@ impl QmdAuditLogger {
 }
 
 impl SchemaInitializer for QmdAuditLogger {
-    fn init_schema(&self) -> Result<()> {
+    fn init_schema(&self) -> anyhow::Result<()> {
         match tokio::runtime::Handle::try_current() {
             Ok(_) => {
                 tokio::task::block_in_place(|| {
