@@ -37,16 +37,22 @@ impl QmdAuditLogger {
 }
 
 impl SchemaInitializer for QmdAuditLogger {
-    fn init_schema(&self) -> anyhow::Result<()> {
-        let rt = match tokio::runtime::Handle::try_current() {
-            Ok(handle) => handle,
+    fn init_schema(&self) -> Result<()> {
+        match tokio::runtime::Handle::try_current() {
+            Ok(_) => {
+                tokio::task::block_in_place(|| {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .build()
+                        .map_err(|e| anyhow::anyhow!("failed to create temporary runtime: {}", e))?;
+                    rt.block_on(self.init_schema_async())
+                })
+            }
             Err(_) => {
                 let runtime = tokio::runtime::Runtime::new()
                     .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;
-                runtime.handle().clone()
+                runtime.block_on(self.init_schema_async())
             }
-        };
-        rt.block_on(self.init_schema_async())
+        }
     }
 }
 
