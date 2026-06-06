@@ -219,7 +219,7 @@ pub(crate) fn extract_relative_date_answer(text: &str, session_time: &str) -> Op
 /// Currently reserved for future integration with temporal query expansion.
 ///
 /// TODO: Wire into reranking pipeline when temporal signals are needed.
-#[allow(dead_code)]
+#[expect(dead_code, reason = "reserved for temporal reranking pipeline")]
 pub(crate) fn has_temporal_signal(text: &str) -> bool {
     let lowered = text.to_lowercase();
     extract_date_answer(text).is_some()
