@@ -1,4 +1,3 @@
-use std::fmt;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -23,8 +22,8 @@ pub struct Secret {
     pub value: String,
 }
 
-impl fmt::Debug for Secret {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Debug for Secret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Secret")
             .field("key", &"[REDACTED]")
             .field("value", &"[REDACTED]")
