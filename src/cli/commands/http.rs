@@ -5,14 +5,9 @@
 
 use crate::cli::config::{require_xavier_token, resolve_base_url, xavier_token};
 use crate::cli::commands::enums::CLI_HTTP_CLIENT;
+use crate::cli::commands::spawn::load_spawn_memory;
 
 use anyhow::Result;
-use std::sync::Arc;
-use tokio::sync::RwLock;
-
-use xavier::memory::qmd_memory::{MemoryDocument, QmdMemory};
-use xavier::memory::sqlite_vec_store::VecSqliteMemoryStore;
-use xavier::memory::store::{MemoryRecord, MemoryStore};
 
 /// Search memories and display results with scores.
 pub async fn recall_memories(query: &str, limit: usize) -> Result<()> {
@@ -219,21 +214,3 @@ pub async fn session_save(session_id: &str, content: &str) -> Result<()> {
     Ok(())
 }
 
-/// Load a spawn memory instance backed by SQLite.
-async fn load_spawn_memory() -> Result<Arc<QmdMemory>> {
-    let store = VecSqliteMemoryStore::from_env().await?;
-    let workspace_id =
-        std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string());
-    let durable_state = store.load_workspace_state(&workspace_id).await?;
-    let docs = Arc::new(RwLock::new(
-        durable_state
-            .memories
-            .iter()
-            .map(MemoryRecord::to_document)
-            .collect::<Vec<MemoryDocument>>(),
-    ));
-    let memory = Arc::new(QmdMemory::new_with_workspace(docs, workspace_id));
-    memory.set_store(Arc::new(store)).await;
-    memory.init().await?;
-    Ok(memory)
-}
