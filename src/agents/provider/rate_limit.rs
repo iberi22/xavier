@@ -301,13 +301,8 @@ impl RateLimitManager {
 impl SchemaInitializer for RateLimitManager {
     fn init_schema(&self) -> Result<()> {
         match tokio::runtime::Handle::try_current() {
-            Ok(_) => {
-                tokio::task::block_in_place(|| {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .build()
-                        .map_err(|e| anyhow::anyhow!("failed to create temporary runtime: {}", e))?;
-                    rt.block_on(self.init_schema_async())
-                })
+            Ok(handle) => {
+                handle.block_on(self.init_schema_async())
             }
             Err(_) => {
                 let runtime = tokio::runtime::Runtime::new()

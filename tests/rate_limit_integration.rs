@@ -1,16 +1,13 @@
 use xavier::agents::rate_limit::RateLimitManager;
 use xavier::ports::outbound::schema_init::SchemaInitializer;
 
-async fn setup_manager() -> (RateLimitManager, tempfile::NamedTempFile) {
-    let temp_file = tempfile::NamedTempFile::new().unwrap();
-    let db = libsql::Builder::new_local(temp_file.path().to_str().unwrap())
-        .build()
-        .await
-        .unwrap();
-    let pool = xavier::utils::connection_pool::LibsqlConnectionPool::new(db, Default::default());
-    let manager = RateLimitManager::new(pool);
-    manager.init_schema().unwrap();
-    (manager, temp_file)
+async fn setup_manager() -> (RateLimitManager, tempfile::TempDir) {
+    let temp_dir = tempfile::tempdir().unwrap();
+    std::env::set_var("XAVIER_DATA_DIR", temp_dir.path());
+    xavier::codebase::connection_manager::ConnectionManager::global().disconnect("metrics");
+    let manager = RateLimitManager::new();
+    manager.init_schema_async().await.unwrap();
+    (manager, temp_dir)
 }
 
 #[tokio::test]
@@ -47,15 +44,14 @@ async fn test_custom_weekly_quota() {
     let (manager, _tmp) = setup_manager().await;
     let provider = "test-provider";
 
-    manager
-        .db()
-        .get()
-        .await
-        .unwrap()
-        .execute(
-            "INSERT INTO provider_quotas (provider, weekly_quota) VALUES (?1, ?2)",
-            (provider.to_string(), 1000i64),
-        )
+    xavier::codebase::connection_manager::ConnectionManager::global()
+        .with_conn("metrics", move |conn| {
+            conn.execute(
+                "INSERT INTO provider_quotas (provider, weekly_quota) VALUES (?1, ?2)",
+                (provider.to_string(), 1000i64),
+            )?;
+            Ok(())
+        })
         .await
         .unwrap();
 
@@ -70,15 +66,14 @@ async fn test_custom_weekly_quota() {
     assert!(manager.is_quota_low(provider).await.unwrap());
 
     let (manager, _tmp) = setup_manager().await;
-    manager
-        .db()
-        .get()
-        .await
-        .unwrap()
-        .execute(
-            "INSERT INTO provider_quotas (provider, weekly_quota) VALUES (?1, ?2)",
-            (provider.to_string(), 1000i64),
-        )
+    xavier::codebase::connection_manager::ConnectionManager::global()
+        .with_conn("metrics", move |conn| {
+            conn.execute(
+                "INSERT INTO provider_quotas (provider, weekly_quota) VALUES (?1, ?2)",
+                (provider.to_string(), 1000i64),
+            )?;
+            Ok(())
+        })
         .await
         .unwrap();
     manager
