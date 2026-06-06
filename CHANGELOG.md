@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.6.1-beta] - Unreleased
 
+### Meta — SWAL Maturity Sprint
+
+Iniciando el Quality & Refactor Sprint para llevar el codebase a estándares Rust 2025:
+- Archivos <500 lines (ideal: 100-200)
+- Cobertura de tests >70%
+- Cero clippy warnings
+- Doc comments en TODO el código público
+- CI con nextest + cobertura
+
+#### Ronda 1 — Completado
+- PR #504 — Refactor archivos >1000 lines en módulos pequeños (merged)
+- PR #507 — Dependabot rust-minor bumps (merged)
+- PR #510 — Split handlers.rs en 11 submódulos (merged)
+- PR #511 — Cleanup .bak files + doc comments (merged)
+
+#### Ronda 2 — Split archivos >1000 lines
+- [Pendiente] Split src/settings.rs (1139 lines)
+- [Pendiente] Split src/coordination/message_bus.rs (1268 lines)
+- [Pendiente] Split src/cli/commands.rs (1145 lines)
+- [Pendiente] Split src/memory/manager.rs (1117 lines)
+- [Pendiente] Split src/memory/entity_graph.rs (1102 lines)
+- [Pendiente] Split src/memory/qmd/search.rs (1045 lines)
+- [Pendiente] Split src/agents/provider.rs (1016 lines)
+
+#### Ronda 3 — CI y calidad
+- [Pendiente] Fix 19 pre-existing clippy warnings
+- [Pendiente] Migrate to cargo-nextest
+- [Pendiente] Add coverage threshold (70%) to CI
+- [Pendiente] Add pre-commit hook (rustfmt + clippy)
+
+#### Ronda 4 — Documentación y tests
+- [Pendiente] Add module-level doc comments to 184 files
+- [Pendiente] Remove allow(dead_code) directives
+- [Pendiente] Fix 4 pre-existing test failures
+- [Pendiente] Add unit tests to 20 untested modules
+
 ### Added
 
 - **Context Regeneration** — Multi-phase context regeneration system (Phase 0, 1, 2)

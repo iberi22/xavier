@@ -1,43 +1,33 @@
-﻿# Task State - CLI Split + Docker + Release Build
-## Saved: 2026-05-12 15:55 (Bogota)
+# Task State — SWAL Maturity: Quality & Refactor Sprint
+## Saved: 2026-06-05 20:19 (Bogota)
 
-## ✅ Completed
-- [feat] Implement Context Pack (.xcp) Export for SOTA GraphRAG
-- cli.rs split into src/cli/ module (10 files) — committed & pushed
-- Chrono timestamp_opt fixes — committed & pushed  
-- Ghost directory src/memory/sqlite_vec_store/ — eliminated + .gitignore added
-- cargo test --lib (452/452) — PASS
-- cargo test full (~594 tests) — PASS
-- cargo build --release (3m 59s, 0 errors) — PASS
-- Binary: C:\Users\belal\.cargo\target_global\release\xavier.exe (49.8 MB, v0.6.0-beta)
-- Codex CLI processes killed (6 zombies, 4h runtime)
-- Scratch files cleaned (_split_*.ps1, etc.)
-- Pushed to origin/main: commits 7eaacbe0, faf1e179
+## ✅ Completed (Ronda 1)
+- PR #504 — Refactor archivos >1000 lines en módulos pequeños (merged)
+- PR #506 — Cerrado (reemplazado por #510 y #511)
+- PR #507 — Dependabot rust-minor bumps (merged)
+- PR #510 — Split handlers.rs en 11 submódulos (merged)
+- PR #511 — Cleanup .bak files + doc comments (merged)
 
-## 🔴 Bloqueado: Docker
-- Docker Desktop no responde (npipe:////./pipe/dockerDesktopLinuxEngine)
-- Causa probable: disco C: tiene solo ~4.6 GB libres de 574 GB
+## 🚀 Ronda 2 — Split archivos >1000 lines (Pendiente)
+- [JULES-REFACTOR-1] Split src/settings.rs (1139 lines)
+- [JULES-REFACTOR-2] Split src/coordination/message_bus.rs (1268 lines)
+- [JULES-REFACTOR-3] Split src/cli/commands.rs (1145 lines)
+- [JULES-REFACTOR-4] Split src/memory/manager.rs (1117 lines)
+- [JULES-REFACTOR-5] Split src/memory/entity_graph.rs (1102 lines)
+- [JULES-REFACTOR-6] Split src/memory/qmd/search.rs (1045 lines)
+- [JULES-REFACTOR-7] Split src/agents/provider.rs (1016 lines)
 
-## 💾 Espacio en disco C:
-- Cargo target_global: 50.74 GB ← PRINCIPAL CULPABLE
-- Repo xavier/target: 6.42 GB
-- AppData\Local\Temp: 1.87 GB
+## 🛠️ Ronda 3 — CI y calidad (Pendiente)
+- [JULES-CI-1] Fix 19 pre-existing clippy warnings
+- [JULES-CI-2] Migrate to cargo-nextest
+- [JULES-CI-3] Add coverage threshold (70%) to CI
+- [JULES-CI-4] Add pre-commit hook (rustfmt + clippy)
 
-## ⏳ Pendiente
-1. Liberar espacio en C: (limpiar cache Rust)
-2. Una vez Docker funcione: docker build -t xavier:latest .
-3. Docker run test
-4. Posible Docker Push (si hay registry)
-5. Probar binary --help y comandos básicos
+## 📝 Ronda 4 — Documentación y tests (Pendiente)
+- [JULES-DOCS-1] Add module-level doc comments to 184 files
+- [JULES-CLEANUP-1] Remove allow(dead_code) directives
+- [JULES-TESTS-1] Fix 4 pre-existing test failures
+- [JULES-TESTS-2] Add unit tests to 20 untested modules
 
-## 📌 Commit history
-faf1e179 fix(tests): update deprecated chrono timestamp_opt API
-7eaacbe0 refactor(cli): split monolithic cli.rs into src/cli/ module
-
-## Files staged but not yet changed (git status as of save):
-M  .gitignore
-M  Dockerfile
-D  src/cli.rs
-A  src/cli/* (10 files)
-M  src/context/bm25.rs, hybrid.rs, indexer.rs, orchestrator.rs
-?? src/agents/system3/ (Jules artifact — no commit)
+## 📌 Epic
+- https://github.com/iberi22/xavier/issues/505 — SWAL Maturity: Quality & Refactor Sprint
