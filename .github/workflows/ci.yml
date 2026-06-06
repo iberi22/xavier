@@ -70,10 +70,14 @@ jobs:
       - uses: actions/checkout@v6.0.2
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-nextest
+        run: cargo install cargo-nextest --locked
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Run tests
-        run: cargo test --workspace --features ci-safe --exclude xavier-web
+        run: cargo nextest run --workspace --features ci-safe --exclude xavier-web
+      - name: Run doc tests
+        run: cargo test --doc --workspace --features ci-safe --exclude xavier-web
 
   build:
     name: Build

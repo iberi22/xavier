@@ -7,6 +7,7 @@ Thank you for your interest in contributing to Xavier! This document provides gu
 ### Prerequisites
 
 - **Rust 1.75+** (with `cargo` and `rustup`)
+- **cargo-nextest** (for faster, parallel test execution)
 - **SQLite** (bundled via `rusqlite`, no system install needed)
 - **OpenSSL** development headers (for `git2` vendored-openssl)
 
@@ -26,6 +27,26 @@ cargo build --features enterprise
 
 ### Running Tests
 
+We recommend using [cargo-nextest](https://nexte.st/) for running tests as it provides faster, parallel execution and better reporting. Standard `cargo test` is still supported and required for running documentation tests.
+
+#### Using cargo-nextest (Recommended)
+
+```bash
+# Install nextest
+cargo install cargo-nextest --locked
+
+# All tests
+cargo nextest run
+
+# Specific test
+cargo nextest run test_name
+
+# With enterprise features
+cargo nextest run --features enterprise
+```
+
+#### Using standard cargo test
+
 ```bash
 # All unit tests
 cargo test --lib
@@ -33,11 +54,8 @@ cargo test --lib
 # All tests (including integration tests)
 cargo test
 
-# Specific test
-cargo test test_name
-
-# With enterprise features
-cargo test --features enterprise
+# Documentation tests (not supported by nextest)
+cargo test --doc
 ```
 
 ### Configuration
@@ -94,7 +112,7 @@ cargo clippy --all-targets --features enterprise -- -D warnings
 Run these before every commit to ensure CI passes:
 
 ```bash
-cargo fmt --all && cargo clippy --all-targets --features enterprise -- -D warnings && cargo test --lib
+cargo fmt --all && cargo clippy --all-targets --features enterprise -- -D warnings && cargo nextest run --lib
 ```
 
 ## Commit Message Convention
