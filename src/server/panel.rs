@@ -289,6 +289,7 @@ fn asset_response(bytes: Vec<u8>, content_type: &'static str) -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use ulid::Ulid;
     use crate::{
         agents::RuntimeConfig,
         memory::file_indexer::{FileIndexer, FileIndexerConfig},

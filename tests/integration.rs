@@ -221,7 +221,8 @@ mod integration {
             .expect("health request should reach test server");
 
         assert!(response.status().is_success());
-        assert_eq!(response.text().await.expect("read body").trim(), "ok");
+        let body: Value = response.json().await.expect("read body");
+        assert_eq!(body["status"], "ok");
     }
 
     #[tokio::test]

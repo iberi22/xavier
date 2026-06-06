@@ -81,8 +81,8 @@ async fn test_health_endpoint() {
         .expect("health request");
 
     assert!(response.status().is_success(), "health should return 2xx");
-    let body = response.text().await.expect("read health body");
-    assert_eq!(body.trim(), "ok");
+    let body: Value = response.json().await.expect("read health body");
+    assert_eq!(body["status"], "ok");
 }
 
 // ─── Session Event Endpoint ────────────────────────────────────────────────

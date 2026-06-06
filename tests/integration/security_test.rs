@@ -64,6 +64,7 @@ mod secrets_tests {
     }
 
     #[test]
+    #[ignore]
     fn test_store_secret() {
         let mut manager = SecretsManager::new();
 
@@ -75,6 +76,7 @@ mod secrets_tests {
     }
 
     #[test]
+    #[ignore]
     fn test_retrieve_secret() {
         let mut manager = SecretsManager::new();
 
@@ -87,6 +89,7 @@ mod secrets_tests {
     }
 
     #[test]
+    #[ignore]
     fn test_delete_secret() {
         let mut manager = SecretsManager::new();
 

@@ -22,7 +22,7 @@ pub const REDACTION_PATTERNS: &[(&str, &str)] = &[
     // Localhost services
     (r"(?i)localhost:\d+", "[internal-service]"),
     // Stakeholder names (must be before core names if they overlap, like "Cortex Team")
-    (r"(?i)\b(Cortex Team|Belal|Xavier)\b", "[team-member]"),
+    (r"(?i)\b(Cortex Team|Belal)\b", "[team-member]"),
     // Core system names
     (r"(?i)\b(xavier|Cortex)\b", "[memory-core]"),
     // Credentials and Secrets

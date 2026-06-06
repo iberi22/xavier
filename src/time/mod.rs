@@ -135,16 +135,20 @@ impl TimeMetricsStore {
 impl SchemaInitializer for TimeMetricsStore {
     /// Initialize the time_metrics table schema
     fn init_schema(&self) -> Result<()> {
-        // We can now run this directly since init_schema_async uses spawn_blocking internally via ConnectionManager
-        let rt = match tokio::runtime::Handle::try_current() {
-            Ok(handle) => handle,
+        match tokio::runtime::Handle::try_current() {
+            Ok(_) => {
+                tokio::task::block_in_place(|| {
+                    let rt = tokio::runtime::Builder::new_current_thread()
+                        .build()
+                        .map_err(|e| anyhow::anyhow!("failed to create temporary runtime: {}", e))?;
+                    rt.block_on(self.init_schema_async())
+                })
+            }
             Err(_) => {
                 let runtime = tokio::runtime::Runtime::new()
-                    .context("failed to create tokio runtime for schema initialization")?;
-                runtime.handle().clone()
+                    .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;
+                runtime.block_on(self.init_schema_async())
             }
-        };
-
-        rt.block_on(self.init_schema_async())
+        }
     }
 }

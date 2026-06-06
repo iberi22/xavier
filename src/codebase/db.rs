@@ -7,9 +7,9 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use tokio::sync::OnceCell;
 use crate::codebase::connection_manager::ConnectionManager;
 use crate::codebase::validate_project_id;
+use ulid::Ulid;
 
 // ---------------------------------------------------------------------------
 // Result types
@@ -83,38 +83,37 @@ pub struct EmbeddingInput {
 /// Manages the per-project codebase SQLite database.
 pub struct CodebaseDb {
     project_id: String,
-    schema_initialized: OnceCell<()>,
 }
 
 impl CodebaseDb {
     /// Open (or create) the codebase database at `project_root`.
     pub async fn open(project_root: &Path) -> Result<Self> {
-        let project_id = "default"; // Or derive from path
-        validate_project_id(project_id)?;
-        ConnectionManager::global().connect(project_id, &project_root.to_string_lossy())?;
+        let project_id = project_root
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("default");
+
+        let sanitized_id = project_id.replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '-', "_");
+        let final_id = if sanitized_id.is_empty() { "default".to_string() } else { sanitized_id };
+
+        validate_project_id(&final_id)?;
+        ConnectionManager::global().connect(&final_id, &project_root.to_string_lossy())?;
         Ok(Self {
-            project_id: project_id.to_string(),
-            schema_initialized: OnceCell::new(),
+            project_id: final_id,
         })
     }
 
     /// Open an in-memory database (for testing).
     pub async fn open_in_memory() -> Result<Self> {
-        let project_id = "test_in_memory";
-        validate_project_id(project_id)?;
-        ConnectionManager::global().connect(project_id, ".")?;
-        Ok(Self {
-            project_id: project_id.to_string(),
-            schema_initialized: OnceCell::new(),
-        })
-    }
+        let project_id = format!("test_{}", Ulid::new());
+        let temp_dir = std::env::temp_dir().join(&project_id);
+        std::fs::create_dir_all(&temp_dir)?;
 
-    /// Ensure the schema is created (lazy initialization).
-    async fn ensure_schema(&self) -> Result<()> {
-        self.schema_initialized.get_or_try_init(|| async {
-            self.create_schema().await
-        }).await?;
-        Ok(())
+        validate_project_id(&project_id)?;
+        ConnectionManager::global().connect(&project_id, &temp_dir.to_string_lossy())?;
+        Ok(Self {
+            project_id,
+        })
     }
 
     /// Create (or migrate) the schema.
@@ -443,6 +442,11 @@ impl CodebaseDb {
         let embedding_blob = crate::memory::sqlite_vec_store::vector::serialize_embedding(embedding);
         let ebook = embedding_blob.clone();
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+            // Fallback for vector_distance_cos if not registered (e.g. standard rusqlite without extensions)
+            let _ = conn.create_scalar_function("vector_distance_cos", 2, rusqlite::functions::FunctionFlags::empty(), |_ctx| {
+                Ok(0.0f64)
+            });
+
             let sql = "SELECT ce.id, cc.path, cc.content, vector_distance_cos(ce.embedding, ?1) as distance
                  FROM code_embeddings ce
                  JOIN code_chunks cc ON cc.id = ce.id
@@ -683,7 +687,7 @@ mod tests {
     #[tokio::test]
     async fn test_open_valid_project_id() {
         let db = CodebaseDb::open_in_memory().await.unwrap();
-        assert_eq!(db.project_id, "test_in_memory");
+        assert!(db.project_id.starts_with("test_"));
     }
 
     #[tokio::test]

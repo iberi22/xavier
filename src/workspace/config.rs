@@ -3,7 +3,7 @@ use std::fmt;
 use crate::settings::XavierSettings;
 use crate::memory::store::MemoryBackend;
 
-const MB: u64 = 1024 * 1024;
+pub const MB: u64 = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
