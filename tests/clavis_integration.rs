@@ -10,16 +10,16 @@ use xavier::tasks::models::{Task, TaskStatus};
 #[tokio::test]
 async fn test_clavis_persistence_and_revocation() -> Result<()> {
     // 1. Setup SQLite database and pool
-    let db_file = NamedTempFile::new()?;
-    let db = libsql::Builder::new_local(db_file.path().to_str().unwrap())
-        .build()
-        .await?;
-    let pool = xavier::utils::connection_pool::LibsqlConnectionPool::new(db, Default::default());
-    let logger = QmdAuditLogger::new(pool.clone());
-    logger.init_schema()?;
+    let _db_file = NamedTempFile::new()?;
+    // Ensure we use a clean temp directory for ConnectionManager
+    let temp_dir = tempfile::tempdir()?;
+    std::env::set_var("XAVIER_DATA_DIR", temp_dir.path());
+
+    let logger = QmdAuditLogger::new();
+    logger.init_schema_async().await?;
 
     // 2. Setup Clavis Engine with Persistent Logger
-    let audit_logger = Box::new(QmdAuditLogger::new(pool.clone()));
+    let audit_logger = Box::new(QmdAuditLogger::new());
     let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger));
 
     // 3. Setup Event Bus and Runtime Hook
@@ -69,18 +69,21 @@ async fn test_clavis_persistence_and_revocation() -> Result<()> {
     );
 
     // 7. VERIFY Persistence in SQLite
-    let conn = pool.get().await?;
-    let stmt = conn
-        .prepare("SELECT event_type, agent_id, reason FROM secret_audit_logs ORDER BY id ASC")
+    let logs = xavier::codebase::connection_manager::ConnectionManager::global()
+        .with_conn("metrics", |conn| {
+            let mut stmt = conn
+                .prepare("SELECT event_type, agent_id, reason FROM secret_audit_logs ORDER BY id ASC")?;
+            let mut rows = stmt.query(())?;
+            let mut logs = Vec::new();
+            while let Some(row) = rows.next()? {
+                let event_type: String = row.get(0)?;
+                let agent_id: String = row.get(1)?;
+                let reason: Option<String> = row.get(2)?;
+                logs.push((event_type, agent_id, reason));
+            }
+            Ok(logs)
+        })
         .await?;
-    let mut rows = stmt.query(()).await?;
-    let mut logs = Vec::new();
-    while let Some(row) = rows.next().await? {
-        let event_type: String = row.get(0)?;
-        let agent_id: String = row.get(1)?;
-        let reason: Option<String> = row.get(2)?;
-        logs.push((event_type, agent_id, reason));
-    }
 
     assert_eq!(logs.len(), 2);
     assert_eq!(logs[0].0, "LEND");
