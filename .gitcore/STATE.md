@@ -1,97 +1,68 @@
-# Xavier — Project State
+# STATE.md — Xavier Cognitive Memory System
 
-**Project:** iberi22/xavier
-**Last Updated:** 2026-05-10 (post-merge cleanup)
-**Status:** Active Development
+**Proyecto:** iberi22/xavier
+**Última actualización:** 2026-06-05
+**Versión:** v0.6.0-dev
 
----
+## Estado del build
 
-## Current Status
-
-| Check | Status | Notes |
+| Check | Estado | Notas |
 |-------|--------|-------|
-| **Build** | ✅ Pass | `cargo build --release` |
-| **Tests** | ✅ Pass | All unit + integration tests |
-| **Lint** | ✅ Pass | `cargo clippy` clean |
-| **Docker** | ✅ Available | `docker compose up -d` |
-| **Health Endpoints** | ✅ Working | `/health`, `/readiness` |
+| **Build** | ✅ 0 errores (44 warnings) | `cargo build --release` |
+| **Clippy** | ✅ Clean | `cargo clippy` sin errores |
+| **Tests** | ✅ 9 integration tests pass | SEVIER2 M6 validation |
+| **HTTP Server** | ❌ CAÍDO | Puerto 8006 no responde |
+| **Docker** | ❌ Caído | No crítico, Xavier corre nativo |
+| **Embeddings** | ⚠️ No-op fallback | Qwen3-Embedding-0.6B planeado |
+
+## Hexagonal Architecture
+
+| Layer | Estado | PR/Issue |
+|-------|--------|----------|
+| **P0** MemoryQueryPort → QmdMemoryAdapter | ✅ Completo | #90-#95 |
+| **P1** SecurityService real impl | ✅ Completo | #170 |
+| **P2** TimeMetricsPort (OnceLock → dyn trait) | ✅ Completo | #173 |
+| **P3** AgentLifecyclePort | ✅ Completo | #174 |
+| **P4** HealthCheckPort + HttpHealthAdapter | ✅ Completo | #91 |
+
+## SEVIER2 Milestones
+
+| Hito | Estado |
+|------|--------|
+| M1+M2: Webhook + Session Indexer | ✅ PR #57 |
+| M3: Save/Retrieve Verification | ✅ PR #56 |
+| M4: Bidirectional Agent Comm | ✅ PR #54 |
+| M5: Cron + Monitoring | ✅ Completo |
+| M6: Validation (9 tests) | ✅ Completo |
+
+## Issues Abiertos
+
+| # | Prioridad | Título | Estado |
+|---|-----------|--------|--------|
+| 115 | P2 | Magic constants hardcoded | 🤖 Jules |
+| 96-98 | feat | Multi-provider spawn, agent skill context, CLI-based spawn | 🤖 Jules |
+| 184-189 | enhancement | Daily Chronicle blog system (6 sub-issues) | 🤖 Jules |
+| 190-194 | PR | Message bus fix + security hardening | ✅ Merged |
+
+## PRs Abiertos
+
+| # | Branch | Mergeable | Estado |
+|---|--------|-----------|--------|
+| 411 | dependabot/github_actions | ✅ Mergeable | Deployed |
+| 399 | dependabot/cargo | ⚠️ | Checking |
+| — | `sevier2-fix-ci` | draft | No mergeable |
+
+## Features Tracking
+
+De `features.json`:
+- **Features totales:** 6
+- **Completados:** 6 (100%)
+- **Pendientes:** 0
+
+## Dependabot
+
+- **Open:** 2 PRs (#411, #399)
+- **Alerts:** Verificar en GitHub
 
 ---
-
-## Module Status
-
-| Module | Status | Notes |
-|--------|--------|-------|
-| **Core Runtime** | ✅ Complete | Rust + Tokio |
-| **HTTP API** | ✅ Complete | Axum-based |
-| **MCP Server** | ✅ Complete | Streamable HTTP transport |
-| **SurrealDB Memory** | ✅ Complete | Hybrid search (BM25 + vectors) |
-| **Belief Graph** | ✅ Complete | Graph relationships |
-| **Code Graph Index** | ✅ Complete | SQLite sidecar |
-| **Hybrid Search** | ✅ Complete | BM25 + vector reranking |
-| **Agent Runtime** | ✅ Complete | `/agents/run` endpoint |
-| **Workspace Isolation** | ✅ Enforced | Multi-tenant safe |
-| **Usage Tracking** | ✅ Complete | `/v1/account/usage` |
-| **Semantic Caching** | ✅ Complete | Tier-1 caching |
-| **Overdrive Pipeline** | ✅ Complete | HyDE, Self-Correction, RRF |
-
----
-
-## Verified Features
-
-| Feature ID | Description | Status |
-|------------|-------------|--------|
-| feat-unified-storage | SurrealDB for Vector + Graph | ✅ |
-| feat-hybrid-search | BM25 + Vector retrieval | ✅ |
-| feat-belief-graph | Belief relationships | ✅ |
-| feat-mcp-server | HTTP-first + MCP | ✅ |
-| feat-code-graph-index | AST/symbol search | ✅ |
-| feat-src-reference | Source documentation | ✅ |
-
----
-
-## Recent Changes
-
-| Change | Date | Description |
-|--------|------|-------------|
-| fix(crypto): remove generic-array dep | 2026-05-10 | Use `aes_gcm::Nonce` instead of `GenericArray::from_slice` — unblocks Dependabot #177 |
-| PR #210 merged | 2026-05-10 | `git2` 0.19.0 → 0.20.4 (Dependabot, all CI green) |
-| PR #209 merged | 2026-05-10 | Chronicle workflow, multi-provider spawn, Groq, configurable RRF |
-| Chronicle module | 2026-05-10 | Harvest, redact, generate, publish, CLI subcommand |
-| Spawn base | 2026-05-10 | Multi-provider agent spawn + Groq provider |
-| RRF configurable | 2026-05-10 | `XAVIER_RRF_K` env var for hybrid search |
-| Workspace isolation | 2026-03-21 | Enforced `WorkspaceRegistry` |
-| Monorepo formalization | 2026-03-19 | Rust + Node mixed workspace |
-| MCP surface | 2026-03-19 | Model Context Protocol added |
-| HTTP API | 2026-03-17 | Agent-safe HTTP endpoints |
-
-## Open Dependabot PRs
-
-| PR | Dep | Status | Blocker |
-|----|-----|--------|---------|
-| **#177** | `generic-array` 0.14.7 → 1.4.1 | ⏳ REBASE TRIGGERED | Fix landed in main (df37fe4). `@dependabot rebase` sent. Awaiting CI re-run. |
-| **#183** | `tauri` 2.10.3 → 2.11.1 | ✅ CLOSED | Dependabot auto-closed: tauri superseded by newer version. |
-
----
-
-## Infrastructure
-
-| Component | Status |
-|-----------|--------|
-| Docker Compose | ✅ Configured |
-| Health Checks | ✅ `/health`, `/readiness` |
-| Smoke Tests | ✅ `scripts/release-smoke.sh` |
-
----
-
-## Key Metrics
-
-| Metric | Value |
-|--------|-------|
-| Features Passing | 6/6 |
-| Last Audit | 2026-03-20 |
-| Rust Version | 2024 Edition |
-
----
-
-*Last updated: 2026-03-25*
+*Actualizado por Claw (SWAL) | SouthWest AI Labs*
