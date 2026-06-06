@@ -9,12 +9,13 @@
 //!
 //! Split into focused sub-modules.
 
+pub mod core;
+pub mod types;
 pub mod actions;
 pub mod config;
 pub mod priority;
 pub mod quality;
 
-pub use actions::*;
-pub use config::*;
-pub use priority::*;
-pub use quality::*;
+// Re-export primary types and struct
+pub use core::MemoryManager;
+pub use types::*;
