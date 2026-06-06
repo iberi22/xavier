@@ -1,7 +1,84 @@
 use chrono::Utc;
-use crate::coordination::message_bus::{MessageBus, MessageBusError, AgentInfo, AgentStatus};
+use tokio::sync::mpsc;
+use crate::coordination::message_bus::{MessageBus, MessageBusError, AgentInfo, AgentStatus, AgentMessage};
 
 impl MessageBus {
+    /// Register an agent with the message bus
+    pub async fn register_agent(
+        &self,
+        agent_id: &str,
+        name: &str,
+        capabilities: Vec<String>,
+    ) -> Result<mpsc::Receiver<AgentMessage>, MessageBusError> {
+        let (tx, rx) = mpsc::channel(100);
+
+        {
+            let mut queues = self.queues.write().await;
+            if queues.contains_key(agent_id) {
+                return Err(MessageBusError::AgentAlreadyRegistered(
+                    agent_id.to_string(),
+                ));
+            }
+            queues.insert(agent_id.to_string(), tx);
+        }
+
+        {
+            let mut agents = self.agents.write().await;
+            agents.insert(
+                agent_id.to_string(),
+                AgentInfo {
+                    id: agent_id.to_string(),
+                    name: name.to_string(),
+                    capabilities,
+                    registered_at: Utc::now(),
+                    last_heartbeat: Utc::now(),
+                    status: AgentStatus::Active,
+                },
+            );
+        }
+
+        {
+            let mut metrics = self.metrics.write().await;
+            metrics.registered_agents = self.agents.read().await.len();
+        }
+
+        tracing::info!("Agent {} registered with message bus", agent_id);
+
+        Ok(rx)
+    }
+
+    /// Unregister an agent
+    pub async fn unregister_agent(&self, agent_id: &str) -> Result<(), MessageBusError> {
+        {
+            let mut queues = self.queues.write().await;
+            queues.remove(agent_id);
+        }
+
+        {
+            let mut agents = self.agents.write().await;
+            if let Some(agent) = agents.get_mut(agent_id) {
+                agent.status = AgentStatus::Offline;
+            }
+            agents.remove(agent_id);
+        }
+
+        {
+            let mut topics = self.topics.write().await;
+            for subscribers in topics.values_mut() {
+                subscribers.remove(agent_id);
+            }
+        }
+
+        {
+            let mut metrics = self.metrics.write().await;
+            metrics.registered_agents = self.agents.read().await.len();
+        }
+
+        tracing::info!("Agent {} unregistered from message bus", agent_id);
+
+        Ok(())
+    }
+
     /// Update agent heartbeat
     pub async fn heartbeat(&self, agent_id: &str) -> Result<(), MessageBusError> {
         let mut agents = self.agents.write().await;

@@ -11,166 +11,242 @@
 //!
 //! Based on: RESEARCH_agent_coordination.md
 
-pub mod types;
+pub mod core;
+pub mod handlers;
+pub mod agents;
+pub mod routing;
 pub mod errors;
 pub mod metrics;
 pub mod dlq;
-pub mod routing;
-pub mod dispatch;
-pub mod agents;
+
+// Backward compatibility re-exports for modules
+pub use handlers as dispatch;
+
+/// Compatibility module for AgentMessage and other types
+pub mod types {
+    pub use super::*;
+}
 
 #[cfg(test)]
 mod tests;
 
-pub use types::*;
 pub use errors::*;
 pub use metrics::*;
 pub use dlq::*;
+pub use core::*;
+pub use routing::*;
+pub use handlers::*;
+pub use agents::*;
 
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-use chrono::Utc;
-use tokio::sync::{broadcast, mpsc, RwLock};
+use std::collections::HashMap;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use ulid::Ulid;
 
-/// The main Message Bus for agent coordination
-pub struct MessageBus {
-    /// Per-agent message receivers
-    pub(crate) queues: RwLock<HashMap<String, mpsc::Sender<AgentMessage>>>,
-
-    /// Topic subscriptions (topic -> set of agent IDs)
-    pub(crate) topics: RwLock<HashMap<String, HashSet<String>>>,
-
-    /// Broadcast channel for topic messages
-    pub(crate) broadcast_tx: broadcast::Sender<AgentMessage>,
-
-    /// Response channels for request/response
-    pub(crate) response_channels: RwLock<HashMap<String, mpsc::Sender<AgentMessage>>>,
-
-    /// Dead Letter Queue with metadata
-    pub(crate) dlq: RwLock<Vec<DLQEntry>>,
-
-    /// Metrics
-    pub(crate) metrics: RwLock<BusMetrics>,
-
-    /// Registered agents
-    pub(crate) agents: RwLock<HashMap<String, AgentInfo>>,
-
-    /// Heartbeat configuration
-    pub(crate) heartbeat_config: HeartbeatConfig,
+/// Message priority levels
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MessagePriority {
+    Low,
+    #[default]
+    Normal,
+    High,
+    Critical,
 }
 
-impl MessageBus {
-    /// Create a new MessageBus with default config
-    pub fn new() -> Arc<Self> {
-        Self::with_config(HeartbeatConfig::default())
+impl MessagePriority {
+    pub fn value(&self) -> u8 {
+        match self {
+            MessagePriority::Low => 1,
+            MessagePriority::Normal => 2,
+            MessagePriority::High => 3,
+            MessagePriority::Critical => 4,
+        }
+    }
+}
+
+/// Message types for agent communication
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum MessageType {
+    #[default]
+    Task,
+    Result,
+    Error,
+    Heartbeat,
+    Register,
+    Unregister,
+    Shutdown,
+}
+
+/// Core message structure for agent communication
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentMessage {
+    /// Unique message ID
+    pub id: String,
+
+    /// Sender agent ID
+    pub sender: String,
+
+    /// Receiver agent ID (None = broadcast/topic)
+    pub receiver: Option<String>,
+
+    /// Topic for pub/sub (None = direct message)
+    pub topic: Option<String>,
+
+    /// Message type
+    pub msg_type: MessageType,
+
+    /// Message content (any serializable data)
+    pub content: serde_json::Value,
+
+    /// Priority level
+    pub priority: MessagePriority,
+
+    /// Timestamp
+    pub timestamp: DateTime<Utc>,
+
+    /// Correlation ID for request/response
+    pub correlation_id: Option<String>,
+
+    /// Reply channel ID
+    pub reply_to: Option<String>,
+
+    /// Additional metadata
+    pub metadata: HashMap<String, String>,
+
+    /// Retry count
+    pub retries: u32,
+
+    /// Max retries before going to DLQ
+    pub max_retries: u32,
+}
+
+impl AgentMessage {
+    /// Create a new message
+    pub fn new(sender: &str, msg_type: MessageType, content: serde_json::Value) -> Self {
+        Self {
+            id: Ulid::new().to_string(),
+            sender: sender.to_string(),
+            receiver: None,
+            topic: None,
+            msg_type,
+            content,
+            priority: MessagePriority::default(),
+            timestamp: Utc::now(),
+            correlation_id: None,
+            reply_to: None,
+            metadata: HashMap::new(),
+            retries: 0,
+            max_retries: 3,
+        }
     }
 
-    /// Create a new MessageBus with custom heartbeat config
-    pub fn with_config(config: HeartbeatConfig) -> Arc<Self> {
-        let (broadcast_tx, _) = broadcast::channel(1000);
-
-        Arc::new(Self {
-            queues: RwLock::new(HashMap::new()),
-            topics: RwLock::new(HashMap::new()),
-            broadcast_tx,
-            response_channels: RwLock::new(HashMap::new()),
-            dlq: RwLock::new(Vec::new()),
-            metrics: RwLock::new(BusMetrics::default()),
-            agents: RwLock::new(HashMap::new()),
-            heartbeat_config: config,
-        })
+    /// Create a task message
+    pub fn task(sender: &str, content: serde_json::Value) -> Self {
+        Self::new(sender, MessageType::Task, content)
     }
 
-    /// Register an agent with the message bus
-    pub async fn register_agent(
-        &self,
-        agent_id: &str,
-        name: &str,
-        capabilities: Vec<String>,
-    ) -> Result<mpsc::Receiver<AgentMessage>, MessageBusError> {
-        let (tx, rx) = mpsc::channel(100);
-
-        {
-            let mut queues = self.queues.write().await;
-            if queues.contains_key(agent_id) {
-                return Err(MessageBusError::AgentAlreadyRegistered(
-                    agent_id.to_string(),
-                ));
-            }
-            queues.insert(agent_id.to_string(), tx);
-        }
-
-        {
-            let mut agents = self.agents.write().await;
-            agents.insert(
-                agent_id.to_string(),
-                AgentInfo {
-                    id: agent_id.to_string(),
-                    name: name.to_string(),
-                    capabilities,
-                    registered_at: Utc::now(),
-                    last_heartbeat: Utc::now(),
-                    status: AgentStatus::Active,
-                },
-            );
-        }
-
-        {
-            let mut metrics = self.metrics.write().await;
-            metrics.registered_agents = self.agents.read().await.len();
-        }
-
-        tracing::info!("Agent {} registered with message bus", agent_id);
-
-        Ok(rx)
+    /// Create a result message
+    pub fn result(sender: &str, content: serde_json::Value) -> Self {
+        Self::new(sender, MessageType::Result, content)
     }
 
-    /// Unregister an agent
-    pub async fn unregister_agent(&self, agent_id: &str) -> Result<(), MessageBusError> {
-        {
-            let mut queues = self.queues.write().await;
-            queues.remove(agent_id);
-        }
-
-        {
-            let mut agents = self.agents.write().await;
-            if let Some(agent) = agents.get_mut(agent_id) {
-                agent.status = AgentStatus::Offline;
-            }
-            agents.remove(agent_id);
-        }
-
-        {
-            let mut topics = self.topics.write().await;
-            for subscribers in topics.values_mut() {
-                subscribers.remove(agent_id);
-            }
-        }
-
-        {
-            let mut metrics = self.metrics.write().await;
-            metrics.registered_agents = self.agents.read().await.len();
-        }
-
-        tracing::info!("Agent {} unregistered from message bus", agent_id);
-
-        Ok(())
+    /// Create an error message
+    pub fn error(sender: &str, content: serde_json::Value) -> Self {
+        Self::new(sender, MessageType::Error, content)
     }
 
-    /// Shutdown the message bus
-    pub async fn shutdown(&self) {
-        // Clear all queues
-        {
-            let mut queues = self.queues.write().await;
-            queues.clear();
-        }
-
-        // Clear agents
-        {
-            let mut agents = self.agents.write().await;
-            agents.clear();
-        }
-
-        tracing::info!("Message bus shutdown complete");
+    /// Create a heartbeat message
+    pub fn heartbeat(sender: &str) -> Self {
+        Self::new(
+            sender,
+            MessageType::Heartbeat,
+            serde_json::json!({ "status": "alive" }),
+        )
     }
+
+    /// Set receiver (direct message)
+    pub fn to(mut self, receiver: &str) -> Self {
+        self.receiver = Some(receiver.to_string());
+        self
+    }
+
+    /// Set topic (pub/sub)
+    pub fn on_topic(mut self, topic: &str) -> Self {
+        self.topic = Some(topic.to_string());
+        self
+    }
+
+    /// Set correlation ID for request/response
+    pub fn with_correlation(mut self, correlation_id: &str) -> Self {
+        self.correlation_id = Some(correlation_id.to_string());
+        self
+    }
+
+    /// Set reply channel
+    pub fn reply_to_channel(mut self, channel_id: &str) -> Self {
+        self.reply_to = Some(channel_id.to_string());
+        self
+    }
+
+    /// Set priority
+    pub fn with_priority(mut self, priority: MessagePriority) -> Self {
+        self.priority = priority;
+        self
+    }
+}
+
+/// Agent subscription info
+#[derive(Debug, Clone)]
+pub struct Subscription {
+    pub agent_id: String,
+    pub topic: String,
+}
+
+/// Result of a request/response operation
+#[derive(Debug)]
+pub struct Response {
+    pub message: AgentMessage,
+    pub received_at: DateTime<Utc>,
+}
+
+/// Heartbeat configuration
+#[derive(Debug, Clone)]
+pub struct HeartbeatConfig {
+    /// Timeout in seconds before marking agent as offline
+    pub timeout_secs: u64,
+    /// Interval to check for stale heartbeats
+    pub check_interval_secs: u64,
+}
+
+impl Default for HeartbeatConfig {
+    fn default() -> Self {
+        Self {
+            timeout_secs: 30,
+            check_interval_secs: 10,
+        }
+    }
+}
+
+/// Agent information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentInfo {
+    pub id: String,
+    pub name: String,
+    pub capabilities: Vec<String>,
+    pub registered_at: DateTime<Utc>,
+    pub last_heartbeat: DateTime<Utc>,
+    pub status: AgentStatus,
+}
+
+/// Agent status
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum AgentStatus {
+    #[default]
+    Registered,
+    Active,
+    Idle,
+    Offline,
 }
