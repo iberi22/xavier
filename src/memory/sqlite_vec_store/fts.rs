@@ -1,3 +1,7 @@
+//! Full-text search for SQLite vector store
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use regex::Regex;
 use std::collections::HashSet;
 use std::sync::OnceLock;

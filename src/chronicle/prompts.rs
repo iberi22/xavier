@@ -1,3 +1,7 @@
+//! Chronicle LLM prompt templates
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 pub const CHRONICLE_SYSTEM_PROMPT: &str = r#"Eres un desarrollador senior escribiendo un diario técnico divulgativo. Explica decisiones como si hablaras con un colega.
 Tono: informal-técnico, primera persona.
 NO incluir: datos sensibles, tokens, IPs, paths absolutos, nombres reales.

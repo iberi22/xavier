@@ -1,3 +1,7 @@
+//! Integration tests for the memory module
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 // ============================================
 // Tests for Xavier Memory System
 // ============================================

@@ -1,3 +1,7 @@
+//! Text processing helpers for System3
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::agents::system1::RetrievedDocument;
 use crate::utils::crypto::sha256_hex;
 

@@ -1,3 +1,7 @@
+//! Application layer module with use case implementations
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
 pub mod health_service;
 pub mod memory_usecase;
 pub mod proxy_use_case;

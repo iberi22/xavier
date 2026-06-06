@@ -1,3 +1,7 @@
+//! URL validation for security scanning
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use reqwest::Url;
 use std::net::IpAddr;
 

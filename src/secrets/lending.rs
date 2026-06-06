@@ -1,3 +1,7 @@
+//! Secret lending and temporary access
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use super::SecretError;
 use std::collections::HashMap;
 use std::fmt;

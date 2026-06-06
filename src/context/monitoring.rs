@@ -1,3 +1,7 @@
+//! Context monitoring and observability
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing::{debug, info};
 

@@ -1,3 +1,7 @@
+//! QMD search functionality
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use regex::Regex;
 use std::collections::HashMap;
 use std::sync::LazyLock;

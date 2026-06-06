@@ -1,3 +1,7 @@
+//! Tests for the System3 reasoning engine
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use super::client::{LlmClient, ResponseGenerator};
 use super::helpers::*;
 use super::types::ActorConfig;

@@ -1,3 +1,8 @@
+//! Secrets management module
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+use std::fmt;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

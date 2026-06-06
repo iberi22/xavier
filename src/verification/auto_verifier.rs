@@ -1,3 +1,7 @@
+//! Automatic content verifier
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use serde::{Deserialize, Serialize};
 use tracing::info;
 

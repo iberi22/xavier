@@ -1,3 +1,7 @@
+//! Workspace registry for project discovery
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;

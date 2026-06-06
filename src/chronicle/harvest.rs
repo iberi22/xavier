@@ -1,3 +1,7 @@
+//! Chronicle data harvesting
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use git2::{Repository, Sort};

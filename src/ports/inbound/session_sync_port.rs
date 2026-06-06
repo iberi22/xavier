@@ -1,3 +1,7 @@
+//! Inbound port for session synchronization
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::tasks::session_sync_task::SyncCheckResult;
 use async_trait::async_trait;
 

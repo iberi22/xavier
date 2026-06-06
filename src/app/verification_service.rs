@@ -1,3 +1,7 @@
+//! Content verification service
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::ports::inbound::verification_port::{VerificationPort, VerificationResult};
 use crate::verification::auto_verifier::AutoVerifier;
 use async_trait::async_trait;

@@ -1,3 +1,7 @@
+//! Belief evaluation engine for agent reasoning
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::domain::memory::belief::BeliefEdge;
 
 #[derive(Debug, Clone)]

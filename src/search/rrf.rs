@@ -1,3 +1,7 @@
+//! Reciprocal Rank Fusion for search combination
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};

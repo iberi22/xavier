@@ -1,3 +1,7 @@
+//! Memory packing for efficient storage
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::retrieval::gating::LayeredSearchResult;
 use std::fmt::Write;
 

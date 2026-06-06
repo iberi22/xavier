@@ -1,3 +1,7 @@
+//! HTTP API v1 endpoint definitions
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use axum::{extract::Json, response::IntoResponse, Extension};
 use tracing::info;
 use crate::workspace::WorkspaceContext;

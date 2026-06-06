@@ -1,3 +1,7 @@
+//! Date and time helpers for System3
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use chrono::{Datelike, Duration, NaiveDate};
 use regex::Regex;
 use std::sync::OnceLock;

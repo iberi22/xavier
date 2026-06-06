@@ -1,3 +1,7 @@
+//! Text embedding generation module
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
 use std::sync::Arc;
 
 use async_trait::async_trait;

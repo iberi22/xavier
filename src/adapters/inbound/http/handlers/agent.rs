@@ -1,3 +1,7 @@
+//! HTTP handler for agent lifecycle operations
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::adapters::inbound::http::AppState;
 use crate::coordination::agent_registry::AgentMetadata;
 use axum::{extract::State, Json};

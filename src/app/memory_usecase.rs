@@ -1,3 +1,7 @@
+//! Memory use case orchestration
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::domain::memory::{MemoryQueryFilters, MemoryRecord};
 use crate::ports::inbound::MemoryQueryPort;
 use crate::ports::outbound::ThreatDetectionPort;

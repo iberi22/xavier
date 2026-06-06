@@ -1,3 +1,7 @@
+//! SQLite vector store schema implementation
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::memory::sqlite_store::TABLE_MEMORIES;
 use crate::ports::outbound::schema_init::SchemaInitializer;
 use anyhow::Result;

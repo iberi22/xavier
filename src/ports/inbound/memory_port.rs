@@ -1,3 +1,7 @@
+//! Inbound port for memory operations
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::domain::memory::{MemoryQueryFilters, MemoryRecord};
 use async_trait::async_trait;
 

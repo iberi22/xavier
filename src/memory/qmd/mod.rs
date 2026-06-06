@@ -1,3 +1,7 @@
+//! QMD (Queryable Memory Document) storage module
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;

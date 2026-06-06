@@ -1,3 +1,7 @@
+//! Search implementation for SQLite vector store
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::memory::sqlite_vec_store::types::FusionSource;
 use crate::memory::store::{HybridSearchResult, MemoryRecord};
 use std::collections::HashMap;

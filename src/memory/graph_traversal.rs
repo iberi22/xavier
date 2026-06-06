@@ -1,3 +1,7 @@
+//! Memory graph traversal algorithms
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::domain::memory::belief::BeliefEdge;
 use crate::memory::belief_graph::BeliefGraph;
 

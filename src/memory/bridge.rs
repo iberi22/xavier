@@ -1,3 +1,7 @@
+//! Memory bridge between storage backends
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use std::path::Path;
 use walkdir::WalkDir;
 

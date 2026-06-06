@@ -1,3 +1,7 @@
+//! Entity graph storage in SQLite
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::memory::sqlite_vec_store::types::ExtractedEntity;
 use crate::memory::sqlite_vec_store::utils;
 use crate::memory::store::{stable_key, GraphHopPath, MemoryRecord};

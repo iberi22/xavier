@@ -1,3 +1,7 @@
+//! Inbound port interfaces
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
 pub mod agent_lifecycle_port;
 pub mod health_port;
 pub mod input_security_port;

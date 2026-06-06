@@ -1,3 +1,7 @@
+//! Inbound port for metrics collection
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::domain::memory::TimeMetric;
 use async_trait::async_trait;
 

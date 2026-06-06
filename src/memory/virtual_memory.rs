@@ -1,3 +1,7 @@
+//! Virtual memory layer
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 // ============================================
 // XAVIER MEMORY VIRTUALIZATION LAYER
 // Based on Context Mode MCP architecture

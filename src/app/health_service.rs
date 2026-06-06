@@ -1,3 +1,7 @@
+//! Health check service for system monitoring
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::ports::inbound::health_port::{HealthPort, HealthStatus};
 use crate::tasks::session_sync_task::get_last_sync_result;
 use async_trait::async_trait;

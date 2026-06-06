@@ -1,3 +1,7 @@
+//! Session checkpointing for agent state
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 

@@ -1,3 +1,7 @@
+//! Entity graph for memory relationships
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;

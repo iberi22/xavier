@@ -1,3 +1,7 @@
+//! Binary entry point for the Xavier cognitive memory system
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 // Xavier - Cognitive Memory System
 // Public open-core release
 

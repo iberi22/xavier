@@ -1,3 +1,7 @@
+//! MCP stdio transport server
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::server::mcp::session::dispatch_mcp_value;
 use crate::{workspace::WorkspaceContext, AppState};
 use anyhow::Result;

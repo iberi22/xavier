@@ -1,3 +1,7 @@
+//! LLM provider abstraction for agents
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use anyhow::{anyhow, bail, Context, Result};
 use reqwest::Client;
 use serde::Serialize;

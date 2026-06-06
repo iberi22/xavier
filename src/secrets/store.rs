@@ -1,3 +1,7 @@
+//! Secrets store abstraction
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use crate::secrets::SecretResult;
 use std::future::Future;
 use std::pin::Pin;

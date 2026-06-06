@@ -1,3 +1,7 @@
+//! Content curation agent
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use anyhow::Result;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};

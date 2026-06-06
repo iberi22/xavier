@@ -1,3 +1,7 @@
+//! Rate limiting for agent API calls
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use anyhow::Result;
 use tracing::log::warn;
 use chrono::{DateTime, Duration, Utc};

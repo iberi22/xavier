@@ -1,3 +1,7 @@
+//! Memory-related MCP tools
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use serde_json::{json, Value};
 use crate::AppState;
 use crate::workspace::WorkspaceContext;

@@ -1,3 +1,7 @@
+//! OpenAI embedding API integration
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use std::fmt;
 use std::time::Duration;
 

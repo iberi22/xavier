@@ -1,3 +1,7 @@
+//! Git core tool implementations
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 // GitCore SRC Tools for Xavier
 // MCP tools for querying GitCore documentation from Xavier
 

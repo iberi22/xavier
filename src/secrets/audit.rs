@@ -1,3 +1,7 @@
+//! Audit logging for secret management
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
 use super::lending::AuditLogger;
 use crate::ports::outbound::schema_init::SchemaInitializer;
 use chrono::Utc;
