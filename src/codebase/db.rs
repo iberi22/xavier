@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use crate::codebase::connection_manager::ConnectionManager;
