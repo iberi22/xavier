@@ -60,6 +60,13 @@ type PanelChatResponse = {
   messages: PanelMessage[];
 };
 
+type OnboardingSuggestions = {
+  os: string;
+  tools: { name: string; installed: boolean; version?: string }[];
+  workspace: { project_type: string; indicators: string[] };
+  recommendations: string[];
+};
+
 function App() {
   const [token, setToken] = useState("");
   const [draftToken, setDraftToken] = useState("");
@@ -71,6 +78,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
+  const [onboarding, setOnboarding] = useState<OnboardingSuggestions | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const activeThread = useMemo(
     () => threads.find((item) => item.id === selectedThreadId) ?? null,
@@ -150,12 +159,31 @@ function App() {
     [openThread, selectedThreadId],
   );
 
+  const loadOnboarding = useCallback(async (currentToken: string) => {
+    try {
+      const response = await fetch(getApiUrl("/v1/onboarding/suggestions"), {
+        headers: { "X-Xavier-Token": currentToken },
+      });
+      if (response.ok) {
+        const data = (await response.json()) as OnboardingSuggestions;
+        setOnboarding(data);
+        const dismissed = localStorage.getItem("xavier_onboarding_dismissed");
+        if (!dismissed) {
+          setShowOnboarding(true);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to load onboarding suggestions:", e);
+    }
+  }, []);
+
   useEffect(() => {
     if (!token) {
       return;
     }
     void loadThreads(token);
-  }, [token, loadThreads]);
+    void loadOnboarding(token);
+  }, [token, loadThreads, loadOnboarding]);
 
   useEffect(() => {
     if (!token || !selectedThreadId || isLoading) {
@@ -412,6 +440,33 @@ function App() {
           </header>
 
           {error ? <div className="error-banner">{error}</div> : null}
+
+          {showOnboarding && onboarding && (
+            <section className="onboarding-banner" style={{ margin: '1rem', padding: '1rem', background: 'var(--cx-surface-2)', borderRadius: 'var(--cx-radius-md)', border: '1px solid var(--cx-border)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <h3 style={{ margin: 0 }}>Welcome to Xavier</h3>
+                <button
+                  type="button"
+                  className="cx-button cx-button-muted"
+                  style={{ padding: '2px 8px', fontSize: '0.8rem' }}
+                  onClick={() => {
+                    setShowOnboarding(false);
+                    localStorage.setItem("xavier_onboarding_dismissed", "true");
+                  }}
+                >
+                  Dismiss
+                </button>
+              </div>
+              <p style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>
+                Detected <strong>{onboarding.os}</strong> environment with <strong>{onboarding.workspace.project_type}</strong> project.
+              </p>
+              <ul style={{ fontSize: '0.85rem', paddingLeft: '1.2rem', color: 'var(--cx-ink)' }}>
+                {onboarding.recommendations.map((rec, i) => (
+                  <li key={i}>{rec}</li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           <section className="message-stream">
             {messages.map((message) => (
