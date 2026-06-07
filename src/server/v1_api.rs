@@ -1,4 +1,4 @@
-//! V1 RESTful Standard Memory API handlers.
+﻿//! V1 RESTful Standard Memory API handlers.
 
 use axum::{
     extract::{Path, Query},
@@ -711,7 +711,7 @@ mod tests {
         {
             let docs = workspace.workspace.memory.all_documents().await;
             eprintln!("DEBUG initial docs count: {}", docs.len());
-            for d in &workspace.workspace.memory.docs.read().await.iter() {
+            for d in workspace.workspace.memory.docs.read().await.iter() {
                 eprintln!("DEBUG doc: id={:?}, path={}, content={}..", d.id, d.path, &d.content[..std::cmp::min(50, d.content.len())]);
             }
         }
