@@ -4,13 +4,13 @@
 //! limits, token bucket throttling, and back-pressure for API calls.
 
 use anyhow::Result;
-use tracing::log::warn;
 use chrono::{DateTime, Duration, Utc};
-use serde::{Deserialize, Serialize};
 use rusqlite::params;
+use serde::{Deserialize, Serialize};
+use tracing::log::warn;
 
-use crate::ports::outbound::schema_init::SchemaInitializer;
 use crate::codebase::connection_manager::ConnectionManager;
+use crate::ports::outbound::schema_init::SchemaInitializer;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct QuotaStatus {
@@ -35,7 +35,9 @@ impl Default for RateLimitManager {
         if let Err(e) = ConnectionManager::global().connect(project_id, ".") {
             warn!("RateLimitManager failed to connect to metrics DB: {}", e);
         }
-        Self { project_id: project_id.to_string() }
+        Self {
+            project_id: project_id.to_string(),
+        }
     }
 }
 
@@ -159,37 +161,39 @@ impl RateLimitManager {
         let day_ago = now - Duration::days(1);
         let provider_id = provider.to_string();
 
-        let requests = ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let mut stmt = conn.prepare(
-                "SELECT timestamp, tokens_used, status_code FROM rate_limit_usage
+        let requests = ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT timestamp, tokens_used, status_code FROM rate_limit_usage
                  WHERE provider = ?1 AND timestamp > ?2
                  ORDER BY timestamp ASC",
-            )?;
+                )?;
 
-            let mut rows = stmt.query(params![provider_id, day_ago.to_rfc3339()])?;
-            let mut internal_requests = Vec::new();
+                let mut rows = stmt.query(params![provider_id, day_ago.to_rfc3339()])?;
+                let mut internal_requests = Vec::new();
 
-            while let Some(row) = rows.next()? {
-                let ts_str: String = row.get(0)?;
-                let ts = DateTime::parse_from_rfc3339(&ts_str)
-                    .map(|dt| dt.with_timezone(&Utc))
-                    .or_else(|_| {
-                        chrono::NaiveDateTime::parse_from_str(&ts_str, "%Y-%m-%d %H:%M:%f")
-                            .map(|ndt| DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc))
-                    })
-                    .unwrap_or_else(|_| Utc::now());
+                while let Some(row) = rows.next()? {
+                    let ts_str: String = row.get(0)?;
+                    let ts = DateTime::parse_from_rfc3339(&ts_str)
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .or_else(|_| {
+                            chrono::NaiveDateTime::parse_from_str(&ts_str, "%Y-%m-%d %H:%M:%f")
+                                .map(|ndt| DateTime::<Utc>::from_naive_utc_and_offset(ndt, Utc))
+                        })
+                        .unwrap_or_else(|_| Utc::now());
 
-                let tokens: i64 = row.get(1)?;
-                let status: i64 = row.get(2)?;
+                    let tokens: i64 = row.get(1)?;
+                    let status: i64 = row.get(2)?;
 
-                internal_requests.push(serde_json::json!({
-                    "ts": ts,
-                    "tokens": tokens,
-                    "status": status as u16,
-                }));
-            }
-            Ok(internal_requests)
-        }).await?;
+                    internal_requests.push(serde_json::json!({
+                        "ts": ts,
+                        "tokens": tokens,
+                        "status": status as u16,
+                    }));
+                }
+                Ok(internal_requests)
+            })
+            .await?;
 
         let total = requests.len();
         let tokens: i64 = requests
@@ -221,29 +225,33 @@ impl RateLimitManager {
     pub async fn report_429(&self, provider: &str, cooldown_minutes: i64) -> Result<()> {
         let until = Utc::now() + Duration::minutes(cooldown_minutes);
         let provider = provider.to_string();
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            conn.execute(
-                "INSERT INTO provider_quotas (provider, rate_limited_until)
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                conn.execute(
+                    "INSERT INTO provider_quotas (provider, rate_limited_until)
                  VALUES (?1, ?2)
                  ON CONFLICT(provider) DO UPDATE SET rate_limited_until = ?2",
-                params![provider, until.to_rfc3339()],
-            )?;
-            Ok(())
-        }).await
+                    params![provider, until.to_rfc3339()],
+                )?;
+                Ok(())
+            })
+            .await
     }
 
     pub async fn get_all_providers(&self) -> Result<Vec<String>> {
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let mut stmt = conn.prepare("SELECT DISTINCT provider FROM rate_limit_usage")?;
-            let mut rows = stmt.query(())?;
-            let mut providers = Vec::new();
-            while let Some(row) = rows.next()? {
-                if let Ok(p) = row.get::<_, String>(0) {
-                    providers.push(p);
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                let mut stmt = conn.prepare("SELECT DISTINCT provider FROM rate_limit_usage")?;
+                let mut rows = stmt.query(())?;
+                let mut providers = Vec::new();
+                while let Some(row) = rows.next()? {
+                    if let Ok(p) = row.get::<_, String>(0) {
+                        providers.push(p);
+                    }
                 }
-            }
-            Ok(providers)
-        }).await
+                Ok(providers)
+            })
+            .await
     }
 
     pub async fn update_manual_limit(&self, provider: &str, percentage: f32) -> Result<()> {
@@ -260,9 +268,10 @@ impl RateLimitManager {
     }
 
     pub async fn init_schema_async(&self) -> Result<()> {
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS rate_limit_usage (
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS rate_limit_usage (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     provider TEXT NOT NULL,
                     timestamp DATETIME DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
@@ -279,36 +288,32 @@ impl RateLimitManager {
                     last_manual_update DATETIME,
                     weekly_quota INTEGER DEFAULT 1000000
                 );",
-            )?;
+                )?;
 
-            // Defensive column migrations
-            let _ = conn
-                .execute(
+                // Defensive column migrations
+                let _ = conn.execute(
                     "ALTER TABLE rate_limit_usage ADD COLUMN cache_hits INTEGER DEFAULT 0",
                     (),
                 );
-            let _ = conn
-                .execute(
+                let _ = conn.execute(
                     "ALTER TABLE rate_limit_usage ADD COLUMN cost_usd REAL DEFAULT 0.0",
                     (),
                 );
-            let _ = conn
-                .execute(
+                let _ = conn.execute(
                     "ALTER TABLE provider_quotas ADD COLUMN weekly_quota INTEGER DEFAULT 1000000",
                     (),
                 );
 
-            Ok(())
-        }).await
+                Ok(())
+            })
+            .await
     }
 }
 
 impl SchemaInitializer for RateLimitManager {
     fn init_schema(&self) -> Result<()> {
         match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                handle.block_on(self.init_schema_async())
-            }
+            Ok(handle) => handle.block_on(self.init_schema_async()),
             Err(_) => {
                 let runtime = tokio::runtime::Runtime::new()
                     .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;

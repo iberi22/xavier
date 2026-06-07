@@ -3,17 +3,17 @@
 //! This module manages session-related events, including indexing chat entries
 //! into memory and performing periodic compaction to optimize context storage.
 
-use axum::extract::State;
-use tracing::info;
-use crate::cli::state::CliState;
-use crate::cli::types::{SessionCompactPayload};
-use xavier::session::event_mapper::PanelThreadEntry;
-use xavier::session::types::SessionEvent;
 use crate::cli::security::secure_external_input;
-use xavier::memory::store::MemoryRecord;
-use xavier::memory::schema::MemoryLevel;
+use crate::cli::state::CliState;
+use crate::cli::types::SessionCompactPayload;
+use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
+use tracing::info;
+use xavier::memory::schema::MemoryLevel;
+use xavier::memory::store::MemoryRecord;
+use xavier::session::event_mapper::PanelThreadEntry;
+use xavier::session::types::SessionEvent;
 
 pub async fn session_event_handler(
     State(state): State<CliState>,

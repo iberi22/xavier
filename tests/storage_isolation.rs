@@ -1,8 +1,8 @@
+use std::sync::Arc;
+use tempfile::tempdir;
+use tokio::sync::RwLock;
 use xavier::memory::qmd_memory::QmdMemory;
 use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use tempfile::tempdir;
 
 #[tokio::test]
 async fn test_workspace_isolation() {
@@ -21,14 +21,28 @@ async fn test_workspace_isolation() {
     let memory_a = QmdMemory::new_with_workspace(Arc::new(RwLock::new(Vec::new())), ws_a);
     memory_a.set_store(store.clone()).await;
 
-    memory_a.add_document("path/a".to_string(), "content for A".to_string(), serde_json::json!({})).await.unwrap();
+    memory_a
+        .add_document(
+            "path/a".to_string(),
+            "content for A".to_string(),
+            serde_json::json!({}),
+        )
+        .await
+        .unwrap();
 
     // Workspace B
     let ws_b = "workspace_b";
     let memory_b = QmdMemory::new_with_workspace(Arc::new(RwLock::new(Vec::new())), ws_b);
     memory_b.set_store(store.clone()).await;
 
-    memory_b.add_document("path/b".to_string(), "content for B".to_string(), serde_json::json!({})).await.unwrap();
+    memory_b
+        .add_document(
+            "path/b".to_string(),
+            "content for B".to_string(),
+            serde_json::json!({}),
+        )
+        .await
+        .unwrap();
 
     // Search in A should NOT find B
     let results_a = memory_a.search("content", 10).await.unwrap();

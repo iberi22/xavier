@@ -3,10 +3,10 @@
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
 use anyhow::Result;
-use tracing::{info, debug};
+use tracing::{debug, info};
 
 use crate::memory::agent_scanner::{AgentScanner, AgentSession};
-use crate::memory::file_indexer::{FileIndexer, IndexedFile, FileChunk};
+use crate::memory::file_indexer::{FileChunk, FileIndexer, IndexedFile};
 
 /// AgentIndexer se encarga de formatear e indexar las sesiones de agentes (Cursor, Windsurf, etc.)
 #[derive(Clone)]
@@ -28,12 +28,12 @@ impl AgentIndexer {
     pub async fn index_agents(&self) -> Result<Vec<IndexedFile>> {
         info!("🤖 Starting Agentic IDE Conversation Indexing...");
         let sessions = self.scanner.scan_all().await?;
-        
+
         let mut indexed_files = Vec::new();
 
         for session in sessions {
             let markdown_content = self.format_session_to_markdown(&session);
-            
+
             // Re-use chunk generation logic from file_indexer
             // Usamos un FileIndexer mock o la instancia principal para el chunking
             let chunks = self.generate_chunks_for_session(&markdown_content);
@@ -52,7 +52,10 @@ impl AgentIndexer {
             debug!("Formatted and chunked session: {}", virtual_path);
         }
 
-        info!("✅ Agent Indexing complete. Formatted {} virtual documents.", indexed_files.len());
+        info!(
+            "✅ Agent Indexing complete. Formatted {} virtual documents.",
+            indexed_files.len()
+        );
         Ok(indexed_files)
     }
 

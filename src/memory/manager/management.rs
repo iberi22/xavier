@@ -3,15 +3,12 @@
 //! Methods for retrieving managed memories, computing statistics,
 //! promoting/demoting priorities, and executing legacy action types.
 
-use std::collections::HashMap;
 use anyhow::Result;
+use std::collections::HashMap;
 use tracing::info;
 
 use super::core::MemoryManager;
-use super::types::{
-    ManagedMemory, MemoryAction, MemoryPriority,
-    MemoryQuality, MemoryStats,
-};
+use super::types::{ManagedMemory, MemoryPriority, MemoryQuality, MemoryStats};
 
 impl MemoryManager {
     /// Get statistics about all memories

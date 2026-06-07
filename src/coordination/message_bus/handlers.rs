@@ -1,11 +1,6 @@
-//! Message handler dispatch and routing logic.
-//!
-//! Implements message type-based handler dispatch, routing messages
-//! to the correct registered handlers for processing and response.
-
+use crate::coordination::message_bus::{AgentMessage, MessageBus, MessageBusError, MessageType};
 use tokio::sync::mpsc;
 use ulid::Ulid;
-use crate::coordination::message_bus::{MessageBus, MessageBusError, AgentMessage, MessageType};
 
 impl MessageBus {
     /// Broadcast a message to all agents

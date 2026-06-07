@@ -3,9 +3,9 @@
 //! These functions interact with the Xavier HTTP server to perform
 //! memory operations and retrieve server statistics.
 
-use crate::cli::config::{require_xavier_token, resolve_base_url, xavier_token};
 use crate::cli::commands::enums::CLI_HTTP_CLIENT;
 use crate::cli::commands::spawn::load_spawn_memory;
+use crate::cli::config::{require_xavier_token, resolve_base_url, xavier_token};
 
 use anyhow::Result;
 
@@ -52,29 +52,38 @@ pub async fn recall_memories(query: &str, limit: usize) -> Result<()> {
         _ => {
             println!("⚠️ Server offline or request failed. Falling back to local offline database index...");
             match load_spawn_memory().await {
-                Ok(memory) => {
-                    match memory.search(query, limit).await {
-                        Ok(docs) => {
-                            println!("Found {} results offline for \"{}\":", docs.len(), query);
-                            for (i, doc) in docs.iter().enumerate() {
-                                let content = &doc.content;
-                                let kind = doc.metadata.get("kind").and_then(|v| v.as_str()).unwrap_or("unknown");
-                                let score = doc.metadata.get("score").and_then(|v| v.as_f64()).unwrap_or(1.0);
-                                let preview = if content.len() > 120 {
-                                    format!("{}...", &content[..120])
-                                } else {
-                                    content.to_string()
-                                };
-                                println!("{:>3}. [{:>12}] σ={:.3}  {}", i + 1, kind, score, preview);
-                            }
-                        }
-                        Err(e) => {
-                            println!("❌ Local search failed: {}", e);
+                Ok(memory) => match memory.search(query, limit).await {
+                    Ok(docs) => {
+                        println!("Found {} results offline for \"{}\":", docs.len(), query);
+                        for (i, doc) in docs.iter().enumerate() {
+                            let content = &doc.content;
+                            let kind = doc
+                                .metadata
+                                .get("kind")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("unknown");
+                            let score = doc
+                                .metadata
+                                .get("score")
+                                .and_then(|v| v.as_f64())
+                                .unwrap_or(1.0);
+                            let preview = if content.len() > 120 {
+                                format!("{}...", &content[..120])
+                            } else {
+                                content.to_string()
+                            };
+                            println!("{:>3}. [{:>12}] σ={:.3}  {}", i + 1, kind, score, preview);
                         }
                     }
-                }
+                    Err(e) => {
+                        println!("❌ Local search failed: {}", e);
+                    }
+                },
                 Err(e) => {
-                    println!("❌ Failed to initialize local offline database store: {}", e);
+                    println!(
+                        "❌ Failed to initialize local offline database store: {}",
+                        e
+                    );
                 }
             }
         }
@@ -114,7 +123,10 @@ pub async fn show_stats() -> Result<()> {
                     println!("  Storage (Estimated Bytes): {}", usage.storage_bytes);
                 }
                 Err(e) => {
-                    println!("❌ Failed to initialize local offline database store: {}", e);
+                    println!(
+                        "❌ Failed to initialize local offline database store: {}",
+                        e
+                    );
                 }
             }
         }
@@ -213,4 +225,3 @@ pub async fn session_save(session_id: &str, content: &str) -> Result<()> {
 
     Ok(())
 }
-

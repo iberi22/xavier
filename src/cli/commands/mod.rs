@@ -14,8 +14,8 @@
 //! The top-level [`Command`] enum and [`Cli::run()`] dispatch remain visible
 //! through re-exports so that external consumers are unaffected.
 
-pub mod enums;
 pub mod code;
+pub mod enums;
 pub mod http;
 pub mod secrets;
 pub mod spawn;
@@ -26,9 +26,9 @@ pub mod usage;
 pub use enums::*;
 pub use spawn::load_spawn_memory;
 
-use crate::cli::config::{resolve_base_url, require_xavier_token, resolve_http_port};
-use crate::cli::server::{add_memory_hierarchical, search_memories_filtered, start_http_server};
+use crate::cli::config::{require_xavier_token, resolve_base_url, resolve_http_port};
 use crate::cli::mcp::start_mcp_stdio;
+use crate::cli::server::{add_memory_hierarchical, search_memories_filtered, start_http_server};
 use crate::cli::state::Cli;
 
 use anyhow::Result;

@@ -3,28 +3,40 @@
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
 use super::lending::AuditLogger;
+use crate::codebase::connection_manager::ConnectionManager;
 use crate::ports::outbound::schema_init::SchemaInitializer;
 use chrono::Utc;
 use rusqlite::params;
-use crate::codebase::connection_manager::ConnectionManager;
 
 pub struct QmdAuditLogger {
     project_id: String,
+}
+
+impl Default for QmdAuditLogger {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl QmdAuditLogger {
     pub fn new() -> Self {
         let project_id = "metrics";
         if let Err(e) = ConnectionManager::global().connect(project_id, ".") {
-            tracing::warn!("QmdAuditLogger failed to connect to metrics database: {}", e);
+            tracing::warn!(
+                "QmdAuditLogger failed to connect to metrics database: {}",
+                e
+            );
         }
-        Self { project_id: project_id.to_string() }
+        Self {
+            project_id: project_id.to_string(),
+        }
     }
 
     pub async fn init_schema_async(&self) -> anyhow::Result<()> {
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            conn.execute(
-                "CREATE TABLE IF NOT EXISTS secret_audit_logs (
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS secret_audit_logs (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp TEXT NOT NULL,
                     event_type TEXT NOT NULL,
@@ -33,19 +45,18 @@ impl QmdAuditLogger {
                     secret_id TEXT,
                     reason TEXT
                 )",
-                (),
-            )?;
-            Ok(())
-        }).await
+                    (),
+                )?;
+                Ok(())
+            })
+            .await
     }
 }
 
 impl SchemaInitializer for QmdAuditLogger {
     fn init_schema(&self) -> anyhow::Result<()> {
         match tokio::runtime::Handle::try_current() {
-            Ok(handle) => {
-                handle.block_on(self.init_schema_async())
-            }
+            Ok(handle) => handle.block_on(self.init_schema_async()),
             Err(_) => {
                 let runtime = tokio::runtime::Runtime::new()
                     .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;

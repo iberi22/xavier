@@ -7,9 +7,9 @@ use axum::{
     Json,
 };
 
+use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
-use crate::cli::handlers::json_response;
 
 pub async fn lend_handler(
     State(state): State<CliState>,

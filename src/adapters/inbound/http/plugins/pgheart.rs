@@ -73,7 +73,8 @@ impl PgHeartConfig {
         let settings = crate::settings::XavierSettings::current();
         (std::env::var("PGHEART_URL").is_ok() || settings.pgheart.url.is_some())
             && (std::env::var("PGHEART_TOKEN").is_ok() || settings.pgheart.token.is_some())
-            && (std::env::var("PGHEART_INSTANCE_ID").is_ok() || settings.pgheart.instance_id.is_some())
+            && (std::env::var("PGHEART_INSTANCE_ID").is_ok()
+                || settings.pgheart.instance_id.is_some())
     }
 }
 

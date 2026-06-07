@@ -1,13 +1,9 @@
 //! System handlers for health, version, readiness, and build information.
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::Response,
-};
-use crate::cli::state::CliState;
-use crate::cli::handlers::json_response;
 use crate::cli::config::resolve_base_url;
+use crate::cli::handlers::json_response;
+use crate::cli::state::CliState;
+use axum::{extract::State, http::StatusCode, response::Response};
 
 pub async fn health_handler(State(state): State<CliState>) -> Response {
     let uptime_secs = crate::cli::server::START_TIME.elapsed().as_secs();

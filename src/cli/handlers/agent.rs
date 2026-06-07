@@ -5,9 +5,9 @@ use axum::{
     Json,
 };
 
+use crate::cli::security::secure_external_input;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
-use crate::cli::security::secure_external_input;
 
 use xavier::memory::schema::MemoryLevel;
 use xavier::memory::store::MemoryRecord;

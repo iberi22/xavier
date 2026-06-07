@@ -1,12 +1,7 @@
-//! Anthropic API provider integration for Xavier agents.
-//!
-//! Implements the LLM provider interface for Anthropic's Claude models,
-//! handling API communication, streaming responses, and rate limiting.
-
+use crate::agents::provider::config::ModelProviderConfig;
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde_json::json;
-use crate::agents::provider::config::ModelProviderConfig;
 
 pub(crate) fn anthropic_messages_endpoint(base_url: &str) -> String {
     let trimmed = base_url.trim_end_matches('/');
@@ -52,10 +47,7 @@ pub(crate) async fn generate_anthropic_compatible(
         if let Some(arr) = system_json.as_array_mut() {
             if let Some(first) = arr.get_mut(0) {
                 if let Some(obj) = first.as_object_mut() {
-                    obj.insert(
-                        "cache_control".to_string(),
-                        json!({"type": "ephemeral"}),
-                    );
+                    obj.insert("cache_control".to_string(), json!({"type": "ephemeral"}));
                 }
             }
         }

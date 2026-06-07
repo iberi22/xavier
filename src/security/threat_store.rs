@@ -2,17 +2,23 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+use crate::codebase::connection_manager::ConnectionManager;
 use crate::ports::outbound::schema_init::SchemaInitializer;
 use crate::security::detections::Threat;
 use anyhow::Result;
 use chrono::Utc;
-use tracing::log::warn;
-use sha2::{Digest, Sha256};
 use rusqlite::params;
-use crate::codebase::connection_manager::ConnectionManager;
+use sha2::{Digest, Sha256};
+use tracing::log::warn;
 
 pub struct SecurityThreatStore {
     project_id: String,
+}
+
+impl Default for SecurityThreatStore {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SecurityThreatStore {
@@ -23,7 +29,9 @@ impl SecurityThreatStore {
         if let Err(e) = ConnectionManager::global().connect(project_id, ".") {
             warn!("SecurityThreatStore failed to connect: {}", e);
         }
-        Self { project_id: project_id.to_string() }
+        Self {
+            project_id: project_id.to_string(),
+        }
     }
 
     pub async fn save_threat(&self, threat: &Threat, component: &str) -> Result<()> {
@@ -121,14 +129,12 @@ impl SecurityThreatStore {
 impl SchemaInitializer for SecurityThreatStore {
     fn init_schema(&self) -> Result<()> {
         match tokio::runtime::Handle::try_current() {
-            Ok(_) => {
-                tokio::task::block_in_place(|| {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .build()
-                        .map_err(|e| anyhow::anyhow!("failed to create temporary runtime: {}", e))?;
-                    rt.block_on(self.init_schema_async())
-                })
-            }
+            Ok(_) => tokio::task::block_in_place(|| {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .map_err(|e| anyhow::anyhow!("failed to create temporary runtime: {}", e))?;
+                rt.block_on(self.init_schema_async())
+            }),
             Err(_) => {
                 let runtime = tokio::runtime::Runtime::new()
                     .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;

@@ -1,12 +1,7 @@
-//! OpenAI API provider integration.
-//!
-//! Implements the LLM provider interface for OpenAI models (GPT-4, GPT-3.5),
-//! handling API communication, streaming, and function calling.
-
+use crate::agents::provider::config::ModelProviderConfig;
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde_json::json;
-use crate::agents::provider::config::ModelProviderConfig;
 
 pub(crate) fn openai_chat_endpoint(base_url: &str) -> String {
     let trimmed = base_url.trim_end_matches('/');
@@ -52,10 +47,7 @@ pub(crate) async fn generate_openai_compatible(
     if use_cache && config.provider_label == "deepseek" {
         if let Some(msg) = messages.get_mut(0) {
             if let Some(obj) = msg.as_object_mut() {
-                obj.insert(
-                    "cache_control".to_string(),
-                    json!({"type": "ephemeral"}),
-                );
+                obj.insert("cache_control".to_string(), json!({"type": "ephemeral"}));
             }
         }
     }

@@ -2,23 +2,23 @@
 //!
 //! This module re-exports handlers from sub-modules for cleaner organization.
 
-pub mod system;
-pub mod memory;
-pub mod code;
-pub mod panel;
 pub mod agent;
-pub mod security;
+pub mod code;
+pub mod memory;
+pub mod panel;
 pub mod secrets;
+pub mod security;
+pub mod system;
 pub mod usage;
 pub mod workspace;
 
-pub use system::*;
-pub use memory::*;
-pub use code::*;
-pub use panel::*;
 pub use agent::*;
-pub use security::*;
+pub use code::*;
+pub use memory::*;
+pub use panel::*;
 pub use secrets::*;
+pub use security::*;
+pub use system::*;
 pub use usage::*;
 pub use workspace::*;
 

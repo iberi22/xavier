@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 use std::any::Any;
 
 use crate::checkpoint::Checkpoint;
+use crate::codebase::connection_manager::ConnectionManager;
 use crate::domain::memory::belief::BeliefEdge;
 use crate::memory::schema::MemoryQueryFilters;
 use crate::memory::sqlite_store::{TABLE_CHECKPOINTS, TABLE_MEMORIES};
@@ -16,7 +17,6 @@ use crate::memory::store::{
     DurableWorkspaceState, GraphHopResult, HybridSearchMode, HybridSearchResult, MemoryBackend,
     MemoryRecord, MemoryStore, SessionTokenRecord,
 };
-use crate::codebase::connection_manager::ConnectionManager;
 
 use super::{graph, vector, VecSqliteMemoryStore};
 
@@ -32,10 +32,12 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     async fn health(&self) -> Result<String> {
         let detail = self.config.detail();
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            conn.query_row("SELECT 1", [], |_row| Ok(()))?;
-            Ok(format!("vecsqlite {}", detail))
-        }).await
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                conn.query_row("SELECT 1", [], |_row| Ok(()))?;
+                Ok(format!("vecsqlite {}", detail))
+            })
+            .await
     }
 
     async fn put(&self, record: MemoryRecord) -> Result<()> {
@@ -145,9 +147,11 @@ impl MemoryStore for VecSqliteMemoryStore {
 
         // Re-run timeline event outside to handle broadcast if needed, or refine append_timeline_event
         let store_clone = self.clone();
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            store_clone.append_timeline_event(conn, &record.workspace_id, &record)
-        }).await
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                store_clone.append_timeline_event(conn, &record.workspace_id, &record)
+            })
+            .await
     }
 
     async fn get(&self, workspace_id: &str, id_or_path: &str) -> Result<Option<MemoryRecord>> {
@@ -199,84 +203,80 @@ impl MemoryStore for VecSqliteMemoryStore {
             let workspace_id = workspace_id.to_string();
             let record_id = record.id.clone();
 
-            ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-                let tx = conn.unchecked_transaction()?;
+            ConnectionManager::global()
+                .with_conn(&self.project_id, move |conn| {
+                    let tx = conn.unchecked_transaction()?;
 
-                // Remove dependent rows first to satisfy foreign keys.
-                tx.execute(
-                    "DELETE FROM memory_entities WHERE workspace_id = ? AND memory_id = ?",
-                    params![workspace_id, record_id],
-                )?;
+                    // Remove dependent rows first to satisfy foreign keys.
+                    tx.execute(
+                        "DELETE FROM memory_entities WHERE workspace_id = ? AND memory_id = ?",
+                        params![workspace_id, record_id],
+                    )?;
 
-                tx.execute(
-                    "DELETE FROM memory_entities WHERE workspace_id = ? AND memory_id IN (
+                    tx.execute(
+                        "DELETE FROM memory_entities WHERE workspace_id = ? AND memory_id IN (
                         SELECT id FROM memory_records WHERE workspace_id = ? AND parent_id = ?
                     )",
-                    params![workspace_id, workspace_id, record_id],
-                )?;
+                        params![workspace_id, workspace_id, record_id],
+                    )?;
 
-                // Delete from vector table
-                tx.execute(
-                    "DELETE FROM memory_embeddings WHERE id = ? AND workspace_id = ?",
-                    params![record_id, workspace_id],
-                )?;
+                    // Delete from vector table
+                    tx.execute(
+                        "DELETE FROM memory_embeddings WHERE id = ? AND workspace_id = ?",
+                        params![record_id, workspace_id],
+                    )?;
 
-                tx.execute(
-                    "DELETE FROM memory_embeddings WHERE workspace_id = ? AND id IN (
+                    tx.execute(
+                        "DELETE FROM memory_embeddings WHERE workspace_id = ? AND id IN (
                         SELECT id FROM memory_records WHERE workspace_id = ? AND parent_id = ?
                     )",
-                    params![workspace_id, workspace_id, record_id],
-                )?;
+                        params![workspace_id, workspace_id, record_id],
+                    )?;
 
-                // Delete from FTS5
-                tx.execute(
-                    "DELETE FROM memory_fts WHERE id = ?",
-                    params![record_id],
-                )?;
+                    // Delete from FTS5
+                    tx.execute("DELETE FROM memory_fts WHERE id = ?", params![record_id])?;
 
-                tx.execute(
-                    "DELETE FROM memory_fts WHERE id IN (
+                    tx.execute(
+                        "DELETE FROM memory_fts WHERE id IN (
                         SELECT id FROM memory_records WHERE workspace_id = ? AND parent_id = ?
                     )",
-                    params![workspace_id, record_id],
-                )?;
+                        params![workspace_id, record_id],
+                    )?;
 
-                let memory_node_id = graph::memory_node_id(&workspace_id, &record_id);
+                    let memory_node_id = graph::memory_node_id(&workspace_id, &record_id);
 
-                tx.execute(
-                    "DELETE FROM relations WHERE source_id = ?",
-                    params![memory_node_id],
-                )?;
+                    tx.execute(
+                        "DELETE FROM relations WHERE source_id = ?",
+                        params![memory_node_id],
+                    )?;
 
-                tx.execute(
-                    "DELETE FROM relations WHERE target_id = ?",
-                    params![memory_node_id],
-                )?;
+                    tx.execute(
+                        "DELETE FROM relations WHERE target_id = ?",
+                        params![memory_node_id],
+                    )?;
 
-                tx.execute(
-                    "DELETE FROM entities WHERE id = ?",
-                    params![memory_node_id],
-                )?;
+                    tx.execute("DELETE FROM entities WHERE id = ?", params![memory_node_id])?;
 
-                // Remove child memories before parent.
-                tx.execute(
-                    &format!(
-                        "DELETE FROM {} WHERE workspace_id = ? AND parent_id = ?",
-                        TABLE_MEMORIES
-                    ),
-                    params![workspace_id, record_id],
-                )?;
+                    // Remove child memories before parent.
+                    tx.execute(
+                        &format!(
+                            "DELETE FROM {} WHERE workspace_id = ? AND parent_id = ?",
+                            TABLE_MEMORIES
+                        ),
+                        params![workspace_id, record_id],
+                    )?;
 
-                tx.execute(
-                    &format!(
-                        "DELETE FROM {} WHERE workspace_id = ? AND id = ?",
-                        TABLE_MEMORIES
-                    ),
-                    params![workspace_id, record_id],
-                )?;
-                tx.commit()?;
-                Ok(())
-            }).await?;
+                    tx.execute(
+                        &format!(
+                            "DELETE FROM {} WHERE workspace_id = ? AND id = ?",
+                            TABLE_MEMORIES
+                        ),
+                        params![workspace_id, record_id],
+                    )?;
+                    tx.commit()?;
+                    Ok(())
+                })
+                .await?;
         }
         Ok(removed)
     }
@@ -544,16 +544,18 @@ impl MemoryStore for VecSqliteMemoryStore {
         let task_id = task_id.to_string();
         let name = name.to_string();
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            conn.execute(
-                &format!(
-                    "DELETE FROM {} WHERE workspace_id = ? AND task_id = ? AND name = ?",
-                    TABLE_CHECKPOINTS
-                ),
-                params![workspace_id, task_id, name],
-            )?;
-            Ok(())
-        }).await
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                conn.execute(
+                    &format!(
+                        "DELETE FROM {} WHERE workspace_id = ? AND task_id = ? AND name = ?",
+                        TABLE_CHECKPOINTS
+                    ),
+                    params![workspace_id, task_id, name],
+                )?;
+                Ok(())
+            })
+            .await
     }
 
     async fn list_timeline_events(

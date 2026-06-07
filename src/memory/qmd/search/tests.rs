@@ -1,4 +1,4 @@
-﻿//! Unit tests for search sub-modules.
+//! Unit tests for search sub-modules.
 
 #[cfg(test)]
 mod tests {
@@ -78,10 +78,7 @@ mod tests {
 
     #[test]
     fn test_extract_answer_date() {
-        let result = extract_answer(
-            "The event took place on 15 January 2023 in New York.",
-            "2",
-        );
+        let result = extract_answer("The event took place on 15 January 2023 in New York.", "2");
         assert!(result.is_some());
         assert_eq!(result.unwrap(), "15 January 2023");
     }

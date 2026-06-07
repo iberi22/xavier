@@ -23,9 +23,12 @@ pub async fn handle_token_command(cmd: TokenCommand) -> Result<()> {
                 anyhow::bail!("user_id must not be empty");
             }
             let manager = xavier::security::SecurityManager::new();
-            let token = manager
-                .generate_token(&user_id)
-                .map_err(|e| anyhow::anyhow!("Failed to generate HMAC token: {}. Ensure XAVIER_TOKEN_SECRET is set.", e))?;
+            let token = manager.generate_token(&user_id).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to generate HMAC token: {}. Ensure XAVIER_TOKEN_SECRET is set.",
+                    e
+                )
+            })?;
             println!("Signed HMAC token for {}:", user_id);
             println!("{}", token);
         }

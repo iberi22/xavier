@@ -6,12 +6,13 @@
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use super::scoring::*;
 use crate::context::ContextLevel;
 use crate::memory::entity_graph::EntityRecord;
 use crate::memory::qmd_memory::MemoryDocument;
 use crate::memory::schema::ContextZone;
 use crate::retrieval::config;
-use crate::search::rrf::{reciprocal_rank_fusion, ScoredResult}; use super::scoring::*;
+use crate::search::rrf::{reciprocal_rank_fusion, ScoredResult};
 
 /// Layer weights for multi-layer retrieval fusion.
 /// These control how much each memory layer contributes to final results.

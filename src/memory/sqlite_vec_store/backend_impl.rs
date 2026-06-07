@@ -2,6 +2,7 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+use crate::codebase::connection_manager::ConnectionManager;
 use crate::memory::schema::MemoryQueryFilters;
 use crate::memory::sqlite_store::TABLE_MEMORIES;
 use crate::memory::store::{
@@ -10,11 +11,11 @@ use crate::memory::store::{
 use anyhow::{Context, Result};
 use rusqlite::params;
 use std::collections::{HashMap, HashSet};
-use crate::codebase::connection_manager::ConnectionManager;
 
 use super::{fts, graph, search, utils, FusionSource, VecSqliteMemoryStore};
 
 impl VecSqliteMemoryStore {
+    #[allow(dead_code)]
     pub(crate) async fn upsert_vector(
         &self,
         memory_id: &str,
@@ -308,7 +309,7 @@ impl VecSqliteMemoryStore {
                     .query(params![workspace_id_c, entity_name.clone()])?;
                 let mut memory_hits = Vec::new();
                 while let Some(hit_row) = hit_rows.next()? {
-                    if let Ok(record) = Self::deserialize_record(&hit_row) {
+                    if let Ok(record) = Self::deserialize_record(hit_row) {
                         if record.id != source_c.id {
                             memory_hits.push(record);
                         }

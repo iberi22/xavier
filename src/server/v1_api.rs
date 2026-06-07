@@ -478,9 +478,10 @@ mod tests {
             AppState {
                 workspace_registry,
                 indexer: FileIndexer::new(FileIndexerConfig::default(), Some(code_indexer.clone())),
-                agent_indexer: crate::memory::agent_indexer::AgentIndexer::new(
-                    FileIndexer::new(FileIndexerConfig::default(), Some(code_indexer.clone()))
-                ),
+                agent_indexer: crate::memory::agent_indexer::AgentIndexer::new(FileIndexer::new(
+                    FileIndexerConfig::default(),
+                    Some(code_indexer.clone()),
+                )),
                 code_indexer,
                 code_query,
                 code_db,

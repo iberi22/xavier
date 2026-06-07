@@ -1,18 +1,15 @@
 //! Code handlers for scanning, searching, and analyzing codebases.
 
-use std::path::PathBuf;
-use axum::{
-    extract::State,
-    Json,
-};
-use tracing::{info, warn};
+use axum::{extract::State, Json};
 use serde::Serialize;
+use std::path::PathBuf;
+use tracing::{info, warn};
 
+use crate::cli::code_graph::{code_find_symbols, filter_symbols_by_query};
+use crate::cli::security::secure_optional_request_field;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
-use crate::cli::code_graph::{code_find_symbols, filter_symbols_by_query};
 use crate::cli::utils::estimate_tokens;
-use crate::cli::security::{secure_optional_request_field};
 
 use xavier::ports::inbound::input_security_port::SecureInputResult;
 

@@ -4,20 +4,22 @@
 //! retry logic, and connection management for all provider backends.
 
 use anyhow::{anyhow, Result};
+use async_trait::async_trait;
 use reqwest::Client;
 use std::time::Duration;
 use tokio::time::timeout;
 use tracing::warn;
-use async_trait::async_trait;
 
-use crate::agents::system1::RetrievedDocument;
-use crate::agents::provider::config::ModelProviderConfig;
-use crate::agents::provider::types::{ModelProviderStatus, ProviderMode, ProviderTarget, LLM_TIMEOUT};
-pub use crate::agents::provider::traits::LlmProvider;
-use crate::agents::provider::openai::generate_openai_compatible;
 use crate::agents::provider::anthropic::generate_anthropic_compatible;
+use crate::agents::provider::config::ModelProviderConfig;
 use crate::agents::provider::gemini::generate_gemini_legacy;
 use crate::agents::provider::minimax::generate_minimax_legacy;
+use crate::agents::provider::openai::generate_openai_compatible;
+pub use crate::agents::provider::traits::LlmProvider;
+use crate::agents::provider::types::{
+    ModelProviderStatus, ProviderMode, ProviderTarget, LLM_TIMEOUT,
+};
+use crate::agents::system1::RetrievedDocument;
 
 /// Client for interacting with various model providers.
 #[derive(Clone)]
@@ -85,20 +87,44 @@ impl ModelProviderClient {
         let future = async {
             match self.config.target {
                 ProviderTarget::GenericOpenAICompatible => {
-                    generate_openai_compatible(&self.client, &self.config, system_prompt, user_prompt, use_cache)
-                        .await
+                    generate_openai_compatible(
+                        &self.client,
+                        &self.config,
+                        system_prompt,
+                        user_prompt,
+                        use_cache,
+                    )
+                    .await
                 }
                 ProviderTarget::AnthropicMessages => {
-                    generate_anthropic_compatible(&self.client, &self.config, system_prompt, user_prompt, use_cache)
-                        .await
+                    generate_anthropic_compatible(
+                        &self.client,
+                        &self.config,
+                        system_prompt,
+                        user_prompt,
+                        use_cache,
+                    )
+                    .await
                 }
                 ProviderTarget::GeminiLegacy => {
-                    generate_gemini_legacy(&self.client, &self.config, system_prompt, user_prompt, use_cache)
-                        .await
+                    generate_gemini_legacy(
+                        &self.client,
+                        &self.config,
+                        system_prompt,
+                        user_prompt,
+                        use_cache,
+                    )
+                    .await
                 }
                 ProviderTarget::MiniMaxLegacy => {
-                    generate_minimax_legacy(&self.client, &self.config, system_prompt, user_prompt, use_cache)
-                        .await
+                    generate_minimax_legacy(
+                        &self.client,
+                        &self.config,
+                        system_prompt,
+                        user_prompt,
+                        use_cache,
+                    )
+                    .await
                 }
             }
         };
@@ -139,8 +165,14 @@ impl ModelProviderClient {
 
 #[async_trait]
 impl LlmProvider for ModelProviderClient {
-    async fn generate_text(&self, system_prompt: &str, user_prompt: &str, use_cache: bool) -> Result<String> {
-        self.generate_text_with_cache(system_prompt, user_prompt, use_cache).await
+    async fn generate_text(
+        &self,
+        system_prompt: &str,
+        user_prompt: &str,
+        use_cache: bool,
+    ) -> Result<String> {
+        self.generate_text_with_cache(system_prompt, user_prompt, use_cache)
+            .await
     }
 
     async fn generate_response(
@@ -175,11 +207,7 @@ impl LlmProvider for ModelProviderClient {
         <Self as LlmProvider>::generate_text(self, system_prompt, query, false).await
     }
 
-    async fn evaluate_context(
-        &self,
-        query: &str,
-        context: &[RetrievedDocument],
-    ) -> Result<f32> {
+    async fn evaluate_context(&self, query: &str, context: &[RetrievedDocument]) -> Result<f32> {
         if !self.config.is_configured() || self.config.provider_mode == ProviderMode::Disabled {
             return Ok(1.0);
         }
@@ -193,7 +221,8 @@ impl LlmProvider for ModelProviderClient {
             .join("\n\n");
 
         let user_prompt = format!("Context:\n{}\n\nQuery: {}", context_text, query);
-        let response = <Self as LlmProvider>::generate_text(self, system_prompt, &user_prompt, false).await?;
+        let response =
+            <Self as LlmProvider>::generate_text(self, system_prompt, &user_prompt, false).await?;
 
         let normalized = response.replace("```json", "").replace("```", "");
         let result: serde_json::Value = serde_json::from_str(normalized.trim())
@@ -228,8 +257,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_llm_timeout() {
-        use tokio::net::TcpListener;
         use crate::agents::provider::types::ApiFlavor;
+        use tokio::net::TcpListener;
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();

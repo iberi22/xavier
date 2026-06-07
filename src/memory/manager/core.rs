@@ -8,8 +8,8 @@ use tracing::info;
 use std::collections::HashMap;
 use std::sync::Arc;
 
+use super::types::{ManagementResult, MemoryAction};
 use crate::memory::qmd_memory::QmdMemory;
-use super::types::{MemoryAction, ManagementResult};
 
 use super::types::MemoryManagerConfig;
 

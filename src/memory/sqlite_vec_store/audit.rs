@@ -22,10 +22,10 @@ impl VecSqliteMemoryStore {
         }
 
         let next_sequence: i64 = conn.query_row(
-                "SELECT COALESCE(MAX(sequence), 0) + 1 FROM timeline_events WHERE workspace_id = ?",
-                params![workspace_id],
-                |row| row.get(0)
-            )?;
+            "SELECT COALESCE(MAX(sequence), 0) + 1 FROM timeline_events WHERE workspace_id = ?",
+            params![workspace_id],
+            |row| row.get(0),
+        )?;
 
         let (previous_event_id, previous_hash): (Option<String>, Option<String>) =
             conn.query_row(

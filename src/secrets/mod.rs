@@ -2,7 +2,6 @@
 //!
 //! Aggregates and re-exports the sub-modules within this module,
 //! providing the public API surface for module consumers.
-use std::fmt;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -38,8 +37,10 @@ impl std::fmt::Debug for Secret {
 
 #[deprecated(note = "SecretsManager is deprecated. Use Clavis or another secure provider.")]
 #[derive(Default)]
+#[allow(deprecated)]
 pub struct SecretsManager;
 
+#[allow(deprecated)]
 impl SecretsManager {
     pub fn new() -> Self {
         Self

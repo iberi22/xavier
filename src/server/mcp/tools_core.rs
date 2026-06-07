@@ -2,12 +2,14 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
-use serde_json::{json, Value};
-use crate::AppState;
-use crate::workspace::WorkspaceContext;
 use super::types::*;
-use crate::memory::schema::{MemoryKind, EvidenceKind, MemoryNamespace, MemoryProvenance, TypedMemoryPayload};
+use crate::memory::schema::{
+    EvidenceKind, MemoryKind, MemoryNamespace, MemoryProvenance, TypedMemoryPayload,
+};
 use crate::utils::crypto::hex_encode;
+use crate::workspace::WorkspaceContext;
+use crate::AppState;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
 pub fn get_xavier_core_tools() -> Vec<MCPTool> {
@@ -52,7 +54,10 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
 }
 
 pub fn is_core_tool(name: &str) -> bool {
-    matches!(name, "list_projects" | "get_project_context" | "sync_gitcore")
+    matches!(
+        name,
+        "list_projects" | "get_project_context" | "sync_gitcore"
+    )
 }
 
 pub async fn handle_core_tool(
@@ -122,7 +127,7 @@ pub async fn handle_core_tool(
                 } else {
                     matching.join("\n\n---\n\n")
                 },
-                false
+                false,
             )
         }
         "sync_gitcore" => {

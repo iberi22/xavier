@@ -1,10 +1,5 @@
-//! Message routing and topic-based dispatch.
-//!
-//! Implements topic-based message routing, subscriber management,
-//! and message distribution to intended recipients across topics.
-
+use crate::coordination::message_bus::{AgentMessage, MessageBus};
 use std::collections::HashMap;
-use crate::coordination::message_bus::{MessageBus, AgentMessage};
 
 impl MessageBus {
     /// Get topic subscriptions

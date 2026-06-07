@@ -72,10 +72,22 @@ mod tests {
 
     #[test]
     fn test_api_flavor_from_env() {
-        assert_eq!(ApiFlavor::from_env("openai"), Some(ApiFlavor::OpenAICompatible));
-        assert_eq!(ApiFlavor::from_env("openai-compatible"), Some(ApiFlavor::OpenAICompatible));
-        assert_eq!(ApiFlavor::from_env("anthropic"), Some(ApiFlavor::AnthropicCompatible));
-        assert_eq!(ApiFlavor::from_env("anthropic-compatible"), Some(ApiFlavor::AnthropicCompatible));
+        assert_eq!(
+            ApiFlavor::from_env("openai"),
+            Some(ApiFlavor::OpenAICompatible)
+        );
+        assert_eq!(
+            ApiFlavor::from_env("openai-compatible"),
+            Some(ApiFlavor::OpenAICompatible)
+        );
+        assert_eq!(
+            ApiFlavor::from_env("anthropic"),
+            Some(ApiFlavor::AnthropicCompatible)
+        );
+        assert_eq!(
+            ApiFlavor::from_env("anthropic-compatible"),
+            Some(ApiFlavor::AnthropicCompatible)
+        );
         assert_eq!(ApiFlavor::from_env("unknown"), None);
     }
 }

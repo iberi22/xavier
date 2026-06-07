@@ -7,8 +7,8 @@ use chrono::Utc;
 use rusqlite::params;
 
 use crate::adapters::inbound::http::dto::TimeMetricDto;
-use crate::ports::outbound::schema_init::SchemaInitializer;
 use crate::codebase::connection_manager::ConnectionManager;
+use crate::ports::outbound::schema_init::SchemaInitializer;
 
 /// Table name for time metrics
 const TABLE_TIME_METRICS: &str = "time_metrics";
@@ -18,14 +18,25 @@ pub struct TimeMetricsStore {
     pub project_id: String,
 }
 
+impl Default for TimeMetricsStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TimeMetricsStore {
     /// Create a new TimeMetricsStore
     pub fn new() -> Self {
         let project_id = "metrics";
         if let Err(e) = ConnectionManager::global().connect(project_id, ".") {
-            tracing::warn!("TimeMetricsStore failed to connect to metrics database: {}", e);
+            tracing::warn!(
+                "TimeMetricsStore failed to connect to metrics database: {}",
+                e
+            );
         }
-        Self { project_id: project_id.to_string() }
+        Self {
+            project_id: project_id.to_string(),
+        }
     }
 
     /// Save a TimeMetric to the store
@@ -93,9 +104,10 @@ impl TimeMetricsStore {
     }
 
     pub async fn init_schema_async(&self) -> Result<()> {
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            conn.execute_batch(&format!(
-                r#"
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                conn.execute_batch(&format!(
+                    r#"
                 CREATE TABLE IF NOT EXISTS {} (
                     id TEXT PRIMARY KEY,
                     workspace_id TEXT NOT NULL,
@@ -121,14 +133,16 @@ impl TimeMetricsStore {
                 CREATE INDEX IF NOT EXISTS idx_time_metrics_type ON {}(metric_type);
                 CREATE INDEX IF NOT EXISTS idx_time_metrics_path ON {}(path);
                 "#,
-                TABLE_TIME_METRICS,
-                TABLE_TIME_METRICS,
-                TABLE_TIME_METRICS,
-                TABLE_TIME_METRICS,
-                TABLE_TIME_METRICS
-            )).context("failed to init time metrics schema")?;
-            Ok(())
-        }).await
+                    TABLE_TIME_METRICS,
+                    TABLE_TIME_METRICS,
+                    TABLE_TIME_METRICS,
+                    TABLE_TIME_METRICS,
+                    TABLE_TIME_METRICS
+                ))
+                .context("failed to init time metrics schema")?;
+                Ok(())
+            })
+            .await
     }
 }
 
@@ -136,14 +150,12 @@ impl SchemaInitializer for TimeMetricsStore {
     /// Initialize the time_metrics table schema
     fn init_schema(&self) -> Result<()> {
         match tokio::runtime::Handle::try_current() {
-            Ok(_) => {
-                tokio::task::block_in_place(|| {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .build()
-                        .map_err(|e| anyhow::anyhow!("failed to create temporary runtime: {}", e))?;
-                    rt.block_on(self.init_schema_async())
-                })
-            }
+            Ok(_) => tokio::task::block_in_place(|| {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .map_err(|e| anyhow::anyhow!("failed to create temporary runtime: {}", e))?;
+                rt.block_on(self.init_schema_async())
+            }),
             Err(_) => {
                 let runtime = tokio::runtime::Runtime::new()
                     .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;

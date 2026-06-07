@@ -2,7 +2,7 @@
 
 use anyhow::{anyhow, Result};
 use axum::{
-    extract::{DefaultBodyLimit},
+    extract::DefaultBodyLimit,
     middleware::{self},
     routing::{get, post},
     Router,
@@ -12,10 +12,10 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::Instant;
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
-use tracing::{info};
-use std::time::Instant;
+use tracing::info;
 
 use crate::cli::config::{
     code_graph_db_path, resolve_base_url, resolve_base_url_for_port, resolve_http_bind_host,
@@ -31,31 +31,28 @@ use xavier::agents::rate_limit::RateLimitManager;
 use xavier::app::proxy_use_case::ProxyUseCase;
 use xavier::app::qmd_memory_adapter::QmdMemoryAdapter;
 use xavier::app::security_service::SecurityService as AppSecurityService;
+use xavier::codebase::connection_manager::ConnectionManager;
+use xavier::codebase::conversations_db::ConversationsDb;
 use xavier::coordination::SimpleAgentRegistry;
 use xavier::coordination::{KeyLendingEngine, XavierEventBus};
 use xavier::embedding::build_embedder_from_env;
 use xavier::memory::qmd_memory::{MemoryDocument, QmdMemory};
-use xavier::codebase::conversations_db::ConversationsDb;
 use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
 use xavier::memory::store::{MemoryRecord, MemoryStore};
 use xavier::ports::inbound::{
-    AgentLifecyclePort, MemoryQueryPort, SecurityScanPort, TimeMetricsPort,
-    InputSecurityPort,
+    AgentLifecyclePort, InputSecurityPort, MemoryQueryPort, SecurityScanPort, TimeMetricsPort,
 };
 use xavier::ports::outbound::schema_init::SchemaInitializer;
 use xavier::security::threat_store::SecurityThreatStore;
-use xavier::server::panel::{
-    panel_asset, panel_index,
-};
+use xavier::server::panel::{panel_asset, panel_index};
 use xavier::tasks::session_sync_task::SessionSyncTask;
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
-use xavier::codebase::connection_manager::ConnectionManager;
 
 pub use crate::cli::handlers::*;
 pub use crate::cli::http_setup::*;
-pub use crate::cli::websocket::*;
 pub use crate::cli::types::*;
+pub use crate::cli::websocket::*;
 
 pub static START_TIME: once_cell::sync::Lazy<Instant> = once_cell::sync::Lazy::new(Instant::now);
 
@@ -101,10 +98,12 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     tokio::spawn(async move {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
-            let _ = ConnectionManager::global().with_conn("vec_store", |conn| {
-                conn.execute("PRAGMA incremental_vacuum(100)", ())?;
-                Ok(())
-            }).await;
+            let _ = ConnectionManager::global()
+                .with_conn("vec_store", |conn| {
+                    conn.execute("PRAGMA incremental_vacuum(100)", ())?;
+                    Ok(())
+                })
+                .await;
         }
     });
 
@@ -233,8 +232,8 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         agent_indexer: Arc::new(crate::memory::agent_indexer::AgentIndexer::new(
             crate::memory::file_indexer::FileIndexer::new(
                 crate::memory::file_indexer::FileIndexerConfig::default(),
-                Some(code_indexer.clone())
-            )
+                Some(code_indexer.clone()),
+            ),
         )),
     };
 

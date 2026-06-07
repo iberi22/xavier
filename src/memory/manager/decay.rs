@@ -8,7 +8,7 @@ use chrono::Utc;
 use tracing::info;
 
 use super::core::MemoryManager;
-use super::types::{MemoryManagementAction, MemoryPriority, ManagementResult};
+use super::types::{ManagementResult, MemoryManagementAction, MemoryPriority};
 
 impl MemoryManager {
     /// Apply decay to all memories based on time since last access

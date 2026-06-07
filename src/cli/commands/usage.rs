@@ -3,7 +3,7 @@
 //! Handles the `xavier usage` subcommand for displaying provider usage
 //! statistics and managing manual cooldowns.
 
-use crate::cli::commands::enums::{CLI_HTTP_CLIENT, UsageCommand};
+use crate::cli::commands::enums::{UsageCommand, CLI_HTTP_CLIENT};
 use crate::cli::config::{require_xavier_token, resolve_base_url};
 use anyhow::Result;
 

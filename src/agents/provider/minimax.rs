@@ -1,12 +1,7 @@
-//! MiniMax (Hailuo AI) API provider integration.
-//!
-//! Implements the LLM provider interface for MiniMax models,
-//! supporting both text generation and function calling.
-
+use crate::agents::provider::config::ModelProviderConfig;
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde_json::json;
-use crate::agents::provider::config::ModelProviderConfig;
 
 pub(crate) async fn generate_minimax_legacy(
     client: &Client,
@@ -15,10 +10,7 @@ pub(crate) async fn generate_minimax_legacy(
     user_prompt: &str,
     _use_cache: bool,
 ) -> Result<String> {
-    let api_key = config
-        .api_key
-        .as_ref()
-        .context("missing MiniMax API key")?;
+    let api_key = config.api_key.as_ref().context("missing MiniMax API key")?;
     let base_url = config
         .base_url
         .as_ref()

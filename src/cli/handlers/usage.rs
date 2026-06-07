@@ -8,10 +8,10 @@ use axum::{
 };
 use tracing::warn;
 
-use crate::cli::state::CliState;
-use crate::cli::types::*;
 use crate::cli::config::resolve_http_token;
 use crate::cli::handlers::json_response;
+use crate::cli::state::CliState;
+use crate::cli::types::*;
 
 pub async fn account_usage_handler(State(state): State<CliState>, headers: HeaderMap) -> Response {
     let expected_token = match resolve_http_token() {

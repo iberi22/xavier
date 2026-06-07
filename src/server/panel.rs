@@ -197,9 +197,15 @@ async fn process_chat_inner(
     let thread = match payload.thread_id {
         Some(thread_id) => match db.get_thread(&thread_id).await? {
             Some(thread) => thread,
-            None => db.create_thread(Some(&payload.message), None, Some("panel")).await?,
+            None => {
+                db.create_thread(Some(&payload.message), None, Some("panel"))
+                    .await?
+            }
         },
-        None => db.create_thread(Some(&payload.message), None, Some("panel")).await?,
+        None => {
+            db.create_thread(Some(&payload.message), None, Some("panel"))
+                .await?
+        }
     };
 
     db.store_message(
@@ -289,11 +295,9 @@ fn asset_response(bytes: Vec<u8>, content_type: &'static str) -> Response {
         .expect("test assertion")
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ulid::Ulid;
     use crate::{
         agents::RuntimeConfig,
         memory::file_indexer::{FileIndexer, FileIndexerConfig},
@@ -311,6 +315,7 @@ mod tests {
     };
     use std::sync::Arc;
     use tower::util::ServiceExt;
+    use ulid::Ulid;
 
     async fn test_state() -> (AppState, WorkspaceContext) {
         let db_path = std::env::temp_dir().join(format!("xavier-panel-{}.db", Ulid::new()));
@@ -349,9 +354,10 @@ mod tests {
             AppState {
                 workspace_registry,
                 indexer: FileIndexer::new(FileIndexerConfig::default(), Some(code_indexer.clone())),
-                agent_indexer: crate::memory::agent_indexer::AgentIndexer::new(
-                    FileIndexer::new(FileIndexerConfig::default(), Some(code_indexer.clone()))
-                ),
+                agent_indexer: crate::memory::agent_indexer::AgentIndexer::new(FileIndexer::new(
+                    FileIndexerConfig::default(),
+                    Some(code_indexer.clone()),
+                )),
                 code_indexer,
                 code_query,
                 code_db,

@@ -1,9 +1,6 @@
 //! Security handlers for input scanning and threat detection.
 
-use axum::{
-    extract::State,
-    Json,
-};
+use axum::{extract::State, Json};
 
 use crate::cli::state::CliState;
 use crate::cli::types::*;

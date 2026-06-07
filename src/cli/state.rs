@@ -8,11 +8,13 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use xavier::agents::rate_limit::RateLimitManager;
 use xavier::app::proxy_use_case::ProxyUseCase;
+use xavier::codebase::conversations_db::ConversationsDb;
 use xavier::coordination::{KeyLendingEngine, XavierEventBus};
 use xavier::embedding::Embedder;
-use xavier::codebase::conversations_db::ConversationsDb;
 use xavier::memory::store::MemoryStore;
-use xavier::ports::inbound::{AgentLifecyclePort, MemoryQueryPort, InputSecurityPort, SecurityScanPort};
+use xavier::ports::inbound::{
+    AgentLifecyclePort, InputSecurityPort, MemoryQueryPort, SecurityScanPort,
+};
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
 
@@ -26,23 +28,41 @@ pub struct CliState {
     pub code_indexer: Arc<::code_graph::indexer::Indexer>,
     pub code_query: Arc<::code_graph::query::QueryEngine>,
     pub security: Arc<dyn InputSecurityPort>,
-    #[expect(dead_code, reason = "Reserved for future security scanning pipeline; wired via SecurityScanPort")]
+    #[expect(
+        dead_code,
+        reason = "Reserved for future security scanning pipeline; wired via SecurityScanPort"
+    )]
     pub security_scan: Arc<dyn SecurityScanPort>,
     pub _time_store: Option<Arc<TimeMetricsStore>>,
     pub agent_registry: Arc<dyn AgentLifecyclePort>,
     pub panel_store: Arc<ConversationsDb>,
     pub secrets_engine: Arc<KeyLendingEngine>,
-    #[expect(dead_code, reason = "Wire event_bus into event-driven architecture (e.g. system3 event bus integration)")]
+    #[expect(
+        dead_code,
+        reason = "Wire event_bus into event-driven architecture (e.g. system3 event bus integration)"
+    )]
     pub event_bus: XavierEventBus,
-    #[expect(dead_code, reason = "Migrate tasks from InMemoryTaskStore to persistent SQLite store")]
+    #[expect(
+        dead_code,
+        reason = "Migrate tasks from InMemoryTaskStore to persistent SQLite store"
+    )]
     pub tasks: Arc<TaskService<InMemoryTaskStore>>,
     pub rate_manager: Arc<RateLimitManager>,
-    #[expect(dead_code, reason = "Implement structured prompt caching (keyed by session+model, auto-expire TTL)")]
+    #[expect(
+        dead_code,
+        reason = "Implement structured prompt caching (keyed by session+model, auto-expire TTL)"
+    )]
     pub prompt_cache: Arc<Mutex<HashMap<String, Vec<String>>>>,
-    #[expect(dead_code, reason = "Use http_client for background provider health checks (model status, rate limits)")]
+    #[expect(
+        dead_code,
+        reason = "Use http_client for background provider health checks (model status, rate limits)"
+    )]
     pub http_client: reqwest::Client,
     pub proxy_use_case: Arc<ProxyUseCase>,
-    #[expect(dead_code, reason = "Wire embedder into memory embedding pipeline (currently unused)")]
+    #[expect(
+        dead_code,
+        reason = "Wire embedder into memory embedding pipeline (currently unused)"
+    )]
     pub embedder: Arc<dyn Embedder>,
     pub agent_indexer: Arc<crate::memory::agent_indexer::AgentIndexer>,
 }

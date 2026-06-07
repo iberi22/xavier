@@ -21,7 +21,10 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
     set_if_absent("XAVIER_HOST", &settings.server.host);
     set_if_absent("XAVIER_PORT", &settings.server.port.to_string());
     set_if_absent("XAVIER_LOG_LEVEL", &settings.server.log_level);
-    set_if_absent("XAVIER_CODE_GRAPH_DB_PATH", &settings.server.code_graph_db_path);
+    set_if_absent(
+        "XAVIER_CODE_GRAPH_DB_PATH",
+        &settings.server.code_graph_db_path,
+    );
     set_optional_if_absent("XAVIER_URL", non_empty(&settings.server.url));
     set_optional_if_absent("XAVIER_CONFIG_PATH", settings.server.config_path.clone());
 
@@ -32,7 +35,10 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
     set_if_absent("XAVIER_DEFAULT_PLAN", &settings.workspace.default_plan);
     set_optional_if_absent(
         "XAVIER_STORAGE_LIMIT_BYTES",
-        settings.workspace.storage_limit_bytes.map(|v| v.to_string()),
+        settings
+            .workspace
+            .storage_limit_bytes
+            .map(|v| v.to_string()),
     );
     set_optional_if_absent(
         "XAVIER_REQUEST_LIMIT",
@@ -54,14 +60,21 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
             "0"
         },
     );
-    set_optional_if_absent("XAVIER_RRF_K", settings.retrieval.rrf_k.map(|v| v.to_string()));
+    set_optional_if_absent(
+        "XAVIER_RRF_K",
+        settings.retrieval.rrf_k.map(|v| v.to_string()),
+    );
     set_optional_if_absent(
         "XAVIER_ZONE_BOOST",
-        settings.retrieval.zone_boost_multiplier.map(|v| v.to_string()),
+        settings
+            .retrieval
+            .zone_boost_multiplier
+            .map(|v| v.to_string()),
     );
     set_optional_if_absent(
         "XAVIER_ZONE_PENALTY",
-        settings.retrieval
+        settings
+            .retrieval
             .zone_penalty_multiplier
             .map(|v| v.to_string()),
     );
@@ -109,7 +122,11 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
     );
     set_if_absent(
         "XAVIER_EPISODIC_MIN_EVENT_IMPORTANCE",
-        &settings.memory_layers.episodic.min_event_importance.to_string(),
+        &settings
+            .memory_layers
+            .episodic
+            .min_event_importance
+            .to_string(),
     );
 
     set_if_absent("XAVIER_MODEL_PROVIDER", &settings.models.provider);
@@ -124,7 +141,10 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
         "XAVIER_ROUTER_COMPLEX_MODEL",
         non_empty(&settings.models.router_complex_model),
     );
-    set_if_absent("XAVIER_ROUTER_FAST_MODEL", &settings.models.router_fast_model);
+    set_if_absent(
+        "XAVIER_ROUTER_FAST_MODEL",
+        &settings.models.router_fast_model,
+    );
     set_if_absent(
         "XAVIER_ROUTER_QUALITY_MODEL",
         &settings.models.router_quality_model,
@@ -145,11 +165,15 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
     );
     set_optional_if_absent(
         "XAVIER_ZONE_BOOST",
-        settings.retrieval.zone_boost_multiplier.map(|v| v.to_string()),
+        settings
+            .retrieval
+            .zone_boost_multiplier
+            .map(|v| v.to_string()),
     );
     set_optional_if_absent(
         "XAVIER_ZONE_PENALTY",
-        settings.retrieval
+        settings
+            .retrieval
             .zone_penalty_multiplier
             .map(|v| v.to_string()),
     );
@@ -177,7 +201,10 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
 
     // Embedding settings
     set_optional_if_absent("XAVIER_EMBEDDER", non_empty(&settings.embedding.embedder));
-    set_optional_if_absent("XAVIER_GLLM_MODEL", non_empty(&settings.embedding.gllm_model));
+    set_optional_if_absent(
+        "XAVIER_GLLM_MODEL",
+        non_empty(&settings.embedding.gllm_model),
+    );
     set_optional_if_absent(
         "XAVIER_EMBEDDING_API_FLAVOR",
         non_empty(&settings.embedding.api_flavor),
@@ -236,7 +263,10 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
     );
 
     // Chronicle settings
-    set_optional_if_absent("Xavier_CHRONICLE_MODEL", non_empty(&settings.chronicle.model));
+    set_optional_if_absent(
+        "Xavier_CHRONICLE_MODEL",
+        non_empty(&settings.chronicle.model),
+    );
 
     // Enterprise settings
     set_if_absent("XAVIER_ENTERPRISE_DB_PATH", &settings.enterprise.db_path);
@@ -275,7 +305,10 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
 
     // PgHeart settings
     set_optional_if_absent("PGHEART_INSTANCE_ID", settings.pgheart.instance_id.clone());
-    set_if_absent("PGHEART_SYNC_INTERVAL_MS", &settings.pgheart.sync_interval_ms.to_string());
+    set_if_absent(
+        "PGHEART_SYNC_INTERVAL_MS",
+        &settings.pgheart.sync_interval_ms.to_string(),
+    );
     set_if_absent(
         "PGHEART_AUTO_HEARTBEAT",
         if settings.pgheart.auto_heartbeat {
@@ -286,5 +319,8 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
     );
 
     // Aliases for backward compatibility
-    set_if_absent("XAVIER_WORKSPACE_ID", &settings.workspace.default_workspace_id);
+    set_if_absent(
+        "XAVIER_WORKSPACE_ID",
+        &settings.workspace.default_workspace_id,
+    );
 }

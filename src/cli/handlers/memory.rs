@@ -8,13 +8,13 @@ use axum::{
 };
 use tracing::info;
 
-use crate::cli::state::CliState;
-use crate::cli::types::*;
-use crate::cli::config::{resolve_http_token, xavier_token, resolve_base_url};
 use crate::cli::commands::spawn::load_spawn_memory;
-use xavier::memory::qmd_memory::MemoryDocument;
+use crate::cli::config::{resolve_base_url, resolve_http_token, xavier_token};
 use crate::cli::handlers::json_response;
 use crate::cli::security::secure_cli_input;
+use crate::cli::state::CliState;
+use crate::cli::types::*;
+use xavier::memory::qmd_memory::MemoryDocument;
 
 use xavier::memory::schema::MemoryLevel;
 use xavier::memory::store::MemoryRecord;
@@ -354,7 +354,11 @@ pub async fn delete_handler(
         );
     };
 
-    match state.store.delete(&state.workspace_id, id_or_path_str).await {
+    match state
+        .store
+        .delete(&state.workspace_id, id_or_path_str)
+        .await
+    {
         Ok(Some(record)) => json_response(
             StatusCode::OK,
             serde_json::json!({
@@ -509,30 +513,31 @@ pub async fn search_memories_filtered(
         _ => {
             println!("⚠️ Server offline or request failed. Falling back to local offline database index...");
             match load_spawn_memory().await {
-                Ok(memory) => {
-                    match memory.search_filtered(&query, limit, Some(&filters)).await {
-                        Ok(docs) => {
-                            println!("\n[OFFLINE] Search results for: {}", query);
-                            let json_results = serde_json::json!({
-                                "results": docs.iter().map(|doc: &MemoryDocument| {
-                                    serde_json::json!({
-                                        "id": doc.id,
-                                        "path": doc.path,
-                                        "content": doc.content,
-                                        "metadata": doc.metadata,
-                                        "score": doc.metadata.get("score").and_then(|v: &serde_json::Value| v.as_f64()).unwrap_or(1.0),
-                                    })
-                                }).collect::<Vec<_>>()
-                            });
-                            println!("{}", serde_json::to_string_pretty(&json_results)?);
-                        }
-                        Err(e) => {
-                            println!("❌ Local search failed: {}", e);
-                        }
+                Ok(memory) => match memory.search_filtered(&query, limit, Some(&filters)).await {
+                    Ok(docs) => {
+                        println!("\n[OFFLINE] Search results for: {}", query);
+                        let json_results = serde_json::json!({
+                            "results": docs.iter().map(|doc: &MemoryDocument| {
+                                serde_json::json!({
+                                    "id": doc.id,
+                                    "path": doc.path,
+                                    "content": doc.content,
+                                    "metadata": doc.metadata,
+                                    "score": doc.metadata.get("score").and_then(|v: &serde_json::Value| v.as_f64()).unwrap_or(1.0),
+                                })
+                            }).collect::<Vec<_>>()
+                        });
+                        println!("{}", serde_json::to_string_pretty(&json_results)?);
                     }
-                }
+                    Err(e) => {
+                        println!("❌ Local search failed: {}", e);
+                    }
+                },
                 Err(e) => {
-                    println!("❌ Failed to initialize local offline database store: {}", e);
+                    println!(
+                        "❌ Failed to initialize local offline database store: {}",
+                        e
+                    );
                 }
             }
         }
@@ -611,7 +616,15 @@ pub async fn add_memory_hierarchical(
                         ..Default::default()
                     };
 
-                    match memory.add_document_typed(path, content.to_string(), metadata, Some(typed_payload)).await {
+                    match memory
+                        .add_document_typed(
+                            path,
+                            content.to_string(),
+                            metadata,
+                            Some(typed_payload),
+                        )
+                        .await
+                    {
                         Ok(id) => {
                             println!("✅ Memory added successfully offline to local SQLite-Vec database!");
                             println!("Document ID: {id}");
@@ -622,7 +635,10 @@ pub async fn add_memory_hierarchical(
                     }
                 }
                 Err(e) => {
-                    println!("❌ Failed to initialize local offline database store: {}", e);
+                    println!(
+                        "❌ Failed to initialize local offline database store: {}",
+                        e
+                    );
                 }
             }
         }

@@ -4,7 +4,7 @@ use anyhow::Result;
 use tracing::info;
 
 use super::core::MemoryManager;
-use super::types::{MemoryManagementAction, ManagementResult};
+use super::types::{ManagementResult, MemoryManagementAction};
 
 impl MemoryManager {
     /// Compress large memories by truncating oversized content.

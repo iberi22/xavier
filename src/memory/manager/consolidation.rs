@@ -14,7 +14,7 @@ use tracing::info;
 use crate::memory::qmd_memory::MemoryDocument;
 
 use super::core::MemoryManager;
-use super::types::{MemoryManagementAction, ManagementResult};
+use super::types::{ManagementResult, MemoryManagementAction};
 
 impl MemoryManager {
     /// Consolidate similar memories — merge duplicates and near-duplicates
