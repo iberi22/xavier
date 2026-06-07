@@ -129,6 +129,21 @@ $env:XAVIER_PORT = 9000
 ~\.xavier\verify.ps1
 ```
 
+### Build and Run Desktop App (Tauri)
+For the full native Windows experience (Desktop UI):
+```powershell
+# 1. Install UI dependencies
+cd e:\scripts-python\xavier\panel-ui
+pnpm install
+
+# 2. Run Desktop UI in Development Mode
+pnpm tauri dev
+
+# 3. Build Desktop UI Executable
+pnpm tauri build
+```
+The compiled MSI/EXE installer will be generated inside `panel-ui/src-tauri/target/release/bundle/msi/`.
+
 Expected output:
 ```
 === Xavier v0.6.1-beta Verification ===
