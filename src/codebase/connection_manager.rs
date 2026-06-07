@@ -44,6 +44,12 @@ impl r2d2::CustomizeConnection<Connection, rusqlite::Error> for PragmaCustomizer
     }
 }
 
+impl Default for ConnectionManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ConnectionManager {
     /// Create a new connection manager instance.
     pub fn new() -> Self {

@@ -24,6 +24,7 @@ use crate::cli::config::{
 };
 use crate::cli::state::CliState;
 use crate::settings::XavierSettings;
+use xavier::security::sessions::SessionManager;
 use xavier::adapters::inbound::http::routes::{
     sync_check_handler, time_metric_handler, verify_save_handler,
 };
@@ -209,6 +210,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
 
     let state = CliState {
         memory: memory_port,
+        session_manager: Arc::new(SessionManager::new(60)),
         store,
         workspace_id,
         workspace_dir,
@@ -264,6 +266,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/code/hotspots", get(code_hotspots_handler))
         .route("/v1/account/usage", get(account_usage_handler))
         .route("/v1/embeddings", post(embed_handler))
+        .route("/v1/auth/session", post(session_create_handler))
         .route("/security/scan", post(security_scan_handler))
         .route("/memory/query", post(memory_query_handler))
         .route("/session/compact", post(session_compact_handler))
@@ -313,7 +316,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             state.clone(),
             rate_limit_middleware,
         ))
-        .layer(middleware::from_fn(auth_middleware));
+        .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 
     let large_body_routes = Router::new()
         .route("/memory/add", post(add_handler))
@@ -325,7 +328,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             state.clone(),
             rate_limit_middleware,
         ))
-        .layer(middleware::from_fn(auth_middleware));
+        .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
 
     #[cfg(feature = "enterprise")]
     let protected_routes = {
@@ -359,7 +362,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         use std::sync::{Arc, Mutex};
         use xavier::enterprise::http::{enterprise_router, EnterpriseState};
         let enterprise_state = Arc::new(Mutex::new(EnterpriseState::init_default()));
-        app.merge(enterprise_router(enterprise_state).layer(middleware::from_fn(auth_middleware)))
+        app.merge(enterprise_router(enterprise_state).layer(middleware::from_fn_with_state(state.clone(), auth_middleware)))
     };
 
     let listener = TcpListener::bind(&bind_addr).await?;

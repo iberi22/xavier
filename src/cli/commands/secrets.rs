@@ -3,10 +3,31 @@
 //! Handles the `xavier secrets` subcommand for lending, listing, and
 //! revoking ephemeral secret leases to/from agents.
 
-use crate::cli::commands::enums::{SecretsCommand, CLI_HTTP_CLIENT};
+use crate::cli::commands::enums::{SecretsCommand, VaultCommand, CLI_HTTP_CLIENT};
 use crate::cli::config::{resolve_base_url, xavier_token};
+use xavier::secrets::vault::HardwareVault;
 
 use anyhow::Result;
+
+/// Dispatch a [`VaultCommand`] to the appropriate handler.
+pub async fn handle_vault_command(cmd: VaultCommand) -> Result<()> {
+    let vault = HardwareVault::new("xavier");
+    match cmd {
+        VaultCommand::Set { key, value } => {
+            vault.store_secret(&key, &value)?;
+            println!("Secret '{}' stored in hardware vault.", key);
+        }
+        VaultCommand::Get { key } => {
+            let value = vault.get_secret(&key)?;
+            println!("{}: {}", key, value);
+        }
+        VaultCommand::Delete { key } => {
+            vault.delete_secret(&key)?;
+            println!("Secret '{}' deleted from hardware vault.", key);
+        }
+    }
+    Ok(())
+}
 
 /// Dispatch a [`SecretsCommand`] to the appropriate handler.
 pub async fn handle_secrets_command(cmd: SecretsCommand) -> Result<()> {

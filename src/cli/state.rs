@@ -8,6 +8,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use xavier::agents::rate_limit::RateLimitManager;
 use xavier::app::proxy_use_case::ProxyUseCase;
+use xavier::security::sessions::SessionManager;
 use xavier::codebase::conversations_db::ConversationsDb;
 use xavier::coordination::{KeyLendingEngine, XavierEventBus};
 use xavier::embedding::Embedder;
@@ -59,6 +60,7 @@ pub struct CliState {
     )]
     pub http_client: reqwest::Client,
     pub proxy_use_case: Arc<ProxyUseCase>,
+    pub session_manager: Arc<SessionManager>,
     #[expect(
         dead_code,
         reason = "Wire embedder into memory embedding pipeline (currently unused)"
