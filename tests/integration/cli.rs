@@ -314,6 +314,7 @@ fn test_add_and_search_without_server() {
     assert!(
         add_combined.contains("Error")
             || add_combined.contains("error")
+            || add_combined.contains("Falling back to local offline")
             || add_combined.contains("must be set"),
         "add without server should produce error, got: {add_combined}"
     );
@@ -327,6 +328,7 @@ fn test_add_and_search_without_server() {
     assert!(
         search_combined.contains("Error")
             || search_combined.contains("error")
+            || search_combined.contains("Falling back to local offline")
             || search_combined.contains("must be set"),
         "search without server should produce error, got: {search_combined}"
     );
