@@ -44,13 +44,18 @@ impl r2d2::CustomizeConnection<Connection, rusqlite::Error> for PragmaCustomizer
 }
 
 impl ConnectionManager {
-    /// Get the global singleton instance.
-    pub fn global() -> &'static Self {
-        INSTANCE.get_or_init(|| Self {
+    /// Create a new connection manager instance.
+    pub fn new() -> Self {
+        Self {
             pools: DashMap::new(),
             active: Arc::new(tokio::sync::RwLock::new(None)),
             idle_timeout_secs: 1800, // 30 minutes
-        })
+        }
+    }
+
+    /// Get the global singleton instance.
+    pub fn global() -> &'static Self {
+        INSTANCE.get_or_init(Self::new)
     }
 
     /// Connect to a database by project_id.
@@ -204,7 +209,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_connection_manager() {
-        let cm = ConnectionManager::global();
+        let cm = ConnectionManager::new();
         let dir = tempdir().unwrap();
         let project_root = dir.path().to_str().unwrap();
 
@@ -217,7 +222,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_active_project() {
-        let cm = ConnectionManager::global();
+        let cm = ConnectionManager::new();
         let dir = tempdir().unwrap();
         let project_root = dir.path().to_str().unwrap();
 

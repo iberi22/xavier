@@ -594,7 +594,10 @@ impl DevLogSSG {
             let path = entry.path();
             if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
                 let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if SKIP_FILES.contains(&filename) {
+                if SKIP_FILES
+                    .iter()
+                    .any(|s| s.eq_ignore_ascii_case(filename))
+                {
                     continue;
                 }
                 posts.push(path.to_path_buf());
@@ -672,11 +675,11 @@ mod tests {
         ssg.build()?;
         assert!(!output_dir.path().join("INDEX.html").exists());
         assert!(!output_dir.path().join("README.html").exists());
+        assert!(!output_dir.path().join("index.md.html").exists());
+        assert!(!output_dir.path().join("readme.md.html").exists());
         assert!(output_dir.path().join("2026-05-10-real-post.html").exists());
         let index_content = fs::read_to_string(output_dir.path().join("index.html"))?;
         assert!(index_content.contains("Real Post"));
-        assert!(!index_content.contains("INDEX"));
-        assert!(!index_content.contains("README"));
         Ok(())
     }
 

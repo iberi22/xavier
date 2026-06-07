@@ -51,10 +51,11 @@ fn usage_event_weights_sync_and_agent_calls_higher() {
 
 #[tokio::test]
 async fn usage_state_persists_between_workspace_reloads() {
-    let root = std::env::temp_dir().join(format!("xavier-usage-{}", Ulid::new()));
+    let unique_id = Ulid::new().to_string();
+    let root = std::env::temp_dir().join(format!("xavier-usage-{}", unique_id));
     let workspace = WorkspaceState::new(
         WorkspaceConfig {
-            id: "persist".to_string(),
+            id: format!("persist-{}", unique_id),
             token: "token".to_string(),
             plan: PlanTier::Personal,
             memory_backend: MemoryBackend::File,
@@ -82,7 +83,7 @@ async fn usage_state_persists_between_workspace_reloads() {
 
     let reloaded = WorkspaceState::new(
         WorkspaceConfig {
-            id: "persist".to_string(),
+            id: format!("persist-{}", unique_id),
             token: "token".to_string(),
             plan: PlanTier::Personal,
             memory_backend: MemoryBackend::File,
@@ -106,9 +107,10 @@ async fn usage_state_persists_between_workspace_reloads() {
 
 #[tokio::test]
 async fn durable_memory_rehydrates_between_workspace_reloads() {
-    let root = std::env::temp_dir().join(format!("xavier-memory-{}", Ulid::new()));
+    let unique_id = Ulid::new().to_string();
+    let root = std::env::temp_dir().join(format!("xavier-memory-{}", unique_id));
     let config = WorkspaceConfig {
-        id: "persist-memory".to_string(),
+        id: format!("persist-memory-{}", unique_id),
         token: "token".to_string(),
         plan: PlanTier::Personal,
         memory_backend: MemoryBackend::File,
@@ -158,9 +160,10 @@ async fn durable_memory_rehydrates_between_workspace_reloads() {
 
 #[tokio::test]
 async fn session_tokens_beliefs_and_checkpoints_persist_between_reloads() {
-    let root = std::env::temp_dir().join(format!("xavier-state-{}", Ulid::new()));
+    let unique_id = Ulid::new().to_string();
+    let root = std::env::temp_dir().join(format!("xavier-state-{}", unique_id));
     let config = WorkspaceConfig {
-        id: "persist-state".to_string(),
+        id: format!("persist-state-{}", unique_id),
         token: "token".to_string(),
         plan: PlanTier::Personal,
         memory_backend: MemoryBackend::File,
