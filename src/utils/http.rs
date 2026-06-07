@@ -12,3 +12,14 @@ pub static DEFAULT_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .build()
         .expect("failed to build default HTTP client")
 });
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_http_client_exists() {
+        // Just verify it doesn't panic on access
+        let _ = &*DEFAULT_HTTP_CLIENT;
+    }
+}
