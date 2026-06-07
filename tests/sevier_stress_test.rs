@@ -93,7 +93,7 @@ async fn test_health_get() {
 
 // ─── Test 2: Time Metric — save and retrieve via SQLite ──────────────────────
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_time_metric_save_and_retrieve() {
     let _project_id = setup_test_db().await;
     let store = Arc::new(TimeMetricsStore::new());

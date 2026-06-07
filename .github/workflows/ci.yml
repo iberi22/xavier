@@ -26,6 +26,8 @@ jobs:
         run: npm ci
       - name: Validate panel-ui
         run: npm run check --workspace panel-ui
+      - name: Run panel-ui unit tests
+        run: npm run test --workspace panel-ui
 
   check:
     name: Check
@@ -72,12 +74,21 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-nextest
         run: cargo install cargo-nextest --locked
+      - name: Install cargo-tarpaulin
+        run: cargo install cargo-tarpaulin --locked
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Run tests
         run: cargo nextest run --workspace --features ci-safe --exclude xavier-web
       - name: Run doc tests
         run: cargo test --doc --workspace --features ci-safe --exclude xavier-web
+      - name: Generate coverage report
+        run: cargo tarpaulin --workspace --features ci-safe --exclude xavier-web --out Xml
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: ./tarpaulin-report.xml
+          fail_ci_if_error: false
 
   build:
     name: Build
