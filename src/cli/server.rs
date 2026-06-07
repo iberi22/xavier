@@ -15,6 +15,7 @@ use std::time::Duration;
 use std::time::Instant;
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
+use tower_http::cors::CorsLayer;
 use tracing::info;
 
 use crate::cli::config::{
@@ -347,7 +348,8 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/panel", get(panel_index))
         .route("/panel/assets/{*path}", get(panel_asset))
         .merge(protected_routes)
-        .merge(large_body_routes);
+        .merge(large_body_routes)
+        .layer(CorsLayer::permissive());
 
     let agent_indexer_cron = state.agent_indexer.clone();
     let memory_port_cron = state.memory.clone();

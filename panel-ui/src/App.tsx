@@ -2,6 +2,7 @@ import { Renderer } from "@openuidev/react-lang";
 import { openuiLibrary, ThemeProvider } from "@openuidev/react-ui";
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { DecisionCard } from "./components/DecisionCard";
 import { ProjectCard } from "./components/ProjectCard";
 import { QuestionCard } from "./components/QuestionCard";
@@ -12,6 +13,11 @@ const combinedLibrary = {
   QuestionCard,
   DecisionCard,
   ProjectCard,
+};
+
+const getApiUrl = (path: string) => {
+  const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  return isTauri ? `http://127.0.0.1:8006${path}` : path;
 };
 
 type ThreadSummary = {
@@ -64,6 +70,7 @@ function App() {
   const [health, setHealth] = useState("checking");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
 
   const activeThread = useMemo(
     () => threads.find((item) => item.id === selectedThreadId) ?? null,
@@ -71,10 +78,26 @@ function App() {
   );
 
   useEffect(() => {
-    fetch("/health")
+    fetch(getApiUrl("/health"))
       .then((response) => response.json())
       .then((data) => setHealth(data.status ?? "unknown"))
       .catch(() => setHealth("offline"));
+  }, []);
+
+  useEffect(() => {
+    const checkNativeToken = async () => {
+      if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+        try {
+          const nativeToken = await invoke<string>("get_xavier_token");
+          if (nativeToken) {
+            setToken(nativeToken);
+          }
+        } catch (e) {
+          console.warn("Could not automatically retrieve Xavier token from local config:", e);
+        }
+      }
+    };
+    void checkNativeToken();
   }, []);
 
   const openThread = useCallback(
@@ -85,7 +108,7 @@ function App() {
 
       try {
         setError(null);
-        const response = await fetch(`/panel/api/threads/${threadId}`, {
+        const response = await fetch(getApiUrl(`/panel/api/threads/${threadId}`), {
           headers: { "X-Xavier-Token": currentToken },
         });
         if (!response.ok) {
@@ -107,7 +130,7 @@ function App() {
     async (currentToken: string) => {
       try {
         setError(null);
-        const response = await fetch("/panel/api/threads", {
+        const response = await fetch(getApiUrl("/panel/api/threads"), {
           headers: { "X-Xavier-Token": currentToken },
         });
         if (!response.ok) {
@@ -149,7 +172,7 @@ function App() {
   }, [token, selectedThreadId, isLoading, openThread]);
 
   async function api<T>(path: string, options?: RequestInit): Promise<T> {
-    const response = await fetch(path, {
+    const response = await fetch(getApiUrl(path), {
       ...options,
       headers: {
         "Content-Type": "application/json",
@@ -200,6 +223,12 @@ function App() {
       setDraft("");
       setSelectedThreadId(payload.thread.id);
       setMessages(payload.messages);
+      
+      const lastMessage = payload.messages[payload.messages.length - 1];
+      if (lastMessage?.role === "assistant") {
+        setStreamingMessageId(lastMessage.id);
+      }
+
       setThreads((current) => {
         const next = [
           payload.thread,
@@ -214,6 +243,37 @@ function App() {
     } finally {
       setIsLoading(false);
     }
+  }
+
+  if (health === "offline") {
+    return (
+      <ThemeProvider mode="light" lightTheme={theme}>
+        <div className="xavier-app token-screen">
+          <div className="token-card">
+            <p className="eyebrow" style={{ color: "var(--cx-color-danger)" }}>Error: Connection Refused</p>
+            <h1>Xavier Core is Offline</h1>
+            <p className="lede">
+              We couldn't reach the local backend at <code>127.0.0.1:8006</code>.
+              Please ensure the Xavier service is running.
+            </p>
+            <div style={{ marginTop: "2rem" }}>
+              <p>To start the service manually, run:</p>
+              <pre style={{ background: "rgba(0,0,0,0.05)", padding: "1rem", borderRadius: "8px", marginTop: "0.5rem" }}>
+                ~\.xavier\start.bat
+              </pre>
+            </div>
+            <button
+              type="button"
+              className="cx-button cx-button-primary"
+              style={{ marginTop: "2rem" }}
+              onClick={() => window.location.reload()}
+            >
+              Retry Connection
+            </button>
+          </div>
+        </div>
+      </ThemeProvider>
+    );
   }
 
   if (!token) {
@@ -414,25 +474,10 @@ function App() {
                       </div>
                     </div>
 
-                    {message.openui_lang ? (
-                      <div className="render-surface">
-                        <div className="render-surface-header">
-                          <span className="render-surface-title">
-                            OpenUI Render Surface
-                          </span>
-                          <span className="render-surface-title render-surface-mode">
-                            Structured output
-                          </span>
-                        </div>
-                        <Renderer
-                          response={message.openui_lang}
-                          library={combinedLibrary}
-                          isStreaming={false}
-                        />
-                      </div>
-                    ) : null}
-
-                    <div className="plain-text">{message.plain_text}</div>
+                    <StreamingMessageRenderer 
+                      message={message} 
+                      isStreamingActive={message.id === streamingMessageId} 
+                    />
                   </>
                 ) : (
                   <div className="plain-text">{message.plain_text}</div>
@@ -480,6 +525,64 @@ function formatConfidence(value?: number) {
     return "n/a";
   }
   return `${Math.round(value * 100)}%`;
+}
+
+function StreamingMessageRenderer({ message, isStreamingActive }: { message: PanelMessage; isStreamingActive: boolean }) {
+  const [streamedResponse, setStreamedResponse] = useState("");
+  const [streamedText, setStreamedText] = useState("");
+  const [isStreaming, setIsStreaming] = useState(false);
+
+  useEffect(() => {
+    if (!isStreamingActive) {
+      setStreamedResponse(message.openui_lang || "");
+      setStreamedText(message.plain_text || "");
+      setIsStreaming(false);
+      return;
+    }
+
+    const fullResponse = message.openui_lang || "";
+    const fullText = message.plain_text || "";
+    let currentIndex = 0;
+    setIsStreaming(true);
+    setStreamedResponse("");
+    setStreamedText("");
+
+    const intervalId = setInterval(() => {
+      currentIndex += 5; // Chunk size
+      setStreamedResponse(fullResponse.slice(0, currentIndex));
+      setStreamedText(fullText.slice(0, currentIndex));
+      
+      if (currentIndex >= Math.max(fullResponse.length, fullText.length)) {
+        setIsStreaming(false);
+        clearInterval(intervalId);
+      }
+    }, 20); // Faster speed for smooth blur diffusion
+
+    return () => clearInterval(intervalId);
+  }, [message, isStreamingActive]);
+
+  return (
+    <>
+      {message.openui_lang ? (
+        <div className="render-surface">
+          <div className="render-surface-header">
+            <span className="render-surface-title">
+              OpenUI Render Surface
+            </span>
+            <span className="render-surface-title render-surface-mode">
+              Structured output {isStreaming && "(Streaming...)"}
+            </span>
+          </div>
+          <Renderer
+            response={streamedResponse}
+            library={combinedLibrary}
+            isStreaming={isStreaming}
+          />
+        </div>
+      ) : null}
+      <div className="plain-text">{streamedText}</div>
+    </>
+  );
 }
 
 export default App;

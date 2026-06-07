@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "check": "npm run biome:check && npm run typecheck && npm run build",
+    "check": "pnpm run biome:check && pnpm run typecheck && pnpm run build",
     "biome:check": "biome check src/App.tsx src/main.tsx src/theme.ts src/styles.css src/components/QuestionCard.tsx src/components/DecisionCard.tsx src/components/ProjectCard.tsx playwright.config.ts tests/generative-ui.spec.ts",
     "biome:write": "biome check --write src/App.tsx src/main.tsx src/theme.ts src/styles.css src/components/QuestionCard.tsx src/components/DecisionCard.tsx src/components/ProjectCard.tsx playwright.config.ts tests/generative-ui.spec.ts",
     "typecheck": "tsc --noEmit -p tsconfig.generative.json",
