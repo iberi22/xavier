@@ -1,4 +1,4 @@
-﻿//! V1 RESTful Standard Memory API handlers.
+//! V1 RESTful Standard Memory API handlers.
 
 use axum::{
     extract::{Path, Query},
@@ -421,13 +421,13 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
     use tower::util::ServiceExt;
 
-    use ulid::Ulid;
     use crate::{
         agents::RuntimeConfig,
         memory::file_indexer::{FileIndexer, FileIndexerConfig},
         workspace::{WorkspaceConfig, WorkspaceContext, WorkspaceRegistry, WorkspaceState},
         AppState,
     };
+    use ulid::Ulid;
 
     fn unique_test_path(prefix: &str, suffix: &str) -> PathBuf {
         let unique = SystemTime::now()
@@ -712,7 +712,12 @@ mod tests {
             let docs = workspace.workspace.memory.all_documents().await;
             eprintln!("DEBUG initial docs count: {}", docs.len());
             for d in workspace.workspace.memory.docs.read().await.iter() {
-                eprintln!("DEBUG doc: id={:?}, path={}, content={}..", d.id, d.path, &d.content[..std::cmp::min(50, d.content.len())]);
+                eprintln!(
+                    "DEBUG doc: id={:?}, path={}, content={}..",
+                    d.id,
+                    d.path,
+                    &d.content[..std::cmp::min(50, d.content.len())]
+                );
             }
         }
         let app = test_router(state, workspace);
@@ -765,7 +770,7 @@ mod tests {
                             .method("GET")
                             .uri("/v1/memories?limit=100")
                             .body(Body::empty())
-                            .expect("DEBUG list req")
+                            .expect("DEBUG list req"),
                     )
                     .await
                     .expect("DEBUG list resp");

@@ -84,7 +84,11 @@ mod tests {
     fn test_weights_sum_to_one() {
         let total = DEFAULT_VECTOR_WEIGHT + DEFAULT_FTS_WEIGHT + DEFAULT_KG_WEIGHT;
         let diff = (total - 1.0).abs();
-        assert!(diff < 0.001, "fusion weights should sum to ~1.0, got {}", total);
+        assert!(
+            diff < 0.001,
+            "fusion weights should sum to ~1.0, got {}",
+            total
+        );
     }
 
     #[test]
