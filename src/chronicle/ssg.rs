@@ -594,10 +594,7 @@ impl DevLogSSG {
             let path = entry.path();
             if path.is_file() && path.extension().is_some_and(|ext| ext == "md") {
                 let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if SKIP_FILES
-                    .iter()
-                    .any(|s| s.eq_ignore_ascii_case(filename))
-                {
+                if SKIP_FILES.iter().any(|s| s.eq_ignore_ascii_case(filename)) {
                     continue;
                 }
                 posts.push(path.to_path_buf());

@@ -230,7 +230,8 @@ mod tests {
     fn test_recency_boost_old_decays() {
         let now = chrono::Utc::now();
         let hours_ago = chrono::Utc::now() - chrono::Duration::hours(48);
-        let result = calculate_recency_boost_factor(Some(hours_ago.timestamp_millis()), now, 0.5, 24.0);
+        let result =
+            calculate_recency_boost_factor(Some(hours_ago.timestamp_millis()), now, 0.5, 24.0);
         // e^(-48/24) = e^-2 ≈ 0.135, so 1 + 0.5 * 0.135 ≈ 1.068
         assert!(result > 1.0);
         assert!(result < 1.5);
@@ -248,7 +249,8 @@ mod tests {
     fn test_recency_boost_future_timestamp_uses_now() {
         let now = chrono::Utc::now();
         let future = now + chrono::Duration::hours(24);
-        let result = calculate_recency_boost_factor(Some(future.timestamp_millis()), now, 0.5, 24.0);
+        let result =
+            calculate_recency_boost_factor(Some(future.timestamp_millis()), now, 0.5, 24.0);
         // age is clamped to 0
         assert!((result - 1.5).abs() < 0.001);
     }
