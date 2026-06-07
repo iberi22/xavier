@@ -120,6 +120,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: SecretsCommand,
     },
+    /// Manage the hardware vault
+    Vault {
+        #[command(subcommand)]
+        cmd: VaultCommand,
+    },
     /// Manage provider usage and rate limits
     Usage {
         #[command(subcommand)]
@@ -208,6 +213,17 @@ pub enum TokenCommand {
     New,
     /// Generate a signed HMAC token for a user
     Gen { user_id: String },
+}
+
+/// Vault management subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum VaultCommand {
+    /// Store a secret in the hardware vault
+    Set { key: String, value: String },
+    /// Retrieve a secret from the hardware vault
+    Get { key: String },
+    /// Delete a secret from the hardware vault
+    Delete { key: String },
 }
 
 /// Secrets management subcommands

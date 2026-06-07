@@ -5,6 +5,7 @@
 //! routing requests to the correct LLM backend.
 
 use crate::agents::provider::types::{ApiFlavor, ProviderMode, ProviderTarget};
+use crate::secrets::vault::HardwareVault;
 
 pub(crate) const DEFAULT_LOCAL_BASE_URL: &str = "http://localhost:11434/v1";
 pub(crate) const DEFAULT_LOCAL_ANTHROPIC_BASE_URL: &str = "http://localhost:11434";
@@ -190,6 +191,7 @@ impl ModelProviderConfig {
                 .unwrap_or_else(|| "gpt-4o-mini".to_string()),
             api_key: std::env::var("OPENAI_API_KEY")
                 .ok()
+                .or_else(|| HardwareVault::new("xavier").get_secret("OPENAI_API_KEY").ok())
                 .or_else(|| settings.models.llm_api_key.clone()),
             base_url: Some(
                 std::env::var("OPENAI_BASE_URL")
@@ -214,6 +216,7 @@ impl ModelProviderConfig {
                 .unwrap_or_else(|| "llama-3.3-70b-versatile".to_string()),
             api_key: std::env::var("GROQ_API_KEY")
                 .ok()
+                .or_else(|| HardwareVault::new("xavier").get_secret("GROQ_API_KEY").ok())
                 .or_else(|| settings.models.llm_api_key.clone()),
             base_url: Some(
                 std::env::var("GROQ_BASE_URL")
@@ -237,6 +240,7 @@ impl ModelProviderConfig {
                 .unwrap_or_else(|| "deepseek-chat".to_string()),
             api_key: std::env::var("DEEPSEEK_API_KEY")
                 .ok()
+                .or_else(|| HardwareVault::new("xavier").get_secret("DEEPSEEK_API_KEY").ok())
                 .or_else(|| settings.models.llm_api_key.clone()),
             base_url: Some(
                 std::env::var("DEEPSEEK_BASE_URL")
@@ -260,6 +264,7 @@ impl ModelProviderConfig {
                 .unwrap_or_else(|| "claude-3-5-sonnet-latest".to_string()),
             api_key: std::env::var("ANTHROPIC_API_KEY")
                 .ok()
+                .or_else(|| HardwareVault::new("xavier").get_secret("ANTHROPIC_API_KEY").ok())
                 .or_else(|| std::env::var("XAVIER_LLM_API_KEY").ok())
                 .or_else(|| settings.models.llm_api_key.clone()),
             base_url: Some(
@@ -286,6 +291,7 @@ impl ModelProviderConfig {
                 .unwrap_or_else(|| "MiniMax-Text-01".to_string()),
             api_key: std::env::var("MINIMAX_API_KEY")
                 .ok()
+                .or_else(|| HardwareVault::new("xavier").get_secret("MINIMAX_API_KEY").ok())
                 .or_else(|| settings.models.llm_api_key.clone()),
             base_url: Some(
                 std::env::var("MINIMAX_BASE_URL")
@@ -309,6 +315,7 @@ impl ModelProviderConfig {
                 .unwrap_or_else(|| "gemini-2.0-flash".to_string()),
             api_key: std::env::var("GEMINI_API_KEY")
                 .ok()
+                .or_else(|| HardwareVault::new("xavier").get_secret("GEMINI_API_KEY").ok())
                 .or_else(|| settings.models.llm_api_key.clone()),
             base_url: None,
             target: ProviderTarget::GeminiLegacy,
