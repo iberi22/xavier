@@ -1,3 +1,8 @@
+//! Message bus performance metrics and monitoring.
+//!
+//! Tracks throughput, latency, delivery rates, and error counts
+//! for the message bus, providing observability into agent communication.
+
 use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use crate::coordination::message_bus::MessageBus;

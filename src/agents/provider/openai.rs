@@ -1,3 +1,8 @@
+//! OpenAI API provider integration.
+//!
+//! Implements the LLM provider interface for OpenAI models (GPT-4, GPT-3.5),
+//! handling API communication, streaming, and function calling.
+
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde_json::json;

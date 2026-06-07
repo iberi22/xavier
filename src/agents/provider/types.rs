@@ -1,3 +1,8 @@
+//! Provider-related type definitions and enums.
+//!
+//! Defines shared types used across LLM provider implementations,
+//! including API flavors, provider modes, and request/response models.
+
 use serde::Serialize;
 use std::time::Duration;
 

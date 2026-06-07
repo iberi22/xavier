@@ -1,3 +1,8 @@
+//! Agent registry and lifecycle management for the message bus.
+//!
+//! Manages agent registration, heartbeat tracking, status monitoring,
+//! and agent-to-agent message routing within the coordination layer.
+
 use chrono::Utc;
 use tokio::sync::mpsc;
 use crate::coordination::message_bus::{MessageBus, MessageBusError, AgentInfo, AgentStatus, AgentMessage};

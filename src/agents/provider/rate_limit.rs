@@ -1,3 +1,8 @@
+//! Provider rate limiting and token bucket implementation.
+//!
+//! Implements per-provider rate limiting with configurable RPM/TPM
+//! limits, token bucket throttling, and back-pressure for API calls.
+
 use anyhow::Result;
 use tracing::log::warn;
 use chrono::{DateTime, Duration, Utc};

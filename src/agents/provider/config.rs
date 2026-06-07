@@ -1,3 +1,9 @@
+//! Provider configuration and model routing.
+//!
+//! Defines provider-specific configuration constants, model-to-provider
+//! mappings, and helper functions for constructing API endpoints and
+//! routing requests to the correct LLM backend.
+
 use crate::agents::provider::types::{ApiFlavor, ProviderMode, ProviderTarget};
 
 pub(crate) const DEFAULT_LOCAL_BASE_URL: &str = "http://localhost:11434/v1";

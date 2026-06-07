@@ -1,3 +1,8 @@
+//! Google Gemini API provider integration.
+//!
+//! Implements the LLM provider interface for Google's Gemini models,
+//! handling API authentication, request formatting, and response parsing.
+
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde_json::json;

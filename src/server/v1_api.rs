@@ -700,6 +700,14 @@ mod tests {
         std::env::remove_var("XAVIER_MODEL_PROVIDER");
 
         let (state, workspace) = test_state().await;
+        // DEBUG: list docs after test_state creation
+        {
+            let docs = workspace.workspace.memory.all_documents().await;
+            eprintln!("DEBUG initial docs count: {}", docs.len());
+            for d in &workspace.workspace.memory.docs.read().await.iter() {
+                eprintln!("DEBUG doc: id={:?}, path={}, content={}..", d.id, d.path, &d.content[..std::cmp::min(50, d.content.len())]);
+            }
+        }
         let app = test_router(state, workspace);
 
         for payload in [
@@ -741,6 +749,22 @@ mod tests {
                 .await
                 .expect("failed to execute add (typed) memory request");
             assert_eq!(resp.status(), StatusCode::OK);
+            // DEBUG after add
+            {
+                let docs = app
+                    .clone()
+                    .oneshot(
+                        Request::builder()
+                            .method("GET")
+                            .uri("/v1/memories?limit=100")
+                            .body(Body::empty())
+                            .expect("DEBUG list req")
+                    )
+                    .await
+                    .expect("DEBUG list resp");
+                let body = to_bytes(docs.into_body(), usize::MAX).await.expect("body");
+                eprintln!("DEBUG after add: {}", String::from_utf8_lossy(&body));
+            }
         }
 
         let search_req = Request::builder()

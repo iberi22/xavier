@@ -1,3 +1,8 @@
+//! MiniMax (Hailuo AI) API provider integration.
+//!
+//! Implements the LLM provider interface for MiniMax models,
+//! supporting both text generation and function calling.
+
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde_json::json;

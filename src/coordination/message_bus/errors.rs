@@ -1,3 +1,8 @@
+//! Message bus error types and handling.
+//!
+//! Defines the `MessageBusError` enum covering all possible failures
+//! in agent communication, topic routing, and message delivery.
+
 /// Message Bus errors
 #[derive(Debug, thiserror::Error)]
 pub enum MessageBusError {

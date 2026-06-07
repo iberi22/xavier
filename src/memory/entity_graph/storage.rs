@@ -1,3 +1,9 @@
+//! Entity graph storage and persistence.
+//!
+//! Implements storage operations for the entity graph, including
+//! CRUD operations for entities and relationships, with SQLite
+//! persistence and in-memory caching.
+
 use super::extraction::*;
 use super::types::*;
 use chrono::{DateTime, Utc};

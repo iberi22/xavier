@@ -1,3 +1,9 @@
+//! Memory manager configuration settings.
+//!
+//! Defines the configuration options for the MemoryManager,
+//! including tier thresholds, consolidation intervals, and
+//! eviction policies for each memory layer.
+
 /// Configuration for memory manager
 #[derive(Debug, Clone)]
 pub struct MemoryManagerConfig {
