@@ -1,0 +1,139 @@
+warning: unused import: `routing::*`
+  --> src/coordination/message_bus/mod.rs:37:9
+   |
+37 | pub use routing::*;
+   |         ^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `handlers::*`
+  --> src/coordination/message_bus/mod.rs:38:9
+   |
+38 | pub use handlers::*;
+   |         ^^^^^^^^^^^
+
+warning: unused import: `agents::*`
+  --> src/coordination/message_bus/mod.rs:39:9
+   |
+39 | pub use agents::*;
+   |         ^^^^^^^^^
+
+warning: unused import: `regex::Regex`
+ --> src/memory/qmd/search/scoring.rs:6:5
+  |
+6 | use regex::Regex;
+  |     ^^^^^^^^^^^^
+
+warning: unused import: `crate::memory::qmd_memory::config::*`
+ --> src/memory/qmd/search/scoring.rs:8:5
+  |
+8 | use crate::memory::qmd_memory::config::*;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::fmt`
+ --> src/secrets/mod.rs:5:5
+  |
+5 | use std::fmt;
+  |     ^^^^^^^^
+
+warning: unused import: `StatusCode`
+ --> src/server/mcp/tests.rs:7:29
+  |
+7 |     http::{Method, Request, StatusCode},
+  |                             ^^^^^^^^^^
+
+warning: unused import: `json`
+  --> src/server/mcp/tests.rs:11:18
+   |
+11 | use serde_json::{json, Value};
+   |                  ^^^^
+
+warning: unused import: `MemoryDocument`
+  --> src/workspace/state.rs:19:29
+   |
+19 |     qmd_memory::{QmdMemory, MemoryDocument, MemoryUsage, estimate_docume...
+   |                             ^^^^^^^^^^^^^^
+
+warning: use of deprecated struct `secrets::SecretsManager`: SecretsManager is deprecated. Use Clavis or another secure provider.
+  --> src/secrets/mod.rs:43:6
+   |
+43 | impl SecretsManager {
+   |      ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(deprecated)]` on by default
+
+warning: associated items `row_key`, `qjl_enabled_for_workspace`, `load_record_by_id`, `sync_memory_entities`, and `resolve_graph_seed_entities` are never used
+   --> src/memory/sqlite_vec_store/mod.rs:83:19
+    |
+ 42 | impl VecSqliteMemoryStore {
+    | ------------------------- associated items in this implementation
+...
+ 83 |     pub(crate) fn row_key(workspace_id: &str, memory_id: &str) -> String {
+    |                   ^^^^^^^
+...
+143 |     pub(crate) async fn qjl_enabled_for_workspace(workspace_id: &str) -...
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+190 |     pub(crate) async fn load_record_by_id(
+    |                         ^^^^^^^^^^^^^^^^^
+...
+213 |     pub(crate) async fn sync_memory_entities(
+    |                         ^^^^^^^^^^^^^^^^^^^^
+...
+224 |     pub(crate) async fn resolve_graph_seed_entities(
+    |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `upsert_vector` is never used
+  --> src/memory/sqlite_vec_store/backend_impl.rs:18:25
+   |
+17 | impl VecSqliteMemoryStore {
+   | ------------------------- method in this implementation
+18 |     pub(crate) async fn upsert_vector(
+   |                         ^^^^^^^^^^^^^
+
+warning: function `open_pool` is never used
+  --> src/memory/sqlite_vec_store/db.rs:11:21
+   |
+11 | pub(crate) async fn open_pool(path: &Path) -> Result<()> {
+   |                     ^^^^^^^^^
+
+warning: function `open_connection` is never used
+  --> src/memory/sqlite_vec_store/db.rs:17:21
+   |
+17 | pub(crate) async fn open_connection(_path: &Path) -> Result<Connection> {
+   |                     ^^^^^^^^^^^^^^^
+
+warning: constant `MCP_SESSION_HEADER` is never used
+  --> src/server/mcp/tests.rs:28:7
+   |
+28 | const MCP_SESSION_HEADER: &str = "mcp-session-id";
+   |       ^^^^^^^^^^^^^^^^^^
+
+warning: function `unique_test_path` is never used
+  --> src/server/mcp/tests.rs:30:4
+   |
+30 | fn unique_test_path(prefix: &str, suffix: &str) -> PathBuf {
+   |    ^^^^^^^^^^^^^^^^
+
+warning: function `test_state` is never used
+  --> src/server/mcp/tests.rs:35:10
+   |
+35 | async fn test_state() -> (AppState, WorkspaceContext) {
+   |          ^^^^^^^^^^
+
+warning: function `test_router` is never used
+  --> src/server/mcp/tests.rs:71:4
+   |
+71 | fn test_router(state: AppState, workspace: WorkspaceContext) -> Router {
+   |    ^^^^^^^^^^^
+
+warning: function `post_json` is never used
+  --> src/server/mcp/tests.rs:75:10
+   |
+75 | async fn post_json(app: Router, body: Value) -> axum::response::Response {
+   |          ^^^^^^^^^
+
+warning: `xavier` (lib) generated 19 warnings (run `cargo fix --lib -p xavier` to apply 9 suggestions)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.45s

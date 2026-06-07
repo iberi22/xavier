@@ -310,6 +310,15 @@ impl QmdMemory {
     pub async fn invalidate_cache(&self) {
         reader::invalidate_cache(self).await
     }
+
+    /// Find nearest neighbors for a given vector.
+    pub async fn nearest_neighbors_query(
+        &self,
+        query_vector: Vec<f32>,
+        limit: usize,
+    ) -> Result<Vec<MemoryDocument>> {
+        self.vsearch(query_vector, limit).await
+    }
 }
 
 // ── Free functions ──────────────────────────────────────────────────

@@ -120,10 +120,15 @@ impl MemoryManager {
     pub async fn auto_manage(&self) -> Result<usize> {
         let mut total_actions = 0;
 
+
         if self.config.auto_decay_enabled {
             let decay_result = self.decay_memories().await?;
             total_actions += decay_result.documents_affected;
+
+            // Reorganize after decay
+            let _ = self.flatten_reorganize().await;
         }
+
 
         if self.config.auto_consolidate_enabled {
             let consolidate_result = self.consolidate_memories().await?;

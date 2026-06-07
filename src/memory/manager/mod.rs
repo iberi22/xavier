@@ -15,6 +15,12 @@ pub mod actions;
 pub mod config;
 pub mod priority;
 pub mod quality;
+pub mod management;
+pub mod eviction;
+pub mod decay;
+pub mod consolidation;
+pub mod compression;
+pub mod tracking;
 
 // Re-export primary types and struct
 pub use core::MemoryManager;
