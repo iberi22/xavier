@@ -129,3 +129,54 @@ pub fn audit_chain_enabled() -> bool {
         .advanced
         .audit_chain_enabled
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_search_tokens_basic() {
+        let tokens = search_tokens("hello world test");
+        assert!(tokens.contains(&"hello".to_string()));
+        assert!(tokens.contains(&"world".to_string()));
+        assert!(tokens.contains(&"test".to_string()));
+    }
+
+    #[test]
+    fn test_search_tokens_filters_short() {
+        let tokens = search_tokens("a b c hello");
+        assert!(!tokens.contains(&"a".to_string()));
+        assert!(!tokens.contains(&"b".to_string()));
+        assert!(!tokens.contains(&"c".to_string()));
+        assert!(tokens.contains(&"hello".to_string()));
+    }
+
+    #[test]
+    fn test_search_tokens_deduplicates() {
+        let tokens = search_tokens("hello Hello HELLO");
+        assert_eq!(tokens.len(), 1);
+    }
+
+    #[test]
+    fn test_split_camel_case_simple() {
+        let words = split_camel_case("helloWorld");
+        assert_eq!(words, vec!["hello", "world"]);
+    }
+
+    #[test]
+    fn test_split_camel_case_multiple() {
+        let words = split_camel_case("aLargeCamelCaseWord");
+        assert_eq!(words, vec!["a", "large", "camel", "case", "word"]);
+    }
+
+    #[test]
+    fn test_split_camel_case_non_alpha() {
+        let words = split_camel_case("hello_world_test");
+        assert_eq!(words, vec!["hello", "world", "test"]);
+    }
+
+    #[test]
+    fn test_split_camel_case_empty() {
+        assert!(split_camel_case("").is_empty());
+    }
+}

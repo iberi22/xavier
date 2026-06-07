@@ -59,3 +59,52 @@ impl VecSqliteStoreConfig {
         )
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_default_constants() {
+        assert_eq!(DB_FILENAME, "xavier_memory_vec.db");
+        assert_eq!(DEFAULT_EMBEDDING_DIMENSIONS, 768);
+        assert_eq!(DEFAULT_RRF_K, 60);
+        assert_eq!(DEFAULT_QJL_THRESHOLD, 30_000);
+        assert!(DEFAULT_VECTOR_WEIGHT > 0.0);
+        assert!(DEFAULT_VECTOR_WEIGHT < 1.0);
+        assert!(DEFAULT_FTS_WEIGHT > 0.0);
+        assert!(DEFAULT_FTS_WEIGHT < 1.0);
+        assert!(DEFAULT_KG_WEIGHT > 0.0);
+        assert!(DEFAULT_KG_WEIGHT < 1.0);
+        assert_eq!(QJL_MAGIC, b"QJL2");
+    }
+
+    #[test]
+    fn test_weights_sum_to_one() {
+        let total = DEFAULT_VECTOR_WEIGHT + DEFAULT_FTS_WEIGHT + DEFAULT_KG_WEIGHT;
+        let diff = (total - 1.0).abs();
+        assert!(diff < 0.001, "fusion weights should sum to ~1.0, got {}", total);
+    }
+
+    #[test]
+    fn test_config_detail_format() {
+        let config = VecSqliteStoreConfig {
+            path: PathBuf::from("/tmp/test.db"),
+            embedding_dimensions: 384,
+        };
+        let detail = config.detail();
+        assert!(detail.contains("/tmp/test.db"));
+        assert!(detail.contains("384d"));
+    }
+
+    #[test]
+    fn test_config_construction() {
+        let config = VecSqliteStoreConfig {
+            path: PathBuf::from(":memory:"),
+            embedding_dimensions: DEFAULT_EMBEDDING_DIMENSIONS,
+        };
+        assert_eq!(config.embedding_dimensions, DEFAULT_EMBEDDING_DIMENSIONS);
+        assert_eq!(config.path, Path::new(":memory:"));
+    }
+}
