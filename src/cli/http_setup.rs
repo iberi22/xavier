@@ -16,7 +16,11 @@ use axum::{
 };
 use tracing::warn;
 
-pub async fn auth_middleware(req: Request<Body>, next: Next) -> Response {
+pub async fn auth_middleware(
+    State(state): State<CliState>,
+    req: Request<Body>,
+    next: Next,
+) -> Response {
     let expected_token = match resolve_http_token() {
         Ok(token) => token,
         Err(e) => {
@@ -38,18 +42,36 @@ pub async fn auth_middleware(req: Request<Body>, next: Next) -> Response {
                 .and_then(|value| value.strip_prefix("Bearer "))
         });
 
+    let provided_token_str = provided_token.unwrap_or("");
+
+    // 1. Check Root Token
     use subtle::ConstantTimeEq;
-    let provided_bytes = provided_token.unwrap_or("").as_bytes();
+    let provided_bytes = provided_token_str.as_bytes();
     let expected_bytes = expected_token.as_bytes();
     let is_match: bool = provided_bytes.ct_eq(expected_bytes).into();
-    if !is_match {
-        return json_response(
-            StatusCode::UNAUTHORIZED,
-            serde_json::json!({"status":"error","message":"Unauthorized"}),
-        );
+
+    if is_match {
+        let mut req = req;
+        req.extensions_mut().insert(SessionInfo { is_ephemeral: false });
+        return next.run(req).await;
     }
 
-    next.run(req).await
+    // 2. Check Ephemeral Session (Zero-Trust Frontend)
+    if state.session_manager.validate_session(provided_token_str) {
+        let mut req = req;
+        req.extensions_mut().insert(SessionInfo { is_ephemeral: true });
+        return next.run(req).await;
+    }
+
+    json_response(
+        StatusCode::UNAUTHORIZED,
+        serde_json::json!({"status":"error","message":"Unauthorized"}),
+    )
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SessionInfo {
+    pub is_ephemeral: bool,
 }
 
 pub async fn rate_limit_middleware(
