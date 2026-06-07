@@ -74,3 +74,107 @@ impl MemoryQueryPort for MemoryUseCase {
         self.inner.export(public_only).await
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::schema::MemoryLevel;
+    use chrono::Utc;
+
+    struct MockMemoryPort;
+
+    #[async_trait]
+    impl MemoryQueryPort for MockMemoryPort {
+        async fn search(
+            &self,
+            _query: &str,
+            _filters: Option<MemoryQueryFilters>,
+        ) -> anyhow::Result<Vec<MemoryRecord>> {
+            Ok(vec![])
+        }
+        async fn add(&self, record: MemoryRecord) -> anyhow::Result<String> {
+            Ok(record.id)
+        }
+        async fn delete(&self, _id: &str) -> anyhow::Result<Option<MemoryRecord>> {
+            Ok(None)
+        }
+        async fn get(&self, _id: &str) -> anyhow::Result<Option<MemoryRecord>> {
+            Ok(None)
+        }
+        async fn list(
+            &self,
+            _workspace_id: &str,
+            _limit: usize,
+        ) -> anyhow::Result<Vec<MemoryRecord>> {
+            Ok(vec![])
+        }
+        async fn export(&self, _public_only: bool) -> anyhow::Result<Vec<MemoryRecord>> {
+            Ok(vec![])
+        }
+    }
+
+    struct MockThreatDetector {
+        should_clean: bool,
+    }
+
+    #[async_trait]
+    impl ThreatDetectionPort for MockThreatDetector {
+        async fn scan_and_log(&self, _text: &str, _component: &str) -> anyhow::Result<bool> {
+            Ok(self.should_clean)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_memory_usecase_search_clean() {
+        let inner = Arc::new(MockMemoryPort);
+        let detector = Arc::new(MockThreatDetector { should_clean: true });
+        let usecase = MemoryUseCase::new(inner, Some(detector));
+
+        let result = usecase.search("query", None).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_memory_usecase_search_blocked() {
+        let inner = Arc::new(MockMemoryPort);
+        let detector = Arc::new(MockThreatDetector {
+            should_clean: false,
+        });
+        let usecase = MemoryUseCase::new(inner, Some(detector));
+
+        let result = usecase.search("bad query", None).await;
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Security policy violation detected in search query"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_memory_usecase_add_clean() {
+        let inner = Arc::new(MockMemoryPort);
+        let detector = Arc::new(MockThreatDetector { should_clean: true });
+        let usecase = MemoryUseCase::new(inner, Some(detector));
+
+        let record = MemoryRecord {
+            id: "1".to_string(),
+            content: "clean content".to_string(),
+            path: "test.txt".to_string(),
+            workspace_id: "default".to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            metadata: serde_json::json!({}),
+            embedding: vec![],
+            revision: 1,
+            primary: true,
+            parent_id: None,
+            cluster_id: None,
+            level: MemoryLevel::default(),
+            relation: None,
+            revisions: vec![],
+        };
+
+        let result = usecase.add(record).await;
+        assert!(result.is_ok());
+    }
+}
