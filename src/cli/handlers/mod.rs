@@ -5,6 +5,7 @@
 pub mod agent;
 pub mod code;
 pub mod memory;
+pub mod onboarding;
 pub mod panel;
 pub mod secrets;
 pub mod security;
@@ -15,6 +16,7 @@ pub mod workspace;
 pub use agent::*;
 pub use code::*;
 pub use memory::*;
+pub use onboarding::*;
 pub use panel::*;
 pub use secrets::*;
 pub use security::*;
