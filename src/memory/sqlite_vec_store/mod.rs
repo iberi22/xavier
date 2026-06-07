@@ -13,7 +13,6 @@ use crate::codebase::connection_manager::ConnectionManager;
 use crate::memory::schema::{MemoryLevel, MemoryQueryFilters};
 use crate::memory::sqlite_store::TABLE_MEMORIES;
 use crate::memory::store::{stable_key, HybridSearchMode, HybridSearchResult, MemoryRecord};
-use crate::ports::outbound::schema_init::SchemaInitializer;
 
 pub mod audit;
 pub mod backend_impl;
@@ -67,7 +66,7 @@ impl VecSqliteMemoryStore {
         };
 
         // Initialize schema
-        store.init_schema()?;
+        store.init_schema_async().await?;
 
         Ok(store)
     }
