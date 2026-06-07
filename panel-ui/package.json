@@ -10,6 +10,8 @@
     "biome:check": "biome check src/App.tsx src/main.tsx src/theme.ts src/styles.css src/components/QuestionCard.tsx src/components/DecisionCard.tsx src/components/ProjectCard.tsx playwright.config.ts tests/generative-ui.spec.ts",
     "biome:write": "biome check --write src/App.tsx src/main.tsx src/theme.ts src/styles.css src/components/QuestionCard.tsx src/components/DecisionCard.tsx src/components/ProjectCard.tsx playwright.config.ts tests/generative-ui.spec.ts",
     "typecheck": "tsc --noEmit -p tsconfig.generative.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "test:e2e:generative": "playwright test"
   },
   "dependencies": {
@@ -25,14 +27,19 @@
     "@astrojs/node": "^10.0.5",
     "@biomejs/biome": "^2.0.5",
     "@playwright/test": "^1.54.2",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
-    "@vitejs/plugin-react": "^5.0.0",
+    "@vitejs/plugin-react": "^5.2.0",
     "astro": "^6.1.6",
     "defu": "^6.1.5",
+    "jsdom": "^29.1.1",
     "picomatch": "^4.0.4",
     "postcss": "^8.5.10",
     "typescript": "^5.8.3",
-    "vite": "^8.0.13"
+    "vite": "^8.0.13",
+    "vitest": "^4.1.8"
   }
 }

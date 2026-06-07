@@ -19,6 +19,41 @@ impl HealthService {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tasks::session_sync_task::{SyncCheckResult, LAST_CHECK_RESULT};
+
+    #[tokio::test]
+    async fn test_get_health_status() {
+        let service = HealthService::new();
+
+        // Setup mock data in the static LAST_CHECK_RESULT
+        {
+            let mut result = LAST_CHECK_RESULT.write().unwrap();
+            *result = SyncCheckResult {
+                status: "ok".to_string(),
+                lag_ms: 123,
+                save_ok_rate: 0.99,
+                match_score: 0.95,
+                active_agents: 5,
+                timestamp_ms: 1000,
+                alerts: vec!["alert1".to_string()],
+            };
+        }
+
+        let status = service.get_health_status().await;
+
+        assert_eq!(status.status, "ok");
+        assert_eq!(status.lag_ms, 123);
+        assert_eq!(status.save_ok_rate, 0.99);
+        assert_eq!(status.match_score, 0.95);
+        assert_eq!(status.active_agents, 5);
+        assert_eq!(status.timestamp_ms, 1000);
+        assert_eq!(status.alerts, vec!["alert1".to_string()]);
+    }
+}
+
 impl Default for HealthService {
     fn default() -> Self {
         Self::new()
