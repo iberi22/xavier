@@ -9,18 +9,26 @@ use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-/// Resolve the XAVIER_TOKEN from the environment.
+use crate::secrets::vault::HardwareVault;
+
+/// Resolve the XAVIER_TOKEN from the environment or hardware vault.
 ///
-/// If `XAVIER_TOKEN` is set, returns its value.
-///
-/// If `XAVIER_TOKEN` is unset, returns an error.
+/// If `XAVIER_TOKEN` is set in the environment, returns its value.
+/// Otherwise, attempts to retrieve it from the system hardware vault.
 pub fn resolve_xavier_token() -> Result<String> {
+    // 1. Try environment variable
     if let Ok(token) = std::env::var("XAVIER_TOKEN") {
         return Ok(token);
     }
 
+    // 2. Try hardware vault
+    let vault = HardwareVault::new("xavier");
+    if let Ok(token) = vault.get_secret("XAVIER_TOKEN") {
+        return Ok(token);
+    }
+
     Err(anyhow!(
-        "XAVIER_TOKEN environment variable is not set. A secure token is required for all operations."
+        "XAVIER_TOKEN is not set in environment or hardware vault. A secure token is required for all operations."
     ))
 }
 

@@ -98,6 +98,8 @@ zerocopy = "0.8"
 walkdir = "2"
 libc = "0.2"
 
+# Hardware Security
+keyring = "3"
 
 # For WASM web deployment
 wasm-bindgen = { version = "0.2", optional = true }
