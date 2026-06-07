@@ -673,13 +673,21 @@ mod tests {
             output_dir: output_dir.path().to_path_buf(),
         };
         ssg.build()?;
-        assert!(!output_dir.path().join("INDEX.html").exists());
+
+        // On case-insensitive filesystems, INDEX.html and index.html are the same file.
+        // Since the SSG always generates index.html, we cannot assert INDEX.html does not exist.
+        // We skip INDEX.html check and focus on other non-post files.
         assert!(!output_dir.path().join("README.html").exists());
         assert!(!output_dir.path().join("index.md.html").exists());
         assert!(!output_dir.path().join("readme.md.html").exists());
         assert!(output_dir.path().join("2026-05-10-real-post.html").exists());
+
         let index_content = fs::read_to_string(output_dir.path().join("index.html"))?;
         assert!(index_content.contains("Real Post"));
+
+        // Verify skipped files are not in the index list
+        assert!(!index_content.contains(">Index<"));
+        assert!(!index_content.contains(">Readme<"));
         Ok(())
     }
 
