@@ -421,6 +421,7 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
     use tower::util::ServiceExt;
 
+    use ulid::Ulid;
     use crate::{
         agents::RuntimeConfig,
         memory::file_indexer::{FileIndexer, FileIndexerConfig},
@@ -437,7 +438,8 @@ mod tests {
     }
 
     async fn test_state() -> (AppState, WorkspaceContext) {
-        let db_path = unique_test_path("xavier-v1-test", "code_graph.db");
+        let unique_id = Ulid::new().to_string();
+        let db_path = unique_test_path(&format!("xavier-v1-test-{}", unique_id), "code_graph.db");
         let code_db = Arc::new(
             code_graph::db::CodeGraphDB::new(&db_path)
                 .expect("failed to create CodeGraphDB for test"),
@@ -447,8 +449,8 @@ mod tests {
         let workspace_registry = Arc::new(WorkspaceRegistry::new());
         let workspace = WorkspaceState::new(
             WorkspaceConfig {
-                id: "test".to_string(),
-                token: "test-token".to_string(),
+                id: format!("test-{}", unique_id),
+                token: format!("test-token-{}", unique_id),
                 plan: crate::workspace::PlanTier::Personal,
                 memory_backend: crate::memory::store::MemoryBackend::File,
                 storage_limit_bytes: Some(10 * 1024 * 1024),
@@ -459,7 +461,7 @@ mod tests {
                 sync_policy: crate::workspace::SyncPolicy::CloudMirror,
             },
             RuntimeConfig::default(),
-            unique_test_path("xavier-v1-panel", "threads"),
+            unique_test_path(&format!("xavier-v1-panel-{}", unique_id), "threads"),
         )
         .await
         .expect("failed to create WorkspaceState for test");
@@ -468,7 +470,7 @@ mod tests {
             .await
             .expect("failed to insert workspace into registry");
         let workspace = workspace_registry
-            .authenticate("test-token")
+            .authenticate(&format!("test-token-{}", unique_id))
             .await
             .expect("failed to authenticate with test token");
 
