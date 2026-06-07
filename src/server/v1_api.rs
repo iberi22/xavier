@@ -452,7 +452,7 @@ mod tests {
                 id: format!("test-{}", unique_id),
                 token: format!("test-token-{}", unique_id),
                 plan: crate::workspace::PlanTier::Personal,
-                memory_backend: crate::memory::store::MemoryBackend::File,
+                memory_backend: crate::memory::store::MemoryBackend::Memory,
                 storage_limit_bytes: Some(10 * 1024 * 1024),
                 request_limit: Some(10_000),
                 request_unit_limit: Some(20_000),
@@ -695,11 +695,15 @@ mod tests {
         let _prev_emb2 = std::env::var("XAVIER_EMBEDDER").ok();
         let _prev_key = std::env::var("OPENAI_API_KEY").ok();
         let _prev_model = std::env::var("XAVIER_MODEL_PROVIDER").ok();
+        let _prev_endpoint = std::env::var("XAVIER_EMBEDDING_ENDPOINT").ok();
+        let _prev_emb_model = std::env::var("XAVIER_EMBEDDING_MODEL").ok();
         std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
         std::env::remove_var("XAVIER_EMBEDDING_URL");
         std::env::remove_var("XAVIER_EMBEDDER");
         std::env::remove_var("OPENAI_API_KEY");
         std::env::remove_var("XAVIER_MODEL_PROVIDER");
+        std::env::remove_var("XAVIER_EMBEDDING_ENDPOINT");
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
 
         let (state, workspace) = test_state().await;
         // DEBUG: list docs after test_state creation
