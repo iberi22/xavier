@@ -1,3 +1,8 @@
+//! Anthropic API provider integration for Xavier agents.
+//!
+//! Implements the LLM provider interface for Anthropic's Claude models,
+//! handling API communication, streaming responses, and rate limiting.
+
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde_json::json;

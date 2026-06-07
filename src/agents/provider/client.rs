@@ -1,3 +1,8 @@
+//! HTTP client abstraction for LLM provider API calls.
+//!
+//! Provides a shared reqwest client with configurable timeouts,
+//! retry logic, and connection management for all provider backends.
+
 use anyhow::{anyhow, Result};
 use reqwest::Client;
 use std::time::Duration;

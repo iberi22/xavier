@@ -1,3 +1,9 @@
+//! Entity extraction from memory content.
+//!
+//! Implements pattern-based and NLP-based entity extraction,
+//! identifying named entities, relationships, and topics from
+//! unstructured memory text for the entity graph.
+
 use super::types::*;
 use once_cell::sync::Lazy;
 use regex::Regex;

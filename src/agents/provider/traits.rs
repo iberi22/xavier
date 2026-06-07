@@ -1,3 +1,8 @@
+//! Provider trait definitions and abstractions.
+//!
+//! Defines the `Provider` trait and related types that all LLM providers
+//! must implement, enabling polymorphic provider usage throughout the system.
+
 use anyhow::Result;
 use async_trait::async_trait;
 use crate::agents::system1::RetrievedDocument;

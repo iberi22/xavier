@@ -1,3 +1,9 @@
+//! Memory quality scoring and evaluation.
+//!
+//! Implements memory quality metrics including recency scoring,
+//! relevance evaluation, completeness checks, and quality-based
+//! retention prioritization.
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

@@ -1,3 +1,8 @@
+//! Integration tests for the message bus.
+//!
+//! Tests message bus functionality including agent registration,
+//! message routing, pub/sub delivery, and error handling.
+
 use super::*;
 use std::collections::HashMap;
 
