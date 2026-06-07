@@ -42,7 +42,6 @@ use xavier::memory::store::{MemoryRecord, MemoryStore};
 use xavier::ports::inbound::{
     AgentLifecyclePort, InputSecurityPort, MemoryQueryPort, SecurityScanPort, TimeMetricsPort,
 };
-use xavier::ports::outbound::schema_init::SchemaInitializer;
 use xavier::security::threat_store::SecurityThreatStore;
 use xavier::server::panel::{panel_asset, panel_index};
 use xavier::tasks::session_sync_task::SessionSyncTask;
@@ -89,11 +88,10 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     let rate_manager = Arc::new(RateLimitManager::new());
     let threat_store = Arc::new(SecurityThreatStore::new());
 
-    store.init_schema()?;
-    time_store.init_schema()?;
-    audit_logger.init_schema()?;
-    rate_manager.init_schema()?;
-    threat_store.init_schema()?;
+    time_store.init_schema_async().await?;
+    audit_logger.init_schema_async().await?;
+    rate_manager.init_schema_async().await?;
+    threat_store.init_schema_async().await?;
 
     tokio::spawn(async move {
         loop {
