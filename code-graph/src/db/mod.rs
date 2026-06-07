@@ -161,7 +161,6 @@ impl CodeGraphDB {
                 created_at DATETIME DEFAULT CURRENT_TIMESTAMP
             );
 
-            CREATE UNIQUE INDEX IF NOT EXISTS idx_symbols_stable_id ON symbols(stable_id);
             CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
             CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind);
             CREATE INDEX IF NOT EXISTS idx_symbols_lang ON symbols(lang);
@@ -217,7 +216,21 @@ impl CodeGraphDB {
 
         drop(conn);
         self.ensure_column("symbols", "stable_id", "TEXT NOT NULL DEFAULT ''")?;
+        self.ensure_column("symbols", "signature", "TEXT")?;
+        self.ensure_column("symbols", "parent", "TEXT")?;
         self.ensure_column("symbols", "complexity", "REAL")?;
+
+        // Create indexes that might depend on added columns
+        {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+            conn.execute_batch(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_symbols_stable_id ON symbols(stable_id);",
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+        }
 
         info!("Database schema initialized");
         Ok(())
@@ -917,6 +930,63 @@ mod tests {
         db.insert_symbol(&symbol).expect("second insert");
 
         let results = db.find_symbols("main", 10).expect("find");
+        assert_eq!(results.symbols.len(), 1);
+        assert!(results.symbols[0].stable_id.is_some());
+    }
+
+    #[test]
+    fn handles_schema_migration_from_missing_stable_id() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let db_path = temp_dir.path().join("test.db");
+
+        // Create a database with old schema (no stable_id)
+        {
+            let conn = Connection::open(&db_path).expect("failed to open db");
+            conn.execute_batch(
+                "CREATE TABLE symbols (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    lang TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    start_line INTEGER NOT NULL,
+                    end_line INTEGER NOT NULL,
+                    start_col INTEGER NOT NULL,
+                    end_col INTEGER NOT NULL
+                );",
+            )
+            .expect("failed to create old schema");
+        }
+
+        // Try to initialize CodeGraphDB, which should trigger schema migration
+        let db = CodeGraphDB::new(&db_path);
+
+        assert!(
+            db.is_ok(),
+            "Failed to initialize CodeGraphDB with old schema: {:?}",
+            db.err()
+        );
+
+        let db = db.unwrap();
+        // Check if stable_id was added
+        let symbol = Symbol {
+            id: None,
+            stable_id: None,
+            name: "test".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "test.rs".to_string(),
+            start_line: 1,
+            end_line: 1,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            parent: None,
+            complexity: None,
+        };
+
+        db.insert_symbol(&symbol).expect("failed to insert symbol");
+        let results = db.find_symbols("test", 1).expect("failed to find symbols");
         assert_eq!(results.symbols.len(), 1);
         assert!(results.symbols[0].stable_id.is_some());
     }
