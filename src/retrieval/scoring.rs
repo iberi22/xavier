@@ -103,3 +103,57 @@ pub fn score_single_semantic(entity: &EntityRecord, query_lower: &str, now: chro
         Some(ScoredResult { id: entity.id.clone(), content: entity.name.clone(), score: final_score, source: "semantic".to_string(), path: format!("entities/{}", entity.id), updated_at: updated_at_ms })
     } else { None }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_recency_boost_zero_weight_returns_one() {
+        let now = chrono::Utc::now();
+        let result = calculate_recency_boost_factor(Some(now.timestamp_millis()), now, 0.0, 24.0);
+        assert_eq!(result, 1.0);
+    }
+
+    #[test]
+    fn test_recency_boost_no_timestamp_returns_one() {
+        let now = chrono::Utc::now();
+        let result = calculate_recency_boost_factor(None, now, 0.5, 24.0);
+        assert_eq!(result, 1.0);
+    }
+
+    #[test]
+    fn test_recency_boost_fresh_returns_boosted() {
+        let now = chrono::Utc::now();
+        let result = calculate_recency_boost_factor(Some(now.timestamp_millis()), now, 0.5, 24.0);
+        // e^0 = 1, so 1 + 0.5 = 1.5
+        assert!((result - 1.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_recency_boost_old_decays() {
+        let now = chrono::Utc::now();
+        let hours_ago = chrono::Utc::now() - chrono::Duration::hours(48);
+        let result = calculate_recency_boost_factor(Some(hours_ago.timestamp_millis()), now, 0.5, 24.0);
+        // e^(-48/24) = e^-2 ≈ 0.135, so 1 + 0.5 * 0.135 ≈ 1.068
+        assert!(result > 1.0);
+        assert!(result < 1.5);
+    }
+
+    #[test]
+    fn test_recency_boost_negative_half_life() {
+        let now = chrono::Utc::now();
+        let result = calculate_recency_boost_factor(Some(now.timestamp_millis()), now, 0.5, -1.0);
+        // half_life <= 0, returns 1 + recency_weight
+        assert!((result - 1.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_recency_boost_future_timestamp_uses_now() {
+        let now = chrono::Utc::now();
+        let future = now + chrono::Duration::hours(24);
+        let result = calculate_recency_boost_factor(Some(future.timestamp_millis()), now, 0.5, 24.0);
+        // age is clamped to 0
+        assert!((result - 1.5).abs() < 0.001);
+    }
+}
