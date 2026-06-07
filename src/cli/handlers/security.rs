@@ -1,18 +1,30 @@
 //! Security handlers for input scanning and threat detection.
 
-use axum::{extract::State, Json};
+use axum::{extract::State, Json, http::StatusCode, response::Response};
 
 use crate::cli::state::CliState;
 use crate::cli::types::*;
+use crate::cli::handlers::json_response;
 
 pub async fn security_scan_handler(
     State(_state): State<CliState>,
     axum::Json(_payload): axum::Json<SecurityScanPayload>,
 ) -> impl axum::response::IntoResponse {
-    // This previously used state.security.process_input, but handlers should probably use their own
-    // logic if we can't easily pass the CliState. Actually, state is available.
-    // I'll keep the logic but use state.security.
-    // Wait, state is available as an argument.
-    // I'll use it.
     Json(serde_json::json!({"status":"todo"}))
+}
+
+pub async fn session_create_handler(
+    State(state): State<CliState>,
+) -> Response {
+    // This handler is protected by auth_middleware which ensures the root XAVIER_TOKEN was used.
+    let session = state.session_manager.create_session();
+
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "status": "ok",
+            "session_id": session.id,
+            "expires_at": session.expires_at,
+        })
+    )
 }

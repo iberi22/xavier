@@ -136,6 +136,7 @@ impl Cli {
             }
             Command::Token { cmd } => token::handle_token_command(cmd.clone()).await,
             Command::Secrets { cmd } => secrets::handle_secrets_command(cmd.clone()).await,
+            Command::Vault { cmd } => secrets::handle_vault_command(cmd.clone()).await,
             Command::Export { public, output } => {
                 let base_url = resolve_base_url();
                 let token = require_xavier_token()?;
