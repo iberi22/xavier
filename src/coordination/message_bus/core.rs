@@ -1,3 +1,8 @@
+//! Core message bus implementation.
+//!
+//! Provides the central event-driven message bus used for agent coordination,
+//! with support for pub/sub messaging, topic routing, and lifecycle events.
+
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};

@@ -1,3 +1,9 @@
+//! Memory priority and scoring system.
+//!
+//! Defines memory priority levels and scoring algorithms used
+//! by the memory manager to determine which memories to retain,
+//! consolidate, or evict during maintenance cycles.
+
 use serde::{Deserialize, Serialize};
 
 /// Memory priority levels - determines retention policy

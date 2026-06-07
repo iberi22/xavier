@@ -1,3 +1,9 @@
+//! Entity graph type definitions.
+//!
+//! Defines the core data structures for the entity graph, including
+//! entities, relationships, property types, and serialization formats
+//! used throughout the knowledge graph layer.
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 

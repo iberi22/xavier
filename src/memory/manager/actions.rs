@@ -1,3 +1,9 @@
+//! Memory manager action types and event logging.
+//!
+//! Defines the action types that the memory manager can perform,
+//! including consolidation triggers, compression events, and
+//! eviction operations.
+
 use serde::{Deserialize, Serialize};
 
 /// Action taken by memory manager
