@@ -2,25 +2,23 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+use crate::codebase::connection_manager::ConnectionManager;
 use crate::memory::sqlite_store::TABLE_MEMORIES;
 use crate::ports::outbound::schema_init::SchemaInitializer;
 use anyhow::Result;
 use rusqlite::{params, Connection};
-use crate::codebase::connection_manager::ConnectionManager;
 
 use super::{vector, VecSqliteMemoryStore};
 
 impl SchemaInitializer for VecSqliteMemoryStore {
     fn init_schema(&self) -> Result<()> {
         match tokio::runtime::Handle::try_current() {
-            Ok(_) => {
-                tokio::task::block_in_place(|| {
-                    let rt = tokio::runtime::Builder::new_current_thread()
-                        .build()
-                        .map_err(|e| anyhow::anyhow!("failed to create temporary runtime: {}", e))?;
-                    rt.block_on(self.init_schema_async())
-                })
-            }
+            Ok(_) => tokio::task::block_in_place(|| {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .map_err(|e| anyhow::anyhow!("failed to create temporary runtime: {}", e))?;
+                rt.block_on(self.init_schema_async())
+            }),
             Err(_) => {
                 let runtime = tokio::runtime::Runtime::new()
                     .map_err(|e| anyhow::anyhow!("failed to create tokio runtime: {}", e))?;
@@ -263,14 +261,19 @@ impl VecSqliteMemoryStore {
 
     fn migrate_embeddings_on_startup(conn: &Connection) -> Result<()> {
         // 1. Check if we already migrated embeddings (meaning memory_embeddings is not empty)
-        let current_count: i64 = conn.query_row("SELECT COUNT(*) FROM memory_embeddings", (), |row| row.get(0))?;
+        let current_count: i64 =
+            conn.query_row("SELECT COUNT(*) FROM memory_embeddings", (), |row| {
+                row.get(0)
+            })?;
 
         if current_count > 0 {
             return Ok(());
         }
 
         // 2. Query all existing memories with non-null embeddings
-        let mut select_stmt = conn.prepare("SELECT id, workspace_id, embedding FROM memory_records WHERE embedding IS NOT NULL")?;
+        let mut select_stmt = conn.prepare(
+            "SELECT id, workspace_id, embedding FROM memory_records WHERE embedding IS NOT NULL",
+        )?;
         let mut select_rows = select_stmt.query(())?;
 
         let mut migrated = 0;

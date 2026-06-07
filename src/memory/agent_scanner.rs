@@ -82,7 +82,10 @@ impl AgentScanner {
             }
         }
 
-        info!("✅ Found {} agent conversation sessions.", all_sessions.len());
+        info!(
+            "✅ Found {} agent conversation sessions.",
+            all_sessions.len()
+        );
         Ok(all_sessions)
     }
 
@@ -98,7 +101,7 @@ impl AgentScanner {
             if let Ok(mut entries) = fs::read_dir(&path).await {
                 while let Ok(Some(entry)) = entries.next_entry().await {
                     let entry_path = entry.path();
-                    
+
                     if entry_path.is_dir() {
                         stack.push(entry_path);
                     } else if entry_path.is_file() {
@@ -106,12 +109,16 @@ impl AgentScanner {
                         if let Some(ext) = entry_path.extension().and_then(|e| e.to_str()) {
                             match ext {
                                 "vscdb" | "sqlite" | "db" => {
-                                    if let Ok(Some(session)) = self.extract_from_sqlite(&entry_path).await {
+                                    if let Ok(Some(session)) =
+                                        self.extract_from_sqlite(&entry_path).await
+                                    {
                                         sessions.push(session);
                                     }
                                 }
                                 "json" | "jsonl" => {
-                                    if let Ok(Some(session)) = self.extract_from_json(&entry_path).await {
+                                    if let Ok(Some(session)) =
+                                        self.extract_from_json(&entry_path).await
+                                    {
                                         sessions.push(session);
                                     }
                                 }
@@ -132,14 +139,15 @@ impl AgentScanner {
         // Run sqlite blocking IO in spawn_blocking to not block the tokio reactor
         let result = tokio::task::spawn_blocking(move || {
             let conn = Connection::open_with_flags(
-                &path_clone, 
-                OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI
-            ).ok()?;
+                &path_clone,
+                OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI,
+            )
+            .ok()?;
 
             // Attempt to read from common vscode/cursor key-value tables
             // This is a generic heuristic: look for keys containing 'chat' or 'cursor'
             let mut stmt = conn.prepare("SELECT key, value FROM ItemTable").ok()?;
-            
+
             let mut rows = stmt.query([]).ok()?;
             let mut messages = Vec::new();
             let updated_at = chrono::Utc::now().to_rfc3339();
@@ -153,7 +161,11 @@ impl AgentScanner {
                     if value.contains("\"role\"") && value.contains("\"content\"") {
                         messages.push(AgentMessage {
                             role: "extracted_data".to_string(),
-                            content: format!("Found fragment in {}: {}", key, value.chars().take(2000).collect::<String>()),
+                            content: format!(
+                                "Found fragment in {}: {}",
+                                key,
+                                value.chars().take(2000).collect::<String>()
+                            ),
                         });
                     }
                 }
@@ -170,17 +182,22 @@ impl AgentScanner {
             } else {
                 None
             }
-        }).await.unwrap_or(None);
-        
+        })
+        .await
+        .unwrap_or(None);
+
         Ok(result)
     }
 
     /// Extracción genérica de JSON (e.g. Copilot chat history)
     async fn extract_from_json(&self, path: &Path) -> Result<Option<AgentSession>> {
         let content = fs::read_to_string(path).await?;
-        
+
         // Naive heuristic for JSON that looks like chat history
-        if content.contains("\"role\"") && content.contains("\"content\"") && content.contains("\"user\"") {
+        if content.contains("\"role\"")
+            && content.contains("\"content\"")
+            && content.contains("\"user\"")
+        {
             // Attempt generic parsing
             let messages = vec![AgentMessage {
                 role: "raw_json_extract".to_string(),

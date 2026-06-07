@@ -11,13 +11,13 @@
 //!
 //! Based on: RESEARCH_agent_coordination.md
 
-pub mod core;
-pub mod handlers;
 pub mod agents;
-pub mod routing;
-pub mod errors;
-pub mod metrics;
+pub mod core;
 pub mod dlq;
+pub mod errors;
+pub mod handlers;
+pub mod metrics;
+pub mod routing;
 
 // Backward compatibility re-exports for modules
 pub use handlers as dispatch;
@@ -30,17 +30,14 @@ pub mod types {
 #[cfg(test)]
 mod tests;
 
+pub use core::*;
+pub use dlq::*;
 pub use errors::*;
 pub use metrics::*;
-pub use dlq::*;
-pub use core::*;
-pub use routing::*;
-pub use handlers::*;
-pub use agents::*;
 
-use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use ulid::Ulid;
 
 /// Message priority levels

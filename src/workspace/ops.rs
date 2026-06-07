@@ -2,12 +2,12 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+use crate::memory::store::{FileMemoryStore, MemoryStore};
+use crate::settings::XavierSettings;
+use anyhow::Result;
 use std::path::{Path, PathBuf};
-use anyhow::{Result};
 use std::sync::Arc;
 use tokio::fs;
-use crate::memory::store::{MemoryStore, FileMemoryStore};
-use crate::settings::XavierSettings;
 
 #[derive(Debug)]
 pub struct FileMigrationResult {
@@ -18,7 +18,11 @@ pub struct FileMigrationResult {
 pub fn resolve_file_store_path(workspace_root: &Path) -> PathBuf {
     let settings = XavierSettings::current();
     let path = PathBuf::from(&settings.memory.file_path);
-    if path.is_absolute() { path } else { workspace_root.join(&settings.memory.file_path) }
+    if path.is_absolute() {
+        path
+    } else {
+        workspace_root.join(&settings.memory.file_path)
+    }
 }
 
 pub fn durable_migration_marker_path(file_store_path: &Path) -> PathBuf {
@@ -52,7 +56,10 @@ pub async fn migrate_file_store_if_needed(
     }
 
     if !fs::try_exists(file_store_path).await.unwrap_or(false) {
-        return Ok(FileMigrationResult { migrated: false, detail: "no legacy file store found".to_string() });
+        return Ok(FileMigrationResult {
+            migrated: false,
+            detail: "no legacy file store found".to_string(),
+        });
     }
 
     let legacy_store = FileMemoryStore::new(file_store_path).await?;
@@ -69,10 +76,20 @@ pub async fn migrate_file_store_if_needed(
             || !legacy_state.checkpoints.is_empty());
 
     if should_import {
-        for record in legacy_state.memories.clone() { target_store.put(record).await?; }
-        target_store.save_beliefs(workspace_id, legacy_state.beliefs.clone()).await?;
-        for token in legacy_state.session_tokens.clone() { target_store.save_session_token(workspace_id, token).await?; }
-        for checkpoint in legacy_state.checkpoints.clone() { target_store.save_checkpoint(workspace_id, checkpoint).await?; }
+        for record in legacy_state.memories.clone() {
+            target_store.put(record).await?;
+        }
+        target_store
+            .save_beliefs(workspace_id, legacy_state.beliefs.clone())
+            .await?;
+        for token in legacy_state.session_tokens.clone() {
+            target_store.save_session_token(workspace_id, token).await?;
+        }
+        for checkpoint in legacy_state.checkpoints.clone() {
+            target_store
+                .save_checkpoint(workspace_id, checkpoint)
+                .await?;
+        }
     }
 
     let detail = serde_json::json!({
@@ -86,5 +103,8 @@ pub async fn migrate_file_store_if_needed(
     }).to_string();
     fs::write(marker_path, &detail).await?;
 
-    Ok(FileMigrationResult { migrated: should_import, detail })
+    Ok(FileMigrationResult {
+        migrated: should_import,
+        detail,
+    })
 }

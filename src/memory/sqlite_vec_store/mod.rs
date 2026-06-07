@@ -9,11 +9,11 @@ use anyhow::Result;
 use rusqlite::params;
 use tokio::sync::broadcast;
 
+use crate::codebase::connection_manager::ConnectionManager;
 use crate::memory::schema::{MemoryLevel, MemoryQueryFilters};
 use crate::memory::sqlite_store::TABLE_MEMORIES;
 use crate::memory::store::{stable_key, HybridSearchMode, HybridSearchResult, MemoryRecord};
 use crate::ports::outbound::schema_init::SchemaInitializer;
-use crate::codebase::connection_manager::ConnectionManager;
 
 pub mod audit;
 pub mod backend_impl;
@@ -80,6 +80,7 @@ impl VecSqliteMemoryStore {
         utils::configured_qjl_threshold()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn row_key(workspace_id: &str, memory_id: &str) -> String {
         stable_key("sqlite_mem", &[workspace_id, memory_id])
     }
@@ -95,16 +96,12 @@ impl VecSqliteMemoryStore {
             content: row.get(3)?,
             metadata: serde_json::from_str(&metadata_str).unwrap_or_default(),
             embedding: vector::deserialize_embedding(&embedding_blob),
-            created_at: chrono::DateTime::parse_from_rfc3339(
-                &row.get::<_, String>(6)?,
-            )
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-            .unwrap_or_else(|_| chrono::Utc::now()),
-            updated_at: chrono::DateTime::parse_from_rfc3339(
-                &row.get::<_, String>(7)?,
-            )
-            .map(|dt| dt.with_timezone(&chrono::Utc))
-            .unwrap_or_else(|_| chrono::Utc::now()),
+            created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(6)?)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .unwrap_or_else(|_| chrono::Utc::now()),
+            updated_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(7)?)
+                .map(|dt| dt.with_timezone(&chrono::Utc))
+                .unwrap_or_else(|_| chrono::Utc::now()),
             revision: row.get(8)?,
             primary: row.get::<_, i32>(9)? != 0,
             parent_id: row.get::<_, Option<String>>(10)?,
@@ -140,15 +137,20 @@ impl VecSqliteMemoryStore {
         utils::audit_chain_enabled()
     }
 
+    #[allow(dead_code)]
     pub(crate) async fn qjl_enabled_for_workspace(workspace_id: &str) -> bool {
         let threshold = Self::configured_qjl_threshold();
         let workspace_id = workspace_id.to_string();
 
-        let result = ConnectionManager::global().with_conn("vec_store", move |conn| {
-            let mut stmt = conn.prepare("SELECT COUNT(*) FROM memory_embeddings WHERE workspace_id = ?")?;
-            let current_vectors: usize = stmt.query_row(params![workspace_id], |row| row.get(0))?;
-            Ok(current_vectors >= threshold)
-        }).await;
+        let result = ConnectionManager::global()
+            .with_conn("vec_store", move |conn| {
+                let mut stmt =
+                    conn.prepare("SELECT COUNT(*) FROM memory_embeddings WHERE workspace_id = ?")?;
+                let current_vectors: usize =
+                    stmt.query_row(params![workspace_id], |row| row.get(0))?;
+                Ok(current_vectors >= threshold)
+            })
+            .await;
 
         result.unwrap_or(false)
     }
@@ -187,6 +189,7 @@ impl VecSqliteMemoryStore {
         })
     }
 
+    #[allow(dead_code)]
     pub(crate) async fn load_record_by_id(
         workspace_id: &str,
         memory_id: &str,
@@ -210,17 +213,21 @@ impl VecSqliteMemoryStore {
         }).await
     }
 
+    #[allow(dead_code)]
     pub(crate) async fn sync_memory_entities(
         workspace_id: &str,
         record: &MemoryRecord,
     ) -> Result<()> {
         let workspace_id = workspace_id.to_string();
         let record = record.clone();
-        ConnectionManager::global().with_conn("vec_store", move |conn| {
-            graph::sync_memory_entities(conn, &workspace_id, &record)
-        }).await
+        ConnectionManager::global()
+            .with_conn("vec_store", move |conn| {
+                graph::sync_memory_entities(conn, &workspace_id, &record)
+            })
+            .await
     }
 
+    #[allow(dead_code)]
     pub(crate) async fn resolve_graph_seed_entities(
         &self,
         workspace_id: &str,
@@ -230,9 +237,11 @@ impl VecSqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let source = source.clone();
         let query = query.to_string();
-        ConnectionManager::global().with_conn("vec_store", move |conn| {
-            graph::resolve_graph_seed_entities(conn, &workspace_id, &source, &query)
-        }).await
+        ConnectionManager::global()
+            .with_conn("vec_store", move |conn| {
+                graph::resolve_graph_seed_entities(conn, &workspace_id, &source, &query)
+            })
+            .await
     }
 
     pub async fn hybrid_search_with_embedding(

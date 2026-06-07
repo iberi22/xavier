@@ -902,9 +902,7 @@ mod tests {
         let docs = Arc::new(tokio::sync::RwLock::new(vec![]));
         let memory = Arc::new(QmdMemory::new_with_workspace(docs, "test".to_string()));
 
-        let builder = RuntimeBuilder::new()
-            .with_memory(memory)
-            .with_timeout(10);
+        let builder = RuntimeBuilder::new().with_memory(memory).with_timeout(10);
 
         let runtime = builder.build().unwrap();
         assert_eq!(runtime.config.timeout_seconds, 10);
@@ -918,6 +916,9 @@ mod tests {
         });
 
         assert_eq!(config.model_provider.as_deref(), Some("local"));
-        assert_eq!(config.model_url.as_deref(), Some("http://localhost:1234/v1"));
+        assert_eq!(
+            config.model_url.as_deref(),
+            Some("http://localhost:1234/v1")
+        );
     }
 }

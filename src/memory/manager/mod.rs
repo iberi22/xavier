@@ -1,4 +1,4 @@
-﻿//! Memory Manager - Intelligent Memory Management System
+//! Memory Manager - Intelligent Memory Management System
 //!
 //! Provides autonomous memory lifecycle management:
 //! - Memory Prioritization (Critical → Ephemeral)
@@ -9,18 +9,18 @@
 //!
 //! Split into focused sub-modules.
 
-pub mod core;
-pub mod types;
 pub mod actions;
+pub mod compression;
 pub mod config;
+pub mod consolidation;
+pub mod core;
+pub mod decay;
+pub mod eviction;
+pub mod management;
 pub mod priority;
 pub mod quality;
-pub mod management;
-pub mod eviction;
-pub mod decay;
-pub mod consolidation;
-pub mod compression;
 pub mod tracking;
+pub mod types;
 
 // Re-export primary types and struct
 pub use core::MemoryManager;

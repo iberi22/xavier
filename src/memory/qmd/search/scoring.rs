@@ -1,11 +1,8 @@
-﻿//! Lexical scoring and contextual boost functions for QMD search.
+//! Lexical scoring and contextual boost functions for QMD search.
 //!
 //! Computes relevance scores for documents against a query using
 //! lexical matching, metadata signals, and time-based decay/boost.
 
-use regex::Regex;
-
-use crate::memory::qmd_memory::config::*;
 use crate::memory::qmd_memory::types::MemoryDocument;
 use crate::memory::qmd_memory::utils::*;
 use crate::memory::schema::{EvidenceKind, MemoryKind};

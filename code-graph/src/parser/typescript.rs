@@ -20,9 +20,9 @@ impl TypeScriptParser {
     pub fn new(lang: Language) -> Result<Self> {
         let mut parser = Parser::new();
         let grammar = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
-        parser
-            .set_language(&grammar)
-            .map_err(|e| GraphError::TreeSitter(format!("failed to set TypeScript language: {}", e)))?;
+        parser.set_language(&grammar).map_err(|e| {
+            GraphError::TreeSitter(format!("failed to set TypeScript language: {}", e))
+        })?;
         Ok(Self { parser, lang })
     }
 

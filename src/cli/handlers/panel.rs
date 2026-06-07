@@ -7,11 +7,9 @@ use axum::{
     Json,
 };
 
-use crate::cli::state::CliState;
 use crate::cli::handlers::json_response;
-use xavier::server::panel::{
-    CreateThreadRequest, PanelChatRequest, PanelChatResponse,
-};
+use crate::cli::state::CliState;
+use xavier::server::panel::{CreateThreadRequest, PanelChatRequest, PanelChatResponse};
 
 pub async fn panel_list_threads(State(state): State<CliState>) -> Response {
     match state.panel_store.list_threads(50).await {
@@ -42,11 +40,17 @@ pub async fn panel_create_thread(
         .or(payload.message)
         .unwrap_or_else(|| "New Thread".to_string());
 
-    match state.panel_store.create_thread(Some(&title_hint), None, Some("cli")).await {
+    match state
+        .panel_store
+        .create_thread(Some(&title_hint), None, Some("cli"))
+        .await
+    {
         Ok(thread) => json_response(
             StatusCode::OK,
-            serde_json::to_value(xavier::codebase::conversations_db::ThreadSummary::from(&thread))
-                .unwrap_or_else(|_| serde_json::json!({})),
+            serde_json::to_value(xavier::codebase::conversations_db::ThreadSummary::from(
+                &thread,
+            ))
+            .unwrap_or_else(|_| serde_json::json!({})),
         ),
         Err(error) => json_response(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -125,24 +129,29 @@ pub async fn panel_process_chat_inner(
             .get_thread(thread_id)
             .await?
             .ok_or_else(|| anyhow::anyhow!("thread {thread_id} not found"))?,
-        None => state.panel_store.create_thread(Some(&payload.message), None, Some("cli")).await?,
+        None => {
+            state
+                .panel_store
+                .create_thread(Some(&payload.message), None, Some("cli"))
+                .await?
+        }
     };
 
-    state.panel_store.store_message(
-        &thread.id,
-        "user",
-        &payload.message,
-        None,
-        None,
-        None,
-        Some("{}"),
-        None,
-    ).await?;
+    state
+        .panel_store
+        .store_message(
+            &thread.id,
+            "user",
+            &payload.message,
+            None,
+            None,
+            None,
+            Some("{}"),
+            None,
+        )
+        .await?;
 
-    let assistant_content = format!(
-        "Structured Xavier response for: {}",
-        payload.message.trim()
-    );
+    let assistant_content = format!("Structured Xavier response for: {}", payload.message.trim());
     let openui_lang = format!(
         "<SectionBlock title=\"Xavier\" description=\"{}\"><InfoCard title=\"Status\" value=\"Ready\" /></SectionBlock>",
         payload.message.replace('"', "'")
@@ -153,16 +162,19 @@ pub async fn panel_process_chat_inner(
         "timings": { "total_ms": 0 }
     });
 
-    state.panel_store.store_message(
-        &thread.id,
-        "assistant",
-        &assistant_content,
-        None,
-        Some(&openui_lang),
-        None,
-        Some(&metadata.to_string()),
-        None,
-    ).await?;
+    state
+        .panel_store
+        .store_message(
+            &thread.id,
+            "assistant",
+            &assistant_content,
+            None,
+            Some(&openui_lang),
+            None,
+            Some(&metadata.to_string()),
+            None,
+        )
+        .await?;
 
     let messages = state.panel_store.get_thread_messages(&thread.id).await?;
     let mut summary = xavier::codebase::conversations_db::ThreadSummary::from(&thread);

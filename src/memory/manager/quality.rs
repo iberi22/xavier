@@ -8,8 +8,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use crate::memory::qmd_memory::MemoryDocument;
 use super::priority::MemoryPriority;
+use crate::memory::qmd_memory::MemoryDocument;
 
 /// Memory Quality Score - composite score for retention decisions
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

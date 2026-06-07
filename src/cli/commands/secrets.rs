@@ -3,7 +3,7 @@
 //! Handles the `xavier secrets` subcommand for lending, listing, and
 //! revoking ephemeral secret leases to/from agents.
 
-use crate::cli::commands::enums::{CLI_HTTP_CLIENT, SecretsCommand};
+use crate::cli::commands::enums::{SecretsCommand, CLI_HTTP_CLIENT};
 use crate::cli::config::{resolve_base_url, xavier_token};
 
 use anyhow::Result;

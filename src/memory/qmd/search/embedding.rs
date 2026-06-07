@@ -1,4 +1,4 @@
-﻿//! Embedding-based search with pronoun resolution and query expansion.
+//! Embedding-based search with pronoun resolution and query expansion.
 //!
 //! Generates query embeddings, resolves pronouns against known speakers,
 //! expands queries with context terms, and performs filtered retrieval.
@@ -75,15 +75,14 @@ pub async fn query_with_embedding_filtered(
     if !initial_results.is_empty() {
         let mut context_terms = Vec::new();
 
-        let common_words: std::collections::HashSet<&str> =
-            std::collections::HashSet::from_iter([
-                "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has",
-                "had", "do", "does", "did", "will", "would", "could", "should", "may", "might",
-                "must", "shall", "can", "need", "dare", "to", "of", "in", "for", "on", "with",
-                "at", "by", "from", "as", "into", "through", "during", "before", "after", "above",
-                "below", "that", "this", "these", "those", "it", "its", "they", "them", "what",
-                "which", "who", "whom", "whose", "where", "when", "why", "how",
-            ]);
+        let common_words: std::collections::HashSet<&str> = std::collections::HashSet::from_iter([
+            "the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has",
+            "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "must",
+            "shall", "can", "need", "dare", "to", "of", "in", "for", "on", "with", "at", "by",
+            "from", "as", "into", "through", "during", "before", "after", "above", "below", "that",
+            "this", "these", "those", "it", "its", "they", "them", "what", "which", "who", "whom",
+            "whose", "where", "when", "why", "how",
+        ]);
 
         for doc in initial_results.iter().take(2) {
             for word in doc.content.split_whitespace() {
@@ -103,8 +102,14 @@ pub async fn query_with_embedding_filtered(
             let expanded_query = format!("{} {}", processed_query, context_terms.join(" "));
             if let Ok(expanded_vector) = generate_embedding(&expanded_query).await {
                 if !expanded_vector.is_empty() {
-                    return query_filtered(memory, &expanded_query, expanded_vector, limit, filters)
-                        .await;
+                    return query_filtered(
+                        memory,
+                        &expanded_query,
+                        expanded_vector,
+                        limit,
+                        filters,
+                    )
+                    .await;
                 }
             }
         }

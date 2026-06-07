@@ -2,10 +2,10 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
-use crate::ports::inbound::SecurityScanPort;
-use serde_json::{Value};
-use crate::AppState;
 use super::types::*;
+use crate::ports::inbound::SecurityScanPort;
+use crate::AppState;
+use serde_json::Value;
 
 pub fn get_xavier_tools() -> Vec<MCPTool> {
     let mut tools = super::tools_core::get_xavier_core_tools();

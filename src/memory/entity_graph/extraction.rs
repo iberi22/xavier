@@ -15,7 +15,8 @@ pub(super) static CANDIDATE_ENTITY_RE: Lazy<Regex> = Lazy::new(|| {
 });
 pub(super) static EMAIL_RE: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"[\w.+-]+@[\w-]+\.[\w.-]+").expect("valid email regex"));
-pub(super) static URL_RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"https?://[^\s]+").expect("valid URL regex"));
+pub(super) static URL_RE: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"https?://[^\s]+").expect("valid URL regex"));
 
 pub(super) static RELATION_PATTERNS: &[(&str, &str, f32)] = &[
     (
@@ -170,10 +171,8 @@ pub(super) fn extract_relation_candidates(text: &str) -> Vec<RawRelation> {
             let Some(target) = cap.name("target").map(|m| m.as_str().trim()) else {
                 continue;
             };
-            let source =
-                best_match(source, &entities).unwrap_or_else(|| source.to_string());
-            let target =
-                best_match(target, &entities).unwrap_or_else(|| target.to_string());
+            let source = best_match(source, &entities).unwrap_or_else(|| source.to_string());
+            let target = best_match(target, &entities).unwrap_or_else(|| target.to_string());
             relations.push(RawRelation {
                 source,
                 target,

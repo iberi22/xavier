@@ -16,11 +16,11 @@ use tower::ServiceExt;
 use xavier::adapters::inbound::http::dto::TimeMetricDto;
 use xavier::adapters::inbound::http::routes::create_router;
 use xavier::adapters::inbound::http::routes::create_router_with_agent_registry;
+use xavier::codebase::connection_manager::ConnectionManager;
 use xavier::coordination::SimpleAgentRegistry;
 use xavier::domain::agent::AgentMetadata;
 use xavier::ports::outbound::schema_init::SchemaInitializer;
 use xavier::time::TimeMetricsStore;
-use xavier::codebase::connection_manager::ConnectionManager;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -30,7 +30,9 @@ fn build_router() -> axum::Router {
 
 async fn setup_test_db() -> String {
     let project_id = format!("test_{}", ulid::Ulid::new());
-    ConnectionManager::global().connect(&project_id, ".").expect("connect test DB");
+    ConnectionManager::global()
+        .connect(&project_id, ".")
+        .expect("connect test DB");
     project_id
 }
 
@@ -120,13 +122,19 @@ async fn test_time_metric_save_and_retrieve() {
         .expect("save should succeed");
 
     // Verify row exists in SQLite
-    let count: i64 = ConnectionManager::global().with_conn("metrics", move |conn| {
-        let mut stmt = conn.prepare("SELECT COUNT(*) FROM time_metrics WHERE agent_id = ?1")?;
-        let count: i64 = stmt.query_row(["test-agent-001"], |row| row.get(0))?;
-        Ok(count)
-    }).await.expect("query should succeed");
+    let count: i64 = ConnectionManager::global()
+        .with_conn("metrics", move |conn| {
+            let mut stmt = conn.prepare("SELECT COUNT(*) FROM time_metrics WHERE agent_id = ?1")?;
+            let count: i64 = stmt.query_row(["test-agent-001"], |row| row.get(0))?;
+            Ok(count)
+        })
+        .await
+        .expect("query should succeed");
 
-    assert!(count >= 1, "Expected at least 1 row for agent_id=test-agent-001");
+    assert!(
+        count >= 1,
+        "Expected at least 1 row for agent_id=test-agent-001"
+    );
 }
 
 // ─── Test 3: Time Metric endpoint returns expected shape ─────────────────────
