@@ -2,8 +2,8 @@
 //!
 //! This module contains all the configuration structs and their Debug implementations.
 
-use std::fmt;
 use serde::Deserialize;
+use std::fmt;
 
 #[derive(Clone, Deserialize, Default)]
 pub struct XavierSettings {

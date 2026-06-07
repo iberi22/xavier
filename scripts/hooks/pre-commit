@@ -441,6 +441,14 @@ main() {
     ensure_runtime_config_is_canonical "$staged_files"
     ensure_public_changes_have_docs "$staged_files"
 
+    # Run Rust-specific pre-commit hook if it exists
+    local rust_hook="$REPO_ROOT/scripts/pre-commit.sh"
+    if [ -x "$rust_hook" ]; then
+        if ! "$rust_hook"; then
+            exit 1
+        fi
+    fi
+
     echo -e "${GREEN}Commit passes repository guardrails${NC}"
 }
 

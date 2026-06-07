@@ -4,17 +4,17 @@
 //! CLI's HTTP API. It ensures secure access via token validation and prevents
 //! resource exhaustion through global rate limits.
 
+use crate::cli::config::resolve_http_token;
+use crate::cli::handlers::json_response;
+use crate::cli::state::CliState;
 use axum::{
     body::Body,
+    extract::State,
     http::{Request, StatusCode},
     middleware::Next,
-    response::{Response},
-    extract::State,
+    response::Response,
 };
-use tracing::{warn};
-use crate::cli::config::resolve_http_token;
-use crate::cli::state::CliState;
-use crate::cli::handlers::json_response;
+use tracing::warn;
 
 pub async fn auth_middleware(req: Request<Body>, next: Next) -> Response {
     let expected_token = match resolve_http_token() {

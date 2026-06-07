@@ -6,14 +6,14 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::codebase::connection_manager::ConnectionManager;
+use crate::codebase::validate_project_id;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tokio::sync::OnceCell;
 use uuid::Uuid;
-use crate::codebase::connection_manager::ConnectionManager;
-use crate::codebase::validate_project_id;
 
 const CONVERSATIONS_DIR: &str = "conversations";
 
@@ -167,17 +167,18 @@ impl ConversationsDb {
 
     /// Ensure the schema is created (lazy initialization).
     async fn ensure_schema(&self) -> Result<()> {
-        self.schema_initialized.get_or_try_init(|| async {
-            self.create_schema().await
-        }).await?;
+        self.schema_initialized
+            .get_or_try_init(|| async { self.create_schema().await })
+            .await?;
         Ok(())
     }
 
     /// Create all tables for the conversations database.
     pub async fn create_schema(&self) -> Result<()> {
-        ConnectionManager::global().with_conn(&self.full_project_id, |conn| {
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS conversation_threads (
+        ConnectionManager::global()
+            .with_conn(&self.full_project_id, |conn| {
+                conn.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS conversation_threads (
                     id TEXT PRIMARY KEY,
                     project_id TEXT,
                     title TEXT,
@@ -241,9 +242,11 @@ impl ConversationsDb {
                     expires_at TEXT,
                     kind TEXT DEFAULT 'work'
                 );",
-            ).context("failed to create conversations schema")?;
-            Ok(())
-        }).await
+                )
+                .context("failed to create conversations schema")?;
+                Ok(())
+            })
+            .await
     }
 
     /// Return the project ID.
@@ -256,7 +259,12 @@ impl ConversationsDb {
     // ------------------------------------------------------------------
 
     /// Create a new conversation thread.
-    pub async fn create_thread(&self, title: Option<&str>, model: Option<&str>, source: Option<&str>) -> Result<Thread> {
+    pub async fn create_thread(
+        &self,
+        title: Option<&str>,
+        model: Option<&str>,
+        source: Option<&str>,
+    ) -> Result<Thread> {
         self.ensure_schema().await?;
         let id = Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
@@ -284,7 +292,8 @@ impl ConversationsDb {
             id: id_for_return,
             project_id: Some(pid_for_return),
             title: title_for_return,
-            started_at: Utc::now(), updated_at: Utc::now(),
+            started_at: Utc::now(),
+            updated_at: Utc::now(),
             last_preview: None,
             model: model_for_return,
             source: source_for_return,
@@ -295,37 +304,40 @@ impl ConversationsDb {
     pub async fn get_thread(&self, thread_id: &str) -> Result<Option<Thread>> {
         self.ensure_schema().await?;
         let tid = thread_id.to_string();
-        ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
-            let mut stmt = conn.prepare(
+        ConnectionManager::global()
+            .with_conn(&self.full_project_id, move |conn| {
+                let mut stmt = conn.prepare(
                 "SELECT id, project_id, title, started_at, updated_at, last_preview, model, source
                  FROM conversation_threads WHERE id = ?1",
             )?;
 
-            let mut rows = stmt.query(params![tid])?;
+                let mut rows = stmt.query(params![tid])?;
 
-            if let Some(row) = rows.next()? {
-                Ok(Some(Thread {
-                    id: row.get(0)?,
-                    project_id: row.get(1)?,
-                    title: row.get(2)?,
-                    started_at: parse_datetime(&row.get::<_, String>(3)?),
-                    updated_at: parse_datetime(&row.get::<_, String>(4)?),
-                    last_preview: row.get(5)?,
-                    model: row.get(6)?,
-                    source: row.get(7)?,
-                }))
-            } else {
-                Ok(None)
-            }
-        }).await
+                if let Some(row) = rows.next()? {
+                    Ok(Some(Thread {
+                        id: row.get(0)?,
+                        project_id: row.get(1)?,
+                        title: row.get(2)?,
+                        started_at: parse_datetime(&row.get::<_, String>(3)?),
+                        updated_at: parse_datetime(&row.get::<_, String>(4)?),
+                        last_preview: row.get(5)?,
+                        model: row.get(6)?,
+                        source: row.get(7)?,
+                    }))
+                } else {
+                    Ok(None)
+                }
+            })
+            .await
     }
 
     /// List all threads for a project.
     pub async fn list_threads(&self, limit: usize) -> Result<Vec<Thread>> {
         self.ensure_schema().await?;
         let pid = self.project_id.clone();
-        ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
-            let mut stmt = conn.prepare(
+        ConnectionManager::global()
+            .with_conn(&self.full_project_id, move |conn| {
+                let mut stmt = conn.prepare(
                 "SELECT id, project_id, title, started_at, updated_at, last_preview, model, source
                  FROM conversation_threads
                  WHERE project_id = ?1
@@ -333,21 +345,24 @@ impl ConversationsDb {
                  LIMIT ?2",
             )?;
 
-            let mut rows = stmt.query(params![pid, limit as i64])?;
+                let mut rows = stmt.query(params![pid, limit as i64])?;
 
-            let mut results = Vec::new();
-            while let Some(row) = rows.next()? {
-                results.push(Thread {
-                    id: row.get(0)?, project_id: row.get(1)?,
-                    title: row.get(2)?,
-                    started_at: parse_datetime(&row.get::<_, String>(3)?),
-                    updated_at: parse_datetime(&row.get::<_, String>(4)?),
-                    last_preview: row.get(5)?,
-                    model: row.get(6)?, source: row.get(7)?,
-                });
-            }
-            Ok(results)
-        }).await
+                let mut results = Vec::new();
+                while let Some(row) = rows.next()? {
+                    results.push(Thread {
+                        id: row.get(0)?,
+                        project_id: row.get(1)?,
+                        title: row.get(2)?,
+                        started_at: parse_datetime(&row.get::<_, String>(3)?),
+                        updated_at: parse_datetime(&row.get::<_, String>(4)?),
+                        last_preview: row.get(5)?,
+                        model: row.get(6)?,
+                        source: row.get(7)?,
+                    });
+                }
+                Ok(results)
+            })
+            .await
     }
 
     // ------------------------------------------------------------------
@@ -400,13 +415,16 @@ impl ConversationsDb {
         }).await?;
 
         Ok(Message {
-            id: id_for_return, thread_id: thread_id.to_string(),
-            role: role.to_string(), content: content.to_string(),
+            id: id_for_return,
+            thread_id: thread_id.to_string(),
+            role: role.to_string(),
+            content: content.to_string(),
             tool_calls: tool_calls.map(|s| s.to_string()),
             openui_lang: openui_lang.map(|s| s.to_string()),
             xui_json: xui_json.map(|s| s.to_string()),
             metadata: metadata.map(|s| s.to_string()),
-            created_at: Utc::now(), tokens,
+            created_at: Utc::now(),
+            tokens,
         })
     }
 
@@ -447,8 +465,11 @@ impl ConversationsDb {
 
     /// Record a deduction.
     pub async fn record_deduction(
-        &self, deduction_text: &str, confidence: f64,
-        category: Option<&str>, source_thread: Option<&str>,
+        &self,
+        deduction_text: &str,
+        confidence: f64,
+        category: Option<&str>,
+        source_thread: Option<&str>,
     ) -> Result<Deduction> {
         self.ensure_schema().await?;
         let id = Uuid::new_v4().to_string();
@@ -472,10 +493,13 @@ impl ConversationsDb {
         }).await?;
 
         Ok(Deduction {
-            id: id_for_return, project_id: Some(self.project_id.clone()),
+            id: id_for_return,
+            project_id: Some(self.project_id.clone()),
             source_thread: source_thread.map(|s| s.to_string()),
-            deduction: deduction_text.to_string(), confidence,
-            created_at: Utc::now(), last_accessed: Some(Utc::now()),
+            deduction: deduction_text.to_string(),
+            confidence,
+            created_at: Utc::now(),
+            last_accessed: Some(Utc::now()),
             category: category.map(|s| s.to_string()),
         })
     }
@@ -589,7 +613,9 @@ impl ConversationsDb {
             }
         }).await?;
 
-        self.get_belief(&id).await?.ok_or_else(|| anyhow::anyhow!("failed to retrieve upserted belief"))
+        self.get_belief(&id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("failed to retrieve upserted belief"))
     }
 
     /// Get a belief by ID.
@@ -752,7 +778,10 @@ impl ConversationsDb {
         // Verify that the resolved path is within the expected directory
         if let Ok(canonical_base) = std::fs::canonicalize(&path) {
             let resolved = canonical_base.join(format!("{}.db", project_id));
-            assert!(resolved.starts_with(&canonical_base), "Path escape detected");
+            assert!(
+                resolved.starts_with(&canonical_base),
+                "Path escape detected"
+            );
         }
 
         db_file
@@ -788,8 +817,14 @@ impl ConversationsDb {
             }
 
             let title = thread_data["title"].as_str().map(|s| s.to_string());
-            let started_at = thread_data["created_at"].as_str().unwrap_or_default().to_string();
-            let updated_at = thread_data["updated_at"].as_str().unwrap_or_default().to_string();
+            let started_at = thread_data["created_at"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
+            let updated_at = thread_data["updated_at"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string();
             let last_preview = thread_data["last_preview"].as_str().map(|s| s.to_string());
 
             let id_c = id.clone();
@@ -848,7 +883,11 @@ mod tests {
         let mal_ids = vec!["../etc/passwd", "my/project", "project\\name", "~", " ", ""];
         for id in mal_ids {
             let res = ConversationsDb::open(id).await;
-            assert!(res.is_err(), "project_id '{}' should have been rejected", id);
+            assert!(
+                res.is_err(),
+                "project_id '{}' should have been rejected",
+                id
+            );
         }
     }
 
@@ -857,7 +896,11 @@ mod tests {
         let mal_ids = vec!["../etc/passwd", "my/project", "project\\name", "~", " ", ""];
         for id in mal_ids {
             let res = ConversationsDb::open_in_memory(id).await;
-            assert!(res.is_err(), "project_id '{}' should have been rejected", id);
+            assert!(
+                res.is_err(),
+                "project_id '{}' should have been rejected",
+                id
+            );
         }
     }
 
@@ -866,13 +909,19 @@ mod tests {
         let mal_ids = vec!["../etc/passwd", "my/project", "project\\name", "~", " ", ""];
         for id in mal_ids {
             let res = std::panic::catch_unwind(|| ConversationsDb::conversations_db_path(id));
-            assert!(res.is_err(), "conversations_db_path should have panicked for project_id '{}'", id);
+            assert!(
+                res.is_err(),
+                "conversations_db_path should have panicked for project_id '{}'",
+                id
+            );
         }
     }
 
     #[tokio::test]
     async fn test_open_valid_project_id() {
-        let db = ConversationsDb::open_in_memory("valid-project_123").await.unwrap();
+        let db = ConversationsDb::open_in_memory("valid-project_123")
+            .await
+            .unwrap();
         assert_eq!(db.project_id(), "valid-project_123");
     }
 }

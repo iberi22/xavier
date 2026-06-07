@@ -6,8 +6,8 @@ use crate::memory::sqlite_vec_store::types::ExtractedEntity;
 use crate::memory::sqlite_vec_store::utils;
 use crate::memory::store::{stable_key, GraphHopPath, MemoryRecord};
 use anyhow::Result;
-use rusqlite::{params, Connection};
 use regex::Regex;
+use rusqlite::{params, Connection};
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
@@ -160,8 +160,7 @@ pub fn resolve_graph_seed_entities(
 
     // Also seed from entities mentioned in the query
     let terms = utils::search_tokens(query);
-    let mut entity_stmt = conn
-        .prepare("SELECT id FROM entities WHERE name LIKE ?")?;
+    let mut entity_stmt = conn.prepare("SELECT id FROM entities WHERE name LIKE ?")?;
     for term in terms {
         let mut entity_rows = entity_stmt.query(params![format!("%{term}%")])?;
         while let Some(row) = entity_rows.next()? {

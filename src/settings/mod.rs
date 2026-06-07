@@ -2,13 +2,13 @@
 //!
 //! This module re-exports sub-modules and defines the main interface for settings.
 
-use std::path::PathBuf;
 use anyhow::Result;
+use std::path::PathBuf;
 
-pub mod types;
 pub mod defaults;
 pub mod env;
 pub mod serialization;
+pub mod types;
 pub mod validation;
 
 pub use types::*;
@@ -45,8 +45,8 @@ impl XavierSettings {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::validation::non_empty;
+    use super::*;
     use std::sync::{LazyLock, Mutex};
 
     static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));

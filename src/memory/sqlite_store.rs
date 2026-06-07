@@ -11,6 +11,7 @@ use rusqlite::params;
 use tokio::fs;
 
 use crate::checkpoint::Checkpoint;
+use crate::codebase::connection_manager::ConnectionManager;
 use crate::domain::memory::belief::BeliefEdge;
 use crate::memory::schema::{MemoryLevel, MemoryQueryFilters};
 use crate::memory::store::{
@@ -18,7 +19,6 @@ use crate::memory::store::{
     MemoryRecord, MemoryStore, SessionTokenRecord,
 };
 use crate::settings::XavierSettings;
-use crate::codebase::connection_manager::ConnectionManager;
 
 const DB_FILENAME: &str = "xavier_memory.db";
 pub(crate) const TABLE_MEMORIES: &str = "memory_records";
@@ -93,9 +93,10 @@ impl SqliteMemoryStore {
         };
 
         // Initialize schema
-        ConnectionManager::global().with_conn(project_id, move |conn| {
-            conn.execute_batch(&format!(
-                r#"
+        ConnectionManager::global()
+            .with_conn(project_id, move |conn| {
+                conn.execute_batch(&format!(
+                    r#"
                 CREATE TABLE IF NOT EXISTS {} (
                     id TEXT PRIMARY KEY,
                     workspace_id TEXT NOT NULL,
@@ -143,18 +144,19 @@ impl SqliteMemoryStore {
                 CREATE INDEX IF NOT EXISTS idx_checkpoints_workspace ON {}(workspace_id);
                 CREATE INDEX IF NOT EXISTS idx_checkpoints_task ON {}(workspace_id, task_id);
                 "#,
-                TABLE_MEMORIES,
-                TABLE_BELIEFS,
-                TABLE_SESSION_TOKENS,
-                TABLE_CHECKPOINTS,
-                TABLE_MEMORIES,
-                TABLE_MEMORIES,
-                TABLE_SESSION_TOKENS,
-                TABLE_CHECKPOINTS,
-                TABLE_CHECKPOINTS
-            ))?;
-            Ok(())
-        }).await?;
+                    TABLE_MEMORIES,
+                    TABLE_BELIEFS,
+                    TABLE_SESSION_TOKENS,
+                    TABLE_CHECKPOINTS,
+                    TABLE_MEMORIES,
+                    TABLE_MEMORIES,
+                    TABLE_SESSION_TOKENS,
+                    TABLE_CHECKPOINTS,
+                    TABLE_CHECKPOINTS
+                ))?;
+                Ok(())
+            })
+            .await?;
 
         Ok(store)
     }
@@ -218,10 +220,12 @@ impl MemoryStore for SqliteMemoryStore {
 
     async fn health(&self) -> Result<String> {
         let detail = self.config.detail();
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            conn.query_row("SELECT 1", [], |_row| Ok(()))?;
-            Ok(format!("sqlite {}", detail))
-        }).await
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                conn.query_row("SELECT 1", [], |_row| Ok(()))?;
+                Ok(format!("sqlite {}", detail))
+            })
+            .await
     }
 
     async fn put(&self, record: MemoryRecord) -> Result<()> {
@@ -305,22 +309,24 @@ impl MemoryStore for SqliteMemoryStore {
             let workspace_id = workspace_id.to_string();
             let record_id = record.id.clone();
 
-            ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-                conn.execute(
-                    &format!("DELETE FROM {} WHERE id = ?", TABLE_MEMORIES),
-                    [&key],
-                )?;
+            ConnectionManager::global()
+                .with_conn(&self.project_id, move |conn| {
+                    conn.execute(
+                        &format!("DELETE FROM {} WHERE id = ?", TABLE_MEMORIES),
+                        [&key],
+                    )?;
 
-                // Also delete children
-                conn.execute(
-                    &format!(
-                        "DELETE FROM {} WHERE workspace_id = ? AND parent_id = ?",
-                        TABLE_MEMORIES
-                    ),
-                    params![workspace_id, record_id],
-                )?;
-                Ok(())
-            }).await?;
+                    // Also delete children
+                    conn.execute(
+                        &format!(
+                            "DELETE FROM {} WHERE workspace_id = ? AND parent_id = ?",
+                            TABLE_MEMORIES
+                        ),
+                        params![workspace_id, record_id],
+                    )?;
+                    Ok(())
+                })
+                .await?;
         }
         Ok(removed)
     }
@@ -514,21 +520,23 @@ impl MemoryStore for SqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let token = token.to_string();
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let token_key = stable_key("session_token_row", &[&workspace_id, &token]);
-            let now = Utc::now().to_rfc3339();
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                let token_key = stable_key("session_token_row", &[&workspace_id, &token]);
+                let now = Utc::now().to_rfc3339();
 
-            let count: i32 = conn.query_row(
-                &format!(
-                    "SELECT COUNT(*) FROM {} WHERE id = ? AND expires_at > ?",
-                    TABLE_SESSION_TOKENS
-                ),
-                params![token_key, now],
-                |row| row.get(0),
-            )?;
+                let count: i32 = conn.query_row(
+                    &format!(
+                        "SELECT COUNT(*) FROM {} WHERE id = ? AND expires_at > ?",
+                        TABLE_SESSION_TOKENS
+                    ),
+                    params![token_key, now],
+                    |row| row.get(0),
+                )?;
 
-            Ok(count > 0)
-        }).await
+                Ok(count > 0)
+            })
+            .await
     }
 
     async fn save_checkpoint(&self, workspace_id: &str, checkpoint: Checkpoint) -> Result<()> {
@@ -563,48 +571,52 @@ impl MemoryStore for SqliteMemoryStore {
         let task_id = task_id.to_string();
         let name = name.to_string();
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let mut stmt = conn.prepare(&format!(
-                "SELECT data FROM {} WHERE workspace_id = ? AND task_id = ? AND name = ?",
-                TABLE_CHECKPOINTS
-            ))?;
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                let mut stmt = conn.prepare(&format!(
+                    "SELECT data FROM {} WHERE workspace_id = ? AND task_id = ? AND name = ?",
+                    TABLE_CHECKPOINTS
+                ))?;
 
-            match stmt.query_row(params![workspace_id, task_id, name], |row| {
-                let data_str: String = row.get(0)?;
-                Ok(serde_json::from_str(&data_str).unwrap_or_default())
-            }) {
-                Ok(data) => Ok(Some(Checkpoint {
-                    task_id,
-                    name,
-                    data,
-                })),
-                Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-                Err(e) => Err(anyhow::anyhow!("SQLite query failed: {}", e)),
-            }
-        }).await
+                match stmt.query_row(params![workspace_id, task_id, name], |row| {
+                    let data_str: String = row.get(0)?;
+                    Ok(serde_json::from_str(&data_str).unwrap_or_default())
+                }) {
+                    Ok(data) => Ok(Some(Checkpoint {
+                        task_id,
+                        name,
+                        data,
+                    })),
+                    Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                    Err(e) => Err(anyhow::anyhow!("SQLite query failed: {}", e)),
+                }
+            })
+            .await
     }
 
     async fn list_checkpoints(&self, workspace_id: &str, task_id: &str) -> Result<Vec<Checkpoint>> {
         let workspace_id = workspace_id.to_string();
         let task_id = task_id.to_string();
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let mut stmt = conn.prepare(&format!(
-                "SELECT task_id, name, data FROM {} WHERE workspace_id = ? AND task_id = ?",
-                TABLE_CHECKPOINTS
-            ))?;
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                let mut stmt = conn.prepare(&format!(
+                    "SELECT task_id, name, data FROM {} WHERE workspace_id = ? AND task_id = ?",
+                    TABLE_CHECKPOINTS
+                ))?;
 
-            let mut rows = stmt.query(params![workspace_id, task_id])?;
-            let mut checkpoints = Vec::new();
-            while let Some(row) = rows.next()? {
-                checkpoints.push(Checkpoint {
-                    task_id: row.get(0)?,
-                    name: row.get(1)?,
-                    data: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
-                });
-            }
-            Ok(checkpoints)
-        }).await
+                let mut rows = stmt.query(params![workspace_id, task_id])?;
+                let mut checkpoints = Vec::new();
+                while let Some(row) = rows.next()? {
+                    checkpoints.push(Checkpoint {
+                        task_id: row.get(0)?,
+                        name: row.get(1)?,
+                        data: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
+                    });
+                }
+                Ok(checkpoints)
+            })
+            .await
     }
 
     async fn delete_checkpoint(&self, workspace_id: &str, task_id: &str, name: &str) -> Result<()> {
@@ -612,13 +624,16 @@ impl MemoryStore for SqliteMemoryStore {
         let task_id = task_id.to_string();
         let name = name.to_string();
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let checkpoint_key = stable_key("checkpoint_row", &[&workspace_id, &task_id, &name]);
-            conn.execute(
-                &format!("DELETE FROM {} WHERE id = ?", TABLE_CHECKPOINTS),
-                [&checkpoint_key],
-            )?;
-            Ok(())
-        }).await
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                let checkpoint_key =
+                    stable_key("checkpoint_row", &[&workspace_id, &task_id, &name]);
+                conn.execute(
+                    &format!("DELETE FROM {} WHERE id = ?", TABLE_CHECKPOINTS),
+                    [&checkpoint_key],
+                )?;
+                Ok(())
+            })
+            .await
     }
 }

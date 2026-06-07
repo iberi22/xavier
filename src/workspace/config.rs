@@ -2,10 +2,10 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+use crate::memory::store::MemoryBackend;
+use crate::settings::XavierSettings;
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use crate::settings::XavierSettings;
-use crate::memory::store::MemoryBackend;
 
 pub const MB: u64 = 1024 * 1024;
 

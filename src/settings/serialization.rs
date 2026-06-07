@@ -2,10 +2,10 @@
 //!
 //! This module handles loading configurations from files and resolving system paths.
 
+use super::types::XavierSettings;
+use anyhow::{Context, Result};
 use std::fs;
 use std::path::PathBuf;
-use anyhow::{Context, Result};
-use super::types::XavierSettings;
 
 const DEFAULT_CONFIG_PATH: &str = "config/xavier.config.json";
 

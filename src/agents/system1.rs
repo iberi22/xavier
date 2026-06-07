@@ -731,8 +731,16 @@ mod ranking_tests {
     #[test]
     fn test_ranking_temporal_query() {
         let mut docs = vec![
-            mock_doc("doc1", "fact about rust", json!({"memory_kind": "fact_atom"})),
-            mock_doc("doc2", "event happened", json!({"resolved_date": "2023-01-01"})),
+            mock_doc(
+                "doc1",
+                "fact about rust",
+                json!({"memory_kind": "fact_atom"}),
+            ),
+            mock_doc(
+                "doc2",
+                "event happened",
+                json!({"resolved_date": "2023-01-01"}),
+            ),
         ];
 
         rank_documents_for_query("when did it happen", &mut docs);
@@ -744,11 +752,15 @@ mod ranking_tests {
     fn test_ranking_prefers_provenance_match() {
         let mut docs = vec![
             mock_doc("doc1", "rust code", json!({})),
-            mock_doc("doc2", "rust code", json!({
-                "provenance": {
-                    "file_path": "src/main.rs"
-                }
-            })),
+            mock_doc(
+                "doc2",
+                "rust code",
+                json!({
+                    "provenance": {
+                        "file_path": "src/main.rs"
+                    }
+                }),
+            ),
         ];
 
         // The current implementation checks if the query contains the provenance path

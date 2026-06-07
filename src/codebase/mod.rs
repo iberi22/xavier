@@ -12,9 +12,8 @@ pub mod conversations_db;
 pub mod db;
 
 /// Validation regex for project_id: only alphanumeric, hyphens, and underscores.
-static PROJECT_ID_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^[a-zA-Z0-9_-]+$").expect("invalid project_id regex")
-});
+static PROJECT_ID_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"^[a-zA-Z0-9_-]+$").expect("invalid project_id regex"));
 
 /// Validates that a project_id is safe to use in file paths.
 ///

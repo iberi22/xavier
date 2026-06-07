@@ -11,7 +11,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
 
-pub static INSTANCE: once_cell::sync::OnceCell<ConnectionManager> = once_cell::sync::OnceCell::new();
+pub static INSTANCE: once_cell::sync::OnceCell<ConnectionManager> =
+    once_cell::sync::OnceCell::new();
 
 /// Unified SQLite connection manager for Xavier.
 /// Manages connection pools by project_id with LRU eviction and PRAGMA optimizations.
@@ -69,7 +70,8 @@ impl ConnectionManager {
             } else if project_id == "metrics" {
                 PathBuf::from(project_root).join("metrics.db")
             } else if project_id.starts_with("conv_") {
-                let pid = project_id.strip_prefix("conv_")
+                let pid = project_id
+                    .strip_prefix("conv_")
                     .ok_or_else(|| anyhow::anyhow!("invalid conversation prefix"))?;
                 dirs::home_dir()
                     .ok_or_else(|| anyhow::anyhow!("could not find home directory"))?
@@ -77,13 +79,16 @@ impl ConnectionManager {
                     .join("conversations")
                     .join(format!("{}.db", pid))
             } else {
-                PathBuf::from(project_root).join(".xavier").join("codebase.db")
+                PathBuf::from(project_root)
+                    .join(".xavier")
+                    .join("codebase.db")
             };
 
             if let Some(parent) = db_path.parent() {
                 if !parent.exists() {
-                    std::fs::create_dir_all(parent)
-                        .with_context(|| format!("failed to create parent dir for {:?}", db_path))?;
+                    std::fs::create_dir_all(parent).with_context(|| {
+                        format!("failed to create parent dir for {:?}", db_path)
+                    })?;
                 }
             }
 
@@ -133,7 +138,9 @@ impl ConnectionManager {
     {
         let active_id = {
             let active = self.active.read().await;
-            active.clone().ok_or_else(|| anyhow::anyhow!("no active project set"))?
+            active
+                .clone()
+                .ok_or_else(|| anyhow::anyhow!("no active project set"))?
         };
 
         self.with_conn(&active_id, f).await
@@ -146,7 +153,9 @@ impl ConnectionManager {
         T: Send + 'static,
     {
         let pool = {
-            let mut entry = self.pools.get_mut(project_id)
+            let mut entry = self
+                .pools
+                .get_mut(project_id)
                 .ok_or_else(|| anyhow::anyhow!("pool for {} not found", project_id))?;
             entry.activated_at = Instant::now();
             entry.pool.clone()
@@ -167,7 +176,9 @@ impl ConnectionManager {
         T: Send + 'static,
     {
         let pool = {
-            let mut entry = self.pools.get_mut(project_id)
+            let mut entry = self
+                .pools
+                .get_mut(project_id)
                 .ok_or_else(|| anyhow::anyhow!("pool for {} not found", project_id))?;
             entry.activated_at = Instant::now();
             entry.pool.clone()
@@ -189,7 +200,9 @@ impl ConnectionManager {
 
         // 2. If still too many, remove least recently used
         while self.pools.len() >= 10 {
-            let oldest = self.pools.iter()
+            let oldest = self
+                .pools
+                .iter()
                 .map(|e| (e.key().clone(), e.activated_at))
                 .min_by_key(|e| e.1);
 
@@ -228,10 +241,12 @@ mod tests {
 
         cm.set_active("p1", project_root).await.unwrap();
 
-        let res = cm.with_active(|conn| {
-            conn.execute("CREATE TABLE IF NOT EXISTS t(id INT)", [])?;
-            Ok(())
-        }).await;
+        let res = cm
+            .with_active(|conn| {
+                conn.execute("CREATE TABLE IF NOT EXISTS t(id INT)", [])?;
+                Ok(())
+            })
+            .await;
 
         assert!(res.is_ok());
     }

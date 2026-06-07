@@ -1,9 +1,6 @@
 //! Workspace handlers for information and MCP tool integration.
 
-use axum::{
-    extract::State,
-    Json,
-};
+use axum::{extract::State, Json};
 
 use crate::cli::state::CliState;
 

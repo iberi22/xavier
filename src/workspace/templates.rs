@@ -2,8 +2,8 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
-use anyhow::Result;
 use super::state::WorkspaceState;
+use anyhow::Result;
 
 pub async fn seed_workspace(workspace: &WorkspaceState) -> Result<()> {
     let seed_docs = [
@@ -13,18 +13,28 @@ pub async fn seed_workspace(workspace: &WorkspaceState) -> Result<()> {
     ];
 
     for (path, content, metadata) in seed_docs {
-        if workspace.memory.get(path).await?.is_some() { continue; }
-        let normalized = crate::memory::schema::normalize_metadata(path, metadata, &workspace.config().id, None)?;
-        workspace.memory.add(crate::memory::qmd_memory::MemoryDocument {
-            id: Some(ulid::Ulid::new().to_string()),
-            path: path.to_string(),
-            content: content.to_string(),
-            metadata: normalized,
-            content_vector: Some(Vec::new()),
-            embedding: Vec::new(),
-            parent_id: None,
-            ..Default::default()
-        }).await?;
+        if workspace.memory.get(path).await?.is_some() {
+            continue;
+        }
+        let normalized = crate::memory::schema::normalize_metadata(
+            path,
+            metadata,
+            &workspace.config().id,
+            None,
+        )?;
+        workspace
+            .memory
+            .add(crate::memory::qmd_memory::MemoryDocument {
+                id: Some(ulid::Ulid::new().to_string()),
+                path: path.to_string(),
+                content: content.to_string(),
+                metadata: normalized,
+                content_vector: Some(Vec::new()),
+                embedding: Vec::new(),
+                parent_id: None,
+                ..Default::default()
+            })
+            .await?;
     }
     Ok(())
 }

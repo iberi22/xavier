@@ -3,8 +3,8 @@
 //! Handles the `xavier code` subcommand which queries Xavier's code graph
 //! for symbol discovery, dependency analysis, and complexity metrics.
 
+use crate::cli::commands::enums::{CodeCommand, CLI_HTTP_CLIENT};
 use crate::cli::config::{require_xavier_token, resolve_base_url};
-use crate::cli::commands::enums::{CLI_HTTP_CLIENT, CodeCommand};
 
 use anyhow::Result;
 

@@ -1,11 +1,6 @@
-//! Dead letter queue for failed message delivery.
-//!
-//! Captures undeliverable messages with metadata about delivery attempts
-//! and failures, enabling debugging and reprocessing of stuck messages.
-
+use crate::coordination::message_bus::{AgentMessage, MessageBus};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use crate::coordination::message_bus::{MessageBus, AgentMessage};
 
 /// Dead Letter Queue entry with metadata
 #[derive(Debug, Clone, Serialize, Deserialize)]
