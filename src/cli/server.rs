@@ -250,6 +250,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/v1/memories/search", post(search_handler))
         .route("/agents", get(agent_list_handler))
         .route("/workspace/default", get(workspace_info_handler))
+        .route("/v1/onboarding/suggestions", get(onboarding_suggestions_handler))
         .route("/mcp/tools", get(mcp_tools_handler))
         .route("/code/find", post(code_find_handler))
         .route("/code/context", post(code_context_handler))
