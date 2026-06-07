@@ -29,7 +29,7 @@ impl SchemaInitializer for VecSqliteMemoryStore {
 }
 
 impl VecSqliteMemoryStore {
-    pub(crate) async fn init_schema_async(&self) -> Result<()> {
+    pub async fn init_schema_async(&self) -> Result<()> {
         let project_id = self.project_id.clone();
         let config = self.config.clone();
 
