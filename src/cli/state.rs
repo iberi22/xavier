@@ -8,7 +8,6 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use xavier::agents::rate_limit::RateLimitManager;
 use xavier::app::proxy_use_case::ProxyUseCase;
-use xavier::security::sessions::SessionManager;
 use xavier::codebase::conversations_db::ConversationsDb;
 use xavier::coordination::{KeyLendingEngine, XavierEventBus};
 use xavier::embedding::Embedder;
@@ -16,6 +15,7 @@ use xavier::memory::store::MemoryStore;
 use xavier::ports::inbound::{
     AgentLifecyclePort, InputSecurityPort, MemoryQueryPort, SecurityScanPort,
 };
+use xavier::security::sessions::SessionManager;
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
 

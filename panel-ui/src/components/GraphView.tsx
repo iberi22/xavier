@@ -10,7 +10,7 @@ interface GraphViewProps {
 }
 
 export default function GraphView({ data, onUpdateData }: GraphViewProps) {
-  const fgRef = useRef<ForceGraphMethods | undefined>(undefined);
+  const fgRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: window.innerWidth, height: window.innerHeight });
 
@@ -66,7 +66,7 @@ export default function GraphView({ data, onUpdateData }: GraphViewProps) {
 
     let maxDepth = 0;
 
-    data.nodes.forEach(n => {
+    for (const n of data.nodes) {
       if (n.type === 'organization') {
         orgs++;
         maxDepth = Math.max(maxDepth, getDepth(n.id, 1));
@@ -82,7 +82,7 @@ export default function GraphView({ data, onUpdateData }: GraphViewProps) {
           newestNode = n;
         }
       }
-    });
+    }
 
     return { total: data.nodes.length, orgs, projects, subprojects, sessions, newestNode, maxDepth };
   }, [data]);
@@ -315,7 +315,7 @@ export default function GraphView({ data, onUpdateData }: GraphViewProps) {
               )}
             </div>
             {hoveredNode.parentId && (
-              <p className="text-[10px] text-white/30 mt-3 border-t border-white/5 pt-2 truncate">Parent: {data.nodes.find(n => n.id === hoveredNode.parentId)?.label || hoveredNode.parentId}</p>
+              <p className="text-[10px] text-white/30 mt-3 border-t border-white/5 pt-2 truncate">Parent: {data.nodes.find((n: GraphNode) => n.id === hoveredNode.parentId)?.label || hoveredNode.parentId}</p>
             )}
           </motion.div>
         )}
@@ -389,7 +389,7 @@ export default function GraphView({ data, onUpdateData }: GraphViewProps) {
                   onClick={() => {
                     const label = (document.getElementById('edit-node-label') as HTMLInputElement).value;
                     const description = (document.getElementById('edit-node-desc') as HTMLInputElement).value;
-                    const newNodes = data.nodes.map(n => n.id === editNode.id ? { ...n, label, description } : n);
+                    const newNodes = data.nodes.map((n: GraphNode) => n.id === editNode.id ? { ...n, label, description } : n);
                     onUpdateData({ nodes: newNodes, links: data.links });
                     setEditNode(null);
                   }}
@@ -461,7 +461,7 @@ export default function GraphView({ data, onUpdateData }: GraphViewProps) {
                    <section>
                       <h4 className="text-[10px] uppercase text-white/40 tracking-widest mb-3 flex items-center gap-2"><FileText className="w-3 h-3" /> Related Files</h4>
                       <ul className="space-y-2">
-                         {selectedNode.relatedFiles.map((file, i) => (
+                         {selectedNode.relatedFiles.map((file: string, i: number) => (
                            <li key={i} className="text-xs text-white/80 flex items-center gap-2 before:content-[''] before:w-1 before:h-1 before:bg-[#39ff14] before:rounded-full bg-white/5 p-2 rounded-lg">{file}</li>
                          ))}
                       </ul>
@@ -472,7 +472,7 @@ export default function GraphView({ data, onUpdateData }: GraphViewProps) {
                    <section>
                       <h4 className="text-[10px] uppercase text-white/40 tracking-widest mb-3 flex items-center gap-2"><CheckSquare className="w-3 h-3" /> Key Decisions</h4>
                       <ul className="space-y-2">
-                         {selectedNode.decisions.map((dec, i) => (
+                         {selectedNode.decisions.map((dec: string, i: number) => (
                            <li key={i} className="text-xs text-white/80 p-2 border-l-2 border-[#39ff14]/50 bg-gradient-to-r from-[#39ff14]/10 to-transparent">{dec}</li>
                          ))}
                       </ul>
@@ -483,7 +483,7 @@ export default function GraphView({ data, onUpdateData }: GraphViewProps) {
                    <section>
                       <h4 className="text-[10px] uppercase text-white/40 tracking-widest mb-3 flex items-center gap-2"><GitCommit className="w-3 h-3" /> Associated Commits</h4>
                       <div className="space-y-2 relative before:absolute before:inset-y-2 before:left-2.5 before:w-px before:bg-white/10">
-                         {selectedNode.commits.map((commit, i) => (
+                         {selectedNode.commits.map((commit: string, i: number) => (
                            <div key={i} className="relative flex items-center gap-3 pl-8 text-xs text-white/70">
                               <div className="absolute left-1.5 w-2 h-2 rounded-full border border-white/30 bg-[#050505]" />
                               <span className="font-mono text-orange-400">{commit.split(' - ')[0]}</span>
@@ -498,7 +498,7 @@ export default function GraphView({ data, onUpdateData }: GraphViewProps) {
                    <section>
                       <h4 className="text-[10px] uppercase text-white/40 tracking-widest mb-3 flex items-center gap-2"><RefreshCw className="w-3 h-3" /> Iterations & Queries</h4>
                       <div className="flex flex-wrap gap-2">
-                         {selectedNode.iterations.map((iter, i) => (
+                         {selectedNode.iterations.map((iter: string, i: number) => (
                            <span key={i} className="text-[11px] text-[#39ff14]/80 bg-[#39ff14]/10 border border-[#39ff14]/20 px-2 py-1 rounded-md">{iter}</span>
                          ))}
                       </div>

@@ -51,3 +51,13 @@
 | Integration tests reales (no scaffolds) | 🟡 MEDIUM | 80% |
 | Graceful shutdown en SessionSyncTask | 🟡 MEDIUM | PENDIENTE |
 | `estimate_index_lag()` real (no stub ~5min) | 🟡 MEDIUM | PENDIENTE |
+
+---
+
+## Panel UI (Tauri + React + SQLite Backend)
+
+| Task | Priority | Status |
+|------|----------|--------|
+| Playwright E2E Setup en `panel-ui` | 🔴 HIGH | PENDIENTE |
+| E2E Mock Removal & SQLite Integration | 🔴 HIGH | PENDIENTE |
+| Generar instaladores nativos via Github Actions | 🟡 MEDIUM | PENDIENTE |

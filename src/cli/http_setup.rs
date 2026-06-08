@@ -52,14 +52,17 @@ pub async fn auth_middleware(
 
     if is_match {
         let mut req = req;
-        req.extensions_mut().insert(SessionInfo { is_ephemeral: false });
+        req.extensions_mut().insert(SessionInfo {
+            is_ephemeral: false,
+        });
         return next.run(req).await;
     }
 
     // 2. Check Ephemeral Session (Zero-Trust Frontend)
     if state.session_manager.validate_session(provided_token_str) {
         let mut req = req;
-        req.extensions_mut().insert(SessionInfo { is_ephemeral: true });
+        req.extensions_mut()
+            .insert(SessionInfo { is_ephemeral: true });
         return next.run(req).await;
     }
 

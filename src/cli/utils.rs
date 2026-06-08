@@ -23,12 +23,8 @@ impl IntoResponse for ProxyErrorWrapper {
             xavier::domain::proxy::ProxyError::Internal(e) => {
                 (StatusCode::INTERNAL_SERVER_ERROR, e)
             }
-            xavier::domain::proxy::ProxyError::SecretError(e) => {
-                (StatusCode::UNAUTHORIZED, e)
-            }
-            xavier::domain::proxy::ProxyError::InvalidRequest(e) => {
-                (StatusCode::BAD_REQUEST, e)
-            }
+            xavier::domain::proxy::ProxyError::SecretError(e) => (StatusCode::UNAUTHORIZED, e),
+            xavier::domain::proxy::ProxyError::InvalidRequest(e) => (StatusCode::BAD_REQUEST, e),
         };
         (status, message).into_response()
     }

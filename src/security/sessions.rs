@@ -3,10 +3,10 @@
 //! Issues short-lived, temporary session tokens for frontends to securely
 //! interact with the Xavier backend without exposure of root tokens.
 
-use chrono::{DateTime, Utc, Duration};
+use chrono::{DateTime, Duration, Utc};
 use dashmap::DashMap;
-use uuid::Uuid;
 use std::sync::Arc;
+use uuid::Uuid;
 
 #[derive(Debug, Clone)]
 pub struct EphemeralSession {

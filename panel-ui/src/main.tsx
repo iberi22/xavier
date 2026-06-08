@@ -1,8 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
-import "./styles.css";
-import "@openuidev/react-ui/components.css";
+import "./index.css";
 
 const rootElement = document.getElementById("root");
 

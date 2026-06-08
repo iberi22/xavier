@@ -3,8 +3,8 @@
 //! Provides secure storage for sensitive tokens (XAVIER_TOKEN, API keys)
 //! using DPAPI/Credential Manager on Windows and Keychain on macOS.
 
+use crate::secrets::{SecretError, SecretResult};
 use keyring::Entry;
-use crate::secrets::{SecretResult, SecretError};
 
 pub struct HardwareVault {
     service_name: String,
@@ -20,7 +20,8 @@ impl HardwareVault {
     pub fn store_secret(&self, key: &str, value: &str) -> SecretResult<()> {
         let entry = Entry::new(&self.service_name, key)
             .map_err(|e| SecretError::ProviderError(format!("Keyring error: {}", e)))?;
-        entry.set_password(value)
+        entry
+            .set_password(value)
             .map_err(|e| SecretError::ProviderError(format!("Failed to store secret: {}", e)))?;
         Ok(())
     }
@@ -28,21 +29,19 @@ impl HardwareVault {
     pub fn get_secret(&self, key: &str) -> SecretResult<String> {
         let entry = Entry::new(&self.service_name, key)
             .map_err(|e| SecretError::ProviderError(format!("Keyring error: {}", e)))?;
-        entry.get_password()
-            .map_err(|e| match e {
-                keyring::Error::NoEntry => SecretError::NotFound(key.to_string()),
-                _ => SecretError::ProviderError(format!("Failed to retrieve secret: {}", e)),
-            })
+        entry.get_password().map_err(|e| match e {
+            keyring::Error::NoEntry => SecretError::NotFound(key.to_string()),
+            _ => SecretError::ProviderError(format!("Failed to retrieve secret: {}", e)),
+        })
     }
 
     pub fn delete_secret(&self, key: &str) -> SecretResult<()> {
         let entry = Entry::new(&self.service_name, key)
             .map_err(|e| SecretError::ProviderError(format!("Keyring error: {}", e)))?;
-        entry.delete_credential()
-            .map_err(|e| match e {
-                keyring::Error::NoEntry => SecretError::NotFound(key.to_string()),
-                _ => SecretError::ProviderError(format!("Failed to delete secret: {}", e)),
-            })?;
+        entry.delete_credential().map_err(|e| match e {
+            keyring::Error::NoEntry => SecretError::NotFound(key.to_string()),
+            _ => SecretError::ProviderError(format!("Failed to delete secret: {}", e)),
+        })?;
         Ok(())
     }
 }

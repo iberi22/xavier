@@ -1,15 +1,16 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
 
-const xavierTarget = process.env.XAVIER_WEB_PROXY_TARGET ?? "http://127.0.0.1:8003";
+const xavierTarget = process.env.XAVIER_WEB_PROXY_TARGET ?? "http://127.0.0.1:8006";
 
 export default defineConfig(({ command }) => {
   const isBuild = command === "build";
 
   return {
     base: isBuild ? "/panel/" : "/",
-    plugins: [react()],
+    plugins: [tailwindcss(), react()],
     resolve: {
       alias: {
         "@openuidev/react-headless": path.resolve(

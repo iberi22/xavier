@@ -253,7 +253,11 @@ mod tests {
 
         assert!(config.get("enabled").unwrap().as_bool().unwrap());
         assert_eq!(
-            config.get("encryption_algorithm").unwrap().as_str().unwrap(),
+            config
+                .get("encryption_algorithm")
+                .unwrap()
+                .as_str()
+                .unwrap(),
             "AES-256-GCM"
         );
     }
