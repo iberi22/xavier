@@ -61,10 +61,7 @@ pub struct CliState {
     pub http_client: reqwest::Client,
     pub proxy_use_case: Arc<ProxyUseCase>,
     pub session_manager: Arc<SessionManager>,
-    #[expect(
-        dead_code,
-        reason = "Wire embedder into memory embedding pipeline (currently unused)"
-    )]
+    #[allow(dead_code)]
     pub embedder: Arc<dyn Embedder>,
     pub agent_indexer: Arc<crate::memory::agent_indexer::AgentIndexer>,
 }

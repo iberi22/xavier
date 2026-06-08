@@ -85,6 +85,7 @@ pub(crate) struct DeleteMemoryRequest {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct SecurityScanPayload {
+    #[allow(dead_code)]
     pub input: String,
 }
 
