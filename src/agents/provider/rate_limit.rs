@@ -7,9 +7,10 @@ use anyhow::Result;
 use chrono::{DateTime, Duration, Utc};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use tracing::log::warn;
+use tracing::warn;
 
 use crate::codebase::connection_manager::ConnectionManager;
+use crate::domain::proxy::types::{ApiTier, ProviderKind, ProviderQuota};
 use crate::ports::outbound::schema_init::SchemaInitializer;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -267,6 +268,103 @@ impl RateLimitManager {
         }).await
     }
 
+    pub async fn update_quota(&self, quota: ProviderQuota) -> Result<()> {
+        let provider_name = quota.provider.as_str().to_string();
+        let api_tier = serde_json::to_string(&quota.api_tier).unwrap_or_else(|_| "Unknown".to_string());
+        let resets_at = quota.resets_at.map(|dt| dt.to_rfc3339());
+        let last_checked = quota.last_checked.to_rfc3339();
+
+        // Warning logic for 80%+ usage
+        if let Some(limit) = quota.requests_limit {
+            if let Some(rem) = quota.requests_remaining {
+                if limit > 0 && (limit - rem) as f32 / limit as f32 >= 0.8 {
+                    warn!(
+                        "Provider {} is reaching request limit: {}/{} remaining",
+                        provider_name, rem, limit
+                    );
+                }
+            }
+        }
+        if let Some(limit) = quota.tokens_limit {
+            if let Some(rem) = quota.tokens_remaining {
+                if limit > 0 && (limit - rem) as f32 / limit as f32 >= 0.8 {
+                    warn!(
+                        "Provider {} is reaching token limit: {}/{} remaining",
+                        provider_name, rem, limit
+                    );
+                }
+            }
+        }
+
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                conn.execute(
+                    "INSERT INTO provider_quotas (
+                        provider, api_tier, requests_remaining, tokens_remaining,
+                        requests_limit, tokens_limit, resets_at, last_checked
+                    ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+                    ON CONFLICT(provider) DO UPDATE SET
+                        api_tier = ?2,
+                        requests_remaining = ?3,
+                        tokens_remaining = ?4,
+                        requests_limit = ?5,
+                        tokens_limit = ?6,
+                        resets_at = ?7,
+                        last_checked = ?8",
+                    params![
+                        provider_name,
+                        api_tier,
+                        quota.requests_remaining,
+                        quota.tokens_remaining,
+                        quota.requests_limit,
+                        quota.tokens_limit,
+                        resets_at,
+                        last_checked,
+                    ],
+                )?;
+                Ok(())
+            })
+            .await
+    }
+
+    pub async fn get_all_quotas(&self) -> Result<Vec<ProviderQuota>> {
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT provider, api_tier, requests_remaining, tokens_remaining,
+                            requests_limit, tokens_limit, resets_at, last_checked
+                     FROM provider_quotas",
+                )?;
+                let mut rows = stmt.query([])?;
+                let mut quotas = Vec::new();
+
+                while let Some(row) = rows.next()? {
+                    let provider_str: String = row.get(0)?;
+                    let tier_str: String = row.get(1).unwrap_or_else(|_| "\"Unknown\"".to_string());
+                    let resets_at_str: Option<String> = row.get(6).ok();
+                    let last_checked_str: String = row.get(7).unwrap_or_else(|_| Utc::now().to_rfc3339());
+
+                    let provider = ProviderKind::from_str(&provider_str);
+                    let api_tier: ApiTier = serde_json::from_str(&tier_str).unwrap_or(ApiTier::Unknown);
+                    let resets_at = resets_at_str.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc)));
+                    let last_checked = DateTime::parse_from_rfc3339(&last_checked_str).ok().map(|dt| dt.with_timezone(&Utc)).unwrap_or_else(Utc::now);
+
+                    quotas.push(ProviderQuota {
+                        provider,
+                        api_tier,
+                        requests_remaining: row.get(2).ok(),
+                        tokens_remaining: row.get(3).ok(),
+                        requests_limit: row.get(4).ok(),
+                        tokens_limit: row.get(5).ok(),
+                        resets_at,
+                        last_checked,
+                    });
+                }
+                Ok(quotas)
+            })
+            .await
+    }
+
     pub async fn init_schema_async(&self) -> Result<()> {
         ConnectionManager::global()
             .with_conn(&self.project_id, move |conn| {
@@ -286,7 +384,14 @@ impl RateLimitManager {
                     rate_limited_until DATETIME,
                     manual_limit_percentage REAL DEFAULT 0.0,
                     last_manual_update DATETIME,
-                    weekly_quota INTEGER DEFAULT 1000000
+                    weekly_quota INTEGER DEFAULT 1000000,
+                    api_tier TEXT,
+                    requests_remaining INTEGER,
+                    tokens_remaining INTEGER,
+                    requests_limit INTEGER,
+                    tokens_limit INTEGER,
+                    resets_at DATETIME,
+                    last_checked DATETIME
                 );",
                 )?;
 
@@ -303,6 +408,13 @@ impl RateLimitManager {
                     "ALTER TABLE provider_quotas ADD COLUMN weekly_quota INTEGER DEFAULT 1000000",
                     (),
                 );
+                let _ = conn.execute("ALTER TABLE provider_quotas ADD COLUMN api_tier TEXT", ());
+                let _ = conn.execute("ALTER TABLE provider_quotas ADD COLUMN requests_remaining INTEGER", ());
+                let _ = conn.execute("ALTER TABLE provider_quotas ADD COLUMN tokens_remaining INTEGER", ());
+                let _ = conn.execute("ALTER TABLE provider_quotas ADD COLUMN requests_limit INTEGER", ());
+                let _ = conn.execute("ALTER TABLE provider_quotas ADD COLUMN tokens_limit INTEGER", ());
+                let _ = conn.execute("ALTER TABLE provider_quotas ADD COLUMN resets_at DATETIME", ());
+                let _ = conn.execute("ALTER TABLE provider_quotas ADD COLUMN last_checked DATETIME", ());
 
                 Ok(())
             })

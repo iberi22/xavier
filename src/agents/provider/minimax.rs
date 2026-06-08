@@ -1,4 +1,5 @@
 use crate::agents::provider::config::ModelProviderConfig;
+use crate::agents::provider::types::LlmResponse;
 use anyhow::{anyhow, Context, Result};
 use reqwest::Client;
 use serde_json::json;
@@ -9,7 +10,7 @@ pub(crate) async fn generate_minimax_legacy(
     system_prompt: &str,
     user_prompt: &str,
     _use_cache: bool,
-) -> Result<String> {
+) -> Result<LlmResponse> {
     let api_key = config.api_key.as_ref().context("missing MiniMax API key")?;
     let base_url = config
         .base_url
@@ -39,10 +40,12 @@ pub(crate) async fn generate_minimax_legacy(
         .json()
         .await
         .context("failed to decode MiniMax response")?;
-    payload["choices"]
+    let text = payload["choices"]
         .as_array()
         .and_then(|choices| choices.first())
         .and_then(|choice| choice["message"]["content"].as_str())
         .map(|text| text.to_string())
-        .ok_or_else(|| anyhow!("MiniMax response did not contain text"))
+        .ok_or_else(|| anyhow!("MiniMax response did not contain text"))?;
+
+    Ok(LlmResponse { text, quota: None })
 }

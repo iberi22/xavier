@@ -12,6 +12,7 @@ use tracing::warn;
 
 use crate::agents::provider::anthropic::generate_anthropic_compatible;
 use crate::agents::provider::config::ModelProviderConfig;
+pub use crate::agents::provider::types::LlmResponse;
 use crate::agents::provider::gemini::generate_gemini_legacy;
 use crate::agents::provider::minimax::generate_minimax_legacy;
 use crate::agents::provider::openai::generate_openai_compatible;
@@ -79,7 +80,7 @@ impl ModelProviderClient {
         system_prompt: &str,
         user_prompt: &str,
         use_cache: bool,
-    ) -> Result<String> {
+    ) -> Result<LlmResponse> {
         if !self.config.is_configured() || self.config.provider_mode == ProviderMode::Disabled {
             return Err(anyhow!("no LLM provider configured"));
         }
@@ -142,11 +143,11 @@ impl ModelProviderClient {
         &self,
         query: &str,
         context: &[RetrievedDocument],
-    ) -> Result<String> {
+    ) -> Result<LlmResponse> {
         <Self as LlmProvider>::generate_response(self, query, context).await
     }
 
-    pub async fn generate_hypothetical_document(&self, query: &str) -> Result<String> {
+    pub async fn generate_hypothetical_document(&self, query: &str) -> Result<LlmResponse> {
         <Self as LlmProvider>::generate_hypothetical_document(self, query).await
     }
 
@@ -158,7 +159,7 @@ impl ModelProviderClient {
         <Self as LlmProvider>::evaluate_context(self, query, context).await
     }
 
-    pub async fn generate_text(&self, system_prompt: &str, user_prompt: &str) -> Result<String> {
+    pub async fn generate_text(&self, system_prompt: &str, user_prompt: &str) -> Result<LlmResponse> {
         <Self as LlmProvider>::generate_text(self, system_prompt, user_prompt, false).await
     }
 }
@@ -170,7 +171,7 @@ impl LlmProvider for ModelProviderClient {
         system_prompt: &str,
         user_prompt: &str,
         use_cache: bool,
-    ) -> Result<String> {
+    ) -> Result<LlmResponse> {
         self.generate_text_with_cache(system_prompt, user_prompt, use_cache)
             .await
     }
@@ -179,7 +180,7 @@ impl LlmProvider for ModelProviderClient {
         &self,
         query: &str,
         context: &[RetrievedDocument],
-    ) -> Result<String> {
+    ) -> Result<LlmResponse> {
         let system_prompt = "You are a helpful AI assistant part of the Xavier memory system. Use the provided memory context accurately. If the context is insufficient, say so clearly. Be concise but informative.";
         let context_text = context
             .iter()
@@ -202,7 +203,7 @@ impl LlmProvider for ModelProviderClient {
         <Self as LlmProvider>::generate_text(self, system_prompt, &user_prompt, false).await
     }
 
-    async fn generate_hypothetical_document(&self, query: &str) -> Result<String> {
+    async fn generate_hypothetical_document(&self, query: &str) -> Result<LlmResponse> {
         let system_prompt = "You are an expert knowledge system. Generate a hypothetical, highly plausible document snippet or answer that directly addresses the user's query. Do not include introductory or concluding remarks. Write only the factual content as if it were a real, authoritative reference document.";
         <Self as LlmProvider>::generate_text(self, system_prompt, query, false).await
     }
@@ -224,7 +225,7 @@ impl LlmProvider for ModelProviderClient {
         let response =
             <Self as LlmProvider>::generate_text(self, system_prompt, &user_prompt, false).await?;
 
-        let normalized = response.replace("```json", "").replace("```", "");
+        let normalized = response.text.replace("```json", "").replace("```", "");
         let result: serde_json::Value = serde_json::from_str(normalized.trim())
             .unwrap_or_else(|_| serde_json::json!({"confidence": 1.0}));
 
@@ -257,7 +258,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_llm_timeout() {
-        use crate::agents::provider::types::ApiFlavor;
+        use crate::agents::provider::types::{ApiFlavor, LlmResponse};
         use tokio::net::TcpListener;
 
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -287,7 +288,7 @@ mod tests {
         let client = ModelProviderClient::new(config);
 
         let start = std::time::Instant::now();
-        let result = client.generate_text("system", "user").await;
+        let result: Result<LlmResponse> = client.generate_text("system", "user").await;
         let elapsed = start.elapsed();
 
         assert!(result.is_err(), "Expected error but got: {:?}", result);

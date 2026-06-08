@@ -23,7 +23,10 @@ impl ResponseGenerator for ModelProviderClient {
         query: &'a str,
         context: &'a [RetrievedDocument],
     ) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
-        Box::pin(async move { ModelProviderClient::generate_response(self, query, context).await })
+        Box::pin(async move {
+            let resp = ModelProviderClient::generate_response(self, query, context).await?;
+            Ok(resp.text)
+        })
     }
 }
 

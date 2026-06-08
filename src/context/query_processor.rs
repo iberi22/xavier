@@ -78,16 +78,17 @@ impl QueryProcessor {
         );
 
         let response = self.provider.generate_text(&system_prompt, prompt).await?;
+        let text = response.text;
 
         // Extract JSON from response (handling potential markdown formatting)
-        let json_str = if let Some(start) = response.find('{') {
-            if let Some(end) = response.rfind('}') {
-                &response[start..=end]
+        let json_str = if let Some(start) = text.find('{') {
+            if let Some(end) = text.rfind('}') {
+                &text[start..=end]
             } else {
-                &response[start..]
+                &text[start..]
             }
         } else {
-            &response
+            &text
         };
 
         let raw_map: HashMap<String, Vec<String>> = serde_json::from_str(json_str)?;

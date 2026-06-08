@@ -63,16 +63,17 @@ impl CurationAgent {
 
         // We use an empty context for raw classification
         let response = self.client.generate_response(&prompt, &[]).await?;
+        let text = response.text;
 
         // Extract JSON from response (handling potential markdown blocks)
-        let json_str = if let Some(start) = response.find('{') {
-            if let Some(end) = response.rfind('}') {
-                &response[start..=end]
+        let json_str = if let Some(start) = text.find('{') {
+            if let Some(end) = text.rfind('}') {
+                &text[start..=end]
             } else {
-                &response[start..]
+                &text[start..]
             }
         } else {
-            &response
+            &text
         };
 
         let result: CurationResult = serde_json::from_str(json_str)?;
@@ -114,7 +115,8 @@ impl CurationAgent {
             combined_content
         );
 
-        let summary = self.client.generate_response(&prompt, &[]).await?;
+        let response = self.client.generate_response(&prompt, &[]).await?;
+        let summary = response.text;
 
         let parent_id = ulid::Ulid::new().to_string();
         let path = format!("clusters/{}/summary", cluster_id);
@@ -176,7 +178,8 @@ impl CurationAgent {
             contents
         );
 
-        let summary = self.client.generate_response(&prompt, &[]).await?;
+        let response = self.client.generate_response(&prompt, &[]).await?;
+        let summary = response.text;
 
         let now = Utc::now();
         Ok(MemoryRecord {

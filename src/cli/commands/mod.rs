@@ -141,6 +141,7 @@ impl Cli {
             Command::Setup => crate::cli::handlers::setup::handle_setup().await,
             Command::Secrets { cmd } => secrets::handle_secrets_command(cmd.clone()).await,
             Command::Vault { cmd } => secrets::handle_vault_command(cmd.clone()).await,
+            Command::Quota => crate::cli::handlers::quota::handle_quota_command().await,
             Command::Export { public, output } => {
                 let base_url = resolve_base_url();
                 let token = require_xavier_token()?;

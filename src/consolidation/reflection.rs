@@ -31,8 +31,8 @@ pub async fn reflect_memories(memories: &[MemoryDocument]) -> Result<ReflectionR
     let context = build_context(memories);
     let prompt = "Reflect on the provided memory context. Produce a concise synthesis of the recurring facts, tensions, and next-useful summary. Return plain text with a short overview followed by bullet points for themes and cleanup suggestions.";
 
-    if let Ok(summary) = provider.generate_response(prompt, &context).await {
-        let parsed = parse_reflection_text(&summary, memories);
+    if let Ok(response) = provider.generate_response(prompt, &context).await {
+        let parsed = parse_reflection_text(&response.text, memories);
         return Ok(ReflectionResult {
             llm_used: true,
             ..parsed

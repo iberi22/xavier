@@ -1,5 +1,8 @@
 use crate::agents::provider::config::ModelProviderConfig;
+use crate::agents::provider::types::LlmResponse;
+use crate::domain::proxy::types::{ApiTier, ProviderKind, ProviderQuota};
 use anyhow::{anyhow, Context, Result};
+use chrono::Utc;
 use reqwest::Client;
 use serde_json::json;
 
@@ -20,7 +23,7 @@ pub(crate) async fn generate_openai_compatible(
     system_prompt: &str,
     user_prompt: &str,
     use_cache: bool,
-) -> Result<String> {
+) -> Result<LlmResponse> {
     let base_url = config
         .base_url
         .as_ref()
@@ -61,7 +64,10 @@ pub(crate) async fn generate_openai_compatible(
         }))
         .send()
         .await
-        .context("failed to call OpenAI-compatible API")?
+        .context("failed to call OpenAI-compatible API")?;
+
+    let headers = response.headers().clone();
+    let response = response
         .error_for_status()
         .context("OpenAI-compatible API returned an error")?;
 
@@ -69,10 +75,77 @@ pub(crate) async fn generate_openai_compatible(
         .json()
         .await
         .context("failed to decode OpenAI-compatible response")?;
-    payload["choices"]
+
+    let text = payload["choices"]
         .as_array()
         .and_then(|choices| choices.first())
         .and_then(|choice| choice["message"]["content"].as_str())
         .map(|text| text.to_string())
-        .ok_or_else(|| anyhow!("OpenAI-compatible response did not contain text"))
+        .ok_or_else(|| anyhow!("OpenAI-compatible response did not contain text"))?;
+
+    let mut quota = None;
+    let provider_kind = ProviderKind::from_str(&config.provider_label);
+
+    let rem_req = headers
+        .get("x-ratelimit-remaining-requests")
+        .or_else(|| headers.get("x-ratelimit-remaining"))
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+
+    let rem_tok = headers
+        .get("x-ratelimit-remaining-tokens")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+
+    let limit_req = headers
+        .get("x-ratelimit-limit-requests")
+        .or_else(|| headers.get("x-ratelimit-limit"))
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+
+    let limit_tok = headers
+        .get("x-ratelimit-limit-tokens")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+
+    let reset_req = headers
+        .get("x-ratelimit-reset-requests")
+        .or_else(|| headers.get("x-ratelimit-reset"))
+        .and_then(|v| v.to_str().ok());
+
+    if rem_req.is_some() || rem_tok.is_some() {
+        let resets_at = reset_req.and_then(|r| {
+            if r.contains('s') || r.contains('m') || r.contains('h') {
+                // Handle duration format if some providers use it
+                None
+            } else {
+                // Assume timestamp or seconds
+                r.parse::<u64>().ok().map(|s| {
+                    if s > 1_000_000_000 {
+                        // Likely a timestamp
+                        chrono::DateTime::from_timestamp(s as i64, 0).unwrap_or_default()
+                    } else {
+                        // Likely seconds until reset
+                        Utc::now() + chrono::Duration::seconds(s as i64)
+                    }
+                })
+            }
+        });
+
+        let rpm = limit_req.unwrap_or(0);
+        let api_tier = ApiTier::from_rpm(rpm);
+
+        quota = Some(ProviderQuota {
+            provider: provider_kind,
+            api_tier,
+            requests_remaining: rem_req,
+            tokens_remaining: rem_tok,
+            requests_limit: limit_req,
+            tokens_limit: limit_tok,
+            resets_at,
+            last_checked: Utc::now(),
+        });
+    }
+
+    Ok(LlmResponse { text, quota })
 }

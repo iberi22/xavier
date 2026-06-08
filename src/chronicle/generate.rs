@@ -58,7 +58,7 @@ impl ChronicleGenerator {
             .generate_text(CHRONICLE_SYSTEM_PROMPT, &user_prompt)
             .await?;
 
-        let processed = self.post_process(&response);
+        let processed = self.post_process(&response.text);
 
         Ok(processed)
     }
