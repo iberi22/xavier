@@ -208,7 +208,7 @@ async fn session_tokens_beliefs_and_checkpoints_persist_between_reloads() {
         .expect("test assertion");
     assert!(reloaded.is_session_token_valid(&session_token).await);
     assert!(
-        reloaded.belief_graph.read().await.get_relations().len() >= 1,
+        !reloaded.belief_graph.read().await.get_relations().is_empty(),
         "Expected at least 1 relation after persist, got {}",
         reloaded.belief_graph.read().await.get_relations().len()
     );
