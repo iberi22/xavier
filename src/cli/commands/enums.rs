@@ -135,6 +135,8 @@ pub enum Command {
         #[command(subcommand)]
         cmd: TokenCommand,
     },
+    /// Run interactive system detection and setup
+    Setup,
     /// Export memories to JSON
     Export {
         /// Export only public memories (exclude is_private: true)
