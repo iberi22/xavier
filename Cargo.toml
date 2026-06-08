@@ -68,6 +68,7 @@ subtle = "2.6"
 
 # HTTP Server
 axum = { version = "0.8", features = ["ws"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
 tower = "0.5"
 tower-http = { version = "0.6", features = ["cors"] }
 

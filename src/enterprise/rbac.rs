@@ -7,7 +7,7 @@ use std::fmt;
 use thiserror::Error;
 
 /// Permission types for memory operations
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Permission {
     MemoryRead,
     MemoryWrite,
@@ -15,6 +15,8 @@ pub enum Permission {
     TenantManage,
     ApiKeyManage,
     AuditView,
+    AgentMemoryRead(String),
+    AgentMemoryWrite(String),
     Admin,
 }
 
@@ -28,6 +30,8 @@ impl Permission {
             Permission::TenantManage,
             Permission::ApiKeyManage,
             Permission::AuditView,
+            Permission::AgentMemoryRead("*".to_string()),
+            Permission::AgentMemoryWrite("*".to_string()),
             Permission::Admin,
         ]
     }
@@ -51,6 +55,8 @@ impl fmt::Display for Permission {
             Permission::TenantManage => write!(f, "tenant:manage"),
             Permission::ApiKeyManage => write!(f, "api_key:manage"),
             Permission::AuditView => write!(f, "audit:view"),
+            Permission::AgentMemoryRead(agent) => write!(f, "agent:{}:read", agent),
+            Permission::AgentMemoryWrite(agent) => write!(f, "agent:{}:write", agent),
             Permission::Admin => write!(f, "admin"),
         }
     }
@@ -187,13 +193,13 @@ impl RoleGuard {
     }
 
     /// Check if role has permission
-    pub fn can(&self, permission: Permission) -> bool {
-        self.role.has_permission(&permission)
+    pub fn can(&self, permission: &Permission) -> bool {
+        self.role.has_permission(permission)
     }
 
     /// Require permission or return error
     pub fn require(&self, permission: Permission) -> Result<(), RbacError> {
-        if self.can(permission) {
+        if self.can(&permission) {
             Ok(())
         } else {
             Err(RbacError::PermissionDenied(permission))
@@ -202,7 +208,7 @@ impl RoleGuard {
 
     /// Check and return detailed result
     pub fn check(&self, permission: Permission) -> PermissionCheck {
-        if self.can(permission) {
+        if self.can(&permission) {
             PermissionCheck::allow(permission, self.user_id)
         } else {
             PermissionCheck::deny(permission, self.user_id, "Role does not have permission")
@@ -233,9 +239,9 @@ mod tests {
     fn test_role_guard() {
         let guard = RoleGuard::new(Role::Editor, uuid::Uuid::new_v4());
 
-        assert!(guard.can(Permission::MemoryRead));
-        assert!(guard.can(Permission::MemoryWrite));
-        assert!(!guard.can(Permission::MemoryDelete));
+        assert!(guard.can(&Permission::MemoryRead));
+        assert!(guard.can(&Permission::MemoryWrite));
+        assert!(!guard.can(&Permission::MemoryDelete));
 
         assert!(guard.require(Permission::MemoryRead).is_ok());
         assert!(guard.require(Permission::MemoryDelete).is_err());

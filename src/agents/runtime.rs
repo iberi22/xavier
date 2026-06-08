@@ -492,6 +492,19 @@ impl AgentRuntime {
                 retries
             );
 
+            // Continuous Observability: Scan for Goal Drift
+            let security_service = crate::security::get_security_service();
+
+            // Use Anticipator through the global SecurityService for efficiency
+            let scan = security_service.anticipator_scan(&reasoning_result.analysis);
+            if !scan.clean {
+                for threat in scan.threats {
+                    if threat.category == crate::security::ThreatCategory::GoalDrift {
+                        warn!("🚨 GOAL DRIFT DETECTED: {}", threat.message);
+                    }
+                }
+            }
+
             // Reflection / Context Paging Loop
             if reasoning_result.confidence >= 0.7 || retries >= self.config.max_retries {
                 break (retrieval_result, reasoning_result);

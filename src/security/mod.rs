@@ -29,6 +29,7 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 use anyhow::{anyhow, Result};
+use dashmap::DashMap;
 
 use crate::utils::crypto::{hex_decode, hex_encode};
 use argon2::password_hash::{rand_core::OsRng, SaltString};
@@ -264,9 +265,31 @@ impl SecurityService {
         self.detector.sanitize(input)
     }
 
+    /// Full Anticipator scan
+    pub fn anticipator_scan(&self, input: &str) -> AnticipatorScanResult {
+        let anticipator = Anticipator::new();
+        anticipator.scan(input)
+    }
+
     /// Obtiene estadísticas de detecciones
     pub fn get_stats(&self) -> HashMap<String, u32> {
         self.stats.read().map(|s| s.clone()).unwrap_or_default()
+    }
+
+    /// Encrypt sensitive data using the node's session key
+    pub fn encrypt_sensitive(&self, data: &[u8]) -> anyhow::Result<Vec<u8>> {
+        let blob = crate::crypto::encryption::encrypt_with_session_key(data)
+            .map_err(|e| anyhow::anyhow!("Encryption failed: {}", e))?;
+        Ok(blob.to_bytes())
+    }
+
+    /// Decrypt sensitive data using the node's session key
+    pub fn decrypt_sensitive(&self, encrypted_data: &[u8]) -> anyhow::Result<Vec<u8>> {
+        let blob = crate::crypto::encryption::EncryptedBlob::from_bytes(encrypted_data)
+            .map_err(|e| anyhow::anyhow!("Invalid encrypted blob: {}", e))?;
+        let decrypted = crate::crypto::encryption::decrypt_with_session_key(&blob)
+            .map_err(|e| anyhow::anyhow!("Decryption failed: {}", e))?;
+        Ok(decrypted)
     }
 
     /// Resetea las estadísticas
@@ -326,6 +349,60 @@ impl ProcessResult {
 }
 
 /// Instancia global del servicio de seguridad
+/// Store for Human-in-the-Loop approvals
+pub struct ApprovalStore {
+    /// Map of action:target -> timestamp of approval
+    approvals: DashMap<String, u64>,
+}
+
+impl Default for ApprovalStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ApprovalStore {
+    pub fn new() -> Self {
+        Self {
+            approvals: DashMap::new(),
+        }
+    }
+
+    pub fn approve(&self, action: &str, target: &str) {
+        let key = format!("{}:{}", action, target);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        self.approvals.insert(key, now);
+    }
+
+    pub fn is_approved(&self, action: &str, target: &str) -> bool {
+        let key = format!("{}:{}", action, target);
+        if let Some(timestamp) = self.approvals.get(&key) {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs();
+            // Approval is valid for 5 minutes
+            if now - *timestamp < 300 {
+                return true;
+            } else {
+                self.approvals.remove(&key);
+            }
+        }
+        false
+    }
+
+    pub fn revoke(&self, action: &str, target: &str) {
+        let key = format!("{}:{}", action, target);
+        self.approvals.remove(&key);
+    }
+}
+
+pub static APPROVAL_STORE: std::sync::LazyLock<ApprovalStore> =
+    std::sync::LazyLock::new(ApprovalStore::new);
+
 static SECURITY_SERVICE: std::sync::OnceLock<SecurityService> = std::sync::OnceLock::new();
 
 /// Obtiene la instancia global del servicio de seguridad

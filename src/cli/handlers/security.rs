@@ -26,3 +26,26 @@ pub async fn session_create_handler(State(state): State<CliState>) -> Response {
         }),
     )
 }
+
+#[derive(serde::Deserialize)]
+pub struct SecurityApprovePayload {
+    pub action: String,
+    pub target: String,
+}
+
+pub async fn security_approve_handler(
+    State(_state): State<CliState>,
+    Json(payload): Json<SecurityApprovePayload>,
+) -> Response {
+    // Use ApprovalStore instead of thread-unsafe environment variables
+    xavier::security::APPROVAL_STORE.approve(&payload.action, &payload.target);
+
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "status": "approved",
+            "action": payload.action,
+            "target": payload.target,
+        }),
+    )
+}
