@@ -275,6 +275,13 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/v1/account/usage", get(account_usage_handler))
         .route("/v1/embeddings", post(embed_handler))
         .route("/v1/auth/session", post(session_create_handler))
+        .route("/v1/system/scan", get(system_scan_handler))
+        .route("/v1/providers/quota", get(providers_quota_handler))
+        .route(
+            "/v1/config/providers",
+            get(get_providers_config_handler).put(update_providers_config_handler),
+        )
+        .route("/v1/providers/{name}/test", post(test_provider_handler))
         .route("/security/scan", post(security_scan_handler))
         .route("/memory/query", post(memory_query_handler))
         .route("/session/compact", post(session_compact_handler))

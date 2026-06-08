@@ -113,6 +113,37 @@ pub async fn usage_track_handler(
     }
 }
 
+pub async fn providers_quota_handler(State(state): State<CliState>) -> Response {
+    let mut quotas = Vec::new();
+    match state.rate_manager.get_all_providers().await {
+        Ok(providers) => {
+            for p in providers {
+                if let Ok(status) = state.rate_manager.get_status(&p).await {
+                    quotas.push(status);
+                }
+            }
+        }
+        Err(e) => {
+            warn!("Failed to list providers for quotas: {e}");
+        }
+    }
+
+    // Ensure we always return at least the configured providers even if no usage yet
+    let detected_providers = vec!["openai", "anthropic", "gemini", "minimax", "local"];
+    for p in detected_providers {
+        if !quotas.iter().any(|q| q.provider == p) {
+            if let Ok(status) = state.rate_manager.get_status(p).await {
+                quotas.push(status);
+            }
+        }
+    }
+
+    json_response(
+        StatusCode::OK,
+        serde_json::to_value(quotas).unwrap_or_else(|_| serde_json::json!([])),
+    )
+}
+
 pub async fn usage_summary_handler(
     State(state): State<CliState>,
     AxumPath(provider): AxumPath<String>,

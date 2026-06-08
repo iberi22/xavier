@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Server, Grid, Brain, Network, Cpu, Shield, Plug, X, Bookmark, Share2, Layers, Cpu as CpuIcon, Database } from 'lucide-react';
+import { Server, Grid, Brain, Network, Cpu, Shield, Plug, X, Bookmark, Share2, Layers, Cpu as CpuIcon, Database, Globe } from 'lucide-react';
 import GraphView from './GraphView';
 import BookmarksView from './BookmarksView';
+import ProvidersPage from '../pages/Settings/Providers';
 import { GraphData, BookmarkArtifact } from '../types';
 
 interface ConfigModalProps {
@@ -13,11 +14,12 @@ interface ConfigModalProps {
   bookmarks: BookmarkArtifact[];
   onPinArtifact: (artifact: BookmarkArtifact) => void;
   onUpdateBookmark: (updated: BookmarkArtifact) => void;
+  token?: string;
 }
 
-type MainTab = 'config' | 'graph' | 'bookmarks';
+type MainTab = 'config' | 'graph' | 'bookmarks' | 'providers';
 
-export default function ConfigModal({ onClose, graphData, onUpdateGraphData, bookmarks, onPinArtifact, onUpdateBookmark }: ConfigModalProps) {
+export default function ConfigModal({ onClose, graphData, onUpdateGraphData, bookmarks, onPinArtifact, onUpdateBookmark, token }: ConfigModalProps) {
   const [mainTab, setMainTab] = useState<MainTab>('config');
   
   // Time and Milestone Filters
@@ -50,6 +52,7 @@ export default function ConfigModal({ onClose, graphData, onUpdateGraphData, boo
       <div className="flex items-center justify-between px-8 py-4 border-b border-white/5 bg-black/40">
         <div className="flex gap-8">
           <TabButton active={mainTab === 'config'} onClick={() => setMainTab('config')} icon={<SettingsIcon />} label="Configuration" />
+          <TabButton active={mainTab === 'providers'} onClick={() => setMainTab('providers')} icon={<Globe className="w-4 h-4" />} label="Providers" />
           <TabButton active={mainTab === 'graph'} onClick={() => setMainTab('graph')} icon={<Share2 className="w-4 h-4" />} label="Knowledge Graph" />
           <TabButton active={mainTab === 'bookmarks'} onClick={() => setMainTab('bookmarks')} icon={<Bookmark className="w-4 h-4" />} label="Saved Artifacts" />
         </div>
@@ -94,6 +97,11 @@ export default function ConfigModal({ onClose, graphData, onUpdateGraphData, boo
             </motion.div>
           )}
           {mainTab === 'bookmarks' && <BookmarksView key="bookmarks" bookmarks={bookmarks} onPinArtifact={onPinArtifact} onUpdateBookmark={onUpdateBookmark} />}
+          {mainTab === 'providers' && (
+            <div className="p-10 overflow-y-auto h-full">
+              <ProvidersPage token={token || ''} />
+            </div>
+          )}
         </AnimatePresence>
       </div>
     </motion.div>
