@@ -333,30 +333,14 @@ impl VerificationCycle {
 impl VerificationCycle {
     /// Create from XAVIER_URL and XAVIER_TOKEN env vars
     pub fn from_env() -> Result<Self, String> {
-        let url_str = std::env::var("XAVIER_URL")
-            .or_else(|_| std::env::var("XAVIER_API_URL"))
-            .unwrap_or_else(|_| {
-                // Fallback: assemble from XAVIER_HOST + XAVIER_PORT or settings defaults
-                let host = std::env::var("XAVIER_HOST")
-                    .unwrap_or_else(|_| crate::settings::XavierSettings::current().server.host);
-                let port = std::env::var("XAVIER_PORT")
-                    .ok()
-                    .and_then(|v| v.parse::<u16>().ok())
-                    .unwrap_or_else(|| crate::settings::XavierSettings::current().server.port);
-                let connect_host = match host.as_str() {
-                    "0.0.0.0" | "::" => "127.0.0.1",
-                    other => other,
-                };
-                format!("http://{}:{}", connect_host, port)
-            });
+        let settings = crate::settings::XavierSettings::current();
+        let url_str = settings.client_base_url();
 
         // Validate internal URL to prevent SSRF
         let validated_url = crate::security::url_validator::validate_internal_url(&url_str)
             .map_err(|e| format!("XAVIER_URL validation failed: {}", e))?;
 
-        let token = std::env::var("XAVIER_TOKEN")
-            .or_else(|_| std::env::var("XAVIER_AUTH_TOKEN"))
-            .map_err(|_| "XAVIER_TOKEN not set")?;
+        let token = settings.auth_token.clone().ok_or_else(|| "XAVIER_TOKEN not set")?;
 
         Ok(Self::new(
             Client::new(),

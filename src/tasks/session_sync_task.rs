@@ -22,26 +22,6 @@ use crate::memory::schema::{MemoryKind, MemoryQueryFilters};
 use crate::memory::store::MemoryStore;
 use crate::settings::XavierSettings;
 
-/// Interval in milliseconds between sync checks.
-/// Default: 5 minutes (300_000 ms)
-const DEFAULT_SYNC_INTERVAL_MS: u64 = 300_000;
-
-/// Threshold for index lag alert (milliseconds)
-/// Default: 30 seconds (30_000 ms)
-const DEFAULT_LAG_THRESHOLD_MS: u64 = 30_000;
-
-/// Threshold for save_ok_rate alert (percentage, expressed as 0.0-1.0)
-/// Default: 0.95 (95%)
-const DEFAULT_SAVE_OK_RATE_THRESHOLD: f64 = 0.95;
-
-/// Max health check retries before marking the sync check degraded.
-const DEFAULT_SYNC_MAX_RETRIES: u32 = 3;
-
-/// Minimum interval between health check attempts in milliseconds.
-const DEFAULT_SYNC_MIN_HEALTH_INTERVAL_MS: u64 = 1_000;
-
-/// Timeout for each health check attempt in milliseconds.
-const DEFAULT_SYNC_TIMEOUT_MS: u64 = 5_000;
 
 /// Last sync check result stored in memory (static)
 /// Unified last sync check result (single lock — no data race).
@@ -56,23 +36,7 @@ pub struct SessionSyncShutdown {
 }
 
 fn resolve_xavier_url_for_sync() -> String {
-    // Same canonical contract as CLI config:
-    // 1. XAVIER_URL env var
-    // 2. XAVIER_HOST + XAVIER_PORT env vars assembled
-    // 3. Settings default
-    std::env::var("XAVIER_URL").unwrap_or_else(|_| {
-        let host =
-            std::env::var("XAVIER_HOST").unwrap_or_else(|_| XavierSettings::current().server.host);
-        let port = std::env::var("XAVIER_PORT")
-            .ok()
-            .and_then(|v| v.parse::<u16>().ok())
-            .unwrap_or_else(|| XavierSettings::current().server.port);
-        let connect_host = match host.as_str() {
-            "0.0.0.0" | "::" => "127.0.0.1",
-            other => other,
-        };
-        format!("http://{}:{}", connect_host, port)
-    })
+    XavierSettings::current().client_base_url()
 }
 
 impl SessionSyncShutdown {
@@ -162,49 +126,21 @@ impl SessionSyncTask {
         health_port: Arc<HttpHealthAdapter>,
         memory_store: Option<Arc<dyn MemoryStore>>,
     ) -> Self {
-        let interval_ms = read_env_or_legacy("XAVIER_SYNC_INTERVAL_MS", "SEVIER_SYNC_INTERVAL_MS")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(DEFAULT_SYNC_INTERVAL_MS);
-
-        let lag_threshold_ms =
-            read_env_or_legacy("XAVIER_SYNC_LAG_THRESHOLD_MS", "SEVIER_LAG_THRESHOLD_MS")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(DEFAULT_LAG_THRESHOLD_MS);
-
-        let save_ok_rate_threshold = read_env_or_legacy(
-            "XAVIER_SYNC_SAVE_OK_RATE_THRESHOLD",
-            "SEVIER_SAVE_OK_RATE_THRESHOLD",
-        )
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_SAVE_OK_RATE_THRESHOLD);
-
-        let max_retries = read_env_or_legacy("XAVIER_SYNC_MAX_RETRIES", "SEVIER_SYNC_MAX_RETRIES")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(DEFAULT_SYNC_MAX_RETRIES);
-
-        let min_health_interval_ms = read_env_or_legacy(
-            "XAVIER_SYNC_MIN_HEALTH_INTERVAL_MS",
-            "SEVIER_SYNC_MIN_HEALTH_INTERVAL_MS",
-        )
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(DEFAULT_SYNC_MIN_HEALTH_INTERVAL_MS);
-
-        let timeout_ms = read_env_or_legacy("XAVIER_SYNC_TIMEOUT_MS", "SEVIER_SYNC_TIMEOUT_MS")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(DEFAULT_SYNC_TIMEOUT_MS);
+        let settings = XavierSettings::current();
+        let sync_settings = &settings.sync;
 
         let (shutdown_tx, _) = watch::channel(false);
 
         Self {
-            interval_ms,
+            interval_ms: sync_settings.interval_ms,
             health_port,
             memory_store,
             last_check: Arc::new(TokioRwLock::new(Instant::now())),
-            lag_threshold_ms,
-            save_ok_rate_threshold,
-            max_retries,
-            min_health_interval_ms,
-            timeout_ms,
+            lag_threshold_ms: sync_settings.lag_threshold_ms,
+            save_ok_rate_threshold: sync_settings.save_ok_rate_threshold as f64,
+            max_retries: sync_settings.max_retries,
+            min_health_interval_ms: sync_settings.min_health_interval_ms,
+            timeout_ms: sync_settings.timeout_ms,
             shutdown_tx,
         }
     }
@@ -482,47 +418,30 @@ impl SessionSyncTask {
 impl Default for SessionSyncTask {
     fn default() -> Self {
         let (shutdown_tx, _) = watch::channel(false);
+        let settings = XavierSettings::current();
+        let sync_settings = &settings.sync;
 
         Self {
-            interval_ms: read_env_or_legacy("XAVIER_SYNC_INTERVAL_MS", "SEVIER_SYNC_INTERVAL_MS")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(DEFAULT_SYNC_INTERVAL_MS),
-            lag_threshold_ms: read_env_or_legacy(
-                "XAVIER_SYNC_LAG_THRESHOLD_MS",
-                "SEVIER_LAG_THRESHOLD_MS",
-            )
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(DEFAULT_LAG_THRESHOLD_MS),
-            save_ok_rate_threshold: read_env_or_legacy(
-                "XAVIER_SYNC_SAVE_OK_RATE_THRESHOLD",
-                "SEVIER_SAVE_OK_RATE_THRESHOLD",
-            )
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(DEFAULT_SAVE_OK_RATE_THRESHOLD),
-            max_retries: read_env_or_legacy("XAVIER_SYNC_MAX_RETRIES", "SEVIER_SYNC_MAX_RETRIES")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(DEFAULT_SYNC_MAX_RETRIES),
-            min_health_interval_ms: read_env_or_legacy(
-                "XAVIER_SYNC_MIN_HEALTH_INTERVAL_MS",
-                "SEVIER_SYNC_MIN_HEALTH_INTERVAL_MS",
-            )
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(DEFAULT_SYNC_MIN_HEALTH_INTERVAL_MS),
-            timeout_ms: read_env_or_legacy("XAVIER_SYNC_TIMEOUT_MS", "SEVIER_SYNC_TIMEOUT_MS")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(DEFAULT_SYNC_TIMEOUT_MS),
+            interval_ms: sync_settings.interval_ms,
+            lag_threshold_ms: sync_settings.lag_threshold_ms,
+            save_ok_rate_threshold: sync_settings.save_ok_rate_threshold as f64,
+            max_retries: sync_settings.max_retries,
+            min_health_interval_ms: sync_settings.min_health_interval_ms,
+            timeout_ms: sync_settings.timeout_ms,
             health_port: Arc::new({
-                let default_url = resolve_xavier_url_for_sync();
-                let url_str = std::env::var("XAVIER_URL").unwrap_or_else(|_| default_url.clone());
+                let url_str = resolve_xavier_url_for_sync();
 
                 // Validate internal URL to prevent SSRF
-                let final_url = match crate::security::url_validator::validate_internal_url(
-                    &url_str,
-                ) {
+                let final_url = match crate::security::url_validator::validate_internal_url(&url_str)
+                {
                     Ok(_) => url_str,
                     Err(e) => {
-                        tracing::error!("XAVIER_URL validation failed in SessionSyncTask: {}. Falling back to default.", e);
-                        default_url
+                        let fallback = settings.client_base_url();
+                        tracing::error!(
+                            "XAVIER_URL validation failed in SessionSyncTask: {}. Falling back to {}.",
+                            e, fallback
+                        );
+                        fallback
                     }
                 };
 
@@ -592,11 +511,6 @@ pub async fn calculate_indexing_lag(storage: &dyn MemoryStore, workspace_id: &st
     }
 }
 
-fn read_env_or_legacy(primary: &str, legacy: &str) -> Option<String> {
-    std::env::var(primary)
-        .ok()
-        .or_else(|| std::env::var(legacy).ok())
-}
 
 fn session_event_timestamp_ms(content: &str) -> Option<i64> {
     let value: serde_json::Value = serde_json::from_str(content).ok()?;
