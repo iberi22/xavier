@@ -35,3 +35,4 @@ Welcome to the Xavier documentation!
 | [Security](./SECURITY.md) | Prompt injection protection |
 | [Benchmarks](./BENCHMARK_COMPARISON.md) | Performance analysis |
 | [Docker](./DOCKER_DEPLOY.md) | Container deployment |
+| [Advanced Settings](./advanced-settings.md) | PgHeart, Chronicle, and Agent configuration |
