@@ -7,6 +7,7 @@ pub mod code;
 pub mod memory;
 pub mod onboarding;
 pub mod panel;
+pub mod setup;
 pub mod secrets;
 pub mod security;
 pub mod system;

@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::process::Command;
+use xavier::secrets::vault::HardwareVault;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolInfo {
@@ -27,8 +28,210 @@ pub struct OnboardingSuggestions {
     pub recommendations: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScanResult {
+    pub os: String,
+    pub gpu: Option<String>,
+    pub ollama: OllamaStatus,
+    pub cli_agents: Vec<AgentInfo>,
+    pub api_keys: Vec<ApiKeyInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OllamaStatus {
+    pub running: bool,
+    pub models: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentInfo {
+    pub name: String,
+    pub installed: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ApiKeyInfo {
+    pub name: String,
+    pub detected: bool,
+}
+
+pub struct SystemScanner;
+
+impl SystemScanner {
+    pub async fn scan() -> ScanResult {
+        ScanResult {
+            os: detect_os_detailed(),
+            gpu: detect_gpu(),
+            ollama: detect_ollama().await,
+            cli_agents: detect_cli_agents(),
+            api_keys: detect_api_keys(),
+        }
+    }
+}
+
 pub fn detect_os() -> String {
     std::env::consts::OS.to_string()
+}
+
+pub fn detect_os_detailed() -> String {
+    let os = std::env::consts::OS;
+    match os {
+        "windows" => {
+            let output = Command::new("powershell")
+                .args(["-Command", "(Get-CimInstance Win32_OperatingSystem).Caption"])
+                .output();
+            if let Ok(out) = output {
+                let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if !name.is_empty() {
+                    return name;
+                }
+            }
+            "Windows".to_string()
+        }
+        "macos" => {
+            let output = Command::new("sw_vers").arg("-productVersion").output();
+            if let Ok(out) = output {
+                let version = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                return format!("macOS {}", version);
+            }
+            "macOS".to_string()
+        }
+        "linux" => {
+            if let Ok(os_release) = std::fs::read_to_string("/etc/os-release") {
+                for line in os_release.lines() {
+                    if let Some(name) = line.strip_prefix("PRETTY_NAME=") {
+                        return name.trim_matches('"').to_string();
+                    }
+                }
+            }
+            "Linux".to_string()
+        }
+        _ => os.to_string(),
+    }
+}
+
+pub fn detect_gpu() -> Option<String> {
+    let os = std::env::consts::OS;
+    if os == "windows" {
+        let output = Command::new("wmic")
+            .args(["path", "win32_VideoController", "get", "name"])
+            .output();
+        if let Ok(out) = output {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            let mut lines = stdout.lines().skip(1);
+            if let Some(line) = lines.next() {
+                let name = line.trim();
+                if !name.is_empty() {
+                    return Some(name.to_string());
+                }
+            }
+        }
+    } else if os == "linux" {
+        // Try nvidia-smi first
+        let output = Command::new("nvidia-smi")
+            .args(["--query-gpu=name", "--format=csv,noheader"])
+            .output();
+        if let Ok(out) = output {
+            let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !name.is_empty() {
+                return Some(name);
+            }
+        }
+        // Fallback to lspci
+        let output = Command::new("sh").arg("-c").arg("lspci | grep -i vga").output();
+        if let Ok(out) = output {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            if let Some(line) = stdout.lines().next() {
+                if let Some(pos) = line.find(": ") {
+                    return Some(line[pos + 2..].to_string());
+                }
+            }
+        }
+    } else if os == "macos" {
+        let output = Command::new("system_profiler")
+            .arg("SPDisplaysDataType")
+            .output();
+        if let Ok(out) = output {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            for line in stdout.lines() {
+                if let Some(pos) = line.find("Chipset Model: ") {
+                    return Some(line[pos + 15..].trim().to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+pub async fn detect_ollama() -> OllamaStatus {
+    let client = reqwest::Client::new();
+    let resp = client.get("http://localhost:11434/api/tags").send().await;
+    match resp {
+        Ok(res) if res.status().is_success() => {
+            #[derive(Deserialize)]
+            struct OllamaTags {
+                models: Vec<OllamaModel>,
+            }
+            #[derive(Deserialize)]
+            struct OllamaModel {
+                name: String,
+            }
+            if let Ok(tags) = res.json::<OllamaTags>().await {
+                return OllamaStatus {
+                    running: true,
+                    models: tags.models.into_iter().map(|m| m.name).collect(),
+                };
+            }
+            OllamaStatus {
+                running: true,
+                models: vec![],
+            }
+        }
+        _ => OllamaStatus {
+            running: false,
+            models: vec![],
+        },
+    }
+}
+
+pub fn detect_cli_agents() -> Vec<AgentInfo> {
+    let agents = ["opencode", "codex", "claude", "copilot"];
+    agents
+        .iter()
+        .map(|name| AgentInfo {
+            name: name.to_string(),
+            installed: check_command_exists(name),
+        })
+        .collect()
+}
+
+fn check_command_exists(cmd: &str) -> bool {
+    #[cfg(windows)]
+    let check_cmd = "where";
+    #[cfg(not(windows))]
+    let check_cmd = "which";
+
+    Command::new(check_cmd)
+        .arg(cmd)
+        .output()
+        .map(|out| out.status.success())
+        .unwrap_or(false)
+}
+
+pub fn detect_api_keys() -> Vec<ApiKeyInfo> {
+    let keys = ["OPENAI", "GEMINI", "GROQ", "FIRECRAWL"];
+    let vault = HardwareVault::new("xavier");
+
+    keys.iter()
+        .map(|name| {
+            let env_name = format!("{}_API_KEY", name);
+            let detected = std::env::var(&env_name).is_ok() || vault.get_secret(&env_name).is_ok();
+            ApiKeyInfo {
+                name: name.to_string(),
+                detected,
+            }
+        })
+        .collect()
 }
 
 pub fn is_wsl() -> bool {
