@@ -169,16 +169,8 @@ pub async fn start_http_server(port: u16) -> Result<()> {
 
     let prompt_cache = Arc::new(parking_lot::Mutex::new(HashMap::new()));
     let security_service = Arc::new(AppSecurityService::new());
-
-    use xavier::agents::provider::router::{ProviderKind, ProviderRouter};
-    let initial_provider = ProviderKind::from_str(&settings.models.provider).unwrap_or(ProviderKind::Local);
-    let provider_router = Arc::new(tokio::sync::RwLock::new(ProviderRouter::new(
-        initial_provider,
-    )));
-
     let proxy_use_case = Arc::new(
         ProxyUseCase::new(rate_manager.clone(), prompt_cache.clone())
-            .with_provider_router(provider_router.clone())
             .with_threat_detector(security_service.clone()),
     );
     let secrets_engine = Arc::new(KeyLendingEngine::new(Box::new(
@@ -242,7 +234,6 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         proxy_use_case,
         http_client,
         embedder,
-        provider_router: provider_router.clone(),
         agent_indexer: Arc::new(crate::memory::agent_indexer::AgentIndexer::new(
             crate::memory::file_indexer::FileIndexer::new(
                 crate::memory::file_indexer::FileIndexerConfig::default(),
@@ -284,13 +275,6 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/v1/account/usage", get(account_usage_handler))
         .route("/v1/embeddings", post(embed_handler))
         .route("/v1/auth/session", post(session_create_handler))
-        .route("/v1/system/scan", get(system_scan_handler))
-        .route("/v1/providers/quota", get(providers_quota_handler))
-        .route(
-            "/v1/config/providers",
-            get(get_providers_config_handler).put(update_providers_config_handler),
-        )
-        .route("/v1/providers/{name}/test", post(test_provider_handler))
         .route("/security/scan", post(security_scan_handler))
         .route("/memory/query", post(memory_query_handler))
         .route("/session/compact", post(session_compact_handler))
@@ -343,10 +327,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/v1/usage/cooldown", post(usage_cooldown_handler))
         .route("/v1/usage/track", post(usage_track_handler))
         .route("/v1/usage/summary/{provider}", get(usage_summary_handler))
-        .route("/v1/provider/status", get(provider_status_handler))
-        .route("/v1/provider/list", get(provider_list_handler))
-        .route("/v1/provider/set", post(provider_set_handler))
-        .route("/v1/provider/auto", post(provider_auto_handler))
+        .route("/v1/providers/quota", get(crate::cli::handlers::quota::v1_providers_quota))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(
             state.clone(),

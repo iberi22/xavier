@@ -3,6 +3,7 @@
 //! Defines shared types used across LLM provider implementations,
 //! including API flavors, provider modes, and request/response models.
 
+use crate::domain::proxy::types::ProviderQuota;
 use serde::Serialize;
 use std::time::Duration;
 
@@ -53,6 +54,13 @@ pub(crate) enum ProviderTarget {
     AnthropicMessages,
     GeminiLegacy,
     MiniMaxLegacy,
+}
+
+/// Response from an LLM provider.
+#[derive(Debug, Clone, Serialize)]
+pub struct LlmResponse {
+    pub text: String,
+    pub quota: Option<ProviderQuota>,
 }
 
 /// Current status of a model provider.

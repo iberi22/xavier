@@ -1,5 +1,8 @@
 use crate::agents::provider::config::ModelProviderConfig;
+use crate::agents::provider::types::LlmResponse;
+use crate::domain::proxy::types::{ApiTier, ProviderKind, ProviderQuota};
 use anyhow::{anyhow, Context, Result};
+use chrono::Utc;
 use reqwest::Client;
 use serde_json::json;
 
@@ -20,7 +23,7 @@ pub(crate) async fn generate_anthropic_compatible(
     system_prompt: &str,
     user_prompt: &str,
     use_cache: bool,
-) -> Result<String> {
+) -> Result<LlmResponse> {
     let base_url = config
         .base_url
         .as_ref()
@@ -66,7 +69,10 @@ pub(crate) async fn generate_anthropic_compatible(
         }))
         .send()
         .await
-        .context("failed to call Anthropic-compatible API")?
+        .context("failed to call Anthropic-compatible API")?;
+
+    let headers = response.headers().clone();
+    let response = response
         .error_for_status()
         .context("Anthropic-compatible API returned an error")?;
 
@@ -74,10 +80,51 @@ pub(crate) async fn generate_anthropic_compatible(
         .json()
         .await
         .context("failed to decode Anthropic-compatible response")?;
-    payload["content"]
+
+    let text = payload["content"]
         .as_array()
         .and_then(|items| items.iter().find(|item| item["type"] == "text"))
         .and_then(|item| item["text"].as_str())
         .map(|text| text.to_string())
-        .ok_or_else(|| anyhow!("Anthropic-compatible response did not contain text"))
+        .ok_or_else(|| anyhow!("Anthropic-compatible response did not contain text"))?;
+
+    let mut quota = None;
+
+    let rem_req = headers
+        .get("anthropic-ratelimit-requests-remaining")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+
+    let rem_tok = headers
+        .get("anthropic-ratelimit-tokens-remaining")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+
+    let limit_req = headers
+        .get("anthropic-ratelimit-requests-limit")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+
+    let limit_tok = headers
+        .get("anthropic-ratelimit-tokens-limit")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok());
+
+    if rem_req.is_some() || rem_tok.is_some() {
+        let rpm = limit_req.unwrap_or(0);
+        let api_tier = ApiTier::from_rpm(rpm);
+
+        quota = Some(ProviderQuota {
+            provider: ProviderKind::Anthropic,
+            api_tier,
+            requests_remaining: rem_req,
+            tokens_remaining: rem_tok,
+            requests_limit: limit_req,
+            tokens_limit: limit_tok,
+            resets_at: None, // Anthropic resets are complicated to parse from headers
+            last_checked: Utc::now(),
+        });
+    }
+
+    Ok(LlmResponse { text, quota })
 }

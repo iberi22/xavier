@@ -135,13 +135,16 @@ pub enum Command {
         #[command(subcommand)]
         cmd: TokenCommand,
     },
-    /// Manage LLM providers and hot-switching
+/// Show API quotas and limits for providers
+    Quota,
+/// Manage LLM providers and hot-switching
     Provider {
         #[command(subcommand)]
         cmd: ProviderCommand,
     },
     /// Run interactive system detection and setup
     Setup,
+
     /// Export memories to JSON
     Export {
         /// Export only public memories (exclude is_private: true)
@@ -266,3 +269,4 @@ pub enum SecretsCommand {
     /// Check the status of a lease
     Status { token: String },
 }
+

@@ -75,6 +75,9 @@ pub struct GenericProxyResponse {
     pub body: serde_json::Value,
 }
 
+pub mod types;
+pub use types::*;
+
 #[derive(Debug, Error)]
 pub enum ProxyError {
     #[error("All providers are rate-limited")]

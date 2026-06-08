@@ -152,9 +152,9 @@ impl System1Retriever {
 
         let search_query = if self.config.use_hyde {
             match self.provider.generate_hypothetical_document(query).await {
-                Ok(hypothetical_doc) => {
+                Ok(resp) => {
                     info!("🧠 HyDE: Generated hypothetical document correctly.");
-                    format!("{}\n\n{}", query, hypothetical_doc)
+                    format!("{}\n\n{}", query, resp.text)
                 }
                 Err(e) => {
                     warn!(
