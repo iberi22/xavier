@@ -49,7 +49,10 @@ async fn test_clavis_persistence_and_revocation() -> Result<()> {
     // Verify lease exists
     let active_lease = secrets_engine.get_lease(&token).await;
     assert!(active_lease.is_some());
-    assert_eq!(active_lease.unwrap().secret_value, Some("ghp_secure_123".to_string()));
+    assert_eq!(
+        active_lease.unwrap().secret_value,
+        Some("ghp_secure_123".to_string())
+    );
 
     // 5. Simulate Task Completion Event
     let mut task = Task::new("Deploy App", "Xavier", "Bela");
@@ -88,8 +91,14 @@ async fn test_clavis_persistence_and_revocation() -> Result<()> {
 
     let relevant_logs: Vec<_> = logs.iter().filter(|l| l.1 == agent_id).collect();
     assert!(relevant_logs.len() >= 2);
-    let lend_log = relevant_logs.iter().find(|l| l.0 == "LEND").expect("LEND log found");
-    let revoke_log = relevant_logs.iter().find(|l| l.0 == "REVOKE").expect("REVOKE log found");
+    let lend_log = relevant_logs
+        .iter()
+        .find(|l| l.0 == "LEND")
+        .expect("LEND log found");
+    let revoke_log = relevant_logs
+        .iter()
+        .find(|l| l.0 == "REVOKE")
+        .expect("REVOKE log found");
 
     assert_eq!(lend_log.1, agent_id);
     assert_eq!(revoke_log.1, agent_id);

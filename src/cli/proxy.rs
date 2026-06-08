@@ -2,9 +2,9 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+use crate::cli::http_setup::SessionInfo;
 use crate::cli::state::CliState;
 use crate::cli::utils::ProxyErrorWrapper;
-use crate::cli::http_setup::SessionInfo;
 use axum::{
     extract::{Json, State},
     http::StatusCode,
@@ -38,7 +38,11 @@ pub async fn chat_proxy(
     axum::Extension(session): axum::Extension<SessionInfo>,
     Json(req): Json<ProxyChatRequest>,
 ) -> Response {
-    match state.proxy_use_case.execute_secured(req.into(), session.is_ephemeral).await {
+    match state
+        .proxy_use_case
+        .execute_secured(req.into(), session.is_ephemeral)
+        .await
+    {
         Ok(resp) => Json(resp).into_response(),
         Err(e) => ProxyErrorWrapper(e).into_response(),
     }
@@ -55,7 +59,9 @@ pub async fn chat_batch_proxy(
     for (idx, req) in requests.into_iter().enumerate() {
         let use_case = state.proxy_use_case.clone();
         join_set.spawn(async move {
-            let res = use_case.execute_secured(req.into(), session.is_ephemeral).await;
+            let res = use_case
+                .execute_secured(req.into(), session.is_ephemeral)
+                .await;
             (idx, res)
         });
     }

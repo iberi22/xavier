@@ -19,12 +19,11 @@ use tower_http::cors::CorsLayer;
 use tracing::info;
 
 use crate::cli::config::{
-    code_graph_db_path, resolve_base_url_for_port, resolve_http_bind_host,
-    resolve_http_token, state_panel_root,
+    code_graph_db_path, resolve_base_url_for_port, resolve_http_bind_host, resolve_http_token,
+    state_panel_root,
 };
 use crate::cli::state::CliState;
 use crate::settings::XavierSettings;
-use xavier::security::sessions::SessionManager;
 use xavier::adapters::inbound::http::routes::{
     sync_check_handler, time_metric_handler, verify_save_handler,
 };
@@ -44,6 +43,7 @@ use xavier::memory::store::{MemoryRecord, MemoryStore};
 use xavier::ports::inbound::{
     AgentLifecyclePort, InputSecurityPort, MemoryQueryPort, SecurityScanPort, TimeMetricsPort,
 };
+use xavier::security::sessions::SessionManager;
 use xavier::security::threat_store::SecurityThreatStore;
 use xavier::server::panel::{
     get_graph, list_bookmarks, list_widgets, panel_asset, panel_index, save_bookmark, save_graph,
@@ -255,7 +255,10 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/v1/memories/search", post(search_handler))
         .route("/agents", get(agent_list_handler))
         .route("/workspace/default", get(workspace_info_handler))
-        .route("/v1/onboarding/suggestions", get(onboarding_suggestions_handler))
+        .route(
+            "/v1/onboarding/suggestions",
+            get(onboarding_suggestions_handler),
+        )
         .route("/mcp/tools", get(mcp_tools_handler))
         .route("/code/find", post(code_find_handler))
         .route("/code/context", post(code_context_handler))
@@ -298,7 +301,10 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             "/panel/api/threads/{thread_id}",
             get(panel_get_thread).delete(panel_delete_thread),
         )
-        .route("/panel/api/bookmarks", get(list_bookmarks).post(save_bookmark))
+        .route(
+            "/panel/api/bookmarks",
+            get(list_bookmarks).post(save_bookmark),
+        )
         .route("/panel/api/widgets", get(list_widgets).post(save_widget))
         .route("/panel/api/graph", get(get_graph).post(save_graph))
         .route("/secrets/lend", post(lend_handler))
@@ -313,10 +319,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             "/v1/proxy/chat/completions/batch",
             post(crate::cli::proxy::chat_batch_proxy),
         )
-        .route(
-            "/v1/proxy/request",
-            post(crate::cli::proxy::generic_proxy),
-        )
+        .route("/v1/proxy/request", post(crate::cli::proxy::generic_proxy))
         .route("/v1/usage/status/{provider}", get(usage_status_handler))
         .route("/v1/usage/update", post(usage_update_handler))
         .route("/v1/usage/cooldown", post(usage_cooldown_handler))
@@ -327,7 +330,10 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             state.clone(),
             rate_limit_middleware,
         ))
-        .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ));
 
     let large_body_routes = Router::new()
         .route("/memory/add", post(add_handler))
@@ -339,7 +345,10 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             state.clone(),
             rate_limit_middleware,
         ))
-        .layer(middleware::from_fn_with_state(state.clone(), auth_middleware));
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            auth_middleware,
+        ));
 
     #[cfg(feature = "enterprise")]
     let protected_routes = {
@@ -373,7 +382,12 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         use std::sync::{Arc, Mutex};
         use xavier::enterprise::http::{enterprise_router, EnterpriseState};
         let enterprise_state = Arc::new(Mutex::new(EnterpriseState::init_default()));
-        app.merge(enterprise_router(enterprise_state).layer(middleware::from_fn_with_state(state.clone(), auth_middleware)))
+        app.merge(
+            enterprise_router(enterprise_state).layer(middleware::from_fn_with_state(
+                state.clone(),
+                auth_middleware,
+            )),
+        )
     };
 
     let listener = TcpListener::bind(&bind_addr).await?;

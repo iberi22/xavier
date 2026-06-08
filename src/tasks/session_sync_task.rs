@@ -22,7 +22,6 @@ use crate::memory::schema::{MemoryKind, MemoryQueryFilters};
 use crate::memory::store::MemoryStore;
 use crate::settings::XavierSettings;
 
-
 /// Last sync check result stored in memory (static)
 /// Unified last sync check result (single lock — no data race).
 pub(crate) static LAST_CHECK_RESULT: Lazy<StdRwLock<SyncCheckResult>> =
@@ -432,8 +431,9 @@ impl Default for SessionSyncTask {
                 let url_str = resolve_xavier_url_for_sync();
 
                 // Validate internal URL to prevent SSRF
-                let final_url = match crate::security::url_validator::validate_internal_url(&url_str)
-                {
+                let final_url = match crate::security::url_validator::validate_internal_url(
+                    &url_str,
+                ) {
                     Ok(_) => url_str,
                     Err(e) => {
                         let fallback = settings.client_base_url();
@@ -510,7 +510,6 @@ pub async fn calculate_indexing_lag(storage: &dyn MemoryStore, workspace_id: &st
         0
     }
 }
-
 
 fn session_event_timestamp_ms(content: &str) -> Option<i64> {
     let value: serde_json::Value = serde_json::from_str(content).ok()?;

@@ -20,7 +20,7 @@ export default function BookmarksView({ bookmarks, onPinArtifact, onUpdateBookma
   const [editType, setEditType] = useState('');
 
   const categories = useMemo(() => {
-    const cats = new Set(bookmarks.map(b => b.category));
+    const cats = new Set(bookmarks.map(b => b.category || 'General'));
     return ['All', ...Array.from(cats)];
   }, [bookmarks]);
 
@@ -29,7 +29,7 @@ export default function BookmarksView({ bookmarks, onPinArtifact, onUpdateBookma
   const startEdit = (b: BookmarkArtifact) => {
     setEditingId(b.id);
     setEditTitle(b.title);
-    setEditCategory(b.category);
+    setEditCategory(b.category || '');
     setEditType(b.type);
   };
 

@@ -1,51 +1,3 @@
-export interface GraphNode {
-  id: string;
-  name?: string;
-  label?: string;
-  type?: string;
-  description?: string;
-  group?: number;
-  val?: number;
-  status?: 'active' | 'archived' | 'learning' | string;
-  milestone?: string;
-  date?: string;
-  relatedFiles?: any[];
-  decisions?: any[];
-  commits?: any[];
-  iterations?: any[];
-  parentId?: string;
-  reason?: string;
-}
-
-export interface GraphLink {
-  source: string;
-  target: string;
-  value?: number;
-  relation?: string;
-}
-
-export interface GraphData {
-  nodes: GraphNode[];
-  links: GraphLink[];
-}
-
-export interface BookmarkArtifact {
-  id: string;
-  title: string;
-  content: string;
-  type: 'code' | 'memory' | 'config' | 'log' | string;
-  category?: string;
-  timestamp: number;
-  date?: string;
-  tags: string[];
-}
-
-export interface CanvasWidget {
-  id: string;
-  artifact: BookmarkArtifact;
-  position: { x: number; y: number };
-}
-
 export type ThreadSummary = {
   id: string;
   title: string;
@@ -76,6 +28,65 @@ export type PanelMessage = {
   };
 };
 
+export type Bookmark = {
+  id: string;
+  title: string;
+  url: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+export type Widget = {
+  id: string;
+  type: string;
+  config: Record<string, unknown>;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  created_at: string;
+};
+
+export interface GraphNode {
+  id: string;
+  label: string;
+  type: 'organization' | 'project' | 'subproject' | 'session';
+  description: string;
+  parentId?: string;
+  date?: string;
+  milestone?: string;
+  reason?: string;
+  relatedFiles?: string[];
+  decisions?: string[];
+  commits?: string[];
+  iterations?: string[];
+}
+
+export interface GraphLink {
+  source: string;
+  target: string;
+  relation: string;
+}
+
+export interface GraphData {
+  nodes: GraphNode[];
+  links: GraphLink[];
+}
+
+export type BackendGraphData = {
+  id: string;
+  name: string;
+  data: GraphData;
+  created_at: string;
+};
+
+export type OnboardingSuggestions = {
+  os: string;
+  tools: { name: string; installed: boolean; version?: string }[];
+  workspace: { project_type: string; indicators: string[] };
+  recommendations: string[];
+};
+
 export type ThreadDetail = {
   thread: ThreadSummary;
   messages: PanelMessage[];
@@ -86,9 +97,19 @@ export type PanelChatResponse = {
   messages: PanelMessage[];
 };
 
-export type OnboardingSuggestions = {
-  os: string;
-  tools: { name: string; installed: boolean; version?: string }[];
-  workspace: { project_type: string; indicators: string[] };
-  recommendations: string[];
-};
+export interface BookmarkArtifact {
+  id: string;
+  title: string;
+  description?: string;
+  type: 'file' | 'memory' | 'document' | 'agent' | string;
+  url?: string;
+  addedAt?: string;
+  date?: string;
+  category?: string;
+}
+
+export interface CanvasWidget {
+  id: string;
+  artifact: BookmarkArtifact;
+  position: { x: number, y: number };
+}

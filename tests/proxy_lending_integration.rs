@@ -1,14 +1,11 @@
 use anyhow::Result;
 use ax_status::StatusCode;
-use axum::{
-    routing::post,
-    Router,
-};
+use axum::{routing::post, Router};
 use serde_json::json;
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use xavier::coordination::KeyLendingEngine;
 use xavier::app::proxy_use_case::ProxyUseCase;
+use xavier::coordination::KeyLendingEngine;
 use xavier::domain::proxy::{GenericProxyRequest, SecretInjectionStrategy};
 use xavier::secrets::audit::QmdAuditLogger;
 
@@ -57,12 +54,17 @@ async fn test_proxy_lending_zero_trust_flow() -> Result<()> {
 
     // 4. LEND secret (Manual lend to avoid HardwareVault CI issues)
     let agent_id = "frontend-agent";
-    let mut lease = secrets_engine.lend(secret_name, Some(secret_value), agent_id, 60).await?;
+    let mut lease = secrets_engine
+        .lend(secret_name, Some(secret_value), agent_id, 60)
+        .await?;
 
     // Simulate what lend_from_vault(..., true) would do: redact the returned lease
     lease.secret_value = None;
 
-    assert!(lease.secret_value.is_none(), "Secret value must be redacted for Zero-Trust");
+    assert!(
+        lease.secret_value.is_none(),
+        "Secret value must be redacted for Zero-Trust"
+    );
     let lease_token = lease.token;
 
     // 5. Use PROXY with lease token
@@ -75,7 +77,9 @@ async fn test_proxy_lending_zero_trust_flow() -> Result<()> {
         secret_injection_strategy: Some(SecretInjectionStrategy::BearerToken),
     };
 
-    let resp = proxy_use_case.execute_generic(proxy_req, secrets_engine.clone()).await?;
+    let resp = proxy_use_case
+        .execute_generic(proxy_req, secrets_engine.clone())
+        .await?;
 
     assert_eq!(resp.status, 200);
     assert_eq!(resp.body["status"], "success");
@@ -93,7 +97,9 @@ async fn test_proxy_lending_zero_trust_flow() -> Result<()> {
         secret_injection_strategy: Some(SecretInjectionStrategy::BearerToken),
     };
 
-    let result = proxy_use_case.execute_generic(proxy_req_revoked, secrets_engine).await;
+    let result = proxy_use_case
+        .execute_generic(proxy_req_revoked, secrets_engine)
+        .await;
     assert!(result.is_err());
 
     Ok(())
