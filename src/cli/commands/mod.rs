@@ -20,6 +20,7 @@ pub mod http;
 pub mod secrets;
 pub mod spawn;
 pub mod token;
+pub mod provider;
 pub mod usage;
 
 // Re-export for backward compatibility
@@ -136,6 +137,7 @@ impl Cli {
                 xavier::chronicle::cli::handle_chronicle_command(cmd.clone()).await
             }
             Command::Token { cmd } => token::handle_token_command(cmd.clone()).await,
+            Command::Provider { cmd } => provider::handle_provider_command(cmd.clone()).await,
             Command::Setup => crate::cli::handlers::setup::handle_setup().await,
             Command::Secrets { cmd } => secrets::handle_secrets_command(cmd.clone()).await,
             Command::Vault { cmd } => secrets::handle_vault_command(cmd.clone()).await,

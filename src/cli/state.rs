@@ -61,6 +61,7 @@ pub struct CliState {
     pub http_client: reqwest::Client,
     pub proxy_use_case: Arc<ProxyUseCase>,
     pub session_manager: Arc<SessionManager>,
+    pub provider_router: Arc<tokio::sync::RwLock<xavier::agents::provider::router::ProviderRouter>>,
     #[allow(dead_code)]
     pub embedder: Arc<dyn Embedder>,
     pub agent_indexer: Arc<crate::memory::agent_indexer::AgentIndexer>,
