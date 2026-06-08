@@ -221,9 +221,9 @@ mod tests {
         assert_eq!(std::env::var("XAVIER_QJL_THRESHOLD").unwrap(), "500");
         assert_eq!(
             std::env::var("XAVIER_ENTITY_EXTRACTION_ENABLED").unwrap(),
-            "1"
+            "true"
         );
-        assert_eq!(std::env::var("XAVIER_AUDIT_CHAIN_ENABLED").unwrap(), "1");
+        assert_eq!(std::env::var("XAVIER_AUDIT_CHAIN_ENABLED").unwrap(), "true");
 
         // Router
         assert_eq!(

@@ -295,8 +295,7 @@ impl Embedder for FallbackEmbedder {
 }
 
 fn local_embedding_signal_present() -> bool {
-    std::env::var("XAVIER_EMBEDDING_ENDPOINT").is_ok()
-        || std::env::var("XAVIER_EMBEDDING_URL").is_ok()
+    std::env::var("XAVIER_EMBEDDING_URL").is_ok()
         || std::env::var("XAVIER_EMBEDDING_MODEL").is_ok()
         || std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
             .map(|value| value.eq_ignore_ascii_case("local"))
@@ -347,10 +346,15 @@ fn gllm_config() -> GllmConfig {
 
 fn local_config() -> OpenAICompatibleConfig {
     let settings = crate::settings::XavierSettings::current();
-    let endpoint = std::env::var("XAVIER_EMBEDDING_ENDPOINT")
-        .or_else(|_| std::env::var("XAVIER_EMBEDDING_URL"))
+    let endpoint = std::env::var("XAVIER_EMBEDDING_URL")
         .map(|value| normalize_openai_embeddings_endpoint(&value))
-        .unwrap_or_else(|_| DEFAULT_LOCAL_EMBEDDING_ENDPOINT.to_string());
+        .unwrap_or_else(|_| {
+            if !settings.models.embedding_url.is_empty() {
+                normalize_openai_embeddings_endpoint(&settings.models.embedding_url)
+            } else {
+                DEFAULT_LOCAL_EMBEDDING_ENDPOINT.to_string()
+            }
+        });
 
     let model = std::env::var("XAVIER_EMBEDDING_MODEL")
         .unwrap_or_else(|_| DEFAULT_LOCAL_EMBEDDING_MODEL.to_string());
@@ -369,10 +373,15 @@ fn local_config() -> OpenAICompatibleConfig {
 
 fn cloud_config() -> OpenAICompatibleConfig {
     let settings = crate::settings::XavierSettings::current();
-    let endpoint = std::env::var("XAVIER_EMBEDDING_ENDPOINT")
-        .or_else(|_| std::env::var("XAVIER_EMBEDDING_URL"))
+    let endpoint = std::env::var("XAVIER_EMBEDDING_URL")
         .map(|value| normalize_openai_embeddings_endpoint(&value))
-        .unwrap_or_else(|_| DEFAULT_CLOUD_EMBEDDING_ENDPOINT.to_string());
+        .unwrap_or_else(|_| {
+            if !settings.models.embedding_url.is_empty() {
+                normalize_openai_embeddings_endpoint(&settings.models.embedding_url)
+            } else {
+                DEFAULT_CLOUD_EMBEDDING_ENDPOINT.to_string()
+            }
+        });
 
     let model = std::env::var("XAVIER_EMBEDDING_MODEL")
         .unwrap_or_else(|_| DEFAULT_CLOUD_EMBEDDING_MODEL.to_string());

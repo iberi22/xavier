@@ -150,12 +150,7 @@ impl WorkspaceConfig {
             token: settings
                 .auth_token
                 .clone()
-                .or_else(|| {
-                    std::env::var("XAVIER_TOKEN")
-                        .ok()
-                        .or_else(|| std::env::var("XAVIER_AUTH_TOKEN").ok())
-                })
-                .expect("XAVIER_TOKEN / XAVIER_AUTH_TOKEN must be set"),
+                .expect("XAVIER_TOKEN must be set"),
             plan,
             memory_backend: MemoryBackend::from_env(&settings.memory.backend),
             storage_limit_bytes,

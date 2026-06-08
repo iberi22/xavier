@@ -73,7 +73,9 @@ pub fn load() -> Result<Option<XavierSettings>> {
 
 pub fn current() -> XavierSettings {
     let mut settings = load().ok().flatten().unwrap_or_default();
-    settings.auth_token = std::env::var("XAVIER_TOKEN").ok();
+    settings.auth_token = std::env::var("XAVIER_TOKEN")
+        .ok()
+        .or_else(|| std::env::var("XAVIER_AUTH_TOKEN").ok());
     // Populate sensitive fields from env if not set via config file
     if settings.security.token_secret.is_none() {
         settings.security.token_secret = std::env::var("XAVIER_TOKEN_SECRET").ok();
@@ -96,6 +98,9 @@ pub fn current() -> XavierSettings {
     if settings.models.local_llm_api_key.is_none() {
         settings.models.local_llm_api_key = std::env::var("XAVIER_LOCAL_LLM_API_KEY").ok();
     }
+    if let Ok(embedding_url) = std::env::var("XAVIER_EMBEDDING_URL") {
+        settings.models.embedding_url = embedding_url;
+    }
     if settings.embedding.api_key.is_none() {
         settings.embedding.api_key = std::env::var("XAVIER_EMBEDDING_API_KEY").ok();
     }
@@ -104,6 +109,37 @@ pub fn current() -> XavierSettings {
         settings.retrieval.rrf_k = std::env::var("XAVIER_RRF_K")
             .ok()
             .and_then(|v| v.parse().ok());
+    }
+    // Sync fallbacks
+    if let Ok(val) = std::env::var("XAVIER_SYNC_INTERVAL_MS") {
+        if let Ok(v) = val.parse() {
+            settings.sync.interval_ms = v;
+        }
+    }
+    if let Ok(val) = std::env::var("XAVIER_SYNC_LAG_THRESHOLD_MS") {
+        if let Ok(v) = val.parse() {
+            settings.sync.lag_threshold_ms = v;
+        }
+    }
+    if let Ok(val) = std::env::var("XAVIER_SYNC_SAVE_OK_RATE_THRESHOLD") {
+        if let Ok(v) = val.parse() {
+            settings.sync.save_ok_rate_threshold = v;
+        }
+    }
+    if let Ok(val) = std::env::var("XAVIER_SYNC_MAX_RETRIES") {
+        if let Ok(v) = val.parse() {
+            settings.sync.max_retries = v;
+        }
+    }
+    if let Ok(val) = std::env::var("XAVIER_SYNC_MIN_HEALTH_INTERVAL_MS") {
+        if let Ok(v) = val.parse() {
+            settings.sync.min_health_interval_ms = v;
+        }
+    }
+    if let Ok(val) = std::env::var("XAVIER_SYNC_TIMEOUT_MS") {
+        if let Ok(v) = val.parse() {
+            settings.sync.timeout_ms = v;
+        }
     }
     if settings.retrieval.zone_boost_multiplier.is_none() {
         settings.retrieval.zone_boost_multiplier = std::env::var("XAVIER_ZONE_BOOST")
