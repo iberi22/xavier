@@ -55,7 +55,12 @@ impl ProxyUseCase {
             "PUT" => reqwest::Method::PUT,
             "DELETE" => reqwest::Method::DELETE,
             "PATCH" => reqwest::Method::PATCH,
-            _ => return Err(ProxyError::InvalidRequest(format!("Unsupported method: {}", req.method))),
+            _ => {
+                return Err(ProxyError::InvalidRequest(format!(
+                    "Unsupported method: {}",
+                    req.method
+                )))
+            }
         };
 
         let mut request_builder = client.request(method, &req.url);
@@ -76,19 +81,26 @@ impl ProxyUseCase {
                 return Err(ProxyError::SecretError("Lease token expired".to_string()));
             }
 
-            let secret = lease
-                .secret_value
-                .ok_or_else(|| ProxyError::SecretError("Secret value missing from lease (redacted or not set)".to_string()))?;
+            let secret = lease.secret_value.ok_or_else(|| {
+                ProxyError::SecretError(
+                    "Secret value missing from lease (redacted or not set)".to_string(),
+                )
+            })?;
 
-            match req.secret_injection_strategy.unwrap_or(SecretInjectionStrategy::BearerToken) {
+            match req
+                .secret_injection_strategy
+                .unwrap_or(SecretInjectionStrategy::BearerToken)
+            {
                 SecretInjectionStrategy::BearerToken => {
-                    request_builder = request_builder.header("Authorization", format!("Bearer {}", secret));
+                    request_builder =
+                        request_builder.header("Authorization", format!("Bearer {}", secret));
                 }
                 SecretInjectionStrategy::XApiKey => {
                     request_builder = request_builder.header("X-API-Key", secret);
                 }
                 SecretInjectionStrategy::GitHubToken => {
-                    request_builder = request_builder.header("Authorization", format!("token {}", secret));
+                    request_builder =
+                        request_builder.header("Authorization", format!("token {}", secret));
                 }
             }
         }
@@ -251,12 +263,12 @@ impl ProxyUseCase {
 
         // Ensure we are using secured keys from vault if available
         let config = if let Ok(_token) = resolve_xavier_token() {
-             // This ensures that even if env vars are missing, we try to use the root token
-             // or other mechanisms defined in resolve_xavier_token.
-             // For actual provider keys, ModelProviderConfig::for_provider already handles env/settings.
-             config
+            // This ensures that even if env vars are missing, we try to use the root token
+            // or other mechanisms defined in resolve_xavier_token.
+            // For actual provider keys, ModelProviderConfig::for_provider already handles env/settings.
+            config
         } else {
-             config
+            config
         };
 
         let client = ModelProviderClient::new(config);

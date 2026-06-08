@@ -310,7 +310,11 @@ pub async fn list_bookmarks(
 ) -> impl IntoResponse {
     let workspace_id = workspace.workspace.config().id.clone();
     let backend = workspace.workspace.durable_store_backend();
-    let project_id = if backend == "vec" { "vec_store" } else { "memory" };
+    let project_id = if backend == "vec" {
+        "vec_store"
+    } else {
+        "memory"
+    };
 
     match ConnectionManager::global()
         .with_conn(project_id, move |conn| {
@@ -350,7 +354,11 @@ pub async fn save_bookmark(
 ) -> impl IntoResponse {
     let workspace_id = workspace.workspace.config().id.clone();
     let backend = workspace.workspace.durable_store_backend();
-    let project_id = if backend == "vec" { "vec_store" } else { "memory" };
+    let project_id = if backend == "vec" {
+        "vec_store"
+    } else {
+        "memory"
+    };
 
     match ConnectionManager::global()
         .with_conn(project_id, move |conn| {
@@ -381,12 +389,14 @@ pub async fn save_bookmark(
     }
 }
 
-pub async fn list_widgets(
-    Extension(workspace): Extension<WorkspaceContext>,
-) -> impl IntoResponse {
+pub async fn list_widgets(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     let workspace_id = workspace.workspace.config().id.clone();
     let backend = workspace.workspace.durable_store_backend();
-    let project_id = if backend == "vec" { "vec_store" } else { "memory" };
+    let project_id = if backend == "vec" {
+        "vec_store"
+    } else {
+        "memory"
+    };
 
     match ConnectionManager::global()
         .with_conn(project_id, move |conn| {
@@ -429,7 +439,11 @@ pub async fn save_widget(
 ) -> impl IntoResponse {
     let workspace_id = workspace.workspace.config().id.clone();
     let backend = workspace.workspace.durable_store_backend();
-    let project_id = if backend == "vec" { "vec_store" } else { "memory" };
+    let project_id = if backend == "vec" {
+        "vec_store"
+    } else {
+        "memory"
+    };
 
     match ConnectionManager::global()
         .with_conn(project_id, move |conn| {
@@ -466,7 +480,11 @@ pub async fn save_widget(
 pub async fn get_graph(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     let workspace_id = workspace.workspace.config().id.clone();
     let backend = workspace.workspace.durable_store_backend();
-    let project_id = if backend == "vec" { "vec_store" } else { "memory" };
+    let project_id = if backend == "vec" {
+        "vec_store"
+    } else {
+        "memory"
+    };
 
     match ConnectionManager::global()
         .with_conn(project_id, move |conn| {
@@ -510,7 +528,11 @@ pub async fn save_graph(
 ) -> impl IntoResponse {
     let workspace_id = workspace.workspace.config().id.clone();
     let backend = workspace.workspace.durable_store_backend();
-    let project_id = if backend == "vec" { "vec_store" } else { "memory" };
+    let project_id = if backend == "vec" {
+        "vec_store"
+    } else {
+        "memory"
+    };
 
     match ConnectionManager::global()
         .with_conn(project_id, move |conn| {
@@ -707,8 +729,10 @@ mod tests {
     #[tokio::test]
     async fn bookmarks_crud() {
         let (state, workspace) = test_state().await;
-        let app = test_router(state, workspace)
-            .route("/panel/api/bookmarks", get(list_bookmarks).post(save_bookmark));
+        let app = test_router(state, workspace).route(
+            "/panel/api/bookmarks",
+            get(list_bookmarks).post(save_bookmark),
+        );
 
         let bookmark = Bookmark {
             id: "test-id".to_string(),
@@ -725,7 +749,11 @@ mod tests {
             .body(Body::from(serde_json::to_string(&bookmark).unwrap()))
             .expect("test assertion");
 
-        let response = app.clone().oneshot(create_request).await.expect("test assertion");
+        let response = app
+            .clone()
+            .oneshot(create_request)
+            .await
+            .expect("test assertion");
         assert_eq!(response.status(), StatusCode::OK);
 
         let get_request = Request::builder()

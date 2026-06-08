@@ -47,8 +47,7 @@ pub async fn lend_handler(
         }
     };
 
-    match result
-    {
+    match result {
         Ok(lease) => json_response(
             StatusCode::OK,
             serde_json::to_value(lease).unwrap_or_default(),

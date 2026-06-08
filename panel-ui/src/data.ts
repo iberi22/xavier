@@ -1,6 +1,6 @@
-import { GraphData, BookmarkArtifact } from './types';
+import { BookmarkArtifact } from './types';
 
-export const initialGraphData: GraphData = {
+export const initialGraphData: any = {
   nodes: [
     { 
       id: 'org_nexus', label: 'Nexus Corp', type: 'organization', description: 'Central Headquarters', 
@@ -40,8 +40,8 @@ export const initialGraphData: GraphData = {
 };
 
 export const initialBookmarks: BookmarkArtifact[] = [
-  { id: 'b1', type: 'Table', title: 'User Retention Metrics', date: '2026-06-07', category: 'Analytics' },
-  { id: 'b2', type: 'Graph', title: 'CPU Workload Array', date: '2026-06-06', category: 'System' },
-  { id: 'b3', type: 'Code Snippet', title: 'RAG Pipeline Script', date: '2026-06-05', category: 'Development' },
-  { id: 'b4', type: 'Data Card', title: 'System Diagnostics', date: '2026-06-04', category: 'System' },
+  { id: 'b1', type: 'Table', title: 'User Retention Metrics', date: '2026-06-07', category: 'Analytics', description: '', url: '', addedAt: '' },
+  { id: 'b2', type: 'Graph', title: 'CPU Workload Array', date: '2026-06-06', category: 'System', description: '', url: '', addedAt: '' },
+  { id: 'b3', type: 'Code Snippet', title: 'RAG Pipeline Script', date: '2026-06-05', category: 'Development', description: '', url: '', addedAt: '' },
+  { id: 'b4', type: 'Data Card', title: 'System Diagnostics', date: '2026-06-04', category: 'System', description: '', url: '', addedAt: '' },
 ];

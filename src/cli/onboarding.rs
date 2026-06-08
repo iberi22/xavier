@@ -139,7 +139,10 @@ pub fn generate_suggestions(workspace_path: &Path) -> OnboardingSuggestions {
         recommendations.push("Rust project detected. Consider enabling code graph indexing (XAVIER_CODE_SCAN) for faster navigation.".to_string());
     }
     if workspace.project_type.contains("Node.js") {
-        recommendations.push("Node.js project detected. Xavier can help manage your npm dependencies and scripts.".to_string());
+        recommendations.push(
+            "Node.js project detected. Xavier can help manage your npm dependencies and scripts."
+                .to_string(),
+        );
     }
     if workspace.project_type.contains("Python") {
         recommendations.push("Python project detected. Consider indexing your virtual environment for better symbol resolution.".to_string());
@@ -170,7 +173,9 @@ pub fn generate_suggestions(workspace_path: &Path) -> OnboardingSuggestions {
     }
 
     if tools.iter().any(|t| t.name == "ollama" && t.installed) {
-        recommendations.push("Ollama detected. Xavier can use it for running local LLMs with ease.".to_string());
+        recommendations.push(
+            "Ollama detected. Xavier can use it for running local LLMs with ease.".to_string(),
+        );
     }
 
     OnboardingSuggestions {
@@ -186,8 +191,8 @@ pub fn generate_suggestions(workspace_path: &Path) -> OnboardingSuggestions {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use std::fs::File;
+    use tempfile::tempdir;
 
     #[test]
     fn test_detect_os() {

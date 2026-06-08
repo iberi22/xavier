@@ -2,10 +2,6 @@
   "extends": "./tsconfig.json",
   "include": [
     "src/App.tsx",
-    "src/main.tsx",
-    "src/theme.ts",
-    "src/components/QuestionCard.tsx",
-    "src/components/DecisionCard.tsx",
-    "src/components/ProjectCard.tsx"
+    "src/main.tsx"
   ]
 }
