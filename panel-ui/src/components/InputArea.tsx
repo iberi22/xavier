@@ -1,12 +1,15 @@
 import { useState } from 'react';
-import { Mic, Send, BrainCircuit } from 'lucide-react';
+import { Mic, Send, BrainCircuit, FolderPlus } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
+import { open } from '@tauri-apps/plugin-dialog';
 
 interface InputAreaProps {
   onSendMessage: (text: string) => void;
   onOpenConfig: () => void;
+  onSystemMessage?: (text: string) => void;
 }
 
-export default function InputArea({ onSendMessage, onOpenConfig }: InputAreaProps) {
+export default function InputArea({ onSendMessage, onOpenConfig, onSystemMessage }: InputAreaProps) {
   const [inputText, setInputText] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -23,6 +26,24 @@ export default function InputArea({ onSendMessage, onOpenConfig }: InputAreaProp
     } else {
       setIsRecording(true);
       setIsTranscribing(false);
+    }
+  };
+
+  const handleFolderClick = async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+      });
+      if (selected && onSystemMessage) {
+        onSystemMessage(`Iniciando escaneo del proyecto en: ${selected}...`);
+        const result = await invoke('scan_project_folder', { path: selected });
+        onSystemMessage(`✅ ${result}`);
+      }
+    } catch (err) {
+      if (onSystemMessage) {
+        onSystemMessage(`❌ Error al escanear: ${err}`);
+      }
     }
   };
 
@@ -48,6 +69,14 @@ export default function InputArea({ onSendMessage, onOpenConfig }: InputAreaProp
         >
           <div className="absolute inset-1 rounded-full border border-transparent group-hover:border-[#39ff14]/40 group-hover:shadow-[inset_0_0_10px_rgba(57,255,20,0.2)] transition-all duration-300" />
           <BrainCircuit className="w-6 h-6 group-hover:drop-shadow-[0_0_10px_rgba(57,255,20,0.8)] transition-all duration-300" strokeWidth={1.5} />
+        </button>
+
+        <button 
+          onClick={handleFolderClick}
+          className="relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 text-white/60 hover:text-blue-400"
+          title="Agregar Codebase (Proyecto Git)"
+        >
+          <FolderPlus className="w-5 h-5" />
         </button>
 
         <div className="w-px h-8 bg-white/10 relative z-10 mx-1" />

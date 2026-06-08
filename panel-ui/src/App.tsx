@@ -46,6 +46,8 @@ export default function App() {
   const [widgets, setWidgets] = useState<CanvasWidget[]>([]);
   const [graphData, setGraphData] = useState<GraphData | null>(null);
 
+  const [hasConfig, setHasConfig] = useState(true);
+
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(
     () => typeof window !== "undefined" && !localStorage.getItem("xavier_onboarding_completed")
@@ -114,6 +116,8 @@ export default function App() {
           if (nativeToken) {
             setToken(nativeToken);
           }
+          const configState: any = await invoke("get_current_config_state");
+          setHasConfig(configState.has_openai || configState.has_gemini);
         } catch (e) {
           console.warn("Could not retrieve Xavier token from local config", e);
         }
@@ -193,7 +197,6 @@ export default function App() {
   async function sendMessage(draft: string) {
     if (!draft.trim()) return;
 
-    // Optimistic UI updates
     const tempId = Date.now().toString();
     const newUserMsg: PanelMessage = {
       id: tempId,
@@ -201,6 +204,22 @@ export default function App() {
       plain_text: draft,
       created_at: new Date().toISOString(),
     };
+    
+    if (!hasConfig) {
+      setMessages((prev) => [
+        ...prev,
+        newUserMsg,
+        {
+          id: tempId + "_sys",
+          role: "assistant",
+          plain_text: "⚠️ Sistema no configurado: No se detectaron proveedores de IA. Por favor, abre los ajustes y configura tu API Key de OpenAI o Gemini.",
+          created_at: new Date().toISOString(),
+        }
+      ]);
+      return;
+    }
+
+    // Optimistic UI updates
     setMessages((prev) => [...prev, newUserMsg]);
 
     try {
@@ -250,6 +269,15 @@ export default function App() {
       setIsLoading(false);
     }
   }
+
+  const handleSystemMessage = (text: string) => {
+    setMessages((prev) => [...prev, {
+      id: Date.now().toString() + "_sys",
+      role: "assistant",
+      plain_text: text,
+      created_at: new Date().toISOString()
+    }]);
+  };
 
   const handleUpdateBookmark = (_updated: BookmarkArtifact) => {
     // For demo purposes, sync local state
@@ -394,6 +422,7 @@ export default function App() {
             <InputArea
               onSendMessage={sendMessage}
               onOpenConfig={() => setIsConfigOpen(true)}
+              onSystemMessage={handleSystemMessage}
             />
           </motion.div>
         )}

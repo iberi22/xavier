@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Database, Activity, Wifi, Bot, Zap, Bell, ShieldCheck, Key, MessageCircle, Hash, Users, Send, MessageSquare, Settings } from 'lucide-react';
+import { invoke } from '@tauri-apps/api/core';
 
 interface TopStatusBarProps {
   isModalOpen?: boolean;
@@ -8,7 +9,9 @@ interface TopStatusBarProps {
 
 export default function TopStatusBar({ isModalOpen = false }: TopStatusBarProps) {
   const [time, setTime] = useState(new Date());
-  const [notifications] = useState(12); // Example notification count
+  const [memoryCount, setMemoryCount] = useState(0);
+  const [metrics, setMetrics] = useState({ cpu_percent: 0, ram_used_gb: 0, ram_total_gb: 0 });
+  const [config, setConfig] = useState({ has_openai: false, has_gemini: false, has_telegram: false });
   const [showConfig, setShowConfig] = useState(false);
   const [modules, setModules] = useState({
     time: true,
@@ -25,10 +28,40 @@ export default function TopStatusBar({ isModalOpen = false }: TopStatusBarProps)
   };
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    // Initial config fetch
+    invoke('get_current_config_state').then((res: any) => setConfig(res)).catch(console.error);
+
+    const fetchMetrics = async () => {
+      try {
+        const met = await invoke('get_realtime_metrics');
+        setMetrics(met as any);
+
+        const token = await invoke('get_xavier_token');
+        const res = await fetch('http://127.0.0.1:8006/v1/memories?limit=1', {
+          headers: { 'X-Xavier-Token': token as string }
+        });
+        if (res.ok) {
+           const data = await res.json();
+           if (data.pagination && data.pagination.total !== undefined) {
+              setMemoryCount(data.pagination.total);
+           }
+        }
+      } catch (err) {
+        console.error("Error fetching metrics:", err);
+      }
+    };
+
+    fetchMetrics();
+    const metricsInterval = setInterval(fetchMetrics, 3000);
+
+    const timeInterval = setInterval(() => {
       setTime(new Date());
     }, 1000);
-    return () => clearInterval(interval);
+
+    return () => {
+      clearInterval(metricsInterval);
+      clearInterval(timeInterval);
+    };
   }, []);
 
   const spring = { type: "spring" as const, stiffness: 200, damping: 25 };
@@ -53,13 +86,13 @@ export default function TopStatusBar({ isModalOpen = false }: TopStatusBarProps)
           {/* System Resources Pill */}
           {modules.resources && (
             <motion.div layout transition={spring} className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-3 py-1 flex items-center gap-3 h-7 shrink-0 hidden lg:flex">
-               <div className="flex items-center gap-1 text-[10px] text-white/70" data-title="Memory Usage: 16.4GB / 32.0GB">
+               <div className="flex items-center gap-1 text-[10px] text-white/70" data-title={`Memory Usage: ${metrics.ram_used_gb.toFixed(1)}GB / ${metrics.ram_total_gb.toFixed(1)}GB`}>
                   <Database className="w-3 h-3 text-blue-400" />
-                  <span className="font-mono">16G</span>
+                  <span className="font-mono">{Math.round(metrics.ram_used_gb)}G</span>
                </div>
-               <div className="flex items-center gap-1 text-[10px] text-white/70" data-title="Average CPU Usage: 14%">
+               <div className="flex items-center gap-1 text-[10px] text-white/70" data-title={`Average CPU Usage: ${Math.round(metrics.cpu_percent)}%`}>
                   <Activity className="w-3 h-3 text-red-400" />
-                  <span className="font-mono">14%</span>
+                  <span className="font-mono">{Math.round(metrics.cpu_percent)}%</span>
                </div>
                <div className="flex items-center gap-1 text-[10px] text-[#39ff14]" data-title="GPU Status: ON">
                   <Zap className="w-3 h-3 fill-[#39ff14]/20" />
@@ -70,11 +103,11 @@ export default function TopStatusBar({ isModalOpen = false }: TopStatusBarProps)
           {/* Communication Channels */}
           {modules.channels && (
             <motion.div layout transition={spring} className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2.5 py-1 flex items-center gap-1.5 h-7 shrink-0 hidden md:flex">
-               <MessageCircle className="w-3 h-3 text-indigo-400 hover:text-indigo-300 cursor-pointer transition-colors" data-title="Discord" />
-               <Hash className="w-3 h-3 text-amber-400 hover:text-amber-300 cursor-pointer transition-colors" data-title="Slack" />
-               <Users className="w-3 h-3 text-purple-400 hover:text-purple-300 cursor-pointer transition-colors" data-title="Teams" />
-               <Send className="w-3 h-3 text-blue-400 hover:text-blue-300 cursor-pointer transition-colors" data-title="Telegram" />
-               <MessageSquare className="w-3 h-3 text-green-400 hover:text-green-300 cursor-pointer transition-colors" data-title="WhatsApp" />
+               <MessageCircle className="w-3 h-3 text-indigo-400/30 cursor-not-allowed transition-colors" data-title="Discord (Not Configured)" />
+               <Hash className="w-3 h-3 text-amber-400/30 cursor-not-allowed transition-colors" data-title="Slack (Not Configured)" />
+               <Users className="w-3 h-3 text-purple-400/30 cursor-not-allowed transition-colors" data-title="Teams (Not Configured)" />
+               <Send className={`w-3 h-3 ${config.has_telegram ? 'text-blue-400 hover:text-blue-300 cursor-pointer' : 'text-blue-400/30 cursor-not-allowed'} transition-colors`} data-title={config.has_telegram ? "Telegram (Active)" : "Telegram (Not Configured)"} />
+               <MessageSquare className="w-3 h-3 text-green-400/30 cursor-not-allowed transition-colors" data-title="WhatsApp (Not Configured)" />
             </motion.div>
           )}
        </motion.div>
@@ -167,24 +200,28 @@ export default function TopStatusBar({ isModalOpen = false }: TopStatusBarProps)
           )}
 
           {/* AI Providers Pill */}
-          {modules.ai && (
+          {modules.ai && (config.has_gemini || config.has_openai) && (
             <motion.div layout transition={spring} className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2.5 py-1 flex items-center gap-1.5 h-7 shrink-0">
                <Bot className="w-3 h-3 text-purple-400" />
                <div className="flex items-center gap-1">
-                  <span className="hidden md:inline-block text-[8px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-1 py-px rounded uppercase tracking-wider font-mono">GEM</span>
-                  <span className="hidden md:inline-block text-[8px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1 py-px rounded uppercase tracking-wider font-mono">OAI</span>
+                  {config.has_gemini && (
+                    <span className="hidden md:inline-block text-[8px] bg-blue-500/20 text-blue-300 border border-blue-500/30 px-1 py-px rounded uppercase tracking-wider font-mono">GEM</span>
+                  )}
+                  {config.has_openai && (
+                    <span className="hidden md:inline-block text-[8px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1 py-px rounded uppercase tracking-wider font-mono">OAI</span>
+                  )}
                </div>
             </motion.div>
           )}
 
           {/* Notifications */}
           {modules.notifications && (
-            <motion.button layout transition={spring} className={`bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2 hover:bg-white/5 transition-colors flex items-center justify-center h-7 shrink-0 ${notifications === 0 ? 'opacity-50' : ''}`} data-title="Notifications">
+            <motion.button layout transition={spring} className={`bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2 hover:bg-white/5 transition-colors flex items-center justify-center h-7 shrink-0 ${memoryCount === 0 ? 'opacity-50' : ''}`} data-title={`${memoryCount} Indexed Memories`}>
                <div className="relative flex items-center justify-center">
-                  <Bell className={`w-3.5 h-3.5 ${notifications > 0 ? 'text-white' : 'text-white/50'}`} />
-                  {notifications > 0 && (
+                  <Bell className={`w-3.5 h-3.5 ${memoryCount > 0 ? 'text-white' : 'text-white/50'}`} />
+                  {memoryCount > 0 && (
                     <div className="absolute -top-1 -right-1 bg-red-500 text-white text-[8px] font-bold px-1 rounded-full border border-[#0a0a0a] min-w-[14px] text-center shadow-[0_0_5px_rgba(239,68,68,0.5)]">
-                       {notifications > 99 ? '99+' : notifications}
+                       {memoryCount > 99 ? '99+' : memoryCount}
                     </div>
                   )}
                </div>
