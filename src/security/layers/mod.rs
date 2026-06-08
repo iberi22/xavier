@@ -9,6 +9,7 @@ pub mod homoglyph;
 pub mod path_traversal;
 pub mod phrase;
 pub mod threat_categories;
+pub mod goal_drift;
 pub mod tool_alias;
 
 pub use canary::detect_canary;
@@ -20,4 +21,5 @@ pub use homoglyph::detect_homoglyph;
 pub use path_traversal::detect_path_traversal;
 pub use phrase::{contains_injection, find_matches, get_match_positions};
 pub use threat_categories::detect_threat_categories;
+pub use goal_drift::detect_goal_drift;
 pub use tool_alias::detect_tool_alias_full;
