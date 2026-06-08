@@ -7,7 +7,9 @@ use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
+use once_cell::sync::Lazy;
 use rand::RngCore;
+use std::sync::RwLock;
 
 use crate::crypto::NONCE_SIZE;
 
@@ -104,6 +106,48 @@ pub enum EncryptionError {
 
 /// Result type for encryption operations
 pub type EncryptionResult<T> = Result<T, EncryptionError>;
+
+/// Session key manager for node-specific E2E encryption
+pub struct SessionKeyManager {
+    key: [u8; AES_KEY_SIZE],
+}
+
+impl SessionKeyManager {
+    fn new() -> Self {
+        let mut key = [0u8; AES_KEY_SIZE];
+        OsRng.fill_bytes(&mut key);
+        Self { key }
+    }
+
+    pub fn get_key(&self) -> &[u8; AES_KEY_SIZE] {
+        &self.key
+    }
+}
+
+static SESSION_KEY: Lazy<RwLock<SessionKeyManager>> =
+    Lazy::new(|| RwLock::new(SessionKeyManager::new()));
+
+pub fn get_node_session_key() -> [u8; AES_KEY_SIZE] {
+    *SESSION_KEY.read().unwrap().get_key()
+}
+
+/// Encrypt data using the node-specific session key
+pub fn encrypt_with_session_key(plaintext: &[u8]) -> EncryptionResult<EncryptedBlob> {
+    let key = get_node_session_key();
+    let nonce = NonceBytes::generate();
+    encrypt_data(plaintext, &key, &nonce)
+}
+
+/// Decrypt data using the node-specific session key
+pub fn decrypt_with_session_key(blob: &EncryptedBlob) -> EncryptionResult<Vec<u8>> {
+    let key = get_node_session_key();
+    let nonce: [u8; NONCE_SIZE] = blob
+        .nonce
+        .clone()
+        .try_into()
+        .map_err(|_| EncryptionError::InvalidNonce)?;
+    decrypt_data(&blob.ciphertext, &key, &nonce)
+}
 
 /// Encrypt data using AES-256-GCM with a random nonce
 ///
@@ -335,6 +379,14 @@ mod tests {
         let decrypted =
             decrypt_data(&blob.ciphertext, &key, nonce.as_bytes()).expect("test assertion");
 
+        assert_eq!(plaintext.to_vec(), decrypted);
+    }
+
+    #[test]
+    fn test_node_session_key_roundtrip() {
+        let plaintext = b"Node-specific session key test";
+        let encrypted = encrypt_with_session_key(plaintext).expect("Encryption failed");
+        let decrypted = decrypt_with_session_key(&encrypted).expect("Decryption failed");
         assert_eq!(plaintext.to_vec(), decrypted);
     }
 

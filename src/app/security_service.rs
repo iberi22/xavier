@@ -14,6 +14,7 @@ use crate::security::threat_store::SecurityThreatStore;
 use crate::security::{self, Anticipator};
 use async_trait::async_trait;
 use chrono::Utc;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -133,6 +134,29 @@ impl InputSecurityPort for SecurityService {
     }
 }
 
+impl SecurityService {
+    pub async fn get_stats(&self) -> anyhow::Result<HashMap<String, u32>> {
+        let stats = tokio::task::spawn_blocking(|| {
+            let service = security::get_security_service();
+            service.get_stats()
+        })
+        .await?;
+        Ok(stats)
+    }
+
+    /// Encrypt sensitive data using the node's session key
+    pub fn encrypt_sensitive(&self, data: &[u8]) -> anyhow::Result<Vec<u8>> {
+        let service = security::get_security_service();
+        service.encrypt_sensitive(data)
+    }
+
+    /// Decrypt sensitive data using the node's session key
+    pub fn decrypt_sensitive(&self, encrypted_data: &[u8]) -> anyhow::Result<Vec<u8>> {
+        let service = security::get_security_service();
+        service.decrypt_sensitive(encrypted_data)
+    }
+}
+
 #[async_trait]
 impl ThreatDetectionPort for SecurityService {
     async fn scan_and_log(&self, text: &str, component: &str) -> anyhow::Result<bool> {
@@ -147,6 +171,20 @@ impl ThreatDetectionPort for SecurityService {
         }
 
         Ok(result.clean)
+    }
+
+    async fn requires_hitl(&self, action: &str, target: &str) -> anyhow::Result<bool> {
+        // Enforce HITL for destructive actions as per MASS 2026
+        if action == "memory_delete" {
+            // Check for bypass token in thread-safe ApprovalStore
+            if crate::security::APPROVAL_STORE.is_approved(action, target) {
+                // Consume approval
+                crate::security::APPROVAL_STORE.revoke(action, target);
+                return Ok(false);
+            }
+            return Ok(true);
+        }
+        Ok(false)
     }
 }
 
