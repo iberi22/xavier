@@ -160,10 +160,44 @@ pub fn run() {
                 e
             })?;
 
-            let (mut _rx, _child) = sidecar_command.args(["http"]).spawn().map_err(|e| {
-                log::error!("Failed to spawn xavier sidecar: {}", e);
-                e
-            })?;
+            // Generate or fetch XAVIER_TOKEN
+            let token = match get_xavier_token() {
+                Ok(t) => t,
+                Err(_) => {
+                    let new_token = uuid::Uuid::new_v4().to_string();
+                    if let Some(mut home) = std::env::var_os("USERPROFILE")
+                        .map(std::path::PathBuf::from)
+                        .or_else(|| std::env::var_os("HOME").map(std::path::PathBuf::from))
+                    {
+                        home.push(".xavier");
+                        home.push("config");
+                        let _ = std::fs::create_dir_all(&home);
+                        home.push("xavier.config.json");
+
+                        let mut json = serde_json::json!({});
+                        if let Ok(contents) = std::fs::read_to_string(&home) {
+                            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&contents)
+                            {
+                                json = parsed;
+                            }
+                        }
+                        json["security"] = serde_json::json!({ "token_secret": new_token });
+                        if let Ok(updated_json) = serde_json::to_string_pretty(&json) {
+                            let _ = std::fs::write(home, updated_json);
+                        }
+                    }
+                    new_token
+                }
+            };
+
+            let (mut _rx, _child) = sidecar_command
+                .env("XAVIER_TOKEN", token)
+                .args(["http"])
+                .spawn()
+                .map_err(|e| {
+                    log::error!("Failed to spawn xavier sidecar: {}", e);
+                    e
+                })?;
 
             log::info!("Xavier sidecar spawned successfully");
             Ok(())
