@@ -238,6 +238,41 @@ impl VecSqliteMemoryStore {
                 )
             )?;
 
+            // Panel UI Backend Parity Tables
+            conn.execute_batch(
+                &format!(
+                    "CREATE TABLE IF NOT EXISTS {} (
+                        id TEXT PRIMARY KEY,
+                        workspace_id TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        url TEXT NOT NULL,
+                        metadata TEXT NOT NULL DEFAULT '{{}}',
+                        created_at DATETIME NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS {} (
+                        id TEXT PRIMARY KEY,
+                        workspace_id TEXT NOT NULL,
+                        type TEXT NOT NULL,
+                        config TEXT NOT NULL DEFAULT '{{}}',
+                        x INTEGER DEFAULT 0,
+                        y INTEGER DEFAULT 0,
+                        w INTEGER DEFAULT 1,
+                        h INTEGER DEFAULT 1,
+                        created_at DATETIME NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS {} (
+                        id TEXT PRIMARY KEY,
+                        workspace_id TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        data TEXT NOT NULL DEFAULT '{{}}',
+                        created_at DATETIME NOT NULL
+                    );",
+                    crate::memory::sqlite_store::TABLE_PANEL_BOOKMARKS,
+                    crate::memory::sqlite_store::TABLE_PANEL_WIDGETS,
+                    crate::memory::sqlite_store::TABLE_PANEL_GRAPHS
+                )
+            )?;
+
             // New native vector search table (Turso specific)
             conn.execute_batch(&format!(
                 "CREATE TABLE IF NOT EXISTS memory_embeddings (

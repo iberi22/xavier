@@ -25,6 +25,9 @@ pub(crate) const TABLE_MEMORIES: &str = "memory_records";
 pub(crate) const TABLE_BELIEFS: &str = "belief_states";
 pub(crate) const TABLE_SESSION_TOKENS: &str = "session_tokens";
 pub(crate) const TABLE_CHECKPOINTS: &str = "checkpoint_records";
+pub(crate) const TABLE_PANEL_BOOKMARKS: &str = "panel_bookmarks";
+pub(crate) const TABLE_PANEL_WIDGETS: &str = "panel_widgets";
+pub(crate) const TABLE_PANEL_GRAPHS: &str = "panel_graphs";
 
 struct SessionTokenRow {
     token: String,
@@ -138,6 +141,35 @@ impl SqliteMemoryStore {
                     data TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS {} (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    url TEXT NOT NULL,
+                    metadata TEXT NOT NULL DEFAULT '{{}}',
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS {} (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    type TEXT NOT NULL,
+                    config TEXT NOT NULL DEFAULT '{{}}',
+                    x INTEGER DEFAULT 0,
+                    y INTEGER DEFAULT 0,
+                    w INTEGER DEFAULT 1,
+                    h INTEGER DEFAULT 1,
+                    created_at TEXT NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS {} (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    data TEXT NOT NULL DEFAULT '{{}}',
+                    created_at TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_memories_workspace ON {}(workspace_id);
                 CREATE INDEX IF NOT EXISTS idx_memories_path ON {}(workspace_id, path);
                 CREATE INDEX IF NOT EXISTS idx_session_tokens_workspace ON {}(workspace_id);
@@ -148,6 +180,9 @@ impl SqliteMemoryStore {
                     TABLE_BELIEFS,
                     TABLE_SESSION_TOKENS,
                     TABLE_CHECKPOINTS,
+                    TABLE_PANEL_BOOKMARKS,
+                    TABLE_PANEL_WIDGETS,
+                    TABLE_PANEL_GRAPHS,
                     TABLE_MEMORIES,
                     TABLE_MEMORIES,
                     TABLE_SESSION_TOKENS,
