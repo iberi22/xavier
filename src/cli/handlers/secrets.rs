@@ -13,17 +13,41 @@ use crate::cli::types::*;
 
 pub async fn lend_handler(
     State(state): State<CliState>,
+    axum::Extension(session): axum::Extension<crate::cli::http_setup::SessionInfo>,
     Json(payload): Json<LendSecretPayload>,
 ) -> Response {
-    match state
-        .secrets_engine
-        .lend(
-            &payload.secret_name,
-            &payload.secret_value,
-            &payload.agent_id,
-            payload.ttl_seconds,
-        )
-        .await
+    let result = if payload.secret_value.is_empty() {
+        state
+            .secrets_engine
+            .lend_from_vault(
+                &payload.secret_name,
+                &payload.agent_id,
+                payload.ttl_seconds,
+                session.is_ephemeral,
+            )
+            .await
+    } else {
+        match state
+            .secrets_engine
+            .lend(
+                &payload.secret_name,
+                Some(&payload.secret_value),
+                &payload.agent_id,
+                payload.ttl_seconds,
+            )
+            .await
+        {
+            Ok(mut lease) => {
+                if session.is_ephemeral {
+                    lease.secret_value = None;
+                }
+                Ok(lease)
+            }
+            Err(e) => Err(e),
+        }
+    };
+
+    match result
     {
         Ok(lease) => json_response(
             StatusCode::OK,
