@@ -15,9 +15,13 @@ use serde_json::json;
 
 use crate::{
     agents::ui_render::UiRenderAgent,
+    codebase::connection_manager::ConnectionManager,
     codebase::conversations_db::{ConversationsDb, Message, ThreadDetail, ThreadSummary},
+    memory::sqlite_store::{TABLE_PANEL_BOOKMARKS, TABLE_PANEL_GRAPHS, TABLE_PANEL_WIDGETS},
     workspace::WorkspaceContext,
 };
+use chrono::{DateTime, Utc};
+use rusqlite::params;
 
 const PANEL_BUILD_DIR: &str = "panel-ui/build";
 
@@ -37,6 +41,36 @@ pub struct PanelChatRequest {
 pub struct PanelChatResponse {
     pub thread: ThreadSummary,
     pub messages: Vec<Message>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Bookmark {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+    pub metadata: serde_json::Value,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Widget {
+    pub id: String,
+    #[serde(rename = "type")]
+    pub widget_type: String,
+    pub config: serde_json::Value,
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphData {
+    pub id: String,
+    pub name: String,
+    pub data: serde_json::Value,
+    pub created_at: DateTime<Utc>,
 }
 
 pub async fn panel_index() -> impl IntoResponse {
@@ -271,6 +305,241 @@ async fn process_chat_inner(
     })
 }
 
+pub async fn list_bookmarks(
+    Extension(workspace): Extension<WorkspaceContext>,
+) -> impl IntoResponse {
+    let workspace_id = workspace.workspace.config().id.clone();
+    let backend = workspace.workspace.durable_store_backend();
+    let project_id = if backend == "vec" { "vec_store" } else { "memory" };
+
+    match ConnectionManager::global()
+        .with_conn(project_id, move |conn| {
+            let mut stmt = conn.prepare(&format!(
+                "SELECT id, title, url, metadata, created_at FROM {} WHERE workspace_id = ? ORDER BY created_at DESC",
+                TABLE_PANEL_BOOKMARKS
+            ))?;
+            let mut rows = stmt.query(params![workspace_id])?;
+            let mut bookmarks = Vec::new();
+            while let Some(row) = rows.next()? {
+                let metadata_str: String = row.get(3)?;
+                let created_at_str: String = row.get(4)?;
+                bookmarks.push(Bookmark {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    url: row.get(2)?,
+                    metadata: serde_json::from_str(&metadata_str).unwrap_or_default(),
+                    created_at: created_at_str.parse().unwrap_or_else(|_| Utc::now()),
+                });
+            }
+            Ok(bookmarks)
+        })
+        .await
+    {
+        Ok(bookmarks) => Json(bookmarks).into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn save_bookmark(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Json(payload): Json<Bookmark>,
+) -> impl IntoResponse {
+    let workspace_id = workspace.workspace.config().id.clone();
+    let backend = workspace.workspace.durable_store_backend();
+    let project_id = if backend == "vec" { "vec_store" } else { "memory" };
+
+    match ConnectionManager::global()
+        .with_conn(project_id, move |conn| {
+            conn.execute(
+                &format!(
+                    "INSERT OR REPLACE INTO {} (id, workspace_id, title, url, metadata, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    TABLE_PANEL_BOOKMARKS
+                ),
+                params![
+                    payload.id,
+                    workspace_id,
+                    payload.title,
+                    payload.url,
+                    serde_json::to_string(&payload.metadata).unwrap_or_default(),
+                    payload.created_at.to_rfc3339(),
+                ],
+            )?;
+            Ok(())
+        })
+        .await
+    {
+        Ok(_) => StatusCode::OK.into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn list_widgets(
+    Extension(workspace): Extension<WorkspaceContext>,
+) -> impl IntoResponse {
+    let workspace_id = workspace.workspace.config().id.clone();
+    let backend = workspace.workspace.durable_store_backend();
+    let project_id = if backend == "vec" { "vec_store" } else { "memory" };
+
+    match ConnectionManager::global()
+        .with_conn(project_id, move |conn| {
+            let mut stmt = conn.prepare(&format!(
+                "SELECT id, type, config, x, y, w, h, created_at FROM {} WHERE workspace_id = ? ORDER BY created_at ASC",
+                TABLE_PANEL_WIDGETS
+            ))?;
+            let mut rows = stmt.query(params![workspace_id])?;
+            let mut widgets = Vec::new();
+            while let Some(row) = rows.next()? {
+                let config_str: String = row.get(2)?;
+                let created_at_str: String = row.get(7)?;
+                widgets.push(Widget {
+                    id: row.get(0)?,
+                    widget_type: row.get(1)?,
+                    config: serde_json::from_str(&config_str).unwrap_or_default(),
+                    x: row.get(3)?,
+                    y: row.get(4)?,
+                    w: row.get(5)?,
+                    h: row.get(6)?,
+                    created_at: created_at_str.parse().unwrap_or_else(|_| Utc::now()),
+                });
+            }
+            Ok(widgets)
+        })
+        .await
+    {
+        Ok(widgets) => Json(widgets).into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn save_widget(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Json(payload): Json<Widget>,
+) -> impl IntoResponse {
+    let workspace_id = workspace.workspace.config().id.clone();
+    let backend = workspace.workspace.durable_store_backend();
+    let project_id = if backend == "vec" { "vec_store" } else { "memory" };
+
+    match ConnectionManager::global()
+        .with_conn(project_id, move |conn| {
+            conn.execute(
+                &format!(
+                    "INSERT OR REPLACE INTO {} (id, workspace_id, type, config, x, y, w, h, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    TABLE_PANEL_WIDGETS
+                ),
+                params![
+                    payload.id,
+                    workspace_id,
+                    payload.widget_type,
+                    serde_json::to_string(&payload.config).unwrap_or_default(),
+                    payload.x,
+                    payload.y,
+                    payload.w,
+                    payload.h,
+                    payload.created_at.to_rfc3339(),
+                ],
+            )?;
+            Ok(())
+        })
+        .await
+    {
+        Ok(_) => StatusCode::OK.into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn get_graph(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
+    let workspace_id = workspace.workspace.config().id.clone();
+    let backend = workspace.workspace.durable_store_backend();
+    let project_id = if backend == "vec" { "vec_store" } else { "memory" };
+
+    match ConnectionManager::global()
+        .with_conn(project_id, move |conn| {
+            let mut stmt = conn.prepare(&format!(
+                "SELECT id, name, data, created_at FROM {} WHERE workspace_id = ? LIMIT 1",
+                TABLE_PANEL_GRAPHS
+            ))?;
+            let mut rows = stmt.query(params![workspace_id])?;
+            if let Some(row) = rows.next()? {
+                let data_str: String = row.get(2)?;
+                let created_at_str: String = row.get(3)?;
+                Ok(Some(GraphData {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    data: serde_json::from_str(&data_str).unwrap_or_default(),
+                    created_at: created_at_str.parse().unwrap_or_else(|_| Utc::now()),
+                }))
+            } else {
+                Ok(None)
+            }
+        })
+        .await
+    {
+        Ok(Some(graph)) => Json(graph).into_response(),
+        Ok(None) => (
+            StatusCode::NOT_FOUND,
+            Json(json!({ "error": "graph data not found" })),
+        )
+            .into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn save_graph(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Json(payload): Json<GraphData>,
+) -> impl IntoResponse {
+    let workspace_id = workspace.workspace.config().id.clone();
+    let backend = workspace.workspace.durable_store_backend();
+    let project_id = if backend == "vec" { "vec_store" } else { "memory" };
+
+    match ConnectionManager::global()
+        .with_conn(project_id, move |conn| {
+            conn.execute(
+                &format!(
+                    "INSERT OR REPLACE INTO {} (id, workspace_id, name, data, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    TABLE_PANEL_GRAPHS
+                ),
+                params![
+                    payload.id,
+                    workspace_id,
+                    payload.name,
+                    serde_json::to_string(&payload.data).unwrap_or_default(),
+                    payload.created_at.to_rfc3339(),
+                ],
+            )?;
+            Ok(())
+        })
+        .await
+    {
+        Ok(_) => StatusCode::OK.into_response(),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
 fn panel_build_path(relative: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join(PANEL_BUILD_DIR)
@@ -433,5 +702,44 @@ mod tests {
         assert_eq!(payload.messages.len(), 2);
         assert_eq!(payload.messages[1].role, "assistant");
         assert!(payload.messages[1].openui_lang.is_some());
+    }
+
+    #[tokio::test]
+    async fn bookmarks_crud() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace)
+            .route("/panel/api/bookmarks", get(list_bookmarks).post(save_bookmark));
+
+        let bookmark = Bookmark {
+            id: "test-id".to_string(),
+            title: "Test Bookmark".to_string(),
+            url: "https://example.com".to_string(),
+            metadata: serde_json::json!({}),
+            created_at: Utc::now(),
+        };
+
+        let create_request = Request::builder()
+            .method("POST")
+            .uri("/panel/api/bookmarks")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&bookmark).unwrap()))
+            .expect("test assertion");
+
+        let response = app.clone().oneshot(create_request).await.expect("test assertion");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let get_request = Request::builder()
+            .method("GET")
+            .uri("/panel/api/bookmarks")
+            .body(Body::empty())
+            .expect("test assertion");
+
+        let response = app.oneshot(get_request).await.expect("test assertion");
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("test assertion");
+        let bookmarks: Vec<Bookmark> = serde_json::from_slice(&body).expect("test assertion");
+        assert_eq!(bookmarks.len(), 1);
+        assert_eq!(bookmarks[0].id, "test-id");
     }
 }

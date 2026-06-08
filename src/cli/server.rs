@@ -45,7 +45,10 @@ use xavier::ports::inbound::{
     AgentLifecyclePort, InputSecurityPort, MemoryQueryPort, SecurityScanPort, TimeMetricsPort,
 };
 use xavier::security::threat_store::SecurityThreatStore;
-use xavier::server::panel::{panel_asset, panel_index};
+use xavier::server::panel::{
+    get_graph, list_bookmarks, list_widgets, panel_asset, panel_index, save_bookmark, save_graph,
+    save_widget,
+};
 use xavier::tasks::session_sync_task::SessionSyncTask;
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
@@ -295,6 +298,9 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             "/panel/api/threads/{thread_id}",
             get(panel_get_thread).delete(panel_delete_thread),
         )
+        .route("/panel/api/bookmarks", get(list_bookmarks).post(save_bookmark))
+        .route("/panel/api/widgets", get(list_widgets).post(save_widget))
+        .route("/panel/api/graph", get(get_graph).post(save_graph))
         .route("/secrets/lend", post(lend_handler))
         .route("/secrets/leases", get(leases_handler))
         .route("/secrets/revoke", post(revoke_handler))

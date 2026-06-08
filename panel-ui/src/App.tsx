@@ -1,8 +1,8 @@
 import { Renderer } from "@openuidev/react-lang";
 import { openuiLibrary, ThemeProvider } from "@openuidev/react-ui";
+import { invoke } from "@tauri-apps/api/core";
 import type { CSSProperties } from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { DecisionCard } from "./components/DecisionCard";
 import { ProjectCard } from "./components/ProjectCard";
 import { QuestionCard } from "./components/QuestionCard";
@@ -16,7 +16,8 @@ const combinedLibrary = {
 };
 
 const getApiUrl = (path: string) => {
-  const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  const isTauri =
+    typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   return isTauri ? `http://127.0.0.1:8006${path}` : path;
 };
 
@@ -67,6 +68,32 @@ type OnboardingSuggestions = {
   recommendations: string[];
 };
 
+type Bookmark = {
+  id: string;
+  title: string;
+  url: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+};
+
+type Widget = {
+  id: string;
+  type: string;
+  config: Record<string, unknown>;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  created_at: string;
+};
+
+type GraphData = {
+  id: string;
+  name: string;
+  data: Record<string, unknown>;
+  created_at: string;
+};
+
 function App() {
   const [token, setToken] = useState("");
   const [draftToken, setDraftToken] = useState("");
@@ -77,9 +104,62 @@ function App() {
   const [health, setHealth] = useState("checking");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
-  const [onboarding, setOnboarding] = useState<OnboardingSuggestions | null>(null);
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(
+    null,
+  );
+  const [onboarding, setOnboarding] = useState<OnboardingSuggestions | null>(
+    null,
+  );
   const [showOnboarding, setShowOnboarding] = useState(false);
+  const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
+  const [widgets, setWidgets] = useState<Widget[]>([]);
+  const [graphData, setGraphData] = useState<GraphData | null>(null);
+
+  const api = useCallback(
+    async <T,>(path: string, options?: RequestInit): Promise<T> => {
+      const response = await fetch(getApiUrl(path), {
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          "X-Xavier-Token": token,
+          ...(options?.headers ?? {}),
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(await response.text());
+      }
+
+      return (await response.json()) as T;
+    },
+    [token],
+  );
+
+  const loadPanelData = useCallback(
+    async (currentToken: string) => {
+      try {
+        const [bookmarksData, widgetsData, graphDataResult] = await Promise.all(
+          [
+            api<Bookmark[]>("/panel/api/bookmarks", {
+              headers: { "X-Xavier-Token": currentToken },
+            }),
+            api<Widget[]>("/panel/api/widgets", {
+              headers: { "X-Xavier-Token": currentToken },
+            }),
+            api<GraphData>("/panel/api/graph", {
+              headers: { "X-Xavier-Token": currentToken },
+            }).catch(() => null),
+          ],
+        );
+        setBookmarks(bookmarksData);
+        setWidgets(widgetsData);
+        if (graphDataResult) setGraphData(graphDataResult);
+      } catch (e) {
+        console.warn("Failed to load panel state:", e);
+      }
+    },
+    [api],
+  );
 
   const activeThread = useMemo(
     () => threads.find((item) => item.id === selectedThreadId) ?? null,
@@ -102,7 +182,10 @@ function App() {
             setToken(nativeToken);
           }
         } catch (e) {
-          console.warn("Could not automatically retrieve Xavier token from local config:", e);
+          console.warn(
+            "Could not automatically retrieve Xavier token from local config:",
+            e,
+          );
         }
       }
     };
@@ -117,9 +200,12 @@ function App() {
 
       try {
         setError(null);
-        const response = await fetch(getApiUrl(`/panel/api/threads/${threadId}`), {
-          headers: { "X-Xavier-Token": currentToken },
-        });
+        const response = await fetch(
+          getApiUrl(`/panel/api/threads/${threadId}`),
+          {
+            headers: { "X-Xavier-Token": currentToken },
+          },
+        );
         if (!response.ok) {
           throw new Error("Failed to load thread");
         }
@@ -183,7 +269,8 @@ function App() {
     }
     void loadThreads(token);
     void loadOnboarding(token);
-  }, [token, loadThreads, loadOnboarding]);
+    void loadPanelData(token);
+  }, [token, loadThreads, loadOnboarding, loadPanelData]);
 
   useEffect(() => {
     if (!token || !selectedThreadId || isLoading) {
@@ -198,23 +285,6 @@ function App() {
 
     return () => clearInterval(interval);
   }, [token, selectedThreadId, isLoading, openThread]);
-
-  async function api<T>(path: string, options?: RequestInit): Promise<T> {
-    const response = await fetch(getApiUrl(path), {
-      ...options,
-      headers: {
-        "Content-Type": "application/json",
-        "X-Xavier-Token": token,
-        ...(options?.headers ?? {}),
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(await response.text());
-    }
-
-    return response.json() as Promise<T>;
-  }
 
   async function createThread() {
     try {
@@ -251,7 +321,7 @@ function App() {
       setDraft("");
       setSelectedThreadId(payload.thread.id);
       setMessages(payload.messages);
-      
+
       const lastMessage = payload.messages[payload.messages.length - 1];
       if (lastMessage?.role === "assistant") {
         setStreamingMessageId(lastMessage.id);
@@ -278,15 +348,24 @@ function App() {
       <ThemeProvider mode="light" lightTheme={theme}>
         <div className="xavier-app token-screen">
           <div className="token-card">
-            <p className="eyebrow" style={{ color: "var(--cx-color-danger)" }}>Error: Connection Refused</p>
+            <p className="eyebrow" style={{ color: "var(--cx-color-danger)" }}>
+              Error: Connection Refused
+            </p>
             <h1>Xavier Core is Offline</h1>
             <p className="lede">
-              We couldn't reach the local backend at <code>127.0.0.1:8006</code>.
-              Please ensure the Xavier service is running.
+              We couldn't reach the local backend at <code>127.0.0.1:8006</code>
+              . Please ensure the Xavier service is running.
             </p>
             <div style={{ marginTop: "2rem" }}>
               <p>To start the service manually, run:</p>
-              <pre style={{ background: "rgba(0,0,0,0.05)", padding: "1rem", borderRadius: "8px", marginTop: "0.5rem" }}>
+              <pre
+                style={{
+                  background: "rgba(0,0,0,0.05)",
+                  padding: "1rem",
+                  borderRadius: "8px",
+                  marginTop: "0.5rem",
+                }}
+              >
                 ~\.xavier\start.bat
               </pre>
             </div>
@@ -419,6 +498,29 @@ function App() {
               </button>
             ))}
           </div>
+
+          <div
+            className="panel-artifacts-summary"
+            style={{
+              padding: "1rem",
+              borderTop: "1px solid var(--cx-border)",
+              marginTop: "auto",
+            }}
+          >
+            <p className="eyebrow">Persisted Artifacts</p>
+            <div
+              style={{
+                display: "flex",
+                gap: "0.5rem",
+                flexWrap: "wrap",
+                fontSize: "0.8rem",
+              }}
+            >
+              <span className="tag">Bookmarks: {bookmarks.length}</span>
+              <span className="tag">Widgets: {widgets.length}</span>
+              <span className="tag">Graph: {graphData ? "Ready" : "None"}</span>
+            </div>
+          </div>
         </aside>
 
         <main className="main-pane">
@@ -442,13 +544,29 @@ function App() {
           {error ? <div className="error-banner">{error}</div> : null}
 
           {showOnboarding && onboarding && (
-            <section className="onboarding-banner" style={{ margin: '1rem', padding: '1rem', background: 'var(--cx-surface-2)', borderRadius: 'var(--cx-radius-md)', border: '1px solid var(--cx-border)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+            <section
+              className="onboarding-banner"
+              style={{
+                margin: "1rem",
+                padding: "1rem",
+                background: "var(--cx-surface-2)",
+                borderRadius: "var(--cx-radius-md)",
+                border: "1px solid var(--cx-border)",
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: "0.5rem",
+                }}
+              >
                 <h3 style={{ margin: 0 }}>Welcome to Xavier</h3>
                 <button
                   type="button"
                   className="cx-button cx-button-muted"
-                  style={{ padding: '2px 8px', fontSize: '0.8rem' }}
+                  style={{ padding: "2px 8px", fontSize: "0.8rem" }}
                   onClick={() => {
                     setShowOnboarding(false);
                     localStorage.setItem("xavier_onboarding_dismissed", "true");
@@ -457,12 +575,19 @@ function App() {
                   Dismiss
                 </button>
               </div>
-              <p style={{ fontSize: '0.9rem', marginBottom: '0.5rem' }}>
-                Detected <strong>{onboarding.os}</strong> environment with <strong>{onboarding.workspace.project_type}</strong> project.
+              <p style={{ fontSize: "0.9rem", marginBottom: "0.5rem" }}>
+                Detected <strong>{onboarding.os}</strong> environment with{" "}
+                <strong>{onboarding.workspace.project_type}</strong> project.
               </p>
-              <ul style={{ fontSize: '0.85rem', paddingLeft: '1.2rem', color: 'var(--cx-ink)' }}>
-                {onboarding.recommendations.map((rec, i) => (
-                  <li key={i}>{rec}</li>
+              <ul
+                style={{
+                  fontSize: "0.85rem",
+                  paddingLeft: "1.2rem",
+                  color: "var(--cx-ink)",
+                }}
+              >
+                {onboarding.recommendations.map((rec) => (
+                  <li key={rec}>{rec}</li>
                 ))}
               </ul>
             </section>
@@ -529,9 +654,9 @@ function App() {
                       </div>
                     </div>
 
-                    <StreamingMessageRenderer 
-                      message={message} 
-                      isStreamingActive={message.id === streamingMessageId} 
+                    <StreamingMessageRenderer
+                      message={message}
+                      isStreamingActive={message.id === streamingMessageId}
                     />
                   </>
                 ) : (
@@ -582,7 +707,13 @@ function formatConfidence(value?: number) {
   return `${Math.round(value * 100)}%`;
 }
 
-function StreamingMessageRenderer({ message, isStreamingActive }: { message: PanelMessage; isStreamingActive: boolean }) {
+function StreamingMessageRenderer({
+  message,
+  isStreamingActive,
+}: {
+  message: PanelMessage;
+  isStreamingActive: boolean;
+}) {
   const [streamedResponse, setStreamedResponse] = useState("");
   const [streamedText, setStreamedText] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
@@ -606,7 +737,7 @@ function StreamingMessageRenderer({ message, isStreamingActive }: { message: Pan
       currentIndex += 5; // Chunk size
       setStreamedResponse(fullResponse.slice(0, currentIndex));
       setStreamedText(fullText.slice(0, currentIndex));
-      
+
       if (currentIndex >= Math.max(fullResponse.length, fullText.length)) {
         setIsStreaming(false);
         clearInterval(intervalId);
@@ -621,9 +752,7 @@ function StreamingMessageRenderer({ message, isStreamingActive }: { message: Pan
       {message.openui_lang ? (
         <div className="render-surface">
           <div className="render-surface-header">
-            <span className="render-surface-title">
-              OpenUI Render Surface
-            </span>
+            <span className="render-surface-title">OpenUI Render Surface</span>
             <span className="render-surface-title render-surface-mode">
               Structured output {isStreaming && "(Streaming...)"}
             </span>
