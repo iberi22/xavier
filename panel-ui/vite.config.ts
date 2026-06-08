@@ -14,12 +14,12 @@ export default defineConfig(({ command }) => {
       alias: {
         "@openuidev/react-headless": path.resolve(
           __dirname,
-          "../node_modules/@openuidev/react-headless/dist/index.js",
+          "./node_modules/@openuidev/react-headless/dist/index.js",
         ),
-        zustand: path.resolve(__dirname, "../node_modules/zustand"),
+        zustand: path.resolve(__dirname, "./node_modules/zustand"),
         "zustand/react/shallow": path.resolve(
           __dirname,
-          "../node_modules/zustand/react/shallow.js",
+          "./node_modules/zustand/react/shallow.js",
         ),
       },
     },
