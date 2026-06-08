@@ -931,7 +931,10 @@ mod tests {
         db.create_schema().await.unwrap();
 
         // Create thread
-        let thread = db.create_thread(Some("Test Title"), Some("gpt-4"), Some("unit-test")).await.unwrap();
+        let thread = db
+            .create_thread(Some("Test Title"), Some("gpt-4"), Some("unit-test"))
+            .await
+            .unwrap();
         assert_eq!(thread.title, Some("Test Title".to_string()));
 
         // Get thread
@@ -943,16 +946,19 @@ mod tests {
         assert!(!threads.is_empty());
 
         // Store message
-        let msg = db.store_message(
-            &thread.id,
-            "user",
-            "Hello world",
-            None,
-            None,
-            None,
-            Some("{\"key\": \"val\"}"),
-            Some(10)
-        ).await.unwrap();
+        let msg = db
+            .store_message(
+                &thread.id,
+                "user",
+                "Hello world",
+                None,
+                None,
+                None,
+                Some("{\"key\": \"val\"}"),
+                Some(10),
+            )
+            .await
+            .unwrap();
         assert_eq!(msg.content, "Hello world");
         assert_eq!(msg.role, "user");
 
