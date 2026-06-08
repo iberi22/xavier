@@ -1,6 +1,6 @@
 //! Code handlers for scanning, searching, and analyzing codebases.
 
-use axum::{extract::State, Json};
+use axum::extract::State;
 use serde::Serialize;
 use std::path::PathBuf;
 use tracing::{info, warn};

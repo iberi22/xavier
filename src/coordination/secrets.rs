@@ -15,7 +15,8 @@ use uuid::Uuid;
 pub struct SecretLease {
     pub token: String,
     pub secret_name: String,
-    pub secret_value: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub secret_value: Option<String>,
     pub agent_id: String,
     pub expires_at: DateTime<Utc>,
     pub created_at: DateTime<Utc>,
@@ -59,7 +60,7 @@ impl KeyLendingEngine {
     pub async fn lend(
         &self,
         name: &str,
-        value: &str,
+        value: Option<&str>,
         agent_id: &str,
         ttl_secs: u64,
     ) -> Result<SecretLease> {
@@ -70,7 +71,7 @@ impl KeyLendingEngine {
         let lease = SecretLease {
             token: token.clone(),
             secret_name: name.to_string(),
-            secret_value: value.to_string(),
+            secret_value: value.map(|v| v.to_string()),
             agent_id: agent_id.to_string(),
             expires_at,
             created_at: now,
@@ -86,6 +87,26 @@ impl KeyLendingEngine {
             agent_id,
             lease.token
         );
+        Ok(lease)
+    }
+
+    /// Lend a secret from the hardware vault by name
+    pub async fn lend_from_vault(
+        &self,
+        name: &str,
+        agent_id: &str,
+        ttl_secs: u64,
+        redact: bool,
+    ) -> Result<SecretLease> {
+        let vault = crate::secrets::vault::HardwareVault::new("xavier");
+        let value = vault.get_secret(name)?;
+
+        let mut lease = self.lend(name, Some(&value), agent_id, ttl_secs).await?;
+
+        if redact {
+            lease.secret_value = None;
+        }
+
         Ok(lease)
     }
 

@@ -4,7 +4,6 @@ use std::sync::Arc;
 use xavier::agents::rate_limit::RateLimitManager;
 use xavier::app::proxy_use_case::ProxyUseCase;
 use xavier::domain::proxy::{ProxyChatCommand, ProxyError};
-use xavier::ports::outbound::schema_init::SchemaInitializer;
 
 #[tokio::test]
 async fn test_proxy_use_case_rate_limited() {
@@ -36,6 +35,6 @@ async fn test_proxy_use_case_rate_limited() {
         max_tokens: None,
     };
 
-    let result = use_case.execute(cmd).await;
+    let result = use_case.execute_secured(cmd, false).await;
     assert!(matches!(result, Err(ProxyError::RateLimited)));
 }

@@ -19,7 +19,7 @@ use tower_http::cors::CorsLayer;
 use tracing::info;
 
 use crate::cli::config::{
-    code_graph_db_path, resolve_base_url, resolve_base_url_for_port, resolve_http_bind_host,
+    code_graph_db_path, resolve_base_url_for_port, resolve_http_bind_host,
     resolve_http_token, state_panel_root,
 };
 use crate::cli::state::CliState;
@@ -306,6 +306,10 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route(
             "/v1/proxy/chat/completions/batch",
             post(crate::cli::proxy::chat_batch_proxy),
+        )
+        .route(
+            "/v1/proxy/request",
+            post(crate::cli::proxy::generic_proxy),
         )
         .route("/v1/usage/status/{provider}", get(usage_status_handler))
         .route("/v1/usage/update", post(usage_update_handler))

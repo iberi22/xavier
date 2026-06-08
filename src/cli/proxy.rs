@@ -12,7 +12,7 @@ use axum::{
 };
 use serde::Deserialize;
 use tracing::warn;
-use xavier::domain::proxy::ProxyChatCommand;
+use xavier::domain::proxy::{GenericProxyRequest, ProxyChatCommand};
 
 #[derive(Debug, Deserialize)]
 pub struct ProxyChatRequest {
@@ -81,4 +81,18 @@ pub async fn chat_batch_proxy(
     }
 
     (StatusCode::OK, Json(results)).into_response()
+}
+
+pub async fn generic_proxy(
+    State(state): State<CliState>,
+    Json(req): Json<GenericProxyRequest>,
+) -> Response {
+    match state
+        .proxy_use_case
+        .execute_generic(req, state.secrets_engine.clone())
+        .await
+    {
+        Ok(resp) => Json(resp).into_response(),
+        Err(e) => ProxyErrorWrapper(e).into_response(),
+    }
 }

@@ -43,6 +43,38 @@ pub struct Usage {
     pub total_tokens: usize,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenericProxyRequest {
+    pub url: String,
+    pub method: String,
+    #[serde(default)]
+    pub headers: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub body: Option<serde_json::Value>,
+    /// Optional lease token to resolve and inject as a secret.
+    /// If provided, the resolved secret will be injected based on `secret_injection_strategy`.
+    pub lease_token: Option<String>,
+    pub secret_injection_strategy: Option<SecretInjectionStrategy>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SecretInjectionStrategy {
+    /// Injects "Bearer <secret>" into Authorization header.
+    BearerToken,
+    /// Injects the raw secret into X-API-Key header.
+    XApiKey,
+    /// Injects "token <secret>" into Authorization header (GitHub style).
+    GitHubToken,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenericProxyResponse {
+    pub status: u16,
+    pub headers: std::collections::HashMap<String, String>,
+    pub body: serde_json::Value,
+}
+
 #[derive(Debug, Error)]
 pub enum ProxyError {
     #[error("All providers are rate-limited")]
@@ -51,4 +83,8 @@ pub enum ProxyError {
     ProviderError(String),
     #[error("Internal error: {0}")]
     Internal(String),
+    #[error("Secret resolution failed: {0}")]
+    SecretError(String),
+    #[error("Invalid request: {0}")]
+    InvalidRequest(String),
 }

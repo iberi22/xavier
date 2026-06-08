@@ -12,7 +12,8 @@ use crate::agents::provider::{ModelProviderClient, ModelProviderConfig, LLM_TIME
 use crate::agents::rate_limit::RateLimitManager;
 use crate::agents::router::{load_routing_policy, RouteCategory, Router};
 use crate::domain::proxy::{
-    ChatChoice, ChatCompletion, ChatMessage, ProxyChatCommand, ProxyError, Usage,
+    ChatChoice, ChatCompletion, ChatMessage, GenericProxyRequest, GenericProxyResponse,
+    ProxyChatCommand, ProxyError, SecretInjectionStrategy, Usage,
 };
 use crate::ports::outbound::ThreatDetectionPort;
 use crate::security::auth::resolve_xavier_token;
@@ -40,6 +41,86 @@ impl ProxyUseCase {
     pub fn with_threat_detector(mut self, threat_detector: Arc<dyn ThreatDetectionPort>) -> Self {
         self.threat_detector = Some(threat_detector);
         self
+    }
+
+    pub async fn execute_generic(
+        &self,
+        req: GenericProxyRequest,
+        secrets_engine: Arc<crate::coordination::KeyLendingEngine>,
+    ) -> Result<GenericProxyResponse, ProxyError> {
+        let client = reqwest::Client::new();
+        let method = match req.method.to_uppercase().as_str() {
+            "GET" => reqwest::Method::GET,
+            "POST" => reqwest::Method::POST,
+            "PUT" => reqwest::Method::PUT,
+            "DELETE" => reqwest::Method::DELETE,
+            "PATCH" => reqwest::Method::PATCH,
+            _ => return Err(ProxyError::InvalidRequest(format!("Unsupported method: {}", req.method))),
+        };
+
+        let mut request_builder = client.request(method, &req.url);
+
+        // Set headers
+        for (k, v) in &req.headers {
+            request_builder = request_builder.header(k, v);
+        }
+
+        // Handle Secret Injection
+        if let Some(token) = &req.lease_token {
+            let lease = secrets_engine
+                .get_lease(token)
+                .await
+                .ok_or_else(|| ProxyError::SecretError("Lease token not found".to_string()))?;
+
+            if lease.is_expired() {
+                return Err(ProxyError::SecretError("Lease token expired".to_string()));
+            }
+
+            let secret = lease
+                .secret_value
+                .ok_or_else(|| ProxyError::SecretError("Secret value missing from lease (redacted or not set)".to_string()))?;
+
+            match req.secret_injection_strategy.unwrap_or(SecretInjectionStrategy::BearerToken) {
+                SecretInjectionStrategy::BearerToken => {
+                    request_builder = request_builder.header("Authorization", format!("Bearer {}", secret));
+                }
+                SecretInjectionStrategy::XApiKey => {
+                    request_builder = request_builder.header("X-API-Key", secret);
+                }
+                SecretInjectionStrategy::GitHubToken => {
+                    request_builder = request_builder.header("Authorization", format!("token {}", secret));
+                }
+            }
+        }
+
+        // Set body
+        if let Some(body) = req.body {
+            request_builder = request_builder.json(&body);
+        }
+
+        let response = request_builder
+            .send()
+            .await
+            .map_err(|e| ProxyError::ProviderError(e.to_string()))?;
+
+        let status = response.status().as_u16();
+        let mut resp_headers = HashMap::new();
+        for (name, value) in response.headers() {
+            if let Ok(v) = value.to_str() {
+                resp_headers.insert(name.to_string(), v.to_string());
+            }
+        }
+
+        let body = response
+            .json::<serde_json::Value>()
+            .await
+            .unwrap_or(serde_json::json!({}));
+
+        Ok(GenericProxyResponse {
+            status,
+            headers: resp_headers,
+            body,
+        })
     }
 
     pub async fn execute_secured(
