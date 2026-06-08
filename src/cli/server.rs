@@ -362,6 +362,25 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             .route("/plugins/sync", post(plugins_sync_handler))
     };
 
+    use axum::Extension;
+    use xavier::agents::RuntimeConfig;
+    use xavier::workspace::{WorkspaceConfig, WorkspaceContext, WorkspaceState};
+
+    let workspace_config = WorkspaceConfig::from_env();
+    let runtime_config = RuntimeConfig::from_env();
+    let workspace_state = Arc::new(
+        WorkspaceState::new(
+            workspace_config,
+            runtime_config,
+            state.workspace_dir.clone(),
+        )
+        .await?,
+    );
+    let workspace_ctx = WorkspaceContext {
+        workspace_id: state.workspace_id.clone(),
+        workspace: workspace_state,
+    };
+
     let app = Router::new()
         .route("/health", get(health_handler))
         .route("/v1/version", get(version_handler))
@@ -372,6 +391,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/panel/assets/{*path}", get(panel_asset))
         .merge(protected_routes)
         .merge(large_body_routes)
+        .layer(Extension(workspace_ctx))
         .layer(CorsLayer::permissive());
 
     let agent_indexer_cron = state.agent_indexer.clone();
