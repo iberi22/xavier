@@ -135,6 +135,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: TokenCommand,
     },
+    /// Manage LLM providers and hot-switching
+    Provider {
+        #[command(subcommand)]
+        cmd: ProviderCommand,
+    },
     /// Run interactive system detection and setup
     Setup,
     /// Export memories to JSON
@@ -206,6 +211,21 @@ pub enum CodeCommand {
     Hotspots,
     /// Show code graph stats
     Stats,
+}
+
+/// Provider management subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum ProviderCommand {
+    /// Show current provider status
+    Status,
+    /// List all available providers and strategies
+    List,
+    /// Manually switch to a provider
+    Set { name: String },
+    /// Set an automatic selection strategy
+    Auto { strategy: String },
+    /// Set the fallback chain of providers
+    Fallback { providers: Vec<String> },
 }
 
 /// Token generation subcommands

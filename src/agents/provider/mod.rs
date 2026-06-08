@@ -11,6 +11,7 @@ pub mod local;
 pub mod minimax;
 pub mod openai;
 pub mod rate_limit;
+pub mod router;
 pub mod traits;
 pub mod types;
 

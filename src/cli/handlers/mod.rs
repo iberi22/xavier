@@ -12,6 +12,7 @@ pub mod setup;
 pub mod secrets;
 pub mod security;
 pub mod system;
+pub mod provider;
 pub mod usage;
 pub mod workspace;
 
@@ -21,6 +22,7 @@ pub use config::*;
 pub use memory::*;
 pub use onboarding::*;
 pub use panel::*;
+pub use provider::*;
 pub use secrets::*;
 pub use security::*;
 pub use system::*;
