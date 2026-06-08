@@ -7,6 +7,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
+use axum_server::tls_rustls::RustlsConfig;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -320,6 +321,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             post(crate::cli::proxy::chat_batch_proxy),
         )
         .route("/v1/proxy/request", post(crate::cli::proxy::generic_proxy))
+        .route("/v1/security/approve", post(security_approve_handler))
         .route("/v1/usage/status/{provider}", get(usage_status_handler))
         .route("/v1/usage/update", post(usage_update_handler))
         .route("/v1/usage/cooldown", post(usage_cooldown_handler))
@@ -446,17 +448,41 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         }
     });
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async move {
+    if let (Ok(cert), Ok(key)) = (
+        std::env::var("XAVIER_TLS_CERT"),
+        std::env::var("XAVIER_TLS_KEY"),
+    ) {
+        info!("TLS 1.3 encryption enabled");
+        let rustls_config = RustlsConfig::from_pem_file(cert, key).await?;
+
+        let handle = axum_server::Handle::new();
+        let shutdown_handle = handle.clone();
+
+        tokio::spawn(async move {
             if let Err(error) = tokio::signal::ctrl_c().await {
                 info!("Failed to listen for Ctrl+C shutdown signal: {}", error);
             }
-            if let Some(shutdown) = sync_shutdown {
-                shutdown.shutdown();
-                shutdown.wait_for_shutdown(Duration::from_secs(5)).await;
-            }
-        })
-        .await?;
+            info!("Shutting down TLS server...");
+            shutdown_handle.graceful_shutdown(Some(Duration::from_secs(10)));
+        });
+
+        axum_server::bind_rustls(bind_addr.parse()?, rustls_config)
+            .handle(handle)
+            .serve(app.into_make_service())
+            .await?;
+    } else {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async move {
+                if let Err(error) = tokio::signal::ctrl_c().await {
+                    info!("Failed to listen for Ctrl+C shutdown signal: {}", error);
+                }
+                if let Some(shutdown) = sync_shutdown {
+                    shutdown.shutdown();
+                    shutdown.wait_for_shutdown(Duration::from_secs(5)).await;
+                }
+            })
+            .await?;
+    }
 
     Ok(())
 }
