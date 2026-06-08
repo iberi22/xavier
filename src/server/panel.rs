@@ -305,19 +305,29 @@ async fn process_chat_inner(
     })
 }
 
-pub async fn list_bookmarks(
-    Extension(workspace): Extension<WorkspaceContext>,
-) -> impl IntoResponse {
-    let workspace_id = workspace.workspace.config().id.clone();
+fn resolve_panel_project_id(workspace: &WorkspaceContext) -> String {
     let backend = workspace.workspace.durable_store_backend();
-    let project_id = if backend == "vec" {
+    let base_id = if backend == "vec" {
         "vec_store"
     } else {
         "memory"
     };
 
+    if cfg!(test) {
+        format!("{}_test_{}", base_id, workspace.workspace_id)
+    } else {
+        base_id.to_string()
+    }
+}
+
+pub async fn list_bookmarks(
+    Extension(workspace): Extension<WorkspaceContext>,
+) -> impl IntoResponse {
+    let workspace_id = workspace.workspace.config().id.clone();
+    let project_id = resolve_panel_project_id(&workspace);
+
     match ConnectionManager::global()
-        .with_conn(project_id, move |conn| {
+        .with_conn(&project_id, move |conn| {
             let mut stmt = conn.prepare(&format!(
                 "SELECT id, title, url, metadata, created_at FROM {} WHERE workspace_id = ? ORDER BY created_at DESC",
                 TABLE_PANEL_BOOKMARKS
@@ -353,15 +363,10 @@ pub async fn save_bookmark(
     Json(payload): Json<Bookmark>,
 ) -> impl IntoResponse {
     let workspace_id = workspace.workspace.config().id.clone();
-    let backend = workspace.workspace.durable_store_backend();
-    let project_id = if backend == "vec" {
-        "vec_store"
-    } else {
-        "memory"
-    };
+    let project_id = resolve_panel_project_id(&workspace);
 
     match ConnectionManager::global()
-        .with_conn(project_id, move |conn| {
+        .with_conn(&project_id, move |conn| {
             conn.execute(
                 &format!(
                     "INSERT OR REPLACE INTO {} (id, workspace_id, title, url, metadata, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -391,15 +396,10 @@ pub async fn save_bookmark(
 
 pub async fn list_widgets(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     let workspace_id = workspace.workspace.config().id.clone();
-    let backend = workspace.workspace.durable_store_backend();
-    let project_id = if backend == "vec" {
-        "vec_store"
-    } else {
-        "memory"
-    };
+    let project_id = resolve_panel_project_id(&workspace);
 
     match ConnectionManager::global()
-        .with_conn(project_id, move |conn| {
+        .with_conn(&project_id, move |conn| {
             let mut stmt = conn.prepare(&format!(
                 "SELECT id, type, config, x, y, w, h, created_at FROM {} WHERE workspace_id = ? ORDER BY created_at ASC",
                 TABLE_PANEL_WIDGETS
@@ -438,15 +438,10 @@ pub async fn save_widget(
     Json(payload): Json<Widget>,
 ) -> impl IntoResponse {
     let workspace_id = workspace.workspace.config().id.clone();
-    let backend = workspace.workspace.durable_store_backend();
-    let project_id = if backend == "vec" {
-        "vec_store"
-    } else {
-        "memory"
-    };
+    let project_id = resolve_panel_project_id(&workspace);
 
     match ConnectionManager::global()
-        .with_conn(project_id, move |conn| {
+        .with_conn(&project_id, move |conn| {
             conn.execute(
                 &format!(
                     "INSERT OR REPLACE INTO {} (id, workspace_id, type, config, x, y, w, h, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
@@ -479,15 +474,10 @@ pub async fn save_widget(
 
 pub async fn get_graph(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     let workspace_id = workspace.workspace.config().id.clone();
-    let backend = workspace.workspace.durable_store_backend();
-    let project_id = if backend == "vec" {
-        "vec_store"
-    } else {
-        "memory"
-    };
+    let project_id = resolve_panel_project_id(&workspace);
 
     match ConnectionManager::global()
-        .with_conn(project_id, move |conn| {
+        .with_conn(&project_id, move |conn| {
             let mut stmt = conn.prepare(&format!(
                 "SELECT id, name, data, created_at FROM {} WHERE workspace_id = ? LIMIT 1",
                 TABLE_PANEL_GRAPHS
@@ -527,15 +517,10 @@ pub async fn save_graph(
     Json(payload): Json<GraphData>,
 ) -> impl IntoResponse {
     let workspace_id = workspace.workspace.config().id.clone();
-    let backend = workspace.workspace.durable_store_backend();
-    let project_id = if backend == "vec" {
-        "vec_store"
-    } else {
-        "memory"
-    };
+    let project_id = resolve_panel_project_id(&workspace);
 
     match ConnectionManager::global()
-        .with_conn(project_id, move |conn| {
+        .with_conn(&project_id, move |conn| {
             conn.execute(
                 &format!(
                     "INSERT OR REPLACE INTO {} (id, workspace_id, name, data, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -609,6 +594,7 @@ mod tests {
     use ulid::Ulid;
 
     async fn test_state() -> (AppState, WorkspaceContext) {
+        let workspace_id = format!("panel-test-{}", Ulid::new());
         let db_path = std::env::temp_dir().join(format!("xavier-panel-{}.db", Ulid::new()));
         let code_db = Arc::new(code_graph::db::CodeGraphDB::new(&db_path).expect("test assertion"));
         let code_indexer = Arc::new(code_graph::indexer::Indexer::new(Arc::clone(&code_db)));
@@ -616,7 +602,7 @@ mod tests {
         let workspace_registry = Arc::new(WorkspaceRegistry::new());
         let workspace = WorkspaceState::new(
             WorkspaceConfig {
-                id: "panel-test".to_string(),
+                id: workspace_id.clone(),
                 token: "panel-token".to_string(),
                 plan: PlanTier::Personal,
                 memory_backend: crate::memory::store::MemoryBackend::File,
@@ -640,6 +626,55 @@ mod tests {
             .authenticate("panel-token")
             .await
             .expect("test assertion");
+
+        // Initialize connection pool for tests
+        let project_id = resolve_panel_project_id(&workspace);
+        let temp_dir = tempfile::tempdir().expect("test assertion");
+        let db_root = temp_dir.path().to_path_buf();
+
+        ConnectionManager::global()
+            .connect(&project_id, db_root.to_str().unwrap())
+            .expect("test assertion");
+
+        // Initialize schema for panel tables
+        ConnectionManager::global()
+            .with_conn(&project_id, move |conn| {
+                conn.execute_batch(&format!(
+                    "CREATE TABLE IF NOT EXISTS {} (
+                        id TEXT PRIMARY KEY,
+                        workspace_id TEXT NOT NULL,
+                        title TEXT NOT NULL,
+                        url TEXT NOT NULL,
+                        metadata TEXT NOT NULL DEFAULT '{{}}',
+                        created_at TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS {} (
+                        id TEXT PRIMARY KEY,
+                        workspace_id TEXT NOT NULL,
+                        type TEXT NOT NULL,
+                        config TEXT NOT NULL DEFAULT '{{}}',
+                        x INTEGER DEFAULT 0,
+                        y INTEGER DEFAULT 0,
+                        w INTEGER DEFAULT 1,
+                        h INTEGER DEFAULT 1,
+                        created_at TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS {} (
+                        id TEXT PRIMARY KEY,
+                        workspace_id TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        data TEXT NOT NULL DEFAULT '{{}}',
+                        created_at TEXT NOT NULL
+                    );",
+                    TABLE_PANEL_BOOKMARKS, TABLE_PANEL_WIDGETS, TABLE_PANEL_GRAPHS
+                ))?;
+                Ok(())
+            })
+            .await
+            .expect("test assertion");
+
+        // Keep the temp dir alive for the duration of the test
+        Box::leak(Box::new(temp_dir));
 
         (
             AppState {
@@ -666,6 +701,12 @@ mod tests {
                 get(get_thread).delete(delete_thread),
             )
             .route("/panel/api/chat", post(process_chat))
+            .route(
+                "/panel/api/bookmarks",
+                get(list_bookmarks).post(save_bookmark),
+            )
+            .route("/panel/api/widgets", get(list_widgets).post(save_widget))
+            .route("/panel/api/graphs", get(get_graph).post(save_graph))
             .layer(Extension(workspace))
             .with_state(state)
     }
@@ -729,10 +770,7 @@ mod tests {
     #[tokio::test]
     async fn bookmarks_crud() {
         let (state, workspace) = test_state().await;
-        let app = test_router(state, workspace).route(
-            "/panel/api/bookmarks",
-            get(list_bookmarks).post(save_bookmark),
-        );
+        let app = test_router(state, workspace);
 
         let bookmark = Bookmark {
             id: "test-id".to_string(),
@@ -769,5 +807,92 @@ mod tests {
         let bookmarks: Vec<Bookmark> = serde_json::from_slice(&body).expect("test assertion");
         assert_eq!(bookmarks.len(), 1);
         assert_eq!(bookmarks[0].id, "test-id");
+    }
+
+    #[tokio::test]
+    async fn widgets_crud() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace);
+
+        let widget = Widget {
+            id: "widget-1".to_string(),
+            widget_type: "chart".to_string(),
+            config: serde_json::json!({"metric": "cpu"}),
+            x: 0,
+            y: 0,
+            w: 4,
+            h: 3,
+            created_at: Utc::now(),
+        };
+
+        let create_request = Request::builder()
+            .method("POST")
+            .uri("/panel/api/widgets")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&widget).unwrap()))
+            .expect("test assertion");
+
+        let response = app
+            .clone()
+            .oneshot(create_request)
+            .await
+            .expect("test assertion");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let get_request = Request::builder()
+            .method("GET")
+            .uri("/panel/api/widgets")
+            .body(Body::empty())
+            .expect("test assertion");
+
+        let response = app.oneshot(get_request).await.expect("test assertion");
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("test assertion");
+        let widgets: Vec<Widget> = serde_json::from_slice(&body).expect("test assertion");
+        assert_eq!(widgets.len(), 1);
+        assert_eq!(widgets[0].id, "widget-1");
+        assert_eq!(widgets[0].widget_type, "chart");
+    }
+
+    #[tokio::test]
+    async fn graphs_crud() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace);
+
+        let graph = GraphData {
+            id: "graph-1".to_string(),
+            name: "Knowledge Graph".to_string(),
+            data: serde_json::json!({"nodes": [], "edges": []}),
+            created_at: Utc::now(),
+        };
+
+        let create_request = Request::builder()
+            .method("POST")
+            .uri("/panel/api/graphs")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&graph).unwrap()))
+            .expect("test assertion");
+
+        let response = app
+            .clone()
+            .oneshot(create_request)
+            .await
+            .expect("test assertion");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let get_request = Request::builder()
+            .method("GET")
+            .uri("/panel/api/graphs")
+            .body(Body::empty())
+            .expect("test assertion");
+
+        let response = app.oneshot(get_request).await.expect("test assertion");
+        let body = to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("test assertion");
+        let result: GraphData = serde_json::from_slice(&body).expect("test assertion");
+        assert_eq!(result.id, "graph-1");
+        assert_eq!(result.name, "Knowledge Graph");
     }
 }
