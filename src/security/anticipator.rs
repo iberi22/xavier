@@ -6,8 +6,8 @@
 use crate::security::detections::{ScanResult, Severity, Threat, ThreatCategory};
 use crate::security::layers::{
     contains_injection, detect_canary, detect_config_drift_full, detect_encoding_attacks,
-    detect_heuristic, detect_high_entropy, detect_homoglyph, detect_path_traversal, detect_secrets,
-    detect_goal_drift, detect_threat_categories, detect_tool_alias_full,
+    detect_goal_drift, detect_heuristic, detect_high_entropy, detect_homoglyph,
+    detect_path_traversal, detect_secrets, detect_threat_categories, detect_tool_alias_full,
 };
 
 /// Layer names for reporting

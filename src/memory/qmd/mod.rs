@@ -343,6 +343,7 @@ pub async fn query_with_embedding_filtered(
 // ── Tests ────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(hidden_glob_reexports)]
 mod tests {
     use super::*;
     use std::env;
