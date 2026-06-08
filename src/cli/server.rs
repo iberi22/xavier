@@ -486,7 +486,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             shutdown_handle.graceful_shutdown(Some(Duration::from_secs(10)));
         });
 
-        axum_server::bind_rustls(bind_addr.parse()?, rustls_config)
+        axum_server::from_tcp_rustls(listener.into_std()?, rustls_config)
             .handle(handle)
             .serve(app.into_make_service())
             .await?;

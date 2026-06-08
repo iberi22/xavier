@@ -97,3 +97,4 @@ scripts/fix_*.py
 # Playwright last-run artifact
 panel-ui/test-results/.last-run.json
 
+*.sqlite3*
