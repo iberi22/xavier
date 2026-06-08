@@ -2,10 +2,10 @@
 //!
 //! This module contains all the configuration structs and their Debug implementations.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fmt;
 
-#[derive(Clone, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 pub struct XavierSettings {
     #[serde(default)]
     pub server: ServerSettings,
@@ -67,7 +67,7 @@ impl fmt::Debug for XavierSettings {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ServerSettings {
     #[serde(default = "XavierSettings::default_host")]
@@ -84,7 +84,7 @@ pub struct ServerSettings {
     pub config_path: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WorkspaceSettings {
     pub default_workspace_id: String,
@@ -97,7 +97,7 @@ pub struct WorkspaceSettings {
     pub sync_policy: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MemorySettings {
     pub backend: String,
@@ -109,7 +109,7 @@ pub struct MemorySettings {
     pub vec_path: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WorkingMemoryLayerConfig {
     pub capacity: usize,
@@ -118,7 +118,7 @@ pub struct WorkingMemoryLayerConfig {
     pub bm25_b: f32,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EpisodicMemoryLayerConfig {
     pub summary_window: usize,
@@ -126,14 +126,14 @@ pub struct EpisodicMemoryLayerConfig {
     pub min_event_importance: f32,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct MemoryLayersSettings {
     pub working: WorkingMemoryLayerConfig,
     pub episodic: EpisodicMemoryLayerConfig,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ModelSettings {
     pub provider: String,
@@ -183,7 +183,7 @@ impl fmt::Debug for ModelSettings {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RetrievalSettings {
     pub disable_hyde: bool,
@@ -192,7 +192,7 @@ pub struct RetrievalSettings {
     pub zone_penalty_multiplier: Option<f32>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SyncSettings {
     pub interval_ms: u64,
@@ -204,7 +204,7 @@ pub struct SyncSettings {
     pub timeout_ms: u64,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EmbeddingSettings {
     #[serde(default)]
@@ -255,7 +255,7 @@ impl fmt::Debug for EmbeddingSettings {
     }
 }
 
-#[derive(Clone, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct SecuritySettings {
     pub allowed_domains: String,
@@ -272,7 +272,7 @@ impl fmt::Debug for SecuritySettings {
     }
 }
 
-#[derive(Clone, Deserialize, Default)]
+#[derive(Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct TelegramSettings {
     pub enabled: bool,
@@ -289,32 +289,32 @@ impl fmt::Debug for TelegramSettings {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RouterSettings {
     pub policy_path: String,
     pub policy_refresh_secs: u64,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct ChronicleSettings {
     pub model: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EnterpriseSettings {
     pub db_path: String,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct AgentSettings {
     pub weekly_budget: Option<u64>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct AdvancedSettings {
     pub qjl_threshold: usize,
@@ -323,7 +323,7 @@ pub struct AdvancedSettings {
     pub panel_store_dir: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct PgHeartSettings {
     pub url: Option<String>,
@@ -331,6 +331,29 @@ pub struct PgHeartSettings {
     pub instance_id: Option<String>,
     pub sync_interval_ms: u64,
     pub auto_heartbeat: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProviderConfigV2 {
+    pub active_provider: String,
+    pub auto_strategy: String,
+    pub fallback_chain: Vec<String>,
+    pub headless: HeadlessConfig,
+    pub notifications: NotificationSettings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct HeadlessConfig {
+    pub enabled: bool,
+    pub port: u16,
+    pub auth_token: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NotificationSettings {
+    pub provider_limit_warning: bool,
+    pub new_model_detected: bool,
+    pub better_provider_available: bool,
 }
 
 impl XavierSettings {
