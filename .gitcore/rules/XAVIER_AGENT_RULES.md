@@ -1,10 +1,9 @@
-# 🤖 Xavier Core Integration Guidelines for Coding Agents (Cursor, Windsurf, Cline)
-> **Mandatory System Directive**: This document defines the protocol for AI agents to interact with the Xavier Context Engine during engineering tasks.
+# 🤖 Xavier Core Integration Guidelines for Coding Agents
+> **Mandatory System Directive**: This document defines the protocol for AI agents to interact with Xavier.
 
 ---
 
 ## 🧭 The Core Principle: "Recall, Analyze, Persist"
-When working in this codebase, you are not acting in isolation. You have access to a shared, persistent cognitive memory graph and a static AST code graph. You must follow the three-stage lifecycle for every task:
 
 ```
 ┌────────────────────────────────┐
@@ -22,79 +21,57 @@ When working in this codebase, you are not acting in isolation. You have access 
 └────────────────────────────────┘
 ```
 
----
+## 📡 Endpoints
 
-## 📡 Essential Protocols & Endpoints
+All HTTP requests to Xavier target `http://localhost:8006` with header `X-Xavier-Token: <env XAVIER_TOKEN>`.
 
-All HTTP requests to Xavier must target `http://localhost:8006` (or the port defined by `$XAVIER_PORT`) and **MUST** include the secure authorization header:
-`X-Xavier-Token: <value_from_XAVIER_TOKEN_env>`
+## ⚠️ REPO HYGIENE RULES (GitCore Protocol)
 
-### 🔍 Stage 1: Pre-Task Recall (Semantic RAG)
-Before modifying code or writing plans, search Xavier to find if this module was touched before, what decisions were made, and what guidelines apply.
+These rules are **MANDATORY** for all agents working in this repo:
 
-* **Endpoint**: `POST /memory/search`
-* **Payload**:
-  ```json
-  {
-    "query": "authentication security dev-token stability",
-    "limit": 5
-  }
-  ```
-* **Directive**: Extract files, architectural specs, or prior bugs associated with the keywords in your current goal.
+### Files at root — what belongs vs what doesn't
 
----
+#### ✅ BELONGS at root (industry standard for AI agents)
+- `AGENTS.md`, `SOUL.md`, `USER.md` — AI agent configs (Cursor, Claude, Copilot, OpenClaw expect these at root)
+- `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md`, `LICENSE`, `SECURITY.md` — standard project docs
+- `Cargo.toml`, `package.json`, `.gitignore` — language/tool configs
+- `.github/`, `.cursor/`, `.claude/` — platform-specific directories
 
-### 🕸️ Stage 2: Codebase Structural Mapping (Static Code Graph)
-Do not use raw text search or RAG vector search to find code files, functions, or dependencies. Use the tree-sitter static graph endpoints to obtain structural precision.
+#### ❌ NEVER at root
+- Temporary scripts (`fix_*.py`, `fix_*.cjs`, `temp_*.yml`) → go in `scripts/` or clean up after task
+- Issue templates → go in `.github/ISSUE_TEMPLATE/`
+- Build artifacts → gitignore or delete
+- Runtime SQLite databases → go in `.xavier/` (already gitignored via `.xavier/` rule)
+- Task tracking files → use `.gitcore/planning/TASK.md`
+- ZIP archives or binary blobs → go in `backup/` or delete
 
-#### A. Locate Symbols (Fuzzy Search)
-* **Endpoint**: `POST /code/find`
-* **Payload**: `{"query": "resolve_xavier_token"}`
+### The 3-Question Test before creating any file:
+1. Does this file already have a canonical location in the repo structure?
+2. Is this a temp file I'll delete after the task?
+3. Would this file make the root directory look messy?
 
-#### B. Map AST and File Context
-* **Endpoint**: `POST /code/context`
-* **Payload**: `{"query": "src/security/auth.rs"}`
-* **Returns**: High-level AST structure, exported functions, structs, classes, methods, and active imports.
+If yes to any of #1 or #3, put it in the right place. If #2, set a reminder to clean up.
 
-#### C. Trace Dependency Graph
-* **Endpoint**: `POST /code/dependencies`
-* **Payload**: `{"query": "src/server/mcp_server.rs", "depth": 2}`
-* **Returns**: Inbound import links to prevent circular dependencies.
+### .gitignore Integrity
+- The `.gitignore` was repaired on 2026-06-08 (was UTF-16 LE corrupted on last line)
+- Always write `.gitignore` in **UTF-8 without BOM**
+- If a file isn't being ignored when it should be, check for encoding corruption
 
 ---
 
-### 💾 Stage 3: Atomic State Persistence (Durable Retention)
-Once your task is completed, compiling successfully, and verified via local tests:
-1. Formulate a short, markdown-formatted summary of your modifications and *why* they were made.
-2. Ingest this summary into Xavier's durable memory so that subsequent agent sessions have immediate context.
+## 🧠 Memory Operations
 
-* **Endpoint**: `POST /memory/add`
-* **Payload**:
-  ```json
-  {
-    "path": "tasks/verification/<issue_number_or_slug>",
-    "content": "### Task: Unify settings authentication\n- Removed dev-token and XAVIER_DEV_MODE fallbacks.\n- Hardened auth.rs to strictly require XAVIER_TOKEN env.\n- Added tests/storage_isolation.rs for multi-tenant verification.",
-    "metadata": {
-      "type": "task_verification",
-      "status": "completed",
-      "author": "your_agent_name"
-    }
-  }
-  ```
+### Pre-Task: Semantic RAG
+- **Endpoint**: `POST /memory/search`
+- **Query**: include relevant keywords for your task context
 
----
+### Post-Task: Store Summary
+- **Endpoint**: `POST /memory/add`
+- **Path**: `tasks/verification/<issue_number_or_slug>`
+- **Content**: markdown summary of changes, why, and verification status
 
-## 💡 Accessing IDE Agent Chat History
-The local **Agentic Scanner Daemon** runs continuously in the background on the Xavier server. It automatically discovers, parses, and vector-indexes your own chat history with IDE agents (Cursor, Windsurf, VS Code, Kiro).
-
-If you are continuing a task previously discussed in a Cursor composer or Windsurf chat session:
-* Search specifically for historical chat fragments by querying:
-  * `query: "Cursor chat history auth"` or `query: "Windsurf Handoff"`
-* Look for virtual documents with path prefix `agent_memory://` to retrieve absolute transcripts of prior agent reasoning!
-
----
-
-## ⚠️ Absolute Agent Constraints
-1. **Mandatory Token Header**: Never omit `X-Xavier-Token`. All requests without this header will be rejected with `401 Unauthorized` due to our hardened security policies.
-2. **Never Commit Secrets**: Never store API keys, database passwords, or plain token values inside Xavier memory.
-3. **No Redundant RAG**: Do not index raw code files inside the semantic vector memory store. The code graph does this with 100% precision via AST parsing. Use vector memory ONLY for documentation, specs, chat logs, and task summaries.
+## ⚠️ Constraints
+1. **Mandatory Token Header**: Never omit `X-Xavier-Token`
+2. **No Secrets**: Never store API keys or tokens in Xavier memory
+3. **No Redundant RAG**: Use code graph for code lookups, vector memory only for docs/specs/task summaries
+4. **Cleanup after yourself**: Delete temp files created during the task
