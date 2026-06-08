@@ -20,6 +20,8 @@ pub struct WorkspaceInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OnboardingSuggestions {
     pub os: String,
+    pub is_docker: bool,
+    pub is_wsl: bool,
     pub tools: Vec<ToolInfo>,
     pub workspace: WorkspaceInfo,
     pub recommendations: Vec<String>,
@@ -27,6 +29,20 @@ pub struct OnboardingSuggestions {
 
 pub fn detect_os() -> String {
     std::env::consts::OS.to_string()
+}
+
+pub fn is_wsl() -> bool {
+    if cfg!(target_os = "linux") {
+        if let Ok(version) = std::fs::read_to_string("/proc/version") {
+            return version.to_lowercase().contains("microsoft")
+                || version.to_lowercase().contains("wsl");
+        }
+    }
+    false
+}
+
+pub fn is_docker() -> bool {
+    Path::new("/.dockerenv").exists()
 }
 
 pub fn check_tool(name: &str, arg: &str) -> ToolInfo {
@@ -55,6 +71,7 @@ pub fn detect_tools() -> Vec<ToolInfo> {
         ("python", "--version"),
         ("git", "--version"),
         ("docker", "--version"),
+        ("ollama", "--version"),
     ];
 
     tools_to_check
@@ -100,6 +117,8 @@ pub fn detect_workspace_type(path: &Path) -> WorkspaceInfo {
 pub fn generate_suggestions(workspace_path: &Path) -> OnboardingSuggestions {
     let os = detect_os();
     let tools = detect_tools();
+    let is_docker = is_docker();
+    let is_wsl = is_wsl();
 
     // Check the provided workspace path
     let mut workspace = detect_workspace_type(workspace_path);
@@ -133,19 +152,31 @@ pub fn generate_suggestions(workspace_path: &Path) -> OnboardingSuggestions {
     match os.as_str() {
         "windows" => {
             recommendations.push("Running on Windows. Ensure you have 'XAVIER_PORT' configured if 8006 is blocked.".to_string());
-            recommendations.push("Consider using WSL2 for optimal performance with local LLMs.".to_string());
-        },
-        "linux" => recommendations.push("Linux environment detected. Performance should be optimal for local model execution with 'vec' backend.".to_string()),
+            recommendations.push("Consider using WSL2 for optimal performance with local LLMs and a more native development experience.".to_string());
+        }
+        "linux" => {
+            if is_wsl {
+                recommendations.push("WSL environment detected. Performance should be optimal for local model execution.".to_string());
+            } else {
+                recommendations.push("Linux environment detected. Performance should be optimal for local model execution with 'vec' backend.".to_string());
+            }
+        }
         "macos" => recommendations.push("macOS detected. Xavier supports Metal acceleration for compatible local models (e.g., via llama.cpp/Ollama).".to_string()),
         _ => {}
     }
 
-    if tools.iter().any(|t| t.name == "docker" && t.installed) {
-        recommendations.push("Docker detected. You can run Xavier in a container for better isolation.".to_string());
+    if tools.iter().any(|t| t.name == "docker" && t.installed) && !is_docker {
+        recommendations.push("Docker detected. You can run Xavier in a container for better isolation and easy environment management.".to_string());
+    }
+
+    if tools.iter().any(|t| t.name == "ollama" && t.installed) {
+        recommendations.push("Ollama detected. Xavier can use it for running local LLMs with ease.".to_string());
     }
 
     OnboardingSuggestions {
         os,
+        is_docker,
+        is_wsl,
         tools,
         workspace,
         recommendations,
@@ -171,5 +202,28 @@ mod tests {
         let info = detect_workspace_type(dir.path());
         assert_eq!(info.project_type, "Rust");
         assert!(info.indicators.contains(&"Cargo.toml".to_string()));
+    }
+
+    #[test]
+    fn test_is_docker_detection() {
+        // Since we can't easily create /.dockerenv in a test environment without root,
+        // we just verify it doesn't crash and returns a boolean.
+        let _ = is_docker();
+    }
+
+    #[test]
+    fn test_is_wsl_detection() {
+        // Verify it doesn't crash.
+        let _ = is_wsl();
+    }
+
+    #[test]
+    fn test_generate_suggestions_basic() {
+        let dir = tempdir().unwrap();
+        let suggestions = generate_suggestions(dir.path());
+
+        assert!(!suggestions.os.is_empty());
+        // Should at least have OS specific recommendations
+        assert!(!suggestions.recommendations.is_empty());
     }
 }
