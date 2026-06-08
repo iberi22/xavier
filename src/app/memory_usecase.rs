@@ -3,6 +3,7 @@
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
 use crate::domain::memory::{MemoryQueryFilters, MemoryRecord};
+use crate::enterprise::rbac::{Permission, RoleGuard};
 use crate::ports::inbound::MemoryQueryPort;
 use crate::ports::outbound::ThreatDetectionPort;
 use async_trait::async_trait;
@@ -12,6 +13,7 @@ use tracing::warn;
 pub struct MemoryUseCase {
     inner: Arc<dyn MemoryQueryPort>,
     threat_detector: Option<Arc<dyn ThreatDetectionPort>>,
+    rbac_guard: Option<Arc<RoleGuard>>,
 }
 
 impl MemoryUseCase {
@@ -22,7 +24,13 @@ impl MemoryUseCase {
         Self {
             inner,
             threat_detector,
+            rbac_guard: None,
         }
+    }
+
+    pub fn with_rbac(mut self, guard: Arc<RoleGuard>) -> Self {
+        self.rbac_guard = Some(guard);
+        self
     }
 }
 
@@ -33,6 +41,18 @@ impl MemoryQueryPort for MemoryUseCase {
         query: &str,
         filters: Option<MemoryQueryFilters>,
     ) -> anyhow::Result<Vec<MemoryRecord>> {
+        if let Some(ref guard) = self.rbac_guard {
+            // Prefer granular permission if workspace/agent context is available
+            let perm = if let Some(ref f) = filters {
+                Permission::AgentMemoryRead(f.workspace_id.clone().unwrap_or("*".to_string()))
+            } else {
+                Permission::MemoryRead
+            };
+
+            if !guard.can(&perm) && !guard.can(&Permission::MemoryRead) {
+                return Err(anyhow::anyhow!("Permission denied: {}", perm));
+            }
+        }
         if let Some(ref detector) = self.threat_detector {
             let clean = detector.scan_and_log(query, "memory_search").await?;
             if !clean {
@@ -46,6 +66,12 @@ impl MemoryQueryPort for MemoryUseCase {
     }
 
     async fn add(&self, record: MemoryRecord) -> anyhow::Result<String> {
+        if let Some(ref guard) = self.rbac_guard {
+            let perm = Permission::AgentMemoryWrite(record.workspace_id.clone());
+            if !guard.can(&perm) && !guard.can(&Permission::MemoryWrite) {
+                return Err(anyhow::anyhow!("Permission denied: {}", perm));
+            }
+        }
         if let Some(ref detector) = self.threat_detector {
             let clean = detector.scan_and_log(&record.content, "memory_add").await?;
             if !clean {
@@ -59,6 +85,23 @@ impl MemoryQueryPort for MemoryUseCase {
     }
 
     async fn delete(&self, id: &str) -> anyhow::Result<Option<MemoryRecord>> {
+        if let Some(ref guard) = self.rbac_guard {
+            // For delete, we still use MemoryDelete as a baseline,
+            // but we could also check AgentMemoryWrite for the workspace if we had it.
+            guard
+                .require(Permission::MemoryDelete)
+                .map_err(|e| anyhow::anyhow!(e))?;
+        }
+
+        // HITL check for destructive actions
+        if let Some(ref detector) = self.threat_detector {
+            if detector.requires_hitl("memory_delete", id).await? {
+                return Err(anyhow::anyhow!(
+                    "Action requires human approval. Please provide an approval token."
+                ));
+            }
+        }
+
         self.inner.delete(id).await
     }
 

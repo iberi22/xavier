@@ -52,6 +52,8 @@ pub enum ThreatCategory {
     ContextLeakage,
     /// Configuration tampering
     ConfigTampering,
+    /// Agent goal drift detection
+    GoalDrift,
 }
 
 impl ThreatCategory {
@@ -67,6 +69,7 @@ impl ThreatCategory {
             ThreatCategory::SocialEngineering => "social_engineering",
             ThreatCategory::ContextLeakage => "context_leakage",
             ThreatCategory::ConfigTampering => "config_tampering",
+            ThreatCategory::GoalDrift => "goal_drift",
         }
     }
 }
