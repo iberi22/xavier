@@ -401,6 +401,7 @@ export default function App() {
                 }
                 onPinArtifact={handlePinArtifact}
                 onUpdateBookmark={handleUpdateBookmark}
+                token={token}
               />
             </motion.div>
           )}

@@ -52,6 +52,33 @@ pub async fn health_handler(State(state): State<CliState>) -> Response {
     )
 }
 
+pub async fn system_scan_handler(State(state): State<CliState>) -> Response {
+    let mut providers = Vec::new();
+    let detected_providers = vec!["openai", "anthropic", "gemini", "minimax", "local"];
+
+    for p in detected_providers {
+        let client = xavier::agents::provider::ModelProviderClient::for_provider(p, None);
+        let status = client.status();
+        providers.push(serde_json::json!({
+            "name": p,
+            "configured": status.configured,
+            "model": status.model,
+        }));
+    }
+
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "version": env!("CARGO_PKG_VERSION"),
+            "os": std::env::consts::OS,
+            "arch": std::env::consts::ARCH,
+            "providers": providers,
+            "workspace_id": state.workspace_id,
+            "memory_backend": crate::settings::XavierSettings::current().memory.backend,
+        }),
+    )
+}
+
 fn calculate_data_dir_size() -> Option<u64> {
     let data_dir = std::path::Path::new("data");
     if !data_dir.is_dir() {
