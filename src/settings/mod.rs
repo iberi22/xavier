@@ -14,6 +14,7 @@ pub mod validation;
 pub use types::*;
 
 impl XavierSettings {
+    #[allow(dead_code)]
     pub fn resolve_config_path() -> PathBuf {
         serialization::resolve_config_path()
     }
