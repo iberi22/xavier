@@ -132,6 +132,8 @@ POST /secure/add        → Encrypted add memory
 ### What is Anticipator?
 Runtime security for multi-agent AI systems. Detects prompt injection, credential leakage, encoding attacks, homoglyph spoofing, and path traversal — **before they become incidents**.
 
+*Note: The implementation is derived from the open-source platform [calus-ai/anticipator](https://github.com/calus-ai/anticipator).*
+
 **10 Detection Layers:**
 
 | Layer | Method | Catches |
@@ -265,7 +267,7 @@ We can be the first to implement this natively.
 |------|--------|-------|
 | TLS 1.3 for transport | TODO | Required for all external endpoints |
 | AES-256-GCM E2E | TODO | Session key per node |
-| Anticipator Core | TODO | Port to Rust or WASM |
+| Anticipator Core | DONE | Ported to Rust (src/security/anticipator.rs) |
 | Node authentication | TODO | node_token + session_key |
 | Secret rotation | TODO | Daily key rotation |
 | Audit logging | TODO | All security events logged |
@@ -295,3 +297,12 @@ We can be the first to implement this natively.
 - [ ] Penetration testing
 - [ ] Security audit
 - [ ] Compliance documentation
+
+---
+
+## MASS (Multi-Agent Systems Security) 2026 Guidelines
+To ensure Xavier meets the latest 2026 standards for AI agentic security (OWASP Top 10 for Agentic Applications), the following principles must be enforced:
+1. **Defense-in-Depth & Zero Trust**: No agent-to-agent communication is inherently trusted. E2E Encryption (AES-256-GCM) is mandatory.
+2. **Identity & Role Boundaries (RBAC)**: Fine-grained tokens are required for all tools and databases. Memory isolation must prevent cross-tenant data leakage.
+3. **Human-in-the-Loop (HITL)**: Deterministic human approval is required for high-stakes or irreversible actions.
+4. **Agent Graph Observability**: Continuous monitoring of agent reasoning steps to detect anomalies or "goal drift".
