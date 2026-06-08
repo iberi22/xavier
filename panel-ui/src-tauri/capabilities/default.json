@@ -6,6 +6,19 @@
     "main"
   ],
   "permissions": [
-    "core:default"
+    "core:default",
+    "shell:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/xavier",
+          "sidecar": true,
+          "args": [
+            "http"
+          ]
+        }
+      ]
+    }
   ]
 }

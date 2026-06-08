@@ -30,7 +30,7 @@ name = "xavier"
 path = "src/lib.rs"
 
 [workspace]
-members = ["code-graph"]
+members = ["code-graph", "panel-ui/src-tauri"]
 
 [features]
 default = ["cli-interactive"]
