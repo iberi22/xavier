@@ -24,6 +24,7 @@ pub mod usage;
 
 // Re-export for backward compatibility
 pub use enums::*;
+#[allow(unused_imports)]
 pub use spawn::load_spawn_memory;
 
 use crate::cli::config::{require_xavier_token, resolve_base_url, resolve_http_port};
