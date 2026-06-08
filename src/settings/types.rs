@@ -335,7 +335,7 @@ pub struct PgHeartSettings {
 
 impl XavierSettings {
     pub fn default_host() -> String {
-        "127.0.0.1".into()
+        "0.0.0.0".into()
     }
     pub fn default_port() -> u16 {
         8006

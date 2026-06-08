@@ -55,7 +55,7 @@ mod tests {
     fn test_default_settings() {
         let settings = XavierSettings::default();
         assert_eq!(settings.server.port, 8006);
-        assert_eq!(settings.server.host, "127.0.0.1");
+        assert_eq!(settings.server.host, "0.0.0.0");
         assert_eq!(settings.workspace.default_workspace_id, "default");
         assert_eq!(settings.memory.backend, "vec");
         assert_eq!(settings.models.provider, "local");
@@ -84,7 +84,7 @@ mod tests {
         let settings = XavierSettings::default();
         settings.apply_to_env();
 
-        assert_eq!(std::env::var("XAVIER_HOST").unwrap(), "127.0.0.1");
+        assert_eq!(std::env::var("XAVIER_HOST").unwrap(), "0.0.0.0");
         assert_eq!(std::env::var("XAVIER_PORT").unwrap(), "8006");
         assert_eq!(
             std::env::var("XAVIER_WORKING_MEMORY_CAPACITY").unwrap(),
@@ -121,7 +121,7 @@ mod tests {
         assert_eq!(std::env::var("XAVIER_PORT").unwrap(), "9999");
         assert_eq!(std::env::var("XAVIER_RRF_K").unwrap(), "100");
         // Missing vars should be set
-        assert_eq!(std::env::var("XAVIER_HOST").unwrap(), "127.0.0.1");
+        assert_eq!(std::env::var("XAVIER_HOST").unwrap(), "0.0.0.0");
 
         // Clean up
         std::env::remove_var("XAVIER_HOST");
@@ -154,8 +154,8 @@ mod tests {
         // Temporarily point config to a nonexistent path so defaults are used
         std::env::set_var("XAVIER_CONFIG_PATH", "/tmp/nonexistent-xavier-config.json");
         let settings = XavierSettings::current();
-        // Without a real config file, host falls to default (127.0.0.1)
-        assert_eq!(settings.server.host, "127.0.0.1");
+        // Without a real config file, host falls to default (0.0.0.0)
+        assert_eq!(settings.server.host, "0.0.0.0");
         assert_eq!(settings.server.port, 8006);
         assert!(settings.auth_token.is_none());
         std::env::remove_var("XAVIER_CONFIG_PATH");

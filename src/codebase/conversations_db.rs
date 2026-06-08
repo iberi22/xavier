@@ -924,4 +924,46 @@ mod tests {
             .unwrap();
         assert_eq!(db.project_id(), "valid-project_123");
     }
+
+    #[tokio::test]
+    async fn test_thread_and_message_crud() {
+        let db = ConversationsDb::open_in_memory("test-crud").await.unwrap();
+        db.create_schema().await.unwrap();
+
+        // Create thread
+        let thread = db.create_thread(Some("Test Title"), Some("gpt-4"), Some("unit-test")).await.unwrap();
+        assert_eq!(thread.title, Some("Test Title".to_string()));
+
+        // Get thread
+        let thread_get = db.get_thread(&thread.id).await.unwrap().unwrap();
+        assert_eq!(thread_get.id, thread.id);
+
+        // List threads
+        let threads = db.list_threads(10).await.unwrap();
+        assert!(!threads.is_empty());
+
+        // Store message
+        let msg = db.store_message(
+            &thread.id,
+            "user",
+            "Hello world",
+            None,
+            None,
+            None,
+            Some("{\"key\": \"val\"}"),
+            Some(10)
+        ).await.unwrap();
+        assert_eq!(msg.content, "Hello world");
+        assert_eq!(msg.role, "user");
+
+        // Get messages
+        let messages = db.get_thread_messages(&thread.id).await.unwrap();
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0].content, "Hello world");
+
+        // Test updated_at and last_preview on thread
+        let thread_updated = db.get_thread(&thread.id).await.unwrap().unwrap();
+        assert!(thread_updated.last_preview.is_some());
+        assert_eq!(thread_updated.last_preview.unwrap(), "Hello world");
+    }
 }
