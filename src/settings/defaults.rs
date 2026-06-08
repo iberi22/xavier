@@ -121,6 +121,8 @@ impl Default for SyncSettings {
             save_ok_rate_threshold: 0.95,
             max_retries: 3,
             retry_delay_ms: 1_000,
+            min_health_interval_ms: 1_000,
+            timeout_ms: 5_000,
         }
     }
 }

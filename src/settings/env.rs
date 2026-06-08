@@ -55,9 +55,9 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
     set_if_absent(
         "XAVIER_MANAGED_GOOGLE_EMBEDDINGS",
         if settings.workspace.managed_google_embeddings {
-            "1"
+            "true"
         } else {
-            "0"
+            "false"
         },
     );
     set_optional_if_absent(
@@ -132,6 +132,7 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
     set_if_absent("XAVIER_MODEL_PROVIDER", &settings.models.provider);
     set_if_absent("XAVIER_API_FLAVOR", &settings.models.api_flavor);
     set_if_absent("XAVIER_LOCAL_LLM_MODEL", &settings.models.local_llm_model);
+    set_if_absent("XAVIER_EMBEDDING_URL", &settings.models.embedding_url);
     set_if_absent("XAVIER_EMBEDDING_MODEL", &settings.models.embedding_model);
     set_optional_if_absent(
         "XAVIER_ROUTER_RETRIEVED_MODEL",
@@ -158,9 +159,9 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
     set_if_absent(
         "XAVIER_DISABLE_HYDE",
         if settings.retrieval.disable_hyde {
-            "1"
+            "true"
         } else {
-            "0"
+            "false"
         },
     );
     set_optional_if_absent(
@@ -197,6 +198,14 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
     set_if_absent(
         "XAVIER_SYNC_RETRY_DELAY_MS",
         &settings.sync.retry_delay_ms.to_string(),
+    );
+    set_if_absent(
+        "XAVIER_SYNC_MIN_HEALTH_INTERVAL_MS",
+        &settings.sync.min_health_interval_ms.to_string(),
+    );
+    set_if_absent(
+        "XAVIER_SYNC_TIMEOUT_MS",
+        &settings.sync.timeout_ms.to_string(),
     );
 
     // Embedding settings
@@ -285,17 +294,17 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
     set_if_absent(
         "XAVIER_ENTITY_EXTRACTION_ENABLED",
         if settings.advanced.entity_extraction_enabled {
-            "1"
+            "true"
         } else {
-            "0"
+            "false"
         },
     );
     set_if_absent(
         "XAVIER_AUDIT_CHAIN_ENABLED",
         if settings.advanced.audit_chain_enabled {
-            "1"
+            "true"
         } else {
-            "0"
+            "false"
         },
     );
     set_optional_if_absent(

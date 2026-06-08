@@ -200,6 +200,8 @@ pub struct SyncSettings {
     pub save_ok_rate_threshold: f32,
     pub max_retries: u32,
     pub retry_delay_ms: u64,
+    pub min_health_interval_ms: u64,
+    pub timeout_ms: u64,
 }
 
 #[derive(Clone, Deserialize)]
