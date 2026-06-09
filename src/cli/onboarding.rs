@@ -78,7 +78,10 @@ pub fn detect_os_detailed() -> String {
     match os {
         "windows" => {
             let output = Command::new("powershell")
-                .args(["-Command", "(Get-CimInstance Win32_OperatingSystem).Caption"])
+                .args([
+                    "-Command",
+                    "(Get-CimInstance Win32_OperatingSystem).Caption",
+                ])
                 .output();
             if let Ok(out) = output {
                 let name = String::from_utf8_lossy(&out.stdout).trim().to_string();
@@ -138,7 +141,10 @@ pub fn detect_gpu() -> Option<String> {
             }
         }
         // Fallback to lspci
-        let output = Command::new("sh").arg("-c").arg("lspci | grep -i vga").output();
+        let output = Command::new("sh")
+            .arg("-c")
+            .arg("lspci | grep -i vga")
+            .output();
         if let Ok(out) = output {
             let stdout = String::from_utf8_lossy(&out.stdout);
             if let Some(line) = stdout.lines().next() {

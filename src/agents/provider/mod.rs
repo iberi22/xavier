@@ -22,6 +22,6 @@ pub use traits::LlmProvider;
 pub use types::{ApiFlavor, ModelProviderStatus, ProviderMode, LLM_TIMEOUT};
 
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod router_tests;
+#[cfg(test)]
+mod tests;

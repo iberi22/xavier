@@ -1,8 +1,8 @@
 //! Provider management CLI command implementation.
 
-use anyhow::Result;
 use crate::cli::commands::enums::{ProviderCommand, CLI_HTTP_CLIENT};
 use crate::cli::config::{require_xavier_token, resolve_base_url};
+use anyhow::Result;
 
 pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
     let base_url = resolve_base_url();
@@ -48,7 +48,10 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
 
             if resp.status().is_success() {
                 let res: serde_json::Value = resp.json().await?;
-                println!("✅ {}", res["message"].as_str().unwrap_or("Switched provider"));
+                println!(
+                    "✅ {}",
+                    res["message"].as_str().unwrap_or("Switched provider")
+                );
             } else {
                 println!("❌ Failed to set provider: {}", resp.text().await?);
             }
@@ -63,7 +66,10 @@ pub async fn handle_provider_command(cmd: ProviderCommand) -> Result<()> {
 
             if resp.status().is_success() {
                 let res: serde_json::Value = resp.json().await?;
-                println!("✅ {}", res["message"].as_str().unwrap_or("Set auto strategy"));
+                println!(
+                    "✅ {}",
+                    res["message"].as_str().unwrap_or("Set auto strategy")
+                );
             } else {
                 println!("❌ Failed to set auto strategy: {}", resp.text().await?);
             }

@@ -260,7 +260,10 @@ mod tests {
     fn test_router_initialization() {
         let router = ProviderRouter::new(ProviderKind::Local);
         assert_eq!(router.current_provider(), ProviderKind::Local);
-        assert_eq!(*router.active_mode(), ActiveProvider::Manual(ProviderKind::Local));
+        assert_eq!(
+            *router.active_mode(),
+            ActiveProvider::Manual(ProviderKind::Local)
+        );
         assert_eq!(router.history().len(), 1);
     }
 
@@ -302,6 +305,11 @@ mod tests {
     fn test_auto_strategy_setting() {
         let mut router = ProviderRouter::new(ProviderKind::Local);
         router.set_auto_strategy(AutoStrategy::LowestCost);
-        assert_eq!(*router.active_mode(), ActiveProvider::Auto { strategy: AutoStrategy::LowestCost });
+        assert_eq!(
+            *router.active_mode(),
+            ActiveProvider::Auto {
+                strategy: AutoStrategy::LowestCost
+            }
+        );
     }
 }

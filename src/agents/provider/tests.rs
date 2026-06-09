@@ -1,9 +1,9 @@
-use super::*;
-use super::rate_limit::*;
 use super::config::*;
+use super::rate_limit::*;
 use super::types::*;
-use crate::domain::proxy::types::{ApiTier, ProviderQuota, ProviderKind as DomainProviderKind};
-use chrono::{Utc, Duration};
+use super::*;
+use crate::domain::proxy::types::{ApiTier, ProviderKind as DomainProviderKind, ProviderQuota};
+use chrono::{Duration, Utc};
 use std::sync::{Mutex, OnceLock};
 
 fn env_lock() -> &'static Mutex<()> {
@@ -18,14 +18,20 @@ async fn test_rate_limit_manager_tracking() {
     manager.init_schema_async().await.unwrap();
 
     // Track a successful request
-    manager.track_request("openai", 100, 200, 0.01, false).await.unwrap();
+    manager
+        .track_request("openai", 100, 200, 0.01, false)
+        .await
+        .unwrap();
 
     let status = manager.get_status("openai").await.unwrap();
     assert_eq!(status.used_today, 100);
     assert!(status.rate_limited_until.is_none());
 
     // Track a 429 error
-    manager.track_request("openai", 0, 429, 0.0, false).await.unwrap();
+    manager
+        .track_request("openai", 0, 429, 0.0, false)
+        .await
+        .unwrap();
     let status = manager.get_status("openai").await.unwrap();
     assert!(status.rate_limited_until.is_some());
     assert!(manager.check("openai").await);

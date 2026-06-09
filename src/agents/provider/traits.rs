@@ -15,8 +15,11 @@ pub trait LlmProvider: Send + Sync {
     ) -> Result<LlmResponse>;
 
     /// Generates a response based on query and context documents.
-    async fn generate_response(&self, query: &str, context: &[RetrievedDocument])
-        -> Result<LlmResponse>;
+    async fn generate_response(
+        &self,
+        query: &str,
+        context: &[RetrievedDocument],
+    ) -> Result<LlmResponse>;
 
     /// Generates a hypothetical document for HyDE-like retrieval.
     async fn generate_hypothetical_document(&self, query: &str) -> Result<LlmResponse>;
