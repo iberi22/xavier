@@ -343,6 +343,13 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/v1/memory/search", post(crate::cli::handlers::headless_api::headless_memory_search))
         .route("/v1/memory/add", post(crate::cli::handlers::headless_api::headless_memory_add))
         .route("/v1/memory/export", get(crate::cli::handlers::headless_api::headless_memory_export))
+        // ── Headless E2E API (New Structure) ──────────────────────────────
+        .route("/headless/health", get(crate::cli::handlers::headless_e2e::health))
+        .route("/headless/context", get(crate::cli::handlers::headless_e2e::context))
+        .route("/headless/memory/search", post(crate::cli::handlers::headless_e2e::memory_search))
+        .route("/headless/tools", get(crate::cli::handlers::headless_e2e::tools))
+        .route("/headless/tools/:name", post(crate::cli::handlers::headless_e2e::execute_tool))
+        .route("/headless/provider/status", get(crate::cli::handlers::headless_e2e::provider_status))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(
             state.clone(),
