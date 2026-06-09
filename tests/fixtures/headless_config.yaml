@@ -1,0 +1,13 @@
+active_provider: local
+auto_strategy: lowest_latency
+fallback_chain:
+  - openai
+  - groq
+headless:
+  enabled: true
+  port: 8007
+  auth_token: test-token
+notifications:
+  provider_limit_warning: true
+  new_model_detected: true
+  better_provider_available: true

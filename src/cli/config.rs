@@ -21,7 +21,17 @@ pub fn resolve_http_token() -> Result<String> {
 }
 
 pub fn resolve_http_bind_host() -> String {
-    std::env::var("XAVIER_HOST").unwrap_or_else(|_| XavierSettings::current().server.host)
+    // If we are in headless mode or the user hasn't specified a host,
+    // we default to 127.0.0.1 for security.
+    std::env::var("XAVIER_HOST").unwrap_or_else(|_| {
+        let settings = XavierSettings::current();
+        // Check for specific headless marker or default to 127.0.0.1
+        if std::env::var("XAVIER_HEADLESS").is_ok() {
+            "127.0.0.1".to_string()
+        } else {
+            settings.server.host.clone()
+        }
+    })
 }
 
 /// Resolve a base URL for a given port.
