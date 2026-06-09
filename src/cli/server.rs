@@ -337,6 +337,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             get(crate::cli::handlers::quota::v1_providers_quota),
         )
         // ── Headless API (issue #624) ─────────────────────────────────────
+<<<<<<< HEAD
         .route(
             "/v1/system/health",
             get(crate::cli::handlers::headless_api::headless_health),
@@ -393,6 +394,29 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             "/v1/memory/export",
             get(crate::cli::handlers::headless_api::headless_memory_export),
         )
+=======
+        .route("/v1/system/health", get(crate::cli::handlers::headless_api::headless_health))
+        .route("/v1/system/scan", get(crate::cli::handlers::headless_api::headless_system_scan))
+        .route("/v1/system/info", get(crate::cli::handlers::headless_api::headless_system_info))
+        .route("/v1/chat/completions", post(crate::cli::handlers::headless_api::headless_chat))
+        .route("/v1/providers", get(crate::cli::handlers::headless_api::headless_providers))
+        .route("/v1/providers/status", get(crate::cli::handlers::headless_api::headless_provider_status))
+        .route("/v1/providers/switch", post(crate::cli::handlers::headless_api::headless_switch_provider))
+        .route("/v1/quota", get(crate::cli::handlers::headless_api::headless_quota))
+        .route("/v1/usage", get(crate::cli::handlers::headless_api::headless_usage))
+        .route("/v1/agents", get(crate::cli::handlers::headless_api::headless_agents))
+        .route("/v1/agents/spawn", post(crate::cli::handlers::headless_api::headless_spawn))
+        .route("/v1/memory/search", post(crate::cli::handlers::headless_api::headless_memory_search))
+        .route("/v1/memory/add", post(crate::cli::handlers::headless_api::headless_memory_add))
+        .route("/v1/memory/export", get(crate::cli::handlers::headless_api::headless_memory_export))
+        // ── Headless E2E API (New Structure) ──────────────────────────────
+        .route("/headless/health", get(crate::cli::handlers::headless_e2e::health))
+        .route("/headless/context", get(crate::cli::handlers::headless_e2e::context))
+        .route("/headless/memory/search", post(crate::cli::handlers::headless_e2e::memory_search))
+        .route("/headless/tools", get(crate::cli::handlers::headless_e2e::tools))
+        .route("/headless/tools/:name", post(crate::cli::handlers::headless_e2e::execute_tool))
+        .route("/headless/provider/status", get(crate::cli::handlers::headless_e2e::provider_status))
+>>>>>>> 0459b7143cf275f06892a09e698397101d7364ea
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(
             state.clone(),
