@@ -402,11 +402,11 @@ async fn detect_env_vars(detailed: bool) -> HashMap<String, EnvVarStatus> {
     vars
 }
 
-fn gather_system_info() -> SystemInfo {
+pub fn gather_system_info() -> SystemInfo {
     SystemInfo {
         os: std::env::consts::OS.to_string(),
         arch: std::env::consts::ARCH.to_string(),
-        cpus: num_cpus::get(),
+        cpus: std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1),
         memory_mb: sysinfo::System::new_all().total_memory() / 1024,
         xavier_version: env!("CARGO_PKG_VERSION").to_string(),
     }

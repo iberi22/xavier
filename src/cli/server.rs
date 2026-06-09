@@ -233,6 +233,11 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         prompt_cache,
         proxy_use_case,
         http_client,
+        provider_router: Arc::new(tokio::sync::RwLock::new(
+            xavier::agents::provider::router::ProviderRouter::new(
+                xavier::agents::provider::router::ProviderKind::OpenAI
+            )
+        )),
         embedder,
         agent_indexer: Arc::new(crate::memory::agent_indexer::AgentIndexer::new(
             crate::memory::file_indexer::FileIndexer::new(
@@ -491,19 +496,11 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         info!("TLS 1.3 encryption enabled");
         let rustls_config = RustlsConfig::from_pem_file(cert, key).await?;
 
-        let handle = axum_server::Handle::new();
+        let handle = axum_server::Handle::<std::net::SocketAddr>::new();
         let shutdown_handle = handle.clone();
 
-        tokio::spawn(async move {
-            if let Err(error) = tokio::signal::ctrl_c().await {
-                info!("Failed to listen for Ctrl+C shutdown signal: {}", error);
-            }
-            info!("Shutting down TLS server...");
-            shutdown_handle.graceful_shutdown(Some(Duration::from_secs(10)));
-        });
-
-        axum_server::from_tcp_rustls(listener.into_std()?, rustls_config)
-            .handle(handle)
+        let addr = listener.local_addr()?;
+        axum_server::bind_rustls(addr, rustls_config)
             .serve(app.into_make_service())
             .await?;
     } else {
