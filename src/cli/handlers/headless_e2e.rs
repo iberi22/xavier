@@ -1,5 +1,5 @@
 use crate::cli::state::CliState;
-use crate::server::headless;
+use xavier_lib::server::headless;
 use axum::{
     extract::{Json, Path, Query, State},
     response::IntoResponse,
@@ -36,6 +36,6 @@ pub async fn execute_tool(
 
 pub async fn provider_status(State(state): State<CliState>) -> impl IntoResponse {
     let router = state.provider_router.read().await;
-    let active = router.get_active_provider_name().to_string();
+    let active = router.current_provider().as_str().to_string();
     headless::routes::provider_status(active).await
 }

@@ -211,7 +211,7 @@ async fn detect_claude_cli(detailed: bool) -> CliAgentStatus {
     }
 }
 
-async fn detect_openai_cli(detailed: bool) -> CliAgentStatus {
+async fn detect_openai_cli(_detailed: bool) -> CliAgentStatus {
     let version = Command::new("openai")
         .arg("--version")
         .output()
