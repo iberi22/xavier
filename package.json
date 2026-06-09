@@ -1,13 +1,14 @@
 {
   "name": "xavier-monorepo",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.6.1",
   "type": "module",
   "workspaces": [
     "panel-ui",
     "docs/site"
   ],
   "scripts": {
+    "release": "standard-version",
     "workflow": "powershell ./scripts/workflow.ps1",
     "install:all": "npm install --workspaces",
     "build": "npm run build --workspace panel-ui && npm run build --workspace docs/site",
@@ -22,6 +23,7 @@
     "cron-validator": "^1.4.0",
     "eslint": "^10.1.0",
     "eslint-config-prettier": "^10.1.8",
-    "js-yaml": "^4.2.0"
+    "js-yaml": "^4.2.0",
+    "standard-version": "^9.5.0"
   }
 }

@@ -120,7 +120,7 @@ export default function TopStatusBar({ isModalOpen = false }: TopStatusBarProps)
        >
           <div className="relative group">
             <motion.div layout transition={spring} className="bg-[#0a0a0a]/90 backdrop-blur-md border border-[#39ff14]/30 shadow-[0_0_15px_rgba(57,255,20,0.15)] rounded-full px-3 py-1 flex items-center justify-center cursor-default shrink-0 min-h-[28px]">
-               <span className="text-[#39ff14] font-mono tracking-widest text-[8px] uppercase font-bold">Xavier Beta</span>
+               <span className="text-[#39ff14] font-mono tracking-widest text-[8px] uppercase font-bold">Xavier {__APP_VERSION__}</span>
             </motion.div>
             
             {/* Gear Button */}

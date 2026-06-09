@@ -47,7 +47,7 @@ function Run-Evaluate {
 }
 
 function Run-Release {
-    Write-Host "Preparing release..." -ForegroundColor Cyan
+    Write-Host "Preparing release and generating changelog..." -ForegroundColor Cyan
     pnpm run release
     
     Write-Host "Building production binaries..."
@@ -59,9 +59,9 @@ function Run-Release {
     
     Write-Host "Creating Windows installers..."
     # Placeholder for Tauri/NSIS build or Wix
-    # npm run tauri build
+    # pnpm run tauri build
     
-    Write-Host "Release created successfully!" -ForegroundColor Green
+    Write-Host "Release created successfully! Changelog has been updated." -ForegroundColor Green
 }
 
 switch ($Mode) {

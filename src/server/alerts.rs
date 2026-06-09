@@ -1,6 +1,6 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::RwLock;
-use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemAlert {
@@ -55,6 +55,12 @@ impl SystemAlertStore {
     }
 }
 
+impl Default for SystemAlertStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 // Global instance
 pub static SYSTEM_ALERTS: std::sync::LazyLock<SystemAlertStore> =
-    std::sync::LazyLock::new(|| SystemAlertStore::new());
+    std::sync::LazyLock::new(SystemAlertStore::new);

@@ -9,6 +9,9 @@ export default defineConfig(({ command }) => {
   const isBuild = command === "build";
 
   return {
+    define: {
+      __APP_VERSION__: JSON.stringify(process.env.npm_package_version || "0.6.1-beta"),
+    },
     base: isBuild ? "/panel/" : "/",
     plugins: [tailwindcss(), react()],
     resolve: {

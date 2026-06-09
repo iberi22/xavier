@@ -1,9 +1,9 @@
 use crate::cli::state::CliState;
-use xavier_lib::server::headless;
 use axum::{
     extract::{Json, Path, Query, State},
     response::IntoResponse,
 };
+use xavier_lib::server::headless;
 
 pub async fn health() -> impl IntoResponse {
     headless::routes::health().await
