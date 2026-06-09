@@ -4,7 +4,7 @@
 //! protected by the existing auth + rate-limit middleware.
 
 use axum::{
-    extract::{Json, State},
+    extract::Json,
     http::StatusCode,
     response::{IntoResponse, Json as AxumJson},
 };
