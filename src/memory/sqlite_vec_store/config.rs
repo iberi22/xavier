@@ -71,12 +71,14 @@ mod tests {
         assert_eq!(DEFAULT_EMBEDDING_DIMENSIONS, 768);
         assert_eq!(DEFAULT_RRF_K, 60);
         assert_eq!(DEFAULT_QJL_THRESHOLD, 30_000);
-        assert!(DEFAULT_VECTOR_WEIGHT > 0.0);
-        assert!(DEFAULT_VECTOR_WEIGHT < 1.0);
-        assert!(DEFAULT_FTS_WEIGHT > 0.0);
-        assert!(DEFAULT_FTS_WEIGHT < 1.0);
-        assert!(DEFAULT_KG_WEIGHT > 0.0);
-        assert!(DEFAULT_KG_WEIGHT < 1.0);
+        const {
+            assert!(DEFAULT_VECTOR_WEIGHT > 0.0);
+            assert!(DEFAULT_VECTOR_WEIGHT < 1.0);
+            assert!(DEFAULT_FTS_WEIGHT > 0.0);
+            assert!(DEFAULT_FTS_WEIGHT < 1.0);
+            assert!(DEFAULT_KG_WEIGHT > 0.0);
+            assert!(DEFAULT_KG_WEIGHT < 1.0);
+        }
         assert_eq!(QJL_MAGIC, b"QJL2");
     }
 

@@ -8,6 +8,7 @@
     "docs/site"
   ],
   "scripts": {
+    "workflow": "powershell ./scripts/workflow.ps1",
     "install:all": "npm install --workspaces",
     "build": "npm run build --workspace panel-ui && npm run build --workspace docs/site",
     "build:panel": "npm run build --workspace panel-ui",

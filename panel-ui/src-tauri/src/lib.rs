@@ -64,7 +64,7 @@ fn scan_system() -> Result<SystemInfo, String> {
 
     let has_gpu = if cfg!(target_os = "windows") {
         let output = StdCommand::new("wmic")
-            .args(&["path", "win32_VideoController", "get", "name"])
+            .args(["path", "win32_VideoController", "get", "name"])
             .output();
 
         if let Ok(output) = output {

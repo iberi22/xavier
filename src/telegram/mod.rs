@@ -4,26 +4,16 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use teloxide::prelude::*;
 use teloxide::types::ParseMode;
-use teloxide::utils::command::BotCommands;
+use tracing::{error, info};
 
-#[derive(BotCommands, Clone)]
-#[command(rename_rule = "lowercase", description = "Available commands:")]
 pub enum Command {
-    #[command(description = "Show welcome message")]
     Start,
-    #[command(description = "Show system health")]
     Health,
-    #[command(description = "Show memory statistics")]
     Stats,
-    #[command(description = "Search memories")]
     Search(String),
-    #[command(description = "Add memory")]
     Add(String),
-    #[command(description = "Scan text for threats")]
     Scan(String),
-    #[command(description = "List active agents")]
     Agents,
-    #[command(description = "Show help")]
     Help,
 }
 
@@ -67,24 +57,19 @@ impl XavierBot {
     }
 
     pub async fn start(&self) {
-        log::info!("Starting Telegram bot...");
+        info!("Starting Telegram bot...");
         let me = self.bot.get_me().await.expect("Failed to get bot info");
-        log::info!("Bot username: @{}", me.username());
+        info!("Bot username: @{}", me.username());
 
-        Dispatcher::new(self.bot.clone())
-            .messages_handler(|rx: DispatcherHandlerRx<Bot, Message>| {
-                rx.for_each_concurrent(0, |ctx| async move {
-                    let bot = ctx.update.bot.clone();
-                    let msg = ctx.update;
-                    if let Some(text) = msg.text() {
-                        if text.starts_with('/') {
-                            let _ = Self::handle_command(bot, msg, text).await;
-                        }
-                    }
-                })
-            })
-            .dispatch()
-            .await;
+        teloxide::repl(self.bot.clone(), |bot: Bot, msg: Message| async move {
+            if let Some(text) = msg.text() {
+                if text.starts_with('/') {
+                    let _ = Self::handle_command(bot, msg, text).await;
+                }
+            }
+            ResponseResult::Ok(())
+        })
+        .await;
     }
 
     async fn handle_command(bot: Bot, msg: Message, text: &str) -> ResponseResult<()> {
@@ -172,12 +157,12 @@ pub async fn run_bot() {
     let config = TelegramConfig::default();
 
     if !config.enabled {
-        log::info!("Telegram bot disabled. Set XAVIER_TELEGRAM_ENABLED=true");
+        info!("Telegram bot disabled. Set XAVIER_TELEGRAM_ENABLED=true");
         return;
     }
 
     if config.bot_token.is_empty() {
-        log::error!("Telegram bot token not set. Set XAVIER_TELEGRAM_TOKEN");
+        error!("Telegram bot token not set. Set XAVIER_TELEGRAM_TOKEN");
         return;
     }
 

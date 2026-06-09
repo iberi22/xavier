@@ -25,6 +25,7 @@ use crate::{
     AppState,
 };
 
+#[allow(dead_code)]
 const MCP_SESSION_HEADER: &str = "mcp-session-id";
 
 fn unique_test_path(prefix: &str, suffix: &str) -> PathBuf {

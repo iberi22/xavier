@@ -1,8 +1,8 @@
+use reqwest::{Client, StatusCode};
+use serde_json::Value;
 use std::net::TcpListener;
 use std::process::{Child, Stdio};
 use std::time::Duration;
-use reqwest::{Client, StatusCode};
-use serde_json::Value;
 
 struct ChildGuard(Child);
 
@@ -29,8 +29,14 @@ async fn test_headless_api_e2e() {
             .env("XAVIER_PORT", port.to_string())
             .env("XAVIER_TOKEN", "test-token")
             .env("XAVIER_HEADLESS", "true")
-            .env("XAVIER_CODE_GRAPH_DB_PATH", format!("data/headless-test-code-{port}.db"))
-            .env("XAVIER_MEMORY_VEC_PATH", format!("data/headless-test-mem-{port}.db"))
+            .env(
+                "XAVIER_CODE_GRAPH_DB_PATH",
+                format!("data/headless-test-code-{port}.db"),
+            )
+            .env(
+                "XAVIER_MEMORY_VEC_PATH",
+                format!("data/headless-test-mem-{port}.db"),
+            )
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
@@ -58,46 +64,65 @@ async fn test_headless_api_e2e() {
     assert_eq!(body["service"], "xavier-headless");
 
     // 2. GET /provider/status (Requires valid Bearer)
-    let resp = client.get(format!("{}/provider/status", url)).send().await.unwrap();
+    let resp = client
+        .get(format!("{}/provider/status", url))
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 
-    let resp = client.get(format!("{}/provider/status", url))
+    let resp = client
+        .get(format!("{}/provider/status", url))
         .header("Authorization", "Bearer test-token")
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body: Value = resp.json().await.unwrap();
     assert!(body["active"].is_string());
 
     // 3. GET /context (Memory hybrid search)
-    let resp = client.get(format!("{}/context?query=rust", url))
+    let resp = client
+        .get(format!("{}/context?query=rust", url))
         .header("Authorization", "Bearer test-token")
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body: Value = resp.json().await.unwrap();
     assert!(body["items"].is_array());
 
     // 4. POST /memory/search
-    let resp = client.post(format!("{}/memory/search", url))
+    let resp = client
+        .post(format!("{}/memory/search", url))
         .header("Authorization", "Bearer test-token")
         .json(&serde_json::json!({"text": "query", "limit": 5}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body: Value = resp.json().await.unwrap();
     assert!(body["results"].is_array());
 
     // 5. GET /tools
-    let resp = client.get(format!("{}/tools", url))
+    let resp = client
+        .get(format!("{}/tools", url))
         .header("Authorization", "Bearer test-token")
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body: Value = resp.json().await.unwrap();
     assert!(body["tools"].is_array());
 
     // 6. POST /tools/:name
-    let resp = client.post(format!("{}/tools/memory_search", url))
+    let resp = client
+        .post(format!("{}/tools/memory_search", url))
         .header("Authorization", "Bearer test-token")
         .json(&serde_json::json!({"args": {"query": "test"}}))
-        .send().await.unwrap();
+        .send()
+        .await
+        .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["result"]["tool"], "memory_search");

@@ -1,9 +1,9 @@
+use crate::cli::state::CliState;
+use crate::server::headless;
 use axum::{
     extract::{Json, Path, Query, State},
     response::IntoResponse,
 };
-use crate::cli::state::CliState;
-use crate::server::headless;
 
 pub async fn health() -> impl IntoResponse {
     headless::routes::health().await
@@ -34,9 +34,7 @@ pub async fn execute_tool(
     headless::routes::execute_tool(name, req).await
 }
 
-pub async fn provider_status(
-    State(state): State<CliState>,
-) -> impl IntoResponse {
+pub async fn provider_status(State(state): State<CliState>) -> impl IntoResponse {
     let router = state.provider_router.read().await;
     let active = router.get_active_provider_name().to_string();
     headless::routes::provider_status(active).await
