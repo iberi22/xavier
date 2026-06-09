@@ -148,16 +148,25 @@ impl EmbedderConfig {
                     match build_backend(backend) {
                         Ok(embedder) => embedders.push(embedder),
                         Err(error) => {
-                            tracing::warn!(%error, "embedding backend unavailable; trying fallback");
+                            let msg = format!(
+                                "embedding backend unavailable; trying fallback error={}",
+                                error
+                            );
+                            tracing::warn!("{}", msg);
+                            crate::server::alerts::SYSTEM_ALERTS.push_alert(
+                                "WARN",
+                                &msg,
+                                "embedding",
+                            );
                         }
                     }
                 }
 
                 match embedders.len() {
                     0 => {
-                        tracing::warn!(
-                            "no embedding backend could be initialized; using no-op embedder"
-                        );
+                        let msg = "no embedding backend could be initialized; using no-op embedder";
+                        tracing::warn!("{}", msg);
+                        crate::server::alerts::SYSTEM_ALERTS.push_alert("ERROR", msg, "embedding");
                         Ok(Arc::new(NoopEmbedder))
                     }
                     1 => Ok(embedders.remove(0)),

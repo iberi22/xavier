@@ -1,5 +1,6 @@
 //! Server modules for AgentRAG/Xavier
 
+pub mod alerts;
 pub mod events;
 pub mod headless;
 pub mod http;
