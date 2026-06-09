@@ -17,10 +17,10 @@
 pub mod code;
 pub mod enums;
 pub mod http;
+pub mod provider;
 pub mod secrets;
 pub mod spawn;
 pub mod token;
-pub mod provider;
 pub mod usage;
 
 // Re-export for backward compatibility

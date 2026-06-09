@@ -135,9 +135,9 @@ pub enum Command {
         #[command(subcommand)]
         cmd: TokenCommand,
     },
-/// Show API quotas and limits for providers
+    /// Show API quotas and limits for providers
     Quota,
-/// Manage LLM providers and hot-switching
+    /// Manage LLM providers and hot-switching
     Provider {
         #[command(subcommand)]
         cmd: ProviderCommand,
@@ -287,6 +287,3 @@ pub enum SecretsCommand {
     /// Check the status of a lease
     Status { token: String },
 }
-
-
-

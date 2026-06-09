@@ -1,4 +1,4 @@
-﻿//! Proxy use case for LLM service proxying
+//! Proxy use case for LLM service proxying
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
@@ -273,11 +273,12 @@ impl ProxyUseCase {
 
         let client = ModelProviderClient::new(config);
 
-        let result: Result<Result<crate::agents::provider::types::LlmResponse, _>, _> = tokio::time::timeout(
-            LLM_TIMEOUT,
-            client.generate_text_with_cache(system_msg, user_msg, is_cache_hit),
-        )
-        .await;
+        let result: Result<Result<crate::agents::provider::types::LlmResponse, _>, _> =
+            tokio::time::timeout(
+                LLM_TIMEOUT,
+                client.generate_text_with_cache(system_msg, user_msg, is_cache_hit),
+            )
+            .await;
 
         match result {
             Ok(Ok(resp)) => {

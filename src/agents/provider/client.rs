@@ -12,11 +12,11 @@ use tracing::warn;
 
 use crate::agents::provider::anthropic::generate_anthropic_compatible;
 use crate::agents::provider::config::ModelProviderConfig;
-pub use crate::agents::provider::types::LlmResponse;
 use crate::agents::provider::gemini::generate_gemini_legacy;
 use crate::agents::provider::minimax::generate_minimax_legacy;
 use crate::agents::provider::openai::generate_openai_compatible;
 pub use crate::agents::provider::traits::LlmProvider;
+pub use crate::agents::provider::types::LlmResponse;
 use crate::agents::provider::types::{
     ModelProviderStatus, ProviderMode, ProviderTarget, LLM_TIMEOUT,
 };
@@ -159,7 +159,11 @@ impl ModelProviderClient {
         <Self as LlmProvider>::evaluate_context(self, query, context).await
     }
 
-    pub async fn generate_text(&self, system_prompt: &str, user_prompt: &str) -> Result<LlmResponse> {
+    pub async fn generate_text(
+        &self,
+        system_prompt: &str,
+        user_prompt: &str,
+    ) -> Result<LlmResponse> {
         <Self as LlmProvider>::generate_text(self, system_prompt, user_prompt, false).await
     }
 }
