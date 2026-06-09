@@ -1,6 +1,5 @@
 use xavier::agents::rate_limit::RateLimitManager;
 
-
 async fn setup_manager() -> (RateLimitManager, tempfile::TempDir) {
     let temp_dir = tempfile::tempdir().unwrap();
     std::env::set_var("XAVIER_DATA_DIR", temp_dir.path());

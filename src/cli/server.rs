@@ -474,6 +474,10 @@ pub async fn start_http_server(port: u16) -> Result<()> {
 
     let app = Router::new()
         .route("/health", get(health_handler))
+        .route(
+            "/system/alerts",
+            get(crate::cli::handlers::system::system_alerts_handler),
+        )
         .route("/v1/version", get(version_handler))
         .route("/build", get(build_handler))
         .route("/ready", get(readiness_handler))

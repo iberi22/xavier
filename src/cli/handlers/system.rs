@@ -4,6 +4,7 @@ use crate::cli::config::resolve_base_url;
 use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
 use axum::{extract::State, http::StatusCode, response::Response};
+use xavier::server::alerts::SYSTEM_ALERTS;
 
 pub async fn health_handler(State(state): State<CliState>) -> Response {
     let uptime_secs = crate::cli::server::START_TIME.elapsed().as_secs();
@@ -48,6 +49,15 @@ pub async fn health_handler(State(state): State<CliState>) -> Response {
             "sqlite_db_size": sqlite_db_size,
             "uptime": uptime_secs,
             "lag_ms": lag_ms,
+        }),
+    )
+}
+
+pub async fn system_alerts_handler() -> Response {
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "alerts": SYSTEM_ALERTS.get_alerts()
         }),
     )
 }
