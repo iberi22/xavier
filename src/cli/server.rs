@@ -411,7 +411,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             get(crate::cli::handlers::headless_e2e::tools),
         )
         .route(
-            "/headless/tools/:name",
+            "/headless/tools/{name}",
             post(crate::cli::handlers::headless_e2e::execute_tool),
         )
         .route(

@@ -8,6 +8,7 @@ $env:XAVIER_EMBEDDING_MODEL = "un_modelo_inexistente_12345"
 # Avoid standard fallback
 $env:XAVIER_EMBEDDING_URL = ""
 $env:OPENAI_API_KEY = ""
+$env:XAVIER_TOKEN = "e2e-test-token"
 
 # 2. Build the backend if not built, or use the last build
 # Just checking if cargo build works, but to save time we run using `cargo run` or start the binary.
