@@ -1,3 +1,4 @@
+#![allow(deprecated)]
 //! Security Module Tests
 
 #[cfg(test)]

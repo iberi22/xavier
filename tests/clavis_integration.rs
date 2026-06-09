@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tempfile::NamedTempFile;
 use xavier::agents::system3::{ActorConfig, System3Actor};
 use xavier::coordination::{KeyLendingEngine, XavierEvent, XavierEventBus};
-use xavier::ports::outbound::schema_init::SchemaInitializer;
+
 use xavier::secrets::audit::QmdAuditLogger;
 use xavier::tasks::models::{Task, TaskStatus};
 
