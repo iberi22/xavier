@@ -5,7 +5,10 @@ fn test_router_initialization() {
     let router = ProviderRouter::new(ProviderKind::Local);
     assert_eq!(router.current_provider(), ProviderKind::Local);
     assert_eq!(router.select(), ProviderKind::Local);
-    assert_eq!(*router.active_mode(), ActiveProvider::Manual(ProviderKind::Local));
+    assert_eq!(
+        *router.active_mode(),
+        ActiveProvider::Manual(ProviderKind::Local)
+    );
     assert_eq!(router.history().len(), 1);
 }
 
@@ -49,16 +52,18 @@ fn test_fallback_on_failure() {
 fn test_auto_strategy_setting() {
     let mut router = ProviderRouter::new(ProviderKind::Local);
     router.set_auto_strategy(AutoStrategy::LowestCost);
-    assert_eq!(*router.active_mode(), ActiveProvider::Auto { strategy: AutoStrategy::LowestCost });
+    assert_eq!(
+        *router.active_mode(),
+        ActiveProvider::Auto {
+            strategy: AutoStrategy::LowestCost
+        }
+    );
 }
 
 #[test]
 fn test_use_fallback_mode() {
     let mut router = ProviderRouter::new(ProviderKind::OpenAI);
-    router.set_fallback_chain(vec![
-        ProviderKind::Anthropic,
-        ProviderKind::Local,
-    ]);
+    router.set_fallback_chain(vec![ProviderKind::Anthropic, ProviderKind::Local]);
 
     router.use_fallback_mode();
     assert_eq!(router.current_provider(), ProviderKind::Anthropic);

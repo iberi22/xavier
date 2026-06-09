@@ -46,7 +46,10 @@ impl RateLimitManager {
     /// Creates a new RateLimitManager with a specific project ID for testing or isolation.
     pub fn new_with_project(project_id: &str) -> Self {
         if let Err(e) = ConnectionManager::global().connect(project_id, ".") {
-            warn!("RateLimitManager failed to connect to {} DB: {}", project_id, e);
+            warn!(
+                "RateLimitManager failed to connect to {} DB: {}",
+                project_id, e
+            );
         }
         Self {
             project_id: project_id.to_string(),
@@ -297,7 +300,8 @@ impl RateLimitManager {
 
     pub async fn update_quota(&self, quota: ProviderQuota) -> Result<()> {
         let provider_name = quota.provider.as_str().to_string();
-        let api_tier = serde_json::to_string(&quota.api_tier).unwrap_or_else(|_| "Unknown".to_string());
+        let api_tier =
+            serde_json::to_string(&quota.api_tier).unwrap_or_else(|_| "Unknown".to_string());
         let resets_at = quota.resets_at.map(|dt| dt.to_rfc3339());
         let last_checked = quota.last_checked.to_rfc3339();
 
@@ -369,12 +373,21 @@ impl RateLimitManager {
                     let provider_str: String = row.get(0)?;
                     let tier_str: String = row.get(1).unwrap_or_else(|_| "\"Unknown\"".to_string());
                     let resets_at_str: Option<String> = row.get(6).ok();
-                    let last_checked_str: String = row.get(7).unwrap_or_else(|_| Utc::now().to_rfc3339());
+                    let last_checked_str: String =
+                        row.get(7).unwrap_or_else(|_| Utc::now().to_rfc3339());
 
                     let provider = ProviderKind::from_str(&provider_str);
-                    let api_tier: ApiTier = serde_json::from_str(&tier_str).unwrap_or(ApiTier::Unknown);
-                    let resets_at = resets_at_str.and_then(|s| DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&Utc)));
-                    let last_checked = DateTime::parse_from_rfc3339(&last_checked_str).ok().map(|dt| dt.with_timezone(&Utc)).unwrap_or_else(Utc::now);
+                    let api_tier: ApiTier =
+                        serde_json::from_str(&tier_str).unwrap_or(ApiTier::Unknown);
+                    let resets_at = resets_at_str.and_then(|s| {
+                        DateTime::parse_from_rfc3339(&s)
+                            .ok()
+                            .map(|dt| dt.with_timezone(&Utc))
+                    });
+                    let last_checked = DateTime::parse_from_rfc3339(&last_checked_str)
+                        .ok()
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .unwrap_or_else(Utc::now);
 
                     quotas.push(ProviderQuota {
                         provider,
@@ -436,12 +449,30 @@ impl RateLimitManager {
                     (),
                 );
                 let _ = conn.execute("ALTER TABLE provider_quotas ADD COLUMN api_tier TEXT", ());
-                let _ = conn.execute("ALTER TABLE provider_quotas ADD COLUMN requests_remaining INTEGER", ());
-                let _ = conn.execute("ALTER TABLE provider_quotas ADD COLUMN tokens_remaining INTEGER", ());
-                let _ = conn.execute("ALTER TABLE provider_quotas ADD COLUMN requests_limit INTEGER", ());
-                let _ = conn.execute("ALTER TABLE provider_quotas ADD COLUMN tokens_limit INTEGER", ());
-                let _ = conn.execute("ALTER TABLE provider_quotas ADD COLUMN resets_at DATETIME", ());
-                let _ = conn.execute("ALTER TABLE provider_quotas ADD COLUMN last_checked DATETIME", ());
+                let _ = conn.execute(
+                    "ALTER TABLE provider_quotas ADD COLUMN requests_remaining INTEGER",
+                    (),
+                );
+                let _ = conn.execute(
+                    "ALTER TABLE provider_quotas ADD COLUMN tokens_remaining INTEGER",
+                    (),
+                );
+                let _ = conn.execute(
+                    "ALTER TABLE provider_quotas ADD COLUMN requests_limit INTEGER",
+                    (),
+                );
+                let _ = conn.execute(
+                    "ALTER TABLE provider_quotas ADD COLUMN tokens_limit INTEGER",
+                    (),
+                );
+                let _ = conn.execute(
+                    "ALTER TABLE provider_quotas ADD COLUMN resets_at DATETIME",
+                    (),
+                );
+                let _ = conn.execute(
+                    "ALTER TABLE provider_quotas ADD COLUMN last_checked DATETIME",
+                    (),
+                );
 
                 Ok(())
             })
@@ -460,7 +491,9 @@ impl TokenQuotaTracker {
     }
 
     pub async fn increment(&self, provider: &str, tokens: usize) -> Result<()> {
-        self.manager.track_request(provider, tokens, 200, 0.0, false).await
+        self.manager
+            .track_request(provider, tokens, 200, 0.0, false)
+            .await
     }
 }
 

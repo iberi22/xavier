@@ -1,7 +1,7 @@
 use crate::cli::onboarding::SystemScanner;
 use crate::settings::types::ProviderConfigV2;
 use anyhow::{Context, Result};
-use dialoguer::{Confirm, Input, Select, MultiSelect};
+use dialoguer::{Confirm, Input, MultiSelect, Select};
 use std::fs;
 use uuid::Uuid;
 
@@ -23,13 +23,17 @@ pub async fn handle_setup() -> Result<()> {
     };
     println!("🦙 Ollama: {}", ollama_status);
 
-    let cli_agents_status = scan.cli_agents.iter()
+    let cli_agents_status = scan
+        .cli_agents
+        .iter()
         .map(|a| format!("{} {}", a.name, if a.installed { "✓" } else { "✗" }))
         .collect::<Vec<_>>()
         .join(" | ");
     println!("🧰 CLI Agents: {}", cli_agents_status);
 
-    let api_keys_status = scan.api_keys.iter()
+    let api_keys_status = scan
+        .api_keys
+        .iter()
         .map(|k| format!("{} {}", k.name, if k.detected { "✓" } else { "✗" }))
         .collect::<Vec<_>>()
         .join(" | ");
@@ -67,7 +71,8 @@ pub async fn handle_setup() -> Result<()> {
         .defaults(&defaults)
         .interact()?;
 
-    config.fallback_chain = selected_indices.iter()
+    config.fallback_chain = selected_indices
+        .iter()
         .map(|&i| available_fallbacks[i].to_string())
         .collect();
 
