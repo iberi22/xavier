@@ -1,5 +1,5 @@
 use xavier::agents::rate_limit::RateLimitManager;
-use xavier::ports::outbound::schema_init::SchemaInitializer;
+
 
 async fn setup_manager() -> (RateLimitManager, tempfile::TempDir) {
     let temp_dir = tempfile::tempdir().unwrap();
