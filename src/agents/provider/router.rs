@@ -216,6 +216,16 @@ impl ProviderRouter {
         self.current_provider
     }
 
+    /// Selects the best available provider (alias for current_provider).
+    pub fn select(&self) -> ProviderKind {
+        self.current_provider()
+    }
+
+    /// Handles a provider failure by switching to the next available fallback (alias for on_provider_failure).
+    pub fn fallback(&mut self) -> Option<ProviderKind> {
+        self.on_provider_failure()
+    }
+
     /// Returns the current active configuration.
     pub fn active_mode(&self) -> &ActiveProvider {
         &self.active
