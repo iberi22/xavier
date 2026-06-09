@@ -9,6 +9,11 @@ pub mod memory;
 pub mod onboarding;
 pub mod panel;
 pub mod quota;
+<<<<<<< HEAD
+=======
+pub mod headless_api;
+pub mod headless_e2e;
+>>>>>>> 0459b7143cf275f06892a09e698397101d7364ea
 pub mod secrets;
 pub mod security;
 pub mod setup;
