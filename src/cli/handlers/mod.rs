@@ -11,6 +11,7 @@ pub mod quota;
 pub mod headless_api;
 pub mod secrets;
 pub mod security;
+pub mod setup;
 pub mod system;
 pub mod system_scan;
 pub mod usage;
