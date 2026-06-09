@@ -2,14 +2,7 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
-use axum::{
-    body::Body,
-    http::{Request, StatusCode},
-    middleware,
-    routing::get,
-    Router,
-};
-use tower::ServiceExt;
+use axum::http::Request;
 
 use crate::cli::code_graph::code_find_symbols;
 
