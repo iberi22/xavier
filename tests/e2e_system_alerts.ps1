@@ -18,7 +18,7 @@ Write-Host "Building and starting Xavier backend (this may take a moment)..." -F
 
 $processInfo = New-Object System.Diagnostics.ProcessStartInfo
 $processInfo.FileName = "cargo"
-$processInfo.Arguments = "run --release --bin xavier --features `"local-gllm,cli-interactive`" --no-default-features"
+$processInfo.Arguments = "run --bin xavier"
 $processInfo.RedirectStandardOutput = $true
 $processInfo.RedirectStandardError = $true
 $processInfo.UseShellExecute = $false
@@ -32,8 +32,8 @@ $serverPid = $process.Id
 Write-Host "Xavier started with PID: $serverPid"
 
 try {
-    # 3. Poll /system/alerts up to 10 times
-    $maxAttempts = 15
+    # 3. Poll /system/alerts up to 60 times
+    $maxAttempts = 60
     $attempt = 1
     $success = $false
 
