@@ -488,7 +488,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     let agent_indexer_cron = state.agent_indexer.clone();
     let memory_port_cron = state.memory.clone();
 
-    let app = app.with_state(state);
+    let app = app.with_state(state.clone());
 
     #[cfg(feature = "enterprise")]
     let app = {
@@ -567,7 +567,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         let rustls_config = RustlsConfig::from_pem_file(cert, key).await?;
 
         let handle = axum_server::Handle::<std::net::SocketAddr>::new();
-        let shutdown_handle = handle.clone();
+        let _shutdown_handle = handle.clone();
 
         let addr = listener.local_addr()?;
         axum_server::bind_rustls(addr, rustls_config)
