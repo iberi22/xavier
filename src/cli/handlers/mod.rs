@@ -8,6 +8,7 @@ pub mod memory;
 pub mod onboarding;
 pub mod panel;
 pub mod quota;
+pub mod headless_api;
 pub mod secrets;
 pub mod security;
 pub mod system;
@@ -47,4 +48,5 @@ pub fn json_response(status: StatusCode, body: serde_json::Value) -> Response {
                 .into_response()
         })
 }
+
 
