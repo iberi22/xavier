@@ -1,12 +1,11 @@
+use crate::domain::memory::MemoryRecord;
+use crate::ports::inbound::MemoryQueryPort;
 use axum::{
-    extract::{Json, Path, Query},
     http::StatusCode,
     response::{IntoResponse, Json as AxumJson},
 };
 use serde::Deserialize;
 use serde_json::json;
-use crate::domain::memory::MemoryRecord;
-use crate::ports::inbound::MemoryQueryPort;
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Handlers
@@ -26,10 +25,7 @@ pub struct ContextParams {
     pub limit: Option<usize>,
 }
 
-pub async fn context(
-    memory: &dyn MemoryQueryPort,
-    params: ContextParams,
-) -> impl IntoResponse {
+pub async fn context(memory: &dyn MemoryQueryPort, params: ContextParams) -> impl IntoResponse {
     let limit = params.limit.unwrap_or(10);
     // Use MemoryQueryPort search
     match memory.search(&params.query, None).await {
@@ -38,12 +34,14 @@ pub async fn context(
             AxumJson(json!({
                 "items": items,
                 "total": items.len(),
-            })).into_response()
-        },
+            }))
+            .into_response()
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             AxumJson(json!({"error": e.to_string()})),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }
 
@@ -54,10 +52,7 @@ pub struct SearchRequest {
     pub filters: Option<serde_json::Value>,
 }
 
-pub async fn memory_search(
-    memory: &dyn MemoryQueryPort,
-    req: SearchRequest,
-) -> impl IntoResponse {
+pub async fn memory_search(memory: &dyn MemoryQueryPort, req: SearchRequest) -> impl IntoResponse {
     let limit = req.limit.unwrap_or(10);
     // Use MemoryQueryPort search
     match memory.search(&req.text, None).await {
@@ -66,12 +61,14 @@ pub async fn memory_search(
             AxumJson(json!({
                 "results": results,
                 "total": results.len(),
-            })).into_response()
-        },
+            }))
+            .into_response()
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             AxumJson(json!({"error": e.to_string()})),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }
 
@@ -101,10 +98,7 @@ pub struct ToolExecuteRequest {
     pub args: serde_json::Value,
 }
 
-pub async fn execute_tool(
-    name: String,
-    req: ToolExecuteRequest,
-) -> impl IntoResponse {
+pub async fn execute_tool(name: String, req: ToolExecuteRequest) -> impl IntoResponse {
     // Simple mock execution for now
     AxumJson(json!({
         "result": {
@@ -116,9 +110,7 @@ pub async fn execute_tool(
     }))
 }
 
-pub async fn provider_status(
-    active_provider: String,
-) -> impl IntoResponse {
+pub async fn provider_status(active_provider: String) -> impl IntoResponse {
     AxumJson(json!({
         "active": active_provider,
         "available": ["openai", "anthropic", "groq", "local"],

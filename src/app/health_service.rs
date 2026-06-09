@@ -19,6 +19,29 @@ impl HealthService {
     }
 }
 
+impl Default for HealthService {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl HealthPort for HealthService {
+    async fn get_health_status(&self) -> HealthStatus {
+        let result = get_last_sync_result();
+
+        HealthStatus {
+            status: result.status,
+            lag_ms: result.lag_ms,
+            save_ok_rate: result.save_ok_rate,
+            match_score: result.match_score,
+            active_agents: result.active_agents,
+            timestamp_ms: result.timestamp_ms,
+            alerts: result.alerts,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -51,28 +74,5 @@ mod tests {
         assert_eq!(status.active_agents, 5);
         assert_eq!(status.timestamp_ms, 1000);
         assert_eq!(status.alerts, vec!["alert1".to_string()]);
-    }
-}
-
-impl Default for HealthService {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl HealthPort for HealthService {
-    async fn get_health_status(&self) -> HealthStatus {
-        let result = get_last_sync_result();
-
-        HealthStatus {
-            status: result.status,
-            lag_ms: result.lag_ms,
-            save_ok_rate: result.save_ok_rate,
-            match_score: result.match_score,
-            active_agents: result.active_agents,
-            timestamp_ms: result.timestamp_ms,
-            alerts: result.alerts,
-        }
     }
 }

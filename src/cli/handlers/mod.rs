@@ -5,11 +5,11 @@
 pub mod agent;
 pub mod code;
 pub mod headless_api;
+pub mod headless_e2e;
 pub mod memory;
 pub mod onboarding;
 pub mod panel;
 pub mod quota;
-pub mod headless_e2e;
 pub mod secrets;
 pub mod security;
 pub mod setup;

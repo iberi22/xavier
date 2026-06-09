@@ -1,7 +1,7 @@
 //! Unit tests for search sub-modules.
 
 #[cfg(test)]
-mod tests {
+mod qmd_search_tests {
     use crate::memory::qmd_memory::search::extract_answer;
     use crate::memory::qmd_memory::utils::{
         extract_speaker_from_query, extract_speakers, is_likely_speaker, resolve_pronouns,
