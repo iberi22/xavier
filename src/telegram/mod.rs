@@ -63,8 +63,9 @@ impl XavierBot {
 
         teloxide::repl(self.bot.clone(), |bot: Bot, msg: Message| async move {
             if let Some(text) = msg.text() {
-                if text.starts_with('/') {
-                    let _ = Self::handle_command(bot, msg, text).await;
+                let text_owned = text.to_string();
+                if text_owned.starts_with('/') {
+                    let _ = Self::handle_command(bot, msg, &text_owned).await;
                 }
             }
             ResponseResult::Ok(())
