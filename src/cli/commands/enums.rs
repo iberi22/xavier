@@ -231,6 +231,24 @@ pub enum ProviderCommand {
     Fallback { providers: Vec<String> },
 }
 
+/// System scan and discovery subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum SystemCommand {
+    /// Scan for local AI services, CLI tools, GPU, and environment
+    Scan {
+        /// Output format: table, json, or markdown
+        #[arg(short, long, default_value = "table")]
+        format: String,
+        /// Show detailed information including API key status (masked)
+        #[arg(short, long)]
+        detailed: bool,
+    },
+    /// Show system health summary
+    Health,
+    /// Detect available GPU and compute resources
+    Gpu,
+}
+
 /// Token generation subcommands
 #[derive(Subcommand, Debug, Clone)]
 pub enum TokenCommand {
@@ -269,4 +287,6 @@ pub enum SecretsCommand {
     /// Check the status of a lease
     Status { token: String },
 }
+
+
 

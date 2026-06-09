@@ -11,6 +11,7 @@ pub mod quota;
 pub mod secrets;
 pub mod security;
 pub mod system;
+pub mod system_scan;
 pub mod usage;
 pub mod workspace;
 
@@ -22,6 +23,7 @@ pub use panel::*;
 pub use secrets::*;
 pub use security::*;
 pub use system::*;
+pub use system_scan::*;
 pub use usage::*;
 pub use workspace::*;
 
@@ -45,3 +47,4 @@ pub fn json_response(status: StatusCode, body: serde_json::Value) -> Response {
                 .into_response()
         })
 }
+
