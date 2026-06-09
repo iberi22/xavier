@@ -84,6 +84,11 @@ impl ConnectionManager {
                     .join(".xavier")
                     .join("conversations")
                     .join(format!("{}.db", pid))
+            } else if project_id.starts_with("test_") {
+                PathBuf::from(project_root)
+                    .join(".xavier")
+                    .join("tests")
+                    .join(format!("{}.db", project_id))
             } else {
                 PathBuf::from(project_root)
                     .join(".xavier")

@@ -32,13 +32,7 @@ pub struct RateLimitManager {
 
 impl Default for RateLimitManager {
     fn default() -> Self {
-        let project_id = "metrics";
-        if let Err(e) = ConnectionManager::global().connect(project_id, ".") {
-            warn!("RateLimitManager failed to connect to metrics DB: {}", e);
-        }
-        Self {
-            project_id: project_id.to_string(),
-        }
+        Self::new_with_project("metrics")
     }
 }
 
@@ -47,6 +41,39 @@ impl RateLimitManager {
     /// Logs a warning if the connection fails (non-fatal for rate limiting).
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Creates a new RateLimitManager with a specific project ID for testing or isolation.
+    pub fn new_with_project(project_id: &str) -> Self {
+        if let Err(e) = ConnectionManager::global().connect(project_id, ".") {
+            warn!("RateLimitManager failed to connect to {} DB: {}", project_id, e);
+        }
+        Self {
+            project_id: project_id.to_string(),
+        }
+    }
+
+    /// Checks if a provider is currently rate limited.
+    pub async fn check(&self, provider: &str) -> bool {
+        if let Ok(status) = self.get_status(provider).await {
+            let now = Utc::now();
+            return status.rate_limited_until.is_some_and(|until| until > now);
+        }
+        false
+    }
+
+    /// Resets the rate limit for a provider (clears cooldown).
+    pub async fn reset(&self, provider: &str) -> Result<()> {
+        let provider = provider.to_string();
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                conn.execute(
+                    "UPDATE provider_quotas SET rate_limited_until = NULL WHERE provider = ?1",
+                    params![provider],
+                )?;
+                Ok(())
+            })
+            .await
     }
 
     pub async fn track_request(
@@ -419,6 +446,36 @@ impl RateLimitManager {
                 Ok(())
             })
             .await
+    }
+}
+
+/// Compatibility wrapper for token-based quota tracking.
+pub struct TokenQuotaTracker {
+    manager: RateLimitManager,
+}
+
+impl TokenQuotaTracker {
+    pub fn new(manager: RateLimitManager) -> Self {
+        Self { manager }
+    }
+
+    pub async fn increment(&self, provider: &str, tokens: usize) -> Result<()> {
+        self.manager.track_request(provider, tokens, 200, 0.0, false).await
+    }
+}
+
+/// Compatibility wrapper for general quota checking.
+pub struct QuotaTracker {
+    manager: RateLimitManager,
+}
+
+impl QuotaTracker {
+    pub fn new(manager: RateLimitManager) -> Self {
+        Self { manager }
+    }
+
+    pub async fn check(&self, provider: &str) -> bool {
+        !self.manager.check(provider).await
     }
 }
 
