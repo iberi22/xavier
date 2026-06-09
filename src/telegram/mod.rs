@@ -119,7 +119,7 @@ impl XavierBot {
                 } else {
                     bot.send_message(
                         msg.chat.id,
-                        format!("🔒 Scan complete:\n✅ Clean - no threats"),
+                        "🔒 Scan complete:\n✅ Clean - no threats".to_string(),
                     )
                     .await?;
                 }

@@ -98,7 +98,7 @@ pub fn render_tui<S: TuiAppState>(f: &mut Frame, app: &S) {
         0 => render_stats(f, app.metrics(), chunks[1]),
         1 => {
             let mut memory_view = crate::ui::memory_view::MemoryView::new();
-            memory_view.state = app.memory_state().clone();
+            memory_view.state = *app.memory_state();
             memory_view.render(f, app.memories(), chunks[1]);
         }
         2 => {
