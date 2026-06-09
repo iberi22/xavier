@@ -225,9 +225,13 @@ impl std::fmt::Debug for PgHeartPlugin {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn pgheart_config_requires_all_vars() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         std::env::remove_var("PGHEART_URL");
         std::env::remove_var("PGHEART_TOKEN");
         std::env::remove_var("PGHEART_INSTANCE_ID");
@@ -238,6 +242,7 @@ mod tests {
 
     #[test]
     fn pgheart_config_parses_env_vars() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         std::env::set_var("PGHEART_URL", "https://pgheart.example.com");
         std::env::set_var("PGHEART_TOKEN", "test-token");
         std::env::set_var("PGHEART_INSTANCE_ID", "instance-123");
@@ -263,6 +268,7 @@ mod tests {
 
     #[test]
     fn pgheart_config_defaults() {
+        let _guard = ENV_MUTEX.lock().unwrap();
         std::env::set_var("PGHEART_URL", "https://pgheart.example.com");
         std::env::set_var("PGHEART_TOKEN", "test-token");
         std::env::set_var("PGHEART_INSTANCE_ID", "instance-123");
