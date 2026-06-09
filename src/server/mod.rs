@@ -6,3 +6,4 @@ pub mod mcp;
 pub mod mcp_stdio;
 pub mod panel;
 pub mod v1_api;
+pub mod headless;
