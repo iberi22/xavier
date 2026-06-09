@@ -10,9 +10,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use std::sync::Arc;
-
-use crate::cli::state::CliState;
+use xavier_lib::agents::provider::router::ProviderKind;
 
 // ═════════════════════════════════════════════════════════════════════════════
 // System

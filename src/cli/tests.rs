@@ -2,13 +2,13 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
-use axum::http::Request;
+
 
 use crate::cli::code_graph::code_find_symbols;
 
 use crate::cli::config::{resolve_base_url, resolve_base_url_for_port, resolve_http_port};
 use crate::cli::security::{secure_cli_input, secure_external_input};
-use crate::cli::server::auth_middleware;
+
 
 use crate::cli::proxy::ProxyChatRequest;
 use code_graph::types::{Language, Symbol, SymbolKind};
