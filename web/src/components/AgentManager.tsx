@@ -1,6 +1,6 @@
+import { Bot, Play, RefreshCw, Square } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Bot, RefreshCw, Play, Square } from "lucide-react";
-import { useApi, Agent } from "../hooks/useApi";
+import { type Agent, useApi } from "../hooks/useApi";
 
 export function AgentManager() {
   const { getAgents } = useApi();
@@ -38,8 +38,12 @@ export function AgentManager() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-stone-900 dark:text-stone-100">Agent Manager</h1>
-          <p className="text-stone-500 text-sm mt-1">Monitor and control active agents</p>
+          <h1 className="text-2xl font-bold text-stone-900 dark:text-stone-100">
+            Agent Manager
+          </h1>
+          <p className="text-stone-500 text-sm mt-1">
+            Monitor and control active agents
+          </p>
         </div>
         <button
           onClick={loadAgents}
@@ -89,7 +93,9 @@ export function AgentManager() {
                         : "Never seen"}
                     </p>
                   </div>
-                  <span className={`text-xs font-medium ${statusColor(agent.status)}`}>
+                  <span
+                    className={`text-xs font-medium ${statusColor(agent.status)}`}
+                  >
                     {agent.status}
                   </span>
                 </div>
@@ -128,17 +134,23 @@ function AgentDetail({
             <Bot size={24} />
           </div>
           <div>
-            <h3 className="text-lg font-bold text-stone-900 dark:text-stone-100">{agent.name}</h3>
-            <p className="text-sm text-stone-500 dark:text-stone-400">ID: {agent.id}</p>
+            <h3 className="text-lg font-bold text-stone-900 dark:text-stone-100">
+              {agent.name}
+            </h3>
+            <p className="text-sm text-stone-500 dark:text-stone-400">
+              ID: {agent.id}
+            </p>
           </div>
         </div>
-        <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-          agent.status === "running"
-            ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
-            : agent.status === "error"
-            ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
-            : "bg-stone-100 text-stone-600 dark:bg-stone-700 dark:text-stone-400"
-        }`}>
+        <span
+          className={`px-3 py-1 rounded-full text-sm font-medium ${
+            agent.status === "running"
+              ? "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400"
+              : agent.status === "error"
+                ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400"
+                : "bg-stone-100 text-stone-600 dark:bg-stone-700 dark:text-stone-400"
+          }`}
+        >
           {agent.status}
         </span>
       </div>
@@ -179,15 +191,11 @@ function AgentDetail({
 
       {/* Controls */}
       <div className="flex items-center gap-3 pt-2">
-        <button
-          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors"
-        >
+        <button className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm font-medium hover:bg-green-700 transition-colors">
           <Play size={16} />
           Start
         </button>
-        <button
-          className="flex items-center gap-2 px-4 py-2 border border-stone-300 dark:border-stone-600 text-stone-700 dark:text-stone-200 rounded-lg text-sm font-medium hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors"
-        >
+        <button className="flex items-center gap-2 px-4 py-2 border border-stone-300 dark:border-stone-600 text-stone-700 dark:text-stone-200 rounded-lg text-sm font-medium hover:bg-stone-100 dark:hover:bg-stone-700 transition-colors">
           <Square size={16} />
           Stop
         </button>

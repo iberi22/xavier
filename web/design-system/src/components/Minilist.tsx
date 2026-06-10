@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 
 export interface MinilistItem {
   label: string;
@@ -11,10 +11,10 @@ export interface MinilistProps {
 
 export function Minilist({ items }: MinilistProps) {
   const defaultItems: MinilistItem[] = [
-    { label: 'Memory', value: '415' },
-    { label: 'Recall', value: '99.1%' },
-    { label: 'Precision', value: '4.45/5' },
-    { label: 'Latency', value: '56ms' },
+    { label: "Memory", value: "415" },
+    { label: "Recall", value: "99.1%" },
+    { label: "Precision", value: "4.45/5" },
+    { label: "Latency", value: "56ms" },
   ];
 
   const listItems = items || defaultItems;

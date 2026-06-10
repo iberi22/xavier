@@ -1,8 +1,8 @@
-import { BrowserRouter, Routes, Route } from "react-router-dom";
-import { Layout } from "./components/Layout";
-import { Dashboard } from "./components/Dashboard";
-import { MemoryBrowser } from "./components/MemoryBrowser";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { AgentManager } from "./components/AgentManager";
+import { Dashboard } from "./components/Dashboard";
+import { Layout } from "./components/Layout";
+import { MemoryBrowser } from "./components/MemoryBrowser";
 import { Settings } from "./components/Settings";
 
 export default function App() {

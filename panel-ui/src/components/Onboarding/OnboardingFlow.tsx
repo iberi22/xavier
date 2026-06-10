@@ -1,9 +1,9 @@
-import { useState } from 'react';
-import { WelcomeStep } from './WelcomeStep';
-import { SystemScanStep } from './SystemScanStep';
-import { HardwareStep } from './HardwareStep';
-import { IntegrationsStep } from './IntegrationsStep';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from "@tauri-apps/api/core";
+import { useState } from "react";
+import { HardwareStep } from "./HardwareStep";
+import { IntegrationsStep } from "./IntegrationsStep";
+import { SystemScanStep } from "./SystemScanStep";
+import { WelcomeStep } from "./WelcomeStep";
 
 export type SystemInfo = {
   total_ram_gb: number;
@@ -22,7 +22,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   const [step, setStep] = useState(0);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [config, setConfig] = useState<InitialConfig>({
-    telegram_token: '',
+    telegram_token: "",
     use_gpu_model: false,
   });
   const [isSaving, setIsSaving] = useState(false);
@@ -32,11 +32,11 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
   const handleComplete = async () => {
     try {
       setIsSaving(true);
-      await invoke('save_initial_config', { config });
-      localStorage.setItem('xavier_onboarding_completed', 'true');
+      await invoke("save_initial_config", { config });
+      localStorage.setItem("xavier_onboarding_completed", "true");
       onComplete();
     } catch (e) {
-      console.error('Error saving config', e);
+      console.error("Error saving config", e);
     } finally {
       setIsSaving(false);
     }
@@ -61,7 +61,9 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
           <HardwareStep
             systemInfo={systemInfo!}
             useGpu={config.use_gpu_model}
-            onChangeUseGpu={(val) => setConfig((prev) => ({ ...prev, use_gpu_model: val }))}
+            onChangeUseGpu={(val) =>
+              setConfig((prev) => ({ ...prev, use_gpu_model: val }))
+            }
             onNext={handleNext}
           />
         );
@@ -69,7 +71,9 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
         return (
           <IntegrationsStep
             token={config.telegram_token}
-            onChangeToken={(val) => setConfig((prev) => ({ ...prev, telegram_token: val }))}
+            onChangeToken={(val) =>
+              setConfig((prev) => ({ ...prev, telegram_token: val }))
+            }
             onComplete={handleComplete}
             isSaving={isSaving}
           />

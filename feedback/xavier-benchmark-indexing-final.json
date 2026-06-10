@@ -44,16 +44,76 @@
   },
 
   "retrieval_test_results": [
-    { "query": "Codex CLI conversation session user assistant", "found": true, "results": 48, "top_relevant": true, "category": "codex" },
-    { "query": "Xavier workspace AGENTS.md identity CEO", "found": true, "results": 18, "top_relevant": true, "category": "codex" },
-    { "query": "proposed_plan plan integration merge PR chronicle", "found": true, "results": 44, "top_relevant": true, "category": "codex" },
-    { "query": "Rust cargo test workspace lib features", "found": true, "results": 80, "top_relevant": true, "category": "codex" },
-    { "query": "OpenClaw session prompt submitted model completed", "found": true, "results": 29, "top_relevant": true, "category": "openclaw" },
-    { "query": "agent trigger session workspace provider model", "found": true, "results": 23, "top_relevant": true, "category": "openclaw" },
-    { "query": "synapse trading aggressive pause TOCTOU race", "found": true, "results": 20, "top_relevant": true, "category": "claude" },
-    { "query": "Fix issue cleanup warnings conservative moderate", "found": true, "results": 42, "top_relevant": true, "category": "claude" },
-    { "query": "Xavier HTTP API memory vector search", "found": true, "results": 32, "top_relevant": true, "category": "general" },
-    { "query": "SouthWest AI Labs SWAL project memory", "found": true, "results": 49, "top_relevant": true, "category": "general" }
+    {
+      "query": "Codex CLI conversation session user assistant",
+      "found": true,
+      "results": 48,
+      "top_relevant": true,
+      "category": "codex"
+    },
+    {
+      "query": "Xavier workspace AGENTS.md identity CEO",
+      "found": true,
+      "results": 18,
+      "top_relevant": true,
+      "category": "codex"
+    },
+    {
+      "query": "proposed_plan plan integration merge PR chronicle",
+      "found": true,
+      "results": 44,
+      "top_relevant": true,
+      "category": "codex"
+    },
+    {
+      "query": "Rust cargo test workspace lib features",
+      "found": true,
+      "results": 80,
+      "top_relevant": true,
+      "category": "codex"
+    },
+    {
+      "query": "OpenClaw session prompt submitted model completed",
+      "found": true,
+      "results": 29,
+      "top_relevant": true,
+      "category": "openclaw"
+    },
+    {
+      "query": "agent trigger session workspace provider model",
+      "found": true,
+      "results": 23,
+      "top_relevant": true,
+      "category": "openclaw"
+    },
+    {
+      "query": "synapse trading aggressive pause TOCTOU race",
+      "found": true,
+      "results": 20,
+      "top_relevant": true,
+      "category": "claude"
+    },
+    {
+      "query": "Fix issue cleanup warnings conservative moderate",
+      "found": true,
+      "results": 42,
+      "top_relevant": true,
+      "category": "claude"
+    },
+    {
+      "query": "Xavier HTTP API memory vector search",
+      "found": true,
+      "results": 32,
+      "top_relevant": true,
+      "category": "general"
+    },
+    {
+      "query": "SouthWest AI Labs SWAL project memory",
+      "found": true,
+      "results": 49,
+      "top_relevant": true,
+      "category": "general"
+    }
   ],
 
   "issues_found": [

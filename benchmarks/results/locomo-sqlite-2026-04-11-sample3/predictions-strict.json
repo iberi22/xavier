@@ -7,12 +7,8 @@
     "prediction": "7 May 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D1:3"
-    ],
-    "normalized_evidence": [
-      "D1:3"
-    ],
+    "evidence": ["D1:3"],
+    "normalized_evidence": ["D1:3"],
     "documents_ingested": 476,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -26,12 +22,8 @@
     "prediction": "2022",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D1:12"
-    ],
-    "normalized_evidence": [
-      "D1:12"
-    ],
+    "evidence": ["D1:12"],
+    "normalized_evidence": ["D1:12"],
     "documents_ingested": 476,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -45,14 +37,8 @@
     "prediction": "Psychology, counseling certification, and Counseling, mental health",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D1:9",
-      "D1:11"
-    ],
-    "normalized_evidence": [
-      "D1:9",
-      "D1:11"
-    ],
+    "evidence": ["D1:9", "D1:11"],
+    "normalized_evidence": ["D1:9", "D1:11"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.6,
@@ -66,12 +52,8 @@
     "prediction": "Adoption agencies, Transgender woman and Psychology, counseling certification",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D2:8"
-    ],
-    "normalized_evidence": [
-      "D2:8"
-    ],
+    "evidence": ["D2:8"],
+    "normalized_evidence": ["D2:8"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.4,
@@ -85,12 +67,8 @@
     "prediction": "Transgender woman, and Single",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D1:5"
-    ],
-    "normalized_evidence": [
-      "D1:5"
-    ],
+    "evidence": ["D1:5"],
+    "normalized_evidence": ["D1:5"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.6666666666666666,
@@ -104,12 +82,8 @@
     "prediction": "The sunday before 25 May 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D2:1"
-    ],
-    "normalized_evidence": [
-      "D2:1"
-    ],
+    "evidence": ["D2:1"],
+    "normalized_evidence": ["D2:1"],
     "documents_ingested": 476,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -123,12 +97,8 @@
     "prediction": "June 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D2:7"
-    ],
-    "normalized_evidence": [
-      "D2:7"
-    ],
+    "evidence": ["D2:7"],
+    "normalized_evidence": ["D2:7"],
     "documents_ingested": 476,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -142,14 +112,8 @@
     "prediction": "Single, and Transgender woman",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D3:13",
-      "D2:14"
-    ],
-    "normalized_evidence": [
-      "D3:13",
-      "D2:14"
-    ],
+    "evidence": ["D3:13", "D2:14"],
+    "normalized_evidence": ["D3:13", "D2:14"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.4,
@@ -163,12 +127,8 @@
     "prediction": "The week before 9 June 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D3:1"
-    ],
-    "normalized_evidence": [
-      "D3:1"
-    ],
+    "evidence": ["D3:1"],
+    "normalized_evidence": ["D3:1"],
     "documents_ingested": 476,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -182,12 +142,8 @@
     "prediction": "The week before 9 June 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D3:11"
-    ],
-    "normalized_evidence": [
-      "D3:11"
-    ],
+    "evidence": ["D3:11"],
+    "normalized_evidence": ["D3:11"],
     "documents_ingested": 476,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -201,12 +157,8 @@
     "prediction": "Beach",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D3:13"
-    ],
-    "normalized_evidence": [
-      "D3:13"
-    ],
+    "evidence": ["D3:13"],
+    "normalized_evidence": ["D3:13"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -220,14 +172,8 @@
     "prediction": "4 years",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D3:13",
-      "D4:3"
-    ],
-    "normalized_evidence": [
-      "D3:13",
-      "D4:3"
-    ],
+    "evidence": ["D3:13", "D4:3"],
+    "normalized_evidence": ["D3:13", "D4:3"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -241,12 +187,8 @@
     "prediction": "Beach",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D4:5"
-    ],
-    "normalized_evidence": [
-      "D4:5"
-    ],
+    "evidence": ["D4:5"],
+    "normalized_evidence": ["D4:5"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -260,14 +202,8 @@
     "prediction": "Psychology, counseling certification, Transgender woman and Adoption agencies",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D4:13",
-      "D1:11"
-    ],
-    "normalized_evidence": [
-      "D4:13",
-      "D1:11"
-    ],
+    "evidence": ["D4:13", "D1:11"],
+    "normalized_evidence": ["D4:13", "D1:11"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.26666666666666666,
@@ -281,14 +217,8 @@
     "prediction": "Psychology, counseling certification",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D4:15",
-      "D3:5"
-    ],
-    "normalized_evidence": [
-      "D4:15",
-      "D3:5"
-    ],
+    "evidence": ["D4:15", "D3:5"],
+    "normalized_evidence": ["D4:15", "D3:5"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -302,18 +232,8 @@
     "prediction": "Painting, Swimming and Camping",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D5:4",
-      "D9:1",
-      "D1:12",
-      "D1:18"
-    ],
-    "normalized_evidence": [
-      "D5:4",
-      "D9:1",
-      "D1:12",
-      "D1:18"
-    ],
+    "evidence": ["D5:4", "D9:1", "D1:12", "D1:18"],
+    "normalized_evidence": ["D5:4", "D9:1", "D1:12", "D1:18"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.75,
@@ -327,12 +247,8 @@
     "prediction": "2 July 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D5:4"
-    ],
-    "normalized_evidence": [
-      "D5:4"
-    ],
+    "evidence": ["D5:4"],
+    "normalized_evidence": ["D5:4"],
     "documents_ingested": 476,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -346,12 +262,8 @@
     "prediction": "July, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D5:13"
-    ],
-    "normalized_evidence": [
-      "D5:13"
-    ],
+    "evidence": ["D5:13"],
+    "normalized_evidence": ["D5:13"],
     "documents_ingested": 476,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -365,16 +277,8 @@
     "prediction": "Beach",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D6:16",
-      "D4:6",
-      "D8:32"
-    ],
-    "normalized_evidence": [
-      "D6:16",
-      "D4:6",
-      "D8:32"
-    ],
+    "evidence": ["D6:16", "D4:6", "D8:32"],
+    "normalized_evidence": ["D6:16", "D4:6", "D8:32"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.5,
@@ -388,14 +292,8 @@
     "prediction": "Counseling, mental health, Psychology, counseling certification and Counseling",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D6:6",
-      "D4:8"
-    ],
-    "normalized_evidence": [
-      "D6:6",
-      "D4:8"
-    ],
+    "evidence": ["D6:6", "D4:8"],
+    "normalized_evidence": ["D6:6", "D4:8"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -409,12 +307,8 @@
     "prediction": "6 July, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D6:4"
-    ],
-    "normalized_evidence": [
-      "D6:4"
-    ],
+    "evidence": ["D6:4"],
+    "normalized_evidence": ["D6:4"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.6666666666666666,
@@ -428,12 +322,8 @@
     "prediction": "17 August, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D6:11"
-    ],
-    "normalized_evidence": [
-      "D6:11"
-    ],
+    "evidence": ["D6:11"],
+    "normalized_evidence": ["D6:11"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -447,12 +337,8 @@
     "prediction": "Counseling, mental health",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D6:9"
-    ],
-    "normalized_evidence": [
-      "D6:9"
-    ],
+    "evidence": ["D6:9"],
+    "normalized_evidence": ["D6:9"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -466,14 +352,8 @@
     "prediction": "Reading, Painting, Reading and Running, Reading, Violin",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D7:8",
-      "D6:10"
-    ],
-    "normalized_evidence": [
-      "D7:8",
-      "D6:10"
-    ],
+    "evidence": ["D7:8", "D6:10"],
+    "normalized_evidence": ["D7:8", "D6:10"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -487,14 +367,8 @@
     "prediction": "5 years, Painting and Swimming",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D7:22",
-      "D5:4"
-    ],
-    "normalized_evidence": [
-      "D7:22",
-      "D5:4"
-    ],
+    "evidence": ["D7:22", "D5:4"],
+    "normalized_evidence": ["D7:22", "D5:4"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -508,12 +382,8 @@
     "prediction": "7 May 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D7:1"
-    ],
-    "normalized_evidence": [
-      "D7:1"
-    ],
+    "evidence": ["D7:1"],
+    "normalized_evidence": ["D7:1"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.3333333333333333,
@@ -527,12 +397,8 @@
     "prediction": "6 July, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D7:8"
-    ],
-    "normalized_evidence": [
-      "D7:8"
-    ],
+    "evidence": ["D7:8"],
+    "normalized_evidence": ["D7:8"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -546,14 +412,8 @@
     "prediction": "Psychology, counseling certification",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D7:5",
-      "D7:9"
-    ],
-    "normalized_evidence": [
-      "D7:5",
-      "D7:9"
-    ],
+    "evidence": ["D7:5", "D7:9"],
+    "normalized_evidence": ["D7:5", "D7:9"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -567,12 +427,8 @@
     "prediction": "25 May, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D8:9"
-    ],
-    "normalized_evidence": [
-      "D8:9"
-    ],
+    "evidence": ["D8:9"],
+    "normalized_evidence": ["D8:9"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -586,12 +442,8 @@
     "prediction": "15 July, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D8:2"
-    ],
-    "normalized_evidence": [
-      "D8:2"
-    ],
+    "evidence": ["D8:2"],
+    "normalized_evidence": ["D8:2"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.7499999999999999,
@@ -620,12 +472,8 @@
     "prediction": "June 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D4:8"
-    ],
-    "normalized_evidence": [
-      "D4:8"
-    ],
+    "evidence": ["D4:8"],
+    "normalized_evidence": ["D4:8"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.5714285714285715,
@@ -639,18 +487,8 @@
     "prediction": "Psychology, counseling certification, Painting and Camping",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D5:1",
-      "D8:17",
-      "D3:1",
-      "D1:3"
-    ],
-    "normalized_evidence": [
-      "D5:1",
-      "D8:17",
-      "D3:1",
-      "D1:3"
-    ],
+    "evidence": ["D5:1", "D8:17", "D3:1", "D1:3"],
+    "normalized_evidence": ["D5:1", "D8:17", "D3:1", "D1:3"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -664,12 +502,8 @@
     "prediction": "The friday before 14 August 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D5:1"
-    ],
-    "normalized_evidence": [
-      "D5:1"
-    ],
+    "evidence": ["D5:1"],
+    "normalized_evidence": ["D5:1"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.4000000000000001,
@@ -683,14 +517,8 @@
     "prediction": "Adoption agencies, 4 years and My",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D9:2",
-      "D3:3"
-    ],
-    "normalized_evidence": [
-      "D9:2",
-      "D3:3"
-    ],
+    "evidence": ["D9:2", "D3:3"],
+    "normalized_evidence": ["D9:2", "D3:3"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -704,12 +532,8 @@
     "prediction": "June 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D9:1"
-    ],
-    "normalized_evidence": [
-      "D9:1"
-    ],
+    "evidence": ["D9:1"],
+    "normalized_evidence": ["D9:1"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -723,12 +547,8 @@
     "prediction": "17 August, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D9:2"
-    ],
-    "normalized_evidence": [
-      "D9:2"
-    ],
+    "evidence": ["D9:2"],
+    "normalized_evidence": ["D9:2"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.5,
@@ -742,12 +562,8 @@
     "prediction": "Painting, and Pottery, Painting",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D8:6; D9:17"
-    ],
-    "normalized_evidence": [
-      "D8:6; D9:17"
-    ],
+    "evidence": ["D8:6; D9:17"],
+    "normalized_evidence": ["D8:6; D9:17"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -761,22 +577,8 @@
     "prediction": "Painting, Swimming and Camping",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D8:4",
-      "D8:6",
-      "D9:1",
-      "D6:4",
-      "D1:18",
-      "D3:14"
-    ],
-    "normalized_evidence": [
-      "D8:4",
-      "D8:6",
-      "D9:1",
-      "D6:4",
-      "D1:18",
-      "D3:14"
-    ],
+    "evidence": ["D8:4", "D8:6", "D9:1", "D6:4", "D1:18", "D3:14"],
+    "normalized_evidence": ["D8:4", "D8:6", "D9:1", "D6:4", "D1:18", "D3:14"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.6,
@@ -790,18 +592,8 @@
     "prediction": "Single, Psychology, counseling certification and Painting",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D10:3",
-      "D5:1",
-      "D9:12",
-      "D9:2"
-    ],
-    "normalized_evidence": [
-      "D10:3",
-      "D5:1",
-      "D9:12",
-      "D9:2"
-    ],
+    "evidence": ["D10:3", "D5:1", "D9:12", "D9:2"],
+    "normalized_evidence": ["D10:3", "D5:1", "D9:12", "D9:2"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -815,14 +607,8 @@
     "prediction": "Beach",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D10:8",
-      "D6:16"
-    ],
-    "normalized_evidence": [
-      "D10:8",
-      "D6:16"
-    ],
+    "evidence": ["D10:8", "D6:16"],
+    "normalized_evidence": ["D10:8", "D6:16"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -836,12 +622,8 @@
     "prediction": "20 July, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D10:3"
-    ],
-    "normalized_evidence": [
-      "D10:3"
-    ],
+    "evidence": ["D10:3"],
+    "normalized_evidence": ["D10:3"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.7499999999999999,
@@ -855,14 +637,8 @@
     "prediction": "Since we last spoke, I took my kids to a park yesterday",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D10:12",
-      "D10:14"
-    ],
-    "normalized_evidence": [
-      "D10:12",
-      "D10:14"
-    ],
+    "evidence": ["D10:12", "D10:14"],
+    "normalized_evidence": ["D10:12", "D10:14"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.12500000000000003,
@@ -876,16 +652,8 @@
     "prediction": "Transgender woman, Psychology, counseling certification and Painting",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D11:12",
-      "D11:8",
-      "D9:14"
-    ],
-    "normalized_evidence": [
-      "D11:12",
-      "D11:8",
-      "D9:14"
-    ],
+    "evidence": ["D11:12", "D11:8", "D9:14"],
+    "normalized_evidence": ["D11:12", "D11:8", "D9:14"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -899,12 +667,8 @@
     "prediction": "9 June, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D11:1"
-    ],
-    "normalized_evidence": [
-      "D11:1"
-    ],
+    "evidence": ["D11:1"],
+    "normalized_evidence": ["D11:1"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -918,12 +682,8 @@
     "prediction": "25 August, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D11:4"
-    ],
-    "normalized_evidence": [
-      "D11:4"
-    ],
+    "evidence": ["D11:4"],
+    "normalized_evidence": ["D11:4"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.5,
@@ -952,14 +712,8 @@
     "prediction": "17 August, 2023",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D12:1",
-      "D3:11"
-    ],
-    "normalized_evidence": [
-      "D12:1",
-      "D3:11"
-    ],
+    "evidence": ["D12:1", "D3:11"],
+    "normalized_evidence": ["D12:1", "D3:11"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -973,16 +727,8 @@
     "prediction": "Pottery, and Pottery, Painting",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D12:14",
-      "D8:4",
-      "D5:6"
-    ],
-    "normalized_evidence": [
-      "D12:14",
-      "D8:4",
-      "D5:6"
-    ],
+    "evidence": ["D12:14", "D8:4", "D5:6"],
+    "normalized_evidence": ["D12:14", "D8:4", "D5:6"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -996,12 +742,8 @@
     "prediction": "The week before 27 June 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D12:15"
-    ],
-    "normalized_evidence": [
-      "D12:15"
-    ],
+    "evidence": ["D12:15"],
+    "normalized_evidence": ["D12:15"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1015,12 +757,8 @@
     "prediction": "Psychology, counseling certification, Counseling, mental health and Beach",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D12:1"
-    ],
-    "normalized_evidence": [
-      "D12:1"
-    ],
+    "evidence": ["D12:1"],
+    "normalized_evidence": ["D12:1"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1034,16 +772,8 @@
     "prediction": "Painting, Swimming and Beach",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D13:8",
-      "D8:6",
-      "D1:12"
-    ],
-    "normalized_evidence": [
-      "D13:8",
-      "D8:6",
-      "D1:12"
-    ],
+    "evidence": ["D13:8", "D8:6", "D1:12"],
+    "normalized_evidence": ["D13:8", "D8:6", "D1:12"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1057,14 +787,8 @@
     "prediction": "Painting, Swimming and Beach",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D13:4",
-      "D7:18"
-    ],
-    "normalized_evidence": [
-      "D13:4",
-      "D7:18"
-    ],
+    "evidence": ["D13:4", "D7:18"],
+    "normalized_evidence": ["D13:4", "D7:18"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1078,12 +802,8 @@
     "prediction": "23 August, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D13:1"
-    ],
-    "normalized_evidence": [
-      "D13:1"
-    ],
+    "evidence": ["D13:1"],
+    "normalized_evidence": ["D13:1"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.7499999999999999,
@@ -1097,12 +817,8 @@
     "prediction": "17 August, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D13:11"
-    ],
-    "normalized_evidence": [
-      "D13:11"
-    ],
+    "evidence": ["D13:11"],
+    "normalized_evidence": ["D13:11"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.5,
@@ -1116,14 +832,8 @@
     "prediction": "beach",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D14:5",
-      "D8:6"
-    ],
-    "normalized_evidence": [
-      "D14:5",
-      "D8:6"
-    ],
+    "evidence": ["D14:5", "D8:6"],
+    "normalized_evidence": ["D14:5", "D8:6"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1137,14 +847,8 @@
     "prediction": "Psychology, counseling certification, Transgender woman and Adoption agencies",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D14:15",
-      "D4:1"
-    ],
-    "normalized_evidence": [
-      "D14:15",
-      "D4:1"
-    ],
+    "evidence": ["D14:15", "D4:1"],
+    "normalized_evidence": ["D14:15", "D4:1"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.16666666666666666,
@@ -1158,12 +862,8 @@
     "prediction": "17 August, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D14:1"
-    ],
-    "normalized_evidence": [
-      "D14:1"
-    ],
+    "evidence": ["D14:1"],
+    "normalized_evidence": ["D14:1"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.5,
@@ -1177,12 +877,8 @@
     "prediction": "13 September, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D14:4"
-    ],
-    "normalized_evidence": [
-      "D14:4"
-    ],
+    "evidence": ["D14:4"],
+    "normalized_evidence": ["D14:4"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.3333333333333333,
@@ -1196,14 +892,8 @@
     "prediction": "Counseling, mental health",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D14:19",
-      "D12:1"
-    ],
-    "normalized_evidence": [
-      "D14:19",
-      "D12:1"
-    ],
+    "evidence": ["D14:19", "D12:1"],
+    "normalized_evidence": ["D14:19", "D12:1"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1217,14 +907,8 @@
     "prediction": "Painting, Swimming and Beach",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D15:26",
-      "D2:5"
-    ],
-    "normalized_evidence": [
-      "D15:26",
-      "D2:5"
-    ],
+    "evidence": ["D15:26", "D2:5"],
+    "normalized_evidence": ["D15:26", "D2:5"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.28571428571428575,
@@ -1238,14 +922,8 @@
     "prediction": "Painting, Swimming and Beach",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D15:16",
-      "D11:3"
-    ],
-    "normalized_evidence": [
-      "D15:16",
-      "D11:3"
-    ],
+    "evidence": ["D15:16", "D11:3"],
+    "normalized_evidence": ["D15:16", "D11:3"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1259,12 +937,8 @@
     "prediction": "9 June, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D15:2"
-    ],
-    "normalized_evidence": [
-      "D15:2"
-    ],
+    "evidence": ["D15:2"],
+    "normalized_evidence": ["D15:2"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.3333333333333333,
@@ -1278,12 +952,8 @@
     "prediction": "28 August, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D15:11"
-    ],
-    "normalized_evidence": [
-      "D15:11"
-    ],
+    "evidence": ["D15:11"],
+    "normalized_evidence": ["D15:11"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.4,
@@ -1297,12 +967,8 @@
     "prediction": "Counseling",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D15:28"
-    ],
-    "normalized_evidence": [
-      "D15:28"
-    ],
+    "evidence": ["D15:28"],
+    "normalized_evidence": ["D15:28"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1316,14 +982,8 @@
     "prediction": "Psychology, counseling certification, Transgender woman and Painting",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D16:15",
-      "D11:14"
-    ],
-    "normalized_evidence": [
-      "D16:15",
-      "D11:14"
-    ],
+    "evidence": ["D16:15", "D11:14"],
+    "normalized_evidence": ["D16:15", "D11:14"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1337,14 +997,8 @@
     "prediction": "Painting, Swimming and Beach",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D16:4",
-      "D10:12"
-    ],
-    "normalized_evidence": [
-      "D16:4",
-      "D10:12"
-    ],
+    "evidence": ["D16:4", "D10:12"],
+    "normalized_evidence": ["D16:4", "D10:12"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1358,12 +1012,8 @@
     "prediction": "17 August, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D16:1"
-    ],
-    "normalized_evidence": [
-      "D16:1"
-    ],
+    "evidence": ["D16:1"],
+    "normalized_evidence": ["D16:1"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -1377,12 +1027,8 @@
     "prediction": "Beach",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D16:8"
-    ],
-    "normalized_evidence": [
-      "D16:8"
-    ],
+    "evidence": ["D16:8"],
+    "normalized_evidence": ["D16:8"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1396,16 +1042,8 @@
     "prediction": "Transgender woman, Psychology, counseling certification and Painting",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D16:18",
-      "D13:16",
-      "D7:4"
-    ],
-    "normalized_evidence": [
-      "D16:18",
-      "D13:16",
-      "D7:4"
-    ],
+    "evidence": ["D16:18", "D13:16", "D7:4"],
+    "normalized_evidence": ["D16:18", "D13:16", "D7:4"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1419,14 +1057,8 @@
     "prediction": "Transgender woman, Psychology, counseling certification and Painting",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D17:19",
-      "D15:13"
-    ],
-    "normalized_evidence": [
-      "D17:19",
-      "D15:13"
-    ],
+    "evidence": ["D17:19", "D15:13"],
+    "normalized_evidence": ["D17:19", "D15:13"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1440,14 +1072,8 @@
     "prediction": "Reading, Painting, Reading and Running, Reading, Violin",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D7:11",
-      "D17:10"
-    ],
-    "normalized_evidence": [
-      "D7:11",
-      "D17:10"
-    ],
+    "evidence": ["D7:11", "D17:10"],
+    "normalized_evidence": ["D7:11", "D17:10"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1461,12 +1087,8 @@
     "prediction": "23 August, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D17:3"
-    ],
-    "normalized_evidence": [
-      "D17:3"
-    ],
+    "evidence": ["D17:3"],
+    "normalized_evidence": ["D17:3"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1480,12 +1102,8 @@
     "prediction": "17 August, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D17:8"
-    ],
-    "normalized_evidence": [
-      "D17:8"
-    ],
+    "evidence": ["D17:8"],
+    "normalized_evidence": ["D17:8"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.4,
@@ -1499,12 +1117,8 @@
     "prediction": "June 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D18:1"
-    ],
-    "normalized_evidence": [
-      "D18:1"
-    ],
+    "evidence": ["D18:1"],
+    "normalized_evidence": ["D18:1"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.28571428571428575,
@@ -1518,14 +1132,8 @@
     "prediction": "Beach",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D18:1",
-      "D18:7"
-    ],
-    "normalized_evidence": [
-      "D18:1",
-      "D18:7"
-    ],
+    "evidence": ["D18:1", "D18:7"],
+    "normalized_evidence": ["D18:1", "D18:7"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1539,12 +1147,8 @@
     "prediction": "June 2023",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D18:17"
-    ],
-    "normalized_evidence": [
-      "D18:17"
-    ],
+    "evidence": ["D18:17"],
+    "normalized_evidence": ["D18:17"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.4,
@@ -1558,14 +1162,8 @@
     "prediction": "Counseling",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D18:3",
-      "D18:1"
-    ],
-    "normalized_evidence": [
-      "D18:3",
-      "D18:1"
-    ],
+    "evidence": ["D18:3", "D18:1"],
+    "normalized_evidence": ["D18:3", "D18:1"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1579,14 +1177,8 @@
     "prediction": "Painting, Swimming and Beach",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D19:2",
-      "D7:18"
-    ],
-    "normalized_evidence": [
-      "D19:2",
-      "D7:18"
-    ],
+    "evidence": ["D19:2", "D7:18"],
+    "normalized_evidence": ["D19:2", "D7:18"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1600,12 +1192,8 @@
     "prediction": "25 May, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D19:1"
-    ],
-    "normalized_evidence": [
-      "D19:1"
-    ],
+    "evidence": ["D19:1"],
+    "normalized_evidence": ["D19:1"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -1619,12 +1207,8 @@
     "prediction": "17 August, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D19:2"
-    ],
-    "normalized_evidence": [
-      "D19:2"
-    ],
+    "evidence": ["D19:2"],
+    "normalized_evidence": ["D19:2"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.3333333333333333,
@@ -1638,14 +1222,8 @@
     "prediction": "This necklace is super special to me - a gift from my grandma in my home country, Sweden",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D19:1",
-      "D19:3"
-    ],
-    "normalized_evidence": [
-      "D19:1",
-      "D19:3"
-    ],
+    "evidence": ["D19:1", "D19:3"],
+    "normalized_evidence": ["D19:1", "D19:3"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.08333333333333333,
@@ -1659,12 +1237,8 @@
     "prediction": "Transgender woman, Psychology, counseling certification and Painting",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D2:2"
-    ],
-    "normalized_evidence": [
-      "D2:2"
-    ],
+    "evidence": ["D2:2"],
+    "normalized_evidence": ["D2:2"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1678,12 +1252,8 @@
     "prediction": "Painting, Swimming and Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D2:3"
-    ],
-    "normalized_evidence": [
-      "D2:3"
-    ],
+    "evidence": ["D2:3"],
+    "normalized_evidence": ["D2:3"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1697,12 +1267,8 @@
     "prediction": "Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D2:5"
-    ],
-    "normalized_evidence": [
-      "D2:5"
-    ],
+    "evidence": ["D2:5"],
+    "normalized_evidence": ["D2:5"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1716,12 +1282,8 @@
     "prediction": "Psychology, counseling certification, Transgender woman and Painting",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D2:8"
-    ],
-    "normalized_evidence": [
-      "D2:8"
-    ],
+    "evidence": ["D2:8"],
+    "normalized_evidence": ["D2:8"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1735,12 +1297,8 @@
     "prediction": "Adoption agencies, Transgender woman and Single",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D2:12"
-    ],
-    "normalized_evidence": [
-      "D2:12"
-    ],
+    "evidence": ["D2:12"],
+    "normalized_evidence": ["D2:12"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1754,12 +1312,8 @@
     "prediction": "Adoption agencies",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D2:12"
-    ],
-    "normalized_evidence": [
-      "D2:12"
-    ],
+    "evidence": ["D2:12"],
+    "normalized_evidence": ["D2:12"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1773,12 +1327,8 @@
     "prediction": "Adoption agencies, Transgender woman and Single",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D2:14"
-    ],
-    "normalized_evidence": [
-      "D2:14"
-    ],
+    "evidence": ["D2:14"],
+    "normalized_evidence": ["D2:14"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1792,12 +1342,8 @@
     "prediction": "Adoption agencies, Transgender woman and 5 years",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D2:15"
-    ],
-    "normalized_evidence": [
-      "D2:15"
-    ],
+    "evidence": ["D2:15"],
+    "normalized_evidence": ["D2:15"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.10526315789473685,
@@ -1811,12 +1357,8 @@
     "prediction": "Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D3:16"
-    ],
-    "normalized_evidence": [
-      "D3:16"
-    ],
+    "evidence": ["D3:16"],
+    "normalized_evidence": ["D3:16"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1830,12 +1372,8 @@
     "prediction": "Transgender woman, Psychology, counseling certification and Painting",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D4:3"
-    ],
-    "normalized_evidence": [
-      "D4:3"
-    ],
+    "evidence": ["D4:3"],
+    "normalized_evidence": ["D4:3"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.18181818181818182,
@@ -1849,12 +1387,8 @@
     "prediction": "Transgender woman, and Single",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D4:3"
-    ],
-    "normalized_evidence": [
-      "D4:3"
-    ],
+    "evidence": ["D4:3"],
+    "normalized_evidence": ["D4:3"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1868,12 +1402,8 @@
     "prediction": "Transgender woman, Adoption agencies and 4 years",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D4:3"
-    ],
-    "normalized_evidence": [
-      "D4:3"
-    ],
+    "evidence": ["D4:3"],
+    "normalized_evidence": ["D4:3"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -1887,12 +1417,8 @@
     "prediction": "Transgender woman, Painting and Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D4:5"
-    ],
-    "normalized_evidence": [
-      "D4:5"
-    ],
+    "evidence": ["D4:5"],
+    "normalized_evidence": ["D4:5"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.22222222222222224,
@@ -1906,12 +1432,8 @@
     "prediction": "Camping, Camping, Hiking and Painting",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D4:8"
-    ],
-    "normalized_evidence": [
-      "D4:8"
-    ],
+    "evidence": ["D4:8"],
+    "normalized_evidence": ["D4:8"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.15384615384615385,
@@ -1925,12 +1447,8 @@
     "prediction": "Counseling, mental health, and Psychology, counseling certification",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D4:13"
-    ],
-    "normalized_evidence": [
-      "D4:13"
-    ],
+    "evidence": ["D4:13"],
+    "normalized_evidence": ["D4:13"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.3,
@@ -1944,12 +1462,8 @@
     "prediction": "Transgender woman, Psychology, counseling certification and Painting",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D4:13"
-    ],
-    "normalized_evidence": [
-      "D4:13"
-    ],
+    "evidence": ["D4:13"],
+    "normalized_evidence": ["D4:13"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.2,
@@ -1963,12 +1477,8 @@
     "prediction": "Psychology, counseling certification, Counseling, mental health and Counseling",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D4:13"
-    ],
-    "normalized_evidence": [
-      "D4:13"
-    ],
+    "evidence": ["D4:13"],
+    "normalized_evidence": ["D4:13"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.11111111111111112,
@@ -1982,12 +1492,8 @@
     "prediction": "Counseling, mental health, and Psychology, counseling certification",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D4:15"
-    ],
-    "normalized_evidence": [
-      "D4:15"
-    ],
+    "evidence": ["D4:15"],
+    "normalized_evidence": ["D4:15"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.2,
@@ -2001,12 +1507,8 @@
     "prediction": "My, Adoption agencies and 4 years",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D4:15"
-    ],
-    "normalized_evidence": [
-      "D4:15"
-    ],
+    "evidence": ["D4:15"],
+    "normalized_evidence": ["D4:15"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.14285714285714288,
@@ -2020,12 +1522,8 @@
     "prediction": "Camping",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D5:8"
-    ],
-    "normalized_evidence": [
-      "D5:8"
-    ],
+    "evidence": ["D5:8"],
+    "normalized_evidence": ["D5:8"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2039,12 +1537,8 @@
     "prediction": "Psychology, counseling certification, Painting and Camping",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D6:9"
-    ],
-    "normalized_evidence": [
-      "D6:9"
-    ],
+    "evidence": ["D6:9"],
+    "normalized_evidence": ["D6:9"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2058,12 +1552,8 @@
     "prediction": "Painting, Swimming and Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D6:10"
-    ],
-    "normalized_evidence": [
-      "D6:10"
-    ],
+    "evidence": ["D6:10"],
+    "normalized_evidence": ["D6:10"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2077,12 +1567,8 @@
     "prediction": "Adoption agencies, 4 years and My",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D7:11"
-    ],
-    "normalized_evidence": [
-      "D7:11"
-    ],
+    "evidence": ["D7:11"],
+    "normalized_evidence": ["D7:11"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2096,12 +1582,8 @@
     "prediction": "Becoming Nicole, Transgender woman and Psychology, counseling certification",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D7:13"
-    ],
-    "normalized_evidence": [
-      "D7:13"
-    ],
+    "evidence": ["D7:13"],
+    "normalized_evidence": ["D7:13"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.13333333333333333,
@@ -2115,12 +1597,8 @@
     "prediction": "Painting, Swimming and Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D7:19"
-    ],
-    "normalized_evidence": [
-      "D7:19"
-    ],
+    "evidence": ["D7:19"],
+    "normalized_evidence": ["D7:19"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2134,12 +1612,8 @@
     "prediction": "Transgender woman, 5 years and Single",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D7:21"
-    ],
-    "normalized_evidence": [
-      "D7:21"
-    ],
+    "evidence": ["D7:21"],
+    "normalized_evidence": ["D7:21"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.15384615384615383,
@@ -2153,12 +1627,8 @@
     "prediction": "Running, Reading, Violin, Running and Painting",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D7:24"
-    ],
-    "normalized_evidence": [
-      "D7:24"
-    ],
+    "evidence": ["D7:24"],
+    "normalized_evidence": ["D7:24"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2172,12 +1642,8 @@
     "prediction": "Pottery, and Pottery, Painting",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D8:2"
-    ],
-    "normalized_evidence": [
-      "D8:2"
-    ],
+    "evidence": ["D8:2"],
+    "normalized_evidence": ["D8:2"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2191,12 +1657,8 @@
     "prediction": "Pottery, and Pottery, Painting",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D8:4"
-    ],
-    "normalized_evidence": [
-      "D8:4"
-    ],
+    "evidence": ["D8:4"],
+    "normalized_evidence": ["D8:4"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2210,12 +1672,8 @@
     "prediction": "Pottery, Pottery, Painting and Adoption agencies",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D8:5"
-    ],
-    "normalized_evidence": [
-      "D8:5"
-    ],
+    "evidence": ["D8:5"],
+    "normalized_evidence": ["D8:5"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.2857142857142857,
@@ -2229,12 +1687,8 @@
     "prediction": "Painting, and Pottery, Painting",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D8:6"
-    ],
-    "normalized_evidence": [
-      "D8:6"
-    ],
+    "evidence": ["D8:6"],
+    "normalized_evidence": ["D8:6"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2248,12 +1702,8 @@
     "prediction": "Adoption agencies, Psychology, counseling certification and Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D8:9"
-    ],
-    "normalized_evidence": [
-      "D8:9"
-    ],
+    "evidence": ["D8:9"],
+    "normalized_evidence": ["D8:9"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2267,12 +1717,8 @@
     "prediction": "Transgender woman, Adoption agencies and 4 years",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D8:11"
-    ],
-    "normalized_evidence": [
-      "D8:11"
-    ],
+    "evidence": ["D8:11"],
+    "normalized_evidence": ["D8:11"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.2,
@@ -2286,12 +1732,8 @@
     "prediction": "Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D8:12"
-    ],
-    "normalized_evidence": [
-      "D8:12"
-    ],
+    "evidence": ["D8:12"],
+    "normalized_evidence": ["D8:12"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2305,12 +1747,8 @@
     "prediction": "Painting",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D9:16"
-    ],
-    "normalized_evidence": [
-      "D9:16"
-    ],
+    "evidence": ["D9:16"],
+    "normalized_evidence": ["D9:16"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2324,12 +1762,8 @@
     "prediction": "Melanie: Seeing my kids' faces so happy at the beach was the best",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D10:10"
-    ],
-    "normalized_evidence": [
-      "D10:10"
-    ],
+    "evidence": ["D10:10"],
+    "normalized_evidence": ["D10:10"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2343,12 +1777,8 @@
     "prediction": "Camping, Camping, Hiking and 5 years",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D10:14"
-    ],
-    "normalized_evidence": [
-      "D10:14"
-    ],
+    "evidence": ["D10:14"],
+    "normalized_evidence": ["D10:14"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2362,12 +1792,8 @@
     "prediction": "Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D10:18"
-    ],
-    "normalized_evidence": [
-      "D10:18"
-    ],
+    "evidence": ["D10:18"],
+    "normalized_evidence": ["D10:18"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2381,12 +1807,8 @@
     "prediction": "Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D11:1"
-    ],
-    "normalized_evidence": [
-      "D11:1"
-    ],
+    "evidence": ["D11:1"],
+    "normalized_evidence": ["D11:1"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2400,12 +1822,8 @@
     "prediction": "Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D11:3"
-    ],
-    "normalized_evidence": [
-      "D11:3"
-    ],
+    "evidence": ["D11:3"],
+    "normalized_evidence": ["D11:3"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2419,12 +1837,8 @@
     "prediction": "to see a pic.",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D12:6"
-    ],
-    "normalized_evidence": [
-      "D12:6"
-    ],
+    "evidence": ["D12:6"],
+    "normalized_evidence": ["D12:6"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.16666666666666666,
@@ -2438,12 +1852,8 @@
     "prediction": "Transgender woman, Psychology, counseling certification and Painting",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D13:3"
-    ],
-    "normalized_evidence": [
-      "D13:3"
-    ],
+    "evidence": ["D13:3"],
+    "normalized_evidence": ["D13:3"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2457,12 +1867,8 @@
     "prediction": "Painting, Swimming and Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D13:4"
-    ],
-    "normalized_evidence": [
-      "D13:4"
-    ],
+    "evidence": ["D13:4"],
+    "normalized_evidence": ["D13:4"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -2476,12 +1882,8 @@
     "prediction": "Melanie: Oliver's hilarious",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D13:6"
-    ],
-    "normalized_evidence": [
-      "D13:6"
-    ],
+    "evidence": ["D13:6"],
+    "normalized_evidence": ["D13:6"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.5,
@@ -2495,12 +1897,8 @@
     "prediction": "Transgender woman, Adoption agencies and 4 years",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D13:7"
-    ],
-    "normalized_evidence": [
-      "D13:7"
-    ],
+    "evidence": ["D13:7"],
+    "normalized_evidence": ["D13:7"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2514,12 +1912,8 @@
     "prediction": "Transgender woman, Psychology, counseling certification and Painting",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D14:17"
-    ],
-    "normalized_evidence": [
-      "D14:17"
-    ],
+    "evidence": ["D14:17"],
+    "normalized_evidence": ["D14:17"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2533,12 +1927,8 @@
     "prediction": "Psychology, counseling certification, Painting and Camping",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D14:23"
-    ],
-    "normalized_evidence": [
-      "D14:23"
-    ],
+    "evidence": ["D14:23"],
+    "normalized_evidence": ["D14:23"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2552,12 +1942,8 @@
     "prediction": "My",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D15:23"
-    ],
-    "normalized_evidence": [
-      "D15:23"
-    ],
+    "evidence": ["D15:23"],
+    "normalized_evidence": ["D15:23"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2571,12 +1957,8 @@
     "prediction": "Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D15:28"
-    ],
-    "normalized_evidence": [
-      "D15:28"
-    ],
+    "evidence": ["D15:28"],
+    "normalized_evidence": ["D15:28"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2590,12 +1972,8 @@
     "prediction": "Melanie: I'm a fan of both classical like Bach and Mozart, as well as modern music like Ed Sheeran's \"Perfect\"",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D15:28"
-    ],
-    "normalized_evidence": [
-      "D15:28"
-    ],
+    "evidence": ["D15:28"],
+    "normalized_evidence": ["D15:28"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.17391304347826084,
@@ -2609,12 +1987,8 @@
     "prediction": "Melanie: Wow, Caroline, that looks awesome",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D16:7"
-    ],
-    "normalized_evidence": [
-      "D16:7"
-    ],
+    "evidence": ["D16:7"],
+    "normalized_evidence": ["D16:7"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2628,12 +2002,8 @@
     "prediction": "Nature, and Psychology, counseling certification",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D16:16"
-    ],
-    "normalized_evidence": [
-      "D16:16"
-    ],
+    "evidence": ["D16:16"],
+    "normalized_evidence": ["D16:16"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2647,12 +2017,8 @@
     "prediction": "Adoption agencies, Transgender woman and Psychology, counseling certification",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D17:7"
-    ],
-    "normalized_evidence": [
-      "D17:7"
-    ],
+    "evidence": ["D17:7"],
+    "normalized_evidence": ["D17:7"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.1904761904761905,
@@ -2666,12 +2032,8 @@
     "prediction": "Painting, Swimming and Camping",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D17:8"
-    ],
-    "normalized_evidence": [
-      "D17:8"
-    ],
+    "evidence": ["D17:8"],
+    "normalized_evidence": ["D17:8"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.14285714285714288,
@@ -2685,12 +2047,8 @@
     "prediction": "Pottery, and Pottery, Painting",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D17:10"
-    ],
-    "normalized_evidence": [
-      "D17:10"
-    ],
+    "evidence": ["D17:10"],
+    "normalized_evidence": ["D17:10"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -2704,12 +2062,8 @@
     "prediction": "Painting, and 4 years",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D17:12"
-    ],
-    "normalized_evidence": [
-      "D17:12"
-    ],
+    "evidence": ["D17:12"],
+    "normalized_evidence": ["D17:12"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.18181818181818182,
@@ -2723,12 +2077,8 @@
     "prediction": "Painting, and Psychology, counseling certification",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D17:14"
-    ],
-    "normalized_evidence": [
-      "D17:14"
-    ],
+    "evidence": ["D17:14"],
+    "normalized_evidence": ["D17:14"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.16666666666666666,
@@ -2742,12 +2092,8 @@
     "prediction": "Reading, Transgender woman and Psychology, counseling certification",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D17:18"
-    ],
-    "normalized_evidence": [
-      "D17:18"
-    ],
+    "evidence": ["D17:18"],
+    "normalized_evidence": ["D17:18"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.2222222222222222,
@@ -2761,12 +2107,8 @@
     "prediction": "Painting, Reading, Reading and Psychology, counseling certification",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D17:19"
-    ],
-    "normalized_evidence": [
-      "D17:19"
-    ],
+    "evidence": ["D17:19"],
+    "normalized_evidence": ["D17:19"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2780,12 +2122,8 @@
     "prediction": "Transgender woman, Psychology, counseling certification and Painting",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D17:23"
-    ],
-    "normalized_evidence": [
-      "D17:23"
-    ],
+    "evidence": ["D17:23"],
+    "normalized_evidence": ["D17:23"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.15384615384615383,
@@ -2799,12 +2137,8 @@
     "prediction": "Let's keep motivating and helping each other out as we journey through life",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D17:25"
-    ],
-    "normalized_evidence": [
-      "D17:25"
-    ],
+    "evidence": ["D17:25"],
+    "normalized_evidence": ["D17:25"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.1,
@@ -2818,12 +2152,8 @@
     "prediction": "5 years, Psychology, counseling certification and Adoption agencies",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D18:1"
-    ],
-    "normalized_evidence": [
-      "D18:1"
-    ],
+    "evidence": ["D18:1"],
+    "normalized_evidence": ["D18:1"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2837,14 +2167,8 @@
     "prediction": "Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D18:6",
-      "D18:7"
-    ],
-    "normalized_evidence": [
-      "D18:6",
-      "D18:7"
-    ],
+    "evidence": ["D18:6", "D18:7"],
+    "normalized_evidence": ["D18:6", "D18:7"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2858,12 +2182,8 @@
     "prediction": "Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D18:5"
-    ],
-    "normalized_evidence": [
-      "D18:5"
-    ],
+    "evidence": ["D18:5"],
+    "normalized_evidence": ["D18:5"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2877,12 +2197,8 @@
     "prediction": "Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D18:7"
-    ],
-    "normalized_evidence": [
-      "D18:7"
-    ],
+    "evidence": ["D18:7"],
+    "normalized_evidence": ["D18:7"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2896,12 +2212,8 @@
     "prediction": "Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D18:5"
-    ],
-    "normalized_evidence": [
-      "D18:5"
-    ],
+    "evidence": ["D18:5"],
+    "normalized_evidence": ["D18:5"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2915,12 +2227,8 @@
     "prediction": "5 years, Painting and Swimming",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D18:5"
-    ],
-    "normalized_evidence": [
-      "D18:5"
-    ],
+    "evidence": ["D18:5"],
+    "normalized_evidence": ["D18:5"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.20000000000000004,
@@ -2934,12 +2242,8 @@
     "prediction": "Painting, Swimming and Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D18:9"
-    ],
-    "normalized_evidence": [
-      "D18:9"
-    ],
+    "evidence": ["D18:9"],
+    "normalized_evidence": ["D18:9"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.28571428571428575,
@@ -2953,12 +2257,8 @@
     "prediction": "How did you feel about your time there",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D18:13"
-    ],
-    "normalized_evidence": [
-      "D18:13"
-    ],
+    "evidence": ["D18:13"],
+    "normalized_evidence": ["D18:13"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2972,12 +2272,8 @@
     "prediction": "5 years, Painting and Swimming",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D18:17"
-    ],
-    "normalized_evidence": [
-      "D18:17"
-    ],
+    "evidence": ["D18:17"],
+    "normalized_evidence": ["D18:17"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -2991,12 +2287,8 @@
     "prediction": "Caroline: That bowl is gorgeous",
     "category": 5,
     "mode": "strict",
-    "evidence": [
-      "D5:8"
-    ],
-    "normalized_evidence": [
-      "D5:8"
-    ],
+    "evidence": ["D5:8"],
+    "normalized_evidence": ["D5:8"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3010,12 +2302,8 @@
     "prediction": "Beach",
     "category": 5,
     "mode": "strict",
-    "evidence": [
-      "D13:3"
-    ],
-    "normalized_evidence": [
-      "D13:3"
-    ],
+    "evidence": ["D13:3"],
+    "normalized_evidence": ["D13:3"],
     "documents_ingested": 476,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3029,12 +2317,8 @@
     "prediction": "19 January 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D1:2"
-    ],
-    "normalized_evidence": [
-      "D1:2"
-    ],
+    "evidence": ["D1:2"],
+    "normalized_evidence": ["D1:2"],
     "documents_ingested": 426,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -3048,12 +2332,8 @@
     "prediction": "January, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D1:3"
-    ],
-    "normalized_evidence": [
-      "D1:3"
-    ],
+    "evidence": ["D1:3"],
+    "normalized_evidence": ["D1:3"],
     "documents_ingested": 426,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -3067,14 +2347,8 @@
     "prediction": "Gina would likely pursue Counseling, mental health. Gina: Finding Freedom..",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D1:7",
-      "D1:6"
-    ],
-    "normalized_evidence": [
-      "D1:7",
-      "D1:6"
-    ],
+    "evidence": ["D1:7", "D1:6"],
+    "normalized_evidence": ["D1:7", "D1:6"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3088,18 +2362,8 @@
     "prediction": "Finding Freedom., and Counseling, mental health",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D1:2",
-      "D1:3",
-      "D1:4",
-      "D2:1"
-    ],
-    "normalized_evidence": [
-      "D1:2",
-      "D1:3",
-      "D1:4",
-      "D2:1"
-    ],
+    "evidence": ["D1:2", "D1:3", "D1:4", "D2:1"],
+    "normalized_evidence": ["D1:2", "D1:3", "D1:4", "D2:1"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.11764705882352942,
@@ -3113,14 +2377,8 @@
     "prediction": "I'm passionate about dancing and it'd be great to share it with others and I was a kid and it's been my passion and escape and to finally start my dream and to the unknown and hoping and to work with our young and to be",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D1:2",
-      "D1:4"
-    ],
-    "normalized_evidence": [
-      "D1:2",
-      "D1:4"
-    ],
+    "evidence": ["D1:2", "D1:4"],
+    "normalized_evidence": ["D1:2", "D1:4"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.1935483870967742,
@@ -3134,16 +2392,8 @@
     "prediction": "Counseling, mental health, and Finding Freedom.",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D1:20",
-      "D2:4",
-      "D2:8"
-    ],
-    "normalized_evidence": [
-      "D1:20",
-      "D2:4",
-      "D2:8"
-    ],
+    "evidence": ["D1:20", "D2:4", "D2:8"],
+    "normalized_evidence": ["D1:20", "D2:4", "D2:8"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.14285714285714288,
@@ -3157,12 +2407,8 @@
     "prediction": "February 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D1:24"
-    ],
-    "normalized_evidence": [
-      "D1:24"
-    ],
+    "evidence": ["D1:24"],
+    "normalized_evidence": ["D1:24"],
     "documents_ingested": 426,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -3176,12 +2422,8 @@
     "prediction": "29 January, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D2:1"
-    ],
-    "normalized_evidence": [
-      "D2:1"
-    ],
+    "evidence": ["D2:1"],
+    "normalized_evidence": ["D2:1"],
     "documents_ingested": 426,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -3195,12 +2437,8 @@
     "prediction": "28 January 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D2:4"
-    ],
-    "normalized_evidence": [
-      "D2:4"
-    ],
+    "evidence": ["D2:4"],
+    "normalized_evidence": ["D2:4"],
     "documents_ingested": 426,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -3214,14 +2452,8 @@
     "prediction": "running",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D2:5",
-      "D15:1"
-    ],
-    "normalized_evidence": [
-      "D2:5",
-      "D15:1"
-    ],
+    "evidence": ["D2:5", "D15:1"],
+    "normalized_evidence": ["D2:5", "D15:1"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3235,12 +2467,8 @@
     "prediction": "10 May 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D5:5"
-    ],
-    "normalized_evidence": [
-      "D5:5"
-    ],
+    "evidence": ["D5:5"],
+    "normalized_evidence": ["D5:5"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.4,
@@ -3254,12 +2482,8 @@
     "prediction": "21 July, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D5:15"
-    ],
-    "normalized_evidence": [
-      "D5:15"
-    ],
+    "evidence": ["D5:15"],
+    "normalized_evidence": ["D5:15"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3273,12 +2497,8 @@
     "prediction": "The week before 16 March 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D6:1"
-    ],
-    "normalized_evidence": [
-      "D6:1"
-    ],
+    "evidence": ["D6:1"],
+    "normalized_evidence": ["D6:1"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.5714285714285715,
@@ -3292,12 +2512,8 @@
     "prediction": "23 March, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D6:6"
-    ],
-    "normalized_evidence": [
-      "D6:6"
-    ],
+    "evidence": ["D6:6"],
+    "normalized_evidence": ["D6:6"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.6666666666666666,
@@ -3311,12 +2527,8 @@
     "prediction": "May 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D8:13"
-    ],
-    "normalized_evidence": [
-      "D8:13"
-    ],
+    "evidence": ["D8:13"],
+    "normalized_evidence": ["D8:13"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.5,
@@ -3330,12 +2542,8 @@
     "prediction": "24 April 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D8:13"
-    ],
-    "normalized_evidence": [
-      "D8:13"
-    ],
+    "evidence": ["D8:13"],
+    "normalized_evidence": ["D8:13"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.4,
@@ -3349,12 +2557,8 @@
     "prediction": "24 April 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D10:1"
-    ],
-    "normalized_evidence": [
-      "D10:1"
-    ],
+    "evidence": ["D10:1"],
+    "normalized_evidence": ["D10:1"],
     "documents_ingested": 426,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -3368,14 +2572,8 @@
     "prediction": "to see where it takes and to see your hard work and I lost my job and now I can expand my clothing store and get closer to my customers.",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D6:8",
-      "D1:3"
-    ],
-    "normalized_evidence": [
-      "D6:8",
-      "D1:3"
-    ],
+    "evidence": ["D6:8", "D1:3"],
+    "normalized_evidence": ["D6:8", "D1:3"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.22222222222222224,
@@ -3389,14 +2587,8 @@
     "prediction": "The Lean Startup, Finding Freedom. and Counseling, mental health",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D1:4",
-      "D6:8"
-    ],
-    "normalized_evidence": [
-      "D1:4",
-      "D6:8"
-    ],
+    "evidence": ["D1:4", "D6:8"],
+    "normalized_evidence": ["D1:4", "D6:8"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3410,12 +2602,8 @@
     "prediction": "The week before 21 July 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D11:14"
-    ],
-    "normalized_evidence": [
-      "D11:14"
-    ],
+    "evidence": ["D11:14"],
+    "normalized_evidence": ["D11:14"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -3429,12 +2617,8 @@
     "prediction": "The week before 9 July 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D12:1"
-    ],
-    "normalized_evidence": [
-      "D12:1"
-    ],
+    "evidence": ["D12:1"],
+    "normalized_evidence": ["D12:1"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -3448,12 +2632,8 @@
     "prediction": "15 June 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D12:6"
-    ],
-    "normalized_evidence": [
-      "D12:6"
-    ],
+    "evidence": ["D12:6"],
+    "normalized_evidence": ["D12:6"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.4,
@@ -3467,12 +2647,8 @@
     "prediction": "13 June, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D13:4"
-    ],
-    "normalized_evidence": [
-      "D13:4"
-    ],
+    "evidence": ["D13:4"],
+    "normalized_evidence": ["D13:4"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.8,
@@ -3486,18 +2662,8 @@
     "prediction": "Gina: Yay",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D5:5",
-      "D16:3",
-      "D8:4",
-      "D13:4"
-    ],
-    "normalized_evidence": [
-      "D5:5",
-      "D16:3",
-      "D8:4",
-      "D13:4"
-    ],
+    "evidence": ["D5:5", "D16:3", "D8:4", "D13:4"],
+    "normalized_evidence": ["D5:5", "D16:3", "D8:4", "D13:4"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3511,16 +2677,8 @@
     "prediction": "Jon: Gina, you won't believe it - I got mentored by this amazing business dude yesterday",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D10:1",
-      "D16:6",
-      "D8:4"
-    ],
-    "normalized_evidence": [
-      "D10:1",
-      "D16:6",
-      "D8:4"
-    ],
+    "evidence": ["D10:1", "D16:6", "D8:4"],
+    "normalized_evidence": ["D10:1", "D16:6", "D8:4"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3534,14 +2692,8 @@
     "prediction": "Nature, Reading and The Lean Startup",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D13:7",
-      "D8:13"
-    ],
-    "normalized_evidence": [
-      "D13:7",
-      "D8:13"
-    ],
+    "evidence": ["D13:7", "D8:13"],
+    "normalized_evidence": ["D13:7", "D8:13"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.09523809523809523,
@@ -3555,12 +2707,8 @@
     "prediction": "24 April 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D14:1"
-    ],
-    "normalized_evidence": [
-      "D14:1"
-    ],
+    "evidence": ["D14:1"],
+    "normalized_evidence": ["D14:1"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.3333333333333333,
@@ -3574,20 +2722,8 @@
     "prediction": "running",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D1:14",
-      "D14:14",
-      "D1:16",
-      "D1:17",
-      "D9:10"
-    ],
-    "normalized_evidence": [
-      "D1:14",
-      "D14:14",
-      "D1:16",
-      "D1:17",
-      "D9:10"
-    ],
+    "evidence": ["D1:14", "D14:14", "D1:16", "D1:17", "D9:10"],
+    "normalized_evidence": ["D1:14", "D14:14", "D1:16", "D1:17", "D9:10"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3601,12 +2737,8 @@
     "prediction": "The week before 19 June 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D15:1"
-    ],
-    "normalized_evidence": [
-      "D15:1"
-    ],
+    "evidence": ["D15:1"],
+    "normalized_evidence": ["D15:1"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.5714285714285715,
@@ -3620,14 +2752,8 @@
     "prediction": "15 June 2023",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D2:4",
-      "D15:1"
-    ],
-    "normalized_evidence": [
-      "D2:4",
-      "D15:1"
-    ],
+    "evidence": ["D2:4", "D15:1"],
+    "normalized_evidence": ["D2:4", "D15:1"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3641,12 +2767,8 @@
     "prediction": "28 January 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D15:5"
-    ],
-    "normalized_evidence": [
-      "D15:5"
-    ],
+    "evidence": ["D15:5"],
+    "normalized_evidence": ["D15:5"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.3333333333333333,
@@ -3660,14 +2782,8 @@
     "prediction": "I'm determined to make this studio work",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D1:2",
-      "D15:13"
-    ],
-    "normalized_evidence": [
-      "D1:2",
-      "D15:13"
-    ],
+    "evidence": ["D1:2", "D15:13"],
+    "normalized_evidence": ["D1:2", "D15:13"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3681,12 +2797,8 @@
     "prediction": "The week before 21 July 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D16:3"
-    ],
-    "normalized_evidence": [
-      "D16:3"
-    ],
+    "evidence": ["D16:3"],
+    "normalized_evidence": ["D16:3"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.28571428571428575,
@@ -3700,12 +2812,8 @@
     "prediction": "20 June 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D16:6"
-    ],
-    "normalized_evidence": [
-      "D16:6"
-    ],
+    "evidence": ["D16:6"],
+    "normalized_evidence": ["D16:6"],
     "documents_ingested": 426,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -3719,12 +2827,8 @@
     "prediction": "The week before 9 July 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D17:1"
-    ],
-    "normalized_evidence": [
-      "D17:1"
-    ],
+    "evidence": ["D17:1"],
+    "normalized_evidence": ["D17:1"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.5714285714285715,
@@ -3738,12 +2842,8 @@
     "prediction": "24 April 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D17:4"
-    ],
-    "normalized_evidence": [
-      "D17:4"
-    ],
+    "evidence": ["D17:4"],
+    "normalized_evidence": ["D17:4"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.4,
@@ -3757,12 +2857,8 @@
     "prediction": "2022",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D18:18"
-    ],
-    "normalized_evidence": [
-      "D18:18"
-    ],
+    "evidence": ["D18:18"],
+    "normalized_evidence": ["D18:18"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3776,12 +2872,8 @@
     "prediction": "The week before 21 July 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D19:4"
-    ],
-    "normalized_evidence": [
-      "D19:4"
-    ],
+    "evidence": ["D19:4"],
+    "normalized_evidence": ["D19:4"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.5,
@@ -3795,12 +2887,8 @@
     "prediction": "The friday before 23 July 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D19:6"
-    ],
-    "normalized_evidence": [
-      "D19:6"
-    ],
+    "evidence": ["D19:6"],
+    "normalized_evidence": ["D19:6"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.5,
@@ -3814,12 +2902,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D1:9"
-    ],
-    "normalized_evidence": [
-      "D1:9"
-    ],
+    "evidence": ["D1:9"],
+    "normalized_evidence": ["D1:9"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3833,12 +2917,8 @@
     "prediction": "Nature, Reading and The Lean Startup",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D1:8"
-    ],
-    "normalized_evidence": [
-      "D1:8"
-    ],
+    "evidence": ["D1:8"],
+    "normalized_evidence": ["D1:8"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3852,12 +2932,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D1:17"
-    ],
-    "normalized_evidence": [
-      "D1:17"
-    ],
+    "evidence": ["D1:17"],
+    "normalized_evidence": ["D1:17"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3871,12 +2947,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D1:19"
-    ],
-    "normalized_evidence": [
-      "D1:19"
-    ],
+    "evidence": ["D1:19"],
+    "normalized_evidence": ["D1:19"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.4444444444444445,
@@ -3890,12 +2962,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D1:25"
-    ],
-    "normalized_evidence": [
-      "D1:25"
-    ],
+    "evidence": ["D1:25"],
+    "normalized_evidence": ["D1:25"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3909,12 +2977,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D1:26"
-    ],
-    "normalized_evidence": [
-      "D1:26"
-    ],
+    "evidence": ["D1:26"],
+    "normalized_evidence": ["D1:26"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3928,12 +2992,8 @@
     "prediction": "Nature, Reading and The Lean Startup",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D1:28"
-    ],
-    "normalized_evidence": [
-      "D1:28"
-    ],
+    "evidence": ["D1:28"],
+    "normalized_evidence": ["D1:28"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3947,12 +3007,8 @@
     "prediction": "Reading, Running and Finding Freedom.",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D2:8"
-    ],
-    "normalized_evidence": [
-      "D2:8"
-    ],
+    "evidence": ["D2:8"],
+    "normalized_evidence": ["D2:8"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3966,12 +3022,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D3:2"
-    ],
-    "normalized_evidence": [
-      "D3:2"
-    ],
+    "evidence": ["D3:2"],
+    "normalized_evidence": ["D3:2"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -3985,12 +3037,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D3:4"
-    ],
-    "normalized_evidence": [
-      "D3:4"
-    ],
+    "evidence": ["D3:4"],
+    "normalized_evidence": ["D3:4"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.18181818181818182,
@@ -4004,14 +3052,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D3:6",
-      "D3:8"
-    ],
-    "normalized_evidence": [
-      "D3:6",
-      "D3:8"
-    ],
+    "evidence": ["D3:6", "D3:8"],
+    "normalized_evidence": ["D3:6", "D3:8"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.2,
@@ -4025,12 +3067,8 @@
     "prediction": "Finding Freedom., Nature and Reading",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D3:3"
-    ],
-    "normalized_evidence": [
-      "D3:3"
-    ],
+    "evidence": ["D3:3"],
+    "normalized_evidence": ["D3:3"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4044,12 +3082,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D3:6"
-    ],
-    "normalized_evidence": [
-      "D3:6"
-    ],
+    "evidence": ["D3:6"],
+    "normalized_evidence": ["D3:6"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.16666666666666666,
@@ -4063,12 +3097,8 @@
     "prediction": "Nature, Reading and The Lean Startup",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D3:9"
-    ],
-    "normalized_evidence": [
-      "D3:9"
-    ],
+    "evidence": ["D3:9"],
+    "normalized_evidence": ["D3:9"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.12500000000000003,
@@ -4082,12 +3112,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D3:8"
-    ],
-    "normalized_evidence": [
-      "D3:8"
-    ],
+    "evidence": ["D3:8"],
+    "normalized_evidence": ["D3:8"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4101,12 +3127,8 @@
     "prediction": "Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D4:2"
-    ],
-    "normalized_evidence": [
-      "D4:2"
-    ],
+    "evidence": ["D4:2"],
+    "normalized_evidence": ["D4:2"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4120,12 +3142,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D5:15"
-    ],
-    "normalized_evidence": [
-      "D5:15"
-    ],
+    "evidence": ["D5:15"],
+    "normalized_evidence": ["D5:15"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.30769230769230765,
@@ -4139,14 +3157,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D6:15",
-      "D6:16"
-    ],
-    "normalized_evidence": [
-      "D6:15",
-      "D6:16"
-    ],
+    "evidence": ["D6:15", "D6:16"],
+    "normalized_evidence": ["D6:15", "D6:16"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.15384615384615383,
@@ -4160,12 +3172,8 @@
     "prediction": "Running, Finding Freedom. and Counseling, mental health",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D7:5"
-    ],
-    "normalized_evidence": [
-      "D7:5"
-    ],
+    "evidence": ["D7:5"],
+    "normalized_evidence": ["D7:5"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4179,12 +3187,8 @@
     "prediction": "to do it for my.",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D8:1"
-    ],
-    "normalized_evidence": [
-      "D8:1"
-    ],
+    "evidence": ["D8:1"],
+    "normalized_evidence": ["D8:1"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -4198,12 +3202,8 @@
     "prediction": "to see where it takes and to for stress relief and to stay hopeful and to prep for your dance and to teach how to style and to you later.",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D8:8"
-    ],
-    "normalized_evidence": [
-      "D8:8"
-    ],
+    "evidence": ["D8:8"],
+    "normalized_evidence": ["D8:8"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.10810810810810811,
@@ -4217,12 +3217,8 @@
     "prediction": "Nature, Reading and The Lean Startup",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D9:5"
-    ],
-    "normalized_evidence": [
-      "D9:5"
-    ],
+    "evidence": ["D9:5"],
+    "normalized_evidence": ["D9:5"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4236,12 +3232,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D9:10"
-    ],
-    "normalized_evidence": [
-      "D9:10"
-    ],
+    "evidence": ["D9:10"],
+    "normalized_evidence": ["D9:10"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4255,12 +3247,8 @@
     "prediction": "Gina: Proud of you for starting your own business",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D10:8"
-    ],
-    "normalized_evidence": [
-      "D10:8"
-    ],
+    "evidence": ["D10:8"],
+    "normalized_evidence": ["D10:8"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.07692307692307691,
@@ -4274,12 +3262,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D12:1"
-    ],
-    "normalized_evidence": [
-      "D12:1"
-    ],
+    "evidence": ["D12:1"],
+    "normalized_evidence": ["D12:1"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4293,12 +3277,8 @@
     "prediction": "Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D12:3"
-    ],
-    "normalized_evidence": [
-      "D12:3"
-    ],
+    "evidence": ["D12:3"],
+    "normalized_evidence": ["D12:3"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4312,12 +3292,8 @@
     "prediction": "Reading, The Lean Startup and Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D12:6"
-    ],
-    "normalized_evidence": [
-      "D12:6"
-    ],
+    "evidence": ["D12:6"],
+    "normalized_evidence": ["D12:6"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.5714285714285715,
@@ -4331,12 +3307,8 @@
     "prediction": "Finding Freedom., and Counseling, mental health",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D13:7"
-    ],
-    "normalized_evidence": [
-      "D13:7"
-    ],
+    "evidence": ["D13:7"],
+    "normalized_evidence": ["D13:7"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.16666666666666666,
@@ -4350,12 +3322,8 @@
     "prediction": "Jon: Yeah, the book got me thinking about building a focused and efficient business",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D13:11"
-    ],
-    "normalized_evidence": [
-      "D13:11"
-    ],
+    "evidence": ["D13:11"],
+    "normalized_evidence": ["D13:11"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0909090909090909,
@@ -4369,12 +3337,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D14:17"
-    ],
-    "normalized_evidence": [
-      "D14:17"
-    ],
+    "evidence": ["D14:17"],
+    "normalized_evidence": ["D14:17"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4388,12 +3352,8 @@
     "prediction": "Nature, Reading and The Lean Startup",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D15:1"
-    ],
-    "normalized_evidence": [
-      "D15:1"
-    ],
+    "evidence": ["D15:1"],
+    "normalized_evidence": ["D15:1"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4407,12 +3367,8 @@
     "prediction": "Nature, Reading and The Lean Startup",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D15:3"
-    ],
-    "normalized_evidence": [
-      "D15:3"
-    ],
+    "evidence": ["D15:3"],
+    "normalized_evidence": ["D15:3"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4426,12 +3382,8 @@
     "prediction": "Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D15:6"
-    ],
-    "normalized_evidence": [
-      "D15:6"
-    ],
+    "evidence": ["D15:6"],
+    "normalized_evidence": ["D15:6"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4445,12 +3397,8 @@
     "prediction": "Opening the dance studio's been a great experience - I want it to be a place of support and encouragement for all our dancers",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D15:7"
-    ],
-    "normalized_evidence": [
-      "D15:7"
-    ],
+    "evidence": ["D15:7"],
+    "normalized_evidence": ["D15:7"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4464,12 +3412,8 @@
     "prediction": "Gina: Yeah, I do remember those dance classes",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D15:8"
-    ],
-    "normalized_evidence": [
-      "D15:8"
-    ],
+    "evidence": ["D15:8"],
+    "normalized_evidence": ["D15:8"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4483,12 +3427,8 @@
     "prediction": "Finding Freedom., and Counseling, mental health",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D15:9"
-    ],
-    "normalized_evidence": [
-      "D15:9"
-    ],
+    "evidence": ["D15:9"],
+    "normalized_evidence": ["D15:9"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4502,12 +3442,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D15:12"
-    ],
-    "normalized_evidence": [
-      "D15:12"
-    ],
+    "evidence": ["D15:12"],
+    "normalized_evidence": ["D15:12"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.11764705882352941,
@@ -4521,14 +3457,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D15:18",
-      "D15:19"
-    ],
-    "normalized_evidence": [
-      "D15:18",
-      "D15:19"
-    ],
+    "evidence": ["D15:18", "D15:19"],
+    "normalized_evidence": ["D15:18", "D15:19"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4542,12 +3472,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D16:3"
-    ],
-    "normalized_evidence": [
-      "D16:3"
-    ],
+    "evidence": ["D16:3"],
+    "normalized_evidence": ["D16:3"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4561,12 +3487,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D17:7"
-    ],
-    "normalized_evidence": [
-      "D17:7"
-    ],
+    "evidence": ["D17:7"],
+    "normalized_evidence": ["D17:7"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.18181818181818182,
@@ -4580,12 +3502,8 @@
     "prediction": "Nature, Reading and The Lean Startup",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D18:10"
-    ],
-    "normalized_evidence": [
-      "D18:10"
-    ],
+    "evidence": ["D18:10"],
+    "normalized_evidence": ["D18:10"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.1,
@@ -4599,12 +3517,8 @@
     "prediction": "Finding Freedom., Counseling, mental health and Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D18:13"
-    ],
-    "normalized_evidence": [
-      "D18:13"
-    ],
+    "evidence": ["D18:13"],
+    "normalized_evidence": ["D18:13"],
     "documents_ingested": 426,
     "exact_match": 0.0,
     "token_f1": 0.11764705882352941,
@@ -4618,12 +3532,8 @@
     "prediction": "5 May 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D13:16"
-    ],
-    "normalized_evidence": [
-      "D13:16"
-    ],
+    "evidence": ["D13:16"],
+    "normalized_evidence": ["D13:16"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4637,12 +3547,8 @@
     "prediction": "22 July, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D2:1"
-    ],
-    "normalized_evidence": [
-      "D2:1"
-    ],
+    "evidence": ["D2:1"],
+    "normalized_evidence": ["D2:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4656,14 +3562,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D2:28",
-      "D1:4"
-    ],
-    "normalized_evidence": [
-      "D2:28",
-      "D1:4"
-    ],
+    "evidence": ["D2:28", "D1:4"],
+    "normalized_evidence": ["D2:28", "D1:4"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4677,14 +3577,8 @@
     "prediction": "nature",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D3:5",
-      "D2:1"
-    ],
-    "normalized_evidence": [
-      "D3:5",
-      "D2:1"
-    ],
+    "evidence": ["D3:5", "D2:1"],
+    "normalized_evidence": ["D3:5", "D2:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4698,12 +3592,8 @@
     "prediction": "5 February, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D3:1"
-    ],
-    "normalized_evidence": [
-      "D3:1"
-    ],
+    "evidence": ["D3:1"],
+    "normalized_evidence": ["D3:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -4717,12 +3607,8 @@
     "prediction": "1 January, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D3:15"
-    ],
-    "normalized_evidence": [
-      "D3:15"
-    ],
+    "evidence": ["D3:15"],
+    "normalized_evidence": ["D3:15"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4736,18 +3622,8 @@
     "prediction": "Hiking",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D4:1",
-      "D2:1",
-      "D19:1",
-      "D14:10"
-    ],
-    "normalized_evidence": [
-      "D4:1",
-      "D2:1",
-      "D19:1",
-      "D14:10"
-    ],
+    "evidence": ["D4:1", "D2:1", "D19:1", "D14:10"],
+    "normalized_evidence": ["D4:1", "D2:1", "D19:1", "D14:10"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4761,14 +3637,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D5:13",
-      "D3:15"
-    ],
-    "normalized_evidence": [
-      "D5:13",
-      "D3:15"
-    ],
+    "evidence": ["D5:13", "D3:15"],
+    "normalized_evidence": ["D5:13", "D3:15"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4782,12 +3652,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D5:5"
-    ],
-    "normalized_evidence": [
-      "D5:5"
-    ],
+    "evidence": ["D5:5"],
+    "normalized_evidence": ["D5:5"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4801,14 +3667,8 @@
     "prediction": "25 February, 2023",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D6:9",
-      "D5:8"
-    ],
-    "normalized_evidence": [
-      "D6:9",
-      "D5:8"
-    ],
+    "evidence": ["D6:9", "D5:8"],
+    "normalized_evidence": ["D6:9", "D5:8"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4822,12 +3682,8 @@
     "prediction": "22 July, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D7:1"
-    ],
-    "normalized_evidence": [
-      "D7:1"
-    ],
+    "evidence": ["D7:1"],
+    "normalized_evidence": ["D7:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.3333333333333333,
@@ -4841,18 +3697,8 @@
     "prediction": "Nature, Camping and Hiking",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D7:5",
-      "D6:5",
-      "D27:8",
-      "D21:19"
-    ],
-    "normalized_evidence": [
-      "D7:5",
-      "D6:5",
-      "D27:8",
-      "D21:19"
-    ],
+    "evidence": ["D7:5", "D6:5", "D27:8", "D21:19"],
+    "normalized_evidence": ["D7:5", "D6:5", "D27:8", "D21:19"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4866,14 +3712,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D8:18",
-      "D3:11"
-    ],
-    "normalized_evidence": [
-      "D8:18",
-      "D3:11"
-    ],
+    "evidence": ["D8:18", "D3:11"],
+    "normalized_evidence": ["D8:18", "D3:11"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4887,12 +3727,8 @@
     "prediction": "22 July, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D8:1"
-    ],
-    "normalized_evidence": [
-      "D8:1"
-    ],
+    "evidence": ["D8:1"],
+    "normalized_evidence": ["D8:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -4906,14 +3742,8 @@
     "prediction": "Beach",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D8:18",
-      "D8:20"
-    ],
-    "normalized_evidence": [
-      "D8:18",
-      "D8:20"
-    ],
+    "evidence": ["D8:18", "D8:20"],
+    "normalized_evidence": ["D8:18", "D8:20"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4927,14 +3757,8 @@
     "prediction": "Nature, Camping and Hiking",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D9:1",
-      "D7:1"
-    ],
-    "normalized_evidence": [
-      "D9:1",
-      "D7:1"
-    ],
+    "evidence": ["D9:1", "D7:1"],
+    "normalized_evidence": ["D9:1", "D7:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4948,12 +3772,8 @@
     "prediction": "12 June, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D9:2"
-    ],
-    "normalized_evidence": [
-      "D9:2"
-    ],
+    "evidence": ["D9:2"],
+    "normalized_evidence": ["D9:2"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -4967,12 +3787,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, Running and Hiking",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D9:6"
-    ],
-    "normalized_evidence": [
-      "D9:6"
-    ],
+    "evidence": ["D9:6"],
+    "normalized_evidence": ["D9:6"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -4986,14 +3802,8 @@
     "prediction": "Beach",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D7:16",
-      "D10:1"
-    ],
-    "normalized_evidence": [
-      "D7:16",
-      "D10:1"
-    ],
+    "evidence": ["D7:16", "D10:1"],
+    "normalized_evidence": ["D7:16", "D10:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5007,14 +3817,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D11:1",
-      "D4:2"
-    ],
-    "normalized_evidence": [
-      "D11:1",
-      "D4:2"
-    ],
+    "evidence": ["D11:1", "D4:2"],
+    "normalized_evidence": ["D11:1", "D4:2"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5028,14 +3832,8 @@
     "prediction": "12 June, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D11:3",
-      "D11:5"
-    ],
-    "normalized_evidence": [
-      "D11:3",
-      "D11:5"
-    ],
+    "evidence": ["D11:3", "D11:5"],
+    "normalized_evidence": ["D11:3", "D11:5"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5049,14 +3847,8 @@
     "prediction": "has happened since we last spoke, with their own inspiring stories and is incredible with their own inspiring stories",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D11:5",
-      "D12:17"
-    ],
-    "normalized_evidence": [
-      "D11:5",
-      "D12:17"
-    ],
+    "evidence": ["D11:5", "D12:17"],
+    "normalized_evidence": ["D11:5", "D12:17"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5070,12 +3862,8 @@
     "prediction": "last month",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D12:9"
-    ],
-    "normalized_evidence": [
-      "D12:9"
-    ],
+    "evidence": ["D12:9"],
+    "normalized_evidence": ["D12:9"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5089,14 +3877,8 @@
     "prediction": "Nature, Camping and Hiking",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D2:25",
-      "D13:18"
-    ],
-    "normalized_evidence": [
-      "D2:25",
-      "D13:18"
-    ],
+    "evidence": ["D2:25", "D13:18"],
+    "normalized_evidence": ["D2:25", "D13:18"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5110,12 +3892,8 @@
     "prediction": "11 August, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D13:3"
-    ],
-    "normalized_evidence": [
-      "D13:3"
-    ],
+    "evidence": ["D13:3"],
+    "normalized_evidence": ["D13:3"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.4,
@@ -5129,14 +3907,8 @@
     "prediction": "Nature, Camping and Hiking",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D13:24",
-      "D8:15"
-    ],
-    "normalized_evidence": [
-      "D13:24",
-      "D8:15"
-    ],
+    "evidence": ["D13:24", "D8:15"],
+    "normalized_evidence": ["D13:24", "D8:15"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5150,14 +3922,8 @@
     "prediction": "with and helping others is so important, has made me happy and is so important",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D14:10",
-      "D11:10"
-    ],
-    "normalized_evidence": [
-      "D14:10",
-      "D11:10"
-    ],
+    "evidence": ["D14:10", "D11:10"],
+    "normalized_evidence": ["D14:10", "D11:10"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5171,12 +3937,8 @@
     "prediction": "12 June, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D15:11"
-    ],
-    "normalized_evidence": [
-      "D15:11"
-    ],
+    "evidence": ["D15:11"],
+    "normalized_evidence": ["D15:11"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -5190,18 +3952,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D15:3",
-      "D12:5",
-      "D9:8",
-      "D1:8"
-    ],
-    "normalized_evidence": [
-      "D15:3",
-      "D12:5",
-      "D9:8",
-      "D1:8"
-    ],
+    "evidence": ["D15:3", "D12:5", "D9:8", "D1:8"],
+    "normalized_evidence": ["D15:3", "D12:5", "D9:8", "D1:8"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5215,14 +3967,8 @@
     "prediction": "Nature, Camping and Hiking",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D16:4",
-      "D15:18"
-    ],
-    "normalized_evidence": [
-      "D16:4",
-      "D15:18"
-    ],
+    "evidence": ["D16:4", "D15:18"],
+    "normalized_evidence": ["D16:4", "D15:18"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5236,16 +3982,8 @@
     "prediction": "Nature, and Camping",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D2:1",
-      "D11:10",
-      "D17:12"
-    ],
-    "normalized_evidence": [
-      "D2:1",
-      "D11:10",
-      "D17:12"
-    ],
+    "evidence": ["D2:1", "D11:10", "D17:12"],
+    "normalized_evidence": ["D2:1", "D11:10", "D17:12"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5259,12 +3997,8 @@
     "prediction": "12 June, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D17:1"
-    ],
-    "normalized_evidence": [
-      "D17:1"
-    ],
+    "evidence": ["D17:1"],
+    "normalized_evidence": ["D17:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5278,14 +4012,8 @@
     "prediction": "Running, Hiking and Camping",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D18:2",
-      "D16:2"
-    ],
-    "normalized_evidence": [
-      "D18:2",
-      "D16:2"
-    ],
+    "evidence": ["D18:2", "D16:2"],
+    "normalized_evidence": ["D18:2", "D16:2"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.3333333333333333,
@@ -5299,16 +4027,8 @@
     "prediction": "Nature, Camping and Hiking",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D1:3",
-      "D18:15",
-      "D19:3"
-    ],
-    "normalized_evidence": [
-      "D1:3",
-      "D18:15",
-      "D19:3"
-    ],
+    "evidence": ["D1:3", "D18:15", "D19:3"],
+    "normalized_evidence": ["D1:3", "D18:15", "D19:3"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5322,12 +4042,8 @@
     "prediction": "9 August, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D19:1"
-    ],
-    "normalized_evidence": [
-      "D19:1"
-    ],
+    "evidence": ["D19:1"],
+    "normalized_evidence": ["D19:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -5341,14 +4057,8 @@
     "prediction": "Nature, and Camping",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D19:23",
-      "D18:3"
-    ],
-    "normalized_evidence": [
-      "D19:23",
-      "D18:3"
-    ],
+    "evidence": ["D19:23", "D18:3"],
+    "normalized_evidence": ["D19:23", "D18:3"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5362,14 +4072,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D20:4",
-      "D8:12"
-    ],
-    "normalized_evidence": [
-      "D20:4",
-      "D8:12"
-    ],
+    "evidence": ["D20:4", "D8:12"],
+    "normalized_evidence": ["D20:4", "D8:12"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5383,20 +4087,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, Running and Hiking",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D15:1",
-      "D15:11",
-      "D21:22",
-      "D24:1",
-      "D29:4"
-    ],
-    "normalized_evidence": [
-      "D15:1",
-      "D15:11",
-      "D21:22",
-      "D24:1",
-      "D29:4"
-    ],
+    "evidence": ["D15:1", "D15:11", "D21:22", "D24:1", "D29:4"],
+    "normalized_evidence": ["D15:1", "D15:11", "D21:22", "D24:1", "D29:4"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5410,12 +4102,8 @@
     "prediction": "25 February, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D21:3"
-    ],
-    "normalized_evidence": [
-      "D21:3"
-    ],
+    "evidence": ["D21:3"],
+    "normalized_evidence": ["D21:3"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.3333333333333333,
@@ -5429,12 +4117,8 @@
     "prediction": "9 August, 2023",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D21:3"
-    ],
-    "normalized_evidence": [
-      "D21:3"
-    ],
+    "evidence": ["D21:3"],
+    "normalized_evidence": ["D21:3"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5448,14 +4132,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D8:4",
-      "D22:7"
-    ],
-    "normalized_evidence": [
-      "D8:4",
-      "D22:7"
-    ],
+    "evidence": ["D8:4", "D22:7"],
+    "normalized_evidence": ["D8:4", "D22:7"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5469,12 +4147,8 @@
     "prediction": "Beach",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D22:15"
-    ],
-    "normalized_evidence": [
-      "D22:15"
-    ],
+    "evidence": ["D22:15"],
+    "normalized_evidence": ["D22:15"],
     "documents_ingested": 759,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -5488,14 +4162,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Always look on the bright side of life",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D14:21",
-      "D23:1"
-    ],
-    "normalized_evidence": [
-      "D14:21",
-      "D23:1"
-    ],
+    "evidence": ["D14:21", "D23:1"],
+    "normalized_evidence": ["D14:21", "D23:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5509,12 +4177,8 @@
     "prediction": "12 June, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D23:1"
-    ],
-    "normalized_evidence": [
-      "D23:1"
-    ],
+    "evidence": ["D23:1"],
+    "normalized_evidence": ["D23:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -5528,16 +4192,8 @@
     "prediction": "Camping, Hiking and Reading",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D25:2",
-      "D24:6",
-      "D28:5"
-    ],
-    "normalized_evidence": [
-      "D25:2",
-      "D24:6",
-      "D28:5"
-    ],
+    "evidence": ["D25:2", "D24:6", "D28:5"],
+    "normalized_evidence": ["D25:2", "D24:6", "D28:5"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -5551,14 +4207,8 @@
     "prediction": "They've opened my eyes to new perspectives, and I'm feeling a sense of connection and purpose with them",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D24:3",
-      "D7:2"
-    ],
-    "normalized_evidence": [
-      "D24:3",
-      "D7:2"
-    ],
+    "evidence": ["D24:3", "D7:2"],
+    "normalized_evidence": ["D24:3", "D7:2"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.058823529411764705,
@@ -5572,12 +4222,8 @@
     "prediction": "The week before 22 July 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D25:2"
-    ],
-    "normalized_evidence": [
-      "D25:2"
-    ],
+    "evidence": ["D25:2"],
+    "normalized_evidence": ["D25:2"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.8000000000000002,
@@ -5591,18 +4237,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D25:17",
-      "D25:13",
-      "D10:1",
-      "D1:4"
-    ],
-    "normalized_evidence": [
-      "D25:17",
-      "D25:13",
-      "D10:1",
-      "D1:4"
-    ],
+    "evidence": ["D25:17", "D25:13", "D10:1", "D1:4"],
+    "normalized_evidence": ["D25:17", "D25:13", "D10:1", "D1:4"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5616,12 +4252,8 @@
     "prediction": "18 April, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D26:4"
-    ],
-    "normalized_evidence": [
-      "D26:4"
-    ],
+    "evidence": ["D26:4"],
+    "normalized_evidence": ["D26:4"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -5635,14 +4267,8 @@
     "prediction": "Nature",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D26:1",
-      "D25:19"
-    ],
-    "normalized_evidence": [
-      "D26:1",
-      "D25:19"
-    ],
+    "evidence": ["D26:1", "D25:19"],
+    "normalized_evidence": ["D26:1", "D25:19"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5656,18 +4282,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D26:6",
-      "D2:14",
-      "D3:5",
-      "D4:6"
-    ],
-    "normalized_evidence": [
-      "D26:6",
-      "D2:14",
-      "D3:5",
-      "D4:6"
-    ],
+    "evidence": ["D26:6", "D2:14", "D3:5", "D4:6"],
+    "normalized_evidence": ["D26:6", "D2:14", "D3:5", "D4:6"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5681,12 +4297,8 @@
     "prediction": "17 December, 2022",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D27:4"
-    ],
-    "normalized_evidence": [
-      "D27:4"
-    ],
+    "evidence": ["D27:4"],
+    "normalized_evidence": ["D27:4"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.3333333333333333,
@@ -5700,14 +4312,8 @@
     "prediction": "Nature",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D27:8",
-      "D21:19"
-    ],
-    "normalized_evidence": [
-      "D27:8",
-      "D21:19"
-    ],
+    "evidence": ["D27:8", "D21:19"],
+    "normalized_evidence": ["D27:8", "D21:19"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5721,12 +4327,8 @@
     "prediction": "2022",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D28:11"
-    ],
-    "normalized_evidence": [
-      "D28:11"
-    ],
+    "evidence": ["D28:11"],
+    "normalized_evidence": ["D28:11"],
     "documents_ingested": 759,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -5740,12 +4342,8 @@
     "prediction": "4 August 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D28:8"
-    ],
-    "normalized_evidence": [
-      "D28:8"
-    ],
+    "evidence": ["D28:8"],
+    "normalized_evidence": ["D28:8"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 1.0,
@@ -5759,12 +4357,8 @@
     "prediction": "9 August, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D29:1"
-    ],
-    "normalized_evidence": [
-      "D29:1"
-    ],
+    "evidence": ["D29:1"],
+    "normalized_evidence": ["D29:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.7499999999999999,
@@ -5778,14 +4372,8 @@
     "prediction": "9 August, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D29:2",
-      "D29:4"
-    ],
-    "normalized_evidence": [
-      "D29:2",
-      "D29:4"
-    ],
+    "evidence": ["D29:2", "D29:4"],
+    "normalized_evidence": ["D29:2", "D29:4"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.5,
@@ -5799,18 +4387,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D3:5",
-      "D6:12",
-      "D29:4",
-      "D29:10"
-    ],
-    "normalized_evidence": [
-      "D3:5",
-      "D6:12",
-      "D29:4",
-      "D29:10"
-    ],
+    "evidence": ["D3:5", "D6:12", "D29:4", "D29:10"],
+    "normalized_evidence": ["D3:5", "D6:12", "D29:4", "D29:10"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5824,12 +4402,8 @@
     "prediction": "22 July, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D30:1"
-    ],
-    "normalized_evidence": [
-      "D30:1"
-    ],
+    "evidence": ["D30:1"],
+    "normalized_evidence": ["D30:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.2222222222222222,
@@ -5843,12 +4417,8 @@
     "prediction": "Beach",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D30:6"
-    ],
-    "normalized_evidence": [
-      "D30:6"
-    ],
+    "evidence": ["D30:6"],
+    "normalized_evidence": ["D30:6"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5862,14 +4432,8 @@
     "prediction": "Nature, Camping and Hiking",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D30:1",
-      "D31:4"
-    ],
-    "normalized_evidence": [
-      "D30:1",
-      "D31:4"
-    ],
+    "evidence": ["D30:1", "D31:4"],
+    "normalized_evidence": ["D30:1", "D31:4"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5883,12 +4447,8 @@
     "prediction": "22 July, 2023",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D31:2"
-    ],
-    "normalized_evidence": [
-      "D31:2"
-    ],
+    "evidence": ["D31:2"],
+    "normalized_evidence": ["D31:2"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.25,
@@ -5902,14 +4462,8 @@
     "prediction": "Maria: I recently gave a few talks at the homeless shelter I volunteer at",
     "category": 1,
     "mode": "strict",
-    "evidence": [
-      "D30:1",
-      "D31:2"
-    ],
-    "normalized_evidence": [
-      "D30:1",
-      "D31:2"
-    ],
+    "evidence": ["D30:1", "D31:2"],
+    "normalized_evidence": ["D30:1", "D31:2"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5923,14 +4477,8 @@
     "prediction": "Nature",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D30:1",
-      "D31:2"
-    ],
-    "normalized_evidence": [
-      "D30:1",
-      "D31:2"
-    ],
+    "evidence": ["D30:1", "D31:2"],
+    "normalized_evidence": ["D30:1", "D31:2"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5944,18 +4492,8 @@
     "prediction": "Camping, Hiking and Reading",
     "category": 3,
     "mode": "strict",
-    "evidence": [
-      "D32:14",
-      "D5:8",
-      "D11:10",
-      "D27:4"
-    ],
-    "normalized_evidence": [
-      "D32:14",
-      "D5:8",
-      "D11:10",
-      "D27:4"
-    ],
+    "evidence": ["D32:14", "D5:8", "D11:10", "D27:4"],
+    "normalized_evidence": ["D32:14", "D5:8", "D11:10", "D27:4"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -5969,12 +4507,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, Running and Hiking",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D1:8"
-    ],
-    "normalized_evidence": [
-      "D1:8"
-    ],
+    "evidence": ["D1:8"],
+    "normalized_evidence": ["D1:8"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.13333333333333333,
@@ -5988,12 +4522,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, Running and Hiking",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D1:10"
-    ],
-    "normalized_evidence": [
-      "D1:10"
-    ],
+    "evidence": ["D1:10"],
+    "normalized_evidence": ["D1:10"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.08,
@@ -6007,12 +4537,8 @@
     "prediction": "John: What a photo",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D1:12"
-    ],
-    "normalized_evidence": [
-      "D1:12"
-    ],
+    "evidence": ["D1:12"],
+    "normalized_evidence": ["D1:12"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6026,12 +4552,8 @@
     "prediction": "Camping, Hiking and Reading",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D1:3"
-    ],
-    "normalized_evidence": [
-      "D1:3"
-    ],
+    "evidence": ["D1:3"],
+    "normalized_evidence": ["D1:3"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6045,12 +4567,8 @@
     "prediction": "Camping, and Reading",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D2:1"
-    ],
-    "normalized_evidence": [
-      "D2:1"
-    ],
+    "evidence": ["D2:1"],
+    "normalized_evidence": ["D2:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6064,12 +4582,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, Running and Always look on the bright side of life",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D2:24"
-    ],
-    "normalized_evidence": [
-      "D2:24"
-    ],
+    "evidence": ["D2:24"],
+    "normalized_evidence": ["D2:24"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6083,12 +4597,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D3:1"
-    ],
-    "normalized_evidence": [
-      "D3:1"
-    ],
+    "evidence": ["D3:1"],
+    "normalized_evidence": ["D3:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6102,12 +4612,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, and Always look on the bright side of life",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D3:5"
-    ],
-    "normalized_evidence": [
-      "D3:5"
-    ],
+    "evidence": ["D3:5"],
+    "normalized_evidence": ["D3:5"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.06451612903225808,
@@ -6121,12 +4627,8 @@
     "prediction": "Maria: I started volunteering to help make a difference",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D5:8"
-    ],
-    "normalized_evidence": [
-      "D5:8"
-    ],
+    "evidence": ["D5:8"],
+    "normalized_evidence": ["D5:8"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6140,12 +4642,8 @@
     "prediction": "to give her some comfort.",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D5:10"
-    ],
-    "normalized_evidence": [
-      "D5:10"
-    ],
+    "evidence": ["D5:10"],
+    "normalized_evidence": ["D5:10"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6159,12 +4657,8 @@
     "prediction": "Nature, Camping and Hiking",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D7:7"
-    ],
-    "normalized_evidence": [
-      "D7:7"
-    ],
+    "evidence": ["D7:7"],
+    "normalized_evidence": ["D7:7"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6178,12 +4672,8 @@
     "prediction": "we last spoke and to run for office again and to make a difference in and to let you know that.",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D7:4"
-    ],
-    "normalized_evidence": [
-      "D7:4"
-    ],
+    "evidence": ["D7:4"],
+    "normalized_evidence": ["D7:4"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.13793103448275865,
@@ -6197,12 +4687,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D7:16"
-    ],
-    "normalized_evidence": [
-      "D7:16"
-    ],
+    "evidence": ["D7:16"],
+    "normalized_evidence": ["D7:16"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6216,12 +4702,8 @@
     "prediction": "10 years, Running and Always look on the bright side of life",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D8:4"
-    ],
-    "normalized_evidence": [
-      "D8:4"
-    ],
+    "evidence": ["D8:4"],
+    "normalized_evidence": ["D8:4"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6235,12 +4717,8 @@
     "prediction": "Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D8:8"
-    ],
-    "normalized_evidence": [
-      "D8:8"
-    ],
+    "evidence": ["D8:8"],
+    "normalized_evidence": ["D8:8"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6254,12 +4732,8 @@
     "prediction": "is hard but there's still hope and beauty, with and helping others is so important and has made me happy",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D8:15"
-    ],
-    "normalized_evidence": [
-      "D8:15"
-    ],
+    "evidence": ["D8:15"],
+    "normalized_evidence": ["D8:15"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6273,12 +4747,8 @@
     "prediction": "Hiking",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D8:15"
-    ],
-    "normalized_evidence": [
-      "D8:15"
-    ],
+    "evidence": ["D8:15"],
+    "normalized_evidence": ["D8:15"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6292,12 +4762,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Always look on the bright side of life",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D9:2"
-    ],
-    "normalized_evidence": [
-      "D9:2"
-    ],
+    "evidence": ["D9:2"],
+    "normalized_evidence": ["D9:2"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0909090909090909,
@@ -6311,12 +4777,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, Running and Hiking",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D9:8"
-    ],
-    "normalized_evidence": [
-      "D9:8"
-    ],
+    "evidence": ["D9:8"],
+    "normalized_evidence": ["D9:8"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.14285714285714288,
@@ -6330,12 +4792,8 @@
     "prediction": "Camping, Hiking and Reading",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D10:10"
-    ],
-    "normalized_evidence": [
-      "D10:10"
-    ],
+    "evidence": ["D10:10"],
+    "normalized_evidence": ["D10:10"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6349,12 +4807,8 @@
     "prediction": "Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D10:13"
-    ],
-    "normalized_evidence": [
-      "D10:13"
-    ],
+    "evidence": ["D10:13"],
+    "normalized_evidence": ["D10:13"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6368,12 +4822,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Always look on the bright side of life",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D11:1"
-    ],
-    "normalized_evidence": [
-      "D11:1"
-    ],
+    "evidence": ["D11:1"],
+    "normalized_evidence": ["D11:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6387,12 +4837,8 @@
     "prediction": "This picture reminds me of a road trip we took last year; even with bumps along the way, there's still beauty and hope",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D11:5"
-    ],
-    "normalized_evidence": [
-      "D11:5"
-    ],
+    "evidence": ["D11:5"],
+    "normalized_evidence": ["D11:5"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6406,12 +4852,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D12:1"
-    ],
-    "normalized_evidence": [
-      "D12:1"
-    ],
+    "evidence": ["D12:1"],
+    "normalized_evidence": ["D12:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.13333333333333333,
@@ -6425,12 +4867,8 @@
     "prediction": "Policies and writing about my thoughts and ideas",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D12:3"
-    ],
-    "normalized_evidence": [
-      "D12:3"
-    ],
+    "evidence": ["D12:3"],
+    "normalized_evidence": ["D12:3"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.11764705882352941,
@@ -6444,12 +4882,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D12:5"
-    ],
-    "normalized_evidence": [
-      "D12:5"
-    ],
+    "evidence": ["D12:5"],
+    "normalized_evidence": ["D12:5"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.11764705882352941,
@@ -6463,12 +4897,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, Running and Hiking",
     "category": 2,
     "mode": "strict",
-    "evidence": [
-      "D12:9"
-    ],
-    "normalized_evidence": [
-      "D12:9"
-    ],
+    "evidence": ["D12:9"],
+    "normalized_evidence": ["D12:9"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6482,12 +4912,8 @@
     "prediction": "Policies and writing about my thoughts and ideas",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D13:7"
-    ],
-    "normalized_evidence": [
-      "D13:7"
-    ],
+    "evidence": ["D13:7"],
+    "normalized_evidence": ["D13:7"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6501,12 +4927,8 @@
     "prediction": "Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D13:5"
-    ],
-    "normalized_evidence": [
-      "D13:5"
-    ],
+    "evidence": ["D13:5"],
+    "normalized_evidence": ["D13:5"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6520,12 +4942,8 @@
     "prediction": "with hope, by people all there for the same cause and is hard but there's still hope and beauty",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D13:18"
-    ],
-    "normalized_evidence": [
-      "D13:18"
-    ],
+    "evidence": ["D13:18"],
+    "normalized_evidence": ["D13:18"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6539,12 +4957,8 @@
     "prediction": "Camping, Hiking and Reading",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D13:16"
-    ],
-    "normalized_evidence": [
-      "D13:16"
-    ],
+    "evidence": ["D13:16"],
+    "normalized_evidence": ["D13:16"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6558,12 +4972,8 @@
     "prediction": "with and helping others is so important, has made me happy and is so important",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D14:10"
-    ],
-    "normalized_evidence": [
-      "D14:10"
-    ],
+    "evidence": ["D14:10"],
+    "normalized_evidence": ["D14:10"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6577,12 +4987,8 @@
     "prediction": "Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D14:10"
-    ],
-    "normalized_evidence": [
-      "D14:10"
-    ],
+    "evidence": ["D14:10"],
+    "normalized_evidence": ["D14:10"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6596,12 +5002,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, Running and Always look on the bright side of life",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D15:13"
-    ],
-    "normalized_evidence": [
-      "D15:13"
-    ],
+    "evidence": ["D15:13"],
+    "normalized_evidence": ["D15:13"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6615,12 +5017,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D15:13"
-    ],
-    "normalized_evidence": [
-      "D15:13"
-    ],
+    "evidence": ["D15:13"],
+    "normalized_evidence": ["D15:13"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.11764705882352941,
@@ -6634,12 +5032,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D15:13"
-    ],
-    "normalized_evidence": [
-      "D15:13"
-    ],
+    "evidence": ["D15:13"],
+    "normalized_evidence": ["D15:13"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6653,12 +5047,8 @@
     "prediction": "Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D16:2"
-    ],
-    "normalized_evidence": [
-      "D16:2"
-    ],
+    "evidence": ["D16:2"],
+    "normalized_evidence": ["D16:2"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6672,12 +5062,8 @@
     "prediction": "Nature, Camping and Hiking",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D16:4"
-    ],
-    "normalized_evidence": [
-      "D16:4"
-    ],
+    "evidence": ["D16:4"],
+    "normalized_evidence": ["D16:4"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6691,12 +5077,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Always look on the bright side of life",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D17:1"
-    ],
-    "normalized_evidence": [
-      "D17:1"
-    ],
+    "evidence": ["D17:1"],
+    "normalized_evidence": ["D17:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6710,12 +5092,8 @@
     "prediction": "10 years",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D17:1"
-    ],
-    "normalized_evidence": [
-      "D17:1"
-    ],
+    "evidence": ["D17:1"],
+    "normalized_evidence": ["D17:1"],
     "documents_ingested": 759,
     "exact_match": 1.0,
     "token_f1": 1.0,
@@ -6729,12 +5107,8 @@
     "prediction": "John: Let's make sure we make progress in the coming weeks to ensure that we honor the memories of our loved ones",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D17:11"
-    ],
-    "normalized_evidence": [
-      "D17:11"
-    ],
+    "evidence": ["D17:11"],
+    "normalized_evidence": ["D17:11"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6748,12 +5122,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Always look on the bright side of life",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D17:11"
-    ],
-    "normalized_evidence": [
-      "D17:11"
-    ],
+    "evidence": ["D17:11"],
+    "normalized_evidence": ["D17:11"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.09523809523809525,
@@ -6767,12 +5137,8 @@
     "prediction": "Nature, Reading and Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D17:12"
-    ],
-    "normalized_evidence": [
-      "D17:12"
-    ],
+    "evidence": ["D17:12"],
+    "normalized_evidence": ["D17:12"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6786,12 +5152,8 @@
     "prediction": "Nature, and Camping",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D18:7"
-    ],
-    "normalized_evidence": [
-      "D18:7"
-    ],
+    "evidence": ["D18:7"],
+    "normalized_evidence": ["D18:7"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6805,12 +5167,8 @@
     "prediction": "Nature, Camping and Hiking",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D18:17"
-    ],
-    "normalized_evidence": [
-      "D18:17"
-    ],
+    "evidence": ["D18:17"],
+    "normalized_evidence": ["D18:17"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.28571428571428575,
@@ -6824,12 +5182,8 @@
     "prediction": "Nature, Camping and Hiking",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D19:1"
-    ],
-    "normalized_evidence": [
-      "D19:1"
-    ],
+    "evidence": ["D19:1"],
+    "normalized_evidence": ["D19:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6843,12 +5197,8 @@
     "prediction": "Nature, Camping and Hiking",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D19:3"
-    ],
-    "normalized_evidence": [
-      "D19:3"
-    ],
+    "evidence": ["D19:3"],
+    "normalized_evidence": ["D19:3"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6862,12 +5212,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D19:8"
-    ],
-    "normalized_evidence": [
-      "D19:8"
-    ],
+    "evidence": ["D19:8"],
+    "normalized_evidence": ["D19:8"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6881,12 +5227,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, Running and Always look on the bright side of life",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D19:12"
-    ],
-    "normalized_evidence": [
-      "D19:12"
-    ],
+    "evidence": ["D19:12"],
+    "normalized_evidence": ["D19:12"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6900,12 +5242,8 @@
     "prediction": "It feels like all the hard work I've put in has paid off now that I'm an assistant manager- it's like a stepping stone for bigger things",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D19:12"
-    ],
-    "normalized_evidence": [
-      "D19:12"
-    ],
+    "evidence": ["D19:12"],
+    "normalized_evidence": ["D19:12"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6919,12 +5257,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, Running and Always look on the bright side of life",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D20:4"
-    ],
-    "normalized_evidence": [
-      "D20:4"
-    ],
+    "evidence": ["D20:4"],
+    "normalized_evidence": ["D20:4"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6938,12 +5272,8 @@
     "prediction": "to leave and find a and to help them succeed and to improve the lives of and to get the word out and to help, so I reached and then and to him afterwards and linked and to help people find what and to help bring people t",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D21:5"
-    ],
-    "normalized_evidence": [
-      "D21:5"
-    ],
+    "evidence": ["D21:5"],
+    "normalized_evidence": ["D21:5"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.14285714285714285,
@@ -6957,12 +5287,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, Running and Hiking",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D21:22"
-    ],
-    "normalized_evidence": [
-      "D21:22"
-    ],
+    "evidence": ["D21:22"],
+    "normalized_evidence": ["D21:22"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -6976,12 +5302,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D21:24"
-    ],
-    "normalized_evidence": [
-      "D21:24"
-    ],
+    "evidence": ["D21:24"],
+    "normalized_evidence": ["D21:24"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.1,
@@ -6995,12 +5317,8 @@
     "prediction": "John: It's really inspiring to see someone staying optimistic even when things get tough",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D22:17"
-    ],
-    "normalized_evidence": [
-      "D22:17"
-    ],
+    "evidence": ["D22:17"],
+    "normalized_evidence": ["D22:17"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7014,12 +5332,8 @@
     "prediction": "10 years, Always look on the bright side of life and Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D23:1"
-    ],
-    "normalized_evidence": [
-      "D23:1"
-    ],
+    "evidence": ["D23:1"],
+    "normalized_evidence": ["D23:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7033,12 +5347,8 @@
     "prediction": "John: Maria, since we talked, it's been tough",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D23:1"
-    ],
-    "normalized_evidence": [
-      "D23:1"
-    ],
+    "evidence": ["D23:1"],
+    "normalized_evidence": ["D23:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7052,12 +5362,8 @@
     "prediction": "10 years",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D23:1"
-    ],
-    "normalized_evidence": [
-      "D23:1"
-    ],
+    "evidence": ["D23:1"],
+    "normalized_evidence": ["D23:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7071,12 +5377,8 @@
     "prediction": "Beach, Camping and Reading",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D23:14"
-    ],
-    "normalized_evidence": [
-      "D23:14"
-    ],
+    "evidence": ["D23:14"],
+    "normalized_evidence": ["D23:14"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7090,12 +5392,8 @@
     "prediction": "Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D24:8"
-    ],
-    "normalized_evidence": [
-      "D24:8"
-    ],
+    "evidence": ["D24:8"],
+    "normalized_evidence": ["D24:8"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7109,12 +5407,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D24:3"
-    ],
-    "normalized_evidence": [
-      "D24:3"
-    ],
+    "evidence": ["D24:3"],
+    "normalized_evidence": ["D24:3"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.10526315789473685,
@@ -7128,12 +5422,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D24:1"
-    ],
-    "normalized_evidence": [
-      "D24:1"
-    ],
+    "evidence": ["D24:1"],
+    "normalized_evidence": ["D24:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7147,12 +5437,8 @@
     "prediction": "to give back and to new perspectives, and I'm and to make a difference and to do something to give and to join the military and to serving and protecting our and my time in the military and to share something cool with a",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D24:3"
-    ],
-    "normalized_evidence": [
-      "D24:3"
-    ],
+    "evidence": ["D24:3"],
+    "normalized_evidence": ["D24:3"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7166,12 +5452,8 @@
     "prediction": "Camping, Hiking and Reading",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D25:2"
-    ],
-    "normalized_evidence": [
-      "D25:2"
-    ],
+    "evidence": ["D25:2"],
+    "normalized_evidence": ["D25:2"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.4,
@@ -7185,12 +5467,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, and 10 years",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D25:14"
-    ],
-    "normalized_evidence": [
-      "D25:14"
-    ],
+    "evidence": ["D25:14"],
+    "normalized_evidence": ["D25:14"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7204,12 +5482,8 @@
     "prediction": "Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D25:17"
-    ],
-    "normalized_evidence": [
-      "D25:17"
-    ],
+    "evidence": ["D25:17"],
+    "normalized_evidence": ["D25:17"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7223,12 +5497,8 @@
     "prediction": "Camping, Hiking and Reading",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D26:1"
-    ],
-    "normalized_evidence": [
-      "D26:1"
-    ],
+    "evidence": ["D26:1"],
+    "normalized_evidence": ["D26:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7242,12 +5512,8 @@
     "prediction": "Maria: Been busy volunteering at the homeless shelter and keeping fit",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D27:4"
-    ],
-    "normalized_evidence": [
-      "D27:4"
-    ],
+    "evidence": ["D27:4"],
+    "normalized_evidence": ["D27:4"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.20000000000000004,
@@ -7261,12 +5527,8 @@
     "prediction": "The week before 9 August 2023",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D27:9"
-    ],
-    "normalized_evidence": [
-      "D27:9"
-    ],
+    "evidence": ["D27:9"],
+    "normalized_evidence": ["D27:9"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7280,12 +5542,8 @@
     "prediction": "John: Wow, Maria, that's so cool that you're making a difference like that",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D27:11"
-    ],
-    "normalized_evidence": [
-      "D27:11"
-    ],
+    "evidence": ["D27:11"],
+    "normalized_evidence": ["D27:11"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7299,12 +5557,8 @@
     "prediction": "to remember and appreciate those and to appreciate and support those and to feel closer to my and to staying motivated and reaching and to value different perspectives and and to teach them good habits and to affordable",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D27:12"
-    ],
-    "normalized_evidence": [
-      "D27:12"
-    ],
+    "evidence": ["D27:12"],
+    "normalized_evidence": ["D27:12"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.2222222222222222,
@@ -7318,12 +5572,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, and 10 years",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D27:13"
-    ],
-    "normalized_evidence": [
-      "D27:13"
-    ],
+    "evidence": ["D27:13"],
+    "normalized_evidence": ["D27:13"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.09999999999999999,
@@ -7337,12 +5587,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, Running and Hiking",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D28:1"
-    ],
-    "normalized_evidence": [
-      "D28:1"
-    ],
+    "evidence": ["D28:1"],
+    "normalized_evidence": ["D28:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7356,12 +5602,8 @@
     "prediction": "Camping, Hiking and Reading",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D28:8"
-    ],
-    "normalized_evidence": [
-      "D28:8"
-    ],
+    "evidence": ["D28:8"],
+    "normalized_evidence": ["D28:8"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7375,12 +5617,8 @@
     "prediction": "The week before 27 June 2023",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D28:11"
-    ],
-    "normalized_evidence": [
-      "D28:11"
-    ],
+    "evidence": ["D28:11"],
+    "normalized_evidence": ["D28:11"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7394,12 +5632,8 @@
     "prediction": "Running, Policies and writing about my thoughts and ideas and 10 years",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D29:4"
-    ],
-    "normalized_evidence": [
-      "D29:4"
-    ],
+    "evidence": ["D29:4"],
+    "normalized_evidence": ["D29:4"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.125,
@@ -7413,12 +5647,8 @@
     "prediction": "John: Yep, we worked with a local organization that helps victims of domestic abuse",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D29:10"
-    ],
-    "normalized_evidence": [
-      "D29:10"
-    ],
+    "evidence": ["D29:10"],
+    "normalized_evidence": ["D29:10"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.2666666666666667,
@@ -7432,12 +5662,8 @@
     "prediction": "Nature, Camping and Hiking",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D29:1"
-    ],
-    "normalized_evidence": [
-      "D29:1"
-    ],
+    "evidence": ["D29:1"],
+    "normalized_evidence": ["D29:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7451,12 +5677,8 @@
     "prediction": "Nature, Camping and Hiking",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D30:1"
-    ],
-    "normalized_evidence": [
-      "D30:1"
-    ],
+    "evidence": ["D30:1"],
+    "normalized_evidence": ["D30:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7470,12 +5692,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D30:6"
-    ],
-    "normalized_evidence": [
-      "D30:6"
-    ],
+    "evidence": ["D30:6"],
+    "normalized_evidence": ["D30:6"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7489,12 +5707,8 @@
     "prediction": "Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D30:6"
-    ],
-    "normalized_evidence": [
-      "D30:6"
-    ],
+    "evidence": ["D30:6"],
+    "normalized_evidence": ["D30:6"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7508,12 +5722,8 @@
     "prediction": "Beach",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D30:14"
-    ],
-    "normalized_evidence": [
-      "D30:14"
-    ],
+    "evidence": ["D30:14"],
+    "normalized_evidence": ["D30:14"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7527,12 +5737,8 @@
     "prediction": "Nature, Camping and Hiking",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D31:4"
-    ],
-    "normalized_evidence": [
-      "D31:4"
-    ],
+    "evidence": ["D31:4"],
+    "normalized_evidence": ["D31:4"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7546,12 +5752,8 @@
     "prediction": "Nature",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D31:10"
-    ],
-    "normalized_evidence": [
-      "D31:10"
-    ],
+    "evidence": ["D31:10"],
+    "normalized_evidence": ["D31:10"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7565,12 +5767,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, Running and Camping",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D31:1"
-    ],
-    "normalized_evidence": [
-      "D31:1"
-    ],
+    "evidence": ["D31:1"],
+    "normalized_evidence": ["D31:1"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7584,12 +5782,8 @@
     "prediction": "Running, Hiking and Camping",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D31:19"
-    ],
-    "normalized_evidence": [
-      "D31:19"
-    ],
+    "evidence": ["D31:19"],
+    "normalized_evidence": ["D31:19"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,
@@ -7603,12 +5797,8 @@
     "prediction": "Policies and writing about my thoughts and ideas, 10 years and Running",
     "category": 4,
     "mode": "strict",
-    "evidence": [
-      "D32:11"
-    ],
-    "normalized_evidence": [
-      "D32:11"
-    ],
+    "evidence": ["D32:11"],
+    "normalized_evidence": ["D32:11"],
     "documents_ingested": 759,
     "exact_match": 0.0,
     "token_f1": 0.0,

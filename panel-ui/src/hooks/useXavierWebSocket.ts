@@ -47,11 +47,13 @@ export function useXavierWebSocket(threadId: string | null) {
 
   const sendXUIEvent = (event: XUIEvent) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({
-        type: "xui_event",
-        ...event,
-        thread_id: threadId,
-      }));
+      wsRef.current.send(
+        JSON.stringify({
+          type: "xui_event",
+          ...event,
+          thread_id: threadId,
+        }),
+      );
       console.log("[XavierWS] Sent XUI event:", event);
     } else {
       console.warn("[XavierWS] Not connected, queuing event");

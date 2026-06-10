@@ -38,7 +38,7 @@ pub mod peer;
 pub mod protocol;
 pub mod transport;
 
-pub use node::{NodeIdentity, NodeId};
+pub use node::{NodeId, NodeIdentity};
 pub use peer::{PeerInfo, PeerRegistry};
 pub use protocol::{MeshHandshake, MeshManifest, MeshSyncRequest};
 pub use transport::MeshTransport;

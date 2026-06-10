@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 
 export interface ProgressItem {
   label: string;
@@ -12,9 +12,9 @@ export interface ProgressProps {
 
 export function Progress({ items }: ProgressProps) {
   const defaultItems: ProgressItem[] = [
-    { label: 'Development', value: 85, color: '#6366f1' },
-    { label: 'Testing', value: 60, color: '#eab308' },
-    { label: 'Documentation', value: 40, color: '#22c55e' },
+    { label: "Development", value: 85, color: "#6366f1" },
+    { label: "Testing", value: 60, color: "#eab308" },
+    { label: "Documentation", value: 40, color: "#22c55e" },
   ];
 
   const progressItems = items || defaultItems;
@@ -32,7 +32,7 @@ export function Progress({ items }: ProgressProps) {
               className="h-full rounded"
               style={{
                 width: `${item.value}%`,
-                background: item.color || '#6366f1',
+                background: item.color || "#6366f1",
               }}
             />
           </div>

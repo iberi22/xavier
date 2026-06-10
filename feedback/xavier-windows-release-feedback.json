@@ -15,8 +15,14 @@
     "features": ["cli-interactive"],
     "features_excluded": ["local-gllm", "enterprise"],
     "dll_dependencies": [
-      "KERNEL32.dll", "msvcrt.dll", "ADVAPI32.dll", "USER32.dll",
-      "ws2_32.dll", "bcrypt.dll", "crypt32.dll", "ole32.dll"
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "ADVAPI32.dll",
+      "USER32.dll",
+      "ws2_32.dll",
+      "bcrypt.dll",
+      "crypt32.dll",
+      "ole32.dll"
     ],
     "msys2_dlls_required": false
   },

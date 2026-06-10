@@ -1,10 +1,18 @@
-import { useEffect, useState, useCallback } from "react";
-import { Search, Plus, Filter, ChevronLeft, ChevronRight } from "lucide-react";
-import { useApi, MemoryEntry } from "../hooks/useApi";
+import { ChevronLeft, ChevronRight, Filter, Plus, Search } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { type MemoryEntry, useApi } from "../hooks/useApi";
 
 const PAGE_SIZE = 20;
 
-const KIND_OPTIONS = ["", "note", "fact", "preference", "context", "task", "agent"];
+const KIND_OPTIONS = [
+  "",
+  "note",
+  "fact",
+  "preference",
+  "context",
+  "task",
+  "agent",
+];
 
 export function MemoryBrowser() {
   const { searchMemories, addMemory } = useApi();
@@ -61,8 +69,12 @@ export function MemoryBrowser() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-stone-900 dark:text-stone-100">Memory Browser</h1>
-          <p className="text-stone-500 text-sm mt-1">Search and browse the shared memory store</p>
+          <h1 className="text-2xl font-bold text-stone-900 dark:text-stone-100">
+            Memory Browser
+          </h1>
+          <p className="text-stone-500 text-sm mt-1">
+            Search and browse the shared memory store
+          </p>
         </div>
         <button
           onClick={() => setShowAdd(!showAdd)}
@@ -79,7 +91,9 @@ export function MemoryBrowser() {
           onSubmit={handleAdd}
           className="bg-white dark:bg-stone-800 rounded-xl border border-stone-200 dark:border-stone-700 p-5 space-y-4"
         >
-          <h2 className="font-semibold text-stone-800 dark:text-stone-100">Add New Memory</h2>
+          <h2 className="font-semibold text-stone-800 dark:text-stone-100">
+            Add New Memory
+          </h2>
           <textarea
             value={newContent}
             onChange={(e) => setNewContent(e.target.value)}
@@ -210,8 +224,10 @@ function MemoryCard({ memory }: { memory: MemoryEntry }) {
   const kindColor: Record<string, string> = {
     note: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
     fact: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
-    preference: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
-    context: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+    preference:
+      "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300",
+    context:
+      "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
     task: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300",
     agent: "bg-stone-100 text-stone-700 dark:bg-stone-700 dark:text-stone-300",
   };
@@ -221,11 +237,15 @@ function MemoryCard({ memory }: { memory: MemoryEntry }) {
       <div className="flex items-start justify-between gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-2 flex-wrap">
-            <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${kindColor[memory.kind] ?? "bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300"}`}>
+            <span
+              className={`px-2 py-0.5 rounded-full text-xs font-medium ${kindColor[memory.kind] ?? "bg-stone-100 dark:bg-stone-700 text-stone-600 dark:text-stone-300"}`}
+            >
               {memory.kind}
             </span>
             {memory.source && (
-              <span className="text-xs text-stone-400 dark:text-stone-500">{memory.source}</span>
+              <span className="text-xs text-stone-400 dark:text-stone-500">
+                {memory.source}
+              </span>
             )}
             <span className="text-xs text-stone-400 dark:text-stone-500 ml-auto">
               {new Date(memory.created_at).toLocaleDateString()}

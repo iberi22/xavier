@@ -1,4 +1,4 @@
-import {
+import type {
   AddMemoryRequest,
   AddMemoryResponse,
   ClientOptions,
@@ -6,7 +6,7 @@ import {
   RetrieveResponse,
   SearchResponse,
   StatsResponse,
-} from './types';
+} from "./types";
 
 export class XavierClient {
   private baseUrl: string;
@@ -14,25 +14,33 @@ export class XavierClient {
   private timeoutMs: number;
 
   constructor(options: ClientOptions = {}) {
-    this.baseUrl = (options.baseUrl || 'http://localhost:8006').replace(/\/$/, '');
-    this.token = options.token || process.env.XAVIER_TOKEN || '';
+    this.baseUrl = (options.baseUrl || "http://localhost:8006").replace(
+      /\/$/,
+      "",
+    );
+    this.token = options.token || process.env.XAVIER_TOKEN || "";
     this.timeoutMs = options.timeoutMs ?? 30000;
     if (!this.token) {
-      console.warn('[xavier] No XAVIER_TOKEN set. Set the XAVIER_TOKEN environment variable or pass token in options.');
+      console.warn(
+        "[xavier] No XAVIER_TOKEN set. Set the XAVIER_TOKEN environment variable or pass token in options.",
+      );
     }
   }
 
   private getHeaders(): Record<string, string> {
     return {
-      'X-Xavier-Token': this.token,
-      'Content-Type': 'application/json',
+      "X-Xavier-Token": this.token,
+      "Content-Type": "application/json",
     };
   }
 
   /**
    * Fetch wrapper with AbortController timeout.
    */
-  private async fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+  ): Promise<Response> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
@@ -50,7 +58,9 @@ export class XavierClient {
       return response.json();
     }
     if (!response.ok) {
-      throw new Error(`Xavier error: ${response.status} ${response.statusText}`);
+      throw new Error(
+        `Xavier error: ${response.status} ${response.statusText}`,
+      );
     }
     return response.json();
   }
@@ -60,7 +70,7 @@ export class XavierClient {
    */
   async add(payload: AddMemoryRequest): Promise<AddMemoryResponse> {
     const response = await this.fetchWithTimeout(`${this.baseUrl}/memory/add`, {
-      method: 'POST',
+      method: "POST",
       headers: this.getHeaders(),
       body: JSON.stringify(payload),
     });
@@ -70,24 +80,38 @@ export class XavierClient {
   /**
    * Search memory with semantic + lexical hybrid search.
    */
-  async search(query: string, limit = 10, filters?: Record<string, any>): Promise<SearchResponse> {
-    const response = await this.fetchWithTimeout(`${this.baseUrl}/memory/search`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify({ query, limit, filters }),
-    });
+  async search(
+    query: string,
+    limit = 10,
+    filters?: Record<string, any>,
+  ): Promise<SearchResponse> {
+    const response = await this.fetchWithTimeout(
+      `${this.baseUrl}/memory/search`,
+      {
+        method: "POST",
+        headers: this.getHeaders(),
+        body: JSON.stringify({ query, limit, filters }),
+      },
+    );
     return this.handleResponse(response) as Promise<SearchResponse>;
   }
 
   /**
    * Perform multi-layer memory retrieval.
    */
-  async retrieve(query: string, limit = 10, options: Record<string, any> = {}): Promise<RetrieveResponse> {
-    const response = await this.fetchWithTimeout(`${this.baseUrl}/memory/retrieve`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify({ query, limit, ...options }),
-    });
+  async retrieve(
+    query: string,
+    limit = 10,
+    options: Record<string, any> = {},
+  ): Promise<RetrieveResponse> {
+    const response = await this.fetchWithTimeout(
+      `${this.baseUrl}/memory/retrieve`,
+      {
+        method: "POST",
+        headers: this.getHeaders(),
+        body: JSON.stringify({ query, limit, ...options }),
+      },
+    );
     return this.handleResponse(response) as Promise<RetrieveResponse>;
   }
 
@@ -95,25 +119,36 @@ export class XavierClient {
    * Get memory statistics.
    */
   async stats(): Promise<StatsResponse> {
-    const response = await this.fetchWithTimeout(`${this.baseUrl}/memory/stats`, {
-      method: 'GET',
-      headers: this.getHeaders(),
-    });
+    const response = await this.fetchWithTimeout(
+      `${this.baseUrl}/memory/stats`,
+      {
+        method: "GET",
+        headers: this.getHeaders(),
+      },
+    );
     return this.handleResponse(response) as Promise<StatsResponse>;
   }
 
   /**
    * Delete a memory entry by ID or path.
    */
-  async delete(options: { id?: string; path?: string }): Promise<DeleteResponse> {
+  async delete(options: {
+    id?: string;
+    path?: string;
+  }): Promise<DeleteResponse> {
     if (!options.id && !options.path) {
-      throw new Error('Xavier error: Either id or path must be provided for delete.');
+      throw new Error(
+        "Xavier error: Either id or path must be provided for delete.",
+      );
     }
-    const response = await this.fetchWithTimeout(`${this.baseUrl}/memory/delete`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(options),
-    });
+    const response = await this.fetchWithTimeout(
+      `${this.baseUrl}/memory/delete`,
+      {
+        method: "POST",
+        headers: this.getHeaders(),
+        body: JSON.stringify(options),
+      },
+    );
     return this.handleResponse(response) as Promise<DeleteResponse>;
   }
 }

@@ -25,10 +25,13 @@ Use `http://localhost:8003/mcp` with `streamable-http` transport.
 - `list_projects`
 - `get_project_context`
 - `sync_gitcore`
+- `core_memory_append` (MemGPT style Working Memory mutation)
+- `archival_search` (MemGPT style Episodic/Semantic lookup)
 
 ## Working rules
 
-- Search before storing new knowledge.
-- Use stable `path` values and meaningful metadata.
-- Do not store secrets or ephemeral scratch notes.
+- **Search before storing new knowledge:** Always use `search_memory` or `archival_search` to pull past context before assuming something is missing.
+- **Dynamic Context Paging:** You act as a cognitive OS. If your pre-digested context is insufficient, explicitly page in memory using `archival_search`, and explicitly page out/append insights using `core_memory_append` to evolve the state in real-time.
+- **Stable References:** Use stable `path` values and meaningful metadata.
+- **No Ephemera:** Do not store secrets or ephemeral scratch notes. Only store procedural improvements (Harness optimizations) or deep context.
 - If the tool list appears different, inspect `src/server/mcp_server.rs` and update this skill instead of guessing.
