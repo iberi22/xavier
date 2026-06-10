@@ -1,6 +1,6 @@
-import { ReactNode } from "react";
+import { Bot, Database, LayoutDashboard, Settings } from "lucide-react";
+import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, Database, Bot, Settings } from "lucide-react";
 
 interface LayoutProps {
   children: ReactNode;
@@ -19,8 +19,12 @@ export function Layout({ children }: LayoutProps) {
       {/* Sidebar */}
       <aside className="w-full lg:w-64 bg-surface-light dark:bg-surface-dark border-b lg:border-b-0 lg:border-r border-stone-200 dark:border-stone-700 shrink-0">
         <div className="p-4 lg:p-6">
-          <h1 className="text-lg font-bold text-primary-600 dark:text-primary-400 mb-1">Xavier</h1>
-          <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-widest">Dashboard</p>
+          <h1 className="text-lg font-bold text-primary-600 dark:text-primary-400 mb-1">
+            Xavier
+          </h1>
+          <p className="text-xs text-stone-500 dark:text-stone-400 uppercase tracking-widest">
+            Dashboard
+          </p>
         </div>
         <nav className="flex lg:flex-col flex-row overflow-x-auto lg:overflow-x-visible">
           {navItems.map(({ to, icon: Icon, label }) => (

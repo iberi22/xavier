@@ -1,5 +1,5 @@
-import { AnimatePresence, motion } from "motion/react";
 import { AlertTriangle, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 
 export interface SystemAlert {
   id: string;
@@ -15,15 +15,21 @@ interface SystemAlertBannerProps {
   onOpenConfig: () => void;
 }
 
-export default function SystemAlertBanner({ alerts, onDismiss, onOpenConfig }: SystemAlertBannerProps) {
+export default function SystemAlertBanner({
+  alerts,
+  onDismiss,
+  onOpenConfig,
+}: SystemAlertBannerProps) {
   if (alerts.length === 0) return null;
 
   return (
     <div className="absolute top-16 left-0 right-0 z-40 flex flex-col items-center pointer-events-none p-4 space-y-2">
       <AnimatePresence>
         {alerts.map((alert) => {
-          const isEmbeddingError = alert.message.toLowerCase().includes("embedding backend unavailable");
-          
+          const isEmbeddingError = alert.message
+            .toLowerCase()
+            .includes("embedding backend unavailable");
+
           return (
             <motion.div
               key={alert.id}
@@ -42,13 +48,15 @@ export default function SystemAlertBanner({ alerts, onDismiss, onOpenConfig }: S
                 <p className="mt-1 text-sm text-red-200/80 leading-relaxed">
                   {alert.message}
                 </p>
-                
+
                 {isEmbeddingError && (
                   <div className="mt-3 bg-black/40 rounded p-3 text-xs text-red-100">
                     <p className="mb-2">
-                      Fallo en embeddings locales. Configure una API externa en Ajustes, o recompile Xavier activando CUDA/GPU para soportar el modelo local.
+                      Fallo en embeddings locales. Configure una API externa en
+                      Ajustes, o recompile Xavier activando CUDA/GPU para
+                      soportar el modelo local.
                     </p>
-                    <button 
+                    <button
                       onClick={onOpenConfig}
                       className="px-3 py-1.5 bg-red-500/20 hover:bg-red-500/40 border border-red-500/30 rounded transition-colors text-red-100 font-medium"
                     >
@@ -57,7 +65,7 @@ export default function SystemAlertBanner({ alerts, onDismiss, onOpenConfig }: S
                   </div>
                 )}
               </div>
-              <button 
+              <button
                 onClick={() => onDismiss(alert.id)}
                 className="ml-4 flex-shrink-0 text-red-400 hover:text-white transition-colors"
               >

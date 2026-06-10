@@ -9,13 +9,13 @@ pub mod provider;
 pub mod rate_limit;
 pub mod router;
 pub mod runtime;
+pub mod self_harness_coordinator;
 pub mod supervisor;
 pub mod system1;
 pub mod system2;
 pub mod system3;
 pub mod ui_render;
 pub mod unregister_agent_handler;
-pub mod self_harness_coordinator;
 
 use std::collections::HashMap;
 

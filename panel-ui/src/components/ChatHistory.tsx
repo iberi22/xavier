@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { PanelMessage } from '../types';
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useRef, useState } from "react";
+import type { PanelMessage } from "../types";
 
 interface ChatHistoryProps {
   messages: PanelMessage[];
@@ -59,7 +59,10 @@ function StreamingMessageRenderer({
   );
 }
 
-export default function ChatHistory({ messages, streamingMessageId }: ChatHistoryProps) {
+export default function ChatHistory({
+  messages,
+  streamingMessageId,
+}: ChatHistoryProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -76,23 +79,25 @@ export default function ChatHistory({ messages, streamingMessageId }: ChatHistor
         ref={scrollRef}
         className="w-full overflow-y-auto flex flex-col gap-5 pointer-events-auto pb-4 scroll-smooth"
         style={{
-          maskImage: 'linear-gradient(to bottom, transparent, black 15%, black 100%)',
-          WebkitMaskImage: '-webkit-linear-gradient(top, transparent, black 15%, black 100%)',
-          scrollbarWidth: 'none',
-          msOverflowStyle: 'none',
+          maskImage:
+            "linear-gradient(to bottom, transparent, black 15%, black 100%)",
+          WebkitMaskImage:
+            "-webkit-linear-gradient(top, transparent, black 15%, black 100%)",
+          scrollbarWidth: "none",
+          msOverflowStyle: "none",
         }}
       >
         <AnimatePresence>
           {messages.map((msg) => (
             <motion.div
               key={msg.id}
-              initial={{ opacity: 0, y: 12, filter: 'blur(4px)' }}
-              animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+              initial={{ opacity: 0, y: 12, filter: "blur(4px)" }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
               transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
-              className={`flex w-full gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
+              className={`flex w-full gap-3 ${msg.role === "user" ? "flex-row-reverse" : "flex-row"}`}
             >
               {/* Avatar */}
-              {msg.role === 'assistant' ? (
+              {msg.role === "assistant" ? (
                 <div className="flex-shrink-0 w-7 h-7 rounded-full bg-[#39ff14]/10 border border-[#39ff14]/20 flex items-center justify-center mt-1">
                   <div className="w-1.5 h-1.5 rounded-full bg-[#39ff14] msg-active-dot" />
                 </div>
@@ -103,39 +108,54 @@ export default function ChatHistory({ messages, streamingMessageId }: ChatHistor
               )}
 
               {/* Bubble */}
-              <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+              <div
+                className={`flex flex-col max-w-[85%] ${msg.role === "user" ? "items-end" : "items-start"}`}
+              >
                 <div
                   className={`px-4 py-3 rounded-2xl backdrop-blur-md ${
-                    msg.role === 'user'
-                      ? 'bg-white/[0.05] border border-white/[0.07] text-white/80 shadow-sm rounded-tr-sm'
-                      : 'bg-[#39ff14]/[0.025] border border-[#39ff14]/[0.09] text-[#39ff14] neon-glow-subtle w-full rounded-tl-sm'
+                    msg.role === "user"
+                      ? "bg-white/[0.05] border border-white/[0.07] text-white/80 shadow-sm rounded-tr-sm"
+                      : "bg-[#39ff14]/[0.025] border border-[#39ff14]/[0.09] text-[#39ff14] neon-glow-subtle w-full rounded-tl-sm"
                   }`}
                 >
-                  {msg.role === 'assistant' && (
+                  {msg.role === "assistant" && (
                     <div className="flex items-center justify-between mb-2.5 border-b border-[#39ff14]/[0.08] pb-2">
                       <div className="flex items-center gap-2 opacity-50">
-                        <span className="text-[9px] uppercase tracking-[0.15em] font-bold">Xavier Agent</span>
-                        <span className="text-[9px] opacity-60">{new Date(msg.created_at).toLocaleTimeString()}</span>
+                        <span className="text-[9px] uppercase tracking-[0.15em] font-bold">
+                          Xavier Agent
+                        </span>
+                        <span className="text-[9px] opacity-60">
+                          {new Date(msg.created_at).toLocaleTimeString()}
+                        </span>
                       </div>
                       {msg.metadata && (
                         <div className="flex gap-3 text-[9px] uppercase tracking-widest font-mono opacity-40">
-                          <span>Conf: {formatConfidence(msg.metadata.confidence)}</span>
+                          <span>
+                            Conf: {formatConfidence(msg.metadata.confidence)}
+                          </span>
                           <span>Docs: {msg.metadata.documents ?? 0}</span>
-                          <span>Lat: {msg.metadata.timings?.total_ms ?? 0}ms</span>
+                          <span>
+                            Lat: {msg.metadata.timings?.total_ms ?? 0}ms
+                          </span>
                         </div>
                       )}
                     </div>
                   )}
 
-                  {msg.role === 'assistant' ? (
-                    <StreamingMessageRenderer message={msg} isStreamingActive={msg.id === streamingMessageId} />
+                  {msg.role === "assistant" ? (
+                    <StreamingMessageRenderer
+                      message={msg}
+                      isStreamingActive={msg.id === streamingMessageId}
+                    />
                   ) : (
-                    <p className="text-sm leading-relaxed font-sans">{msg.plain_text}</p>
+                    <p className="text-sm leading-relaxed font-sans">
+                      {msg.plain_text}
+                    </p>
                   )}
                 </div>
 
                 {/* Timestamp below bubble for user messages */}
-                {msg.role === 'user' && (
+                {msg.role === "user" && (
                   <span className="text-[9px] text-white/20 mt-1 mr-1">
                     {new Date(msg.created_at).toLocaleTimeString()}
                   </span>

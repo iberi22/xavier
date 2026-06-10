@@ -54,7 +54,11 @@ export function useApi() {
   }, []);
 
   const searchMemories = useCallback(
-    async (query: string, kind?: string, limit = 20): Promise<MemoryEntry[]> => {
+    async (
+      query: string,
+      kind?: string,
+      limit = 20,
+    ): Promise<MemoryEntry[]> => {
       const params = new URLSearchParams({ q: query, limit: String(limit) });
       if (kind) params.set("kind", kind);
       return api<MemoryEntry[]>(`/memory/search?${params}`);
@@ -67,7 +71,12 @@ export function useApi() {
   }, []);
 
   const addMemory = useCallback(
-    async (content: string, kind = "note", priority = "medium", source = "web") => {
+    async (
+      content: string,
+      kind = "note",
+      priority = "medium",
+      source = "web",
+    ) => {
       return api<MemoryEntry>("/memory/add", {
         method: "POST",
         body: JSON.stringify({ content, kind, priority, source }),

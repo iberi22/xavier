@@ -10,7 +10,7 @@ impl MemoryManager {
     /// Compress large memories semantically using an LLM to generate a dense summary.
     pub async fn compact_semantically(&self) -> Result<ManagementResult> {
         use crate::agents::provider::ModelProviderClient;
-        
+
         let docs = self.memory.all_documents().await;
         let threshold = self.config.compression_threshold_bytes;
         let mut actions = Vec::new();
@@ -29,11 +29,16 @@ impl MemoryManager {
                 };
 
                 // Skip critical priority
-                if super::types::MemoryPriority::from_metadata(&doc.metadata) == super::types::MemoryPriority::Critical {
+                if super::types::MemoryPriority::from_metadata(&doc.metadata)
+                    == super::types::MemoryPriority::Critical
+                {
                     continue;
                 }
 
-                info!("Semantically compacting memory {} (size: {} bytes)", doc_id, size);
+                info!(
+                    "Semantically compacting memory {} (size: {} bytes)",
+                    doc_id, size
+                );
 
                 let prompt = format!(
                     "You are an expert cognitive archivist. The following memory document is too large and needs to be semantically compacted.\n\

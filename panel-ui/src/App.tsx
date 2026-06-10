@@ -5,9 +5,9 @@ import ChatHistory from "./components/ChatHistory";
 import ConfigModal from "./components/ConfigModal";
 import DraggableWidget from "./components/DraggableWidget";
 import InputArea from "./components/InputArea";
+import { OnboardingFlow } from "./components/Onboarding/OnboardingFlow";
 import ParticleBackground from "./components/ParticleBackground";
 import TopStatusBar from "./components/TopStatusBar";
-import { OnboardingFlow } from "./components/Onboarding/OnboardingFlow";
 import { initialBookmarks, initialGraphData } from "./data";
 
 import type {
@@ -50,7 +50,9 @@ export default function App() {
 
   const [isConfigOpen, setIsConfigOpen] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(
-    () => typeof window !== "undefined" && !localStorage.getItem("xavier_onboarding_completed")
+    () =>
+      typeof window !== "undefined" &&
+      !localStorage.getItem("xavier_onboarding_completed"),
   );
 
   const api = useCallback(
@@ -204,7 +206,7 @@ export default function App() {
       plain_text: draft,
       created_at: new Date().toISOString(),
     };
-    
+
     if (!hasConfig) {
       setMessages((prev) => [
         ...prev,
@@ -212,9 +214,10 @@ export default function App() {
         {
           id: tempId + "_sys",
           role: "assistant",
-          plain_text: "⚠️ Sistema no configurado: No se detectaron proveedores de IA. Por favor, abre los ajustes y configura tu API Key de OpenAI o Gemini.",
+          plain_text:
+            "⚠️ Sistema no configurado: No se detectaron proveedores de IA. Por favor, abre los ajustes y configura tu API Key de OpenAI o Gemini.",
           created_at: new Date().toISOString(),
-        }
+        },
       ]);
       return;
     }
@@ -271,12 +274,15 @@ export default function App() {
   }
 
   const handleSystemMessage = (text: string) => {
-    setMessages((prev) => [...prev, {
-      id: Date.now().toString() + "_sys",
-      role: "assistant",
-      plain_text: text,
-      created_at: new Date().toISOString()
-    }]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString() + "_sys",
+        role: "assistant",
+        plain_text: text,
+        created_at: new Date().toISOString(),
+      },
+    ]);
   };
 
   const handleUpdateBookmark = (_updated: BookmarkArtifact) => {

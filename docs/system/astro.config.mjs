@@ -1,19 +1,19 @@
-import { defineConfig } from 'astro/config';
-import svelte from '@astrojs/svelte';
-import node from '@astrojs/node';
+import node from "@astrojs/node";
+import svelte from "@astrojs/svelte";
+import { defineConfig } from "astro/config";
 
 export default defineConfig({
   integrations: [svelte()],
-  output: 'static',
+  output: "static",
   adapter: node({
-    mode: 'standalone'
+    mode: "standalone",
   }),
   build: {
-    format: 'file'
+    format: "file",
   },
   vite: {
     ssr: {
-      noExternal: ['flexsearch']
-    }
-  }
+      noExternal: ["flexsearch"],
+    },
+  },
 });

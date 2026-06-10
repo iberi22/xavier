@@ -38,7 +38,7 @@ path = "src/lib.rs"
 members = ["code-graph", "panel-ui/src-tauri"]
 
 [features]
-default = ["cli-interactive"]
+default = ["cli-interactive", "local-gllm"]
 cli-interactive = ["ratatui", "crossterm"]
 # All features that are safe to run on host CI (no GUI/Winit issues)
 ci-safe = []

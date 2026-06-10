@@ -10,19 +10,18 @@
   "scripts": {
     "release": "standard-version",
     "workflow": "powershell ./scripts/workflow.ps1",
-    "install:all": "npm install --workspaces",
-    "build": "npm run build --workspace panel-ui && npm run build --workspace docs/site",
-    "build:panel": "npm run build --workspace panel-ui",
-    "build:docs": "npm run build --workspace docs/site",
-    "lint": "eslint src/"
+    "install:all": "pnpm install",
+    "build": "pnpm --filter panel-ui build && pnpm --filter docs/site build",
+    "build:panel": "pnpm --filter panel-ui build",
+    "build:docs": "pnpm --filter docs/site build",
+    "lint": "biome check ."
   },
   "engines": {
     "node": ">=22.12.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.0.5",
     "cron-validator": "^1.4.0",
-    "eslint": "^10.1.0",
-    "eslint-config-prettier": "^10.1.8",
     "js-yaml": "^4.2.0",
     "standard-version": "^9.5.0"
   }

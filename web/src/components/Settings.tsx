@@ -1,11 +1,13 @@
+import { Bell, CreditCard, Eye, EyeOff, Globe, Key, Moon } from "lucide-react";
 import { useState } from "react";
-import { Key, Bell, Moon, Globe, CreditCard, Eye, EyeOff } from "lucide-react";
 
 export function Settings() {
   const [darkMode, setDarkMode] = useState(() =>
     document.documentElement.classList.contains("dark"),
   );
-  const [apiKeys, setApiKeys] = useState<{ key: string; value: string; show: boolean }[]>([
+  const [apiKeys, setApiKeys] = useState<
+    { key: string; value: string; show: boolean }[]
+  >([
     { key: "OpenAI", value: "", show: false },
     { key: "Anthropic", value: "", show: false },
     { key: "Tavily", value: "", show: false },
@@ -19,7 +21,9 @@ export function Settings() {
 
   const toggleShow = (i: number) => {
     setApiKeys((prev) =>
-      prev.map((item, idx) => (idx === i ? { ...item, show: !item.show } : item)),
+      prev.map((item, idx) =>
+        idx === i ? { ...item, show: !item.show } : item,
+      ),
     );
   };
 
@@ -33,8 +37,12 @@ export function Settings() {
   return (
     <div className="space-y-8 max-w-2xl">
       <div>
-        <h1 className="text-2xl font-bold text-stone-900 dark:text-stone-100">Settings</h1>
-        <p className="text-stone-500 text-sm mt-1">Configure your Xavier dashboard</p>
+        <h1 className="text-2xl font-bold text-stone-900 dark:text-stone-100">
+          Settings
+        </h1>
+        <p className="text-stone-500 text-sm mt-1">
+          Configure your Xavier dashboard
+        </p>
       </div>
 
       {/* API Keys */}
@@ -44,7 +52,9 @@ export function Settings() {
             <Key size={18} />
           </div>
           <div>
-            <h2 className="font-semibold text-stone-900 dark:text-stone-100">API Keys</h2>
+            <h2 className="font-semibold text-stone-900 dark:text-stone-100">
+              API Keys
+            </h2>
             <p className="text-sm text-stone-500 dark:text-stone-400">
               Manage your external API keys
             </p>
@@ -63,7 +73,9 @@ export function Settings() {
                   value={item.value}
                   onChange={(e) =>
                     setApiKeys((prev) =>
-                      prev.map((x, idx) => (idx === i ? { ...x, value: e.target.value } : x)),
+                      prev.map((x, idx) =>
+                        idx === i ? { ...x, value: e.target.value } : x,
+                      ),
                     )
                   }
                   placeholder={`Your ${item.key} API key`}
@@ -102,7 +114,9 @@ export function Settings() {
             <CreditCard size={18} />
           </div>
           <div>
-            <h2 className="font-semibold text-stone-900 dark:text-stone-100">Plan & Billing</h2>
+            <h2 className="font-semibold text-stone-900 dark:text-stone-100">
+              Plan & Billing
+            </h2>
             <p className="text-sm text-stone-500 dark:text-stone-400">
               Current plan and usage information
             </p>
@@ -110,16 +124,28 @@ export function Settings() {
         </div>
         <div className="space-y-3">
           <div className="flex items-center justify-between py-2 border-b border-stone-100 dark:border-stone-700">
-            <span className="text-sm text-stone-600 dark:text-stone-300">Current Plan</span>
-            <span className="text-sm font-medium text-stone-900 dark:text-stone-100">Pro</span>
+            <span className="text-sm text-stone-600 dark:text-stone-300">
+              Current Plan
+            </span>
+            <span className="text-sm font-medium text-stone-900 dark:text-stone-100">
+              Pro
+            </span>
           </div>
           <div className="flex items-center justify-between py-2 border-b border-stone-100 dark:border-stone-700">
-            <span className="text-sm text-stone-600 dark:text-stone-300">Memory Used</span>
-            <span className="text-sm font-medium text-stone-900 dark:text-stone-100">—</span>
+            <span className="text-sm text-stone-600 dark:text-stone-300">
+              Memory Used
+            </span>
+            <span className="text-sm font-medium text-stone-900 dark:text-stone-100">
+              —
+            </span>
           </div>
           <div className="flex items-center justify-between py-2">
-            <span className="text-sm text-stone-600 dark:text-stone-300">Active Agents</span>
-            <span className="text-sm font-medium text-stone-900 dark:text-stone-100">—</span>
+            <span className="text-sm text-stone-600 dark:text-stone-300">
+              Active Agents
+            </span>
+            <span className="text-sm font-medium text-stone-900 dark:text-stone-100">
+              —
+            </span>
           </div>
         </div>
       </section>
@@ -131,8 +157,12 @@ export function Settings() {
             <Globe size={18} />
           </div>
           <div>
-            <h2 className="font-semibold text-stone-900 dark:text-stone-100">Preferences</h2>
-            <p className="text-sm text-stone-500 dark:text-stone-400">Customize your experience</p>
+            <h2 className="font-semibold text-stone-900 dark:text-stone-100">
+              Preferences
+            </h2>
+            <p className="text-sm text-stone-500 dark:text-stone-400">
+              Customize your experience
+            </p>
           </div>
         </div>
 
@@ -141,7 +171,9 @@ export function Settings() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Moon size={16} className="text-stone-400" />
-              <span className="text-sm text-stone-700 dark:text-stone-200">Dark Mode</span>
+              <span className="text-sm text-stone-700 dark:text-stone-200">
+                Dark Mode
+              </span>
             </div>
             <button
               onClick={toggleDarkMode}
@@ -161,7 +193,9 @@ export function Settings() {
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <Bell size={16} className="text-stone-400" />
-              <span className="text-sm text-stone-700 dark:text-stone-200">Notifications</span>
+              <span className="text-sm text-stone-700 dark:text-stone-200">
+                Notifications
+              </span>
             </div>
             <button className="relative w-11 h-6 rounded-full bg-stone-300 dark:bg-stone-600">
               <span className="absolute top-1 left-1 w-4 h-4 bg-white rounded-full" />

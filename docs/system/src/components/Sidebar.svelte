@@ -1,34 +1,34 @@
 <script>
-  const sections = [
-    {
-      title: 'Getting Started',
-      items: [
-        { title: 'Introduction', path: '/doc/intro' },
-        { title: 'Quick Start', path: '/doc/quickstart' },
-      ]
-    },
-    {
-      title: 'Core',
-      items: [
-        { title: 'Architecture', path: '/doc/architecture' },
-        { title: 'SRC Reference', path: '/doc/src' },
-      ]
-    },
-    {
-      title: 'Administration',
-      items: [
-        { title: 'Project Admin', path: '/doc/project-admin' },
-        { title: 'Features', path: '/doc/features' },
-      ]
-    },
-    {
-      title: 'Agents',
-      items: [
-        { title: 'Agent Index', path: '/doc/agent-index' },
-        { title: 'CLI Config', path: '/doc/cli-config' },
-      ]
-    }
-  ];
+const sections = [
+  {
+    title: "Getting Started",
+    items: [
+      { title: "Introduction", path: "/doc/intro" },
+      { title: "Quick Start", path: "/doc/quickstart" },
+    ],
+  },
+  {
+    title: "Core",
+    items: [
+      { title: "Architecture", path: "/doc/architecture" },
+      { title: "SRC Reference", path: "/doc/src" },
+    ],
+  },
+  {
+    title: "Administration",
+    items: [
+      { title: "Project Admin", path: "/doc/project-admin" },
+      { title: "Features", path: "/doc/features" },
+    ],
+  },
+  {
+    title: "Agents",
+    items: [
+      { title: "Agent Index", path: "/doc/agent-index" },
+      { title: "CLI Config", path: "/doc/cli-config" },
+    ],
+  },
+];
 </script>
 
 <nav class="sidebar">

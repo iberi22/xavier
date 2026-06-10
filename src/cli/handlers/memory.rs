@@ -779,6 +779,7 @@ pub async fn export_handler(
     }
 }
 
+#[allow(clippy::result_large_err)]
 pub(crate) fn check_cli_token(headers: &HeaderMap) -> Result<(), Response> {
     let expected_token = match resolve_http_token() {
         Ok(token) => token,
@@ -802,31 +803,39 @@ pub(crate) fn check_cli_token(headers: &HeaderMap) -> Result<(), Response> {
     }
 }
 
-pub async fn decay_handler(
-    State(state): State<CliState>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn decay_handler(State(state): State<CliState>, headers: HeaderMap) -> Response {
     if let Err(r) = check_cli_token(&headers) {
         return r;
     }
-    let manager = xavier::memory::manager::core::MemoryManager::new(Arc::clone(&state.qmd_memory), None);
+    let manager =
+        xavier::memory::manager::core::MemoryManager::new(Arc::clone(&state.qmd_memory), None);
     match manager.decay_memories().await {
-        Ok(res) => json_response(StatusCode::OK, serde_json::json!({ "status": "ok", "documents_affected": res.documents_affected })),
-        Err(e) => json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({ "status": "error", "message": e.to_string() })),
+        Ok(res) => json_response(
+            StatusCode::OK,
+            serde_json::json!({ "status": "ok", "documents_affected": res.documents_affected }),
+        ),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "status": "error", "message": e.to_string() }),
+        ),
     }
 }
 
-pub async fn consolidate_handler(
-    State(state): State<CliState>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn consolidate_handler(State(state): State<CliState>, headers: HeaderMap) -> Response {
     if let Err(r) = check_cli_token(&headers) {
         return r;
     }
-    let manager = xavier::memory::manager::core::MemoryManager::new(Arc::clone(&state.qmd_memory), None);
+    let manager =
+        xavier::memory::manager::core::MemoryManager::new(Arc::clone(&state.qmd_memory), None);
     match manager.consolidate_memories().await {
-        Ok(res) => json_response(StatusCode::OK, serde_json::json!({ "status": "ok", "documents_affected": res.documents_affected, "bytes_freed": res.bytes_freed })),
-        Err(e) => json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({ "status": "error", "message": e.to_string() })),
+        Ok(res) => json_response(
+            StatusCode::OK,
+            serde_json::json!({ "status": "ok", "documents_affected": res.documents_affected, "bytes_freed": res.bytes_freed }),
+        ),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "status": "error", "message": e.to_string() }),
+        ),
     }
 }
 
@@ -838,8 +847,9 @@ pub async fn evict_handler(
     if let Err(r) = check_cli_token(&headers) {
         return r;
     }
-    let mut manager = xavier::memory::manager::core::MemoryManager::new(Arc::clone(&state.qmd_memory), None);
-    
+    let mut manager =
+        xavier::memory::manager::core::MemoryManager::new(Arc::clone(&state.qmd_memory), None);
+
     let result = if let Some(priority_str) = &payload.priority {
         let p = match priority_str.as_str() {
             "critical" => xavier::memory::manager::types::MemoryPriority::Critical,
@@ -860,33 +870,48 @@ pub async fn evict_handler(
     };
 
     match result {
-        Ok(res) => json_response(StatusCode::OK, serde_json::json!({ "status": "ok", "documents_affected": res.documents_affected, "bytes_freed": res.bytes_freed })),
-        Err(e) => json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({ "status": "error", "message": e.to_string() })),
+        Ok(res) => json_response(
+            StatusCode::OK,
+            serde_json::json!({ "status": "ok", "documents_affected": res.documents_affected, "bytes_freed": res.bytes_freed }),
+        ),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "status": "error", "message": e.to_string() }),
+        ),
     }
 }
 
-pub async fn manage_handler(
-    State(state): State<CliState>,
-    headers: HeaderMap,
-) -> Response {
+pub async fn manage_handler(State(state): State<CliState>, headers: HeaderMap) -> Response {
     if let Err(r) = check_cli_token(&headers) {
         return r;
     }
-    let manager = xavier::memory::manager::core::MemoryManager::new(Arc::clone(&state.qmd_memory), None);
-    
+    let manager =
+        xavier::memory::manager::core::MemoryManager::new(Arc::clone(&state.qmd_memory), None);
+
     let mut total_affected = 0;
     let mut total_freed = 0;
 
-    if let Ok(res) = manager.decay_memories().await { total_affected += res.documents_affected; }
-    if let Ok(res) = manager.consolidate_memories().await { total_affected += res.documents_affected; total_freed += res.bytes_freed; }
-    if let Ok(res) = manager.evict_low_quality().await { total_affected += res.documents_affected; total_freed += res.bytes_freed; }
-    
-    json_response(StatusCode::OK, serde_json::json!({
-        "status": "ok",
-        "message": "Auto-management cycle complete",
-        "documents_affected": total_affected,
-        "bytes_freed": total_freed
-    }))
+    if let Ok(res) = manager.decay_memories().await {
+        total_affected += res.documents_affected;
+    }
+    if let Ok(res) = manager.consolidate_memories().await {
+        total_affected += res.documents_affected;
+        total_freed += res.bytes_freed;
+    }
+    if let Ok(res) = manager.evict_low_quality().await {
+        total_affected += res.documents_affected;
+        total_freed += res.bytes_freed;
+    }
+
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "status": "ok",
+            "message": "Auto-management cycle complete",
+            "documents_affected": total_affected,
+            "bytes_freed": total_freed
+        }),
+    )
 }
 
 pub async fn timeline_query_handler(
@@ -897,9 +922,9 @@ pub async fn timeline_query_handler(
     if let Err(r) = check_cli_token(&headers) {
         return r;
     }
-    
+
     let engine = xavier::context::timeline::TimelineEngine::new(Arc::clone(&state.qmd_memory));
-    
+
     let query = xavier::context::timeline::TimelineQuery {
         query: payload.query.clone(),
         start_date: payload.start_date,
@@ -909,18 +934,24 @@ pub async fn timeline_query_handler(
     };
 
     match engine.get_time_slice(&query).await {
-        Ok(slice) => json_response(StatusCode::OK, serde_json::json!({
-            "status": "ok",
-            "period_start": slice.period_start,
-            "period_end": slice.period_end,
-            "memories_count": slice.memories.len(),
-            "memories": slice.memories,
-            "events_count": slice.timeline_events.len(),
-            "timeline_events": slice.timeline_events
-        })),
-        Err(e) => json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({
-            "status": "error",
-            "message": e.to_string()
-        })),
+        Ok(slice) => json_response(
+            StatusCode::OK,
+            serde_json::json!({
+                "status": "ok",
+                "period_start": slice.period_start,
+                "period_end": slice.period_end,
+                "memories_count": slice.memories.len(),
+                "memories": slice.memories,
+                "events_count": slice.timeline_events.len(),
+                "timeline_events": slice.timeline_events
+            }),
+        ),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({
+                "status": "error",
+                "message": e.to_string()
+            }),
+        ),
     }
 }

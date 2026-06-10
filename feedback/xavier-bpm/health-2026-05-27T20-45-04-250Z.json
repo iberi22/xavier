@@ -6,10 +6,7 @@
     "xavier2_port_8006": "DOWN",
     "reason": "Server not listening - likely not started",
     "node_processes": {
-      "pids": [
-        4380,
-        15464
-      ]
+      "pids": [4380, 15464]
     },
     "listening_ports": [
       "22",

@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 
 export interface IconStatProps {
   icon: string;
@@ -7,12 +7,17 @@ export interface IconStatProps {
   color?: string;
 }
 
-export function IconStat({ icon, value, label, color = '#6366f1' }: IconStatProps) {
+export function IconStat({
+  icon,
+  value,
+  label,
+  color = "#6366f1",
+}: IconStatProps) {
   return (
     <div className="bg-bg-3 rounded-lg p-3.5 flex items-center gap-3">
       <div
         className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
-        style={{ background: color + '30' }}
+        style={{ background: color + "30" }}
       >
         {icon}
       </div>

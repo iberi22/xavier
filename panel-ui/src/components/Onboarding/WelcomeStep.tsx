@@ -1,4 +1,4 @@
-import { Terminal, Shield, Cpu } from 'lucide-react';
+import { Cpu, Shield, Terminal } from "lucide-react";
 
 export function WelcomeStep({ onNext }: { onNext: () => void }) {
   return (
@@ -17,14 +17,21 @@ export function WelcomeStep({ onNext }: { onNext: () => void }) {
           <Shield className="w-6 h-6 text-emerald-400 mt-1" />
           <div>
             <h3 className="font-semibold text-emerald-300">Local Privacy</h3>
-            <p className="text-sm text-neutral-400">Your data never leaves this machine unless explicitly requested.</p>
+            <p className="text-sm text-neutral-400">
+              Your data never leaves this machine unless explicitly requested.
+            </p>
           </div>
         </div>
         <div className="flex items-start gap-4 p-4 rounded bg-neutral-950/50 border border-emerald-900/30">
           <Cpu className="w-6 h-6 text-emerald-400 mt-1" />
           <div>
-            <h3 className="font-semibold text-emerald-300">Auto-Optimization</h3>
-            <p className="text-sm text-neutral-400">Xavier will now scan your system to optimize neural models and detect sibling nodes (OpenClaw, Hermes).</p>
+            <h3 className="font-semibold text-emerald-300">
+              Auto-Optimization
+            </h3>
+            <p className="text-sm text-neutral-400">
+              Xavier will now scan your system to optimize neural models and
+              detect sibling nodes (OpenClaw, Hermes).
+            </p>
           </div>
         </div>
       </div>

@@ -31,7 +31,7 @@
 }
 
 /* Dark theme overrides */
-:root[data-theme='dark'] {
+:root[data-theme="dark"] {
   --sl-color-accent-low: #312e81;
   --sl-color-accent: #818cf8;
   --sl-color-accent-high: #a5b4fc;
@@ -70,11 +70,17 @@
 
 /* Module cards */
 .module-card {
-  background: linear-gradient(135deg, var(--sl-color-gray-6) 0%, var(--sl-color-gray-5) 100%);
+  background: linear-gradient(
+    135deg,
+    var(--sl-color-gray-6) 0%,
+    var(--sl-color-gray-5) 100%
+  );
   border: 1px solid var(--sl-color-gray-4);
   border-radius: 12px;
   padding: 1.5rem;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
 }
 
 .module-card:hover {
@@ -118,6 +124,9 @@ pre {
 }
 
 /* Smooth transitions */
-a, button {
-  transition: color 0.15s, background-color 0.15s;
+a,
+button {
+  transition:
+    color 0.15s,
+    background-color 0.15s;
 }

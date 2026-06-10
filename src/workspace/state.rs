@@ -186,9 +186,9 @@ impl WorkspaceState {
             usage_metrics: UsageMetrics::new(),
             optimization_metrics: OptimizationMetrics::new(),
         };
-        
+
         crate::scheduler::daemon::MemoryDaemon::new(Arc::clone(&state.memory_manager)).spawn();
-        
+
         state.load_usage_state().await?;
         Ok(state)
     }

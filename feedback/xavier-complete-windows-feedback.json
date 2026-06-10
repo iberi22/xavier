@@ -16,8 +16,14 @@
     "features": ["cli-interactive"],
     "features_excluded": ["local-gllm", "enterprise"],
     "dll_dependencies": [
-      "KERNEL32.dll", "msvcrt.dll", "ADVAPI32.dll", "USER32.dll",
-      "ws2_32.dll", "bcrypt.dll", "crypt32.dll", "ole32.dll"
+      "KERNEL32.dll",
+      "msvcrt.dll",
+      "ADVAPI32.dll",
+      "USER32.dll",
+      "ws2_32.dll",
+      "bcrypt.dll",
+      "crypt32.dll",
+      "ole32.dll"
     ],
     "msys2_dlls_required": false
   },
@@ -27,19 +33,71 @@
     "passed": 13,
     "failed": 0,
     "details": [
-      { "name": "Health endpoint", "status": "PASS", "notes": "Returns {status:ok, version:1.0.0}" },
-      { "name": "Memory add", "status": "PASS", "notes": "Creates memory entries with IDs" },
-      { "name": "Memory search", "status": "PASS", "notes": "Semantic search works with embeddings" },
-      { "name": "Memory retrieve by path", "status": "PASS", "notes": "Finds content by semantic query" },
-      { "name": "Memory with metadata", "status": "PASS", "notes": "Rich metadata storage works" },
-      { "name": "Search by metadata concept", "status": "PASS", "notes": "Finds entries by metadata keywords" },
-      { "name": "Memory path hierarchy", "status": "PASS", "notes": "Hierarchical paths work" },
-      { "name": "Security scan endpoint", "status": "PASS", "notes": "Detects attacks, allows clean input" },
-      { "name": "Memory delete (verify)", "status": "PASS", "notes": "Entries can be found after creation" },
-      { "name": "Session context", "status": "PASS", "notes": "Session metadata storage works" },
-      { "name": "Bulk operations", "status": "PASS", "notes": "Multiple entries created and found" },
-      { "name": "Search ranking relevance", "status": "PASS", "notes": "Relevant results rank first" },
-      { "name": "Auto-save verify cycle", "status": "PASS", "notes": "SAVE-RETRIEVE-VERIFY cycle works" }
+      {
+        "name": "Health endpoint",
+        "status": "PASS",
+        "notes": "Returns {status:ok, version:1.0.0}"
+      },
+      {
+        "name": "Memory add",
+        "status": "PASS",
+        "notes": "Creates memory entries with IDs"
+      },
+      {
+        "name": "Memory search",
+        "status": "PASS",
+        "notes": "Semantic search works with embeddings"
+      },
+      {
+        "name": "Memory retrieve by path",
+        "status": "PASS",
+        "notes": "Finds content by semantic query"
+      },
+      {
+        "name": "Memory with metadata",
+        "status": "PASS",
+        "notes": "Rich metadata storage works"
+      },
+      {
+        "name": "Search by metadata concept",
+        "status": "PASS",
+        "notes": "Finds entries by metadata keywords"
+      },
+      {
+        "name": "Memory path hierarchy",
+        "status": "PASS",
+        "notes": "Hierarchical paths work"
+      },
+      {
+        "name": "Security scan endpoint",
+        "status": "PASS",
+        "notes": "Detects attacks, allows clean input"
+      },
+      {
+        "name": "Memory delete (verify)",
+        "status": "PASS",
+        "notes": "Entries can be found after creation"
+      },
+      {
+        "name": "Session context",
+        "status": "PASS",
+        "notes": "Session metadata storage works"
+      },
+      {
+        "name": "Bulk operations",
+        "status": "PASS",
+        "notes": "Multiple entries created and found"
+      },
+      {
+        "name": "Search ranking relevance",
+        "status": "PASS",
+        "notes": "Relevant results rank first"
+      },
+      {
+        "name": "Auto-save verify cycle",
+        "status": "PASS",
+        "notes": "SAVE-RETRIEVE-VERIFY cycle works"
+      }
     ]
   },
 

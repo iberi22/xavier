@@ -1,17 +1,17 @@
-import { vi } from 'vitest';
+import { vi } from "vitest";
 
-vi.mock('@openuidev/react-ui', () => ({
+vi.mock("@openuidev/react-ui", () => ({
   createTheme: vi.fn(() => ({})),
   designTokens: {
     color: {
-      info: '#3B82F6',
-      success: '#19C37D',
-      muted: '#5D584B',
-    }
-  }
+      info: "#3B82F6",
+      success: "#19C37D",
+      muted: "#5D584B",
+    },
+  },
 }));
 
-vi.mock('../src/theme', () => ({
+vi.mock("../src/theme", () => ({
   designTokens: {
     color: {
       bg: "#F6F3EA",
@@ -26,7 +26,7 @@ vi.mock('../src/theme', () => ({
       success: "#19C37D",
       muted: "#5D584B",
     },
-  }
+  },
 }));
 
-import '@testing-library/jest-dom';
+import "@testing-library/jest-dom";

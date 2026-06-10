@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 
 export interface PipelineStage {
   name: string;
@@ -12,10 +12,10 @@ export interface PipelineProps {
 
 export function Pipeline({ stages }: PipelineProps) {
   const defaultStages: PipelineStage[] = [
-    { name: 'Lead', count: 120, color: '#3b82f6' },
-    { name: 'Qualified', count: 80, color: '#eab308' },
-    { name: 'Proposal', count: 40, color: '#f97316' },
-    { name: 'Closed', count: 20, color: '#22c55e' },
+    { name: "Lead", count: 120, color: "#3b82f6" },
+    { name: "Qualified", count: 80, color: "#eab308" },
+    { name: "Proposal", count: 40, color: "#f97316" },
+    { name: "Closed", count: 20, color: "#22c55e" },
   ];
 
   const pipelineStages = stages || defaultStages;
@@ -35,7 +35,10 @@ export function Pipeline({ stages }: PipelineProps) {
             </div>
           </div>
           {i < pipelineStages.length - 1 && (
-            <div className="w-0.5 h-3.5 bg-border ml-1.25 my-0.5" style={{ background: '#3f3f46' }} />
+            <div
+              className="w-0.5 h-3.5 bg-border ml-1.25 my-0.5"
+              style={{ background: "#3f3f46" }}
+            />
           )}
         </div>
       ))}

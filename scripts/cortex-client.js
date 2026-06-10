@@ -16,15 +16,23 @@
  */
 
 function getRequiredXavierToken() {
-  const token = process.env.XAVIER_TOKEN || process.env.XAVIER_API_KEY || process.env.XAVIER_TOKEN;
+  const token =
+    process.env.XAVIER_TOKEN ||
+    process.env.XAVIER_API_KEY ||
+    process.env.XAVIER_TOKEN;
   if (!token) {
-    throw new Error('Missing Xavier token. Set XAVIER_TOKEN, XAVIER_API_KEY, or XAVIER_TOKEN.');
+    throw new Error(
+      "Missing Xavier token. Set XAVIER_TOKEN, XAVIER_API_KEY, or XAVIER_TOKEN.",
+    );
   }
   return token;
 }
 
 class XavierClient {
-  constructor(baseUrl = 'http://localhost:8006', token = getRequiredXavierToken()) {
+  constructor(
+    baseUrl = "http://localhost:8006",
+    token = getRequiredXavierToken(),
+  ) {
     this.baseUrl = baseUrl;
     this.token = token;
   }
@@ -33,9 +41,9 @@ class XavierClient {
     const options = {
       method,
       headers: {
-        'Content-Type': 'application/json',
-        'X-Xavier-Token': this.token
-      }
+        "Content-Type": "application/json",
+        "X-Xavier-Token": this.token,
+      },
     };
     if (body) options.body = JSON.stringify(body);
 
@@ -49,42 +57,49 @@ class XavierClient {
 
   /** Health check */
   async health() {
-    return this._request('GET', '/health');
+    return this._request("GET", "/health");
   }
 
   /** Search memories */
-  async search({ query, limit = 5, workspace_id = 'default' }) {
-    return this._request('POST', '/memory/search', { query, limit, workspace_id });
+  async search({ query, limit = 5, workspace_id = "default" }) {
+    return this._request("POST", "/memory/search", {
+      query,
+      limit,
+      workspace_id,
+    });
   }
 
   /** Add memory */
   async add({ content, metadata = {} }) {
-    return this._request('POST', '/memory/add', { content, metadata });
+    return this._request("POST", "/memory/add", { content, metadata });
   }
 
   /** Get memory stats */
   async stats() {
-    return this._request('GET', '/memory/stats');
+    return this._request("GET", "/memory/stats");
   }
 
   /** Apply decay to old memories */
   async decay(dryRun = false) {
-    return this._request('POST', '/memory/decay', { dry_run: dryRun });
+    return this._request("POST", "/memory/decay", { dry_run: dryRun });
   }
 
   /** Consolidate/merge duplicates */
   async consolidate(dryRun = false) {
-    return this._request('POST', '/memory/consolidate', { dry_run: dryRun });
+    return this._request("POST", "/memory/consolidate", { dry_run: dryRun });
   }
 
   /** Evict low quality memories */
   async evict({ threshold = 0.2, dryRun = false }) {
-    return this._request('DELETE', `/memory/evict?threshold=${threshold}&dry_run=${dryRun}`);
+    return this._request(
+      "DELETE",
+      `/memory/evict?threshold=${threshold}&dry_run=${dryRun}`,
+    );
   }
 
   /** Get low quality memories */
   async quality(threshold = 0.3) {
-    return this._request('GET', `/memory/quality?threshold=${threshold}`);
+    return this._request("GET", `/memory/quality?threshold=${threshold}`);
   }
 }
 

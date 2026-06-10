@@ -291,10 +291,19 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/security/scan", post(security_scan_handler))
         .route("/memory/query", post(memory_query_handler))
         .route("/session/compact", post(session_compact_handler))
-        .route("/api/skill/dispatch", post(xavier::api::skills::dispatch_skill))
+        .route(
+            "/api/skill/dispatch",
+            post(xavier::api::skills::dispatch_skill),
+        )
         .route("/api/skill/list", get(xavier::api::skills::list_skills))
-        .route("/api/memory/health", get(xavier::api::skills::memory_health))
-        .route("/api/timeline/slice", post(xavier::api::timeline::get_time_slice))
+        .route(
+            "/api/memory/health",
+            get(xavier::api::skills::memory_health),
+        )
+        .route(
+            "/api/timeline/slice",
+            post(xavier::api::timeline::get_time_slice),
+        )
         .route("/xavier/events/session", post(session_event_handler))
         .route("/xavier/time/metric", post(time_metric_handler))
         .route("/xavier/agents/register", post(agent_register_handler))
@@ -406,11 +415,26 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             get(crate::cli::handlers::headless_api::headless_memory_export),
         )
         // ── Mesh API ──────────────────────────────────────────────────────
-        .route("/v1/mesh/identity", get(xavier::server::v1_api::v1_mesh_identity))
-        .route("/v1/mesh/handshake", post(xavier::server::v1_api::v1_mesh_handshake))
-        .route("/v1/mesh/manifest", get(xavier::server::v1_api::v1_mesh_manifest))
-        .route("/v1/mesh/chunks/request", post(xavier::server::v1_api::v1_mesh_chunks_request))
-        .route("/v1/mesh/chunks/push", post(xavier::server::v1_api::v1_mesh_chunks_push))
+        .route(
+            "/v1/mesh/identity",
+            get(xavier::server::v1_api::v1_mesh_identity),
+        )
+        .route(
+            "/v1/mesh/handshake",
+            post(xavier::server::v1_api::v1_mesh_handshake),
+        )
+        .route(
+            "/v1/mesh/manifest",
+            get(xavier::server::v1_api::v1_mesh_manifest),
+        )
+        .route(
+            "/v1/mesh/chunks/request",
+            post(xavier::server::v1_api::v1_mesh_chunks_request),
+        )
+        .route(
+            "/v1/mesh/chunks/push",
+            post(xavier::server::v1_api::v1_mesh_chunks_push),
+        )
         // ── Headless E2E API (New Structure) ──────────────────────────────
         .route(
             "/headless/health",

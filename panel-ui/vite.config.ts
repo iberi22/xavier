@@ -1,16 +1,19 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
 import path from "node:path";
+import tailwindcss from "@tailwindcss/vite";
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
 
-const xavierTarget = process.env.XAVIER_WEB_PROXY_TARGET ?? "http://127.0.0.1:8006";
+const xavierTarget =
+  process.env.XAVIER_WEB_PROXY_TARGET ?? "http://127.0.0.1:8006";
 
 export default defineConfig(({ command }) => {
   const isBuild = command === "build";
 
   return {
     define: {
-      __APP_VERSION__: JSON.stringify(process.env.npm_package_version || "0.6.1-beta"),
+      __APP_VERSION__: JSON.stringify(
+        process.env.npm_package_version || "0.6.1-beta",
+      ),
     },
     base: "/",
     plugins: [tailwindcss(), react()],

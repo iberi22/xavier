@@ -1,0 +1,58 @@
+{
+  "timestamp": "2026-06-10T08:58:16.832Z",
+  "topics": [
+    {
+      "label": "Data Commons",
+      "count": 100
+    },
+    {
+      "label": "Memory/RAG",
+      "count": 100
+    },
+    {
+      "label": "Bridge Config",
+      "count": 100
+    },
+    {
+      "label": "Session History",
+      "count": 100
+    },
+    {
+      "label": "Content Strategy",
+      "count": 95
+    },
+    {
+      "label": "API",
+      "count": 78
+    },
+    {
+      "label": "Rust Code",
+      "count": 66
+    },
+    {
+      "label": "Tokenomics",
+      "count": 43
+    },
+    {
+      "label": "Benchmarking",
+      "count": 17
+    },
+    {
+      "label": "Post-Quantum Wallet",
+      "count": 0
+    },
+    {
+      "label": "Governance",
+      "count": 0
+    },
+    {
+      "label": "Reputation",
+      "count": 0
+    }
+  ],
+  "summary": {
+    "topicsCovered": 9,
+    "totalTopics": 12,
+    "coverageRate": 75
+  }
+}

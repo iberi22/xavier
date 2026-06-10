@@ -1,0 +1,102 @@
+{
+  "timestamp": "2026-06-10T08:57:12.705Z",
+  "queries": [
+    {
+      "query": "gobernanza token votacion consejo xavier core",
+      "latencyMs": 42,
+      "numResults": 100,
+      "relevant": false,
+      "status": "OK"
+    },
+    {
+      "query": "wallet post-cuantica ML-KEM ML-DSA firma digital",
+      "latencyMs": 28,
+      "numResults": 9,
+      "relevant": false,
+      "status": "OK"
+    },
+    {
+      "query": "data commons funnel reputation recompensas",
+      "latencyMs": 36,
+      "numResults": 100,
+      "relevant": false,
+      "status": "OK"
+    },
+    {
+      "query": "memoria RAG busqueda indexacion openclaw",
+      "latencyMs": 26,
+      "numResults": 100,
+      "relevant": true,
+      "status": "OK"
+    },
+    {
+      "query": "xavier data commons architecture features roadmap",
+      "latencyMs": 29,
+      "numResults": 100,
+      "relevant": true,
+      "status": "OK"
+    },
+    {
+      "query": "configuracion bridge sincronizacion sesiones",
+      "latencyMs": 28,
+      "numResults": 7,
+      "relevant": true,
+      "status": "OK"
+    },
+    {
+      "query": "compilacion rust error borrow checker fix",
+      "latencyMs": 33,
+      "numResults": 60,
+      "relevant": true,
+      "status": "OK"
+    },
+    {
+      "query": "token supply limit distribucion tokenomics",
+      "latencyMs": 30,
+      "numResults": 44,
+      "relevant": false,
+      "status": "OK"
+    },
+    {
+      "query": "benchmark performance latency throughput",
+      "latencyMs": 20,
+      "numResults": 17,
+      "relevant": false,
+      "status": "OK"
+    },
+    {
+      "query": "reputation proof contribution staked slashing",
+      "latencyMs": 14467,
+      "numResults": 0,
+      "relevant": false,
+      "status": "OK"
+    },
+    {
+      "query": "content creator tiktok receta video viral",
+      "latencyMs": 36,
+      "numResults": 92,
+      "relevant": true,
+      "status": "OK"
+    },
+    {
+      "query": "openclaw session conversation history",
+      "latencyMs": 42,
+      "numResults": 100,
+      "relevant": true,
+      "status": "OK"
+    }
+  ],
+  "summary": {
+    "totalQueries": 12,
+    "successful": 12,
+    "failed": 0,
+    "avgLatencyMs": 1234.8,
+    "minLatencyMs": 20,
+    "maxLatencyMs": 14467,
+    "totalResults": 729,
+    "relevantResults": 6,
+    "recallRate": 0.5,
+    "latencyGrade": "D",
+    "recallGrade": "B"
+  }
+}
