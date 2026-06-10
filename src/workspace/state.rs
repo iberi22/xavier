@@ -541,6 +541,10 @@ impl WorkspaceState {
                 .and_then(|t| t.level)
                 .unwrap_or(existing.level),
             relation: typed.as_ref().and_then(|t| t.relation.clone()),
+            clearance: typed
+                .as_ref()
+                .and_then(|t| t.clearance)
+                .unwrap_or(existing.clearance),
         };
         if let Some(object) = document.metadata.as_object_mut() {
             let revision = existing

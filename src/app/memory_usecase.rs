@@ -214,6 +214,7 @@ mod tests {
             cluster_id: None,
             level: MemoryLevel::default(),
             relation: None,
+            clearance: Default::default(),
             revisions: vec![],
         };
 

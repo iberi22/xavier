@@ -147,6 +147,17 @@ pub enum ContextZone {
     Relational, // Beliefs and knowledge graph relations
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
+#[serde(rename_all = "snake_case")]
+#[derive(Default)]
+pub enum ClearanceLevel {
+    Unclassified,
+    Confidential,
+    Secret,
+    #[default]
+    TopSecret,
+}
+
 pub fn parse_zones_from_prompt(prompt: &str) -> Vec<ContextZone> {
     let lowered = prompt.to_lowercase();
     let mut zones = Vec::new();
@@ -193,6 +204,26 @@ impl ContextZone {
             "global" => Self::Global,
             "relational" => Self::Relational,
             _ => Self::Atomic,
+        }
+    }
+}
+
+impl ClearanceLevel {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Unclassified => "unclassified",
+            Self::Confidential => "confidential",
+            Self::Secret => "secret",
+            Self::TopSecret => "top_secret",
+        }
+    }
+
+    pub fn parse(s: &str) -> Self {
+        match s.to_lowercase().as_str() {
+            "unclassified" => Self::Unclassified,
+            "confidential" => Self::Confidential,
+            "secret" => Self::Secret,
+            _ => Self::TopSecret,
         }
     }
 }
@@ -298,6 +329,7 @@ pub struct TypedMemoryPayload {
     pub level: Option<MemoryLevel>,
     pub zone: Option<ContextZone>,
     pub relation: Option<RelationKind>,
+    pub clearance: Option<ClearanceLevel>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -327,6 +359,7 @@ pub struct MemoryQueryFilters {
     pub cluster_ids: Option<Vec<String>>,
     pub levels: Option<Vec<MemoryLevel>>,
     pub zones: Option<Vec<ContextZone>>,
+    pub clearances: Option<Vec<ClearanceLevel>>,
     #[serde(default)]
     pub path_prefix: Option<String>,
 }
@@ -336,6 +369,7 @@ pub struct ResolvedMemoryMetadata {
     pub kind: MemoryKind,
     pub evidence_kind: Option<EvidenceKind>,
     pub zone: ContextZone,
+    pub clearance: ClearanceLevel,
     pub namespace: MemoryNamespace,
     pub provenance: MemoryProvenance,
 }
@@ -356,6 +390,7 @@ pub fn normalize_metadata(
         }
     }
     metadata["zone"] = json!(resolved.zone.as_str());
+    metadata["clearance"] = json!(resolved.clearance.as_str());
     metadata["namespace"] = serde_json::to_value(&resolved.namespace)?;
     metadata["provenance"] = serde_json::to_value(&resolved.provenance)?;
     Ok(metadata)
@@ -423,10 +458,21 @@ pub fn resolve_metadata(
         })
         .unwrap_or_else(|| infer_zone_from_kind_and_level(kind, typed.level));
 
+    let clearance = typed
+        .clearance
+        .or_else(|| {
+            metadata
+                .get("clearance")
+                .and_then(|v| v.as_str())
+                .map(ClearanceLevel::parse)
+        })
+        .unwrap_or(ClearanceLevel::TopSecret);
+
     Ok(ResolvedMemoryMetadata {
         kind,
         evidence_kind,
         zone,
+        clearance,
         namespace,
         provenance,
     })
@@ -583,6 +629,12 @@ pub fn matches_filters(
 
     if let Some(zones) = &filters.zones {
         if !zones.contains(&resolved.zone) {
+            return false;
+        }
+    }
+
+    if let Some(clearances) = &filters.clearances {
+        if !clearances.contains(&resolved.clearance) {
             return false;
         }
     }

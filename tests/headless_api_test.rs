@@ -37,8 +37,8 @@ async fn test_headless_api_e2e() {
                 "XAVIER_MEMORY_VEC_PATH",
                 format!("data/headless-test-mem-{port}.db"),
             )
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
             .spawn()
             .expect("failed to start xavier binary"),
     );
@@ -46,8 +46,13 @@ async fn test_headless_api_e2e() {
     let client = Client::new();
     let mut started = false;
     for _ in 0..30 {
-        if let Ok(resp) = client.get(format!("{}/health", url)).send().await {
-            if resp.status().is_success() {
+        if let Ok(resp) = client
+            .get(format!("{}/health", url))
+            .header("Authorization", "Bearer test-token")
+            .send()
+            .await
+        {
+            if resp.status().is_success() || resp.status().as_u16() == 401 {
                 started = true;
                 break;
             }

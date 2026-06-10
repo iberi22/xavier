@@ -1,0 +1,46 @@
+﻿---
+name: "🛡️ Xavier Security Report"
+description: "Reporte de seguridad generado automáticamente por Xavier"
+title: "[SECURITY] {{ severity }}: {{ brief_description }}"
+labels: ["auto-detected", "security"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 🛡️ Reporte de Seguridad Automático
+
+        **Nodo:** `{{ node_id }}` | **Versión:** {{ version }}
+        **Severidad:** `{{ severity }}`
+        **Timestamp:** {{ timestamp }}
+
+  - type: textarea
+    id: finding
+    attributes:
+      label: Hallazgo
+      value: |
+        {{ finding_description }}
+
+  - type: textarea
+    id: impact
+    attributes:
+      label: Impacto Potencial
+      value: |
+        {{ impact_analysis }}
+
+  - type: textarea
+    id: remediation
+    attributes:
+      label: Remedio Sugerido
+      value: |
+        {{ suggested_remediation }}
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+
+        *🛡️ Reporte generado por **Xavier Mesh Network**.*
+
+        *Para evidencias completas y trazas de ataque, conectar al nodo
+        `{{ node_id }}` vía P2P cifrado.*

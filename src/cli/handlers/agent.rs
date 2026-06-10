@@ -118,6 +118,7 @@ pub async fn agent_push_context_handler(
         cluster_id: None,
         level: MemoryLevel::Raw,
         relation: None,
+        clearance: Default::default(),
         revisions: vec![],
     };
     match state.memory.add(record).await {

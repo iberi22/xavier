@@ -283,6 +283,7 @@ pub async fn add_handler(
         cluster_id,
         level,
         relation,
+        clearance: Default::default(),
         revisions: vec![],
     };
     match state.memory.add(record).await {

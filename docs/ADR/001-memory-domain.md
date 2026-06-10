@@ -48,4 +48,4 @@ El `QmdMemoryAdapter` creado en P0 NO wrappea `QmdMemory` como si fuera infraest
 
 ## Notas
 
-El `QmdMemoryAdapter` en `src/app/qmd_memory_adapter.rs` делегирует todo a `QmdMemory` — no agrega lógica, solo hace el trait impl posible. Si nunca se necesita swappear storage, este adapter es innecesario y puede ser removido sin impacto en funcionalidad.
+El `QmdMemoryAdapter` en `src/app/qmd_memory_adapter.rs` delega todo a `QmdMemory` — no agrega lógica, solo hace el trait impl posible. Si nunca se necesita swappear storage, este adapter es innecesario y puede ser removido sin impacto en funcionalidad.

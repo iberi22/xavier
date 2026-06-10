@@ -167,6 +167,7 @@ pub async fn add_handler(
         cluster_id: None,
         level: crate::memory::schema::MemoryLevel::Raw,
         relation: None,
+        clearance: Default::default(),
         revisions: Vec::new(),
     };
     // Note: domain metadata translation would go here if needed

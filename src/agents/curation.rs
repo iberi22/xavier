@@ -200,6 +200,7 @@ impl CurationAgent {
             cluster_id: Some(cluster_id.to_string()),
             level: MemoryLevel::Extracted,
             relation: None,
+            clearance: Default::default(),
             revisions: Vec::new(),
         })
     }

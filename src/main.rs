@@ -22,7 +22,6 @@ use crate::settings::XavierSettings;
 use anyhow::Result;
 use clap::Parser;
 use cli::Cli;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -36,10 +35,13 @@ async fn main() -> Result<()> {
         .or_else(|| std::env::var("XAVIER_LOG_LEVEL").ok())
         .unwrap_or_else(|| "info".to_string());
 
-    tracing_subscriber::registry()
-        .with(EnvFilter::new(&log_filter))
-        .with(tracing_subscriber::fmt::layer())
-        .init();
+    let log_dir = std::path::PathBuf::from(std::env::var("XAVIER_LOG_DIR").unwrap_or_else(|_| {
+        let home = std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .unwrap_or_else(|_| ".".to_string());
+        format!("{}/.xavier/logs", home)
+    }));
+    crate::observability::init_logger(&log_dir, &log_filter);
 
     // Parse and run CLI
     let cli = Cli::parse();

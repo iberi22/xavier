@@ -31,6 +31,8 @@ pub struct MemoryDocument {
     pub level: crate::memory::schema::MemoryLevel,
     #[serde(default)]
     pub relation: Option<crate::memory::schema::RelationKind>,
+    #[serde(default)]
+    pub clearance: crate::memory::schema::ClearanceLevel,
 }
 
 impl Default for MemoryDocument {
@@ -46,6 +48,7 @@ impl Default for MemoryDocument {
             parent_id: None,
             level: crate::memory::schema::MemoryLevel::Raw,
             relation: None,
+            clearance: crate::memory::schema::ClearanceLevel::TopSecret,
         }
     }
 }

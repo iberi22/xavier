@@ -109,6 +109,7 @@ impl VecSqliteMemoryStore {
             relation: row
                 .get::<_, Option<String>>(13)?
                 .and_then(|s| serde_json::from_str(&s).ok()),
+            clearance: Default::default(),
             revisions: row
                 .get::<_, Option<String>>(14)?
                 .and_then(|s| serde_json::from_str(&s).ok())

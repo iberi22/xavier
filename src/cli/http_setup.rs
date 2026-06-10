@@ -21,6 +21,11 @@ pub async fn auth_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Response {
+    let path = req.uri().path();
+    if path == "/health" || path == "/headless/health" {
+        return next.run(req).await;
+    }
+
     let expected_token = match resolve_http_token() {
         Ok(token) => token,
         Err(e) => {

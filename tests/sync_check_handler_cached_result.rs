@@ -171,6 +171,7 @@ fn make_session_record(seconds_ago: i64) -> MemoryRecord {
         cluster_id: None,
         level: xavier::memory::schema::MemoryLevel::Raw,
         relation: None,
+        clearance: Default::default(),
     }
 }
 
