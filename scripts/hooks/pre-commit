@@ -188,7 +188,6 @@ ROOT_ALLOWED_FILES=(
     "CONTRIBUTING.md"
     "SECURITY.md"
     "LICENSE"
-    "LICENSE.enterprise"
     "SOUL.md"
     "USER.md"
     "AGENTS.md"

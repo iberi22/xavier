@@ -9,7 +9,7 @@
 
 Xavier enters a growing market of AI memory systems. Our **differentiators**:
 - **99.1% recall** (vs Mem0's 66.88%)
-- **Open source + freemium** model
+- **Fully open-source** model
 - **E2E encryption** for Enterprise
 - **Anticipator** prompt injection protection
 - **OpenClaw native** integration
@@ -114,7 +114,7 @@ Xavier enters a growing market of AI memory systems. Our **differentiators**:
 | **Open Source** | ✅ MIT | ✅ Apache | ❌ | ❌ |
 | **E2E Encryption** | ✅ Enterprise | ❌ | ❌ | ❌ |
 | **Anticipator** | ✅ Security | ❌ | ❌ | ❌ |
-| **Price (Free)** | ✅ $0 | ✅ $0 | ❌ | ✅ |
+| **Price** | ✅ Free | Freemium | Paid | Freemium |
 | **CLI Tools** | ✅ Full | Basic | Basic | ❌ |
 | **Auto-curaction** | ✅ Built-in | Basic | Yes | ❌ |
 
@@ -125,7 +125,7 @@ Xavier enters a growing market of AI memory systems. Our **differentiators**:
 1. **Performance**: 99.1% recall vs Mem0's 66.88% — 32% better
 2. **Security**: First with Anticipator integration
 3. **Open Source**: MIT license, community-driven
-4. **Price**: Free tier with more features than competitors
+4. **Price**: Completely free and open-source
 5. **Native OpenClaw**: Built-in for OpenClaw agents
 
 ---
@@ -137,118 +137,6 @@ Xavier enters a growing market of AI memory systems. Our **differentiators**:
 3. **Documentation**: Mem0 has extensive docs
 4. **Multi-framework**: Mem0 supports LangChain, LlamaIndex, etc.
 5. **Graph Memory**: Mem0 has explicit graph feature
-
----
-
-## Market Opportunity
-
-### Target Segments
-
-```
-Priority 1: Individual Developers / Small Teams
-─────────────────────────────────────────────
-- Open source enthusiasts
-- Solo developers
-- Price-sensitive
-- Value: Free tier, easy setup
-
-Priority 2: Dev Agencies / Small Businesses
-─────────────────────────────────────────────
-- Building AI products
-- Need reliability + support
-- Value: Cloud tier $8/mo
-
-Priority 3: Mid-Market / Enterprise
-─────────────────────────────────────────────
-- Security requirements
-- Compliance (HIPAA, SOC2)
-- Value: E2E encryption, Anticipator, SSO
-```
-
----
-
-## Competitive Pricing Strategy
-
-### Our Model vs Competitors
-
-| Feature | Mem0 Free | Mem0 Pro | Xavier Free | Xavier Cloud | Xavier Enterprise |
-|---------|-----------|----------|-------------|--------------|-------------------|
-| **Price** | $0 | $249/mo | $0 | $8/mo | $29-99/mo |
-| **Memories** | 10K/mo | 500K/mo | Unlimited | Unlimited | Unlimited |
-| **Retrieval** | 1K/mo | 50K/mo | Unlimited | Unlimited | Unlimited |
-| **Encryption** | ❌ | ❌ | ❌ | ❌ | ✅ AES-256 |
-| **Anticipator** | ❌ | ❌ | ❌ | ❌ | ✅ |
-| **Open Source** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Support** | Community | Slack | Community | Priority | Dedicated |
-
----
-
-## Go-to-Market Strategy
-
-### Phase 1: Open Source Community (Month 1-3)
-
-**Goal:** Build community, get GitHub stars, establish credibility
-
-**Tactics:**
-- Publish on Hacker News, Reddit, Twitter
-- Contributor guides + good first issues
-- YouTube tutorial series
-- Comparison blog posts: "Xavier vs Mem0"
-
-**Metrics:**
-- 500 GitHub stars
-- 100 Discord members
-- 10 contributors
-
----
-
-### Phase 2: Developer Adoption (Month 3-6)
-
-**Goal:** Get developers to use Xavier in projects
-
-**Tactics:**
-- Integration guides for LangChain, LlamaIndex, OpenClaw
-- Template projects / starters
-- Hackathon participation
-- Developer advocacy
-
-**Metrics:**
-- 1000 GitHub stars
-- 50 production deployments
-- 5 case studies
-
----
-
-### Phase 3: Cloud Tier Launch (Month 6-9)
-
-**Goal:** First revenue from cloud tier
-
-**Tactics:**
-- Launch cloud dashboard
-- Stripe integration
-- Free → Cloud upgrade flow
-- Targeted ads to developers
-
-**Metrics:**
-- 50 paying customers
-- $5K MRR
-
----
-
-### Phase 4: Enterprise Push (Month 9-12)
-
-**Goal:** Land enterprise deals with E2E encryption + Anticipator
-
-**Tactics:**
-- Sales outreach to security-conscious companies
-- Demo with live Anticipator scan
-- Proof of concept deals
-- Conference presence
-
-**Metrics:**
-- 10 enterprise customers
-- $20K MRR
-- 1 case study with logo
 
 ---
 
@@ -265,8 +153,7 @@ Priority 3: Mid-Market / Enterprise
 ### vs Zep
 
 ```
-"Zep requires a sales call and doesn't publish pricing. Xavier is open source,
- deploys in one click, and starts free. Enterprise security features cost just $29/mo."
+"Zep requires a sales call and doesn't publish pricing. Xavier is completely open source and deploys in one click."
 ```
 
 ### vs Pinecone
@@ -324,12 +211,7 @@ Xavier is **technically superior** to Mem0 on the LoCoMo benchmark (99.1% vs 66.
 1. Open source first → build community
 2. Performance benchmark → prove superiority
 3. Security differentiation → Enterprise sales
-4. Price accessibility → mass adoption
-
-**Realistic MRR targets:**
-- Month 3: $1K
-- Month 6: $5K
-- Month 12: $20K
+4. Open availability → mass adoption
 
 ---
 

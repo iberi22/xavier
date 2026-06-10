@@ -193,45 +193,6 @@ This includes:
 - hard evidence for disaster recovery and operational maturity
 - cleaner hosted / managed deployment story
 
-## Recommended Pricing
-
-### Market comparison used
-
-- **Mem0** currently lists:
-  - Free
-  - Starter: **$19/month**
-  - Pro: **$249/month**
-  - Enterprise: flexible pricing
-  - Enterprise features explicitly include on-prem deployment, SSO, audit logs, and SLA
-- **Bureau / Reverb** positions **Bureau** as **free open source**, while paid tiers for the broader Reverb platform are still marked **TBD / coming soon**.
-
-### Pricing conclusion
-
-Xavier should **not** be priced like Mem0 Pro or Mem0 Enterprise yet. The codebase shows strong technical direction, but it lacks the security and enterprise maturity that justify premium managed-memory pricing.
-
-### Recommended pricing by stage
-
-**If sold now as a technical beta / founder-led pilot:**
-
-- Self-hosted license or pilot: **$99-$299/month per team**
-- White-glove pilot / setup package: **$2k-$5k one-time**
-
-**After the P0/P1 fixes above are complete:**
-
-- Team / Pro tier: **$249-$499/month**
-- Enterprise pilot: **$1.5k-$3k/month** with onboarding
-
-**After true enterprise hardening:**
-
-- Enterprise annual contracts: **$12k-$36k ARR** for smaller teams
-- Higher pricing only if managed deployment, SSO, auditability, support SLAs, and a stable UI/operator experience are all in place
-
-### Positioning guidance
-
-- Price it **below Mem0** until the security, compliance, and ops story catches up.
-- Price it **above pure open-source/Bureau-style tooling** only when you are clearly selling a maintained product, not just interesting infrastructure.
-- The best near-term offer is likely: **self-hosted memory substrate for agent teams with paid setup and support**, not “enterprise memory platform” yet.
-
 ## Bottom Line
 
 Xavier has real technical value and a stronger backend than many early-stage repos, but it is currently a **promising beta**, not an enterprise-ready sale asset.
