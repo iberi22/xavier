@@ -158,6 +158,8 @@ pub struct ModelSettings {
     pub local_llm_api_key: Option<String>,
     #[serde(default)]
     pub local_anthropic_url: Option<String>,
+    #[serde(default)]
+    pub compaction_model: Option<String>,
 }
 
 impl fmt::Debug for ModelSettings {
@@ -179,6 +181,7 @@ impl fmt::Debug for ModelSettings {
             .field("cloud_llm_url", &self.cloud_llm_url)
             .field("local_llm_api_key", &"[REDACTED]")
             .field("local_anthropic_url", &self.local_anthropic_url)
+            .field("compaction_model", &self.compaction_model)
             .finish()
     }
 }

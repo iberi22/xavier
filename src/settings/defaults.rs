@@ -98,6 +98,7 @@ impl Default for ModelSettings {
             cloud_llm_url: None,
             local_llm_api_key: None,
             local_anthropic_url: None,
+            compaction_model: None,
         }
     }
 }

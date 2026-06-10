@@ -115,7 +115,7 @@ impl NodeIdentity {
         // Derive a pseudo-public key via SHA-256 of private key for Phase 1.
         // Phase 2 will use proper Ed25519 (ed25519-dalek) with real signing.
         let mut hasher = Sha256::new();
-        hasher.update(&sk_bytes);
+        hasher.update(sk_bytes);
         let pk_bytes = hasher.finalize().to_vec();
 
         let node_id = NodeId::from_public_key_bytes(&pk_bytes);
@@ -158,17 +158,14 @@ impl NodeIdentity {
 
         let json = serde_json::to_string_pretty(&stored)?;
         // Store with restrictive permissions on Linux/macOS via write + chmod
-        std::fs::write(&identity_file, &json)
-            .context("Failed to write mesh identity file")?;
+        std::fs::write(&identity_file, &json).context("Failed to write mesh identity file")?;
 
         // Attempt to restrict permissions (best-effort on Windows)
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(
-                &identity_file,
-                std::fs::Permissions::from_mode(0o600),
-            );
+            let _ =
+                std::fs::set_permissions(&identity_file, std::fs::Permissions::from_mode(0o600));
         }
 
         tracing::info!(

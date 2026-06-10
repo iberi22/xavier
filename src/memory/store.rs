@@ -365,6 +365,11 @@ pub trait MemoryStore: Send + Sync {
             self.backend().as_str()
         )
     }
+
+    /// Clean up orphaned vectors or internal resources. Returns the number of cleaned items.
+    async fn cleanup_orphans(&self) -> Result<usize> {
+        Ok(0)
+    }
 }
 
 // ---------------------------------------------------------------------------

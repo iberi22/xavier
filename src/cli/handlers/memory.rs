@@ -6,6 +6,7 @@ use axum::{
     response::{IntoResponse, Response},
     Json,
 };
+use std::sync::Arc;
 use tracing::info;
 
 use crate::cli::commands::spawn::load_spawn_memory;
@@ -313,6 +314,118 @@ pub async fn add_handler(
             )
                 .into_response()
         }
+    }
+}
+
+pub async fn update_handler(
+    State(state): State<CliState>,
+    headers: HeaderMap,
+    axum::extract::Json(payload): axum::extract::Json<UpdateMemoryRequest>,
+) -> Response {
+    let expected_token = match resolve_http_token() {
+        Ok(token) => token,
+        Err(e) => {
+            return json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({"status":"error","message": format!("Token resolution failed: {e}")}),
+            );
+        }
+    };
+
+    match headers
+        .get("X-Xavier-Token")
+        .and_then(|value| value.to_str().ok())
+    {
+        Some(token) if token == expected_token => {}
+        _ => {
+            return json_response(
+                StatusCode::UNAUTHORIZED,
+                serde_json::json!({"status":"error","message":"Unauthorized"}),
+            );
+        }
+    }
+
+    let sec_result = state
+        .security
+        .process_input(&payload.content)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: payload.content.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    if !sec_result.allowed {
+        info!(
+            "Update blocked by security: injection detected (confidence={})",
+            sec_result.detection_confidence
+        );
+        return axum::Json(serde_json::json!({
+            "status": "blocked",
+            "reason": "security_policy_violation",
+            "detection": {
+                "is_injection": sec_result.is_injection,
+                "confidence": sec_result.detection_confidence,
+                "attack_type": sec_result.attack_type,
+            }
+        }))
+        .into_response();
+    }
+
+    let effective_content = sec_result
+        .sanitized_input
+        .as_deref()
+        .unwrap_or(&sec_result.original_input);
+
+    let path = payload
+        .path
+        .unwrap_or_else(|| format!("memory/{}", payload.id));
+    let metadata = payload.metadata.unwrap_or(serde_json::json!({}));
+
+    let record = MemoryRecord {
+        id: payload.id.clone(),
+        workspace_id: state.workspace_id.clone(),
+        path: path.clone(),
+        content: effective_content.to_string(),
+        metadata,
+        embedding: vec![],
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+        revision: 1,
+        primary: true,
+        parent_id: None,
+        cluster_id: None,
+        level: MemoryLevel::Raw,
+        relation: None,
+        clearance: Default::default(),
+        revisions: vec![],
+    };
+
+    match state.memory.update(&payload.id, record).await {
+        Ok(updated_record) => json_response(
+            StatusCode::OK,
+            serde_json::json!({
+                "status": "ok",
+                "message": "Memory updated",
+                "id": updated_record.id,
+                "path": updated_record.path,
+                "security": {
+                    "scanned": true,
+                    "sanitized": sec_result.sanitized_input.is_some(),
+                    "attack_type": sec_result.attack_type,
+                }
+            }),
+        ),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({
+                "status": "error",
+                "message": e.to_string(),
+            }),
+        ),
     }
 }
 
@@ -663,5 +776,151 @@ pub async fn export_handler(
             })),
         )
             .into_response(),
+    }
+}
+
+pub(crate) fn check_cli_token(headers: &HeaderMap) -> Result<(), Response> {
+    let expected_token = match resolve_http_token() {
+        Ok(token) => token,
+        Err(e) => {
+            return Err(json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({"status":"error","message": format!("Token resolution failed: {e}")}),
+            ));
+        }
+    };
+
+    match headers
+        .get("X-Xavier-Token")
+        .and_then(|value| value.to_str().ok())
+    {
+        Some(token) if token == expected_token => Ok(()),
+        _ => Err(json_response(
+            StatusCode::UNAUTHORIZED,
+            serde_json::json!({"status":"error","message":"Unauthorized"}),
+        )),
+    }
+}
+
+pub async fn decay_handler(
+    State(state): State<CliState>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(r) = check_cli_token(&headers) {
+        return r;
+    }
+    let manager = xavier::memory::manager::core::MemoryManager::new(Arc::clone(&state.qmd_memory), None);
+    match manager.decay_memories().await {
+        Ok(res) => json_response(StatusCode::OK, serde_json::json!({ "status": "ok", "documents_affected": res.documents_affected })),
+        Err(e) => json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({ "status": "error", "message": e.to_string() })),
+    }
+}
+
+pub async fn consolidate_handler(
+    State(state): State<CliState>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(r) = check_cli_token(&headers) {
+        return r;
+    }
+    let manager = xavier::memory::manager::core::MemoryManager::new(Arc::clone(&state.qmd_memory), None);
+    match manager.consolidate_memories().await {
+        Ok(res) => json_response(StatusCode::OK, serde_json::json!({ "status": "ok", "documents_affected": res.documents_affected, "bytes_freed": res.bytes_freed })),
+        Err(e) => json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({ "status": "error", "message": e.to_string() })),
+    }
+}
+
+pub async fn evict_handler(
+    State(state): State<CliState>,
+    headers: HeaderMap,
+    axum::extract::Json(payload): axum::extract::Json<EvictPayload>,
+) -> Response {
+    if let Err(r) = check_cli_token(&headers) {
+        return r;
+    }
+    let mut manager = xavier::memory::manager::core::MemoryManager::new(Arc::clone(&state.qmd_memory), None);
+    
+    let result = if let Some(priority_str) = &payload.priority {
+        let p = match priority_str.as_str() {
+            "critical" => xavier::memory::manager::types::MemoryPriority::Critical,
+            "high" => xavier::memory::manager::types::MemoryPriority::High,
+            "medium" => xavier::memory::manager::types::MemoryPriority::Medium,
+            "low" => xavier::memory::manager::types::MemoryPriority::Low,
+            "ephemeral" => xavier::memory::manager::types::MemoryPriority::Ephemeral,
+            _ => xavier::memory::manager::types::MemoryPriority::Medium,
+        };
+        manager.evict_by_priority(p).await
+    } else {
+        if let Some(threshold) = payload.threshold {
+            let mut config = manager.config().clone();
+            config.quality_threshold = threshold;
+            manager.set_config(config);
+        }
+        manager.evict_low_quality().await
+    };
+
+    match result {
+        Ok(res) => json_response(StatusCode::OK, serde_json::json!({ "status": "ok", "documents_affected": res.documents_affected, "bytes_freed": res.bytes_freed })),
+        Err(e) => json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({ "status": "error", "message": e.to_string() })),
+    }
+}
+
+pub async fn manage_handler(
+    State(state): State<CliState>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(r) = check_cli_token(&headers) {
+        return r;
+    }
+    let manager = xavier::memory::manager::core::MemoryManager::new(Arc::clone(&state.qmd_memory), None);
+    
+    let mut total_affected = 0;
+    let mut total_freed = 0;
+
+    if let Ok(res) = manager.decay_memories().await { total_affected += res.documents_affected; }
+    if let Ok(res) = manager.consolidate_memories().await { total_affected += res.documents_affected; total_freed += res.bytes_freed; }
+    if let Ok(res) = manager.evict_low_quality().await { total_affected += res.documents_affected; total_freed += res.bytes_freed; }
+    
+    json_response(StatusCode::OK, serde_json::json!({
+        "status": "ok",
+        "message": "Auto-management cycle complete",
+        "documents_affected": total_affected,
+        "bytes_freed": total_freed
+    }))
+}
+
+pub async fn timeline_query_handler(
+    State(state): State<CliState>,
+    headers: HeaderMap,
+    axum::extract::Json(payload): axum::extract::Json<TimelineQueryPayload>,
+) -> Response {
+    if let Err(r) = check_cli_token(&headers) {
+        return r;
+    }
+    
+    let engine = xavier::context::timeline::TimelineEngine::new(Arc::clone(&state.qmd_memory));
+    
+    let query = xavier::context::timeline::TimelineQuery {
+        query: payload.query.clone(),
+        start_date: payload.start_date,
+        end_date: payload.end_date,
+        agent_id: payload.agent_id.clone(),
+        limit: payload.limit,
+    };
+
+    match engine.get_time_slice(&query).await {
+        Ok(slice) => json_response(StatusCode::OK, serde_json::json!({
+            "status": "ok",
+            "period_start": slice.period_start,
+            "period_end": slice.period_end,
+            "memories_count": slice.memories.len(),
+            "memories": slice.memories,
+            "events_count": slice.timeline_events.len(),
+            "timeline_events": slice.timeline_events
+        })),
+        Err(e) => json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({
+            "status": "error",
+            "message": e.to_string()
+        })),
     }
 }

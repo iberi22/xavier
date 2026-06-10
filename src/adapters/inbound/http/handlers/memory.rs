@@ -51,6 +51,20 @@ pub struct AddPayload {
 }
 
 #[derive(Debug, Deserialize)]
+pub struct UpdatePayload {
+    pub id: String,
+    pub content: String,
+    pub path: String,
+    #[serde(default)]
+    pub metadata: serde_json::Value,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DeletePayload {
+    pub id: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct MemoryQueryPayload {
     pub query: String,
     pub limit: Option<usize>,
@@ -179,6 +193,75 @@ pub async fn add_handler(
             // FIX: Return sanitized_path (the actual persisted value), not payload.path
             "path": sanitized_path,
             "workspace_id": state.workspace_id,
+        }))),
+        Err(e) => Ok(Json(serde_json::json!({
+            "status": "error",
+            "message": e.to_string(),
+        }))),
+    }
+}
+
+pub async fn update_handler(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(payload): Json<UpdatePayload>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_auth(&headers, &state)?;
+    let now = chrono::Utc::now();
+    let sanitized_content = sanitize_unicode(&payload.content);
+    let sanitized_path = sanitize_unicode(&payload.path);
+
+    let record = DomainMemoryRecord {
+        id: payload.id.clone(),
+        workspace_id: state.workspace_id.clone(),
+        path: sanitized_path.clone(),
+        content: sanitized_content,
+        metadata: payload.metadata,
+        embedding: Vec::new(),
+        created_at: now,
+        updated_at: now,
+        revision: 1,
+        primary: true,
+        parent_id: None,
+        cluster_id: None,
+        level: crate::memory::schema::MemoryLevel::Raw,
+        relation: None,
+        clearance: Default::default(),
+        revisions: Vec::new(),
+    };
+
+    match state.memory.update(&payload.id, record).await {
+        Ok(updated_record) => Ok(Json(serde_json::json!({
+            "status": "ok",
+            "id": updated_record.id,
+            "path": updated_record.path,
+            "workspace_id": state.workspace_id,
+        }))),
+        Err(e) => Ok(Json(serde_json::json!({
+            "status": "error",
+            "message": e.to_string(),
+        }))),
+    }
+}
+
+pub async fn delete_handler(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Json(payload): Json<DeletePayload>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    check_auth(&headers, &state)?;
+
+    match state.memory.delete(&payload.id).await {
+        Ok(Some(record)) => Ok(Json(serde_json::json!({
+            "status": "ok",
+            "deleted": true,
+            "id": record.id,
+            "path": record.path,
+        }))),
+        Ok(None) => Ok(Json(serde_json::json!({
+            "status": "not_found",
+            "deleted": false,
+            "id": payload.id,
         }))),
         Err(e) => Ok(Json(serde_json::json!({
             "status": "error",

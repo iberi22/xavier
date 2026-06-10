@@ -10,7 +10,7 @@ pub async fn handle_setup() -> Result<()> {
     let scan = SystemScanner::scan().await;
 
     println!("🖥️ OS: {}", scan.os);
-    if let Some(gpu) = scan.gpu {
+    if let Some(gpu) = scan.hardware.gpu_name {
         println!("🎮 GPU: {}", gpu);
     } else {
         println!("🎮 GPU: Not detected");

@@ -565,4 +565,36 @@ impl MemoryStore for VecSqliteMemoryStore {
     ) -> Result<Vec<crate::server::events::RealtimeEvent>> {
         self.perform_list_timeline_events(workspace_id, since).await
     }
+
+    async fn cleanup_orphans(&self) -> Result<usize> {
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                let tx = conn.unchecked_transaction()?;
+
+                // Find orphaned embeddings (id in memory_embeddings but not in memory_records)
+                let orphans: usize = {
+                    let mut stmt = tx.prepare(
+                        "SELECT COUNT(*) FROM memory_embeddings WHERE id NOT IN (SELECT id FROM memory_records)"
+                    )?;
+                    stmt.query_row((), |row| row.get(0)).unwrap_or(0)
+                };
+
+                if orphans > 0 {
+                    tx.execute(
+                        "DELETE FROM memory_embeddings WHERE id NOT IN (SELECT id FROM memory_records)",
+                        ()
+                    )?;
+                }
+
+                // Cleanup orphaned graph entities and relations
+                tx.execute(
+                    "DELETE FROM relations WHERE source_id NOT IN (SELECT id FROM entities) OR target_id NOT IN (SELECT id FROM entities)",
+                    ()
+                )?;
+
+                tx.commit()?;
+                Ok(orphans)
+            })
+            .await
+    }
 }

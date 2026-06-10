@@ -215,6 +215,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
 
     let state = CliState {
         memory: memory_port,
+        qmd_memory: Arc::clone(&memory),
         session_manager: Arc::new(SessionManager::new(60)),
         store,
         workspace_id,
@@ -255,9 +256,15 @@ pub async fn start_http_server(port: u16) -> Result<()> {
 
     let protected_routes = Router::new()
         .route("/memory/search", post(search_handler))
+        .route("/memory/update", post(update_handler))
         .route("/memory/delete", post(delete_handler))
         .route("/memory/stats", get(stats_handler))
         .route("/memory/export", get(export_handler))
+        .route("/memory/decay", post(decay_handler))
+        .route("/memory/consolidate", post(consolidate_handler))
+        .route("/memory/evict", axum::routing::delete(evict_handler))
+        .route("/memory/manage", post(manage_handler))
+        .route("/memory/timeline/query", post(timeline_query_handler))
         .route("/v1/memories", post(add_handler).get(stats_handler))
         .route("/v1/memories/search", post(search_handler))
         .route("/agents", get(agent_list_handler))
@@ -284,6 +291,10 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/security/scan", post(security_scan_handler))
         .route("/memory/query", post(memory_query_handler))
         .route("/session/compact", post(session_compact_handler))
+        .route("/api/skill/dispatch", post(xavier::api::skills::dispatch_skill))
+        .route("/api/skill/list", get(xavier::api::skills::list_skills))
+        .route("/api/memory/health", get(xavier::api::skills::memory_health))
+        .route("/api/timeline/slice", post(xavier::api::timeline::get_time_slice))
         .route("/xavier/events/session", post(session_event_handler))
         .route("/xavier/time/metric", post(time_metric_handler))
         .route("/xavier/agents/register", post(agent_register_handler))
