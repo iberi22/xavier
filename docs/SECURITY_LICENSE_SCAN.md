@@ -48,10 +48,9 @@
 
 ## 2. License Compliance
 
-- **Project license:** MIT (dual-license open-core model with enterprise addendum)
+- **Project license:** MIT
 - **code-graph subcrate:** MIT
 - All dependencies use OSI-approved licenses (MIT, Apache-2.0, BSD-3-Clause, MPL-2.0)
-- `LICENSE.enterprise` file present for enterprise licensing terms
 - No `deny` checks run (cargo-deny not installed) — visual inspection passed
 
 ---

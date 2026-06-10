@@ -203,7 +203,7 @@ Xavier uses a **hexagonal architecture** (ports & adapters):
 
 - **Issues** — open at https://github.com/iberi22/xavier/issues
 - **Discussions** — use GitHub Discussions
-- **Enterprise support** — contact enterprise@southwest-ai-labs.com
+- **Enterprise support** — contact iberi22
 - **Sponsors** — for dedicated support, reach out via GitHub Sponsors
 
 ## License

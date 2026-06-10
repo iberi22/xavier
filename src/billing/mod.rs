@@ -2,9 +2,7 @@
 //!
 //! Provides cloud tier billing for Xavier with the following pricing:
 //! - Free: $0/mo - Local only
-//! - Cloud: $8/mo - 1GB storage, 3 nodes
-//! - Pro: $19/mo - 10GB storage, 10 nodes
-//! - Enterprise: $49/mo+ - Unlimited
+//! - Cloud: Free - 1GB storage, 3 nodes
 
 pub mod plans;
 pub mod stripe_client;
@@ -156,13 +154,11 @@ pub async fn create_checkout(
 
     let plan = match payload.plan.to_lowercase().as_str() {
         "cloud" => Plan::Cloud,
-        "pro" => Plan::Pro,
-        "enterprise" => Plan::Enterprise,
         _ => {
             return Json(CreateCheckoutResponse {
                 status: "error".to_string(),
                 checkout_url: None,
-                message: Some("Invalid plan. Use: cloud, pro, or enterprise".to_string()),
+                message: Some("Invalid plan. Use: cloud".to_string()),
             });
         }
     };
@@ -329,18 +325,6 @@ pub async fn billing_plans() -> impl IntoResponse {
             display_name: "Cloud".to_string(),
             monthly_price_cents: Plan::Cloud.monthly_price_cents(),
             limits: PlanLimits::for_plan(Plan::Cloud),
-        },
-        PlanInfo {
-            name: "pro".to_string(),
-            display_name: "Pro".to_string(),
-            monthly_price_cents: Plan::Pro.monthly_price_cents(),
-            limits: PlanLimits::for_plan(Plan::Pro),
-        },
-        PlanInfo {
-            name: "enterprise".to_string(),
-            display_name: "Enterprise".to_string(),
-            monthly_price_cents: Plan::Enterprise.monthly_price_cents(),
-            limits: PlanLimits::for_plan(Plan::Enterprise),
         },
     ];
 

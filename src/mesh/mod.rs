@@ -1,0 +1,44 @@
+//! Xavier Mesh — Distributed P2P Memory Synchronization
+//!
+//! This module implements the foundational layer for connecting Xavier nodes
+//! across the internet in a secure, peer-to-peer manner. Each Xavier instance
+//! is identified by a unique **NodeID** derived from an Ed25519 public key,
+//! enabling cryptographically-authenticated connections without relying on
+//! central servers or IP addresses.
+//!
+//! # Architecture
+//!
+//! ```text
+//! ┌─────────────────────────────────────────────────────┐
+//! │                  Xavier Mesh Layer                  │
+//! ├─────────────────────────────────────────────────────┤
+//! │  Identity   │ NodeID = blake3(ed25519_public_key)   │
+//! │  Protocol   │ XMesh-Sync v1: handshake + manifest   │
+//! │  Transport  │ HTTP REST (Phase 1) → Iroh/QUIC (P2)  │
+//! │  Registry   │ Persistent peer list with metadata    │
+//! └─────────────────────────────────────────────────────┘
+//! ```
+//!
+//! # Phase 1 Scope
+//!
+//! - NodeIdentity generation and persistence (Ed25519 keypair)
+//! - Peer registry (add, list, remove trusted peers)
+//! - HTTP-based sync transport (connect to a remote Xavier via its HTTP API)
+//! - XMesh-Sync v1 protocol types (manifest exchange, chunk requests)
+//! - CLI commands: `xavier mesh id`, `mesh add-peer`, `mesh list`, `mesh sync`
+//!
+//! # Future Phases
+//!
+//! - Phase 2: Iroh QUIC transport with automatic NAT traversal
+//! - Phase 3: Loro CRDT for conflict-free memory merge
+//! - Phase 4: Tor/Yggdrasil transport for anonymous operation
+
+pub mod node;
+pub mod peer;
+pub mod protocol;
+pub mod transport;
+
+pub use node::{NodeIdentity, NodeId};
+pub use peer::{PeerInfo, PeerRegistry};
+pub use protocol::{MeshHandshake, MeshManifest, MeshSyncRequest};
+pub use transport::MeshTransport;

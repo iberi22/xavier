@@ -1,6 +1,6 @@
 # Xavier Pricing & Commercial Model
 
-> Built and maintained by [SouthWest AI Labs](mailto:enterprise@southwest-ai-labs.com)
+> Built and maintained by [SouthWest AI Labs](mailto:iberi22)
 
 ---
 
@@ -141,7 +141,7 @@ For large teams, governments, or regulated industries:
 - **Direct engineering access** — speak to the people who built it
 - **Custom model training** — we'll train and maintain models specifically for your domain
 
-Contact: **enterprise@southwest-ai-labs.com**
+Contact: **iberi22**
 
 ---
 
@@ -183,7 +183,7 @@ A: Your MIT rights continue indefinitely. Reserved enterprise features deactivat
 
 ## 📬 Contact
 
-**Enterprise sales & licensing:** enterprise@southwest-ai-labs.com
+**Enterprise sales & licensing:** iberi22
 **General inquiries:** contact@southwest-ai-labs.com
 **Security disclosures:** security@southwest-ai-labs.com
 
