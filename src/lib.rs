@@ -18,6 +18,7 @@ pub mod embedding;
 pub mod enterprise;
 pub mod memory;
 pub mod observability;
+pub mod mesh;
 pub mod retrieval;
 pub mod scheduler;
 pub mod search;
