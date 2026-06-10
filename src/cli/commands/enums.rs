@@ -145,6 +145,12 @@ pub enum Command {
     /// Run interactive system detection and setup
     Setup,
 
+    /// Manage Xavier Mesh P2P connections
+    Mesh {
+        #[command(subcommand)]
+        cmd: MeshCommand,
+    },
+
     /// Export memories to JSON
     Export {
         /// Export only public memories (exclude is_private: true)
@@ -267,6 +273,34 @@ pub enum VaultCommand {
     Get { key: String },
     /// Delete a secret from the hardware vault
     Delete { key: String },
+}
+
+/// Mesh network management subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum MeshCommand {
+    /// Show this node's identity (NodeID + public key)
+    Id,
+    /// Add a trusted peer node
+    AddPeer {
+        node_id: String,
+        endpoint: String,
+        #[arg(long)]
+        alias: Option<String>,
+    },
+    /// List all known peers
+    List,
+    /// Remove a peer
+    RemovePeer { node_id: String },
+    /// Ping a peer (handshake test)
+    Ping { node_id: String },
+    /// Sync memories with a specific peer
+    Sync {
+        node_id: String,
+        #[arg(long, default_value = "bidirectional")]
+        mode: String,
+    },
+    /// Show mesh network status
+    Status,
 }
 
 /// Secrets management subcommands
