@@ -255,10 +255,18 @@ pub struct XipProposal {
     pub discussion_end: u64,
     pub voting_end: u64,
     pub execution_at: u64,
-    /// Votos: wallet → vote (true = a favor, false = en contra)
-    pub votes: HashMap<WalletAddress, bool>,
+    /// Votos de usuarios: wallet → vote (true = a favor)
+    pub user_votes: HashMap<WalletAddress, bool>,
+    /// Votos del consejo: member_id → vote
+    pub council_votes: HashMap<String, bool>,
     /// Apoyos (wallets que apoyan la propuesta para pasar a votación)
     pub supports: Vec<WalletAddress>,
+    /// Veto activo del consejo?
+    pub council_veto: bool,
+    /// Razón del veto (si aplica)
+    pub veto_reason: Option<String>,
+    /// La propuesta fue apelada por la comunidad?
+    pub appealed: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -268,8 +276,61 @@ pub enum ProposalStatus {
     Voting,
     Approved,
     Rejected,
+    Vetoed,
+    Overruled,   // La comunidad overruleó el veto del consejo
     Executed,
     Expired,
+}
+
+/// Miembro del consejo Xavier Core
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CouncilMember {
+    /// ID único del miembro
+    pub id: String,
+    /// Wallet asociada
+    pub wallet: WalletAddress,
+    /// Rol dentro del core
+    pub role: CouncilRole,
+    /// Fecha de ingreso al consejo
+    pub joined_at: u64,
+    /// Activo?
+    pub active: bool,
+    /// Expertise área (seguridad, arquitectura, skills...)
+    pub expertise: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CouncilRole {
+    CoreMaintainer,
+    SkillContributor,
+    SecurityAuditor,
+    Architect,
+    CommunityRepresentative,
+}
+
+/// Resultado de una votación bicameral
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BicameralResult {
+    /// ID de la propuesta
+    pub proposal_id: String,
+    // Cámara 1: Usuarios
+    pub user_votes_for: u64,
+    pub user_votes_against: u64,
+    pub user_abstain: u64,
+    pub user_quorum_met: bool,
+    pub user_percentage_for: f32,
+    pub user_active_wallets: u64,
+    // Cámara 2: Consejo
+    pub council_votes_for: u64,
+    pub council_votes_against: u64,
+    pub council_total: u64,
+    pub council_percentage_for: f32,
+    pub council_veto_active: bool,
+    // Resultado final
+    pub passed: bool,
+    pub veto_overruled: bool,
+    pub executed: bool,
+    pub tallied_at: u64,
 }
 
 // ---------------------------------------------------------------------------

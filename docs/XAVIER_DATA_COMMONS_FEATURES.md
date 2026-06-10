@@ -352,23 +352,62 @@ Feature: Precios automatizados por oferta y demanda
 
 ### EPIC 6: Gobernanza Democrática
 
-**Feature 6.1 — Sistema de Votación**
+**Feature 6.1 — Sistema de Votación Bicameral**
 ```
-Feature: Votación descentralizada 100% democrática
+Feature: Votación descentralizada con pesos balanceados
   Como: Cualquier wallet $XAV
   Quiero: Votar en decisiones de la red
   Para: Participar en la gobernanza del ecosistema
 
-  Reglas de Votación:
-  - [ ] 1 wallet = 1 voto. SIN importar saldo de $XAV
-  - [ ] Voto ANÓNIMO: cifrado con Kyber, revelado solo al contar
-  - [ ] Quórum mínimo: 10% de wallets activas (que hayan votado en ≥1 mes)
-  - [ ] Período de voto: 7 días
-  - [ ] Mayoría simple gana (>50% de votos emitidos)
-  - [ ] Timer de ejecución: 48h post-aprobación
+  ### Reglas de Votación
 
-  No hay delegación — si no votas, no votas. Simple.
-  Esto evita que grandes wallets acumulen poder delegado.
+  **Dos Cámaras:**
+
+  **Cámara 1 — Usuarios (Wallets):**
+  - 1 wallet = 1 voto. SIN importar saldo de $XAV
+  - **1 voto por red personal de nodos, no por nodo**
+    - Si tienes 10 nodos, sigues teniendo 1 voto
+    - Si tienes 1 nodo, tienes 1 voto
+  - Requisito: feedback de uso en los últimos 7 días
+    - Haber interactuado con el sistema (compartir, comprar o validar al menos 1 contexto en la última semana)
+    - Si no usas el sistema 7 días seguidos, pierdes derecho a voto hasta que vuelvas a usarlo
+  - Voto ANÓNIMO: cifrado con Kyber, revelado solo al contar
+  - No hay delegación — si no votas, no votas
+
+  **Cámara 2 — Consejo Xavier Core:**
+  - Miembros: mantenedores del repo core, contributors de skills, arquitectos
+  - 1 voto por miembro del consejo
+  - Voto PÚBLICO (transparente para accountability)
+  - Los miembros son elegidos por voto de la comunidad + ratificación del core
+  - El consejo cuida: seguridad de la arquitectura, calidad del código, evolución técnica
+
+  **Pesos de Votación:**
+  | Cámara | Peso | Votantes |
+  |--------|------|----------|
+  | Usuarios (wallets activas 7d) | 50% | 1 wallet = 1 voto |
+  | Consejo Xavier Core | 50% | 1 miembro = 1 voto |
+
+  **Para que una propuesta PASE, necesita:**
+  - ✅ Mayoría simple en AMBAS cámaras
+  - Si usuarios votan 60% a favor pero consejo vota 40% → NO PASA
+  - Si usuarios votan 55% y consejo 80% → PASA
+
+  **Excepción — Veto Unilateral del Consejo:**
+  - Propuestas que comprometan la seguridad post-cuántica, la integridad del
+    protocolo mesh, o la descentralización → el consejo puede vetar con 66%
+    de sus votos (veto supermayoritario)
+  - El veto es transparente y debe venir con explicación pública
+  - La comunidad puede apelar: si la propuesta vetada recibe 75% de apoyo
+    de wallets en una segunda votación, OVERRULE al consejo
+
+  **Quórum:**
+  - Usuarios: 10% de wallets activas (últimos 7 días)
+  - Consejo: 51% de miembros
+
+  **Timeline:**
+  - Discusión: 3 días
+  - Votación: 7 días
+  - Timer ejecución: 48h post-aprobación
 ```
 
 **Feature 6.2 — Parámetros Gobernables**
