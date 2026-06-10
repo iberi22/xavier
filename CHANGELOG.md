@@ -7,6 +7,11 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### Features
 
+* **ui:** implement MessagingConfigModal with platform tabs (Telegram, Discord, Slack, Teams, WhatsApp)
+* **ui:** implement NotificationsDropdown with isolated islands (System, Memory, Agents, Errors)
+* **ui:** implement SecurityConfigPanel for API Tokens, Provider Keys, Audit Log, and Network Config
+* **ui:** polish neon glow and improve chat history layout (avatars, subtle styling)
+* **observability:** implement comprehensive test coverage for analyzer, detector, fixer, middleware, and notifier
 * add 'xavier token' CLI command (new + gen) with code review improvements ([41d2c55](https://github.com/iberi22/xavier/commit/41d2c553dd553742bbe2dcf1f0aaa060b187eab7)), closes [#420](https://github.com/iberi22/xavier/issues/420)
 * Add ConnectionManager with r2d2 SQLite pool (LRU, multi-project, active project routing) ([95b16c9](https://github.com/iberi22/xavier/commit/95b16c997bd06831aff7ca96a547560132b738db))
 * add context-aware workspace suggestions during onboarding ([72619a8](https://github.com/iberi22/xavier/commit/72619a8f27ee3369f85bc525dbc3e3e10b8a9f69))

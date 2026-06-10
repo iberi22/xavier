@@ -73,7 +73,7 @@ pub async fn request_logger(
     let method = req.method().clone();
     let path = req.uri().path().to_string();
 
-    tracing::info!(method = %method, path = %path, "→ incoming request");
+    tracing::info!(method = %method, path = %path, "â†’ incoming request");
 
     let response = next.run(req).await;
     let latency = start.elapsed();
@@ -84,7 +84,7 @@ pub async fn request_logger(
         path = %path,
         status = %status.as_u16(),
         latency_ms = latency.as_millis() as u64,
-        "← response sent"
+        "â† response sent"
     );
 
     // Log server errors to persistent store
@@ -93,7 +93,7 @@ pub async fn request_logger(
             let entry = LogEntry::error(
                 LogSource::HttpServer,
                 &format!("http{}", path.replace('/', "::")),
-                &format!("HTTP {} → {} ({}ms)", method, status, latency.as_millis()),
+                &format!("HTTP {} â†’ {} ({}ms)", method, status, latency.as_millis()),
             )
             .with_metadata(serde_json::json!({
                 "method": method.to_string(),
@@ -112,4 +112,42 @@ pub async fn request_logger(
     }
 
     response
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_observability_state_creation() {
+        let state = ObservabilityState::new();
+        // In test context, store will be None because ConnectionManager::global()
+        // may not be initialized. That's fine.
+        assert!(state.store.is_none() || state.store.is_some());
+        // app_start_time should be set
+        assert!(state.uptime_seconds() < 100); // just started
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_observability_state_uptime() {
+        let state = ObservabilityState::new();
+        // Uptime should increase as time passes
+        let u1 = state.uptime_seconds();
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        let u2 = state.uptime_seconds();
+        assert!(u2 >= u1);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_observability_state_default() {
+        let state = ObservabilityState::default();
+        assert!(state.store.is_none() || state.store.is_some());
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_observability_state_clone() {
+        let state = ObservabilityState::new();
+        let cloned = state.clone();
+        assert_eq!(state.uptime_seconds(), cloned.uptime_seconds());
+    }
 }

@@ -7,7 +7,7 @@
 //!
 //! 1. Analyzer produces diagnosis (root cause + fix suggestion)
 //! 2. Fixer creates a formatted GitHub Issue
-//! 3. If fix is high-confidence and automatic → GitHub PR
+//! 3. If fix is high-confidence and automatic â†’ GitHub PR
 //! 4. Issue/PR is linked back to the service_log entry
 
 use std::process::Command;
@@ -51,7 +51,7 @@ pub enum FixerAction {
     Skipped,
 }
 
-/// The fixer — creates GitHub Issues/PRs from error diagnoses.
+/// The fixer â€” creates GitHub Issues/PRs from error diagnoses.
 pub struct Fixer {
     repo: RepoConfig,
     store: Option<ServiceLogStore>,
@@ -99,7 +99,7 @@ impl Fixer {
                     url: None,
                     number: None,
                     success: true,
-                    message: "Low urgency — logged for periodic report".to_string(),
+                    message: "Low urgency â€” logged for periodic report".to_string(),
                 }
             }
         }
@@ -187,7 +187,7 @@ impl Fixer {
     fn format_issue_body(&self, diagnosis: &ErrorDiagnosis) -> String {
         let confidence_pct = diagnosis.confidence * 100.0;
         format!(
-            r#"## 🤖 Auto-Detected Error
+            r#"## ðŸ¤– Auto-Detected Error
 
 **Module:** `{}`
 **Level:** {}
@@ -227,5 +227,109 @@ impl Fixer {
 impl Default for Fixer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::observability::analyzer::Urgency;
+    use crate::observability::service_log::{ErrorPattern, LogLevel};
+
+    fn make_diagnosis(urgency: Urgency) -> ErrorDiagnosis {
+        ErrorDiagnosis {
+            pattern: ErrorPattern {
+                module: "test::mod".into(),
+                level: LogLevel::Error,
+                frequency: 5,
+                sample_message: "connection timeout".into(),
+                first_seen: "2025-01-01T00:00:00Z".into(),
+                last_seen: "2025-01-01T01:00:00Z".into(),
+            },
+            analyzed_at: "2025-01-01T02:00:00.000Z".into(),
+            root_cause: "Network timeout".into(),
+            source_location: Some("src/server/http.rs:42".into()),
+            suggested_fix: "Increase timeout".into(),
+            confidence: 0.85,
+            urgency,
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_format_issue_body() {
+        // Fixer::new() uses tokio block_in_place, so we need a tokio runtime
+        let fixer = Fixer::new();
+        let diagnosis = make_diagnosis(Urgency::High);
+        let body = fixer.format_issue_body(&diagnosis);
+        assert!(body.contains("test::mod"));
+        assert!(body.contains("Network timeout"));
+        assert!(body.contains("Increase timeout"));
+        assert!(body.contains("src/server/http.rs:42"));
+        assert!(body.contains("85%"));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_format_issue_body_without_location() {
+        let fixer = Fixer::new();
+        let mut diagnosis = make_diagnosis(Urgency::Critical);
+        diagnosis.source_location = None;
+        let body = fixer.format_issue_body(&diagnosis);
+        assert!(body.contains("(unknown)"));
+    }
+
+    #[test]
+    fn test_fixer_action_display() {
+        let actions = [
+            FixerAction::IssueCreated,
+            FixerAction::PullRequestCreated,
+            FixerAction::TelegramNotified,
+            FixerAction::Skipped,
+        ];
+        // Just verify they debug-format without panic
+        for action in &actions {
+            let _ = format!("{:?}", action);
+        }
+    }
+
+    #[test]
+    fn test_fixer_result_struct() {
+        let result = FixerResult {
+            action: FixerAction::IssueCreated,
+            url: Some("https://github.com/iberi22/xavier/issues/1".into()),
+            number: Some(1),
+            success: true,
+            message: "Issue created".into(),
+        };
+        assert!(result.success);
+        assert_eq!(result.number, Some(1));
+        assert_eq!(
+            result.url.as_deref(),
+            Some("https://github.com/iberi22/xavier/issues/1")
+        );
+    }
+
+    #[test]
+    fn test_repo_config_defaults() {
+        let config = RepoConfig::default();
+        assert_eq!(config.owner, "iberi22");
+        assert_eq!(config.repo, "xavier");
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_fixer_format_body_has_module() {
+        let fixer = Fixer::new();
+        let diagnosis = make_diagnosis(Urgency::Low);
+        let body = fixer.format_issue_body(&diagnosis);
+        assert!(body.contains("test::mod"));
+        assert!(body.contains("Network timeout"));
+        assert!(body.contains("85%"));
+    }
+
+    #[test]
+    fn test_issue_title_truncation() {
+        let diagnosis = make_diagnosis(Urgency::High);
+        let sample = &diagnosis.pattern.sample_message;
+        let truncated = &sample[..80.min(sample.len())];
+        assert_eq!(truncated, "connection timeout");
     }
 }

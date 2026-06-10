@@ -1,6 +1,5 @@
 //! SystemScanner: Detect CLI agents, local models, GPU, env vars, and login status
 
-use crate::cli::state::CliState;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::process::Command;
@@ -265,7 +264,7 @@ async fn detect_generic_cli(name: &str, _detailed: bool) -> CliAgentStatus {
 fn detect_gpu() -> GpuStatus {
     // Try nvidia-smi first (Windows/Linux)
     let nvidia = Command::new("nvidia-smi")
-        .args(&[
+        .args([
             "--query-gpu=name,memory.total,driver_version",
             "--format=csv,noheader",
         ])
@@ -371,7 +370,7 @@ async fn detect_docker() -> DockerStatus {
 
     let containers = if running {
         Command::new("docker")
-            .args(&["ps", "--format", "{{.Names}}"])
+            .args(["ps", "--format", "{{.Names}}"])
             .output()
             .ok()
             .filter(|o| o.status.success())
@@ -453,6 +452,7 @@ pub fn gather_system_info() -> SystemInfo {
 }
 
 /// Format scan result as table
+#[allow(dead_code)]
 pub fn format_as_table(result: &SystemScanResult) -> String {
     let mut lines = vec![
         "╔═══════════════════════════════════════════════════════════════╗".to_string(),
@@ -535,6 +535,7 @@ pub fn format_as_json(result: &SystemScanResult) -> String {
 }
 
 /// Format scan result as Markdown
+#[allow(dead_code)]
 pub fn format_as_markdown(result: &SystemScanResult) -> String {
     let mut md = vec!["# System Scan Results\n".to_string()];
 

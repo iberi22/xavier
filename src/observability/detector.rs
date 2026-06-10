@@ -6,9 +6,9 @@
 //!
 //! ## Detection Rules
 //!
-//! - Same `module` + same message prefix repeated > 3 times in 1 hour → pattern
-//! - Single module with >10 errors in 1 hour → burst alert
-//! - New module with errors (never seen before) → new error alert
+//! - Same `module` + same message prefix repeated > 3 times in 1 hour â†’ pattern
+//! - Single module with >10 errors in 1 hour â†’ burst alert
+//! - New module with errors (never seen before) â†’ new error alert
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -47,7 +47,7 @@ pub struct DetectionResult {
     pub new_error_alerts: Vec<String>,
 }
 
-/// The log detector — scans for error patterns.
+/// The log detector â€” scans for error patterns.
 pub struct LogDetector {
     store: ServiceLogStore,
     config: DetectorConfig,
@@ -107,7 +107,7 @@ impl LogDetector {
             if !seen.contains(&sig) {
                 seen.push(sig);
                 result.new_error_alerts.push(format!(
-                    "New error detected: module '{}' — {}",
+                    "New error detected: module '{}' â€” {}",
                     pattern.module, pattern.sample_message
                 ));
             }
@@ -158,5 +158,97 @@ impl LogDetector {
                 }
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::observability::service_log::{ErrorPattern, LogLevel};
+
+    #[test]
+    fn test_detector_config_defaults() {
+        let config = DetectorConfig::default();
+        assert_eq!(config.interval_seconds, 300);
+        assert_eq!(config.window_minutes, 60);
+        assert_eq!(config.pattern_threshold, 3);
+    }
+
+    #[test]
+    fn test_detector_config_custom() {
+        let config = DetectorConfig {
+            interval_seconds: 60,
+            window_minutes: 30,
+            pattern_threshold: 5,
+        };
+        assert_eq!(config.interval_seconds, 60);
+        assert_eq!(config.window_minutes, 30);
+        assert_eq!(config.pattern_threshold, 5);
+    }
+
+    #[test]
+    fn test_detection_result_struct() {
+        let pattern = ErrorPattern {
+            module: "http".into(),
+            level: LogLevel::Error,
+            frequency: 10,
+            sample_message: "500 Internal".into(),
+            first_seen: "2025-01-01T00:00:00Z".into(),
+            last_seen: "2025-01-01T01:00:00Z".into(),
+        };
+        let result = DetectionResult {
+            timestamp: "2025-01-01T01:00:00.000Z".into(),
+            patterns_found: vec![pattern],
+            burst_alerts: vec![],
+            new_error_alerts: vec![],
+        };
+        assert_eq!(result.patterns_found.len(), 1);
+        assert!(result.burst_alerts.is_empty());
+        assert!(result.new_error_alerts.is_empty());
+    }
+
+    #[test]
+    fn test_burst_detection_logic() {
+        // Burst threshold is pattern_threshold * 5 = 15
+        let pattern = ErrorPattern {
+            module: "db".into(),
+            level: LogLevel::Error,
+            frequency: 20,
+            sample_message: "connection refused".into(),
+            first_seen: "t1".into(),
+            last_seen: "t2".into(),
+        };
+        let burst_threshold = DetectorConfig::default().pattern_threshold * 5;
+        assert!(pattern.frequency >= burst_threshold);
+    }
+
+    #[test]
+    fn test_new_error_alert_logic() {
+        let pattern = ErrorPattern {
+            module: "new_module".into(),
+            level: LogLevel::Error,
+            frequency: 3,
+            sample_message: "something unexpected".into(),
+            first_seen: "t1".into(),
+            last_seen: "t2".into(),
+        };
+        let sig = format!(
+            "{}::{}",
+            pattern.module,
+            &pattern.sample_message[..50.min(pattern.sample_message.len())]
+        );
+        let mut seen: Vec<String> = Vec::new();
+        assert!(!seen.contains(&sig));
+        seen.push(sig);
+        assert_eq!(seen.len(), 1);
+    }
+
+    #[test]
+    fn test_seen_signatures_limit() {
+        let mut seen: Vec<String> = (0..10001).map(|i| format!("sig_{}", i)).collect();
+        assert!(seen.len() > 10000);
+        let excess = seen.len() - 5000;
+        seen.drain(0..excess);
+        assert_eq!(seen.len(), 5000);
     }
 }

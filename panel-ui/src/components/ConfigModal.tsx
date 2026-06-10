@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Server, Grid, Brain, Network, Cpu, Shield, Plug, X, Bookmark, Share2, Layers, Cpu as CpuIcon, Database, Globe } from 'lucide-react';
+import { Server, Grid, Brain, Network, Cpu, Shield, Plug, X, Bookmark, Share2, Layers, Cpu as CpuIcon, Database, Globe, MessageSquare } from 'lucide-react';
 import GraphView from './GraphView';
 import BookmarksView from './BookmarksView';
 import ProvidersPage from '../pages/Settings/Providers';
+import SecurityConfigPanel from '../pages/Settings/Security';
+import MessagingConfigModal, { MessagingConfigInner } from './MessagingConfigModal';
 import { GraphData, BookmarkArtifact } from '../types';
 
 interface ConfigModalProps {
@@ -17,7 +19,7 @@ interface ConfigModalProps {
   token?: string;
 }
 
-type MainTab = 'config' | 'graph' | 'bookmarks' | 'providers';
+type MainTab = 'config' | 'graph' | 'bookmarks' | 'providers' | 'messaging' | 'security';
 
 export default function ConfigModal({ onClose, graphData, onUpdateGraphData, bookmarks, onPinArtifact, onUpdateBookmark, token }: ConfigModalProps) {
   const [mainTab, setMainTab] = useState<MainTab>('config');
@@ -50,9 +52,11 @@ export default function ConfigModal({ onClose, graphData, onUpdateGraphData, boo
     >
       {/* Top Navigation */}
       <div className="flex items-center justify-between px-8 py-4 border-b border-white/5 bg-black/40">
-        <div className="flex gap-8">
+        <div className="flex gap-6 overflow-x-auto">
           <TabButton active={mainTab === 'config'} onClick={() => setMainTab('config')} icon={<SettingsIcon />} label="Configuration" />
           <TabButton active={mainTab === 'providers'} onClick={() => setMainTab('providers')} icon={<Globe className="w-4 h-4" />} label="Providers" />
+          <TabButton active={mainTab === 'messaging'} onClick={() => setMainTab('messaging')} icon={<MessageSquare className="w-4 h-4" />} label="Messaging" />
+          <TabButton active={mainTab === 'security'} onClick={() => setMainTab('security')} icon={<Shield className="w-4 h-4" />} label="Security" />
           <TabButton active={mainTab === 'graph'} onClick={() => setMainTab('graph')} icon={<Share2 className="w-4 h-4" />} label="Knowledge Graph" />
           <TabButton active={mainTab === 'bookmarks'} onClick={() => setMainTab('bookmarks')} icon={<Bookmark className="w-4 h-4" />} label="Saved Artifacts" />
         </div>
@@ -102,6 +106,31 @@ export default function ConfigModal({ onClose, graphData, onUpdateGraphData, boo
               <ProvidersPage token={token || ''} />
             </div>
           )}
+          {mainTab === 'messaging' && (
+            <motion.div key="messaging" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="w-full h-full overflow-y-auto">
+              {/* Embedded messaging config — no close button, no backdrop */}
+              <div className="p-6 h-full flex flex-col">
+                <div className="mb-4">
+                  <h2 className="text-2xl font-light text-white tracking-tight">Messaging Integrations</h2>
+                  <p className="text-sm text-white/40 mt-1">Configure external communication channels for Xavier.</p>
+                </div>
+                <div className="flex-1 bg-black/20 border border-white/[0.04] rounded-2xl overflow-hidden">
+                  <MessagingEmbedded />
+                </div>
+              </div>
+            </motion.div>
+          )}
+          {mainTab === 'security' && (
+            <motion.div key="security" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="w-full h-full overflow-y-auto">
+              <div className="p-6">
+                <div className="mb-4">
+                  <h2 className="text-2xl font-light text-white tracking-tight">Security & Tokens</h2>
+                  <p className="text-sm text-white/40 mt-1">Manage API tokens, provider keys, audit log, and network settings.</p>
+                </div>
+              </div>
+              <SecurityConfigPanel embedded />
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
     </motion.div>
@@ -114,6 +143,15 @@ function SettingsIcon() {
       <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
       <circle cx="12" cy="12" r="3" />
     </svg>
+  );
+}
+
+/** Embedded version rendered inside ConfigModal (no backdrop/close button) */
+function MessagingEmbedded() {
+  return (
+    <div className="w-full h-full">
+      <MessagingConfigInner initialTab="telegram" />
+    </div>
   );
 }
 

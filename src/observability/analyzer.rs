@@ -53,7 +53,7 @@ impl std::fmt::Display for Urgency {
     }
 }
 
-/// The error analyzer — uses AgentRuntime to diagnose errors.
+/// The error analyzer â€” uses AgentRuntime to diagnose errors.
 pub struct ErrorAnalyzer {
     codebase_path: std::path::PathBuf,
 }
@@ -179,7 +179,7 @@ impl ErrorAnalyzer {
 
         if msg.contains("database") || msg.contains("sqlite") || msg.contains("sql") {
             return (
-                "Database error. SQLite operation failed — possibly corrupted DB, disk full, or schema mismatch."
+                "Database error. SQLite operation failed â€” possibly corrupted DB, disk full, or schema mismatch."
                     .to_string(),
                 "Check disk space, run VACUUM on vec-store.sqlite3, verify schema migrations."
                     .to_string(),
@@ -236,5 +236,161 @@ impl ErrorAnalyzer {
 impl Default for ErrorAnalyzer {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_pattern(msg: &str, module: &str, level: LogLevel, freq: u32) -> ErrorPattern {
+        ErrorPattern {
+            module: module.to_string(),
+            level,
+            frequency: freq,
+            sample_message: msg.to_string(),
+            first_seen: "2025-01-01T00:00:00Z".into(),
+            last_seen: "2025-01-01T01:00:00Z".into(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_analyzer_auth_error() {
+        let analyzer = ErrorAnalyzer::new();
+        let pattern = make_pattern(
+            "token expired - unauthorized access",
+            "auth::handler",
+            LogLevel::Error,
+            5,
+        );
+        let diagnosis = analyzer.analyze(&pattern).await;
+        assert!(diagnosis.root_cause.contains("Authentication"));
+        assert_eq!(diagnosis.urgency, Urgency::High);
+        assert!(diagnosis.confidence > 0.8);
+    }
+
+    #[tokio::test]
+    async fn test_analyzer_500_error() {
+        let analyzer = ErrorAnalyzer::new();
+        let pattern = make_pattern(
+            "HTTP 500 Internal Server Error",
+            "http::handler",
+            LogLevel::Error,
+            3,
+        );
+        let diagnosis = analyzer.analyze(&pattern).await;
+        assert!(diagnosis.root_cause.contains("500"));
+        assert_eq!(diagnosis.urgency, Urgency::High);
+    }
+
+    #[tokio::test]
+    async fn test_analyzer_network_error() {
+        let analyzer = ErrorAnalyzer::new();
+        let pattern = make_pattern(
+            "connection refused: tcp://localhost:8080",
+            "network",
+            LogLevel::Error,
+            10,
+        );
+        let diagnosis = analyzer.analyze(&pattern).await;
+        assert!(diagnosis.root_cause.contains("Network"));
+        assert_eq!(diagnosis.urgency, Urgency::Critical);
+    }
+
+    #[tokio::test]
+    async fn test_analyzer_database_error() {
+        let analyzer = ErrorAnalyzer::new();
+        let pattern = make_pattern(
+            "database error: SQL logic error",
+            "db::store",
+            LogLevel::Error,
+            7,
+        );
+        let diagnosis = analyzer.analyze(&pattern).await;
+        assert!(diagnosis.root_cause.contains("Database"));
+        assert_eq!(diagnosis.urgency, Urgency::Critical);
+    }
+
+    #[tokio::test]
+    async fn test_analyzer_oom_error() {
+        let analyzer = ErrorAnalyzer::new();
+        let pattern = make_pattern(
+            "out of memory: cannot allocate",
+            "agent",
+            LogLevel::Error,
+            1,
+        );
+        let diagnosis = analyzer.analyze(&pattern).await;
+        assert!(diagnosis.root_cause.contains("memory"));
+        assert_eq!(diagnosis.urgency, Urgency::Critical);
+    }
+
+    #[tokio::test]
+    async fn test_analyzer_generic_error() {
+        let analyzer = ErrorAnalyzer::new();
+        let pattern = make_pattern(
+            "some random error happened",
+            "unknown::mod",
+            LogLevel::Warn,
+            2,
+        );
+        let diagnosis = analyzer.analyze(&pattern).await;
+        // Generic fallback — should have medium urgency for error, low for warn
+        assert_eq!(diagnosis.urgency, Urgency::Low);
+    }
+
+    #[tokio::test]
+    async fn test_analyzer_generic_error_level() {
+        let analyzer = ErrorAnalyzer::new();
+        let pattern = make_pattern(
+            "some random error happened",
+            "unknown::mod",
+            LogLevel::Error,
+            2,
+        );
+        let diagnosis = analyzer.analyze(&pattern).await;
+        assert_eq!(diagnosis.urgency, Urgency::Medium);
+    }
+
+    #[tokio::test]
+    async fn test_analyzer_high_freq_hint() {
+        let analyzer = ErrorAnalyzer::new();
+        let pattern = make_pattern("generic problem", "test", LogLevel::Error, 20);
+        let diagnosis = analyzer.analyze(&pattern).await;
+        assert!(diagnosis.root_cause.contains("20 times"));
+    }
+
+    #[test]
+    fn test_urgency_display() {
+        assert_eq!(Urgency::Critical.to_string(), "critical");
+        assert_eq!(Urgency::High.to_string(), "high");
+        assert_eq!(Urgency::Medium.to_string(), "medium");
+        assert_eq!(Urgency::Low.to_string(), "low");
+    }
+
+    #[test]
+    fn test_urgency_ordering() {
+        assert_eq!(Urgency::Critical as u8, 0u8);
+        assert_eq!(Urgency::High as u8, 1u8);
+        assert_eq!(Urgency::Medium as u8, 2u8);
+        assert_eq!(Urgency::Low as u8, 3u8);
+    }
+
+    #[test]
+    fn test_error_diagnosis_struct() {
+        let pattern = make_pattern("test", "mod", LogLevel::Error, 3);
+        let diagnosis = ErrorDiagnosis {
+            pattern: pattern.clone(),
+            analyzed_at: "now".into(),
+            root_cause: "cause".into(),
+            source_location: None,
+            suggested_fix: "fix".into(),
+            confidence: 0.5,
+            urgency: Urgency::Medium,
+        };
+        assert_eq!(diagnosis.pattern.module, "mod");
+        assert_eq!(diagnosis.root_cause, "cause");
+        assert_eq!(diagnosis.suggested_fix, "fix");
+        assert!((diagnosis.confidence - 0.5).abs() < f32::EPSILON);
     }
 }

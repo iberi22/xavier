@@ -15,7 +15,7 @@ use super::analyzer::{ErrorDiagnosis, Urgency};
 use super::fixer::FixerResult;
 
 /// Notification severity (maps to emoji + level).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum NotificationLevel {
     Success,
     Info,
@@ -25,7 +25,7 @@ pub enum NotificationLevel {
 }
 
 /// A notification to be sent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Notification {
     pub level: NotificationLevel,
     pub title: String,
@@ -177,5 +177,183 @@ impl Notifier {
 impl Default for Notifier {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::observability::analyzer::{ErrorDiagnosis, Urgency};
+    use crate::observability::fixer::{FixerAction, FixerResult};
+    use crate::observability::service_log::{ErrorPattern, LogLevel};
+
+    fn make_diagnosis(urgency: Urgency) -> ErrorDiagnosis {
+        ErrorDiagnosis {
+            pattern: ErrorPattern {
+                module: "http::server".into(),
+                level: LogLevel::Error,
+                frequency: 5,
+                sample_message: "connection timeout".into(),
+                first_seen: "2025-01-01T00:00:00Z".into(),
+                last_seen: "2025-01-01T01:00:00Z".into(),
+            },
+            analyzed_at: "2025-01-01T02:00:00.000Z".into(),
+            root_cause: "Network timeout".into(),
+            source_location: Some("src/http.rs:42".into()),
+            suggested_fix: "Increase timeout".into(),
+            confidence: 0.85,
+            urgency,
+        }
+    }
+
+    #[test]
+    fn test_notification_level_emoji() {
+        let n = Notification {
+            level: NotificationLevel::Critical,
+            title: "Test".into(),
+            message: "Critical error".into(),
+            metadata: None,
+        };
+        let text = n.to_telegram_text();
+        assert!(text.starts_with("\u{1F6A8}"));
+    }
+
+    #[test]
+    fn test_notification_level_success() {
+        let n = Notification {
+            level: NotificationLevel::Success,
+            title: "Done".into(),
+            message: "All good".into(),
+            metadata: None,
+        };
+        assert!(n.to_telegram_text().starts_with("\u{2705}"));
+    }
+
+    #[test]
+    fn test_notification_level_warning() {
+        let n = Notification {
+            level: NotificationLevel::Warning,
+            title: "Warn".into(),
+            message: "Disk full".into(),
+            metadata: None,
+        };
+        assert!(n.to_telegram_text().starts_with("\u{26A0}\u{FE0F}"));
+    }
+
+    #[test]
+    fn test_notification_level_info() {
+        let n = Notification {
+            level: NotificationLevel::Info,
+            title: "Info".into(),
+            message: "Started".into(),
+            metadata: None,
+        };
+        assert!(n.to_telegram_text().starts_with("\u{2139}\u{FE0F}"));
+    }
+
+    #[test]
+    fn test_notification_level_error() {
+        let n = Notification {
+            level: NotificationLevel::Error,
+            title: "Error".into(),
+            message: "Failed".into(),
+            metadata: None,
+        };
+        assert!(n.to_telegram_text().starts_with("\u{274C}"));
+    }
+
+    #[test]
+    fn test_notify_error_critical() {
+        let notifier = Notifier::new();
+        let diagnosis = make_diagnosis(Urgency::Critical);
+        let notif = notifier.notify_error(&diagnosis);
+        assert_eq!(notif.level, NotificationLevel::Critical);
+        assert!(notif.title.contains("http::server"));
+    }
+
+    #[test]
+    fn test_notify_error_high() {
+        let notifier = Notifier::new();
+        let diagnosis = make_diagnosis(Urgency::High);
+        let notif = notifier.notify_error(&diagnosis);
+        assert_eq!(notif.level, NotificationLevel::Error);
+    }
+
+    #[test]
+    fn test_notify_error_medium() {
+        let notifier = Notifier::new();
+        let diagnosis = make_diagnosis(Urgency::Medium);
+        let notif = notifier.notify_error(&diagnosis);
+        assert_eq!(notif.level, NotificationLevel::Warning);
+    }
+
+    #[test]
+    fn test_notify_error_low() {
+        let notifier = Notifier::new();
+        let diagnosis = make_diagnosis(Urgency::Low);
+        let notif = notifier.notify_error(&diagnosis);
+        assert_eq!(notif.level, NotificationLevel::Info);
+    }
+
+    #[test]
+    fn test_notify_fixer_result_success() {
+        let notifier = Notifier::new();
+        let result = FixerResult {
+            action: FixerAction::IssueCreated,
+            url: Some("https://github.com/iberi22/xavier/issues/1".into()),
+            number: Some(1),
+            success: true,
+            message: "Issue created successfully".into(),
+        };
+        let notif = notifier.notify_fixer_result(&result);
+        assert_eq!(notif.level, NotificationLevel::Success);
+    }
+
+    #[test]
+    fn test_notify_fixer_result_failure() {
+        let notifier = Notifier::new();
+        let result = FixerResult {
+            action: FixerAction::IssueCreated,
+            url: None,
+            number: None,
+            success: false,
+            message: "gh CLI not available".into(),
+        };
+        let notif = notifier.notify_fixer_result(&result);
+        assert_eq!(notif.level, NotificationLevel::Error);
+    }
+
+    #[test]
+    fn test_notify_startup() {
+        let notifier = Notifier::new();
+        let notif = notifier.notify_startup();
+        assert_eq!(notif.level, NotificationLevel::Info);
+        assert!(notif.title.contains("Observability"));
+    }
+
+    #[test]
+    fn test_notify_self_heal_success() {
+        let notifier = Notifier::new();
+        let notif = notifier.notify_self_heal("Restarted service", true);
+        assert_eq!(notif.level, NotificationLevel::Success);
+    }
+
+    #[test]
+    fn test_notify_self_heal_failure() {
+        let notifier = Notifier::new();
+        let notif = notifier.notify_self_heal("Failed to restart", false);
+        assert_eq!(notif.level, NotificationLevel::Error);
+    }
+
+    #[test]
+    fn test_notification_with_metadata() {
+        let n = Notification {
+            level: NotificationLevel::Error,
+            title: "Test".into(),
+            message: "With metadata".into(),
+            metadata: Some(serde_json::json!({"key": "value"})),
+        };
+        assert!(n.metadata.is_some());
+        assert_eq!(n.metadata.as_ref().unwrap()["key"], "value");
     }
 }
