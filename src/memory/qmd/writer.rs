@@ -201,6 +201,7 @@ pub async fn add_document_typed_with_embedding(
                     .and_then(|t| t.level)
                     .unwrap_or(crate::memory::schema::MemoryLevel::Raw),
                 relation: typed.as_ref().and_then(|t| t.relation.clone()),
+                clearance: typed.as_ref().and_then(|t| t.clearance).unwrap_or_default(),
             })
             .await?;
     }

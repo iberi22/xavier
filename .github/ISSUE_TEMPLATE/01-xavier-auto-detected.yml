@@ -1,0 +1,59 @@
+﻿---
+name: "🤖 Xavier Auto-Detected Bug"
+description: "Issue creado automáticamente por Xavier al detectar un error reproducible"
+title: "[AUTO] <módulo>: <error breve>"
+labels: ["auto-detected", "bug"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## ⚠️ Error Auto-Detectado por Xavier
+
+        **Nodo:** `{{ node_id }}` | **Versión:** {{ version }}
+        **Timestamp:** {{ timestamp }}
+
+  - type: textarea
+    id: error-details
+    attributes:
+      label: Error Detectado
+      render: shell
+      value: |
+        {{ error_message }}
+
+        ```
+        {{ stack_trace }}
+        ```
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Contexto Público
+      value: |
+        - **Módulo:** {{ module }}
+        - **Frecuencia:** {{ frequency }} en {{ time_window }}
+        - **Nivel de severidad:** {{ severity }}
+        - **Sistema operativo:** {{ os }}
+        - **Arquitectura:** {{ arch }}
+
+  - type: textarea
+    id: diagnostic-info
+    attributes:
+      label: Información de Diagnóstico
+      value: |
+        - **Versión de Rust:** {{ rust_version }}
+        - **Plugins activos:** {{ active_plugins }}
+        - **Feature flags:** {{ features }}
+        - **Uptime del nodo:** {{ uptime }}
+        - **Memoria disponible:** {{ memory_available_mb }} MB
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+
+        *🤖 Este issue fue creado automáticamente por **Xavier Mesh Network**.*
+        *No requiere intervención humana.*
+
+        *Para acceder a metadatos cifrados adicionales (entorno completo, trazas,
+        config local), conectar al nodo origen `{{ node_id }}` vía protocolo P2P.*

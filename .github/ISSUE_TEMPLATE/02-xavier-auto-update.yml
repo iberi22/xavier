@@ -1,0 +1,52 @@
+﻿---
+name: "🔄 Xavier Auto-Update"
+description: "Registro de actualización automática de versión de un nodo"
+title: "[UPDATE] Nodo {{ node_id }} → v{{ new_version }}"
+labels: ["auto-update"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## 🔄 Actualización Automática de Xavier
+
+        **Nodo:** `{{ node_id }}`
+        **De:** `v{{ old_version }}` → **A:** `v{{ new_version }}`
+        **Timestamp:** {{ timestamp }}
+
+  - type: textarea
+    id: changelog
+    attributes:
+      label: Cambios en la Nueva Versión
+      value: |
+        {{ changelog_diff }}
+
+  - type: textarea
+    id: local-state
+    attributes:
+      label: Estado Local Post-Update
+      value: |
+        - **Configuración persistida:** ✅ / ❌
+        - **Plugins compatibles:** {{ plugin_status }}
+        - **Base de datos migrada:** ✅ / ❌ / N/A
+        - **Uptime antes del update:** {{ previous_uptime }}
+        - **Uptime después del update:** {{ current_uptime }}
+
+  - type: textarea
+    id: network-status
+    attributes:
+      label: Estado de la Red
+      value: |
+        - **Peers activos antes:** {{ peers_before }}
+        - **Peers activos después:** {{ peers_after }}
+        - **Versiones de peers conocidos:** {{ peer_versions }}
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+
+        *🔄 Actualización gestionada por **Xavier Mesh Network**.*
+
+        *El nodo `{{ node_id }}` se actualizó exitosamente y continúa
+        operando en la red.*

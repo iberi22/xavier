@@ -86,6 +86,8 @@ pub struct MemoryRecord {
     #[serde(default)]
     pub relation: Option<RelationKind>,
     #[serde(default)]
+    pub clearance: crate::memory::schema::ClearanceLevel,
+    #[serde(default)]
     pub revisions: Vec<MemoryRevision>,
 }
 
@@ -221,6 +223,7 @@ impl MemoryRecord {
             cluster_id: document.cluster_id.clone(),
             level: document.level,
             relation: document.relation.clone(),
+            clearance: document.clearance,
             revisions: vec![MemoryRevision {
                 revision,
                 recorded_at: updated_at,
@@ -260,6 +263,7 @@ impl MemoryRecord {
             parent_id: self.parent_id.clone(),
             level: self.level,
             relation: self.relation.clone(),
+            clearance: self.clearance,
         }
     }
 

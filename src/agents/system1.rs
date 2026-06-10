@@ -636,6 +636,7 @@ mod budget_tests {
             cluster_id: None,
             level: crate::memory::schema::MemoryLevel::Raw,
             relation: None,
+            clearance: Default::default(),
             revisions: vec![],
         }
     }

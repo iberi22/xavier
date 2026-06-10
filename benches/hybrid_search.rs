@@ -81,6 +81,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
                     cluster_id: None,
                     level: Default::default(),
                     relation: None,
+                    clearance: Default::default(),
                     revisions: Vec::new(),
                 })
                 .await

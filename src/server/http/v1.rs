@@ -38,6 +38,7 @@ pub async fn memory_add(
         level: payload.level,
         zone: None,
         relation: payload.relation,
+        clearance: None,
     };
     let content_vector = match embedding::build_embedder_from_env().await {
         Ok(embedder) => match embedder.encode(&content).await {
