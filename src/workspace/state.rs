@@ -52,7 +52,7 @@ pub struct WorkspaceState {
     pub(super) store: Arc<dyn MemoryStore>,
     pub(super) store_migrated_from_file: bool,
     pub(super) store_migration_detail: String,
-    pub(super) usage_state_path: PathBuf,
+    pub usage_state_path: PathBuf,
     pub(super) persist_lock: Mutex<()>,
     pub(super) requests_used: AtomicUsize,
     pub(super) usage_metrics: UsageMetrics,

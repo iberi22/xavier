@@ -394,6 +394,12 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             "/v1/memory/export",
             get(crate::cli::handlers::headless_api::headless_memory_export),
         )
+        // ── Mesh API ──────────────────────────────────────────────────────
+        .route("/v1/mesh/identity", get(xavier::server::v1_api::v1_mesh_identity))
+        .route("/v1/mesh/handshake", post(xavier::server::v1_api::v1_mesh_handshake))
+        .route("/v1/mesh/manifest", get(xavier::server::v1_api::v1_mesh_manifest))
+        .route("/v1/mesh/chunks/request", post(xavier::server::v1_api::v1_mesh_chunks_request))
+        .route("/v1/mesh/chunks/push", post(xavier::server::v1_api::v1_mesh_chunks_push))
         // ── Headless E2E API (New Structure) ──────────────────────────────
         .route(
             "/headless/health",
