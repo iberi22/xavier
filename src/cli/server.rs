@@ -507,7 +507,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     // Start the error pattern detector in background
     let detector_store = obs_state_clone.store.clone();
     tokio::spawn(async move {
-        if let Some(ref store) = detector_store {
+        if let Some(ref _store) = detector_store {
             let detector = crate::observability::detector::LogDetector::new().await;
             if let Ok(d) = detector {
                 let d = std::sync::Arc::new(d);
