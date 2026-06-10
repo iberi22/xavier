@@ -33,6 +33,7 @@ pub enum MemoryKind {
     ContentProject,
     VideoAsset,
     Document,
+    Harness,
 }
 
 impl MemoryKind {
@@ -61,6 +62,7 @@ impl MemoryKind {
             "content_project" | "content-project" | "content project" => Some(Self::ContentProject),
             "video_asset" | "video-asset" | "video asset" => Some(Self::VideoAsset),
             "document" | "memory" | "note" => Some(Self::Document),
+            "harness" => Some(Self::Harness),
             _ => None,
         }
     }
@@ -90,6 +92,7 @@ impl MemoryKind {
             Self::ContentProject => "content_project",
             Self::VideoAsset => "video_asset",
             Self::Document => "document",
+            Self::Harness => "harness",
         }
     }
 }
@@ -105,6 +108,7 @@ pub enum EvidenceKind {
     SummaryFact,
     Observation,
     UserPrompt,
+    ExecutionTrace,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -274,6 +278,7 @@ impl EvidenceKind {
             "summary_fact" | "summary-fact" => Some(Self::SummaryFact),
             "observation" => Some(Self::Observation),
             "user_prompt" | "user-prompt" | "prompt" => Some(Self::UserPrompt),
+            "execution_trace" | "execution-trace" | "trace" => Some(Self::ExecutionTrace),
             _ => None,
         }
     }
@@ -288,6 +293,7 @@ impl EvidenceKind {
             Self::SummaryFact => "summary_fact",
             Self::Observation => "observation",
             Self::UserPrompt => "user_prompt",
+            Self::ExecutionTrace => "execution_trace",
         }
     }
 }
@@ -686,7 +692,8 @@ fn infer_kind_from_evidence(evidence_kind: Option<EvidenceKind>) -> Option<Memor
         | Some(EvidenceKind::Observation) => Some(MemoryKind::Fact),
         Some(EvidenceKind::SourceTurn)
         | Some(EvidenceKind::SessionSummary)
-        | Some(EvidenceKind::UserPrompt) => Some(MemoryKind::Session),
+        | Some(EvidenceKind::UserPrompt)
+        | Some(EvidenceKind::ExecutionTrace) => Some(MemoryKind::Session),
         None => None,
     }
 }

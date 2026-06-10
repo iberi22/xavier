@@ -84,6 +84,16 @@ pub(crate) struct DeleteMemoryRequest {
 }
 
 #[derive(Debug, Deserialize)]
+pub(crate) struct UpdateMemoryRequest {
+    pub id: String,
+    pub content: String,
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
 pub(crate) struct SecurityScanPayload {
     #[allow(dead_code)]
     pub input: String,
@@ -95,6 +105,27 @@ pub(crate) struct MemoryQueryPayload {
     pub limit: Option<usize>,
     #[serde(default, rename = "filters")]
     pub _filters: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct EvictPayload {
+    #[serde(default)]
+    pub priority: Option<String>,
+    #[serde(default)]
+    pub threshold: Option<f32>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct TimelineQueryPayload {
+    pub query: String,
+    #[serde(default)]
+    pub start_date: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub end_date: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub agent_id: Option<String>,
+    #[serde(default = "default_limit")]
+    pub limit: usize,
 }
 
 #[derive(Debug, Deserialize)]

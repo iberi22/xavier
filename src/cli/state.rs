@@ -11,6 +11,7 @@ use xavier::app::proxy_use_case::ProxyUseCase;
 use xavier::codebase::conversations_db::ConversationsDb;
 use xavier::coordination::{KeyLendingEngine, XavierEventBus};
 use xavier::embedding::Embedder;
+use xavier::memory::qmd_memory::QmdMemory;
 use xavier::memory::store::MemoryStore;
 use xavier::ports::inbound::{
     AgentLifecyclePort, InputSecurityPort, MemoryQueryPort, SecurityScanPort,
@@ -22,6 +23,7 @@ use xavier::time::TimeMetricsStore;
 #[derive(Clone)]
 pub struct CliState {
     pub memory: Arc<dyn MemoryQueryPort>,
+    pub qmd_memory: Arc<QmdMemory>,
     pub store: Arc<dyn MemoryStore>,
     pub workspace_id: String,
     pub workspace_dir: PathBuf,

@@ -11,7 +11,10 @@ pub mod manager;
 pub mod monitoring;
 pub mod orchestrator;
 pub mod query_processor;
+pub mod skill_dispatcher;
+pub mod skill_registry;
 pub mod skills;
+pub mod timeline;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -24,7 +27,10 @@ pub use manager::ContextManager;
 pub use monitoring::ContextMetrics;
 pub use orchestrator::{ContextBudgetConfig, ExecutionPlan, HookKind, Orchestrator};
 pub use query_processor::QueryProcessor;
+pub use skill_dispatcher::{ContextPack, SkillDispatchRequest, SkillDispatchResult, SkillDispatcher};
+pub use skill_registry::{IndexedSkill, SkillRegistry};
 pub use skills::{Skill, SkillLoader};
+pub use timeline::{TimeSlice, TimelineEngine, TimelineEventSummary, TimelineQuery};
 
 /// Canonical unit used by context regeneration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

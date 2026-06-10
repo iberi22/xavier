@@ -16,6 +16,7 @@ pub mod consolidation;
 pub mod core;
 pub mod decay;
 pub mod eviction;
+pub mod gc;
 pub mod management;
 pub mod priority;
 pub mod quality;

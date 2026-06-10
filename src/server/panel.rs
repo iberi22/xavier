@@ -760,6 +760,8 @@ mod tests {
         let body = to_bytes(response.into_body(), usize::MAX)
             .await
             .expect("test assertion");
+        let body_str = String::from_utf8_lossy(&body);
+        println!("Response body: {}", body_str);
         let payload: PanelChatResponse = serde_json::from_slice(&body).expect("test assertion");
 
         assert_eq!(payload.messages.len(), 2);

@@ -15,6 +15,7 @@ pub mod system2;
 pub mod system3;
 pub mod ui_render;
 pub mod unregister_agent_handler;
+pub mod self_harness_coordinator;
 
 use std::collections::HashMap;
 
