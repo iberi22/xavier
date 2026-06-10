@@ -252,6 +252,14 @@ impl GovernanceEngine {
 
     /// Apoyar una propuesta (para pasar a votación)
     pub fn support_proposal(&mut self, proposal_id: &str, wallet: &WalletAddress) -> Result<(), GovernanceError> {
+        // Checks que necesitan &self antes del borrow mutable
+        let can_vote = self.can_user_vote(wallet);
+        let min_supports = self.config.min_supports;
+
+        if !can_vote {
+            return Err(GovernanceError::InactiveVoter);
+        }
+
         let proposal = self.proposals
             .iter_mut()
             .find(|p| p.id == proposal_id)
@@ -265,14 +273,10 @@ impl GovernanceEngine {
             return Err(GovernanceError::AlreadySupported);
         }
 
-        if !self.can_user_vote(wallet) {
-            return Err(GovernanceError::InactiveVoter);
-        }
-
         proposal.supports.push(wallet.clone());
 
         // Si alcanza apoyos mínimos, pasar a votación
-        if proposal.supports.len() >= self.config.min_supports as usize {
+        if proposal.supports.len() >= min_supports as usize {
             proposal.status = ProposalStatus::Voting;
         }
 
@@ -285,9 +289,16 @@ impl GovernanceEngine {
         proposal_id: &str,
         wallet: &WalletAddress,
         in_favor: bool,
-        encrypted_vote: Vec<u8>,
-        dilithium_signature: Vec<u8>,
+        _encrypted_vote: Vec<u8>,
+        _dilithium_signature: Vec<u8>,
     ) -> Result<(), GovernanceError> {
+        // Checks que necesitan &self antes del borrow mutable
+        let can_vote = self.can_user_vote(wallet);
+
+        if !can_vote {
+            return Err(GovernanceError::InactiveVoter);
+        }
+
         let proposal = self.proposals
             .iter_mut()
             .find(|p| p.id == proposal_id)
@@ -301,12 +312,7 @@ impl GovernanceEngine {
             return Err(GovernanceError::AlreadyVoted);
         }
 
-        if !self.can_user_vote(wallet) {
-            return Err(GovernanceError::InactiveVoter);
-        }
-
-        // Verificar firma Dilithium-5
-        // TODO: verificar firma contra wallet pública
+        // TODO: verificar firma Dilithium-5 contra wallet pública
 
         proposal.user_votes.insert(wallet.clone(), in_favor);
         Ok(())
@@ -319,6 +325,12 @@ impl GovernanceEngine {
         member_id: &str,
         in_favor: bool,
     ) -> Result<(), GovernanceError> {
+        // Verificar que el miembro existe y está activo (antes del borrow mutable)
+        let member_active = self.council.iter().any(|m| m.id == member_id && m.active);
+        if !member_active {
+            return Err(GovernanceError::NotAuthorized);
+        }
+
         let proposal = self.proposals
             .iter_mut()
             .find(|p| p.id == proposal_id)
@@ -330,12 +342,6 @@ impl GovernanceEngine {
 
         if proposal.council_votes.contains_key(member_id) {
             return Err(GovernanceError::AlreadyVoted);
-        }
-
-        // Verificar que el miembro existe y está activo
-        let member_active = self.council.iter().any(|m| m.id == member_id && m.active);
-        if !member_active {
-            return Err(GovernanceError::NotAuthorized);
         }
 
         proposal.council_votes.insert(member_id.to_string(), in_favor);
@@ -351,6 +357,10 @@ impl GovernanceEngine {
         proposal_id: &str,
         reason: String,
     ) -> Result<(), GovernanceError> {
+        // Extraer datos necesarios antes del borrow mutable
+        let active_members = self.active_council_members().len() as f32;
+        let veto_threshold = self.config.council_veto_threshold;
+
         let proposal = self.proposals
             .iter_mut()
             .find(|p| p.id == proposal_id)
@@ -360,11 +370,10 @@ impl GovernanceEngine {
             return Err(GovernanceError::VotingNotOpen);
         }
 
-        let active_members = self.active_council_members().len() as f32;
         let veto_votes = proposal.council_votes.values().filter(|&&v| v == false).count() as f32;
-        let veto_threshold = (active_members * self.config.council_veto_threshold / 100.0).ceil();
+        let needed = (active_members * veto_threshold / 100.0).ceil();
 
-        if veto_votes < veto_threshold {
+        if veto_votes < needed {
             return Err(GovernanceError::VetoThresholdNotReached);
         }
 
@@ -382,6 +391,11 @@ impl GovernanceEngine {
         &mut self,
         proposal_id: &str,
     ) -> Result<(), GovernanceError> {
+        // Extraer datos antes del borrow mutable
+        let total_active = self.active_voter_wallets().len() as f32;
+        let quorum_minimum = self.config.user_quorum_minimum;
+        let overrule_threshold = self.config.community_overrule_threshold;
+
         let proposal = self.proposals
             .iter_mut()
             .find(|p| p.id == proposal_id)
@@ -391,16 +405,15 @@ impl GovernanceEngine {
             return Err(GovernanceError::NoVetoToAppeal);
         }
 
-        let total_active = self.active_voter_wallets().len() as f32;
         let votes_for = proposal.user_votes.values().filter(|&&v| v == true).count() as f32;
         let total_votes_cast = proposal.user_votes.len() as f32;
 
-        if total_votes_cast < (total_active * self.config.user_quorum_minimum / 100.0).floor() {
+        if total_votes_cast < (total_active * quorum_minimum / 100.0).floor() {
             return Err(GovernanceError::QuorumNotMet);
         }
 
         let support_percentage = (votes_for / total_votes_cast) * 100.0;
-        if support_percentage >= self.config.community_overrule_threshold {
+        if support_percentage >= overrule_threshold {
             proposal.status = ProposalStatus::Overruled;
             proposal.council_veto = false;
             proposal.appealed = true;
@@ -490,14 +503,16 @@ impl GovernanceEngine {
             tallied_at: now,
         };
 
-        // Actualizar estado de la propuesta
+        // Actualizar estado de la propuesta (no referenciar `proposal` prestado)
+        let veto_active = proposal.council_veto && !proposal.appealed;
+        let was_overruled = proposal.council_veto && proposal.appealed;
+        
         if let Some(p) = self.proposals.iter_mut().find(|p| p.id == proposal_id) {
-            if proposal.council_veto && !proposal.appealed {
-                // Si hay veto y no fue apelado, queda vetoed
-                // (ya está en ese estado)
+            if veto_active {
+                // veto activo, no apelado → se queda como Vetoed
             } else if passed {
                 p.status = ProposalStatus::Approved;
-            } else if proposal.council_veto && proposal.appealed {
+            } else if was_overruled {
                 p.status = ProposalStatus::Overruled;
             } else {
                 p.status = ProposalStatus::Rejected;
@@ -579,7 +594,7 @@ impl GovernanceEngine {
         changes.insert("block_wallet".into(), target.0.clone());
         changes.insert("evidence".into(), evidence);
 
-        let mut proposal = self.create_proposal(
+        let proposal = self.create_proposal(
             format!("Expulsión de wallet {}", target.0),
             "Expulsión por collusion comprobada".into(),
             changes,

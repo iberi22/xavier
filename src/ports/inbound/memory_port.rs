@@ -13,6 +13,7 @@ pub trait MemoryQueryPort: Send + Sync {
         filters: Option<MemoryQueryFilters>,
     ) -> anyhow::Result<Vec<MemoryRecord>>;
     async fn add(&self, record: MemoryRecord) -> anyhow::Result<String>;
+    async fn update(&self, id: &str, record: MemoryRecord) -> anyhow::Result<MemoryRecord>;
     async fn delete(&self, id: &str) -> anyhow::Result<Option<MemoryRecord>>;
     async fn get(&self, id: &str) -> anyhow::Result<Option<MemoryRecord>>;
     async fn list(&self, workspace_id: &str, limit: usize) -> anyhow::Result<Vec<MemoryRecord>>;

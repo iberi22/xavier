@@ -46,6 +46,17 @@ impl MemoryQueryPort for QmdMemoryAdapter {
             .await
     }
 
+    async fn update(&self, id: &str, record: MemoryRecord) -> anyhow::Result<MemoryRecord> {
+        let mut doc = record.to_document();
+        doc.id = Some(id.to_string());
+        self.inner.update(doc).await?;
+        let workspace_id = self.inner.workspace_id();
+        let result = self.inner.get(id).await?;
+        result
+            .map(|doc| MemoryRecord::from_document(workspace_id, &doc, true, None))
+            .ok_or_else(|| anyhow::anyhow!("Record not found after update"))
+    }
+
     async fn delete(&self, id: &str) -> anyhow::Result<Option<MemoryRecord>> {
         let workspace_id = self.inner.workspace_id();
         let result = self.inner.delete(id).await?;

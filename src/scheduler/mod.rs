@@ -2,8 +2,10 @@
 //!
 //! Aggregates and re-exports the sub-modules within this module,
 //! providing the public API surface for module consumers.
+pub mod daemon;
 pub mod job;
 
+pub use daemon::MemoryDaemon;
 pub use job::{RecoveryConfig, ScheduledJob};
 
 use std::path::{Path, PathBuf};

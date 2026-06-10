@@ -84,6 +84,25 @@ impl MemoryQueryPort for MemoryUseCase {
         self.inner.add(record).await
     }
 
+    async fn update(&self, id: &str, record: MemoryRecord) -> anyhow::Result<MemoryRecord> {
+        if let Some(ref guard) = self.rbac_guard {
+            let perm = Permission::AgentMemoryWrite(record.workspace_id.clone());
+            if !guard.can(&perm) && !guard.can(&Permission::MemoryWrite) {
+                return Err(anyhow::anyhow!("Permission denied: {}", perm));
+            }
+        }
+        if let Some(ref detector) = self.threat_detector {
+            let clean = detector.scan_and_log(&record.content, "memory_update").await?;
+            if !clean {
+                warn!("Memory update blocked: security threat detected in content");
+                return Err(anyhow::anyhow!(
+                    "Security policy violation detected in memory content"
+                ));
+            }
+        }
+        self.inner.update(id, record).await
+    }
+
     async fn delete(&self, id: &str) -> anyhow::Result<Option<MemoryRecord>> {
         if let Some(ref guard) = self.rbac_guard {
             // For delete, we still use MemoryDelete as a baseline,
@@ -137,6 +156,9 @@ mod tests {
         }
         async fn add(&self, record: MemoryRecord) -> anyhow::Result<String> {
             Ok(record.id)
+        }
+        async fn update(&self, _id: &str, record: MemoryRecord) -> anyhow::Result<MemoryRecord> {
+            Ok(record)
         }
         async fn delete(&self, _id: &str) -> anyhow::Result<Option<MemoryRecord>> {
             Ok(None)
