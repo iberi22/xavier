@@ -718,6 +718,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
                         cluster_id: None,
                         level: Default::default(),
                         relation: None,
+                        clearance: Default::default(),
                         revisions: vec![],
                     };
                     let _ = memory_port_cron.add(record).await;
