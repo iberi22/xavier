@@ -216,7 +216,7 @@ pub struct ObservabilityStats {
     pub db_size_kb: u64,
 }
 
-/// The service log store — writes/reads to vec-store.sqlite3.
+/// The service log store â€” writes/reads to vec-store.sqlite3.
 #[derive(Clone)]
 pub struct ServiceLogStore {
     conn: &'static ConnectionManager,
@@ -465,7 +465,7 @@ impl ServiceLogStore {
             .await
     }
 
-    // ── Helper: map SQLite row to LogEntry ──────────────────────
+    // â”€â”€ Helper: map SQLite row to LogEntry â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
     fn map_row(row: &rusqlite::Row) -> rusqlite::Result<LogEntry> {
         let metadata_str: Option<String> = row.get(7)?;
@@ -489,5 +489,139 @@ impl ServiceLogStore {
             resolved: row.get::<_, i32>(8)? != 0,
             resolution: resolution_str.and_then(|s| serde_json::from_str(&s).ok()),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[tokio::test]
+    async fn test_log_entry_creation() {
+        let entry = LogEntry::error(LogSource::HttpServer, "test_mod", "something broke");
+        assert!(entry.id.len() > 10);
+        assert!(!entry.timestamp.is_empty());
+        assert_eq!(entry.level, LogLevel::Error);
+        assert!(entry.module.as_deref() == Some("test_mod"));
+        assert_eq!(entry.message, "something broke");
+        assert!(!entry.resolved);
+        assert!(entry.resolution.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_log_entry_info() {
+        let entry = LogEntry::info(LogSource::AgentRuntime, "agent::chat", "started");
+        assert_eq!(entry.level, LogLevel::Info);
+    }
+
+    #[tokio::test]
+    async fn test_log_entry_warn() {
+        let entry = LogEntry::warn(LogSource::Sidecar, "sidecar", "high memory");
+        assert_eq!(entry.level, LogLevel::Warn);
+    }
+
+    #[tokio::test]
+    async fn test_log_entry_debug() {
+        let entry = LogEntry::debug(LogSource::Cli, "cli", "parsing args");
+        assert_eq!(entry.level, LogLevel::Debug);
+    }
+
+    #[tokio::test]
+    async fn test_log_entry_with_correlation_id() {
+        let entry =
+            LogEntry::error(LogSource::HttpServer, "http", "err").with_correlation_id("req-123");
+        assert_eq!(entry.correlation_id.as_deref(), Some("req-123"));
+    }
+
+    #[tokio::test]
+    async fn test_log_entry_with_metadata() {
+        let meta = serde_json::json!({"user": "bob", "status": 500});
+        let entry =
+            LogEntry::error(LogSource::HttpServer, "api", "fail").with_metadata(meta.clone());
+        assert_eq!(entry.metadata, Some(meta));
+    }
+
+    #[tokio::test]
+    async fn test_log_entry_with_resolution() {
+        let res = serde_json::json!({"fix": "restarted"});
+        let entry =
+            LogEntry::error(LogSource::HttpServer, "mod", "crash").with_resolution(res.clone());
+        assert!(entry.resolved);
+        assert_eq!(entry.resolution, Some(res));
+    }
+
+    #[test]
+    fn test_log_level_display() {
+        assert_eq!(LogLevel::Trace.to_string(), "trace");
+        assert_eq!(LogLevel::Debug.to_string(), "debug");
+        assert_eq!(LogLevel::Info.to_string(), "info");
+        assert_eq!(LogLevel::Warn.to_string(), "warn");
+        assert_eq!(LogLevel::Error.to_string(), "error");
+    }
+
+    #[test]
+    fn test_log_level_from_str() {
+        assert_eq!(LogLevel::from("error"), LogLevel::Error);
+        assert_eq!(LogLevel::from("warn"), LogLevel::Warn);
+        assert_eq!(LogLevel::from("warning"), LogLevel::Warn);
+        assert_eq!(LogLevel::from("info"), LogLevel::Info);
+        assert_eq!(LogLevel::from("debug"), LogLevel::Debug);
+        assert_eq!(LogLevel::from("trace"), LogLevel::Trace);
+        assert_eq!(LogLevel::from("unknown"), LogLevel::Info);
+        assert_eq!(LogLevel::from("ERROR"), LogLevel::Error);
+    }
+
+    #[test]
+    fn test_log_level_ordering() {
+        assert!(LogLevel::Error > LogLevel::Warn);
+        assert!(LogLevel::Warn > LogLevel::Info);
+        assert!(LogLevel::Info > LogLevel::Debug);
+        assert!(LogLevel::Debug > LogLevel::Trace);
+    }
+
+    #[test]
+    fn test_log_source_display() {
+        assert_eq!(LogSource::HttpServer.to_string(), "http_server");
+        assert_eq!(LogSource::AgentRuntime.to_string(), "agent_runtime");
+        assert_eq!(LogSource::Sidecar.to_string(), "sidecar");
+        assert_eq!(LogSource::Ui.to_string(), "ui");
+        assert_eq!(LogSource::Cli.to_string(), "cli");
+        assert_eq!(LogSource::Scheduler.to_string(), "scheduler");
+        assert_eq!(LogSource::Detector.to_string(), "detector");
+        assert_eq!(LogSource::Analyzer.to_string(), "analyzer");
+        assert_eq!(LogSource::Fixer.to_string(), "fixer");
+        assert_eq!(LogSource::Notifier.to_string(), "notifier");
+        assert_eq!(LogSource::Other("custom".into()).to_string(), "custom");
+    }
+
+    #[test]
+    fn test_log_source_from_str() {
+        assert_eq!(LogSource::from("http_server"), LogSource::HttpServer);
+        assert_eq!(LogSource::from("agent_runtime"), LogSource::AgentRuntime);
+        assert_eq!(LogSource::from("sidecar"), LogSource::Sidecar);
+        assert_eq!(LogSource::from("ui"), LogSource::Ui);
+        assert_eq!(LogSource::from("cli"), LogSource::Cli);
+        assert_eq!(LogSource::from("scheduler"), LogSource::Scheduler);
+        assert_eq!(LogSource::from("detector"), LogSource::Detector);
+        assert_eq!(LogSource::from("analyzer"), LogSource::Analyzer);
+        assert_eq!(LogSource::from("fixer"), LogSource::Fixer);
+        assert_eq!(LogSource::from("notifier"), LogSource::Notifier);
+        assert_eq!(
+            LogSource::from("unknown"),
+            LogSource::Other("unknown".into())
+        );
+    }
+
+    #[test]
+    fn test_error_pattern_struct() {
+        let p = ErrorPattern {
+            module: "http".into(),
+            level: LogLevel::Error,
+            frequency: 5,
+            sample_message: "timeout".into(),
+            first_seen: "t1".into(),
+            last_seen: "t2".into(),
+        };
+        assert_eq!(p.module, "http");
+        assert_eq!(p.frequency, 5);
     }
 }

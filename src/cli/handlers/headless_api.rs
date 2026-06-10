@@ -10,7 +10,6 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use xavier_lib::agents::provider::router::ProviderKind;
 
 // ═════════════════════════════════════════════════════════════════════════════
 // System
@@ -57,6 +56,7 @@ pub async fn headless_system_info() -> impl IntoResponse {
 // Chat
 // ═════════════════════════════════════════════════════════════════════════════
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct ChatRequest {
     pub model: Option<String>,
@@ -226,6 +226,7 @@ pub async fn headless_usage() -> impl IntoResponse {
 // Agents
 // ═════════════════════════════════════════════════════════════════════════════
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct SpawnRequest {
     pub count: usize,
@@ -266,6 +267,7 @@ pub async fn headless_spawn(Json(req): Json<SpawnRequest>) -> impl IntoResponse 
 // Memory
 // ═════════════════════════════════════════════════════════════════════════════
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct MemorySearchRequest {
     pub query: String,
@@ -289,6 +291,7 @@ pub async fn headless_memory_search(Json(req): Json<MemorySearchRequest>) -> imp
     }))
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct MemoryAddRequest {
     pub content: String,

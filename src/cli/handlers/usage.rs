@@ -113,6 +113,7 @@ pub async fn usage_track_handler(
     }
 }
 
+#[allow(dead_code)]
 pub async fn providers_quota_handler(State(state): State<CliState>) -> Response {
     let mut quotas = Vec::new();
     match state.rate_manager.get_all_providers().await {

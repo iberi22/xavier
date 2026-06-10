@@ -62,6 +62,7 @@ pub async fn system_alerts_handler() -> Response {
     )
 }
 
+#[allow(dead_code)]
 pub async fn system_scan_handler(State(state): State<CliState>) -> Response {
     let mut providers = Vec::new();
     let detected_providers = vec!["openai", "anthropic", "gemini", "minimax", "local"];
