@@ -2,6 +2,7 @@
 
 use axum::{
     extract::{Path, Query},
+    http::StatusCode,
     response::IntoResponse,
     Extension, Json,
 };
@@ -16,6 +17,7 @@ use crate::{
             MemoryQueryFilters, TypedMemoryPayload,
         },
     },
+    mesh::{NodeIdentity, protocol::{MeshHandshake, MeshHandshakeResponse, MeshManifest, MeshSyncRequest, ChunkRef}},
     workspace::WorkspaceContext,
 };
 
@@ -196,6 +198,135 @@ pub async fn v1_memories_add(
             "message": e.to_string(),
         })),
     }
+}
+
+// ── Mesh API Handlers ──────────────────────────────────────────────────────
+
+pub async fn v1_mesh_identity(
+    Extension(_workspace): Extension<WorkspaceContext>,
+) -> impl IntoResponse {
+    match NodeIdentity::load_or_create() {
+        Ok(identity) => Json(identity.public_info()).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ).into_response(),
+    }
+}
+
+pub async fn v1_mesh_handshake(
+    Extension(_workspace): Extension<WorkspaceContext>,
+    Json(payload): Json<MeshHandshake>,
+) -> impl IntoResponse {
+    info!("Received mesh handshake from {}", payload.node_id);
+    match NodeIdentity::load_or_create() {
+        Ok(identity) => {
+            let response = MeshHandshakeResponse {
+                accepted: true,
+                node_id: identity.node_id.clone(),
+                public_key_hex: hex::encode(&identity.public_key),
+                reason: None,
+            };
+            Json(response).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "accepted": false, "reason": e.to_string() })),
+        ).into_response(),
+    }
+}
+
+pub async fn v1_mesh_manifest(
+    Extension(workspace): Extension<WorkspaceContext>,
+) -> impl IntoResponse {
+    match NodeIdentity::load_or_create() {
+        Ok(identity) => {
+            // Use existing chunking logic from src/sync/chunks.rs
+            let sync_dir = workspace.workspace.usage_state_path
+                .parent().unwrap_or(&workspace.workspace.usage_state_path)
+                .join("sync");
+            let _ = std::fs::create_dir_all(&sync_dir);
+
+            match crate::sync::chunks::load_manifest(&sync_dir) {
+                Ok(chunk_manifest) => {
+                    let chunks = chunk_manifest.chunks.values().map(|c| ChunkRef {
+                        hash: c.hash.clone(),
+                        document_count: c.document_ids.len(),
+                        created_at: c.created_at,
+                    }).collect();
+
+                    let manifest = MeshManifest {
+                        node_id: identity.node_id,
+                        chunks,
+                        generated_at: chrono::Utc::now().timestamp(),
+                    };
+                    Json(manifest).into_response()
+                }
+                Err(e) => (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": e.to_string() })),
+                ).into_response(),
+            }
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ).into_response(),
+    }
+}
+
+pub async fn v1_mesh_chunks_request(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Json(payload): Json<MeshSyncRequest>,
+) -> impl IntoResponse {
+    use std::collections::HashMap;
+    let mut response_chunks = HashMap::new();
+    let sync_dir = workspace.workspace.usage_state_path
+        .parent().unwrap_or(&workspace.workspace.usage_state_path)
+        .join("sync");
+
+    for hash in payload.wanted_hashes {
+        let chunk_path = sync_dir.join("chunks").join(format!("{}.jsonl.gz", hash));
+        if chunk_path.exists() {
+            if let Ok(data) = std::fs::read(chunk_path) {
+                response_chunks.insert(hash, data);
+            }
+        }
+    }
+
+    Json(response_chunks)
+}
+
+pub async fn v1_mesh_chunks_push(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Json(chunks): Json<std::collections::HashMap<String, Vec<u8>>>,
+) -> impl IntoResponse {
+    let mut synced_hashes = Vec::new();
+    let sync_dir = workspace.workspace.usage_state_path
+        .parent().unwrap_or(&workspace.workspace.usage_state_path)
+        .join("sync");
+    let chunks_dir = sync_dir.join("chunks");
+    let _ = std::fs::create_dir_all(&chunks_dir);
+
+    for (hash, data) in chunks {
+        let chunk_path = chunks_dir.join(format!("{}.jsonl.gz", hash));
+        if std::fs::write(&chunk_path, &data).is_ok() {
+            // Import documents from chunk into local memory
+            if let Ok(docs) = crate::sync::chunks::import_from_chunk(&sync_dir, &hash) {
+                for doc in docs {
+                    let _ = workspace.workspace.memory.add_document_typed(
+                        doc.path,
+                        doc.content,
+                        doc.metadata,
+                        None,
+                    ).await;
+                }
+                synced_hashes.push(hash);
+            }
+        }
+    }
+
+    Json(synced_hashes)
 }
 
 pub async fn v1_memories_search(
