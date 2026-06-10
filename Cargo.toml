@@ -20,8 +20,8 @@ categories = ["database", "science", "data-structures"]
 brand = "Xavier"
 compatibility_alias = "xavier"
 open_source_license = "MIT"
-enterprise_license_file = "LICENSE.enterprise"
-enterprise_contact = "enterprise@southwest-ai-labs.com"
+
+enterprise_contact = "iberi22"
 support_model = "dual-license-open-core"
 enterprise_reserved_features = [
     "advanced-rrf",

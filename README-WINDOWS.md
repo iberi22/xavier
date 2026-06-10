@@ -229,7 +229,7 @@ Invoke-RestMethod -Uri "http://localhost:8006/xavier/verify/save" `
 ## Troubleshooting
 
 ### Build fails with "program not found"
-**Cause**: CMake or C compiler missing  
+**Cause**: CMake or C compiler missing
 **Fix**: Install Visual Studio Build Tools or MinGW:
 ```powershell
 winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --add Microsoft.VisualStudio.Workload.VCTools"
@@ -238,14 +238,14 @@ winget install MinGW.MinGW
 ```
 
 ### "libsql-ffi build failed"
-**Cause**: Missing clang/gcc on Windows  
+**Cause**: Missing clang/gcc on Windows
 **Fix**: The installer auto-installs prerequisites. If manual:
 ```powershell
 winget install LLVM.LLVM  # For clang
 ```
 
 ### Out of disk space during build
-**Cause**: Cargo target cache grows large  
+**Cause**: Cargo target cache grows large
 **Fix**: Clean cache or move to larger drive:
 ```powershell
 cargo clean
@@ -306,7 +306,7 @@ Xavier2 data is fully compatible. The migration path:
 
 - **Issues**: https://github.com/iberi22/xavier/issues
 - **Docs**: https://github.com/iberi22/xavier/tree/main/docs
-- **Enterprise**: enterprise@southwest-ai-labs.com
+- **Enterprise**: iberi22
 
 ---
 

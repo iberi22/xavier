@@ -10,25 +10,16 @@ pub enum Plan {
     Free,
     /// Cloud tier - 1GB storage, 3 nodes
     Cloud,
-    /// Pro tier - 10GB storage, 10 nodes
-    Pro,
-    /// Enterprise tier - unlimited, custom pricing
-    Enterprise,
 }
 
 impl Plan {
     /// Get plan from Stripe price ID
     pub fn from_price_id(price_id: &str) -> Option<Self> {
         let cloud_price = std::env::var("STRIPE_PRICE_CLOUD").ok()?;
-        let pro_price = std::env::var("STRIPE_PRICE_PRO").ok()?;
-        let enterprise_price = std::env::var("STRIPE_PRICE_ENTERPRISE").ok()?;
+        let cloud_price = std::env::var("STRIPE_PRICE_CLOUD").ok()?;
 
         if price_id == cloud_price {
             Some(Self::Cloud)
-        } else if price_id == pro_price {
-            Some(Self::Pro)
-        } else if price_id == enterprise_price {
-            Some(Self::Enterprise)
         } else {
             None
         }
@@ -39,8 +30,6 @@ impl Plan {
         match self {
             Self::Free => None,
             Self::Cloud => std::env::var("STRIPE_PRICE_CLOUD").ok(),
-            Self::Pro => std::env::var("STRIPE_PRICE_PRO").ok(),
-            Self::Enterprise => std::env::var("STRIPE_PRICE_ENTERPRISE").ok(),
         }
     }
 
@@ -48,9 +37,7 @@ impl Plan {
     pub fn monthly_price_cents(&self) -> u32 {
         match self {
             Self::Free => 0,
-            Self::Cloud => 800,  // $8.00
-            Self::Pro => 1900,   // $19.00
-            Self::Enterprise => 4900, // $49.00
+            Self::Cloud => 0,
         }
     }
 }
@@ -60,8 +47,6 @@ impl std::fmt::Display for Plan {
         match self {
             Self::Free => write!(f, "free"),
             Self::Cloud => write!(f, "cloud"),
-            Self::Pro => write!(f, "pro"),
-            Self::Enterprise => write!(f, "enterprise"),
         }
     }
 }
@@ -97,33 +82,6 @@ impl PlanLimits {
                     "basic_memory".to_string(),
                     "api_access".to_string(),
                     "email_support".to_string(),
-                ],
-            },
-            Plan::Pro => Self {
-                max_storage_gb: 10,
-                max_nodes: 10,
-                features: vec![
-                    "cloud_sync".to_string(),
-                    "advanced_memory".to_string(),
-                    "api_access".to_string(),
-                    "priority_support".to_string(),
-                    "advanced_analytics".to_string(),
-                    "team_sharing".to_string(),
-                ],
-            },
-            Plan::Enterprise => Self {
-                max_storage_gb: 0, // Unlimited
-                max_nodes: 0,      // Unlimited
-                features: vec![
-                    "cloud_sync".to_string(),
-                    "advanced_memory".to_string(),
-                    "api_access".to_string(),
-                    "dedicated_support".to_string(),
-                    "advanced_analytics".to_string(),
-                    "team_sharing".to_string(),
-                    "sso".to_string(),
-                    "custom_integrations".to_string(),
-                    "sla".to_string(),
                 ],
             },
         }
@@ -189,9 +147,6 @@ mod tests {
         assert_eq!(cloud_limits.max_storage_gb, 1);
         assert!(cloud_limits.has_feature("cloud_sync"));
 
-        let pro_limits = PlanLimits::for_plan(Plan::Pro);
-        assert_eq!(pro_limits.max_storage_gb, 10);
-        assert!(pro_limits.has_feature("advanced_analytics"));
     }
 
     #[test]
