@@ -1,9 +1,10 @@
 {
-  "lastCheck": "2026-06-09T11:01:00Z",
-  "openPRs": [635, 634],
-  "mergedPRs": [633],
-  "failedPRs": [634, 635],
-  "newPRs": [634, 635],
+  "lastCheck": "2026-06-09T22:36:00Z",
+  "openPRs": [],
+  "mergedPRs": [635, 633],
+  "failedPRs": [],
+  "newPRs": [],
   "changes": true,
-  "report": "2026-06-09T11:01:00Z"
+  "report": "2026-06-09T22:36:00Z",
+  "summary": "No open PRs de Jules. PR #635 (headless-api-tests) merged hoy. Stale branch jules-cli-1 tiene 1 commit no mergeado (CLI commands). Issues de repo deshabilitados."
 }
