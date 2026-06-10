@@ -12,7 +12,7 @@ export default defineConfig(({ command }) => {
     define: {
       __APP_VERSION__: JSON.stringify(process.env.npm_package_version || "0.6.1-beta"),
     },
-    base: isBuild ? "/panel/" : "/",
+    base: "/",
     plugins: [tailwindcss(), react()],
     resolve: {
       alias: {

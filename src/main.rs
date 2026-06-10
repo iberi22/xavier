@@ -9,6 +9,11 @@ mod cli;
 mod settings;
 extern crate xavier as xavier_lib;
 
+// Re-export observability module for CLI access
+mod observability {
+    pub use xavier_lib::observability::*;
+}
+
 // Re-export memory types for binary crate access
 pub use xavier_lib::memory;
 pub use xavier_lib::workspace;
