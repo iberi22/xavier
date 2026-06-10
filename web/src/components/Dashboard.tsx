@@ -1,7 +1,7 @@
+import { Activity, Bot, Brain, Plus, Search, Settings } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { Brain, Bot, Activity, Plus, Search, Settings } from "lucide-react";
-import { useApi, HealthStatus, MemoryStats } from "../hooks/useApi";
+import { type HealthStatus, type MemoryStats, useApi } from "../hooks/useApi";
 
 export function Dashboard() {
   const { getHealth, getMemoryStats } = useApi();
@@ -37,8 +37,12 @@ export function Dashboard() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-stone-900 dark:text-stone-100">Dashboard</h1>
-          <p className="text-stone-500 text-sm mt-1">System overview and quick actions</p>
+          <h1 className="text-2xl font-bold text-stone-900 dark:text-stone-100">
+            Dashboard
+          </h1>
+          <p className="text-stone-500 text-sm mt-1">
+            System overview and quick actions
+          </p>
         </div>
         <span className={`text-sm font-medium ${statusColor}`}>
           ● {health?.status ?? "unknown"}
@@ -86,7 +90,9 @@ export function Dashboard() {
                 className="inline-flex items-center gap-2 px-3 py-1.5 bg-stone-100 dark:bg-stone-700 rounded-full text-sm text-stone-700 dark:text-stone-200"
               >
                 <span className="font-medium">{count}</span>
-                <span className="text-stone-400 dark:text-stone-500">{kind}</span>
+                <span className="text-stone-400 dark:text-stone-500">
+                  {kind}
+                </span>
               </span>
             ))}
           </div>
@@ -132,14 +138,18 @@ function StatCard({
   return (
     <div className="bg-white dark:bg-stone-800 rounded-xl border border-stone-200 dark:border-stone-700 p-5">
       <div className="flex items-center gap-3 mb-3">
-        <div className={`p-2 rounded-lg bg-stone-100 dark:bg-stone-700 ${color}`}>
+        <div
+          className={`p-2 rounded-lg bg-stone-100 dark:bg-stone-700 ${color}`}
+        >
           <Icon size={18} />
         </div>
         <span className="text-xs font-medium text-stone-500 dark:text-stone-400 uppercase tracking-wider">
           {label}
         </span>
       </div>
-      <p className="text-2xl font-bold text-stone-900 dark:text-stone-100">{value}</p>
+      <p className="text-2xl font-bold text-stone-900 dark:text-stone-100">
+        {value}
+      </p>
     </div>
   );
 }
@@ -164,8 +174,12 @@ function QuickAction({
         <Icon size={20} />
       </div>
       <div>
-        <p className="font-medium text-stone-900 dark:text-stone-100">{label}</p>
-        <p className="text-sm text-stone-500 dark:text-stone-400">{description}</p>
+        <p className="font-medium text-stone-900 dark:text-stone-100">
+          {label}
+        </p>
+        <p className="text-sm text-stone-500 dark:text-stone-400">
+          {description}
+        </p>
       </div>
     </Link>
   );

@@ -33,16 +33,22 @@ export class ApiClient {
   }
 
   async updateProvidersConfig(providers: ProviderConfig[]) {
-    return this.fetch<{ status: string; message: string }>("/v1/config/providers", {
-      method: "PUT",
-      body: JSON.stringify({ providers }),
-    });
+    return this.fetch<{ status: string; message: string }>(
+      "/v1/config/providers",
+      {
+        method: "PUT",
+        body: JSON.stringify({ providers }),
+      },
+    );
   }
 
   async testProvider(name: string) {
-    return this.fetch<{ status: string; message: string }>(`/v1/providers/${name}/test`, {
-      method: "POST",
-    });
+    return this.fetch<{ status: string; message: string }>(
+      `/v1/providers/${name}/test`,
+      {
+        method: "POST",
+      },
+    );
   }
 
   // System

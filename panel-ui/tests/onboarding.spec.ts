@@ -1,13 +1,13 @@
-import { test, expect } from '@playwright/test';
+import { expect, test } from "@playwright/test";
 
-test.describe('Onboarding Flow', () => {
+test.describe("Onboarding Flow", () => {
   test.beforeEach(async ({ page }) => {
     // Mock Tauri internals and invoke
     await page.addInitScript(() => {
       (window as any).__TAURI_INTERNALS__ = {
         invoke: async (cmd: string, args: any) => {
-          console.log('Tauri Invoke:', cmd, args);
-          if (cmd === 'scan_system') {
+          console.log("Tauri Invoke:", cmd, args);
+          if (cmd === "scan_system") {
             return {
               total_ram_gb: 16.0,
               cpu_cores: 8,
@@ -16,89 +16,97 @@ test.describe('Onboarding Flow', () => {
               hermes_running: false,
             };
           }
-          if (cmd === 'save_initial_config') {
+          if (cmd === "save_initial_config") {
             return null;
           }
-          if (cmd === 'get_xavier_token') {
+          if (cmd === "get_xavier_token") {
             // Return empty to force auth screen or just a mock token
             return null;
           }
           return null;
-        }
+        },
       };
     });
 
     // Mock health endpoint
-    await page.route('**/health', async route => {
+    await page.route("**/health", async (route) => {
       await route.fulfill({
         status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ status: 'online', version: '1.0.0' })
+        contentType: "application/json",
+        body: JSON.stringify({ status: "online", version: "1.0.0" }),
       });
     });
 
     // Mock threads and other initial data to prevent crashes after onboarding
-    await page.route('**/panel/api/threads', async route => {
+    await page.route("**/panel/api/threads", async (route) => {
       await route.fulfill({ json: [] });
     });
-    await page.route('**/panel/api/bookmarks', async route => {
+    await page.route("**/panel/api/bookmarks", async (route) => {
       await route.fulfill({ json: [] });
     });
-    await page.route('**/panel/api/widgets', async route => {
+    await page.route("**/panel/api/widgets", async (route) => {
       await route.fulfill({ json: [] });
     });
-    await page.route('**/panel/api/graph', async route => {
+    await page.route("**/panel/api/graph", async (route) => {
       await route.fulfill({ json: { data: { nodes: [], links: [] } } });
     });
 
-    await page.goto('/');
+    await page.goto("/");
 
     // Clear onboarding state before each test
     await page.evaluate(() => {
-      localStorage.removeItem('xavier_onboarding_completed');
+      localStorage.removeItem("xavier_onboarding_completed");
       window.location.reload();
     });
 
     // Wait for reload and re-check if we are on onboarding
-    await page.waitForURL('/');
+    await page.waitForURL("/");
   });
 
-  test('should complete the full onboarding flow', async ({ page }) => {
+  test("should complete the full onboarding flow", async ({ page }) => {
     // Step 0: Welcome
-    await expect(page.getByText('INITIALIZING XAVIER_')).toBeVisible();
-    await page.getByRole('button', { name: 'BEGIN_SCAN' }).click();
+    await expect(page.getByText("INITIALIZING XAVIER_")).toBeVisible();
+    await page.getByRole("button", { name: "BEGIN_SCAN" }).click();
 
     // Step 1: System Scan
-    await expect(page.getByText('SYSTEM_DIAGNOSTICS')).toBeVisible();
-    await expect(page.getByText('> Initiating deep system scan...')).toBeVisible();
+    await expect(page.getByText("SYSTEM_DIAGNOSTICS")).toBeVisible();
+    await expect(
+      page.getByText("> Initiating deep system scan..."),
+    ).toBeVisible();
 
     // The component has 1000ms, 800ms, 800ms delays, then 2000ms before transition
     // Wait for the transition to Hardware Step
-    await expect(page.getByText('NEURAL_EXECUTION_PLAN')).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText("NEURAL_EXECUTION_PLAN")).toBeVisible({
+      timeout: 10000,
+    });
 
     // Step 2: Hardware
-    await expect(page.getByText('GPU Accleration')).toBeVisible();
-    await expect(page.getByText('GPU Detected: YES')).toBeHidden(); // Log from previous step
+    await expect(page.getByText("GPU Accleration")).toBeVisible();
+    await expect(page.getByText("GPU Detected: YES")).toBeHidden(); // Log from previous step
 
     // Verify default selection (GPU was true in mock)
-    await expect(page.getByText('gpu-fast-model')).toBeVisible();
+    await expect(page.getByText("gpu-fast-model")).toBeVisible();
 
     // Toggle to CPU
-    await page.getByText('CPU Fallback').click();
-    await expect(page.getByText('cpu-fast-model')).toBeVisible();
+    await page.getByText("CPU Fallback").click();
+    await expect(page.getByText("cpu-fast-model")).toBeVisible();
 
-    await page.getByRole('button', { name: 'CONFIRM_ALLOCATION' }).click();
+    await page.getByRole("button", { name: "CONFIRM_ALLOCATION" }).click();
 
     // Step 3: Integrations
-    await expect(page.getByText('EXTERNAL_UPLINK')).toBeVisible();
-    await page.getByPlaceholder('123456789:ABCdefGHIjklMNOpqrsTUVwxyz').fill('test-bot-token');
+    await expect(page.getByText("EXTERNAL_UPLINK")).toBeVisible();
+    await page
+      .getByPlaceholder("123456789:ABCdefGHIjklMNOpqrsTUVwxyz")
+      .fill("test-bot-token");
 
-    await page.getByRole('button', { name: 'INITIALIZE_SYSTEM' }).click();
+    await page.getByRole("button", { name: "INITIALIZE_SYSTEM" }).click();
 
     // Final state: Should show Auth screen (since we mocked get_xavier_token to return null)
-    await expect(page.getByText('XAVIER AUTH')).toBeVisible();
+    await expect(page.getByText("XAVIER AUTH")).toBeVisible();
 
-    const completed = await page.evaluate(() => localStorage.getItem('xavier_onboarding_completed'));
-    expect(completed).toBe('true');
+    const completed = await page.evaluate(() =>
+      localStorage.getItem("xavier_onboarding_completed"),
+    );
+    expect(completed).toBe("true");
   });
 });

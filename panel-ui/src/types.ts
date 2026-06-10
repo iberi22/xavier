@@ -50,7 +50,7 @@ export type Widget = {
 export interface GraphNode {
   id: string;
   label: string;
-  type: 'organization' | 'project' | 'subproject' | 'session';
+  type: "organization" | "project" | "subproject" | "session";
   description: string;
   parentId?: string;
   date?: string;
@@ -101,7 +101,7 @@ export interface BookmarkArtifact {
   id: string;
   title: string;
   description?: string;
-  type: 'file' | 'memory' | 'document' | 'agent' | string;
+  type: "file" | "memory" | "document" | "agent" | string;
   url?: string;
   addedAt?: string;
   date?: string;
@@ -111,5 +111,5 @@ export interface BookmarkArtifact {
 export interface CanvasWidget {
   id: string;
   artifact: BookmarkArtifact;
-  position: { x: number, y: number };
+  position: { x: number; y: number };
 }

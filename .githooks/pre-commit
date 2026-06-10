@@ -25,4 +25,13 @@ if [ $CLIPPY_EXIT -ne 0 ]; then
     exit $CLIPPY_EXIT
 fi
 
+# Check Biome (Lint and Format for JS/TS)
+echo "→ pnpm biome ci ."
+pnpm biome ci . 2>&1 | tail -20
+BIOME_EXIT=$?
+if [ $BIOME_EXIT -ne 0 ]; then
+    echo "❌ Biome check failed. Run 'pnpm biome check --write .' to fix auto-fixable issues."
+    exit $BIOME_EXIT
+fi
+
 echo "✅ All pre-commit checks passed."

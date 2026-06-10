@@ -1,4 +1,4 @@
-import React from 'react';
+import React from "react";
 
 export interface SparklineProps {
   value?: string;
@@ -7,7 +7,12 @@ export interface SparklineProps {
   color?: string;
 }
 
-export function Sparkline({ value = '+12%', label = 'Trend', data, color = '#22c55e' }: SparklineProps) {
+export function Sparkline({
+  value = "+12%",
+  label = "Trend",
+  data,
+  color = "#22c55e",
+}: SparklineProps) {
   const defaultData = [30, 45, 35, 60, 50, 70, 65, 80];
   const chartData = data || defaultData;
   const max = Math.max(...chartData, 1);

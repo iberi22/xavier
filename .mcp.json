@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "xavier-memory": {
+      "command": "cargo",
+      "args": ["run", "--bin", "xavier", "--", "mcp"],
+      "env": {},
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}

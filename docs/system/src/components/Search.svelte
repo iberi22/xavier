@@ -1,26 +1,47 @@
 <script>
-  let searchQuery = '';
-  let results = [];
+let searchQuery = "";
+let results = [];
 
-  const docs = [
-    { title: 'SRC - Source Code Reference', path: '/doc/src', tags: ['#documentation', '#source'] },
-    { title: 'Architecture', path: '/doc/architecture', tags: ['#architecture', '#core'] },
-    { title: 'Project Admin', path: '/doc/project-admin', tags: ['#admin', '#projects'] },
-    { title: 'Agent Index', path: '/doc/agent-index', tags: ['#agents', '#skills'] },
-    { title: 'Features', path: '/doc/features', tags: ['#features', '#tracking'] },
-  ];
+const docs = [
+  {
+    title: "SRC - Source Code Reference",
+    path: "/doc/src",
+    tags: ["#documentation", "#source"],
+  },
+  {
+    title: "Architecture",
+    path: "/doc/architecture",
+    tags: ["#architecture", "#core"],
+  },
+  {
+    title: "Project Admin",
+    path: "/doc/project-admin",
+    tags: ["#admin", "#projects"],
+  },
+  {
+    title: "Agent Index",
+    path: "/doc/agent-index",
+    tags: ["#agents", "#skills"],
+  },
+  {
+    title: "Features",
+    path: "/doc/features",
+    tags: ["#features", "#tracking"],
+  },
+];
 
-  function handleSearch() {
-    if (!searchQuery.trim()) {
-      results = [];
-      return;
-    }
-    const q = searchQuery.toLowerCase();
-    results = docs.filter(d =>
-      d.title.toLowerCase().includes(q) ||
-      d.tags.some(t => t.toLowerCase().includes(q))
-    );
+function handleSearch() {
+  if (!searchQuery.trim()) {
+    results = [];
+    return;
   }
+  const q = searchQuery.toLowerCase();
+  results = docs.filter(
+    (d) =>
+      d.title.toLowerCase().includes(q) ||
+      d.tags.some((t) => t.toLowerCase().includes(q)),
+  );
+}
 </script>
 
 <div class="search-container">

@@ -62,7 +62,13 @@
     "failed": 0,
     "precision": "100%",
     "avg_latency_ms": 32,
-    "categories_tested": ["unicode", "code", "path_concept", "business", "technical"]
+    "categories_tested": [
+      "unicode",
+      "code",
+      "path_concept",
+      "business",
+      "technical"
+    ]
   },
 
   "anomalies_remaining": [

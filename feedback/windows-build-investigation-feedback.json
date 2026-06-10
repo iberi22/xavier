@@ -41,12 +41,22 @@
     "A_MSYS2": {
       "effort": "15 min install",
       "result": "Native Windows EXE",
-      "steps": ["Install MSYS2", "pacman -S make gcc", "Add to PATH", "cargo build"]
+      "steps": [
+        "Install MSYS2",
+        "pacman -S make gcc",
+        "Add to PATH",
+        "cargo build"
+      ]
     },
     "B_WSL2": {
       "effort": "30 min",
       "result": "Linux binary copied to Windows",
-      "steps": ["Open WSL2", "apt install build-essential", "cargo build --release", "Copy .exe"]
+      "steps": [
+        "Open WSL2",
+        "apt install build-essential",
+        "cargo build --release",
+        "Copy .exe"
+      ]
     },
     "C_Docker": {
       "effort": "0",
