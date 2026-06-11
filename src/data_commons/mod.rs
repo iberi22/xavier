@@ -26,11 +26,11 @@
 //! El código en este módulo define la estructura de datos y tipos,
 //! pero las features están en documentos de diseño.
 
-pub mod wallet;
-pub mod reputation;
 pub mod funnel;
 pub mod governance;
+pub mod reputation;
 pub mod types;
+pub mod wallet;
 
 // Re-export principales
 pub use types::*;

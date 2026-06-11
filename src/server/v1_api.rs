@@ -17,7 +17,10 @@ use crate::{
             MemoryQueryFilters, TypedMemoryPayload,
         },
     },
-    mesh::{NodeIdentity, protocol::{MeshHandshake, MeshHandshakeResponse, MeshManifest, MeshSyncRequest, ChunkRef}},
+    mesh::{
+        protocol::{ChunkRef, MeshHandshake, MeshHandshakeResponse, MeshManifest, MeshSyncRequest},
+        NodeIdentity,
+    },
     workspace::WorkspaceContext,
 };
 
@@ -210,7 +213,8 @@ pub async fn v1_mesh_identity(
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }
 
@@ -232,7 +236,8 @@ pub async fn v1_mesh_handshake(
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "accepted": false, "reason": e.to_string() })),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }
 
@@ -242,18 +247,25 @@ pub async fn v1_mesh_manifest(
     match NodeIdentity::load_or_create() {
         Ok(identity) => {
             // Use existing chunking logic from src/sync/chunks.rs
-            let sync_dir = workspace.workspace.usage_state_path
-                .parent().unwrap_or(&workspace.workspace.usage_state_path)
+            let sync_dir = workspace
+                .workspace
+                .usage_state_path
+                .parent()
+                .unwrap_or(&workspace.workspace.usage_state_path)
                 .join("sync");
             let _ = std::fs::create_dir_all(&sync_dir);
 
             match crate::sync::chunks::load_manifest(&sync_dir) {
                 Ok(chunk_manifest) => {
-                    let chunks = chunk_manifest.chunks.values().map(|c| ChunkRef {
-                        hash: c.hash.clone(),
-                        document_count: c.document_ids.len(),
-                        created_at: c.created_at,
-                    }).collect();
+                    let chunks = chunk_manifest
+                        .chunks
+                        .values()
+                        .map(|c| ChunkRef {
+                            hash: c.hash.clone(),
+                            document_count: c.document_ids.len(),
+                            created_at: c.created_at,
+                        })
+                        .collect();
 
                     let manifest = MeshManifest {
                         node_id: identity.node_id,
@@ -265,13 +277,15 @@ pub async fn v1_mesh_manifest(
                 Err(e) => (
                     StatusCode::INTERNAL_SERVER_ERROR,
                     Json(serde_json::json!({ "error": e.to_string() })),
-                ).into_response(),
+                )
+                    .into_response(),
             }
         }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({ "error": e.to_string() })),
-        ).into_response(),
+        )
+            .into_response(),
     }
 }
 
@@ -281,8 +295,11 @@ pub async fn v1_mesh_chunks_request(
 ) -> impl IntoResponse {
     use std::collections::HashMap;
     let mut response_chunks = HashMap::new();
-    let sync_dir = workspace.workspace.usage_state_path
-        .parent().unwrap_or(&workspace.workspace.usage_state_path)
+    let sync_dir = workspace
+        .workspace
+        .usage_state_path
+        .parent()
+        .unwrap_or(&workspace.workspace.usage_state_path)
         .join("sync");
 
     for hash in payload.wanted_hashes {
@@ -302,8 +319,11 @@ pub async fn v1_mesh_chunks_push(
     Json(chunks): Json<std::collections::HashMap<String, Vec<u8>>>,
 ) -> impl IntoResponse {
     let mut synced_hashes = Vec::new();
-    let sync_dir = workspace.workspace.usage_state_path
-        .parent().unwrap_or(&workspace.workspace.usage_state_path)
+    let sync_dir = workspace
+        .workspace
+        .usage_state_path
+        .parent()
+        .unwrap_or(&workspace.workspace.usage_state_path)
         .join("sync");
     let chunks_dir = sync_dir.join("chunks");
     let _ = std::fs::create_dir_all(&chunks_dir);
@@ -314,12 +334,11 @@ pub async fn v1_mesh_chunks_push(
             // Import documents from chunk into local memory
             if let Ok(docs) = crate::sync::chunks::import_from_chunk(&sync_dir, &hash) {
                 for doc in docs {
-                    let _ = workspace.workspace.memory.add_document_typed(
-                        doc.path,
-                        doc.content,
-                        doc.metadata,
-                        None,
-                    ).await;
+                    let _ = workspace
+                        .workspace
+                        .memory
+                        .add_document_typed(doc.path, doc.content, doc.metadata, None)
+                        .await;
                 }
                 synced_hashes.push(hash);
             }

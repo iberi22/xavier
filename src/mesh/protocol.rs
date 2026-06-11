@@ -3,8 +3,8 @@
 //! This module defines the data structures used in the Xavier Mesh sync protocol.
 //! All types are designed for JSON serialization over HTTP.
 
-use serde::{Deserialize, Serialize};
 use crate::mesh::node::NodeId;
+use serde::{Deserialize, Serialize};
 
 /// Initial handshake sent by a node to a peer.
 #[derive(Debug, Serialize, Deserialize, Clone)]
