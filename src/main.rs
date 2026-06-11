@@ -45,7 +45,6 @@ async fn main() -> Result<()> {
             .unwrap_or_else(|_| ".".to_string());
         format!("{}/.xavier/logs", home)
     }));
-    crate::observability::init_logger(&log_dir, &log_filter);
 
     // Parse and run CLI
     let cli = Cli::parse();

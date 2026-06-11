@@ -92,7 +92,9 @@ impl MemoryQueryPort for MemoryUseCase {
             }
         }
         if let Some(ref detector) = self.threat_detector {
-            let clean = detector.scan_and_log(&record.content, "memory_update").await?;
+            let clean = detector
+                .scan_and_log(&record.content, "memory_update")
+                .await?;
             if !clean {
                 warn!("Memory update blocked: security threat detected in content");
                 return Err(anyhow::anyhow!(

@@ -3,11 +3,11 @@
 //! Stores information about known peers, their public keys, and sync settings.
 //! The registry is stored as a JSON file at `~/.config/xavier/mesh_peers.json`.
 
+use crate::mesh::node::NodeId;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use crate::mesh::node::NodeId;
 
 /// Information about a trusted peer node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,15 +49,12 @@ impl PeerRegistry {
             });
         }
 
-        let raw = std::fs::read_to_string(&storage_path)
-            .context("Failed to read peer registry file")?;
-        let peers: Vec<PeerInfo> = serde_json::from_str(&raw)
-            .context("Failed to parse peer registry JSON")?;
+        let raw =
+            std::fs::read_to_string(&storage_path).context("Failed to read peer registry file")?;
+        let peers: Vec<PeerInfo> =
+            serde_json::from_str(&raw).context("Failed to parse peer registry JSON")?;
 
-        let peers_map = peers
-            .into_iter()
-            .map(|p| (p.node_id.clone(), p))
-            .collect();
+        let peers_map = peers.into_iter().map(|p| (p.node_id.clone(), p)).collect();
 
         Ok(Self {
             peers: peers_map,
@@ -69,8 +66,7 @@ impl PeerRegistry {
     pub fn save(&self) -> Result<()> {
         let peers_vec: Vec<&PeerInfo> = self.peers.values().collect();
         let json = serde_json::to_string_pretty(&peers_vec)?;
-        std::fs::write(&self.storage_path, json)
-            .context("Failed to write peer registry file")?;
+        std::fs::write(&self.storage_path, json).context("Failed to write peer registry file")?;
         Ok(())
     }
 

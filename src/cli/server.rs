@@ -24,7 +24,7 @@ use crate::cli::config::{
     state_panel_root,
 };
 use crate::cli::state::CliState;
-use crate::observability::middleware::{request_logger, ObservabilityState};
+
 use crate::settings::XavierSettings;
 use xavier::adapters::inbound::http::routes::{
     sync_check_handler, time_metric_handler, verify_save_handler,
@@ -291,10 +291,19 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/security/scan", post(security_scan_handler))
         .route("/memory/query", post(memory_query_handler))
         .route("/session/compact", post(session_compact_handler))
-        .route("/api/skill/dispatch", post(xavier::api::skills::dispatch_skill))
+        .route(
+            "/api/skill/dispatch",
+            post(xavier::api::skills::dispatch_skill),
+        )
         .route("/api/skill/list", get(xavier::api::skills::list_skills))
-        .route("/api/memory/health", get(xavier::api::skills::memory_health))
-        .route("/api/timeline/slice", post(xavier::api::timeline::get_time_slice))
+        .route(
+            "/api/memory/health",
+            get(xavier::api::skills::memory_health),
+        )
+        .route(
+            "/api/timeline/slice",
+            post(xavier::api::timeline::get_time_slice),
+        )
         .route("/xavier/events/session", post(session_event_handler))
         .route("/xavier/time/metric", post(time_metric_handler))
         .route("/xavier/agents/register", post(agent_register_handler))
@@ -406,11 +415,26 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             get(crate::cli::handlers::headless_api::headless_memory_export),
         )
         // ── Mesh API ──────────────────────────────────────────────────────
-        .route("/v1/mesh/identity", get(xavier::server::v1_api::v1_mesh_identity))
-        .route("/v1/mesh/handshake", post(xavier::server::v1_api::v1_mesh_handshake))
-        .route("/v1/mesh/manifest", get(xavier::server::v1_api::v1_mesh_manifest))
-        .route("/v1/mesh/chunks/request", post(xavier::server::v1_api::v1_mesh_chunks_request))
-        .route("/v1/mesh/chunks/push", post(xavier::server::v1_api::v1_mesh_chunks_push))
+        .route(
+            "/v1/mesh/identity",
+            get(xavier::server::v1_api::v1_mesh_identity),
+        )
+        .route(
+            "/v1/mesh/handshake",
+            post(xavier::server::v1_api::v1_mesh_handshake),
+        )
+        .route(
+            "/v1/mesh/manifest",
+            get(xavier::server::v1_api::v1_mesh_manifest),
+        )
+        .route(
+            "/v1/mesh/chunks/request",
+            post(xavier::server::v1_api::v1_mesh_chunks_request),
+        )
+        .route(
+            "/v1/mesh/chunks/push",
+            post(xavier::server::v1_api::v1_mesh_chunks_push),
+        )
         // ── Headless E2E API (New Structure) ──────────────────────────────
         .route(
             "/headless/health",
@@ -507,171 +531,8 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .layer(Extension(workspace_ctx))
         .layer(CorsLayer::permissive());
 
-    // ── Observability middleware ──────────────────────────────────
-    let obs_state = Arc::new(ObservabilityState::new());
-    let obs_state_clone = obs_state.clone();
-
-    // Initialize file logger (only once)
-    let log_dir = std::path::PathBuf::from(std::env::var("XAVIER_LOG_DIR").unwrap_or_else(|_| {
-        let home = std::env::var("USERPROFILE")
-            .or_else(|_| std::env::var("HOME"))
-            .unwrap_or_else(|_| ".".to_string());
-        format!("{}/.xavier/logs", home)
-    }));
-    let log_level = std::env::var("XAVIER_LOG_LEVEL").unwrap_or_else(|_| "info".to_string());
-    crate::observability::init_logger(&log_dir, &log_level);
-
-    // Start the error pattern detector in background
-    let detector_store = obs_state_clone.store.clone();
-    tokio::spawn(async move {
-        if let Some(ref _store) = detector_store {
-            let detector = crate::observability::detector::LogDetector::new().await;
-            if let Ok(d) = detector {
-                let d = std::sync::Arc::new(d);
-                tokio::spawn(async move {
-                    d.spawn();
-                });
-            }
-        }
-    });
-
-    // Log startup
-    let notifier = crate::observability::notifier::Notifier::new();
-    notifier.notify_startup();
-
     let agent_indexer_cron = state.agent_indexer.clone();
     let memory_port_cron = state.memory.clone();
-
-    // ── Add observability middleware + routes ──────────────────
-    let app = app
-        .route(
-            "/monitor/stats",
-            get({
-                let obs = obs_state.clone();
-                axum::routing::get(move || {
-                    let obs = obs.clone();
-                    async move {
-                        if let Some(ref store) = obs.store {
-                            match store.get_stats().await {
-                                Ok(stats) => (
-                                    axum::http::StatusCode::OK,
-                                    axum::Json(serde_json::json!({
-                                        "status": "ok",
-                                        "uptime_seconds": obs.uptime_seconds(),
-                                        "stats": stats,
-                                    })),
-                                ),
-                                Err(e) => (
-                                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                                    axum::Json(serde_json::json!({
-                                        "status": "error",
-                                        "message": e.to_string(),
-                                    })),
-                                ),
-                            }
-                        } else {
-                            (
-                                axum::http::StatusCode::OK,
-                                axum::Json(serde_json::json!({
-                                    "status": "ok",
-                                    "note": "ServiceLogStore not available (running without DB)",
-                                    "uptime_seconds": obs.uptime_seconds(),
-                                })),
-                            )
-                        }
-                    }
-                })
-            }),
-        )
-        .route(
-            "/monitor/errors",
-            get({
-                let obs = obs_state.clone();
-                axum::routing::get(
-                    move |axum::extract::Query(params): axum::extract::Query<
-                        std::collections::HashMap<String, String>,
-                    >| {
-                        let obs = obs.clone();
-                        async move {
-                            let limit = params
-                                .get("limit")
-                                .and_then(|l| l.parse::<u32>().ok())
-                                .unwrap_or(20);
-                            if let Some(ref store) = obs.store {
-                                match store.search_logs("error", limit).await {
-                                    Ok(entries) => (
-                                        axum::http::StatusCode::OK,
-                                        axum::Json(serde_json::json!({
-                                            "status": "ok",
-                                            "count": entries.len(),
-                                            "entries": entries,
-                                        })),
-                                    ),
-                                    Err(e) => (
-                                        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                                        axum::Json(serde_json::json!({
-                                            "status": "error",
-                                            "message": e.to_string(),
-                                        })),
-                                    ),
-                                }
-                            } else {
-                                (
-                                    axum::http::StatusCode::OK,
-                                    axum::Json(serde_json::json!({
-                                        "status": "ok",
-                                        "entries": serde_json::Value::Array(vec![]),
-                                    })),
-                                )
-                            }
-                        }
-                    },
-                )
-            }),
-        )
-        .route(
-            "/monitor/patterns",
-            get({
-                let obs = obs_state.clone();
-                axum::routing::get(move || {
-                    let obs = obs.clone();
-                    async move {
-                        if let Some(ref store) = obs.store {
-                            match store.detect_patterns(60, 3).await {
-                                Ok(patterns) => (
-                                    axum::http::StatusCode::OK,
-                                    axum::Json(serde_json::json!({
-                                        "status": "ok",
-                                        "patterns": patterns,
-                                    })),
-                                ),
-                                Err(e) => (
-                                    axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                                    axum::Json(serde_json::json!({
-                                        "status": "error",
-                                        "message": e.to_string(),
-                                    })),
-                                ),
-                            }
-                        } else {
-                            (
-                                axum::http::StatusCode::OK,
-                                axum::Json(serde_json::json!({
-                                    "status": "ok",
-                                    "patterns": serde_json::Value::Array(vec![]),
-                                    "note": "ServiceLogStore not available",
-                                })),
-                            )
-                        }
-                    }
-                })
-            }),
-        )
-        .layer(axum::middleware::from_fn_with_state(
-            obs_state.clone(),
-            request_logger,
-        ));
-
     let app = app.with_state(state.clone());
 
     #[cfg(feature = "enterprise")]

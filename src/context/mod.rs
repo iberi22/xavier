@@ -27,7 +27,9 @@ pub use manager::ContextManager;
 pub use monitoring::ContextMetrics;
 pub use orchestrator::{ContextBudgetConfig, ExecutionPlan, HookKind, Orchestrator};
 pub use query_processor::QueryProcessor;
-pub use skill_dispatcher::{ContextPack, SkillDispatchRequest, SkillDispatchResult, SkillDispatcher};
+pub use skill_dispatcher::{
+    ContextPack, SkillDispatchRequest, SkillDispatchResult, SkillDispatcher,
+};
 pub use skill_registry::{IndexedSkill, SkillRegistry};
 pub use skills::{Skill, SkillLoader};
 pub use timeline::{TimeSlice, TimelineEngine, TimelineEventSummary, TimelineQuery};

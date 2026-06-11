@@ -111,7 +111,12 @@ impl Minter {
     ///
     /// 80% del precio se quema (envía a address burn)
     /// 20% va a rewards pool
-    pub fn burn(&mut self, buyer: &WalletAddress, amount: u64, context_hash: &str) -> Result<BurnEvent, MinterError> {
+    pub fn burn(
+        &mut self,
+        buyer: &WalletAddress,
+        amount: u64,
+        context_hash: &str,
+    ) -> Result<BurnEvent, MinterError> {
         todo!("Feature 3.3 — Execute burn")
     }
 
@@ -121,14 +126,13 @@ impl Minter {
         let today = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
-            .as_secs() / 86400;
+            .as_secs()
+            / 86400;
 
-        let count_today = self.mint_history
+        let count_today = self
+            .mint_history
             .iter()
-            .filter(|e| {
-                e.beneficiary == *wallet
-                    && e.minted_at / 86400 == today
-            })
+            .filter(|e| e.beneficiary == *wallet && e.minted_at / 86400 == today)
             .count() as u32;
 
         let limit = if trust_score < self.config.rate_limits.low_trust_threshold {

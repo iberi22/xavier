@@ -277,7 +277,7 @@ pub enum ProposalStatus {
     Approved,
     Rejected,
     Vetoed,
-    Overruled,   // La comunidad overruleó el veto del consejo
+    Overruled, // La comunidad overruleó el veto del consejo
     Executed,
     Expired,
 }
@@ -371,7 +371,8 @@ impl Default for SystemParams {
                 ("NormalLog".into(), 1.0),
                 ("BasicTelemetry".into(), 0.5),
                 ("Anomaly".into(), 2.5),
-            ].into(),
+            ]
+            .into(),
             reward_split: [40, 40, 20],
             rate_limit_low_trust: 10,
             burn_rate: 80,
