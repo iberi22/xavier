@@ -88,8 +88,14 @@ impl XavierBot {
                 .await?;
             }
             "/health" => {
-                bot.send_message(msg.chat.id, "🟢 System: Running\n⚡ Xavier v0.4.1")
-                    .await?;
+                bot.send_message(
+                    msg.chat.id,
+                    &format!(
+                        "🟢 System: Running\n⚡ Xavier v{}",
+                        env!("CARGO_PKG_VERSION")
+                    ),
+                )
+                .await?;
             }
             "/stats" => {
                 bot.send_message(msg.chat.id, "📊 Memories: 3\n💾 Size: 1.7 KB")
