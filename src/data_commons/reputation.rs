@@ -102,11 +102,7 @@ impl EigenTrustEngine {
     }
 
     /// Calcular reputación híbrida (EigenTrust + Contribution)
-    pub fn hybrid_score(
-        &self,
-        eigentrust_score: f64,
-        contribution_score: f64,
-    ) -> f64 {
+    pub fn hybrid_score(&self, eigentrust_score: f64, contribution_score: f64) -> f64 {
         self.config.eigentrust_weight * eigentrust_score
             + self.config.contribution_weight * contribution_score
     }
@@ -130,10 +126,7 @@ impl ContributionCalculator {
     /// - Uptime del nodo
     /// - Versión actualizada
     /// - Validaciones realizadas con acierto
-    pub fn calculate(
-        wallet: &WalletAddress,
-        history: &ContributionHistory,
-    ) -> u64 {
+    pub fn calculate(wallet: &WalletAddress, history: &ContributionHistory) -> u64 {
         todo!("Feature 4.2 — Contribution score")
     }
 }
@@ -185,10 +178,7 @@ mod tests {
 
     #[test]
     fn test_hybrid_score_default_weights() {
-        let engine = EigenTrustEngine::new(
-            ReputationConfig::default(),
-            vec![],
-        );
+        let engine = EigenTrustEngine::new(ReputationConfig::default(), vec![]);
         let score = engine.hybrid_score(0.8, 0.6);
         // 0.7 * 0.8 + 0.3 * 0.6 = 0.56 + 0.18 = 0.74
         assert!((score - 0.74).abs() < 0.001);

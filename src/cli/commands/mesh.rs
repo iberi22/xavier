@@ -1,11 +1,11 @@
 //! Mesh Command Handlers — CLI implementation for Xavier Mesh
 
+use crate::cli::commands::MeshCommand;
+use crate::cli::config::resolve_http_token;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::cli::commands::MeshCommand;
-use xavier::mesh::{NodeIdentity, PeerRegistry, PeerInfo, MeshTransport, NodeId};
-use crate::cli::config::resolve_http_token;
+use xavier::mesh::{MeshTransport, NodeId, NodeIdentity, PeerInfo, PeerRegistry};
 
 pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
     match cmd {
@@ -16,7 +16,11 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
             println!("  Public Key: {}", hex::encode(&identity.public_key));
             println!("  Version:    {}", env!("CARGO_PKG_VERSION"));
         }
-        MeshCommand::AddPeer { node_id, endpoint, alias } => {
+        MeshCommand::AddPeer {
+            node_id,
+            endpoint,
+            alias,
+        } => {
             let node_id = NodeId::parse(&node_id)?;
             let mut registry = PeerRegistry::load()?;
 
@@ -45,8 +49,17 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
             println!("{:<30} {:<30} {:<10}", "NodeID", "Endpoint", "Status");
             println!("{}", "-".repeat(70));
             for peer in peers {
-                let status = if peer.sync_enabled { "Enabled" } else { "Disabled" };
-                println!("{:<30} {:<30} {:<10}", peer.node_id.as_str(), peer.endpoint_url, status);
+                let status = if peer.sync_enabled {
+                    "Enabled"
+                } else {
+                    "Disabled"
+                };
+                println!(
+                    "{:<30} {:<30} {:<10}",
+                    peer.node_id.as_str(),
+                    peer.endpoint_url,
+                    status
+                );
             }
         }
         MeshCommand::RemovePeer { node_id } => {
@@ -58,7 +71,8 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
         MeshCommand::Ping { node_id } => {
             let node_id = NodeId::parse(&node_id)?;
             let registry = PeerRegistry::load()?;
-            let peer = registry.get_peer(&node_id)
+            let peer = registry
+                .get_peer(&node_id)
                 .context("Peer not found in registry")?;
 
             let identity = Arc::new(NodeIdentity::load_or_create()?);
@@ -88,7 +102,8 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
         MeshCommand::Sync { node_id, mode } => {
             let node_id = NodeId::parse(&node_id)?;
             let registry = PeerRegistry::load()?;
-            let peer = registry.get_peer(&node_id)
+            let peer = registry
+                .get_peer(&node_id)
                 .context("Peer not found in registry")?;
 
             let identity = Arc::new(NodeIdentity::load_or_create()?);
@@ -107,7 +122,8 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                     println!("Remote node has no chunks.");
                 } else {
                     println!("Fetching {} chunks...", hashes.len());
-                    let chunks: HashMap<String, Vec<u8>> = transport.fetch_chunks(peer, &token, &hashes).await?;
+                    let chunks: HashMap<String, Vec<u8>> =
+                        transport.fetch_chunks(peer, &token, &hashes).await?;
 
                     println!("Importing chunks...");
                     // Using the same logic as v1_mesh_chunks_push but locally
@@ -116,16 +132,21 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                     let runtime_config = xavier::agents::RuntimeConfig::from_env();
                     let workspace_dir = dirs::config_dir()
                         .context("Could not determine config directory")?
-                        .join("xavier").join("workspaces").join(&config.id);
+                        .join("xavier")
+                        .join("workspaces")
+                        .join(&config.id);
 
                     let workspace = xavier::workspace::WorkspaceState::new(
                         config,
                         runtime_config,
                         workspace_dir,
-                    ).await?;
+                    )
+                    .await?;
 
-                    let sync_dir = workspace.usage_state_path
-                        .parent().unwrap_or(&workspace.usage_state_path)
+                    let sync_dir = workspace
+                        .usage_state_path
+                        .parent()
+                        .unwrap_or(&workspace.usage_state_path)
                         .join("sync");
                     let chunks_dir = sync_dir.join("chunks");
                     std::fs::create_dir_all(&chunks_dir)?;
@@ -134,14 +155,20 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                     for (hash, data) in chunks {
                         let chunk_path = chunks_dir.join(format!("{}.jsonl.gz", hash));
                         if std::fs::write(&chunk_path, &data).is_ok() {
-                            if let Ok(docs) = xavier::sync::chunks::import_from_chunk(&sync_dir, &hash) {
+                            if let Ok(docs) =
+                                xavier::sync::chunks::import_from_chunk(&sync_dir, &hash)
+                            {
                                 for doc in docs {
-                                    if let Err(e) = workspace.memory.add_document_typed(
-                                        doc.path,
-                                        doc.content,
-                                        doc.metadata,
-                                        None,
-                                    ).await {
+                                    if let Err(e) = workspace
+                                        .memory
+                                        .add_document_typed(
+                                            doc.path,
+                                            doc.content,
+                                            doc.metadata,
+                                            None,
+                                        )
+                                        .await
+                                    {
                                         eprintln!("Failed to import document: {}", e);
                                     } else {
                                         imported_count += 1;
@@ -150,7 +177,11 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                             }
                         }
                     }
-                    println!("✅ Pull sync complete. Imported {} documents from {} chunks.", imported_count, hashes.len());
+                    println!(
+                        "✅ Pull sync complete. Imported {} documents from {} chunks.",
+                        imported_count,
+                        hashes.len()
+                    );
                 }
             }
 
@@ -160,16 +191,18 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 let runtime_config = xavier::agents::RuntimeConfig::from_env();
                 let workspace_dir = dirs::config_dir()
                     .context("Could not determine config directory")?
-                    .join("xavier").join("workspaces").join(&config.id);
+                    .join("xavier")
+                    .join("workspaces")
+                    .join(&config.id);
 
-                let workspace = xavier::workspace::WorkspaceState::new(
-                    config,
-                    runtime_config,
-                    workspace_dir,
-                ).await?;
+                let workspace =
+                    xavier::workspace::WorkspaceState::new(config, runtime_config, workspace_dir)
+                        .await?;
 
-                let sync_dir = workspace.usage_state_path
-                    .parent().unwrap_or(&workspace.usage_state_path)
+                let sync_dir = workspace
+                    .usage_state_path
+                    .parent()
+                    .unwrap_or(&workspace.usage_state_path)
                     .join("sync");
 
                 // Export local docs to chunks
@@ -178,14 +211,18 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                     println!("No local memories to push.");
                 } else {
                     let mut manifest = xavier::sync::chunks::load_manifest(&sync_dir)?;
-                    let hash = xavier::sync::chunks::export_to_chunk(&sync_dir, &docs, &mut manifest)?;
+                    let hash =
+                        xavier::sync::chunks::export_to_chunk(&sync_dir, &docs, &mut manifest)?;
 
                     let chunk_path = sync_dir.join("chunks").join(format!("{}.jsonl.gz", hash));
                     let data = std::fs::read(chunk_path)?;
 
                     println!("Pushing 1 chunk ({} docs) to {}...", docs.len(), node_id);
                     let pushed = transport.push_chunks(peer, &token, &[(hash, data)]).await?;
-                    println!("✅ Push sync complete. Remote accepted {} chunks.", pushed.len());
+                    println!(
+                        "✅ Push sync complete. Remote accepted {} chunks.",
+                        pushed.len()
+                    );
                 }
             }
         }

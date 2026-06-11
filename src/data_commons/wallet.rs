@@ -2,7 +2,7 @@
 //!
 //! ## Stack Criptográfico
 //!
-//! | Propósito | Algoritmo | Crate | 
+//! | Propósito | Algoritmo | Crate |
 //! |-----------|-----------|-------|
 //! | Cifrado asimétrico | ML-KEM-1024 (Kyber-1024) | `oqs` |
 //! | Firmas | ML-DSA-87 (Dilithium-5) | `oqs` |
@@ -114,12 +114,21 @@ impl XavierWallet {
     }
 
     /// Verificar firma ML-DSA-87
-    pub fn verify(&self, data: &[u8], signature: &[u8], public_key: &[u8]) -> Result<bool, WalletError> {
+    pub fn verify(
+        &self,
+        data: &[u8],
+        signature: &[u8],
+        public_key: &[u8],
+    ) -> Result<bool, WalletError> {
         todo!("Feature 1.1 — Verify Dilithium-5 signature")
     }
 
     /// Cifrar datos para un destinatario (ML-KEM-1024)
-    pub fn encrypt(&self, data: &[u8], recipient_public_key: &[u8]) -> Result<Vec<u8>, WalletError> {
+    pub fn encrypt(
+        &self,
+        data: &[u8],
+        recipient_public_key: &[u8],
+    ) -> Result<Vec<u8>, WalletError> {
         todo!("Feature 1.3 — Kyber-1024 encryption")
     }
 
@@ -152,7 +161,11 @@ impl XavierWallet {
             address: self.state.as_ref().map(|w| w.address.clone()),
             balance: self.balance(),
             trust_score: self.state.as_ref().map(|w| w.trust_score).unwrap_or(0),
-            contribution_score: self.state.as_ref().map(|w| w.contribution_score).unwrap_or(0),
+            contribution_score: self
+                .state
+                .as_ref()
+                .map(|w| w.contribution_score)
+                .unwrap_or(0),
             node_count: self.state.as_ref().map(|w| w.nodes.len()).unwrap_or(0),
             has_tpm: self.has_tpm,
         }
