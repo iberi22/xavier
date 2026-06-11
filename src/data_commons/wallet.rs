@@ -89,36 +89,36 @@ impl XavierWallet {
     /// 7. Si no TPM, cifrar seed con AES-256-GCM + contraseña
     /// 8. Persistir keypairs cifrados en disco
     /// 9. Retornar Wallet + seed phrase
-    pub fn create(_config: WalletConfig) -> Result<(Self, String), WalletError> {
+    pub fn create(config: WalletConfig) -> Result<(Self, String), WalletError> {
         todo!("Feature 1.1 — Wallet Creation")
     }
 
     /// Importar wallet desde seed phrase
-    pub fn from_seed(_seed_phrase: &str, _config: WalletConfig) -> Result<Self, WalletError> {
+    pub fn from_seed(seed_phrase: &str, config: WalletConfig) -> Result<Self, WalletError> {
         todo!("Feature 1.1 — Import wallet")
     }
 
     /// Importar wallet desde QR code (imagen)
-    pub fn from_qr(_qr_image_path: &str, _config: WalletConfig) -> Result<Self, WalletError> {
+    pub fn from_qr(qr_image_path: &str, config: WalletConfig) -> Result<Self, WalletError> {
         todo!("Feature 1.1 — Import wallet from QR")
     }
 
     /// Cargar wallet existente desde disco
-    pub fn load(_config: WalletConfig) -> Result<Self, WalletError> {
+    pub fn load(config: WalletConfig) -> Result<Self, WalletError> {
         todo!("Feature 1.1 — Load wallet")
     }
 
     /// Firmar datos con ML-DSA-87
-    pub fn sign(&self, _data: &[u8]) -> Result<Vec<u8>, WalletError> {
+    pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, WalletError> {
         todo!("Feature 1.1 — Sign with Dilithium-5")
     }
 
     /// Verificar firma ML-DSA-87
     pub fn verify(
         &self,
-        _data: &[u8],
-        _signature: &[u8],
-        _public_key: &[u8],
+        data: &[u8],
+        signature: &[u8],
+        public_key: &[u8],
     ) -> Result<bool, WalletError> {
         todo!("Feature 1.1 — Verify Dilithium-5 signature")
     }
@@ -126,14 +126,14 @@ impl XavierWallet {
     /// Cifrar datos para un destinatario (ML-KEM-1024)
     pub fn encrypt(
         &self,
-        _data: &[u8],
-        _recipient_public_key: &[u8],
+        data: &[u8],
+        recipient_public_key: &[u8],
     ) -> Result<Vec<u8>, WalletError> {
         todo!("Feature 1.3 — Kyber-1024 encryption")
     }
 
     /// Descifrar datos (ML-KEM-1024)
-    pub fn decrypt(&self, _ciphertext: &[u8]) -> Result<Vec<u8>, WalletError> {
+    pub fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>, WalletError> {
         todo!("Feature 1.3 — Kyber-1024 decryption")
     }
 
@@ -141,12 +141,12 @@ impl XavierWallet {
     ///
     /// El wallet firma (NodeID + WalletAddress) con Dilithium-5
     /// para probar que el nodo pertenece a este wallet.
-    pub fn register_node(&mut self, _node_id: &str) -> Result<NodeBinding, WalletError> {
+    pub fn register_node(&mut self, node_id: &str) -> Result<NodeBinding, WalletError> {
         todo!("Feature 1.3 — Register node to wallet")
     }
 
     /// Revocar un nodo de esta wallet
-    pub fn revoke_node(&mut self, _node_id: &str) -> Result<(), WalletError> {
+    pub fn revoke_node(&mut self, node_id: &str) -> Result<(), WalletError> {
         todo!("Feature 1.3 — Revoke node from wallet")
     }
 
@@ -219,5 +219,6 @@ impl std::fmt::Display for WalletError {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     // TODO: Tests cuando la feature esté implementada
 }

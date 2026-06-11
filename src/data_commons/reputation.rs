@@ -28,6 +28,7 @@
 //! - **Replay:** Hash SHA-256 único por contexto
 
 use crate::data_commons::types::*;
+use std::collections::HashMap;
 
 /// Configuración del sistema de reputación
 #[derive(Debug, Clone)]
@@ -60,7 +61,6 @@ impl Default for ReputationConfig {
 pub struct EigenTrustEngine {
     config: ReputationConfig,
     /// Wallets pre-trusted (seed nodes de Xavier Core)
-    #[allow(dead_code)]
     pre_trusted: Vec<WalletAddress>,
     /// Atestaciones de reputación recolectadas
     attestations: Vec<ReputationAttestation>,
@@ -126,7 +126,7 @@ impl ContributionCalculator {
     /// - Uptime del nodo
     /// - Versión actualizada
     /// - Validaciones realizadas con acierto
-    pub fn calculate(_wallet: &WalletAddress, _history: &ContributionHistory) -> u64 {
+    pub fn calculate(wallet: &WalletAddress, history: &ContributionHistory) -> u64 {
         todo!("Feature 4.2 — Contribution score")
     }
 }

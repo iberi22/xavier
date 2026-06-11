@@ -25,12 +25,21 @@ use crate::data_commons::types::*;
 use std::collections::HashSet;
 
 /// Configuración del funnel de recompensas
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct FunnelConfig {
     /// Parámetros del sistema (gobernables)
     pub params: SystemParams,
     /// Rate limiting por wallet
     pub rate_limits: RateLimits,
+}
+
+impl Default for FunnelConfig {
+    fn default() -> Self {
+        Self {
+            params: SystemParams::default(),
+            rate_limits: RateLimits::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -57,7 +66,6 @@ impl Default for RateLimits {
 pub struct Minter {
     config: FunnelConfig,
     /// Historial de contextos compartidos (para detectar duplicados)
-    #[allow(dead_code)]
     context_history: HashSet<String>,
     /// Historial de minteos por wallet (rate limiting)
     mint_history: Vec<MinterEvent>,
@@ -80,7 +88,7 @@ impl Minter {
     /// 3. Nodo tiene Proof of Liveliness (≥24h uptime)
     /// 4. No self-dealing (el comprador no es el vendedor)
     /// 5. No collusion flag activo
-    pub fn validate_context(&self, _offer: &ContextOffer) -> Result<(), MinterError> {
+    pub fn validate_context(&self, offer: &ContextOffer) -> Result<(), MinterError> {
         todo!("Feature 3.1 — Validate context for minting")
     }
 
@@ -90,12 +98,12 @@ impl Minter {
     /// ```text
     /// Precio = PrecioReferencia × (1 / max(Rareza, 0.01)) × TrustScoreNormalized × MultiplicadorTipo
     /// ```
-    pub fn calculate_reward(&self, _offer: &ContextOffer) -> RewardBreakdown {
+    pub fn calculate_reward(&self, offer: &ContextOffer) -> RewardBreakdown {
         todo!("Feature 3.1 — Calculate reward")
     }
 
     /// Ejecutar minteo: crear evento de emisión
-    pub fn mint(&mut self, _offer: &ContextOffer) -> Result<MinterEvent, MinterError> {
+    pub fn mint(&mut self, offer: &ContextOffer) -> Result<MinterEvent, MinterError> {
         todo!("Feature 3.1 — Execute mint")
     }
 
@@ -105,9 +113,9 @@ impl Minter {
     /// 20% va a rewards pool
     pub fn burn(
         &mut self,
-        _buyer: &WalletAddress,
-        _amount: u64,
-        _context_hash: &str,
+        buyer: &WalletAddress,
+        amount: u64,
+        context_hash: &str,
     ) -> Result<BurnEvent, MinterError> {
         todo!("Feature 3.3 — Execute burn")
     }
