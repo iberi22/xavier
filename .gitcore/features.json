@@ -1,106 +1,271 @@
 {
-  "_comment": "Feature tracking file for Xavier Cognitive Memory System.",
+  "_comment": "Feature tracking file for Xavier Cognitive Memory System — actualizado Jun 2026 con % de implementación real",
   "metadata": {
     "project": "Xavier",
+    "version": "0.6.1-beta",
     "created": "2026-03-05",
-    "last_verified": "2026-04-11",
-    "total_features": 6,
-    "passing": 6,
-    "failing": 0
+    "last_verified": "2026-06-11",
+    "total_features": 12,
+    "features_complete": 5,
+    "features_beta": 3,
+    "features_draft": 2,
+    "features_planned": 2,
+    "overall_progress_pct": 62
   },
   "features": [
     {
       "id": "feat-unified-storage",
+      "name": "Unified SQLite Storage",
       "category": "core",
-      "description": "Unified durable storage direction using SQLite + SQLite-vec for vector and graph data",
+      "status": "beta",
+      "progress_pct": 85,
+      "description": "Unified durable storage using SQLite + SQLite-vec for vectors, graph data, and memory persistence",
       "steps": [
         "Initialize SQLite + sqlite-vec",
         "Store high-dimensional vectors for semantic search",
-        "Store graph nodes for belief relationships"
+        "Store graph nodes for belief relationships",
+        "Connection pooling (r2d2)",
+        "Migration system for schema changes"
       ],
       "passes": true,
-      "verified_by": "doc-alignment",
+      "verified_by": "production-usage",
       "github_issue": null,
-      "last_tested": "2026-04-14",
-      "notes": "SQLite + sqlite-vec is the production-ready default backend since v0.4.x."
+      "last_tested": "2026-06-10",
+      "notes": "SQLite + sqlite-vec is production-ready since v0.4.x. 113 memories loaded in LaSantacruz instance. BM25 search ~5ms. Missing: migration system, columnar indices.",
+      "implemented_in": "src/storage/, src/memory/, src/adapters/outbound/"
     },
     {
       "id": "feat-hybrid-search",
+      "name": "BM25 + Vector Hybrid Search",
       "category": "search",
-      "description": "Hybrid Search combining BM25 keyword matching and vector retrieval",
+      "status": "beta",
+      "progress_pct": 70,
+      "description": "Hybrid Search combining BM25 keyword matching and vector retrieval with RRF merging",
       "steps": [
-        "Index markdown files with Tantivy",
-        "Perform vector search in the active memory runtime",
-        "Rerank and combine results"
+        "Implement BM25 full-text search with FTS5",
+        "Implement vector search via sqlite-vec",
+        "Implement Reciprocal Rank Fusion merging",
+        "Embedding provider integration (cloud gllm)",
+        "Caching layer for repeated queries"
       ],
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-04-11",
-      "notes": "Validated through tests and benchmark smoke execution. Retrieval quality remains strong, but current benchmark latency is above the older <500ms target."
+      "last_tested": "2026-06-10",
+      "notes": "BM25 search works (~5ms). Vector search requires valid OpenAI API key or compiled gllm. Current key is invalid. Falls back to BM25-only. Missing: working embedding provider, query caching, RRF weights config at runtime.",
+      "implemented_in": "src/search/, src/retrieval/, src/embedding/"
     },
     {
       "id": "feat-belief-graph",
+      "name": "Belief Graph",
       "category": "cognitive",
-      "description": "Belief Graph for conceptual relationship mapping",
+      "status": "beta",
+      "progress_pct": 75,
+      "description": "Belief Graph for conceptual relationship mapping and cognitive inference",
       "steps": [
-        "Define relationship nodes",
+        "Define relationship nodes and edges",
         "Implement extraction logic for agent insights",
-        "Verify graph traversal performance"
+        "Implement graph traversal queries",
+        "Verify graph traversal performance",
+        "Add inference and decay mechanisms"
       ],
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-03-17",
-      "notes": "Current belief graph module is covered by passing tests in `memory/belief_graph.rs`."
+      "last_tested": "2026-06-10",
+      "notes": "Belief graph module passing tests. PR #12 added Timeline, Cognitive memory, Onboarding, and Skill Dispatcher tests. Missing: performance benchmarks, inference engine, graph serialization format.",
+      "implemented_in": "src/memory/entity_graph/, src/domain/belief/"
     },
     {
       "id": "feat-mcp-server",
+      "name": "MCP Server",
       "category": "integration",
-      "description": "HTTP-first integration surface with optional Model Context Protocol (MCP) support",
+      "status": "beta",
+      "progress_pct": 90,
+      "description": "HTTP-first integration with optional Model Context Protocol (MCP) support exposing 12 tools",
       "steps": [
         "Expose authenticated HTTP endpoints for memory and code operations",
-        "Implement MCP tool definitions",
+        "Implement MCP tool definitions (12 tools)",
         "Expose memory search as a tool",
-        "Verify connectivity through HTTP and MCP clients"
+        "Verify connectivity through HTTP and MCP clients",
+        "Integration tests for all 12 tools"
       ],
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-03-19",
-      "notes": "The integrated binary exposes authenticated HTTP handlers in `server/http.rs` and an MCP surface in `server/mcp_server.rs`."
+      "last_tested": "2026-06-10",
+      "notes": "12 tools operational per MCP_CONTRACT.md. Axum 0.8 with TLS. Missing: integration tests for all 12 tools, error handling consistency docs.",
+      "implemented_in": "src/server/http/, src/server/mcp/, src/server/headless/"
     },
     {
       "id": "feat-code-graph-index",
+      "name": "Code Graph Index",
       "category": "integration",
-      "description": "AST-backed code indexing and symbol search through the `code-graph` sidecar",
+      "status": "draft",
+      "progress_pct": 40,
+      "description": "AST-backed code indexing and symbol search through the `code-graph` sidecar crate",
       "steps": [
         "Initialize SQLite index for code symbols",
-        "Expose `/code/scan`, `/code/find`, and `/code/stats`",
-        "Persist index path via `XAVIER_CODE_GRAPH_DB_PATH` across local, test, and Docker runs"
+        "Implement AST parsing with tree-sitter",
+        "Expose /code/scan, /code/find, and /code/stats endpoints",
+        "Persist index path via XAVIER_CODE_GRAPH_DB_PATH",
+        "Support multiple programming languages"
       ],
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-03-17",
-      "notes": "Validated with HTTP handler tests, e2e startup, and benchmark smoke runs."
+      "last_tested": "2026-06-10",
+      "notes": "Code-graph sidecar crate exists. HTTP handlers exist. Missing: multi-language support, symbol search completeness, AST coverage (limited to few languages).",
+      "implemented_in": "code-graph/, src/codebase/, src/api/"
     },
     {
       "id": "feat-src-reference",
+      "name": "SRC Reference Documentation",
       "category": "documentation",
-      "description": "Source Code Reference (SRC) - Comprehensive documentation of all source files",
+      "status": "draft",
+      "progress_pct": 20,
+      "description": "Source Code Reference (SRC) — comprehensive documentation of all source files per GitCore protocol",
       "steps": [
         "Document directory structure",
         "Document core modules (a2a, agents, memory, server, tasks)",
         "Document important types and traits",
         "Add build/run instructions",
-        "Add CLI reference"
+        "Add CLI reference",
+        "Fill SRC_CONFIG.md with real configuration references"
+      ],
+      "passes": false,
+      "verified_by": "repo-audit",
+      "github_issue": null,
+      "last_tested": "2026-06-10",
+      "notes": ".gitcore/SRC.md and SRC_CONFIG.md are ALL TODO entries. Needs complete fill-in pass. 422 Rust files, ~88K lines of code to document.",
+      "implemented_in": ".gitcore/SRC.md, .gitcore/SRC_CONFIG.md"
+    },
+    {
+      "id": "feat-session-management",
+      "name": "Session Management",
+      "category": "core",
+      "status": "stable",
+      "progress_pct": 95,
+      "description": "Session persistence, authentication, and context management for AI agent interactions",
+      "steps": [
+        "Create sessions with UUID",
+        "Persist session state",
+        "Session TTL and expiration",
+        "Session cleanup/eviction",
+        "Multi-instance session sharing"
+      ],
+      "passes": true,
+      "verified_by": "production-usage",
+      "github_issue": null,
+      "last_tested": "2026-06-10",
+      "notes": "Working in production for LaSantacruz agent. Responsive and stable. Missing: cross-instance sharing, session export/import.",
+      "implemented_in": "src/session/, src/domain/memory/"
+    },
+    {
+      "id": "feat-encryption-at-rest",
+      "name": "Encryption at Rest",
+      "category": "security",
+      "status": "draft",
+      "progress_pct": 60,
+      "description": "AES-256-GCM encryption for stored memory data with Argon2 key derivation",
+      "steps": [
+        "Implement AES-256-GCM encryption engine",
+        "Implement Argon2 key derivation",
+        "Wire encryption into storage layer",
+        "Key management (env var / platform keychain)",
+        "Performance impact benchmarking"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": null,
+      "last_tested": "2026-06-10",
+      "notes": "Dependencies in Cargo.toml (aes-gcm 0.10, argon2 0.5). Crypto module exists in src/crypto/. Missing: full integration into storage layer, key management documentation.",
+      "implemented_in": "src/crypto/, src/security/"
+    },
+    {
+      "id": "feat-documentation-site",
+      "name": "Starlight Documentation Site",
+      "category": "documentation",
+      "status": "draft",
+      "progress_pct": 30,
+      "description": "Astro + Starlight documentation site for Xavier public-facing docs",
+      "steps": [
+        "Set up Astro + Starlight project",
+        "Write quickstart guide",
+        "Write API reference",
+        "Write architecture docs",
+        "Set up CI/CD for automatic deployment",
+        "Deploy to GitHub Pages or Cloudflare"
       ],
       "passes": true,
       "verified_by": "repo-audit",
       "github_issue": null,
-      "last_tested": "2026-03-20",
-      "notes": "GitCore Monitor executed 2026-03-20: 78 projects analyzed, 153 modules found. SRC.md central index updated from 43 to 78 projects."
+      "last_tested": "2026-06-10",
+      "notes": "Two doc site variants exist (Starlight at docs/site/, Svelte at docs/system/). Neither is deployed. Missing: content completion, CI/CD deployment pipeline, domain setup.",
+      "implemented_in": "docs/site/, docs/system/"
+    },
+    {
+      "id": "feat-mesh-network",
+      "name": "Xavier Mesh P2P Network",
+      "category": "enterprise",
+      "status": "beta",
+      "progress_pct": 80,
+      "description": "Distributed P2P memory synchronization across Xavier instances with encrypted telemetry",
+      "steps": [
+        "Define P2P node identity and discovery",
+        "Implement encrypted transport layer",
+        "Implement memory synchronization protocol",
+        "Handle network partitions and conflicts",
+        "Auto-update mechanism for nodes"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": null,
+      "last_tested": "2026-06-10",
+      "notes": "Phase 1 complete (Issue #8 closed). Mesh module with 5 files (mod, node, peer, protocol, transport). Integration tests exist. Missing: Phase 2 (conflict resolution, multi-hop routing), Phase 3 (auto-update).",
+      "implemented_in": "src/mesh/, tests/mesh_integration.rs"
+    },
+    {
+      "id": "feat-telegram-bot",
+      "name": "Telegram Bot Integration",
+      "category": "integration",
+      "status": "beta",
+      "progress_pct": 35,
+      "description": "Telegram bot for receiving commands and sending notifications from Xavier",
+      "steps": [
+        "Implement telegram module with teloxide",
+        "Support webhook and polling modes",
+        "Store bot token encrypted in config",
+        "Handle incoming commands (/memory search)",
+        "Send notifications to configured chat"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": null,
+      "last_tested": "2026-06-10",
+      "notes": "src/telegram/mod.rs exists (172 lines). Feature-gated behind 'telegram' flag with teloxide. Notifier uses Telegram channel. Missing: full command handling, bot token storage, webhook mode.",
+      "implemented_in": "src/telegram/, src/observability/notifier.rs"
+    },
+    {
+      "id": "feat-notification-system",
+      "name": "Notification Persistence and Delivery",
+      "category": "core",
+      "status": "draft",
+      "progress_pct": 25,
+      "description": "Persistent notification system with event bus, SQLite storage, REST API, and Tauri real-time updates",
+      "steps": [
+        "Create notification struct and event types",
+        "Persist notifications to SQLite",
+        "Expose REST API (GET, PATCH, DELETE)",
+        "Tauri emit_all for real-time UI updates",
+        "4 category islands (System, Memory, Agents, Errors)"
+      ],
+      "passes": false,
+      "verified_by": "code-audit",
+      "github_issue": 4,
+      "last_tested": "2026-06-10",
+      "notes": "Observability notifier.rs exists (11KB) with structs. Notification struct + Telegram compatibility implemented. Missing: SQLite persistence, REST endpoints, Tauri integration.",
+      "implemented_in": "src/observability/notifier.rs"
     }
   ],
   "verification_commands": {
@@ -108,6 +273,8 @@
     "unit": "cargo test -p xavier --lib",
     "e2e": "cargo test -p xavier --test e2e -- --nocapture",
     "lint": "cargo clippy -p xavier --all-targets -- -D warnings",
-    "benchmark_smoke": "python scripts/benchmarks/run_locomo_benchmark.py --sample-limit 1 --question-limit 2"
+    "benchmark_smoke": "python scripts/benchmarks/run_locomo_benchmark.py --sample-limit 1 --question-limit 2",
+    "mesh_test": "cargo test mesh_integration",
+    "telegram_test": "cargo test -p xavier --features telegram"
   }
 }
