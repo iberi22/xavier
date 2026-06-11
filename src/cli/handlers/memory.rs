@@ -504,7 +504,7 @@ pub async fn stats_handler(State(state): State<CliState>) -> impl axum::response
     axum::Json(serde_json::json!({
         "status": "ok",
         "workspace_id": state.workspace_id,
-        "version": "0.4.1",
+        "version": env!("CARGO_PKG_VERSION"),
     }))
 }
 

@@ -220,10 +220,22 @@ impl EmbedderConfig {
         ])
     }
 
-    fn cloud_only(_api_flavor: ApiFlavor) -> Self {
-        Self::Fallback(vec![
-            EmbedderBackendConfig::OpenAICompatible(cloud_config()),
-        ])
+    fn cloud_only(api_flavor: ApiFlavor) -> Self {
+        // Primary: cloud endpoint, Fallback: local endpoint if available
+        let mut backends = vec![EmbedderBackendConfig::OpenAICompatible(cloud_config())];
+
+        if local_embedding_signal_present() {
+            match api_flavor {
+                ApiFlavor::OpenAICompatible => {
+                    backends.push(EmbedderBackendConfig::OpenAICompatible(local_config()));
+                }
+                ApiFlavor::AnthropicCompatible => {
+                    backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
+                }
+            }
+        }
+
+        Self::Fallback(backends)
     }
 
     fn gllm_only() -> Self {
@@ -304,11 +316,19 @@ impl Embedder for FallbackEmbedder {
 }
 
 fn local_embedding_signal_present() -> bool {
-    std::env::var("XAVIER_EMBEDDING_URL").is_ok()
+    std::env::var("XAVIER_EMBEDDING_LOCAL_URL").is_ok()
         || std::env::var("XAVIER_EMBEDDING_MODEL").is_ok()
         || std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
             .map(|value| value.eq_ignore_ascii_case("local"))
             .unwrap_or(false)
+        || crate::settings::XavierSettings::current()
+            .embedding
+            .endpoint
+            .contains("localhost")
+        || crate::settings::XavierSettings::current()
+            .embedding
+            .endpoint
+            .contains("://localhost")
 }
 
 fn cloud_embedding_signal_present() -> bool {
@@ -355,9 +375,12 @@ fn gllm_config() -> GllmConfig {
 
 fn local_config() -> OpenAICompatibleConfig {
     let settings = crate::settings::XavierSettings::current();
-    let endpoint = std::env::var("XAVIER_EMBEDDING_URL")
+    // Priority: XAVIER_EMBEDDING_LOCAL_URL > XAVIER_EMBEDDING_URL > settings.models.embedding_url > DEFAULT_LOCAL_EMBEDDING_ENDPOINT
+    let endpoint = std::env::var("XAVIER_EMBEDDING_LOCAL_URL")
+        .ok()
+        .or_else(|| std::env::var("XAVIER_EMBEDDING_URL").ok())
         .map(|value| normalize_openai_embeddings_endpoint(&value))
-        .unwrap_or_else(|_| {
+        .unwrap_or_else(|| {
             if !settings.models.embedding_url.is_empty() {
                 normalize_openai_embeddings_endpoint(&settings.models.embedding_url)
             } else {

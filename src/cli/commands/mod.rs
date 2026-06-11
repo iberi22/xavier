@@ -52,12 +52,14 @@ impl Cli {
             Command::Search {
                 query,
                 limit,
+                max_results,
                 cluster,
                 level,
             } => {
                 let base_url = resolve_base_url();
                 println!("Searching memories via HTTP API on {}", base_url);
-                let lim = limit.unwrap_or(10);
+                // Prefer --max-results / -n flag over positional limit
+                let lim = max_results.clone().or(limit.clone()).unwrap_or(10);
                 search_memories_filtered(query, lim, cluster.clone(), level.clone()).await
             }
             Command::Usage { cmd } => usage::handle_usage_command(cmd.clone()).await,
@@ -144,14 +146,25 @@ impl Cli {
             Command::Secrets { cmd } => secrets::handle_secrets_command(cmd.clone()).await,
             Command::Vault { cmd } => secrets::handle_vault_command(cmd.clone()).await,
             Command::Quota => crate::cli::handlers::quota::handle_quota_command().await,
-            Command::Export { public, output } => {
+            Command::Export {
+                public,
+                output,
+                limit,
+            } => {
                 let base_url = resolve_base_url();
                 let token = require_xavier_token()?;
                 let client = enums::CLI_HTTP_CLIENT.clone();
 
-                println!("Exporting memories (public_only={})...", public);
+                let limit = limit.unwrap_or(1000).clamp(1, 10000);
+                println!(
+                    "Exporting memories (public_only={}, limit={})...",
+                    public, limit
+                );
                 let resp = client
-                    .get(format!("{}/memory/export?public={}", base_url, public))
+                    .get(format!(
+                        "{}/memory/export?public={}&limit={}",
+                        base_url, public, limit
+                    ))
                     .header("X-Xavier-Token", &token)
                     .send()
                     .await?;
