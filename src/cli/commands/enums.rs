@@ -30,6 +30,8 @@ pub enum Command {
     Search {
         query: String,
         limit: Option<usize>,
+        #[arg(short = 'n', long)]
+        max_results: Option<usize>,
         #[arg(long)]
         cluster: Vec<String>,
         #[arg(long)]
@@ -159,6 +161,9 @@ pub enum Command {
         /// Output file path
         #[arg(short, long)]
         output: Option<PathBuf>,
+        /// Limit the number of exported memories
+        #[arg(short, long)]
+        limit: Option<usize>,
     },
 }
 

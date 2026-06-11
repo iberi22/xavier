@@ -94,6 +94,8 @@ pub async fn recall_memories(query: &str, limit: usize) -> Result<()> {
 
 /// Fetch and display server statistics.
 pub async fn show_stats() -> Result<()> {
+    println!("Xavier CLI version: {}", env!("CARGO_PKG_VERSION"));
+
     let token = xavier_token();
     let base_url = resolve_base_url();
     let url = format!("{}/memory/stats", base_url);
@@ -109,11 +111,11 @@ pub async fn show_stats() -> Result<()> {
     match response {
         Ok(resp) if resp.status().is_success() => {
             let body: serde_json::Value = resp.json().await.unwrap_or_default();
-            println!("\nXavier Statistics:");
+            println!("\nXavier Server Statistics:");
             println!("{}", serde_json::to_string_pretty(&body)?);
         }
         _ => {
-            println!("⚠️ Server offline or request failed. Falling back to local offline database statistics...");
+            println!("⚠️ Server unreachable. Falling back to local offline database statistics...");
             match load_spawn_memory().await {
                 Ok(memory) => {
                     let usage = memory.usage().await;
