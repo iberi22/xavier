@@ -673,12 +673,4 @@ impl MemoryStore for SqliteMemoryStore {
             .await
     }
 
-    async fn ls(
-        &self,
-        workspace_id: &str,
-        path: &str,
-    ) -> Result<Vec<crate::memory::hierarchy::MemoryHierarchyNode>> {
-        let all = self.list(workspace_id).await?;
-        Ok(crate::memory::hierarchy::MemoryTree::build_ls(all, path))
-    }
 }
