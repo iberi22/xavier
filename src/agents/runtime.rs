@@ -540,7 +540,10 @@ impl AgentRuntime {
         };
 
         // If confidence is still low after retries, trigger TGD to learn from the gap
-        if reasoning_result.confidence < 0.7 {
+        let tgd_threshold = self.tgd_engine.as_ref()
+            .map(|tgd| tgd.config().confidence_threshold)
+            .unwrap_or(0.7);
+        if reasoning_result.confidence < tgd_threshold {
             if let Some(ref tgd) = self.tgd_engine {
                 // We use a simplified history for TGD here (the current query)
                 // In a full implementation, we'd pass the session history
