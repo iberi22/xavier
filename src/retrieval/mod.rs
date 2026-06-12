@@ -10,4 +10,5 @@ pub use gating::{
     AdaptiveGating, Event, GatingConfig, LayerSearchResult, LayerStats, LayerWeights,
     SessionSummary,
 };
+pub mod navigation;
 pub mod scoring;
