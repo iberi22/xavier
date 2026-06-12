@@ -76,7 +76,7 @@ impl Hormer {
             settings.retrieval.learned_policy.semantic_weight = policy.weights.semantic;
             settings.retrieval.learned_policy.update_count = policy.update_count;
 
-            if let Err(e) = settings.save() {
+            if let Err(e) = settings.save().await {
                 tracing::warn!("HORMER: Failed to persist policy: {}", e);
             }
         }

@@ -58,7 +58,7 @@ impl RewardModel {
             return 0.0;
         }
 
-        let mut sources = std::collections::HashSet::new();
+        let mut sources = std::collections::HashSet::with_capacity(results.len());
         for r in results {
             sources.insert(&r.source);
         }
