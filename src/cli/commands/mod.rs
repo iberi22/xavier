@@ -18,6 +18,7 @@ pub mod code;
 pub mod enums;
 pub mod http;
 pub mod mesh;
+pub mod navigation;
 pub mod provider;
 pub mod secrets;
 pub mod spawn;
@@ -93,6 +94,9 @@ impl Cli {
                 http::show_stats().await
             }
             Command::Code { cmd } => code::handle_code_command(cmd.clone()).await,
+            Command::Ls { path } => navigation::handle_ls(path.clone()).await,
+            Command::Cd { path } => navigation::handle_cd(path.clone()).await,
+            Command::Pwd => navigation::handle_pwd().await,
             Command::SessionSave {
                 session_id,
                 content,
