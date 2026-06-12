@@ -198,6 +198,7 @@ pub struct AgentRuntime {
     scheduler: Option<Arc<tokio::sync::Mutex<JobScheduler>>>,
     orchestrator: Option<Orchestrator>,
     rate_manager: Option<Arc<RateLimitManager>>,
+    tgd_engine: Option<crate::agents::tgd::TgdEngine>,
 }
 
 impl AgentRuntime {
@@ -224,6 +225,7 @@ impl AgentRuntime {
             scheduler: None,
             orchestrator: Some(orchestrator),
             rate_manager: None,
+            tgd_engine: None,
         })
     }
 
@@ -244,6 +246,11 @@ impl AgentRuntime {
 
     pub fn with_rate_manager(mut self, manager: Arc<RateLimitManager>) -> Self {
         self.rate_manager = Some(manager);
+        self
+    }
+
+    pub fn with_tgd_engine(mut self, engine: crate::agents::tgd::TgdEngine) -> Self {
+        self.tgd_engine = Some(engine);
         self
     }
 
@@ -271,8 +278,9 @@ impl AgentRuntime {
         mut self,
         provider_config: crate::agents::provider::ModelProviderConfig,
     ) -> Self {
-        let provider = crate::agents::provider::ModelProviderClient::new(provider_config);
-        self.system2 = System2Reasoner::with_provider(ReasonerConfig::default(), provider);
+        let provider = crate::agents::provider::ModelProviderClient::new(provider_config.clone());
+        self.system2 = System2Reasoner::with_provider(ReasonerConfig::default(), provider.clone());
+        self.tgd_engine = Some(crate::agents::tgd::TgdEngine::new(provider));
         self
     }
 
@@ -530,6 +538,23 @@ impl AgentRuntime {
             current_query = format!("{} (expanded context needed)", current_query);
             retries += 1;
         };
+
+        // If confidence is still low after retries, trigger TGD to learn from the gap
+        if reasoning_result.confidence < 0.7 {
+            if let Some(ref tgd) = self.tgd_engine {
+                // We use a simplified history for TGD here (the current query)
+                // In a full implementation, we'd pass the session history
+                let messages = vec![ConversationMessage {
+                    id: ulid::Ulid::new().to_string(),
+                    role: MessageRole::User,
+                    content: query.to_string(),
+                    timestamp: chrono::Utc::now(),
+                }];
+                if let Err(e) = tgd.generate_rules(&messages, &retrieval_result.documents).await {
+                    warn!("TGD rule generation failed: {}", e);
+                }
+            }
+        }
 
         // System 3: Action
         let should_skip_system3 = match system3_mode {
