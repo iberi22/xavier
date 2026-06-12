@@ -6,6 +6,7 @@ use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::path::Path;
 
 use crate::memory::{
     manager::ManagedMemory,
@@ -132,7 +133,13 @@ pub fn similarity(left: &MemoryDocument, right: &MemoryDocument) -> f32 {
     } else if normalize_text(&left.path) == normalize_text(&right.path) {
         0.95
     } else {
-        0.0
+        let left_parent = Path::new(&left.path).parent();
+        let right_parent = Path::new(&right.path).parent();
+        if left_parent.is_some() && left_parent == right_parent {
+            0.50 // Navigation-aware boost: memories in same directory are more likely related
+        } else {
+            0.0
+        }
     };
 
     (semantic * 0.50 + lexical * 0.40 + path_boost * 0.10).clamp(0.0, 1.0)
@@ -339,5 +346,30 @@ mod tests {
         assert!(cleaned.contains("Alpha"));
         assert!(cleaned.contains("Beta"));
         assert_eq!(cleaned.matches("Alpha").count(), 1);
+    }
+
+    #[test]
+    fn test_navigation_aware_similarity() {
+        let doc_a = MemoryDocument {
+            path: "src/memory/a.md".to_string(),
+            content: "Same content".to_string(),
+            ..Default::default()
+        };
+        let doc_b = MemoryDocument {
+            path: "src/memory/b.md".to_string(),
+            content: "Same content".to_string(),
+            ..Default::default()
+        };
+        let doc_c = MemoryDocument {
+            path: "other/c.md".to_string(),
+            content: "Same content".to_string(),
+            ..Default::default()
+        };
+
+        let sim_ab = similarity(&doc_a, &doc_b);
+        let sim_ac = similarity(&doc_a, &doc_c);
+
+        // AB share same parent 'src/memory', AC do not.
+        assert!(sim_ab > sim_ac, "Similarity in same directory ({}) should be higher than different directory ({})", sim_ab, sim_ac);
     }
 }
