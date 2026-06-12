@@ -140,20 +140,31 @@ docker compose -f docker/docker-compose.embeddings.yml up -d infinity
 - Docker Infinity with gte-Qwen2-1.5B — ~3 GB (well within 8 GB)
 - Both can run simultaneously if needed
 
-### Expected Results
+### Actual Results (CPU wgpu, EditorOne, 2026-06-11)
 
-- **MiniLM-L6-v2:** fastest (~2ms) but weakest precision (58.8 MTEB)
-- **mpnet-base-v2:** good balance (~6ms, 63.0 MTEB) — new default
-- **Qwen3-Embedding-0.6B:** best precision (~67.5 MTEB), GPU fast (~1-2ms with CUDA)
-- **Docker gte-Qwen2:** good precision (~64.5 MTEB), network overhead (~5-10ms)
-- **OpenRouter:** worst latency (~1,200ms), moderate precision
+| Model | Accuracy | Latency (CPU) | Dims | MTEB | Notes |
+|-------|----------|---------------|------|------|-------|
+| **MiniLM-L6-v2** | 60% ✅ | **1,928ms** | 384 | 58.8 | All HIGH correct. LOW fails due to shared terms in old pairs. |
+| **mpnet-base-v2** | 60% ✅ | **6,410ms** | 768 | 63.0 | Same, HIGH all correct. |
+| **Qwen3-Embed-0.6B** | 60% ✅ | **17,368ms** | 1024 | 67.5 | Same pattern. CPU too slow for practical use. |
+| Docker Infinity | 40% ❌ | 4,690ms | 1536 | 64.5 | Failed — no Docker server running during test. |
+| OpenRouter API | 40% ❌ | 357ms | 1536 | 62.3 | Failed — no API key configured. |
 
-### Decision Framework
+**Key finding:** Modern dense embeddings (all models) produce cosine similarities in 0.97-1.0 range. Old thresholds (0.4/0.5) are invalid.
 
-After benchmarks, default will be:
-- **GPU available:** Qwen3-Embedding-0.6B via GLLM CUDA (fastest + most precise)
-- **CPU only:** all-mpnet-base-v2 via GLLM wgpu (best quality/speed tradeoff)
-- **Fallback:** OpenRouter API (cloud, no local resources)
+### Decision (Applied 2026-06-11)
+
+**Default: `Qwen/Qwen3-Embedding-0.6B` (1024d, MTEB 67.5)**
+- **GPU available (AMD RX 6600 8GB):** wgpu via Vulkan → estimated latency ~2-5ms
+- **CPU fallback:** all-MiniLM-L6-v2 (384d, 1.9s — usable but slow)
+- **Docker Infinity:** Qwen3-Embedding-0.6B via Infinity on port 7997
+- **Feature usado:** `local-gllm` (wgpu) — NO CUDA porque AMD no tiene CUDA
+
+### Applied Changes
+- `src/embedding/gllm.rs` → DEFAULT_GLLM_MODEL = Qwen/Qwen3-Embedding-0.6B, dim = 1024
+- `benches/embedding_benchmark.rs` → thresholds calibrados (0.95/0.94), LOW pairs rediseñados
+- `docker/docker-compose.embeddings.yml` → Infinity con Qwen3-Embedding-0.6B
+- `pplx-embed` eliminado de Docker, reemplazado por Infinity en puerto 7997
 
 ### Env Var Configuration
 
