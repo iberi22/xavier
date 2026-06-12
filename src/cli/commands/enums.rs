@@ -291,6 +291,8 @@ pub enum MeshCommand {
         endpoint: String,
         #[arg(long)]
         alias: Option<String>,
+        #[arg(long)]
+        cloud: bool,
     },
     /// List all known peers
     List,

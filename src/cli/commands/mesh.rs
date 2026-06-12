@@ -5,7 +5,8 @@ use crate::cli::config::resolve_http_token;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
-use xavier::mesh::{MeshTransport, NodeId, NodeIdentity, PeerInfo, PeerRegistry};
+use xavier::mesh::{NodeId, NodeIdentity, PeerInfo, PeerRegistry};
+use xavier::sync::SyncTransport;
 
 pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
     match cmd {
@@ -20,6 +21,7 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
             node_id,
             endpoint,
             alias,
+            cloud,
         } => {
             let node_id = NodeId::parse(&node_id)?;
             let mut registry = PeerRegistry::load()?;
@@ -32,6 +34,7 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 added_at: chrono::Utc::now().timestamp(),
                 last_seen_at: None,
                 sync_enabled: true,
+                is_cloud: cloud,
             };
 
             registry.add_peer(peer)?;
@@ -76,7 +79,7 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 .context("Peer not found in registry")?;
 
             let identity = Arc::new(NodeIdentity::load_or_create()?);
-            let transport = MeshTransport::new(identity);
+            let transport = SyncTransport::for_peer(peer, identity)?;
             let token = resolve_http_token().unwrap_or_default();
 
             println!("Pinging {} at {}...", node_id, peer.endpoint_url);
@@ -107,7 +110,7 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 .context("Peer not found in registry")?;
 
             let identity = Arc::new(NodeIdentity::load_or_create()?);
-            let transport = MeshTransport::new(identity);
+            let transport = SyncTransport::for_peer(peer, identity)?;
             let token = resolve_http_token().unwrap_or_default();
 
             println!("Starting sync with {} (mode: {})...", node_id, mode);
@@ -219,6 +222,19 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
 
                     println!("Pushing 1 chunk ({} docs) to {}...", docs.len(), node_id);
                     let pushed = transport.push_chunks(peer, &token, &[(hash, data)]).await?;
+
+                    // Publish manifest if in cloud mode
+                    let mesh_manifest = xavier::mesh::protocol::MeshManifest {
+                        node_id: identity.node_id.clone(),
+                        chunks: manifest.chunks.values().map(|c| xavier::mesh::protocol::ChunkRef {
+                            hash: c.hash.clone(),
+                            document_count: c.document_ids.len(),
+                            created_at: c.created_at,
+                        }).collect(),
+                        generated_at: chrono::Utc::now().timestamp(),
+                    };
+                    transport.publish_manifest(&mesh_manifest).await?;
+
                     println!(
                         "✅ Push sync complete. Remote accepted {} chunks.",
                         pushed.len()
