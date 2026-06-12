@@ -15,6 +15,7 @@ use tokio::{fs, sync::RwLock};
 
 use crate::checkpoint::Checkpoint;
 use crate::domain::memory::belief::BeliefEdge;
+use crate::memory::hierarchy::{MemoryHierarchyNode, MemoryTree};
 use crate::memory::qmd_memory::MemoryDocument;
 use crate::memory::schema::{resolve_metadata, MemoryLevel, MemoryQueryFilters, RelationKind};
 use crate::utils::crypto::hex_encode;
@@ -370,6 +371,12 @@ pub trait MemoryStore: Send + Sync {
     async fn cleanup_orphans(&self) -> Result<usize> {
         Ok(0)
     }
+
+    /// List memories and virtual directories at a given path.
+    async fn ls(&self, workspace_id: &str, path: &str) -> Result<Vec<MemoryHierarchyNode>> {
+        let all = self.list(workspace_id).await?;
+        Ok(MemoryTree::build_ls(all, path))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -629,6 +636,11 @@ impl MemoryStore for FileMemoryStore {
         }
         self.persist().await
     }
+
+    async fn ls(&self, workspace_id: &str, path: &str) -> Result<Vec<MemoryHierarchyNode>> {
+        let all = self.list(workspace_id).await?;
+        Ok(MemoryTree::build_ls(all, path))
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -822,6 +834,11 @@ impl MemoryStore for InMemoryMemoryStore {
                 .retain(|item| !(item.task_id == task_id && item.name == name));
         }
         Ok(())
+    }
+
+    async fn ls(&self, workspace_id: &str, path: &str) -> Result<Vec<MemoryHierarchyNode>> {
+        let all = self.list(workspace_id).await?;
+        Ok(MemoryTree::build_ls(all, path))
     }
 }
 

@@ -42,7 +42,7 @@ impl SimpleMemoryDoc {
 }
 
 /// Extract keywords for indexing
-fn extract_keywords(content: &str) -> Vec<String> {
+pub fn extract_keywords(content: &str) -> Vec<String> {
     let stop_words = [
         "the", "is", "at", "which", "on", "a", "an", "and", "or", "but",
         "in", "to", "for", "of", "with", "by", "from", "as", "it", "be",
