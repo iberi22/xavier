@@ -514,7 +514,11 @@ impl AgentRuntime {
             }
 
             // Reflection / Context Paging Loop
-            if reasoning_result.confidence >= 0.7 || retries >= self.config.max_retries {
+            let paging_threshold = self.tgd_engine
+                .as_ref()
+                .map(|tgd| tgd.config().confidence_threshold)
+                .unwrap_or(0.7);
+            if reasoning_result.confidence >= paging_threshold || retries >= self.config.max_retries {
                 break (retrieval_result, reasoning_result);
             }
 
@@ -778,6 +782,9 @@ fn should_answer_from_evidence(
     });
 
     deterministic_shape && has_specific_evidence && reasoning_result.confidence >= 0.7
+    // NOTE: This 0.7 is a separate evidence-based answering threshold,
+    // not related to TGD. It controls when a direct answer from structured
+    // evidence is good enough without LLM invocation.
 }
 
 impl AgentRuntime {
