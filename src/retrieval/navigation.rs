@@ -83,7 +83,7 @@ impl NavigationPolicy {
 
     /// Extract signals from a MemoryDocument and a raw score (usually vector or lexical)
     pub fn extract_signals(&self, doc: &MemoryDocument, base_score: f32, is_vector: bool) -> Vec<NavigationSignal> {
-        let mut signals = Vec::new();
+        let mut signals = Vec::with_capacity(5);
 
         if is_vector {
             signals.push(NavigationSignal::VectorSimilarity(base_score));
@@ -91,22 +91,29 @@ impl NavigationPolicy {
             signals.push(NavigationSignal::LexicalMatch(base_score));
         }
 
-        // 1. Recency Signal
+        // 1. Recency Signal (smooth exponential decay, clamped to [0, 1])
         let updated_at = doc.metadata.get("updated_at")
             .and_then(|v| v.as_str())
             .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
             .map(|dt| dt.with_timezone(&Utc))
             .unwrap_or(Utc::now());
 
-        let age_hours = (Utc::now() - updated_at).num_hours() as f32;
-        let recency = (-age_hours / 168.0).exp(); // 1 week half-life
+        let now = Utc::now();
+        let age_hours = if updated_at > now {
+            0.0_f32 // Future timestamps clamped to zero age
+        } else {
+            (now - updated_at).num_hours() as f32
+        };
+        // Smooth sigmoid-like decay: recency = 1 / (1 + age_hours / half_life)
+        // This avoids the step function of exp(-x) which drops too fast at low values
+        let recency = 1.0 / (1.0 + age_hours / 168.0);
         signals.push(NavigationSignal::Recency(recency));
 
         // 2. Importance Signal
         let importance = doc.metadata.get("importance")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.5) as f32;
-        signals.push(NavigationSignal::Importance(importance));
+        signals.push(NavigationSignal::Importance(importance.clamp(0.0, 1.0)));
 
         // 3. Access Frequency (if available in metadata)
         let access_count = doc.metadata.get("access_count")
