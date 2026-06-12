@@ -193,6 +193,29 @@ pub struct RetrievalSettings {
     pub rrf_k: Option<u32>, // XAVIER_RRF_K
     pub zone_boost_multiplier: Option<f32>,
     pub zone_penalty_multiplier: Option<f32>,
+    #[serde(default)]
+    pub learned_policy: NavigationPolicyConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NavigationPolicyConfig {
+    pub working_weight: f32,
+    pub episodic_weight: f32,
+    pub semantic_weight: f32,
+    pub learning_rate: f32,
+    pub update_count: u64,
+}
+
+impl Default for NavigationPolicyConfig {
+    fn default() -> Self {
+        Self {
+            working_weight: 0.3,
+            episodic_weight: 0.3,
+            semantic_weight: 0.4,
+            learning_rate: 0.01,
+            update_count: 0,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

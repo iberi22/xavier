@@ -154,10 +154,14 @@ pub struct LayeredSearchResult {
     pub level_3_episodic: Vec<ScoredResult>,
 }
 
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
 /// Adaptive gating for multi-layer memory retrieval
 #[derive(Debug, Clone)]
 pub struct AdaptiveGating {
     config: GatingConfig,
+    policy: Option<Arc<RwLock<super::policy::NavigationPolicy>>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -166,12 +170,36 @@ pub struct AdaptiveGating {
 
 impl AdaptiveGating {
     pub fn new(config: GatingConfig) -> Self {
-        Self { config }
+        Self {
+            config,
+            policy: None,
+        }
+    }
+
+    pub fn with_policy(
+        config: GatingConfig,
+        policy: Arc<RwLock<super::policy::NavigationPolicy>>,
+    ) -> Self {
+        Self {
+            config,
+            policy: Some(policy),
+        }
     }
 
     pub fn with_defaults() -> Self {
+        let settings = crate::settings::XavierSettings::current();
+        let policy = super::policy::NavigationPolicy::new(
+            LayerWeights::new(
+                settings.retrieval.learned_policy.working_weight,
+                settings.retrieval.learned_policy.episodic_weight,
+                settings.retrieval.learned_policy.semantic_weight,
+            ),
+            settings.retrieval.learned_policy.learning_rate,
+        );
+
         Self {
             config: GatingConfig::default(),
+            policy: Some(Arc::new(RwLock::new(policy))),
         }
     }
 
@@ -223,13 +251,18 @@ impl AdaptiveGating {
             semantic_results.extend(expansions);
         }
 
+        // 2. Determine weights: use learned policy if available, otherwise use config defaults
+        let weights = if let Some(policy_lock) = &self.policy {
+            let policy = policy_lock.read().await;
+            policy.weights
+        } else {
+            self.config.layer_weights
+        };
+
         // 2. Apply layer weights to scores
-        let weighted_working =
-            self.apply_weights(working_results, self.config.layer_weights.working);
-        let weighted_episodic =
-            self.apply_weights(episodic_results, self.config.layer_weights.episodic);
-        let weighted_semantic =
-            self.apply_weights(semantic_results, self.config.layer_weights.semantic);
+        let weighted_working = self.apply_weights(working_results, weights.working);
+        let weighted_episodic = self.apply_weights(episodic_results, weights.episodic);
+        let weighted_semantic = self.apply_weights(semantic_results, weights.semantic);
 
         // 3. Fuse with RRF
         let mut fused = reciprocal_rank_fusion(
@@ -514,6 +547,16 @@ impl AdaptiveGating {
     /// Get configuration reference
     pub fn config(&self) -> &GatingConfig {
         &self.config
+    }
+
+    /// Get the effective weights used for retrieval
+    pub async fn effective_weights(&self) -> LayerWeights {
+        if let Some(policy_lock) = &self.policy {
+            let policy = policy_lock.read().await;
+            policy.weights
+        } else {
+            self.config.layer_weights
+        }
     }
 
     /// Update layer weights
