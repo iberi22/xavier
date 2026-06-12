@@ -153,3 +153,13 @@ pub fn current() -> XavierSettings {
     }
     settings
 }
+
+pub fn save(settings: &XavierSettings) -> Result<()> {
+    let path = resolve_config_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let content = serde_json::to_string_pretty(settings)?;
+    fs::write(path, content)?;
+    Ok(())
+}
