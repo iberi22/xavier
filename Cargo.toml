@@ -50,6 +50,11 @@ dev-mode = []
 # Enterprise features: Cortex Enterprise Cloud integration
 enterprise = []
 
+[[bench]]
+name = "embedding_benchmark"
+path = "benches/embedding_benchmark.rs"
+harness = false
+
 [dependencies]
 code-graph = { path = "./code-graph" }
 anyhow = "1.0.102"
