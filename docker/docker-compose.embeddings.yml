@@ -1,110 +1,66 @@
-# Docker Compose for Embedding Model Services
-#
-# Provides REST API endpoints compatible with Xavier's embedding backend.
-# Xavier connects to these via XAVIER_EMBEDDING_LOCAL_URL env var.
+# Docker Compose for Embedding Services
+# 
+# Services:
+#   infinity     - Infinity embedding server (RECOMMENDED) with Qwen3-Embedding-0.6B
+#                 Port: 7997 | OpenAI-compatible API
+#   tei          - HuggingFace Text Embeddings Inference (alternative)
+#                 Port: 7998 | HF API format
+#   ollama       - Ollama with nomic-embed-text (lightweight)
+#                 Port: 11434 | Ollama API
 #
 # Usage:
-#   docker compose -f docker/docker-compose.embeddings.yml up -d
+#   docker compose -f docker/docker-compose.embeddings.yml up -d infinity
 #   docker compose -f docker/docker-compose.embeddings.yml down
-#
-# Available backends (pick ONE that works on your GPU/CPU):
-#   1. Infinity   — michaelfeil/infinity (GPU + CPU, best performance)
-#   2. TEI        — ghcr.io/huggingface/text-embeddings-inference (GPU only)
-#   3. Ollama     — ollama/ollama (CPU, easy setup)
 
 services:
-  # ─── Infinity (recommended) ───
-  # Supports: all Sentence-Transformers models, GGUF, ONNX
-  # GPU: uses NVIDIA container toolkit automatically
-  # API: https://michaelfeil.github.io/infinity/
   infinity:
-    image: michaelfeil/infinity:latest
-    container_name: xavier-embedding-infinity
-    restart: unless-stopped
+    image: michaelf34/infinity:latest
+    container_name: infinity-embed
     ports:
       - "7997:7997"
     volumes:
       - infinity-cache:/app/.cache
     environment:
-      - HF_HUB_ENABLE_HF_TRANSFER=1
       - HF_HOME=/app/.cache
-      # Adjust batch size based on your GPU VRAM (8GB → 32)
       - INFINITY_BATCH_SIZE=32
+      - INFINITY_MODEL=Qwen/Qwen3-Embedding-0.6B
     command: >
-      v2 Alibaba-NLP/gte-Qwen2-1.5B-instruct
-      --engine torch
-      --device cuda
-      --dtype float16
+      --model-id Qwen/Qwen3-Embedding-0.6B
+      --port 7997
       --batch-size 32
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7997/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  # ─── Alternative: TEI (HuggingFace) ───
-  # Requires: NVIDIA GPU + nvidia-container-toolkit
-  # Faster than Infinity for individual requests; less flexible
-  tei:
-    image: ghcr.io/huggingface/text-embeddings-inference:latest
-    container_name: xavier-embedding-tei
     restart: unless-stopped
+    # NOTE: For AMD GPUs, use default runtime (no device reservation needed)
+    # For NVIDIA GPUs, uncomment:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - capabilities: [gpu]
+    #           driver: nvidia
+    #           count: all
+
+  tei:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-latest
+    container_name: tei-embed
     ports:
       - "7998:80"
-    volumes:
-      - tei-cache:/data
     environment:
       - HF_HUB_ENABLE_HF_TRANSFER=1
     command: >
       --model-id Alibaba-NLP/gte-Qwen2-1.5B-instruct
-      --revision main
-      --max-client-batch-size 32
-      --max-batch-tokens 16384
-      --dtype float16
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
+      --port 80
+    restart: unless-stopped
 
-  # ─── Alternative: Ollama ───
-  # CPU-friendly fallback; models are smaller but still good quality
-  # Models: nomic-embed-text (137M), mxbai-embed-large (334M)
   ollama:
     image: ollama/ollama:latest
-    container_name: xavier-embedding-ollama
-    restart: unless-stopped
+    container_name: ollama-embed
     ports:
       - "11434:11434"
     volumes:
       - ollama-data:/root/.ollama
-    environment:
-      - OLLAMA_KEEP_ALIVE=24h
-      - OLLAMA_NUM_PARALLEL=4
-    # Enable GPU if NVIDIA container toolkit is available
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    command: serve
+    restart: unless-stopped
 
 volumes:
   infinity-cache:
-  tei-cache:
   ollama-data:
