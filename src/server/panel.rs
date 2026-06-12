@@ -205,14 +205,16 @@ pub async fn process_chat(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<PanelChatRequest>,
 ) -> impl IntoResponse {
-    match process_chat_inner(
-        &workspace.workspace.conversations_db,
-        &workspace.workspace.runtime,
-        &workspace,
-        payload,
-    )
+    let db = std::sync::Arc::clone(&workspace.workspace.conversations_db);
+    let runtime = std::sync::Arc::clone(&workspace.workspace.runtime);
+    let wc = workspace.clone();
+    let response = tokio::task::spawn(async move {
+        process_chat_inner(db, runtime, wc, payload).await
+    })
     .await
-    {
+    .unwrap_or_else(|_| Err(anyhow::anyhow!("chat task panicked")));
+
+    match response {
         Ok(response) => Json(response).into_response(),
         Err(error) => (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -223,9 +225,9 @@ pub async fn process_chat(
 }
 
 async fn process_chat_inner(
-    db: &ConversationsDb,
-    runtime: &std::sync::Arc<crate::agents::AgentRuntime>,
-    workspace: &WorkspaceContext,
+    db: std::sync::Arc<ConversationsDb>,
+    runtime: std::sync::Arc<crate::agents::AgentRuntime>,
+    workspace: WorkspaceContext,
     payload: PanelChatRequest,
 ) -> anyhow::Result<PanelChatResponse> {
     let thread = match payload.thread_id {
