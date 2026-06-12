@@ -7,6 +7,7 @@ use crate::consistency::regularization::RetentionRegularizer;
 use crate::consolidation::ConsolidationTask;
 use crate::context::ContextClassifier;
 use crate::retrieval::gating::{AdaptiveGating, LayerWeights, SessionSummary};
+use std::sync::Arc;
 use crate::server::http::types::*;
 use crate::workspace::WorkspaceContext;
 use axum::{extract::Json, response::IntoResponse, Extension};
@@ -27,7 +28,7 @@ pub async fn memory_retrieve(
         let level = classifier.classify(&payload.query);
         LayerWeights::adaptive(&payload.query, level, &[])
     };
-    let gating = AdaptiveGating::new(crate::retrieval::gating::GatingConfig {
+    let gating_config = crate::retrieval::gating::GatingConfig {
         layer_weights: weights,
         relevance_threshold: payload.relevance_threshold.clamp(0.0, 1.0),
         rrf_k: payload.rrf_k,
@@ -45,8 +46,13 @@ pub async fn memory_retrieve(
         half_life_hours: payload.half_life_hours,
         grounding_enabled: payload.grounding_enabled,
         grounding_min_confidence: payload.grounding_min_confidence,
-        navigation_policy: Some(crate::retrieval::navigation::NavigationPolicy::with_defaults()),
-    });
+    };
+
+    let gating = if payload.layer_weights.is_some() {
+        AdaptiveGating::new(gating_config)
+    } else {
+        AdaptiveGating::with_policy(gating_config, Arc::clone(&workspace.workspace.hormer.policy()))
+    };
     let working_docs = workspace.workspace.memory.all_documents().await;
     let threads = workspace
         .workspace
@@ -74,6 +80,17 @@ pub async fn memory_retrieve(
             Some(std::sync::Arc::clone(&workspace.workspace.belief_graph)),
         )
         .await;
+
+    // HORMER: Update policy if it was used
+    if payload.layer_weights.is_none() {
+        let weights_used = gating.effective_weights().await;
+        workspace
+            .workspace
+            .hormer
+            .update_from_interaction(weights_used, &results)
+            .await;
+    }
+
     let retrieved: Vec<RetrievedMemory> = results
         .iter()
         .map(|r| RetrievedMemory {
