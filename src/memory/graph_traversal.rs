@@ -168,13 +168,18 @@ impl<'a> Pathfinder<'a> {
             .cloned()
             .unwrap_or_else(NavigationPolicy::with_defaults);
 
-        #[derive(PartialOrd, PartialEq)]
+        #[derive(PartialEq)]
         struct NodeState {
             score: f32,
             concept: String,
             depth: usize,
         }
         impl Eq for NodeState {}
+        impl PartialOrd for NodeState {
+            fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+                self.score.partial_cmp(&other.score)
+            }
+        }
         impl Ord for NodeState {
             fn cmp(&self, other: &Self) -> std::cmp::Ordering {
                 self.score
@@ -202,24 +207,25 @@ impl<'a> Pathfinder<'a> {
 
             if let Some(relations) = self.adjacency_map.get(&current) {
                 for relation in relations {
-                    if visited_relations.insert(relation.id.clone()) {
+                    // Mark relation as visited at push time, not pop time, to avoid
+                    // expanding the same relation via a different parent path with a lower score.
+                    if !visited_relations.contains(&relation.id) {
+                        visited_relations.insert(relation.id.clone());
                         let transition_score = policy.score_transition(query, relation, now);
                         let combined_score = current_score * transition_score;
 
                         // Threshold to prune low-relevance paths
-                        if combined_score > 0.1 {
+                        if combined_score > 0.1 && !visited_nodes.contains(&relation.target) {
+                            visited_nodes.insert(relation.target.clone());
                             result.push(ScoredEdge {
                                 edge: relation.clone(),
                                 policy_score: combined_score,
                             });
-                            if !visited_nodes.contains(&relation.target) {
-                                visited_nodes.insert(relation.target.clone());
-                                priority_queue.push(NodeState {
-                                    score: combined_score,
-                                    concept: relation.target.clone(),
-                                    depth: depth + 1,
-                                });
-                            }
+                            priority_queue.push(NodeState {
+                                score: combined_score,
+                                concept: relation.target.clone(),
+                                depth: depth + 1,
+                            });
                         }
                     }
                 }
