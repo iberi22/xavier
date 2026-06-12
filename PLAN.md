@@ -85,6 +85,92 @@ The help text shows `xavier search <QUERY> [LIMIT]` but `--limit` is not recogni
 4. 🟡 **P3 — Performance** → Embedding cache (needs design)
 5. 🟡 **P4 — Code cleanup** → 29 warnings (unused imports, dead code)
 
+## Embedding Model Benchmarking Plan
+
+### Problem
+`xavier add` takes ~1,200ms via OpenRouter embedding API. Local embeddings remove network latency entirely but must match or exceed retrieval precision.
+
+### Goal
+Benchmark 5 embedding backends on retrieval precision (recall@3) + latency to select the optimal default.
+
+### Contenders
+
+| # | Model | Backend | Dims | MTEB | Size | VRAM |
+|---|-------|---------|------|------|------|------|
+| 1 | **all-MiniLM-L6-v2** | GLLM (wgpu/cpu) | 384 | 58.8 | 80 MB | 0 MB |
+| 2 | **all-mpnet-base-v2** ⭐ | GLLM (wgpu/cpu) | 768 | **63.0** | 420 MB | 0 MB |
+| 3 | **Qwen3-Embedding-0.6B** | GLLM (cuda) | 1024 | **~67.5** | ~1.5 GB | ~1.5 GB |
+| 4 | **gte-Qwen2-1.5B-instruct** | Docker (Infinity/TEI) | 1536 | ~64.5 | ~3 GB | ~3 GB |
+| 5 | **text-embedding-3-small** | OpenRouter (API) | 1536 | 62.3 | N/A | N/A |
+
+### Files Created
+
+| File | Purpose |
+|------|---------|
+| `benches/embedding_benchmark.rs` | Rust benchmark (10 questions, recall@3, latency) |
+| `scripts/run-embedding-benchmark.ps1` | PowerShell orchestrator (builds, runs, reports) |
+| `docker/docker-compose.embeddings.yml` | Docker services for Infinity/TEI/Ollama |
+
+### How to Run
+
+**Quick test (one model):**
+```bash
+cargo test --test embedding_benchmark -- --nocapture
+```
+
+**Full benchmark suite:**
+```powershell
+.\scripts\run-embedding-benchmark.ps1 -Cuda
+```
+
+**Docker models (pre-requisite):**
+```bash
+docker compose -f docker/docker-compose.embeddings.yml up -d infinity
+```
+
+### What We Measure
+
+- **Retrieval precision:** recall@3 across 10 multi-domain queries (contracts, incidents, releases, performance, infrastructure)
+- **Latency:** average/min/max encode time per query (ms)
+- **Hit rate:** correct top-3 retrievals / total queries
+
+### GPU Usage (8GB VRAM)
+
+- `gllm` CUDA feature — Qwen3-Embedding-0.6B fits in ~1.5 GB (easily within 8 GB)
+- Docker Infinity with gte-Qwen2-1.5B — ~3 GB (well within 8 GB)
+- Both can run simultaneously if needed
+
+### Expected Results
+
+- **MiniLM-L6-v2:** fastest (~2ms) but weakest precision (58.8 MTEB)
+- **mpnet-base-v2:** good balance (~6ms, 63.0 MTEB) — new default
+- **Qwen3-Embedding-0.6B:** best precision (~67.5 MTEB), GPU fast (~1-2ms with CUDA)
+- **Docker gte-Qwen2:** good precision (~64.5 MTEB), network overhead (~5-10ms)
+- **OpenRouter:** worst latency (~1,200ms), moderate precision
+
+### Decision Framework
+
+After benchmarks, default will be:
+- **GPU available:** Qwen3-Embedding-0.6B via GLLM CUDA (fastest + most precise)
+- **CPU only:** all-mpnet-base-v2 via GLLM wgpu (best quality/speed tradeoff)
+- **Fallback:** OpenRouter API (cloud, no local resources)
+
+### Env Var Configuration
+
+```bash
+# Model selection (GLLM)
+XAVIER_GLLM_MODEL=Qwen/Qwen3-Embedding-0.6B    # SOTA, needs CUDA
+XAVIER_GLLM_MODEL=all-mpnet-base-v2             # Balanced, CPU/GPU
+
+# Feature selection (compile-time)
+cargo build --features local-gllm                # wgpu (CPU + any GPU)
+cargo build --features local-gllm-cuda           # CUDA (NVIDIA only)
+
+# Docker backend
+XAVIER_EMBEDDING_LOCAL_URL=http://localhost:7997/v1/embeddings
+XAVIER_EMBEDDING_MODEL=Alibaba-NLP/gte-Qwen2-1.5B-instruct
+```
+
 ## How to Verify
 
 ### After PR merge:

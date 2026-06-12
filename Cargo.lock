@@ -964,6 +964,7 @@ checksum = "4d0c68cf653eb9c27dcbe046bb7b04cc18c6b33afda4c09317c102e6f4ae7cb6"
 dependencies = [
  "burn-backend",
  "burn-cubecl",
+ "burn-fusion",
  "cubecl",
 ]
 
@@ -4147,6 +4148,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d037589036a1edb3dbeeed6d2efdb8720766054eb25cdb57010015ae68bf94de"
 dependencies = [
  "burn",
+ "burn-cuda",
  "burn-wgpu",
  "crossbeam-channel",
  "log",
