@@ -9,6 +9,70 @@
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::memory::simple_index::{extract_keywords, SimpleMemoryDoc, SimpleMemoryIndex};
+    use crate::memory::virtual_memory::{Checkpoint, TokenSavings, VirtualMemoryEntry};
+    use crate::memory::qmd::utils::cosine_similarity;
+    use crate::memory::hierarchy::{MemoryTree, MemoryHierarchyNode};
+    use crate::memory::store::{MemoryRecord, InMemoryMemoryStore, MemoryStore};
+    use chrono::Utc;
+
+    // ==================== Hierarchy Tests ====================
+
+    fn mock_record(path: &str) -> MemoryRecord {
+        MemoryRecord {
+            id: path.to_string(),
+            workspace_id: "test".to_string(),
+            path: path.to_string(),
+            content: "test".to_string(),
+            metadata: serde_json::json!({}),
+            embedding: vec![],
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            revision: 1,
+            primary: true,
+            parent_id: None,
+            cluster_id: None,
+            level: Default::default(),
+            relation: None,
+            clearance: Default::default(),
+            revisions: vec![],
+        }
+    }
+
+    #[tokio::test]
+    async fn test_store_ls_integration() {
+        let store = InMemoryMemoryStore::new();
+        store.put(mock_record("docs/api/v1.md")).await.expect("test assertion");
+        store.put(mock_record("docs/api/v2.md")).await.expect("test assertion");
+        store.put(mock_record("docs/readme.md")).await.expect("test assertion");
+        store.put(mock_record("blog/post1.md")).await.expect("test assertion");
+
+        // List root
+        let root = store.ls("test", "").await.expect("test assertion");
+        assert_eq!(root.len(), 2); // blog/ (Dir), docs/ (Dir)
+
+        if let MemoryHierarchyNode::Directory { name, .. } = &root[0] {
+            assert_eq!(name, "blog");
+        } else {
+            panic!("Expected directory blog");
+        }
+
+        // List docs
+        let docs = store.ls("test", "docs").await.expect("test assertion");
+        assert_eq!(docs.len(), 2); // api/ (Dir), readme.md (File)
+
+        if let MemoryHierarchyNode::Directory { name, .. } = &docs[0] {
+            assert_eq!(name, "api");
+        } else {
+            panic!("Expected directory api");
+        }
+
+        if let MemoryHierarchyNode::File(record) = &docs[1] {
+            assert_eq!(record.path, "docs/readme.md");
+        } else {
+            panic!("Expected file docs/readme.md");
+        }
+    }
 
     // ==================== Keyword Search Tests ====================
 

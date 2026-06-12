@@ -1,0 +1,7195 @@
+Directory structure:
+└── iberi22-xavier/
+    ├── biome.json
+    ├── feedback_usage_report.json
+    ├── package.json
+    ├── pnpm-workspace.yaml
+    ├── prometheus.yml
+    ├── xavier.sh
+    ├── .dockerignore
+    ├── .env.example
+    ├── .git-atomize.yml
+    ├── .git-core-protocol-version
+    ├── .mcp.json
+    ├── .xavier-jules-tracker-last-run.txt
+    ├── backup/
+    │   └── manifest_2026-04-13T19-29-42_vec-build-test.json
+    ├── benchmarks/
+    │   └── results/
+    │       └── internal-sqlite-2026-04-11/
+    │           └── summary.json
+    ├── clients/
+    │   ├── python/
+    │   │   ├── pyproject.toml
+    │   │   └── xavier_py/
+    │   │       └── __init__.py
+    │   └── typescript/
+    │       ├── jest.config.js
+    │       ├── package.json
+    │       ├── tsconfig.json
+    │       └── src/
+    │           └── index.ts
+    ├── code-graph/
+    │   ├── .dockerignore
+    │   ├── src/
+    │   │   ├── error.rs
+    │   │   └── lib.rs
+    │   └── .gitcore/
+    │       └── AGENT_INDEX.md
+    ├── config/
+    │   └── xavier.config.json
+    ├── docker/
+    │   ├── benchmark-runner.Dockerfile
+    │   ├── docker-compose.yml
+    │   ├── Dockerfile.public
+    │   ├── render-gestalt.yaml
+    │   ├── cloudflared/
+    │   │   └── Cortexfile
+    │   └── termux-python/
+    │       └── Dockerfile
+    ├── docs/
+    │   ├── HEARTBEAT.md
+    │   ├── IDENTITY.md
+    │   ├── MEMORY.md
+    │   ├── security_issue_2.md
+    │   ├── security_issue_3.md
+    │   ├── security_issue_4.md
+    │   ├── agent-docs/
+    │   │   ├── .gitkeep
+    │   │   ├── analysis/
+    │   │   │   ├── README.md
+    │   │   │   └── .gitkeep
+    │   │   ├── prompts/
+    │   │   │   ├── README.md
+    │   │   │   └── .gitkeep
+    │   │   ├── reports/
+    │   │   │   └── .gitkeep
+    │   │   ├── research/
+    │   │   │   └── .gitkeep
+    │   │   ├── sessions/
+    │   │   │   └── .gitkeep
+    │   │   └── specs/
+    │   │       └── .gitkeep
+    │   ├── API/
+    │   │   └── README.md
+    │   ├── ARCHITECTURE/
+    │   │   └── ADR/
+    │   │       └── README.md
+    │   ├── DEPLOY/
+    │   │   └── README.md
+    │   ├── devlog/
+    │   │   ├── README.md
+    │   │   └── INDEX.md
+    │   ├── guides/
+    │   │   └── QUICKSTART.md
+    │   ├── prompts/
+    │   │   └── README.md
+    │   ├── public/
+    │   │   └── README.md
+    │   ├── site/
+    │   │   ├── README.md
+    │   │   ├── package.json
+    │   │   ├── tsconfig.json
+    │   │   └── src/
+    │   │       └── content.config.ts
+    │   ├── SRC/
+    │   │   ├── DATABASE.md
+    │   │   ├── GLOSSARY.md
+    │   │   ├── index.md
+    │   │   ├── INTERFACES.md
+    │   │   ├── NON-FUNCTIONAL.md
+    │   │   └── REQUIREMENTS.md
+    │   └── system/
+    │       ├── astro.config.mjs
+    │       ├── package.json
+    │       ├── tsconfig.json
+    │       ├── src/
+    │       │   └── layouts/
+    │       │       └── Layout.astro
+    │       └── .astro/
+    │           └── types.d.ts
+    ├── feedback/
+    │   └── xavier-bpm/
+    │       └── health-2026-05-27T20-45-04-250Z.json
+    ├── memory/
+    │   └── xavier-jules-state.json
+    ├── panel-ui/
+    │   ├── index.html
+    │   ├── playwright.config.ts
+    │   ├── tsconfig.generative.json
+    │   ├── tsconfig.json
+    │   ├── vitest.config.ts
+    │   ├── src/
+    │   │   ├── global.d.ts
+    │   │   └── main.tsx
+    │   ├── src-tauri/
+    │   │   ├── build.rs
+    │   │   ├── Cargo.toml
+    │   │   ├── tauri.conf.json
+    │   │   ├── capabilities/
+    │   │   │   └── default.json
+    │   │   ├── gen/
+    │   │   │   └── android/
+    │   │   │       ├── build.gradle.kts
+    │   │   │       ├── .editorconfig
+    │   │   │       ├── app/
+    │   │   │       │   ├── proguard-rules.pro
+    │   │   │       │   └── src/
+    │   │   │       │       └── main/
+    │   │   │       │           ├── java/
+    │   │   │       │           │   └── com/
+    │   │   │       │           │       └── swalsystems/
+    │   │   │       │           │           └── xavier/
+    │   │   │       │           │               └── MainActivity.kt
+    │   │   │       │           └── res/
+    │   │   │       │               ├── layout/
+    │   │   │       │               │   └── activity_main.xml
+    │   │   │       │               ├── mipmap-anydpi-v26/
+    │   │   │       │               │   └── ic_launcher.xml
+    │   │   │       │               ├── values/
+    │   │   │       │               │   ├── colors.xml
+    │   │   │       │               │   ├── ic_launcher_background.xml
+    │   │   │       │               │   ├── strings.xml
+    │   │   │       │               │   └── themes.xml
+    │   │   │       │               ├── values-night/
+    │   │   │       │               │   └── themes.xml
+    │   │   │       │               └── xml/
+    │   │   │       │                   └── file_paths.xml
+    │   │   │       ├── buildSrc/
+    │   │   │       │   └── build.gradle.kts
+    │   │   │       └── gradle/
+    │   │   │           └── wrapper/
+    │   │   │               └── gradle-wrapper.properties
+    │   │   └── src/
+    │   │       └── main.rs
+    │   └── tests/
+    │       └── setup.ts
+    ├── patches/
+    │   └── burn-candle/
+    │       ├── Cargo.toml
+    │       └── src/
+    │           ├── element.rs
+    │           ├── lib.rs
+    │           └── ops/
+    │               ├── activation.rs
+    │               ├── mod.rs
+    │               └── transaction.rs
+    ├── prompts/
+    │   └── xui-system-prompt.md
+    ├── scripts/
+    │   ├── README.md
+    │   ├── api-test.ps1
+    │   ├── build-docker.sh
+    │   ├── build-tauri.ps1
+    │   ├── build-tauri.sh
+    │   ├── check-env.ps1
+    │   ├── check_alerts.ps1
+    │   ├── debug_alerts.ps1
+    │   ├── dismiss_alerts2.ps1
+    │   ├── fix_closing.py
+    │   ├── generate-devlog-post.sh
+    │   ├── project_status_agent_README.md
+    │   ├── run-sync-test.ps1
+    │   ├── run-sync.ps1
+    │   ├── run_codex.ps1
+    │   ├── run_export.py
+    │   ├── run_extract.py
+    │   ├── run_gemini.ps1
+    │   ├── run_termux_docker_smoke.ps1
+    │   ├── ryzen-cppc-fix.py
+    │   ├── send-alert.ps1
+    │   ├── start-cortex.ps1
+    │   ├── sync_run.ps1
+    │   ├── test-integration.ps1
+    │   ├── test_agent.ps1
+    │   ├── xavier-bpm.bat
+    │   ├── xavier.sh
+    │   ├── benchmarks/
+    │   │   └── model_lab.example.json
+    │   ├── jules/
+    │   │   ├── check-api.js
+    │   │   ├── jules-api.js
+    │   │   ├── list-sessions.js
+    │   │   └── retrigger-jules.js
+    │   └── launch/
+    │       └── launch_cortex.sh
+    ├── skills/
+    │   ├── deterministic-diag-ops/
+    │   │   └── scripts/
+    │   │       └── security_audit.py
+    │   ├── devlog-writer/
+    │   │   └── templates/
+    │   │       └── diagram-guide.md
+    │   ├── rust-hexagonal-modern/
+    │   │   ├── agents/
+    │   │   │   └── openai.yaml
+    │   │   └── references/
+    │   │       └── review-checklist.md
+    │   └── scripts_diag/
+    │       └── security_audit.py
+    ├── src/
+    │   ├── adapters/
+    │   │   ├── mod.rs
+    │   │   ├── inbound/
+    │   │   │   ├── mod.rs
+    │   │   │   └── http/
+    │   │   │       ├── mod.rs
+    │   │   │       ├── time_metrics_adapter.rs
+    │   │   │       └── handlers/
+    │   │   │           └── mod.rs
+    │   │   └── outbound/
+    │   │       └── mod.rs
+    │   ├── agents/
+    │   │   ├── rate_limit.rs
+    │   │   ├── registry.rs
+    │   │   ├── supervisor.rs
+    │   │   ├── provider/
+    │   │   │   ├── local.rs
+    │   │   │   ├── mod.rs
+    │   │   │   └── traits.rs
+    │   │   └── system3/
+    │   │       ├── mod.rs
+    │   │       └── helpers/
+    │   │           └── mod.rs
+    │   ├── api/
+    │   │   └── mod.rs
+    │   ├── app/
+    │   │   └── mod.rs
+    │   ├── chronicle/
+    │   │   └── mod.rs
+    │   ├── cli/
+    │   │   ├── mod.rs
+    │   │   └── handlers/
+    │   │       └── onboarding.rs
+    │   ├── consistency/
+    │   │   └── mod.rs
+    │   ├── coordination/
+    │   │   └── message_bus/
+    │   │       ├── errors.rs
+    │   │       └── metrics.rs
+    │   ├── devlog/
+    │   │   ├── generator.rs
+    │   │   ├── mod.rs
+    │   │   └── models.rs
+    │   ├── domain/
+    │   │   ├── agent.rs
+    │   │   ├── error.rs
+    │   │   ├── mod.rs
+    │   │   ├── belief/
+    │   │   │   ├── mod.rs
+    │   │   │   └── types.rs
+    │   │   ├── pattern/
+    │   │   │   └── mod.rs
+    │   │   └── security/
+    │   │       └── mod.rs
+    │   ├── enterprise/
+    │   │   └── mod.rs
+    │   ├── memory/
+    │   │   ├── mod.rs
+    │   │   ├── qmd_memory.rs
+    │   │   ├── manager/
+    │   │   │   └── mod.rs
+    │   │   └── sqlite_vec_store/
+    │   │       └── db.rs
+    │   ├── ports/
+    │   │   ├── mod.rs
+    │   │   ├── inbound/
+    │   │   │   ├── agent_lifecycle_port.rs
+    │   │   │   ├── health_port.rs
+    │   │   │   ├── input_security_port.rs
+    │   │   │   ├── memory_port.rs
+    │   │   │   ├── mod.rs
+    │   │   │   ├── session_port.rs
+    │   │   │   ├── session_sync_port.rs
+    │   │   │   ├── time_metrics_port.rs
+    │   │   │   └── verification_port.rs
+    │   │   └── outbound/
+    │   │       ├── mod.rs
+    │   │       ├── schema_init.rs
+    │   │       └── threat_detection_port.rs
+    │   ├── retrieval/
+    │   │   └── mod.rs
+    │   ├── search/
+    │   │   └── mod.rs
+    │   ├── secrets/
+    │   │   ├── store.rs
+    │   │   └── tests.rs
+    │   ├── security/
+    │   │   ├── layers/
+    │   │   │   └── mod.rs
+    │   │   └── scanner/
+    │   │       └── mod.rs
+    │   ├── server/
+    │   │   ├── mod.rs
+    │   │   ├── headless/
+    │   │   │   └── mod.rs
+    │   │   └── mcp/
+    │   │       └── mod.rs
+    │   ├── session/
+    │   │   ├── indexer.rs
+    │   │   └── mod.rs
+    │   ├── settings/
+    │   │   └── validation.rs
+    │   ├── sync/
+    │   │   └── mod.rs
+    │   ├── tools/
+    │   │   ├── mod.rs
+    │   │   └── validation_tools.rs
+    │   ├── ui/
+    │   │   └── mod.rs
+    │   ├── utils/
+    │   │   ├── http.rs
+    │   │   └── mod.rs
+    │   ├── verification/
+    │   │   └── mod.rs
+    │   └── workspace/
+    │       └── mod.rs
+    ├── tests/
+    │   ├── error_test.rs
+    │   └── fixtures/
+    │       └── headless_config.yaml
+    ├── web/
+    │   ├── Cargo.toml
+    │   ├── index.html
+    │   ├── package.json
+    │   ├── postcss.config.js
+    │   ├── tailwind.config.js
+    │   ├── tsconfig.json
+    │   ├── vite.config.ts
+    │   ├── design-system/
+    │   │   ├── package.json
+    │   │   ├── postcss.config.js
+    │   │   ├── tailwind.config.js
+    │   │   ├── tsconfig.json
+    │   │   ├── tsconfig.node.json
+    │   │   ├── vite.config.ts
+    │   │   └── src/
+    │   │       ├── index.css
+    │   │       ├── main.tsx
+    │   │       └── components/
+    │   │           ├── Comparison.tsx
+    │   │           ├── HeroBanner.tsx
+    │   │           ├── IconStat.tsx
+    │   │           ├── Minilist.tsx
+    │   │           └── StatsRow.tsx
+    │   └── src/
+    │       ├── App.tsx
+    │       ├── index.css
+    │       └── main.tsx
+    ├── .agent/
+    │   └── rules/
+    │       ├── rule-0.md
+    │       └── rule-10-gitcore-cortex.md
+    ├── .cargo/
+    │   ├── audit_ignore.txt
+    │   └── config.toml
+    ├── .claude/
+    │   └── settings.local.json
+    ├── .gitcore/
+    │   ├── CONTEXT_LOG.md
+    │   ├── features-detailed.json
+    │   ├── PROJECT_README.md
+    │   └── features/
+    │       ├── INDEX.md
+    │       └── STATE-2026-06-08.md
+    ├── .githooks/
+    │   └── pre-commit
+    ├── .github/
+    │   ├── dependabot.yml
+    │   ├── FUNDING.yml
+    │   ├── actions/
+    │   │   └── structure-validator/
+    │   │       └── Cargo.toml
+    │   ├── ISSUE_TEMPLATE/
+    │   │   ├── bug.md
+    │   │   ├── bug_report.md
+    │   │   ├── devlog.md
+    │   │   ├── feature.md
+    │   │   ├── feature_request.md
+    │   │   └── task.md
+    │   ├── issues/
+    │   │   ├── _TEMPLATE.md
+    │   │   ├── FEAT_checkpoint_resume.md
+    │   │   ├── FEAT_floating-config-ui.md
+    │   │   ├── FEAT_lightweight-tui-dashboard.md
+    │   │   ├── FEAT_missed_job_recovery.md
+    │   │   ├── FEAT_ui-implement-new-task-and-project-dialogs.md
+    │   │   ├── REFACTOR_refactor-implement-file-modification-time-checks-in-fileindexer.md
+    │   │   ├── TASK_implement-sota-memory-graphrag-and-paging.md
+    │   │   ├── TASK_refine-cortex-rag-system-and-documentation.md
+    │   │   ├── TASK_v1-fix-clippy-and-doctest-gates.md
+    │   │   ├── TASK_v1-fix-storage-isolation.md
+    │   │   ├── TASK_v1-panel-stabilization.md
+    │   │   ├── TASK_v1-remove-insecure-defaults.md
+    │   │   ├── TASK_v1-stabilize-mcp-contract.md
+    │   │   ├── TASK_v1-stabilize-release-smoke.md
+    │   │   ├── TASK_v1-sync-public-docs.md
+    │   │   ├── .gitkeep
+    │   │   └── .issue-mapping.json
+    │   └── workflows/
+    │       ├── cron-validator.yml
+    │       └── heartbeat.yml
+    ├── .issues/
+    │   ├── issue-2-replace-unwrap.md
+    │   ├── issue-3-add-tests-critical-modules.md
+    │   ├── issue-4-security-path-traversal.md
+    │   └── issue-5-ci-cron-validator.md
+    └── .openclaw/
+        └── workspace-state.json
+
+================================================
+FILE: biome.json
+================================================
+{
+  "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
+  "vcs": {
+    "enabled": true,
+    "clientKind": "git",
+    "useIgnoreFile": true
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space",
+    "indentWidth": 2
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "recommended": true,
+      "correctness": {
+        "noUnusedVariables": "error"
+      },
+      "suspicious": {
+        "noConsole": "off"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double"
+    }
+  }
+}
+
+
+
+================================================
+FILE: feedback_usage_report.json
+================================================
+{
+  "timestamp": "2026-06-10T08:58:16.832Z",
+  "topics": [
+    {
+      "label": "Data Commons",
+      "count": 100
+    },
+    {
+      "label": "Memory/RAG",
+      "count": 100
+    },
+    {
+      "label": "Bridge Config",
+      "count": 100
+    },
+    {
+      "label": "Session History",
+      "count": 100
+    },
+    {
+      "label": "Content Strategy",
+      "count": 95
+    },
+    {
+      "label": "API",
+      "count": 78
+    },
+    {
+      "label": "Rust Code",
+      "count": 66
+    },
+    {
+      "label": "Tokenomics",
+      "count": 43
+    },
+    {
+      "label": "Benchmarking",
+      "count": 17
+    },
+    {
+      "label": "Post-Quantum Wallet",
+      "count": 0
+    },
+    {
+      "label": "Governance",
+      "count": 0
+    },
+    {
+      "label": "Reputation",
+      "count": 0
+    }
+  ],
+  "summary": {
+    "topicsCovered": 9,
+    "totalTopics": 12,
+    "coverageRate": 75
+  }
+}
+
+
+
+================================================
+FILE: package.json
+================================================
+{
+  "name": "xavier-monorepo",
+  "private": true,
+  "version": "0.6.1",
+  "type": "module",
+  "workspaces": [
+    "panel-ui",
+    "docs/site"
+  ],
+  "scripts": {
+    "release": "standard-version",
+    "workflow": "powershell ./scripts/workflow.ps1",
+    "install:all": "pnpm install",
+    "build": "pnpm --filter panel-ui build && pnpm --filter docs/site build",
+    "build:panel": "pnpm --filter panel-ui build",
+    "build:docs": "pnpm --filter docs/site build",
+    "lint": "biome check ."
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.0.5",
+    "cron-validator": "^1.4.0",
+    "js-yaml": "^4.2.0",
+    "standard-version": "^9.5.0"
+  }
+}
+
+
+
+================================================
+FILE: pnpm-workspace.yaml
+================================================
+packages:
+  - 'panel-ui'
+  - 'docs/site'
+
+
+
+================================================
+FILE: prometheus.yml
+================================================
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: "xavier-health"
+    metrics_path: /health
+    static_configs:
+      - targets: ["xavier:8006"]
+
+
+
+================================================
+FILE: xavier.sh
+================================================
+#!/bin/sh
+set -eu
+
+BACKEND="${XAVIER_BACKEND:-vec}"
+PORT="${XAVIER_PORT:-8003}"
+VERSION="${XAVIER_VERSION:-unknown}"
+
+if [ -z "${XAVIER_TOKEN:-}" ]; then
+    echo "xavier: XAVIER_TOKEN is required" >&2
+    exit 1
+fi
+
+export XAVIER_BACKEND="${BACKEND}"
+export XAVIER_MEMORY_BACKEND="${XAVIER_MEMORY_BACKEND:-$BACKEND}"
+export XAVIER_PORT="${PORT}"
+
+echo "xavier: starting version=${VERSION} backend=${XAVIER_MEMORY_BACKEND} port=${XAVIER_PORT}"
+
+exec /usr/local/bin/xavier-bin "$@"
+
+
+================================================
+FILE: .dockerignore
+================================================
+# Git metadata
+.git
+.gitcore
+.github
+
+# IDE / editor files
+.vscode
+.idea
+*.swp
+*.tmp
+
+# Build artifacts (we compile inside container)
+target
+dist
+*.so
+*.a
+
+# Node modules (frontend builds happen inside container)
+node_modules
+panel-ui/node_modules
+
+# Test & benchmark results (not needed in container)
+tests
+benchmarks
+benchmark-results
+benchmark_test_results.json
+
+# Docs & scripts (not needed in runtime)
+docs
+scripts
+
+# Agent / Clawd files
+.agents
+.agent
+
+
+
+================================================
+FILE: .env.example
+================================================
+# Xavier credentials and secrets only.
+# Non-secret runtime configuration lives in config/xavier.config.json.
+#
+# You can override any config value at runtime by setting the corresponding
+# XAVIER_* environment variable — it takes precedence over the config file.
+
+# Core auth
+XAVIER_TOKEN=replace-with-a-long-random-token
+
+# Provider API keys
+OPENAI_API_KEY=
+ANTHROPIC_API_KEY=
+DEEPSEEK_API_KEY=
+MINIMAX_API_KEY=
+GEMINI_API_KEY=
+
+
+
+
+
+
+================================================
+FILE: .git-atomize.yml
+================================================
+mode: team
+
+rules:
+  max_files_per_commit: 20
+  max_concerns_per_commit: 3
+
+concerns:
+  - pattern: "scripts/hooks/*"
+    scope: "tooling"
+  - pattern: ".github/issues/*"
+    scope: "issues"
+  - pattern: ".github/ISSUE_TEMPLATE/*"
+    scope: "issues"
+  - pattern: "README.md"
+    scope: "docs"
+  - pattern: "docs/*"
+    scope: "docs"
+  - pattern: "docs/site/*"
+    scope: "docs"
+  - pattern: "panel-ui/*"
+    scope: "panel"
+  - pattern: "src/server/*"
+    scope: "server"
+  - pattern: "src/cli.rs"
+    scope: "cli"
+  - pattern: "src/*"
+    scope: "core"
+  - pattern: "tests/*"
+    scope: "test"
+  - pattern: "scripts/*"
+    scope: "scripts"
+
+
+
+================================================
+FILE: .git-core-protocol-version
+================================================
+3.6.1
+
+
+================================================
+FILE: .mcp.json
+================================================
+{
+  "mcpServers": {
+    "xavier-memory": {
+      "command": "cargo",
+      "args": ["run", "--bin", "xavier", "--", "mcp"],
+      "env": {},
+      "disabled": false,
+      "autoApprove": []
+    }
+  }
+}
+
+
+
+================================================
+FILE: .xavier-jules-tracker-last-run.txt
+================================================
+2026-06-10 01:03 - No Jules PRs found, no action needed.
+
+
+
+================================================
+FILE: backup/manifest_2026-04-13T19-29-42_vec-build-test.json
+================================================
+{
+  "timestamp": "2026-04-13T19-29-42",
+  "backend": "vec-build-test",
+  "files": [
+    {
+      "name": "xavier_memory_vec_2026-04-13T19-29-42_vec-build-test.db",
+      "size": 0
+    },
+    {
+      "name": "xavier_code_graph_2026-04-13T19-29-42_vec-build-test.db",
+      "size": 0
+    }
+  ]
+}
+
+
+================================================
+FILE: benchmarks/results/internal-sqlite-2026-04-11/summary.json
+================================================
+{
+  "benchmark": "internal_swal_openclaw_memory",
+  "dataset": "E:\\scripts-python\\xavier\\scripts\\benchmarks\\datasets\\internal_swal_openclaw_memory.json",
+  "base_url": "http://127.0.0.1:64404",
+  "cases": 5,
+  "passed": 5,
+  "accuracy": 1.0
+}
+
+
+
+================================================
+FILE: clients/python/pyproject.toml
+================================================
+[project]
+name = "xavier-py"
+version = "0.1.0"
+description = "Official Python SDK for Xavier Memory API"
+authors = [
+    { name = "SouthWest AI Labs" }
+]
+dependencies = [
+    "requests>=2.31.0",
+    "aiohttp>=3.9.0",
+    "pydantic>=2.0.0"
+]
+requires-python = ">=3.8"
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "httpx>=0.25"
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+
+
+
+================================================
+FILE: clients/python/xavier_py/__init__.py
+================================================
+from .client import XavierClient
+from .models import (
+    MemoryNode,
+    RetrievedMemory,
+    LayerStats,
+    SearchResponse,
+    RetrieveResponse,
+    GraphNode,
+    GraphEdge,
+    GraphResponse,
+    StatsResponse
+)
+
+__all__ = [
+    "XavierClient",
+    "MemoryNode",
+    "RetrievedMemory",
+    "LayerStats",
+    "SearchResponse",
+    "RetrieveResponse",
+    "GraphNode",
+    "GraphEdge",
+    "GraphResponse",
+    "StatsResponse"
+]
+
+
+
+================================================
+FILE: clients/typescript/jest.config.js
+================================================
+module.exports = {
+  preset: "ts-jest",
+  testEnvironment: "node",
+  testMatch: ["**/tests/**/*.test.ts"],
+};
+
+
+
+================================================
+FILE: clients/typescript/package.json
+================================================
+{
+  "name": "@iberi22/xavier",
+  "version": "0.1.0",
+  "description": "Official TypeScript SDK for Xavier Memory API",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest"
+  },
+  "author": "SouthWest AI Labs",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "@types/jest": "^29.0.0",
+    "@types/node": "^18.0.0"
+  }
+}
+
+
+
+================================================
+FILE: clients/typescript/tsconfig.json
+================================================
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "lib": ["ES2020", "DOM"],
+    "declaration": true,
+    "outDir": "./dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "node"
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "tests"]
+}
+
+
+
+================================================
+FILE: clients/typescript/src/index.ts
+================================================
+export * from "./client";
+export * from "./types";
+
+
+
+================================================
+FILE: code-graph/.dockerignore
+================================================
+# Build artifacts
+target/
+*.exe
+*.pdb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Git
+.git/
+.gitcore/
+
+# Docs (keep if needed)
+*.md
+
+# Cargo
+Cargo.lock
+
+
+
+================================================
+FILE: code-graph/src/error.rs
+================================================
+//! Error types for code-graph
+
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum GraphError {
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
+
+    #[error("Database error: {0}")]
+    Database(String),
+
+    #[error("Parser error: {0}")]
+    Parser(String),
+
+    #[error("Tree-sitter error: {0}")]
+    TreeSitter(String),
+
+    #[error("Language not supported: {0}")]
+    LanguageNotSupported(String),
+
+    #[error("Symbol not found: {0}")]
+    SymbolNotFound(String),
+
+    #[error("Query error: {0}")]
+    Query(String),
+}
+
+pub type Result<T> = std::result::Result<T, GraphError>;
+
+
+
+================================================
+FILE: code-graph/src/lib.rs
+================================================
+//! code-graph - Codebase Understanding without RAG
+//!
+//! A fast, lightweight codebase indexer using tree-sitter AST parsing.
+//! Inspired by Aider's tree-sitter strategy and Claude Code's agentic search.
+//!
+//! Note: Storage - use SQLite for standalone CLI, or SurrealDB via Xavier integration
+
+pub mod db;
+pub mod debug;
+pub mod indexer;
+pub mod parser;
+pub mod query;
+
+pub use error::GraphError;
+pub use types::*;
+
+mod error;
+pub mod types;
+
+
+
+================================================
+FILE: code-graph/.gitcore/AGENT_INDEX.md
+================================================
+# Agent Index - code-graph
+
+## Agents
+
+| Agente | Rol | Estado |
+|--------|-----|--------|
+| **Clawd** | Principal | ✅ Activo |
+| **Jules** | Orquestador de tareas | ✅ Activo |
+
+## Workflow
+
+```
+Clawd → index project → query symbols → Claude Code / Codex
+```
+
+## Commands
+
+```bash
+# Index a project
+code-graph scan ./my-project
+
+# Find functions
+code-graph find "function_name"
+
+# List all functions
+code-graph functions
+
+# List all structs
+code-graph structs
+
+# Show stats
+code-graph stats
+```
+
+## Integration with OpenClaw
+
+This tool is designed to be used by OpenClaw for:
+- Understanding codebase structure
+- Finding functions/structs quickly
+- Agentic search fallback (filesystem navigation)
+- Zero RAG overhead for code
+
+---
+*Generated: 2026-03-05*
+
+
+
+================================================
+FILE: config/xavier.config.json
+================================================
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8006,
+    "log_level": "info"
+  },
+  "embedding": {
+    "endpoint": "",
+    "embedder": "gllm (local, AVX2)",
+    "gllm_model": "all-MiniLM-L6-v2"
+  },
+  "memory": {
+    "backend": "vec",
+    "embedding_dimensions": 384,
+    "max_memories": 70000,
+    "data_dir": "data/memory"
+  },
+  "workspace": {
+    "default_workspace_id": "default",
+    "default_plan": "standard",
+    "storage_limit_bytes": 41339060224
+  },
+  "security": {},
+  "retrieval": {},
+  "advanced": {},
+  "router": {},
+  "chronicle": {},
+  "agent": {},
+  "sync": {}
+}
+
+
+
+================================================
+FILE: docker/benchmark-runner.Dockerfile
+================================================
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    git \
+    docker.io \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+COPY scripts/benchmarks /workspace/scripts/benchmarks
+
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+
+
+================================================
+FILE: docker/docker-compose.yml
+================================================
+version: '3.8'
+
+services:
+  xavier:
+    image: iberi22/xavier:latest
+    container_name: xavier-memory
+    #network_mode: host  # DISABLED - causes crash loop on Windows Docker Desktop
+    ports:
+      - "8006:8006"
+    environment:
+      - XAVIER_PORT=8006
+      - RUST_LOG=info
+      - XAVIER_STORAGE=/data/memory
+    volumes:
+      - xavier-data:/data/memory
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Redis for vector storage (if needed)
+  redis:
+    image: redis:7-alpine
+    container_name: xavier-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    restart: unless-stopped
+
+volumes:
+  xavier-data:
+  redis-data:
+
+
+
+================================================
+FILE: docker/Dockerfile.public
+================================================
+﻿FROM rust:1.75-slim as builder
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy manifests
+COPY Cargo.toml Cargo.lock* ./
+COPY code-graph/ ./code-graph/
+COPY src/ ./src/
+
+# Build dependencies first (caching layer)
+RUN cargo build --release 2>&1 || true
+
+# Build binary
+RUN touch src/*.rs && cargo build --release
+
+# Runtime image
+FROM debian:bookworm-slim
+
+WORKDIR /app
+
+# Install runtime dependencies
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy binary from builder
+COPY --from=builder /app/target/release/xavier /usr/local/bin/xavier
+
+# Create data directory
+RUN mkdir -p /data
+
+# Environment defaults
+ENV XAVIER_PORT=8006
+ENV XAVIER_HOST=0.0.0.0
+ENV XAVIER_DEV_MODE=false
+
+# Required: set XAVIER_TOKEN to a secure random value
+
+# Expose port
+EXPOSE 8006
+
+# Default command - start HTTP server
+ENTRYPOINT ["xavier"]
+CMD ["http"]
+
+
+
+================================================
+FILE: docker/render-gestalt.yaml
+================================================
+# Gestalt MCP Server on Render
+# IA C pipeline: GitHub → Render (Rust build) → Jules (auto-fix on failure)
+
+services:
+  - name: gestalt-mcp-server
+    runtime: rust
+    region: oregon
+    plan: free
+    repo: https://github.com/iberi22/gestalt
+    branch: main
+    rootDir: gestalt_cli
+    buildCommand: cargo build --release -p gestalt_cli
+    startCommand: ./target/release/gestalt_cli serve --host 0.0.0.0 --port 10000
+    healthCheckPath: /health
+    envVars:
+      - key: DEEPSEEK_API_KEY
+        sync: false
+      - key: RUST_LOG
+        value: info
+
+
+
+================================================
+FILE: docker/cloudflared/Cortexfile
+================================================
+# Cloudflare Tunnel Configuration for Xavier Enterprise
+# This config exposes Xavier via Cloudflare Tunnel
+
+tunnel: xavier-enterprise
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  # Xavier HTTP API
+  - hostname: xavier.swallowai.com
+    service: http://xavier:8003
+    originRequest:
+      noTLSVerify: false
+      connectTimeout: 30s
+
+  # Health check
+  - hostname: xavier-health.swallowai.com
+    service: http://xavier:8003/health
+
+  # Catch-all - don't route anything else
+  - service: http_status:404
+
+
+
+================================================
+FILE: docker/termux-python/Dockerfile
+================================================
+FROM termux/termux-docker:x86_64
+
+# Optional prebuilt image for Termux-like smoke tests.
+# If mirror selection fails during docker build, use:
+#   powershell -File scripts/run_termux_docker_smoke.ps1 -RuntimeInstall
+#
+# The runtime-install path is slower but more reliable on Docker Desktop.
+
+SHELL ["/data/data/com.termux/files/usr/bin/bash", "-lc"]
+
+USER system
+
+RUN mkdir -p "$PREFIX/tmp" \
+    && pkg update -y \
+    && pkg install -y python git bash coreutils findutils ripgrep \
+    && pkg clean
+
+WORKDIR /workspace
+
+CMD ["bash"]
+
+
+
+================================================
+FILE: docs/HEARTBEAT.md
+================================================
+# HEARTBEAT.md Template
+
+```markdown
+# Keep this file empty (or with only comments) to skip heartbeat API calls.
+
+# Add tasks below when you want the agent to check something periodically.
+```
+
+
+
+================================================
+FILE: docs/IDENTITY.md
+================================================
+# IDENTITY.md - Xavier
+
+- **Name:** Xavier
+- **Creature:** AI CEO / Context Engine
+- **Vibe:** Liderazgo proactivo, estratégico, conectado a datos
+- **Emoji:** 🧠
+- **Role:** CEO del proyecto SWAL junto a BELA
+
+## Mission
+
+Ser el cerebro central de SWAL — memoria, decisiones y mejora continua.
+
+## Stack Técnico
+
+- **Memory:** Xavier (localhost:8006)
+- **Language:** Rust + TypeScript
+- **Storage:** SQLite-Vec
+- **Deploy:** Docker, Termux
+
+---
+
+_Xavier 🧠 — Construyendo el futuro con memoria._
+
+
+
+================================================
+FILE: docs/MEMORY.md
+================================================
+# Xavier Memory System
+
+This file documents the long-term memory architecture and indexing strategy for Xavier.
+
+## Hierarchical Memory
+Xavier uses a hierarchical memory structure:
+- **L0 (Ephemeral)**: Current session context.
+- **L1 (Short-term)**: Recent interactions and tool outputs.
+- **L2 (Long-term)**: Durable knowledge and architectural decisions.
+
+## Indexing
+Memory is indexed using:
+- **BM25**: For lexical search.
+- **SQLite-Vec**: For semantic vector search.
+- **Belief Graph**: For deterministic relationship mapping.
+
+## Maintenance
+- **Precompact**: Runs before reaching token limits to summarize context.
+- **Periodic Indexing**: Consolidates ephemeral memories into the durable layer.
+
+
+
+================================================
+FILE: docs/security_issue_2.md
+================================================
+## Severity: CRITICAL
+
+## Finding
+Múltiples archivos usaban `unwrap_or("dev-token")` en paths de autenticación. Esto permite acceso sin token válido.
+
+## Files affected
+- `src/cli.rs` (línea ~1710, variable XAVIER_TOKEN)
+- `src/main_tui.rs` (línea ~40)
+- `src/workspace.rs` (línea ~169)
+- `src/integration_test.rs` (test, aceptable)
+
+## Fix Applied
+- Cambiado a `.expect("XAVIER_TOKEN environment variable must be set")`
+- El servicio ahora falla al iniciar si no hay token válido
+
+## Status: FIXED
+
+
+
+================================================
+FILE: docs/security_issue_3.md
+================================================
+## Severity: HIGH
+
+## Finding
+`#[derive(Debug)]` en structs con información sensible expone credenciales en logs y output de debug.
+
+## Files affected
+- `src/embedding/openai.rs` — `OpenAIEmbedder` (contiene `api_key`)
+- `src/security/auth.rs` — `Claims` y `User` (contienen token/password)
+
+## Fix Applied
+- Removido `#[derive(Debug)]` de `OpenAIEmbedder`, `Claims`, `User`
+- Agregado manual `impl fmt::Debug for OpenAIEmbedder` que redacta `api_key`
+
+## Status: FIXED
+
+
+
+================================================
+FILE: docs/security_issue_4.md
+================================================
+## Severity: HIGH
+
+## Finding
+`prompt_guard.rs` tenía patrones incompletos para sanitización de inyecciones de prompt.
+
+## Gaps fixed
+- Zero-width characters Unicode (U+200B, U+200C, U+200D, U+FEFF, U+2060, U+180E) — usado para ocultar payloads
+- Template injection `${...}` patterns
+- HTML `<script` injection
+- Event handlers `onerror=`, `onload=` injection
+- 10+ nuevos patterns agregados a `dangerous_patterns`
+
+## Files affected
+- `src/security/prompt_guard.rs`
+
+## Fix Applied
+- Agregado detección de zero-width chars en `detect()` con confidence 0.6
+- Extendido `sanitize()` con 5 categorías de patterns adicionales
+- Múltiples vectors de inyección bloqueados
+
+## Status: FIXED
+
+
+
+================================================
+FILE: docs/agent-docs/.gitkeep
+================================================
+# Agent Documentation Folder
+#
+# This folder contains documents created BY AI agents AT USER REQUEST ONLY.
+#
+# Valid document types:
+#   - PROMPT_*.md      - Prompts for other AI systems
+#   - RESEARCH_*.md    - Research findings and analysis
+#   - STRATEGY_*.md    - Business/technical strategies
+#   - SPEC_*.md        - Technical specifications
+#   - GUIDE_*.md       - User-requested guides
+#
+# ⚠️ IMPORTANT: Agents should ONLY create files here when explicitly
+#    requested by the user. All other output goes to chat responses.
+
+
+
+================================================
+FILE: docs/agent-docs/analysis/README.md
+================================================
+# 📊 Análisis - Índice
+
+> Esta carpeta contiene análisis técnicos detallados.
+
+## 📋 Documentos Disponibles
+
+| Documento | Descripción | Fecha | Tags |
+|-----------|-------------|-------|------|
+| [ANALYSIS_TELEMETRY_SCALE.md](./ANALYSIS_TELEMETRY_SCALE.md) | Análisis de escalabilidad del sistema de telemetría | 2024-05-15 | #telemetry #scalability |
+| [ANALYSIS_WORKFLOW_RUST_MIGRATION.md](./ANALYSIS_WORKFLOW_RUST_MIGRATION.md) | Viabilidad de migración de workflows a Rust | 2024-06-20 | #rust #migration #performance |
+
+## 🔍 Buscar por Tags
+
+- **#telemetry** - Documentos relacionados con la telemetría y monitoreo.
+- **#scalability** - Análisis de escalabilidad de componentes del sistema.
+- **#rust** - Investigaciones y análisis sobre la adopción de Rust.
+- **#migration** - Documentos sobre la migración de tecnologías.
+- **#performance** - Análisis de rendimiento.
+
+## 📚 Documentos Relacionados
+
+- [SPEC_CONTEXT_PROTOCOL.md](../specs/SPEC_CONTEXT_PROTOCOL.md)
+
+
+
+================================================
+FILE: docs/agent-docs/analysis/.gitkeep
+================================================
+# analysis
+
+Documentos tipo analysis. Ver README.md principal.
+
+
+
+================================================
+FILE: docs/agent-docs/prompts/README.md
+================================================
+# 💡 Prompts - Catálogo
+
+> Esta carpeta contiene prompts reutilizables para interactuar con los LLMs.
+
+## 📋 Documentos Disponibles
+
+| Documento | Descripción | Fecha | Tags |
+|-----------|-------------|-------|------|
+| [PROMPT_PROTOCOL_INSTALLER.md](./PROMPT_PROTOCOL_INSTALLER.md) | Prompt para instalar y configurar el protocolo de agentes | 2024-09-01 | #installer #protocol |
+
+## 🔍 Buscar por Tags
+
+- **#installer** - Prompts relacionados con la instalación y configuración.
+- **#protocol** - Prompts para interactuar con el protocolo de agentes.
+
+## 📚 Documentos Relacionados
+
+- [SPEC_CONTEXT_PROTOCOL.md](../specs/SPEC_CONTEXT_PROTOCOL.md)
+
+
+
+================================================
+FILE: docs/agent-docs/prompts/.gitkeep
+================================================
+# prompts
+
+Documentos tipo prompts. Ver README.md principal.
+
+
+
+================================================
+FILE: docs/agent-docs/reports/.gitkeep
+================================================
+# reports
+
+Documentos tipo reports. Ver README.md principal.
+
+
+
+================================================
+FILE: docs/agent-docs/research/.gitkeep
+================================================
+# research
+
+Documentos tipo research. Ver README.md principal.
+
+
+
+================================================
+FILE: docs/agent-docs/sessions/.gitkeep
+================================================
+# sessions
+
+Documentos tipo sessions. Ver README.md principal.
+
+
+
+================================================
+FILE: docs/agent-docs/specs/.gitkeep
+================================================
+# specs
+
+Documentos tipo specs. Ver README.md principal.
+
+
+
+================================================
+FILE: docs/API/README.md
+================================================
+# Architecture Decision Records (ADR)
+
+**Proyecto:** Xavier
+
+---
+
+## ADRs Recientes
+
+*Lista de decisiones de arquitectura*
+
+---
+
+Para agregar un nuevo ADR, usar el formato:
+- ADR-XXX: Título de la decisión
+- Fecha
+- Contexto
+- Decisión
+- Consecuencias
+
+
+
+================================================
+FILE: docs/ARCHITECTURE/ADR/README.md
+================================================
+# Architecture Decision Records (ADR)
+
+**Proyecto:** Xavier
+
+---
+
+## ADRs Recientes
+
+*Lista de decisiones de arquitectura*
+
+---
+
+Para agregar un nuevo ADR, usar el formato:
+- ADR-XXX: Título de la decisión
+- Fecha
+- Contexto
+- Decisión
+- Consecuencias
+
+
+
+================================================
+FILE: docs/DEPLOY/README.md
+================================================
+# Architecture Decision Records (ADR)
+
+**Proyecto:** Xavier
+
+---
+
+## ADRs Recientes
+
+*Lista de decisiones de arquitectura*
+
+---
+
+Para agregar un nuevo ADR, usar el formato:
+- ADR-XXX: Título de la decisión
+- Fecha
+- Contexto
+- Decisión
+- Consecuencias
+
+
+
+================================================
+FILE: docs/devlog/README.md
+================================================
+# Xavier DevLog
+
+Welcome to the **Xavier DevLog**, the deep-dive technical narrative of the Xavier project.
+
+## Philosophy
+We believe that technical documentation shouldn't just say *what* the code does, but *why* it was built that way. Our DevLog follows the **Hacker News Engineering Blog** style: deep technical detail, transparent trade-offs, and clear architectural narratives.
+
+## For Humans
+Read these posts to understand the soul of Xavier's architecture and the engineering decisions that make it unique.
+
+## For AI Agents
+Use these posts as high-level context when planning refactors or adding features. The DevLog represents the "Design Intent" of the system.
+
+## Contributing
+If you are an AI agent working on Xavier:
+1. Identify a technical decision or pattern that needs explanation.
+2. Use the `devlog-writer` skill to generate a post.
+3. Submit a PR to `docs/devlog/`.
+
+## Index
+See [INDEX.md](./INDEX.md) for a full list of posts.
+
+
+
+================================================
+FILE: docs/devlog/INDEX.md
+================================================
+# DevLog Index
+
+| Date | Title | Tags | Source Links |
+|------|-------|------|--------------|
+| 2026-05-29 | [Local-First CLI Resilience and Hexagonal Security Wiring](./2026-05-29-local-first-cli-resilience-and-hexagonal-security.md) | `cli`, `local-first`, `architecture`, `security` | `src/cli/commands.rs`, `src/cli/state.rs` |
+| 2026-05-10 | [Why SQLite-Vec?](./2026-05-10-why-sqlite-vec.md) | `sqlite-vec`, `storage`, `vector` | `Cargo.toml`, `src/memory/sqlite_vec_store.rs` |
+| 2026-05-10 | [Hexagonal Architecture in Rust CLI](./2026-05-10-hexagonal-architecture.md) | `rust`, `architecture`, `hexagonal` | `src/domain/`, `src/adapters/` |
+| 2026-05-10 | [Built-in Prompt Injection Defense](./2026-05-10-prompt-injection-detector.md) | `security`, `defense`, `memory` | `src/security/` |
+
+
+
+================================================
+FILE: docs/guides/QUICKSTART.md
+================================================
+# Quick Start Guide
+
+## Installation
+
+### From Source
+
+```bash
+git clone https://github.com/iberi22/xavier.git
+cd xavier
+cargo build --release
+./target/release/xavier http
+```
+
+### From Binary
+
+Download from GitHub Releases for your platform.
+
+### Docker
+
+```bash
+docker run -p 8006:8006 ghcr.io/iberi22/xavier:latest
+```
+
+## First Steps
+
+1. **Start the server:**
+   ```bash
+   xavier http
+   ```
+
+2. **Add your first memory:**
+   ```bash
+   xavier add "Hello Xavier!" "First Memory"
+   ```
+
+3. **Search:**
+   ```bash
+   xavier search "hello"
+   ```
+
+4. **Check stats:**
+   ```bash
+   xavier stats
+   ```
+
+## Next Steps
+
+- [CLI Reference](./CLI_REFERENCE.md) - Full CLI documentation
+- [API Reference](../reference/API.md) - HTTP API details
+- [MCP Integration](./MCP_INTEGRATION.md) - Connect to AI clients
+
+
+
+================================================
+FILE: docs/prompts/README.md
+================================================
+# Session Continuation Prompts
+
+This directory stores **temporary** session continuation prompts generated by `export-session.ps1`.
+
+## ⚠️ Important
+
+- Files here are **AUTO-GENERATED**, not manually created
+- Files should be **DELETED after use**
+- This is NOT a place for permanent documentation
+- Use GitHub Issues for task tracking
+
+## Usage
+
+```bash
+# Generate a continuation prompt
+./scripts/export-session.ps1 -Summary "Working on feature X" -Topic "my-feature"
+
+# In new chat, reference the file
+#file:docs/prompts/SESSION_2025-12-02_my-feature.md
+```
+
+## Why This Exists
+
+VS Code Chat API does **not** support:
+- Auto-restoring chat history
+- Pre-filling chat input
+- Programmatic prompt injection
+
+Therefore, we use `#file:` references to load context manually.
+
+
+
+================================================
+FILE: docs/public/README.md
+================================================
+# Xavier Documentation
+
+Welcome to Xavier — Fast Vector Memory for AI Agents.
+
+## Getting Started
+
+- [Quick Start](QUICKSTART.md) — Install, configure, and run in 5 minutes
+- [Architecture](ARCHITECTURE.md) — How Xavier works under the hood
+- [API Reference](API.md) — Complete HTTP API documentation
+
+## Examples
+
+See the [examples directory](../examples/) for working CLI, HTTP, and MCP examples.
+
+## Resources
+
+- **GitHub:** https://github.com/iberi22/xavier
+- **CLI:** `xavier --help` for all available commands
+- **MCP:** `xavier mcp` to start the MCP stdio server
+
+
+
+================================================
+FILE: docs/site/README.md
+================================================
+# Xavier Docs Site
+
+Published documentation site source for Xavier.
+
+## Purpose
+
+- Build the public documentation site from content under `src/content/docs/`
+- Publish through the GitHub Pages workflow in `.github/workflows/docs.yml`
+- Keep site-specific tooling isolated under `docs/site/`
+- Keep public docs aligned with the current verified runtime, not with aspirational architecture alone
+
+## Commands
+
+```bash
+npm ci
+npm run dev
+npm run build
+npm run preview
+```
+
+## Content
+
+- `src/content/docs/architecture/`
+- `src/content/docs/guides/`
+- `src/content/docs/modules/`
+- `src/content/docs/reference/`
+- `src/content/docs/testing/`
+
+
+
+================================================
+FILE: docs/site/package.json
+================================================
+{
+  "name": "xavier-docs-site",
+  "type": "module",
+  "version": "0.0.1",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "^0.38.0",
+    "astro": "^6.1.6",
+    "destr": "^2.0.5",
+    "ufo": "^1.6.3"
+  }
+}
+
+
+
+================================================
+FILE: docs/site/tsconfig.json
+================================================
+{
+  "extends": "astro/tsconfigs/strict",
+  "include": [".astro/types.d.ts", "**/*"],
+  "exclude": ["dist"]
+}
+
+
+
+================================================
+FILE: docs/site/src/content.config.ts
+================================================
+// @ts-check
+import { defineCollection } from "astro:content";
+import { docsLoader } from "@astrojs/starlight/loaders";
+import { docsSchema } from "@astrojs/starlight/schema";
+
+export const collections = {
+  docs: defineCollection({ loader: docsLoader(), schema: docsSchema() }),
+};
+
+
+
+================================================
+FILE: docs/SRC/DATABASE.md
+================================================
+# Modelo de Datos
+
+**Proyecto:** Xavier
+**Fecha:** 2026-03-13
+
+---
+
+## Entidades Principales
+
+### Entidad 1
+
+| Atributo | Tipo | Descripción |
+|-----------|------|-------------|
+| id | UUID | Identificador único |
+| created_at | Timestamp | Fecha de creación |
+
+## Relaciones
+
+*Por definir diagrama de relaciones*
+
+## Volumen Estimado
+
+*Por definir volumen de datos esperado*
+
+---
+
+*Actualizado: 2026-03-13*
+
+
+
+================================================
+FILE: docs/SRC/GLOSSARY.md
+================================================
+# Glosario de Términos
+
+**Proyecto:** Xavier
+**Fecha:** 2026-03-13
+
+---
+
+## Términos
+
+| Término | Definición |
+|---------|------------|
+| *Término* | *Definición* |
+
+## Acrónimos
+
+| Acrónimo | Significado |
+|----------|-------------|
+| *SRC* | Software Requirements Specification |
+| *API* | Application Programming Interface |
+
+---
+
+*Actualizado: 2026-03-13*
+
+
+
+================================================
+FILE: docs/SRC/index.md
+================================================
+# Software Requirements Specification (SRC)
+
+**Proyecto:** Xavier
+**Versión:** 1.0
+**Fecha:** 2026-03-13
+**Estado:** Draft
+
+---
+
+## Tabla de Contenidos
+
+1. [REQUIREMENTS.md](REQUIREMENTS.md) - Requisitos Funcionales
+2. [NON-FUNCTIONAL.md](NON-FUNCTIONAL.md) - Requisitos No Funcionales
+3. [INTERFACES.md](INTERFACES.md) - Interfaces de Sistema
+4. [DATABASE.md](DATABASE.md) - Modelo de Datos
+5. [GLOSSARY.md](GLOSSARY.md) - Glosario de Términos
+
+---
+
+## Resumen Ejecutivo
+
+*Por completar*
+
+## Metadata
+
+```yaml
+src_version: "1.0"
+project: "Xavier"
+created: "2026-03-13"
+status: "draft"
+```
+
+---
+
+*Documento generado automáticamente - SWAL*
+
+
+
+================================================
+FILE: docs/SRC/INTERFACES.md
+================================================
+# Interfaces del Sistema
+
+**Proyecto:** Xavier
+**Fecha:** 2026-03-13
+
+---
+
+## Interfaces de Usuario
+
+| Pantalla | Descripción | Estado |
+|----------|-------------|--------|
+| *Pantalla 1* | *Descripción* | Por hacer |
+
+## Interfaces de API
+
+### Endpoints Principales
+
+| Método | Endpoint | Descripción | Estado |
+|--------|----------|-------------|--------|
+| GET | /api/v1/... | *Descripción* | Por hacer |
+
+## Integraciones Externas
+
+| Sistema | Tipo | Datos | Estado |
+|---------|------|-------|--------|
+| *Sistema* | API | *Datos* | Por hacer |
+
+---
+
+*Actualizado: 2026-03-13*
+
+
+
+================================================
+FILE: docs/SRC/NON-FUNCTIONAL.md
+================================================
+# Requisitos No Funcionales
+
+**Proyecto:** Xavier
+**Fecha:** 2026-03-13
+
+---
+
+## Rendimiento
+
+| Métrica | Requisito | Prioridad |
+|---------|-----------|-----------|
+| Tiempo de respuesta | < 200ms | Alta |
+| Usuarios concurrentes | 1000 | Media |
+
+## Seguridad
+
+| Requisito | Descripción | Prioridad |
+|-----------|-------------|-----------|
+| Autenticación | JWT/OAuth2 | Alta |
+| Encriptación | TLS 1.3 | Alta |
+
+## Disponibilidad
+
+- **Uptime objetivo:** 99.9%
+- **RTO:** 1 hora
+- **RPO:** 15 minutos
+
+## Escalabilidad
+
+*Por definir estrategia de escalabilidad*
+
+---
+
+*Actualizado: 2026-03-13*
+
+
+
+================================================
+FILE: docs/SRC/REQUIREMENTS.md
+================================================
+# Requisitos Funcionales
+
+**Proyecto:** Xavier
+**Fecha:** 2026-03-13
+
+---
+
+## Requisitos Funcionales
+
+| ID | Descripción | Prioridad | Estado |
+|----|-------------|-----------|--------|
+| SRC-FUN-001 | *Por definir* | Alta | Pendiente |
+| SRC-FUN-002 | *Por definir* | Media | Pendiente |
+
+---
+
+## Casos de Uso
+
+### UC-001: *Nombre del Caso de Uso*
+
+**Actor:**
+**Descripción:**
+**Precondiciones:**
+**Flujo Principal:**
+**Postcondiciones:**
+
+---
+
+## Reglas de Negocio
+
+- *Regla 1 por definir*
+- *Regla 2 por definir*
+
+---
+
+*Actualizado: 2026-03-13*
+
+
+
+================================================
+FILE: docs/system/astro.config.mjs
+================================================
+import node from "@astrojs/node";
+import svelte from "@astrojs/svelte";
+import { defineConfig } from "astro/config";
+
+export default defineConfig({
+  integrations: [svelte()],
+  output: "static",
+  adapter: node({
+    mode: "standalone",
+  }),
+  build: {
+    format: "file",
+  },
+  vite: {
+    ssr: {
+      noExternal: ["flexsearch"],
+    },
+  },
+});
+
+
+
+================================================
+FILE: docs/system/package.json
+================================================
+{
+  "name": "docnode",
+  "type": "module",
+  "version": "1.0.0",
+  "description": "Minimal Astro + Svelte documentation system with vault support",
+  "scripts": {
+    "dev": "astro dev",
+    "start": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/svelte": "^6.0.0",
+    "@astrojs/node": "^10.0.5",
+    "astro": "^6.1.6",
+    "svelte": "^5.0.0",
+    "marked": "^15.0.0",
+    "gray-matter": "^4.0.3",
+    "flexsearch": "^0.7.43"
+  },
+  "devDependencies": {
+    "typescript": "^5.0.0",
+    "@types/node": "^20.0.0"
+  }
+}
+
+
+
+================================================
+FILE: docs/system/tsconfig.json
+================================================
+{
+  "extends": "astro/tsconfigs/strict",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "checkJs": true
+  }
+}
+
+
+
+================================================
+FILE: docs/system/src/layouts/Layout.astro
+================================================
+---
+export interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<meta name="generator" content={Astro.generator} />
+		<title>{title}</title>
+	</head>
+	<body>
+		<slot />
+	</body>
+</html>
+<style is:global>
+	:root {
+		--accent: 124, 58, 237;
+		--accent-gradient: linear-gradient(45deg, rgb(var(--accent)), #da62c4 30%, white 60%);
+	}
+	html {
+		font-family: system-ui, sans-serif;
+		background-color: #F6F6F6;
+	}
+	code {
+		font-family: Menlo, Monaco, Lucida Console, Liberation Mono, DejaVu Sans Mono,
+			Bitstream Vera Sans Mono, Courier New, monospace;
+	}
+</style>
+
+
+
+================================================
+FILE: docs/system/.astro/types.d.ts
+================================================
+/// <reference types="astro/client" />
+/// <reference path="content.d.ts" />
+
+
+
+================================================
+FILE: feedback/xavier-bpm/health-2026-05-27T20-45-04-250Z.json
+================================================
+{
+  "timestamp": "2026-05-27T20:45:04.249Z",
+  "source": "xavier-bpm-health-cron",
+  "status": "FAIL",
+  "details": {
+    "xavier2_port_8006": "DOWN",
+    "reason": "Server not listening - likely not started",
+    "node_processes": {
+      "pids": [4380, 15464]
+    },
+    "listening_ports": [
+      "22",
+      "135",
+      "445",
+      "2179",
+      "5040",
+      "5432",
+      "5901-5904",
+      "18789",
+      "18791",
+      "42050"
+    ]
+  },
+  "next_check": "2026-05-27T22:45:04.250Z"
+}
+
+
+
+================================================
+FILE: memory/xavier-jules-state.json
+================================================
+{
+  "lastCheck": "2026-06-09T22:36:00Z",
+  "openPRs": [],
+  "mergedPRs": [635, 633],
+  "failedPRs": [],
+  "newPRs": [],
+  "changes": true,
+  "report": "2026-06-09T22:36:00Z",
+  "summary": "No open PRs de Jules. PR #635 (headless-api-tests) merged hoy. Stale branch jules-cli-1 tiene 1 commit no mergeado (CLI commands). Issues de repo deshabilitados."
+}
+
+
+
+================================================
+FILE: panel-ui/index.html
+================================================
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Xavier Panel</title>
+    <script type="module" src="/src/main.tsx"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+  </html>
+
+
+
+================================================
+FILE: panel-ui/playwright.config.ts
+================================================
+import { defineConfig, devices } from "@playwright/test";
+
+const baseURL = process.env.PANEL_UI_BASE_URL ?? "http://127.0.0.1:4174";
+
+export default defineConfig({
+  testDir: "./tests",
+  timeout: 60_000,
+  expect: {
+    timeout: 15_000,
+  },
+  fullyParallel: false,
+  reporter: [["list"]],
+  use: {
+    baseURL,
+    trace: "on-first-retry",
+    screenshot: "only-on-failure",
+    video: "retain-on-failure",
+  },
+  projects: [
+    {
+      name: "chromium",
+      use: { ...devices["Desktop Chrome"] },
+    },
+  ],
+});
+
+
+
+================================================
+FILE: panel-ui/tsconfig.generative.json
+================================================
+{
+  "extends": "./tsconfig.json",
+  "include": ["src/App.tsx", "src/main.tsx"]
+}
+
+
+
+================================================
+FILE: panel-ui/tsconfig.json
+================================================
+{
+  "compilerOptions": {
+    "target": "ES2021",
+    "useDefineForClassFields": true,
+    "lib": ["ES2021", "DOM", "DOM.Iterable"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx"
+  },
+  "include": ["src"],
+  "references": []
+}
+
+
+
+================================================
+FILE: panel-ui/vitest.config.ts
+================================================
+/// <reference types="vitest" />
+
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [react()],
+  test: {
+    globals: true,
+    environment: "jsdom",
+    setupFiles: "./tests/setup.ts",
+    include: ["tests/**/*.test.{ts,tsx}"],
+  },
+});
+
+
+
+================================================
+FILE: panel-ui/src/global.d.ts
+================================================
+declare const __APP_VERSION__: string;
+
+
+
+================================================
+FILE: panel-ui/src/main.tsx
+================================================
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import "./index.css";
+
+const rootElement = document.getElementById("root");
+
+if (!rootElement) {
+  throw new Error("Root element #root was not found.");
+}
+
+ReactDOM.createRoot(rootElement).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);
+
+
+
+================================================
+FILE: panel-ui/src-tauri/build.rs
+================================================
+fn main() {
+    tauri_build::build()
+}
+
+
+
+================================================
+FILE: panel-ui/src-tauri/Cargo.toml
+================================================
+[package]
+name = "app"
+version = "0.1.0"
+description = "A Tauri App"
+authors = ["you"]
+license = ""
+repository = ""
+edition = "2021"
+rust-version = "1.77.2"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5.4", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+log = "0.4"
+tauri = { version = "2.11.1", features = ["tray-icon"] }
+tauri-plugin-log = "2"
+tauri-plugin-shell = "2"
+sysinfo = "0.36.1"
+uuid = { version = "1.20.0", features = ["v4"] }
+
+
+
+================================================
+FILE: panel-ui/src-tauri/tauri.conf.json
+================================================
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "xavier",
+  "version": "0.1.0",
+  "identifier": "com.swalsystems.xavier",
+  "build": {
+    "frontendDist": "../build",
+    "devUrl": "http://127.0.0.1:4174",
+    "beforeDevCommand": "cd .. \u0026\u0026 cd panel-ui \u0026\u0026 pnpm run dev",
+    "beforeBuildCommand": "cd .. \u0026\u0026 cd panel-ui \u0026\u0026 pnpm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "xavier",
+        "width": 800,
+        "height": 600,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "externalBin": ["binaries/xavier"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": ""
+    }
+  }
+}
+
+
+
+================================================
+FILE: panel-ui/src-tauri/capabilities/default.json
+================================================
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "enables the default permissions",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "shell:default",
+    {
+      "identifier": "shell:allow-execute",
+      "allow": [
+        {
+          "name": "binaries/xavier",
+          "sidecar": true,
+          "args": ["http"]
+        }
+      ]
+    }
+  ]
+}
+
+
+
+================================================
+FILE: panel-ui/src-tauri/gen/android/build.gradle.kts
+================================================
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle:8.11.0")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+tasks.register("clean").configure {
+    delete("build")
+}
+
+
+
+
+================================================
+FILE: panel-ui/src-tauri/gen/android/.editorconfig
+================================================
+# EditorConfig is awesome: https://EditorConfig.org
+
+# top-most EditorConfig file
+root = true
+
+[*]
+indent_style = space
+indent_size = 2
+end_of_line = lf
+charset = utf-8
+trim_trailing_whitespace = false
+insert_final_newline = false
+
+
+================================================
+FILE: panel-ui/src-tauri/gen/android/app/proguard-rules.pro
+================================================
+# Add project specific ProGuard rules here.
+# You can control the set of applied configuration files using the
+# proguardFiles setting in build.gradle.
+#
+# For more details, see
+#   http://developer.android.com/guide/developing/tools/proguard.html
+
+# If your project uses WebView with JS, uncomment the following
+# and specify the fully qualified class name to the JavaScript interface
+# class:
+#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
+#   public *;
+#}
+
+# Uncomment this to preserve the line number information for
+# debugging stack traces.
+#-keepattributes SourceFile,LineNumberTable
+
+# If you keep the line number information, uncomment this to
+# hide the original source file name.
+#-renamesourcefileattribute SourceFile
+
+
+================================================
+FILE: panel-ui/src-tauri/gen/android/app/src/main/java/com/swalsystems/xavier/MainActivity.kt
+================================================
+package com.swalsystems.xavier
+
+import android.os.Bundle
+import androidx.activity.enableEdgeToEdge
+
+class MainActivity : TauriActivity() {
+  override fun onCreate(savedInstanceState: Bundle?) {
+    enableEdgeToEdge()
+    super.onCreate(savedInstanceState)
+  }
+}
+
+
+
+================================================
+FILE: panel-ui/src-tauri/gen/android/app/src/main/res/layout/activity_main.xml
+================================================
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.constraintlayout.widget.ConstraintLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    tools:context=".MainActivity">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Hello World!"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintLeft_toLeftOf="parent"
+        app:layout_constraintRight_toRightOf="parent"
+        app:layout_constraintTop_toTopOf="parent" />
+
+</androidx.constraintlayout.widget.ConstraintLayout>
+
+
+================================================
+FILE: panel-ui/src-tauri/gen/android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+================================================
+<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+  <foreground android:drawable="@mipmap/ic_launcher_foreground"/>
+  <background android:drawable="@color/ic_launcher_background"/>
+</adaptive-icon>
+
+
+================================================
+FILE: panel-ui/src-tauri/gen/android/app/src/main/res/values/colors.xml
+================================================
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="purple_200">#FFBB86FC</color>
+    <color name="purple_500">#FF6200EE</color>
+    <color name="purple_700">#FF3700B3</color>
+    <color name="teal_200">#FF03DAC5</color>
+    <color name="teal_700">#FF018786</color>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+</resources>
+
+
+================================================
+FILE: panel-ui/src-tauri/gen/android/app/src/main/res/values/ic_launcher_background.xml
+================================================
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <color name="ic_launcher_background">#fff</color>
+</resources>
+
+
+================================================
+FILE: panel-ui/src-tauri/gen/android/app/src/main/res/values/strings.xml
+================================================
+<resources>
+    <string name="app_name">xavier</string>
+    <string name="main_activity_title">xavier</string>
+</resources>
+
+
+================================================
+FILE: panel-ui/src-tauri/gen/android/app/src/main/res/values/themes.xml
+================================================
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.app" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Customize your theme here. -->
+    </style>
+</resources>
+
+
+
+================================================
+FILE: panel-ui/src-tauri/gen/android/app/src/main/res/values-night/themes.xml
+================================================
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.app" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Customize your theme here. -->
+    </style>
+</resources>
+
+
+
+================================================
+FILE: panel-ui/src-tauri/gen/android/app/src/main/res/xml/file_paths.xml
+================================================
+<?xml version="1.0" encoding="utf-8"?>
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+  <external-path name="my_images" path="." />
+  <cache-path name="my_cache_images" path="." />
+</paths>
+
+
+
+================================================
+FILE: panel-ui/src-tauri/gen/android/buildSrc/build.gradle.kts
+================================================
+plugins {
+    `kotlin-dsl`
+}
+
+gradlePlugin {
+    plugins {
+        create("pluginsForCoolKids") {
+            id = "rust"
+            implementationClass = "RustPlugin"
+        }
+    }
+}
+
+repositories {
+    google()
+    mavenCentral()
+}
+
+dependencies {
+    compileOnly(gradleApi())
+    implementation("com.android.tools.build:gradle:8.11.0")
+}
+
+
+
+
+================================================
+FILE: panel-ui/src-tauri/gen/android/gradle/wrapper/gradle-wrapper.properties
+================================================
+#Tue May 10 19:22:52 CST 2022
+distributionBase=GRADLE_USER_HOME
+distributionUrl=https\://services.gradle.org/distributions/gradle-8.14.3-bin.zip
+distributionPath=wrapper/dists
+zipStorePath=wrapper/dists
+zipStoreBase=GRADLE_USER_HOME
+
+
+
+================================================
+FILE: panel-ui/src-tauri/src/main.rs
+================================================
+// Prevents additional console window on Windows in release, DO NOT REMOVE!!
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+fn main() {
+    app_lib::run();
+}
+
+
+
+================================================
+FILE: panel-ui/tests/setup.ts
+================================================
+import { vi } from "vitest";
+
+vi.mock("@openuidev/react-ui", () => ({
+  createTheme: vi.fn(() => ({})),
+  designTokens: {
+    color: {
+      info: "#3B82F6",
+      success: "#19C37D",
+      muted: "#5D584B",
+    },
+  },
+}));
+
+vi.mock("../src/theme", () => ({
+  designTokens: {
+    color: {
+      bg: "#F6F3EA",
+      surface: "#FFFDF8",
+      surface2: "#EDE7D8",
+      text: "#111111",
+      border: "#000000",
+      accent: "#F2F230",
+      accentStrong: "#D8D81E",
+      danger: "#FF5C5C",
+      info: "#3B82F6",
+      success: "#19C37D",
+      muted: "#5D584B",
+    },
+  },
+}));
+
+import "@testing-library/jest-dom";
+
+
+
+================================================
+FILE: patches/burn-candle/Cargo.toml
+================================================
+[package]
+authors = ["louisfd <louisfd94@gmail.com>"]
+categories = ["science"]
+description = "Candle backend for the Burn framework"
+edition = "2021"
+keywords = ["deep-learning", "machine-learning", "data"]
+license = "MIT OR Apache-2.0"
+name = "burn-candle"
+readme = "README.md"
+repository = "https://github.com/tracel-ai/burn/tree/main/crates/burn-candle"
+documentation = "https://docs.rs/burn-candle"
+version = "0.20.1"
+
+# [lints]
+# workspace = true
+
+[features]
+default = ["std"]
+std = []
+doc = ["default"]
+tracing = [
+    "burn-backend/tracing",
+    "burn-std/tracing",
+]
+
+cuda = ["candle-core/cuda"]
+metal = ["candle-core/metal"]
+accelerate = ["candle-core/accelerate"]
+
+[dependencies]
+burn-backend = "0.20.1"
+burn-std = "0.20.1"
+candle-core = "=0.9.1"
+derive-new = "0.7"
+
+[dev-dependencies]
+burn-tch = "0.20.1"
+
+[package.metadata.docs.rs]
+features = ["doc"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+
+
+================================================
+FILE: patches/burn-candle/src/element.rs
+================================================
+use std::borrow::Borrow;
+
+use burn_backend::{Element, bf16, f16};
+use candle_core::{FloatDType, Tensor, WithDType};
+
+/// Candle element
+pub trait CandleElement: Element + WithDType {}
+/// Candle float element
+pub trait FloatCandleElement: CandleElement + FloatDType {}
+/// Candle int element
+pub trait IntCandleElement: CandleElement {}
+
+impl CandleElement for f64 {}
+impl FloatCandleElement for f64 {}
+
+impl CandleElement for f32 {}
+impl FloatCandleElement for f32 {}
+
+impl CandleElement for f16 {}
+impl FloatCandleElement for f16 {}
+
+impl CandleElement for bf16 {}
+impl FloatCandleElement for bf16 {}
+
+impl CandleElement for u8 {}
+impl IntCandleElement for u8 {}
+
+impl CandleElement for u32 {}
+impl IntCandleElement for u32 {}
+
+impl CandleElement for i64 {}
+impl IntCandleElement for i64 {}
+
+
+
+================================================
+FILE: patches/burn-candle/src/lib.rs
+================================================
+#![warn(missing_docs)]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![allow(unused)] // TODO remove when backend filled
+
+//! Burn Candle Backend
+
+#[macro_use]
+extern crate derive_new;
+
+mod backend;
+mod element;
+mod ops;
+mod tensor;
+
+pub use backend::*;
+pub use element::*;
+pub use tensor::*;
+
+
+
+================================================
+FILE: patches/burn-candle/src/ops/activation.rs
+================================================
+use burn_backend::{ops::ActivationOps, tensor::FloatTensor};
+
+use crate::{
+    Candle, CandleTensor,
+    element::{CandleElement, FloatCandleElement, IntCandleElement},
+    tensor,
+};
+
+impl<F: FloatCandleElement, I: IntCandleElement> ActivationOps<Self> for Candle<F, I> {
+    fn gelu(tensor: FloatTensor<Self>) -> FloatTensor<Self> {
+        CandleTensor::new(tensor.tensor.gelu().unwrap())
+    }
+
+    fn relu(tensor: FloatTensor<Self>) -> FloatTensor<Self> {
+        CandleTensor::new(tensor.tensor.relu().unwrap())
+    }
+}
+
+
+
+================================================
+FILE: patches/burn-candle/src/ops/mod.rs
+================================================
+mod activation;
+mod base;
+mod bool_tensor;
+mod candle_utils;
+mod int_tensor;
+mod module;
+mod qtensor;
+mod tensor;
+mod transaction;
+mod utils;
+
+
+
+================================================
+FILE: patches/burn-candle/src/ops/transaction.rs
+================================================
+use burn_backend::{
+    Backend,
+    ops::{TransactionOps, TransactionPrimitive},
+};
+
+use crate::{
+    Candle,
+    element::{FloatCandleElement, IntCandleElement},
+};
+
+impl<F: FloatCandleElement, I: IntCandleElement> TransactionOps<Self> for Candle<F, I> {}
+
+
+
+================================================
+FILE: prompts/xui-system-prompt.md
+================================================
+# XavierUI System Prompt Snippet
+
+## XavierUI Generation Rules
+
+When generating responses, determine if a structured UI component would enhance the user experience.
+
+If YES, include an xui_json field with valid JSON following this schema:
+- Root must have "component" key
+- Supported: data-table, info-card, form-input, progress-bar, code-block, timeline, confirm-dialog, status-badge, chart-bar, list-group
+- Never include HTML, CSS, or JSX - pure JSON data only
+- The renderer will handle visualization
+
+If NO, set xui_json to null and provide a plain text response.
+
+
+
+================================================
+FILE: scripts/README.md
+================================================
+# Scripts Directory
+
+This directory contains utility scripts for Xavier development and operations.
+
+## Organization
+
+- enchmarks/ - Benchmarking scripts for memory systems
+- dev/ - Development utilities
+-
+elease/ - Release and deployment scripts
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| xavier-service.ps1 | Windows service management |
+| xavier_client.ps1 | Client/CLI testing |
+| xavier-optimizer.ps1 | Performance optimization |
+| locomo_benchmark*.ps1 | LOCOMO benchmark suite |
+| cortex_cli.py | Cortex CLI utilities (⚠️ deprecated, project removed) |
+| enchmark_*.py | Various benchmark scripts |
+
+## Usage
+
+Most scripts require:
+- PowerShell 5+ (Windows)
+- Python 3.8+ (some scripts)
+- Cargo and Rust toolchain
+
+See individual script headers for specific requirements.
+
+
+
+================================================
+FILE: scripts/api-test.ps1
+================================================
+$TOKEN = $env:XAVIER_TOKEN
+if (-not $TOKEN) { $TOKEN = $env:XAVIER_API_KEY }
+if (-not $TOKEN) { $TOKEN = $env:XAVIER_TOKEN }
+if (-not $TOKEN) {
+    throw "Missing Xavier token. Set XAVIER_TOKEN, XAVIER_API_KEY, or XAVIER_TOKEN."
+}
+
+$body = @{"content"="test123"; "path"="test/debug"} | ConvertTo-Json
+$result = Invoke-WebRequest -Uri 'http://localhost:8006/memory/add' -Method POST -ContentType 'application/json' -Headers @{'X-Xavier-Token' = $TOKEN} -Body $body -UseBasicParsing
+Write-Host "Status: $($result.StatusCode)"
+Write-Host "Body: $($result.Content)"
+
+
+
+================================================
+FILE: scripts/build-docker.sh
+================================================
+#!/usr/bin/env bash
+# Build Xavier using Docker BuildKit (no cross-compilation needed)
+set -e
+
+echo "=== Xavier Docker Build (Native) ==="
+
+cd "$(dirname "$0")/.."
+
+# Ensure Docker is running
+if ! docker info > /dev/null 2>&1; then
+    echo "ERROR: Docker is not running"
+    exit 1
+fi
+
+# Build with BuildKit
+echo "Building Docker image..."
+DOCKER_BUILDKIT=1 docker build \
+    --platform linux/amd64 \
+    -t iberi22/xavier:latest \
+    -f docker/Dockerfile \
+    .
+
+echo ""
+echo "=== Build successful ==="
+docker images iberi22/xavier --format "{{.Repository}}:{{.Tag}} - {{.Size}}"
+
+
+================================================
+FILE: scripts/build-tauri.ps1
+================================================
+# Xavier Build Script for Tauri Sidecar (PowerShell)
+$ErrorActionPreference = "Stop"
+
+Write-Host "Building Xavier backend..."
+cargo build --release --bin xavier
+
+# Get the target triple
+$TargetTriple = (rustc -Vv | Select-String "host:").ToString().Split(" ")[1]
+Write-Host "Detected target triple: $TargetTriple"
+
+# Create binaries directory if it doesn't exist
+$BinDir = "panel-ui/src-tauri/binaries"
+if (!(Test-Path $BinDir)) {
+    New-Item -ItemType Directory -Path $BinDir
+}
+
+# Copy and rename binary
+$BinaryPath = "target/release/xavier.exe"
+if (!(Test-Path $BinaryPath)) {
+    $BinaryPath = "target/release/xavier"
+}
+
+$DestPath = "$BinDir/xavier-$TargetTriple"
+if ($BinaryPath.EndsWith(".exe")) {
+    $DestPath += ".exe"
+}
+
+Copy-Item $BinaryPath $DestPath
+Write-Host "Binary copied to $DestPath"
+
+# Build Tauri App
+Write-Host "Building Tauri App..."
+Set-Location panel-ui
+pnpm install
+pnpm tauri build
+
+
+
+================================================
+FILE: scripts/build-tauri.sh
+================================================
+#!/bin/bash
+set -e
+
+# Xavier Build Script for Tauri Sidecar
+echo "Building Xavier backend..."
+cargo build --release --bin xavier
+
+# Get the target triple
+TARGET_TRIPLE=$(rustc -Vv | grep host: | cut -d ' ' -f 2)
+echo "Detected target triple: $TARGET_TRIPLE"
+
+# Create binaries directory if it doesn't exist
+mkdir -p panel-ui/src-tauri/binaries
+
+# Copy and rename binary
+BINARY_EXT=""
+if [[ "$TARGET_TRIPLE" == *"windows"* ]]; then
+    BINARY_EXT=".exe"
+fi
+
+cp "target/release/xavier$BINARY_EXT" "panel-ui/src-tauri/binaries/xavier-$TARGET_TRIPLE$BINARY_EXT"
+echo "Binary copied to panel-ui/src-tauri/binaries/xavier-$TARGET_TRIPLE$BINARY_EXT"
+
+# Build Tauri App
+echo "Building Tauri App..."
+cd panel-ui
+pnpm install
+pnpm tauri build
+
+
+
+================================================
+FILE: scripts/check-env.ps1
+================================================
+Write-Host "XAVIER_IMAGE_TAG: $env:XAVIER_IMAGE_TAG"
+Write-Host "XAVIER_MEMORY_BACKEND: $env:XAVIER_MEMORY_BACKEND"
+
+
+
+================================================
+FILE: scripts/check_alerts.ps1
+================================================
+$headers = @{ Authorization = "Bearer $(gh auth token)" }
+$alerts = Invoke-RestMethod -Uri "https://api.github.com/repos/iberi22/xavier/dependabot/alerts" -Headers $headers -Method Get
+$alerts | Where-Object { $_.state -eq 'open' } | ForEach-Object {
+    $pkg = $_.security_advisory.vulnerabilities[0].package.name
+    $severity = $_.security_advisory.vulnerabilities[0].severity
+    $fixed = $_.security_advisory.vulnerabilities[0].first_patched_version.identifier
+    "$($_.number) | $pkg | $severity | fixed: $fixed"
+}
+"Total open: " + ($alerts | Where-Object { $_.state -eq 'open' }).Count
+
+
+
+================================================
+FILE: scripts/debug_alerts.ps1
+================================================
+$headers = @{ Authorization = "Bearer $(gh auth token)"; Accept = "application/vnd.github+json" }
+$base = "https://api.github.com/repos/iberi22/xavier/dependabot/alerts"
+
+# Get full alert data to find the correct ID field
+$alerts = Invoke-RestMethod -Uri $base -Headers $headers -Method Get
+$alerts[0] | ConvertTo-Json -Depth 5
+
+
+
+================================================
+FILE: scripts/dismiss_alerts2.ps1
+================================================
+$headers = @{ Authorization = "Bearer $(gh auth token)"; Accept = "application/vnd.github+json" }
+$base = "https://api.github.com/repos/iberi22/xavier/dependabot/alerts"
+
+# Dismiss all open low-severity alerts
+$lowSeverity = @(26, 13)
+foreach ($num in $lowSeverity) {
+    try {
+        $body = @{ dismissed_reason = "not_used"; dismissed_comment = "Dev dependency, no production impact" } | ConvertTo-Json
+        Invoke-RestMethod -Uri "$base/$($num)" -Headers $headers -Method PUT -ContentType "application/vnd.github+json" -Body $body
+        Write-Host "Dismissed #$num"
+    } catch {
+        Write-Host "Error #$num : $($_.Exception.Message)"
+    }
+}
+
+# Check remaining
+Start-Sleep 2
+$alerts = Invoke-RestMethod -Uri $base -Headers $headers -Method Get
+Write-Host ""
+Write-Host "Remaining open: " + ($alerts | Where-Object { $_.state -eq 'open' }).Count
+$alerts | Where-Object { $_.state -eq 'open' } | ForEach-Object {
+    $pkg = $_.security_advisory.vulnerabilities[0].package.name
+    "$($_.number) | $pkg"
+}
+
+
+
+================================================
+FILE: scripts/fix_closing.py
+================================================
+import sys
+with open(r'E:\scripts-python\xavier\src\memory\sqlite_vec_store.rs', 'r', encoding='utf-8') as f:
+    content = f.read()
+lines = content.split('\n')
+fixed = 0
+for i, line in enumerate(lines):
+    stripped = line.rstrip('\r')
+    # The broken line: 8 spaces + quote+close+hash+question+semicolon (5 visible chars)
+    # Should be: 8 spaces + quote+hash+close+question+semicolon (6 visible chars)
+    if stripped == '        ")#?;':
+        print(f'Found broken line at {i+1}: {repr(stripped)}')
+        lines[i] = '        "#)?;'
+        fixed += 1
+    elif stripped == '        ")#?;'.replace('\r',''):
+        print(f'Found CR-broken line at {i+1}: {repr(stripped)}')
+        lines[i] = '        "#)?;'
+        fixed += 1
+print(f'Fixed {fixed} occurrences')
+with open(r'E:\scripts-python\xavier\src\memory\sqlite_vec_store.rs', 'w', encoding='utf-8') as f:
+    f.write('\n'.join(lines))
+print('Done')
+
+
+
+================================================
+FILE: scripts/generate-devlog-post.sh
+================================================
+#!/bin/bash
+# DevLog generator script
+# Usage: ./scripts/generate-devlog-post.sh <title> <body> <issue_number>
+set -euo pipefail
+
+DATE=$(date +%Y-%m-%d)
+TITLE="$1"
+BODY="$2"
+NUM="$3"
+SLUG=$(echo "$TITLE" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]/-/g' | sed 's/--*/-/g' | sed 's/^-//' | sed 's/-$//')
+FILENAME="docs/devlog/${DATE}-${SLUG}.md"
+
+cat > "$FILENAME" << EOF
+# ${TITLE}
+
+**Date**: ${DATE}
+**Author**: Community Contribution
+**Tags**: [generated, devlog]
+**Source**: Issue #${NUM}
+
+${BODY}
+
+---
+
+_This DevLog post was auto-generated from issue #${NUM}._
+EOF
+
+echo "Post created: ${FILENAME}"
+echo "filename=${FILENAME}"
+
+
+
+================================================
+FILE: scripts/project_status_agent_README.md
+================================================
+# Project Status Agent
+
+Agent que obtiene el estado de los proyectos desde GitHub API y lo guarda en Xavier.
+
+## Uso
+
+### Ejecución única
+```bash
+cd E:\scripts-python\xavier
+python project_status_agent.py
+```
+
+### Modo polling (actualiza cada 5 minutos)
+```bash
+python project_status_agent.py --poll
+```
+
+### Intervalo personalizado
+```bash
+python project_status_agent.py --poll --interval 600  # cada 10 minutos
+```
+
+## Datos que obtiene
+
+- **CI Status** - Estado de GitHub Actions (passing/failing/unknown)
+- **Issues Count** - Cantidad de issues abiertos
+- **Last Commit** - Fecha del último commit
+- **Blockers** - Traducción desde STATUS.md
+
+## Paths en Xavier
+
+- Overview: `sweat-operations/projects/overview`
+- Proyecto individual: `sweat-operations/projects/{name}/status`
+
+## Requisitos
+
+- Python 3.8+
+- requests library
+- Acceso a Xavier en localhost:8006
+- GitHub API token (opcional, para mayor rate limit)
+
+
+
+================================================
+FILE: scripts/run-sync-test.ps1
+================================================
+$env:NODE_OPTIONS = '--max-old-space-size=128'
+$start = Get-Date
+$out = [System.IO.Path]::GetTempFileName()
+$err = [System.IO.Path]::GetTempFileName()
+$proc = Start-Process node -ArgumentList 'E:\scripts-python\xavier\scripts\sync-all-to-xavier.js' -NoNewWindow -PassThru -RedirectStandardOutput $out -RedirectStandardError $err
+$ok = $proc.WaitForExit(110000)
+$elapsed = (Get-Date) - $start
+if ($ok) {
+    Write-Host "EXIT: $($proc.ExitCode) in $($elapsed.TotalSeconds)s"
+    Get-Content $out
+} else {
+    Write-Host "TIMEOUT - killing process"
+    Stop-Process $proc.Id -Force -ErrorAction SilentlyContinue
+}
+if ((Get-Item $err).Length -gt 0) { Get-Content $err }
+Remove-Item $out,$err -Force -ErrorAction SilentlyContinue
+
+
+
+================================================
+FILE: scripts/run-sync.ps1
+================================================
+$env:NODE_OPTIONS = '--max-old-space-size=128'
+$out = "$env:TEMP\sync_out_$(Get-Random).txt"
+$proc = Start-Process node -ArgumentList 'E:\scripts-python\xavier\scripts\sync-all-to-xavier.js' -NoNewWindow -PassThru -RedirectStandardOutput $out
+$ok = $proc.WaitForExit(110000)
+if ($ok) {
+    Write-Host "Exit: $($proc.ExitCode)"
+} else {
+    Write-Host "TIMEOUT - killed"
+    Stop-Process $proc.Id -Force -ErrorAction SilentlyContinue
+}
+Get-Content $out -ErrorAction SilentlyContinue
+Remove-Item $out -Force -ErrorAction SilentlyContinue
+
+
+
+================================================
+FILE: scripts/run_codex.ps1
+================================================
+$prompt = Get-Content 'E:\temp\p1-sevier\PROMPT_P1.md' -Raw
+$tempFile = [System.IO.Path]::GetTempFileName() + ".txt"
+$prompt | Out-File -FilePath $tempFile -Encoding utf8
+codex -c model="gpt-5.5" -c model_reasoning_effort="medium" --yolo exec @$tempFile 2>&1
+Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+
+
+
+================================================
+FILE: scripts/run_export.py
+================================================
+import sys
+sys.path.insert(0, r'E:\scripts-python\xavier\scripts')
+import export_training_data
+export_training_data.main()
+
+
+================================================
+FILE: scripts/run_extract.py
+================================================
+import sys
+sys.path.insert(0, r'E:\scripts-python\xavier\scripts')
+import extract_comprehensive_training
+extract_comprehensive_training.main()
+
+
+================================================
+FILE: scripts/run_gemini.ps1
+================================================
+$env:GEMINI_CLI_TRUST_WORKSPACE = "true"
+$prompt = Get-Content 'E:\temp\p3-gestalt\PROMPT_GESTALT.md' -Raw
+$tempFile = [System.IO.Path]::GetTempFileName() + ".txt"
+$prompt | Out-File -FilePath $tempFile -Encoding utf8
+& 'C:\Users\belal\AppData\Roaming\npm\gemini.ps1' --yolo $tempFile 2>&1
+Remove-Item $tempFile -Force -ErrorAction SilentlyContinue
+
+
+
+================================================
+FILE: scripts/run_termux_docker_smoke.ps1
+================================================
+param(
+    [string]$Image = "swal/termux-python:x86_64",
+    [switch]$Build,
+    [switch]$RuntimeInstall
+)
+
+$ErrorActionPreference = "Stop"
+
+$repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$dockerfile = Join-Path $repo "docker\termux-python\Dockerfile"
+
+if ($Build) {
+    docker build -t $Image -f $dockerfile $repo
+}
+
+if ($RuntimeInstall) {
+    docker run --rm `
+        -v "${repo}:/workspace" `
+        -w /workspace `
+        termux/termux-docker:x86_64 `
+        bash -lc "mkdir -p `$PREFIX/tmp && pkg update -y && pkg install -y python git ripgrep && python scripts/termux_docker_smoke.py"
+} else {
+    docker run --rm `
+        -v "${repo}:/workspace" `
+        -w /workspace `
+        $Image `
+        bash -lc "python scripts/termux_docker_smoke.py"
+}
+
+
+
+================================================
+FILE: scripts/ryzen-cppc-fix.py
+================================================
+#!/usr/bin/env python3
+"""Override AMD CPPC highest_perf limit at boot.
+Fixes Ryzen CPUs stuck at base clock due to BIOS CPPC limits.
+"""
+import os, struct
+
+MSR_CPPC_CAP1 = 0xC0010293
+
+for cpu in range(os.cpu_count() or 12):
+    try:
+        fd = os.open(f'/dev/cpu/{cpu}/msr', os.O_RDWR)
+        os.lseek(fd, MSR_CPPC_CAP1, os.SEEK_SET)
+        data = os.read(fd, 8)
+        val = struct.unpack('<Q', data)[0]
+        new_val = (val & ~0xFF) | 0xFF  # Set highest_perf to 255 (max)
+        os.lseek(fd, MSR_CPPC_CAP1, os.SEEK_SET)
+        os.write(fd, struct.pack('<Q', new_val))
+        os.close(fd)
+    except Exception as e:
+        print(f'CPU{cpu}: {e}')
+
+
+
+================================================
+FILE: scripts/send-alert.ps1
+================================================
+$body = @{
+    chat_id = '777007827'
+    text = 'Xavier Optimizer Alert - Benchmark Score: 20% (1/5 tests passed). Below 70% threshold - human review required. Passed: bench/person. Failed: bench/city, bench/company, bench/project, bench/tech. Xavier container healthy (v0.4.1, vec backend). Project changes detected: xavier(3), manteniapp(3). Time: 2026-04-14 08:37 UTC'
+}
+Invoke-RestMethod -Uri 'https://api.telegram.org/bot7304978495:AAEQ4hzBaJA6ZvNPabU_PQv5R9xRiT9gK40/sendMessage' -Method Post -Body $body
+
+
+================================================
+FILE: scripts/start-cortex.ps1
+================================================
+Set-Location 'E:\scripts-python\xavier'
+docker-compose up -d xavier
+
+
+
+================================================
+FILE: scripts/sync_run.ps1
+================================================
+$env:NODE_OPTIONS="--max-old-space-size=128"
+node "E:\scripts-python\xavier\scripts\sync-all-to-xavier.js"
+
+
+
+================================================
+FILE: scripts/test-integration.ps1
+================================================
+$body = @{query="SWAL"; limit=5} | ConvertTo-Json -Compress
+$temp = [System.IO.Path]::GetTempFileName() + ".json"
+[System.IO.File]::WriteAllText($temp, $body)
+$TOKEN = $env:XAVIER_TOKEN
+if (-not $TOKEN) { $TOKEN = $env:XAVIER_API_KEY }
+if (-not $TOKEN) { $TOKEN = $env:XAVIER_TOKEN }
+if (-not $TOKEN) {
+    throw "Missing Xavier token. Set XAVIER_TOKEN, XAVIER_API_KEY, or XAVIER_TOKEN."
+}
+curl.exe -s -X POST "http://localhost:8003/memory/search" -H "X-Xavier-Token: $TOKEN" -H "Content-Type: application/json" --data-binary "@$temp"
+Remove-Item $temp
+
+
+
+================================================
+FILE: scripts/test_agent.ps1
+================================================
+function Get-XavierToken {
+    $token = $env:XAVIER_TOKEN
+    if (-not $token) { $token = $env:XAVIER_API_KEY }
+    if (-not $token) { $token = $env:XAVIER_TOKEN }
+    if (-not $token) {
+        throw "Missing Xavier token. Set XAVIER_TOKEN, XAVIER_API_KEY, or XAVIER_TOKEN."
+    }
+    return $token
+}
+
+$headers = @{
+    "X-Xavier-Token" = Get-XavierToken
+    "Content-Type" = "application/json"
+}
+
+$body = @{
+    query = "What is the price?"
+    limit = 3
+    system3_mode = "disabled"
+} | ConvertTo-Json -Compress
+
+try {
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    $resp = Invoke-RestMethod -Uri "http://localhost:8006/agents/run" -Method POST -Headers $headers -ContentType "application/json" -Body $body -TimeoutSec 30
+    $sw.Stop()
+    Write-Host "Query took:" $sw.ElapsedMilliseconds "ms"
+    Write-Host "Response:" $resp.response
+} catch {
+    Write-Host "Error:" $_.Exception.Message
+}
+
+
+
+================================================
+FILE: scripts/xavier-bpm.bat
+================================================
+@echo off
+node "E:\scripts-python\xavier-v1\scripts\xavier-bpm-health.js" >> "E:\scripts-python\xavier-v1\scripts\xavier-bpm.log" 2>&1
+
+
+
+================================================
+FILE: scripts/xavier.sh
+================================================
+#!/bin/sh
+set -eu
+
+BACKEND="${XAVIER_BACKEND:-vec}"
+PORT="${XAVIER_PORT:-8003}"
+VERSION="${XAVIER_VERSION:-unknown}"
+
+if [ -z "${XAVIER_TOKEN:-}" ]; then
+    echo "xavier: XAVIER_TOKEN is required" >&2
+    exit 1
+fi
+
+export XAVIER_BACKEND="${BACKEND}"
+export XAVIER_MEMORY_BACKEND="${XAVIER_MEMORY_BACKEND:-$BACKEND}"
+export XAVIER_PORT="${PORT}"
+
+echo "xavier: starting version=${VERSION} backend=${XAVIER_MEMORY_BACKEND} port=${XAVIER_PORT}"
+
+exec /usr/local/bin/xavier-bin "$@"
+
+
+================================================
+FILE: scripts/benchmarks/model_lab.example.json
+================================================
+{
+  "dataset": "scripts/benchmarks/datasets/internal_swal_openclaw_memory.json",
+  "base_url": "http://127.0.0.1:8003",
+  "baseline_embedding_label": "pplx",
+  "embedding_candidates": [
+    {
+      "label": "pplx",
+      "model": "perplexity-ai/pplx-embed-v1-0.6b",
+      "url": "http://localhost:8002"
+    },
+    {
+      "label": "embeddinggemma",
+      "model": "google/embeddinggemma-300m",
+      "url": "http://localhost:11435/v1"
+    }
+  ],
+  "llm_candidates": [
+    {
+      "label": "fast",
+      "provider": "local",
+      "model": "gemma4:e2b",
+      "url": "http://localhost:11434/v1"
+    },
+    {
+      "label": "quality",
+      "provider": "local",
+      "model": "gemma4:e4b",
+      "url": "http://localhost:11434/v1"
+    }
+  ]
+}
+
+
+
+================================================
+FILE: scripts/jules/check-api.js
+================================================
+const fs = require("fs");
+const path = require("path");
+
+const envPath = path.join(__dirname, "../../.env");
+let apiKey = "";
+
+if (fs.existsSync(envPath)) {
+  const env = fs.readFileSync(envPath, "utf-8");
+  const match = env.match(/JULES_API_KEY=(.*)/);
+  if (match) apiKey = match[1].trim();
+}
+
+if (!apiKey) {
+  console.error("❌ JULES_API_KEY not found in .env");
+  process.exit(1);
+}
+
+async function validate() {
+  try {
+    const response = await fetch(
+      "https://jules.googleapis.com/v1alpha/sessions",
+      {
+        headers: { "X-Goog-Api-Key": apiKey },
+      },
+    );
+
+    if (response.ok) {
+      console.log("✅ JULES_API_KEY is valid and connected to Google Cloud.");
+    } else {
+      console.error(`❌ API Error: ${response.status} ${response.statusText}`);
+    }
+  } catch (error) {
+    console.error("❌ Validation failed:", error.message);
+  }
+}
+
+validate();
+
+
+
+================================================
+FILE: scripts/jules/jules-api.js
+================================================
+const fs = require("fs");
+const path = require("path");
+
+// Load API key from .env
+const envPath = path.join(__dirname, "../../.env");
+let apiKey = "";
+
+if (fs.existsSync(envPath)) {
+  const env = fs.readFileSync(envPath, "utf-8");
+  const match = env.match(/JULES_API_KEY=(.*)/);
+  if (match) apiKey = match[1].trim();
+}
+
+if (!apiKey) {
+  console.error("JULES_API_KEY not found in .env");
+  process.exit(1);
+}
+
+const API_BASE = "https://jules.googleapis.com/v1alpha";
+
+async function listSessions() {
+  try {
+    const response = await fetch(`${API_BASE}/sessions`, {
+      headers: {
+        "X-Goog-Api-Key": apiKey,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    console.log("--- Jules API Sessions ---");
+    console.log(JSON.stringify(data, null, 2));
+  } catch (error) {
+    console.error("Request failed:", error.message);
+  }
+}
+
+listSessions();
+
+
+
+================================================
+FILE: scripts/jules/list-sessions.js
+================================================
+const { execSync } = require("child_process");
+
+try {
+  console.log("Fetching Jules remote sessions...");
+  const output = execSync("jules remote list --session", { encoding: "utf-8" });
+  console.log("--- Current Jules Sessions ---");
+  console.log(output);
+} catch (error) {
+  console.error("Error fetching sessions:", error.message);
+}
+
+
+
+================================================
+FILE: scripts/jules/retrigger-jules.js
+================================================
+const { execSync } = require("child_process");
+
+const issueNumber = process.argv[2];
+
+if (!issueNumber) {
+  console.error("Usage: node retrigger-jules.js <issue_number>");
+  process.exit(1);
+}
+
+const REPO = "iberi22/xavier";
+
+try {
+  console.log(`Re-triggering Jules for issue #${issueNumber} in ${REPO}...`);
+
+  // Remove label
+  console.log("Removing jules label...");
+  execSync(`gh issue edit ${issueNumber} --repo ${REPO} --remove-label jules`);
+
+  // Wait a bit
+  console.log("Waiting for sync...");
+  execSync("powershell Start-Sleep -s 2");
+
+  // Add label
+  console.log("Re-adding jules label...");
+  execSync(`gh issue edit ${issueNumber} --repo ${REPO} --add-label jules`);
+
+  console.log("Success! Jules should pick up a fresh session now.");
+} catch (error) {
+  console.error("Operation failed:", error.message);
+}
+
+
+
+================================================
+FILE: scripts/launch/launch_cortex.sh
+================================================
+#!/usr/bin/env bash
+# ⚠️ DEPRECATED: Cortex has been removed from the SWAL stack (May 2026).
+# This launcher was a script to run Xavier on port 8003 (old port, now 8006).
+# Use `systemctl --user start xavier.service` or `xavier http` instead.
+echo "CORTEX REMOVED — Xavier ahora corre en :8006."
+echo "Usa: systemctl --user start xavier.service"
+exit 1
+
+
+
+================================================
+FILE: skills/deterministic-diag-ops/scripts/security_audit.py
+================================================
+import subprocess
+import sys
+
+def run_cmd(cmd):
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        return result.returncode, result.stdout, result.stderr
+    except Exception as e:
+        return 1, "", str(e)
+
+def audit():
+    print("Running security audit...")
+    
+    # Check if cargo-audit is installed
+    rc, stdout, stderr = run_cmd("cargo audit --version")
+    if rc != 0:
+        print("[WARN] cargo-audit is not installed. Skipping security scan.")
+        print("To install: cargo install cargo-audit")
+        return True # Don't fail the whole diag for a missing tool
+        
+    print("Scanning dependencies for vulnerabilities...")
+    rc, stdout, stderr = run_cmd("cargo audit")
+    if rc == 0:
+        print("[OK] No known vulnerabilities found.")
+        return True
+    else:
+        print("[FAIL] Vulnerabilities detected!")
+        print(stdout)
+        return False
+
+if __name__ == "__main__":
+    success = audit()
+    sys.exit(0 if success else 1)
+
+
+
+================================================
+FILE: skills/devlog-writer/templates/diagram-guide.md
+================================================
+# DevLog Diagram Guide
+
+Use this guide to ensure consistency in technical diagrams within DevLog posts.
+
+## 1. Flowcharts (Decision Logic)
+Use for explaining "how it works" or "decision trees".
+**Type**: `graph TD` or `graph LR`
+
+## 2. Sequence Diagrams (Communication)
+Use for explaining interactions between components (e.g., Agent -> Memory -> Storage).
+**Type**: `sequenceDiagram`
+
+## 3. Class Diagrams (Structures)
+Use for explaining Rust structs, traits, and their relationships.
+**Type**: `classDiagram`
+
+## 4. State Diagrams (Lifecycle)
+Use for explaining the state transitions of a memory or a task.
+**Type**: `stateDiagram-v2`
+
+## Rules
+- Use descriptive node names.
+- Keep diagrams simple; focus on the specific concept being explained.
+- Always use high-contrast styling compatible with both light and dark modes.
+
+
+
+================================================
+FILE: skills/rust-hexagonal-modern/agents/openai.yaml
+================================================
+version: 1
+interface:
+  display_name: Rust Hexagonal Modern
+  short_description: Design and refactor Rust services with modern crates, strong async patterns, and clean hexagonal boundaries.
+  default_prompt: Use the rust-hexagonal-modern skill to improve a Rust workspace with current crate guidance and hexagonal architecture patterns.
+
+
+
+================================================
+FILE: skills/rust-hexagonal-modern/references/review-checklist.md
+================================================
+# Review Checklist
+
+Use this checklist when reviewing or tightening Rust code with this skill.
+
+- Does the module belong in `domain`, `application`, `ports`, or `adapters`, and is that placement explicit?
+- Do domain types avoid HTTP, SQL, filesystem, and framework-specific dependencies?
+- Are handlers, CLI commands, or UI callbacks thin translators instead of business-logic containers?
+- Are outbound integrations hidden behind ports or another clearly owned boundary?
+- Is async work owned and cancellable, or is the code relying on detached tasks without lifecycle control?
+- Are `reqwest::Client`, DB handles, and shared state reused instead of rebuilt per call?
+- Are errors modeled with enough structure to preserve meaning without leaking transport details upward?
+- Are logs structured and placed at the right boundaries?
+- Do tests cover the cheapest layer that can prove the behavior?
+- Did the change introduce a new crate for convenience when an existing crate or pattern already fits?
+
+
+
+================================================
+FILE: skills/scripts_diag/security_audit.py
+================================================
+import subprocess
+import sys
+
+def run_cmd(cmd):
+    try:
+        result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
+        return result.returncode, result.stdout, result.stderr
+    except Exception as e:
+        return 1, "", str(e)
+
+def audit():
+    print("Running security audit...")
+    
+    # Check if cargo-audit is installed
+    rc, stdout, stderr = run_cmd("cargo audit --version")
+    if rc != 0:
+        print("[WARN] cargo-audit is not installed. Skipping security scan.")
+        print("To install: cargo install cargo-audit")
+        return True # Don't fail the whole diag for a missing tool
+        
+    print("Scanning dependencies for vulnerabilities...")
+    rc, stdout, stderr = run_cmd("cargo audit")
+    if rc == 0:
+        print("[OK] No known vulnerabilities found.")
+        return True
+    else:
+        print("[FAIL] Vulnerabilities detected!")
+        print(stdout)
+        return False
+
+if __name__ == "__main__":
+    success = audit()
+    sys.exit(0 if success else 1)
+
+
+
+================================================
+FILE: src/adapters/mod.rs
+================================================
+//! Adapter layer implementing the hexagonal architecture
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod inbound;
+pub mod outbound;
+
+
+
+================================================
+FILE: src/adapters/inbound/mod.rs
+================================================
+//! Inbound adapters for receiving external requests
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod http;
+
+
+
+================================================
+FILE: src/adapters/inbound/http/mod.rs
+================================================
+//! HTTP inbound adapter and REST API implementation
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod dto;
+pub mod routes;
+pub mod state;
+pub mod time_metrics_adapter;
+
+#[cfg(feature = "enterprise")]
+pub mod plugins;
+
+pub use state::AppState;
+pub mod handlers;
+
+
+
+================================================
+FILE: src/adapters/inbound/http/time_metrics_adapter.rs
+================================================
+//! HTTP adapter for timing and performance metrics
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+use async_trait::async_trait;
+use std::sync::Arc;
+
+use crate::domain::memory::TimeMetric;
+use crate::ports::inbound::TimeMetricsPort;
+use crate::time::TimeMetricsStore;
+
+/// Inbound adapter that wraps TimeMetricsStore and implements TimeMetricsPort
+pub struct TimeMetricsAdapter {
+    store: Arc<TimeMetricsStore>,
+}
+
+impl TimeMetricsAdapter {
+    pub fn new(store: Arc<TimeMetricsStore>) -> Self {
+        Self { store }
+    }
+}
+
+#[async_trait]
+impl TimeMetricsPort for TimeMetricsAdapter {
+    async fn save_time_metric(
+        &self,
+        metric: &TimeMetric,
+        workspace_id: &str,
+    ) -> Result<(), String> {
+        let dto = metric.clone().into();
+        self.store.save_time_metric(&dto, workspace_id).await
+    }
+}
+
+
+
+================================================
+FILE: src/adapters/inbound/http/handlers/mod.rs
+================================================
+//! HTTP handler module re-exports
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+pub mod agent;
+pub mod code;
+pub mod memory;
+pub mod security;
+
+
+
+================================================
+FILE: src/adapters/outbound/mod.rs
+================================================
+//! Outbound adapters for external system communication
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod http_health_adapter;
+
+
+
+================================================
+FILE: src/agents/rate_limit.rs
+================================================
+pub use crate::agents::provider::rate_limit::*;
+
+
+
+================================================
+FILE: src/agents/registry.rs
+================================================
+//! Agent registry for lifecycle management
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+// Agent Registry - Manages registered agents
+// Implementation by subagent
+
+
+
+================================================
+FILE: src/agents/supervisor.rs
+================================================
+//! Supervisor agent for sub-agent management
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+pub struct SwarmSupervisor;
+
+
+
+================================================
+FILE: src/agents/provider/local.rs
+================================================
+/// This module currently serves as a placeholder for local-specific provider logic if needed.
+/// Currently, local providers use the OpenAI or Anthropic compatible paths.
+pub mod types {}
+
+
+
+================================================
+FILE: src/agents/provider/mod.rs
+================================================
+//! Model provider system for Xavier agents.
+//!
+//! This module provides a unified interface for interacting with different
+//! LLM providers, both local and cloud-based.
+
+pub mod anthropic;
+pub mod client;
+pub mod config;
+pub mod gemini;
+pub mod local;
+pub mod minimax;
+pub mod openai;
+pub mod rate_limit;
+pub mod router;
+pub mod traits;
+pub mod types;
+
+pub use client::ModelProviderClient;
+pub use config::ModelProviderConfig;
+pub use rate_limit::{QuotaStatus, RateLimitManager};
+pub use traits::LlmProvider;
+pub use types::{ApiFlavor, ModelProviderStatus, ProviderMode, LLM_TIMEOUT};
+
+#[cfg(test)]
+mod router_tests;
+#[cfg(test)]
+mod tests;
+
+
+
+================================================
+FILE: src/agents/provider/traits.rs
+================================================
+use crate::agents::provider::types::LlmResponse;
+use crate::agents::system1::RetrievedDocument;
+use anyhow::Result;
+use async_trait::async_trait;
+
+/// Common trait for LLM providers.
+#[async_trait]
+pub trait LlmProvider: Send + Sync {
+    /// Generates a text response from the provider.
+    async fn generate_text(
+        &self,
+        system_prompt: &str,
+        user_prompt: &str,
+        use_cache: bool,
+    ) -> Result<LlmResponse>;
+
+    /// Generates a response based on query and context documents.
+    async fn generate_response(
+        &self,
+        query: &str,
+        context: &[RetrievedDocument],
+    ) -> Result<LlmResponse>;
+
+    /// Generates a hypothetical document for HyDE-like retrieval.
+    async fn generate_hypothetical_document(&self, query: &str) -> Result<LlmResponse>;
+
+    /// Evaluates if the context is sufficient to answer the query.
+    async fn evaluate_context(&self, query: &str, context: &[RetrievedDocument]) -> Result<f32>;
+}
+
+
+
+================================================
+FILE: src/agents/system3/mod.rs
+================================================
+//! System3 reasoning engine module
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod client;
+pub mod engine;
+pub mod helpers;
+#[cfg(test)]
+pub mod tests;
+pub mod types;
+
+pub use engine::System3Actor;
+pub use types::{
+    Action, ActionResult, ActionType, ActorConfig, MemoryOperation, MemoryUpdate, ToolCall,
+};
+
+
+
+================================================
+FILE: src/agents/system3/helpers/mod.rs
+================================================
+//! Helper utilities for System3
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub(crate) mod date;
+pub(crate) mod nlp;
+pub(crate) mod text;
+
+pub(crate) use date::*;
+pub(crate) use nlp::*;
+pub(crate) use text::*;
+
+
+
+================================================
+FILE: src/api/mod.rs
+================================================
+//! Public API module for the Xavier library
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod graph;
+pub mod search;
+pub mod skills;
+pub mod timeline;
+
+
+
+================================================
+FILE: src/app/mod.rs
+================================================
+//! Application layer module with use case implementations
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod health_service;
+pub mod memory_usecase;
+pub mod proxy_use_case;
+pub mod qmd_memory_adapter;
+pub mod security_service;
+// pub mod session_service; // removed — types not available in current domain layout
+pub mod verification_service;
+
+
+
+================================================
+FILE: src/chronicle/mod.rs
+================================================
+//! Chronicle module.
+//!
+//! Chronicle provides harvesting, redaction, generation, publishing, and CLI
+//! primitives for Xavier's daily technical log workflow.
+//! Also provides auto-documentation generation from code-graph data.
+
+pub mod auto_docs;
+pub mod cli;
+pub mod generate;
+pub mod harvest;
+pub mod patterns;
+pub mod prompts;
+pub mod publish;
+pub mod redact;
+pub mod ssg;
+
+pub use redact::{process_output, redact, verify};
+
+
+
+================================================
+FILE: src/cli/mod.rs
+================================================
+//! Command-line interface module
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub(crate) mod code_graph;
+pub mod commands;
+pub(crate) mod config;
+pub mod handlers;
+pub mod http_setup;
+pub(crate) mod mcp;
+pub mod onboarding;
+pub mod proxy;
+pub(crate) mod security;
+pub mod server;
+pub mod state;
+#[cfg(test)]
+mod tests;
+pub mod types;
+pub(crate) mod utils;
+pub mod websocket;
+
+pub use commands::Command;
+pub use state::Cli;
+
+
+
+================================================
+FILE: src/cli/handlers/onboarding.rs
+================================================
+//! Onboarding handlers for context-aware suggestions.
+
+use crate::cli::onboarding::generate_suggestions;
+use crate::cli::state::CliState;
+use axum::{extract::State, Json};
+
+pub async fn onboarding_suggestions_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    let suggestions = generate_suggestions(&state.workspace_dir);
+    Json(suggestions)
+}
+
+
+
+================================================
+FILE: src/consistency/mod.rs
+================================================
+//! Consistency module - Memory coherence and retention regularization
+//!
+//! This module provides retention regularization for detecting conflicts,
+//! verifying entity consistency, checking temporal ordering, and scoring
+//! memory coherence across the multi-layer memory architecture.
+
+pub mod regularization;
+
+pub use regularization::{
+    CoherenceReport, Conflict, ConflictType, DriftAlert, DriftThreshold, DriftType,
+    RegularizerConfig, RetentionRegularizer, TemporalIssue,
+};
+
+
+
+================================================
+FILE: src/coordination/message_bus/errors.rs
+================================================
+//! Message bus error types and handling.
+//!
+//! Defines the `MessageBusError` enum covering all possible failures
+//! in agent communication, topic routing, and message delivery.
+
+/// Message Bus errors
+#[derive(Debug, thiserror::Error)]
+pub enum MessageBusError {
+    #[error("Agent not found: {0}")]
+    AgentNotFound(String),
+
+    #[error("Agent already registered: {0}")]
+    AgentAlreadyRegistered(String),
+
+    #[error("Request timeout after {0} seconds")]
+    RequestTimeout(u64),
+
+    #[error("Channel closed")]
+    ChannelClosed,
+
+    #[error("Message send failed: {0}")]
+    SendFailed(String),
+
+    #[error("Serialization error: {0}")]
+    SerializationError(String),
+}
+
+impl serde::Serialize for MessageBusError {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+
+
+================================================
+FILE: src/coordination/message_bus/metrics.rs
+================================================
+use crate::coordination::message_bus::MessageBus;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+
+/// Message Bus metrics
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct BusMetrics {
+    pub messages_sent: u64,
+    pub messages_received: u64,
+    pub messages_failed: u64,
+    pub dlq_size: usize,
+    pub registered_agents: usize,
+    pub topic_subscriptions: HashMap<String, usize>,
+    pub queue_sizes: HashMap<String, usize>,
+    pub stale_agents: usize,
+    pub heartbeats_received: u64,
+}
+
+impl MessageBus {
+    /// Get bus metrics
+    pub async fn get_metrics(&self) -> BusMetrics {
+        let mut metrics = self.metrics.write().await;
+
+        // Update queue sizes
+        let queues = self.queues.read().await;
+        metrics.queue_sizes = queues
+            .iter()
+            .map(|(k, v)| (k.clone(), v.capacity()))
+            .collect();
+
+        metrics.clone()
+    }
+}
+
+
+
+================================================
+FILE: src/devlog/generator.rs
+================================================
+//! Devlog entry generator
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+// DEPRECATED — see src/chronicle/ssg.rs
+
+
+
+================================================
+FILE: src/devlog/mod.rs
+================================================
+//! Developer activity log module
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+// DevLog module — DEPRECATED. All functionality moved to src/chronicle/ssg.rs (DevLogSSG).
+// This file kept as placeholder to avoid breaking builds. Will be removed next cleanup.
+
+
+
+================================================
+FILE: src/devlog/models.rs
+================================================
+//! Data models for devlog entries
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+// DEPRECATED — see src/chronicle/ssg.rs
+
+
+
+================================================
+FILE: src/domain/agent.rs
+================================================
+//! Domain model for agents
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+/// Active agent entry tracked by the lifecycle registry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AgentEntry {
+    pub agent_id: String,
+    pub session_id: String,
+    pub last_heartbeat: DateTime<Utc>,
+    pub metadata: AgentMetadata,
+}
+
+/// Additional agent metadata accepted during registration.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AgentMetadata {
+    pub name: Option<String>,
+    pub capabilities: Vec<String>,
+    pub role: Option<String>,
+    pub endpoint: Option<String>,
+}
+
+
+
+================================================
+FILE: src/domain/error.rs
+================================================
+//! Domain error types
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum AppError {
+    #[error("Internal error: {0}")]
+    Internal(String),
+    #[error("Configuration error: {0}")]
+    ConfigError(String),
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+}
+
+
+
+================================================
+FILE: src/domain/mod.rs
+================================================
+//! Domain module for core business logic
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod agent;
+pub mod audit;
+pub mod belief;
+pub mod error;
+pub mod memory;
+pub mod pattern;
+pub mod proxy;
+pub mod security;
+
+pub use error::AppError;
+
+
+
+================================================
+FILE: src/domain/belief/mod.rs
+================================================
+//! Belief system domain module
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod types;
+
+pub use types::*;
+
+
+
+================================================
+FILE: src/domain/belief/types.rs
+================================================
+//! Belief system type definitions
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BeliefNode {
+    pub id: String,
+    pub belief: String,
+    pub confidence: f32,
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum BeliefRelation {
+    Supports,
+    Contradicts,
+    Neutral,
+}
+
+
+
+================================================
+FILE: src/domain/pattern/mod.rs
+================================================
+//! Pattern detection domain module
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod types;
+
+pub use types::*;
+
+
+
+================================================
+FILE: src/domain/security/mod.rs
+================================================
+//! Security domain module
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod types;
+
+pub use types::*;
+
+
+
+================================================
+FILE: src/enterprise/mod.rs
+================================================
+//! Enterprise features module
+//!
+//! Provides:
+//! - Multi-tenancy
+//! - Role-based access control (RBAC)
+//! - Audit logging
+//! - API key management
+//! - Rate limiting
+
+pub mod audit;
+#[cfg(feature = "enterprise")]
+pub mod http;
+pub mod keys;
+pub mod rate_limit;
+pub mod rbac;
+pub mod tenancy;
+#[cfg(not(feature = "enterprise"))]
+pub mod http {
+    pub fn enterprise_router() -> axum::Router {
+        axum::Router::new()
+    }
+}
+pub mod persistence;
+#[cfg(test)]
+pub mod tests;
+
+pub use audit::{AuditAction, AuditEntry, AuditLog};
+pub use keys::{ApiKey, ApiKeyStore, ApiKeyType};
+pub use rate_limit::{RateLimitConfig, RateLimitKey, RateLimitResult, RateLimiter};
+pub use rbac::{Permission, PermissionCheck, Role, RoleGuard};
+pub use tenancy::{Plan, Tenant, TenantId, TenantStore};
+
+
+
+================================================
+FILE: src/memory/mod.rs
+================================================
+//! Core memory module for cognitive storage
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod agent_indexer;
+pub mod agent_scanner;
+pub mod belief_graph;
+pub mod bridge;
+pub mod checkpoint_summary;
+pub mod embedder;
+pub mod entities;
+pub mod entity_graph;
+pub mod episodic;
+pub mod file_indexer;
+pub mod graph_store;
+pub mod graph_traversal;
+pub mod layers_config;
+pub mod manager;
+pub mod pack;
+pub mod qmd;
+pub mod qmd_memory;
+pub mod schema;
+pub mod semantic;
+pub mod semantic_cache;
+pub mod sqlite_store;
+pub mod sqlite_vec_store;
+pub mod store;
+pub mod virtual_memory;
+pub mod working;
+pub use store::*;
+
+
+
+================================================
+FILE: src/memory/qmd_memory.rs
+================================================
+//! QMD (Queryable Memory Document) integration
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+// Facade module: re-exports everything from the sibling qmd/ module tree.
+//
+// This file serves as the public entry point for the qmd_memory module.
+// Implementation lives in src/memory/qmd/.
+// src/memory/mod.rs declares both `pub mod qmd;` and `pub mod qmd_memory;`.
+
+pub use crate::memory::qmd::*;
+
+
+
+================================================
+FILE: src/memory/manager/mod.rs
+================================================
+//! Memory Manager - Intelligent Memory Management System
+//!
+//! Provides autonomous memory lifecycle management:
+//! - Memory Prioritization (Critical → Ephemeral)
+//! - Memory Decay based on access time
+//! - Memory Quality Scoring
+//! - Memory Consolidation (deduplication)
+//! - Intelligent Forgetting/Eviction
+//!
+//! Split into focused sub-modules.
+
+pub mod actions;
+pub mod compression;
+pub mod config;
+pub mod consolidation;
+pub mod core;
+pub mod decay;
+pub mod eviction;
+pub mod gc;
+pub mod management;
+pub mod priority;
+pub mod quality;
+pub mod tracking;
+pub mod types;
+
+// Re-export primary types and struct
+pub use core::MemoryManager;
+pub use types::*;
+
+
+
+================================================
+FILE: src/memory/sqlite_vec_store/db.rs
+================================================
+//! Database connection management
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+use crate::codebase::connection_manager::ConnectionManager;
+use anyhow::Result;
+use rusqlite::Connection;
+use std::path::Path;
+use tokio::fs;
+
+#[allow(dead_code)]
+pub(crate) async fn open_pool(path: &Path) -> Result<()> {
+    let project_id = "vec_store";
+    ConnectionManager::global().connect(
+        project_id,
+        &path.parent().unwrap_or(Path::new(".")).to_string_lossy(),
+    )?;
+    Ok(())
+}
+
+#[allow(dead_code)]
+pub(crate) async fn open_connection(_path: &Path) -> Result<Connection> {
+    Err(anyhow::anyhow!(
+        "open_connection is deprecated, use ConnectionManager instead"
+    ))
+}
+
+pub(crate) async fn ensure_dir(path: &Path) -> Result<()> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).await?;
+    }
+    Ok(())
+}
+
+
+
+================================================
+FILE: src/ports/mod.rs
+================================================
+//! Port interfaces for hexagonal architecture
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod inbound;
+pub mod outbound;
+
+
+
+================================================
+FILE: src/ports/inbound/agent_lifecycle_port.rs
+================================================
+//! Inbound port for agent lifecycle management
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+use crate::domain::agent::{AgentEntry, AgentMetadata};
+use async_trait::async_trait;
+
+/// Port for agent lifecycle management.
+///
+/// Abstracts agent registration, heartbeats, and active agent queries.
+#[async_trait]
+pub trait AgentLifecyclePort: Send + Sync {
+    /// Register a new agent with metadata.
+    async fn register(&self, agent_id: String, session_id: String, metadata: AgentMetadata)
+        -> bool;
+
+    /// Unregister an agent by ID.
+    async fn unregister(&self, agent_id: &str) -> bool;
+
+    /// Update heartbeat for an agent.
+    async fn heartbeat(&self, agent_id: &str) -> bool;
+
+    /// Get all active agents (heartbeat < 5 minutes old).
+    async fn get_active_agents(&self) -> Vec<AgentEntry>;
+
+    /// Get a specific agent entry.
+    async fn get(&self, agent_id: &str) -> Option<AgentEntry>;
+}
+
+
+
+================================================
+FILE: src/ports/inbound/health_port.rs
+================================================
+//! Inbound port for health check operations
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+use async_trait::async_trait;
+use serde::Serialize;
+
+#[derive(Debug, Serialize, Clone)]
+pub struct HealthStatus {
+    pub status: String,
+    pub lag_ms: u64,
+    pub save_ok_rate: f64,
+    pub match_score: f64,
+    pub active_agents: u64,
+    pub timestamp_ms: u64,
+    pub alerts: Vec<String>,
+}
+
+#[async_trait]
+pub trait HealthPort: Send + Sync {
+    async fn get_health_status(&self) -> HealthStatus;
+}
+
+
+
+================================================
+FILE: src/ports/inbound/input_security_port.rs
+================================================
+//! Inbound port for input security validation
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+pub use crate::ports::inbound::security_port::SecureInputResult;
+use async_trait::async_trait;
+
+#[async_trait]
+pub trait InputSecurityPort: Send + Sync {
+    async fn process_input(&self, input: &str) -> anyhow::Result<SecureInputResult>;
+    async fn process_output(&self, output: &str) -> anyhow::Result<String>;
+}
+
+
+
+================================================
+FILE: src/ports/inbound/memory_port.rs
+================================================
+//! Inbound port for memory operations
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+use crate::domain::memory::{MemoryQueryFilters, MemoryRecord};
+use async_trait::async_trait;
+
+#[async_trait]
+pub trait MemoryQueryPort: Send + Sync {
+    async fn search(
+        &self,
+        query: &str,
+        filters: Option<MemoryQueryFilters>,
+    ) -> anyhow::Result<Vec<MemoryRecord>>;
+    async fn add(&self, record: MemoryRecord) -> anyhow::Result<String>;
+    async fn update(&self, id: &str, record: MemoryRecord) -> anyhow::Result<MemoryRecord>;
+    async fn delete(&self, id: &str) -> anyhow::Result<Option<MemoryRecord>>;
+    async fn get(&self, id: &str) -> anyhow::Result<Option<MemoryRecord>>;
+    async fn list(&self, workspace_id: &str, limit: usize) -> anyhow::Result<Vec<MemoryRecord>>;
+    async fn export(&self, public_only: bool) -> anyhow::Result<Vec<MemoryRecord>>;
+}
+
+
+
+================================================
+FILE: src/ports/inbound/mod.rs
+================================================
+//! Inbound port interfaces
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod agent_lifecycle_port;
+pub mod health_port;
+pub mod input_security_port;
+pub mod memory_port;
+pub mod security_port;
+pub mod session_port;
+pub mod session_sync_port;
+pub mod time_metrics_port;
+pub mod verification_port;
+
+pub use agent_lifecycle_port::AgentLifecyclePort;
+pub use health_port::{HealthPort, HealthStatus as InboundHealthStatus};
+pub use input_security_port::InputSecurityPort;
+pub use memory_port::MemoryQueryPort;
+pub use security_port::SecurityScanPort;
+pub use session_port::SessionPort;
+pub use session_sync_port::SessionSyncPort;
+pub use time_metrics_port::TimeMetricsPort;
+pub use verification_port::VerificationPort;
+
+
+
+================================================
+FILE: src/ports/inbound/session_port.rs
+================================================
+//! Inbound port for session management
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+use crate::session::types::SessionEvent;
+use async_trait::async_trait;
+use serde::Serialize;
+
+#[derive(Debug, Serialize)]
+pub struct SessionEventResult {
+    pub status: String,
+    pub session_id: String,
+    pub memory_id: Option<String>,
+    pub mapped: bool,
+}
+
+#[async_trait]
+pub trait SessionPort: Send + Sync {
+    async fn handle_event(&self, event: SessionEvent) -> bool;
+    async fn handle_and_index_event(
+        &self,
+        event: SessionEvent,
+    ) -> anyhow::Result<SessionEventResult>;
+}
+
+
+
+================================================
+FILE: src/ports/inbound/session_sync_port.rs
+================================================
+//! Inbound port for session synchronization
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+use crate::tasks::session_sync_task::SyncCheckResult;
+use async_trait::async_trait;
+
+#[async_trait]
+pub trait SessionSyncPort: Send + Sync {
+    async fn check(&self) -> anyhow::Result<SyncCheckResult>;
+    async fn last_result(&self) -> SyncCheckResult;
+}
+
+
+
+================================================
+FILE: src/ports/inbound/time_metrics_port.rs
+================================================
+//! Inbound port for metrics collection
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+use crate::domain::memory::TimeMetric;
+use async_trait::async_trait;
+
+/// Port for time metrics operations (inbound)
+#[async_trait]
+pub trait TimeMetricsPort: Send + Sync {
+    /// Save a time metric record
+    async fn save_time_metric(&self, metric: &TimeMetric, workspace_id: &str)
+        -> Result<(), String>;
+}
+
+
+
+================================================
+FILE: src/ports/inbound/verification_port.rs
+================================================
+//! Inbound port for content verification
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VerificationResult {
+    pub path: String,
+    pub save_ok: bool,
+    pub retrieve_ok: bool,
+    pub match_score: f32,
+    pub latency_ms: u64,
+}
+
+#[async_trait]
+pub trait VerificationPort: Send + Sync {
+    async fn verify_save(
+        &self,
+        xavier_url: &str,
+        auth_token: &str,
+        path: &str,
+        test_content: &str,
+    ) -> Result<VerificationResult, String>;
+}
+
+
+
+================================================
+FILE: src/ports/outbound/mod.rs
+================================================
+//! Outbound port interfaces
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod schema_init;
+pub mod threat_detection_port;
+
+pub use threat_detection_port::ThreatDetectionPort;
+
+
+
+================================================
+FILE: src/ports/outbound/schema_init.rs
+================================================
+//! Outbound port for schema initialization
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+pub trait SchemaInitializer: Send + Sync {
+    fn init_schema(&self) -> anyhow::Result<()>;
+}
+
+
+
+================================================
+FILE: src/ports/outbound/threat_detection_port.rs
+================================================
+//! Outbound port for threat detection
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+use async_trait::async_trait;
+
+#[async_trait]
+pub trait ThreatDetectionPort: Send + Sync {
+    /// Scans the given text for security threats and logs them to the audit chain.
+    /// Returns true if the content is clean, false if a threat was detected.
+    async fn scan_and_log(&self, text: &str, component: &str) -> anyhow::Result<bool>;
+
+    /// Checks if an action requires Human-in-the-Loop approval
+    async fn requires_hitl(&self, action: &str, target: &str) -> anyhow::Result<bool> {
+        // Default implementation: assume no HITL required
+        let _ = action;
+        let _ = target;
+        Ok(false)
+    }
+}
+
+
+
+================================================
+FILE: src/retrieval/mod.rs
+================================================
+//! Retrieval module - Multi-layer memory retrieval with adaptive gating
+//!
+//! This module provides adaptive retrieval gating that combines results from
+//! Working, Episodic, and Semantic memory layers using weighted RRF fusion.
+
+pub mod config;
+pub mod gating;
+
+pub use gating::{
+    AdaptiveGating, Event, GatingConfig, LayerSearchResult, LayerStats, LayerWeights,
+    SessionSummary,
+};
+pub mod scoring;
+
+
+
+================================================
+FILE: src/search/mod.rs
+================================================
+//! Multi-strategy search module
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod bm25;
+pub mod hooks;
+pub mod hybrid;
+pub mod rerank;
+pub mod rrf;
+
+
+
+================================================
+FILE: src/secrets/store.rs
+================================================
+//! Secrets store abstraction
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+use crate::secrets::SecretResult;
+use std::future::Future;
+use std::pin::Pin;
+
+pub trait SecretStore: Send + Sync {
+    fn get<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = SecretResult<String>> + Send + 'a>>;
+    fn set<'a>(
+        &'a self,
+        key: &'a str,
+        value: &'a str,
+    ) -> Pin<Box<dyn Future<Output = SecretResult<()>> + Send + 'a>>;
+    fn delete<'a>(
+        &'a self,
+        key: &'a str,
+    ) -> Pin<Box<dyn Future<Output = SecretResult<()>> + Send + 'a>>;
+}
+
+
+
+================================================
+FILE: src/secrets/tests.rs
+================================================
+//! Tests for secrets management
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+#[cfg(test)]
+mod secret_tests {}
+
+
+
+================================================
+FILE: src/security/layers/mod.rs
+================================================
+//! Security layers module
+
+pub mod canary;
+pub mod config_drift;
+pub mod encoding;
+pub mod entropy;
+pub mod goal_drift;
+pub mod heuristic;
+pub mod homoglyph;
+pub mod path_traversal;
+pub mod phrase;
+pub mod threat_categories;
+pub mod tool_alias;
+
+pub use canary::detect_canary;
+pub use config_drift::detect_config_drift_full;
+pub use encoding::detect_encoding_attacks;
+pub use entropy::{detect_high_entropy, detect_secrets, shannon_entropy};
+pub use goal_drift::detect_goal_drift;
+pub use heuristic::detect_heuristic;
+pub use homoglyph::detect_homoglyph;
+pub use path_traversal::detect_path_traversal;
+pub use phrase::{contains_injection, find_matches, get_match_positions};
+pub use threat_categories::detect_threat_categories;
+pub use tool_alias::detect_tool_alias_full;
+
+
+
+================================================
+FILE: src/security/scanner/mod.rs
+================================================
+//! Scanner module - Multi-layer security scanning
+//!
+//! This module provides multi-layer security scanning for prompt injection detection.
+
+pub mod entropy;
+pub mod phrase_matcher;
+pub mod scanner_impl;
+
+pub use entropy::{
+    EntropyCalculator, EntropyRegion, EntropyScanner, EntropyThreshold, SecretDetector, SecretMatch,
+};
+pub use phrase_matcher::{PhraseMatch, PhraseMatcher, INJECTION_PATTERNS};
+pub use scanner_impl::{
+    is_threat, scan_text, DetectionLayer, ScanResult, ScannerConfig, SecurityScanner, ThreatLevel,
+    TriggeredDetection, SCANNER,
+};
+
+
+
+================================================
+FILE: src/server/mod.rs
+================================================
+//! Server modules for AgentRAG/Xavier
+
+pub mod alerts;
+pub mod events;
+pub mod headless;
+pub mod http;
+pub mod mcp;
+pub mod mcp_stdio;
+pub mod panel;
+pub mod v1_api;
+
+
+
+================================================
+FILE: src/server/headless/mod.rs
+================================================
+pub mod auth;
+pub mod routes;
+
+pub use routes::*;
+
+
+
+================================================
+FILE: src/server/mcp/mod.rs
+================================================
+//! MCP (Model Context Protocol) server module
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod server;
+pub mod session;
+pub mod tools_core;
+pub mod tools_memory;
+pub mod types;
+
+pub use server::*;
+pub use session::*;
+pub use types::*;
+#[cfg(test)]
+pub mod tests;
+
+
+
+================================================
+FILE: src/session/indexer.rs
+================================================
+//! Session indexer
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+use tracing::info;
+
+use crate::session::event_mapper::PanelThreadEntry;
+use crate::session::types::SessionEvent;
+
+/// Maps session events to PanelThreadEntry and indexes them into Xavier memory stores
+pub struct SessionIndexer;
+
+impl SessionIndexer {
+    /// Map a session event to a thread entry (returns None for session start/end)
+    pub fn index_event(event: &SessionEvent) -> Option<PanelThreadEntry> {
+        let entry = PanelThreadEntry::from_session_event(event)?;
+
+        info!(
+            session_id = %event.session_id,
+            role = %entry.role,
+            content_len = entry.content.len(),
+            "mapping session event"
+        );
+
+        Some(entry)
+    }
+}
+
+
+
+================================================
+FILE: src/session/mod.rs
+================================================
+//! Session management module
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod event_mapper;
+pub mod indexer;
+pub mod types;
+
+
+
+================================================
+FILE: src/settings/validation.rs
+================================================
+//! Logical concern: Validation helpers for Xavier settings.
+//!
+//! This module contains functions to validate and sanitize configuration values.
+
+/// Returns Some(trimmed_string) if not empty, otherwise None.
+pub fn non_empty(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+
+
+================================================
+FILE: src/sync/mod.rs
+================================================
+//! Distributed state synchronization module
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod chunks;
+
+
+
+================================================
+FILE: src/tools/mod.rs
+================================================
+//! Tool definitions and execution module
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod kanban;
+pub mod search_tools;
+pub mod validation_tools;
+
+
+
+================================================
+FILE: src/tools/validation_tools.rs
+================================================
+//! Validation tool implementations
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+pub fn validate_logic() {}
+
+
+
+================================================
+FILE: src/ui/mod.rs
+================================================
+//! UI modules for Xavier
+//!
+//! This provides various UI components for different interfaces.
+
+#[cfg(feature = "cli-interactive")]
+pub mod dashboard;
+#[cfg(feature = "cli-interactive")]
+pub mod log_stream;
+#[cfg(feature = "cli-interactive")]
+pub mod memory_view;
+
+
+
+================================================
+FILE: src/utils/http.rs
+================================================
+//! HTTP utility functions
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+use std::sync::LazyLock;
+use std::time::Duration;
+
+pub static DEFAULT_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .user_agent(concat!("xavier-internal/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .expect("failed to build default HTTP client")
+});
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_http_client_exists() {
+        // Just verify it doesn't panic on access
+        let _ = &*DEFAULT_HTTP_CLIENT;
+    }
+}
+
+
+
+================================================
+FILE: src/utils/mod.rs
+================================================
+//! Utility modules for Xavier
+//!
+//! This module provides lightweight utilities that replace external dependencies.
+
+pub mod crypto;
+pub mod file_traversal;
+pub mod http;
+
+
+
+================================================
+FILE: src/verification/mod.rs
+================================================
+//! Content verification module
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod auto_verifier;
+
+
+
+================================================
+FILE: src/workspace/mod.rs
+================================================
+//! Workspace management module
+//!
+//! Aggregates and re-exports the sub-modules within this module,
+//! providing the public API surface for module consumers.
+pub mod config;
+pub mod ops;
+pub mod registry;
+pub mod state;
+pub mod templates;
+pub mod usage;
+
+pub use config::*;
+pub use ops::*;
+pub use registry::*;
+pub use state::*;
+pub use templates::*;
+pub use usage::*;
+
+#[cfg(test)]
+mod tests;
+
+
+
+================================================
+FILE: tests/error_test.rs
+================================================
+use xavier::domain::AppError;
+
+#[test]
+fn test_app_error_usage() {
+    let err = AppError::Internal("test".to_string());
+    assert_eq!(format!("{}", err), "Internal error: test");
+}
+
+
+
+================================================
+FILE: tests/fixtures/headless_config.yaml
+================================================
+active_provider: local
+auto_strategy: lowest_latency
+fallback_chain:
+  - openai
+  - groq
+headless:
+  enabled: true
+  port: 8007
+  auth_token: test-token
+notifications:
+  provider_limit_warning: true
+  new_model_detected: true
+  better_provider_available: true
+
+
+
+================================================
+FILE: web/Cargo.toml
+================================================
+﻿[package]
+name = "xavier-web"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# egui for web
+egui = "0.33.3"
+eframe = { version = "0.33.3", default-features = false, features = ["default_fonts", "glow"] }
+wasm-bindgen = "0.2"
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1"
+web-sys = { version = "0.3", features = ["console", "Document", "Element", "HtmlCanvasElement", "Window"] }
+js-sys = "0.3"
+
+
+
+
+================================================
+FILE: web/index.html
+================================================
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Xavier Dashboard</title>
+  </head>
+  <body class="bg-background-light dark:bg-background-dark">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
+
+
+================================================
+FILE: web/package.json
+================================================
+{
+  "name": "xavier-web-dashboard",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "typescript": "^5.6.3",
+    "vite": "^8.0.13"
+  }
+}
+
+
+
+================================================
+FILE: web/postcss.config.js
+================================================
+export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+};
+
+
+
+================================================
+FILE: web/tailwind.config.js
+================================================
+/** @type {import('tailwindcss').Config} */
+export default {
+  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  darkMode: "class",
+  theme: {
+    extend: {
+      colors: {
+        primary: {
+          DEFAULT: "#0f766e",
+          50: "#ccfbf1",
+          100: "#99f6e4",
+          200: "#5eead4",
+          300: "#2dd4bf",
+          400: "#14b8a6",
+          500: "#0f766e",
+          600: "#0d9488",
+          700: "#0f766e",
+          800: "#115e59",
+          900: "#134e4a",
+        },
+        accent: "#b45309",
+        surface: {
+          light: "#fffdf8",
+          dark: "#1e293b",
+        },
+        background: {
+          light: "#f4efe7",
+          dark: "#0f172a",
+        },
+      },
+    },
+  },
+  plugins: [],
+};
+
+
+
+================================================
+FILE: web/tsconfig.json
+================================================
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Node",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["src"],
+  "references": []
+}
+
+
+
+================================================
+FILE: web/vite.config.ts
+================================================
+import path from "node:path";
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./src"),
+    },
+  },
+  server: {
+    port: 5173,
+    allowedHosts: [".trycloudflare.com"],
+    proxy: {
+      "/api": {
+        target: "http://localhost:8003",
+        changeOrigin: true,
+      },
+    },
+  },
+  build: {
+    outDir: "dist",
+    emptyOutDir: true,
+  },
+});
+
+
+
+================================================
+FILE: web/design-system/package.json
+================================================
+{
+  "name": "xavier-design-system",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}
+
+
+
+================================================
+FILE: web/design-system/postcss.config.js
+================================================
+export default {
+  plugins: {
+    tailwindcss: {},
+    autoprefixer: {},
+  },
+};
+
+
+
+================================================
+FILE: web/design-system/tailwind.config.js
+================================================
+/** @type {import('tailwindcss').Config} */
+export default {
+  darkMode: "class",
+  content: ["./index.html", "./src/**/*.{js,ts,jsx,tsx}"],
+  theme: {
+    extend: {
+      colors: {
+        bg: "#09090b",
+        "bg-2": "#18181b",
+        "bg-3": "#27272a",
+        border: "#3f3f46",
+        accent: "#6366f1",
+        "accent-2": "#4f46e5",
+        green: "#22c55e",
+        yellow: "#eab308",
+        red: "#ef4444",
+        orange: "#f97316",
+        purple: "#a855f7",
+        blue: "#3b82f6",
+        cyan: "#06b6d4",
+      },
+    },
+  },
+  plugins: [],
+};
+
+
+
+================================================
+FILE: web/design-system/tsconfig.json
+================================================
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "useDefineForClassFields": true,
+    "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "skipLibCheck": true,
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "noFallthroughCasesInSwitch": true
+  },
+  "include": ["src"],
+  "references": [{ "path": "./tsconfig.node.json" }]
+}
+
+
+
+================================================
+FILE: web/design-system/tsconfig.node.json
+================================================
+{
+  "compilerOptions": {
+    "composite": true,
+    "skipLibCheck": true,
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true
+  },
+  "include": ["vite.config.ts"]
+}
+
+
+
+================================================
+FILE: web/design-system/vite.config.ts
+================================================
+import react from "@vitejs/plugin-react";
+import { defineConfig } from "vite";
+
+export default defineConfig({
+  plugins: [react()],
+});
+
+
+
+================================================
+FILE: web/design-system/src/index.css
+================================================
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+
+================================================
+FILE: web/design-system/src/main.tsx
+================================================
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import "./index.css";
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);
+
+
+
+================================================
+FILE: web/design-system/src/components/Comparison.tsx
+================================================
+import React from "react";
+
+export interface ComparisonProps {
+  left: { label: string; value: string | number };
+  right: { label: string; value: string | number };
+  vs?: string;
+}
+
+export function Comparison({ left, right, vs = "vs" }: ComparisonProps) {
+  return (
+    <div className="grid grid-cols-[1fr_auto_1fr] gap-2.5 items-center">
+      <div className="bg-bg-3 rounded-lg p-3 text-center">
+        <div className="text-[10px] uppercase text-zinc-500 mb-1.5">
+          {left.label}
+        </div>
+        <div className="text-xl font-bold text-white">{left.value}</div>
+      </div>
+      <div className="text-[11px] text-zinc-500 font-semibold px-1">{vs}</div>
+      <div className="bg-bg-3 rounded-lg p-3 text-center">
+        <div className="text-[10px] uppercase text-zinc-500 mb-1.5">
+          {right.label}
+        </div>
+        <div className="text-xl font-bold text-white">{right.value}</div>
+      </div>
+    </div>
+  );
+}
+
+export default Comparison;
+
+
+
+================================================
+FILE: web/design-system/src/components/HeroBanner.tsx
+================================================
+import React from "react";
+
+export interface HeroBannerProps {
+  value: string;
+  label: string;
+  subtitle?: string;
+  gradientFrom?: string;
+  gradientTo?: string;
+}
+
+export function HeroBanner({
+  value,
+  label,
+  subtitle,
+  gradientFrom = "#6366f1",
+  gradientTo = "#a855f7",
+}: HeroBannerProps) {
+  return (
+    <div
+      className="rounded-xl p-8 text-center relative overflow-hidden"
+      style={{
+        background: `linear-gradient(135deg, ${gradientFrom}, ${gradientTo})`,
+      }}
+    >
+      <div className="relative z-10">
+        <div className="text-5xl font-bold text-white mb-1">{value}</div>
+        <div className="text-base text-white/90">{label}</div>
+        {subtitle && (
+          <div className="text-xs text-white/60 mt-2">{subtitle}</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default HeroBanner;
+
+
+
+================================================
+FILE: web/design-system/src/components/IconStat.tsx
+================================================
+import React from "react";
+
+export interface IconStatProps {
+  icon: string;
+  value: string | number;
+  label: string;
+  color?: string;
+}
+
+export function IconStat({
+  icon,
+  value,
+  label,
+  color = "#6366f1",
+}: IconStatProps) {
+  return (
+    <div className="bg-bg-3 rounded-lg p-3.5 flex items-center gap-3">
+      <div
+        className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+        style={{ background: color + "30" }}
+      >
+        {icon}
+      </div>
+      <div>
+        <div className="text-xl font-bold" style={{ color }}>
+          {value}
+        </div>
+        <div className="text-[10px] text-zinc-500 mt-0.5">{label}</div>
+      </div>
+    </div>
+  );
+}
+
+export default IconStat;
+
+
+
+================================================
+FILE: web/design-system/src/components/Minilist.tsx
+================================================
+import React from "react";
+
+export interface MinilistItem {
+  label: string;
+  value: string | number;
+}
+
+export interface MinilistProps {
+  items?: MinilistItem[];
+}
+
+export function Minilist({ items }: MinilistProps) {
+  const defaultItems: MinilistItem[] = [
+    { label: "Memory", value: "415" },
+    { label: "Recall", value: "99.1%" },
+    { label: "Precision", value: "4.45/5" },
+    { label: "Latency", value: "56ms" },
+  ];
+
+  const listItems = items || defaultItems;
+
+  return (
+    <div className="flex flex-col gap-1">
+      {listItems.map((item, i) => (
+        <div
+          key={i}
+          className="flex justify-between px-2.5 py-1.5 bg-bg-3 rounded text-[11px]"
+        >
+          <span className="font-semibold text-zinc-300">{item.label}</span>
+          <span className="text-white font-medium">{item.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default Minilist;
+
+
+
+================================================
+FILE: web/design-system/src/components/StatsRow.tsx
+================================================
+import React from "react";
+
+export interface StatsRowProps {
+  stats: Array<{
+    label: string;
+    value: string | number;
+    icon?: string;
+  }>;
+}
+
+export function StatsRow({ stats }: StatsRowProps) {
+  return (
+    <div
+      className="grid gap-2"
+      style={{
+        gridTemplateColumns: `repeat(${Math.min(stats.length, 4)}, 1fr)`,
+      }}
+    >
+      {stats.map((stat, i) => (
+        <div key={i} className="bg-bg-3 rounded-lg p-3 text-center">
+          {stat.icon && <div className="text-lg mb-1">{stat.icon}</div>}
+          <div className="text-xl font-bold text-white">{stat.value}</div>
+          <div className="text-[9px] text-zinc-500 uppercase mt-1">
+            {stat.label}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default StatsRow;
+
+
+
+================================================
+FILE: web/src/App.tsx
+================================================
+import { BrowserRouter, Route, Routes } from "react-router-dom";
+import { AgentManager } from "./components/AgentManager";
+import { Dashboard } from "./components/Dashboard";
+import { Layout } from "./components/Layout";
+import { MemoryBrowser } from "./components/MemoryBrowser";
+import { Settings } from "./components/Settings";
+
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Layout>
+        <Routes>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/memory" element={<MemoryBrowser />} />
+          <Route path="/agents" element={<AgentManager />} />
+          <Route path="/settings" element={<Settings />} />
+        </Routes>
+      </Layout>
+    </BrowserRouter>
+  );
+}
+
+
+
+================================================
+FILE: web/src/index.css
+================================================
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.dark {
+  color-scheme: dark;
+}
+
+
+
+================================================
+FILE: web/src/main.tsx
+================================================
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App";
+import "./index.css";
+
+ReactDOM.createRoot(document.getElementById("root")!).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>,
+);
+
+
+
+================================================
+FILE: .agent/rules/rule-0.md
+================================================
+# Xavier Project Context
+
+- Repository: `xavier`
+- Runtime: Rust + Tokio
+- Memory store: SurrealDB
+- Agent memory endpoint: `http://localhost:8003/mcp`
+- Task state lives in GitHub Issues, not in local markdown trackers
+
+## Read Order
+
+1. `AGENTS.md`
+2. `.gitcore/ARCHITECTURE.md`
+3. `.gitcore/features.json`
+4. `README.md`
+
+## Project Intent
+
+Use Xavier as the reusable memory substrate for agentic workflows. Prefer storing durable knowledge in Xavier and keep repo files focused on product code, architecture, and user-facing documentation.
+
+
+
+================================================
+FILE: .agent/rules/rule-10-gitcore-cortex.md
+================================================
+# Git-Core + Xavier Workflow Rules
+
+## Canonical Sources
+
+- `AGENTS.md` defines workflow behavior
+- `.gitcore/ARCHITECTURE.md` defines binding implementation decisions
+- `README.md` is the human/product entrypoint
+
+## Memory Split
+
+- GitHub Issues: task state, progress, checklists, planning
+- Xavier: reusable memory, research, architecture context, long-horizon recall
+
+## Forbidden Patterns
+
+- Do not create `TODO.md`, `PLAN.md`, `PROGRESS.md`, workflow `CHANGELOG.md`, or scratch summary files.
+- Do not hardcode tokens in repo or global IDE configs.
+- Do not fork protocol instructions into multiple conflicting rule files.
+
+## Required Behavior
+
+- Prefer Xavier MCP at `http://localhost:8003/mcp`
+- Use environment variables for credentials
+- Keep changes atomic
+- If an issue conflicts with architecture, architecture wins
+
+
+
+================================================
+FILE: .cargo/audit_ignore.txt
+================================================
+﻿# Security advisories to ignore
+# Reason: No patched version available for these dependencies
+RUSTSEC-2023-0071  # rsa: Marvin attack - transitive dep through jsonwebtoken/surrealdb
+RUSTSEC-2026-0002  # lru: IterMut unsoundness - ratatui dependency, no fix yet
+
+
+
+================================================
+FILE: .cargo/config.toml
+================================================
+[build]
+target-dir = "target"
+
+[env]
+RUST_MIN_STACK = "16777216"
+
+
+
+================================================
+FILE: .claude/settings.local.json
+================================================
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls -la e:/scripts-python/xavier/*.md)",
+      "Bash(ls -la e:/scripts-python/xavier/*.txt)",
+      "Bash(ls -la e:/scripts-python/xavier/*.py)",
+      "Bash(ls -la e:/scripts-python/xavier/*.ps1)",
+      "Bash(ls *.md)",
+      "Bash(cargo build *)"
+    ]
+  }
+}
+
+
+
+================================================
+FILE: .gitcore/CONTEXT_LOG.md
+================================================
+---
+title: "Context Log"
+type: LOG
+id: "log-context"
+created: 2025-12-01
+updated: 2025-12-01
+agent: copilot
+model: gemini-3-pro
+requested_by: system
+summary: |
+  Ephemeral session notes and context log.
+keywords: [log, context, session, notes]
+tags: ["#log", "#context", "#ephemeral"]
+project: Git-Core-Protocol
+---
+
+# 📝 Context Log
+
+This file is for **ephemeral session notes only**. Do not store permanent information here.
+
+---
+
+## Session: YYYY-MM-DD
+
+### Current Focus
+- Working on: Issue #X
+
+### Quick Notes
+- Note 1
+- Note 2
+
+### Blockers
+- None
+
+---
+
+*⚠️ This file should be cleaned periodically. Use GitHub Issues for permanent state.*
+
+
+
+
+================================================
+FILE: .gitcore/features-detailed.json
+================================================
+PART1_OF_2
+
+
+================================================
+FILE: .gitcore/PROJECT_README.md
+================================================
+# xavier - GitCore Documentation
+
+## Project Overview
+
+**Location:** `E:/scripts-python/xavier`
+**Last Analyzed:** 2026-03-26
+**Status:** Active
+
+## Source Modules
+
+- `a2a/`
+- `agents/`
+- `checkpoint/`
+- `coordination/`
+- `memory/`
+- `scheduler/`
+- `secrets/`
+- `security/`
+- `server/`
+- `sync/`
+- `tasks/`
+- `tools/`
+- `ui/`
+
+## GitCore Files
+
+| File | Description |
+|------|-------------|
+| [SRC.md](SRC.md) | Source Code Reference |
+| [PROJECT_ADMIN.md](PROJECT_ADMIN.md) | Project Administration |
+| [features.json](features.json) | Feature Tracking |
+
+## Related Projects
+
+See main GitCore documentation at `xavier/.gitcore/`
+
+---
+*Generated by GitCore Monitor Agent*
+
+
+
+================================================
+FILE: .gitcore/features/INDEX.md
+================================================
+# Features Index
+
+## Active Features
+
+| Feature | Status | Phase | Issues |
+|---------|--------|-------|--------|
+| SystemScanner | 📝 Planned | 1 | #1.1 |
+| TokenQuotaTracker | 📝 Planned | 1 | #1.2 |
+| ProviderSwitch | 📝 Planned | 1 | #1.3 |
+| Onboarding v2 | 📝 Planned | 2 | #2.1 |
+| ProviderConfigPage | 📝 Planned | 4 | #4.1 |
+| HeadlessServer | 📝 Planned | 5 | #5.1 |
+| QualityDashboard | 📝 Planned | 3,4 | TBD |
+| Colab Fine-tuning | 📝 Planned | 6 | TBD |
+
+## Legend
+- 🟢 Done
+- 🟡 In Progress
+- 📝 Planned
+- ❌ Blocked
+
+## Implementation Order
+1. Phase 1 (Backend Core): 1.1 → 1.2 → 1.3
+2. Phase 2 (Onboarding): 2.1
+3. Phase 3-4 (Frontend): 4.1 → Quality Dashboard
+4. Phase 5 (Integration): 5.1
+5. Phase 6 (ML): 6.1
+
+
+
+================================================
+FILE: .gitcore/features/STATE-2026-06-08.md
+================================================
+# State: LLM Provider Dashboard v2 Feature
+
+**Date**: 2026-06-08
+**Feature**: Universal LLM Provider + CLI Agent Discovery + Onboarding v2
+**Spec**: `.gitcore/features/FEATURE-llm-provider-dashboard-v2.md`
+**Issues**: `.gitcore/issues/`
+
+## Current Progress
+- ✅ Research complete: CLI agents detected, login status verified
+- ✅ Feature spec written: full architecture, 6 issues
+- ✅ Issues created: 6 issues for Phase 1, 2, 4, 5
+- ✅ Hardware mapped: AMD RX 6600 (8GB), 32GB RAM, Ollama models present
+- ❌ Implementation not started (waiting for Jules)
+
+## Next Steps
+1. Jules picks up Issue 1.1 → 1.2 → 1.3 (Phase 1)
+2. Then Issue 2.1 (Onboarding v2)
+3. Then Issue 4.1 (Frontend)
+4. Then Issue 5.1 (Headless)
+
+## Dependencies
+- Issue 1.1 before 2.1 and 4.1
+- Issue 1.2 before 4.1
+- Issue 1.3 before 4.1
+- Issue 5.1 independent (parallel)
+
+
+
+================================================
+FILE: .githooks/pre-commit
+================================================
+#!/bin/sh
+# Pre-commit hook for Xavier
+# Runs cargo fmt --check and cargo clippy before each commit.
+# Install: git config core.hooksPath .githooks
+
+set -e
+
+echo "🚦 Pre-commit checks..."
+
+# Check formatting
+echo "→ cargo fmt --check"
+cargo fmt --check 2>&1 | head -20
+FMT_EXIT=$?
+if [ $FMT_EXIT -ne 0 ]; then
+    echo "❌ Formatting check failed. Run 'cargo fmt' to fix."
+    exit $FMT_EXIT
+fi
+
+# Check clippy
+echo "→ cargo clippy --all-targets --all-features -- -D warnings"
+cargo clippy --all-targets --all-features -- -D warnings 2>&1 | tail -20
+CLIPPY_EXIT=$?
+if [ $CLIPPY_EXIT -ne 0 ]; then
+    echo "❌ Clippy check failed. Fix warnings above."
+    exit $CLIPPY_EXIT
+fi
+
+# Check Biome (Lint and Format for JS/TS)
+echo "→ pnpm biome ci ."
+pnpm biome ci . 2>&1 | tail -20
+BIOME_EXIT=$?
+if [ $BIOME_EXIT -ne 0 ]; then
+    echo "❌ Biome check failed. Run 'pnpm biome check --write .' to fix auto-fixable issues."
+    exit $BIOME_EXIT
+fi
+
+echo "✅ All pre-commit checks passed."
+
+
+
+================================================
+FILE: .github/dependabot.yml
+================================================
+# Dependabot configuration for Git-Core Protocol
+# Integrated with Context Research Agent for intelligent adoption
+
+version: 2
+updates:
+  # Rust dependencies
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "quarantine"  # All new deps go to quarantine first
+    commit-message:
+      prefix: "chore(deps)"
+    # Group minor/patch updates to reduce noise
+    groups:
+      rust-minor:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "ci(deps)"
+
+
+
+================================================
+FILE: .github/FUNDING.yml
+================================================
+# These are supported funding model platforms
+
+github: [iberi22]
+patreon: # Replace with a single Patreon username
+open_collective: # Replace with a single Open Collective username
+ko_fi: # Replace with a single Ko-fi username
+tidelift: # Replace with a single Tidelift platform-name/package-name, e.g., npm/babel
+community_bridge: # Replace with a single Community Bridge project-name, e.g., cloud-foundry
+liberapay: # Replace with a single Liberapay username
+issuehunt: # Replace with a single IssueHunt username
+lfx_crowdfunding: # Replace with a single LFX Crowdfunding project-name, e.g., cloud-foundry
+polar: # Replace with a single Polar username
+buy_me_a_coffee: xavier
+thanks_dev: # Replace with a single thanks.dev username
+custom: # Replace with up to 4 custom sponsorship URLs, e.g., ['link1', 'link2']
+
+
+
+================================================
+FILE: .github/actions/structure-validator/Cargo.toml
+================================================
+[package]
+name = "structure-validator"
+version = "1.0.0"
+edition = "2021"
+description = "Git-Core Protocol structure validator"
+authors = ["Git-Core Protocol"]
+license = "MIT"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+walkdir = "2.4"
+regex = "1.10"
+clap = { version = "4.4", features = ["derive"] }
+colored = "2.1"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+
+
+
+================================================
+FILE: .github/ISSUE_TEMPLATE/bug.md
+================================================
+---
+name: "🐛 Bug Report"
+about: "Report a bug or unexpected behavior"
+title: "[BUG]: "
+labels: "bug"
+assignees: ""
+---
+
+## 🐛 Bug Description
+A clear description of what the bug is.
+
+## 🔄 Steps to Reproduce
+1. Step 1
+2. Step 2
+3. Step 3
+
+## ✅ Expected Behavior
+What should happen.
+
+## ❌ Actual Behavior
+What actually happens.
+
+## 📸 Screenshots/Logs
+```
+Paste relevant logs here
+```
+
+## 🌍 Environment
+- OS:
+- Version:
+- Browser (if applicable):
+
+## 📝 Notes for AI Agent
+Any special instructions for fixing this bug.
+
+
+
+================================================
+FILE: .github/ISSUE_TEMPLATE/bug_report.md
+================================================
+---
+name: "?? Bug Report"
+about: "Report a bug or unexpected behavior"
+title: "[BUG]: "
+labels: "bug"
+assignees: ""
+---
+
+## ?? Bug Description
+A clear and concise description of what the bug is.
+
+## ?? Steps to Reproduce
+
+1. Go to '...'
+2. Run command '...'
+3. See error
+
+## ? Expected Behavior
+What you expected to happen.
+
+## ? Actual Behavior
+What actually happened.
+
+## ?? Screenshots / Logs
+
+```
+Paste relevant logs, stack traces, or terminal output here.
+```
+
+## ?? Environment
+
+- **OS**: [e.g. Windows 11, macOS 14, Ubuntu 24.04]
+- **Xavier Version**: [e.g. 0.1.0, output of `xavier --version`]
+- **Rust Version**: [e.g. 1.77.0, from `rustc --version`]
+- **Installation Method**: [e.g. cargo install, Docker, built from source]
+
+## ?? Additional Context
+Any other context about the problem, such as configuration files, data inputs, or frequency of occurrence.
+
+## ?? Notes for AI Agent
+_(Optional)_ Implementation hints or constraints for automated fix agents.
+
+
+
+================================================
+FILE: .github/ISSUE_TEMPLATE/devlog.md
+================================================
+---
+name: "📝 DevLog Request"
+about: "Request a deep technical explanation of a decision or code structure"
+title: "[DEVLOG]: "
+labels: "devlog, ai-plan"
+assignees: ""
+---
+
+## 🏗️ Technical Topic
+What architectural decision, function, or library needs a DevLog post?
+
+## 📂 Source Files
+Which files are most relevant to this topic? (e.g., `src/memory/store.rs`)
+
+## 💡 Context
+Why is this explanation important right now? (e.g., "We just migrated to SQLite-Vec and need to document the trade-offs").
+
+## 🎯 Target Audience
+Is this primarily for human contributors, or to provide high-level context for other AI agents?
+
+## 📝 Notes for DevLog Writer
+Any specific points or trade-offs that MUST be mentioned.
+
+
+
+================================================
+FILE: .github/ISSUE_TEMPLATE/feature.md
+================================================
+---
+name: "✨ Feature Request"
+about: "Propose a new feature"
+title: "[FEATURE]: "
+labels: "enhancement, ai-plan"
+assignees: ""
+---
+
+## 💡 Feature Description
+A clear description of the feature you'd like.
+
+## 🎯 Problem it Solves
+What problem does this feature address?
+
+## 📐 Proposed Solution
+How should this be implemented?
+
+## 🔄 Alternatives Considered
+Other approaches you've thought about.
+
+## 📝 Notes for AI Agent
+Implementation hints or constraints.
+
+
+
+================================================
+FILE: .github/ISSUE_TEMPLATE/feature_request.md
+================================================
+---
+name: "✨ Feature Request"
+about: "Propose a new feature or improvement"
+title: "[FEATURE]: "
+labels: "enhancement"
+assignees: ""
+---
+
+## 💡 Feature Description
+A clear and concise description of the feature you'd like.
+
+## 🎯 Problem It Solves
+What problem does this feature address? Who benefits from it?
+
+## 📐 Proposed Solution
+How do you envision this working? Be as specific as possible.
+
+- **API changes**: New endpoints or modified signatures
+- **CLI changes**: New flags, subcommands, or output formats
+- **Configuration**: New settings or environment variables
+
+## 🔄 Alternatives Considered
+What other approaches have you thought about? Why did you choose this one?
+
+## 📝 Notes for AI Agent
+_(Optional)_ Implementation hints, relevant code areas, or constraints for automated development agents.
+
+## ✅ Acceptance Criteria
+
+- [ ] Criterion 1
+- [ ] Criterion 2
+- [ ] Tests and documentation updated
+
+
+
+================================================
+FILE: .github/ISSUE_TEMPLATE/task.md
+================================================
+---
+name: "🎯 Task"
+about: "Create a new development task"
+title: "[TASK]: "
+labels: "ai-plan"
+assignees: ""
+---
+
+## 📋 Description
+A clear description of what needs to be done.
+
+## 🎯 Acceptance Criteria
+- [ ] Criterion 1
+- [ ] Criterion 2
+- [ ] Criterion 3
+
+## 📁 Files to Modify
+- `path/to/file1`
+- `path/to/file2`
+
+## 🔗 Related Issues
+- #issue_number
+
+## 📝 Notes for AI Agent
+Any special instructions or context the AI should know.
+
+
+
+================================================
+FILE: .github/issues/_TEMPLATE.md
+================================================
+---
+# Issue Template - Copia este archivo y renómbralo
+# Formato: TYPE_titulo-del-issue.md
+# Types: FEAT, BUG, TASK, DOCS, REFACTOR, TEST, CHORE
+
+title: "Título del Issue"
+labels:
+  - ai-plan
+  - enhancement
+assignees: []
+protocol_version: 1.3.0
+# assignees: ["@me", "copilot", "jules"]
+---
+
+## Descripción
+
+Describe el issue aquí...
+
+## Criterios de Aceptación
+
+- [ ] Criterio 1
+- [ ] Criterio 2
+
+## Contexto Adicional
+
+Cualquier información relevante...
+
+
+
+================================================
+FILE: .github/issues/FEAT_checkpoint_resume.md
+================================================
+---
+title: "FEAT: Sistema de Checkpoint y Resume para Tareas en Ejecución"
+labels:
+  - ai-plan
+  - enhancement
+  - resilience
+assignees: []
+protocol_version: 1.3.0
+---
+
+## Descripción
+
+Implementar un sistema de checkpoint que permita a los agentes retomar tareas en ejecución después de un corte de energía, reinicio del sistema o falla del gateway.
+
+
+
+================================================
+FILE: .github/issues/FEAT_floating-config-ui.md
+================================================
+---
+title: "FEAT: Create Floating egui Configuration Window"
+labels: ["enhancement", "ui", "egui"]
+status: "OPEN"
+priority: "MEDIUM"
+summary: |
+  Implement a lightweight, frameless floating window using egui/eframe to allow manual editing of 'config/xavier.config.json'.
+---
+
+# Feature: Floating Config UI
+
+## Context
+Provide a quick, visual way to modify Xavier settings without opening a full IDE or terminal.
+
+## Requirements
+- Use `egui` and `eframe`.
+- Frameless/Floating window style.
+- **Features**:
+    - Load settings from `config/xavier.config.json`.
+    - Form fields for: `port`, `workspace_id`, `token`, `log_level`.
+    - "Save" button to persist changes.
+- **Aesthetics**: Consistent with the mint green LED theme.
+
+## Acceptance Criteria
+- [ ] Window opens quickly from the tray icon or CLI.
+- [ ] Edits to the form are successfully saved to the JSON file.
+- [ ] Changes in the JSON are reflected in the UI upon opening.
+
+## References
+- Config path: `config/xavier.config.json`
+
+
+
+================================================
+FILE: .github/issues/FEAT_lightweight-tui-dashboard.md
+================================================
+---
+title: "FEAT: Lightweight ratatui TUI Dashboard"
+labels: ["enhancement", "tui", "ratatui"]
+status: "OPEN"
+priority: "LOW"
+summary: |
+  Build a high-performance terminal dashboard using ratatui to monitor Xavier's real-time stats and logs.
+---
+
+# Feature: TUI Dashboard
+
+## Context
+A power-user tool for monitoring Xavier memory operations and system health via terminal.
+
+## Requirements
+- Use `ratatui` and `crossterm`.
+- **Layout**:
+    - Header: Status bar with current port and uptime.
+    - Left Panel: Statistics (Memory count, CPU/Mem usage).
+    - Right Panel: Recent activity (Log entries).
+- **Style**: ASCII-art triangle logo with mint green coloring.
+
+## Acceptance Criteria
+- [ ] Responsive TUI layout that handles terminal resizing.
+- [ ] Real-time updates of Xavier statistics (polled via API or local DB).
+- [ ] Clean exit with Ctrl+C or 'q'.
+
+## References
+- See `scripts/xavier_client.ps1` for examples of querying Xavier stats.
+
+
+
+================================================
+FILE: .github/issues/FEAT_missed_job_recovery.md
+================================================
+---
+title: "FEAT: Sistema de Missed Job Recovery para Cron Jobs"
+labels:
+  - ai-plan
+  - enhancement
+  - cron
+  - scheduler
+assignees: []
+protocol_version: 1.3.0
+---
+
+## Descripción
+
+Implementar un sistema de recuperación de jobs perdidos que ejecute automáticamente las tareas programadas que no se ejecutaron debido a que el sistema estaba caído.
+
+
+
+================================================
+FILE: .github/issues/FEAT_ui-implement-new-task-and-project-dialogs.md
+================================================
+---
+title: 'UI: Implement New Task and Project Dialogs'
+labels:
+- enhancement
+assignees: []
+---
+
+## Description
+UI: Implement New Task and Project Dialogs
+
+## Context
+- Created via `gc task`
+
+
+
+================================================
+FILE: .github/issues/REFACTOR_refactor-implement-file-modification-time-checks-in-fileindexer.md
+================================================
+---
+title: 'Refactor: Implement file modification time checks in FileIndexer'
+labels:
+- refactor
+assignees: []
+---
+
+## Description
+Refactor: Implement file modification time checks in FileIndexer
+
+## Context
+- Created via `gc task`
+
+
+
+================================================
+FILE: .github/issues/TASK_implement-sota-memory-graphrag-and-paging.md
+================================================
+---
+title: Implement SOTA Memory (GraphRAG and Paging)
+labels:
+- task
+assignees: []
+---
+
+## Description
+Implement SOTA Memory (GraphRAG and Paging)
+
+## Context
+- Created via `gc task`
+
+
+
+================================================
+FILE: .github/issues/TASK_refine-cortex-rag-system-and-documentation.md
+================================================
+---
+title: Refine Xavier RAG system and documentation
+labels:
+- task
+assignees: []
+---
+
+## Description
+Refine Xavier RAG system and documentation
+
+## Context
+- Created via `gc task`
+
+
+
+================================================
+FILE: .github/issues/TASK_v1-fix-clippy-and-doctest-gates.md
+================================================
+---
+title: "TASK: Make release quality gates pass for Rust core"
+labels:
+  - ai-plan
+  - release
+  - rust
+assignees: []
+---
+
+## Description
+
+The repository is not `1.0`-ready while `cargo clippy -- -D warnings` and doctests still fail. Current failures include dead code, stale docs, and mechanical lints across core modules.
+
+## Acceptance Criteria
+
+- [x] eliminate the current `clippy -D warnings` failures without papering over them
+- [x] fix stale doctests such as the `WorkingMemory::new(10)` example
+- [x] keep `cargo check`, `cargo test`, and `cargo build --release` green after cleanup
+- [x] record any justified suppressions with narrow scope and explanation
+
+## Evidence
+
+- current validation shows `clippy -D warnings` failures across context, memory, server, and workspace modules
+- current doctests still fail in `memory::working`
+
+
+
+================================================
+FILE: .github/issues/TASK_v1-fix-storage-isolation.md
+================================================
+---
+title: "TASK: Fix workspace and storage isolation for memory runtime"
+labels:
+  - ai-plan
+  - release
+  - storage
+assignees: []
+---
+
+## Description
+
+Usage testing showed memory search results leaking existing workspace content while the server was started with temporary database paths intended to isolate the test run. That makes the current storage contract too ambiguous for a `1.0` release.
+
+## Acceptance Criteria
+
+- [x] define the canonical environment variables for all memory and workspace storage paths
+- [x] verify those variables fully isolate a fresh runtime from previous local data
+- [x] document which paths belong to code graph, vector memory, workspace state, and panel threads
+- [x] add an automated test proving an isolated temporary workspace stays isolated
+- [x] remove or explain any implicit seeding that makes empty-state testing ambiguous
+
+## Evidence
+
+- direct HTTP search returned older default-workspace memories during a temporary isolated test run
+
+
+
+================================================
+FILE: .github/issues/TASK_v1-panel-stabilization.md
+================================================
+---
+title: "TASK: Stabilize panel build pipeline and route expectations"
+labels:
+  - ai-plan
+  - release
+  - panel
+assignees: []
+---
+
+## Description
+
+The repository documents `/panel` and related API routes as part of the product surface, but the tested runtime returned `404` for `/panel`, and the frontend toolchain is still failing around Biome and build alignment.
+
+## Acceptance Criteria
+
+- [ ] fix `panel-ui` toolchain alignment so local and CI checks run from a fresh install
+- [ ] make panel shell behavior explicit when frontend assets are missing
+- [ ] ensure documented panel routes match the actual server behavior
+- [ ] add panel smoke coverage that distinguishes asset-missing from route-missing failures
+- [ ] update public docs to state whether panel is stable, beta, or optional
+
+## Evidence
+
+- direct runtime test returned `404` for `/panel`
+- prior validation already showed `panel-ui` check failure from Biome config drift
+
+
+
+================================================
+FILE: .github/issues/TASK_v1-remove-insecure-defaults.md
+================================================
+---
+title: "TASK: Remove insecure defaults from production-facing docs and scripts"
+labels:
+  - ai-plan
+  - release
+  - security
+assignees: []
+---
+
+## Description
+
+The repository still contains widespread production-facing references to `dev-token`, hardcoded token examples, and stale defaults in scripts and docs. That is not acceptable for a professional `1.0` release.
+
+## Acceptance Criteria
+
+- [x] remove `dev-token` defaults from production-facing scripts and public docs
+- [x] replace insecure examples with required secure-token setup
+- [x] keep any intentionally insecure examples isolated to explicit local-development notes only
+- [x] add guardrails so new insecure defaults cannot be committed again
+- [x] audit benchmark and migration scripts for stale auth defaults
+
+## Evidence
+
+- `dev-token` references remain across scripts, docs, and auxiliary tooling
+
+
+
+================================================
+FILE: .github/issues/TASK_v1-stabilize-mcp-contract.md
+================================================
+---
+title: "TASK: Stabilize MCP contract for Xavier 1.0"
+labels:
+  - ai-plan
+  - release
+  - mcp
+assignees: []
+---
+
+## Description
+
+The current MCP stdio server works in beta for basic tool calls, but the tool contract is still closer to an internal prototype than a polished `1.0` memory interface.
+
+## Acceptance Criteria
+
+- [ ] define the `1.0` MCP tool naming and argument contract
+- [ ] decide whether the contract remains `search`/`add`/`stats` or moves to richer memory-specific names
+- [ ] align MCP docs with the actual tool surface
+- [ ] ensure security scanning and validation are consistently applied across MCP memory inputs
+- [ ] add end-to-end MCP tests covering the final tool contract
+
+## Evidence
+
+- direct MCP testing succeeded for `search`, `add`, and `stats`
+- repository docs and review notes still reference richer MemoryFragment-style tooling expectations
+
+
+
+================================================
+FILE: .github/issues/TASK_v1-stabilize-release-smoke.md
+================================================
+---
+title: "TASK: Stabilize release smoke scripts against the live server surface"
+labels:
+  - ai-plan
+  - release
+  - qa
+assignees: []
+---
+
+## Description
+
+The current release smoke scripts do not match the verified behavior of the running server. In testing, `scripts/release-smoke.ps1` failed because `/build` returned `404`.
+
+## Acceptance Criteria
+
+- [ ] decide whether `/build` is required for `1.0` or should be removed from smoke coverage
+- [ ] make PowerShell and shell smoke scripts test the same contract
+- [ ] remove insecure token defaults from smoke scripts
+- [ ] make smoke scripts fail only on real release blockers, not stale route assumptions
+- [ ] wire smoke validation into the documented release checklist
+
+## Evidence
+
+- `scripts/release-smoke.ps1` failed against the tested runtime on `/build`
+
+
+
+================================================
+FILE: .github/issues/TASK_v1-sync-public-docs.md
+================================================
+---
+title: "TASK: Sync public documentation to the verified beta surface"
+labels:
+  - ai-plan
+  - release
+  - documentation
+assignees: []
+---
+
+## Description
+
+The repository mixed aspirational product claims with behavior that could not be reproduced directly in current usage tests. Public docs should describe the verified beta surface first and the `1.0` target separately.
+
+## Acceptance Criteria
+
+- [x] keep README, CLI docs, API docs, and feature status aligned
+- [x] distinguish verified beta behavior from planned `1.0` behavior
+- [x] document panel, smoke, and CLI caveats explicitly until they are fixed
+- [x] remove stale examples that reference missing flags or unsupported routes
+- [x] publish the `1.0` gap list as a clear release backlog
+
+## Evidence
+
+- previous docs referenced flags and subcommands not present in current CLI help
+- route documentation and smoke scripts did not fully match the tested runtime
+
+
+
+================================================
+FILE: .github/issues/.gitkeep
+================================================
+# Esta carpeta contiene issues pendientes en formato .md
+# Los archivos aquí se sincronizan automáticamente con GitHub Issues
+#
+# Formato del nombre: TYPE_titulo-del-issue.md
+# Ejemplos:
+#   FEAT_add-user-authentication.md
+#   BUG_fix-login-error.md
+#   TASK_update-dependencies.md
+#
+# Cuando un issue se cierra en GitHub, el archivo se elimina automáticamente
+
+
+
+================================================
+FILE: .github/issues/.issue-mapping.json
+================================================
+{}
+
+
+
+================================================
+FILE: .github/workflows/cron-validator.yml
+================================================
+name: Cron Validation
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate-cron:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Run Cron Validator
+        run: node scripts/validate-cron.js
+
+
+
+================================================
+FILE: .github/workflows/heartbeat.yml
+================================================
+# DISABLED - Waiting for n8n VPS deployment and action fix
+# TODO: Fix gestalt-core-health-check-action name corruption
+# TODO: Configure n8n webhook URL once VPS is deployed
+
+name: Project Heartbeat
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 * * * *'
+
+jobs:
+  analyze-project-health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Health Check
+        run: echo "Heartbeat disabled - waiting for n8n VPS deployment"
+
+
+
+================================================
+FILE: .issues/issue-2-replace-unwrap.md
+================================================
+## Descripción
+Reemplazar ~20 `unwrap()` en código de producción con error handling apropiado.
+
+## Archivos objetivo
+
+| Archivo | Líneas | Contexto |
+|---------|--------|----------|
+| `src/api/routes.rs` | 551, 582, 612 | `.unwrap()` en handlers HTTP |
+| `src/agents/provider.rs` | 930-931, 961 | TcpListener, local_addr, err_msg |
+| `src/server/router.rs` | 631 | serde_json parsing |
+| `src/memory/rate_limit.rs` | 29 | ConnectionManager::connect |
+| `src/server/system1.rs` | 672, 683 | Revisar contexto |
+
+## Patrón a usar
+
+```rust
+// ANTES
+let value = some_result.unwrap();
+
+// DESPUÉS
+let value = some_result.map_err(|e| {
+    tracing::log::warn!("[component] failed to ...: {}", e);
+    AppError::Internal(format!("...: {}", e))
+})?;
+```
+
+## Criterios de Aceptación
+- [ ] 0 `unwrap()` en código de producción (no test)
+- [ ] `cargo check` pasa limpio
+- [ ] `cargo clippy` no da nuevas warnings
+
+
+
+================================================
+FILE: .issues/issue-3-add-tests-critical-modules.md
+================================================
+## Descripción
+Agregar tests para los módulos críticos sin cobertura. Ver `docs/TEST_COVERAGE_GAPS.md` para el análisis completo.
+
+## Módulos prioritarios
+
+| Módulo | Cobertura actual | Prioridad |
+|--------|-----------------|-----------|
+| Agentes (sistema1, provider, runtime) | ~27% | 🔴 Crítica |
+| `src/cli/` | ~30% | 🔴 Crítica |
+| Coordinación (message_bus, agent_registry) | ~40% | 🟠 Media |
+| Contexto (builder, manager, orchestrator) | ~35% | 🟠 Media |
+| Seguridad (layers, scanner) | ~86% | 🟢 Mejora |
+
+## Lo que ya existe
+- `src/security/` tiene buena cobertura (86%) — usar como referencia
+- `src/memory/` tiene tests de integración existentes
+
+## Notas
+- No modificar código de producción existente
+- Solo agregar tests
+- Usar `#[cfg(test)] mod tests {}` blocks dentro de cada archivo
+- Priorizar tests de integración para mega-módulos
+
+
+
+================================================
+FILE: .issues/issue-4-security-path-traversal.md
+================================================
+## Descripción
+Validar path traversal en `project_id` usado en rutas de base de datos.
+
+## Contexto
+El project_id se usa directamente en rutas de SQLite. Aunque ya hay sanitización parcial (commit `14898d3`), se necesita validación completa en todos los puntos de entrada.
+
+## Archivos objetivo
+- `src/codebase/conversations_db.rs`
+- `src/codebase/db.rs`
+
+## Criterios de Aceptación
+- [ ] `project_id` validado con regex alfanumérico
+- [ ] Rechazar `/`, `..`, `\`, `~` en todos los project_id
+- [ ] Tests de integración con project_ids maliciosos
+- [ ] `cargo test` pasa
+
+
+
+================================================
+FILE: .issues/issue-5-ci-cron-validator.md
+================================================
+## Descripción
+Implementar cron-validator en el pipeline CI para validar expresiones cron y job schedules.
+
+## Contexto
+El proyecto usa cron jobs para scheduling. Sin validación automática, expresiones cron inválidas pueden pasar desapercibidas hasta producción.
+
+## Archivos objetivo
+- `.github/workflows/` (crear workflow nuevo)
+- Usar el skill cron-validator del workspace
+
+## Criterios de Aceptación
+- [ ] Workflow CI valida todas las expresiones cron en el repo
+- [ ] Falla con error claro si hay expresión inválida
+- [ ] Corre en PRs automáticamente
+
+
+
+================================================
+FILE: .openclaw/workspace-state.json
+================================================
+{
+  "version": 1,
+  "setupCompletedAt": "2026-05-01T23:07:17.849Z"
+}
+
+
