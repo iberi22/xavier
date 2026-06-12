@@ -110,6 +110,7 @@ impl Default for RetrievalSettings {
             rrf_k: None,
             zone_boost_multiplier: None,
             zone_penalty_multiplier: None,
+            learned_policy: NavigationPolicyConfig::default(),
         }
     }
 }

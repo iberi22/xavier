@@ -5,6 +5,7 @@
 
 pub mod config;
 pub mod gating;
+pub mod policy;
 
 pub use gating::{
     AdaptiveGating, Event, GatingConfig, LayerSearchResult, LayerStats, LayerWeights,
@@ -12,3 +13,4 @@ pub use gating::{
 };
 pub mod navigation;
 pub mod scoring;
+pub use policy::NavigationPolicy;

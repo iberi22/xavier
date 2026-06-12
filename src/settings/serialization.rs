@@ -4,7 +4,7 @@
 
 use super::types::XavierSettings;
 use anyhow::{Context, Result};
-use std::fs;
+use tokio::fs;
 use std::path::PathBuf;
 
 const DEFAULT_CONFIG_PATH: &str = "config/xavier.config.json";
@@ -50,7 +50,7 @@ pub fn load() -> Result<Option<XavierSettings>> {
         return Ok(None);
     }
 
-    let raw = fs::read_to_string(&path)
+    let raw = std::fs::read_to_string(&path)
         .with_context(|| format!("failed to read config file at {}", path.display()))?;
 
     // Handle both JSON and YAML/TOML if we want, but for now stick to what we have
@@ -152,4 +152,14 @@ pub fn current() -> XavierSettings {
             .and_then(|v| v.parse().ok());
     }
     settings
+}
+
+pub async fn save(settings: &XavierSettings) -> Result<()> {
+    let path = resolve_config_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent).await?;
+    }
+    let content = serde_json::to_string_pretty(settings)?;
+    fs::write(path, content).await?;
+    Ok(())
 }

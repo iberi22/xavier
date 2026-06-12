@@ -18,6 +18,7 @@ use super::usage::{
     WorkspaceUsageSnapshot,
 };
 use crate::agents::{router::RouteCategory, AgentRuntime, RuntimeConfig};
+use crate::retrieval::LayerWeights;
 use crate::checkpoint::CheckpointManager;
 use crate::codebase::conversations_db::ConversationsDb;
 use crate::memory::{
@@ -57,6 +58,7 @@ pub struct WorkspaceState {
     pub(super) requests_used: AtomicUsize,
     pub(super) usage_metrics: UsageMetrics,
     pub(super) optimization_metrics: OptimizationMetrics,
+    pub hormer: Arc<crate::agents::hormer::Hormer>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -160,6 +162,20 @@ impl WorkspaceState {
         let conversations_db = Arc::new(ConversationsDb::open(&config.id).await?);
         conversations_db.create_schema().await?;
 
+        let settings = crate::settings::XavierSettings::current();
+        let navigation_policy = Arc::new(RwLock::new(crate::retrieval::NavigationPolicy::new(
+            LayerWeights::new(
+                settings.retrieval.learned_policy.working_weight,
+                settings.retrieval.learned_policy.episodic_weight,
+                settings.retrieval.learned_policy.semantic_weight,
+            ),
+            settings.retrieval.learned_policy.learning_rate,
+        )));
+
+        let hormer = Arc::new(crate::agents::hormer::Hormer::new(Arc::clone(
+            &navigation_policy,
+        )));
+
         let state = Self {
             runtime: Arc::new(
                 AgentRuntime::new(
@@ -185,6 +201,7 @@ impl WorkspaceState {
             requests_used: AtomicUsize::new(0),
             usage_metrics: UsageMetrics::new(),
             optimization_metrics: OptimizationMetrics::new(),
+            hormer,
         };
 
         crate::scheduler::daemon::MemoryDaemon::new(Arc::clone(&state.memory_manager)).spawn();
