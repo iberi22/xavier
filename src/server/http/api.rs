@@ -45,6 +45,7 @@ pub async fn memory_retrieve(
         half_life_hours: payload.half_life_hours,
         grounding_enabled: payload.grounding_enabled,
         grounding_min_confidence: payload.grounding_min_confidence,
+        navigation_policy: Some(crate::retrieval::navigation::NavigationPolicy::with_defaults()),
     });
     let working_docs = workspace.workspace.memory.all_documents().await;
     let threads = workspace
