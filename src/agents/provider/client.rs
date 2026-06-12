@@ -185,7 +185,15 @@ impl LlmProvider for ModelProviderClient {
         query: &str,
         context: &[RetrievedDocument],
     ) -> Result<LlmResponse> {
-        let system_prompt = "You are a helpful AI assistant part of the Xavier memory system. Use the provided memory context accurately. If the context is insufficient, say so clearly. Be concise but informative.";
+        let mut learned_rules = String::new();
+        if let Ok(rules) = tokio::fs::read_to_string(".xavier/agent_improvements.md").await {
+            learned_rules = format!("\n\nLearned Improvement Rules:\n{}", rules);
+        }
+
+        let system_prompt = format!(
+            "You are a helpful AI assistant part of the Xavier memory system. Use the provided memory context accurately. If the context is insufficient, say so clearly. Be concise but informative.{}",
+            learned_rules
+        );
         let context_text = context
             .iter()
             .map(|doc| format!("- {}\n  Source: {}", doc.content, doc.path))
@@ -204,7 +212,7 @@ impl LlmProvider for ModelProviderClient {
             );
         }
 
-        <Self as LlmProvider>::generate_text(self, system_prompt, &user_prompt, false).await
+        <Self as LlmProvider>::generate_text(self, &system_prompt, &user_prompt, false).await
     }
 
     async fn generate_hypothetical_document(&self, query: &str) -> Result<LlmResponse> {

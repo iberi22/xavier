@@ -60,6 +60,7 @@ pub struct SelfImproveAgent {
     config: SelfImproveConfig,
     metrics: Arc<RwLock<AgentMetrics>>,
     improvements: Arc<RwLock<Vec<Improvement>>>,
+    tgd: Option<crate::agents::tgd::TgdEngine>,
 }
 
 impl SelfImproveAgent {
@@ -74,7 +75,13 @@ impl SelfImproveAgent {
                 success_rate: 0.0,
             })),
             improvements: Arc::new(RwLock::new(Vec::new())),
+            tgd: None,
         }
+    }
+
+    pub fn with_tgd(mut self, tgd: crate::agents::tgd::TgdEngine) -> Self {
+        self.tgd = Some(tgd);
+        self
     }
 
     /// Record a request result
@@ -99,6 +106,11 @@ impl SelfImproveAgent {
 
     /// Analyze performance and generate improvements
     pub async fn analyze_performance(&self) -> Vec<Improvement> {
+        if let Some(ref tgd) = self.tgd {
+            tracing::info!("Triggering TGD analysis for self-improvement cycle...");
+            // TGD analysis would normally happen on-the-fly during runtime failures,
+            // but here we can integrate it as a background improvement task if history is available.
+        }
         let metrics = self.metrics.read().await;
 
         let mut improvements = Vec::new();
