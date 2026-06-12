@@ -46,6 +46,7 @@ pub async fn memory_retrieve(
         half_life_hours: payload.half_life_hours,
         grounding_enabled: payload.grounding_enabled,
         grounding_min_confidence: payload.grounding_min_confidence,
+        navigation_policy: None,
     };
 
     let gating = if payload.layer_weights.is_some() {
