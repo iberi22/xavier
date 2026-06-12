@@ -14,6 +14,7 @@ pub mod episodic;
 pub mod file_indexer;
 pub mod graph_store;
 pub mod graph_traversal;
+pub mod hierarchy;
 pub mod layers_config;
 pub mod manager;
 pub mod pack;
@@ -22,9 +23,13 @@ pub mod qmd_memory;
 pub mod schema;
 pub mod semantic;
 pub mod semantic_cache;
+pub mod simple_index;
 pub mod sqlite_store;
 pub mod sqlite_vec_store;
 pub mod store;
 pub mod virtual_memory;
 pub mod working;
 pub use store::*;
+
+#[cfg(test)]
+mod tests;

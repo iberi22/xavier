@@ -1,0 +1,3 @@
+pnpm run prebuild
+pnpm run lint
+pnpm --filter xavier-panel-ui run build

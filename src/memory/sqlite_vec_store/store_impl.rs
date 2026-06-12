@@ -597,4 +597,5 @@ impl MemoryStore for VecSqliteMemoryStore {
             })
             .await
     }
+
 }
