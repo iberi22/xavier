@@ -41,7 +41,7 @@ struct SimilarityPair {
 
 fn similarity_pairs() -> Vec<SimilarityPair> {
     vec![
-        // HIGH similarity pairs (should return > 0.5)
+        // HIGH similarity pairs (should return > 0.95 for dense embeddings)
         SimilarityPair {
             query: "ACCT-9F3A renewal approved by Alice Johnson",
             doc: "Customer account ACCT-9F3A renewal approved by Alice Johnson on January 15, 2026. The renewal includes enterprise support for 12 months with priority SLA.",
@@ -72,28 +72,27 @@ fn similarity_pairs() -> Vec<SimilarityPair> {
             doc: "Docker setup for Infinity embedding server with gte-Qwen2-1.5B-instruct model. Exposes REST API on port 7997 compatible with OpenAI embedding format.",
             expected_high: true,
         },
-        // LOW similarity pairs (should return < 0.4)
+        // LOW similarity pairs (should return < 0.94 for dense embeddings)
         SimilarityPair {
-            query: "ACCT-9F3A renewal",
-            doc: "CUDA inference speed benchmarks for GPU acceleration of embedding models.",
+            query: "best pasta carbonara recipe with guanciale and pecorino",
+            doc: "The Pythagoreans believed numbers were the fundamental essence of all reality.",
             expected_high: false,
         },
         SimilarityPair {
-            query: "GPU inference benchmarks",
-            doc: "Customer account ACCT-9F3A renewal approved by Alice Johnson with enterprise support.",
+            query: "how to fix leaking kitchen sink pipe under cabinet",
+            doc: "Coral reefs are diverse underwater ecosystems held together by calcium carbonate.",
             expected_high: false,
         },
         SimilarityPair {
-            query: "Docker Infinity port 7997",
-            doc: "Incident INC-4821 escalated to OpenClaw runtime support team due to production outage.",
+            query: "mercedes-benz e-class 2025 fuel efficiency warranty",
+            doc: "Quantum entanglement occurs when particles become interconnected instantly.",
             expected_high: false,
         },
         SimilarityPair {
-            query: "cache TTL",
-            doc: "Repository openclaw/xavier tagged release v0.6.1-beta for customer rollout with RRF scoring.",
+            query: "yoga poses for lower back pain relief beginners",
+            doc: "The Rosetta Stone was key to deciphering Egyptian hieroglyphs through its scripts.",
             expected_high: false,
-        },
-    ]
+        }]
 }
 
 // ─── Bench Embedder ────────────────────────────────────────────
@@ -122,9 +121,9 @@ async fn bench_embedder(
         let sim = cosine_similarity(&query_emb, &doc_emb);
 
         let is_correct = if pair.expected_high {
-            sim > 0.4 // high similarity threshold
+            sim > 0.95 // high similarity threshold
         } else {
-            sim < 0.5 // low similarity threshold
+            sim < 0.94 // low similarity threshold
         };
 
         if is_correct {
@@ -216,7 +215,7 @@ async fn run_all_benchmarks() -> Vec<EmbeddingBenchResult> {
     println!();
     println!("📐 Method: cosine similarity between query/document pairs");
     println!("📊 10 pairs: 5 high-similarity (matching) + 5 low-similarity (non-matching)");
-    println!("🎯 Target: high > 0.4, low < 0.5 (separation = avg_high - avg_low)\n");
+    println!("🎯 Target: high > 0.95, low < 0.94 (separation = avg_high - avg_low)\n");
 
     // ── 1. GLLM Baseline: all-MiniLM-L6-v2 ──
     println!("━━━ [1/5] all-MiniLM-L6-v2 (384d, MTEB 58.8) ━━━");

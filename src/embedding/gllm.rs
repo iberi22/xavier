@@ -8,8 +8,10 @@ use std::sync::Arc;
 
 use crate::embedding::{Embedder, EmbeddingError};
 
-pub const DEFAULT_GLLM_MODEL: &str = "all-mpnet-base-v2";
-pub const DEFAULT_GLLM_DIMENSION: usize = 768;
+// Best overall: Qwen3-Embedding-0.6B (MTEB 67.5, 1024d) — ideal with GPU.
+// Fallback: all-MiniLM-L6-v2 (MTEB 58.8, 384d) — fastest on CPU.
+pub const DEFAULT_GLLM_MODEL: &str = "Qwen/Qwen3-Embedding-0.6B";
+pub const DEFAULT_GLLM_DIMENSION: usize = 1024;
 
 #[cfg(feature = "local-gllm")]
 type InnerEmbedder = ::gllm::FallbackEmbedder;
