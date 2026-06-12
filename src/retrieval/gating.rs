@@ -110,6 +110,8 @@ pub struct GatingConfig {
     pub grounding_enabled: bool,
     /// Minimum confidence for semantic grounding
     pub grounding_min_confidence: f32,
+    /// Smart navigation policy for intelligent scoring (HORMER-style)
+    pub navigation_policy: Option<super::navigation::NavigationPolicy>,
 }
 
 impl Default for GatingConfig {
@@ -126,6 +128,7 @@ impl Default for GatingConfig {
             half_life_hours: config::DEFAULT_HALF_LIFE_HOURS,
             grounding_enabled: true,
             grounding_min_confidence: 0.5,
+            navigation_policy: Some(super::navigation::NavigationPolicy::default()),
         }
     }
 }
@@ -245,7 +248,18 @@ impl AdaptiveGating {
             }
         }
 
-        // 6. Limit results
+        // 6. Apply Navigation Policy if enabled
+        if let Some(policy) = &self.config.navigation_policy {
+            let mut docs_map = std::collections::HashMap::new();
+            for doc in working {
+                if let Some(id) = &doc.id {
+                    docs_map.insert(id.clone(), doc);
+                }
+            }
+            policy.apply(&mut results, &docs_map);
+        }
+
+        // 7. Limit results
         results.into_iter().take(self.config.max_results).collect()
     }
 
