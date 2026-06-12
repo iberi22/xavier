@@ -1,5 +1,14 @@
-import { Bell, CreditCard, Eye, EyeOff, Globe, Key, Moon } from "lucide-react";
-import { useState } from "react";
+import {
+  Bell,
+  Cloud,
+  CreditCard,
+  Eye,
+  EyeOff,
+  Globe,
+  Key,
+  Moon,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 
 export function Settings() {
   const [darkMode, setDarkMode] = useState(() =>
@@ -13,6 +22,26 @@ export function Settings() {
     { key: "Tavily", value: "", show: false },
   ]);
   const [saved, setSaved] = useState(false);
+  const [cloudSettings, setCloudSettings] = useState({
+    url: "",
+    token: "",
+    instance_id: "",
+  });
+  const [cloudSaved, setCloudSaved] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings/cloud-node")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.status === "ok") {
+          setCloudSettings({
+            url: data.data.url || "",
+            token: data.data.token || "",
+            instance_id: data.data.instance_id || "",
+          });
+        }
+      });
+  }, []);
 
   const toggleDarkMode = () => {
     document.documentElement.classList.toggle("dark");
@@ -32,6 +61,23 @@ export function Settings() {
     // In a real app, would send to backend
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const handleSaveCloud = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch("/api/settings/cloud-node", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cloudSettings),
+      });
+      if (res.ok) {
+        setCloudSaved(true);
+        setTimeout(() => setCloudSaved(false), 2000);
+      }
+    } catch (err) {
+      console.error("Failed to save cloud settings", err);
+    }
   };
 
   return (
@@ -99,6 +145,86 @@ export function Settings() {
               Save Keys
             </button>
             {saved && (
+              <span className="text-sm text-green-600 dark:text-green-400">
+                ✓ Saved successfully
+              </span>
+            )}
+          </div>
+        </form>
+      </section>
+
+      {/* Cloud Relay */}
+      <section className="bg-white dark:bg-stone-800 rounded-xl border border-stone-200 dark:border-stone-700 p-6">
+        <div className="flex items-center gap-3 mb-5">
+          <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400">
+            <Cloud size={18} />
+          </div>
+          <div>
+            <h2 className="font-semibold text-stone-900 dark:text-stone-100">
+              Cloud Relay
+            </h2>
+            <p className="text-sm text-stone-500 dark:text-stone-400">
+              Configure your Supabase cloud relay
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSaveCloud} className="space-y-4">
+          <div className="space-y-4">
+            <div className="flex items-center gap-3">
+              <label className="w-28 text-sm font-medium text-stone-700 dark:text-stone-300">
+                Supabase URL
+              </label>
+              <input
+                type="text"
+                value={cloudSettings.url}
+                onChange={(e) =>
+                  setCloudSettings({ ...cloudSettings, url: e.target.value })
+                }
+                placeholder="https://xyz.supabase.co"
+                className="flex-1 px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="w-28 text-sm font-medium text-stone-700 dark:text-stone-300">
+                Service Token
+              </label>
+              <input
+                type="password"
+                value={cloudSettings.token}
+                onChange={(e) =>
+                  setCloudSettings({ ...cloudSettings, token: e.target.value })
+                }
+                placeholder="Your Supabase service_role key"
+                className="flex-1 px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="w-28 text-sm font-medium text-stone-700 dark:text-stone-300">
+                Instance ID
+              </label>
+              <input
+                type="text"
+                value={cloudSettings.instance_id}
+                onChange={(e) =>
+                  setCloudSettings({
+                    ...cloudSettings,
+                    instance_id: e.target.value,
+                  })
+                }
+                placeholder="xavier-instance-01"
+                className="flex-1 px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-3 pt-2">
+            <button
+              type="submit"
+              className="px-4 py-2 bg-primary-600 text-white rounded-lg text-sm font-medium hover:bg-primary-700 transition-colors"
+            >
+              Save Cloud Config
+            </button>
+            {cloudSaved && (
               <span className="text-sm text-green-600 dark:text-green-400">
                 ✓ Saved successfully
               </span>
