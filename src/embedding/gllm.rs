@@ -3,19 +3,22 @@
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
 use std::fmt;
-#[cfg(feature = "local-gllm")]
+#[cfg(any(feature = "local-gllm", feature = "local-gllm-cuda"))]
 use std::sync::Arc;
 
 use crate::embedding::{Embedder, EmbeddingError};
 
-pub const DEFAULT_GLLM_MODEL: &str = "all-MiniLM-L6-v2";
-pub const DEFAULT_GLLM_DIMENSION: usize = 384;
+pub const DEFAULT_GLLM_MODEL: &str = "all-mpnet-base-v2";
+pub const DEFAULT_GLLM_DIMENSION: usize = 768;
 
 #[cfg(feature = "local-gllm")]
 type InnerEmbedder = ::gllm::FallbackEmbedder;
 
+#[cfg(feature = "local-gllm-cuda")]
+type InnerEmbedder = ::gllm::FallbackEmbedder;
+
 pub struct GllmEmbedder {
-    #[cfg(feature = "local-gllm")]
+    #[cfg(any(feature = "local-gllm", feature = "local-gllm-cuda"))]
     inner: Arc<InnerEmbedder>,
     model: String,
     dimension: usize,
@@ -31,7 +34,7 @@ impl fmt::Debug for GllmEmbedder {
 }
 
 impl GllmEmbedder {
-    #[cfg(feature = "local-gllm")]
+    #[cfg(any(feature = "local-gllm", feature = "local-gllm-cuda"))]
     pub fn new(model: String, dimension: usize) -> Result<Self, EmbeddingError> {
         let inner = ::gllm::FallbackEmbedder::new(&model)
             .map_err(|error| EmbeddingError::Config(error.to_string()))?;
@@ -43,7 +46,7 @@ impl GllmEmbedder {
         })
     }
 
-    #[cfg(not(feature = "local-gllm"))]
+    #[cfg(not(any(feature = "local-gllm", feature = "local-gllm-cuda")))]
     pub fn new(model: String, _dimension: usize) -> Result<Self, EmbeddingError> {
         Err(EmbeddingError::Config(format!(
             "gllm embedder requested for model {model}, but Xavier was built without the local-gllm feature"
@@ -54,7 +57,7 @@ impl GllmEmbedder {
 #[async_trait::async_trait]
 impl Embedder for GllmEmbedder {
     async fn encode(&self, text: &str) -> Result<Vec<f32>, EmbeddingError> {
-        #[cfg(feature = "local-gllm")]
+        #[cfg(any(feature = "local-gllm", feature = "local-gllm-cuda"))]
         {
             let inner = Arc::clone(&self.inner);
             let text = text.to_string();
@@ -64,7 +67,7 @@ impl Embedder for GllmEmbedder {
                 .map_err(|error| EmbeddingError::Network(error.to_string()));
         }
 
-        #[cfg(not(feature = "local-gllm"))]
+        #[cfg(not(any(feature = "local-gllm", feature = "local-gllm-cuda")))]
         {
             let _ = text;
             Err(EmbeddingError::Config(
