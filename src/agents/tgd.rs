@@ -4,7 +4,7 @@
 //! to generate new behavioral rules in Markdown.
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use tokio::sync::Mutex;
 
 use anyhow::Result;
 use tracing::{info, warn};
@@ -109,7 +109,7 @@ impl TgdEngine {
 
     /// Persists rules to the local improvement file using atomic write (tmp + rename).
     async fn persist_rules(&self, rules: &str) -> Result<()> {
-        let _lock = self.io_lock.lock().expect("TGD IO lock poisoned");
+        let _lock = self.io_lock.lock().await;
 
         let path = &self.config.improvements_path;
         if let Some(parent) = path.parent() {
