@@ -94,6 +94,15 @@ pub struct CachedSearchResult {
     pub cache_hit: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NavEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub is_doc: bool,
+    pub id: Option<String>,
+}
+
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
 pub struct SearchCacheKey {
     pub workspace_id: String,

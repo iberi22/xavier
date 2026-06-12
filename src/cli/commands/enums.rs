@@ -165,6 +165,21 @@ pub enum Command {
         #[arg(short, long)]
         limit: Option<usize>,
     },
+
+    /// List memories at current or specified path (navigation)
+    Ls {
+        /// Optional path to list
+        path: Option<String>,
+    },
+
+    /// Change current working directory in memory (navigation)
+    Cd {
+        /// Path to navigate to
+        path: String,
+    },
+
+    /// Show current working directory (navigation)
+    Pwd,
 }
 
 /// Provider usage subcommands

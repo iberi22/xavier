@@ -99,3 +99,21 @@ pub fn state_panel_root(workspace_dir: &std::path::Path, workspace_id: &str) -> 
                 .join("panel_threads")
         })
 }
+
+pub fn resolve_cwd() -> String {
+    let cwd_file = XavierSettings::resolve_data_dir().join("cwd");
+    if let Ok(cwd) = std::fs::read_to_string(&cwd_file) {
+        cwd.trim().to_string()
+    } else {
+        "/".to_string()
+    }
+}
+
+pub fn save_cwd(path: &str) -> Result<()> {
+    let cwd_file = XavierSettings::resolve_data_dir().join("cwd");
+    if let Some(parent) = cwd_file.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(cwd_file, path)?;
+    Ok(())
+}

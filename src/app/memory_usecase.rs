@@ -137,6 +137,10 @@ impl MemoryQueryPort for MemoryUseCase {
     async fn export(&self, public_only: bool) -> anyhow::Result<Vec<MemoryRecord>> {
         self.inner.export(public_only).await
     }
+
+    async fn ls(&self, path: &str) -> anyhow::Result<Vec<crate::memory::qmd::types::NavEntry>> {
+        self.inner.ls(path).await
+    }
 }
 
 #[cfg(test)]
@@ -176,6 +180,9 @@ mod tests {
             Ok(vec![])
         }
         async fn export(&self, _public_only: bool) -> anyhow::Result<Vec<MemoryRecord>> {
+            Ok(vec![])
+        }
+        async fn ls(&self, _path: &str) -> anyhow::Result<Vec<crate::memory::qmd::types::NavEntry>> {
             Ok(vec![])
         }
     }

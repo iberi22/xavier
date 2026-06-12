@@ -18,4 +18,5 @@ pub trait MemoryQueryPort: Send + Sync {
     async fn get(&self, id: &str) -> anyhow::Result<Option<MemoryRecord>>;
     async fn list(&self, workspace_id: &str, limit: usize) -> anyhow::Result<Vec<MemoryRecord>>;
     async fn export(&self, public_only: bool) -> anyhow::Result<Vec<MemoryRecord>>;
+    async fn ls(&self, path: &str) -> anyhow::Result<Vec<crate::memory::qmd::types::NavEntry>>;
 }
