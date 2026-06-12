@@ -25,6 +25,7 @@ pub use types::*;
 pub use utils::*;
 pub use writer::*;
 
+use crate::memory::hierarchy::MemoryHierarchyNode;
 use crate::memory::schema::{matches_filters, MemoryQueryFilters, TypedMemoryPayload};
 use crate::memory::store::MemoryStore;
 
@@ -309,6 +310,22 @@ impl QmdMemory {
 
     pub async fn invalidate_cache(&self) {
         reader::invalidate_cache(self).await
+    }
+
+    pub async fn list_directory(&self, path: &str) -> Result<Vec<MemoryHierarchyNode>> {
+        if let Some(store) = self.store().await {
+            store.ls(&self.workspace_id, path).await
+        } else {
+            // Fallback for in-memory only QmdMemory (no persistent store)
+            let docs = self.all_documents().await;
+            let records: Vec<crate::memory::store::MemoryRecord> = docs
+                .into_iter()
+                .map(|doc| crate::memory::store::MemoryRecord::from_document(&self.workspace_id, &doc, true, None))
+                .collect();
+            Ok(crate::memory::hierarchy::MemoryTree::build_ls(
+                records, path,
+            ))
+        }
     }
 
     /// Find nearest neighbors for a given vector.
