@@ -133,11 +133,16 @@ pub fn similarity(left: &MemoryDocument, right: &MemoryDocument) -> f32 {
     } else if normalize_text(&left.path) == normalize_text(&right.path) {
         0.95
     } else {
-        let left_parent = Path::new(&left.path).parent();
-        let right_parent = Path::new(&right.path).parent();
-        if left_parent.is_some() && left_parent == right_parent {
-            0.50 // Navigation-aware boost: memories in same directory are more likely related
+        let left_parent = Path::new(&left.path).parent().and_then(|p| p.to_str());
+        let right_parent = Path::new(&right.path).parent().and_then(|p| p.to_str());
+        if let (Some(lp), Some(rp)) = (left_parent, right_parent) {
+            if lp == rp && !lp.is_empty() {
+                0.50 // Navigation-aware boost: memories in same directory are more likely related
+            } else {
+                0.0
+            }
         } else {
+            // Filenames without directory components (e.g., "a.md", "b.md") should NOT get a boost
             0.0
         }
     };
