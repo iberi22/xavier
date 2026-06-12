@@ -1,6 +1,6 @@
 //! Manifest tracking for Git-Chunk sync
 
-use crate::sync::chunks::Chunk;
+use crate::sync::chunks::ChunkMetadata as Chunk;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
@@ -38,14 +38,14 @@ impl Manifest {
     }
 
     /// Add a chunk to the manifest
-    pub fn add_chunk(&mut self, chunk: &Chunk) {
+    pub fn add_chunk(&mut self, chunk: &Chunk, path: String, size_bytes: u64) {
         // Avoid duplicates based on hash
         if !self.chunks.iter().any(|c| c.hash == chunk.hash) {
             self.chunks.push(ChunkMeta {
                 hash: chunk.hash.clone(),
-                path: chunk.path.clone(),
-                created_at: chunk.created_at,
-                size_bytes: chunk.content.len() as u64,
+                path,
+                created_at: chrono::DateTime::from_timestamp(chunk.created_at, 0).unwrap_or_default(),
+                size_bytes,
             });
             self.updated_at = chrono::Utc::now();
         }

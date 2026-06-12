@@ -19,6 +19,8 @@ pub struct PeerInfo {
     pub added_at: i64,
     pub last_seen_at: Option<i64>,
     pub sync_enabled: bool,
+    #[serde(default)]
+    pub is_cloud: bool,
 }
 
 /// A persistent, file-backed registry of trusted peers.
@@ -119,6 +121,7 @@ mod tests {
             added_at: 1000,
             last_seen_at: None,
             sync_enabled: true,
+            is_cloud: false,
         };
 
         registry.add_peer(peer).unwrap();
