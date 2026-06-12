@@ -5,7 +5,9 @@
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
+use super::navigation::NavigationPolicy;
 use super::scoring::*;
 use crate::context::ContextLevel;
 use crate::memory::entity_graph::EntityRecord;
@@ -110,6 +112,8 @@ pub struct GatingConfig {
     pub grounding_enabled: bool,
     /// Minimum confidence for semantic grounding
     pub grounding_min_confidence: f32,
+    /// Navigation policy for intelligent graph traversal
+    pub navigation_policy: Option<NavigationPolicy>,
 }
 
 impl Default for GatingConfig {
@@ -126,6 +130,7 @@ impl Default for GatingConfig {
             half_life_hours: config::DEFAULT_HALF_LIFE_HOURS,
             grounding_enabled: true,
             grounding_min_confidence: 0.5,
+            navigation_policy: Some(NavigationPolicy::with_defaults()),
         }
     }
 }
@@ -183,7 +188,40 @@ impl AdaptiveGating {
         // 1. Score each layer independently (may use parallel execution internally)
         let working_results = self.score_working_layer_at(working, query, now).await;
         let episodic_results = self.score_episodic_layer_at(episodic, query, now).await;
-        let semantic_results = self.score_semantic_layer_at(semantic, query, now).await;
+        let mut semantic_results = self.score_semantic_layer_at(semantic, query, now).await;
+
+        // 1.1 Guided graph expansion (if graph and policy available)
+        if let (Some(graph_lock), Some(policy)) =
+            (belief_graph.as_ref(), &self.config.navigation_policy)
+        {
+            let graph = graph_lock.read().await;
+            let pathfinder =
+                crate::memory::graph_traversal::Pathfinder::with_policy(&graph, policy.clone());
+
+            let mut expansions = Vec::new();
+            // Expand from top semantic hits
+            for hit in semantic_results.iter().take(3) {
+                // hit.content for semantic layer is the entity name
+                let expanded = pathfinder.guided_search(&hit.content, query, 2);
+                for scored_edge in expanded {
+                    let edge = scored_edge.edge;
+                    expansions.push(ScoredResult {
+                        id: format!("belief/{}", edge.id),
+                        content: format!("{} {} {}", edge.source, edge.relation_type, edge.target),
+                        score: scored_edge.policy_score,
+                        source: "semantic_expansion".to_string(),
+                        path: format!("beliefs/{}", edge.id),
+                        updated_at: Some(edge.updated_at.timestamp_millis()),
+                    });
+                }
+            }
+
+            // Deduplicate expansions (same belief might be reached via different paths)
+            let mut seen_expansions = HashSet::new();
+            expansions.retain(|r| seen_expansions.insert(r.id.clone()));
+
+            semantic_results.extend(expansions);
+        }
 
         // 2. Apply layer weights to scores
         let weighted_working =
