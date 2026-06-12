@@ -290,6 +290,70 @@ impl QmdMemory {
         self.docs.read().await.clone()
     }
 
+    pub async fn ls(&self, path_prefix: &str) -> Result<Vec<NavEntry>> {
+        let docs = self.all_documents().await;
+        let prefix = if path_prefix.is_empty() || path_prefix == "/" {
+            "".to_string()
+        } else {
+            let mut p = path_prefix.to_string();
+            if p.starts_with('/') {
+                p.remove(0);
+            }
+            if !p.is_empty() && !p.ends_with('/') {
+                p.push('/');
+            }
+            p
+        };
+
+        let mut entries: HashMap<String, NavEntry> = HashMap::new();
+
+        for doc in docs {
+            let doc_path = if doc.path.starts_with('/') {
+                &doc.path[1..]
+            } else {
+                &doc.path
+            };
+
+            if doc_path.starts_with(&prefix) {
+                let remainder = &doc_path[prefix.len()..];
+                if remainder.is_empty() {
+                    continue;
+                }
+
+                let parts: Vec<&str> = remainder.split('/').collect();
+                let name = parts[0];
+                let is_dir = parts.len() > 1;
+                let is_doc = parts.len() == 1;
+
+                let entry_path = if prefix.is_empty() {
+                    name.to_string()
+                } else {
+                    format!("{}{}", prefix, name)
+                };
+
+                let entry = entries.entry(name.to_string()).or_insert_with(|| NavEntry {
+                    name: name.to_string(),
+                    path: entry_path,
+                    is_dir: false,
+                    is_doc: false,
+                    id: None,
+                });
+
+                if is_dir {
+                    entry.is_dir = true;
+                }
+                if is_doc {
+                    entry.is_doc = true;
+                    entry.id = doc.id.clone();
+                }
+            }
+        }
+
+        let mut result: Vec<NavEntry> = entries.into_values().collect();
+        result.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(result)
+    }
+
     pub async fn usage(&self) -> MemoryUsage {
         reader::usage(self).await
     }
@@ -704,5 +768,41 @@ mod tests {
         assert!(!is_likely_speaker("What"));
         assert!(!is_likely_speaker("She"));
         assert!(!is_likely_speaker("The"));
+    }
+
+    #[tokio::test]
+    async fn test_ls_navigation() {
+        use serde_json::json;
+        let memory = QmdMemory::new(Arc::new(AsyncRwLock::new(Vec::new())));
+
+        memory.add_document("docs/api/v1".to_string(), "v1".to_string(), json!({})).await.unwrap();
+        memory.add_document("docs/api/v2".to_string(), "v2".to_string(), json!({})).await.unwrap();
+        memory.add_document("docs/readme.md".to_string(), "readme".to_string(), json!({})).await.unwrap();
+        memory.add_document("blog/post1".to_string(), "post1".to_string(), json!({})).await.unwrap();
+
+        // Test root ls
+        let root = memory.ls("").await.unwrap();
+        assert_eq!(root.len(), 2);
+        assert_eq!(root[0].name, "blog");
+        assert!(root[0].is_dir);
+        assert!(!root[0].is_doc);
+        assert_eq!(root[1].name, "docs");
+        assert!(root[1].is_dir);
+
+        // Test docs ls
+        let docs = memory.ls("docs").await.unwrap();
+        assert_eq!(docs.len(), 2);
+        assert_eq!(docs[0].name, "api");
+        assert!(docs[0].is_dir);
+        assert_eq!(docs[1].name, "readme.md");
+        assert!(docs[1].is_doc);
+
+        // Test docs/api ls
+        let api = memory.ls("docs/api").await.unwrap();
+        assert_eq!(api.len(), 2);
+        assert_eq!(api[0].name, "v1");
+        assert!(api[0].is_doc);
+        assert_eq!(api[1].name, "v2");
+        assert!(api[1].is_doc);
     }
 }
