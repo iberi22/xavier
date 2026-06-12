@@ -89,4 +89,8 @@ impl MemoryQueryPort for QmdMemoryAdapter {
             .map(|doc| MemoryRecord::from_document(workspace_id, &doc, true, None))
             .collect())
     }
+
+    async fn ls(&self, path: &str) -> anyhow::Result<Vec<crate::memory::qmd::types::NavEntry>> {
+        self.inner.ls(path).await
+    }
 }
