@@ -8,11 +8,10 @@
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::memory::simple_index::{extract_keywords, SimpleMemoryDoc, SimpleMemoryIndex};
     use crate::memory::virtual_memory::{Checkpoint, TokenSavings, VirtualMemoryEntry};
     use crate::memory::qmd::utils::cosine_similarity;
-    use crate::memory::hierarchy::{MemoryTree, MemoryHierarchyNode};
+    use crate::memory::hierarchy::MemoryHierarchyNode;
     use crate::memory::store::{MemoryRecord, InMemoryMemoryStore, MemoryStore};
     use chrono::Utc;
 
@@ -200,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_token_savings() {
-        let original = "x".repeat(56000); // 56KB
+        let original = "x ".repeat(56000); // 112KB with spaces
         let entry = VirtualMemoryEntry::new(
             "test.txt".to_string(),
             original.clone(),
