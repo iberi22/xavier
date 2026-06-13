@@ -2,8 +2,9 @@
 
 use crate::cli::commands::enums::CLI_HTTP_CLIENT;
 use crate::cli::config::{require_xavier_token, resolve_base_url, resolve_cwd, save_cwd};
+use crate::memory::graph_traversal::AffectedNode;
 use crate::memory::qmd::types::NavEntry;
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 
 pub async fn handle_ls(path: Option<String>) -> Result<()> {
     let token = require_xavier_token()?;
@@ -97,5 +98,68 @@ pub async fn handle_cd(path: String) -> Result<()> {
 pub async fn handle_pwd() -> Result<()> {
     let cwd = resolve_cwd();
     println!("{}", cwd);
+    Ok(())
+}
+
+pub async fn handle_affected(
+    path: String,
+    depth: usize,
+    format: String,
+    exclude_file_type: Option<String>,
+) -> Result<()> {
+    let token = require_xavier_token()?;
+    let base_url = resolve_base_url();
+    let client = CLI_HTTP_CLIENT.clone();
+
+    let cwd = resolve_cwd();
+    let effective_path = if path.starts_with('/') || path.contains("::") || !path.contains('/') {
+        path
+    } else if cwd == "/" {
+        format!("/{}", path)
+    } else {
+        format!("{}/{}", cwd, path)
+    };
+
+    let mut url = format!(
+        "{}/v1/nav/affected?path={}&depth={}",
+        base_url, effective_path, depth
+    );
+    if let Some(exclude) = exclude_file_type {
+        url.push_str(&format!("&exclude_file_type={}", exclude));
+    }
+
+    let response = client
+        .get(url)
+        .header("X-Xavier-Token", &token)
+        .send()
+        .await?;
+
+    if response.status().is_success() {
+        let body: serde_json::Value = response.json().await?;
+        let affected: Vec<AffectedNode> = serde_json::from_value(body["affected"].clone())?;
+
+        if format == "json" {
+            println!("{}", serde_json::to_string_pretty(&affected)?);
+        } else {
+            println!("Nodes affected by change in {}:", body["path"]);
+            if affected.is_empty() {
+                println!("  (none found within depth {})", depth);
+            } else {
+                println!(
+                    "{:<40} | {:<20} | {:<5}",
+                    "Node", "Relation", "Depth"
+                );
+                println!("{:-<40}-+-{:-<20}-+-{:-<5}", "", "", "");
+                for item in affected {
+                    println!(
+                        "{:<40} | {:<20} | {:<5}",
+                        item.node, item.relation, item.depth
+                    );
+                }
+            }
+        }
+    } else {
+        println!("❌ affected failed: {}", response.text().await?);
+    }
     Ok(())
 }

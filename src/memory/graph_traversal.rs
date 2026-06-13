@@ -5,7 +5,16 @@
 use crate::domain::memory::belief::BeliefEdge;
 use crate::memory::belief_graph::BeliefGraph;
 use crate::retrieval::navigation::NavigationPolicy;
+use serde::{Deserialize, Serialize};
 use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
+
+/// Represents a node affected by a change, including the path taken to reach it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AffectedNode {
+    pub node: String,
+    pub relation: String,
+    pub depth: usize,
+}
 
 /// A utility for traversing the belief graph using various algorithms.
 pub struct Pathfinder<'a> {
@@ -244,6 +253,43 @@ impl<'a> Pathfinder<'a> {
 
         result
     }
+
+    /// Performs a depth-limited BFS to find nodes affected by a change at `start_node`.
+    pub fn affected_bfs(&self, start_node: &str, max_depth: usize) -> Vec<AffectedNode> {
+        let mut result = Vec::new();
+        let mut visited = HashSet::new();
+        let mut queue = VecDeque::new();
+
+        queue.push_back((start_node.to_string(), "root".to_string(), 0));
+        visited.insert(start_node.to_string());
+
+        while let Some((current, relation_type, depth)) = queue.pop_front() {
+            if depth > 0 {
+                result.push(AffectedNode {
+                    node: current.clone(),
+                    relation: relation_type,
+                    depth,
+                });
+            }
+
+            if depth < max_depth {
+                if let Some(relations) = self.adjacency_map.get(&current) {
+                    for relation in relations {
+                        if !visited.contains(&relation.target) {
+                            visited.insert(relation.target.clone());
+                            queue.push_back((
+                                relation.target.clone(),
+                                relation.relation_type.clone(),
+                                depth + 1,
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+
+        result
+    }
 }
 
 #[cfg(test)]
@@ -313,6 +359,12 @@ mod tests {
 
         let all = pathfinder.all_paths("A", "C", 3);
         assert_eq!(all.len(), 2);
+
+        let affected = pathfinder.affected_bfs("A", 2);
+        assert_eq!(affected.len(), 3); // B, D, C (via B or D)
+        assert!(affected.iter().any(|a| a.node == "B" && a.depth == 1));
+        assert!(affected.iter().any(|a| a.node == "D" && a.depth == 1));
+        assert!(affected.iter().any(|a| a.node == "C" && a.depth == 2));
     }
 
     #[tokio::test]

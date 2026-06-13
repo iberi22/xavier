@@ -4,11 +4,14 @@ use axum::{
     extract::{Query, State},
     http::StatusCode,
     response::IntoResponse,
-    Json,
+    Extension, Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::json;
+use std::collections::HashSet;
 use crate::cli::state::CliState;
+use crate::workspace::WorkspaceContext;
+use crate::memory::graph_traversal::Pathfinder;
 
 #[derive(Debug, Deserialize)]
 pub struct LsParams {
@@ -18,6 +21,13 @@ pub struct LsParams {
 #[derive(Debug, Deserialize)]
 pub struct CdParams {
     pub path: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AffectedParams {
+    pub path: String,
+    pub depth: Option<usize>,
+    pub exclude_file_type: Option<String>,
 }
 
 pub async fn ls_handler(
@@ -88,6 +98,71 @@ pub async fn pwd_handler() -> impl IntoResponse {
     Json(json!({
         "status": "ok",
         "message": "PWD is handled client-side in the CLI, but the API is ready for navigation."
+    }))
+}
+
+pub async fn affected_handler(
+    Extension(ctx): Extension<WorkspaceContext>,
+    Query(params): Query<AffectedParams>,
+) -> impl IntoResponse {
+    let depth = params.depth.unwrap_or(2);
+    let graph_guard = ctx.workspace.belief_graph.read().await;
+    let pathfinder = Pathfinder::new(&graph_guard);
+
+    // 1. Resolve start nodes.
+    // We try to find nodes that correspond to the given path/concept.
+    // If it's a document path, we look for beliefs with that provenance.
+    let mut start_nodes = HashSet::new();
+
+    // Check if it's a known concept (node)
+    if graph_guard.get_node(&params.path).is_some() {
+        start_nodes.insert(params.path.clone());
+    }
+
+    // Also check for provenance matching
+    for edge in graph_guard.get_edges() {
+        if edge.provenance_id == params.path || edge.source == params.path || edge.target == params.path {
+            start_nodes.insert(edge.source.clone());
+            start_nodes.insert(edge.target.clone());
+        }
+    }
+
+    if start_nodes.is_empty() {
+        // Try searching for the document to see if we can find more context
+        match ctx.workspace.memory.get(&params.path).await {
+            Ok(Some(doc)) => {
+                // If we found a document, use its path as a potential seed
+                start_nodes.insert(doc.path.clone());
+            },
+            _ => {}
+        }
+    }
+
+    let mut all_affected = Vec::new();
+    let mut seen_nodes = HashSet::new();
+
+    for start_node in start_nodes {
+        let affected = pathfinder.affected_bfs(&start_node, depth);
+        for item in affected {
+            if seen_nodes.insert(item.node.clone()) {
+                // Apply filters
+                if let Some(ref exclude) = params.exclude_file_type {
+                    if exclude == "code" {
+                        // Basic heuristic: check if node name looks like a code symbol or file
+                        if item.node.contains("::") || item.node.ends_with(".rs") || item.node.ends_with(".py") || item.node.ends_with(".js") || item.node.ends_with(".ts") {
+                            continue;
+                        }
+                    }
+                }
+                all_affected.push(item);
+            }
+        }
+    }
+
+    Json(json!({
+        "status": "ok",
+        "path": params.path,
+        "affected": all_affected
     }))
 }
 
@@ -208,4 +283,5 @@ mod tests {
             .unwrap();
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
+
 }

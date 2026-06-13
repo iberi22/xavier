@@ -464,6 +464,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/v1/nav/ls", get(crate::cli::handlers::navigation::ls_handler))
         .route("/v1/nav/cd", post(crate::cli::handlers::navigation::cd_handler))
         .route("/v1/nav/pwd", get(crate::cli::handlers::navigation::pwd_handler))
+        .route("/v1/nav/affected", get(crate::cli::handlers::navigation::affected_handler))
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(
             state.clone(),
