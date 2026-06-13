@@ -342,6 +342,14 @@ pub struct SecuritySettings {
     pub allowed_domains: String,
     #[serde(default)]
     pub token_secret: Option<String>,
+    #[serde(default)]
+    pub encryption_at_rest_enabled: bool,
+    #[serde(default = "default_master_key_name")]
+    pub master_key_name: String,
+}
+
+fn default_master_key_name() -> String {
+    "xavier_master_key".to_string()
 }
 
 impl fmt::Debug for SecuritySettings {
