@@ -19,6 +19,7 @@
 //! a new keypair is generated and persisted. Subsequent calls load the same identity.
 
 use anyhow::{Context, Result};
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -108,23 +109,45 @@ impl fmt::Debug for NodeIdentity {
 impl NodeIdentity {
     /// Generate a brand new random Ed25519 keypair and derive a NodeID.
     pub fn generate() -> Self {
-        use rand::RngCore;
-        let mut sk_bytes = [0u8; 32];
-        OsRng.fill_bytes(&mut sk_bytes);
-
-        // Derive a pseudo-public key via SHA-256 of private key for Phase 1.
-        // Phase 2 will use proper Ed25519 (ed25519-dalek) with real signing.
-        let mut hasher = Sha256::new();
-        hasher.update(sk_bytes);
-        let pk_bytes = hasher.finalize().to_vec();
+        let signing_key = SigningKey::generate(&mut OsRng);
+        let public_key = signing_key.verifying_key();
+        let pk_bytes = public_key.to_bytes();
 
         let node_id = NodeId::from_public_key_bytes(&pk_bytes);
 
         NodeIdentity {
             node_id,
-            public_key: pk_bytes,
-            private_key: sk_bytes.to_vec(),
+            public_key: pk_bytes.to_vec(),
+            private_key: signing_key.to_bytes().to_vec(),
         }
+    }
+
+    /// Sign a message using the node's private key.
+    pub fn sign(&self, message: &[u8]) -> Vec<u8> {
+        let signing_key = SigningKey::from_bytes(
+            self.private_key
+                .as_slice()
+                .try_into()
+                .expect("invalid private key length"),
+        );
+        let signature: Signature = signing_key.sign(message);
+        signature.to_bytes().to_vec()
+    }
+
+    /// Verify a signature against a public key.
+    pub fn verify(public_key_bytes: &[u8], message: &[u8], signature_bytes: &[u8]) -> bool {
+        let Ok(pk_arr) = <[u8; 32]>::try_from(public_key_bytes) else {
+            return false;
+        };
+        let Ok(verifying_key) = VerifyingKey::from_bytes(&pk_arr) else {
+            return false;
+        };
+        let Ok(sig_arr) = <[u8; 64]>::try_from(signature_bytes) else {
+            return false;
+        };
+        let signature = Signature::from_bytes(&sig_arr);
+
+        verifying_key.verify(message, &signature).is_ok()
     }
 
     /// Load existing identity from the system keyring, or generate a new one.
