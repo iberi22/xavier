@@ -78,6 +78,22 @@ pub struct EntityRelationRecord {
     pub updated_at: DateTime<Utc>,
 }
 
+impl EntityRelationRecord {
+    pub fn source_name(&self, data: &super::storage::GraphData) -> String {
+        data.entities
+            .get(&self.source)
+            .map(|e| e.normalized_name.clone())
+            .unwrap_or_else(|| self.source.clone())
+    }
+
+    pub fn target_name(&self, data: &super::storage::GraphData) -> String {
+        data.entities
+            .get(&self.target)
+            .map(|e| e.normalized_name.clone())
+            .unwrap_or_else(|| self.target.clone())
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum GraphDirection {

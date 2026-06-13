@@ -88,7 +88,7 @@ impl VecSqliteMemoryStore {
         let metadata_str: String = row.get(4)?;
         let embedding_blob: Vec<u8> = row.get(5)?;
 
-        Ok(MemoryRecord {
+        Ok(MemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
             id: row.get(0)?,
             workspace_id: row.get(1)?,
             path: row.get(2)?,
@@ -114,6 +114,9 @@ impl VecSqliteMemoryStore {
                 .get::<_, Option<String>>(14)?
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or_default(),
+            encrypted_dek: row.get(15)?,
+            content_iv: row.get(16)?,
+            metadata_iv: row.get(17)?,
         })
     }
 

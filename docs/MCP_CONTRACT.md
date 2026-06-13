@@ -170,3 +170,15 @@ MemoryFragment inputs enforce strict validation:
 | `repo_url` / `file_path` / `chunk_id` | 2048 chars | No control characters |
 | `importance` | — | Float 0.0–1.0 (default 0.5) |
 | `limit` | — | Integer 1–100 (default 10) |
+
+## Error Handling and Codes
+
+Xavier uses standard JSON-RPC 2.0 error codes and custom Xavier-specific codes for MCP tool calls.
+
+| Code | Name | Description |
+|------|------|-------------|
+| `-32000` | `XAVIER_ERROR_SECURITY` | Security policy violation (e.g., prompt injection) |
+| `-32001` | `XAVIER_ERROR_VALIDATION` | Missing parameters or invalid argument format |
+| `-32002` | `XAVIER_ERROR_NOT_FOUND` | Requested resource (memory, project) not found |
+| `-32601` | `Method not found` | Standard JSON-RPC error for unknown methods |
+| `-32603` | `Internal error` | Unhandled internal exception |
