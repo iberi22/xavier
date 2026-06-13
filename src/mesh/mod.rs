@@ -40,6 +40,9 @@ pub mod pairing;
 pub mod peer;
 pub mod protocol;
 pub mod transport;
+pub mod telemetry;
+pub mod crypto_gating;
+pub mod governance;
 
 pub use acl::{MeshAcl, NodeAclEntry};
 pub use node::{NodeId, NodeIdentity};
