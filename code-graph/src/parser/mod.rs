@@ -139,7 +139,7 @@ mod tests {
     #[test]
     fn parses_typescript_symbols() {
         let symbols = parse_source(
-            "import x from 'pkg';\nclass UserService { run() {} }\nfunction main() {}\nconst load = () => main();",
+            "import x from 'pkg';\nclass UserService { run() {} }\nfunction main() {}\nconst load = () => main();\nenum Color { Red }\nconst a = 1, b = 2;\nlet count = 0;",
             &Language::TypeScript,
             "app.ts",
         )
@@ -151,12 +151,16 @@ mod tests {
             .iter()
             .any(|s| s.name == "main" && s.kind == SymbolKind::Function));
         assert!(symbols.iter().any(|s| s.kind == SymbolKind::Import));
+        assert!(symbols.iter().any(|s| s.name == "Color" && s.kind == SymbolKind::Enum));
+        assert!(symbols.iter().any(|s| s.name == "a" && s.kind == SymbolKind::Constant));
+        assert!(symbols.iter().any(|s| s.name == "b" && s.kind == SymbolKind::Constant));
+        assert!(symbols.iter().any(|s| s.name == "count" && s.kind == SymbolKind::Variable));
     }
 
     #[test]
     fn parses_python_symbols() {
         let symbols = parse_source(
-            "import os\nclass Service:\n    def run(self):\n        return os.getcwd()\n",
+            "import os\nclass Service:\n    VERSION = 1\n    async def run(self):\n        return os.getcwd()\nx, y = (1, 2)",
             &Language::Python,
             "app.py",
         )
@@ -166,14 +170,17 @@ mod tests {
             .any(|s| s.name == "Service" && s.kind == SymbolKind::Class));
         assert!(symbols
             .iter()
-            .any(|s| s.name == "run" && s.kind == SymbolKind::Function));
+            .any(|s| s.name == "run" && s.kind == SymbolKind::Method));
         assert!(symbols.iter().any(|s| s.kind == SymbolKind::Import));
+        assert!(symbols.iter().any(|s| s.name == "VERSION" && s.kind == SymbolKind::Variable && s.parent.as_deref() == Some("Service")));
+        assert!(symbols.iter().any(|s| s.name == "x" && s.kind == SymbolKind::Variable));
+        assert!(symbols.iter().any(|s| s.name == "y" && s.kind == SymbolKind::Variable));
     }
 
     #[test]
     fn parses_go_symbols() {
         let symbols = parse_source(
-            "package main\nimport \"fmt\"\ntype User struct{}\nfunc main() { fmt.Println(\"x\") }\n",
+            "package main\nimport \"fmt\"\ntype User struct{}\nfunc (u *User) GetName() string { return \"\" }\nconst Max = 10\nvar count = 0\nfunc main() { fmt.Println(\"x\") }\n",
             &Language::Go,
             "main.go",
         )
@@ -185,6 +192,9 @@ mod tests {
             .iter()
             .any(|s| s.name == "main" && s.kind == SymbolKind::Function));
         assert!(symbols.iter().any(|s| s.kind == SymbolKind::Import));
+        assert!(symbols.iter().any(|s| s.name == "GetName" && s.kind == SymbolKind::Method && s.parent.as_deref() == Some("User")));
+        assert!(symbols.iter().any(|s| s.name == "Max" && s.kind == SymbolKind::Constant));
+        assert!(symbols.iter().any(|s| s.name == "count" && s.kind == SymbolKind::Variable));
     }
 
     #[test]

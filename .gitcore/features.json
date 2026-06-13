@@ -7,10 +7,10 @@
     "last_verified": "2026-06-13",
     "total_features": 12,
     "features_complete": 6,
-    "features_beta": 2,
-    "features_draft": 2,
+    "features_beta": 3,
+    "features_draft": 1,
     "features_planned": 2,
-    "overall_progress_pct": 65
+    "overall_progress_pct": 72
   },
   "features": [
     {
@@ -186,8 +186,8 @@
       "id": "feat-documentation-site",
       "name": "Starlight Documentation Site",
       "category": "documentation",
-      "status": "draft",
-      "progress_pct": 30,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Astro + Starlight documentation site for Xavier public-facing docs",
       "steps": [
         "Set up Astro + Starlight project",
@@ -200,9 +200,9 @@
       "passes": true,
       "verified_by": "repo-audit",
       "github_issue": null,
-      "last_tested": "2026-06-10",
-      "notes": "Two doc site variants exist (Starlight at docs/site/, Svelte at docs/system/). Neither is deployed. Missing: content completion, CI/CD deployment pipeline, domain setup.",
-      "implemented_in": "docs/site/, docs/system/"
+      "last_tested": "2026-06-13",
+      "notes": "Starlight documentation site is fully completed and deployed via GitHub Pages CI/CD pipeline using pnpm. Content includes guides, API reference, architecture, and module documentation.",
+      "implemented_in": "docs/site/, .github/workflows/docs.yml"
     },
     {
       "id": "feat-mesh-network",
