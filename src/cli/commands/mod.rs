@@ -97,6 +97,25 @@ impl Cli {
             Command::Ls { path } => navigation::handle_ls(path.clone()).await,
             Command::Cd { path } => navigation::handle_cd(path.clone()).await,
             Command::Pwd => navigation::handle_pwd().await,
+            Command::Nav { cmd } => match cmd {
+                NavCommand::Ls { path } => navigation::handle_ls(path.clone()).await,
+                NavCommand::Cd { path } => navigation::handle_cd(path.clone()).await,
+                NavCommand::Pwd => navigation::handle_pwd().await,
+                NavCommand::Affected {
+                    path,
+                    depth,
+                    format,
+                    exclude_file_type,
+                } => {
+                    navigation::handle_affected(
+                        path.clone(),
+                        *depth,
+                        format.clone(),
+                        exclude_file_type.clone(),
+                    )
+                    .await
+                }
+            },
             Command::SessionSave {
                 session_id,
                 content,

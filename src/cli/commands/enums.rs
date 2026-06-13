@@ -180,6 +180,43 @@ pub enum Command {
 
     /// Show current working directory (navigation)
     Pwd,
+
+    /// Navigation and impact analysis commands
+    Nav {
+        #[command(subcommand)]
+        cmd: NavCommand,
+    },
+}
+
+/// Navigation and impact analysis subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum NavCommand {
+    /// List memories at current or specified path
+    Ls {
+        /// Optional path to list
+        path: Option<String>,
+    },
+    /// Change current working directory in memory
+    Cd {
+        /// Path to navigate to
+        path: String,
+    },
+    /// Show current working directory
+    Pwd,
+    /// Show nodes affected by a change to a document or concept
+    Affected {
+        /// Path to the document or name of the concept
+        path: String,
+        /// Maximum depth for BFS traversal
+        #[arg(short, long, default_value_t = 2)]
+        depth: usize,
+        /// Output format: table or json
+        #[arg(short, long, default_value = "table")]
+        format: String,
+        /// Filter results: 'code' to exclude code-related nodes
+        #[arg(long)]
+        exclude_file_type: Option<String>,
+    },
 }
 
 /// Provider usage subcommands
