@@ -15,6 +15,7 @@ pub mod file_indexer;
 pub mod graph_store;
 pub mod graph_traversal;
 pub mod hierarchy;
+pub mod languages;
 pub mod layers_config;
 pub mod manager;
 pub mod pack;

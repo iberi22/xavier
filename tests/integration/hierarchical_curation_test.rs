@@ -87,8 +87,8 @@ async fn test_hierarchical_curation_and_retrieval() {
     // 5. Test Belief Graph Augmentation
     {
         let graph = workspace.belief_graph.read().await;
-        graph.add_node("Rust".to_string(), 0.9);
-        graph.add_node("Memory Safety".to_string(), 0.9);
+        graph.add_node("Rust".to_string(), 0.9, None);
+        graph.add_node("Memory Safety".to_string(), 0.9, None);
         graph
             .add_edge(
                 "Rust".to_string(),

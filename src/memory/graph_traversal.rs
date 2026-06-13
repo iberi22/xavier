@@ -250,10 +250,10 @@ mod tests {
     #[tokio::test]
     async fn test_pathfinding() {
         let graph = BeliefGraph::new();
-        graph.add_node("A".to_string(), 1.0);
-        graph.add_node("B".to_string(), 1.0);
-        graph.add_node("C".to_string(), 1.0);
-        graph.add_node("D".to_string(), 1.0);
+        graph.add_node("A".to_string(), 1.0, None);
+        graph.add_node("B".to_string(), 1.0, None);
+        graph.add_node("C".to_string(), 1.0, None);
+        graph.add_node("D".to_string(), 1.0, None);
 
         graph
             .add_relation(
@@ -315,9 +315,9 @@ mod tests {
     #[tokio::test]
     async fn test_guided_search() {
         let graph = BeliefGraph::new();
-        graph.add_node("A".to_string(), 1.0);
-        graph.add_node("B".to_string(), 1.0);
-        graph.add_node("D".to_string(), 1.0);
+        graph.add_node("A".to_string(), 1.0, None);
+        graph.add_node("B".to_string(), 1.0, None);
+        graph.add_node("D".to_string(), 1.0, None);
 
         graph
             .add_relation(

@@ -5,6 +5,7 @@
 use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 use std::collections::HashSet;
 use std::path::Path;
 
@@ -123,6 +124,29 @@ pub fn merge_documents(memories: &[ManagedMemory]) -> Result<MergeOutcome> {
 }
 
 pub fn similarity(left: &MemoryDocument, right: &MemoryDocument) -> f32 {
+    // [G3] Language boundary awareness: documents of different languages
+    // should not be merged without explicit evidence (same entity, high confidence)
+    let left_lang = crate::memory::languages::get_language_family(&left.path);
+    let right_lang = crate::memory::languages::get_language_family(&right.path);
+
+    if let (Some(l_lang), Some(r_lang)) = (&left_lang, &right_lang) {
+        if l_lang != r_lang {
+            // Check for explicit evidence
+            let same_entity = left.metadata.get("entity_id") == right.metadata.get("entity_id")
+                && left.metadata.get("entity_id").is_some();
+            let same_canonical = left.metadata.get("canonical_id") == right.metadata.get("canonical_id")
+                && left.metadata.get("canonical_id").is_some();
+
+            if !same_entity && !same_canonical {
+                // Not the same entity, check if lexical similarity is extremely high
+                let lexical = lexical_similarity(&left.content, &right.content);
+                if lexical < 0.95 {
+                    return 0.0;
+                }
+            }
+        }
+    }
+
     let semantic = match (&left.content_vector, &right.content_vector) {
         (Some(a), Some(b)) if !a.is_empty() && !b.is_empty() => cosine_similarity(a, b),
         _ => 0.0,
@@ -351,6 +375,38 @@ mod tests {
         assert!(cleaned.contains("Alpha"));
         assert!(cleaned.contains("Beta"));
         assert_eq!(cleaned.matches("Alpha").count(), 1);
+    }
+
+    #[test]
+    fn test_language_aware_similarity() {
+        let doc_py = MemoryDocument {
+            path: "script.py".to_string(),
+            content: "def hello(): print('hi')".to_string(),
+            ..Default::default()
+        };
+        let doc_rs = MemoryDocument {
+            path: "main.rs".to_string(),
+            content: "fn hello() { println!(\"hi\"); }".to_string(),
+            ..Default::default()
+        };
+        let doc_py2 = MemoryDocument {
+            path: "other.py".to_string(),
+            content: "def hello(): print('hi')".to_string(),
+            ..Default::default()
+        };
+
+        // Same content but different language families (Python vs Rust)
+        assert_eq!(similarity(&doc_py, &doc_rs), 0.0);
+
+        // Same content and same language family (Python vs Python)
+        assert!(similarity(&doc_py, &doc_py2) > 0.0);
+
+        // Different language families but same entity_id (explicit evidence)
+        let mut doc_py_entity = doc_py.clone();
+        doc_py_entity.metadata = serde_json::json!({"entity_id": "hello_fn"});
+        let mut doc_rs_entity = doc_rs.clone();
+        doc_rs_entity.metadata = serde_json::json!({"entity_id": "hello_fn"});
+        assert!(similarity(&doc_py_entity, &doc_rs_entity) > 0.0);
     }
 
     #[test]

@@ -67,12 +67,13 @@ impl BeliefGraph {
         }
     }
 
-    pub fn add_node(&self, concept: String, confidence: f32) {
+    pub fn add_node(&self, concept: String, confidence: f32, language_family: Option<String>) {
         let id = ulid::Ulid::new().to_string();
         let node = BeliefNode {
             id: id.clone(),
             concept: concept.clone(),
             confidence,
+            language_family,
             created_at: Utc::now(),
         };
 
@@ -107,6 +108,15 @@ impl BeliefGraph {
             .evaluate_confidence(source_type.unwrap_or("unknown"), &relation_type)
             .await;
 
+        let lang_family = crate::memory::languages::get_language_family(&provenance_id);
+
+        if self.get_node(&source).is_none() {
+            self.add_node(source.clone(), 0.5, lang_family.clone());
+        }
+        if self.get_node(&target).is_none() {
+            self.add_node(target.clone(), 0.5, lang_family.clone());
+        }
+
         let mut new_edge = BeliefEdge::new(
             source.clone(),
             target.clone(),
@@ -114,6 +124,17 @@ impl BeliefGraph {
             confidence_score,
             provenance_id,
         );
+
+        if source_type == Some("inference") {
+            new_edge.is_inferred = true;
+        }
+
+        if let Some(src_node) = self.get_node(&source) {
+            new_edge.source_language = src_node.language_family;
+        }
+        if let Some(tgt_node) = self.get_node(&target) {
+            new_edge.target_language = tgt_node.language_family;
+        }
 
         let existing_edges = self.get_edges_async().await;
         if let Some(contradicts_id) = self
@@ -201,12 +222,14 @@ impl BeliefGraph {
                 id: edge.source.clone(),
                 concept: edge.source.clone(),
                 confidence: edge.confidence_score,
+                language_family: edge.source_language.clone(),
                 created_at: edge.created_at,
             });
             nodes.entry(edge.target.clone()).or_insert(BeliefNode {
                 id: edge.target.clone(),
                 concept: edge.target.clone(),
                 confidence: edge.confidence_score,
+                language_family: edge.target_language.clone(),
                 created_at: edge.created_at,
             });
 
@@ -233,13 +256,16 @@ impl BeliefGraph {
 
     pub async fn add_belief(&self, belief: Belief, source_memory_id: Option<String>) -> Result<()> {
         let confidence_score = belief.confidence.score();
+        let lang_family = source_memory_id
+            .as_ref()
+            .and_then(|id| crate::memory::languages::get_language_family(id));
 
         if self.get_node(&belief.subject).is_none() {
-            self.add_node(belief.subject.clone(), confidence_score);
+            self.add_node(belief.subject.clone(), confidence_score, lang_family.clone());
         }
 
         if self.get_node(&belief.object).is_none() {
-            self.add_node(belief.object.clone(), confidence_score);
+            self.add_node(belief.object.clone(), confidence_score, lang_family.clone());
         }
 
         self.add_relation(
@@ -491,8 +517,8 @@ mod grounding_tests {
     #[tokio::test]
     async fn test_validate_grounding_semantic() {
         let graph = BeliefGraph::new();
-        graph.add_node("Xavier".to_string(), 0.9);
-        graph.add_node("Rust".to_string(), 0.4);
+        graph.add_node("Xavier".to_string(), 0.9, None);
+        graph.add_node("Rust".to_string(), 0.4, None);
 
         let docs = vec![MemoryDocument {
             id: Some("doc-1".to_string()),
@@ -516,7 +542,7 @@ mod grounding_tests {
     #[tokio::test]
     async fn test_validate_grounding_no_match() {
         let graph = BeliefGraph::new();
-        graph.add_node("Xavier".to_string(), 0.9);
+        graph.add_node("Xavier".to_string(), 0.9, None);
 
         let docs = vec![MemoryDocument {
             id: Some("doc-1".to_string()),
