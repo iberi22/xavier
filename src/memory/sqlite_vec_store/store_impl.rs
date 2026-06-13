@@ -356,7 +356,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
 
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let mut stmt = conn.prepare("SELECT id, source_id, target_id, relation_type, weight, confidence_score, provenance_id, contradicts_edge_id, created_at, updated_at FROM relations WHERE source_id LIKE ? OR target_id LIKE ?")?;
+            let mut stmt = conn.prepare("SELECT id, source_id, target_id, relation_type, weight, confidence_score, provenance_id, contradicts_edge_id, is_inferred, source_language, target_language, created_at, updated_at FROM relations WHERE source_id LIKE ? OR target_id LIKE ?")?;
             let workspace_prefix = format!("entity:{}%", workspace_id);
             let mut rows = stmt
                 .query(params![workspace_prefix.clone(), workspace_prefix.clone()])?;
@@ -367,6 +367,7 @@ impl MemoryStore for VecSqliteMemoryStore {
                 let confidence_score = row.get::<_, f64>(5)? as f32;
                 let provenance_id = row.get::<_, String>(6)?;
                 let contradicts_edge_id = row.get::<_, Option<String>>(7)?;
+                let is_inferred: i32 = row.get(8)?;
                 beliefs.push(BeliefEdge {
                     id: row.get(0)?,
                     source: row.get(1)?,
@@ -376,13 +377,16 @@ impl MemoryStore for VecSqliteMemoryStore {
                     confidence_score,
                     provenance_id,
                     contradicts_edge_id,
+                    is_inferred: is_inferred != 0,
+                    source_language: row.get(9)?,
+                    target_language: row.get(10)?,
                     created_at: chrono::DateTime::parse_from_rfc3339(
-                        &row.get::<_, String>(8)?,
+                        &row.get::<_, String>(11)?,
                     )
                     .map(|dt| dt.with_timezone(&chrono::Utc))
                     .unwrap_or_else(|_| chrono::Utc::now()),
                     updated_at: chrono::DateTime::parse_from_rfc3339(
-                        &row.get::<_, String>(9)?,
+                        &row.get::<_, String>(12)?,
                     )
                     .map(|dt| dt.with_timezone(&chrono::Utc))
                     .unwrap_or_else(|_| chrono::Utc::now()),
@@ -402,7 +406,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
             for belief in beliefs {
                 conn.execute(
-                    "INSERT OR REPLACE INTO relations (id, source_id, target_id, relation_type, weight, confidence_score, provenance_id, contradicts_edge_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT OR REPLACE INTO relations (id, source_id, target_id, relation_type, weight, confidence_score, provenance_id, contradicts_edge_id, is_inferred, source_language, target_language, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     params![
                         belief.id,
                         belief.source,
@@ -412,6 +416,9 @@ impl MemoryStore for VecSqliteMemoryStore {
                         belief.confidence_score,
                         belief.provenance_id,
                         belief.contradicts_edge_id,
+                        belief.is_inferred as i32,
+                        belief.source_language,
+                        belief.target_language,
                         belief.created_at.to_rfc3339(),
                         belief.updated_at.to_rfc3339(),
                     ],

@@ -49,6 +49,7 @@ impl SqliteGraphStore {
                 description TEXT,
                 trust_score REAL NOT NULL DEFAULT 0.5,
                 confirmation_count INTEGER NOT NULL DEFAULT 1,
+                language_family TEXT,
                 metadata TEXT NOT NULL DEFAULT '{{}}',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
@@ -61,6 +62,9 @@ impl SqliteGraphStore {
                 relation_type TEXT NOT NULL,
                 weight REAL NOT NULL DEFAULT 0.5,
                 confirmation_count INTEGER NOT NULL DEFAULT 1,
+                is_inferred INTEGER NOT NULL DEFAULT 0,
+                source_language TEXT,
+                target_language TEXT,
                 metadata TEXT NOT NULL DEFAULT '{{}}',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
@@ -263,92 +267,131 @@ impl SqliteGraphStore {
 #[async_trait]
 impl GraphStorePort for SqliteGraphStore {
     async fn put_node(&self, _workspace_id: &str, node: BeliefNode) -> Result<()> {
-        let entity = GraphEntity {
-            id: node.id,
-            name: node.concept.clone(),
-            normalized_name: GraphEntity::normalize(&node.concept),
-            entity_type: GraphEntityType::Concept,
-            aliases: Vec::new(),
-            description: None,
-            trust_score: node.confidence,
-            confirmation_count: 1,
-            metadata: std::collections::HashMap::new(),
-            created_at: node.created_at,
-            updated_at: node.created_at,
-        };
-        self.upsert_entity(entity)?;
+        let conn = self.conn.lock();
+        conn.execute(
+            &format!(
+                "INSERT OR REPLACE INTO {} (id, name, normalized_name, entity_type, aliases, description, trust_score, confirmation_count, language_family, metadata, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                TABLE_GRAPH_NODES
+            ),
+            params![
+                node.id,
+                node.concept,
+                GraphEntity::normalize(&node.concept),
+                GraphEntityType::Concept.as_str(),
+                "[]",
+                None::<String>,
+                node.confidence,
+                1,
+                node.language_family,
+                "{}",
+                node.created_at.to_rfc3339(),
+                node.created_at.to_rfc3339(),
+            ],
+        )?;
         Ok(())
     }
 
     async fn get_node(&self, _workspace_id: &str, concept: &str) -> Result<Option<BeliefNode>> {
-        let id = GraphEntity::normalize(concept);
-        if let Some(entity) = self.get_entity(&id)? {
-            return Ok(Some(BeliefNode {
-                id: entity.id,
-                concept: entity.name,
-                confidence: entity.trust_score,
-                created_at: entity.created_at,
-            }));
-        }
-        Ok(None)
+        let conn = self.conn.lock();
+        let normalized = GraphEntity::normalize(concept);
+        let mut stmt = conn.prepare(&format!(
+            "SELECT id, name, trust_score, language_family, created_at FROM {} WHERE normalized_name = ?",
+            TABLE_GRAPH_NODES
+        ))?;
+
+        let node = stmt
+            .query_row([normalized], |row| {
+                Ok(BeliefNode {
+                    id: row.get(0)?,
+                    concept: row.get(1)?,
+                    confidence: row.get(2)?,
+                    language_family: row.get(3)?,
+                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                        .map(|dt| dt.with_timezone(&Utc))
+                        .unwrap_or_else(|_| Utc::now()),
+                })
+            })
+            .ok();
+
+        Ok(node)
     }
 
     async fn list_nodes(&self, _workspace_id: &str) -> Result<Vec<BeliefNode>> {
-        let entities = self.list_entities()?;
-        Ok(entities
-            .into_iter()
-            .map(|e| BeliefNode {
-                id: e.id,
-                concept: e.name,
-                confidence: e.trust_score,
-                created_at: e.created_at,
+        let conn = self.conn.lock();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT id, name, trust_score, language_family, created_at FROM {}",
+            TABLE_GRAPH_NODES
+        ))?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok(BeliefNode {
+                id: row.get(0)?,
+                concept: row.get(1)?,
+                confidence: row.get(2)?,
+                language_family: row.get(3)?,
+                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                    .map(|dt| dt.with_timezone(&Utc))
+                    .unwrap_or_else(|_| Utc::now()),
             })
-            .collect())
+        })?;
+
+        let mut nodes = Vec::new();
+        for node in rows {
+            nodes.push(node?);
+        }
+        Ok(nodes)
     }
 
     async fn put_edge(&self, _workspace_id: &str, edge: BeliefEdge) -> Result<()> {
-        use crate::domain::memory::graph::GraphRelationshipType;
-        let rel_type = GraphRelationshipType::parse(&edge.relation_type)
-            .unwrap_or(GraphRelationshipType::RelatedTo);
-
-        let rel = GraphRelationship {
-            id: edge.id,
-            source_id: edge.source,
-            target_id: edge.target,
-            relation_type: rel_type,
-            weight: edge.weight,
-            confirmation_count: 1,
-            metadata: std::collections::HashMap::new(),
-            created_at: edge.created_at,
-            updated_at: edge.updated_at,
-        };
-        self.upsert_relationship(rel)?;
+        let conn = self.conn.lock();
+        conn.execute(
+            &format!(
+                "INSERT OR REPLACE INTO {} (id, source_id, target_id, relation_type, weight, confirmation_count, is_inferred, source_language, target_language, metadata, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                TABLE_GRAPH_EDGES
+            ),
+            params![
+                edge.id,
+                edge.source,
+                edge.target,
+                edge.relation_type,
+                edge.weight,
+                1,
+                edge.is_inferred as i32,
+                edge.source_language,
+                edge.target_language,
+                "{}",
+                edge.created_at.to_rfc3339(),
+                edge.updated_at.to_rfc3339(),
+            ],
+        )?;
         Ok(())
     }
 
     async fn list_edges(&self, _workspace_id: &str) -> Result<Vec<BeliefEdge>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(&format!(
-            "SELECT id, source_id, target_id, relation_type, weight, confirmation_count, metadata, created_at, updated_at FROM {}",
+            "SELECT id, source_id, target_id, relation_type, weight, is_inferred, source_language, target_language, created_at, updated_at FROM {}",
             TABLE_GRAPH_EDGES
         ))?;
 
         let rows = stmt.query_map([], |row| {
-            let rel_type_str: String = row.get(3)?;
-
+            let is_inferred: i32 = row.get(5)?;
             Ok(BeliefEdge {
                 id: row.get(0)?,
                 source: row.get(1)?,
                 target: row.get(2)?,
-                relation_type: rel_type_str,
+                relation_type: row.get(3)?,
                 weight: row.get(4)?,
                 confidence_score: row.get(4)?,
                 provenance_id: "unknown".to_string(),
                 contradicts_edge_id: None,
-                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(7)?)
+                is_inferred: is_inferred != 0,
+                source_language: row.get(6)?,
+                target_language: row.get(7)?,
+                created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
                     .map(|dt| dt.with_timezone(&Utc))
                     .unwrap_or_else(|_| Utc::now()),
-                updated_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
+                updated_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(9)?)
                     .map(|dt| dt.with_timezone(&Utc))
                     .unwrap_or_else(|_| Utc::now()),
             })
@@ -364,27 +407,29 @@ impl GraphStorePort for SqliteGraphStore {
     async fn get_edge(&self, _workspace_id: &str, edge_id: &str) -> Result<Option<BeliefEdge>> {
         let conn = self.conn.lock();
         let mut stmt = conn.prepare(&format!(
-            "SELECT id, source_id, target_id, relation_type, weight, confirmation_count, metadata, created_at, updated_at FROM {} WHERE id = ?",
+            "SELECT id, source_id, target_id, relation_type, weight, is_inferred, source_language, target_language, created_at, updated_at FROM {} WHERE id = ?",
             TABLE_GRAPH_EDGES
         ))?;
 
         let edge = stmt
             .query_row([edge_id], |row| {
-                let rel_type_str: String = row.get(3)?;
-
+                let is_inferred: i32 = row.get(5)?;
                 Ok(BeliefEdge {
                     id: row.get(0)?,
                     source: row.get(1)?,
                     target: row.get(2)?,
-                    relation_type: rel_type_str,
+                    relation_type: row.get(3)?,
                     weight: row.get(4)?,
                     confidence_score: row.get(4)?,
                     provenance_id: "unknown".to_string(),
                     contradicts_edge_id: None,
-                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(7)?)
+                    is_inferred: is_inferred != 0,
+                    source_language: row.get(6)?,
+                    target_language: row.get(7)?,
+                    created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
                         .map(|dt| dt.with_timezone(&Utc))
                         .unwrap_or_else(|_| Utc::now()),
-                    updated_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(8)?)
+                    updated_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(9)?)
                         .map(|dt| dt.with_timezone(&Utc))
                         .unwrap_or_else(|_| Utc::now()),
                 })
