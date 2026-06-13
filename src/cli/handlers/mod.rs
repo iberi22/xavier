@@ -16,6 +16,7 @@ pub mod secrets;
 pub mod security;
 pub mod setup;
 pub mod system;
+pub mod tokens;
 pub mod system_scan;
 pub mod usage;
 pub mod workspace;
@@ -28,6 +29,7 @@ pub use panel::*;
 pub use secrets::*;
 pub use security::*;
 pub use system::*;
+pub use tokens::*;
 
 pub use usage::*;
 pub use workspace::*;
