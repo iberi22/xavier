@@ -44,7 +44,7 @@ impl PythonParser {
         parent: Option<String>,
     ) {
         match node.kind() {
-            "function_definition" => {
+            "function_definition" | "async_function_definition" => {
                 self.push_named(
                     node,
                     source,
@@ -68,6 +68,9 @@ impl PythonParser {
             }
             "import_statement" | "import_from_statement" => {
                 self.push_import(node, source, file_path, symbols);
+            }
+            "assignment" => {
+                self.push_assignment(node, source, file_path, symbols, parent.clone());
             }
             _ => {}
         }
@@ -116,6 +119,75 @@ impl PythonParser {
         Some(name)
     }
 
+    fn push_assignment(
+        &self,
+        node: Node,
+        source: &str,
+        file_path: &str,
+        symbols: &mut Vec<Symbol>,
+        parent: Option<String>,
+    ) {
+        // En Python, una asignación puede tener múltiples identificadores: x = y = 1
+        // Buscamos el nodo 'left' o los hijos que sean identificadores antes del '='
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "identifier" {
+                if let Ok(name) = child.utf8_text(source.as_bytes()) {
+                    self.push_symbol(
+                        symbols,
+                        PushSymbolArgs {
+                            node: child,
+                            source,
+                            language: Language::Python,
+                            kind: SymbolKind::Variable,
+                            file_path,
+                            name: name.to_string(),
+                            depth: 0,
+                            parent: parent.clone(),
+                        },
+                    );
+                }
+            } else if child.kind() == "pattern_list" || child.kind() == "tuple" {
+                // Manejar x, y = 1, 2
+                self.extract_identifiers_from_pattern(child, source, file_path, symbols, &parent);
+            } else if child.kind() == "=" {
+                break;
+            }
+        }
+    }
+
+    fn extract_identifiers_from_pattern(
+        &self,
+        node: Node,
+        source: &str,
+        file_path: &str,
+        symbols: &mut Vec<Symbol>,
+        parent: &Option<String>,
+    ) {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "identifier" {
+                if let Ok(name) = child.utf8_text(source.as_bytes()) {
+                    self.push_symbol(
+                        symbols,
+                        PushSymbolArgs {
+                            node: child,
+                            source,
+                            language: Language::Python,
+                            kind: SymbolKind::Variable,
+                            file_path,
+                            name: name.to_string(),
+                            depth: 0,
+                            parent: parent.clone(),
+                        },
+                    );
+                }
+            } else if child.kind() == "pattern_list" || child.kind() == "tuple" || child.kind() == "list_pattern" {
+                self.extract_identifiers_from_pattern(child, source, file_path, symbols, parent);
+            }
+        }
+    }
+
     fn push_import(&self, node: Node, source: &str, file_path: &str, symbols: &mut Vec<Symbol>) {
         let raw = node.utf8_text(source.as_bytes()).unwrap_or_default();
         let name = raw
@@ -144,13 +216,20 @@ impl PythonParser {
     fn push_symbol(&self, symbols: &mut Vec<Symbol>, args: PushSymbolArgs<'_>) {
         let start = args.node.start_position();
         let end = args.node.end_position();
-        let complexity = (args.kind == SymbolKind::Function)
+
+        let final_kind = if args.kind == SymbolKind::Function && args.parent.is_some() {
+            SymbolKind::Method
+        } else {
+            args.kind
+        };
+
+        let complexity = matches!(final_kind, SymbolKind::Function | SymbolKind::Method)
             .then(|| cyclomatic_complexity(args.node, args.source));
         symbols.push(Symbol {
             id: None,
             stable_id: None,
             name: args.name,
-            kind: args.kind,
+            kind: final_kind,
             lang: Language::Python,
             file_path: args.file_path.to_string(),
             start_line: (start.row + 1) as u32,

@@ -55,6 +55,16 @@ impl TypeScriptParser {
                     parent.clone(),
                 );
             }
+            "enum_declaration" => {
+                self.push_named(
+                    node,
+                    source,
+                    file_path,
+                    symbols,
+                    SymbolKind::Enum,
+                    parent.clone(),
+                );
+            }
             "method_definition" | "public_field_definition" => {
                 self.push_named(
                     node,
@@ -148,33 +158,136 @@ impl TypeScriptParser {
         symbols: &mut Vec<Symbol>,
         parent: Option<String>,
     ) {
+        let is_const = node.child(0).map_or(false, |c| c.kind() == "const");
+        let kind = if is_const {
+            SymbolKind::Constant
+        } else {
+            SymbolKind::Variable
+        };
+
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             if child.kind() != "variable_declarator" {
                 continue;
             }
+
             let value_kind = child
                 .child_by_field_name("value")
                 .map(|value| value.kind().to_string())
                 .unwrap_or_default();
-            if value_kind != "arrow_function" && value_kind != "function" {
-                continue;
-            }
+
+            let final_kind = if value_kind == "arrow_function" || value_kind == "function" {
+                SymbolKind::Function
+            } else {
+                kind.clone()
+            };
+
             if let Some(name_node) = child.child_by_field_name("name") {
-                if let Ok(name) = name_node.utf8_text(source.as_bytes()) {
+                self.extract_identifiers_from_pattern(
+                    name_node,
+                    child,
+                    source,
+                    file_path,
+                    symbols,
+                    final_kind,
+                    parent.clone(),
+                );
+            }
+        }
+    }
+
+    fn extract_identifiers_from_pattern(
+        &self,
+        node: Node,
+        symbol_node: Node,
+        source: &str,
+        file_path: &str,
+        symbols: &mut Vec<Symbol>,
+        kind: SymbolKind,
+        parent: Option<String>,
+    ) {
+        match node.kind() {
+            "identifier" => {
+                if let Ok(name) = node.utf8_text(source.as_bytes()) {
                     self.push_symbol(
                         symbols,
                         PushSymbolArgs {
-                            node: child,
+                            node: symbol_node,
                             source,
                             language: self.lang.clone(),
-                            kind: SymbolKind::Function,
+                            kind,
                             file_path,
                             name: name.to_string(),
                             depth: 0,
-                            parent: parent.clone(),
+                            parent,
                         },
                     );
+                }
+            }
+            "object_pattern" | "array_pattern" => {
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    if child.kind() == "{" || child.kind() == "}" || child.kind() == "[" || child.kind() == "]" || child.kind() == "," {
+                        continue;
+                    }
+                    // In patterns, we might have shorthand_property_identifier, or [identifier, identifier]
+                    // We need to be careful with depth or recursion
+                    self.extract_identifiers_from_pattern(
+                        child,
+                        symbol_node,
+                        source,
+                        file_path,
+                        symbols,
+                        kind.clone(),
+                        parent.clone(),
+                    );
+                }
+            }
+            "shorthand_property_identifier" => {
+                if let Ok(name) = node.utf8_text(source.as_bytes()) {
+                    self.push_symbol(
+                        symbols,
+                        PushSymbolArgs {
+                            node: symbol_node,
+                            source,
+                            language: self.lang.clone(),
+                            kind,
+                            file_path,
+                            name: name.to_string(),
+                            depth: 0,
+                            parent,
+                        },
+                    );
+                }
+            }
+            "pair" => {
+                if let Some(value_node) = node.child_by_field_name("value") {
+                    self.extract_identifiers_from_pattern(
+                        value_node,
+                        symbol_node,
+                        source,
+                        file_path,
+                        symbols,
+                        kind,
+                        parent,
+                    );
+                }
+            }
+            _ => {
+                // Other patterns like rest_pattern can be handled if needed
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    if child.kind() == "identifier" || child.kind().contains("pattern") {
+                        self.extract_identifiers_from_pattern(
+                            child,
+                            symbol_node,
+                            source,
+                            file_path,
+                            symbols,
+                            kind.clone(),
+                            parent.clone(),
+                        );
+                    }
                 }
             }
         }
