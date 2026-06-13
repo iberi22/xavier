@@ -41,6 +41,7 @@ pub const SEMANTIC_CONFIDENCE_MULTIPLIER: f32 = 0.5;
 
 pub const DEFAULT_ZONE_BOOST_MULTIPLIER: f32 = 1.5;
 pub const DEFAULT_ZONE_PENALTY_MULTIPLIER: f32 = 0.5;
+pub const DEFAULT_CACHE_WARMING_THRESHOLD: f32 = 0.5;
 
 pub fn configured_zone_boost() -> f32 {
     std::env::var("XAVIER_ZONE_BOOST")

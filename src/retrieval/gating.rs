@@ -114,6 +114,10 @@ pub struct GatingConfig {
     pub grounding_min_confidence: f32,
     /// Navigation policy for intelligent graph traversal
     pub navigation_policy: Option<NavigationPolicy>,
+    /// Whether to enable predictive cache warming
+    pub cache_warming_enabled: bool,
+    /// Threshold for cache warming (0.0 to 1.0)
+    pub cache_warming_threshold: f32,
 }
 
 impl Default for GatingConfig {
@@ -131,6 +135,8 @@ impl Default for GatingConfig {
             grounding_enabled: true,
             grounding_min_confidence: 0.5,
             navigation_policy: Some(NavigationPolicy::with_defaults()),
+            cache_warming_enabled: false,
+            cache_warming_threshold: config::DEFAULT_CACHE_WARMING_THRESHOLD,
         }
     }
 }
@@ -162,6 +168,7 @@ use tokio::sync::RwLock;
 pub struct AdaptiveGating {
     config: GatingConfig,
     policy: Option<Arc<RwLock<super::policy::NavigationPolicy>>>,
+    memory: Option<Arc<crate::memory::qmd_memory::QmdMemory>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -173,6 +180,7 @@ impl AdaptiveGating {
         Self {
             config,
             policy: None,
+            memory: None,
         }
     }
 
@@ -183,7 +191,13 @@ impl AdaptiveGating {
         Self {
             config,
             policy: Some(policy),
+            memory: None,
         }
+    }
+
+    pub fn with_memory(mut self, memory: Arc<crate::memory::qmd_memory::QmdMemory>) -> Self {
+        self.memory = Some(memory);
+        self
     }
 
     pub fn with_defaults() -> Self {
@@ -197,9 +211,16 @@ impl AdaptiveGating {
             settings.retrieval.learned_policy.learning_rate,
         );
 
+        let mut config = GatingConfig::default();
+        config.cache_warming_enabled = settings.retrieval.cache_warming_enabled;
+        if let Some(threshold) = settings.retrieval.cache_warming_threshold {
+            config.cache_warming_threshold = threshold;
+        }
+
         Self {
-            config: GatingConfig::default(),
+            config,
             policy: Some(Arc::new(RwLock::new(policy))),
+            memory: None,
         }
     }
 
@@ -219,7 +240,7 @@ impl AdaptiveGating {
         let mut semantic_results = self.score_semantic_layer_at(semantic, query, now).await;
 
         // 1.1 Guided graph expansion (if graph and policy available)
-        if let (Some(graph_lock), Some(policy)) =
+        if let (Some(ref graph_lock), Some(policy)) =
             (belief_graph.as_ref(), &self.config.navigation_policy)
         {
             let graph = graph_lock.read().await;
@@ -288,7 +309,7 @@ impl AdaptiveGating {
 
         // 5. Apply grounding validation if enabled
         if self.config.grounding_enabled {
-            if let Some(graph_lock) = belief_graph {
+            if let Some(ref graph_lock) = belief_graph {
                 let graph = graph_lock.read().await;
                 // Convert ScoredResult back to MemoryDocument for validate_grounding
                 // Note: We only have content/id, so we build partial documents
@@ -316,8 +337,104 @@ impl AdaptiveGating {
             }
         }
 
-        // 6. Limit results
+        // 6. Predictive Cache Warming
+        if self.config.cache_warming_enabled {
+            self.perform_cache_warming(&results, belief_graph.clone());
+        }
+
+        // 7. Limit results
         results.into_iter().take(self.config.max_results).collect()
+    }
+
+    /// Predict likely future queries based on current results and navigation patterns
+    pub async fn predict_next_queries(
+        &self,
+        results: &[ScoredResult],
+        belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
+    ) -> Vec<String> {
+        let mut predictions = HashSet::new();
+
+        // 1. Graph-based prediction: Explore neighbors of top hits in the belief graph
+        if let (Some(graph_lock), Some(policy)) = (belief_graph, &self.config.navigation_policy) {
+            // We use a block here to drop the read lock quickly
+            let mut top_concepts = Vec::new();
+            {
+                let graph = graph_lock.read().await;
+                for hit in results.iter().take(3) {
+                    // Try to find if the content represents a concept in the graph
+                    if graph.get_node(&hit.content).is_some() {
+                        top_concepts.push(hit.content.clone());
+                    }
+                }
+            }
+
+            for concept in top_concepts {
+                let graph = graph_lock.read().await;
+                let pathfinder =
+                    crate::memory::graph_traversal::Pathfinder::with_policy(&graph, policy.clone());
+
+                // Perform a 1-hop guided search to find relevant neighbors
+                let neighbors = pathfinder.guided_search(&concept, "", 1);
+                for scored_edge in neighbors {
+                    if scored_edge.policy_score >= self.config.cache_warming_threshold {
+                        predictions.insert(scored_edge.edge.target);
+                    }
+                }
+            }
+        }
+
+        // 2. Hierarchy-based prediction: Suggest sibling documents or sub-directories
+        let mut paths = Vec::new();
+        for hit in results.iter().take(5) {
+            if !hit.path.is_empty() && !hit.path.starts_with("beliefs/") {
+                paths.push(&hit.path);
+            }
+        }
+
+        for path in paths {
+            if let Some(parent) = std::path::Path::new(path).parent() {
+                if let Some(parent_str) = parent.to_str() {
+                    if !parent_str.is_empty() && parent_str != "." {
+                        // Predict the parent directory as a potential future search scope
+                        predictions.insert(parent_str.to_string());
+                    }
+                }
+            }
+        }
+
+        predictions.into_iter().collect()
+    }
+
+    /// Perform asynchronous cache warming for predicted queries
+    pub fn perform_cache_warming(
+        &self,
+        results: &[ScoredResult],
+        belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
+    ) {
+        let memory = match &self.memory {
+            Some(m) => Arc::clone(m),
+            None => return,
+        };
+
+        let gating_clone = self.clone();
+        let results_clone = results.to_vec();
+        let belief_graph_clone = belief_graph;
+        let limit = self.config.max_results;
+
+        tokio::spawn(async move {
+            let predictions = gating_clone
+                .predict_next_queries(&results_clone, belief_graph_clone)
+                .await;
+
+            for query in predictions {
+                let memory_inner = Arc::clone(&memory);
+                tokio::spawn(async move {
+                    // Background search to populate QmdMemory cache
+                    let _ = memory_inner.search_with_cache(&query, limit).await;
+                    tracing::debug!("Cache warmed for predicted query: '{}'", query);
+                });
+            }
+        });
     }
 
     /// Retrieve only from working memory
@@ -1060,5 +1177,59 @@ mod tests {
             assert_eq!(s.id, p.id);
             assert!((s.score - p.score).abs() < 0.0001);
         }
+    }
+
+    #[tokio::test]
+    async fn test_predict_next_queries_hierarchy() {
+        let gating = AdaptiveGating::with_defaults();
+        let results = vec![
+            ScoredResult {
+                id: "1".to_string(),
+                path: "docs/rust/basics.md".to_string(),
+                content: "content".to_string(),
+                score: 1.0,
+                source: "working".to_string(),
+                ..Default::default()
+            },
+            ScoredResult {
+                id: "2".to_string(),
+                path: "docs/rust/advanced.md".to_string(),
+                content: "content".to_string(),
+                score: 0.9,
+                source: "working".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        let predictions = gating.predict_next_queries(&results, None).await;
+        assert!(predictions.contains(&"docs/rust".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_predict_next_queries_graph() {
+        let mut config = GatingConfig::default();
+        config.cache_warming_threshold = 0.5;
+        let gating = AdaptiveGating::new(config);
+
+        let graph = Arc::new(tokio::sync::RwLock::new(crate::memory::belief_graph::BeliefGraph::new()));
+        {
+            let mut g = graph.write().await;
+            g.add_node("Rust".to_string(), 1.0);
+            g.add_node("Cargo".to_string(), 1.0);
+            g.add_relation("Rust".to_string(), "Cargo".to_string(), "uses".to_string(), None, None).await.unwrap();
+        }
+
+        let results = vec![
+            ScoredResult {
+                id: "rust-id".to_string(),
+                content: "Rust".to_string(),
+                score: 1.0,
+                source: "semantic".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        let predictions = gating.predict_next_queries(&results, Some(graph)).await;
+        assert!(predictions.contains(&"Cargo".to_string()));
     }
 }

@@ -193,6 +193,8 @@ pub struct RetrievalSettings {
     pub rrf_k: Option<u32>, // XAVIER_RRF_K
     pub zone_boost_multiplier: Option<f32>,
     pub zone_penalty_multiplier: Option<f32>,
+    pub cache_warming_enabled: bool,
+    pub cache_warming_threshold: Option<f32>,
     #[serde(default)]
     pub learned_policy: NavigationPolicyConfig,
 }
