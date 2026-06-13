@@ -7,6 +7,11 @@
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+pub const XAVIER_ERROR_SECURITY: i32 = -32000;
+pub const XAVIER_ERROR_VALIDATION: i32 = -32001;
+pub const XAVIER_ERROR_NOT_FOUND: i32 = -32002;
+pub const XAVIER_ERROR_INTERNAL: i32 = -32603;
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct MCPRequest {
     pub jsonrpc: String,
