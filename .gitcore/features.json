@@ -59,21 +59,23 @@
       "id": "feat-belief-graph",
       "name": "Belief Graph",
       "category": "cognitive",
-      "status": "beta",
-      "progress_pct": 75,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Belief Graph for conceptual relationship mapping and cognitive inference",
       "steps": [
         "Define relationship nodes and edges",
         "Implement extraction logic for agent insights",
         "Implement graph traversal queries",
         "Verify graph traversal performance",
-        "Add inference and decay mechanisms"
+        "Add inference and decay mechanisms",
+        "Implement JSON/Bincode serialization",
+        "Add performance benchmarks"
       ],
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-06-10",
-      "notes": "Belief graph module passing tests. PR #12 added Timeline, Cognitive memory, Onboarding, and Skill Dispatcher tests. Missing: performance benchmarks, inference engine, graph serialization format.",
+      "last_tested": "2026-06-12",
+      "notes": "Belief graph module complete. Added inference engine, hourly decay mechanisms, JSON/Bincode serialization, and Criterion benchmarks.",
       "implemented_in": "src/memory/entity_graph/, src/domain/belief/"
     },
     {
