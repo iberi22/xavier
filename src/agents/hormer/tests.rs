@@ -42,6 +42,27 @@ mod tests {
         // Advantage = 0.895 - 0.5 = 0.395
         // Weights should increase (normalized)
         assert!(updated_policy.weights.is_valid());
+
+        // Verify metrics
+        let metrics = hormer.get_metrics().await;
+        assert_eq!(metrics["navigated_queries"], 1);
+        assert_eq!(metrics["non_navigated_queries"], 0);
+        assert!(metrics["average_reward"].as_f64().unwrap() > 0.0);
+        let histogram = metrics["score_histogram"].as_array().unwrap();
+        // bucket 0.9-1.0 (index 9) and 0.8-0.9 (index 8)
+        assert_eq!(histogram[9].as_u64().unwrap(), 1);
+        assert_eq!(histogram[8].as_u64().unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_hormer_non_navigated_metric() {
+        let policy = Arc::new(RwLock::new(NavigationPolicy::default()));
+        let hormer = Hormer::new(policy);
+
+        hormer.record_non_navigated();
+        let metrics = hormer.get_metrics().await;
+        assert_eq!(metrics["non_navigated_queries"], 1);
+        assert_eq!(metrics["navigated_queries"], 0);
     }
 
     #[tokio::test]

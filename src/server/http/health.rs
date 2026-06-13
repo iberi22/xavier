@@ -50,18 +50,25 @@ pub struct BuildInfoResponse {
 
 pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
     let workspace = state.workspace_registry.default_context().await;
-    let lag_ms = if let Some(ref context) = workspace {
-        crate::tasks::session_sync_task::calculate_indexing_lag(
+    let mut lag_ms = 0;
+    let mut hormer_metrics = serde_json::json!(null);
+
+    if let Some(ref context) = workspace {
+        lag_ms = crate::tasks::session_sync_task::calculate_indexing_lag(
             context.workspace.durable_store().as_ref(),
             &context.workspace_id,
         )
-        .await
-    } else {
-        0
-    };
-    Json(
-        serde_json::json!({ "status": "ok", "service": "xavier", "version": env!("CARGO_PKG_VERSION"), "lag_ms": lag_ms }),
-    )
+        .await;
+        hormer_metrics = context.workspace.hormer.get_metrics().await;
+    }
+
+    Json(serde_json::json!({
+        "status": "ok",
+        "service": "xavier",
+        "version": env!("CARGO_PKG_VERSION"),
+        "lag_ms": lag_ms,
+        "hormer": hormer_metrics
+    }))
 }
 
 pub async fn readiness(State(state): State<AppState>) -> impl IntoResponse {

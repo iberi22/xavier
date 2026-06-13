@@ -10,6 +10,7 @@ mod tests;
 use crate::retrieval::{LayerWeights, NavigationPolicy};
 use crate::search::rrf::ScoredResult;
 use reward::RewardModel;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -17,6 +18,12 @@ use tokio::sync::RwLock;
 pub struct Hormer {
     policy: Arc<RwLock<NavigationPolicy>>,
     reward_model: RewardModel,
+    /// Counter for queries that used the learned policy
+    navigated_queries: AtomicU64,
+    /// Counter for queries that used manual weights
+    non_navigated_queries: AtomicU64,
+    /// Histogram of retrieval scores (10 buckets: 0.0-0.1, 0.1-0.2, ..., 0.9-1.0)
+    score_histogram: Arc<RwLock<[u64; 10]>>,
 }
 
 impl Hormer {
@@ -24,11 +31,31 @@ impl Hormer {
         Self {
             policy,
             reward_model: RewardModel::default(),
+            navigated_queries: AtomicU64::new(0),
+            non_navigated_queries: AtomicU64::new(0),
+            score_histogram: Arc::new(RwLock::new([0; 10])),
         }
     }
 
     pub fn policy(&self) -> &Arc<RwLock<NavigationPolicy>> {
         &self.policy
+    }
+
+    /// Record a query that did not use the learned policy
+    pub fn record_non_navigated(&self) {
+        self.non_navigated_queries.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Update telemetry metrics from retrieval results
+    async fn update_metrics(&self, results: &[ScoredResult]) {
+        self.navigated_queries.fetch_add(1, Ordering::Relaxed);
+
+        let mut histogram = self.score_histogram.write().await;
+        for res in results {
+            let bucket = (res.score * 10.0).floor() as usize;
+            let bucket = bucket.min(9);
+            histogram[bucket] += 1;
+        }
     }
 
     /// Update the policy using a simplified GRPO approach
@@ -41,6 +68,7 @@ impl Hormer {
     /// 2. Evaluamos el reward.
     /// 3. Si el reward es superior al promedio histórico (o una base), ajustamos pesos.
     pub async fn update_from_interaction(&self, weights_used: LayerWeights, results: &[ScoredResult]) {
+        self.update_metrics(results).await;
         let reward = self.reward_model.calculate_reward(results);
 
         // Simplified Advantage calculation:
@@ -60,6 +88,9 @@ impl Hormer {
             );
 
             policy.update(delta);
+            policy.last_reward = reward;
+            policy.avg_reward = self.reward_model.get_average_reward();
+
             tracing::info!(
                 reward = reward,
                 advantage = advantage,
@@ -80,6 +111,17 @@ impl Hormer {
                 tracing::warn!("HORMER: Failed to persist policy: {}", e);
             }
         }
+    }
+
+    /// Get telemetry metrics
+    pub async fn get_metrics(&self) -> serde_json::Value {
+        let histogram = self.score_histogram.read().await;
+        serde_json::json!({
+            "navigated_queries": self.navigated_queries.load(Ordering::Relaxed),
+            "non_navigated_queries": self.non_navigated_queries.load(Ordering::Relaxed),
+            "average_reward": self.reward_model.get_average_reward(),
+            "score_histogram": *histogram
+        })
     }
 
     /// Get current weights from policy
