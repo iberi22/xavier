@@ -269,7 +269,7 @@ pub async fn add_handler(
         effective_content.len()
     );
 
-    let record = MemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
+    let record = MemoryRecord {
         id: String::new(),
         workspace_id: state.workspace_id.clone(),
         path: path.clone(),
@@ -385,7 +385,7 @@ pub async fn update_handler(
         .unwrap_or_else(|| format!("memory/{}", payload.id));
     let metadata = payload.metadata.unwrap_or(serde_json::json!({}));
 
-    let record = MemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
+    let record = MemoryRecord {
         id: payload.id.clone(),
         workspace_id: state.workspace_id.clone(),
         path: path.clone(),

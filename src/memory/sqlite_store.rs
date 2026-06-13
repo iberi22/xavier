@@ -238,7 +238,7 @@ impl SqliteMemoryStore {
 
         // Note: Decryption is handled in MemoryStore implementation if needed.
         // We store encrypted content directly in MemoryRecord during raw fetch.
-        Ok(MemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
+        Ok(MemoryRecord {
             id: row.get(0)?,
             workspace_id: row.get(1)?,
             path: row.get(2)?,

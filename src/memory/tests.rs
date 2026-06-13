@@ -17,8 +17,8 @@ mod tests {
 
     // ==================== Hierarchy Tests ====================
 
-    fn mock_record(path: &str) -> MemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
-        MemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
+    fn mock_record(path: &str) -> MemoryRecord {
+        MemoryRecord {
             id: path.to_string(),
             workspace_id: "test".to_string(),
             path: path.to_string(),
