@@ -48,6 +48,15 @@ impl NavigationPolicy {
         edge: &BeliefEdge,
         now: chrono::DateTime<chrono::Utc>,
     ) -> f32 {
+        // [G3] File-type aware edge filtering: edges INFERRED that cross language families receive score 0
+        if edge.is_inferred {
+            if let (Some(src_lang), Some(tgt_lang)) = (&edge.source_language, &edge.target_language) {
+                if src_lang != tgt_lang {
+                    return 0.0;
+                }
+            }
+        }
+
         let query_lower = query.to_lowercase();
         let target_lower = edge.target.to_lowercase();
         let relation_lower = edge.relation_type.to_lowercase();
@@ -128,5 +137,28 @@ mod tests {
         // similarity (0.0 * 0.5) + confidence (0.9 * 0.2) + weight (0.9 * 0.2) + recency (1.0 * 0.1)
         // 0.0 + 0.18 + 0.18 + 0.1 = 0.46
         assert!((score - 0.46).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_score_transition_cross_language_inferred() {
+        let policy = NavigationPolicy::with_defaults();
+        let mut edge = BeliefEdge::new(
+            "Xavier".to_string(),
+            "Rust".to_string(),
+            "written_in".to_string(),
+            0.9,
+            "provenance".to_string(),
+        );
+        edge.is_inferred = true;
+        edge.source_language = Some("python".to_string());
+        edge.target_language = Some("rust".to_string());
+
+        let score = policy.score_transition("Rust", &edge, chrono::Utc::now());
+        assert_eq!(score, 0.0, "Inferred cross-language edge should have score 0.0");
+
+        // Same language family - should have normal score
+        edge.source_language = Some("rust".to_string());
+        let score = policy.score_transition("Rust", &edge, chrono::Utc::now());
+        assert!(score > 0.0);
     }
 }

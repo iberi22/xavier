@@ -111,7 +111,8 @@ impl VecSqliteMemoryStore {
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
                     entity_type TEXT NOT NULL,
-                    properties TEXT
+                    properties TEXT,
+                    language_family TEXT
                 );
                 CREATE TABLE IF NOT EXISTS relations (
                     id TEXT PRIMARY KEY,
@@ -123,6 +124,9 @@ impl VecSqliteMemoryStore {
                     confidence_score REAL DEFAULT 1.0,
                     provenance_id TEXT,
                     contradicts_edge_id TEXT,
+                    is_inferred INTEGER DEFAULT 0,
+                    source_language TEXT,
+                    target_language TEXT,
                     created_at DATETIME DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
                     updated_at DATETIME DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now')),
                     FOREIGN KEY(source_id) REFERENCES entities(id),
@@ -159,6 +163,20 @@ impl VecSqliteMemoryStore {
             }
             if !Self::table_has_column(conn, "relations", "updated_at")? {
                 conn.execute("ALTER TABLE relations ADD COLUMN updated_at DATETIME DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))", ())?;
+            }
+
+            // Migration: Language families and inferred flag
+            if !Self::table_has_column(conn, "entities", "language_family")? {
+                conn.execute("ALTER TABLE entities ADD COLUMN language_family TEXT", ())?;
+            }
+            if !Self::table_has_column(conn, "relations", "is_inferred")? {
+                conn.execute("ALTER TABLE relations ADD COLUMN is_inferred INTEGER DEFAULT 0", ())?;
+            }
+            if !Self::table_has_column(conn, "relations", "source_language")? {
+                conn.execute("ALTER TABLE relations ADD COLUMN source_language TEXT", ())?;
+            }
+            if !Self::table_has_column(conn, "relations", "target_language")? {
+                conn.execute("ALTER TABLE relations ADD COLUMN target_language TEXT", ())?;
             }
 
             // Session tokens and auth

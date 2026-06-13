@@ -10,6 +10,7 @@ pub struct BeliefNode {
     pub id: String,
     pub concept: String,
     pub confidence: f32,
+    pub language_family: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -23,6 +24,9 @@ pub struct BeliefEdge {
     pub confidence_score: f32,
     pub provenance_id: String,
     pub contradicts_edge_id: Option<String>,
+    pub is_inferred: bool,
+    pub source_language: Option<String>,
+    pub target_language: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -45,6 +49,9 @@ impl BeliefEdge {
             confidence_score,
             provenance_id,
             contradicts_edge_id: None,
+            is_inferred: false,
+            source_language: None,
+            target_language: None,
             created_at: now,
             updated_at: now,
         }
