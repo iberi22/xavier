@@ -34,11 +34,17 @@
 //! - Phase 4: Tor/Yggdrasil transport for anonymous operation
 
 pub mod cloud_node;
+pub mod acl;
 pub mod node;
+pub mod pairing;
 pub mod peer;
 pub mod protocol;
 pub mod transport;
+pub mod telemetry;
+pub mod crypto_gating;
+pub mod governance;
 
+pub use acl::{MeshAcl, NodeAclEntry};
 pub use node::{NodeId, NodeIdentity};
 pub use peer::{PeerInfo, PeerRegistry};
 pub use protocol::{MeshHandshake, MeshManifest, MeshSyncRequest};
