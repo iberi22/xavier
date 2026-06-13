@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use axum::{
     extract::DefaultBodyLimit,
     middleware::{self},
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use axum_server::tls_rustls::RustlsConfig;
@@ -99,6 +99,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     audit_logger.init_schema_async().await?;
     rate_manager.init_schema_async().await?;
     threat_store.init_schema_async().await?;
+    xavier::security::tokens::TokenStore::new().init_schema_async().await?;
 
     tokio::spawn(async move {
         loop {
@@ -367,6 +368,9 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         )
         .route("/v1/proxy/request", post(crate::cli::proxy::generic_proxy))
         .route("/v1/security/approve", post(security_approve_handler))
+        .route("/security/tokens", get(list_tokens_handler).post(create_token_handler))
+        .route("/security/tokens/:id", delete(revoke_token_handler))
+        .route("/security/tokens/:id/rotate", post(rotate_token_handler))
         .route("/v1/usage/status/{provider}", get(usage_status_handler))
         .route("/v1/usage/update", post(usage_update_handler))
         .route("/v1/usage/cooldown", post(usage_cooldown_handler))

@@ -247,6 +247,44 @@ fn register_window(_window: tauri::Window) {
     log::info!("Frontend registered for tray events");
 }
 
+// ── API Token management commands ──────────────────────────────
+
+#[tauri::command]
+async fn create_api_token(
+    name: String,
+    scopes: Vec<String>,
+    expires_at: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let store = xavier::security::tokens::TokenStore::new();
+    let expiry = expires_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&chrono::Utc)));
+
+    match store.create_token(name, scopes, expiry).await {
+        Ok((plaintext, metadata)) => Ok(serde_json::json!({
+            "token": plaintext,
+            "metadata": metadata
+        })),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+async fn list_api_tokens() -> Result<Vec<xavier::security::tokens::ApiTokenMetadata>, String> {
+    let store = xavier::security::tokens::TokenStore::new();
+    match store.list_tokens().await {
+        Ok(tokens) => Ok(tokens),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+#[tauri::command]
+async fn evoke_api_token(id: String) -> Result<(), String> {
+    let store = xavier::security::tokens::TokenStore::new();
+    match store.revoke_token(&id).await {
+        Ok(_) => Ok(()),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
 // ── Application entry point ────────────────────────────────────
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -410,6 +448,9 @@ pub fn run() {
             scan_system,
             save_initial_config,
             register_window,
+            create_api_token,
+            list_api_tokens,
+            evoke_api_token,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
