@@ -31,6 +31,8 @@ import MemoryBrowser from "./MemoryBrowser";
 import MessagingConfigModal, {
   MessagingConfigInner,
 } from "./MessagingConfigModal";
+import { CloudRelayConfig } from "./CloudRelayConfig";
+import DataCommonsConfigUI from "./DataCommonsConfigUI";
 
 interface ConfigModalProps {
   key?: React.Key;
@@ -755,6 +757,29 @@ function ConfigView({ graphData }: { graphData: GraphData }) {
             >
               <Layers className="w-12 h-12 mb-4 opacity-20" />
               <p>Select a category to view specific configuration layers</p>
+            </motion.div>
+          )}
+
+          {activeTab === "server" && (
+            <motion.div
+              key="server"
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              className="flex flex-col gap-8 max-w-2xl h-full"
+            >
+              <div>
+                <h2 className="text-3xl font-light text-white tracking-tight">
+                  Server & Network
+                </h2>
+                <p className="text-sm text-white/40 mt-1">
+                  Configure Xavier's connectivity, P2P Cloud Relays, and Data Commons.
+                </p>
+              </div>
+              <div className="space-y-6">
+                <CloudRelayConfig token={token || ""} />
+                <DataCommonsConfigUI token={token || ""} />
+              </div>
             </motion.div>
           )}
         </AnimatePresence>

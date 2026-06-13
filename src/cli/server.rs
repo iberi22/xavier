@@ -428,6 +428,14 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             post(xavier::server::v1_api::v1_mesh_handshake),
         )
         .route(
+            "/v1/mesh/cloud",
+            get(xavier::server::v1_api::v1_mesh_cloud_get).put(xavier::server::v1_api::v1_mesh_cloud_update),
+        )
+        .route(
+            "/v1/mesh/data_commons/opt_in",
+            get(xavier::server::v1_api::v1_mesh_data_commons_get).post(xavier::server::v1_api::v1_mesh_data_commons_opt_in),
+        )
+        .route(
             "/v1/mesh/manifest",
             get(xavier::server::v1_api::v1_mesh_manifest),
         )
