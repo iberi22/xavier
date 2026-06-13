@@ -46,7 +46,7 @@ pub async fn memory_retrieve(
         half_life_hours: payload.half_life_hours,
         grounding_enabled: payload.grounding_enabled,
         grounding_min_confidence: payload.grounding_min_confidence,
-        navigation_policy: Some(crate::retrieval::navigation::NavigationPolicy::with_defaults()),
+        navigation_policy: Some(crate::retrieval::NavigationPolicy::default()),
         cache_warming_enabled: settings.retrieval.cache_warming_enabled,
         cache_warming_threshold: settings
             .retrieval
