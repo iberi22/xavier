@@ -30,13 +30,19 @@ impl MeshTransport {
     }
 
     /// Perform a handshake with a remote peer.
-    pub async fn handshake(&self, peer_url: &str, token: &str) -> Result<MeshHandshakeResponse> {
+    pub async fn handshake(
+        &self,
+        peer_url: &str,
+        token: &str,
+        invite_code: Option<String>,
+    ) -> Result<MeshHandshakeResponse> {
         let handshake = MeshHandshake {
             node_id: self.local_identity.node_id.clone(),
             public_key_hex: hex::encode(&self.local_identity.public_key),
             xavier_version: env!("CARGO_PKG_VERSION").to_string(),
             capabilities: vec!["sync-v1".to_string()],
             timestamp: chrono::Utc::now().timestamp(),
+            invite_code,
         };
 
         let url = format!("{}/v1/mesh/handshake", peer_url.trim_end_matches('/'));

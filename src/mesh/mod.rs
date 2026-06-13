@@ -33,6 +33,8 @@
 //! - Phase 3: Loro CRDT for conflict-free memory merge
 //! - Phase 4: Tor/Yggdrasil transport for anonymous operation
 
+pub mod acl;
+pub mod invite;
 pub mod node;
 pub mod peer;
 pub mod protocol;

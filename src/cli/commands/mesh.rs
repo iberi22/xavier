@@ -1,10 +1,12 @@
 //! Mesh Command Handlers — CLI implementation for Xavier Mesh
 
-use crate::cli::commands::MeshCommand;
+use crate::cli::commands::{InviteCommand, MeshCommand};
 use crate::cli::config::resolve_http_token;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
+use xavier::memory::schema::ClearanceLevel;
+use xavier::mesh::invite::InviteRegistry;
 use xavier::mesh::{MeshTransport, NodeId, NodeIdentity, PeerInfo, PeerRegistry};
 
 pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
@@ -20,11 +22,12 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
             node_id,
             endpoint,
             alias,
+            invite,
         } => {
             let node_id = NodeId::parse(&node_id)?;
             let mut registry = PeerRegistry::load()?;
 
-            let peer = PeerInfo {
+            let mut peer = PeerInfo {
                 node_id: node_id.clone(),
                 alias: alias.clone(),
                 endpoint_url: endpoint.clone(),
@@ -32,7 +35,33 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 added_at: chrono::Utc::now().timestamp(),
                 last_seen_at: None,
                 sync_enabled: true,
+                max_clearance: None,
+                allowed_namespaces: None,
+                allowed_paths: None,
             };
+
+            if let Some(code) = invite {
+                let identity = Arc::new(NodeIdentity::load_or_create()?);
+                let transport = MeshTransport::new(identity);
+                let token = resolve_http_token().unwrap_or_default();
+
+                println!("Attempting handshake with invite code...");
+                match transport.handshake(&endpoint, &token, Some(code)).await {
+                    Ok(resp) => {
+                        peer.public_key_hex = resp.public_key_hex;
+                        peer.last_seen_at = Some(chrono::Utc::now().timestamp());
+                        if resp.registered {
+                            println!("✅ Successfully registered with remote node via invite code.");
+                        } else if !resp.accepted {
+                            println!("⚠️ Handshake not accepted: {}", resp.reason.unwrap_or_default());
+                        }
+                    }
+                    Err(e) => {
+                        println!("❌ Handshake failed: {}", e);
+                        anyhow::bail!("Handshake failed, could not use invite code.");
+                    }
+                }
+            }
 
             registry.add_peer(peer)?;
             println!("✅ Added peer {} ({})", node_id, endpoint);
@@ -80,7 +109,10 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
             let token = resolve_http_token().unwrap_or_default();
 
             println!("Pinging {} at {}...", node_id, peer.endpoint_url);
-            match transport.handshake(&peer.endpoint_url, &token).await {
+            match transport
+                .handshake(&peer.endpoint_url, &token, None)
+                .await
+            {
                 Ok(resp) => {
                     println!("✅ Pong! Remote node identity verified.");
                     println!("   Remote NodeID: {}", resp.node_id);
@@ -233,6 +265,72 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
             println!("  Local NodeID:   {}", identity.node_id);
             println!("  Trusted Peers:  {}", registry.list_peers().len());
         }
+        MeshCommand::Invite { cmd } => match cmd {
+            InviteCommand::Create {
+                clearance,
+                namespaces,
+                paths,
+                expiry_hours,
+                max_uses,
+            } => {
+                let mut registry = InviteRegistry::load()?;
+                let clearance = ClearanceLevel::parse(&clearance);
+                let namespaces = namespaces
+                    .unwrap_or_default()
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                let paths = paths
+                    .unwrap_or_default()
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                let expires_at = expiry_hours
+                    .map(|h| chrono::Utc::now().timestamp() + (h as i64 * 3600));
+
+                let code = registry.create_invite(
+                    clearance,
+                    namespaces,
+                    paths,
+                    expires_at,
+                    max_uses,
+                )?;
+                println!("✅ Created invite code: {}", code);
+            }
+            InviteCommand::List => {
+                let registry = InviteRegistry::load()?;
+                let invites = registry.list_invites();
+                if invites.is_empty() {
+                    println!("No active invite codes.");
+                } else {
+                    println!(
+                        "{:<15} {:<15} {:<10} {:<10}",
+                        "Code", "Clearance", "Uses", "Limit"
+                    );
+                    println!("{}", "-".repeat(50));
+                    for invite in invites {
+                        let limit = invite
+                            .max_uses
+                            .map(|u| u.to_string())
+                            .unwrap_or_else(|| "∞".to_string());
+                        println!(
+                            "{:<15} {:<15} {:<10} {:<10}",
+                            invite.code,
+                            invite.max_clearance.as_str(),
+                            invite.uses,
+                            limit
+                        );
+                    }
+                }
+            }
+            InviteCommand::Remove { code } => {
+                let mut registry = InviteRegistry::load()?;
+                registry.remove_invite(&code)?;
+                println!("✅ Removed invite code: {}", code);
+            }
+        },
     }
     Ok(())
 }

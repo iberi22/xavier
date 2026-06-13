@@ -343,6 +343,9 @@ pub enum MeshCommand {
         endpoint: String,
         #[arg(long)]
         alias: Option<String>,
+        /// Invite code to use for registration
+        #[arg(long)]
+        invite: Option<String>,
     },
     /// List all known peers
     List,
@@ -358,6 +361,38 @@ pub enum MeshCommand {
     },
     /// Show mesh network status
     Status,
+    /// Manage invite codes
+    Invite {
+        #[command(subcommand)]
+        cmd: InviteCommand,
+    },
+}
+
+/// Mesh invite management subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum InviteCommand {
+    /// Create a new invite code
+    Create {
+        /// Maximum clearance level (Unclassified, Confidential, Secret, TopSecret)
+        #[arg(long, default_value = "TopSecret")]
+        clearance: String,
+        /// Comma-separated list of allowed namespaces
+        #[arg(long)]
+        namespaces: Option<String>,
+        /// Comma-separated list of allowed paths
+        #[arg(long)]
+        paths: Option<String>,
+        /// Expiry in hours (optional)
+        #[arg(long)]
+        expiry_hours: Option<u64>,
+        /// Maximum number of uses (optional)
+        #[arg(long)]
+        max_uses: Option<u32>,
+    },
+    /// List all active invite codes
+    List,
+    /// Remove an invite code
+    Remove { code: String },
 }
 
 /// Secrets management subcommands

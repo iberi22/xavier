@@ -243,12 +243,13 @@ mod tests {
         edge.source_language = Some("python".to_string());
         edge.target_language = Some("rust".to_string());
 
-        let score = policy.score_transition("Rust", &edge, chrono::Utc::now());
+        let score = policy.score_transition("Rust", &edge, chrono::Utc::now(), 1, 1);
+        let score = policy.score_transition("Rust", &edge, chrono::Utc::now(), 1, 1);
         assert_eq!(score, 0.0, "Inferred cross-language edge should have score 0.0");
 
         // Same language family - should have normal score
         edge.source_language = Some("rust".to_string());
-        let score = policy.score_transition("Rust", &edge, chrono::Utc::now());
+        let score = policy.score_transition("Rust", &edge, chrono::Utc::now(), 1, 1);
         assert!(score > 0.0);
     }
 }

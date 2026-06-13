@@ -3,6 +3,7 @@
 //! Stores information about known peers, their public keys, and sync settings.
 //! The registry is stored as a JSON file at `~/.config/xavier/mesh_peers.json`.
 
+use crate::memory::schema::ClearanceLevel;
 use crate::mesh::node::NodeId;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -19,6 +20,10 @@ pub struct PeerInfo {
     pub added_at: i64,
     pub last_seen_at: Option<i64>,
     pub sync_enabled: bool,
+    /// Permissions for this peer
+    pub max_clearance: Option<ClearanceLevel>,
+    pub allowed_namespaces: Option<Vec<String>>,
+    pub allowed_paths: Option<Vec<String>>,
 }
 
 /// A persistent, file-backed registry of trusted peers.
@@ -119,6 +124,9 @@ mod tests {
             added_at: 1000,
             last_seen_at: None,
             sync_enabled: true,
+            max_clearance: Some(ClearanceLevel::Secret),
+            allowed_namespaces: Some(vec!["test-ns".to_string()]),
+            allowed_paths: None,
         };
 
         registry.add_peer(peer).unwrap();

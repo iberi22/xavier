@@ -14,6 +14,7 @@ pub struct MeshHandshake {
     pub xavier_version: String,
     pub capabilities: Vec<String>,
     pub timestamp: i64,
+    pub invite_code: Option<String>,
 }
 
 /// Response to a [`MeshHandshake`].
@@ -23,6 +24,7 @@ pub struct MeshHandshakeResponse {
     pub node_id: NodeId,
     pub public_key_hex: String,
     pub reason: Option<String>,
+    pub registered: bool,
 }
 
 /// A manifest of chunks available on a node.
@@ -68,12 +70,14 @@ mod tests {
             xavier_version: "0.1.0".to_string(),
             capabilities: vec!["sync-v1".to_string()],
             timestamp: 123456789,
+            invite_code: Some("INV-123".to_string()),
         };
 
         let json = serde_json::to_string(&handshake).unwrap();
         let deserialized: MeshHandshake = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.node_id, handshake.node_id);
         assert_eq!(deserialized.public_key_hex, handshake.public_key_hex);
+        assert_eq!(deserialized.invite_code, Some("INV-123".to_string()));
     }
 
     #[test]
