@@ -188,6 +188,13 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         info!("Secrets engine listening for task events...");
         while let Ok(event) = receiver.recv().await {
             if let xavier::coordination::events::XavierEvent::TaskCompleted { task } = event {
+                let _ = xavier::notifications::NOTIFICATIONS.notify(
+                    xavier::notifications::IslandId::Agents,
+                    "Agent Task Complete",
+                    &format!("Task {} completed by agent {}.", task.id, task.assignee.as_deref().unwrap_or("unknown")),
+                    "success"
+                ).await;
+
                 if let Some(agent_id) = &task.assignee {
                     info!(
                         "Task {} completed by agent {}. Revoking ephemeral keys...",
@@ -477,6 +484,19 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/v1/nav/cd", post(crate::cli::handlers::navigation::cd_handler))
         .route("/v1/nav/pwd", get(crate::cli::handlers::navigation::pwd_handler))
         .route("/v1/nav/affected", get(crate::cli::handlers::navigation::affected_handler))
+        .route("/notifications", get(crate::cli::handlers::notifications::list_notifications_handler))
+        .route(
+            "/notifications/{id}/read",
+            axum::routing::patch(crate::cli::handlers::notifications::mark_notification_read_handler),
+        )
+        .route(
+            "/notifications/read-all",
+            axum::routing::patch(crate::cli::handlers::notifications::mark_all_notifications_read_handler),
+        )
+        .route(
+            "/notifications/all",
+            axum::routing::delete(crate::cli::handlers::notifications::delete_all_notifications_handler),
+        )
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -571,6 +591,13 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     info!("Xavier HTTP server listening on http://{}", bound_addr);
     println!("Xavier HTTP server listening on http://{}", bound_addr);
     println!("Press Ctrl+C to stop");
+
+    let _ = xavier::notifications::NOTIFICATIONS.notify(
+        xavier::notifications::IslandId::System,
+        "Xavier Started",
+        &format!("Xavier backend v{} started on port {}.", env!("CARGO_PKG_VERSION"), port),
+        "info"
+    ).await;
 
     #[cfg(feature = "enterprise")]
     {

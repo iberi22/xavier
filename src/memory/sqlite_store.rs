@@ -28,6 +28,7 @@ pub(crate) const TABLE_CHECKPOINTS: &str = "checkpoint_records";
 pub(crate) const TABLE_PANEL_BOOKMARKS: &str = "panel_bookmarks";
 pub(crate) const TABLE_PANEL_WIDGETS: &str = "panel_widgets";
 pub(crate) const TABLE_PANEL_GRAPHS: &str = "panel_graphs";
+pub(crate) const TABLE_NOTIFICATIONS: &str = "notifications";
 
 struct SessionTokenRow {
     token: String,
@@ -170,6 +171,16 @@ impl SqliteMemoryStore {
                     created_at TEXT NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS {} (
+                    id TEXT PRIMARY KEY,
+                    island_id TEXT NOT NULL,
+                    title TEXT NOT NULL,
+                    body TEXT NOT NULL,
+                    timestamp TEXT NOT NULL,
+                    read INTEGER NOT NULL DEFAULT 0,
+                    severity TEXT NOT NULL
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_memories_workspace ON {}(workspace_id);
                 CREATE INDEX IF NOT EXISTS idx_memories_path ON {}(workspace_id, path);
                 CREATE INDEX IF NOT EXISTS idx_session_tokens_workspace ON {}(workspace_id);
@@ -183,6 +194,7 @@ impl SqliteMemoryStore {
                     TABLE_PANEL_BOOKMARKS,
                     TABLE_PANEL_WIDGETS,
                     TABLE_PANEL_GRAPHS,
+                    TABLE_NOTIFICATIONS,
                     TABLE_MEMORIES,
                     TABLE_MEMORIES,
                     TABLE_SESSION_TOKENS,
