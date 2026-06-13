@@ -50,6 +50,10 @@ dev-mode = []
 # Enterprise features: Cortex Enterprise Cloud integration
 enterprise = []
 
+# Xavier Data Commons ($XAV) features
+data-commons = ["oqs", "bip39", "bech32"]
+post-quantum = ["data-commons", "tpm-rs"]
+
 [[bench]]
 name = "embedding_benchmark"
 path = "benches/embedding_benchmark.rs"
@@ -156,6 +160,12 @@ hmac = "0.12"
 http-body-util = "0.1"
 serde_yaml = "0.9.34"
 dialoguer = "0.12.0"
+
+# Post-Quantum Cryptography & Data Commons
+oqs = { version = "0.11", optional = true, features = ["kems", "sigs", "serde"] }
+tpm-rs = { version = "0.1", optional = true }
+bip39 = { version = "2.1", optional = true, features = ["all-languages"] }
+bech32 = { version = "0.11", optional = true }
 
 [dev-dependencies]
 image = "0.25"

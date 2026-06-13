@@ -186,6 +186,18 @@ pub enum Command {
         #[command(subcommand)]
         cmd: NavCommand,
     },
+
+    /// Manage Xavier Data Commons ($XAV) wallet
+    Wallet {
+        #[command(subcommand)]
+        cmd: WalletCommandSub,
+    },
+
+    /// Interact with Xavier Data Commons network
+    Commons {
+        #[command(subcommand)]
+        cmd: CommonsCommand,
+    },
 }
 
 /// Navigation and impact analysis subcommands
@@ -330,6 +342,30 @@ pub enum VaultCommand {
     Get { key: String },
     /// Delete a secret from the hardware vault
     Delete { key: String },
+}
+
+/// Wallet management subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum WalletCommandSub {
+    /// Create a new post-quantum wallet
+    Create,
+    /// Show wallet status, balance and linked nodes
+    Status,
+    /// Link current mesh node to this wallet
+    LinkNode,
+    /// Import wallet from seed phrase
+    Import { seed: String },
+}
+
+/// Data Commons network subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum CommonsCommand {
+    /// Show Data Commons network status and stats
+    Status,
+    /// List available context offers in the network
+    ListOffers,
+    /// Manually compute EigenTrust reputation
+    ComputeReputation,
 }
 
 /// Mesh network management subcommands

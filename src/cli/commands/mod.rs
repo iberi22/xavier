@@ -15,6 +15,7 @@
 //! through re-exports so that external consumers are unaffected.
 
 pub mod code;
+pub mod commons;
 pub mod enums;
 pub mod http;
 pub mod mesh;
@@ -166,6 +167,8 @@ impl Cli {
             Command::Provider { cmd } => provider::handle_provider_command(cmd.clone()).await,
             Command::Setup => crate::cli::handlers::setup::handle_setup().await,
             Command::Mesh { cmd } => mesh::handle_mesh_command(cmd.clone()).await,
+            Command::Wallet { cmd } => commons::handle_wallet_command(cmd.clone()).await,
+            Command::Commons { cmd } => commons::handle_commons_command(cmd.clone()).await,
             Command::Secrets { cmd } => secrets::handle_secrets_command(cmd.clone()).await,
             Command::Vault { cmd } => secrets::handle_vault_command(cmd.clone()).await,
             Command::Quota => crate::cli::handlers::quota::handle_quota_command().await,

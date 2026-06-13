@@ -67,6 +67,13 @@
       "working_weight": 0.31236818,
       "episodic_weight": 0.29587728,
       "semantic_weight": 0.39175457,
+      "semantic_similarity_weight": 0.5,
+      "confidence_weight": 0.1,
+      "edge_weight": 0.1,
+      "recency_weight": 0.1,
+      "cross_layer_weight": 0.05,
+      "cross_dir_weight": 0.1,
+      "peripheral_hub_weight": 0.05,
       "learning_rate": 0.01,
       "update_count": 1
     }
