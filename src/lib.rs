@@ -20,6 +20,7 @@ pub mod embedding;
 pub mod enterprise;
 pub mod memory;
 pub mod mesh;
+pub mod notifications;
 pub mod observability;
 pub mod retrieval;
 pub mod scheduler;
