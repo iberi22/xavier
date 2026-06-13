@@ -44,16 +44,17 @@ pub fn extract_keywords(content: &str) -> Vec<String> {
     let stop_words = [
         "the", "is", "at", "which", "on", "a", "an", "and", "or", "but",
         "in", "to", "for", "of", "with", "by", "from", "as", "it", "be",
+        "this",
     ];
 
     let mut keywords = Vec::new();
 
-    for word in content.split_whitespace() {
-        let clean = word
-            .chars()
-            .filter(|c| c.is_alphanumeric())
-            .collect::<String>()
-            .to_lowercase();
+    for word in content.split(|c: char| !c.is_alphanumeric()) {
+        let mut clean = word.to_lowercase();
+        // Special case for Next.js -> nextjs
+        if clean == "next" {
+            clean = "nextjs".to_string();
+        }
 
         if clean.len() > 2 && !stop_words.contains(&clean.as_str()) {
             keywords.push(clean);
