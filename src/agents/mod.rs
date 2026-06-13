@@ -13,6 +13,8 @@ pub mod runtime;
 pub mod self_harness_coordinator;
 pub mod supervisor;
 pub mod system1;
+pub mod anomaly_scanner;
+pub mod cve_learner;
 pub mod system2;
 pub mod system3;
 pub mod tgd;

@@ -103,7 +103,7 @@ pub async fn agent_push_context_handler(
         );
     }
 
-    let record = MemoryRecord {
+    let record = MemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
         id: String::new(),
         workspace_id: state.workspace_id.clone(),
         path: path.clone(),
