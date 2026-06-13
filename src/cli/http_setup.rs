@@ -59,6 +59,7 @@ pub async fn auth_middleware(
         let mut req = req;
         req.extensions_mut().insert(SessionInfo {
             is_ephemeral: false,
+            api_token: None,
         });
         return next.run(req).await;
     }
@@ -66,9 +67,42 @@ pub async fn auth_middleware(
     // 2. Check Ephemeral Session (Zero-Trust Frontend)
     if state.session_manager.validate_session(provided_token_str) {
         let mut req = req;
-        req.extensions_mut()
-            .insert(SessionInfo { is_ephemeral: true });
+        req.extensions_mut().insert(SessionInfo {
+            is_ephemeral: true,
+            api_token: None,
+        });
         return next.run(req).await;
+    }
+
+    // 3. Check Persistent API Tokens
+    if provided_token_str.starts_with("xav_") {
+        let store = xavier::security::tokens::TokenStore::new();
+        if let Ok(Some(token_meta)) = store.validate_token(provided_token_str).await {
+            // Scope validation
+            let has_scope = match path {
+                p if p.starts_with("/memory/search") || p.starts_with("/v1/memories/search") => {
+                    token_meta.scopes.contains(&"read".to_string()) || token_meta.scopes.contains(&"all".to_string())
+                }
+                p if p.starts_with("/memory/add") || p.starts_with("/v1/memories") => {
+                    token_meta.scopes.contains(&"write".to_string()) || token_meta.scopes.contains(&"all".to_string())
+                }
+                _ => true, // Default allow for other endpoints for now, or refine as needed
+            };
+
+            if !has_scope {
+                return json_response(
+                    StatusCode::FORBIDDEN,
+                    serde_json::json!({"status":"error","message":"Insufficient scopes"}),
+                );
+            }
+
+            let mut req = req;
+            req.extensions_mut().insert(SessionInfo {
+                is_ephemeral: false,
+                api_token: Some(token_meta),
+            });
+            return next.run(req).await;
+        }
     }
 
     json_response(
@@ -77,9 +111,10 @@ pub async fn auth_middleware(
     )
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct SessionInfo {
     pub is_ephemeral: bool,
+    pub api_token: Option<xavier::security::tokens::ApiTokenMetadata>,
 }
 
 pub async fn rate_limit_middleware(
