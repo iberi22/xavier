@@ -1,7 +1,7 @@
 {
   "name": "xavier-monorepo",
   "private": true,
-  "version": "0.6.1",
+  "version": "0.10.0-12-06-2026",
   "type": "module",
   "workspaces": [
     "panel-ui",
@@ -11,6 +11,7 @@
     "release": "standard-version",
     "workflow": "powershell ./scripts/workflow.ps1",
     "install:all": "pnpm install",
+    "prebuild": "node scripts/update-version.js",
     "build": "pnpm --filter panel-ui build && pnpm --filter docs/site build",
     "build:panel": "pnpm --filter panel-ui build",
     "build:docs": "pnpm --filter docs/site build",
@@ -23,6 +24,7 @@
     "@biomejs/biome": "^2.0.5",
     "cron-validator": "^1.4.0",
     "js-yaml": "^4.2.0",
-    "standard-version": "^9.5.0"
+    "standard-version": "^9.5.0",
+    "husky": "^9.0.0"
   }
 }
