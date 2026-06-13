@@ -4,7 +4,7 @@
 //! responsibilities within the Xavier cognitive memory system.
 use crate::domain::memory::belief::BeliefEdge;
 use crate::memory::belief_graph::BeliefGraph;
-use crate::retrieval::navigation::NavigationPolicy;
+use crate::retrieval::policy::NavigationPolicy;
 use serde::{Deserialize, Serialize};
 use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 
@@ -18,10 +18,10 @@ pub struct AffectedNode {
 
 /// A utility for traversing the belief graph using various algorithms.
 pub struct Pathfinder<'a> {
-    #[allow(dead_code)]
-    graph: &'a BeliefGraph,
+    _graph: &'a BeliefGraph,
     policy: Option<NavigationPolicy>,
     adjacency_map: HashMap<String, Vec<BeliefEdge>>,
+    degrees: HashMap<String, usize>,
 }
 
 /// A wrapper for a belief edge with its associated policy-based score.
@@ -36,17 +36,24 @@ impl<'a> Pathfinder<'a> {
     pub fn new(graph: &'a BeliefGraph) -> Self {
         let relations = graph.get_relations();
         let mut adjacency_map: HashMap<String, Vec<BeliefEdge>> = HashMap::new();
+        let mut degrees: HashMap<String, usize> = HashMap::new();
+
         for relation in relations {
             adjacency_map
                 .entry(relation.source.clone())
                 .or_default()
-                .push(relation);
+                .push(relation.clone());
+
+            // Increment degree for both source and target (undirected for hub detection)
+            *degrees.entry(relation.source.clone()).or_default() += 1;
+            *degrees.entry(relation.target.clone()).or_default() += 1;
         }
 
         Self {
-            graph,
+            _graph: graph,
             policy: None,
             adjacency_map,
+            degrees,
         }
     }
 
@@ -176,7 +183,7 @@ impl<'a> Pathfinder<'a> {
             .policy
             .as_ref()
             .cloned()
-            .unwrap_or_else(NavigationPolicy::with_defaults);
+            .unwrap_or_else(NavigationPolicy::default);
 
         #[derive(PartialEq)]
         struct NodeState {
@@ -216,12 +223,14 @@ impl<'a> Pathfinder<'a> {
             }
 
             if let Some(relations) = self.adjacency_map.get(&current) {
+                let source_degree = *self.degrees.get(&current).unwrap_or(&0);
+
                 for relation in relations {
-                    // Mark relation as visited at push time, not pop time, to avoid
-                    // expanding the same relation via a different parent path with a lower score.
                     if !visited_relations.contains(&relation.id) {
                         visited_relations.insert(relation.id.clone());
-                        let transition_score = policy.score_transition(query, relation, now);
+                        let target_degree = *self.degrees.get(&relation.target).unwrap_or(&0);
+
+                        let transition_score = policy.score_transition(query, relation, now, source_degree, target_degree);
                         let combined_score = current_score * transition_score;
 
                         // Threshold to prune low-relevance paths
