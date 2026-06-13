@@ -4,7 +4,6 @@
 
 use super::types::XavierSettings;
 use anyhow::{Context, Result};
-use tokio::fs;
 use std::path::PathBuf;
 
 const DEFAULT_CONFIG_PATH: &str = "config/xavier.config.json";
@@ -83,6 +82,12 @@ pub fn current() -> XavierSettings {
     if settings.telegram.bot_token.is_none() {
         settings.telegram.bot_token = std::env::var("XAVIER_TELEGRAM_TOKEN").ok();
     }
+    if settings.discord.webhook_url.is_none() {
+        settings.discord.webhook_url = std::env::var("XAVIER_DISCORD_WEBHOOK").ok();
+    }
+    if settings.discord.bot_token.is_none() {
+        settings.discord.bot_token = std::env::var("XAVIER_DISCORD_TOKEN").ok();
+    }
     if settings.pgheart.url.is_none() {
         settings.pgheart.url = std::env::var("PGHEART_URL").ok();
     }
@@ -154,21 +159,12 @@ pub fn current() -> XavierSettings {
     settings
 }
 
-<<<<<<< HEAD
-pub async fn save(settings: &XavierSettings) -> Result<()> {
-    let path = resolve_config_path();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).await?;
-    }
-    let content = serde_json::to_string_pretty(settings)?;
-    fs::write(path, content).await?;
-=======
 pub fn save(settings: &XavierSettings) -> Result<()> {
     let path = resolve_config_path();
 
     if let Some(parent) = path.parent() {
         if !parent.exists() {
-            fs::create_dir_all(parent).with_context(|| {
+            std::fs::create_dir_all(parent).with_context(|| {
                 format!("failed to create config directory at {}", parent.display())
             })?;
         }
@@ -177,13 +173,12 @@ pub fn save(settings: &XavierSettings) -> Result<()> {
     let raw = serde_json::to_string_pretty(settings)
         .with_context(|| "failed to serialize settings to JSON")?;
 
-    fs::write(&path, raw).with_context(|| {
+    std::fs::write(&path, raw).with_context(|| {
         format!(
             "failed to write settings to config file at {}",
             path.display()
         )
     })?;
 
->>>>>>> origin/feat/cloud-relay-ui-settings-endpoint-4928233387040376179
     Ok(())
 }
