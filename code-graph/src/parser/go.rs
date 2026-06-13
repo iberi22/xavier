@@ -55,13 +55,14 @@ impl GoParser {
                 );
             }
             "method_declaration" => {
+                let receiver_parent = self.extract_receiver_type(node, source);
                 self.push_named(
                     node,
                     source,
                     file_path,
                     symbols,
                     SymbolKind::Method,
-                    parent.clone(),
+                    receiver_parent.or(parent.clone()),
                 );
             }
             "type_declaration" => {
@@ -70,12 +71,99 @@ impl GoParser {
             "import_declaration" | "import_spec" => {
                 self.push_import(node, source, file_path, symbols);
             }
+            "const_declaration" => {
+                self.extract_declarations(
+                    node,
+                    source,
+                    file_path,
+                    symbols,
+                    SymbolKind::Constant,
+                    parent.clone(),
+                );
+            }
+            "var_declaration" => {
+                self.extract_declarations(
+                    node,
+                    source,
+                    file_path,
+                    symbols,
+                    SymbolKind::Variable,
+                    parent.clone(),
+                );
+            }
             _ => {}
         }
 
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             self.extract(child, source, file_path, symbols, parent.clone());
+        }
+    }
+
+    fn extract_receiver_type(&self, node: Node, source: &str) -> Option<String> {
+        let receiver = node.child_by_field_name("receiver")?;
+        // El receiver puede ser (u User) o (u *User)
+        // Buscamos el tipo dentro del receiver
+        let mut cursor = receiver.walk();
+        for child in receiver.children(&mut cursor) {
+            if child.kind() == "parameter_declaration" {
+                if let Some(type_node) = child.child_by_field_name("type") {
+                    return self.find_type_identifier(type_node, source);
+                }
+            }
+        }
+        None
+    }
+
+    fn find_type_identifier(&self, node: Node, source: &str) -> Option<String> {
+        if node.kind() == "type_identifier" {
+            return node.utf8_text(source.as_bytes()).ok().map(|s| s.to_string());
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if let Some(name) = self.find_type_identifier(child, source) {
+                return Some(name);
+            }
+        }
+        None
+    }
+
+    fn extract_declarations(
+        &self,
+        node: Node,
+        source: &str,
+        file_path: &str,
+        symbols: &mut Vec<Symbol>,
+        kind: SymbolKind,
+        parent: Option<String>,
+    ) {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                "const_spec" | "var_spec" => {
+                    let mut spec_cursor = child.walk();
+                    for grandchild in child.children(&mut spec_cursor) {
+                        if grandchild.kind() == "identifier" {
+                            if let Ok(name) = grandchild.utf8_text(source.as_bytes()) {
+                                self.push_symbol(
+                                    symbols,
+                                    PushSymbolArgs {
+                                        node: grandchild,
+                                        source,
+                                        language: Language::Go,
+                                        kind: kind.clone(),
+                                        file_path,
+                                        name: name.to_string(),
+                                        depth: 0,
+                                        parent: parent.clone(),
+                                    },
+                                );
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
         }
     }
 
