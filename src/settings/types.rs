@@ -202,6 +202,15 @@ pub struct NavigationPolicyConfig {
     pub working_weight: f32,
     pub episodic_weight: f32,
     pub semantic_weight: f32,
+    // Traversal weights
+    pub semantic_similarity_weight: f32,
+    pub confidence_weight: f32,
+    pub edge_weight: f32,
+    pub recency_weight: f32,
+    pub cross_layer_weight: f32,
+    pub cross_dir_weight: f32,
+    pub peripheral_hub_weight: f32,
+
     pub learning_rate: f32,
     pub update_count: u64,
 }
@@ -212,6 +221,13 @@ impl Default for NavigationPolicyConfig {
             working_weight: 0.3,
             episodic_weight: 0.3,
             semantic_weight: 0.4,
+            semantic_similarity_weight: 0.5,
+            confidence_weight: 0.1,
+            edge_weight: 0.1,
+            recency_weight: 0.1,
+            cross_layer_weight: 0.05,
+            cross_dir_weight: 0.1,
+            peripheral_hub_weight: 0.05,
             learning_rate: 0.01,
             update_count: 0,
         }
