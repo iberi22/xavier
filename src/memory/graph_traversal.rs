@@ -9,6 +9,7 @@ use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 
 /// A utility for traversing the belief graph using various algorithms.
 pub struct Pathfinder<'a> {
+    #[allow(dead_code)]
     graph: &'a BeliefGraph,
     policy: Option<NavigationPolicy>,
     adjacency_map: HashMap<String, Vec<BeliefEdge>>,
