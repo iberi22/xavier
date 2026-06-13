@@ -90,6 +90,8 @@ pub async fn memory_retrieve(
             .hormer
             .update_from_interaction(weights_used, &results)
             .await;
+    } else {
+        workspace.workspace.hormer.record_non_navigated();
     }
 
     let retrieved: Vec<RetrievedMemory> = results
