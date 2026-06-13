@@ -208,6 +208,13 @@ impl Cli {
                 }
                 Ok(())
             }
+            Command::ExportTraining {
+                output,
+                limit,
+                force,
+            } => {
+                http::export_training_data(output, *limit, *force).await
+            }
         }
     }
 }

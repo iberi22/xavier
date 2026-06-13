@@ -260,6 +260,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/memory/delete", post(delete_handler))
         .route("/memory/stats", get(stats_handler))
         .route("/memory/export", get(export_handler))
+        .route("/memory/export-training", get(export_training_handler))
         .route("/memory/decay", post(decay_handler))
         .route("/memory/consolidate", post(consolidate_handler))
         .route("/memory/evict", axum::routing::delete(evict_handler))

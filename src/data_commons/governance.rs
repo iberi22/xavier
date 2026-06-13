@@ -673,6 +673,37 @@ impl GovernanceEngine {
     }
 }
 
+/// Manejador de consentimiento granular para exportación de datos.
+pub struct ConsentManager {
+    config: crate::settings::ConsentSettings,
+}
+
+impl ConsentManager {
+    pub fn new(config: crate::settings::ConsentSettings) -> Self {
+        Self { config }
+    }
+
+    pub fn from_settings() -> Self {
+        let settings = crate::settings::XavierSettings::current();
+        Self::new(settings.consent.clone())
+    }
+
+    /// Verifica si hay consentimiento para exportar datos de entrenamiento.
+    pub fn has_training_export_consent(&self) -> bool {
+        self.config.training_data_export
+    }
+
+    /// Verifica si hay consentimiento para compartir métricas de rendimiento.
+    pub fn has_performance_metrics_consent(&self) -> bool {
+        self.config.performance_metrics_sharing
+    }
+
+    /// Verifica si hay consentimiento para compartir informes de errores.
+    pub fn has_error_report_consent(&self) -> bool {
+        self.config.error_report_sharing
+    }
+}
+
 #[derive(Debug)]
 pub enum GovernanceError {
     NotAuthorized,
@@ -860,5 +891,17 @@ mod tests {
             !result.passed, // pero la propuesta NO pasa porque consejo dijo que no
             "La propuesta no debería pasar — consejo votó en contra"
         );
+    }
+
+    #[test]
+    fn test_consent_manager() {
+        let mut config = crate::settings::ConsentSettings::default();
+        config.training_data_export = true;
+        config.error_report_sharing = false;
+
+        let manager = ConsentManager::new(config);
+        assert!(manager.has_training_export_consent());
+        assert!(!manager.has_error_report_consent());
+        assert!(!manager.has_performance_metrics_consent());
     }
 }

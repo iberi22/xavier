@@ -92,6 +92,44 @@ pub async fn recall_memories(query: &str, limit: usize) -> Result<()> {
     Ok(())
 }
 
+/// Export training data (anonymized and JSONL).
+pub async fn export_training_data(
+    output: &std::path::Path,
+    limit: usize,
+    force: bool,
+) -> Result<()> {
+    let token = xavier_token();
+    let base_url = resolve_base_url();
+    let url = format!("{}/memory/export-training?limit={}&force={}", base_url, limit, force);
+
+    let client = CLI_HTTP_CLIENT.clone();
+
+    let response = client
+        .get(&url)
+        .header("X-Xavier-Token", &token)
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                let bytes = resp.bytes().await?;
+                std::fs::write(output, bytes)?;
+                println!("✅ Training data exported to: {}", output.display());
+            } else {
+                let status = resp.status();
+                let text = resp.text().await.unwrap_or_default();
+                println!("❌ Export failed ({}): {}", status, text);
+            }
+        }
+        Err(e) => {
+            println!("❌ Error connecting to Xavier server: {}", e);
+        }
+    }
+
+    Ok(())
+}
+
 /// Fetch and display server statistics.
 pub async fn show_stats() -> Result<()> {
     println!("Xavier CLI version: {}", env!("CARGO_PKG_VERSION"));

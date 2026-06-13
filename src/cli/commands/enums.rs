@@ -166,6 +166,19 @@ pub enum Command {
         limit: Option<usize>,
     },
 
+    /// Export memories for model training (anonymized and JSONL)
+    ExportTraining {
+        /// Output file path (.jsonl)
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Limit the number of exported memories
+        #[arg(short, long, default_value_t = 1000)]
+        limit: usize,
+        /// Skip consent check (use with caution, only for local dev)
+        #[arg(long)]
+        force: bool,
+    },
+
     /// List memories at current or specified path (navigation)
     Ls {
         /// Optional path to list

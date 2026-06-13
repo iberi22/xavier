@@ -779,6 +779,65 @@ pub async fn export_handler(
     }
 }
 
+pub async fn export_training_handler(
+    State(state): State<CliState>,
+    Query(params): Query<ExportTrainingPayload>,
+) -> impl IntoResponse {
+    let consent = xavier::data_commons::governance::ConsentManager::from_settings();
+    let force = params.force.unwrap_or(false);
+
+    if !force && !consent.has_training_export_consent() {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": "Consent for training data export not granted. Enable training_data_export in consent settings or use --force (dev only)."
+            })),
+        )
+            .into_response();
+    }
+
+    let limit = params.limit.unwrap_or(1000).clamp(1, 10000);
+    let settings = xavier::settings::XavierSettings::current();
+    let anon_config = &settings.anonymization;
+
+    match state.store.list(&state.workspace_id).await {
+        Ok(records) => {
+            let mut output = String::new();
+            for record in records.into_iter().take(limit) {
+                let mut doc = record.to_document();
+
+                // Apply anonymization
+                doc.content = crate::utils::anonymizer::anonymize(
+                    &doc.content,
+                    anon_config.scrub_absolute_paths,
+                    anon_config.scrub_ips,
+                    anon_config.scrub_secrets,
+                );
+                doc.path = if anon_config.scrub_absolute_paths {
+                    crate::utils::anonymizer::scrub_paths(&doc.path).into_owned()
+                } else {
+                    doc.path
+                };
+
+                if let Ok(line) = serde_json::to_string(&doc) {
+                    output.push_str(&line);
+                    output.push('\n');
+                }
+            }
+            output.into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({
+                "status": "error",
+                "message": e.to_string()
+            })),
+        )
+            .into_response(),
+    }
+}
+
 #[allow(clippy::result_large_err)]
 pub(crate) fn check_cli_token(headers: &HeaderMap) -> Result<(), Response> {
     let expected_token = match resolve_http_token() {

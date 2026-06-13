@@ -39,6 +39,10 @@ pub struct XavierSettings {
     pub advanced: AdvancedSettings,
     #[serde(default)]
     pub pgheart: PgHeartSettings,
+    #[serde(default)]
+    pub consent: ConsentSettings,
+    #[serde(default)]
+    pub anonymization: AnonymizationSettings,
     #[serde(skip)]
     pub auth_token: Option<String>,
 }
@@ -62,6 +66,8 @@ impl fmt::Debug for XavierSettings {
             .field("agents", &self.agents)
             .field("advanced", &self.advanced)
             .field("pgheart", &self.pgheart)
+            .field("consent", &self.consent)
+            .field("anonymization", &self.anonymization)
             .field("auth_token", &"[REDACTED]")
             .finish()
     }
@@ -376,6 +382,44 @@ pub struct PgHeartSettings {
     pub instance_id: Option<String>,
     pub sync_interval_ms: u64,
     pub auto_heartbeat: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ConsentSettings {
+    pub training_data_export: bool,
+    pub performance_metrics_sharing: bool,
+    pub error_report_sharing: bool,
+}
+
+impl Default for ConsentSettings {
+    fn default() -> Self {
+        Self {
+            training_data_export: false,
+            performance_metrics_sharing: false,
+            error_report_sharing: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AnonymizationSettings {
+    pub scrub_absolute_paths: bool,
+    pub scrub_ips: bool,
+    pub scrub_secrets: bool,
+    pub mask_user_names: bool,
+}
+
+impl Default for AnonymizationSettings {
+    fn default() -> Self {
+        Self {
+            scrub_absolute_paths: true,
+            scrub_ips: true,
+            scrub_secrets: true,
+            mask_user_names: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

@@ -248,6 +248,12 @@ pub struct ExportPackPayload {
     pub max_level: usize,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ExportTrainingPayload {
+    pub limit: Option<usize>,
+    pub force: Option<bool>,
+}
+
 pub fn default_max_level_val() -> usize {
     3
 }

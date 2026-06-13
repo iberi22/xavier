@@ -14,6 +14,7 @@ async fn test_hormer_policy_update_positive() {
         0.1
     )));
     let hormer = Hormer::new(Arc::clone(&policy));
+    let initial_count = policy.read().await.update_count;
 
     // Results with high relevance (simulating a good interaction)
     let results = vec![
