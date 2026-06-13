@@ -38,8 +38,8 @@
       "id": "feat-hybrid-search",
       "name": "BM25 + Vector Hybrid Search",
       "category": "search",
-      "status": "beta",
-      "progress_pct": 70,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Hybrid Search combining BM25 keyword matching and vector retrieval with RRF merging",
       "steps": [
         "Implement BM25 full-text search with FTS5",
@@ -51,8 +51,8 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-06-10",
-      "notes": "BM25 search works (~5ms). Vector search requires valid OpenAI API key or compiled gllm. Current key is invalid. Falls back to BM25-only. Missing: working embedding provider, query caching, RRF weights config at runtime.",
+      "last_tested": "2026-06-12",
+      "notes": "BM25 + Vector search fully integrated. Features dynamic RRF weights (keyword/vector) in configuration and a bounded LRU caching layer for optimized repeated queries. Stable embedding provider handling with shared instance injection.",
       "implemented_in": "src/search/, src/retrieval/, src/embedding/"
     },
     {
