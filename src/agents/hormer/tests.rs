@@ -33,7 +33,9 @@ mod tests {
         ];
 
         let initial_count = policy.read().await.update_count;
-        hormer.update_from_interaction(initial_weights, &results).await;
+        hormer
+            .update_from_interaction(initial_weights, &results)
+            .await;
 
         let updated_policy = policy.read().await;
         assert_eq!(updated_policy.update_count, initial_count + 1);
@@ -75,7 +77,9 @@ mod tests {
         ];
 
         let initial_count = policy.read().await.update_count;
-        hormer.update_from_interaction(initial_weights, &results).await;
+        hormer
+            .update_from_interaction(initial_weights, &results)
+            .await;
 
         let updated_policy = policy.read().await;
         assert_eq!(updated_policy.update_count, initial_count);

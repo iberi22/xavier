@@ -6,11 +6,11 @@
 use std::path::PathBuf;
 use tokio::sync::Mutex;
 
-use anyhow::Result;
-use tracing::{info, warn};
+use crate::agents::provider::ModelProviderClient;
 use crate::agents::runtime::ConversationMessage;
 use crate::agents::system1::RetrievedDocument;
-use crate::agents::provider::ModelProviderClient;
+use anyhow::Result;
+use tracing::{info, warn};
 
 /// Configuration for TGD engine
 #[derive(Debug, Clone)]
@@ -91,7 +91,11 @@ impl TgdEngine {
             history_text, context_text
         );
 
-        match self.provider.generate_text(system_prompt, &user_prompt).await {
+        match self
+            .provider
+            .generate_text(system_prompt, &user_prompt)
+            .await
+        {
             Ok(response) => {
                 let rules = response.text.trim().to_string();
                 if !rules.is_empty() {

@@ -3,8 +3,8 @@
 //! Provides the data structures and logic for maintaining and updating
 //! the weights used for multi-layer memory retrieval.
 
-use serde::{Deserialize, Serialize};
 use super::gating::LayerWeights;
+use serde::{Deserialize, Serialize};
 
 /// Learned navigation policy for retrieval
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,9 +38,12 @@ impl NavigationPolicy {
 
     /// Update weights based on a gradient (delta)
     pub fn update(&mut self, deltas: LayerWeights) {
-        self.weights.working = (self.weights.working + self.learning_rate * deltas.working).max(0.0);
-        self.weights.episodic = (self.weights.episodic + self.learning_rate * deltas.episodic).max(0.0);
-        self.weights.semantic = (self.weights.semantic + self.learning_rate * deltas.semantic).max(0.0);
+        self.weights.working =
+            (self.weights.working + self.learning_rate * deltas.working).max(0.0);
+        self.weights.episodic =
+            (self.weights.episodic + self.learning_rate * deltas.episodic).max(0.0);
+        self.weights.semantic =
+            (self.weights.semantic + self.learning_rate * deltas.semantic).max(0.0);
 
         self.normalize();
         self.update_count += 1;

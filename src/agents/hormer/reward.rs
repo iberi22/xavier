@@ -21,7 +21,9 @@ impl Default for RewardModel {
 
 impl RewardModel {
     pub fn new(relevance_threshold: f32) -> Self {
-        Self { relevance_threshold }
+        Self {
+            relevance_threshold,
+        }
     }
 
     /// Calculate total reward for a set of retrieved results
@@ -39,12 +41,16 @@ impl RewardModel {
 
     /// Relevance reward: mean score of results above threshold
     fn calculate_relevance_reward(&self, results: &[ScoredResult]) -> f32 {
-        let relevant_count = results.iter().filter(|r| r.score >= self.relevance_threshold).count();
+        let relevant_count = results
+            .iter()
+            .filter(|r| r.score >= self.relevance_threshold)
+            .count();
         if relevant_count == 0 {
             return 0.0;
         }
 
-        let sum_score: f32 = results.iter()
+        let sum_score: f32 = results
+            .iter()
             .filter(|r| r.score >= self.relevance_threshold)
             .map(|r| r.score)
             .sum();

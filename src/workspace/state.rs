@@ -18,7 +18,6 @@ use super::usage::{
     WorkspaceUsageSnapshot,
 };
 use crate::agents::{router::RouteCategory, AgentRuntime, RuntimeConfig};
-use crate::retrieval::LayerWeights;
 use crate::checkpoint::CheckpointManager;
 use crate::codebase::conversations_db::ConversationsDb;
 use crate::memory::{
@@ -31,6 +30,7 @@ use crate::memory::{
     sqlite_vec_store::VecSqliteMemoryStore,
     store::{MemoryBackend, MemoryRecord, MemoryStore, SessionTokenRecord},
 };
+use crate::retrieval::LayerWeights;
 use chrono::{DateTime, Duration, Utc};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -208,11 +208,10 @@ pub async fn process_chat(
     let db = std::sync::Arc::clone(&workspace.workspace.conversations_db);
     let runtime = std::sync::Arc::clone(&workspace.workspace.runtime);
     let wc = workspace.clone();
-    let response = tokio::task::spawn(async move {
-        process_chat_inner(db, runtime, wc, payload).await
-    })
-    .await
-    .unwrap_or_else(|_| Err(anyhow::anyhow!("chat task panicked")));
+    let response =
+        tokio::task::spawn(async move { process_chat_inner(db, runtime, wc, payload).await })
+            .await
+            .unwrap_or_else(|_| Err(anyhow::anyhow!("chat task panicked")));
 
     match response {
         Ok(response) => Json(response).into_response(),

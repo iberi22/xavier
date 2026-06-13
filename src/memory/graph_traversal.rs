@@ -9,6 +9,7 @@ use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
 
 /// A utility for traversing the belief graph using various algorithms.
 pub struct Pathfinder<'a> {
+    #[expect(dead_code)]
     graph: &'a BeliefGraph,
     policy: Option<NavigationPolicy>,
     adjacency_map: HashMap<String, Vec<BeliefEdge>>,
@@ -177,7 +178,7 @@ impl<'a> Pathfinder<'a> {
         impl Eq for NodeState {}
         impl PartialOrd for NodeState {
             fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-                self.score.partial_cmp(&other.score)
+                Some(self.cmp(other))
             }
         }
         impl Ord for NodeState {

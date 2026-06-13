@@ -384,7 +384,14 @@ impl QmdMemory {
             let docs = self.all_documents().await;
             let records: Vec<crate::memory::store::MemoryRecord> = docs
                 .into_iter()
-                .map(|doc| crate::memory::store::MemoryRecord::from_document(&self.workspace_id, &doc, true, None))
+                .map(|doc| {
+                    crate::memory::store::MemoryRecord::from_document(
+                        &self.workspace_id,
+                        &doc,
+                        true,
+                        None,
+                    )
+                })
                 .collect();
             Ok(crate::memory::hierarchy::MemoryTree::build_ls(
                 records, path,
@@ -792,10 +799,26 @@ mod tests {
         use serde_json::json;
         let memory = QmdMemory::new(Arc::new(AsyncRwLock::new(Vec::new())));
 
-        memory.add_document("docs/api/v1".to_string(), "v1".to_string(), json!({})).await.unwrap();
-        memory.add_document("docs/api/v2".to_string(), "v2".to_string(), json!({})).await.unwrap();
-        memory.add_document("docs/readme.md".to_string(), "readme".to_string(), json!({})).await.unwrap();
-        memory.add_document("blog/post1".to_string(), "post1".to_string(), json!({})).await.unwrap();
+        memory
+            .add_document("docs/api/v1".to_string(), "v1".to_string(), json!({}))
+            .await
+            .unwrap();
+        memory
+            .add_document("docs/api/v2".to_string(), "v2".to_string(), json!({}))
+            .await
+            .unwrap();
+        memory
+            .add_document(
+                "docs/readme.md".to_string(),
+                "readme".to_string(),
+                json!({}),
+            )
+            .await
+            .unwrap();
+        memory
+            .add_document("blog/post1".to_string(), "post1".to_string(), json!({}))
+            .await
+            .unwrap();
 
         // Test root ls
         let root = memory.ls("").await.unwrap();

@@ -4,8 +4,8 @@
 
 use super::types::XavierSettings;
 use anyhow::{Context, Result};
-use tokio::fs;
 use std::path::PathBuf;
+use tokio::fs;
 
 const DEFAULT_CONFIG_PATH: &str = "config/xavier.config.json";
 

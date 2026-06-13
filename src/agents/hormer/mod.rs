@@ -40,7 +40,11 @@ impl Hormer {
     /// 1. Tomamos los resultados de una navegación.
     /// 2. Evaluamos el reward.
     /// 3. Si el reward es superior al promedio histórico (o una base), ajustamos pesos.
-    pub async fn update_from_interaction(&self, weights_used: LayerWeights, results: &[ScoredResult]) {
+    pub async fn update_from_interaction(
+        &self,
+        weights_used: LayerWeights,
+        results: &[ScoredResult],
+    ) {
         let reward = self.reward_model.calculate_reward(results);
 
         // Simplified Advantage calculation:

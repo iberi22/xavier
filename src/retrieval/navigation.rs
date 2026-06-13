@@ -3,8 +3,8 @@
 //! Implements scoring for graph transitions based on multiple signals:
 //! cosine similarity, edge confidence, node importance, and context relevance.
 
-use serde::{Deserialize, Serialize};
 use crate::domain::memory::belief::BeliefEdge;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub struct NavigationWeights {
@@ -84,12 +84,10 @@ impl NavigationPolicy {
             (-age_hours / 168.0).exp()
         };
 
-        let final_score = (similarity * self.weights.semantic_similarity) +
-                          (confidence * self.weights.confidence) +
-                          (weight * self.weights.edge_weight) +
-                          (recency * self.weights.recency);
-
-        final_score
+        (similarity * self.weights.semantic_similarity)
+            + (confidence * self.weights.confidence)
+            + (weight * self.weights.edge_weight)
+            + (recency * self.weights.recency)
     }
 }
 

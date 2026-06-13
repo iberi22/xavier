@@ -514,11 +514,13 @@ impl AgentRuntime {
             }
 
             // Reflection / Context Paging Loop
-            let paging_threshold = self.tgd_engine
+            let paging_threshold = self
+                .tgd_engine
                 .as_ref()
                 .map(|tgd| tgd.config().confidence_threshold)
                 .unwrap_or(0.7);
-            if reasoning_result.confidence >= paging_threshold || retries >= self.config.max_retries {
+            if reasoning_result.confidence >= paging_threshold || retries >= self.config.max_retries
+            {
                 break (retrieval_result, reasoning_result);
             }
 
@@ -544,7 +546,9 @@ impl AgentRuntime {
         };
 
         // If confidence is still low after retries, trigger TGD to learn from the gap
-        let tgd_threshold = self.tgd_engine.as_ref()
+        let tgd_threshold = self
+            .tgd_engine
+            .as_ref()
             .map(|tgd| tgd.config().confidence_threshold)
             .unwrap_or(0.7);
         if reasoning_result.confidence < tgd_threshold {
@@ -557,7 +561,10 @@ impl AgentRuntime {
                     content: query.to_string(),
                     timestamp: chrono::Utc::now(),
                 }];
-                if let Err(e) = tgd.generate_rules(&messages, &retrieval_result.documents).await {
+                if let Err(e) = tgd
+                    .generate_rules(&messages, &retrieval_result.documents)
+                    .await
+                {
                     warn!("TGD rule generation failed: {}", e);
                 }
             }

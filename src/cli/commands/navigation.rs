@@ -13,7 +13,13 @@ pub async fn handle_ls(path: Option<String>) -> Result<()> {
     let cwd = resolve_cwd();
     let effective_path = match path {
         Some(p) if p.starts_with('/') => p,
-        Some(p) => if cwd == "/" { format!("/{}", p) } else { format!("{}/{}", cwd, p) },
+        Some(p) => {
+            if cwd == "/" {
+                format!("/{}", p)
+            } else {
+                format!("{}/{}", cwd, p)
+            }
+        }
         None => cwd.clone(),
     };
 

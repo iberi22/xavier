@@ -7,7 +7,6 @@ use crate::consistency::regularization::RetentionRegularizer;
 use crate::consolidation::ConsolidationTask;
 use crate::context::ContextClassifier;
 use crate::retrieval::gating::{AdaptiveGating, LayerWeights, SessionSummary};
-use std::sync::Arc;
 use crate::server::http::types::*;
 use crate::workspace::WorkspaceContext;
 use axum::{extract::Json, response::IntoResponse, Extension};
@@ -52,7 +51,7 @@ pub async fn memory_retrieve(
     let gating = if payload.layer_weights.is_some() {
         AdaptiveGating::new(gating_config)
     } else {
-        AdaptiveGating::with_policy(gating_config, Arc::clone(&workspace.workspace.hormer.policy()))
+        AdaptiveGating::with_policy(gating_config, workspace.workspace.hormer.policy().clone())
     };
     let working_docs = workspace.workspace.memory.all_documents().await;
     let threads = workspace

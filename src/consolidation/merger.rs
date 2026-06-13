@@ -375,6 +375,11 @@ mod tests {
         let sim_ac = similarity(&doc_a, &doc_c);
 
         // AB share same parent 'src/memory', AC do not.
-        assert!(sim_ab > sim_ac, "Similarity in same directory ({}) should be higher than different directory ({})", sim_ab, sim_ac);
+        assert!(
+            sim_ab > sim_ac,
+            "Similarity in same directory ({}) should be higher than different directory ({})",
+            sim_ab,
+            sim_ac
+        );
     }
 }
