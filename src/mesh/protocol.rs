@@ -4,6 +4,7 @@
 //! All types are designed for JSON serialization over HTTP.
 
 use crate::mesh::node::NodeId;
+use crate::session::sharing::SessionBundle;
 use serde::{Deserialize, Serialize};
 
 /// Initial handshake sent by a node to a peer.
@@ -54,6 +55,13 @@ pub struct MeshSyncResult {
     pub synced_chunks: Vec<String>,
     pub failed_chunks: Vec<String>,
     pub duration_ms: u64,
+}
+
+/// Request to share a session bundle with a peer.
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MeshSessionShare {
+    pub sender_node_id: NodeId,
+    pub bundle: SessionBundle,
 }
 
 #[cfg(test)]

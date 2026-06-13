@@ -110,7 +110,7 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 .context("Peer not found in registry")?;
 
             let identity = Arc::new(NodeIdentity::load_or_create()?);
-            let transport = SyncTransport::for_peer(peer, identity)?;
+            let transport = SyncTransport::for_peer(peer, identity.clone())?;
             let token = resolve_http_token().unwrap_or_default();
 
             println!("Starting sync with {} (mode: {})...", node_id, mode);

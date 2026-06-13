@@ -439,6 +439,18 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             "/v1/mesh/chunks/push",
             post(xavier::server::v1_api::v1_mesh_chunks_push),
         )
+        .route(
+            "/v1/sessions/{session_id}/export",
+            get(xavier::server::v1_api::v1_session_export),
+        )
+        .route(
+            "/v1/sessions/import",
+            post(xavier::server::v1_api::v1_session_import),
+        )
+        .route(
+            "/v1/mesh/session/{session_id}/share",
+            post(xavier::server::v1_api::v1_mesh_session_share),
+        )
         // ── Headless E2E API (New Structure) ──────────────────────────────
         .route(
             "/headless/health",
