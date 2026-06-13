@@ -113,3 +113,20 @@ export interface CanvasWidget {
   artifact: BookmarkArtifact;
   position: { x: number; y: number };
 }
+
+export interface MemoryEntry {
+  id: string;
+  content: string;
+  kind: string;
+  priority: string;
+  source: string;
+  created_at: string;
+}
+
+export interface Agent {
+  id: string;
+  name: string;
+  status: "running" | "stopped" | "error";
+  last_seen: string;
+  metadata?: Record<string, unknown>;
+}

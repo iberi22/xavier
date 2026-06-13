@@ -13,4 +13,4 @@ pub use gating::{
 };
 pub mod navigation;
 pub mod scoring;
-pub use policy::NavigationPolicy;
+pub use policy::{NavigationPolicy, TraversalWeights};
