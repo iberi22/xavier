@@ -7,7 +7,7 @@ use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-use super::navigation::NavigationPolicy;
+use super::policy::NavigationPolicy;
 use super::scoring::*;
 use crate::context::ContextLevel;
 use crate::memory::entity_graph::EntityRecord;
@@ -130,7 +130,7 @@ impl Default for GatingConfig {
             half_life_hours: config::DEFAULT_HALF_LIFE_HOURS,
             grounding_enabled: true,
             grounding_min_confidence: 0.5,
-            navigation_policy: Some(NavigationPolicy::with_defaults()),
+            navigation_policy: None,
         }
     }
 }
@@ -194,6 +194,15 @@ impl AdaptiveGating {
                 settings.retrieval.learned_policy.episodic_weight,
                 settings.retrieval.learned_policy.semantic_weight,
             ),
+            super::policy::TraversalWeights {
+                semantic_similarity: settings.retrieval.learned_policy.semantic_similarity_weight,
+                confidence: settings.retrieval.learned_policy.confidence_weight,
+                edge_weight: settings.retrieval.learned_policy.edge_weight,
+                recency: settings.retrieval.learned_policy.recency_weight,
+                cross_layer: settings.retrieval.learned_policy.cross_layer_weight,
+                cross_dir: settings.retrieval.learned_policy.cross_dir_weight,
+                peripheral_hub: settings.retrieval.learned_policy.peripheral_hub_weight,
+            },
             settings.retrieval.learned_policy.learning_rate,
         );
 
@@ -219,12 +228,17 @@ impl AdaptiveGating {
         let mut semantic_results = self.score_semantic_layer_at(semantic, query, now).await;
 
         // 1.1 Guided graph expansion (if graph and policy available)
-        if let (Some(graph_lock), Some(policy)) =
-            (belief_graph.as_ref(), &self.config.navigation_policy)
-        {
+        let expansion_policy = if let Some(p) = &self.config.navigation_policy {
+            Some(p.clone())
+        } else if let Some(policy_lock) = &self.policy {
+            Some(policy_lock.read().await.clone())
+        } else {
+            None
+        };
+
+        if let (Some(graph_lock), Some(policy)) = (belief_graph.as_ref(), expansion_policy) {
             let graph = graph_lock.read().await;
-            let pathfinder =
-                crate::memory::graph_traversal::Pathfinder::with_policy(&graph, policy.clone());
+            let pathfinder = crate::memory::graph_traversal::Pathfinder::with_policy(&graph, policy);
 
             let mut expansions = Vec::new();
             // Expand from top semantic hits
@@ -254,7 +268,7 @@ impl AdaptiveGating {
         // 2. Determine weights: use learned policy if available, otherwise use config defaults
         let weights = if let Some(policy_lock) = &self.policy {
             let policy = policy_lock.read().await;
-            policy.weights
+            policy.layer_weights
         } else {
             self.config.layer_weights
         };
@@ -553,7 +567,7 @@ impl AdaptiveGating {
     pub async fn effective_weights(&self) -> LayerWeights {
         if let Some(policy_lock) = &self.policy {
             let policy = policy_lock.read().await;
-            policy.weights
+            policy.layer_weights
         } else {
             self.config.layer_weights
         }
