@@ -199,6 +199,7 @@ pub async fn search_with_cache_filtered(
 
 pub async fn invalidate_cache(memory: &QmdMemory) {
     memory.search_cache.write().await.clear();
+    crate::search::hybrid::invalidate_hybrid_cache().await;
 }
 
 // ── Read / query operations ───────────────────────────────────────────

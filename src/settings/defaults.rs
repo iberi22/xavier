@@ -108,6 +108,8 @@ impl Default for RetrievalSettings {
         Self {
             disable_hyde: true,
             rrf_k: None,
+            keyword_weight: None,
+            vector_weight: None,
             zone_boost_multiplier: None,
             zone_penalty_multiplier: None,
             cache_warming_enabled: false,

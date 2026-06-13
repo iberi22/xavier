@@ -15,6 +15,20 @@ pub fn configured_rrf_k() -> u32 {
         .unwrap_or(DEFAULT_RRF_K)
 }
 
+pub fn configured_keyword_weight() -> f32 {
+    crate::settings::XavierSettings::current()
+        .retrieval
+        .keyword_weight
+        .unwrap_or(DEFAULT_KEYWORD_WEIGHT)
+}
+
+pub fn configured_vector_weight() -> f32 {
+    crate::settings::XavierSettings::current()
+        .retrieval
+        .vector_weight
+        .unwrap_or(DEFAULT_VECTOR_WEIGHT)
+}
+
 pub const DEFAULT_MAX_RESULTS: usize = 20;
 pub const DEFAULT_SEARCH_LIMIT: usize = 10;
 pub const DEFAULT_RERANK_LIMIT: usize = 50;

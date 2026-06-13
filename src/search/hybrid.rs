@@ -23,12 +23,40 @@ pub enum SearchError {
     Hook(String),
 }
 
-#[derive(Debug, Clone)]
+use moka::future::Cache;
+use std::sync::LazyLock;
+use std::time::Duration;
+
+static HYBRID_SEARCH_CACHE: LazyLock<Cache<String, Vec<ScoredResult>>> = LazyLock::new(|| {
+    Cache::builder()
+        .max_capacity(1000)
+        .time_to_live(Duration::from_secs(3600))
+        .build()
+});
+
+pub async fn invalidate_hybrid_cache() {
+    HYBRID_SEARCH_CACHE.invalidate_all();
+}
+
+#[derive(Clone)]
 pub struct HybridSearcher {
     pub keyword_weight: f32,
     pub vector_weight: f32,
     pub rrf_k: u32,
     pub hooks: HookRegistry,
+    pub embedder: Option<std::sync::Arc<dyn crate::embedding::Embedder>>,
+}
+
+impl std::fmt::Debug for HybridSearcher {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("HybridSearcher")
+            .field("keyword_weight", &self.keyword_weight)
+            .field("vector_weight", &self.vector_weight)
+            .field("rrf_k", &self.rrf_k)
+            .field("hooks", &self.hooks)
+            .field("embedder_configured", &self.embedder.is_some())
+            .finish()
+    }
 }
 
 impl Default for HybridSearcher {
@@ -39,10 +67,11 @@ impl Default for HybridSearcher {
         }
 
         Self {
-            keyword_weight: 0.5,
-            vector_weight: 0.5,
+            keyword_weight: crate::retrieval::config::configured_keyword_weight(),
+            vector_weight: crate::retrieval::config::configured_vector_weight(),
             rrf_k: configured_rrf_k(),
             hooks,
+            embedder: None,
         }
     }
 }
@@ -71,6 +100,20 @@ impl HybridSearcher {
             .execute_pre_query(&mut query, &mut filters)
             .await
             .map_err(|e| SearchError::Hook(e.to_string()))?;
+
+        // Check cache
+        let cache_key = format!(
+            "{}:{}:{}:{}:{}:{:?}",
+            memory.workspace_id(),
+            query,
+            limit,
+            self.keyword_weight,
+            self.vector_weight,
+            filters
+        );
+        if let Some(results) = HYBRID_SEARCH_CACHE.get(&cache_key).await {
+            return Ok(results);
+        }
 
         // Use a larger candidate pool if reranking is likely to be involved
         let candidate_limit = if !self.hooks.is_empty() {
@@ -105,7 +148,14 @@ impl HybridSearcher {
             .await
             .map_err(|e| SearchError::Hook(e.to_string()))?;
 
-        Ok(fused.into_iter().take(limit).collect())
+        let final_results: Vec<ScoredResult> = fused.into_iter().take(limit).collect();
+
+        // Update cache
+        HYBRID_SEARCH_CACHE
+            .insert(cache_key, final_results.clone())
+            .await;
+
+        Ok(final_results)
     }
 
     async fn keyword_search(
@@ -133,14 +183,21 @@ impl HybridSearcher {
         limit: usize,
         filters: Option<&MemoryQueryFilters>,
     ) -> Result<Vec<ScoredResult>, SearchError> {
-        let embedder = embedding::build_embedder_from_env()
-            .await
-            .map_err(|error| SearchError::Embedding(error.to_string()))?;
+        let embedder = if let Some(embedder) = &self.embedder {
+            embedder.clone()
+        } else {
+            embedding::build_embedder_from_env()
+                .await
+                .map_err(|error| SearchError::Embedding(error.to_string()))?
+        };
 
-        let query_vector = embedder
-            .encode(query)
-            .await
-            .map_err(|error| SearchError::Embedding(error.to_string()))?;
+        let query_vector = match embedder.encode(query).await {
+            Ok(vector) => vector,
+            Err(error) => {
+                tracing::warn!(error = %error, "vector search: embedding failed; skipping semantic results");
+                return Ok(Vec::new());
+            }
+        };
 
         if query_vector.is_empty() {
             return Ok(Vec::new());
@@ -279,5 +336,38 @@ mod tests {
         assert_eq!(configured_rrf_k(), 100);
         std::env::remove_var("XAVIER_RRF_K");
         assert_eq!(configured_rrf_k(), 60);
+    }
+
+    #[tokio::test]
+    async fn test_hybrid_search_cache() {
+        let memory = QmdMemory::new(Arc::new(RwLock::new(Vec::new())));
+        memory
+            .add_document(
+                "doc1".to_string(),
+                "the quick brown fox".to_string(),
+                serde_json::json!({}),
+            )
+            .await
+            .expect("test assertion");
+
+        let searcher = HybridSearcher::new();
+
+        // First search - should populate cache
+        let results1 = searcher
+            .search(&memory, "quick", 10, None)
+            .await
+            .expect("test assertion");
+
+        // Second search - should hit cache
+        let results2 = searcher
+            .search(&memory, "quick", 10, None)
+            .await
+            .expect("test assertion");
+
+        assert_eq!(results1.len(), results2.len());
+        // Since we are using QmdMemory::add_document, it generates a new ULID ID every time if not specified.
+        // But the search results content and path should be identical.
+        assert_eq!(results1[0].content, results2[0].content);
+        assert_eq!(results1[0].path, results2[0].path);
     }
 }
