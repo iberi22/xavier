@@ -166,7 +166,7 @@ pub async fn add_handler(
     // FIX A001: Sanitize unicode to prevent JSON serialization errors
     let sanitized_content = sanitize_unicode(&payload.content);
     let sanitized_path = sanitize_unicode(&payload.path);
-    let record = DomainMemoryRecord {
+    let record = DomainMemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
         id: String::new(),
         workspace_id: state.workspace_id.clone(),
         path: sanitized_path.clone(),
@@ -211,7 +211,7 @@ pub async fn update_handler(
     let sanitized_content = sanitize_unicode(&payload.content);
     let sanitized_path = sanitize_unicode(&payload.path);
 
-    let record = DomainMemoryRecord {
+    let record = DomainMemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
         id: payload.id.clone(),
         workspace_id: state.workspace_id.clone(),
         path: sanitized_path.clone(),
