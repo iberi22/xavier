@@ -15,6 +15,10 @@ pub struct NavigationPolicy {
     pub learning_rate: f32,
     /// Number of updates applied to this policy
     pub update_count: u64,
+    /// Last reward received (0.0-1.0)
+    pub last_reward: f32,
+    /// Historical average reward
+    pub avg_reward: f32,
 }
 
 impl Default for NavigationPolicy {
@@ -23,6 +27,8 @@ impl Default for NavigationPolicy {
             weights: LayerWeights::default(),
             learning_rate: 0.01,
             update_count: 0,
+            last_reward: 0.0,
+            avg_reward: 0.0,
         }
     }
 }
@@ -33,6 +39,8 @@ impl NavigationPolicy {
             weights,
             learning_rate,
             update_count: 0,
+            last_reward: 0.0,
+            avg_reward: 0.0,
         }
     }
 
