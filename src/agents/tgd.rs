@@ -11,6 +11,7 @@ use tracing::{info, warn};
 use crate::agents::runtime::ConversationMessage;
 use crate::agents::system1::RetrievedDocument;
 use crate::agents::provider::ModelProviderClient;
+use crate::agents::tgd_cache::TgdCache;
 
 /// Configuration for TGD engine
 #[derive(Debug, Clone)]
@@ -21,6 +22,10 @@ pub struct TgdConfig {
     pub improvements_path: PathBuf,
     /// Maximum number of rules to keep (default: 100)
     pub max_rules_count: usize,
+    /// Path to the TGD cache file
+    pub cache_path: PathBuf,
+    /// Minimum interval between TGD executions in seconds (default: 3600)
+    pub min_interval_seconds: i64,
 }
 
 impl Default for TgdConfig {
@@ -29,6 +34,8 @@ impl Default for TgdConfig {
             confidence_threshold: 0.7,
             improvements_path: PathBuf::from(".xavier/agent_improvements.md"),
             max_rules_count: 100,
+            cache_path: PathBuf::from(".xavier/tgd_cache.json"),
+            min_interval_seconds: 3600,
         }
     }
 }
@@ -64,6 +71,14 @@ impl TgdEngine {
         history: &[ConversationMessage],
         context: &[RetrievedDocument],
     ) -> Result<String> {
+        let current_hash = TgdCache::calculate_hash(history, context);
+        let mut cache = TgdCache::load(&self.config.cache_path).await;
+
+        if cache.should_skip(&current_hash, self.config.min_interval_seconds) {
+            info!("⏭️ TGD: Skipping re-execution (cache hit and interval not elapsed)");
+            return Ok(String::new());
+        }
+
         info!("🚀 TGD: Analyzing delta for rule generation...");
 
         let history_text = history
@@ -98,6 +113,14 @@ impl TgdEngine {
                     info!("✅ TGD: Successfully generated new rules.");
                     self.persist_rules(&rules).await?;
                 }
+
+                // Update and save cache after successful run (even if no rules found)
+                cache.last_hash = current_hash;
+                cache.last_run = chrono::Utc::now();
+                if let Err(e) = cache.save(&self.config.cache_path).await {
+                    warn!("⚠️ TGD: Failed to save cache: {}", e);
+                }
+
                 Ok(rules)
             }
             Err(e) => {
