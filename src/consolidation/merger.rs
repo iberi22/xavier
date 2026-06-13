@@ -28,7 +28,15 @@ pub fn cluster_similar_memories(
     let mut clusters = Vec::new();
     let mut used = HashSet::new();
 
-    for (index, seed) in memories.iter().enumerate() {
+    // Pre-compute MinHash for all documents in the batch if not already present
+    let mut enriched_memories = memories.to_vec();
+    for managed in &mut enriched_memories {
+        if managed.doc.minhash.is_none() {
+            managed.doc.minhash = Some(crate::memory::qmd::compute_minhash(&managed.doc.content));
+        }
+    }
+
+    for (index, seed) in enriched_memories.iter().enumerate() {
         let Some(seed_id) = seed.doc.id.as_ref() else {
             continue;
         };
@@ -39,7 +47,7 @@ pub fn cluster_similar_memories(
         let mut cluster = vec![seed.clone()];
         used.insert(seed_id.clone());
 
-        for candidate in memories.iter().skip(index + 1) {
+        for candidate in enriched_memories.iter().skip(index + 1) {
             let Some(candidate_id) = candidate.doc.id.as_ref() else {
                 continue;
             };
@@ -145,6 +153,22 @@ pub fn similarity(left: &MemoryDocument, right: &MemoryDocument) -> f32 {
                 }
             }
         }
+    }
+
+    // 1. MinHash pre-filter (cheap)
+    let minhash_sim = match (&left.minhash, &right.minhash) {
+        (Some(a), Some(b)) => crate::memory::qmd::jaccard_similarity(a, b),
+        _ => 0.0,
+    };
+
+    let minhash_threshold = crate::settings::XavierSettings::current()
+        .advanced
+        .minhash_threshold;
+
+    // If MinHash is extremely low, we can skip expensive cosine similarity
+    // but only if it's below a safe margin of the target threshold.
+    if minhash_sim < minhash_threshold * 0.5 {
+        return 0.0;
     }
 
     let semantic = match (&left.content_vector, &right.content_vector) {

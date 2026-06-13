@@ -365,6 +365,7 @@ pub struct AdvancedSettings {
     pub entity_extraction_enabled: bool,
     pub audit_chain_enabled: bool,
     pub panel_store_dir: String,
+    pub minhash_threshold: f32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
