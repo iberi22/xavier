@@ -30,6 +30,7 @@ pub mod funnel;
 pub mod governance;
 pub mod reputation;
 pub mod types;
+#[cfg(feature = "post-quantum")]
 pub mod wallet;
 
 // Re-export principales
