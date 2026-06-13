@@ -223,6 +223,32 @@ pub async fn v1_mesh_handshake(
     Json(payload): Json<MeshHandshake>,
 ) -> impl IntoResponse {
     info!("Received mesh handshake from {}", payload.node_id);
+
+    // 1. Verify Signature
+    let Ok(public_key) = hex::decode(&payload.public_key_hex) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "accepted": false, "reason": "Invalid public key hex" })),
+        )
+            .into_response();
+    };
+
+    let Ok(signature) = hex::decode(&payload.signature_hex) else {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({ "accepted": false, "reason": "Invalid signature hex" })),
+        )
+            .into_response();
+    };
+
+    if !NodeIdentity::verify(&public_key, payload.nonce.as_bytes(), &signature) {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({ "accepted": false, "reason": "Invalid signature" })),
+        )
+            .into_response();
+    }
+
     match NodeIdentity::load_or_create() {
         Ok(identity) => {
             let response = MeshHandshakeResponse {
@@ -243,7 +269,29 @@ pub async fn v1_mesh_handshake(
 
 pub async fn v1_mesh_manifest(
     Extension(workspace): Extension<WorkspaceContext>,
+    Query(payload): Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
+    let node_id_str = payload.get("node_id");
+    let acl = crate::mesh::acl::MeshAcl::load().unwrap_or_else(|_| {
+        crate::mesh::acl::MeshAcl::load_from(std::path::PathBuf::from("/tmp/mesh_acl.json")).unwrap()
+    });
+
+    let (_role, clearance) = if let Some(id) = node_id_str {
+        if let Some(entry) = acl.get_entry(&crate::mesh::node::NodeId(id.clone())) {
+            (entry.role, entry.clearance)
+        } else {
+            (
+                crate::enterprise::rbac::Role::Reader,
+                crate::memory::schema::ClearanceLevel::Unclassified,
+            )
+        }
+    } else {
+        (
+            crate::enterprise::rbac::Role::Reader,
+            crate::memory::schema::ClearanceLevel::Unclassified,
+        )
+    };
+
     match NodeIdentity::load_or_create() {
         Ok(identity) => {
             // Use existing chunking logic from src/sync/chunks.rs
@@ -257,15 +305,23 @@ pub async fn v1_mesh_manifest(
 
             match crate::sync::chunks::load_manifest(&sync_dir) {
                 Ok(chunk_manifest) => {
-                    let chunks = chunk_manifest
-                        .chunks
-                        .values()
-                        .map(|c| ChunkRef {
-                            hash: c.hash.clone(),
-                            document_count: c.document_ids.len(),
-                            created_at: c.created_at,
-                        })
-                        .collect();
+                    let mut chunks = Vec::new();
+                    for c in chunk_manifest.chunks.values() {
+                        // Filter chunks: only include if at least one doc is authorized
+                        if let Ok(docs) = crate::sync::chunks::import_from_chunk(&sync_dir, &c.hash) {
+                            let has_authorized_doc = docs.iter().any(|doc| {
+                                doc.clearance <= clearance
+                            });
+
+                            if has_authorized_doc {
+                                chunks.push(ChunkRef {
+                                    hash: c.hash.clone(),
+                                    document_count: c.document_ids.len(),
+                                    created_at: c.created_at,
+                                });
+                            }
+                        }
+                    }
 
                     let manifest = MeshManifest {
                         node_id: identity.node_id,
@@ -294,6 +350,17 @@ pub async fn v1_mesh_chunks_request(
     Json(payload): Json<MeshSyncRequest>,
 ) -> impl IntoResponse {
     use std::collections::HashMap;
+
+    let acl = crate::mesh::acl::MeshAcl::load().unwrap_or_else(|_| {
+        crate::mesh::acl::MeshAcl::load_from(std::path::PathBuf::from("/tmp/mesh_acl.json")).unwrap()
+    });
+
+    let clearance = if let Some(entry) = acl.get_entry(&payload.requesting_node_id) {
+        entry.clearance
+    } else {
+        crate::memory::schema::ClearanceLevel::Unclassified
+    };
+
     let mut response_chunks = HashMap::new();
     let sync_dir = workspace
         .workspace
@@ -303,10 +370,13 @@ pub async fn v1_mesh_chunks_request(
         .join("sync");
 
     for hash in payload.wanted_hashes {
-        let chunk_path = sync_dir.join("chunks").join(format!("{}.jsonl.gz", hash));
-        if chunk_path.exists() {
-            if let Ok(data) = std::fs::read(chunk_path) {
-                response_chunks.insert(hash, data);
+        if let Ok(docs) = crate::sync::chunks::import_from_chunk(&sync_dir, &hash) {
+            let all_authorized = docs.iter().all(|doc| doc.clearance <= clearance);
+            if all_authorized {
+                let chunk_path = sync_dir.join("chunks").join(format!("{}.jsonl.gz", hash));
+                if let Ok(data) = std::fs::read(chunk_path) {
+                    response_chunks.insert(hash, data);
+                }
             }
         }
     }
@@ -555,6 +625,58 @@ pub async fn v1_memories_delete(
             "message": "Memory not found"
         })),
     }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct CloudNodeRequest {
+    pub url: String,
+    pub token: String,
+    pub instance_id: String,
+}
+
+pub async fn v1_mesh_cloud_get() -> impl IntoResponse {
+    let settings = crate::settings::XavierSettings::current();
+    Json(settings.pgheart)
+}
+
+pub async fn v1_mesh_cloud_update(Json(payload): Json<CloudNodeRequest>) -> impl IntoResponse {
+    let mut settings = crate::settings::XavierSettings::current();
+    settings.pgheart.url = Some(payload.url);
+    settings.pgheart.token = Some(payload.token);
+    settings.pgheart.instance_id = Some(payload.instance_id);
+    
+    if let Err(e) = settings.save().await {
+        return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save settings: {}", e)).into_response();
+    }
+    
+    Json(serde_json::json!({ "status": "ok" })).into_response()
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DataCommonsOptInRequest {
+    pub enabled: bool,
+    pub consent_given: bool,
+    pub wallet_address: Option<String>,
+}
+
+pub async fn v1_mesh_data_commons_get() -> impl IntoResponse {
+    let settings = crate::settings::XavierSettings::current();
+    Json(settings.data_commons)
+}
+
+pub async fn v1_mesh_data_commons_opt_in(Json(payload): Json<DataCommonsOptInRequest>) -> impl IntoResponse {
+    let mut settings = crate::settings::XavierSettings::current();
+    settings.data_commons.enabled = payload.enabled;
+    settings.data_commons.consent_given = payload.consent_given;
+    if payload.wallet_address.is_some() {
+        settings.data_commons.wallet_address = payload.wallet_address;
+    }
+    
+    if let Err(e) = settings.save().await {
+        return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save settings: {}", e)).into_response();
+    }
+    
+    Json(serde_json::json!({ "status": "ok" })).into_response()
 }
 
 #[cfg(test)]
