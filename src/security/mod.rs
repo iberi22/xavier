@@ -11,6 +11,7 @@ pub mod prompt_guard;
 pub mod scanner;
 pub mod sessions;
 pub mod threat_store;
+pub mod tokens;
 pub mod url_validator;
 
 pub use anticipator::{Anticipator, AnticipatorConfig};
