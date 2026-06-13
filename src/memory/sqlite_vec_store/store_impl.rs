@@ -41,6 +41,66 @@ impl MemoryStore for VecSqliteMemoryStore {
     }
 
     async fn put(&self, record: MemoryRecord) -> Result<()> {
+        let mut record = record;
+        let security = crate::security::get_security_service();
+        if security.get_config().encryption_at_rest_enabled {
+            let mgr = security.get_key_manager()?;
+            let kek = security.get_kek()?;
+
+            // Get or create salt for this workspace
+            let workspace_id = record.workspace_id.clone();
+            let project_id = self.project_id.clone();
+            let salt_bytes = ConnectionManager::global()
+                .with_conn(&project_id, move |conn| {
+                    let mut stmt = conn.prepare(
+                        "SELECT salt FROM encryption_metadata WHERE workspace_id = ?",
+                    )?;
+                    match stmt.query_row([&workspace_id], |row| row.get::<_, Vec<u8>>(0)) {
+                        Ok(salt) => Ok(salt),
+                        Err(rusqlite::Error::QueryReturnedNoRows) => {
+                            let new_salt = crate::crypto::keys::KeySalt::generate();
+                            let salt_vec = new_salt.as_bytes().to_vec();
+                            conn.execute(
+                                "INSERT INTO encryption_metadata (id, workspace_id, salt, created_at) VALUES (?, ?, ?, ?)",
+                                params![ulid::Ulid::new().to_string(), workspace_id, salt_vec, chrono::Utc::now().to_rfc3339()],
+                            )?;
+                            Ok(salt_vec)
+                        }
+                        Err(e) => Err(anyhow::anyhow!("Database error: {}", e)),
+                    }
+                })
+                .await?;
+
+            // Generate DEK
+            let dek = mgr.generate_dek();
+            let encrypted_dek = mgr.encrypt_dek(&dek, &kek).map_err(|e| anyhow::anyhow!("DEK encryption failed: {}", e))?;
+
+            // Encrypt content
+            let content_nonce = crate::crypto::encryption::NonceBytes::generate();
+            let encrypted_content = crate::crypto::encryption::encrypt_data(
+                record.content.as_bytes(),
+                dek.as_bytes(),
+                &content_nonce,
+            ).map_err(|e| anyhow::anyhow!("Content encryption failed: {}", e))?;
+
+            // Encrypt metadata
+            let metadata_nonce = crate::crypto::encryption::NonceBytes::generate();
+            let metadata_json = serde_json::to_string(&record.metadata)?;
+            let encrypted_metadata = crate::crypto::encryption::encrypt_data(
+                metadata_json.as_bytes(),
+                dek.as_bytes(),
+                &metadata_nonce,
+            ).map_err(|e| anyhow::anyhow!("Metadata encryption failed: {}", e))?;
+
+            record.content = crate::utils::crypto::hex_encode(&encrypted_content.ciphertext);
+            record.metadata = serde_json::json!({
+                "encrypted": crate::utils::crypto::hex_encode(&encrypted_metadata.ciphertext)
+            });
+            record.encrypted_dek = Some(encrypted_dek);
+            record.content_iv = Some(content_nonce.as_bytes().to_vec());
+            record.metadata_iv = Some(metadata_nonce.as_bytes().to_vec());
+        }
+
         let project_id = self.project_id.clone();
         let record_c = record.clone();
 
@@ -79,7 +139,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
                 conn.execute(
                     &format!(
-                        "INSERT OR REPLACE INTO {} (id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                        "INSERT OR REPLACE INTO {} (id, workspace_id, path, content, metadata, embedding, encrypted_dek, content_iv, metadata_iv, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
                         TABLE_MEMORIES
                     ),
                     params![
@@ -89,6 +149,9 @@ impl MemoryStore for VecSqliteMemoryStore {
                         record_c.content,
                         serde_json::to_string(&record_c.metadata).unwrap_or_default(),
                         embedding_blob,
+                        record_c.encrypted_dek,
+                        record_c.content_iv,
+                        record_c.metadata_iv,
                         record_c.created_at.to_rfc3339(),
                         record_c.updated_at.to_rfc3339(),
                         record_c.revision,
@@ -158,11 +221,11 @@ impl MemoryStore for VecSqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let id_or_path = id_or_path.to_string();
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        let record = ConnectionManager::global().with_conn(&self.project_id, move |conn| {
             // Try by id first (O(1) lookup)
             let key = crate::memory::store::stable_key("sqlite_mem", &[&workspace_id, &id_or_path]);
             let mut stmt = conn.prepare(&format!(
-                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE id = ? LIMIT 1",
+                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM {} WHERE id = ? LIMIT 1",
                 TABLE_MEMORIES
             ))?;
 
@@ -173,7 +236,7 @@ impl MemoryStore for VecSqliteMemoryStore {
 
             // Fallback: try by path
             let mut stmt = conn.prepare(&format!(
-                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE workspace_id = ? AND path = ?",
+                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM {} WHERE workspace_id = ? AND path = ?",
                 TABLE_MEMORIES
             ))?;
 
@@ -183,7 +246,14 @@ impl MemoryStore for VecSqliteMemoryStore {
             } else {
                 Ok(None)
             }
-        }).await
+        }).await?;
+
+        if let Some(mut record) = record {
+            crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(&mut record)?;
+            Ok(Some(record))
+        } else {
+            Ok(None)
+        }
     }
 
     async fn update(&self, record: MemoryRecord) -> Result<()> {
@@ -283,9 +353,9 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     async fn list(&self, workspace_id: &str) -> Result<Vec<MemoryRecord>> {
         let workspace_id = workspace_id.to_string();
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+        let records = ConnectionManager::global().with_conn(&self.project_id, move |conn| {
             let mut stmt = conn.prepare(&format!(
-                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE workspace_id = ?",
+                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM {} WHERE workspace_id = ?",
                 TABLE_MEMORIES
             ))?;
 
@@ -295,7 +365,14 @@ impl MemoryStore for VecSqliteMemoryStore {
                 records.push(VecSqliteMemoryStore::deserialize_record(row)?);
             }
             Ok(records)
-        }).await
+        }).await?;
+
+        let mut results = Vec::with_capacity(records.len());
+        for mut record in records {
+            crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(&mut record)?;
+            results.push(record);
+        }
+        Ok(results)
     }
 
     async fn search(
@@ -304,28 +381,8 @@ impl MemoryStore for VecSqliteMemoryStore {
         query: &str,
         filters: Option<&MemoryQueryFilters>,
     ) -> Result<Vec<MemoryRecord>> {
-        let workspace_id_c = workspace_id.to_string();
-        let query = query.to_string();
-        let filters = filters.cloned();
-
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let mut stmt = conn.prepare(&format!(
-                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE workspace_id = ?",
-                TABLE_MEMORIES
-            ))?;
-
-            let mut rows = stmt.query([&workspace_id_c])?;
-            let mut records = Vec::new();
-            while let Some(row) = rows.next()? {
-                let record = VecSqliteMemoryStore::deserialize_record(row)?;
-                if VecSqliteMemoryStore::row_matches_filters(&workspace_id_c, &record, filters.as_ref())
-                    && record.matches_query(&query)
-                {
-                    records.push(record);
-                }
-            }
-            Ok(records)
-        }).await
+        let records = self.list(workspace_id).await?;
+        crate::memory::store::filter_records(records, workspace_id, query, filters)
     }
 
     async fn hybrid_search(

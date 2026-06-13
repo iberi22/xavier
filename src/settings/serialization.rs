@@ -4,7 +4,6 @@
 
 use super::types::XavierSettings;
 use anyhow::{Context, Result};
-use tokio::fs;
 use std::path::PathBuf;
 
 const DEFAULT_CONFIG_PATH: &str = "config/xavier.config.json";
@@ -154,21 +153,12 @@ pub fn current() -> XavierSettings {
     settings
 }
 
-<<<<<<< HEAD
-pub async fn save(settings: &XavierSettings) -> Result<()> {
-    let path = resolve_config_path();
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).await?;
-    }
-    let content = serde_json::to_string_pretty(settings)?;
-    fs::write(path, content).await?;
-=======
 pub fn save(settings: &XavierSettings) -> Result<()> {
     let path = resolve_config_path();
 
     if let Some(parent) = path.parent() {
         if !parent.exists() {
-            fs::create_dir_all(parent).with_context(|| {
+            std::fs::create_dir_all(parent).with_context(|| {
                 format!("failed to create config directory at {}", parent.display())
             })?;
         }
@@ -177,13 +167,12 @@ pub fn save(settings: &XavierSettings) -> Result<()> {
     let raw = serde_json::to_string_pretty(settings)
         .with_context(|| "failed to serialize settings to JSON")?;
 
-    fs::write(&path, raw).with_context(|| {
+    std::fs::write(&path, raw).with_context(|| {
         format!(
             "failed to write settings to config file at {}",
             path.display()
         )
     })?;
 
->>>>>>> origin/feat/cloud-relay-ui-settings-endpoint-4928233387040376179
     Ok(())
 }

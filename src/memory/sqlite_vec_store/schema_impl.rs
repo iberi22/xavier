@@ -43,6 +43,9 @@ impl VecSqliteMemoryStore {
                     content TEXT NOT NULL,
                     metadata TEXT NOT NULL,
                     embedding BLOB,
+                    encrypted_dek BLOB,
+                    content_iv BLOB,
+                    metadata_iv BLOB,
                     created_at DATETIME NOT NULL,
                     updated_at DATETIME NOT NULL,
                     revision INTEGER NOT NULL,
@@ -76,7 +79,35 @@ impl VecSqliteMemoryStore {
                 )?;
             }
 
-            // Add cluster_id, level, relation, revisions if missing
+            // Add cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv if missing
+            if !Self::table_has_column(conn, TABLE_MEMORIES, "encrypted_dek")? {
+                conn.execute(
+                    &format!(
+                        "ALTER TABLE {} ADD COLUMN encrypted_dek BLOB",
+                        TABLE_MEMORIES
+                    ),
+                    (),
+                )?;
+            }
+            if !Self::table_has_column(conn, TABLE_MEMORIES, "content_iv")? {
+                conn.execute(
+                    &format!(
+                        "ALTER TABLE {} ADD COLUMN content_iv BLOB",
+                        TABLE_MEMORIES
+                    ),
+                    (),
+                )?;
+            }
+            if !Self::table_has_column(conn, TABLE_MEMORIES, "metadata_iv")? {
+                conn.execute(
+                    &format!(
+                        "ALTER TABLE {} ADD COLUMN metadata_iv BLOB",
+                        TABLE_MEMORIES
+                    ),
+                    (),
+                )?;
+            }
+
             if !Self::table_has_column(conn, TABLE_MEMORIES, "cluster_id")? {
                 conn.execute(
                     &format!("ALTER TABLE {} ADD COLUMN cluster_id TEXT", TABLE_MEMORIES),
@@ -257,6 +288,15 @@ impl VecSqliteMemoryStore {
             )?;
 
             // Panel UI Backend Parity Tables
+            conn.execute_batch(
+                "CREATE TABLE IF NOT EXISTS encryption_metadata (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    salt BLOB NOT NULL,
+                    created_at DATETIME NOT NULL
+                );",
+            )?;
+
             conn.execute_batch(
                 &format!(
                     "CREATE TABLE IF NOT EXISTS {} (
