@@ -33,6 +33,26 @@ impl Default for NavigationPolicy {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_score_for_prefetch() {
+        let policy = NavigationPolicy::default();
+        // Default weights: working=0.3, episodic=0.3, semantic=0.4
+
+        let score_w = policy.score_for_prefetch("working", 0.8);
+        assert!((score_w - 0.24).abs() < 0.001);
+
+        let score_s = policy.score_for_prefetch("semantic", 0.8);
+        assert!((score_s - 0.32).abs() < 0.001);
+
+        let score_unknown = policy.score_for_prefetch("unknown", 0.8);
+        assert_eq!(score_unknown, 0.0);
+    }
+}
+
 impl NavigationPolicy {
     pub fn new(weights: LayerWeights, learning_rate: f32) -> Self {
         Self {
@@ -52,6 +72,12 @@ impl NavigationPolicy {
 
         self.normalize();
         self.update_count += 1;
+    }
+
+    /// Score a layer for prefetching based on its weight and base relevance
+    pub fn score_for_prefetch(&self, layer: &str, base_relevance: f32) -> f32 {
+        let weight = self.weights.weight_for(layer);
+        base_relevance * weight
     }
 
     /// Normalize weights so they sum to 1.0

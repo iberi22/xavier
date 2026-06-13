@@ -46,14 +46,20 @@ pub async fn memory_retrieve(
         half_life_hours: payload.half_life_hours,
         grounding_enabled: payload.grounding_enabled,
         grounding_min_confidence: payload.grounding_min_confidence,
-        navigation_policy: None,
+        navigation_policy: Some(crate::retrieval::navigation::NavigationPolicy::with_defaults()),
+        cache_warming_enabled: settings.retrieval.cache_warming_enabled,
+        cache_warming_threshold: settings
+            .retrieval
+            .cache_warming_threshold
+            .unwrap_or(crate::retrieval::config::DEFAULT_CACHE_WARMING_THRESHOLD),
     };
 
     let gating = if payload.layer_weights.is_some() {
         AdaptiveGating::new(gating_config)
     } else {
         AdaptiveGating::with_policy(gating_config, Arc::clone(&workspace.workspace.hormer.policy()))
-    };
+    }
+    .with_memory(Arc::clone(&workspace.workspace.memory));
     let working_docs = workspace.workspace.memory.all_documents().await;
     let threads = workspace
         .workspace
