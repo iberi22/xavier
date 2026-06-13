@@ -35,13 +35,8 @@ impl XavierSettings {
         serialization::current()
     }
 
-<<<<<<< HEAD
     pub async fn save(&self) -> Result<()> {
         serialization::save(self).await
-=======
-    pub fn save(&self) -> Result<()> {
-        serialization::save(self)
->>>>>>> origin/feat/cloud-relay-ui-settings-endpoint-4928233387040376179
     }
 
     pub fn client_base_url(&self) -> String {
