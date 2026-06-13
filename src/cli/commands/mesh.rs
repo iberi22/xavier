@@ -5,7 +5,7 @@ use crate::cli::config::resolve_http_token;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
-use xavier::mesh::{NodeId, NodeIdentity, PeerInfo, PeerRegistry};
+use xavier::mesh::{NodeId, NodeIdentity, PeerInfo, PeerRegistry, MeshTransport};
 use xavier::sync::SyncTransport;
 
 pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
@@ -271,6 +271,7 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 added_at: chrono::Utc::now().timestamp(),
                 last_seen_at: None,
                 sync_enabled: true,
+                is_cloud: false,
             };
 
             registry.add_peer(peer)?;
