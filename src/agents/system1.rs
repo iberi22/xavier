@@ -619,9 +619,9 @@ mod budget_tests {
     use chrono::Utc;
     use tokio::sync::RwLock;
 
-    fn mock_doc(id: &str, content: &str) -> crate::memory::store::MemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
+    fn mock_doc(id: &str, content: &str) -> crate::memory::store::MemoryRecord {
         let now = Utc::now();
-        crate::memory::store::MemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
+        crate::memory::store::MemoryRecord {
             id: id.to_string(),
             workspace_id: "test".to_string(),
             path: format!("path/{}", id),

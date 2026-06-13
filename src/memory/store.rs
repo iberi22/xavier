@@ -68,7 +68,7 @@ pub struct MemoryRevision {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryRecord { ..Default::default(),
+pub struct MemoryRecord {
     pub id: String,
     pub workspace_id: String,
     pub path: String,
@@ -98,7 +98,7 @@ pub struct MemoryRecord { ..Default::default(),
     pub metadata_iv: Option<Vec<u8>>,
 }
 
-impl Default for MemoryRecord { ..Default::default(),
+impl Default for MemoryRecord {
     fn default() -> Self {
         Self {
             id: String::new(),
@@ -113,7 +113,7 @@ impl Default for MemoryRecord { ..Default::default(),
             primary: false,
             parent_id: None,
             cluster_id: None,
-            level: MemoryLevel::Atom,
+            level: MemoryLevel::Raw,
             relation: None,
             clearance: crate::memory::schema::ClearanceLevel::Unclassified,
             revisions: Vec::new(),
@@ -205,7 +205,7 @@ pub(crate) struct DurableStoreFile {
 // MemoryRecord helpers
 // ---------------------------------------------------------------------------
 
-impl MemoryRecord { ..Default::default(),
+impl MemoryRecord {
     pub fn from_document(
         workspace_id: &str,
         document: &MemoryDocument,
@@ -909,7 +909,7 @@ impl MemoryStore for InMemoryMemoryStore {
 // Shared helper functions
 // ---------------------------------------------------------------------------
 
-pub(crate) fn revisioned_record(existing: MemoryRecord, mut next: MemoryRecord) -> MemoryRecord { ..Default::default(),
+pub(crate) fn revisioned_record(existing: MemoryRecord, mut next: MemoryRecord) -> MemoryRecord {
     next.id = existing.id;
     next.created_at = existing.created_at;
     next.updated_at = Utc::now();

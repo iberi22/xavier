@@ -130,7 +130,7 @@ impl Hormer {
             settings.retrieval.learned_policy.peripheral_hub_weight = policy.traversal_weights.peripheral_hub;
             settings.retrieval.learned_policy.update_count = policy.update_count;
 
-            if let Err(e) = settings.save() {
+            if let Err(e) = settings.save().await {
                 tracing::warn!("HORMER: Failed to persist policy: {}", e);
             }
         }

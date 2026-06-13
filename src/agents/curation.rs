@@ -182,7 +182,7 @@ impl CurationAgent {
         let summary = response.text;
 
         let now = Utc::now();
-        Ok(MemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
+        Ok(MemoryRecord {
             id: uuid::Uuid::new_v4().to_string(),
             workspace_id: workspace_id.to_string(),
             path: format!("zone_summary/{}", cluster_id),
@@ -200,8 +200,9 @@ impl CurationAgent {
             cluster_id: Some(cluster_id.to_string()),
             level: MemoryLevel::Extracted,
             relation: None,
-            clearance: Default::default(),
-            revisions: Vec::new(),
+            clearance: crate::memory::schema::ClearanceLevel::Unclassified,
+            revisions: vec![],
+            ..Default::default()
         })
     }
 }
