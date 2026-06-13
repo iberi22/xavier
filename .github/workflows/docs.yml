@@ -35,16 +35,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      # Step 1: Setup Node for Astro
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
           node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: package-lock.json
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install
 
       # Step 2: Build Xavier binary for Chronicle SSG + auto-docs
       - name: Setup Rust
@@ -76,7 +79,7 @@ jobs:
 
       # Step 5: Build Astro documentation site
       - name: Build Astro site
-        run: npm run build --workspace docs/site
+        run: pnpm --filter xavier-docs-site build
 
       # Step 6: Inject DevLog HTML into Astro output
       - name: Inject DevLog into Astro output

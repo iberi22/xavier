@@ -13,6 +13,8 @@ use serde::{Deserialize, Serialize};
 
 use super::analyzer::{ErrorDiagnosis, Urgency};
 use super::fixer::FixerResult;
+use crate::messaging::DiscordClient;
+use crate::settings::XavierSettings;
 
 /// Notification severity (maps to emoji + level).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -47,6 +49,17 @@ impl Notification {
         format!("{} *{}*\n\n{}", emoji, self.title, self.message)
     }
 
+    /// Get Discord color for notification level
+    pub fn discord_color(&self) -> u32 {
+        match self.level {
+            NotificationLevel::Success => 0x39ff14,  // Xavier Green
+            NotificationLevel::Info => 0x3498db,     // Blue
+            NotificationLevel::Warning => 0xf1c40f,  // Yellow
+            NotificationLevel::Error => 0xe74c3c,    // Red
+            NotificationLevel::Critical => 0x992d22, // Dark Red
+        }
+    }
+
     /// Format as a tracing log message.
     pub fn log(&self) {
         match self.level {
@@ -64,12 +77,24 @@ impl Notification {
 }
 
 /// The notifier — sends notifications via configured channels.
-pub struct Notifier;
+pub struct Notifier {
+    discord: Option<DiscordClient>,
+}
 
 impl Notifier {
     /// Create a new notifier.
     pub fn new() -> Self {
-        Self
+        let settings = XavierSettings::current();
+        let discord = if settings.discord.enabled {
+            Some(DiscordClient::new(
+                settings.discord.webhook_url.clone(),
+                settings.discord.rate_limit_per_min,
+            ))
+        } else {
+            None
+        };
+
+        Self { discord }
     }
 
     /// Notify about a detected error.
@@ -100,7 +125,20 @@ impl Notifier {
         };
 
         notif.log();
+        let _ = self.send_discord(&notif);
         notif
+    }
+
+    async fn send_discord(&self, notif: &Notification) {
+        if let Some(ref client) = self.discord {
+            let _ = client
+                .send_embed(
+                    Some(notif.title.clone()),
+                    notif.message.clone(),
+                    Some(notif.discord_color()),
+                )
+                .await;
+        }
     }
 
     /// Notify about a fixer action result.
@@ -131,6 +169,8 @@ impl Notifier {
         };
 
         notif.log();
+        let _ = self.send_discord(&notif);
+        let _ = self.send_discord(&notif);
         notif
     }
 
@@ -170,6 +210,7 @@ impl Notifier {
         };
 
         notif.log();
+        let _ = self.send_discord(&notif);
         notif
     }
 }

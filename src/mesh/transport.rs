@@ -31,12 +31,17 @@ impl MeshTransport {
 
     /// Perform a handshake with a remote peer.
     pub async fn handshake(&self, peer_url: &str, token: &str) -> Result<MeshHandshakeResponse> {
+        let nonce = uuid::Uuid::new_v4().to_string();
+        let signature = self.local_identity.sign(nonce.as_bytes());
+
         let handshake = MeshHandshake {
             node_id: self.local_identity.node_id.clone(),
             public_key_hex: hex::encode(&self.local_identity.public_key),
             xavier_version: env!("CARGO_PKG_VERSION").to_string(),
             capabilities: vec!["sync-v1".to_string()],
             timestamp: chrono::Utc::now().timestamp(),
+            nonce,
+            signature_hex: hex::encode(signature),
         };
 
         let url = format!("{}/v1/mesh/handshake", peer_url.trim_end_matches('/'));

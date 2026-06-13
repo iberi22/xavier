@@ -4,6 +4,7 @@
 
 use super::types::XavierSettings;
 use anyhow::{Context, Result};
+use tokio::fs;
 use std::path::PathBuf;
 
 const DEFAULT_CONFIG_PATH: &str = "config/xavier.config.json";
@@ -153,12 +154,11 @@ pub fn current() -> XavierSettings {
     settings
 }
 
-pub fn save(settings: &XavierSettings) -> Result<()> {
+pub async fn save(settings: &XavierSettings) -> Result<()> {
     let path = resolve_config_path();
-
     if let Some(parent) = path.parent() {
         if !parent.exists() {
-            std::fs::create_dir_all(parent).with_context(|| {
+            fs::create_dir_all(parent).await.with_context(|| {
                 format!("failed to create config directory at {}", parent.display())
             })?;
         }
@@ -167,12 +167,11 @@ pub fn save(settings: &XavierSettings) -> Result<()> {
     let raw = serde_json::to_string_pretty(settings)
         .with_context(|| "failed to serialize settings to JSON")?;
 
-    std::fs::write(&path, raw).with_context(|| {
+    fs::write(&path, raw).await.with_context(|| {
         format!(
             "failed to write settings to config file at {}",
             path.display()
         )
     })?;
-
     Ok(())
 }
