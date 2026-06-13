@@ -91,7 +91,129 @@ impl EigenTrustEngine {
     /// 3. Distrust adjustment
     /// 4. Retornar scores
     pub fn compute(&mut self) -> Result<EigenTrustResult, ReputationError> {
-        todo!("Feature 4.1 — EigenTrust compute")
+        if self.attestations.is_empty() {
+            return Err(ReputationError::NoAttestations);
+        }
+
+        let mut wallets: Vec<WalletAddress> = self
+            .attestations
+            .iter()
+            .flat_map(|a| vec![a.from.clone(), a.to.clone()])
+            .collect();
+        wallets.sort_by(|a, b| a.0.cmp(&b.0));
+        wallets.dedup();
+
+        let n = wallets.len();
+        if n < 2 && self.pre_trusted.is_empty() {
+            return Err(ReputationError::TooFewPeers);
+        }
+
+        let wallet_to_idx: HashMap<WalletAddress, usize> = wallets
+            .iter()
+            .enumerate()
+            .map(|(i, w)| (w.clone(), i))
+            .collect();
+
+        // 1. Construir matriz de confianza local normalizada C
+        let mut c = vec![vec![0.0; n]; n];
+        for a in &self.attestations {
+            if let (Some(&from_idx), Some(&to_idx)) =
+                (wallet_to_idx.get(&a.from), wallet_to_idx.get(&a.to))
+            {
+                if a.score > 0 {
+                    c[from_idx][to_idx] += a.score as f64;
+                }
+            }
+        }
+
+        // Normalizar filas
+        for i in 0..n {
+            let row_sum: f64 = c[i].iter().sum();
+            if row_sum > 0.0 {
+                for j in 0..n {
+                    c[i][j] /= row_sum;
+                }
+            } else {
+                // Si no confía en nadie, confía uniformemente en pre-trusted o en todos
+                if !self.pre_trusted.is_empty() {
+                    let pt_weight = 1.0 / self.pre_trusted.len() as f64;
+                    for pt in &self.pre_trusted {
+                        if let Some(&idx) = wallet_to_idx.get(pt) {
+                            c[i][idx] = pt_weight;
+                        }
+                    }
+                } else {
+                    let weight = 1.0 / n as f64;
+                    for j in 0..n {
+                        c[i][j] = weight;
+                    }
+                }
+            }
+        }
+
+        // 2. Power iteration
+        let a = self.config.teleport_factor;
+        let mut p = vec![0.0; n];
+        if !self.pre_trusted.is_empty() {
+            let pt_weight = 1.0 / self.pre_trusted.len() as f64;
+            for pt in &self.pre_trusted {
+                if let Some(&idx) = wallet_to_idx.get(pt) {
+                    p[idx] = pt_weight;
+                }
+            }
+        } else {
+            p.fill(1.0 / n as f64);
+        }
+
+        let mut t = p.clone();
+        let mut converged = false;
+        let mut final_diff = 0.0;
+        let mut final_iterations = 0;
+
+        for k in 0..self.config.max_iterations {
+            let mut t_next = vec![0.0; n];
+            for j in 0..n {
+                let mut sum = 0.0;
+                for i in 0..n {
+                    sum += c[i][j] * t[i];
+                }
+                t_next[j] = (1.0 - a) * sum + a * p[j];
+            }
+
+            // Verificar convergencia
+            let diff: f64 = t.iter().zip(t_next.iter()).map(|(a, b)| (a - b).abs()).sum();
+            t = t_next;
+            final_diff = diff;
+            final_iterations = k + 1;
+
+            if diff < self.config.convergence_threshold {
+                converged = true;
+                break;
+            }
+        }
+
+        if !converged {
+            return Err(ReputationError::NotConverged);
+        }
+
+        let scores: HashMap<WalletAddress, f64> = wallets
+            .into_iter()
+            .enumerate()
+            .map(|(i, w)| (w, t[i]))
+            .collect();
+
+        let result = EigenTrustResult {
+            scores,
+            iterations: final_iterations,
+            convergence_diff: final_diff,
+            computed_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+        };
+
+        self.last_result = Some(result.clone());
+        Ok(result)
     }
 
     /// Obtener trust score de una wallet
@@ -112,7 +234,27 @@ impl EigenTrustEngine {
     /// Si A y B se validan mutuamente >80% del tiempo sin variación,
     /// ambos son marcados como potencial colusión.
     pub fn detect_collusion(&self) -> Vec<(WalletAddress, WalletAddress, f64)> {
-        todo!("Feature 4.1 — Collusion detection")
+        let mut pairs: HashMap<(WalletAddress, WalletAddress), (u32, u32)> = HashMap::new();
+
+        for a in &self.attestations {
+            let key = if a.from.0 < a.to.0 {
+                (a.from.clone(), a.to.clone())
+            } else {
+                (a.to.clone(), a.from.clone())
+            };
+
+            let stats = pairs.entry(key).or_insert((0, 0));
+            stats.0 += 1; // total interacciones
+            if a.score > 0 {
+                stats.1 += 1; // interacciones positivas
+            }
+        }
+
+        pairs
+            .into_iter()
+            .filter(|(_, (total, pos))| *total > 5 && (*pos as f64 / *total as f64) > 0.8)
+            .map(|(key, (total, pos))| (key.0, key.1, pos as f64 / total as f64))
+            .collect()
     }
 }
 
@@ -126,8 +268,31 @@ impl ContributionCalculator {
     /// - Uptime del nodo
     /// - Versión actualizada
     /// - Validaciones realizadas con acierto
-    pub fn calculate(wallet: &WalletAddress, history: &ContributionHistory) -> u64 {
-        todo!("Feature 4.2 — Contribution score")
+    pub fn calculate(_wallet: &WalletAddress, history: &ContributionHistory) -> u64 {
+        let mut score = 0.0;
+
+        // 1. Contextos compartidos (máx 300 pts)
+        // 10 pts por cada uno, hasta 30
+        score += (history.shared_contexts.len() as f64 * 10.0).min(300.0);
+
+        // 2. Utilidad (máx 300 pts)
+        // Si otros compraron tus contextos, es que son útiles
+        if !history.shared_contexts.is_empty() {
+            let utility_ratio =
+                history.purchased_contexts.len() as f64 / history.shared_contexts.len() as f64;
+            score += utility_ratio * 300.0;
+        }
+
+        // 3. Uptime (máx 200 pts)
+        // 1 pt por cada hora (3600s), hasta 200h
+        score += (history.total_uptime as f64 / 3600.0).min(200.0);
+
+        // 4. Validaciones (máx 200 pts)
+        // 20 pts por cada validación correcta
+        let correct_validations = history.validations.iter().filter(|v| v.was_correct).count();
+        score += (correct_validations as f64 * 20.0).min(200.0);
+
+        score.min(1000.0) as u64
     }
 }
 
@@ -182,5 +347,108 @@ mod tests {
         let score = engine.hybrid_score(0.8, 0.6);
         // 0.7 * 0.8 + 0.3 * 0.6 = 0.56 + 0.18 = 0.74
         assert!((score - 0.74).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_eigentrust_convergence() {
+        let config = ReputationConfig::default();
+        let mut engine = EigenTrustEngine::new(config, vec![]);
+
+        let w1 = WalletAddress("xv1_1".into());
+        let w2 = WalletAddress("xv1_2".into());
+        let w3 = WalletAddress("xv1_3".into());
+
+        // w1 confía en w2
+        engine.add_attestation(ReputationAttestation {
+            from: w1.clone(),
+            to: w2.clone(),
+            score: 1,
+            context_hash: None,
+            timestamp: 0,
+            signature: vec![],
+        });
+
+        // w2 confía en w3
+        engine.add_attestation(ReputationAttestation {
+            from: w2.clone(),
+            to: w3.clone(),
+            score: 1,
+            context_hash: None,
+            timestamp: 0,
+            signature: vec![],
+        });
+
+        // w3 confía en w1
+        engine.add_attestation(ReputationAttestation {
+            from: w3.clone(),
+            to: w1.clone(),
+            score: 1,
+            context_hash: None,
+            timestamp: 0,
+            signature: vec![],
+        });
+
+        let result = engine.compute().unwrap();
+
+        // En un anillo simétrico sin pre-trusted, todos deberían tener el mismo score (1/3)
+        let s1 = result.scores.get(&w1).unwrap();
+        let s2 = result.scores.get(&w2).unwrap();
+        let s3 = result.scores.get(&w3).unwrap();
+
+        assert!((s1 - 0.333).abs() < 0.01);
+        assert!((s2 - 0.333).abs() < 0.01);
+        assert!((s3 - 0.333).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_contribution_score_calculation() {
+        let w = WalletAddress("xv1_test".into());
+        let history = ContributionHistory {
+            shared_contexts: vec!["h1".into(), "h2".into(), "h3".into()], // 3 * 10 = 30 pts
+            purchased_contexts: vec!["h1".into()], // 1/3 utility = 100 pts
+            total_uptime: 3600 * 50, // 50h = 50 pts
+            validations: vec![
+                ValidationRecord { context_hash: "c1".into(), was_correct: true, timestamp: 0 },
+                ValidationRecord { context_hash: "c2".into(), was_correct: true, timestamp: 0 },
+            ], // 2 * 20 = 40 pts
+            node_version: "1.0.0".into(),
+        };
+
+        let score = ContributionCalculator::calculate(&w, &history);
+        // Total: 30 + 100 + 50 + 40 = 220
+        assert_eq!(score, 220);
+    }
+
+    #[test]
+    fn test_collusion_detection() {
+        let config = ReputationConfig::default();
+        let mut engine = EigenTrustEngine::new(config, vec![]);
+
+        let a = WalletAddress("xv1_a".into());
+        let b = WalletAddress("xv1_b".into());
+
+        // A y B se validan mutuamente 10 veces
+        for i in 0..10 {
+            engine.add_attestation(ReputationAttestation {
+                from: a.clone(),
+                to: b.clone(),
+                score: 1,
+                context_hash: Some(format!("ctx_{}", i)),
+                timestamp: 0,
+                signature: vec![],
+            });
+            engine.add_attestation(ReputationAttestation {
+                from: b.clone(),
+                to: a.clone(),
+                score: 1,
+                context_hash: Some(format!("ctx_{}_rev", i)),
+                timestamp: 0,
+                signature: vec![],
+            });
+        }
+
+        let collusion = engine.detect_collusion();
+        assert!(!collusion.is_empty());
+        assert_eq!(collusion[0].2, 1.0); // 100% positive interaction
     }
 }

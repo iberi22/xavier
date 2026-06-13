@@ -1228,8 +1228,8 @@ mod tests {
         let graph = Arc::new(tokio::sync::RwLock::new(crate::memory::belief_graph::BeliefGraph::new()));
         {
             let mut g = graph.write().await;
-            g.add_node("Rust".to_string(), 1.0);
-            g.add_node("Cargo".to_string(), 1.0);
+            g.add_node("Rust".to_string(), 1.0, None);
+            g.add_node("Cargo".to_string(), 1.0, None);
             g.add_relation("Rust".to_string(), "Cargo".to_string(), "uses".to_string(), None, None).await.unwrap();
         }
 

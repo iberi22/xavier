@@ -35,6 +35,7 @@ async fn test_hormer_policy_update_positive() {
         },
     ];
 
+    let initial_count = policy.read().await.update_count;
     hormer.update_from_interaction(initial_weights, &results).await;
 
     let updated_policy = policy.read().await;
