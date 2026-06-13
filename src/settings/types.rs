@@ -228,6 +228,8 @@ impl fmt::Debug for ModelSettings {
 pub struct RetrievalSettings {
     pub disable_hyde: bool,
     pub rrf_k: Option<u32>, // XAVIER_RRF_K
+    pub keyword_weight: Option<f32>,
+    pub vector_weight: Option<f32>,
     pub zone_boost_multiplier: Option<f32>,
     pub zone_penalty_multiplier: Option<f32>,
     pub cache_warming_enabled: bool,
