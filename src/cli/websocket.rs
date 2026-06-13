@@ -49,7 +49,7 @@ pub async fn session_event_handler(
     );
 
     let record_path = format!("sessions/{}/thread", event.session_id);
-    let record = MemoryRecord {
+    let record = MemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
         id: String::new(),
         workspace_id: state.workspace_id.clone(),
         path: record_path.clone(),
@@ -172,7 +172,7 @@ pub async fn session_compact_handler(
     }
 
     let compact_path = format!("context/{}/compact", session_id);
-    let record = MemoryRecord {
+    let record = MemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
         id: String::new(),
         workspace_id: state.workspace_id.clone(),
         path: compact_path.clone(),
