@@ -68,7 +68,7 @@ pub struct MemoryRevision {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MemoryRecord {
+pub struct MemoryRecord { ..Default::default(),
     pub id: String,
     pub workspace_id: String,
     pub path: String,
@@ -90,6 +90,38 @@ pub struct MemoryRecord {
     pub clearance: crate::memory::schema::ClearanceLevel,
     #[serde(default)]
     pub revisions: Vec<MemoryRevision>,
+    #[serde(default)]
+    pub encrypted_dek: Option<Vec<u8>>,
+    #[serde(default)]
+    pub content_iv: Option<Vec<u8>>,
+    #[serde(default)]
+    pub metadata_iv: Option<Vec<u8>>,
+}
+
+impl Default for MemoryRecord { ..Default::default(),
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            workspace_id: String::new(),
+            path: String::new(),
+            content: String::new(),
+            metadata: serde_json::Value::Null,
+            embedding: Vec::new(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            revision: 0,
+            primary: false,
+            parent_id: None,
+            cluster_id: None,
+            level: MemoryLevel::Atom,
+            relation: None,
+            clearance: crate::memory::schema::ClearanceLevel::Unclassified,
+            revisions: Vec::new(),
+            encrypted_dek: None,
+            content_iv: None,
+            metadata_iv: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -173,7 +205,7 @@ pub(crate) struct DurableStoreFile {
 // MemoryRecord helpers
 // ---------------------------------------------------------------------------
 
-impl MemoryRecord {
+impl MemoryRecord { ..Default::default(),
     pub fn from_document(
         workspace_id: &str,
         document: &MemoryDocument,
@@ -225,6 +257,18 @@ impl MemoryRecord {
             level: document.level,
             relation: document.relation.clone(),
             clearance: document.clearance,
+            encrypted_dek: document.metadata.get("encrypted_dek").and_then(|v| {
+                v.as_str()
+                    .and_then(|s| crate::utils::crypto::hex_decode(s).ok())
+            }),
+            content_iv: document.metadata.get("content_iv").and_then(|v| {
+                v.as_str()
+                    .and_then(|s| crate::utils::crypto::hex_decode(s).ok())
+            }),
+            metadata_iv: document.metadata.get("metadata_iv").and_then(|v| {
+                v.as_str()
+                    .and_then(|s| crate::utils::crypto::hex_decode(s).ok())
+            }),
             revisions: vec![MemoryRevision {
                 revision,
                 recorded_at: updated_at,
@@ -250,6 +294,28 @@ impl MemoryRecord {
             object.insert("primary".to_string(), serde_json::json!(self.primary));
             if let Some(parent_id) = &self.parent_id {
                 object.insert("parent_id".to_string(), serde_json::json!(parent_id));
+            }
+        }
+
+        let mut metadata = metadata;
+        if let Some(object) = metadata.as_object_mut() {
+            if let Some(encrypted_dek) = &self.encrypted_dek {
+                object.insert(
+                    "encrypted_dek".to_string(),
+                    serde_json::json!(crate::utils::crypto::hex_encode(encrypted_dek)),
+                );
+            }
+            if let Some(content_iv) = &self.content_iv {
+                object.insert(
+                    "content_iv".to_string(),
+                    serde_json::json!(crate::utils::crypto::hex_encode(content_iv)),
+                );
+            }
+            if let Some(metadata_iv) = &self.metadata_iv {
+                object.insert(
+                    "metadata_iv".to_string(),
+                    serde_json::json!(crate::utils::crypto::hex_encode(metadata_iv)),
+                );
             }
         }
 
@@ -843,7 +909,7 @@ impl MemoryStore for InMemoryMemoryStore {
 // Shared helper functions
 // ---------------------------------------------------------------------------
 
-pub(crate) fn revisioned_record(existing: MemoryRecord, mut next: MemoryRecord) -> MemoryRecord {
+pub(crate) fn revisioned_record(existing: MemoryRecord, mut next: MemoryRecord) -> MemoryRecord { ..Default::default(),
     next.id = existing.id;
     next.created_at = existing.created_at;
     next.updated_at = Utc::now();

@@ -4,6 +4,7 @@
 //! responsibilities within the Xavier cognitive memory system.
 
 pub mod extraction;
+pub mod inference;
 pub mod storage;
 pub mod types;
 
@@ -133,6 +134,49 @@ impl EntityGraph {
             outgoing,
             traversal,
         })
+    }
+
+    pub async fn export_json(&self) -> Result<String> {
+        let data = self.inner.read().await;
+        serde_json::to_string(&*data).map_err(|e| anyhow!("failed to export json: {e}"))
+    }
+
+    pub async fn import_json(&self, json: &str) -> Result<()> {
+        let mut data = self.inner.write().await;
+        let imported: GraphData =
+            serde_json::from_str(json).map_err(|e| anyhow!("failed to import json: {e}"))?;
+        *data = imported;
+        data.rebuild_indexes();
+        Ok(())
+    }
+
+    pub async fn export_bincode(&self) -> Result<Vec<u8>> {
+        let data = self.inner.read().await;
+        bincode::serialize(&*data).map_err(|e| anyhow!("failed to export bincode: {e}"))
+    }
+
+    pub async fn import_bincode(&self, bytes: &[u8]) -> Result<()> {
+        let mut data = self.inner.write().await;
+        let imported: GraphData =
+            bincode::deserialize(bytes).map_err(|e| anyhow!("failed to import bincode: {e}"))?;
+        *data = imported;
+        data.rebuild_indexes();
+        Ok(())
+    }
+
+    pub async fn apply_decay(&self, factor: f32) -> Result<()> {
+        let mut data = self.inner.write().await;
+        data.apply_decay(factor, Utc::now());
+        Ok(())
+    }
+
+    pub async fn run_inference(&self) -> Result<Vec<EntityRelationRecord>> {
+        let mut data = self.inner.write().await;
+        let inferred = inference::InferenceEngine::run(&mut data);
+        if !inferred.is_empty() {
+            data.rebuild_indexes();
+        }
+        Ok(inferred)
     }
 
     pub async fn merge_entities(
@@ -475,5 +519,80 @@ mod tests {
             .aliases
             .iter()
             .any(|alias| alias.eq_ignore_ascii_case("Alicia")));
+    }
+
+    #[tokio::test]
+    async fn serialization_roundtrip() {
+        let graph = EntityGraph::new();
+        graph
+            .upsert_memory("memory-1", "Alice works at Acme", None)
+            .await
+            .unwrap();
+
+        // JSON
+        let json = graph.export_json().await.unwrap();
+        let graph2 = EntityGraph::new();
+        graph2.import_json(&json).await.unwrap();
+        assert_eq!(graph2.all_entities().await.len(), 2);
+
+        // Bincode
+        let bytes = graph.export_bincode().await.unwrap();
+        let graph3 = EntityGraph::new();
+        graph3.import_bincode(&bytes).await.unwrap();
+        assert_eq!(graph3.all_entities().await.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_decay() {
+        let graph = EntityGraph::new();
+        graph
+            .upsert_memory("memory-1", "Alice works at Acme", None)
+            .await
+            .unwrap();
+
+        let initial_relations = graph.all_relations().await;
+        assert!(!initial_relations.is_empty());
+        let initial_weight = initial_relations[0].weight;
+
+        // Manually adjust updated_at back in time
+        {
+            let mut data = graph.inner.write().await;
+            for r in data.relations.values_mut() {
+                r.updated_at = Utc::now() - chrono::Duration::hours(24);
+            }
+            for e in data.entities.values_mut() {
+                e.last_seen = Utc::now() - chrono::Duration::hours(24);
+            }
+        }
+
+        // Apply 10% hourly decay
+        graph.apply_decay(0.1).await.unwrap();
+
+        let decayed_relations = graph.all_relations().await;
+        assert!(decayed_relations[0].weight < initial_weight);
+    }
+
+    #[tokio::test]
+    async fn test_inference() {
+        let graph = EntityGraph::new();
+
+        // (Alice works_at Acme) AND (Acme located_in London) => (Alice located_in London)
+        graph
+            .upsert_memory("m1", "Alice works at Acme", None)
+            .await
+            .unwrap();
+        graph
+            .upsert_memory("m2", "Acme located in London", None)
+            .await
+            .unwrap();
+
+        let inferred = graph.run_inference().await.unwrap();
+        assert!(!inferred.is_empty());
+
+        let data = graph.inner.read().await;
+        let alice_london = inferred
+            .iter()
+            .find(|r| r.source_name(&data) == "alice" && r.target_name(&data) == "london");
+        assert!(alice_london.is_some());
     }
 }

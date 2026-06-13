@@ -494,10 +494,21 @@ impl WorkspaceState {
         content: &str,
         metadata: &serde_json::Value,
     ) -> Result<()> {
-        self.entity_graph
+        let result = self.entity_graph
             .upsert_memory(memory_id, content, Some(metadata))
             .await
-            .map(|_| ())
+            .map(|_| ());
+
+        if result.is_ok() {
+             let _ = crate::notifications::NOTIFICATIONS.notify(
+                crate::notifications::IslandId::Memory,
+                "Memory Indexed",
+                &format!("New memory indexed: {}", memory_id),
+                "success"
+            ).await;
+        }
+
+        result
     }
 
     pub async fn index_memory_layers(

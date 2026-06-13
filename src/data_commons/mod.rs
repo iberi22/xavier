@@ -33,5 +33,3 @@ pub mod types;
 #[cfg(feature = "post-quantum")]
 pub mod wallet;
 
-// Re-export principales
-pub use types::*;

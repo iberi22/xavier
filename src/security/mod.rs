@@ -31,6 +31,7 @@ use std::sync::RwLock;
 
 use anyhow::{anyhow, Result};
 use dashmap::DashMap;
+use std::sync::Arc;
 
 use crate::utils::crypto::{hex_decode, hex_encode};
 use argon2::password_hash::{rand_core::OsRng, SaltString};
@@ -46,6 +47,8 @@ pub struct SecurityService {
     stats: RwLock<HashMap<String, u32>>,
     /// Flags de configuración
     config: SecurityConfig,
+    /// Key manager for encryption at rest (lazy initialized)
+    key_manager: RwLock<Option<Arc<crate::crypto::KeyManager>>>,
 }
 
 /// Configuración del servicio de seguridad
@@ -53,6 +56,8 @@ pub struct SecurityService {
 pub struct SecurityConfig {
     pub enabled: bool,
     pub encryption_algorithm: String,
+    pub encryption_at_rest_enabled: bool,
+    pub master_key_name: String,
     /// Habilitar detección de inyección directa
     pub enable_direct_detection: bool,
     /// Habilitar detección de inyección indirecta
@@ -74,6 +79,8 @@ impl Default for SecurityConfig {
         SecurityConfig {
             enabled: true,
             encryption_algorithm: "AES-256-GCM".to_string(),
+            encryption_at_rest_enabled: false,
+            master_key_name: "xavier_master_key".to_string(),
             enable_direct_detection: true,
             enable_indirect_detection: true,
             enable_leaking_detection: true,
@@ -201,10 +208,17 @@ impl Default for SecurityService {
 impl SecurityService {
     /// Crea un nuevo servicio de seguridad
     pub fn new() -> Self {
+        let settings = crate::settings::XavierSettings::current();
+        let config = SecurityConfig {
+            encryption_at_rest_enabled: settings.security.encryption_at_rest_enabled,
+            master_key_name: settings.security.master_key_name.clone(),
+            ..SecurityConfig::default()
+        };
         SecurityService {
             detector: PromptInjectionDetector::new(),
             stats: RwLock::new(HashMap::new()),
-            config: SecurityConfig::default(),
+            config,
+            key_manager: RwLock::new(None),
         }
     }
 
@@ -214,6 +228,7 @@ impl SecurityService {
             detector: PromptInjectionDetector::new(),
             stats: RwLock::new(HashMap::new()),
             config,
+            key_manager: RwLock::new(None),
         }
     }
 
@@ -324,6 +339,51 @@ impl SecurityService {
     /// Obtiene la configuración actual
     pub fn get_config(&self) -> SecurityConfig {
         self.config.clone()
+    }
+
+    /// Get or initialize the KeyManager using hardware-backed master key
+    pub fn get_key_manager(&self) -> Result<Arc<crate::crypto::KeyManager>> {
+        if let Some(mgr) = self.key_manager.read().unwrap().as_ref() {
+            return Ok(mgr.clone());
+        }
+
+        let mut mgr_write = self.key_manager.write().unwrap();
+        if let Some(mgr) = mgr_write.as_ref() {
+            return Ok(mgr.clone());
+        }
+
+        let vault = crate::secrets::vault::HardwareVault::new("xavier");
+        let password = match vault.get_secret(&self.config.master_key_name) {
+            Ok(p) => p,
+            Err(_) => {
+                // For development/initial setup, if not in vault, use a fallback or fail
+                // In production, we expect the key to be there.
+                // Let's generate a random one and store it if it's missing?
+                // Or maybe just return an error if encryption is mandatory.
+                return Err(anyhow!(
+                    "Master key not found in vault: {}",
+                    self.config.master_key_name
+                ));
+            }
+        };
+
+        // We need a salt. In a real scenario, the salt should be stored in the DB.
+        // For now, let's assume the KeyManager handles its own salt or we'll pass it from storage.
+        let mgr = Arc::new(crate::crypto::KeyManager::new());
+        // Initialize KEK to ensure it works
+        mgr.derive_kek(&password)
+            .map_err(|e| anyhow!("Failed to derive KEK: {}", e))?;
+
+        *mgr_write = Some(mgr.clone());
+        Ok(mgr)
+    }
+
+    /// Get KEK using the master password from vault
+    pub fn get_kek(&self) -> Result<crate::crypto::keys::KEK> {
+        let mgr = self.get_key_manager()?;
+        let vault = crate::secrets::vault::HardwareVault::new("xavier");
+        let password = vault.get_secret(&self.config.master_key_name)?;
+        Ok(mgr.derive_kek(&password)?)
     }
 }
 

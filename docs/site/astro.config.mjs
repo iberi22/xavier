@@ -5,7 +5,8 @@ import { defineConfig } from "astro/config";
 
 // https://astro.build/config
 export default defineConfig({
-  site: "https://southwest-ai-labs.github.io/xavier/",
+  site: "https://southwest-ai-labs.github.io",
+  base: "/xavier",
   integrations: [
     starlight({
       title: "Xavier",

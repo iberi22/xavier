@@ -8,6 +8,7 @@ pub mod headless_api;
 pub mod headless_e2e;
 pub mod memory;
 pub mod navigation;
+pub mod notifications;
 pub mod onboarding;
 pub mod panel;
 pub mod quota;

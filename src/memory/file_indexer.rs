@@ -10,6 +10,7 @@ use tokio::fs;
 use tracing::{debug, info, warn};
 
 use crate::memory::qmd_memory::QmdMemory;
+use crate::observability::Notifier;
 
 /// Configuración del indexer
 #[derive(Debug, Clone)]
@@ -187,6 +188,16 @@ impl FileIndexer {
         info!(
             "✅ Indexing complete: {} files, {} chunks",
             result.total_files, result.total_chunks
+        );
+
+        // Notify via configured channels
+        let notifier = Notifier::new();
+        notifier.notify_self_heal(
+            &format!(
+                "Indexing complete: {} files, {} chunks from {:?}",
+                result.total_files, result.total_chunks, self.config.root_path
+            ),
+            true,
         );
 
         Ok(result)

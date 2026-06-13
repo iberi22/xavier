@@ -157,9 +157,21 @@ pub fn current() -> XavierSettings {
 pub async fn save(settings: &XavierSettings) -> Result<()> {
     let path = resolve_config_path();
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).await?;
+        if !parent.exists() {
+            fs::create_dir_all(parent).await.with_context(|| {
+                format!("failed to create config directory at {}", parent.display())
+            })?;
+        }
     }
-    let content = serde_json::to_string_pretty(settings)?;
-    fs::write(path, content).await?;
+
+    let raw = serde_json::to_string_pretty(settings)
+        .with_context(|| "failed to serialize settings to JSON")?;
+
+    fs::write(&path, raw).await.with_context(|| {
+        format!(
+            "failed to write settings to config file at {}",
+            path.display()
+        )
+    })?;
     Ok(())
 }
