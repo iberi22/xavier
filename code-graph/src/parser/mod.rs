@@ -1,6 +1,8 @@
 //! Parser module - tree-sitter based
 
 use crate::error::Result;
+use crate::parser::c::CParser;
+use crate::parser::cpp::CppParser;
 use crate::parser::go::GoParser;
 use crate::parser::java::JavaParser;
 use crate::parser::python::PythonParser;
@@ -9,6 +11,8 @@ use crate::parser::typescript::TypeScriptParser;
 use crate::types::{Language, Symbol, SymbolKind};
 use tree_sitter::Node;
 
+pub mod c;
+pub mod cpp;
 pub mod go;
 pub mod java;
 pub mod python;
@@ -36,6 +40,14 @@ pub fn parse_source(source: &str, lang: &Language, file_path: &str) -> Result<Ve
         }
         Language::Java => {
             let mut parser = JavaParser::new()?;
+            parser.parse(source, file_path)
+        }
+        Language::C => {
+            let mut parser = CParser::new()?;
+            parser.parse(source, file_path)
+        }
+        Language::Cpp => {
+            let mut parser = CppParser::new()?;
             parser.parse(source, file_path)
         }
         _ => Ok(vec![]),
@@ -212,5 +224,34 @@ mod tests {
             .iter()
             .any(|s| s.name == "run" && s.kind == SymbolKind::Method));
         assert!(symbols.iter().any(|s| s.kind == SymbolKind::Import));
+    }
+
+    #[test]
+    fn parses_c_symbols() {
+        let symbols = parse_source(
+            "#include <stdio.h>\n#define MAX 100\nstruct Point { int x; };\nvoid main() { printf(\"hello\"); }",
+            &Language::C,
+            "main.c",
+        )
+        .expect("parse");
+        assert!(symbols.iter().any(|s| s.name == "main" && s.kind == SymbolKind::Function));
+        assert!(symbols.iter().any(|s| s.name == "Point" && s.kind == SymbolKind::Struct));
+        assert!(symbols.iter().any(|s| s.name == "MAX" && s.kind == SymbolKind::Constant));
+        assert!(symbols.iter().any(|s| s.name == "stdio.h" && s.kind == SymbolKind::Import));
+    }
+
+    #[test]
+    fn parses_cpp_symbols() {
+        let symbols = parse_source(
+            "#include <iostream>\nnamespace xav { class Scanner { public: void run() {} }; }\nint main() { return 0; }",
+            &Language::Cpp,
+            "main.cpp",
+        )
+        .expect("parse");
+        assert!(symbols.iter().any(|s| s.name == "main" && s.kind == SymbolKind::Function));
+        assert!(symbols.iter().any(|s| s.name == "Scanner" && s.kind == SymbolKind::Class));
+        assert!(symbols.iter().any(|s| s.name == "run" && s.kind == SymbolKind::Method && s.parent.as_deref() == Some("Scanner")));
+        assert!(symbols.iter().any(|s| s.name == "xav" && s.kind == SymbolKind::Module));
+        assert!(symbols.iter().any(|s| s.name == "iostream" && s.kind == SymbolKind::Import));
     }
 }
