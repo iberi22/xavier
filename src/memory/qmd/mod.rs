@@ -10,6 +10,7 @@ use tokio::sync::RwLock as AsyncRwLock;
 use std::fmt;
 
 pub mod config;
+pub mod hash;
 pub mod query_builder;
 pub mod reader;
 pub mod search;
@@ -18,6 +19,7 @@ pub mod utils;
 pub mod writer;
 
 pub use config::*;
+pub use hash::*;
 pub use query_builder::*;
 pub use reader::*;
 pub use search::*;
