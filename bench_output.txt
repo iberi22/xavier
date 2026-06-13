@@ -1,0 +1,246 @@
+warning: unused import: `std::sync::Arc`
+  --> src/memory/simple_index.rs:13:5
+   |
+13 | use std::sync::Arc;
+   |     ^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `tokio::sync::RwLock`
+  --> src/memory/simple_index.rs:14:5
+   |
+14 | use tokio::sync::RwLock;
+   |     ^^^^^^^^^^^^^^^^^^^
+
+warning: field `graph` is never read
+  --> src/memory/graph_traversal.rs:12:5
+   |
+11 | pub struct Pathfinder<'a> {
+   |            ---------- field in this struct
+12 |     graph: &'a BeliefGraph,
+   |     ^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `xavier` (lib) generated 3 warnings (run `cargo fix --lib -p xavier` to apply 2 suggestions)
+   Compiling xavier v0.6.1-beta (/app)
+warning: unused import: `anyhow`
+ --> src/cli/commands/navigation.rs:6:14
+  |
+6 | use anyhow::{anyhow, Result};
+  |              ^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Serialize`
+ --> src/cli/handlers/navigation.rs:9:26
+  |
+9 | use serde::{Deserialize, Serialize};
+  |                          ^^^^^^^^^
+
+warning: unused import: `xavier_lib::observability::*`
+  --> src/main.rs:14:13
+   |
+14 |     pub use xavier_lib::observability::*;
+   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `std::collections::HashMap`
+  --> src/data_commons/reputation.rs:31:5
+   |
+31 | use std::collections::HashMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `offer`
+  --> src/data_commons/funnel.rs:91:36
+   |
+91 | ... validate_context(&self, offer: &ContextOffer) -> Result<(), MinterEr...
+   |                             ^^^^^ help: if this is intentional, prefix it with an underscore: `_offer`
+   |
+   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `offer`
+   --> src/data_commons/funnel.rs:101:36
+    |
+101 | ... calculate_reward(&self, offer: &ContextOffer) -> RewardBreakdown {
+    |                             ^^^^^ help: if this is intentional, prefix it with an underscore: `_offer`
+
+warning: unused variable: `offer`
+   --> src/data_commons/funnel.rs:106:28
+    |
+106 |     pub fn mint(&mut self, offer: &ContextOffer) -> Result<MinterEvent,...
+    |                            ^^^^^ help: if this is intentional, prefix it with an underscore: `_offer`
+
+warning: unused variable: `buyer`
+   --> src/data_commons/funnel.rs:116:9
+    |
+116 |         buyer: &WalletAddress,
+    |         ^^^^^ help: if this is intentional, prefix it with an underscore: `_buyer`
+
+warning: unused variable: `amount`
+   --> src/data_commons/funnel.rs:117:9
+    |
+117 |         amount: u64,
+    |         ^^^^^^ help: if this is intentional, prefix it with an underscore: `_amount`
+
+warning: unused variable: `context_hash`
+   --> src/data_commons/funnel.rs:118:9
+    |
+118 |         context_hash: &str,
+    |         ^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_context_hash`
+
+warning: unused variable: `wallet`
+   --> src/data_commons/reputation.rs:129:22
+    |
+129 |     pub fn calculate(wallet: &WalletAddress, history: &ContributionHist...
+    |                      ^^^^^^ help: if this is intentional, prefix it with an underscore: `_wallet`
+
+warning: unused variable: `history`
+   --> src/data_commons/reputation.rs:129:46
+    |
+129 | ...(wallet: &WalletAddress, history: &ContributionHistory) -> u64 {
+    |                             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_history`
+
+warning: unused variable: `config`
+  --> src/data_commons/wallet.rs:92:19
+   |
+92 |     pub fn create(config: WalletConfig) -> Result<(Self, String), Wallet...
+   |                   ^^^^^^ help: if this is intentional, prefix it with an underscore: `_config`
+
+warning: unused variable: `seed_phrase`
+  --> src/data_commons/wallet.rs:97:22
+   |
+97 |     pub fn from_seed(seed_phrase: &str, config: WalletConfig) -> Result<...
+   |                      ^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_seed_phrase`
+
+warning: unused variable: `config`
+  --> src/data_commons/wallet.rs:97:41
+   |
+97 | ..._seed(seed_phrase: &str, config: WalletConfig) -> Result<Self, Wallet...
+   |                             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_config`
+
+warning: unused variable: `qr_image_path`
+   --> src/data_commons/wallet.rs:102:20
+    |
+102 |     pub fn from_qr(qr_image_path: &str, config: WalletConfig) -> Result...
+    |                    ^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_qr_image_path`
+
+warning: unused variable: `config`
+   --> src/data_commons/wallet.rs:102:41
+    |
+102 | ..._qr(qr_image_path: &str, config: WalletConfig) -> Result<Self, Walle...
+    |                             ^^^^^^ help: if this is intentional, prefix it with an underscore: `_config`
+
+warning: unused variable: `config`
+   --> src/data_commons/wallet.rs:107:17
+    |
+107 |     pub fn load(config: WalletConfig) -> Result<Self, WalletError> {
+    |                 ^^^^^^ help: if this is intentional, prefix it with an underscore: `_config`
+
+warning: unused variable: `data`
+   --> src/data_commons/wallet.rs:112:24
+    |
+112 |     pub fn sign(&self, data: &[u8]) -> Result<Vec<u8>, WalletError> {
+    |                        ^^^^ help: if this is intentional, prefix it with an underscore: `_data`
+
+warning: unused variable: `data`
+   --> src/data_commons/wallet.rs:119:9
+    |
+119 |         data: &[u8],
+    |         ^^^^ help: if this is intentional, prefix it with an underscore: `_data`
+
+warning: unused variable: `signature`
+   --> src/data_commons/wallet.rs:120:9
+    |
+120 |         signature: &[u8],
+    |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_signature`
+
+warning: unused variable: `public_key`
+   --> src/data_commons/wallet.rs:121:9
+    |
+121 |         public_key: &[u8],
+    |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_public_key`
+
+warning: unused variable: `data`
+   --> src/data_commons/wallet.rs:129:9
+    |
+129 |         data: &[u8],
+    |         ^^^^ help: if this is intentional, prefix it with an underscore: `_data`
+
+warning: unused variable: `recipient_public_key`
+   --> src/data_commons/wallet.rs:130:9
+    |
+130 |         recipient_public_key: &[u8],
+    |         ^^^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_recipient_public_key`
+
+warning: unused variable: `ciphertext`
+   --> src/data_commons/wallet.rs:136:27
+    |
+136 |     pub fn decrypt(&self, ciphertext: &[u8]) -> Result<Vec<u8>, WalletE...
+    |                           ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_ciphertext`
+
+warning: unused variable: `node_id`
+   --> src/data_commons/wallet.rs:144:37
+    |
+144 | ...register_node(&mut self, node_id: &str) -> Result<NodeBinding, Walle...
+    |                             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_node_id`
+
+warning: unused variable: `node_id`
+   --> src/data_commons/wallet.rs:149:35
+    |
+149 | ...n revoke_node(&mut self, node_id: &str) -> Result<(), WalletError> {
+    |                             ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_node_id`
+
+warning: unused variable: `log_filter`
+  --> src/main.rs:37:9
+   |
+37 |     let log_filter = std::env::var("RUST_LOG")
+   |         ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_log_filter`
+
+warning: unused variable: `log_dir`
+  --> src/main.rs:42:9
+   |
+42 |     let log_dir = std::path::PathBuf::from(std::env::var("XAVIER_LOG_DIR...
+   |         ^^^^^^^ help: if this is intentional, prefix it with an underscore: `_log_dir`
+
+warning: method `save` is never used
+  --> src/settings/mod.rs:38:18
+   |
+16 | impl XavierSettings {
+   | ------------------- method in this implementation
+...
+38 |     pub async fn save(&self) -> Result<()> {
+   |                  ^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `save` is never used
+   --> src/settings/serialization.rs:157:14
+    |
+157 | pub async fn save(settings: &XavierSettings) -> Result<()> {
+    |              ^^^^
+
+warning: field `context_history` is never read
+  --> src/data_commons/funnel.rs:69:5
+   |
+66 | pub struct Minter {
+   |            ------ field in this struct
+...
+69 |     context_history: HashSet<String>,
+   |     ^^^^^^^^^^^^^^^
+
+warning: field `pre_trusted` is never read
+  --> src/data_commons/reputation.rs:64:5
+   |
+61 | pub struct EigenTrustEngine {
+   |            ---------------- field in this struct
+...
+64 |     pre_trusted: Vec<WalletAddress>,
+   |     ^^^^^^^^^^^
+
+warning: `xavier` (bin "xavier") generated 33 warnings (run `cargo fix --bin "xavier" -p xavier` to apply 29 suggestions)
+    Finished `bench` profile [optimized] target(s) in 5m 32s
+     Running benches/minhash_bench.rs (target/release/deps/minhash_bench-712718b363dd2c7a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

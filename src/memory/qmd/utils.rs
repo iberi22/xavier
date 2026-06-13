@@ -19,7 +19,7 @@ pub fn is_locomo_document(path: &str, metadata: &Value) -> bool {
             .is_some_and(|value| value.eq_ignore_ascii_case("locomo"))
 }
 
-pub(crate) fn cosine_similarity(left: &[f32], right: &[f32]) -> f32 {
+pub fn cosine_similarity(left: &[f32], right: &[f32]) -> f32 {
     if left.is_empty() || right.is_empty() || left.len() != right.len() {
         return 0.0;
     }

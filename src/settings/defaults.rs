@@ -170,6 +170,7 @@ impl Default for AdvancedSettings {
             entity_extraction_enabled: true,
             audit_chain_enabled: true,
             panel_store_dir: String::new(),
+            minhash_threshold: 0.85,
         }
     }
 }

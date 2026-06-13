@@ -33,6 +33,8 @@ pub struct MemoryDocument {
     pub relation: Option<crate::memory::schema::RelationKind>,
     #[serde(default)]
     pub clearance: crate::memory::schema::ClearanceLevel,
+    #[serde(default)]
+    pub minhash: Option<Vec<u64>>,
 }
 
 impl Default for MemoryDocument {
@@ -49,6 +51,7 @@ impl Default for MemoryDocument {
             level: crate::memory::schema::MemoryLevel::Raw,
             relation: None,
             clearance: crate::memory::schema::ClearanceLevel::TopSecret,
+            minhash: None,
         }
     }
 }
@@ -72,6 +75,11 @@ impl MemoryDocument {
             + self.parent_id.as_ref().map(|s| s.len()).unwrap_or(0) as u64
             + 1 // level enum size estimate
             + self.relation.as_ref().map(|r| r.name.len()).unwrap_or(0) as u64
+            + self
+                .minhash
+                .as_ref()
+                .map(|m| m.len() * std::mem::size_of::<u64>())
+                .unwrap_or(0) as u64
     }
 }
 
