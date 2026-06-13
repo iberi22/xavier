@@ -5,7 +5,7 @@ burn-candle = { path = "patches/burn-candle" }
 
 [package]
 name = "xavier"
-version = "0.6.1-beta"
+version = "0.10.0-12-06-2026"
 authors = ["BELA <bela@swal.dev>", "Xavier <xavier@swal.dev>"]
 edition = "2021"
 autobins = false
@@ -39,6 +39,8 @@ members = ["code-graph", "panel-ui/src-tauri"]
 
 [features]
 default = ["cli-interactive", "local-gllm"]
+data-commons = ["post-quantum"]
+post-quantum = ["oqs"]
 cli-interactive = ["ratatui", "crossterm"]
 # All features that are safe to run on host CI (no GUI/Winit issues)
 ci-safe = []
@@ -58,13 +60,13 @@ harness = false
 [dependencies]
 code-graph = { path = "./code-graph" }
 anyhow = "1.0.102"
-git2 = { version = "0.21", features = ["vendored-openssl"] }
+git2 = { version = "0.21", default-features = false }
 async-trait = "0.1"
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 gllm = { version = "0.10.6", default-features = false, features = ["wgpu"], optional = true }
 gllm-cuda = { version = "0.10.6", default-features = false, features = ["cuda"], package = "gllm", optional = true }
 candle-core = { version = "=0.9.1", optional = true }
-teloxide = { version = "0.12", optional = true }
+teloxide = { version = "0.12", default-features = false, features = ["rustls"], optional = true }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 thiserror = "2.0.18"
@@ -156,10 +158,13 @@ hmac = "0.12"
 http-body-util = "0.1"
 serde_yaml = "0.9.34"
 dialoguer = "0.12.0"
-oqs = { version = "0.11.0", features = ["kems", "sigs", "serde"] }
+oqs = { version = "0.11.0", features = ["kems", "sigs", "serde"], optional = true }
 bip39 = { version = "2.2.2", features = ["rand", "spanish"] }
 ed25519-dalek = { version = "2.2.0", features = ["rand_core", "serde"] }
 bech32 = "0.9.1"
+
+
+
 
 [dev-dependencies]
 image = "0.25"
