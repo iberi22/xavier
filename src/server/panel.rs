@@ -18,6 +18,8 @@ use crate::{
     codebase::connection_manager::ConnectionManager,
     codebase::conversations_db::{ConversationsDb, Message, ThreadDetail, ThreadSummary},
     memory::sqlite_store::{TABLE_PANEL_BOOKMARKS, TABLE_PANEL_GRAPHS, TABLE_PANEL_WIDGETS},
+    mesh::{node::NodeIdentity, peer::PeerRegistry},
+    security::sessions::SessionManager,
     workspace::WorkspaceContext,
 };
 use chrono::{DateTime, Utc};
@@ -79,6 +81,68 @@ pub async fn panel_index() -> impl IntoResponse {
         Err(_) => (
             StatusCode::SERVICE_UNAVAILABLE,
             "Panel frontend assets are missing. Build them first: cd panel-ui && npm install && npm run build",
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct SessionInfo {
+    pub id: String,
+    pub expires_at: String,
+    pub created_at: String,
+}
+
+pub async fn list_security_tokens(
+    Extension(session_manager): Extension<std::sync::Arc<SessionManager>>,
+) -> impl IntoResponse {
+    let sessions = session_manager.list_active_sessions();
+    let info: Vec<SessionInfo> = sessions
+        .into_iter()
+        .map(|s| SessionInfo {
+            id: s.id,
+            expires_at: s.expires_at.to_rfc3339(),
+            created_at: s.created_at.to_rfc3339(),
+        })
+        .collect();
+    Json(info).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct RevokeTokenRequest {
+    pub token_id: String,
+}
+
+pub async fn revoke_security_token(
+    Extension(session_manager): Extension<std::sync::Arc<SessionManager>>,
+    Json(payload): Json<RevokeTokenRequest>,
+) -> impl IntoResponse {
+    session_manager.revoke_session(&payload.token_id);
+    StatusCode::OK.into_response()
+}
+
+pub async fn list_security_audit(
+    Extension(audit_logger): Extension<std::sync::Arc<crate::secrets::audit::QmdAuditLogger>>,
+) -> impl IntoResponse {
+    match audit_logger.get_recent_logs(50).await {
+        Ok(logs) => {
+            let info: Vec<serde_json::Value> = logs
+                .into_iter()
+                .map(|l| {
+                    json!({
+                        "id": l.id.to_string(),
+                        "event": format!("{} (Agent: {})", l.event_type, l.agent_id),
+                        "source": l.session_token,
+                        "timestamp": l.timestamp,
+                        "level": if l.event_type == "REVOKE" { "warning" } else { "info" }
+                    })
+                })
+                .collect();
+            Json(info).into_response()
+        }
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": error.to_string() })),
         )
             .into_response(),
     }
@@ -549,6 +613,70 @@ pub async fn save_graph(
     }
 }
 
+pub async fn get_mesh_id() -> impl IntoResponse {
+    match NodeIdentity::load_or_create() {
+        Ok(identity) => Json(identity.public_info()).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn list_mesh_peers() -> impl IntoResponse {
+    match PeerRegistry::load() {
+        Ok(registry) => Json(registry.list_peers()).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddPeerRequest {
+    pub url: String,
+    pub alias: Option<String>,
+}
+
+pub async fn add_mesh_peer(
+    Extension(_workspace): Extension<WorkspaceContext>,
+    Json(_payload): Json<AddPeerRequest>,
+) -> impl IntoResponse {
+    // In a real implementation, we would perform a handshake here.
+    // For Phase 1, we manually add it if we have enough info, or we just provide the structure.
+    // Since we don't have the public key yet, this might need to call MeshTransport.
+
+    // For now, let's just return a placeholder or implement a simple version.
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(json!({ "error": "Handshake required. Use CLI 'xavier mesh add-peer' for now or wait for Phase 2." })),
+    ).into_response()
+}
+
+pub async fn remove_mesh_peer(AxumPath(node_id): AxumPath<String>) -> impl IntoResponse {
+    let node_id_struct = crate::mesh::node::NodeId(node_id);
+    match PeerRegistry::load() {
+        Ok(mut registry) => {
+            if let Err(e) = registry.remove_peer(&node_id_struct) {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(json!({ "error": e.to_string() })),
+                )
+                    .into_response();
+            }
+            StatusCode::OK.into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
 fn panel_build_path(relative: &str) -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join(PANEL_BUILD_DIR)
@@ -709,6 +837,9 @@ mod tests {
             )
             .route("/panel/api/widgets", get(list_widgets).post(save_widget))
             .route("/panel/api/graphs", get(get_graph).post(save_graph))
+            .route("/panel/api/mesh/id", get(get_mesh_id))
+            .route("/panel/api/mesh/peers", get(list_mesh_peers).post(add_mesh_peer))
+            .route("/panel/api/mesh/peers/{id}", axum::routing::delete(remove_mesh_peer))
             .layer(Extension(workspace))
             .with_state(state)
     }
@@ -898,5 +1029,24 @@ mod tests {
         let result: GraphData = serde_json::from_slice(&body).expect("test assertion");
         assert_eq!(result.id, "graph-1");
         assert_eq!(result.name, "Knowledge Graph");
+    }
+
+    #[tokio::test]
+    async fn mesh_id_handler() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace);
+
+        let request = Request::builder()
+            .method("GET")
+            .uri("/panel/api/mesh/id")
+            .body(Body::empty())
+            .expect("test assertion");
+
+        let response = app.oneshot(request).await.expect("test assertion");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let body = to_bytes(response.into_body(), usize::MAX).await.expect("test assertion");
+        let info: serde_json::Value = serde_json::from_slice(&body).expect("test assertion");
+        assert!(info.get("node_id").is_some());
     }
 }

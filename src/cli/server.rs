@@ -48,8 +48,9 @@ use xavier::ports::inbound::{
 use xavier::security::sessions::SessionManager;
 use xavier::security::threat_store::SecurityThreatStore;
 use xavier::server::panel::{
-    get_graph, list_bookmarks, list_widgets, panel_asset, panel_index, save_bookmark, save_graph,
-    save_widget,
+    add_mesh_peer, get_graph, get_mesh_id, list_bookmarks, list_mesh_peers, list_security_audit,
+    list_security_tokens, list_widgets, panel_asset, panel_index, remove_mesh_peer,
+    revoke_security_token, save_bookmark, save_graph, save_widget,
 };
 use xavier::tasks::session_sync_task::SessionSyncTask;
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
@@ -228,6 +229,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         _time_store: Some(time_store),
         agent_registry: SimpleAgentRegistry::new() as Arc<dyn AgentLifecyclePort>,
         panel_store,
+        audit_logger: audit_logger.clone(),
         secrets_engine,
         event_bus,
         tasks,
@@ -334,6 +336,17 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         )
         .route("/panel/api/widgets", get(list_widgets).post(save_widget))
         .route("/panel/api/graph", get(get_graph).post(save_graph))
+        .route("/panel/api/mesh/id", get(get_mesh_id))
+        .route(
+            "/panel/api/mesh/peers",
+            get(list_mesh_peers).post(add_mesh_peer),
+        )
+        .route("/panel/api/mesh/peers/{id}", axum::routing::delete(remove_mesh_peer))
+        .route(
+            "/panel/api/security/tokens",
+            get(list_security_tokens).post(revoke_security_token),
+        )
+        .route("/panel/api/security/audit", get(list_security_audit))
         .route("/secrets/lend", post(lend_handler))
         .route("/secrets/leases", get(leases_handler))
         .route("/secrets/revoke", post(revoke_handler))
@@ -534,6 +547,9 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .merge(protected_routes)
         .merge(large_body_routes)
         .layer(Extension(workspace_ctx))
+        .layer(Extension(state.session_manager.clone()))
+        .layer(Extension(state.audit_logger.clone()))
+        .layer(Extension(state.clone()))
         .layer(CorsLayer::permissive());
 
     let agent_indexer_cron = state.agent_indexer.clone();

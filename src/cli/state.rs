@@ -39,6 +39,7 @@ pub struct CliState {
     pub _time_store: Option<Arc<TimeMetricsStore>>,
     pub agent_registry: Arc<dyn AgentLifecyclePort>,
     pub panel_store: Arc<ConversationsDb>,
+    pub audit_logger: Arc<xavier::secrets::audit::QmdAuditLogger>,
     pub secrets_engine: Arc<KeyLendingEngine>,
     #[expect(
         dead_code,

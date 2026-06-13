@@ -18,53 +18,21 @@ import {
   Unlock,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-// ── Mock Data ──────────────────────────────────────────────────────────────
+const getApiUrl = (path: string) => {
+  const isTauri =
+    typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  return isTauri ? `http://127.0.0.1:8006${path}` : path;
+};
+
+// ── Types ──────────────────────────────────────────────────────────────
 
 interface TokenEntry {
   id: string;
-  label: string;
-  prefix: string;
-  created: Date;
-  lastUsed: Date | null;
-  expiresAt: Date | null;
-  scopes: string[];
-  active: boolean;
+  created_at: string;
+  expires_at: string;
 }
-
-const MOCK_TOKENS: TokenEntry[] = [
-  {
-    id: "t1",
-    label: "Desktop App (local)",
-    prefix: "xav_loc_****",
-    active: true,
-    created: new Date(Date.now() - 30 * 86400000),
-    lastUsed: new Date(Date.now() - 60000),
-    expiresAt: null,
-    scopes: ["read", "write", "admin"],
-  },
-  {
-    id: "t2",
-    label: "CI Pipeline",
-    prefix: "xav_ci_*****",
-    active: true,
-    created: new Date(Date.now() - 15 * 86400000),
-    lastUsed: new Date(Date.now() - 4 * 3600000),
-    expiresAt: new Date(Date.now() + 60 * 86400000),
-    scopes: ["read"],
-  },
-  {
-    id: "t3",
-    label: "Jules Agent",
-    prefix: "xav_jul_****",
-    active: false,
-    created: new Date(Date.now() - 60 * 86400000),
-    lastUsed: new Date(Date.now() - 7 * 86400000),
-    expiresAt: new Date(Date.now() - 1 * 86400000),
-    scopes: ["read", "write"],
-  },
-];
 
 interface ApiKey {
   id: string;
@@ -180,20 +148,49 @@ function ScopeChip({ scope }: { scope: string }) {
 
 // ── Sections ───────────────────────────────────────────────────────────────
 
-function TokensSection() {
-  const [tokens, setTokens] = useState<TokenEntry[]>(MOCK_TOKENS);
-  const [revealed, setRevealed] = useState<string[]>([]);
+function TokensSection({ token }: { token: string }) {
+  const [tokens, setTokens] = useState<TokenEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [creating, setCreating] = useState(false);
 
-  const toggleReveal = (id: string) =>
-    setRevealed((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
+  const fetchTokens = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const resp = await fetch(getApiUrl("/panel/api/security/tokens"), {
+        headers: { "X-Xavier-Token": token },
+      });
+      if (resp.ok) {
+        setTokens(await resp.json());
+      }
+    } catch (e) {
+      console.error("Failed to fetch tokens", e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [token]);
 
-  const revoke = (id: string) =>
-    setTokens((prev) =>
-      prev.map((t) => (t.id === id ? { ...t, active: false } : t)),
-    );
+  useEffect(() => {
+    fetchTokens();
+  }, [fetchTokens]);
+
+  const revoke = async (id: string) => {
+    if (!confirm("Revoke this session?")) return;
+    try {
+      const resp = await fetch(getApiUrl("/panel/api/security/tokens"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Xavier-Token": token,
+        },
+        body: JSON.stringify({ token_id: id }),
+      });
+      if (resp.ok) {
+        fetchTokens();
+      }
+    } catch (e) {
+      alert("Failed to revoke token");
+    }
+  };
 
   return (
     <motion.div
@@ -294,46 +291,31 @@ function TokensSection() {
 
       {/* Token list */}
       <div className="space-y-2">
-        {tokens.map((token) => (
+        {isLoading && tokens.length === 0 && (
+          <div className="py-8 flex justify-center">
+            <RefreshCw className="w-5 h-5 text-[#39ff14] animate-spin" />
+          </div>
+        )}
+        {tokens.map((t) => (
           <div
-            key={token.id}
-            className={`p-4 rounded-xl border transition-colors ${token.active ? "bg-white/[0.02] border-white/[0.06]" : "bg-black/20 border-white/[0.03] opacity-50"}`}
+            key={t.id}
+            className="p-4 rounded-xl border bg-white/[0.02] border-white/[0.06] transition-colors"
           >
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-2.5">
-                <div
-                  className={`w-6 h-6 rounded-lg flex items-center justify-center ${token.active ? "bg-[#39ff14]/10" : "bg-white/5"}`}
-                >
-                  {token.active ? (
-                    <Key className="w-3 h-3 text-[#39ff14]/70" />
-                  ) : (
-                    <Lock className="w-3 h-3 text-white/20" />
-                  )}
+                <div className="w-6 h-6 rounded-lg flex items-center justify-center bg-[#39ff14]/10">
+                  <Key className="w-3 h-3 text-[#39ff14]/70" />
                 </div>
                 <div>
                   <p className="text-xs font-medium text-white/80">
-                    {token.label}
+                    Ephemeral Session
                   </p>
                   <div className="flex items-center gap-1.5 mt-1">
                     <code className="text-[10px] font-mono text-white/40">
-                      {revealed.includes(token.id)
-                        ? "xav_revealed_mock_token_value_here"
-                        : token.prefix}
+                      {t.id}
                     </code>
                     <button
-                      onClick={() => toggleReveal(token.id)}
-                      className="text-white/20 hover:text-white/50 transition-colors"
-                    >
-                      {revealed.includes(token.id) ? (
-                        <EyeOff className="w-3 h-3" />
-                      ) : (
-                        <Eye className="w-3 h-3" />
-                      )}
-                    </button>
-                    <button
-                      onClick={() =>
-                        navigator.clipboard.writeText("mock-token")
-                      }
+                      onClick={() => navigator.clipboard.writeText(t.id)}
                       className="text-white/20 hover:text-white/50 transition-colors"
                     >
                       <Copy className="w-3 h-3" />
@@ -341,47 +323,34 @@ function TokensSection() {
                   </div>
                 </div>
               </div>
-              {token.active && (
-                <button
-                  onClick={() => revoke(token.id)}
-                  className="p-1.5 text-red-400/40 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
-                  title="Revoke token"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              )}
+              <button
+                onClick={() => revoke(t.id)}
+                className="p-1.5 text-red-400/40 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+                title="Revoke token"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+              </button>
             </div>
             <div className="flex items-center gap-4 mt-3 pt-2.5 border-t border-white/[0.04]">
               <div className="flex gap-1">
-                {token.scopes.map((s) => (
-                  <ScopeChip key={s} scope={s} />
-                ))}
+                <ScopeChip scope="read" />
+                <ScopeChip scope="write" />
               </div>
               <div className="flex items-center gap-1 text-[9px] text-white/25 ml-auto">
                 <Clock className="w-2.5 h-2.5" />
-                <span>Created {formatRelative(token.created)}</span>
-                {token.lastUsed && (
-                  <>
-                    <span>·</span>
-                    <span>Used {formatRelative(token.lastUsed)}</span>
-                  </>
-                )}
-                {token.expiresAt && (
-                  <>
-                    <span>·</span>
-                    <span
-                      className={
-                        token.expiresAt < new Date()
-                          ? "text-red-400"
-                          : "text-white/25"
-                      }
-                    >
-                      {token.expiresAt < new Date()
-                        ? "Expired"
-                        : `Expires ${formatRelative(token.expiresAt)}`}
-                    </span>
-                  </>
-                )}
+                <span>Created {formatRelative(new Date(t.created_at))}</span>
+                <span>·</span>
+                <span
+                  className={
+                    new Date(t.expires_at) < new Date()
+                      ? "text-red-400"
+                      : "text-white/25"
+                  }
+                >
+                  {new Date(t.expires_at) < new Date()
+                    ? "Expired"
+                    : `Expires ${formatRelative(new Date(t.expires_at))}`}
+                </span>
               </div>
             </div>
           </div>
@@ -476,7 +445,38 @@ function ApiKeysSection() {
   );
 }
 
-function AuditLogSection() {
+interface AuditEntry {
+  id: string;
+  event: string;
+  source: string;
+  timestamp: string;
+  level: "info" | "warning" | "error";
+}
+
+function AuditLogSection({ token }: { token: string }) {
+  const [logs, setLogs] = useState<AuditEntry[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchLogs = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const resp = await fetch(getApiUrl("/panel/api/security/audit"), {
+        headers: { "X-Xavier-Token": token },
+      });
+      if (resp.ok) {
+        setLogs(await resp.json());
+      }
+    } catch (e) {
+      console.error("Failed to fetch audit logs", e);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [token]);
+
+  useEffect(() => {
+    fetchLogs();
+  }, [fetchLogs]);
+
   const levelColors = {
     info: "text-cyan-400/60",
     warning: "text-amber-400/60",
@@ -507,7 +507,12 @@ function AuditLogSection() {
         </button>
       </div>
       <div className="space-y-1.5">
-        {MOCK_AUDIT.map((entry) => (
+        {isLoading && logs.length === 0 && (
+          <div className="py-8 flex justify-center">
+            <RefreshCw className="w-5 h-5 text-[#39ff14] animate-spin" />
+          </div>
+        )}
+        {logs.map((entry) => (
           <div
             key={entry.id}
             className={`flex items-start gap-3 px-3 py-2.5 rounded-lg border border-white/[0.04] ${levelBg[entry.level]}`}
@@ -523,7 +528,7 @@ function AuditLogSection() {
                   {entry.event}
                 </p>
                 <span className="flex-shrink-0 text-[9px] text-white/20">
-                  {formatRelative(entry.timestamp)}
+                  {formatRelative(new Date(entry.timestamp))}
                 </span>
               </div>
               <p className="text-[9px] text-white/25 mt-0.5 font-mono">
@@ -532,6 +537,11 @@ function AuditLogSection() {
             </div>
           </div>
         ))}
+        {!isLoading && logs.length === 0 && (
+          <p className="text-center text-white/20 text-xs py-8">
+            No audit events found.
+          </p>
+        )}
       </div>
       <div className="flex items-center gap-2 p-3 bg-amber-500/5 border border-amber-500/15 rounded-lg">
         <AlertTriangle className="w-3.5 h-3.5 text-amber-400/70 flex-shrink-0" />
@@ -618,6 +628,7 @@ interface SecurityConfigPanelProps {
 
 export default function SecurityConfigPanel({
   embedded = false,
+  token = "",
 }: SecurityConfigPanelProps) {
   const [activeSection, setActiveSection] = useState<SecuritySection>("tokens");
 
@@ -695,9 +706,13 @@ export default function SecurityConfigPanel({
         )}
 
         <AnimatePresence mode="wait">
-          {activeSection === "tokens" && <TokensSection key="tokens" />}
+          {activeSection === "tokens" && (
+            <TokensSection key="tokens" token={token} />
+          )}
           {activeSection === "apikeys" && <ApiKeysSection key="apikeys" />}
-          {activeSection === "audit" && <AuditLogSection key="audit" />}
+          {activeSection === "audit" && (
+            <AuditLogSection key="audit" token={token} />
+          )}
           {activeSection === "proxy" && <ProxySection key="proxy" />}
         </AnimatePresence>
       </div>

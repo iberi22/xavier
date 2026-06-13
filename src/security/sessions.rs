@@ -47,6 +47,21 @@ impl SessionManager {
         session
     }
 
+    /// Revoke a session manually
+    pub fn revoke_session(&self, id: &str) {
+        self.sessions.remove(id);
+    }
+
+    /// List all active (non-expired) sessions
+    pub fn list_active_sessions(&self) -> Vec<EphemeralSession> {
+        let now = Utc::now();
+        self.sessions
+            .iter()
+            .filter(|r| r.value().expires_at > now)
+            .map(|r| r.value().clone())
+            .collect()
+    }
+
     /// Validate a session ID
     pub fn validate_session(&self, id: &str) -> bool {
         if let Some(session) = self.sessions.get(id) {

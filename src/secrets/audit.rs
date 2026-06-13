@@ -7,6 +7,18 @@ use crate::codebase::connection_manager::ConnectionManager;
 use crate::ports::outbound::schema_init::SchemaInitializer;
 use chrono::Utc;
 use rusqlite::params;
+use serde::Serialize;
+
+#[derive(Debug, Serialize)]
+pub struct AuditLogEntry {
+    pub id: i64,
+    pub timestamp: String,
+    pub event_type: String,
+    pub agent_id: String,
+    pub session_token: String,
+    pub secret_id: Option<String>,
+    pub reason: Option<String>,
+}
 
 pub struct QmdAuditLogger {
     project_id: String,
@@ -30,6 +42,34 @@ impl QmdAuditLogger {
         Self {
             project_id: project_id.to_string(),
         }
+    }
+
+    pub async fn get_recent_logs(&self, limit: usize) -> anyhow::Result<Vec<AuditLogEntry>> {
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT id, timestamp, event_type, agent_id, session_token, secret_id, reason
+                     FROM secret_audit_logs ORDER BY timestamp DESC LIMIT ?",
+                )?;
+                let rows = stmt.query_map(params![limit], |row| {
+                    Ok(AuditLogEntry {
+                        id: row.get(0)?,
+                        timestamp: row.get(1)?,
+                        event_type: row.get(2)?,
+                        agent_id: row.get(3)?,
+                        session_token: row.get(4)?,
+                        secret_id: row.get(5)?,
+                        reason: row.get(6)?,
+                    })
+                })?;
+
+                let mut logs = Vec::new();
+                for log in rows {
+                    logs.push(log?);
+                }
+                Ok(logs)
+            })
+            .await
     }
 
     pub async fn init_schema_async(&self) -> anyhow::Result<()> {

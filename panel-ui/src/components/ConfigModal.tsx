@@ -26,6 +26,8 @@ import GraphView from "./GraphView";
 import MessagingConfigModal, {
   MessagingConfigInner,
 } from "./MessagingConfigModal";
+import NetworkPage from "../pages/Settings/Network";
+import ObservabilityPage from "../pages/Settings/Observability";
 
 interface ConfigModalProps {
   key?: React.Key;
@@ -44,7 +46,9 @@ type MainTab =
   | "bookmarks"
   | "providers"
   | "messaging"
-  | "security";
+  | "security"
+  | "network"
+  | "observability";
 
 export default function ConfigModal({
   onClose,
@@ -114,6 +118,18 @@ export default function ConfigModal({
             onClick={() => setMainTab("security")}
             icon={<Shield className="w-4 h-4" />}
             label="Security"
+          />
+          <TabButton
+            active={mainTab === "network"}
+            onClick={() => setMainTab("network")}
+            icon={<Network className="w-4 h-4" />}
+            label="Mesh Network"
+          />
+          <TabButton
+            active={mainTab === "observability"}
+            onClick={() => setMainTab("observability")}
+            icon={<Activity className="w-4 h-4" />}
+            label="Observability"
           />
           <TabButton
             active={mainTab === "graph"}
@@ -267,8 +283,18 @@ export default function ConfigModal({
                   </p>
                 </div>
               </div>
-              <SecurityConfigPanel embedded />
+              <SecurityConfigPanel embedded token={token || ""} />
             </motion.div>
+          )}
+          {mainTab === "network" && (
+            <div className="p-10 overflow-y-auto h-full">
+              <NetworkPage token={token || ""} />
+            </div>
+          )}
+          {mainTab === "observability" && (
+            <div className="p-10 overflow-y-auto h-full">
+              <ObservabilityPage token={token || ""} />
+            </div>
           )}
         </AnimatePresence>
       </div>

@@ -15,6 +15,13 @@ pub async fn health_handler(State(state): State<CliState>) -> Response {
     )
     .await;
 
+    let hormer_metrics = match state.provider_router.read().await.get_hormer() {
+        Some(hormer) => hormer.get_metrics().await,
+        None => serde_json::json!({}),
+    };
+
+    let memory_stats = state.qmd_memory.stats().await;
+
     let embedding_provider = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
         .ok()
         .map(|v| v.trim().to_ascii_lowercase())
@@ -49,6 +56,13 @@ pub async fn health_handler(State(state): State<CliState>) -> Response {
             "sqlite_db_size": sqlite_db_size,
             "uptime": uptime_secs,
             "lag_ms": lag_ms,
+            "memory": {
+                "documents": memory_stats.documents,
+                "entities": memory_stats.entities,
+                "relations": memory_stats.relations,
+                "embedding_progress": 1.0, // Placeholder
+            },
+            "hormer": hormer_metrics,
         }),
     )
 }
