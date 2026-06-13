@@ -21,6 +21,7 @@ pub mod mesh;
 pub mod navigation;
 pub mod provider;
 pub mod secrets;
+pub mod session;
 pub mod spawn;
 pub mod token;
 pub mod usage;
@@ -165,6 +166,7 @@ impl Cli {
             Command::Token { cmd } => token::handle_token_command(cmd.clone()).await,
             Command::Provider { cmd } => provider::handle_provider_command(cmd.clone()).await,
             Command::Setup => crate::cli::handlers::setup::handle_setup().await,
+            Command::Session { cmd } => session::handle_session_command(cmd.clone()).await,
             Command::Mesh { cmd } => mesh::handle_mesh_command(cmd.clone()).await,
             Command::Secrets { cmd } => secrets::handle_secrets_command(cmd.clone()).await,
             Command::Vault { cmd } => secrets::handle_vault_command(cmd.clone()).await,

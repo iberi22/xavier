@@ -40,7 +40,7 @@ async fn test_hormer_lifecycle() {
 
     // 3. Shared policy configuration
     let initial_weights = LayerWeights::new(0.3, 0.3, 0.4);
-    let policy = Arc::new(RwLock::new(NavigationPolicy::new(initial_weights, 0.1)));
+    let policy = Arc::new(RwLock::new(NavigationPolicy::new(initial_weights, xavier::retrieval::policy::TraversalWeights::default(), 0.1)));
 
     let gating = AdaptiveGating::with_policy(GatingConfig::default(), policy.clone());
     let hormer = Hormer::new(policy.clone());

@@ -7,6 +7,7 @@ use axum::{
     Extension, Json,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tracing::info;
 
 use crate::{
@@ -20,7 +21,9 @@ use crate::{
     mesh::{
         protocol::{ChunkRef, MeshHandshake, MeshHandshakeResponse, MeshManifest, MeshSyncRequest},
         NodeIdentity,
+        PeerRegistry,
     },
+    session::sharing::{export_session, import_session, SessionBundle},
     workspace::WorkspaceContext,
 };
 
@@ -346,6 +349,106 @@ pub async fn v1_mesh_chunks_push(
     }
 
     Json(synced_hashes)
+}
+
+// ── Session Sharing API ───────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct V1SessionShareRequest {
+    pub peer_node_id: String,
+}
+
+pub async fn v1_session_export(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Path(session_id): Path<String>,
+) -> impl IntoResponse {
+    match export_session(&workspace.workspace.memory, &session_id).await {
+        Ok(bundle) => Json(bundle).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn v1_session_import(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Json(bundle): Json<SessionBundle>,
+) -> impl IntoResponse {
+    match import_session(&workspace.workspace.memory, bundle).await {
+        Ok(_) => Json(serde_json::json!({ "status": "ok" })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn v1_mesh_session_share(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Path(session_id): Path<String>,
+    Json(payload): Json<V1SessionShareRequest>,
+) -> impl IntoResponse {
+    let registry = match PeerRegistry::load() {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+
+    let peer_node_id = crate::mesh::node::NodeId(payload.peer_node_id);
+    let peer = match registry.get_peer(&peer_node_id) {
+        Some(p) => p,
+        None => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({ "error": "Peer not found" })),
+            )
+                .into_response()
+        }
+    };
+
+    let bundle = match export_session(&workspace.workspace.memory, &session_id).await {
+        Ok(b) => b,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+
+    let identity = match NodeIdentity::load_or_create() {
+        Ok(id) => Arc::new(id),
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+
+    let transport = crate::mesh::transport::MeshTransport::new(identity);
+    // Note: We need a token to talk to the peer. For now, assume we use the local token
+    // or a specialized mesh token if available in PeerInfo.
+    let token = std::env::var("XAVIER_TOKEN").unwrap_or_default();
+
+    match transport.share_session(peer, &token, bundle).await {
+        Ok(_) => Json(serde_json::json!({ "status": "ok" })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
 }
 
 pub async fn v1_memories_search(
