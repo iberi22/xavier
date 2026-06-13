@@ -2,29 +2,128 @@
   "server": {
     "host": "0.0.0.0",
     "port": 8006,
-    "log_level": "info"
-  },
-  "embedding": {
-    "endpoint": "",
-    "embedder": "gllm (local, AVX2)",
-    "gllm_model": "all-MiniLM-L6-v2"
-  },
-  "memory": {
-    "backend": "vec",
-    "embedding_dimensions": 384,
-    "max_memories": 70000,
-    "data_dir": "data/memory"
+    "log_level": "info",
+    "code_graph_db_path": "data/code_graph.db",
+    "url": "",
+    "config_path": null
   },
   "workspace": {
     "default_workspace_id": "default",
     "default_plan": "standard",
-    "storage_limit_bytes": 41339060224
+    "storage_limit_bytes": 41339060224,
+    "request_limit": null,
+    "request_unit_limit": null,
+    "embedding_provider_mode": "bring_your_own",
+    "managed_google_embeddings": false,
+    "sync_policy": "local_only"
   },
-  "security": {},
-  "retrieval": {},
-  "advanced": {},
-  "router": {},
-  "chronicle": {},
-  "agent": {},
-  "sync": {}
+  "memory": {
+    "backend": "vec",
+    "data_dir": "data/memory",
+    "embedding_dimensions": 384,
+    "workspace_dir": "/home/jules/.local/share/xavier/workspaces",
+    "file_path": "/home/jules/.local/share/xavier/workspaces/default/memory-store.json",
+    "sqlite_path": "/home/jules/.local/share/xavier/memory-store.sqlite3",
+    "vec_path": "/home/jules/.local/share/xavier/vec-store.sqlite3"
+  },
+  "memory_layers": {
+    "working": {
+      "capacity": 100,
+      "lru_exempt_access_threshold": 2,
+      "bm25_k1": 1.5,
+      "bm25_b": 0.75
+    },
+    "episodic": {
+      "summary_window": 10,
+      "max_sessions": 50,
+      "min_event_importance": 0.5
+    }
+  },
+  "models": {
+    "provider": "local",
+    "api_flavor": "openai-compatible",
+    "local_llm_url": "http://localhost:11434/v1",
+    "local_llm_model": "qwen3-coder",
+    "embedding_url": "http://localhost:11434/v1",
+    "embedding_model": "embeddinggemma",
+    "router_retrieved_model": "",
+    "router_complex_model": "",
+    "router_fast_model": "opencode/minimax-m2.7",
+    "router_quality_model": "opencode/deepseek-v4-pro",
+    "llm_model": null,
+    "llm_api_key": null,
+    "cloud_llm_model": null,
+    "cloud_llm_url": null,
+    "local_llm_api_key": null,
+    "local_anthropic_url": null,
+    "compaction_model": null
+  },
+  "retrieval": {
+    "disable_hyde": true,
+    "rrf_k": null,
+    "zone_boost_multiplier": null,
+    "zone_penalty_multiplier": null,
+    "learned_policy": {
+      "working_weight": 0.31236818,
+      "episodic_weight": 0.29587728,
+      "semantic_weight": 0.39175457,
+      "learning_rate": 0.01,
+      "update_count": 1
+    }
+  },
+  "sync": {
+    "interval_ms": 300000,
+    "lag_threshold_ms": 30000,
+    "save_ok_rate_threshold": 0.95,
+    "max_retries": 3,
+    "retry_delay_ms": 1000,
+    "min_health_interval_ms": 1000,
+    "timeout_ms": 5000
+  },
+  "embedding": {
+    "endpoint": "",
+    "embedder": "gllm (local, AVX2)",
+    "gllm_model": "all-MiniLM-L6-v2",
+    "api_flavor": "",
+    "api_key": null,
+    "gllm_dimension": null,
+    "cache_enabled": true,
+    "cache_size": 10000,
+    "cache_ttl_hours": 24,
+    "cache_db_path": "data/embedding_cache.db"
+  },
+  "security": {
+    "allowed_domains": "",
+    "token_secret": null
+  },
+  "telegram": {
+    "enabled": false,
+    "bot_token": null
+  },
+  "router": {
+    "policy_path": "",
+    "policy_refresh_secs": 300
+  },
+  "chronicle": {
+    "model": ""
+  },
+  "enterprise": {
+    "db_path": "data/enterprise.db"
+  },
+  "agents": {
+    "weekly_budget": null
+  },
+  "advanced": {
+    "qjl_threshold": 500,
+    "entity_extraction_enabled": true,
+    "audit_chain_enabled": true,
+    "panel_store_dir": ""
+  },
+  "pgheart": {
+    "url": null,
+    "token": null,
+    "instance_id": null,
+    "sync_interval_ms": 60000,
+    "auto_heartbeat": true
+  }
 }
