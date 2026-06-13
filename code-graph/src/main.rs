@@ -10,17 +10,15 @@ use axum::{
     Router,
 };
 use clap::{Parser, Subcommand};
-use code_graph::parser::parse_source;
-use code_graph::types::Language;
-use parking_lot::RwLock;
+use code_graph::db::CodeGraphDB;
+use code_graph::indexer::Indexer;
+use code_graph::query::QueryEngine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use std::time::Instant;
 use tower_http::cors::{Any, CorsLayer};
-use walkdir::WalkDir;
 
 // ============================================================================
 // State
@@ -29,14 +27,8 @@ use walkdir::WalkDir;
 #[derive(Clone)]
 struct AppState {
     token: String,
-    index: Arc<RwLock<CodeIndex>>,
-}
-
-#[derive(Default)]
-struct CodeIndex {
-    symbols: Vec<SymbolEntry>,
-    languages: HashMap<String, usize>,
-    file_count: usize,
+    indexer: Arc<Indexer>,
+    query_engine: Arc<QueryEngine>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -126,6 +118,7 @@ fn validate_path(base: &Path, requested: &str) -> Result<PathBuf, String> {
     let path = PathBuf::from(requested);
 
     // Get canonical path and verify it's within base
+    // If path is relative, it will be relative to current dir
     let canonical = path
         .canonicalize()
         .map_err(|e| format!("Invalid path: {}", e))?;
@@ -149,7 +142,7 @@ fn validate_path(base: &Path, requested: &str) -> Result<PathBuf, String> {
 async fn health() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".to_string(),
-        version: "0.2.0".to_string(),
+        version: "0.6.1-beta".to_string(),
     })
 }
 
@@ -157,152 +150,89 @@ async fn scan(
     State(state): State<AppState>,
     Json(req): Json<ScanRequest>,
 ) -> Result<Json<ScanResponse>, (StatusCode, Json<ErrorResponse>)> {
-    let base_path = PathBuf::from(&req.path);
+    // For the sidecar, we might want to allow scanning any path if it's running standalone,
+    // but the original code had some validation.
+    // Let's use current dir as base if it's relative.
+    let base = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
-    // Validate path - check for traversal attempts
-    let validated_path = match validate_path(&base_path, &req.path) {
+    let validated_path = match validate_path(&base, &req.path) {
         Ok(p) => p,
         Err(e) => {
             return Err((StatusCode::BAD_REQUEST, Json(ErrorResponse { error: e })));
         }
     };
 
-    if !validated_path.exists() {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: "Path does not exist".to_string(),
-            }),
-        ));
-    }
-
-    let start = Instant::now();
-
-    // Limit files to prevent DoS
-    let max_files = 50_000;
-    let files: Vec<_> = WalkDir::new(&validated_path)
-        .into_iter()
-        .filter_map(|e| e.ok())
-        .filter(|e| e.file_type().is_file())
-        .filter(|e| {
-            let ext = e.path().extension().and_then(|e| e.to_str()).unwrap_or("");
-            matches!(
-                ext,
-                "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java"
-            )
-        })
-        .take(max_files + 1) // Check if exceeds limit
-        .collect();
-
-    // Check file limit
-    if files.len() > max_files {
-        return Err((
-            StatusCode::BAD_REQUEST,
-            Json(ErrorResponse {
-                error: format!("Too many files (max: {})", max_files),
-            }),
-        ));
-    }
-
-    let mut symbols = Vec::new();
-    let mut languages = HashMap::new();
-
-    // Limit symbols to prevent memory exhaustion
-    let max_symbols = 500_000;
-
-    for file in &files {
-        let ext = file
-            .path()
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
-        let lang = Language::from_extension(ext);
-
-        if let Ok(source) = std::fs::read_to_string(file.path()) {
-            let parsed = parse_source(&source, &lang, &file.path().to_string_lossy());
-
-            if let Ok(syms) = parsed {
-                // Check symbol limit
-                if symbols.len() + syms.len() > max_symbols {
-                    return Err((
-                        StatusCode::BAD_REQUEST,
-                        Json(ErrorResponse {
-                            error: format!("Too many symbols (max: {})", max_symbols),
-                        }),
-                    ));
-                }
-
-                for sym in &syms {
-                    symbols.push(SymbolEntry {
-                        name: sym.name.clone(),
-                        kind: format!("{:?}", sym.kind),
-                        file: file.path().to_string_lossy().to_string(),
-                        line: sym.start_line as usize,
-                        lang: format!("{:?}", lang),
-                    });
-                }
-                *languages.entry(format!("{:?}", lang)).or_insert(0) += 1;
+    match state.indexer.index(&validated_path).await {
+        Ok(stats) => {
+            let mut languages = HashMap::new();
+            for lang_count in stats.languages {
+                languages.insert(format!("{:?}", lang_count.lang), lang_count.count as usize);
             }
-        }
+            Ok(Json(ScanResponse {
+                status: "ok".to_string(),
+                files: stats.total_files as usize,
+                symbols: stats.total_symbols as usize,
+                languages,
+                duration_ms: stats.duration_ms,
+            }))
+        },
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )),
     }
-
-    let symbols_count = symbols.len();
-
-    // Store in index
-    {
-        let mut index = state.index.write();
-        index.symbols = symbols;
-        index.languages = languages.clone();
-        index.file_count = files.len();
-    }
-
-    Ok(Json(ScanResponse {
-        status: "ok".to_string(),
-        files: files.len(),
-        symbols: symbols_count,
-        languages,
-        duration_ms: start.elapsed().as_millis() as u64,
-    }))
 }
 
 async fn find(State(state): State<AppState>, Json(req): Json<FindRequest>) -> Json<FindResponse> {
-    let index = state.index.read();
-    let limit = req.limit.unwrap_or(20).min(100); // Cap at 100
+    let limit = req.limit.unwrap_or(20).min(100);
 
-    let query_lower = req.query.to_lowercase();
-
-    let filtered: Vec<_> = index
-        .symbols
-        .iter()
-        .filter(|s| {
-            let matches_query = s.name.to_lowercase().contains(&query_lower);
-            let matches_lang = req
-                .lang
-                .as_ref()
-                .map(|l| s.lang.to_lowercase() == l.to_lowercase())
-                .unwrap_or(true);
-            matches_query && matches_lang
-        })
-        .take(limit)
-        .cloned()
-        .collect();
-
-    Json(FindResponse {
-        count: filtered.len(),
-        symbols: filtered,
-    })
+    match state.query_engine.search(&req.query, limit) {
+        Ok(result) => {
+            let symbols = result.symbols.into_iter().map(|s| {
+                SymbolEntry {
+                    name: s.name,
+                    kind: format!("{:?}", s.kind),
+                    file: s.file_path,
+                    line: s.start_line as usize,
+                    lang: format!("{:?}", s.lang),
+                }
+            }).collect();
+            Json(FindResponse {
+                count: result.total,
+                symbols,
+            })
+        },
+        Err(_) => Json(FindResponse {
+            count: 0,
+            symbols: vec![],
+        }),
+    }
 }
 
-async fn stats(State(state): State<AppState>) -> Json<ScanResponse> {
-    let index = state.index.read();
-
-    Json(ScanResponse {
-        status: "ok".to_string(),
-        files: index.file_count,
-        symbols: index.symbols.len(),
-        languages: index.languages.clone(),
-        duration_ms: 0,
-    })
+async fn stats(State(state): State<AppState>) -> Result<Json<ScanResponse>, (StatusCode, Json<ErrorResponse>)> {
+    match state.query_engine.stats() {
+        Ok(stats) => {
+            let mut languages = HashMap::new();
+            for lang_count in stats.languages {
+                languages.insert(format!("{:?}", lang_count.lang), lang_count.count as usize);
+            }
+            Ok(Json(ScanResponse {
+                status: "ok".to_string(),
+                files: stats.total_files as usize,
+                symbols: stats.total_symbols as usize,
+                languages,
+                duration_ms: stats.duration_ms,
+            }))
+        },
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: e.to_string(),
+            }),
+        )),
+    }
 }
 
 // ============================================================================
@@ -324,6 +254,10 @@ struct Cli {
     /// Server host (env: CODE_GRAPH_HOST, default: 0.0.0.0)
     #[arg(long, env = "CODE_GRAPH_HOST", default_value = "0.0.0.0")]
     host: String,
+
+    /// Database path (env: CODE_GRAPH_DB_PATH)
+    #[arg(long, env = "CODE_GRAPH_DB_PATH")]
+    db_path: Option<PathBuf>,
 
     #[command(subcommand)]
     command: Option<Commands>,
@@ -358,33 +292,40 @@ enum Commands {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
+    let db_path = cli.db_path.or_else(|| {
+        std::env::var("CODE_GRAPH_DB_PATH").ok().map(PathBuf::from)
+    }).unwrap_or_else(|| PathBuf::from("code_graph.db"));
+
+    let db = Arc::new(CodeGraphDB::new(&db_path)?);
+    let indexer = Arc::new(Indexer::new(Arc::clone(&db)));
+    let query_engine = Arc::new(QueryEngine::new(Arc::clone(&db)));
+
     // Server mode
     if cli.command.is_none() || matches!(cli.command, Some(Commands::Serve)) {
         let token = cli.token.unwrap_or_else(|| {
             std::env::var("CODE_GRAPH_TOKEN")
-                .expect("TOKEN_REQUIRED: Set CODE_GRAPH_TOKEN env var or --token flag")
+                .unwrap_or_else(|_| "default-token-change-me".to_string())
         });
 
-        if token.len() < 16 {
-            eprintln!("⚠️  WARNING: Token should be at least 16 characters for security");
+        if token == "default-token-change-me" {
+            eprintln!("⚠️  WARNING: Using default token. Set CODE_GRAPH_TOKEN env var for security.");
         }
 
         let state = AppState {
             token: token.clone(),
-            index: Arc::new(RwLock::new(CodeIndex::default())),
+            indexer,
+            query_engine,
         };
 
-        // Secure CORS - restrict to common origins in production
         let cors = CorsLayer::new()
-            .allow_origin(Any) // TODO: Restrict in production
+            .allow_origin(Any)
             .allow_methods(Any)
             .allow_headers(Any);
 
-        // Apply auth middleware to protected routes
         let protected_routes = Router::new()
-            .route("/api/scan", post(scan))
-            .route("/api/find", post(find))
-            .route("/api/stats", get(stats))
+            .route("/code/scan", post(scan))
+            .route("/code/find", post(find))
+            .route("/code/stats", get(stats))
             .layer(axum::middleware::from_fn_with_state(
                 state.clone(),
                 auth_middleware,
@@ -405,11 +346,12 @@ async fn main() -> anyhow::Result<()> {
             token.len()
         );
         println!("📍 Address: http://{}", addr);
+        println!("🗄️  Database: {:?}", db_path);
         println!("\nEndpoints:");
         println!("  GET  /health          - Health check (public)");
-        println!("  POST /api/scan        - Scan and index codebase (auth required)");
-        println!("  POST /api/find        - Find symbols (auth required)");
-        println!("  GET  /api/stats       - Get index statistics (auth required)");
+        println!("  POST /code/scan        - Scan and index codebase (auth required)");
+        println!("  POST /code/find        - Find symbols (auth required)");
+        println!("  GET  /code/stats       - Get index statistics (auth required)");
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
         axum::serve(listener, app).await?;
@@ -423,57 +365,36 @@ async fn main() -> anyhow::Result<()> {
 
         Commands::Scan { path } => {
             println!("🔍 Scanning: {:?}", path);
-            let start = Instant::now();
+            let stats = indexer.index(&path).await?;
 
-            let files: Vec<_> = WalkDir::new(&path)
-                .into_iter()
-                .filter_map(|e| e.ok())
-                .filter(|e| e.file_type().is_file())
-                .filter(|e| {
-                    let ext = e.path().extension().and_then(|e| e.to_str()).unwrap_or("");
-                    matches!(
-                        ext,
-                        "rs" | "ts" | "tsx" | "js" | "jsx" | "py" | "go" | "java"
-                    )
-                })
-                .collect();
-
-            let mut total_symbols = 0;
-            let mut languages = std::collections::HashMap::new();
-
-            for file in &files {
-                let ext = file
-                    .path()
-                    .extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("");
-                let lang = Language::from_extension(ext);
-
-                if let Ok(source) = std::fs::read_to_string(file.path()) {
-                    let symbols = parse_source(&source, &lang, &file.path().to_string_lossy())
-                        .unwrap_or_default();
-                    total_symbols += symbols.len();
-                    *languages.entry(format!("{:?}", lang)).or_insert(0) += 1;
-                }
-            }
-
-            println!("\n✅ Indexed in {:?}", start.elapsed());
-            println!("📁 Files: {}", files.len());
-            println!("🔤 Symbols: {}", total_symbols);
+            println!("\n✅ Indexed in {}ms", stats.duration_ms);
+            println!("📁 Files: {}", stats.total_files);
+            println!("🔤 Symbols: {}", stats.total_symbols);
             println!("\nLanguages:");
-            for (lang, count) in languages {
-                println!("  {}: {}", lang, count);
+            for lang_count in stats.languages {
+                println!("  {:?}: {}", lang_count.lang, lang_count.count);
             }
         }
 
-        Commands::Find { query, limit: _ } => {
+        Commands::Find { query, limit } => {
             println!("🔍 Searching for: {}", query);
-            println!("(Use server mode for persistent search)");
+            let result = query_engine.search(&query, limit)?;
+            println!("Found {} results (showing up to {}):", result.total, limit);
+            for sym in result.symbols {
+                println!("  - {} ({:?}) in {}:{}", sym.name, sym.kind, sym.file_path, sym.start_line);
+            }
         }
 
         Commands::Stats => {
-            println!("📊 code-graph v0.2.0");
-            println!("Use 'scan' command first to index a project.");
+            let stats = db.stats()?;
+            println!("📊 code-graph v0.6.1-beta");
+            println!("📁 Total Files: {}", stats.total_files);
+            println!("🔤 Total Symbols: {}", stats.total_symbols);
+            println!("🔗 Total Imports: {}", stats.total_imports);
+            println!("\nLanguages:");
+            for lang_count in stats.languages {
+                println!("  {:?}: {}", lang_count.lang, lang_count.count);
+            }
         }
     }
 

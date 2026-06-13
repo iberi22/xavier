@@ -38,7 +38,7 @@ impl RustParser {
         file_path: &str,
         symbols: &mut Vec<Symbol>,
     ) {
-        self.extract_symbols_from_node(tree.root_node(), source, file_path, symbols);
+        self.extract_symbols_from_node(tree.root_node(), source, file_path, symbols, None);
     }
 
     fn extract_symbols_from_node(
@@ -47,19 +47,26 @@ impl RustParser {
         source: &str,
         file_path: &str,
         symbols: &mut Vec<Symbol>,
+        parent: Option<String>,
     ) {
         let kind = node.kind();
 
         match kind {
             "function_item" | "function_declaration" => {
                 if let Some(name_node) = node.child_by_field_name("name") {
+                    let kind = if parent.is_some() {
+                        SymbolKind::Method
+                    } else {
+                        SymbolKind::Function
+                    };
                     self.push_symbol(
                         symbols,
                         node,
                         name_node,
                         source,
                         file_path,
-                        SymbolKind::Function,
+                        kind,
+                        parent.clone(),
                     );
                 }
             }
@@ -72,6 +79,7 @@ impl RustParser {
                         source,
                         file_path,
                         SymbolKind::Struct,
+                        parent.clone(),
                     );
                 }
             }
@@ -84,6 +92,7 @@ impl RustParser {
                         source,
                         file_path,
                         SymbolKind::Enum,
+                        parent.clone(),
                     );
                 }
             }
@@ -96,6 +105,83 @@ impl RustParser {
                         source,
                         file_path,
                         SymbolKind::Trait,
+                        parent.clone(),
+                    );
+                }
+            }
+            "impl_item" => {
+                let impl_name = self.extract_impl_name(node, source);
+                self.push_symbol(
+                    symbols,
+                    node,
+                    node, // Use the whole node as name reference if needed, but we have a custom name
+                    source,
+                    file_path,
+                    SymbolKind::Impl,
+                    parent.clone(),
+                );
+                // Update last symbol name because push_symbol uses name_node text
+                if let Some(last) = symbols.last_mut() {
+                    if last.kind == SymbolKind::Impl {
+                        if let Some(name) = &impl_name {
+                            last.name = name.clone();
+                        }
+                    }
+                }
+
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    if child.kind() == "declaration_list" {
+                        let mut sub_cursor = child.walk();
+                        for grandchild in child.children(&mut sub_cursor) {
+                            self.extract_symbols_from_node(
+                                grandchild,
+                                source,
+                                file_path,
+                                symbols,
+                                impl_name.clone().or(parent.clone()),
+                            );
+                        }
+                    }
+                }
+                return;
+            }
+            "const_item" | "static_item" => {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    self.push_symbol(
+                        symbols,
+                        node,
+                        name_node,
+                        source,
+                        file_path,
+                        SymbolKind::Constant,
+                        parent.clone(),
+                    );
+                }
+            }
+            "let_declaration" => {
+                if let Some(pattern) = node.child_by_field_name("pattern") {
+                    self.extract_identifiers_from_pattern(
+                        pattern,
+                        node,
+                        source,
+                        file_path,
+                        symbols,
+                        SymbolKind::Variable,
+                        parent.clone(),
+                    );
+                }
+            }
+            "mod_item" => {
+                if let Some(name_node) = node.child_by_field_name("name") {
+                    self.push_symbol(
+                        symbols,
+                        node,
+                        name_node,
+                        source,
+                        file_path,
+                        SymbolKind::Module,
+                        parent.clone(),
                     );
                 }
             }
@@ -104,7 +190,73 @@ impl RustParser {
 
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
-            self.extract_symbols_from_node(child, source, file_path, symbols);
+            self.extract_symbols_from_node(child, source, file_path, symbols, parent.clone());
+        }
+    }
+
+    fn extract_impl_name(&self, node: Node, source: &str) -> Option<String> {
+        // impl Trait for Struct { ... } -> Struct
+        // impl Struct { ... } -> Struct
+        if let Some(type_node) = node.child_by_field_name("type") {
+            return type_node.utf8_text(source.as_bytes()).ok().map(|s| s.to_string());
+        }
+        None
+    }
+
+    fn extract_identifiers_from_pattern(
+        &self,
+        node: Node,
+        symbol_node: Node,
+        source: &str,
+        file_path: &str,
+        symbols: &mut Vec<Symbol>,
+        kind: SymbolKind,
+        parent: Option<String>,
+    ) {
+        match node.kind() {
+            "identifier" => {
+                if node.utf8_text(source.as_bytes()).is_ok() {
+                    self.push_symbol(
+                        symbols,
+                        symbol_node,
+                        node,
+                        source,
+                        file_path,
+                        kind,
+                        parent,
+                    );
+                }
+            }
+            "tuple_pattern" | "struct_pattern" | "slice_pattern" => {
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    self.extract_identifiers_from_pattern(
+                        child,
+                        symbol_node,
+                        source,
+                        file_path,
+                        symbols,
+                        kind.clone(),
+                        parent.clone(),
+                    );
+                }
+            }
+            _ => {
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    if child.kind() == "identifier" || child.kind().contains("pattern") {
+                        self.extract_identifiers_from_pattern(
+                            child,
+                            symbol_node,
+                            source,
+                            file_path,
+                            symbols,
+                            kind.clone(),
+                            parent.clone(),
+                        );
+                    }
+                }
+            }
         }
     }
 
@@ -116,11 +268,12 @@ impl RustParser {
         source: &str,
         file_path: &str,
         kind: SymbolKind,
+        parent: Option<String>,
     ) {
         let start = node.start_position();
         let end = node.end_position();
         let complexity =
-            (kind == SymbolKind::Function).then(|| cyclomatic_complexity(node, source));
+            (kind == SymbolKind::Function || kind == SymbolKind::Method).then(|| cyclomatic_complexity(node, source));
 
         symbols.push(Symbol {
             id: None,
@@ -137,7 +290,7 @@ impl RustParser {
             start_col: start.column as u32,
             end_col: end.column as u32,
             signature: compact_node_signature(node, source),
-            parent: None,
+            parent,
             complexity,
         });
     }
