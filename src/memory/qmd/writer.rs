@@ -18,7 +18,7 @@ use anyhow::Result;
 pub(crate) fn memory_record_from_document(
     workspace_id: &str,
     document: &MemoryDocument,
-) -> MemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
+) -> MemoryRecord {
     let primary = document
         .metadata
         .get("source_path")

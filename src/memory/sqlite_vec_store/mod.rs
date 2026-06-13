@@ -88,7 +88,7 @@ impl VecSqliteMemoryStore {
         let metadata_str: String = row.get(4)?;
         let embedding_blob: Vec<u8> = row.get(5)?;
 
-        Ok(MemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
+        Ok(MemoryRecord {
             id: row.get(0)?,
             workspace_id: row.get(1)?,
             path: row.get(2)?,
