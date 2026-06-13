@@ -265,4 +265,9 @@ impl QueryEngine {
         // Would need a new db method
         Ok(vec![])
     }
+
+    /// Get indexing statistics
+    pub fn stats(&self) -> Result<crate::types::IndexStats> {
+        self.db.stats()
+    }
 }
