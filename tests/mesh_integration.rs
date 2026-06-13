@@ -122,6 +122,7 @@ async fn test_mesh_handshake_and_sync() {
         added_at: 0,
         last_seen_at: None,
         sync_enabled: true,
+        is_cloud: false,
     };
 
     // Export B's data to chunks so it appears in manifest
