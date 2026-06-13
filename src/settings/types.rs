@@ -39,6 +39,8 @@ pub struct XavierSettings {
     pub advanced: AdvancedSettings,
     #[serde(default)]
     pub pgheart: PgHeartSettings,
+    #[serde(default)]
+    pub data_commons: DataCommonsSettings,
     #[serde(skip)]
     pub auth_token: Option<String>,
 }
@@ -62,6 +64,7 @@ impl fmt::Debug for XavierSettings {
             .field("agents", &self.agents)
             .field("advanced", &self.advanced)
             .field("pgheart", &self.pgheart)
+            .field("data_commons", &self.data_commons)
             .field("auth_token", &"[REDACTED]")
             .finish()
     }
@@ -376,6 +379,26 @@ pub struct PgHeartSettings {
     pub instance_id: Option<String>,
     pub sync_interval_ms: u64,
     pub auto_heartbeat: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DataCommonsSettings {
+    pub enabled: bool,
+    pub consent_given: bool,
+    pub data_dir: String,
+    pub wallet_address: Option<String>,
+}
+
+impl Default for DataCommonsSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            consent_given: false,
+            data_dir: "data/commons".to_string(),
+            wallet_address: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

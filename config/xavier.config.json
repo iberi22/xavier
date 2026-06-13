@@ -9,8 +9,8 @@
   },
   "workspace": {
     "default_workspace_id": "default",
-    "default_plan": "standard",
-    "storage_limit_bytes": 41339060224,
+    "default_plan": "community",
+    "storage_limit_bytes": 1073741824,
     "request_limit": null,
     "request_unit_limit": null,
     "embedding_provider_mode": "bring_your_own",
@@ -19,12 +19,12 @@
   },
   "memory": {
     "backend": "vec",
-    "data_dir": "data/memory",
+    "data_dir": "data",
     "embedding_dimensions": 384,
-    "workspace_dir": "/home/jules/.local/share/xavier/workspaces",
-    "file_path": "/home/jules/.local/share/xavier/workspaces/default/memory-store.json",
-    "sqlite_path": "/home/jules/.local/share/xavier/memory-store.sqlite3",
-    "vec_path": "/home/jules/.local/share/xavier/vec-store.sqlite3"
+    "workspace_dir": "data/workspaces",
+    "file_path": "data/workspaces/default/memory-store.json",
+    "sqlite_path": "data/memory-store.sqlite3",
+    "vec_path": "data/vec-store.sqlite3"
   },
   "memory_layers": {
     "working": {
@@ -63,12 +63,21 @@
     "rrf_k": null,
     "zone_boost_multiplier": null,
     "zone_penalty_multiplier": null,
+    "cache_warming_enabled": false,
+    "cache_warming_threshold": null,
     "learned_policy": {
-      "working_weight": 0.31236818,
-      "episodic_weight": 0.29587728,
-      "semantic_weight": 0.39175457,
+      "working_weight": 0.3,
+      "episodic_weight": 0.3,
+      "semantic_weight": 0.4,
+      "semantic_similarity_weight": 0.5,
+      "confidence_weight": 0.1,
+      "edge_weight": 0.1,
+      "recency_weight": 0.1,
+      "cross_layer_weight": 0.05,
+      "cross_dir_weight": 0.1,
+      "peripheral_hub_weight": 0.05,
       "learning_rate": 0.01,
-      "update_count": 1
+      "update_count": 0
     }
   },
   "sync": {
@@ -82,9 +91,9 @@
   },
   "embedding": {
     "endpoint": "",
-    "embedder": "gllm (local, AVX2)",
-    "gllm_model": "all-MiniLM-L6-v2",
-    "api_flavor": "",
+    "embedder": "",
+    "gllm_model": "",
+    "api_flavor": "openai-compatible",
     "api_key": null,
     "gllm_dimension": null,
     "cache_enabled": true,
@@ -117,7 +126,8 @@
     "qjl_threshold": 500,
     "entity_extraction_enabled": true,
     "audit_chain_enabled": true,
-    "panel_store_dir": ""
+    "panel_store_dir": "",
+    "minhash_threshold": 0.85
   },
   "pgheart": {
     "url": null,
@@ -125,5 +135,11 @@
     "instance_id": null,
     "sync_interval_ms": 60000,
     "auto_heartbeat": true
+  },
+  "data_commons": {
+    "enabled": false,
+    "consent_given": false,
+    "data_dir": "data/commons",
+    "wallet_address": null
   }
 }
