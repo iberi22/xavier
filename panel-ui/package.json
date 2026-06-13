@@ -1,7 +1,7 @@
 {
   "name": "xavier-panel-ui",
   "private": true,
-  "version": "0.6.1-beta",
+  "version": "0.10.0-12-06-2026",
   "type": "module",
   "scripts": {
     "dev": "vite",
