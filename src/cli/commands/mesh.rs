@@ -243,6 +243,50 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 }
             }
         }
+        MeshCommand::PairingCode { endpoint } => {
+            let identity = NodeIdentity::load_or_create()?;
+            let endpoint = endpoint.unwrap_or_else(|| "http://localhost:8006".to_string());
+            let (code, secret) = xavier::mesh::pairing::generate_pairing_code(
+                identity.node_id.clone(),
+                endpoint,
+                hex::encode(&identity.public_key),
+            );
+
+            println!("✨ Xavier Mesh Pairing Code generated (valid for 1 hour):");
+            println!("\n  {}\n", code);
+            println!("Verification Secret (share separately): {}", secret);
+            println!("\nInstructions:");
+            println!("  On the other node, run: xavier mesh join <CODE>");
+        }
+        MeshCommand::Join { code } => {
+            let data = xavier::mesh::pairing::decode_pairing_code(&code)?;
+            println!("🔗 Joining Xavier Mesh node: {} at {}", data.node_id, data.endpoint);
+
+            let mut registry = PeerRegistry::load()?;
+            let peer = PeerInfo {
+                node_id: data.node_id.clone(),
+                alias: None,
+                endpoint_url: data.endpoint.clone(),
+                public_key_hex: data.public_key_hex.clone(),
+                added_at: chrono::Utc::now().timestamp(),
+                last_seen_at: None,
+                sync_enabled: true,
+            };
+
+            registry.add_peer(peer)?;
+            println!("✅ Node {} added as a trusted peer.", data.node_id);
+
+            // Optional: immediately perform a handshake to verify
+            let identity = Arc::new(NodeIdentity::load_or_create()?);
+            let transport = MeshTransport::new(identity);
+            let token = resolve_http_token().unwrap_or_default();
+
+            println!("Verifying connection...");
+            match transport.handshake(&data.endpoint, &token).await {
+                Ok(_) => println!("✅ Connection verified!"),
+                Err(e) => println!("⚠️ Could not verify connection immediately: {}", e),
+            }
+        }
         MeshCommand::Status => {
             let identity = NodeIdentity::load_or_create()?;
             let registry = PeerRegistry::load()?;
