@@ -308,6 +308,14 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             "/api/settings/cloud-node",
             get(xavier::api::settings::get_cloud_node).post(xavier::api::settings::update_cloud_node),
         )
+        .route(
+            "/api/settings/discord",
+            get(xavier::api::settings::get_discord_settings).post(xavier::api::settings::update_discord_settings),
+        )
+        .route(
+            "/api/settings/discord/test",
+            post(xavier::api::settings::test_discord_connection),
+        )
         .route("/xavier/events/session", post(session_event_handler))
         .route("/xavier/time/metric", post(time_metric_handler))
         .route("/xavier/agents/register", post(agent_register_handler))
