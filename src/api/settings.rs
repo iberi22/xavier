@@ -40,7 +40,7 @@ pub async fn update_cloud_node(
         settings.pgheart.instance_id = Some(instance_id);
     }
 
-    match settings.save() {
+    match settings.save().await {
         Ok(_) => Json(serde_json::json!({ "status": "ok", "message": "Cloud node settings updated" })),
         Err(e) => Json(serde_json::json!({ "status": "error", "message": e.to_string() })),
     }
