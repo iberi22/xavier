@@ -5,7 +5,7 @@
 use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+
 use std::collections::HashSet;
 use std::path::Path;
 

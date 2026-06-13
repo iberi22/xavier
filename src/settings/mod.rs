@@ -35,9 +35,10 @@ impl XavierSettings {
         serialization::current()
     }
 
-    pub fn save(&self) -> Result<()> {
-        serialization::save(self)
+    pub async fn save(&self) -> Result<()> {
+        serialization::save(self).await
     }
+
 
     pub fn client_base_url(&self) -> String {
         let host = match self.server.host.as_str() {

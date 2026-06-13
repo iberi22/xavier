@@ -1,5 +1,6 @@
 import {
   Bookmark,
+  Bot,
   Brain,
   Cpu,
   Cpu as CpuIcon,
@@ -10,6 +11,7 @@ import {
   MessageSquare,
   Network,
   Plug,
+  RefreshCw,
   Server,
   Share2,
   Shield,
@@ -17,15 +19,20 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import type React from "react";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { ApiClient } from "../api/client";
 import ProvidersPage from "../pages/Settings/Providers";
 import SecurityConfigPanel from "../pages/Settings/Security";
-import type { BookmarkArtifact, GraphData } from "../types";
+import type { Agent, BookmarkArtifact, GraphData } from "../types";
+import AgentsView from "./AgentsView";
 import BookmarksView from "./BookmarksView";
 import GraphView from "./GraphView";
+import MemoryBrowser from "./MemoryBrowser";
 import MessagingConfigModal, {
   MessagingConfigInner,
 } from "./MessagingConfigModal";
+import { CloudRelayConfig } from "./CloudRelayConfig";
+import DataCommonsConfigUI from "./DataCommonsConfigUI";
 
 interface ConfigModalProps {
   key?: React.Key;
@@ -44,7 +51,9 @@ type MainTab =
   | "bookmarks"
   | "providers"
   | "messaging"
-  | "security";
+  | "security"
+  | "memory"
+  | "agents";
 
 export default function ConfigModal({
   onClose,
@@ -114,6 +123,18 @@ export default function ConfigModal({
             onClick={() => setMainTab("security")}
             icon={<Shield className="w-4 h-4" />}
             label="Security"
+          />
+          <TabButton
+            active={mainTab === "memory"}
+            onClick={() => setMainTab("memory")}
+            icon={<Brain className="w-4 h-4" />}
+            label="Memory"
+          />
+          <TabButton
+            active={mainTab === "agents"}
+            onClick={() => setMainTab("agents")}
+            icon={<Bot className="w-4 h-4" />}
+            label="Agents"
           />
           <TabButton
             active={mainTab === "graph"}
@@ -270,6 +291,28 @@ export default function ConfigModal({
               <SecurityConfigPanel embedded />
             </motion.div>
           )}
+          {mainTab === "memory" && (
+            <motion.div
+              key="memory"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full h-full overflow-hidden"
+            >
+              <MemoryBrowser token={token || ""} />
+            </motion.div>
+          )}
+          {mainTab === "agents" && (
+            <motion.div
+              key="agents"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full h-full overflow-y-auto p-8"
+            >
+              <AgentsView token={token || ""} />
+            </motion.div>
+          )}
         </AnimatePresence>
       </div>
     </motion.div>
@@ -302,6 +345,7 @@ function MessagingEmbedded() {
     </div>
   );
 }
+
 
 function TabButton({
   active,
@@ -713,6 +757,29 @@ function ConfigView({ graphData }: { graphData: GraphData }) {
             >
               <Layers className="w-12 h-12 mb-4 opacity-20" />
               <p>Select a category to view specific configuration layers</p>
+            </motion.div>
+          )}
+
+          {activeTab === "server" && (
+            <motion.div
+              key="server"
+              initial={{ opacity: 0, x: 10 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -10 }}
+              className="flex flex-col gap-8 max-w-2xl h-full"
+            >
+              <div>
+                <h2 className="text-3xl font-light text-white tracking-tight">
+                  Server & Network
+                </h2>
+                <p className="text-sm text-white/40 mt-1">
+                  Configure Xavier's connectivity, P2P Cloud Relays, and Data Commons.
+                </p>
+              </div>
+              <div className="space-y-6">
+                <CloudRelayConfig token={token || ""} />
+                <DataCommonsConfigUI token={token || ""} />
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
