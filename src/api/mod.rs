@@ -4,5 +4,6 @@
 //! providing the public API surface for module consumers.
 pub mod graph;
 pub mod search;
+pub mod settings;
 pub mod skills;
 pub mod timeline;

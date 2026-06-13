@@ -304,6 +304,10 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             "/api/timeline/slice",
             post(xavier::api::timeline::get_time_slice),
         )
+        .route(
+            "/api/settings/cloud-node",
+            get(xavier::api::settings::get_cloud_node).post(xavier::api::settings::update_cloud_node),
+        )
         .route("/xavier/events/session", post(session_event_handler))
         .route("/xavier/time/metric", post(time_metric_handler))
         .route("/xavier/agents/register", post(agent_register_handler))
