@@ -6,7 +6,7 @@
     "created": "2026-03-05",
     "last_verified": "2026-06-11",
     "total_features": 12,
-    "features_complete": 5,
+    "features_complete": 6,
     "features_beta": 3,
     "features_draft": 2,
     "features_planned": 2,
@@ -81,7 +81,7 @@
       "name": "MCP Server",
       "category": "integration",
       "status": "beta",
-      "progress_pct": 90,
+      "progress_pct": 100,
       "description": "HTTP-first integration with optional Model Context Protocol (MCP) support exposing 12 tools",
       "steps": [
         "Expose authenticated HTTP endpoints for memory and code operations",
@@ -93,8 +93,8 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-06-10",
-      "notes": "12 tools operational per MCP_CONTRACT.md. Axum 0.8 with TLS. Missing: integration tests for all 12 tools, error handling consistency docs.",
+      "last_tested": "2026-06-11",
+      "notes": "12 tools operational per MCP_CONTRACT.md. Axum 0.8 with TLS. Comprehensive integration tests and standard error codes implemented.",
       "implemented_in": "src/server/http/, src/server/mcp/, src/server/headless/"
     },
     {
