@@ -586,7 +586,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             info!("Running scheduled Agentic Scanner pass...");
             if let Ok(indexed_files) = agent_indexer_cron.index_agents().await {
                 for file in indexed_files {
-                    let record = xavier::memory::store::MemoryRecord {
+                    let record = xavier::memory::store::MemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
                         id: uuid::Uuid::new_v4().to_string(),
                         workspace_id: "default".to_string(),
                         path: file.path,
