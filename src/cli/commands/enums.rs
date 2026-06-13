@@ -356,6 +356,15 @@ pub enum MeshCommand {
         #[arg(long, default_value = "bidirectional")]
         mode: String,
     },
+    /// Generate a temporary pairing code
+    PairingCode {
+        #[arg(long)]
+        endpoint: Option<String>,
+    },
+    /// Join a mesh using a pairing code
+    Join {
+        code: String,
+    },
     /// Show mesh network status
     Status,
 }

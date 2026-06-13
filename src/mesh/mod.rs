@@ -33,11 +33,14 @@
 //! - Phase 3: Loro CRDT for conflict-free memory merge
 //! - Phase 4: Tor/Yggdrasil transport for anonymous operation
 
+pub mod acl;
 pub mod node;
+pub mod pairing;
 pub mod peer;
 pub mod protocol;
 pub mod transport;
 
+pub use acl::{MeshAcl, NodeAclEntry};
 pub use node::{NodeId, NodeIdentity};
 pub use peer::{PeerInfo, PeerRegistry};
 pub use protocol::{MeshHandshake, MeshManifest, MeshSyncRequest};
