@@ -1,3 +1,5 @@
+import type { Agent, MemoryEntry } from "../types";
+
 const getApiUrl = (path: string) => {
   const isTauri =
     typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
@@ -59,6 +61,30 @@ export class ApiClient {
   // Quota
   async getProvidersQuota() {
     return this.fetch<ProviderQuota[]>("/v1/providers/quota");
+  }
+
+  // Memory
+  async searchMemories(query: string, kind?: string, limit = 20) {
+    const params = new URLSearchParams({ q: query, limit: String(limit) });
+    if (kind) params.set("kind", kind);
+    return this.fetch<MemoryEntry[]>(`/api/memory/search?${params}`);
+  }
+
+  async addMemory(
+    content: string,
+    kind = "note",
+    priority = "medium",
+    source = "panel-ui",
+  ) {
+    return this.fetch<MemoryEntry>("/api/memory/add", {
+      method: "POST",
+      body: JSON.stringify({ content, kind, priority, source }),
+    });
+  }
+
+  // Agents
+  async getAgents() {
+    return this.fetch<Agent[]>("/api/agents");
   }
 }
 

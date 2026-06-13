@@ -28,6 +28,8 @@ pub struct XavierSettings {
     #[serde(default)]
     pub telegram: TelegramSettings,
     #[serde(default)]
+    pub discord: DiscordSettings,
+    #[serde(default)]
     pub router: RouterSettings,
     #[serde(default)]
     pub chronicle: ChronicleSettings,
@@ -58,6 +60,7 @@ impl fmt::Debug for XavierSettings {
             .field("embedding", &self.embedding)
             .field("security", &self.security)
             .field("telegram", &self.telegram)
+            .field("discord", &self.discord)
             .field("router", &self.router)
             .field("chronicle", &self.chronicle)
             .field("enterprise", &self.enterprise)
@@ -66,6 +69,37 @@ impl fmt::Debug for XavierSettings {
             .field("pgheart", &self.pgheart)
             .field("data_commons", &self.data_commons)
             .field("auth_token", &"[REDACTED]")
+            .finish()
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DiscordSettings {
+    pub enabled: bool,
+    pub webhook_url: Option<String>,
+    pub bot_token: Option<String>,
+    pub rate_limit_per_min: u32,
+}
+
+impl Default for DiscordSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            webhook_url: None,
+            bot_token: None,
+            rate_limit_per_min: 30,
+        }
+    }
+}
+
+impl fmt::Debug for DiscordSettings {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DiscordSettings")
+            .field("enabled", &self.enabled)
+            .field("webhook_url", &self.webhook_url.as_ref().map(|_| "[REDACTED]"))
+            .field("bot_token", &self.bot_token.as_ref().map(|_| "[REDACTED]"))
+            .field("rate_limit_per_min", &self.rate_limit_per_min)
             .finish()
     }
 }
@@ -308,6 +342,14 @@ pub struct SecuritySettings {
     pub allowed_domains: String,
     #[serde(default)]
     pub token_secret: Option<String>,
+    #[serde(default)]
+    pub encryption_at_rest_enabled: bool,
+    #[serde(default = "default_master_key_name")]
+    pub master_key_name: String,
+}
+
+fn default_master_key_name() -> String {
+    "xavier_master_key".to_string()
 }
 
 impl fmt::Debug for SecuritySettings {

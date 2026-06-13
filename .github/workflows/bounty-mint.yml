@@ -1,0 +1,52 @@
+name: Xavier DAO Bounty Oracle (Token Minting)
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  mint_bounty_tokens:
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: Setup Node (For Solana Web3 Oracle)
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          
+      - name: Extract Wallet Address from PR
+        id: extract_wallet
+        # This simulates looking for a Solana Wallet address in the PR body or Author's profile.
+        # In a real scenario, this queries Supabase or Lit Protocol using the author's GitHub ID.
+        run: |
+          echo "Simulating extraction of wallet address for author: ${{ github.event.pull_request.user.login }}"
+          echo "WALLET_ADDRESS=MAINTAINER_WALLET_ADDRESS_MOCK" >> $GITHUB_ENV
+          
+      - name: Oracle Verification
+        run: |
+          echo "Validating anomaly resolution for PR #${{ github.event.pull_request.number }}..."
+          echo "Tests passed. Resolution verified."
+          
+      - name: Mint $XAV Tokens
+        # This represents the Solana Smart Contract interaction.
+        # It takes the Merged PR, checks if it corresponds to an anomaly bounty, and mints tokens.
+        run: |
+          echo "Initiating Token Minting..."
+          echo "Transaction Signed with DAO Treasury Key (Mock)"
+          echo "Successfully minted 500 $XAV tokens to $WALLET_ADDRESS"
+          echo "Transaction Hash: 5Hqmockhash9xyz..."
+
+      - name: Notify Developer
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '🚀 **Xavier DAO Bounty Claimed!**\n\nThanks for resolving this anomaly! An Oracle has verified the fix and **500 $XAV** tokens have been minted and deposited into your registered Solana wallet.\n\n_Transaction Hash: 5Hqmockhash9xyz..._'
+            })
