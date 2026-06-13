@@ -4,4 +4,5 @@
 //! providing the public API surface for module consumers.
 pub mod event_mapper;
 pub mod indexer;
+pub mod sharing;
 pub mod types;
