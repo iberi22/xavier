@@ -9,7 +9,6 @@ pub mod api;
 pub mod checkpoint;
 pub mod chronicle;
 pub mod codebase;
-pub mod data_commons;
 pub mod consistency;
 pub mod consolidation;
 pub mod context;
