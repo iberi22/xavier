@@ -169,6 +169,15 @@ impl WorkspaceState {
                 settings.retrieval.learned_policy.episodic_weight,
                 settings.retrieval.learned_policy.semantic_weight,
             ),
+            crate::retrieval::policy::TraversalWeights {
+                semantic_similarity: settings.retrieval.learned_policy.semantic_similarity_weight,
+                confidence: settings.retrieval.learned_policy.confidence_weight,
+                edge_weight: settings.retrieval.learned_policy.edge_weight,
+                recency: settings.retrieval.learned_policy.recency_weight,
+                cross_layer: settings.retrieval.learned_policy.cross_layer_weight,
+                cross_dir: settings.retrieval.learned_policy.cross_dir_weight,
+                peripheral_hub: settings.retrieval.learned_policy.peripheral_hub_weight,
+            },
             settings.retrieval.learned_policy.learning_rate,
         )));
 
