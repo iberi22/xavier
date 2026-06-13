@@ -219,11 +219,7 @@ async fn handle_mcp_request(
                         jsonrpc: "2.0".to_string(),
                         id: request.id.unwrap_or(Value::Null),
                         result: None,
-                        error: Some(MCPError {
-                            code: -32000,
-                            message: error.to_string(),
-                            data: None,
-                        }),
+                        error: Some(classify_mcp_error(error)),
                     },
                 },
             )
@@ -253,4 +249,28 @@ fn error_response(id: Option<Value>, code: i32, message: String) -> Option<MCPRe
             data: None,
         }),
     })
+}
+
+fn classify_mcp_error(err: anyhow::Error) -> MCPError {
+    let message = err.to_string();
+    let code = if message.contains("Security policy violation")
+        || message.contains("blocked by security policy")
+    {
+        XAVIER_ERROR_SECURITY
+    } else if message.contains("Missing")
+        || message.contains("must be")
+        || message.contains("Invalid")
+    {
+        XAVIER_ERROR_VALIDATION
+    } else if message.contains("not found") || message.contains("Memory not found") {
+        XAVIER_ERROR_NOT_FOUND
+    } else {
+        XAVIER_ERROR_INTERNAL
+    };
+
+    MCPError {
+        code,
+        message,
+        data: None,
+    }
 }

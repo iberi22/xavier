@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use axum::{
     extract::DefaultBodyLimit,
     middleware::{self},
-    routing::{get, post},
+    routing::{delete, get, post},
     Router,
 };
 use axum_server::tls_rustls::RustlsConfig;
@@ -99,6 +99,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     audit_logger.init_schema_async().await?;
     rate_manager.init_schema_async().await?;
     threat_store.init_schema_async().await?;
+    xavier::security::tokens::TokenStore::new().init_schema_async().await?;
 
     tokio::spawn(async move {
         loop {
@@ -188,6 +189,13 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         info!("Secrets engine listening for task events...");
         while let Ok(event) = receiver.recv().await {
             if let xavier::coordination::events::XavierEvent::TaskCompleted { task } = event {
+                let _ = xavier::notifications::NOTIFICATIONS.notify(
+                    xavier::notifications::IslandId::Agents,
+                    "Agent Task Complete",
+                    &format!("Task {} completed by agent {}.", task.id, task.assignee.as_deref().unwrap_or("unknown")),
+                    "success"
+                ).await;
+
                 if let Some(agent_id) = &task.assignee {
                     info!(
                         "Task {} completed by agent {}. Revoking ephemeral keys...",
@@ -308,6 +316,14 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             "/api/settings/cloud-node",
             get(xavier::api::settings::get_cloud_node).post(xavier::api::settings::update_cloud_node),
         )
+        .route(
+            "/api/settings/discord",
+            get(xavier::api::settings::get_discord_settings).post(xavier::api::settings::update_discord_settings),
+        )
+        .route(
+            "/api/settings/discord/test",
+            post(xavier::api::settings::test_discord_connection),
+        )
         .route("/xavier/events/session", post(session_event_handler))
         .route("/xavier/time/metric", post(time_metric_handler))
         .route("/xavier/agents/register", post(agent_register_handler))
@@ -352,6 +368,9 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         )
         .route("/v1/proxy/request", post(crate::cli::proxy::generic_proxy))
         .route("/v1/security/approve", post(security_approve_handler))
+        .route("/security/tokens", get(list_tokens_handler).post(create_token_handler))
+        .route("/security/tokens/:id", delete(revoke_token_handler))
+        .route("/security/tokens/:id/rotate", post(rotate_token_handler))
         .route("/v1/usage/status/{provider}", get(usage_status_handler))
         .route("/v1/usage/update", post(usage_update_handler))
         .route("/v1/usage/cooldown", post(usage_cooldown_handler))
@@ -428,6 +447,14 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             post(xavier::server::v1_api::v1_mesh_handshake),
         )
         .route(
+            "/v1/mesh/cloud",
+            get(xavier::server::v1_api::v1_mesh_cloud_get).put(xavier::server::v1_api::v1_mesh_cloud_update),
+        )
+        .route(
+            "/v1/mesh/data_commons/opt_in",
+            get(xavier::server::v1_api::v1_mesh_data_commons_get).post(xavier::server::v1_api::v1_mesh_data_commons_opt_in),
+        )
+        .route(
             "/v1/mesh/manifest",
             get(xavier::server::v1_api::v1_mesh_manifest),
         )
@@ -469,6 +496,19 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/v1/nav/cd", post(crate::cli::handlers::navigation::cd_handler))
         .route("/v1/nav/pwd", get(crate::cli::handlers::navigation::pwd_handler))
         .route("/v1/nav/affected", get(crate::cli::handlers::navigation::affected_handler))
+        .route("/notifications", get(crate::cli::handlers::notifications::list_notifications_handler))
+        .route(
+            "/notifications/{id}/read",
+            axum::routing::patch(crate::cli::handlers::notifications::mark_notification_read_handler),
+        )
+        .route(
+            "/notifications/read-all",
+            axum::routing::patch(crate::cli::handlers::notifications::mark_all_notifications_read_handler),
+        )
+        .route(
+            "/notifications/all",
+            axum::routing::delete(crate::cli::handlers::notifications::delete_all_notifications_handler),
+        )
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(
             state.clone(),
@@ -563,6 +603,13 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     info!("Xavier HTTP server listening on http://{}", bound_addr);
     println!("Xavier HTTP server listening on http://{}", bound_addr);
     println!("Press Ctrl+C to stop");
+
+    let _ = xavier::notifications::NOTIFICATIONS.notify(
+        xavier::notifications::IslandId::System,
+        "Xavier Started",
+        &format!("Xavier backend v{} started on port {}.", env!("CARGO_PKG_VERSION"), port),
+        "info"
+    ).await;
 
     #[cfg(feature = "enterprise")]
     {

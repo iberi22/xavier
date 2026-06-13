@@ -14,6 +14,8 @@ pub struct MeshHandshake {
     pub xavier_version: String,
     pub capabilities: Vec<String>,
     pub timestamp: i64,
+    pub nonce: String,
+    pub signature_hex: String,
 }
 
 /// Response to a [`MeshHandshake`].
@@ -68,6 +70,8 @@ mod tests {
             xavier_version: "0.1.0".to_string(),
             capabilities: vec!["sync-v1".to_string()],
             timestamp: 123456789,
+            nonce: "nonce123".to_string(),
+            signature_hex: "sig123".to_string(),
         };
 
         let json = serde_json::to_string(&handshake).unwrap();

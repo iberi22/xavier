@@ -182,7 +182,7 @@ impl CurationAgent {
         let summary = response.text;
 
         let now = Utc::now();
-        Ok(MemoryRecord {
+        Ok(MemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
             id: uuid::Uuid::new_v4().to_string(),
             workspace_id: workspace_id.to_string(),
             path: format!("zone_summary/{}", cluster_id),

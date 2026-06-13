@@ -250,6 +250,18 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
         "XAVIER_ALLOWED_DOMAINS",
         non_empty(&settings.security.allowed_domains),
     );
+    set_if_absent(
+        "XAVIER_ENCRYPTION_AT_REST_ENABLED",
+        if settings.security.encryption_at_rest_enabled {
+            "true"
+        } else {
+            "false"
+        },
+    );
+    set_if_absent(
+        "XAVIER_MASTER_KEY_NAME",
+        &settings.security.master_key_name,
+    );
 
     // Telegram settings
     set_if_absent(
