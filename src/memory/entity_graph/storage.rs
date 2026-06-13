@@ -7,6 +7,7 @@
 use super::extraction::*;
 use super::types::*;
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 pub(super) struct RelationUpsert<'a> {
@@ -19,8 +20,8 @@ pub(super) struct RelationUpsert<'a> {
     pub now: DateTime<Utc>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub(super) struct GraphData {
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct GraphData {
     pub entities: HashMap<String, EntityRecord>,
     pub entity_lookup: HashMap<String, String>,
     pub relations: HashMap<String, EntityRelationRecord>,
@@ -219,5 +220,25 @@ impl GraphData {
     pub(super) fn remove_relations_for_entity(&mut self, entity_id: &str) {
         self.relations
             .retain(|_, relation| relation.source != entity_id && relation.target != entity_id);
+    }
+
+    pub(super) fn apply_decay(&mut self, factor: f32, now: DateTime<Utc>) {
+        for relation in self.relations.values_mut() {
+            let hours_since = (now - relation.updated_at).num_hours() as f32;
+            if hours_since > 0.0 {
+                let decay = (1.0 - factor).powf(hours_since);
+                relation.weight *= decay;
+                relation.confidence_score *= decay;
+                relation.updated_at = now;
+            }
+        }
+        for entity in self.entities.values_mut() {
+            let hours_since = (now - entity.last_seen).num_hours() as f32;
+            if hours_since > 0.0 {
+                let decay = (1.0 - factor).powf(hours_since);
+                entity.trust_score *= decay;
+                entity.last_seen = now;
+            }
+        }
     }
 }
