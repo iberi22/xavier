@@ -15,8 +15,7 @@ mod observability {
 }
 
 // Data Commons module ($XAV token, reputation, governance)
-mod data_commons;
-pub use data_commons::*;
+pub use xavier_lib::data_commons::*;
 
 // Re-export memory types for binary crate access
 pub use xavier_lib::memory;
