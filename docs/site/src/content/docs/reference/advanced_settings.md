@@ -1,3 +1,8 @@
+---
+title: Advanced Settings
+description: Detailed configuration for Xavier
+---
+
 # Advanced Settings Reference
 
 This document provides detailed information about advanced configuration options in Xavier. These settings are primarily managed via `config/xavier.config.json` or environment variables.
