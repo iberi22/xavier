@@ -133,6 +133,7 @@ hex = "0.4"
 
 # Security - Phrase matching (Aho-Corasick)
 aho-corasick = "1.1"
+xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
 base64 = "0.22"
 unicode-normalization = "0.1"
 

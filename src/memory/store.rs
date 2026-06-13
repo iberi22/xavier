@@ -265,6 +265,7 @@ impl MemoryRecord {
             level: self.level,
             relation: self.relation.clone(),
             clearance: self.clearance,
+            minhash: None,
         }
     }
 
