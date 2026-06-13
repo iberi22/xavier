@@ -627,6 +627,58 @@ pub async fn v1_memories_delete(
     }
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct CloudNodeRequest {
+    pub url: String,
+    pub token: String,
+    pub instance_id: String,
+}
+
+pub async fn v1_mesh_cloud_get() -> impl IntoResponse {
+    let settings = crate::settings::XavierSettings::current();
+    Json(settings.pgheart)
+}
+
+pub async fn v1_mesh_cloud_update(Json(payload): Json<CloudNodeRequest>) -> impl IntoResponse {
+    let mut settings = crate::settings::XavierSettings::current();
+    settings.pgheart.url = Some(payload.url);
+    settings.pgheart.token = Some(payload.token);
+    settings.pgheart.instance_id = Some(payload.instance_id);
+    
+    if let Err(e) = settings.save().await {
+        return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save settings: {}", e)).into_response();
+    }
+    
+    Json(serde_json::json!({ "status": "ok" })).into_response()
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DataCommonsOptInRequest {
+    pub enabled: bool,
+    pub consent_given: bool,
+    pub wallet_address: Option<String>,
+}
+
+pub async fn v1_mesh_data_commons_get() -> impl IntoResponse {
+    let settings = crate::settings::XavierSettings::current();
+    Json(settings.data_commons)
+}
+
+pub async fn v1_mesh_data_commons_opt_in(Json(payload): Json<DataCommonsOptInRequest>) -> impl IntoResponse {
+    let mut settings = crate::settings::XavierSettings::current();
+    settings.data_commons.enabled = payload.enabled;
+    settings.data_commons.consent_given = payload.consent_given;
+    if payload.wallet_address.is_some() {
+        settings.data_commons.wallet_address = payload.wallet_address;
+    }
+    
+    if let Err(e) = settings.save().await {
+        return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save settings: {}", e)).into_response();
+    }
+    
+    Json(serde_json::json!({ "status": "ok" })).into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
