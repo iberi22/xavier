@@ -16,7 +16,6 @@ pub struct CloudPeer {
     local_identity: Arc<NodeIdentity>,
     supabase_url: String,
     supabase_key: String,
-    namespace: String,
 }
 
 impl CloudPeer {
@@ -25,7 +24,6 @@ impl CloudPeer {
         let settings = crate::settings::XavierSettings::current();
         let url = settings.pgheart.url.clone().context("XAVIER_PGHEART_URL not set")?;
         let key = settings.pgheart.token.clone().context("XAVIER_PGHEART_TOKEN not set")?;
-        let namespace = settings.pgheart.instance_id.clone().unwrap_or_else(|| "default".to_string());
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(30))
@@ -37,21 +35,19 @@ impl CloudPeer {
             local_identity: identity,
             supabase_url: url,
             supabase_key: key,
-            namespace,
         })
     }
 
     /// "Handshake" with a cloud peer: Verify they have a manifest in the cloud.
     pub async fn handshake(&self, peer_url: &str, _token: &str) -> Result<MeshHandshakeResponse> {
+        // In cloud mode, the "peer_url" is used as the NodeID if it starts with xv1-
         let node_id = if peer_url.starts_with("xv1-") {
             peer_url.to_string()
         } else {
             anyhow::bail!("Invalid cloud peer NodeID: {}", peer_url);
         };
 
-        // For handshake, we just return ok if we can connect to supabase.
-        // Or we could check if there are any chunks for this namespace.
-        let url = format!("{}/rest/v1/encrypted_sync_chunks?namespace=eq.{}&limit=1", self.supabase_url, self.namespace);
+        let url = format!("{}/rest/v1/mesh_manifests?node_id=eq.{}", self.supabase_url, node_id);
         let resp = self.client.get(&url)
             .header("apikey", &self.supabase_key)
             .header("Authorization", format!("Bearer {}", self.supabase_key))
@@ -62,56 +58,45 @@ impl CloudPeer {
             anyhow::bail!("Cloud handshake failed: {}", resp.status());
         }
 
+        let manifests: Vec<serde_json::Value> = resp.json().await?;
+        if manifests.is_empty() {
+            anyhow::bail!("Peer {} has no manifest in cloud storage", node_id);
+        }
+
         Ok(MeshHandshakeResponse {
             accepted: true,
             node_id: NodeId(node_id),
-            public_key_hex: String::new(),
+            public_key_hex: String::new(), // Cloud peers might not expose PK directly in manifest table
             reason: None,
         })
     }
 
-    /// Fetch manifest from Supabase. We synthesize one from available chunks.
+    /// Fetch manifest from Supabase.
     pub async fn fetch_manifest(&self, peer: &PeerInfo, _token: &str) -> Result<MeshManifest> {
-        let url = format!("{}/rest/v1/encrypted_sync_chunks?namespace=eq.{}&select=chunk_hash,created_at", self.supabase_url, self.namespace);
+        let url = format!("{}/rest/v1/mesh_manifests?node_id=eq.{}", self.supabase_url, peer.node_id);
         let resp = self.client.get(&url)
             .header("apikey", &self.supabase_key)
             .header("Authorization", format!("Bearer {}", self.supabase_key))
             .send()
             .await?;
 
-        let rows: Vec<serde_json::Value> = resp.json().await.context("Failed to parse cloud chunks for manifest")?;
-        
-        let mut chunks = Vec::new();
-        for row in rows {
-            if let (Some(hash), Some(created_at)) = (row["chunk_hash"].as_str(), row["created_at"].as_str()) {
-                let ts = chrono::DateTime::parse_from_rfc3339(created_at).unwrap_or_default().timestamp();
-                chunks.push(crate::mesh::protocol::ChunkRef {
-                    hash: hash.to_string(),
-                    document_count: 0, // Not strictly known without payload
-                    created_at: ts,
-                });
-            }
-        }
-
-        Ok(MeshManifest {
-            node_id: peer.node_id.clone(),
-            chunks,
-            generated_at: chrono::Utc::now().timestamp(),
-        })
+        let manifests: Vec<MeshManifest> = resp.json().await.context("Failed to parse cloud manifest")?;
+        manifests.into_iter().next().context("Manifest not found for cloud peer")
     }
 
-    /// Fetch chunks from Supabase `encrypted_sync_chunks` table.
+    /// Fetch chunks from Supabase `mesh_chunks` table.
     pub async fn fetch_chunks(
         &self,
-        _peer: &PeerInfo,
+        peer: &PeerInfo,
         _token: &str,
         hashes: &[String],
     ) -> Result<HashMap<String, Vec<u8>>> {
         let mut results = HashMap::new();
 
+        // Fetch in batches or one by one for simplicity in Phase 1
         for hash in hashes {
-            let url = format!("{}/rest/v1/encrypted_sync_chunks?namespace=eq.{}&chunk_hash=eq.{}",
-                self.supabase_url, self.namespace, hash);
+            let url = format!("{}/rest/v1/mesh_chunks?node_id=eq.{}&hash=eq.{}",
+                self.supabase_url, peer.node_id, hash);
 
             let resp = self.client.get(&url)
                 .header("apikey", &self.supabase_key)
@@ -122,9 +107,9 @@ impl CloudPeer {
             if resp.status().is_success() {
                 let chunks: Vec<serde_json::Value> = resp.json().await?;
                 if let Some(chunk) = chunks.into_iter().next() {
-                    if let Some(payload_str) = chunk["payload"].as_str() {
+                    if let Some(data_b64) = chunk["data"].as_str() {
                         use base64::{Engine as _, engine::general_purpose};
-                        let data = general_purpose::STANDARD.decode(payload_str)?;
+                        let data = general_purpose::STANDARD.decode(data_b64)?;
                         results.insert(hash.clone(), data);
                     }
                 }
@@ -146,13 +131,13 @@ impl CloudPeer {
 
         for (hash, data) in chunks {
             let payload = json!({
-                "namespace": self.namespace,
-                "chunk_hash": hash,
-                "payload": general_purpose::STANDARD.encode(data),
+                "node_id": self.local_identity.node_id.as_str(),
+                "hash": hash,
+                "data": general_purpose::STANDARD.encode(data),
                 "created_at": chrono::Utc::now().to_rfc3339()
             });
 
-            let url = format!("{}/rest/v1/encrypted_sync_chunks", self.supabase_url);
+            let url = format!("{}/rest/v1/mesh_chunks", self.supabase_url);
             let resp = self.client.post(&url)
                 .header("apikey", &self.supabase_key)
                 .header("Authorization", format!("Bearer {}", self.supabase_key))
@@ -164,20 +149,28 @@ impl CloudPeer {
 
             if resp.status().is_success() || resp.status() == reqwest::StatusCode::CREATED {
                 pushed.push(hash.clone());
-            } else {
-                let status = resp.status();
-                let err_text = resp.text().await.unwrap_or_default();
-                eprintln!("Failed to push chunk to supabase: status={}, error={}", status, err_text);
             }
         }
 
         Ok(pushed)
     }
 
-    /// Publish the local manifest to cloud storage. (No-op since we build it from chunks dynamically)
-    pub async fn publish_manifest(&self, _manifest: &MeshManifest) -> Result<()> {
-        // With our simplified schema, we don't store the manifest separately.
-        // It's derived dynamically in `fetch_manifest` from the chunks table.
+    /// Publish the local manifest to cloud storage.
+    pub async fn publish_manifest(&self, manifest: &MeshManifest) -> Result<()> {
+        let url = format!("{}/rest/v1/mesh_manifests", self.supabase_url);
+        let resp = self.client.post(&url)
+            .header("apikey", &self.supabase_key)
+            .header("Authorization", format!("Bearer {}", self.supabase_key))
+            .header("Content-Type", "application/json")
+            .header("Prefer", "resolution=merge-duplicates")
+            .json(manifest)
+            .send()
+            .await?;
+
+        if !resp.status().is_success() && resp.status() != reqwest::StatusCode::CREATED {
+            anyhow::bail!("Failed to publish manifest to cloud: {}", resp.status());
+        }
+
         Ok(())
     }
 }
