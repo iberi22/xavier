@@ -251,3 +251,12 @@ pub struct ExportPackPayload {
 pub fn default_max_level_val() -> usize {
     3
 }
+
+#[derive(Debug, Deserialize)]
+pub struct CreateTokenPayload {
+    pub name: String,
+    #[serde(default)]
+    pub scopes: Vec<String>,
+    #[serde(default)]
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
+}

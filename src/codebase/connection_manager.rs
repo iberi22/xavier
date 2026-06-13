@@ -75,6 +75,8 @@ impl ConnectionManager {
                 PathBuf::from(project_root).join("vec-store.sqlite3")
             } else if project_id == "metrics" {
                 PathBuf::from(project_root).join("metrics.db")
+            } else if project_id == "security" {
+                PathBuf::from(project_root).join(".xavier").join("security.db")
             } else if project_id.starts_with("conv_") {
                 let pid = project_id
                     .strip_prefix("conv_")
