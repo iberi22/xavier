@@ -230,7 +230,7 @@ mod tests {
         let detector = Arc::new(MockThreatDetector { should_clean: true });
         let usecase = MemoryUseCase::new(inner, Some(detector));
 
-        let record = MemoryRecord {
+        let record = MemoryRecord { ..Default::default(), ..Default::default(), ..Default::default(),
             id: "1".to_string(),
             content: "clean content".to_string(),
             path: "test.txt".to_string(),
