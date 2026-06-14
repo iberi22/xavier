@@ -103,6 +103,9 @@ mod tests {
             relation: None,
             clearance: Default::default(),
             revisions: vec![],
+            content_iv: None,
+            encrypted_dek: None,
+            metadata_iv: None,
         }
     }
 
