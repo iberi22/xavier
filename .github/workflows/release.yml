@@ -60,9 +60,16 @@ jobs:
 
       - name: Build Tauri Executables
         working-directory: panel-ui
-        run: pnpm tauri build
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            pnpm tauri build --no-bundle
+          else
+            pnpm tauri build
+          fi
         
       - name: Upload Build Artifacts
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: xavier-desktop-${{ matrix.os }}
