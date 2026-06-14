@@ -20,8 +20,7 @@ use crate::{
     },
     mesh::{
         protocol::{ChunkRef, MeshHandshake, MeshHandshakeResponse, MeshManifest, MeshSyncRequest},
-        NodeIdentity,
-        PeerRegistry,
+        MeshAcl, NodeAclEntry, NodeIdentity, PeerInfo, PeerRegistry,
     },
     session::sharing::{export_session, import_session, SessionBundle},
     workspace::WorkspaceContext,
@@ -421,6 +420,136 @@ pub async fn v1_mesh_chunks_push(
     Json(synced_hashes)
 }
 
+pub async fn v1_mesh_peers_list() -> impl IntoResponse {
+    let registry = match PeerRegistry::load() {
+        Ok(r) => r,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))).into_response(),
+    };
+    Json(registry.list_peers()).into_response()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AddPeerRequest {
+    pub pairing_code: Option<String>,
+    pub endpoint_url: Option<String>,
+    pub public_key_hex: Option<String>,
+    pub node_id: Option<String>,
+    pub alias: Option<String>,
+}
+
+pub async fn v1_mesh_peers_add(Json(payload): Json<AddPeerRequest>) -> impl IntoResponse {
+    let mut registry = match PeerRegistry::load() {
+        Ok(r) => r,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))).into_response(),
+    };
+
+    let peer_info = if let Some(code) = payload.pairing_code {
+        match crate::mesh::pairing::decode_pairing_code(&code) {
+            Ok(data) => PeerInfo {
+                node_id: data.node_id,
+                alias: payload.alias,
+                endpoint_url: data.endpoint,
+                public_key_hex: data.public_key_hex,
+                added_at: chrono::Utc::now().timestamp(),
+                last_seen_at: None,
+                sync_enabled: true,
+                is_cloud: false,
+            },
+            Err(e) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": format!("Invalid pairing code: {}", e) }))).into_response(),
+        }
+    } else {
+        let node_id = match payload.node_id {
+            Some(id) => crate::mesh::node::NodeId(id),
+            None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "node_id or pairing_code required" }))).into_response(),
+        };
+        let endpoint_url = match payload.endpoint_url {
+            Some(url) => url,
+            None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "endpoint_url required" }))).into_response(),
+        };
+        let public_key_hex = match payload.public_key_hex {
+            Some(key) => key,
+            None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({ "error": "public_key_hex required" }))).into_response(),
+        };
+
+        PeerInfo {
+            node_id,
+            alias: payload.alias,
+            endpoint_url,
+            public_key_hex,
+            added_at: chrono::Utc::now().timestamp(),
+            last_seen_at: None,
+            sync_enabled: true,
+            is_cloud: false,
+        }
+    };
+
+    match registry.add_peer(peer_info) {
+        Ok(_) => Json(serde_json::json!({ "status": "ok" })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+pub async fn v1_mesh_peers_remove(Path(node_id): Path<String>) -> impl IntoResponse {
+    let mut registry = match PeerRegistry::load() {
+        Ok(r) => r,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))).into_response(),
+    };
+
+    match registry.remove_peer(&crate::mesh::node::NodeId(node_id)) {
+        Ok(_) => Json(serde_json::json!({ "status": "ok" })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+pub async fn v1_mesh_acl_get(Path(node_id): Path<String>) -> impl IntoResponse {
+    let acl = match MeshAcl::load() {
+        Ok(a) => a,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))).into_response(),
+    };
+
+    match acl.get_entry(&crate::mesh::node::NodeId(node_id)) {
+        Some(entry) => Json(serde_json::json!({ "status": "ok", "entry": entry })).into_response(),
+        None => (StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": "ACL entry not found" }))).into_response(),
+    }
+}
+
+pub async fn v1_mesh_acl_set(Path(node_id): Path<String>, Json(entry): Json<NodeAclEntry>) -> impl IntoResponse {
+    let mut acl = match MeshAcl::load() {
+        Ok(a) => a,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))).into_response(),
+    };
+
+    match acl.set_entry(crate::mesh::node::NodeId(node_id), entry) {
+        Ok(_) => Json(serde_json::json!({ "status": "ok" })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))).into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PairingGenerateRequest {
+    pub endpoint: String,
+}
+
+pub async fn v1_mesh_pairing_generate(Json(payload): Json<PairingGenerateRequest>) -> impl IntoResponse {
+    let identity = match NodeIdentity::load_or_create() {
+        Ok(id) => id,
+        Err(e) => return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({ "error": e.to_string() }))).into_response(),
+    };
+
+    let (code, secret) = crate::mesh::pairing::generate_pairing_code(
+        identity.node_id.clone(),
+        payload.endpoint,
+        hex::encode(&identity.public_key),
+    );
+
+    Json(serde_json::json!({
+        "status": "ok",
+        "pairing_code": code,
+        "secret": secret,
+        "node_id": identity.node_id.0
+    })).into_response()
+}
+
 // ── Session Sharing API ───────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -788,7 +917,7 @@ mod tests {
     use axum::{
         body::{to_bytes, Body},
         http::{Request, StatusCode},
-        routing::{get, post},
+        routing::{delete, get, post},
         Router,
     };
     use std::path::PathBuf;
@@ -876,8 +1005,92 @@ mod tests {
                     .delete(v1_memories_delete),
             )
             .route("/v1/memories/search", post(v1_memories_search))
+            .route(
+                "/v1/mesh/peers",
+                get(v1_mesh_peers_list).post(v1_mesh_peers_add),
+            )
+            .route("/v1/mesh/peers/{node_id}", delete(v1_mesh_peers_remove))
+            .route(
+                "/v1/mesh/acl/{node_id}",
+                get(v1_mesh_acl_get).put(v1_mesh_acl_set),
+            )
+            .route("/v1/mesh/pairing/generate", post(v1_mesh_pairing_generate))
             .layer(Extension(workspace))
             .with_state(state)
+    }
+
+    #[tokio::test]
+    async fn test_mesh_peers_api() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace);
+
+        // 1. Generate pairing code
+        let gen_req = Request::builder()
+            .method("POST")
+            .uri("/v1/mesh/pairing/generate")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::json!({ "endpoint": "http://localhost:8006" }).to_string()))
+            .expect("failed to build generate request");
+        let resp = app.clone().oneshot(gen_req).await.expect("request failed");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("body failed");
+        let gen_resp: serde_json::Value = serde_json::from_slice(&body).expect("json failed");
+        let code = gen_resp["pairing_code"].as_str().unwrap();
+        let node_id = gen_resp["node_id"].as_str().unwrap();
+
+        // 2. Add peer using the code
+        let add_req = Request::builder()
+            .method("POST")
+            .uri("/v1/mesh/peers")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::json!({ "pairing_code": code, "alias": "Test Peer" }).to_string()))
+            .expect("failed to build add peer request");
+        let resp = app.clone().oneshot(add_req).await.expect("request failed");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // 3. List peers
+        let list_req = Request::builder()
+            .method("GET")
+            .uri("/v1/mesh/peers")
+            .body(Body::empty())
+            .expect("failed to build list request");
+        let resp = app.clone().oneshot(list_req).await.expect("request failed");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("body failed");
+        let peers: Vec<PeerInfo> = serde_json::from_slice(&body).expect("json failed");
+        assert_eq!(peers.len(), 1);
+        assert_eq!(peers[0].alias, Some("Test Peer".to_string()));
+
+        // 4. Update ACL
+        let acl_req = Request::builder()
+            .method("PUT")
+            .uri(format!("/v1/mesh/acl/{}", node_id))
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::json!({ "role": "Admin", "clearance": "TopSecret" }).to_string()))
+            .expect("failed to build acl request");
+        let resp = app.clone().oneshot(acl_req).await.expect("request failed");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // 5. Get ACL
+        let get_acl_req = Request::builder()
+            .method("GET")
+            .uri(format!("/v1/mesh/acl/{}", node_id))
+            .body(Body::empty())
+            .expect("failed to build get acl request");
+        let resp = app.clone().oneshot(get_acl_req).await.expect("request failed");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("body failed");
+        let acl_resp: serde_json::Value = serde_json::from_slice(&body).expect("json failed");
+        assert_eq!(acl_resp["entry"]["role"], "Admin");
+
+        // 6. Remove peer
+        let rem_req = Request::builder()
+            .method("DELETE")
+            .uri(format!("/v1/mesh/peers/{}", node_id))
+            .body(Body::empty())
+            .expect("failed to build remove request");
+        let resp = app.clone().oneshot(rem_req).await.expect("request failed");
+        assert_eq!(resp.status(), StatusCode::OK);
     }
 
     #[tokio::test]

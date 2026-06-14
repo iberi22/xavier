@@ -130,3 +130,42 @@ export interface Agent {
   last_seen: string;
   metadata?: Record<string, unknown>;
 }
+
+export interface PeerInfo {
+  node_id: { 0: string };
+  alias?: string;
+  endpoint_url: string;
+  public_key_hex: string;
+  added_at: number;
+  last_seen_at?: number;
+  sync_enabled: boolean;
+  is_cloud: boolean;
+}
+
+export interface NodeAclEntry {
+  role: "Admin" | "Editor" | "Reader";
+  clearance: "Public" | "Unclassified" | "Confidential" | "Secret" | "TopSecret";
+}
+
+export interface CloudNodeConfig {
+  url: string;
+  token?: string;
+  instance_id: string;
+}
+
+export interface DataCommonsConfig {
+  enabled: boolean;
+  consent_given: boolean;
+  wallet_address?: string;
+}
+
+export interface PairingCodeData {
+  pairing_code: string;
+  secret: string;
+  node_id: string;
+}
+
+export interface MeshIdentity {
+  node_id: string;
+  public_key_hex: string;
+}

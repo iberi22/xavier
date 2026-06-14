@@ -1,4 +1,13 @@
-import type { Agent, MemoryEntry } from "../types";
+import type {
+  Agent,
+  CloudNodeConfig,
+  DataCommonsConfig,
+  MemoryEntry,
+  MeshIdentity,
+  NodeAclEntry,
+  PairingCodeData,
+  PeerInfo,
+} from "../types";
 
 const getApiUrl = (path: string) => {
   const isTauri =
@@ -85,6 +94,68 @@ export class ApiClient {
   // Agents
   async getAgents() {
     return this.fetch<Agent[]>("/api/agents");
+  }
+
+  // Mesh & Peers
+  async getMeshIdentity() {
+    return this.fetch<MeshIdentity>("/v1/mesh/identity");
+  }
+
+  async getPeers() {
+    return this.fetch<PeerInfo[]>("/v1/mesh/peers");
+  }
+
+  async addPeer(payload: { pairing_code?: string; endpoint_url?: string; public_key_hex?: string; node_id?: string; alias?: string }) {
+    return this.fetch<{ status: string }>("/v1/mesh/peers", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async removePeer(nodeId: string) {
+    return this.fetch<{ status: string }>(`/v1/mesh/peers/${nodeId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async getPeerAcl(nodeId: string) {
+    return this.fetch<{ status: string; entry: NodeAclEntry }>(`/v1/mesh/acl/${nodeId}`);
+  }
+
+  async updatePeerAcl(nodeId: string, entry: NodeAclEntry) {
+    return this.fetch<{ status: string }>(`/v1/mesh/acl/${nodeId}`, {
+      method: "PUT",
+      body: JSON.stringify(entry),
+    });
+  }
+
+  async generatePairingCode(endpoint: string) {
+    return this.fetch<PairingCodeData>("/v1/mesh/pairing/generate", {
+      method: "POST",
+      body: JSON.stringify({ endpoint }),
+    });
+  }
+
+  async getCloudNode() {
+    return this.fetch<{ status: string; data: CloudNodeConfig }>("/api/settings/cloud-node");
+  }
+
+  async updateCloudNode(config: CloudNodeConfig) {
+    return this.fetch<{ status: string }>("/api/settings/cloud-node", {
+      method: "POST",
+      body: JSON.stringify(config),
+    });
+  }
+
+  async getDataCommons() {
+    return this.fetch<{ status: string; data: DataCommonsConfig }>("/v1/mesh/data_commons/opt_in");
+  }
+
+  async optInDataCommons(config: DataCommonsConfig) {
+    return this.fetch<{ status: string }>("/v1/mesh/data_commons/opt_in", {
+      method: "POST",
+      body: JSON.stringify(config),
+    });
   }
 }
 

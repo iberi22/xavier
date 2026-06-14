@@ -16,6 +16,7 @@ export type SystemInfo = {
 export type InitialConfig = {
   telegram_token: string;
   use_gpu_model: boolean;
+  pairing_code?: string;
 };
 
 export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
@@ -73,6 +74,10 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
             token={config.telegram_token}
             onChangeToken={(val) =>
               setConfig((prev) => ({ ...prev, telegram_token: val }))
+            }
+            pairingCode={config.pairing_code || ""}
+            onChangePairingCode={(val) =>
+              setConfig((prev) => ({ ...prev, pairing_code: val }))
             }
             onComplete={handleComplete}
             isSaving={isSaving}

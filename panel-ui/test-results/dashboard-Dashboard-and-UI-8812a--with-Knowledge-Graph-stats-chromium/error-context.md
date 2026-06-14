@@ -6,8 +6,8 @@
 
 # Test info
 
-- Name: generative-ui.spec.ts >> Xavier generative panel >> keeps the shell public while protecting panel APIs and assets
-- Location: tests/generative-ui.spec.ts:27:3
+- Name: dashboard.spec.ts >> Dashboard and UI Islands >> should navigate ConfigModal and interact with Knowledge Graph stats
+- Location: tests/dashboard.spec.ts:84:3
 
 # Error details
 

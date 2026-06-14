@@ -1,13 +1,17 @@
-import { Loader2, Send } from "lucide-react";
+import { Loader2, Send, Network } from "lucide-react";
 
 export function IntegrationsStep({
   token,
   onChangeToken,
+  pairingCode,
+  onChangePairingCode,
   onComplete,
   isSaving,
 }: {
   token: string;
   onChangeToken: (val: string) => void;
+  pairingCode: string;
+  onChangePairingCode: (val: string) => void;
   onComplete: () => void;
   isSaving: boolean;
 }) {
@@ -33,8 +37,23 @@ export function IntegrationsStep({
             className="w-full bg-black border border-emerald-900 rounded p-2 text-emerald-300 focus:outline-none focus:border-emerald-500 transition-colors font-mono placeholder:text-neutral-700"
           />
           <p className="text-xs text-neutral-500 mt-2">
-            Optional. Leave blank to skip. Required to receive notifications and
-            interact via Telegram.
+            Optional. Leave blank to skip.
+          </p>
+        </div>
+
+        <div className="bg-neutral-950 p-4 border border-emerald-900/30 rounded">
+          <label className="block text-sm font-semibold text-emerald-400 mb-2 flex items-center gap-2">
+            <Network className="w-4 h-4" /> XMesh Linking (Pairing Code)
+          </label>
+          <input
+            type="text"
+            value={pairingCode}
+            onChange={(e) => onChangePairingCode(e.target.value)}
+            placeholder="Paste code from another Xavier node"
+            className="w-full bg-black border border-emerald-900 rounded p-2 text-emerald-300 focus:outline-none focus:border-emerald-500 transition-colors font-mono placeholder:text-neutral-700 text-xs"
+          />
+          <p className="text-xs text-neutral-500 mt-2">
+            Link this node to your primary device to sync memories.
           </p>
         </div>
       </div>

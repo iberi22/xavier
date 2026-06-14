@@ -33,6 +33,7 @@ import MessagingConfigModal, {
 } from "./MessagingConfigModal";
 import { CloudRelayConfig } from "./CloudRelayConfig";
 import DataCommonsConfigUI from "./DataCommonsConfigUI";
+import { MeshPeersConfig } from "./MeshPeersConfig";
 
 interface ConfigModalProps {
   key?: React.Key;
@@ -777,6 +778,7 @@ function ConfigView({ graphData }: { graphData: GraphData }) {
                 </p>
               </div>
               <div className="space-y-6">
+                <MeshPeersConfig token={token || ""} />
                 <CloudRelayConfig token={token || ""} />
                 <DataCommonsConfigUI token={token || ""} />
               </div>

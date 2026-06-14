@@ -6,8 +6,8 @@
 
 # Test info
 
-- Name: generative-ui.spec.ts >> Xavier generative panel >> keeps the shell public while protecting panel APIs and assets
-- Location: tests/generative-ui.spec.ts:27:3
+- Name: onboarding.spec.ts >> Onboarding Flow >> should complete the full onboarding flow
+- Location: tests/onboarding.spec.ts:66:3
 
 # Error details
 

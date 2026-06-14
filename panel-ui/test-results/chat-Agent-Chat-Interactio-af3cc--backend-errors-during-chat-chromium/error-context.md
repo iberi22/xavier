@@ -6,8 +6,8 @@
 
 # Test info
 
-- Name: generative-ui.spec.ts >> Xavier generative panel >> keeps the shell public while protecting panel APIs and assets
-- Location: tests/generative-ui.spec.ts:27:3
+- Name: chat.spec.ts >> Agent Chat Interactions >> should handle backend errors during chat
+- Location: tests/chat.spec.ts:146:3
 
 # Error details
 

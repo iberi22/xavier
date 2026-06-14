@@ -6,8 +6,8 @@
 
 # Test info
 
-- Name: generative-ui.spec.ts >> Xavier generative panel >> keeps the shell public while protecting panel APIs and assets
-- Location: tests/generative-ui.spec.ts:27:3
+- Name: app.spec.ts >> Panel UI End-to-End Tests >> should verify persisted artifacts in sidebar
+- Location: tests/app.spec.ts:31:3
 
 # Error details
 

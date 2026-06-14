@@ -6,8 +6,8 @@
 
 # Test info
 
-- Name: generative-ui.spec.ts >> Xavier generative panel >> keeps the shell public while protecting panel APIs and assets
-- Location: tests/generative-ui.spec.ts:27:3
+- Name: app.spec.ts >> Panel UI End-to-End Tests >> should create a new thread
+- Location: tests/app.spec.ts:43:3
 
 # Error details
 

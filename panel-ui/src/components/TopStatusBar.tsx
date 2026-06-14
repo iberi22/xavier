@@ -44,6 +44,10 @@ export default function TopStatusBar({
     ram_used_gb: 0,
     ram_total_gb: 0,
   });
+  const [syncStatus, setSyncStatus] = useState({
+    peer_count: 0,
+    sync_percent: 0,
+  });
   const [config, setConfig] = useState({
     has_openai: false,
     has_gemini: false,
@@ -80,14 +84,26 @@ export default function TopStatusBar({
         setMetrics(met as any);
 
         const token = await invoke("get_xavier_token");
+        const headers = { "X-Xavier-Token": token as string };
         const res = await fetch("http://127.0.0.1:8006/v1/memories?limit=1", {
-          headers: { "X-Xavier-Token": token as string },
+          headers,
         });
         if (res.ok) {
           const data = await res.json();
           if (data.pagination?.total !== undefined) {
             setMemoryCount(data.pagination.total);
           }
+        }
+
+        const peerRes = await fetch("http://127.0.0.1:8006/v1/mesh/peers", {
+          headers,
+        });
+        if (peerRes.ok) {
+          const peers = await peerRes.json();
+          setSyncStatus({
+            peer_count: peers.length,
+            sync_percent: peers.length > 0 ? 98 : 0, // Mock 98% if peers exist
+          });
         }
       } catch (err) {
         console.error("Error fetching metrics:", err);
@@ -348,16 +364,25 @@ export default function TopStatusBar({
               transition={spring}
               className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2.5 py-1 flex items-center gap-1.5 h-7 shrink-0 sm:flex"
             >
-              <Wifi className="w-3 h-3 text-cyan-400" />
+              <Wifi
+                className={`w-3 h-3 ${syncStatus.peer_count > 0 ? "text-cyan-400" : "text-white/20"}`}
+              />
               <span className="font-mono text-[9px] text-cyan-400 uppercase tracking-wide hidden md:inline-block">
-                4
+                {syncStatus.peer_count}
               </span>
-              <div className="w-8 h-0.5 bg-black/50 rounded-full overflow-hidden border border-white/5 mx-0.5 hidden xl:block">
-                <div className="h-full bg-cyan-400 w-[98%] shadow-[0_0_6px_rgba(34,211,238,0.5)]" />
-              </div>
-              <span className="font-mono text-[9px] text-cyan-400 font-bold">
-                98%
-              </span>
+              {syncStatus.peer_count > 0 && (
+                <>
+                  <div className="w-8 h-0.5 bg-black/50 rounded-full overflow-hidden border border-white/5 mx-0.5 hidden xl:block">
+                    <div
+                      className="h-full bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.5)]"
+                      style={{ width: `${syncStatus.sync_percent}%` }}
+                    />
+                  </div>
+                  <span className="font-mono text-[9px] text-cyan-400 font-bold">
+                    {syncStatus.sync_percent}%
+                  </span>
+                </>
+              )}
             </motion.div>
           )}
 
