@@ -14,6 +14,8 @@ use std::time::Instant;
 pub static INSTANCE: once_cell::sync::OnceCell<ConnectionManager> =
     once_cell::sync::OnceCell::new();
 
+const MAX_POOLS: usize = 128;
+
 /// Unified SQLite connection manager for Xavier.
 /// Manages connection pools by project_id with LRU eviction and PRAGMA optimizations.
 pub struct ConnectionManager {
@@ -33,8 +35,8 @@ struct PragmaCustomizer;
 impl r2d2::CustomizeConnection<Connection, rusqlite::Error> for PragmaCustomizer {
     fn on_acquire(&self, conn: &mut Connection) -> std::result::Result<(), rusqlite::Error> {
         conn.execute_batch(
-            "PRAGMA journal_mode=WAL; \
-             PRAGMA busy_timeout=5000; \
+            "PRAGMA busy_timeout=5000; \
+             PRAGMA journal_mode=WAL; \
              PRAGMA synchronous=NORMAL;",
         )
         .map_err(|e| {
@@ -202,7 +204,7 @@ impl ConnectionManager {
             .context("blocking task panicked")?
     }
 
-    /// Evict pools that are idle for too long or if we exceed the max capacity (10).
+    /// Evict pools that are idle for too long or if we exceed the max capacity.
     fn evict_if_needed(&self) {
         let now = Instant::now();
 
@@ -212,7 +214,7 @@ impl ConnectionManager {
         });
 
         // 2. If still too many, remove least recently used
-        while self.pools.len() >= 10 {
+        while self.pools.len() >= MAX_POOLS {
             let oldest = self
                 .pools
                 .iter()
