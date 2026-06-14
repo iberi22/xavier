@@ -29,6 +29,7 @@ pub mod security;
 pub mod server;
 pub mod session;
 pub mod settings;
+pub mod storage;
 pub mod sync;
 pub mod tasks;
 #[cfg(feature = "telegram")]
