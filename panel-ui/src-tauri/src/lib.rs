@@ -297,6 +297,9 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_log::Builder::default().build())
         .setup(|app| {
+            // Initialize Xavier's Tauri AppHandle
+            xavier::utils::tauri_utils::set_tauri_app_handle(app.handle().clone());
+
             // ── Build tray menu ─────────────────────────────────────
             let open_app = MenuItemBuilder::with_id("open_app", "Open Xavier")
                 .build(app)
