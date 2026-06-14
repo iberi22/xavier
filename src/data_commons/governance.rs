@@ -853,6 +853,12 @@ mod tests {
             .council_vote(&proposal.id, &council_member.id, false)
             .unwrap();
 
+        // Para que tally_votes no devuelva VotingNotEnded sin que voting_end haya pasado,
+        // necesitamos ejecutar un veto formal si el consejo votó en contra.
+        engine
+            .council_veto(&proposal.id, "Security concern".into())
+            .unwrap();
+
         let result = engine.tally_votes(&proposal.id).unwrap();
         assert!(result.user_quorum_met);
         assert!(result.user_percentage_for > 50.0); // usuarios aprobaron
