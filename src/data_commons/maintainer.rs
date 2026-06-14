@@ -1,4 +1,4 @@
-use xavier_lib::crypto::encryption::{aes_decrypt, aes_encrypt, NonceBytes};
+use crate::crypto::encryption::{aes_decrypt, aes_encrypt, NonceBytes};
 use x25519_dalek::{PublicKey, StaticSecret};
 use rand::rngs::OsRng;
 use std::env;
@@ -50,7 +50,7 @@ pub fn is_maintainer_node() -> bool {
 /// 2. Deriva el secreto compartido usando ECDH.
 /// 3. Usa el secreto compartido como llave AES-256-GCM.
 /// 4. Retorna el (payload_cifrado, pubkey_efimera).
-pub fn encrypt_for_maintainer(payload_json: &str) -> Result<(Vec<u8>, [u8; 32]), xavier_lib::crypto::encryption::EncryptionError> {
+pub fn encrypt_for_maintainer(payload_json: &str) -> Result<(Vec<u8>, [u8; 32]), crate::crypto::encryption::EncryptionError> {
     let maintainer_pub = get_maintainer_public_key();
     
     // 1. Generar llave efímera para esta única transacción
@@ -72,7 +72,7 @@ pub fn encrypt_for_maintainer(payload_json: &str) -> Result<(Vec<u8>, [u8; 32]),
 pub fn decrypt_as_maintainer(
     encrypted_payload: &[u8],
     ephemeral_pubkey_bytes: &[u8; 32],
-) -> Result<String, xavier_lib::crypto::encryption::EncryptionError> {
+) -> Result<String, crate::crypto::encryption::EncryptionError> {
     if !is_maintainer_node() {
         warn!("Intento de descifrado en un nodo que no es mantenedor.");
     }

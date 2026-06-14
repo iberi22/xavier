@@ -1,0 +1,233 @@
+//! # Wallet Post-Cuántica $XAV
+//!
+//! ## Stack Criptográfico
+//!
+//! | Propósito | Algoritmo | Crate |
+//! |-----------|-----------|-------|
+//! | Cifrado asimétrico | ML-KEM-1024 (Kyber-1024) | `oqs` |
+//! | Firmas | ML-DSA-87 (Dilithium-5) | `oqs` |
+//! | Identidad mesh | Ed25519 | `ed25519-dalek` (existente) |
+//! | Seed phrase | BIP-39 español 24 palabras | `bip39` |
+//! | Cifrado local | AES-256-GCM | `aes-gcm` |
+//! | Key derivation | Argon2id | `argon2` |
+//! | TPM (opcional) | RSA-2048 + SRK | `tpm-rs` |
+
+use crate::crypto::encryption::{decrypt_data, encrypt_data, NonceBytes};
+use crate::crypto::keys::{KeyManager, KeySalt};
+use crate::data_commons::types::*;
+use bip39::{Language, Mnemonic};
+use ed25519_dalek::SigningKey;
+use oqs::kem::{Algorithm as KemAlg, Kem};
+use oqs::sig::{Algorithm as SigAlg, Sig};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::fs;
+use std::path::PathBuf;
+
+/// Configuración de wallet
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WalletConfig {
+    /// Directorio donde almacenar datos de wallet
+    pub data_dir: PathBuf,
+    /// Usar TPM 2.0 si disponible?
+    pub prefer_tpm: bool,
+    /// Idioma de seed phrase (default: español)
+    pub seed_language: String,
+}
+
+impl Default for WalletConfig {
+    fn default() -> Self {
+        Self {
+            data_dir: PathBuf::from("~/.config/xavier/wallet"),
+            prefer_tpm: true,
+            seed_language: "spanish".into(),
+        }
+    }
+}
+
+/// Estructura interna para persistir la wallet
+#[derive(Serialize, Deserialize)]
+struct EncryptedWallet {
+    /// Salt de Argon2 usado para derivar la KEK
+    salt: [u8; 16],
+    /// Blob cifrado con AES-256-GCM que contiene las claves privadas
+    /// Formato: [nonce (12b)] + [ciphertext]
+    encrypted_data: Vec<u8>,
+    /// Datos públicos de la wallet
+    public_data: Wallet,
+}
+
+/// Datos privados de la wallet (después de descifrar)
+#[derive(Serialize, Deserialize)]
+struct WalletSecrets {
+    /// Mnemonic (seed phrase)
+    mnemonic: String,
+    /// Clave privada ML-DSA-87 (Dilithium-5)
+    dilithium_sk: Vec<u8>,
+    /// Clave privada ML-KEM-1024 (Kyber-1024)
+    kyber_sk: Vec<u8>,
+    /// Clave privada Ed25519
+    ed25519_sk: [u8; 32],
+}
+
+/// Wallet post-cuántica $XAV
+pub struct XavierWallet {
+    /// Configuración
+    pub config: WalletConfig,
+    /// Estado de la wallet (público)
+    pub state: Option<Wallet>,
+    /// Secretos (solo en memoria mientras esté desbloqueada)
+    secrets: Option<WalletSecrets>,
+    /// Usando TPM?
+    pub has_tpm: bool,
+}
+
+impl XavierWallet {
+    /// Crear una nueva wallet desde cero
+    pub fn create(config: WalletConfig, password: &str) -> Result<(Self, String), WalletError> {
+        let language = match config.seed_language.as_str() {
+            "spanish" => Language::Spanish,
+            "english" => Language::English,
+            _ => Language::Spanish,
+        };
+
+        // 1. Generar seed phrase (24 palabras)
+        let mnemonic = Mnemonic::generate_in(language, 24)
+            .map_err(|_| WalletError::SeedGenerationFailed)?;
+        let mnemonic_phrase = mnemonic.to_string();
+
+        let wallet = Self::from_mnemonic(&mnemonic_phrase, config)?;
+        wallet.save(password)?;
+
+        Ok((wallet, mnemonic_phrase))
+    }
+
+    /// Importar wallet desde mnemonic
+    pub fn from_mnemonic(mnemonic_phrase: &str, config: WalletConfig) -> Result<Self, WalletError> {
+        let mnemonic = Mnemonic::parse(mnemonic_phrase).map_err(|_| WalletError::InvalidSeed)?;
+
+        let seed_bytes = mnemonic.to_seed("");
+
+        // 2. Derivar claves desde el seed
+        let _dilithium_seed = {
+            let mut h = Sha256::new();
+            h.update(seed_bytes);
+            h.update(b"dilithium");
+            h.finalize()
+        };
+
+        let kyber_seed = {
+            let mut h = Sha256::new();
+            h.update(seed_bytes);
+            h.update(b"kyber");
+            h.finalize()
+        };
+
+        let ed25519_seed = {
+            let mut h = Sha256::new();
+            h.update(seed_bytes);
+            h.update(b"ed25519");
+            let res = h.finalize();
+            let mut arr = [0u8; 32];
+            arr.copy_from_slice(&res);
+            arr
+        };
+
+        // 3. Generar keypairs PQ
+        let sig = Sig::new(SigAlg::MlDsa87).map_err(|_| WalletError::KeyGenerationFailed)?;
+        let (dilithium_pk, dilithium_sk) =
+            sig.keypair().map_err(|_| WalletError::KeyGenerationFailed)?;
+
+        let kem = Kem::new(KemAlg::MlKem1024).map_err(|_| WalletError::KeyGenerationFailed)?;
+
+        let kyber_seed_ref = kem
+            .keypair_seed_from_bytes(&kyber_seed[..kem.length_keypair_seed()])
+            .ok_or(WalletError::KeyGenerationFailed)?;
+
+        let (kyber_pk, kyber_sk) = kem
+            .keypair_derand(kyber_seed_ref)
+            .map_err(|_| WalletError::KeyGenerationFailed)?;
+
+        // 4. Generar Ed25519 keypair
+        let ed25519_sk_key = SigningKey::from_bytes(&ed25519_seed);
+        let _ed25519_pk = ed25519_sk_key.verifying_key();
+
+        // 5. Derivar wallet address: xv1_ + bech32(hash(ML-DSA-87 pk))
+        let address = derive_address(dilithium_pk.as_ref());
+
+        let wallet_data = Wallet {
+            address: WalletAddress(address),
+            dilithium_public_key: dilithium_pk.as_ref().to_vec(),
+            kyber_public_key: kyber_pk.as_ref().to_vec(),
+            nodes: Vec::new(),
+            balance: 0,
+            trust_score: 0,
+            contribution_score: 0,
+            created_at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            has_tpm: false, // Por ahora software
+        };
+
+        let secrets = WalletSecrets {
+            mnemonic: mnemonic_phrase.to_string(),
+            dilithium_sk: dilithium_sk.as_ref().to_vec(),
+            kyber_sk: kyber_sk.as_ref().to_vec(),
+            ed25519_sk: ed25519_seed,
+        };
+
+        Ok(Self {
+            config,
+            state: Some(wallet_data),
+            secrets: Some(secrets),
+            has_tpm: false,
+        })
+    }
+
+    /// Guardar wallet cifrada en disco
+    pub fn save(&self, password: &str) -> Result<(), WalletError> {
+        let Some(state) = &self.state else {
+            return Err(WalletError::WalletNotFound);
+        };
+        let Some(secrets) = &self.secrets else {
+            return Err(WalletError::WalletNotFound);
+        };
+
+        let manager = KeyManager::new();
+        let kek = manager
+            .derive_kek(password)
+            .map_err(|_| WalletError::EncryptionFailed)?;
+
+        let secrets_json = serde_json::to_vec(secrets).map_err(|_| WalletError::EncryptionFailed)?;
+        let nonce = NonceBytes::generate();
+        let encrypted_blob = encrypt_data(&secrets_json, kek.as_bytes(), &nonce)
+            .map_err(|_| WalletError::EncryptionFailed)?;
+
+        let encrypted_wallet = EncryptedWallet {
+            salt: *manager.salt().as_bytes(),
+            encrypted_data: encrypted_blob.to_bytes(),
+            public_data: state.clone(),
+        };
+
+        if !self.config.data_dir.exists() {
+            fs::create_dir_all(&self.config.data_dir).map_err(|_| WalletError::StorageFailed)?;
+        }
+
+        let wallet_path = self.config.data_dir.join("wallet.json");
+        let data =
+            serde_json::to_vec_pretty(&encrypted_wallet).map_err(|_| WalletError::StorageFailed)?;
+        fs::write(wallet_path, data).map_err(|_| WalletError::StorageFailed)?;
+
+        Ok(())
+    }
+
+    /// Cargar wallet existente desde disco
+    pub fn load(config: WalletConfig, password: &str) -> Result<Self, WalletError> {
+        let wallet_path = config.data_dir.join("wallet.json");
+        if !wallet_path.exists() {
+            return Err(WalletError::WalletNotFound);
+        }
+
+        let data = fs::read(wallet_path).map_err(|_| WalletError::StorageFailed)?;
+        let encrypted_wallet: EncryptedWallet =
