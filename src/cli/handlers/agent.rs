@@ -120,6 +120,9 @@ pub async fn agent_push_context_handler(
         relation: None,
         clearance: Default::default(),
         revisions: vec![],
+        encrypted_dek: None,
+        content_iv: None,
+        metadata_iv: None,
     };
     match state.memory.add(record).await {
         Ok(doc_id) => axum::Json(serde_json::json!({

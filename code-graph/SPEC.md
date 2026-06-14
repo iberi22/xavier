@@ -91,7 +91,7 @@ code-graph stats
 | Python | .py | ✅ Complete |
 | Go | .go | ✅ Complete |
 | Java | .java | ✅ Complete |
-| C/C++ | .c, .cpp, .h, .hpp | ⚠️ Partial |
+| C/C++ | .c, .cpp, .h, .hpp | ✅ Complete |
 
 ## Performance
 
