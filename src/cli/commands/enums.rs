@@ -147,6 +147,12 @@ pub enum Command {
     /// Run interactive system detection and setup
     Setup,
 
+    /// Manage Xavier sessions
+    Session {
+        #[command(subcommand)]
+        cmd: SessionCommand,
+    },
+
     /// Manage Xavier Mesh P2P connections
     Mesh {
         #[command(subcommand)]
@@ -372,6 +378,31 @@ pub enum MeshCommand {
 }
 
 /// Secrets management subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum SessionCommand {
+    /// Export a session to a JSON bundle
+    Export {
+        /// ID of the session to export
+        session_id: String,
+        /// Output file path
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+    /// Import a session from a JSON bundle
+    Import {
+        /// Path to the session bundle file
+        input: PathBuf,
+    },
+    /// Share a session with a peer via mesh
+    Share {
+        /// ID of the session to share
+        session_id: String,
+        /// Node ID of the peer to share with
+        #[arg(short, long)]
+        peer: String,
+    },
+}
+
 #[derive(Subcommand, Debug, Clone)]
 pub enum SecretsCommand {
     /// Lend a secret to an agent
