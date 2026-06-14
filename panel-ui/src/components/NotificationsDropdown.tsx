@@ -1,3 +1,5 @@
+import { listen } from "@tauri-apps/api/event";
+import { invoke } from "@tauri-apps/api/core";
 import {
   Activity,
   AlertTriangle,
@@ -10,14 +12,16 @@ import {
   Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { getApiUrl } from "../api/client";
 
 export interface Notification {
   id: string;
   islandId: IslandId;
+  island_id?: IslandId; // Backend uses snake_case
   title: string;
   body: string;
-  timestamp: Date;
+  timestamp: Date | string;
   read: boolean;
   severity?: "info" | "warning" | "error" | "success";
 }
@@ -68,74 +72,16 @@ const ISLANDS: Island[] = [
   },
 ];
 
-// ── Mock notifications ─────────────────────────────────────────────────────
-const MOCK_NOTIFICATIONS: Notification[] = [
-  {
-    id: "n1",
-    islandId: "memory",
-    title: "Memory Indexed",
-    read: false,
-    timestamp: new Date(Date.now() - 2 * 60000),
-    body: "247 new memories indexed from project scan. BM25 index updated.",
-    severity: "success",
-  },
-  {
-    id: "n2",
-    islandId: "memory",
-    title: "Memory Indexed",
-    read: false,
-    timestamp: new Date(Date.now() - 8 * 60000),
-    body: "14 episodic memories summarized and compacted.",
-    severity: "info",
-  },
-  {
-    id: "n3",
-    islandId: "agents",
-    title: "Agent Task Complete",
-    read: false,
-    timestamp: new Date(Date.now() - 15 * 60000),
-    body: "Antigravity agent completed code analysis task in 4.2s.",
-    severity: "success",
-  },
-  {
-    id: "n4",
-    islandId: "system",
-    title: "Xavier Started",
-    read: true,
-    timestamp: new Date(Date.now() - 42 * 60000),
-    body: "Xavier backend v0.6.1-beta started on port 8006. SQLite-Vec loaded.",
-    severity: "info",
-  },
-  {
-    id: "n5",
-    islandId: "system",
-    title: "Node Sync",
-    read: true,
-    timestamp: new Date(Date.now() - 65 * 60000),
-    body: "Synchronized with 4 peer nodes. Consensus: 98%.",
-    severity: "success",
-  },
-  {
-    id: "n6",
-    islandId: "errors",
-    title: "Telegram Disconnected",
-    read: false,
-    timestamp: new Date(Date.now() - 5 * 60000),
-    body: "Telegram bot token not configured. Messaging channel offline.",
-    severity: "error",
-  },
-  {
-    id: "n7",
-    islandId: "errors",
-    title: "OpenAI Quota Warning",
-    read: true,
-    timestamp: new Date(Date.now() - 120 * 60000),
-    body: "OpenAI API usage at 89% of monthly quota. Consider switching to Gemini.",
-    severity: "warning",
-  },
-];
+async function getAuthToken(): Promise<string> {
+  try {
+    return await invoke<string>("get_xavier_token");
+  } catch {
+    return localStorage.getItem("XAVIER_TOKEN") || "";
+  }
+}
 
-function formatRelativeTime(date: Date): string {
+function formatRelativeTime(dateInput: Date | string): string {
+  const date = typeof dateInput === "string" ? new Date(dateInput) : dateInput;
   const diff = (Date.now() - date.getTime()) / 1000;
   if (diff < 60) return "just now";
   if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
@@ -210,31 +156,84 @@ interface NotificationsDropdownProps {
 export default function NotificationsDropdown({
   onClose,
 }: NotificationsDropdownProps) {
-  const [notifications, setNotifications] =
-    useState<Notification[]>(MOCK_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [activeIsland, setActiveIsland] = useState<IslandId | "all">("all");
+
+  useEffect(() => {
+    // 1. Fetch initial notifications
+    const fetchNotifications = async () => {
+      try {
+        const token = await getAuthToken();
+        const response = await fetch(getApiUrl("/notifications"), {
+          headers: { "X-Xavier-Token": token },
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setNotifications(data);
+        }
+      } catch (err) {
+        console.error("Failed to fetch notifications:", err);
+      }
+    };
+
+    fetchNotifications();
+
+    // 2. Listen for real-time notifications via Tauri
+    const unlistenPromise = listen<Notification>(
+      "new-notification",
+      (event) => {
+        setNotifications((prev) => [event.payload, ...prev]);
+      },
+    );
+
+    return () => {
+      unlistenPromise.then((unlisten) => unlisten());
+    };
+  }, []);
 
   const unreadCount = notifications.filter((n) => !n.read).length;
 
-  const markRead = (id: string) => {
+  const markRead = async (id: string) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, read: true } : n)),
     );
+
+    try {
+      const token = await getAuthToken();
+      await fetch(getApiUrl(`/notifications/${id}/read`), {
+        method: "PATCH",
+        headers: { "X-Xavier-Token": token },
+      });
+    } catch (err) {
+      console.error("Failed to mark notification as read:", err);
+    }
   };
 
-  const markAllRead = () => {
+  const markAllRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+
+    try {
+      const token = await getAuthToken();
+      await fetch(getApiUrl("/notifications/read-all"), {
+        method: "PATCH",
+        headers: { "X-Xavier-Token": token },
+      });
+    } catch (err) {
+      console.error("Failed to mark all notifications as read:", err);
+    }
   };
 
   const filtered =
     activeIsland === "all"
       ? notifications
-      : notifications.filter((n) => n.islandId === activeIsland);
+      : notifications.filter(
+          (n) => (n.island_id || n.islandId) === activeIsland,
+        );
 
   const islandCounts = ISLANDS.reduce<Record<IslandId, number>>(
     (acc, island) => {
       acc[island.id] = notifications.filter(
-        (n) => n.islandId === island.id && !n.read,
+        (n) => (n.island_id || n.islandId) === island.id && !n.read,
       ).length;
       return acc;
     },
@@ -344,7 +343,7 @@ export default function NotificationsDropdown({
         {/* Footer */}
         <div className="px-4 py-2 border-t border-white/[0.04] bg-black/20">
           <p className="text-[9px] text-white/15 text-center">
-            Mock data — persistence backend pending
+            Persistent notification system active
           </p>
         </div>
       </motion.div>
