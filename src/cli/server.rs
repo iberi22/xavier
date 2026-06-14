@@ -83,6 +83,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     cm.connect("memory", ".")?;
     cm.connect("vec_store", ".")?;
     cm.connect("metrics", ".")?;
+    cm.connect("security", ".")?;
     cm.set_active("default", ".").await?;
 
     let mut store_inner = VecSqliteMemoryStore::new(config.clone()).await?;
