@@ -45,7 +45,7 @@ cli-interactive = ["ratatui", "crossterm"]
 # All features that are safe to run on host CI (no GUI/Winit issues)
 ci-safe = []
 bench-runners = []
-telegram = ["teloxide"]
+telegram = ["teloxide/macros", "teloxide/webhooks-axum"]
 local-gllm = ["dep:gllm", "dep:candle-core"]
 local-gllm-cuda = ["dep:gllm-cuda", "dep:candle-core"]
 dev-mode = []

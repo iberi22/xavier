@@ -324,6 +324,14 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             "/api/settings/discord/test",
             post(xavier::api::settings::test_discord_connection),
         )
+        .route(
+            "/api/settings/telegram",
+            get(xavier::api::settings::get_telegram_settings).post(xavier::api::settings::update_telegram_settings),
+        )
+        .route(
+            "/api/settings/telegram/test",
+            post(xavier::api::settings::test_telegram_connection),
+        )
         .route("/xavier/events/session", post(session_event_handler))
         .route("/xavier/time/metric", post(time_metric_handler))
         .route("/xavier/agents/register", post(agent_register_handler))
@@ -636,6 +644,16 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         info!("SessionSyncTask cron started");
     } else {
         info!("SessionSyncTask cron already running; skipped duplicate start");
+    }
+
+    #[cfg(feature = "telegram")]
+    {
+        let memory_bot = state.memory.clone();
+        let agents_bot = state.agent_registry.clone();
+        let security_bot = state.security_scan.clone();
+        tokio::spawn(async move {
+            xavier::telegram::run_bot(memory_bot, agents_bot, security_bot).await;
+        });
     }
 
     tokio::spawn(async move {
