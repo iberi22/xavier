@@ -26,6 +26,8 @@ export function Settings() {
     url: "",
     token: "",
     instance_id: "",
+    sync_interval_ms: 300000,
+    auto_heartbeat: true,
   });
   const [cloudSaved, setCloudSaved] = useState(false);
 
@@ -38,6 +40,11 @@ export function Settings() {
             url: data.data.url || "",
             token: data.data.token || "",
             instance_id: data.data.instance_id || "",
+            sync_interval_ms: data.data.sync_interval_ms || 300000,
+            auto_heartbeat:
+              data.data.auto_heartbeat !== undefined
+                ? data.data.auto_heartbeat
+                : true,
           });
         }
       });
@@ -215,6 +222,48 @@ export function Settings() {
                 placeholder="xavier-instance-01"
                 className="flex-1 px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
               />
+            </div>
+            <div className="flex items-center gap-3">
+              <label className="w-28 text-sm font-medium text-stone-700 dark:text-stone-300">
+                Sync (ms)
+              </label>
+              <input
+                type="number"
+                value={cloudSettings.sync_interval_ms}
+                onChange={(e) =>
+                  setCloudSettings({
+                    ...cloudSettings,
+                    sync_interval_ms: parseInt(e.target.value),
+                  })
+                }
+                className="flex-1 px-3 py-2 rounded-lg border border-stone-300 dark:border-stone-600 bg-white dark:bg-stone-900 text-stone-900 dark:text-stone-100 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium text-stone-700 dark:text-stone-300">
+                Auto Heartbeat
+              </label>
+              <button
+                type="button"
+                onClick={() =>
+                  setCloudSettings({
+                    ...cloudSettings,
+                    auto_heartbeat: !cloudSettings.auto_heartbeat,
+                  })
+                }
+                className={`relative w-11 h-6 rounded-full transition-colors ${
+                  cloudSettings.auto_heartbeat
+                    ? "bg-primary-600"
+                    : "bg-stone-300 dark:bg-stone-600"
+                }`}
+              >
+                <span
+                  className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                    cloudSettings.auto_heartbeat
+                      ? "translate-x-6" : "translate-x-1"
+                  }`}
+                />
+              </button>
             </div>
           </div>
           <div className="flex items-center gap-3 pt-2">
