@@ -41,6 +41,19 @@ jobs:
       - name: Run Backend Tests (Rust)
         run: cargo test --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app --verbose
 
+      - name: Prepare Tauri Sidecar
+        shell: bash
+        run: |
+          cargo build --release --bin xavier
+          mkdir -p panel-ui/src-tauri/binaries
+          TARGET_TRIPLE=$(rustc -Vv | awk '/host:/ { print $2 }')
+
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cp target/release/xavier.exe "panel-ui/src-tauri/binaries/xavier-$TARGET_TRIPLE.exe"
+          else
+            cp target/release/xavier "panel-ui/src-tauri/binaries/xavier-$TARGET_TRIPLE"
+          fi
+
       - name: Install Frontend Dependencies
         working-directory: panel-ui
         run: pnpm install
