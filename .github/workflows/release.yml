@@ -25,10 +25,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 22.12.0
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4
         with:
           version: 9
           run_install: false
@@ -37,11 +37,6 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc, x86_64-apple-darwin
-
-      - name: Install Rust dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install webkit2gtk
 
       - name: Run Backend Tests (Rust)
         run: cargo test --verbose

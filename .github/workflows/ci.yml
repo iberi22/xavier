@@ -22,7 +22,10 @@ jobs:
         with:
           node-version: 22.12.0
       - name: Setup pnpm
-        run: corepack enable
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
       - name: Install Node dependencies
         run: pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
       - name: Validate panel-ui
@@ -123,7 +126,10 @@ jobs:
         with:
           node-version: 22.12.0
       - name: Setup pnpm
-        run: corepack enable
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
@@ -171,7 +177,10 @@ jobs:
         with:
           node-version: 22.12.0
       - name: Setup pnpm
-        run: corepack enable
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
