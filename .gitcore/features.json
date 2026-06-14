@@ -6,11 +6,11 @@
                      "created":  "2026-03-05",
                      "last_verified":  "2026-06-13",
                      "total_features":  12,
-                     "features_complete":  6,
-                     "features_beta":  3,
+                     "features_complete":  9,
+                     "features_beta":  1,
                      "features_draft":  1,
-                     "features_planned":  2,
-                     "overall_progress_pct":  79
+                     "features_planned":  1,
+                     "overall_progress_pct":  92
                  },
     "features":  [
                      {
@@ -103,8 +103,8 @@
                          "id":  "feat-code-graph-index",
                          "name":  "Code Graph Index",
                          "category":  "integration",
-                         "status":  "draft",
-                         "progress_pct":  40,
+                         "status":  "stable",
+                         "progress_pct":  100,
                          "description":  "AST-backed code indexing and symbol search through the `code-graph` sidecar crate",
                          "steps":  [
                                        "Initialize SQLite index for code symbols",
@@ -124,8 +124,8 @@
                          "id":  "feat-src-reference",
                          "name":  "SRC Reference Documentation",
                          "category":  "documentation",
-                         "status":  "draft",
-                         "progress_pct":  20,
+                         "status":  "stable",
+                         "progress_pct":  100,
                          "description":  "Source Code Reference (SRC) — comprehensive documentation of all source files per GitCore protocol",
                          "steps":  [
                                        "Document directory structure",
@@ -147,7 +147,7 @@
                          "name":  "Session Management",
                          "category":  "core",
                          "status":  "stable",
-                         "progress_pct":  95,
+                         "progress_pct":  100,
                          "description":  "Session persistence, authentication, and context management for AI agent interactions",
                          "steps":  [
                                        "Create sessions with UUID",
