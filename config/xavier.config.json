@@ -61,6 +61,8 @@
   "retrieval": {
     "disable_hyde": true,
     "rrf_k": null,
+    "keyword_weight": null,
+    "vector_weight": null,
     "zone_boost_multiplier": null,
     "zone_penalty_multiplier": null,
     "cache_warming_enabled": false,
@@ -103,11 +105,22 @@
   },
   "security": {
     "allowed_domains": "",
-    "token_secret": null
+    "token_secret": null,
+    "encryption_at_rest_enabled": false,
+    "master_key_name": "xavier_master_key"
   },
   "telegram": {
     "enabled": false,
-    "bot_token": null
+    "bot_token": null,
+    "webhook_url": null,
+    "webhook_port": 8009,
+    "admin_ids": []
+  },
+  "discord": {
+    "enabled": false,
+    "webhook_url": null,
+    "bot_token": null,
+    "rate_limit_per_min": 30
   },
   "router": {
     "policy_path": "",
