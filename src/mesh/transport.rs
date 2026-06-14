@@ -5,7 +5,10 @@
 
 use crate::mesh::node::NodeIdentity;
 use crate::mesh::peer::PeerInfo;
-use crate::mesh::protocol::{MeshHandshake, MeshHandshakeResponse, MeshManifest, MeshSyncRequest};
+use crate::mesh::protocol::{
+    MeshHandshake, MeshHandshakeResponse, MeshManifest, MeshSessionShare, MeshSyncRequest,
+};
+use crate::session::sharing::SessionBundle;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -151,6 +154,38 @@ impl MeshTransport {
 
         let result: Vec<String> = resp.json().await.context("Failed to parse push result")?;
         Ok(result)
+    }
+
+    /// Share a session bundle with a remote peer.
+    pub async fn share_session(
+        &self,
+        peer: &PeerInfo,
+        token: &str,
+        bundle: SessionBundle,
+    ) -> Result<()> {
+        let url = format!(
+            "{}/v1/sessions/import",
+            peer.endpoint_url.trim_end_matches('/')
+        );
+        let request = MeshSessionShare {
+            sender_node_id: self.local_identity.node_id.clone(),
+            bundle,
+        };
+
+        let resp = self
+            .client
+            .post(&url)
+            .header("X-Xavier-Token", token)
+            .json(&request.bundle)
+            .send()
+            .await
+            .context("Failed to share session")?;
+
+        if !resp.status().is_success() {
+            anyhow::bail!("Session share failed: {}", resp.status());
+        }
+
+        Ok(())
     }
 }
 
