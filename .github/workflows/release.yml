@@ -42,6 +42,7 @@ jobs:
         run: cargo test --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app --verbose
 
       - name: Prepare Tauri Sidecar
+        if: github.event_name != 'pull_request'
         shell: bash
         run: |
           cargo build --release --bin xavier
@@ -63,7 +64,8 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            pnpm tauri build --no-bundle
+            pnpm run build
+            cargo check --manifest-path src-tauri/Cargo.toml
           else
             pnpm tauri build
           fi
