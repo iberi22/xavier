@@ -96,122 +96,13 @@ impl SqliteMemoryStore {
             project_id: project_id.to_string(),
         };
 
-        // Initialize schema
+        // Initialize schema via migration manager
         ConnectionManager::global()
             .with_conn(project_id, move |conn| {
-                conn.execute_batch(&format!(
-                    r#"
-                CREATE TABLE IF NOT EXISTS {} (
-                    id TEXT PRIMARY KEY,
-                    workspace_id TEXT NOT NULL,
-                    path TEXT NOT NULL,
-                    content TEXT NOT NULL,
-                    metadata TEXT NOT NULL DEFAULT '{{}}',
-                    embedding BLOB,
-                    encrypted_dek BLOB,
-                    content_iv BLOB,
-                    metadata_iv BLOB,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    revision INTEGER NOT NULL DEFAULT 1,
-                    primary_flag INTEGER DEFAULT 0,
-                    parent_id TEXT,
-                    cluster_id TEXT,
-                    level TEXT DEFAULT 'raw',
-                    relation TEXT,
-                    revisions TEXT
-                );
-
-                CREATE TABLE IF NOT EXISTS {} (
-                    id TEXT PRIMARY KEY,
-                    workspace_id TEXT NOT NULL,
-                    beliefs TEXT NOT NULL DEFAULT '[]',
-                    updated_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS {} (
-                    id TEXT PRIMARY KEY,
-                    workspace_id TEXT NOT NULL,
-                    token TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    expires_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS {} (
-                    id TEXT PRIMARY KEY,
-                    workspace_id TEXT NOT NULL,
-                    task_id TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    data TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS {} (
-                    id TEXT PRIMARY KEY,
-                    workspace_id TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    url TEXT NOT NULL,
-                    metadata TEXT NOT NULL DEFAULT '{{}}',
-                    created_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS {} (
-                    id TEXT PRIMARY KEY,
-                    workspace_id TEXT NOT NULL,
-                    type TEXT NOT NULL,
-                    config TEXT NOT NULL DEFAULT '{{}}',
-                    x INTEGER DEFAULT 0,
-                    y INTEGER DEFAULT 0,
-                    w INTEGER DEFAULT 1,
-                    h INTEGER DEFAULT 1,
-                    created_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS {} (
-                    id TEXT PRIMARY KEY,
-                    workspace_id TEXT NOT NULL,
-                    name TEXT NOT NULL,
-                    data TEXT NOT NULL DEFAULT '{{}}',
-                    created_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS encryption_metadata (
-                    id TEXT PRIMARY KEY,
-                    workspace_id TEXT NOT NULL,
-                    salt BLOB NOT NULL,
-                    created_at TEXT NOT NULL
-                );
-
-                CREATE TABLE IF NOT EXISTS {} (
-                    id TEXT PRIMARY KEY,
-                    island_id TEXT NOT NULL,
-                    title TEXT NOT NULL,
-                    body TEXT NOT NULL,
-                    timestamp TEXT NOT NULL,
-                    read INTEGER NOT NULL DEFAULT 0,
-                    severity TEXT NOT NULL
-                );
-
-                CREATE INDEX IF NOT EXISTS idx_memories_workspace ON {}(workspace_id);
-                CREATE INDEX IF NOT EXISTS idx_memories_path ON {}(workspace_id, path);
-                CREATE INDEX IF NOT EXISTS idx_session_tokens_workspace ON {}(workspace_id);
-                CREATE INDEX IF NOT EXISTS idx_checkpoints_workspace ON {}(workspace_id);
-                CREATE INDEX IF NOT EXISTS idx_checkpoints_task ON {}(workspace_id, task_id);
-                "#,
-                    TABLE_MEMORIES,
-                    TABLE_BELIEFS,
-                    TABLE_SESSION_TOKENS,
-                    TABLE_CHECKPOINTS,
-                    TABLE_PANEL_BOOKMARKS,
-                    TABLE_PANEL_WIDGETS,
-                    TABLE_PANEL_GRAPHS,
-                    TABLE_NOTIFICATIONS,
-                    TABLE_MEMORIES,
-                    TABLE_MEMORIES,
-                    TABLE_SESSION_TOKENS,
-                    TABLE_CHECKPOINTS,
-                    TABLE_CHECKPOINTS
-                ))?;
-                Ok(())
+                let mut manager = crate::storage::MigrationManager::new();
+                manager.add_migration(crate::storage::migrations::MigrationV1InitialSchema);
+                manager.add_migration(crate::storage::migrations::MigrationV2ColumnarIndices);
+                manager.run_migrations(conn)
             })
             .await?;
 
@@ -348,7 +239,7 @@ impl MemoryStore for SqliteMemoryStore {
             // Get or create salt for this workspace
             let workspace_id = record.workspace_id.clone();
             let project_id = self.project_id.clone();
-            let salt_bytes = ConnectionManager::global()
+            let _salt_bytes = ConnectionManager::global()
                 .with_conn(&project_id, move |conn| {
                     let mut stmt = conn.prepare(
                         "SELECT salt FROM encryption_metadata WHERE workspace_id = ?",

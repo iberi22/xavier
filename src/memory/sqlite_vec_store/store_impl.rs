@@ -50,7 +50,7 @@ impl MemoryStore for VecSqliteMemoryStore {
             // Get or create salt for this workspace
             let workspace_id = record.workspace_id.clone();
             let project_id = self.project_id.clone();
-            let salt_bytes = ConnectionManager::global()
+            let _salt_bytes = ConnectionManager::global()
                 .with_conn(&project_id, move |conn| {
                     let mut stmt = conn.prepare(
                         "SELECT salt FROM encryption_metadata WHERE workspace_id = ?",
