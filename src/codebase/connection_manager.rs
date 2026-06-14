@@ -79,6 +79,11 @@ impl ConnectionManager {
                 PathBuf::from(project_root).join("metrics.db")
             } else if project_id == "security" {
                 PathBuf::from(project_root).join(".xavier").join("security.db")
+            } else if project_id.starts_with("conv_test_") {
+                PathBuf::from(project_root)
+                    .join(".xavier")
+                    .join("tests")
+                    .join(format!("{}.db", project_id))
             } else if project_id.starts_with("conv_") {
                 let pid = project_id
                     .strip_prefix("conv_")
