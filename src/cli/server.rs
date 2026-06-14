@@ -654,6 +654,9 @@ pub async fn start_http_server(port: u16) -> Result<()> {
                         relation: None,
                         clearance: Default::default(),
                         revisions: vec![],
+                        encrypted_dek: None,
+                        content_iv: None,
+                        metadata_iv: None,
                     };
                     let _ = memory_port_cron.add(record).await;
                 }

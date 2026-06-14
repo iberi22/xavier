@@ -286,6 +286,9 @@ pub async fn add_handler(
         relation,
         clearance: Default::default(),
         revisions: vec![],
+        encrypted_dek: None,
+        content_iv: None,
+        metadata_iv: None,
     };
     match state.memory.add(record).await {
         Ok(id) => {
@@ -402,6 +405,9 @@ pub async fn update_handler(
         relation: None,
         clearance: Default::default(),
         revisions: vec![],
+        encrypted_dek: None,
+        content_iv: None,
+        metadata_iv: None,
     };
 
     match state.memory.update(&payload.id, record).await {
