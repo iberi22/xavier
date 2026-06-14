@@ -15,6 +15,10 @@ use super::analyzer::{ErrorDiagnosis, Urgency};
 use super::fixer::FixerResult;
 use crate::messaging::DiscordClient;
 use crate::settings::XavierSettings;
+#[cfg(feature = "tauri")]
+use crate::utils::tauri_utils::get_tauri_app_handle;
+#[cfg(feature = "tauri")]
+use tauri::Emitter;
 
 /// Notification severity (maps to emoji + level).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -126,6 +130,7 @@ impl Notifier {
 
         notif.log();
         let _ = self.send_discord(&notif);
+        self.emit_tauri(&notif);
         notif
     }
 
@@ -139,6 +144,18 @@ impl Notifier {
                 )
                 .await;
         }
+    }
+
+    #[cfg(feature = "tauri")]
+    fn emit_tauri(&self, notif: &Notification) {
+        if let Some(handle) = get_tauri_app_handle() {
+            let _ = handle.emit("notification", notif);
+        }
+    }
+
+    #[cfg(not(feature = "tauri"))]
+    fn emit_tauri(&self, _notif: &Notification) {
+        // No-op when tauri feature is disabled
     }
 
     /// Notify about a fixer action result.
@@ -170,7 +187,7 @@ impl Notifier {
 
         notif.log();
         let _ = self.send_discord(&notif);
-        let _ = self.send_discord(&notif);
+        self.emit_tauri(&notif);
         notif
     }
 
@@ -187,6 +204,7 @@ impl Notifier {
         };
 
         notif.log();
+        self.emit_tauri(&notif);
         notif
     }
 
@@ -211,6 +229,7 @@ impl Notifier {
 
         notif.log();
         let _ = self.send_discord(&notif);
+        self.emit_tauri(&notif);
         notif
     }
 }
