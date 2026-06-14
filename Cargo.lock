@@ -226,6 +226,7 @@ dependencies = [
  "tauri-plugin-log",
  "tauri-plugin-shell",
  "uuid",
+ "xavier",
 ]
 
 [[package]]
@@ -12311,6 +12312,7 @@ dependencies = [
  "sha2",
  "subtle",
  "sysinfo",
+ "tauri",
  "teloxide",
  "tempfile",
  "thiserror 2.0.18",
