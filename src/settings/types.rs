@@ -369,13 +369,26 @@ pub struct TelegramSettings {
     pub enabled: bool,
     #[serde(default)]
     pub bot_token: Option<String>,
+    #[serde(default)]
+    pub webhook_url: Option<String>,
+    #[serde(default = "default_telegram_webhook_port")]
+    pub webhook_port: u16,
+    #[serde(default)]
+    pub admin_ids: Vec<u64>,
+}
+
+fn default_telegram_webhook_port() -> u16 {
+    8009
 }
 
 impl fmt::Debug for TelegramSettings {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("TelegramSettings")
             .field("enabled", &self.enabled)
-            .field("bot_token", &"[REDACTED]")
+            .field("bot_token", &self.bot_token.as_ref().map(|_| "[REDACTED]"))
+            .field("webhook_url", &self.webhook_url.as_ref().map(|_| "[REDACTED]"))
+            .field("webhook_port", &self.webhook_port)
+            .field("admin_ids", &self.admin_ids)
             .finish()
     }
 }
