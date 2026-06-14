@@ -115,3 +115,84 @@ pub async fn test_discord_connection() -> impl IntoResponse {
         Err(e) => Json(serde_json::json!({ "status": "error", "message": format!("Discord test failed: {}", e) })),
     }
 }
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TelegramConfigPayload {
+    pub enabled: Option<bool>,
+    pub bot_token: Option<String>,
+    pub webhook_url: Option<String>,
+    pub webhook_port: Option<u16>,
+    pub admin_ids: Option<Vec<u64>>,
+}
+
+pub async fn get_telegram_settings() -> impl IntoResponse {
+    let settings = XavierSettings::current();
+    let config = TelegramConfigPayload {
+        enabled: Some(settings.telegram.enabled),
+        bot_token: settings.telegram.bot_token.as_ref().map(|_| "********".to_string()),
+        webhook_url: settings.telegram.webhook_url.as_ref().map(|_| "********".to_string()),
+        webhook_port: Some(settings.telegram.webhook_port),
+        admin_ids: Some(settings.telegram.admin_ids.clone()),
+    };
+    Json(serde_json::json!({ "status": "ok", "data": config }))
+}
+
+pub async fn update_telegram_settings(
+    Json(payload): Json<TelegramConfigPayload>,
+) -> impl IntoResponse {
+    let mut settings = XavierSettings::current();
+
+    if let Some(enabled) = payload.enabled {
+        settings.telegram.enabled = enabled;
+    }
+
+    if let Some(token) = payload.bot_token {
+        if !token.contains("********") {
+            let vault = HardwareVault::new("xavier-telegram");
+            let _ = vault.store_secret("bot_token", &token);
+            settings.telegram.bot_token = Some(token);
+        }
+    }
+
+    if let Some(url) = payload.webhook_url {
+        if !url.contains("********") {
+            let vault = HardwareVault::new("xavier-telegram");
+            let _ = vault.store_secret("webhook_url", &url);
+            settings.telegram.webhook_url = Some(url);
+        }
+    }
+
+    if let Some(port) = payload.webhook_port {
+        settings.telegram.webhook_port = port;
+    }
+
+    if let Some(ids) = payload.admin_ids {
+        settings.telegram.admin_ids = ids;
+    }
+
+    match settings.save().await {
+        Ok(_) => Json(serde_json::json!({ "status": "ok", "message": "Telegram settings updated" })),
+        Err(e) => Json(serde_json::json!({ "status": "error", "message": e.to_string() })),
+    }
+}
+
+pub async fn test_telegram_connection() -> impl IntoResponse {
+    #[cfg(feature = "telegram")]
+    {
+        let settings = XavierSettings::current();
+        let token = match settings.telegram.bot_token {
+            Some(t) => t,
+            None => return Json(serde_json::json!({ "status": "error", "message": "Bot token not set" })),
+        };
+        use teloxide::prelude::*;
+        let bot = Bot::new(token);
+        match bot.get_me().await {
+            Ok(me) => Json(serde_json::json!({ "status": "ok", "message": format!("Telegram connection successful: @{}", me.username()) })),
+            Err(e) => Json(serde_json::json!({ "status": "error", "message": format!("Telegram test failed: {}", e) })),
+        }
+    }
+    #[cfg(not(feature = "telegram"))]
+    {
+        Json(serde_json::json!({ "status": "error", "message": "Telegram feature not enabled in build" }))
+    }
+}
