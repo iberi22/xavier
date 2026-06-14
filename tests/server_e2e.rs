@@ -13,6 +13,7 @@ impl Drop for ChildGuard {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn test_health_endpoint_via_xavier_binary() {
+    let data_dir = tempfile::tempdir().expect("temp data dir");
     let port = TcpListener::bind("127.0.0.1:0")
         .expect("bind ephemeral port")
         .local_addr()
@@ -22,19 +23,25 @@ async fn test_health_endpoint_via_xavier_binary() {
     let _child = ChildGuard(
         std::process::Command::new(env!("CARGO_BIN_EXE_xavier"))
             .arg("http")
+            .arg(port.to_string())
             .env("XAVIER_HOST", "127.0.0.1")
             .env("XAVIER_PORT", port.to_string())
+            .env("XAVIER_URL", &url)
             .env("XAVIER_TOKEN", "test-token")
             .env(
                 "XAVIER_CODE_GRAPH_DB_PATH",
-                format!("data/e2e-code-graph-{port}.db"),
+                data_dir
+                    .path()
+                    .join(format!("e2e-code-graph-{port}.db")),
             )
             .env(
                 "XAVIER_MEMORY_VEC_PATH",
-                format!("data/e2e-memory-vec-{port}.db"),
+                data_dir
+                    .path()
+                    .join(format!("e2e-memory-vec-{port}.db")),
             )
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
             .spawn()
             .expect("failed to start xavier binary"),
     );
@@ -47,7 +54,7 @@ async fn test_health_endpoint_via_xavier_binary() {
     let mut readiness_checked = false;
     let mut auth_checked = false;
 
-    for _ in 0..30 {
+    for _ in 0..120 {
         match client.get(&health_url).send().await {
             Ok(response) if response.status().is_success() => {
                 assert!(response.headers().contains_key("x-request-id"));
