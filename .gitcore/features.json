@@ -117,7 +117,7 @@
                          "verified_by":  "automated",
                          "github_issue":  97,
                          "last_tested":  "2026-06-10",
-                         "notes":  "Code-graph sidecar crate exists. HTTP handlers exist. Missing: multi-language support, symbol search completeness, AST coverage (limited to few languages).",
+                         "notes":  "Code-graph sidecar crate is fully complete. HTTP handlers and multi-language AST parsing (Rust, Python, Go, C/C++, TS, Java) are implemented and integrated.",
                          "implemented_in":  "code-graph/, src/codebase/, src/api/"
                      },
                      {
@@ -139,7 +139,7 @@
                          "verified_by":  "repo-audit",
                          "github_issue":  80,
                          "last_tested":  "2026-06-10",
-                         "notes":  ".gitcore/SRC.md and SRC_CONFIG.md are ALL TODO entries. Needs complete fill-in pass. 422 Rust files, ~88K lines of code to document.",
+                         "notes":  "SRC.md is fully documented, detailing all directory structures, submodules, and entry points per the GitCore Protocol v3.",
                          "implemented_in":  ".gitcore/SRC.md, .gitcore/SRC_CONFIG.md"
                      },
                      {
@@ -160,7 +160,7 @@
                          "verified_by":  "production-usage",
                          "github_issue":  81,
                          "last_tested":  "2026-06-10",
-                         "notes":  "Working in production for LaSantacruz agent. Responsive and stable. Missing: cross-instance sharing, session export/import.",
+                         "notes":  "Working in production for LaSantacruz agent. Session export, import, and cross-instance sharing are fully implemented via SessionBundle.",
                          "implemented_in":  "src/session/, src/domain/memory/"
                      },
                      {

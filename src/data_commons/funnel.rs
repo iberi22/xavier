@@ -228,6 +228,37 @@ impl Minter {
         Ok(event)
     }
 
+    /// Pipeline completo para procesar telemetría en el nodo mantenedor.
+    /// Emite los tokens (mint) y luego cifra y guarda el payload real usando Cifrado Asimétrico.
+    pub fn process_and_store_telemetry(
+        &mut self,
+        offer: &ContextOffer,
+        payload_json: &str,
+        db_path: &std::path::Path,
+    ) -> Result<MinterEvent, MinterError> {
+        let event = self.mint(offer)?;
+        
+        // Cifrar el payload asimétricamente para el nodo mantenedor (ECIES)
+        let (encrypted_payload, ephemeral_pubkey) = crate::data_commons::maintainer::encrypt_for_maintainer(payload_json)
+            .map_err(|_| MinterError::InvalidContext)?;
+
+        let maintainer_pubkey = crate::data_commons::maintainer::get_maintainer_public_key().to_bytes();
+
+        // Instanciar DB y guardar
+        let db = crate::data_commons::telemetry_db::TelemetryDb::new(db_path)
+            .map_err(|_| MinterError::InvalidContext)?;
+            
+        db.save_encrypted_log(
+            &offer.context_hash,
+            &encrypted_payload,
+            &ephemeral_pubkey, // guardamos la llave pública efímera como el 'DEK' para que el mantenedor descifre
+            &maintainer_pubkey,
+            &offer.seller_address.0,
+        ).map_err(|_| MinterError::InvalidContext)?;
+        
+        Ok(event)
+    }
+
     /// Quemar tokens al comprar un contexto
     ///
     /// 80% del precio se quema (envía a address burn)
