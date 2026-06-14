@@ -421,6 +421,149 @@ pub async fn v1_mesh_chunks_push(
     Json(synced_hashes)
 }
 
+pub async fn v1_mesh_peers_list() -> impl IntoResponse {
+    match crate::mesh::peer::PeerRegistry::load() {
+        Ok(registry) => Json(registry.list_peers()).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn v1_mesh_peers_add(
+    Json(peer): Json<crate::mesh::peer::PeerInfo>,
+) -> impl IntoResponse {
+    match crate::mesh::peer::PeerRegistry::load() {
+        Ok(mut registry) => {
+            if let Err(e) = registry.add_peer(peer) {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": e.to_string() })),
+                )
+                    .into_response();
+            }
+            Json(serde_json::json!({ "status": "ok" })).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn v1_mesh_peers_remove(Path(node_id): Path<String>) -> impl IntoResponse {
+    let node_id = crate::mesh::node::NodeId(node_id);
+    match crate::mesh::peer::PeerRegistry::load() {
+        Ok(mut registry) => {
+            if let Err(e) = registry.remove_peer(&node_id) {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "error": e.to_string() })),
+                )
+                    .into_response();
+            }
+            Json(serde_json::json!({ "status": "ok" })).into_response()
+        }
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct V1PairingGenerateRequest {
+    pub endpoint: Option<String>,
+}
+
+pub async fn v1_mesh_pairing_generate(
+    Json(payload): Json<V1PairingGenerateRequest>,
+) -> impl IntoResponse {
+    let identity = match crate::mesh::node::NodeIdentity::load_or_create() {
+        Ok(id) => id,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+
+    let endpoint = payload
+        .endpoint
+        .unwrap_or_else(|| "http://localhost:8006".to_string());
+    let (code, secret) = crate::mesh::pairing::generate_pairing_code(
+        identity.node_id,
+        endpoint,
+        hex::encode(&identity.public_key),
+    );
+
+    Json(serde_json::json!({
+        "code": code,
+        "secret": secret
+    }))
+    .into_response()
+}
+
+#[derive(Debug, Deserialize)]
+pub struct V1PairingJoinRequest {
+    pub code: String,
+}
+
+pub async fn v1_mesh_pairing_join(Json(payload): Json<V1PairingJoinRequest>) -> impl IntoResponse {
+    let data = match crate::mesh::pairing::decode_pairing_code(&payload.code) {
+        Ok(d) => d,
+        Err(e) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+
+    let mut registry = match crate::mesh::peer::PeerRegistry::load() {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+
+    let peer = crate::mesh::peer::PeerInfo {
+        node_id: data.node_id.clone(),
+        alias: None,
+        endpoint_url: data.endpoint.clone(),
+        public_key_hex: data.public_key_hex.clone(),
+        added_at: chrono::Utc::now().timestamp(),
+        last_seen_at: None,
+        sync_enabled: true,
+        is_cloud: false,
+    };
+
+    if let Err(e) = registry.add_peer(peer) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response();
+    }
+
+    Json(serde_json::json!({
+        "status": "ok",
+        "node_id": data.node_id
+    }))
+    .into_response()
+}
+
 // ── Session Sharing API ───────────────────────────────────────────────────
 
 #[derive(Debug, Deserialize, Serialize, Clone)]

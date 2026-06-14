@@ -20,8 +20,13 @@ test.describe("Onboarding Flow", () => {
             return null;
           }
           if (cmd === "get_xavier_token") {
-            // Return empty to force auth screen or just a mock token
-            return null;
+            return "mock-token";
+          }
+          if (cmd === "get_current_config_state") {
+            return { has_openai: false, has_gemini: false };
+          }
+          if (cmd === "get_realtime_metrics") {
+            return { cpu_percent: 10, ram_used_gb: 4, ram_total_gb: 16 };
           }
           return null;
         },
@@ -101,8 +106,8 @@ test.describe("Onboarding Flow", () => {
 
     await page.getByRole("button", { name: "INITIALIZE_SYSTEM" }).click();
 
-    // Final state: Should show Auth screen (since we mocked get_xavier_token to return null)
-    await expect(page.getByText("XAVIER AUTH")).toBeVisible();
+    // Final state: Should show Chat screen (since we mocked get_xavier_token)
+    await expect(page.getByPlaceholder("Initialize command sequence...")).toBeVisible();
 
     const completed = await page.evaluate(() =>
       localStorage.getItem("xavier_onboarding_completed"),

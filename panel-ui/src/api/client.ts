@@ -86,6 +86,76 @@ export class ApiClient {
   async getAgents() {
     return this.fetch<Agent[]>("/api/agents");
   }
+
+  // Mesh
+  async getMeshIdentity() {
+    return this.fetch<MeshIdentity>("/v1/mesh/identity");
+  }
+
+  async getPeers() {
+    return this.fetch<PeerInfo[]>("/v1/mesh/peers");
+  }
+
+  async addPeer(peer: PeerInfo) {
+    return this.fetch<{ status: string }>("/v1/mesh/peers", {
+      method: "POST",
+      body: JSON.stringify(peer),
+    });
+  }
+
+  async removePeer(nodeId: string) {
+    return this.fetch<{ status: string }>(`/v1/mesh/peers/${nodeId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async generatePairingCode(endpoint?: string) {
+    return this.fetch<{ code: string; secret: string }>(
+      "/v1/mesh/pairing/generate",
+      {
+        method: "POST",
+        body: JSON.stringify({ endpoint }),
+      },
+    );
+  }
+
+  async joinMesh(code: string) {
+    return this.fetch<{ status: string; node_id: string }>(
+      "/v1/mesh/pairing/join",
+      {
+        method: "POST",
+        body: JSON.stringify({ code }),
+      },
+    );
+  }
+
+  // Data Commons
+  async getDataCommons() {
+    return this.fetch<{ status: string; data: DataCommonsConfig }>(
+      "/v1/mesh/data_commons/opt_in",
+    );
+  }
+
+  async optInDataCommons(config: DataCommonsConfig) {
+    return this.fetch<{ status: string }>("/v1/mesh/data_commons/opt_in", {
+      method: "POST",
+      body: JSON.stringify(config),
+    });
+  }
+
+  // Cloud Node
+  async getCloudNode() {
+    return this.fetch<{ status: string; data: CloudNodeConfig }>(
+      "/api/settings/cloud-node",
+    );
+  }
+
+  async updateCloudNode(config: CloudNodeConfig) {
+    return this.fetch<{ status: string }>("/api/settings/cloud-node", {
+      method: "POST",
+      body: JSON.stringify(config),
+    });
+  }
 }
 
 export interface ProviderConfig {
@@ -118,4 +188,32 @@ export interface ProviderQuota {
   cache_hits: number;
   rate_limited_until: string | null;
   last_update: string;
+}
+
+export interface MeshIdentity {
+  node_id: string;
+  public_key_hex: string;
+}
+
+export interface PeerInfo {
+  node_id: string;
+  alias?: string;
+  endpoint_url: string;
+  public_key_hex: string;
+  added_at: number;
+  last_seen_at?: number;
+  sync_enabled: boolean;
+  is_cloud: boolean;
+}
+
+export interface DataCommonsConfig {
+  enabled: boolean;
+  consent_given: boolean;
+  wallet_address?: string;
+}
+
+export interface CloudNodeConfig {
+  url: string;
+  token: string;
+  instance_id: string;
 }

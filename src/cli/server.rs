@@ -475,6 +475,22 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             post(xavier::server::v1_api::v1_mesh_chunks_push),
         )
         .route(
+            "/v1/mesh/peers",
+            get(xavier::server::v1_api::v1_mesh_peers_list).post(xavier::server::v1_api::v1_mesh_peers_add),
+        )
+        .route(
+            "/v1/mesh/peers/{node_id}",
+            delete(xavier::server::v1_api::v1_mesh_peers_remove),
+        )
+        .route(
+            "/v1/mesh/pairing/generate",
+            post(xavier::server::v1_api::v1_mesh_pairing_generate),
+        )
+        .route(
+            "/v1/mesh/pairing/join",
+            post(xavier::server::v1_api::v1_mesh_pairing_join),
+        )
+        .route(
             "/v1/sessions/{session_id}/export",
             get(xavier::server::v1_api::v1_session_export),
         )

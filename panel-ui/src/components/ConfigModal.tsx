@@ -33,6 +33,7 @@ import MessagingConfigModal, {
 } from "./MessagingConfigModal";
 import { CloudRelayConfig } from "./CloudRelayConfig";
 import DataCommonsConfigUI from "./DataCommonsConfigUI";
+import MeshSettings from "../pages/Settings/Mesh";
 
 interface ConfigModalProps {
   key?: React.Key;
@@ -53,7 +54,8 @@ type MainTab =
   | "messaging"
   | "security"
   | "memory"
-  | "agents";
+  | "agents"
+  | "network";
 
 export default function ConfigModal({
   onClose,
@@ -123,6 +125,12 @@ export default function ConfigModal({
             onClick={() => setMainTab("security")}
             icon={<Shield className="w-4 h-4" />}
             label="Security"
+          />
+          <TabButton
+            active={mainTab === "network"}
+            onClick={() => setMainTab("network")}
+            icon={<Network className="w-4 h-4" />}
+            label="Network"
           />
           <TabButton
             active={mainTab === "memory"}
@@ -311,6 +319,17 @@ export default function ConfigModal({
               className="w-full h-full overflow-y-auto p-8"
             >
               <AgentsView token={token || ""} />
+            </motion.div>
+          )}
+          {mainTab === "network" && (
+            <motion.div
+              key="network"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full h-full overflow-y-auto p-8"
+            >
+              <MeshSettings token={token || ""} />
             </motion.div>
           )}
         </AnimatePresence>

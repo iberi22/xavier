@@ -1,5 +1,14 @@
 import React, { useEffect, useState } from "react";
-import { Database, ShieldAlert, Sparkles, Check } from "lucide-react";
+import {
+  Database,
+  ShieldAlert,
+  Sparkles,
+  Check,
+  TrendingUp,
+  Coins,
+  ArrowUpRight,
+  ArrowDownLeft,
+} from "lucide-react";
 import { ApiClient, DataCommonsConfig } from "../api/client";
 
 export default function DataCommonsConfigUI({ token }: { token: string }) {
@@ -48,10 +57,32 @@ export default function DataCommonsConfigUI({ token }: { token: string }) {
   }
 
   return (
-    <div className="bg-[#050505]/50 border border-emerald-900/30 rounded-2xl overflow-hidden relative">
-      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500/0 via-emerald-500 to-emerald-500/0 opacity-20" />
-      
-      <div className="p-6">
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <StatsCard
+          label="Estimated $XAV"
+          value="452.80"
+          subValue="~$12.40 USD"
+          icon={<Coins className="text-emerald-400" size={16} />}
+        />
+        <StatsCard
+          label="Data Quality Score"
+          value="0.98"
+          subValue="Top 5% of nodes"
+          icon={<TrendingUp className="text-blue-400" size={16} />}
+        />
+        <StatsCard
+          label="Contribution Level"
+          value="Lvl 4"
+          subValue="1.2k embeddings"
+          icon={<Sparkles className="text-orange-400" size={16} />}
+        />
+      </div>
+
+      <div className="bg-[#050505]/50 border border-emerald-900/30 rounded-2xl overflow-hidden relative">
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500/0 via-emerald-500 to-emerald-500/0 opacity-20" />
+
+        <div className="p-6">
         <div className="flex items-start justify-between mb-6">
           <div className="flex items-start gap-4">
             <div className="p-3 bg-emerald-500/10 rounded-xl">
@@ -130,27 +161,104 @@ export default function DataCommonsConfigUI({ token }: { token: string }) {
           </div>
         </div>
 
-        <div className="mt-8 flex items-center justify-between border-t border-white/5 pt-6">
-          <div className="flex items-center gap-2 text-xs text-white/30">
-            <ShieldAlert className="w-4 h-4" />
-            Your data remains encrypted in transit.
+          <div className="mt-8 flex items-center justify-between border-t border-white/5 pt-6">
+            <div className="flex items-center gap-2 text-xs text-white/30">
+              <ShieldAlert className="w-4 h-4" />
+              Your data remains encrypted in transit.
+            </div>
+            <button
+              onClick={handleSave}
+              disabled={saving || (!config.consent_given && config.enabled)}
+              className="px-6 py-2 bg-white text-black hover:bg-emerald-400 font-medium rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {saving ? (
+                <Sparkles className="w-4 h-4 animate-spin" />
+              ) : saved ? (
+                <Check className="w-4 h-4" />
+              ) : (
+                <Sparkles className="w-4 h-4" />
+              )}
+              {saved ? "Saved" : "Save Preferences"}
+            </button>
           </div>
-          <button
-            onClick={handleSave}
-            disabled={saving || (!config.consent_given && config.enabled)}
-            className="px-6 py-2 bg-white text-black hover:bg-emerald-400 font-medium rounded-lg transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? (
-              <Sparkles className="w-4 h-4 animate-spin" />
-            ) : saved ? (
-              <Check className="w-4 h-4" />
-            ) : (
-              <Sparkles className="w-4 h-4" />
-            )}
-            {saved ? "Saved" : "Save Preferences"}
-          </button>
         </div>
       </div>
+
+      {/* Transaction History (Mock) */}
+      <section className="space-y-4">
+        <h4 className="text-xs font-semibold text-white/40 uppercase tracking-widest px-2">
+          Reward History
+        </h4>
+        <div className="bg-black/30 border border-white/5 rounded-2xl divide-y divide-white/5">
+          <TransactionRow
+            date="2026-06-12"
+            type="Embedding Contribution"
+            amount="+12.5 XAV"
+          />
+          <TransactionRow
+            date="2026-06-11"
+            type="Uptime Reward"
+            amount="+5.0 XAV"
+          />
+          <TransactionRow
+            date="2026-06-10"
+            type="Network Validation"
+            amount="+2.2 XAV"
+          />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function StatsCard({
+  label,
+  value,
+  subValue,
+  icon,
+}: {
+  label: string;
+  value: string;
+  subValue: string;
+  icon: React.ReactNode;
+}) {
+  return (
+    <div className="bg-black/40 border border-white/5 rounded-2xl p-4 flex flex-col gap-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[10px] uppercase tracking-widest text-white/30 font-bold">
+          {label}
+        </span>
+        {icon}
+      </div>
+      <div className="text-xl font-light text-white mt-1">{value}</div>
+      <div className="text-[10px] text-white/40">{subValue}</div>
+    </div>
+  );
+}
+
+function TransactionRow({
+  date,
+  type,
+  amount,
+}: {
+  date: string;
+  type: string;
+  amount: string;
+}) {
+  return (
+    <div className="flex items-center justify-between p-4 hover:bg-white/[0.02] transition-all">
+      <div className="flex items-center gap-3">
+        <div className="p-1.5 rounded-lg bg-emerald-500/10">
+          <ArrowUpRight className="text-emerald-400" size={14} />
+        </div>
+        <div className="flex flex-col">
+          <span className="text-xs font-medium text-white/80">{type}</span>
+          <span className="text-[10px] text-white/30">{date}</span>
+        </div>
+      </div>
+      <span className="text-xs font-mono text-emerald-400 font-bold">
+        {amount}
+      </span>
     </div>
   );
 }

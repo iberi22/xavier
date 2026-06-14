@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
 import { HardwareStep } from "./HardwareStep";
 import { IntegrationsStep } from "./IntegrationsStep";
+import { MeshStep } from "./MeshStep";
 import { SystemScanStep } from "./SystemScanStep";
 import { WelcomeStep } from "./WelcomeStep";
 
@@ -16,6 +17,7 @@ export type SystemInfo = {
 export type InitialConfig = {
   telegram_token: string;
   use_gpu_model: boolean;
+  mesh_join_code?: string;
 };
 
 export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
@@ -69,6 +71,15 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
         );
       case 3:
         return (
+          <MeshStep
+            onComplete={(data) => {
+              setConfig((prev) => ({ ...prev, mesh_join_code: data.joinCode }));
+              handleNext();
+            }}
+          />
+        );
+      case 4:
+        return (
           <IntegrationsStep
             token={config.telegram_token}
             onChangeToken={(val) =>
@@ -90,7 +101,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
         <div className="h-1 w-full bg-neutral-900">
           <div
             className="h-full bg-emerald-500 transition-all duration-500 ease-in-out"
-            style={{ width: `${((step + 1) / 4) * 100}%` }}
+            style={{ width: `${((step + 1) / 5) * 100}%` }}
           />
         </div>
         <div className="p-8">{renderStep()}</div>
