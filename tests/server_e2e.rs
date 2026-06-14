@@ -21,6 +21,7 @@ async fn test_health_endpoint_via_xavier_binary() {
     let url = format!("http://127.0.0.1:{port}");
     let _child = ChildGuard(
         std::process::Command::new(env!("CARGO_BIN_EXE_xavier"))
+            .arg("http")
             .env("XAVIER_HOST", "127.0.0.1")
             .env("XAVIER_PORT", port.to_string())
             .env("XAVIER_TOKEN", "test-token")

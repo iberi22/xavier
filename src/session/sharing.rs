@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
 use crate::memory::qmd_memory::{MemoryDocument, QmdMemory};
-use crate::memory::schema::{MemoryKind, MemoryQueryFilters};
+use crate::memory::schema::{matches_filters, MemoryKind, MemoryQueryFilters};
 
 /// A portable bundle containing all documents and metadata for a session
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -26,7 +26,20 @@ pub async fn export_session(memory: &QmdMemory, session_id: &str) -> Result<Sess
         ..Default::default()
     };
 
-    let documents = memory.search_filtered("", 1000, Some(&filters)).await?;
+    let documents = memory
+        .all_documents()
+        .await
+        .into_iter()
+        .filter(|doc| {
+            matches_filters(
+                &doc.path,
+                &doc.metadata,
+                memory.workspace_id(),
+                Some(&filters),
+            )
+        })
+        .take(1000)
+        .collect();
 
     Ok(SessionBundle {
         session_id: session_id.to_string(),
@@ -43,7 +56,9 @@ pub async fn import_session(memory: &Arc<QmdMemory>, bundle: SessionBundle) -> R
         let content = doc.content.clone();
         let metadata = doc.metadata.clone();
 
-        memory.add_document_typed(path, content, metadata, None).await?;
+        memory
+            .add_document_typed(path, content, metadata, None)
+            .await?;
     }
     Ok(())
 }
@@ -58,7 +73,10 @@ mod tests {
     #[tokio::test]
     async fn test_session_export_import() {
         let docs = Arc::new(RwLock::new(vec![]));
-        let memory = Arc::new(QmdMemory::new_with_workspace(docs, "test-workspace".to_string()));
+        let memory = Arc::new(QmdMemory::new_with_workspace(
+            docs,
+            "test-workspace".to_string(),
+        ));
 
         // Add some session documents
         let session_id = "test-session-123";
@@ -71,19 +89,25 @@ mod tests {
             ..Default::default()
         });
 
-        memory.add_document_typed(
-            format!("sessions/{}/1", session_id),
-            "message 1".to_string(),
-            serde_json::json!({}),
-            typed.clone()
-        ).await.unwrap();
+        memory
+            .add_document_typed(
+                format!("sessions/{}/1", session_id),
+                "message 1".to_string(),
+                serde_json::json!({}),
+                typed.clone(),
+            )
+            .await
+            .unwrap();
 
-        memory.add_document_typed(
-            format!("sessions/{}/2", session_id),
-            "message 2".to_string(),
-            serde_json::json!({}),
-            typed
-        ).await.unwrap();
+        memory
+            .add_document_typed(
+                format!("sessions/{}/2", session_id),
+                "message 2".to_string(),
+                serde_json::json!({}),
+                typed,
+            )
+            .await
+            .unwrap();
 
         // Export
         let bundle = export_session(&memory, session_id).await.unwrap();
@@ -92,7 +116,10 @@ mod tests {
 
         // Import into a new memory store
         let docs2 = Arc::new(RwLock::new(vec![]));
-        let memory2 = Arc::new(QmdMemory::new_with_workspace(docs2, "other-workspace".to_string()));
+        let memory2 = Arc::new(QmdMemory::new_with_workspace(
+            docs2,
+            "other-workspace".to_string(),
+        ));
 
         import_session(&memory2, bundle).await.unwrap();
 
