@@ -83,11 +83,11 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Run tests
-        run: cargo nextest run --workspace --features ci-safe --exclude xavier-web --exclude app
+        run: cargo nextest run --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app
       - name: Run doc tests
-        run: cargo test --doc --workspace --features ci-safe --exclude xavier-web --exclude app
+        run: cargo test --doc --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app
       - name: Generate coverage report
-        run: cargo tarpaulin --workspace --features ci-safe --exclude xavier-web --exclude app --out Xml
+        run: cargo tarpaulin --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app --out Xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
