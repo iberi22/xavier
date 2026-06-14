@@ -17,6 +17,7 @@ pub struct MeshHandshake {
     pub timestamp: i64,
     pub nonce: String,
     pub signature_hex: String,
+    pub pairing_secret: Option<String>,
 }
 
 /// Response to a [`MeshHandshake`].
@@ -49,6 +50,9 @@ pub struct ChunkRef {
 pub struct MeshSyncRequest {
     pub requesting_node_id: NodeId,
     pub wanted_hashes: Vec<String>,
+    pub timestamp: i64,
+    pub nonce: String,
+    pub signature_hex: String,
 }
 
 /// Result of a sync operation.
