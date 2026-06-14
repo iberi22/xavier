@@ -38,6 +38,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY benches/ benches/
 COPY src/ src/
 COPY code-graph/ code-graph/
+COPY panel-ui/src-tauri/ panel-ui/src-tauri/
 
 # Build only xavier binary (skip bench, gui, tui for smaller image)
 # Using -j 1 to avoid OOM on memory-constrained systems (Windows Docker Desktop)

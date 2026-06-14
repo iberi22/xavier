@@ -21,13 +21,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22.12.0
-          cache: npm
+      - name: Setup pnpm
+        run: corepack enable
       - name: Install Node dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Validate panel-ui
-        run: npm run check --workspace panel-ui
+        run: pnpm --filter panel-ui check
       - name: Run panel-ui unit tests
-        run: npm run test --workspace panel-ui
+        run: pnpm --filter panel-ui test
 
   check:
     name: Check
@@ -39,7 +40,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Run cargo check
-        run: cargo check --workspace --all-targets --features ci-safe --exclude xavier-web
+        run: cargo check --workspace --all-targets --features ci-safe --exclude xavier-web --exclude app
 
   enterprise-check:
     name: Enterprise Check
@@ -63,7 +64,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --features ci-safe --exclude xavier-web -- -D warnings
+        run: cargo clippy --workspace --all-targets --features ci-safe --exclude xavier-web --exclude app -- -D warnings
 
   test:
     name: Test
@@ -79,11 +80,11 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Run tests
-        run: cargo nextest run --workspace --features ci-safe --exclude xavier-web
+        run: cargo nextest run --workspace --features ci-safe --exclude xavier-web --exclude app
       - name: Run doc tests
-        run: cargo test --doc --workspace --features ci-safe --exclude xavier-web
+        run: cargo test --doc --workspace --features ci-safe --exclude xavier-web --exclude app
       - name: Generate coverage report
-        run: cargo tarpaulin --workspace --features ci-safe --exclude xavier-web --out Xml
+        run: cargo tarpaulin --workspace --features ci-safe --exclude xavier-web --exclude app --out Xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
@@ -121,17 +122,18 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22.12.0
-          cache: npm
+      - name: Setup pnpm
+        run: corepack enable
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install Node dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Install Playwright browser
-        run: npm exec --workspace panel-ui playwright install --with-deps chromium
+        run: pnpm --filter panel-ui exec playwright install --with-deps chromium
       - name: Build panel-ui
-        run: npm run build --workspace panel-ui
+        run: pnpm --filter panel-ui build
       - name: Build Xavier debug binary
         run: cargo build --bin xavier
       - name: Start Xavier
@@ -142,7 +144,7 @@ jobs:
       - name: Verify server health
         run: curl -f http://127.0.0.1:8003/health
       - name: Run panel Playwright suite
-        run: npm run test:e2e:generative --workspace panel-ui
+        run: pnpm --filter panel-ui test:e2e:generative
       - name: Upload panel e2e log on failure
         if: failure()
         uses: actions/upload-artifact@v7.0.0
@@ -168,15 +170,16 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22.12.0
-          cache: npm
+      - name: Setup pnpm
+        run: corepack enable
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install Node dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
       - name: Build panel-ui
-        run: npm run build --workspace panel-ui
+        run: pnpm --filter panel-ui build
       - name: Build debug binary
         run: cargo build --bin xavier
       - name: Start Xavier

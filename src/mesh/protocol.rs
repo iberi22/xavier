@@ -84,6 +84,7 @@ mod tests {
             timestamp: 123456789,
             nonce: "nonce123".to_string(),
             signature_hex: "sig123".to_string(),
+            pairing_secret: None,
         };
 
         let json = serde_json::to_string(&handshake).unwrap();

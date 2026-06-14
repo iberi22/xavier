@@ -6,7 +6,7 @@
 //!
 //! Run: cargo test --release --test swal_benchmarks -- --nocapture
 
-use std::process::{Command, Output};
+use std::process::Command;
 use std::time::{Duration, Instant};
 
 // ─── Helpers ───────────────────────────────────────────────────────────────
@@ -18,11 +18,9 @@ fn xavier_binary() -> Command {
 /// Run CLI command, measure wall time
 fn bench_cli(args: &[&str], label: &str) -> Duration {
     let start = Instant::now();
-    let output = xavier_binary().args(args).output().expect(&format!(
-        "failed to run xavier {} {}",
-        label,
-        args.join(" ")
-    ));
+    let output = xavier_binary().args(args).output().unwrap_or_else(|_| {
+        panic!("failed to run xavier {} {}", label, args.join(" "))
+    });
     let elapsed = start.elapsed();
 
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -119,7 +117,6 @@ fn swal_bench_memory_add_large() {
     ensure_binary();
     println!("\n── SWAL Benchmark 3: Large Memory Add ──");
     let large_content = "SWAL benchmark LARGE entry. ".repeat(100);
-    let large_content = format!("{}", large_content);
     let t = bench_cli(
         &["add", &large_content, "swal-bench/large-entry"],
         "large-add",
@@ -139,7 +136,7 @@ fn swal_bench_search() {
             i
         );
         let _ = xavier_binary()
-            .args(&["add", &content, &format!("swal-bench/search-{}", i)])
+            .args(["add", &content, &format!("swal-bench/search-{}", i)])
             .output();
     }
 

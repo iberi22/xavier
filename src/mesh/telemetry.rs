@@ -59,8 +59,6 @@ mod tests {
     #[test]
     fn test_scrub_pii() {
         let input = "Error at C:\\Users\\belal\\scripts-python\\xavier\\src\\main.rs. Contact admin@domain.com from IP 192.168.1.5";
-        let expected = "Error at [REDACTED] Contact [REDACTED] from IP [REDACTED]";
-        
         // We use a simpler check since regex might match spaces differently depending on exact bounds
         let output = scrub_pii(input);
         assert!(!output.contains("belal"));
