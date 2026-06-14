@@ -172,10 +172,16 @@ jobs:
       XAVIER_URL: http://127.0.0.1:8003
       XAVIER_HOST: 127.0.0.1
       XAVIER_PORT: 8003
-      XAVIER_CODE_GRAPH_DB_PATH: data/ci-release-smoke.db
+      XAVIER_DATA_DIR: ${{ runner.temp }}/xavier-release-smoke/data
+      XAVIER_WORKSPACE_DIR: ${{ runner.temp }}/xavier-release-smoke/workspaces
+      XAVIER_CODE_GRAPH_DB_PATH: ${{ runner.temp }}/xavier-release-smoke/code_graph.db
+      XAVIER_EMBEDDING_CACHE_DB_PATH: ${{ runner.temp }}/xavier-release-smoke/embedding_cache.db
+      XAVIER_ENTERPRISE_DB_PATH: ${{ runner.temp }}/xavier-release-smoke/enterprise.db
       XAVIER_REQUIRE_PANEL: 1
     steps:
       - uses: actions/checkout@v6.0.2
+      - name: Prepare smoke storage
+        run: mkdir -p "$XAVIER_DATA_DIR" "$XAVIER_WORKSPACE_DIR"
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
