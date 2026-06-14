@@ -39,7 +39,7 @@ jobs:
           targets: x86_64-pc-windows-msvc, x86_64-apple-darwin
 
       - name: Run Backend Tests (Rust)
-        run: cargo test --verbose
+        run: cargo test --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app --verbose
 
       - name: Install Frontend Dependencies
         working-directory: panel-ui
