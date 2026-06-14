@@ -24,7 +24,7 @@ jobs:
       - name: Setup pnpm
         run: corepack enable
       - name: Install Node dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
       - name: Validate panel-ui
         run: pnpm --filter panel-ui check
       - name: Run panel-ui unit tests
@@ -129,7 +129,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install Node dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
       - name: Install Playwright browser
         run: pnpm --filter panel-ui exec playwright install --with-deps chromium
       - name: Build panel-ui
@@ -177,7 +177,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install Node dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
       - name: Build panel-ui
         run: pnpm --filter panel-ui build
       - name: Build debug binary

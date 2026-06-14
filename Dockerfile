@@ -38,6 +38,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY benches/ benches/
 COPY src/ src/
 COPY code-graph/ code-graph/
+COPY patches/ patches/
 COPY panel-ui/src-tauri/ panel-ui/src-tauri/
 
 # Build only xavier binary (skip bench, gui, tui for smaller image)
