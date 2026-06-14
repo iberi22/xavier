@@ -76,14 +76,12 @@ jobs:
       - uses: actions/checkout@v6.0.2
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-nextest
-        run: cargo install cargo-nextest --locked
       - name: Install cargo-tarpaulin
         run: cargo install cargo-tarpaulin --locked
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Run tests
-        run: cargo nextest run --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app
+        run: cargo test --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app
       - name: Run doc tests
         run: cargo test --doc --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app
       - name: Generate coverage report
@@ -144,11 +142,17 @@ jobs:
         run: cargo build --bin xavier
       - name: Start Xavier
         run: |
-          nohup target/debug/xavier > panel-e2e.log 2>&1 &
+          nohup target/debug/xavier http > panel-e2e.log 2>&1 &
       - name: Wait for startup
-        run: sleep 3
-      - name: Verify server health
-        run: curl -f http://127.0.0.1:8003/health
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8003/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat panel-e2e.log
+          exit 1
       - name: Run panel Playwright suite
         run: pnpm --filter panel-ui test:e2e:generative
       - name: Upload panel e2e log on failure
@@ -193,9 +197,17 @@ jobs:
         run: cargo build --bin xavier
       - name: Start Xavier
         run: |
-          nohup target/debug/xavier > smoke.log 2>&1 &
+          nohup target/debug/xavier http > smoke.log 2>&1 &
       - name: Wait for startup
-        run: sleep 3
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8003/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat smoke.log
+          exit 1
       - name: Run release smoke checks
         run: bash scripts/release-smoke.sh
       - name: Upload smoke log on failure
