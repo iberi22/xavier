@@ -46,11 +46,8 @@ jobs:
       - name: Build plugin system
         run: cargo build --package xavier 2>&1 | tail -20
 
-      - name: Install cargo-nextest
-        run: cargo install cargo-nextest --locked
-
       - name: Run plugin tests
-        run: "cargo nextest run --lib -- plugins:: 2>&1 | tail -20"
+        run: "cargo test --package xavier --lib --no-default-features --features ci-safe plugins::"
 
       - name: Sync to Cortex Enterprise
         if: inputs.plugin == 'cortex' || inputs.plugin == 'all' || github.event_name == 'schedule'
