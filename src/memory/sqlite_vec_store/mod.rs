@@ -7,6 +7,7 @@ use std::collections::HashSet;
 
 use anyhow::Result;
 use rusqlite::params;
+use sha2::{Digest, Sha256};
 use tokio::sync::broadcast;
 
 use crate::codebase::connection_manager::ConnectionManager;
@@ -56,11 +57,12 @@ impl VecSqliteMemoryStore {
         db::ensure_dir(&config.path).await?;
         vector::register_sqlite_vec_extension()?;
 
-        let project_id = "vec_store";
-        ConnectionManager::global().connect(project_id, ".")?;
+        let digest = hex::encode(Sha256::digest(config.path.to_string_lossy().as_bytes()));
+        let project_id = format!("vec_store_{}", &digest[..12]);
+        ConnectionManager::global().connect_with_path(&project_id, config.path.clone())?;
 
         let store = Self {
-            project_id: project_id.to_string(),
+            project_id,
             config,
             event_tx: None,
         };
@@ -140,24 +142,6 @@ impl VecSqliteMemoryStore {
         utils::audit_chain_enabled()
     }
 
-    #[allow(dead_code)]
-    pub(crate) async fn qjl_enabled_for_workspace(workspace_id: &str) -> bool {
-        let threshold = Self::configured_qjl_threshold();
-        let workspace_id = workspace_id.to_string();
-
-        let result = ConnectionManager::global()
-            .with_conn("vec_store", move |conn| {
-                let mut stmt =
-                    conn.prepare("SELECT COUNT(*) FROM memory_embeddings WHERE workspace_id = ?")?;
-                let current_vectors: usize =
-                    stmt.query_row(params![workspace_id], |row| row.get(0))?;
-                Ok(current_vectors >= threshold)
-            })
-            .await;
-
-        result.unwrap_or(false)
-    }
-
     pub(crate) fn row_matches_filters(
         workspace_id: &str,
         record: &MemoryRecord,
@@ -194,13 +178,14 @@ impl VecSqliteMemoryStore {
 
     #[allow(dead_code)]
     pub(crate) async fn load_record_by_id(
+        &self,
         workspace_id: &str,
         memory_id: &str,
     ) -> Result<Option<MemoryRecord>> {
         let workspace_id = workspace_id.to_string();
         let memory_id = memory_id.to_string();
 
-        ConnectionManager::global().with_conn("vec_store", move |conn| {
+        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
             let mut stmt = conn.prepare(&format!(
                 "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions FROM {} WHERE id = ? AND workspace_id = ?",
                 TABLE_MEMORIES
@@ -218,13 +203,14 @@ impl VecSqliteMemoryStore {
 
     #[allow(dead_code)]
     pub(crate) async fn sync_memory_entities(
+        &self,
         workspace_id: &str,
         record: &MemoryRecord,
     ) -> Result<()> {
         let workspace_id = workspace_id.to_string();
         let record = record.clone();
         ConnectionManager::global()
-            .with_conn("vec_store", move |conn| {
+            .with_conn(&self.project_id, move |conn| {
                 graph::sync_memory_entities(conn, &workspace_id, &record)
             })
             .await
@@ -241,7 +227,7 @@ impl VecSqliteMemoryStore {
         let source = source.clone();
         let query = query.to_string();
         ConnectionManager::global()
-            .with_conn("vec_store", move |conn| {
+            .with_conn(&self.project_id, move |conn| {
                 graph::resolve_graph_seed_entities(conn, &workspace_id, &source, &query)
             })
             .await
