@@ -34,13 +34,16 @@
 //! - Phase 4: Tor/Yggdrasil transport for anonymous operation
 
 pub mod acl;
+#[cfg(feature = "mesh")]
 pub mod auto_update;
 pub mod cloud_node;
 pub mod crypto_gating;
 pub mod data_consent;
 pub mod data_sanitizer;
+#[cfg(feature = "mesh")]
 pub mod discovery;
 pub mod governance;
+#[cfg(feature = "mesh")]
 pub mod heartbeat;
 pub mod node;
 pub mod pairing;
@@ -53,10 +56,13 @@ pub mod tokenomics;
 pub mod transport;
 
 pub use acl::{MeshAcl, NodeAclEntry};
+#[cfg(feature = "mesh")]
 pub use auto_update::{AutoUpdateService, UpdateStatus};
 pub use data_consent::{ConsentLevel, DataConsentManager};
 pub use data_sanitizer::{DataSanitizer, SanitizationAction, SanitizationRule};
+#[cfg(feature = "mesh")]
 pub use discovery::DiscoveryService;
+#[cfg(feature = "mesh")]
 pub use heartbeat::{HeartbeatPayload, HeartbeatReceipt, HeartbeatService};
 pub use node::{NodeId, NodeIdentity};
 pub use peer::{PeerInfo, PeerRegistry};
