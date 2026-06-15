@@ -14,7 +14,13 @@ pub async fn handle_ls(path: Option<String>) -> Result<()> {
     let cwd = resolve_cwd();
     let effective_path = match path {
         Some(p) if p.starts_with('/') => p,
-        Some(p) => if cwd == "/" { format!("/{}", p) } else { format!("{}/{}", cwd, p) },
+        Some(p) => {
+            if cwd == "/" {
+                format!("/{}", p)
+            } else {
+                format!("{}/{}", cwd, p)
+            }
+        }
         None => cwd.clone(),
     };
 
@@ -38,9 +44,113 @@ pub async fn handle_ls(path: Option<String>) -> Result<()> {
             }
         }
     } else {
-        println!("❌ ls failed: {}", response.text().await?);
+        println!("ls failed: {}", response.text().await?);
     }
     Ok(())
+}
+
+pub async fn handle_visualize(format: String) -> Result<()> {
+    let token = require_xavier_token()?;
+    let base_url = resolve_base_url();
+    let client = CLI_HTTP_CLIENT.clone();
+
+    let response = client
+        .get(format!("{}/v1/nav/visualize", base_url))
+        .header("X-Xavier-Token", &token)
+        .send()
+        .await?;
+
+    if response.status().is_success() {
+        let body: serde_json::Value = response.json().await?;
+
+        if format == "json" {
+            println!("{}", serde_json::to_string_pretty(&body)?);
+        } else {
+            println!(
+                "Memory Graph Visualization for workspace: {}",
+                body["workspace_id"]
+            );
+            println!("\n[Navigation Weights]");
+            println!(
+                "  Working:  {:.4}",
+                body["weights"]["working"].as_f64().unwrap_or(0.0)
+            );
+            println!(
+                "  Episodic: {:.4}",
+                body["weights"]["episodic"].as_f64().unwrap_or(0.0)
+            );
+            println!(
+                "  Semantic: {:.4}",
+                body["weights"]["semantic"].as_f64().unwrap_or(0.0)
+            );
+
+            println!("\n[Directory Structure]");
+            let docs: Vec<xavier::memory::qmd::MemoryDocument> =
+                serde_json::from_value(body["documents"].clone())?;
+            render_tree(&docs);
+
+            println!("\n[Belief Graph Edges]");
+            let edges: Vec<xavier::domain::memory::belief::BeliefEdge> =
+                serde_json::from_value(body["edges"].clone())?;
+            if edges.is_empty() {
+                println!("  (no edges)");
+            } else {
+                for edge in edges {
+                    println!(
+                        "  {} --[{}]--> {} (conf: {:.2})",
+                        edge.source, edge.relation_type, edge.target, edge.confidence_score
+                    );
+                }
+            }
+        }
+    } else {
+        println!("visualize failed: {}", response.text().await?);
+    }
+    Ok(())
+}
+
+fn render_tree(docs: &[xavier::memory::qmd::MemoryDocument]) {
+    use std::collections::BTreeMap;
+
+    #[derive(Default)]
+    struct Node {
+        children: BTreeMap<String, Node>,
+        is_doc: bool,
+    }
+
+    let mut root = Node::default();
+    for doc in docs {
+        let mut curr = &mut root;
+        let parts: Vec<&str> = doc.path.split('/').filter(|s| !s.is_empty()).collect();
+        for (i, part) in parts.iter().enumerate() {
+            curr = curr.children.entry(part.to_string()).or_default();
+            if i == parts.len() - 1 {
+                curr.is_doc = true;
+            }
+        }
+    }
+
+    fn print_node(name: &str, node: &Node, indent: &str, is_last: bool) {
+        let branch = if is_last { "`-- " } else { "|-- " };
+        let prefix = if node.is_doc { "DOC " } else { "DIR " };
+        println!("{}{}{}{}", indent, branch, prefix, name);
+
+        let new_indent = format!("{}{}", indent, if is_last { "    " } else { "|   " });
+        let count = node.children.len();
+        for (i, (child_name, child_node)) in node.children.iter().enumerate() {
+            print_node(child_name, child_node, &new_indent, i == count - 1);
+        }
+    }
+
+    if root.children.is_empty() {
+        println!("  (no documents)");
+        return;
+    }
+
+    let count = root.children.len();
+    for (i, (name, node)) in root.children.iter().enumerate() {
+        print_node(name, node, "", i == count - 1);
+    }
 }
 
 pub async fn handle_cd(path: String) -> Result<()> {
@@ -71,7 +181,6 @@ pub async fn handle_cd(path: String) -> Result<()> {
         format!("{}/{}", cwd, path)
     };
 
-    // Normalize target_path (remove trailing slash except for /)
     let mut normalized_target = target_path;
     if normalized_target.len() > 1 && normalized_target.ends_with('/') {
         normalized_target.pop();
@@ -86,11 +195,11 @@ pub async fn handle_cd(path: String) -> Result<()> {
 
     if response.status().is_success() {
         save_cwd(&normalized_target)?;
-        println!("✅ Current directory changed to: {}", normalized_target);
+        println!("Current directory changed to: {}", normalized_target);
     } else if response.status() == 404 {
-        println!("❌ cd failed: Path not found: {}", normalized_target);
+        println!("cd failed: Path not found: {}", normalized_target);
     } else {
-        println!("❌ cd failed: {}", response.text().await?);
+        println!("cd failed: {}", response.text().await?);
     }
     Ok(())
 }
@@ -145,10 +254,7 @@ pub async fn handle_affected(
             if affected.is_empty() {
                 println!("  (none found within depth {})", depth);
             } else {
-                println!(
-                    "{:<40} | {:<20} | {:<5}",
-                    "Node", "Relation", "Depth"
-                );
+                println!("{:<40} | {:<20} | {:<5}", "Node", "Relation", "Depth");
                 println!("{:-<40}-+-{:-<20}-+-{:-<5}", "", "", "");
                 for item in affected {
                     println!(
@@ -159,7 +265,7 @@ pub async fn handle_affected(
             }
         }
     } else {
-        println!("❌ affected failed: {}", response.text().await?);
+        println!("affected failed: {}", response.text().await?);
     }
     Ok(())
 }

@@ -228,6 +228,12 @@ pub enum NavCommand {
         #[arg(long)]
         exclude_file_type: Option<String>,
     },
+    /// Render memory graph for debugging (tree, edges, weights)
+    Visualize {
+        /// Output format: text or json
+        #[arg(short, long, default_value = "text")]
+        format: String,
+    },
 }
 
 /// Provider usage subcommands

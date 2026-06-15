@@ -117,6 +117,9 @@ impl Cli {
                     )
                     .await
                 }
+                NavCommand::Visualize { format } => {
+                    navigation::handle_visualize(format.clone()).await
+                }
             },
             Command::SessionSave {
                 session_id,
