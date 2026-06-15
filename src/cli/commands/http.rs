@@ -137,6 +137,49 @@ pub async fn show_stats() -> Result<()> {
     Ok(())
 }
 
+/// Re-index memories missing embeddings via the HTTP server.
+pub async fn reindex_memories() -> Result<()> {
+    let token = xavier_token();
+    let base_url = resolve_base_url();
+    let url = format!("{}/memory/reindex", base_url);
+
+    let client = CLI_HTTP_CLIENT.clone();
+
+    let response = client
+        .post(&url)
+        .header("X-Xavier-Token", &token)
+        .header("Content-Type", "application/json")
+        .json(&serde_json::json!({}))
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            let body: serde_json::Value = resp.json().await.unwrap_or_default();
+            println!("\nRe-index Complete:");
+            println!("  Total: {}", body["total"].as_u64().unwrap_or(0));
+            println!("  Re-indexed: {}", body["reindexed"].as_u64().unwrap_or(0));
+            println!("  Skipped (already embedded): {}", body["skipped"].as_u64().unwrap_or(0));
+            let errors = body["errors"].as_array().map(|a| a.len()).unwrap_or(0);
+            if errors > 0 {
+                println!("  Errors: {}", errors);
+                for e in body["errors"].as_array().unwrap_or(&vec![]) {
+                    println!("    - {}", e.as_str().unwrap_or("unknown"));
+                }
+            }
+            println!("  Status: {}", body["status"].as_str().unwrap_or("unknown"));
+        }
+        Ok(resp) => {
+            println!("❌ Server error: {} {}", resp.status(), resp.text().await.unwrap_or_default());
+        }
+        Err(e) => {
+            println!("❌ Failed to reach Xavier server: {}", e);
+        }
+    }
+
+    Ok(())
+}
+
 /// Export a context pack (.xcp) for a given topic.
 pub async fn export_context_pack(
     topic: &str,
