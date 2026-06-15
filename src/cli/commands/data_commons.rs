@@ -42,10 +42,37 @@ async fn export_training_bundle(output: PathBuf, seed: u64, eval_ratio: f32) -> 
 
     match exporter.generate_bundle(seed, eval_ratio, None) {
         Ok(bundle) => {
-            let json = serde_json::to_string_pretty(&bundle)?;
-            std::fs::write(&output, json)?;
+            // Create output directory if it doesn't exist
+            if !output.exists() {
+                std::fs::create_dir_all(&output)?;
+            }
+
+            // 1. Write bundle_manifest.json
+            let manifest_json = serde_json::to_string_pretty(&bundle.manifest)?;
+            std::fs::write(output.join("bundle_manifest.json"), manifest_json)?;
+
+            // 2. Write anonymization_audit.json
+            let audit_json = serde_json::to_string_pretty(&bundle.audit_summary)?;
+            std::fs::write(output.join("anonymization_audit.json"), audit_json)?;
+
+            // 3. Write train.jsonl
+            let mut train_content = String::new();
+            for record in &bundle.train_split {
+                train_content.push_str(&serde_json::to_string(record)?);
+                train_content.push('\n');
+            }
+            std::fs::write(output.join("train.jsonl"), train_content)?;
+
+            // 4. Write eval.jsonl
+            let mut eval_content = String::new();
+            for record in &bundle.eval_split {
+                eval_content.push_str(&serde_json::to_string(record)?);
+                eval_content.push('\n');
+            }
+            std::fs::write(output.join("eval.jsonl"), eval_content)?;
+
             println!(
-                "Training bundle exported successfully to {}",
+                "Training bundle exported successfully to directory {}",
                 output.display()
             );
             println!(

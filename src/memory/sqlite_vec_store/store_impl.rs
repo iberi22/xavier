@@ -123,9 +123,8 @@ impl MemoryStore for VecSqliteMemoryStore {
 
             // Store in main table first
             {
-                // qjl_enabled_for_workspace logic here
                 let qjl_enabled = {
-                    let threshold = 1000; // Mock or get from config
+                    let threshold = super::VecSqliteMemoryStore::configured_qjl_threshold();
                     let current_vectors: usize = conn.query_row(
                         "SELECT COUNT(*) FROM memory_embeddings WHERE workspace_id = ?",
                         params![record_c.workspace_id],

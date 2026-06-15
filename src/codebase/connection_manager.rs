@@ -6,15 +6,19 @@ use anyhow::{Context, Result};
 use dashmap::DashMap;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite::Connection;
+use rusqlite::{Connection, ErrorCode};
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 pub static INSTANCE: once_cell::sync::OnceCell<ConnectionManager> =
     once_cell::sync::OnceCell::new();
 
 const MAX_POOLS: usize = 128;
+const WAL_INIT_ATTEMPTS: usize = 10;
+const WAL_INIT_RETRY_DELAY: Duration = Duration::from_millis(50);
+
+static WAL_INIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 /// Unified SQLite connection manager for Xavier.
 /// Manages connection pools by project_id with LRU eviction and PRAGMA optimizations.
@@ -45,6 +49,46 @@ impl r2d2::CustomizeConnection<Connection, rusqlite::Error> for PragmaCustomizer
             e
         })
     }
+}
+
+fn initialize_wal_mode(conn: &Connection, db_path: &PathBuf) -> Result<()> {
+    let _guard = WAL_INIT_LOCK
+        .lock()
+        .map_err(|_| anyhow::anyhow!("SQLite WAL initialization lock was poisoned"))?;
+
+    conn.execute_batch("PRAGMA busy_timeout=5000;")
+        .with_context(|| format!("failed to configure SQLite busy timeout at {:?}", db_path))?;
+
+    for attempt in 1..=WAL_INIT_ATTEMPTS {
+        match conn.execute_batch("PRAGMA journal_mode=WAL;") {
+            Ok(()) => return Ok(()),
+            Err(err) if is_sqlite_lock_error(&err) && attempt < WAL_INIT_ATTEMPTS => {
+                std::thread::sleep(WAL_INIT_RETRY_DELAY);
+            }
+            Err(err) if is_sqlite_lock_error(&err) => {
+                eprintln!(
+                    "ConnectionManager: SQLite WAL initialization skipped for {:?}: {}",
+                    db_path, err
+                );
+                return Ok(());
+            }
+            Err(err) => {
+                return Err(err).with_context(|| {
+                    format!("failed to initialize SQLite WAL mode at {:?}", db_path)
+                });
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn is_sqlite_lock_error(err: &rusqlite::Error) -> bool {
+    matches!(
+        err,
+        rusqlite::Error::SqliteFailure(error, _)
+            if matches!(error.code, ErrorCode::DatabaseBusy | ErrorCode::DatabaseLocked)
+    )
 }
 
 impl Default for ConnectionManager {
@@ -107,6 +151,19 @@ impl ConnectionManager {
                     .join("codebase.db")
             };
 
+            self.connect_with_path(project_id, db_path)
+        } else {
+            // Update last accessed time
+            if let Some(mut entry) = self.pools.get_mut(project_id) {
+                entry.activated_at = Instant::now();
+            }
+            Ok(())
+        }
+    }
+
+    /// Explicitly connect to a database file with a given project_id.
+    pub fn connect_with_path(&self, project_id: &str, db_path: PathBuf) -> Result<()> {
+        if !self.pools.contains_key(project_id) {
             if let Some(parent) = db_path.parent() {
                 if !parent.exists() {
                     std::fs::create_dir_all(parent).with_context(|| {
@@ -118,14 +175,7 @@ impl ConnectionManager {
             let init_conn = Connection::open(&db_path).with_context(|| {
                 format!("failed to initialize SQLite database at {:?}", db_path)
             })?;
-            init_conn
-                .execute_batch(
-                    "PRAGMA busy_timeout=5000; \
-                     PRAGMA journal_mode=WAL;",
-                )
-                .with_context(|| {
-                    format!("failed to initialize SQLite WAL mode at {:?}", db_path)
-                })?;
+            initialize_wal_mode(&init_conn, &db_path)?;
             drop(init_conn);
 
             let manager = SqliteConnectionManager::file(db_path);
@@ -144,11 +194,8 @@ impl ConnectionManager {
                     activated_at: Instant::now(),
                 },
             );
-        } else {
-            // Update last accessed time
-            if let Some(mut entry) = self.pools.get_mut(project_id) {
-                entry.activated_at = Instant::now();
-            }
+        } else if let Some(mut entry) = self.pools.get_mut(project_id) {
+            entry.activated_at = Instant::now();
         }
         Ok(())
     }
