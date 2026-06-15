@@ -5,16 +5,15 @@
 use crate::codebase::connection_manager::ConnectionManager;
 use anyhow::Result;
 use rusqlite::Connection;
+use sha2::Digest;
 use std::path::Path;
 use tokio::fs;
 
 #[allow(dead_code)]
 pub(crate) async fn open_pool(path: &Path) -> Result<()> {
-    let project_id = "vec_store";
-    ConnectionManager::global().connect(
-        project_id,
-        &path.parent().unwrap_or(Path::new(".")).to_string_lossy(),
-    )?;
+    let digest = hex::encode(sha2::Sha256::digest(path.to_string_lossy().as_bytes()));
+    let project_id = format!("vec_store_{}", &digest[..12]);
+    ConnectionManager::global().connect_with_path(&project_id, path.to_path_buf())?;
     Ok(())
 }
 

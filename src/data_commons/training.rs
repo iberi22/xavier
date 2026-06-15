@@ -11,21 +11,10 @@ use std::path::Path;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TrainingBundle {
-    pub manifest: BundleManifest,
+    pub manifest: crate::data_commons::readiness::TrainingBundleManifest,
     pub train_split: Vec<serde_json::Value>,
     pub eval_split: Vec<serde_json::Value>,
     pub audit_summary: AuditSummary,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct BundleManifest {
-    pub schema_version: String,
-    pub generated_at: String,
-    pub anonymized_sources: Vec<String>,
-    pub consent_policy: String,
-    pub revocation_policy: String,
-    pub usage_policy: String,
-    pub seed: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -53,7 +42,7 @@ impl TrainingExporter {
         &self,
         seed: u64,
         eval_ratio: f32,
-        generated_at: Option<DateTime<Utc>>,
+        _generated_at: Option<DateTime<Utc>>,
     ) -> Result<TrainingBundle, String> {
         if !(0.0..=1.0).contains(&eval_ratio) {
             return Err("eval_ratio must be between 0.0 and 1.0".to_string());
@@ -114,19 +103,19 @@ impl TrainingExporter {
         processed_records.shuffle(&mut rng);
 
         let eval_size = (included_records as f32 * eval_ratio) as usize;
-        let eval_split = processed_records.drain(0..eval_size).collect();
+        let eval_split: Vec<serde_json::Value> = processed_records.drain(0..eval_size).collect();
         let train_split = processed_records;
 
-        let manifest = BundleManifest {
-            schema_version: self.schema_version.clone(),
-            generated_at: generated_at.unwrap_or_else(Utc::now).to_rfc3339(),
-            anonymized_sources: anonymized_sources.into_iter().collect(),
-            consent_policy: "Opt-in telemetry for model improvement".to_string(),
-            revocation_policy:
-                "Users can revoke consent anytime; revoked data excluded from future bundles"
-                    .to_string(),
+        let mut split_counts = std::collections::HashMap::new();
+        split_counts.insert("train".to_string(), train_split.len());
+        split_counts.insert("eval".to_string(), eval_split.len());
+
+        let manifest = crate::data_commons::readiness::TrainingBundleManifest {
+            version: self.schema_version.clone(),
             usage_policy: "Research and model fine-tuning only".to_string(),
-            seed,
+            reproducibility_seed: seed,
+            split_counts,
+            data_files: vec!["train.jsonl".to_string(), "eval.jsonl".to_string()],
         };
 
         let audit_summary = AuditSummary {
@@ -207,8 +196,7 @@ mod tests {
         assert_eq!(bundle.audit_summary.included_records, 10);
         assert_eq!(bundle.eval_split.len(), 2);
         assert_eq!(bundle.train_split.len(), 8);
-        assert_eq!(bundle.manifest.seed, seed);
-        assert!(!bundle.manifest.anonymized_sources.is_empty());
+        assert_eq!(bundle.manifest.reproducibility_seed, seed);
     }
 
     #[test]
