@@ -68,6 +68,8 @@ pub enum Command {
     },
     /// Show statistics
     Stats,
+    /// Re-index all memories missing embeddings
+    Reindex,
     /// Query Xavier code graph
     Code {
         #[command(subcommand)]
@@ -209,6 +211,24 @@ pub enum Command {
         #[command(subcommand)]
         cmd: NavCommand,
     },
+
+    /// Task management (list, run)
+    Task {
+        #[command(subcommand)]
+        cmd: TaskCommand,
+    },
+
+    /// Sync operations (memory, tasks, mesh)
+    Sync {
+        #[command(subcommand)]
+        cmd: SyncCommand,
+    },
+
+    /// System & security scanning
+    Scan {
+        #[command(subcommand)]
+        cmd: ScanCommand,
+    },
 }
 
 /// Navigation and impact analysis subcommands
@@ -286,6 +306,18 @@ pub enum VerifyCommand {
         /// Show detailed information including masked API key status
         #[arg(short, long)]
         detailed: bool,
+    },
+    /// Run full system health check
+    Health {
+        /// Output format: table, json, or markdown
+        #[arg(short, long, default_value = "table")]
+        format: String,
+    },
+    /// Verify memory save/retrieve round-trip
+    Save {
+        /// Content to verify with
+        #[arg(short, long, default_value = "xavier verification test content")]
+        content: String,
     },
 }
 
@@ -490,5 +522,101 @@ pub enum DataCommonsCommand {
     Validate {
         /// Path to the bundle directory
         bundle_path: PathBuf,
+    },
+}
+
+/// Billing & subscription management subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum BillingCommand {
+    /// Show current billing status / subscription info
+    Status,
+    /// List available billing plans
+    Plans,
+    /// Generate or show an invoice summary
+    Invoice {
+        /// Invoice period: current, last, or specific month (YYYY-MM)
+        #[arg(short, long, default_value = "current")]
+        period: String,
+        /// Output format: table or json
+        #[arg(short, long, default_value = "table")]
+        format: String,
+    },
+}
+
+/// Task management subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum TaskCommand {
+    /// List all tasks with optional filters
+    List {
+        /// Filter by project name
+        #[arg(short, long)]
+        project: Option<String>,
+        /// Filter by status: backlog, in_progress, done
+        #[arg(short, long)]
+        status: Option<String>,
+        /// Search query
+        #[arg(short, long)]
+        search: Option<String>,
+        /// Output format: table or json
+        #[arg(short, long, default_value = "table")]
+        format: String,
+    },
+    /// Create a new task
+    Create {
+        /// Task title
+        title: String,
+        /// Project name
+        #[arg(short, long, default_value = "Xavier")]
+        project: String,
+        /// Description
+        #[arg(short, long)]
+        description: Option<String>,
+    },
+    /// Run / execute a task by ID
+    Run {
+        /// Task ID
+        id: String,
+    },
+    /// Move a task to a different status
+    Move {
+        /// Task ID
+        id: String,
+        /// New status: backlog, in_progress, done
+        status: String,
+    },
+}
+
+/// Sync operations subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum SyncCommand {
+    /// Show sync status
+    Status,
+    /// Trigger a full sync now
+    Now {
+        /// Sync mode: push, pull, bidirectional
+        #[arg(short, long, default_value = "bidirectional")]
+        mode: String,
+    },
+    /// Check last sync result
+    Check,
+}
+
+/// System scanning subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum ScanCommand {
+    /// Scan system (Ollama, CLI agents, GPU, Docker, env vars)
+    System {
+        /// Output format: table, json, or markdown
+        #[arg(short, long, default_value = "table")]
+        format: String,
+        /// Show detailed information
+        #[arg(short, long)]
+        detailed: bool,
+    },
+    /// Security scan (threat detection, token audit, suspicious activity)
+    Security {
+        /// Output format: table or json
+        #[arg(short, long, default_value = "table")]
+        format: String,
     },
 }

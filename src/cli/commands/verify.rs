@@ -19,6 +19,14 @@ pub async fn handle_verify_command(cmd: VerifyCommand) -> Result<()> {
                 }
             }
         }
+        VerifyCommand::Health { format } => {
+            crate::cli::handlers::verify::handle_verify_command(VerifyCommand::Health { format })
+                .await?;
+        }
+        VerifyCommand::Save { content } => {
+            crate::cli::handlers::verify::handle_verify_command(VerifyCommand::Save { content })
+                .await?;
+        }
     }
 
     Ok(())

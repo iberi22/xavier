@@ -506,6 +506,88 @@ pub async fn delete_handler(
     }
 }
 
+/// Re-index memories that have missing or empty embeddings.
+///
+/// Iterates over all stored memories, checks for empty embedding vectors,
+/// recalculates embeddings via the embedder, and updates each record.
+pub async fn reindex_handler(
+    State(state): State<CliState>,
+    headers: HeaderMap,
+) -> Response {
+    use tokio::time::timeout;
+    use std::time::Duration;
+
+    if let Err(r) = check_cli_token(&headers) {
+        return r;
+    }
+
+    let records = match state.store.list(&state.workspace_id).await {
+        Ok(records) => records,
+        Err(e) => {
+            return json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({"status":"error","message": format!("Failed to list memories: {e}")}),
+            );
+        }
+    };
+
+    let total = records.len();
+    let mut reindexed = 0usize;
+    let mut errors = Vec::new();
+    let mut skipped = 0usize;
+
+    for record in &records {
+        // Skip records that already have a non-empty embedding
+        if !record.embedding.is_empty() {
+            skipped += 1;
+            continue;
+        }
+
+        // Try embedding within a 60-second timeout per doc
+        match timeout(Duration::from_secs(60), state.embedder.encode(&record.content)).await {
+            Ok(Ok(embedding)) => {
+                let mut updated = record.clone();
+                updated.embedding = embedding;
+                updated.updated_at = chrono::Utc::now();
+                match state.store.update(updated).await {
+                    Ok(()) => reindexed += 1,
+                    Err(e) => errors.push(format!("{}: update failed: {e}", record.id)),
+                }
+            }
+            Ok(Err(e)) => {
+                errors.push(format!("{}: embedding failed: {e}", record.id));
+            }
+            Err(_) => {
+                errors.push(format!("{}: embedding timed out", record.id));
+            }
+        }
+    }
+
+    if errors.is_empty() {
+        json_response(
+            StatusCode::OK,
+            serde_json::json!({
+                "status": "ok",
+                "total": total,
+                "reindexed": reindexed,
+                "skipped": skipped,
+                "errors": [],
+            }),
+        )
+    } else {
+        json_response(
+            StatusCode::OK,
+            serde_json::json!({
+                "status": "partial",
+                "total": total,
+                "reindexed": reindexed,
+                "skipped": skipped,
+                "errors": errors,
+            }),
+        )
+    }
+}
+
 pub async fn stats_handler(State(state): State<CliState>) -> impl axum::response::IntoResponse {
     axum::Json(serde_json::json!({
         "status": "ok",
