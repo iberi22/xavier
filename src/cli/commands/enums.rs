@@ -147,7 +147,7 @@ pub enum Command {
     /// Run interactive system detection and setup
     Setup,
 
-    /// Manage Xavier Data Commons ($XAV)
+    /// Manage Xavier Data Commons and fine-tuning readiness
     DataCommons {
         #[command(subcommand)]
         cmd: DataCommonsCommand,
@@ -192,7 +192,6 @@ pub enum Command {
 
     /// Show current working directory (navigation)
     Pwd,
-
     /// Navigation and impact analysis commands
     Nav {
         #[command(subcommand)]
@@ -438,5 +437,10 @@ pub enum DataCommonsCommand {
         /// Ratio for eval split (0.0 to 1.0)
         #[arg(short, long, default_value_t = 0.2)]
         eval_ratio: f32,
+    },
+    /// Validate a training bundle for fine-tuning readiness
+    Validate {
+        /// Path to the bundle directory
+        bundle_path: PathBuf,
     },
 }
