@@ -8,6 +8,10 @@ use std::sync::Arc;
 use tokio::sync::RwLock as AsyncRwLock;
 
 use std::fmt;
+use std::str::FromStr;
+use unicode_normalization::UnicodeNormalization;
+use regex::Regex;
+use once_cell::sync::Lazy;
 
 pub mod config;
 pub mod hash;
@@ -45,6 +49,48 @@ impl fmt::Debug for QmdMemory {
         f.debug_struct("QmdMemory")
             .field("workspace_id", &self.workspace_id)
             .finish()
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct NormalizedId(String);
+
+impl FromStr for NormalizedId {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        static RE_NON_WORD: Lazy<Regex> = Lazy::new(|| Regex::new(r"[^\w]+").unwrap());
+        static RE_UNDERSCORES: Lazy<Regex> = Lazy::new(|| Regex::new(r"_+").unwrap());
+
+        // 1. NFKC normalization
+        let nfkc = s.nfkc().collect::<String>();
+
+        // 2. regex [^\w]+ -> underscore
+        let with_underscores = RE_NON_WORD.replace_all(&nfkc, "_");
+
+        // 3. underscore collapse
+        let collapsed = RE_UNDERSCORES.replace_all(&with_underscores, "_");
+
+        // 4. casefold
+        Ok(NormalizedId(collapsed.to_lowercase()))
+    }
+}
+
+impl fmt::Display for NormalizedId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl NormalizedId {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Creates a NormalizedId without applying normalization rules.
+    /// Internal use only or for pre-normalized strings.
+    pub fn from_str_unchecked(s: &str) -> Self {
+        Self(s.to_string())
     }
 }
 
@@ -787,6 +833,24 @@ mod tests {
         assert!(!is_likely_speaker("What"));
         assert!(!is_likely_speaker("She"));
         assert!(!is_likely_speaker("The"));
+    }
+
+    #[test]
+    fn test_normalized_id() {
+        let cases = vec![
+            ("Foo.Bar", "foo_bar"),
+            ("foo__bar", "foo_bar"),
+            ("ID-123", "id_123"),
+            ("   Space   ", "_space_"),
+            ("Special!@#$%^&*()Chars", "special_chars"),
+            ("NFKC\u{00B2}", "nfkc2"), // superscript 2
+            ("CaseFold_TEST", "casefold_test"),
+        ];
+
+        for (input, expected) in cases {
+            let normalized: NormalizedId = input.parse().unwrap();
+            assert_eq!(normalized.as_str(), expected, "Failed for input: {}", input);
+        }
     }
 
     #[tokio::test]
