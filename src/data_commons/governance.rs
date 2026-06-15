@@ -387,11 +387,7 @@ impl GovernanceEngine {
             return Err(GovernanceError::VotingNotOpen);
         }
 
-        let veto_votes = proposal
-            .council_votes
-            .values()
-            .filter(|&&v| v == false)
-            .count() as f32;
+        let veto_votes = proposal.council_votes.values().filter(|&&v| !v).count() as f32;
         let needed = (active_members * veto_threshold / 100.0).ceil();
 
         if veto_votes < needed {
@@ -424,7 +420,7 @@ impl GovernanceEngine {
             return Err(GovernanceError::NoVetoToAppeal);
         }
 
-        let votes_for = proposal.user_votes.values().filter(|&&v| v == true).count() as f32;
+        let votes_for = proposal.user_votes.values().filter(|&&v| v).count() as f32;
         let total_votes_cast = proposal.user_votes.len() as f32;
 
         if total_votes_cast < (total_active * quorum_minimum / 100.0).floor() {
@@ -463,12 +459,8 @@ impl GovernanceEngine {
         let active_users = self.active_voter_wallets().len() as f32;
         let total_user_votes = proposal.user_votes.len() as f32;
 
-        let user_for = proposal.user_votes.values().filter(|&&v| v == true).count() as u64;
-        let user_against = proposal
-            .user_votes
-            .values()
-            .filter(|&&v| v == false)
-            .count() as u64;
+        let user_for = proposal.user_votes.values().filter(|&&v| v).count() as u64;
+        let user_against = proposal.user_votes.values().filter(|&&v| !v).count() as u64;
 
         let user_quorum_met =
             total_user_votes >= (active_users * self.config.user_quorum_minimum / 100.0).floor();
@@ -482,16 +474,8 @@ impl GovernanceEngine {
         let active_council = self.active_council_members().len() as f32;
         let total_council_votes = proposal.council_votes.len() as f32;
 
-        let council_for = proposal
-            .council_votes
-            .values()
-            .filter(|&&v| v == true)
-            .count() as u64;
-        let council_against = proposal
-            .council_votes
-            .values()
-            .filter(|&&v| v == false)
-            .count() as u64;
+        let council_for = proposal.council_votes.values().filter(|&&v| v).count() as u64;
+        let council_against = proposal.council_votes.values().filter(|&&v| !v).count() as u64;
 
         let council_quorum_met = total_council_votes
             >= (active_council * self.config.council_quorum_minimum / 100.0).floor();

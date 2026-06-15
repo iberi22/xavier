@@ -28,9 +28,10 @@
 
 pub mod funnel;
 pub mod governance;
-pub mod reputation;
-pub mod types;
-pub mod telemetry_db;
 pub mod maintainer;
+pub mod reputation;
+pub mod telemetry_db;
+pub mod training;
+pub mod types;
 #[cfg(feature = "post-quantum")]
 pub mod wallet;
