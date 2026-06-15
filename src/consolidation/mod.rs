@@ -1,7 +1,7 @@
 //! Phase 4 consolidation layer.
 //!
-//! This module provides consolidation, decay, importance scoring, and reflection
-//! on top of the existing memory store.
+//! This module provides consolidation, decay, importance scoring, reflection,
+//! and TGD (Textual Gradient Descent) integration on top of the existing memory store.
 
 pub mod merger;
 pub mod reflection;
@@ -13,6 +13,7 @@ use std::collections::HashSet;
 use tracing::{info, warn};
 
 use crate::{
+    agents::tgd::TgdEngine,
     memory::{
         manager::ManagedMemory,
         qmd_memory::MemoryDocument,
@@ -30,6 +31,10 @@ pub struct ConsolidationTask {
     pub reflection_batch_size: usize,
     pub reflection_age_days: i64,
     pub cleanup_similarity_threshold: f32,
+    /// Whether to run TGD during consolidation (default: false)
+    pub enable_tgd_in_consolidation: bool,
+    /// Minimum number of new conversation turns since last TGD to trigger
+    pub tgd_min_new_history: usize,
 }
 
 impl Default for ConsolidationTask {
@@ -42,6 +47,8 @@ impl Default for ConsolidationTask {
             reflection_batch_size: 8,
             reflection_age_days: 30,
             cleanup_similarity_threshold: 0.91,
+            enable_tgd_in_consolidation: false,
+            tgd_min_new_history: 20,
         }
     }
 }
@@ -193,6 +200,64 @@ impl ConsolidationTask {
             "memory consolidation complete"
         );
         Ok(stats)
+    }
+
+    /// If enabled and a TGD engine is provided, run TGD rule generation
+    /// on any available conversation history. Does not block consolidation on failure.
+    pub async fn run_tgd_if_enabled(
+        &self,
+        workspace: &WorkspaceContext,
+        tgd_engine: Option<&TgdEngine>,
+    ) -> Result<()> {
+        if !self.enable_tgd_in_consolidation {
+            return Ok(());
+        }
+        let Some(engine) = tgd_engine else {
+            info!("⏭️ TGD in consolidation: skipped (no engine provided)");
+            return Ok(());
+        };
+
+        let memories = workspace
+            .workspace
+            .memory_manager
+            .get_all_memories()
+            .await?;
+        let recent_count = memories
+            .iter()
+            .filter(|m| {
+                let age = merger::age_days(m.last_access, m.created_at);
+                age < 1.0 // less than 1 day old
+            })
+            .count();
+
+        if recent_count < self.tgd_min_new_history {
+            info!(
+                "⏭️ TGD in consolidation: skipped ({} recent memories < {} min)",
+                recent_count, self.tgd_min_new_history
+            );
+            return Ok(());
+        }
+
+        info!(
+            "🧠 TGD in consolidation: starting with {} recent memories",
+            recent_count
+        );
+
+        // Build empty history/context to signal TGD to analyze recent memory deltas
+        match engine.generate_rules(&[], &[]).await {
+            Ok(rules) => {
+                if rules.is_empty() {
+                    info!("🧠 TGD in consolidation: no new rules generated");
+                } else {
+                    info!("🧠 TGD in consolidation: generated rules:\n{}", rules);
+                }
+            }
+            Err(e) => {
+                warn!("⚠️ TGD in consolidation: non-blocking error: {:#}", e);
+            }
+        }
+
+        Ok(())
     }
 
     pub async fn reflect(&self, workspace: &WorkspaceContext) -> Result<ReflectionStats> {
