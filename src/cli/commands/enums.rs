@@ -166,6 +166,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: DataCommonsCommand,
     },
+    /// Manage XP wallet and tokenomics [SKELETON — decisions pending]
+    Wallet {
+        #[command(subcommand)]
+        cmd: WalletCommand,
+    },
 
     /// Manage Xavier sessions
     Session {
@@ -618,5 +623,18 @@ pub enum ScanCommand {
         /// Output format: table or json
         #[arg(short, long, default_value = "table")]
         format: String,
+    },
+}
+
+/// XP wallet subcommands [SKELETON — decisions pending with BELA]
+#[derive(Subcommand, Debug, Clone)]
+pub enum WalletCommand {
+    /// Show XP wallet balance
+    Balance,
+    /// Show recent transactions
+    Transactions {
+        /// Limit number of transactions to show
+        #[arg(short, long, default_value_t = 10)]
+        limit: usize,
     },
 }
