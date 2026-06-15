@@ -4,7 +4,7 @@ use anyhow::{anyhow, Result};
 use axum::{
     extract::DefaultBodyLimit,
     middleware::{self},
-    routing::{delete, get, post},
+    routing::{delete, get, post, put},
     Router,
 };
 use axum_server::tls_rustls::RustlsConfig;
@@ -486,6 +486,30 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route(
             "/v1/mesh/session/{session_id}/share",
             post(xavier::server::v1_api::v1_mesh_session_share),
+        )
+        .route(
+            "/v1/mesh/peers",
+            get(list_peers_handler),
+        )
+        .route(
+            "/v1/mesh/peers/pair",
+            post(pair_peer_handler),
+        )
+        .route(
+            "/v1/mesh/peers/decode",
+            post(decode_pairing_code_handler),
+        )
+        .route(
+            "/v1/mesh/peers/generate-code",
+            post(generate_pairing_code_handler),
+        )
+        .route(
+            "/v1/mesh/peers/{node_id}/acl",
+            put(update_peer_acl_handler),
+        )
+        .route(
+            "/v1/mesh/peers/{node_id}",
+            delete(remove_peer_handler),
         )
         // ── Headless E2E API (New Structure) ──────────────────────────────
         .route(
