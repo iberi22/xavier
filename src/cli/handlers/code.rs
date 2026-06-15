@@ -20,12 +20,20 @@ use xavier::ports::inbound::input_security_port::SecureInputResult;
 /// the code graph with symbols, imports, and relationships.
 pub async fn code_index_handler(
     State(state): State<CliState>,
-    axum::Json(payload): axum::Json<serde_json::Value>,
+    payload: Option<axum::Json<serde_json::Value>>,
 ) -> Json<serde_json::Value> {
-    let base_path = payload.get("path").and_then(|v| v.as_str()).unwrap_or("src");
+    let base_path = payload
+        .as_ref()
+        .and_then(|payload| payload.get("path"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("src");
     info!("Code index request: path={}", base_path);
 
-    match state.code_indexer.index(std::path::Path::new(base_path)).await {
+    match state
+        .code_indexer
+        .index(std::path::Path::new(base_path))
+        .await
+    {
         Ok(stats) => Json(serde_json::json!({
             "status": "ok",
             "indexed_files": stats.total_files,
