@@ -13,6 +13,8 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_HTTP_MULTIPLEXING: false
+  CARGO_NET_RETRY: 10
 
 jobs:
   build-windows:
@@ -46,13 +48,25 @@ jobs:
 
       - name: Build release binary
         run: |
-          cargo build --release --bin xavier --features "local-gllm,cli-interactive" --no-default-features
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            cargo build --release --bin xavier --features "local-gllm,cli-interactive" --no-default-features
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Write-Warning "cargo build xavier failed on attempt $attempt"
+            Start-Sleep -Seconds (15 * $attempt)
+          }
+          exit $LASTEXITCODE
         env:
           LIBCLANG_PATH: "C:\Program Files\LLVM\bin"
 
       - name: Build TUI binary
         run: |
-          cargo build --release --bin xavier-tui --features "local-gllm,cli-interactive" --no-default-features
+          for ($attempt = 1; $attempt -le 3; $attempt++) {
+            cargo build --release --bin xavier-tui --features "local-gllm,cli-interactive" --no-default-features
+            if ($LASTEXITCODE -eq 0) { exit 0 }
+            Write-Warning "cargo build xavier-tui failed on attempt $attempt"
+            Start-Sleep -Seconds (15 * $attempt)
+          }
+          exit $LASTEXITCODE
         env:
           LIBCLANG_PATH: "C:\Program Files\LLVM\bin"
 
