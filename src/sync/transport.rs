@@ -8,6 +8,7 @@ use crate::mesh::peer::PeerInfo;
 use crate::mesh::protocol::{MeshHandshakeResponse, MeshManifest};
 use crate::mesh::transport::MeshTransport;
 use crate::mesh::cloud_node::CloudPeer;
+use crate::session::sharing::SessionBundle;
 use anyhow::Result;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -74,6 +75,19 @@ impl SyncTransport {
         match self {
             Self::P2P(_t) => Ok(()), // P2P serves manifest on request
             Self::Cloud(t) => t.publish_manifest(manifest).await,
+        }
+    }
+
+    /// Share a session bundle with a remote peer.
+    pub async fn share_session(
+        &self,
+        peer: &PeerInfo,
+        token: &str,
+        bundle: SessionBundle,
+    ) -> Result<()> {
+        match self {
+            Self::P2P(t) => t.share_session(peer, token, bundle).await,
+            Self::Cloud(t) => t.share_session(peer, token, bundle).await,
         }
     }
 }
