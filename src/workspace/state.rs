@@ -159,6 +159,9 @@ impl WorkspaceState {
             config.id.clone(),
             Arc::clone(&store),
         ));
+        #[cfg(test)]
+        let conversations_db = Arc::new(ConversationsDb::open_in_memory(&config.id).await?);
+        #[cfg(not(test))]
         let conversations_db = Arc::new(ConversationsDb::open(&config.id).await?);
         conversations_db.create_schema().await?;
 

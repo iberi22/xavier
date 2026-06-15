@@ -129,7 +129,7 @@ impl Notifier {
         };
 
         notif.log();
-        let _ = self.send_discord(&notif);
+        std::mem::drop(self.send_discord(&notif));
         self.emit_tauri(&notif);
         notif
     }
@@ -186,7 +186,7 @@ impl Notifier {
         };
 
         notif.log();
-        let _ = self.send_discord(&notif);
+        std::mem::drop(self.send_discord(&notif));
         self.emit_tauri(&notif);
         notif
     }
@@ -228,7 +228,7 @@ impl Notifier {
         };
 
         notif.log();
-        let _ = self.send_discord(&notif);
+        std::mem::drop(self.send_discord(&notif));
         self.emit_tauri(&notif);
         notif
     }

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 pub enum MemoryHierarchyNode {
     File(MemoryRecord),
     Directory {
@@ -39,11 +40,9 @@ impl MemoryTree {
                 } else if !record_path.is_empty() {
                     files.push(MemoryHierarchyNode::File(record));
                 }
-            } else if record_path.starts_with(parent_path) {
+            } else if let Some(remainder) = record_path.strip_prefix(parent_path) {
                 // Check if it's a direct child or in a sub-sub directory
-                let remainder = &record_path[parent_path.len()..];
-                if remainder.starts_with('/') {
-                    let remainder = &remainder[1..];
+                if let Some(remainder) = remainder.strip_prefix('/') {
                     if let Some(first_slash) = remainder.find('/') {
                         let dir_name = &remainder[..first_slash];
                         let full_dir_path = format!("{}/{}", parent_path, dir_name);

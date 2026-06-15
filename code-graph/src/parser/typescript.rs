@@ -158,7 +158,7 @@ impl TypeScriptParser {
         symbols: &mut Vec<Symbol>,
         parent: Option<String>,
     ) {
-        let is_const = node.child(0).map_or(false, |c| c.kind() == "const");
+        let is_const = node.child(0).is_some_and(|c| c.kind() == "const");
         let kind = if is_const {
             SymbolKind::Constant
         } else {
@@ -196,6 +196,7 @@ impl TypeScriptParser {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn extract_identifiers_from_pattern(
         &self,
         node: Node,

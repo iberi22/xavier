@@ -1,17 +1,15 @@
 use xavier::agents::rate_limit::RateLimitManager;
 
-async fn setup_manager() -> (RateLimitManager, tempfile::TempDir) {
-    let temp_dir = tempfile::tempdir().unwrap();
-    std::env::set_var("XAVIER_DATA_DIR", temp_dir.path());
-    xavier::codebase::connection_manager::ConnectionManager::global().disconnect("metrics");
-    let manager = RateLimitManager::new();
+async fn setup_manager() -> (RateLimitManager, String) {
+    let project_id = format!("test_metrics_{}", uuid::Uuid::new_v4().simple());
+    let manager = RateLimitManager::new_with_project(&project_id);
     manager.init_schema_async().await.unwrap();
-    (manager, temp_dir)
+    (manager, project_id)
 }
 
 #[tokio::test]
 async fn test_is_quota_low() {
-    let (manager, _tmp) = setup_manager().await;
+    let (manager, _project_id) = setup_manager().await;
     let provider = "test-provider";
 
     assert!(!manager.is_quota_low(provider).await.unwrap());
@@ -26,7 +24,7 @@ async fn test_is_quota_low() {
 
     assert!(manager.is_quota_low(provider).await.unwrap());
 
-    let (manager, _tmp) = setup_manager().await;
+    let (manager, _project_id) = setup_manager().await;
     manager
         .track_request(provider, 890_000, 200, 0.0, false)
         .await
@@ -40,11 +38,11 @@ async fn test_is_quota_low() {
 
 #[tokio::test]
 async fn test_custom_weekly_quota() {
-    let (manager, _tmp) = setup_manager().await;
+    let (manager, project_id) = setup_manager().await;
     let provider = "test-provider";
 
     xavier::codebase::connection_manager::ConnectionManager::global()
-        .with_conn("metrics", move |conn| {
+        .with_conn(&project_id, move |conn| {
             conn.execute(
                 "INSERT INTO provider_quotas (provider, weekly_quota) VALUES (?1, ?2)",
                 (provider.to_string(), 1000i64),
@@ -64,9 +62,9 @@ async fn test_custom_weekly_quota() {
 
     assert!(manager.is_quota_low(provider).await.unwrap());
 
-    let (manager, _tmp) = setup_manager().await;
+    let (manager, project_id) = setup_manager().await;
     xavier::codebase::connection_manager::ConnectionManager::global()
-        .with_conn("metrics", move |conn| {
+        .with_conn(&project_id, move |conn| {
             conn.execute(
                 "INSERT INTO provider_quotas (provider, weekly_quota) VALUES (?1, ?2)",
                 (provider.to_string(), 1000i64),
@@ -88,7 +86,7 @@ async fn test_custom_weekly_quota() {
 
 #[tokio::test]
 async fn test_daily_summary_and_hourly_usage() {
-    let (manager, _tmp) = setup_manager().await;
+    let (manager, _project_id) = setup_manager().await;
     let provider = "test-provider";
 
     manager

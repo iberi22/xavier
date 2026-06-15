@@ -42,6 +42,12 @@ impl TokenStore {
         }
     }
 
+    pub fn with_project_id(project_id: impl Into<String>) -> Self {
+        Self {
+            project_id: project_id.into(),
+        }
+    }
+
     /// Initializes the database schema for API tokens.
     pub async fn init_schema_async(&self) -> Result<()> {
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
@@ -234,8 +240,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_token_lifecycle() {
-        ConnectionManager::global().connect("security", ".").unwrap();
-        let store = TokenStore::new();
+        let temp = tempfile::tempdir().unwrap();
+        let project_id = format!("test_security_tokens_{}", Uuid::new_v4().simple());
+        let root = temp.path().to_string_lossy().to_string();
+
+        ConnectionManager::global()
+            .connect(&project_id, &root)
+            .unwrap();
+        let store = TokenStore::with_project_id(project_id.clone());
         store.init_schema_async().await.unwrap();
 
         // 1. Create
@@ -262,5 +274,7 @@ mod tests {
         store.revoke_token(&meta.id).await.unwrap();
         let validated_after = store.validate_token(&plaintext).await.unwrap();
         assert!(validated_after.is_none());
+
+        ConnectionManager::global().disconnect(&project_id);
     }
 }

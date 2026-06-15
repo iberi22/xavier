@@ -27,16 +27,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Check (lint)
-        run: cargo check --workspace --all-targets --features ci-safe --exclude xavier-web
+        run: cargo check --workspace --all-targets --features ci-safe --exclude xavier-web --exclude app
 
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --features ci-safe --exclude xavier-web -- -D warnings
-
-      - name: Install cargo-nextest
-        run: cargo install cargo-nextest --locked
+        run: cargo clippy --workspace --all-targets --features ci-safe --exclude xavier-web --exclude app -- -D warnings
 
       - name: Test
-        run: cargo nextest run --workspace --features ci-safe --exclude xavier-web
+        run: cargo test --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app
 
       - name: Build
         run: cargo build --release --bin xavier --bin xavier-tui

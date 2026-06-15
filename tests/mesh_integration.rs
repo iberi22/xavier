@@ -14,6 +14,8 @@ use xavier::agents::RuntimeConfig;
 use xavier::memory::qmd_memory::MemoryDocument;
 use xavier::memory::store::MemoryBackend;
 use xavier::mesh::{MeshTransport, NodeIdentity, PeerInfo};
+use xavier::memory::schema::ClearanceLevel;
+use xavier::enterprise::rbac::Role;
 use xavier::workspace::{WorkspaceConfig, WorkspaceContext, WorkspaceState};
 
 async fn start_test_server() -> (String, String, Arc<WorkspaceState>) {
@@ -115,7 +117,7 @@ async fn test_mesh_handshake_and_sync() {
 
     // 3. Fetch manifest from B
     let peer_b = PeerInfo {
-        node_id: resp.node_id,
+        node_id: resp.node_id.clone(),
         alias: None,
         endpoint_url: url_b,
         public_key_hex: resp.public_key_hex,
@@ -124,6 +126,18 @@ async fn test_mesh_handshake_and_sync() {
         sync_enabled: true,
         is_cloud: false,
     };
+
+    // Since we now enforce NodeID in manifest request, we must make sure Node A is in Node B's ACL
+    // In this test, Node B's environment is not strictly controlled like in permissions_test,
+    // so we might need to manually set it up if it doesn't auto-register (it only auto-registers with pairing secret).
+    // Let's manually add it to the ACL file.
+    let mut acl_b = xavier::mesh::MeshAcl::load().unwrap();
+    acl_b.set_entry(identity_a.node_id.clone(), xavier::mesh::NodeAclEntry {
+        role: Role::Reader,
+        clearance: ClearanceLevel::TopSecret,
+        namespaces: None,
+        public_key_hex: hex::encode(&identity_a.public_key),
+    }).unwrap();
 
     // Export B's data to chunks so it appears in manifest
     let mut manifest_b =

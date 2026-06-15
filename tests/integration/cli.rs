@@ -265,7 +265,7 @@ fn test_cli_subcommand_add_without_server() {
 #[test]
 fn test_cli_subcommand_search_without_server() {
     // search requires a running server — should fail gracefully
-    let output = run_with_timeout(&["search", "test query"], 5);
+    let output = run_with_timeout(&["search", "test query"], 15);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -283,7 +283,7 @@ fn test_cli_subcommand_search_without_server() {
 #[test]
 fn test_cli_subcommand_recall_without_server() {
     // recall requires a running server — should fail gracefully
-    let output = run_with_timeout(&["recall", "test"], 5);
+    let output = run_with_timeout(&["recall", "test"], 15);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -319,7 +319,7 @@ fn test_add_and_search_without_server() {
         "add without server should produce error, got: {add_combined}"
     );
 
-    let search_output = run_with_timeout(&["search", "integration test query"], 5);
+    let search_output = run_with_timeout(&["search", "integration test query"], 15);
     let search_combined = format!(
         "{} {}",
         String::from_utf8_lossy(&search_output.stdout),

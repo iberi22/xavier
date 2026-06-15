@@ -111,6 +111,12 @@ impl AnomalyScannerAgent {
     }
 }
 
+impl Default for AnomalyScannerAgent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

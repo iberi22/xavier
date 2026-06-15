@@ -220,8 +220,10 @@ impl AdaptiveGating {
             settings.retrieval.learned_policy.learning_rate,
         );
 
-        let mut config = GatingConfig::default();
-        config.cache_warming_enabled = settings.retrieval.cache_warming_enabled;
+        let mut config = GatingConfig {
+            cache_warming_enabled: settings.retrieval.cache_warming_enabled,
+            ..Default::default()
+        };
         if let Some(threshold) = settings.retrieval.cache_warming_threshold {
             config.cache_warming_threshold = threshold;
         }
@@ -1221,13 +1223,15 @@ mod tests {
 
     #[tokio::test]
     async fn test_predict_next_queries_graph() {
-        let mut config = GatingConfig::default();
-        config.cache_warming_threshold = 0.5;
+        let config = GatingConfig {
+            cache_warming_threshold: 0.5,
+            ..Default::default()
+        };
         let gating = AdaptiveGating::new(config);
 
         let graph = Arc::new(tokio::sync::RwLock::new(crate::memory::belief_graph::BeliefGraph::new()));
         {
-            let mut g = graph.write().await;
+            let g = graph.write().await;
             g.add_node("Rust".to_string(), 1.0, None);
             g.add_node("Cargo".to_string(), 1.0, None);
             g.add_relation("Rust".to_string(), "Cargo".to_string(), "uses".to_string(), None, None).await.unwrap();

@@ -297,7 +297,6 @@ impl MemoryRecord {
             }
         }
 
-        let mut metadata = metadata;
         if let Some(object) = metadata.as_object_mut() {
             if let Some(encrypted_dek) = &self.encrypted_dek {
                 object.insert(

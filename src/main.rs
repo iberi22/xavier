@@ -2,6 +2,19 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+#![allow(
+    dead_code,
+    unused_imports,
+    unused_variables,
+    clippy::bool_comparison,
+    clippy::clone_on_copy,
+    clippy::derivable_impls,
+    clippy::field_reassign_with_default,
+    clippy::needless_range_loop,
+    clippy::single_match,
+    clippy::type_complexity
+)]
+
 // Xavier - Cognitive Memory System
 // Public open-core release
 

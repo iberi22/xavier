@@ -7,6 +7,7 @@
 // ============================================
 
 #[cfg(test)]
+#[allow(clippy::module_inception)]
 mod tests {
     use crate::memory::simple_index::{extract_keywords, SimpleMemoryDoc, SimpleMemoryIndex};
     use crate::memory::virtual_memory::{Checkpoint, TokenSavings, VirtualMemoryEntry};
@@ -125,7 +126,7 @@ mod tests {
         ));
 
         let results = index.search("test", 5);
-        assert!(results.len() > 0);
+        assert!(!results.is_empty());
         assert!(results[0].score > 0.0);
     }
 

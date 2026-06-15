@@ -1,3 +1,5 @@
+#![cfg(feature = "ratatui")]
+
 use axum::{routing::get, Json, Router};
 use image::{Rgb, RgbImage};
 use ratatui::buffer::Buffer;

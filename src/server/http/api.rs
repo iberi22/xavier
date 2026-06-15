@@ -57,7 +57,7 @@ pub async fn memory_retrieve(
     let gating = if payload.layer_weights.is_some() {
         AdaptiveGating::new(gating_config)
     } else {
-        AdaptiveGating::with_policy(gating_config, Arc::clone(&workspace.workspace.hormer.policy()))
+        AdaptiveGating::with_policy(gating_config, workspace.workspace.hormer.policy().clone())
     }
     .with_memory(Arc::clone(&workspace.workspace.memory));
     let working_docs = workspace.workspace.memory.all_documents().await;

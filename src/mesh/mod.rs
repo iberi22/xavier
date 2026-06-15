@@ -37,6 +37,7 @@ pub mod cloud_node;
 pub mod acl;
 pub mod node;
 pub mod pairing;
+pub mod pairing_registry;
 pub mod peer;
 pub mod protocol;
 pub mod transport;

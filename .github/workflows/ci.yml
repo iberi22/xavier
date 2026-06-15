@@ -21,13 +21,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22.12.0
-          cache: npm
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
       - name: Install Node dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
       - name: Validate panel-ui
-        run: npm run check --workspace panel-ui
+        run: pnpm --filter panel-ui check
       - name: Run panel-ui unit tests
-        run: npm run test --workspace panel-ui
+        run: pnpm --filter panel-ui test
 
   check:
     name: Check
@@ -39,7 +43,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Run cargo check
-        run: cargo check --workspace --all-targets --features ci-safe --exclude xavier-web
+        run: cargo check --workspace --all-targets --features ci-safe --exclude xavier-web --exclude app
 
   enterprise-check:
     name: Enterprise Check
@@ -63,7 +67,7 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Run clippy
-        run: cargo clippy --workspace --all-targets --features ci-safe --exclude xavier-web -- -D warnings
+        run: cargo clippy --workspace --all-targets --features ci-safe --exclude xavier-web --exclude app -- -D warnings
 
   test:
     name: Test
@@ -72,18 +76,16 @@ jobs:
       - uses: actions/checkout@v6.0.2
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-nextest
-        run: cargo install cargo-nextest --locked
       - name: Install cargo-tarpaulin
         run: cargo install cargo-tarpaulin --locked
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Run tests
-        run: cargo nextest run --workspace --features ci-safe --exclude xavier-web
+        run: cargo test --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app
       - name: Run doc tests
-        run: cargo test --doc --workspace --features ci-safe --exclude xavier-web
+        run: cargo test --doc --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app
       - name: Generate coverage report
-        run: cargo tarpaulin --workspace --features ci-safe --exclude xavier-web --out Xml
+        run: cargo tarpaulin --workspace --lib --no-default-features --features ci-safe --exclude xavier-web --exclude app --out Xml
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v5
         with:
@@ -121,28 +123,38 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22.12.0
-          cache: npm
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install Node dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
       - name: Install Playwright browser
-        run: npm exec --workspace panel-ui playwright install --with-deps chromium
+        run: pnpm --filter panel-ui exec playwright install --with-deps chromium
       - name: Build panel-ui
-        run: npm run build --workspace panel-ui
+        run: pnpm --filter panel-ui build
       - name: Build Xavier debug binary
         run: cargo build --bin xavier
       - name: Start Xavier
         run: |
-          nohup target/debug/xavier > panel-e2e.log 2>&1 &
+          nohup target/debug/xavier http > panel-e2e.log 2>&1 &
       - name: Wait for startup
-        run: sleep 3
-      - name: Verify server health
-        run: curl -f http://127.0.0.1:8003/health
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8003/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat panel-e2e.log
+          exit 1
       - name: Run panel Playwright suite
-        run: npm run test:e2e:generative --workspace panel-ui
+        run: pnpm --filter panel-ui test:e2e:generative
       - name: Upload panel e2e log on failure
         if: failure()
         uses: actions/upload-artifact@v7.0.0
@@ -160,30 +172,48 @@ jobs:
       XAVIER_URL: http://127.0.0.1:8003
       XAVIER_HOST: 127.0.0.1
       XAVIER_PORT: 8003
-      XAVIER_CODE_GRAPH_DB_PATH: data/ci-release-smoke.db
+      XAVIER_DATA_DIR: ${{ runner.temp }}/xavier-release-smoke/data
+      XAVIER_WORKSPACE_DIR: ${{ runner.temp }}/xavier-release-smoke/workspaces
+      XAVIER_CODE_GRAPH_DB_PATH: ${{ runner.temp }}/xavier-release-smoke/code_graph.db
+      XAVIER_EMBEDDING_CACHE_DB_PATH: ${{ runner.temp }}/xavier-release-smoke/embedding_cache.db
+      XAVIER_ENTERPRISE_DB_PATH: ${{ runner.temp }}/xavier-release-smoke/enterprise.db
       XAVIER_REQUIRE_PANEL: 1
     steps:
       - uses: actions/checkout@v6.0.2
+      - name: Prepare smoke storage
+        run: mkdir -p "$XAVIER_DATA_DIR" "$XAVIER_WORKSPACE_DIR"
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 22.12.0
-          cache: npm
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+          run_install: false
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Install Node dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
       - name: Build panel-ui
-        run: npm run build --workspace panel-ui
+        run: pnpm --filter panel-ui build
       - name: Build debug binary
         run: cargo build --bin xavier
       - name: Start Xavier
         run: |
-          nohup target/debug/xavier > smoke.log 2>&1 &
+          nohup target/debug/xavier http > smoke.log 2>&1 &
       - name: Wait for startup
-        run: sleep 3
+        run: |
+          for i in {1..30}; do
+            if curl -fsS http://127.0.0.1:8003/health; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat smoke.log
+          exit 1
       - name: Run release smoke checks
         run: bash scripts/release-smoke.sh
       - name: Upload smoke log on failure

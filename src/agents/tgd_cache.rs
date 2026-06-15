@@ -25,7 +25,7 @@ impl TgdCache {
         }
         Self {
             last_hash: String::new(),
-            last_run: DateTime::UNIX_EPOCH.into(),
+            last_run: DateTime::UNIX_EPOCH,
         }
     }
 

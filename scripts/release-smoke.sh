@@ -81,11 +81,26 @@ echo "PASS auth gate"
 doc_path="smoke/$(date +%Y%m%d%H%M%S)"
 content='Xavier public release smoke test document'
 
-curl -fsS \
-  -X POST "${BASE_URL}/memory/add" \
-  -H "X-Xavier-Token: ${TOKEN}" \
-  -H "Content-Type: application/json" \
-  -d "{\"path\":\"${doc_path}\",\"content\":\"${content}\",\"metadata\":{\"source\":\"release-smoke\"}}" >/dev/null
+add_body="/tmp/xavier-memory-add-smoke.json"
+add_status=""
+for attempt in 1 2 3; do
+  add_status="$(curl -sS --max-time 60 \
+    -o "${add_body}" \
+    -w "%{http_code}" \
+    -X POST "${BASE_URL}/memory/add" \
+    -H "X-Xavier-Token: ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "{\"path\":\"${doc_path}\",\"content\":\"${content}\",\"metadata\":{\"source\":\"release-smoke\"}}")"
+  if [[ "${add_status}" == "200" ]]; then
+    break
+  fi
+  echo "WARN /memory/add attempt ${attempt} returned ${add_status}: $(cat "${add_body}" 2>/dev/null || true)" >&2
+  sleep 2
+done
+if [[ "${add_status}" != "200" ]]; then
+  echo "FAIL /memory/add returned ${add_status}: $(cat "${add_body}" 2>/dev/null || true)" >&2
+  exit 1
+fi
 echo "PASS /memory/add"
 
 search="$(curl -fsS \

@@ -34,6 +34,16 @@ impl MeshTransport {
 
     /// Perform a handshake with a remote peer.
     pub async fn handshake(&self, peer_url: &str, token: &str) -> Result<MeshHandshakeResponse> {
+        self.handshake_with_secret(peer_url, token, None).await
+    }
+
+    /// Perform a handshake with a remote peer, including an optional pairing secret.
+    pub async fn handshake_with_secret(
+        &self,
+        peer_url: &str,
+        token: &str,
+        pairing_secret: Option<String>,
+    ) -> Result<MeshHandshakeResponse> {
         let nonce = uuid::Uuid::new_v4().to_string();
         let signature = self.local_identity.sign(nonce.as_bytes());
 
@@ -45,6 +55,7 @@ impl MeshTransport {
             timestamp: chrono::Utc::now().timestamp(),
             nonce,
             signature_hex: hex::encode(signature),
+            pairing_secret,
         };
 
         let url = format!("{}/v1/mesh/handshake", peer_url.trim_end_matches('/'));
@@ -70,9 +81,18 @@ impl MeshTransport {
 
     /// Fetch the sync manifest from a peer.
     pub async fn fetch_manifest(&self, peer: &PeerInfo, token: &str) -> Result<MeshManifest> {
+        let timestamp = chrono::Utc::now().timestamp().to_string();
+        let nonce = uuid::Uuid::new_v4().to_string();
+        let message = format!("{}:{}", timestamp, nonce);
+        let signature = hex::encode(self.local_identity.sign(message.as_bytes()));
+
         let url = format!(
-            "{}/v1/mesh/manifest",
-            peer.endpoint_url.trim_end_matches('/')
+            "{}/v1/mesh/manifest?node_id={}&timestamp={}&nonce={}&signature={}",
+            peer.endpoint_url.trim_end_matches('/'),
+            self.local_identity.node_id,
+            timestamp,
+            nonce,
+            signature
         );
         let resp = self
             .client
@@ -101,9 +121,18 @@ impl MeshTransport {
             "{}/v1/mesh/chunks/request",
             peer.endpoint_url.trim_end_matches('/')
         );
+
+        let timestamp = chrono::Utc::now().timestamp();
+        let nonce = uuid::Uuid::new_v4().to_string();
+        let message = format!("{}:{}", timestamp, nonce);
+        let signature_hex = hex::encode(self.local_identity.sign(message.as_bytes()));
+
         let request = MeshSyncRequest {
             requesting_node_id: self.local_identity.node_id.clone(),
             wanted_hashes: hashes.to_vec(),
+            timestamp,
+            nonce,
+            signature_hex,
         };
 
         let resp = self
