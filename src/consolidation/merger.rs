@@ -11,7 +11,7 @@ use std::path::Path;
 
 use crate::memory::{
     manager::ManagedMemory,
-    qmd_memory::{cosine_similarity, MemoryDocument},
+    qmd_memory::{cosine_similarity, MemoryDocument, NormalizedId},
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,6 +85,8 @@ pub fn merge_documents(memories: &[ManagedMemory]) -> Result<MergeOutcome> {
 
     let canonical_source = ordered[0].clone();
     let canonical_id = canonical_source.doc.id.clone().unwrap_or_default();
+    let canonical_id_norm: NormalizedId = canonical_id.parse().unwrap_or_else(|_| NormalizedId::from_str_unchecked(&canonical_id));
+
     let mut combined_sentences = extract_sentences(&canonical_source.doc.content);
     let mut redundant_ids = Vec::new();
     let mut best_similarity = 1.0f32;
@@ -92,7 +94,13 @@ pub fn merge_documents(memories: &[ManagedMemory]) -> Result<MergeOutcome> {
     for memory in ordered.iter().skip(1) {
         let similarity = similarity(&canonical_source.doc, &memory.doc);
         best_similarity = best_similarity.min(similarity);
-        redundant_ids.push(memory.doc.id.clone().unwrap_or_default());
+
+        let mem_id = memory.doc.id.clone().unwrap_or_default();
+        let mem_id_norm: NormalizedId = mem_id.parse().unwrap_or_else(|_| NormalizedId::from_str_unchecked(&mem_id));
+
+        if mem_id_norm != canonical_id_norm {
+            redundant_ids.push(mem_id);
+        }
 
         for sentence in extract_sentences(&memory.doc.content) {
             if !combined_sentences
@@ -178,9 +186,13 @@ pub fn similarity(left: &MemoryDocument, right: &MemoryDocument) -> f32 {
         _ => 0.0,
     };
     let lexical = lexical_similarity(&left.content, &right.content);
+
+    let left_path_norm: NormalizedId = left.path.parse().unwrap_or_else(|_| NormalizedId::from_str_unchecked(&left.path));
+    let right_path_norm: NormalizedId = right.path.parse().unwrap_or_else(|_| NormalizedId::from_str_unchecked(&right.path));
+
     let path_boost = if left.path == right.path {
         1.0
-    } else if normalize_text(&left.path) == normalize_text(&right.path) {
+    } else if left_path_norm == right_path_norm {
         0.95
     } else {
         let left_parent = Path::new(&left.path).parent().and_then(|p| p.to_str());
@@ -474,5 +486,40 @@ mod tests {
 
         // AB share same parent 'src/memory', AC do not.
         assert!(sim_ab > sim_ac, "Similarity in same directory ({}) should be higher than different directory ({})", sim_ab, sim_ac);
+    }
+
+    #[test]
+    fn test_similarity_normalized_path_reconciliation() {
+        let mut doc_a = MemoryDocument {
+            path: "Foo.Bar".to_string(),
+            content: "Same content".to_string(),
+            ..Default::default()
+        };
+        doc_a.minhash = Some(crate::memory::qmd::compute_minhash(&doc_a.content));
+
+        let mut doc_b = MemoryDocument {
+            path: "foo_bar".to_string(),
+            content: "Same content".to_string(),
+            ..Default::default()
+        };
+        doc_b.minhash = Some(crate::memory::qmd::compute_minhash(&doc_b.content));
+
+        let mut doc_c = MemoryDocument {
+            path: "different".to_string(),
+            content: "Same content".to_string(),
+            ..Default::default()
+        };
+        doc_c.minhash = Some(crate::memory::qmd::compute_minhash(&doc_c.content));
+
+        let sim_ab = similarity(&doc_a, &doc_b);
+        let sim_ac = similarity(&doc_a, &doc_c);
+
+        // AB should have higher similarity due to normalized path reconciliation (path boost 0.95)
+        assert!(sim_ab > sim_ac, "Similarity with normalized path reconciliation ({}) should be higher than different path ({})", sim_ab, sim_ac);
+        // path_boost for AB should be 0.95, for AC 0.0.
+        // With same content, lexical similarity is 1.0.
+        // AB: 0.4 * 1.0 + 0.1 * 0.95 = 0.495
+        // AC: 0.4 * 1.0 + 0.1 * 0.0 = 0.4
+        assert!(sim_ab >= 0.49);
     }
 }
