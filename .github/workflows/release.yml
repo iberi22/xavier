@@ -1,93 +1,70 @@
-name: "Release & Test Pipeline"
+name: Release
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-  workflow_dispatch:
+    tags:
+      - 'v*'
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
 
 jobs:
-  test-and-build:
+  build:
+    name: Build ${{ matrix.asset_name }}
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
-    
-    runs-on: ${{ matrix.os }}
+        include:
+          - os: ubuntu-latest
+            asset_name: xavier-linux
+            archive_name: xavier-linux.tar.gz
+            binary_name: xavier
+          - os: windows-latest
+            asset_name: xavier-windows
+            archive_name: xavier-windows.zip
+            binary_name: xavier.exe
+          - os: macos-latest
+            asset_name: xavier-macos
+            archive_name: xavier-macos.tar.gz
+            binary_name: xavier
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22.12.0
-
-      - name: Install pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-          run_install: false
-
-      - name: Setup Rust
+      - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc, x86_64-apple-darwin
 
-      - name: Run Backend Tests (Rust)
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build xavier binary
+        run: cargo build --release --bin xavier
+
+      - name: Package binary
         shell: bash
         run: |
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            cargo test --workspace --lib --no-default-features --features ci-safe --exclude xavier-web --exclude app --verbose
+          mkdir -p dist
+          cp "target/release/${{ matrix.binary_name }}" "dist/${{ matrix.binary_name }}"
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            7z a "dist/${{ matrix.archive_name }}" "dist/${{ matrix.binary_name }}"
           else
-            cargo test --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app --verbose
+            tar -C dist -czf "dist/${{ matrix.archive_name }}" "${{ matrix.binary_name }}"
           fi
 
-      - name: Prepare Tauri Sidecar
-        if: github.event_name != 'pull_request'
-        shell: bash
-        run: |
-          cargo build --release --bin xavier
-          mkdir -p panel-ui/src-tauri/binaries
-          TARGET_TRIPLE=$(rustc -Vv | awk '/host:/ { print $2 }')
-
-          if [[ "$RUNNER_OS" == "Windows" ]]; then
-            cp target/release/xavier.exe "panel-ui/src-tauri/binaries/xavier-$TARGET_TRIPLE.exe"
-          else
-            cp target/release/xavier "panel-ui/src-tauri/binaries/xavier-$TARGET_TRIPLE"
-          fi
-
-      - name: Install Frontend Dependencies
-        working-directory: panel-ui
-        run: pnpm install
-
-      - name: Build Tauri Executables
-        working-directory: panel-ui
-        shell: bash
-        run: |
-          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            pnpm run build
-            if [[ "$RUNNER_OS" == "Windows" ]]; then
-              echo "Skipping Tauri cargo check on Windows pull requests; full Tauri build runs on push."
-            else
-              TARGET_TRIPLE=$(rustc -Vv | awk '/host:/ { print $2 }')
-              mkdir -p src-tauri/binaries
-              touch "src-tauri/binaries/xavier-$TARGET_TRIPLE"
-              cargo check --manifest-path src-tauri/Cargo.toml
-            fi
-          else
-            pnpm tauri build
-          fi
-        
-      - name: Upload Build Artifacts
-        if: github.event_name != 'pull_request'
+      - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: xavier-desktop-${{ matrix.os }}
-          path: |
-            panel-ui/src-tauri/target/release/bundle/msi/*.msi
-            panel-ui/src-tauri/target/release/bundle/dmg/*.dmg
+          name: ${{ matrix.asset_name }}
+          path: dist/${{ matrix.archive_name }}
+          if-no-files-found: error
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ matrix.archive_name }}
