@@ -227,3 +227,54 @@ pub async fn session_save(session_id: &str, content: &str) -> Result<()> {
 
     Ok(())
 }
+
+/// Re-index memories that have missing or empty embeddings.
+///
+/// Iterates over all stored memories, checks for empty embedding vectors,
+/// recalculates embeddings via the embedder, and updates each record.
+pub async fn reindex_memories() -> Result<()> {
+    let token = require_xavier_token()?;
+    let base_url = resolve_base_url();
+    let url = format!("{}/memory/reindex", base_url);
+
+    let client = CLI_HTTP_CLIENT.clone();
+
+    println!("Re-indexing memories on {}...", base_url);
+
+    let response = client
+        .post(&url)
+        .header("X-Xavier-Token", &token)
+        .send()
+        .await;
+
+    match response {
+        Ok(resp) if resp.status().is_success() => {
+            let result: serde_json::Value = resp.json().await.unwrap_or_default();
+            let total = result["total"].as_u64().unwrap_or(0);
+            let reindexed = result["reindexed"].as_u64().unwrap_or(0);
+            let skipped = result["skipped"].as_u64().unwrap_or(0);
+            let errors_len = result["errors"].as_array().map(|a| a.len()).unwrap_or(0);
+
+            println!();
+            println!("{} === Re-index Complete === {}", "=".repeat(12), "=".repeat(12));
+            println!("  Total memories:  {}", total);
+            println!("  Re-indexed:      {}", reindexed);
+            println!("  Skipped (had embeddings): {}", skipped);
+            if errors_len > 0 {
+                println!("  Errors:          {}", errors_len);
+            }
+            println!("{}", "=".repeat(47));
+        }
+        Ok(resp) => {
+            let status = resp.status();
+            let text = resp.text().await.unwrap_or_default();
+            println!("Re-index request failed ({}): {}", status, text);
+        }
+        Err(e) => {
+            println!("Failed to connect to Xavier server: {}", e);
+            println!("Is the server running? (xavier http)");
+        }
+    }
+
+    Ok(())
+}

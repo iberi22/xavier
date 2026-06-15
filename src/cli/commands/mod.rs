@@ -223,6 +223,16 @@ impl Cli {
                 }
                 Ok(())
             }
+            Command::Reindex => http::reindex_memories().await,
+            Command::Task { cmd } => {
+                crate::cli::handlers::tasks::handle_task_command(cmd.clone()).await
+            }
+            Command::Sync { cmd } => {
+                crate::cli::handlers::sync::handle_sync_command(cmd.clone()).await
+            }
+            Command::Scan { cmd } => {
+                crate::cli::handlers::system_scan_cli::handle_scan_command(cmd.clone()).await
+            }
         }
     }
 }

@@ -267,6 +267,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/memory/search", post(search_handler))
         .route("/memory/update", post(update_handler))
         .route("/memory/delete", post(delete_handler))
+        .route("/memory/reindex", post(reindex_handler))
         .route("/memory/stats", get(stats_handler))
         .route("/memory/export", get(export_handler))
         .route("/memory/decay", post(decay_handler))
