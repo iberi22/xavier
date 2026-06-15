@@ -51,6 +51,7 @@ use xavier::server::panel::{
     get_graph, list_bookmarks, list_widgets, panel_asset, panel_index, save_bookmark, save_graph,
     save_widget,
 };
+use xavier::server::v1_api::v1_memories_delete;
 use xavier::tasks::session_sync_task::SessionSyncTask;
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
@@ -275,6 +276,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/memory/manage", post(manage_handler))
         .route("/memory/timeline/query", post(timeline_query_handler))
         .route("/v1/memories", post(add_handler).get(stats_handler))
+        .route("/v1/memories/{id}", delete(v1_memories_delete))
         .route("/v1/memories/search", post(search_handler))
         .route("/agents", get(agent_list_handler))
         .route("/workspace/default", get(workspace_info_handler))
