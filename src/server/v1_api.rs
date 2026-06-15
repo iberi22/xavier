@@ -24,6 +24,7 @@ use crate::{
         PeerRegistry,
     },
     session::sharing::{export_session, import_session, SessionBundle},
+    sync::SyncTransport,
     workspace::WorkspaceContext,
 };
 
@@ -629,7 +630,17 @@ pub async fn v1_mesh_session_share(
         }
     };
 
-    let transport = crate::mesh::transport::MeshTransport::new(identity);
+    let transport = match SyncTransport::for_peer(peer, identity.clone()) {
+        Ok(t) => t,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response()
+        }
+    };
+
     // Note: We need a token to talk to the peer. For now, assume we use the local token
     // or a specialized mesh token if available in PeerInfo.
     let token = std::env::var("XAVIER_TOKEN").unwrap_or_default();
