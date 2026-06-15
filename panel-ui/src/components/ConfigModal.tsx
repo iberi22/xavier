@@ -33,6 +33,7 @@ import MessagingConfigModal, {
 } from "./MessagingConfigModal";
 import { CloudRelayConfig } from "./CloudRelayConfig";
 import DataCommonsConfigUI from "./DataCommonsConfigUI";
+import MeshConfig from "./MeshConfig";
 
 interface ConfigModalProps {
   key?: React.Key;
@@ -52,6 +53,7 @@ type MainTab =
   | "providers"
   | "messaging"
   | "security"
+  | "mesh"
   | "memory"
   | "agents";
 
@@ -125,6 +127,12 @@ export default function ConfigModal({
             label="Security"
           />
           <TabButton
+            active={mainTab === "mesh"}
+            onClick={() => setMainTab("mesh")}
+            icon={<Network className="w-4 h-4" />}
+            label="Mesh"
+          />
+          <TabButton
             active={mainTab === "memory"}
             onClick={() => setMainTab("memory")}
             icon={<Brain className="w-4 h-4" />}
@@ -162,7 +170,7 @@ export default function ConfigModal({
       <div className="flex-1 overflow-hidden relative bg-black/20">
         <AnimatePresence mode="wait">
           {mainTab === "config" && (
-            <ConfigView key="config" graphData={graphData} />
+            <ConfigView key="config" graphData={graphData} token={token || ""} />
           )}
           {mainTab === "graph" && (
             <motion.div
@@ -291,6 +299,17 @@ export default function ConfigModal({
               <SecurityConfigPanel embedded />
             </motion.div>
           )}
+          {mainTab === "mesh" && (
+            <motion.div
+              key="mesh"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full h-full overflow-hidden"
+            >
+              <MeshConfig token={token || ""} />
+            </motion.div>
+          )}
           {mainTab === "memory" && (
             <motion.div
               key="memory"
@@ -386,7 +405,13 @@ import {
   YAxis,
 } from "recharts";
 
-function ConfigView({ graphData }: { graphData: GraphData }) {
+function ConfigView({
+  graphData,
+  token,
+}: {
+  graphData: GraphData;
+  token: string;
+}) {
   const [activeTab, setActiveTab] = useState("topology");
 
   const tabs = [
