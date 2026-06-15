@@ -33,19 +33,25 @@
 //! - Phase 3: Loro CRDT for conflict-free memory merge
 //! - Phase 4: Tor/Yggdrasil transport for anonymous operation
 
-pub mod cloud_node;
 pub mod acl;
+pub mod auto_update;
+pub mod cloud_node;
+pub mod crypto_gating;
+pub mod discovery;
+pub mod governance;
+pub mod heartbeat;
 pub mod node;
 pub mod pairing;
 pub mod pairing_registry;
 pub mod peer;
 pub mod protocol;
-pub mod transport;
 pub mod telemetry;
-pub mod crypto_gating;
-pub mod governance;
+pub mod transport;
 
 pub use acl::{MeshAcl, NodeAclEntry};
+pub use auto_update::{AutoUpdateService, UpdateStatus};
+pub use discovery::DiscoveryService;
+pub use heartbeat::{HeartbeatPayload, HeartbeatReceipt, HeartbeatService};
 pub use node::{NodeId, NodeIdentity};
 pub use peer::{PeerInfo, PeerRegistry};
 pub use protocol::{MeshHandshake, MeshManifest, MeshSyncRequest};
