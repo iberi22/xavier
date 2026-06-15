@@ -36,7 +36,6 @@ impl r2d2::CustomizeConnection<Connection, rusqlite::Error> for PragmaCustomizer
     fn on_acquire(&self, conn: &mut Connection) -> std::result::Result<(), rusqlite::Error> {
         conn.execute_batch(
             "PRAGMA busy_timeout=5000; \
-             PRAGMA journal_mode=WAL; \
              PRAGMA synchronous=NORMAL; \
              PRAGMA mmap_size=268435456; \
              PRAGMA foreign_keys=ON;",
@@ -80,7 +79,9 @@ impl ConnectionManager {
             } else if project_id == "metrics" {
                 PathBuf::from(project_root).join("metrics.db")
             } else if project_id == "security" {
-                PathBuf::from(project_root).join(".xavier").join("security.db")
+                PathBuf::from(project_root)
+                    .join(".xavier")
+                    .join("security.db")
             } else if project_id.starts_with("conv_test_") {
                 PathBuf::from(project_root)
                     .join(".xavier")
@@ -113,6 +114,19 @@ impl ConnectionManager {
                     })?;
                 }
             }
+
+            let init_conn = Connection::open(&db_path).with_context(|| {
+                format!("failed to initialize SQLite database at {:?}", db_path)
+            })?;
+            init_conn
+                .execute_batch(
+                    "PRAGMA busy_timeout=5000; \
+                     PRAGMA journal_mode=WAL;",
+                )
+                .with_context(|| {
+                    format!("failed to initialize SQLite WAL mode at {:?}", db_path)
+                })?;
+            drop(init_conn);
 
             let manager = SqliteConnectionManager::file(db_path);
             let pool = Pool::builder()

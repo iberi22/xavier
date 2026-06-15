@@ -103,7 +103,9 @@ jobs:
   deploy:
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # GitHub Pages is not enabled in every repository clone/fork. Keep the docs
+    # build required, but make deployment opt-in via the ENABLE_GITHUB_PAGES var.
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.ENABLE_GITHUB_PAGES == 'true'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
