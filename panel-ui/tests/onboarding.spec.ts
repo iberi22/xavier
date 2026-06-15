@@ -20,8 +20,7 @@ test.describe("Onboarding Flow", () => {
             return null;
           }
           if (cmd === "get_xavier_token") {
-            // Return empty to force auth screen or just a mock token
-            return null;
+            return "mock-token";
           }
           return null;
         },
@@ -56,11 +55,8 @@ test.describe("Onboarding Flow", () => {
     // Clear onboarding state before each test
     await page.evaluate(() => {
       localStorage.removeItem("xavier_onboarding_completed");
-      window.location.reload();
     });
-
-    // Wait for reload and re-check if we are on onboarding
-    await page.waitForURL("/");
+    await page.goto("/");
   });
 
   test("should complete the full onboarding flow", async ({ page }) => {

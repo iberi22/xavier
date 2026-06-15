@@ -57,11 +57,11 @@ test.describe("Dashboard and UI Islands", () => {
 
   test("should toggle modules in TopStatusBar", async ({ page }) => {
     // Identity pill is always visible
-    await expect(page.getByText("Xavier Beta")).toBeVisible();
+    await expect(page.getByText(/Xavier /i)).toBeVisible();
 
     // Hover near identity to show gear
-    await page.locator('div:has-text("Xavier Beta")').hover();
-    const gear = page.locator('button[data-title="Configure Status Bar"]');
+    await page.locator('div:has-text("Xavier")').filter({ hasText: /Xavier /i }).first().hover();
+    const gear = page.locator('button[title="Configure Status Bar"]');
     await expect(gear).toBeVisible();
     await gear.click();
 
@@ -70,7 +70,7 @@ test.describe("Dashboard and UI Islands", () => {
 
     // Toggle System Resources (it is enabled by default)
     const resourcesPill = page.locator(
-      'div[data-title="Average CPU Usage: 14%"]',
+      'div[title^="CPU:"]',
     );
     await expect(resourcesPill).toBeVisible();
 
