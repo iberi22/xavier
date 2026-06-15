@@ -42,6 +42,18 @@ export default defineConfig(({ command }) => {
           target: xavierTarget,
           changeOrigin: true,
         },
+        "/v1": {
+          target: xavierTarget,
+          changeOrigin: true,
+        },
+        "/api": {
+          target: xavierTarget,
+          changeOrigin: true,
+        },
+        "/notifications": {
+          target: xavierTarget,
+          changeOrigin: true,
+        },
       },
     },
     build: {
