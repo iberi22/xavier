@@ -65,6 +65,13 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             pnpm run build
+            TARGET_TRIPLE=$(rustc -Vv | awk '/host:/ { print $2 }')
+            mkdir -p src-tauri/binaries
+            if [[ "$RUNNER_OS" == "Windows" ]]; then
+              touch "src-tauri/binaries/xavier-$TARGET_TRIPLE.exe"
+            else
+              touch "src-tauri/binaries/xavier-$TARGET_TRIPLE"
+            fi
             cargo check --manifest-path src-tauri/Cargo.toml
           else
             pnpm tauri build
