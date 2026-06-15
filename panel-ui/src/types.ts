@@ -130,3 +130,31 @@ export interface Agent {
   last_seen: string;
   metadata?: Record<string, unknown>;
 }
+
+export type MeshRole = "admin" | "editor" | "reader";
+
+export type ClearanceLevel =
+  | "unclassified"
+  | "confidential"
+  | "secret"
+  | "top_secret";
+
+export interface MeshPeer {
+  node_id: string;
+  alias?: string;
+  endpoint_url: string;
+  role: MeshRole;
+  clearance: ClearanceLevel;
+  last_seen_at: number | null;
+  sync_enabled: boolean;
+}
+
+export interface MeshStatus {
+  peers: MeshPeer[];
+  local_node_id: string;
+}
+
+export interface PairingCodeResponse {
+  code: string;
+  secret: string;
+}

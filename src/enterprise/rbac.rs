@@ -64,9 +64,13 @@ impl fmt::Display for Permission {
 
 /// Role types with associated permissions
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Role {
+    #[serde(alias = "Admin")]
     Admin,
+    #[serde(alias = "Editor")]
     Editor,
+    #[serde(alias = "Reader")]
     Reader,
 }
 

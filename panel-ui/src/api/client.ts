@@ -1,4 +1,11 @@
-import type { Agent, MemoryEntry } from "../types";
+import type {
+  Agent,
+  ClearanceLevel,
+  MemoryEntry,
+  MeshRole,
+  MeshStatus,
+  PairingCodeResponse,
+} from "../types";
 
 const getApiUrl = (path: string) => {
   const isTauri =
@@ -86,6 +93,77 @@ export class ApiClient {
   async getAgents() {
     return this.fetch<Agent[]>("/api/agents");
   }
+
+  // Cloud relay
+  async getCloudNode() {
+    const data = await this.fetch<PgHeartSettings>("/v1/mesh/cloud");
+    return {
+      status: "ok",
+      data: {
+        url: data.url ?? "",
+        token: data.token ?? "",
+        instance_id: data.instance_id ?? "",
+      },
+    };
+  }
+
+  async updateCloudNode(config: CloudNodeConfig) {
+    return this.fetch<{ status: string }>("/v1/mesh/cloud", {
+      method: "PUT",
+      body: JSON.stringify(config),
+    });
+  }
+
+  // Data Commons
+  async getDataCommons() {
+    const data = await this.fetch<DataCommonsConfig>(
+      "/v1/mesh/data_commons/opt_in",
+    );
+    return { status: "ok", data };
+  }
+
+  async optInDataCommons(config: DataCommonsConfig) {
+    return this.fetch<{ status: string }>("/v1/mesh/data_commons/opt_in", {
+      method: "POST",
+      body: JSON.stringify(config),
+    });
+  }
+
+  // Mesh
+  async getMeshStatus() {
+    return this.fetch<MeshStatus>("/v1/mesh/peers");
+  }
+
+  async pairPeer(code: string) {
+    return this.fetch<{ status: string; node_id: string }>("/v1/mesh/peers/pair", {
+      method: "POST",
+      body: JSON.stringify({ code }),
+    });
+  }
+
+  async generatePairingCode(endpoint?: string) {
+    return this.fetch<PairingCodeResponse>("/v1/mesh/peers/generate-code", {
+      method: "POST",
+      body: JSON.stringify({ endpoint }),
+    });
+  }
+
+  async updatePeerAcl(
+    nodeId: string,
+    role: MeshRole,
+    clearance: ClearanceLevel,
+  ) {
+    return this.fetch<{ status: string }>(`/v1/mesh/peers/${nodeId}/acl`, {
+      method: "PUT",
+      body: JSON.stringify({ role, clearance }),
+    });
+  }
+
+  async removePeer(nodeId: string) {
+    return this.fetch<{ status: string }>(`/v1/mesh/peers/${nodeId}`, {
+      method: "DELETE",
+    });
+  }
 }
 
 export interface ProviderConfig {
@@ -118,4 +196,24 @@ export interface ProviderQuota {
   cache_hits: number;
   rate_limited_until: string | null;
   last_update: string;
+}
+
+interface PgHeartSettings {
+  url?: string | null;
+  token?: string | null;
+  instance_id?: string | null;
+  sync_interval_ms?: number;
+  auto_heartbeat?: boolean;
+}
+
+export interface CloudNodeConfig {
+  url: string;
+  token: string;
+  instance_id: string;
+}
+
+export interface DataCommonsConfig {
+  enabled: boolean;
+  consent_given: boolean;
+  wallet_address?: string | null;
 }
