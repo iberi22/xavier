@@ -3,6 +3,7 @@
 //! This module handles loading configurations from files and resolving system paths.
 
 use super::types::XavierSettings;
+use crate::secrets::vault::HardwareVault;
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 use tokio::fs;
@@ -82,6 +83,18 @@ pub fn current() -> XavierSettings {
     }
     if settings.telegram.bot_token.is_none() {
         settings.telegram.bot_token = std::env::var("XAVIER_TELEGRAM_TOKEN").ok();
+    }
+    if settings.telegram.bot_token.is_none() {
+        let vault = HardwareVault::new("xavier-telegram");
+        settings.telegram.bot_token = vault.get_secret("bot_token").ok();
+    }
+    if settings.telegram.notification_chat_id.is_none() {
+        settings.telegram.notification_chat_id =
+            std::env::var("XAVIER_TELEGRAM_NOTIFICATION_CHAT_ID").ok();
+    }
+    if settings.telegram.notification_chat_id.is_none() {
+        let vault = HardwareVault::new("xavier-telegram");
+        settings.telegram.notification_chat_id = vault.get_secret("notification_chat_id").ok();
     }
     if settings.pgheart.url.is_none() {
         settings.pgheart.url = std::env::var("PGHEART_URL").ok();
