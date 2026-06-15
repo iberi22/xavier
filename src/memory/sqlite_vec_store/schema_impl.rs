@@ -30,34 +30,23 @@ impl SchemaInitializer for VecSqliteMemoryStore {
 impl VecSqliteMemoryStore {
     pub async fn init_schema_async(&self) -> Result<()> {
         let project_id = self.project_id.clone();
-        let config = self.config.clone();
 
-        ConnectionManager::global().with_conn(&project_id, move |conn| {
-            // Run unified migrations
-            let mut manager = crate::storage::MigrationManager::new();
-            manager.add_migration(crate::storage::migrations::MigrationV1InitialSchema);
-            manager.add_migration(crate::storage::migrations::MigrationV2ColumnarIndices);
-            manager.run_migrations(conn)?;
+        ConnectionManager::global()
+            .with_conn(&project_id, move |conn| {
+                // Run unified migrations
+                let mut manager = crate::storage::MigrationManager::new();
+                manager.add_migration(crate::storage::migrations::MigrationV1InitialSchema);
+                manager.add_migration(crate::storage::migrations::MigrationV2ColumnarIndices);
+                manager.add_migration(crate::storage::migrations::MigrationV3UnifiedExtensions);
+                manager.add_migration(crate::storage::migrations::MigrationV4UnifiedIsolation);
+                manager.run_migrations(conn)?;
 
-            // New native vector search table (Turso specific)
-            conn.execute_batch(&format!(
-                "CREATE TABLE IF NOT EXISTS memory_embeddings (
-                    id TEXT PRIMARY KEY,
-                    workspace_id TEXT NOT NULL,
-                    embedding F32_BLOB({})
-                );",
-                config.embedding_dimensions
-            ))?;
+                // Run automatic vector migration
+                Self::migrate_embeddings_on_startup(conn)?;
 
-            // Vector search indexes and timeline sequences
-            Self::ensure_fts_index(conn)?;
-            Self::ensure_timeline_sequence(conn)?;
-
-            // Run automatic vector migration
-            Self::migrate_embeddings_on_startup(conn)?;
-
-            Ok(())
-        }).await
+                Ok(())
+            })
+            .await
     }
 
     fn migrate_embeddings_on_startup(conn: &Connection) -> Result<()> {
@@ -105,29 +94,6 @@ impl VecSqliteMemoryStore {
             );
         }
 
-        Ok(())
-    }
-
-
-    fn ensure_timeline_sequence(conn: &Connection) -> Result<()> {
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS timeline_sequence (
-                workspace_id TEXT PRIMARY KEY,
-                last_sequence INTEGER NOT NULL DEFAULT 0
-            );",
-        )?;
-        Ok(())
-    }
-
-    fn ensure_fts_index(conn: &Connection) -> Result<()> {
-        conn.execute_batch(
-            "CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
-                id UNINDEXED,
-                path,
-                content,
-                code_tokens
-            );",
-        )?;
         Ok(())
     }
 }
