@@ -246,14 +246,14 @@ async fn run_all_benchmarks() -> Vec<EmbeddingBenchResult> {
         .unwrap_or_else(|_| "Alibaba-NLP/gte-Qwen2-1.5B-instruct".to_string());
     let docker_model_name = docker_model
         .split('/')
-        .last()
+        .next_back()
         .unwrap_or("unknown")
         .to_string();
 
     if let Ok(e) = xavier::embedding::openai::OpenAICompatibleEmbedder::new(
         Some("dummy-key".into()),
         docker_model.clone(),
-        format!("{docker_url}"),
+        docker_url.to_string(),
         1536,
     ) {
         results.push(
@@ -400,9 +400,8 @@ fn print_summary(results: &[EmbeddingBenchResult]) {
 }
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
-    use super::*;
-
     #[tokio::test]
     async fn run_embedding_benchmarks() {
         let results = run_all_benchmarks().await;

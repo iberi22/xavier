@@ -178,31 +178,30 @@ mod tests {
     use std::sync::Arc;
     use tower::util::ServiceExt;
     use tokio::sync::RwLock as AsyncRwLock;
-    use crate::memory::qmd_memory::QmdMemory;
-    use crate::app::qmd_memory_adapter::QmdMemoryAdapter;
-    use crate::ports::inbound::MemoryQueryPort;
+    use xavier::memory::qmd_memory::QmdMemory;
+    use xavier::app::qmd_memory_adapter::QmdMemoryAdapter;
     use crate::cli::state::CliState;
-    use crate::security::sessions::SessionManager;
-    use crate::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
-    use crate::coordination::SimpleAgentRegistry;
-    use crate::codebase::conversations_db::ConversationsDb;
-    use crate::coordination::KeyLendingEngine;
-    use crate::coordination::XavierEventBus;
-    use crate::tasks::store::{InMemoryTaskStore, TaskService};
-    use crate::agents::rate_limit::RateLimitManager;
-    use crate::app::proxy_use_case::ProxyUseCase;
-    use crate::embedding::MockEmbedder;
-    use crate::memory::file_indexer::{FileIndexer, FileIndexerConfig};
-    use crate::memory::agent_indexer::AgentIndexer;
+    use xavier::security::sessions::SessionManager;
+    use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
+    use xavier::coordination::SimpleAgentRegistry;
+    use xavier::codebase::conversations_db::ConversationsDb;
+    use xavier::coordination::KeyLendingEngine;
+    use xavier::coordination::XavierEventBus;
+    use xavier::tasks::store::{InMemoryTaskStore, TaskService};
+    use xavier::agents::rate_limit::RateLimitManager;
+    use xavier::app::proxy_use_case::ProxyUseCase;
+    use xavier::embedding::NoopEmbedder;
+    use xavier::memory::file_indexer::{FileIndexer, FileIndexerConfig};
+    use xavier::memory::agent_indexer::AgentIndexer;
     use parking_lot::Mutex;
     use std::collections::HashMap;
     use std::path::PathBuf;
 
     async fn test_state() -> CliState {
-        use crate::memory::sqlite_vec_store::DEFAULT_EMBEDDING_DIMENSIONS;
-        use crate::agents::provider::router::{ProviderKind, ProviderRouter};
-        use crate::app::security_service::SecurityService;
-        use crate::secrets::audit::QmdAuditLogger;
+        use xavier::memory::sqlite_vec_store::DEFAULT_EMBEDDING_DIMENSIONS;
+        use xavier::agents::provider::router::{ProviderKind, ProviderRouter};
+        use xavier::app::security_service::SecurityService;
+        use xavier::secrets::audit::QmdAuditLogger;
 
         let docs = Arc::new(AsyncRwLock::new(Vec::new()));
         let qmd_memory = Arc::new(QmdMemory::new_with_workspace(docs, "test-ws"));
@@ -226,7 +225,7 @@ mod tests {
             security: Arc::new(SecurityService::new()),
             security_scan: Arc::new(SecurityService::new()),
             _time_store: None,
-            agent_registry: Arc::new(SimpleAgentRegistry::new()),
+            agent_registry: SimpleAgentRegistry::new(),
             panel_store: Arc::new(ConversationsDb::open_in_memory("test-project").await.unwrap()),
             secrets_engine: Arc::new(KeyLendingEngine::new(Box::new(QmdAuditLogger::new()))),
             event_bus: XavierEventBus::new(10),
@@ -237,7 +236,7 @@ mod tests {
             proxy_use_case: Arc::new(ProxyUseCase::new(Arc::new(RateLimitManager::new()), Arc::new(Mutex::new(HashMap::new())))),
             session_manager: Arc::new(SessionManager::new(60)),
             provider_router: Arc::new(tokio::sync::RwLock::new(ProviderRouter::new(ProviderKind::OpenAI))),
-            embedder: Arc::new(MockEmbedder::new()),
+            embedder: Arc::new(NoopEmbedder),
             agent_indexer: Arc::new(AgentIndexer::new(FileIndexer::new(FileIndexerConfig::default(), None))),
         }
     }

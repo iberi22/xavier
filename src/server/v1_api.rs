@@ -252,8 +252,68 @@ pub async fn v1_mesh_handshake(
             .into_response();
     }
 
+    // 2. Verify Pairing Secret if provided
+    let mut auto_register = false;
+    if let Some(secret) = payload.pairing_secret {
+        match crate::mesh::pairing_registry::PairingSecretRegistry::load() {
+            Ok(mut registry) => {
+                match registry.verify_and_remove(&secret) {
+                    Ok(true) => {
+                        info!("Pairing secret verified for node {}", payload.node_id);
+                        auto_register = true;
+                    }
+                    Ok(false) => {
+                        return (
+                            StatusCode::UNAUTHORIZED,
+                            Json(serde_json::json!({ "accepted": false, "reason": "Invalid or expired pairing secret" })),
+                        ).into_response();
+                    }
+                    Err(e) => {
+                        return (
+                            StatusCode::INTERNAL_SERVER_ERROR,
+                            Json(serde_json::json!({ "accepted": false, "reason": format!("Secret registry error: {}", e) })),
+                        ).into_response();
+                    }
+                }
+            }
+            Err(e) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    Json(serde_json::json!({ "accepted": false, "reason": format!("Failed to load secret registry: {}", e) })),
+                ).into_response();
+            }
+        }
+    }
+
     match NodeIdentity::load_or_create() {
         Ok(identity) => {
+            if auto_register {
+                // Automatically add to PeerRegistry and MeshAcl
+                if let Ok(mut peers) = crate::mesh::PeerRegistry::load() {
+                    let _ = peers.add_peer(crate::mesh::PeerInfo {
+                        node_id: payload.node_id.clone(),
+                        alias: None,
+                        endpoint_url: String::new(), // We don't necessarily know their endpoint yet
+                        public_key_hex: payload.public_key_hex.clone(),
+                        added_at: chrono::Utc::now().timestamp(),
+                        last_seen_at: Some(chrono::Utc::now().timestamp()),
+                        sync_enabled: true,
+                        is_cloud: false,
+                    });
+            info!("Auto-registered peer {} in PeerRegistry", payload.node_id);
+                }
+
+                if let Ok(mut acl) = crate::mesh::MeshAcl::load() {
+                    let _ = acl.set_entry(payload.node_id.clone(), crate::mesh::NodeAclEntry {
+                        role: crate::enterprise::rbac::Role::Reader,
+                        clearance: crate::memory::schema::ClearanceLevel::Unclassified,
+                        namespaces: None,
+                        public_key_hex: payload.public_key_hex.clone(),
+                    });
+            info!("Auto-registered peer {} in MeshAcl", payload.node_id);
+                }
+            }
+
             let response = MeshHandshakeResponse {
                 accepted: true,
                 node_id: identity.node_id.clone(),
@@ -275,23 +335,43 @@ pub async fn v1_mesh_manifest(
     Query(payload): Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
     let node_id_str = payload.get("node_id");
-    let acl = crate::mesh::acl::MeshAcl::load().unwrap_or_else(|_| {
+    let timestamp_str = payload.get("timestamp");
+    let nonce = payload.get("nonce");
+    let signature_hex = payload.get("signature");
+
+    let acl = crate::mesh::acl::MeshAcl::load().unwrap_or_else(|e| {
+        tracing::error!("Failed to load mesh ACL: {}", e);
         crate::mesh::acl::MeshAcl::load_from(std::path::PathBuf::from("/tmp/mesh_acl.json")).unwrap()
     });
 
-    let (_role, clearance) = if let Some(id) = node_id_str {
+    let (clearance, namespaces) = if let Some(id) = node_id_str {
         if let Some(entry) = acl.get_entry(&crate::mesh::node::NodeId(id.clone())) {
-            (entry.role, entry.clearance)
+            // VERIFY SIGNATURE
+            if let (Some(ts), Some(n), Some(sig)) = (timestamp_str, nonce, signature_hex) {
+                let message = format!("{}:{}", ts, n);
+                let pubkey = hex::decode(&entry.public_key_hex).unwrap_or_default();
+                let signature = hex::decode(sig).unwrap_or_default();
+                if !NodeIdentity::verify(&pubkey, message.as_bytes(), &signature) {
+                    return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid signature" }))).into_response();
+                }
+            } else {
+                return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Missing auth headers" }))).into_response();
+            }
+
+            info!("Manifest request: NodeId={} verified and found in ACL", id);
+            (entry.clearance, entry.namespaces.clone())
         } else {
+            info!("Manifest request: NodeId={} NOT found in ACL, denying access", id);
             (
-                crate::enterprise::rbac::Role::Reader,
                 crate::memory::schema::ClearanceLevel::Unclassified,
+                Some(vec![]), // Secure-by-default: deny all namespaces
             )
         }
     } else {
+        info!("Manifest request: No NodeId provided, denying access");
         (
-            crate::enterprise::rbac::Role::Reader,
             crate::memory::schema::ClearanceLevel::Unclassified,
+            Some(vec![]),
         )
     };
 
@@ -312,11 +392,33 @@ pub async fn v1_mesh_manifest(
                     for c in chunk_manifest.chunks.values() {
                         // Filter chunks: only include if at least one doc is authorized
                         if let Ok(docs) = crate::sync::chunks::import_from_chunk(&sync_dir, &c.hash) {
-                            let has_authorized_doc = docs.iter().any(|doc| {
-                                doc.clearance <= clearance
+                            let all_authorized = docs.iter().all(|doc| {
+                                let clearance_ok = doc.clearance <= clearance;
+                                let namespace_ok = if let Some(ref ns_list) = namespaces {
+                                    let doc_project = doc.metadata.get("namespace")
+                                        .and_then(|v| v.get("project"))
+                                        .and_then(|v| v.as_str())
+                                        .or_else(|| {
+                                            doc.metadata.get("project")
+                                                .and_then(|v| v.as_str())
+                                        })
+                                        .map(|s| s.to_string());
+
+                                    if let Some(ref doc_ns) = doc_project {
+                                        let matched = ns_list.contains(doc_ns);
+                                        tracing::debug!("Namespace check: doc_ns={}, ns_list={:?}, matched={}", doc_ns, ns_list, matched);
+                                        matched
+                                    } else {
+                                        tracing::debug!("Namespace check: doc has no project, ns_list={:?}, matched=false, metadata={:?}", ns_list, doc.metadata);
+                                        false // Restricted but doc has no namespace
+                                    }
+                                } else {
+                                    true // No restriction
+                                };
+                                clearance_ok && namespace_ok
                             });
 
-                            if has_authorized_doc {
+                            if all_authorized {
                                 chunks.push(ChunkRef {
                                     hash: c.hash.clone(),
                                     document_count: c.document_ids.len(),
@@ -354,14 +456,23 @@ pub async fn v1_mesh_chunks_request(
 ) -> impl IntoResponse {
     use std::collections::HashMap;
 
-    let acl = crate::mesh::acl::MeshAcl::load().unwrap_or_else(|_| {
+    let acl = crate::mesh::acl::MeshAcl::load().unwrap_or_else(|e| {
+        tracing::error!("Failed to load mesh ACL: {}", e);
         crate::mesh::acl::MeshAcl::load_from(std::path::PathBuf::from("/tmp/mesh_acl.json")).unwrap()
     });
 
-    let clearance = if let Some(entry) = acl.get_entry(&payload.requesting_node_id) {
-        entry.clearance
+    let (clearance, namespaces) = if let Some(entry) = acl.get_entry(&payload.requesting_node_id) {
+        // VERIFY SIGNATURE
+        let message = format!("{}:{}", payload.timestamp, payload.nonce);
+        let pubkey = hex::decode(&entry.public_key_hex).unwrap_or_default();
+        let signature = hex::decode(&payload.signature_hex).unwrap_or_default();
+        if !NodeIdentity::verify(&pubkey, message.as_bytes(), &signature) {
+            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid signature" }))).into_response();
+        }
+
+        (entry.clearance, entry.namespaces.clone())
     } else {
-        crate::memory::schema::ClearanceLevel::Unclassified
+        (crate::memory::schema::ClearanceLevel::Unclassified, Some(vec![]))
     };
 
     let mut response_chunks = HashMap::new();
@@ -374,7 +485,19 @@ pub async fn v1_mesh_chunks_request(
 
     for hash in payload.wanted_hashes {
         if let Ok(docs) = crate::sync::chunks::import_from_chunk(&sync_dir, &hash) {
-            let all_authorized = docs.iter().all(|doc| doc.clearance <= clearance);
+            let all_authorized = docs.iter().all(|doc| {
+                let clearance_ok = doc.clearance <= clearance;
+                let namespace_ok = if let Some(ref ns_list) = namespaces {
+                    if let Some(ref doc_ns) = doc.metadata.get("namespace").and_then(|v| v.get("project")).and_then(|v| v.as_str()) {
+                        ns_list.contains(&doc_ns.to_string())
+                    } else {
+                        false
+                    }
+                } else {
+                    true
+                };
+                clearance_ok && namespace_ok
+            });
             if all_authorized {
                 let chunk_path = sync_dir.join("chunks").join(format!("{}.jsonl.gz", hash));
                 if let Ok(data) = std::fs::read(chunk_path) {
@@ -384,7 +507,7 @@ pub async fn v1_mesh_chunks_request(
         }
     }
 
-    Json(response_chunks)
+    Json(response_chunks).into_response()
 }
 
 pub async fn v1_mesh_chunks_push(

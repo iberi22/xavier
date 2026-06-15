@@ -32,9 +32,13 @@ pub struct PeerRegistry {
 impl PeerRegistry {
     /// Load the registry from the default storage path.
     pub fn load() -> Result<Self> {
-        let config_dir = dirs::config_dir()
-            .context("Could not determine config directory")?
-            .join("xavier");
+        let config_dir = if let Ok(val) = std::env::var("XAVIER_CONFIG_DIR") {
+            PathBuf::from(val)
+        } else {
+            dirs::config_dir()
+                .context("Could not determine config directory")?
+                .join("xavier")
+        };
         Self::load_from(config_dir.join("mesh_peers.json"))
     }
 

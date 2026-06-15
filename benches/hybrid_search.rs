@@ -83,6 +83,9 @@ fn bench_hybrid_search(c: &mut Criterion) {
                     relation: None,
                     clearance: Default::default(),
                     revisions: Vec::new(),
+                    content_iv: None,
+                    encrypted_dek: None,
+                    metadata_iv: None,
                 })
                 .await
                 .expect("seed memory");

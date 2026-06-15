@@ -1,3 +1,4 @@
+#[cfg(feature = "tauri")]
 use std::sync::OnceLock;
 
 #[cfg(feature = "tauri")]
