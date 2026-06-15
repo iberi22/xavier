@@ -115,18 +115,17 @@ impl RewardEngine {
     /// Calculate the XP reward for a given contribution without applying it.
     pub fn calculate_reward(&self, contribution: &ContributionType) -> u64 {
         let raw = match contribution {
-            ContributionType::StorageProvided { bytes, duration_secs } => {
-                (*bytes as f64 * *duration_secs as f64) / 1_000_000.0 * self.reward_rate
-            }
+            ContributionType::StorageProvided {
+                bytes,
+                duration_secs,
+            } => (*bytes as f64 * *duration_secs as f64) / 1_000_000.0 * self.reward_rate,
             ContributionType::BandwidthProvided { bytes } => {
                 *bytes as f64 / 1_000_000.0 * self.reward_rate
             }
             ContributionType::ComputeProvided { cycles } => {
                 *cycles as f64 / 100_000.0 * self.reward_rate
             }
-            ContributionType::PeerDiscovery { peers_connected } => {
-                *peers_connected as f64 * 10.0
-            }
+            ContributionType::PeerDiscovery { peers_connected } => *peers_connected as f64 * 10.0,
             ContributionType::DataValidated { records } => *records as f64 * 5.0,
         };
         // Floor to u64, minimum 1 XP for non-zero contributions
@@ -191,8 +190,7 @@ impl RewardEngine {
         }
 
         // Update atomic counter
-        self.today_earned
-            .fetch_add(xp_awarded, Ordering::Relaxed);
+        self.today_earned.fetch_add(xp_awarded, Ordering::Relaxed);
 
         let event = RewardEvent {
             event_id: Uuid::new_v4(),
@@ -244,9 +242,7 @@ mod tests {
     async fn test_bandwidth_reward_calculation() {
         let (engine, _) = setup_engine().await;
         // 10 MB transferred → 10_000_000 / 1_000_000 * 1.0 = 10 XP
-        let contrib = ContributionType::BandwidthProvided {
-            bytes: 10_000_000,
-        };
+        let contrib = ContributionType::BandwidthProvided { bytes: 10_000_000 };
         let xp = engine.calculate_reward(&contrib);
         assert_eq!(xp, 10);
     }
@@ -263,9 +259,7 @@ mod tests {
     #[tokio::test]
     async fn test_peer_discovery_flat_reward() {
         let (engine, _) = setup_engine().await;
-        let contrib = ContributionType::PeerDiscovery {
-            peers_connected: 3,
-        };
+        let contrib = ContributionType::PeerDiscovery { peers_connected: 3 };
         let xp = engine.calculate_reward(&contrib);
         assert_eq!(xp, 30); // 3 * 10
     }
@@ -296,21 +290,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_daily_cap_enforced() {
-        let (engine, _) = setup_engine().await;
+        let (mut engine, _) = setup_engine().await;
         // Force the engine to a tiny daily cap for testing
         engine.daily_cap = 5; // Override for test only
 
         let contrib = ContributionType::DataValidated { records: 10 }; // 50 XP normally
 
-        let result = engine.process_contribution(contrib, "Should be capped").await;
+        let result = engine
+            .process_contribution(contrib, "Should be capped")
+            .await;
         assert!(result.is_ok());
         assert_eq!(result.unwrap().xp_awarded, 5); // capped to daily cap
 
         // Next attempt should fail
         let contrib2 = ContributionType::DataValidated { records: 1 };
-        let result2 = engine
-            .process_contribution(contrib2, "Should fail")
-            .await;
+        let result2 = engine.process_contribution(contrib2, "Should fail").await;
         assert!(result2.is_err());
         assert!(result2
             .unwrap_err()
@@ -319,14 +313,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_tiny_contribution_returns_zero() {
+    async fn test_tiny_contribution_returns_minimum_reward() {
         let (engine, _) = setup_engine().await;
         let contrib = ContributionType::StorageProvided {
             bytes: 1,
             duration_secs: 1,
         };
         let xp = engine.calculate_reward(&contrib);
-        assert_eq!(xp, 0); // 1*1/1_000_000 * 1.0 < 1
+        assert_eq!(xp, 1); // non-zero contributions receive the minimum reward
     }
 
     #[tokio::test]
