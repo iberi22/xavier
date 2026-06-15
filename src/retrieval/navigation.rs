@@ -6,6 +6,7 @@
 
 use crate::domain::memory::belief::BeliefEdge;
 use super::policy::{NavigationPolicy, NavigationScore};
+use crate::memory::qmd::NormalizedId;
 
 impl NavigationPolicy {
     /// Scores a transition (edge) from a current node towards a target given a query.
@@ -54,14 +55,16 @@ impl NavigationPolicy {
             }
         }
 
-        let query_lower = query.to_lowercase();
-        let _source_lower = edge.source.to_lowercase();
-        let target_lower = edge.target.to_lowercase();
+        let query_norm: NormalizedId = query.parse().unwrap_or_else(|_| NormalizedId::from_str_unchecked(query));
+        let target_norm: NormalizedId = edge.target.parse().unwrap_or_else(|_| NormalizedId::from_str_unchecked(&edge.target));
+
+        let query_lower = query_norm.as_str();
+        let target_lower = target_norm.as_str();
         let relation_lower = edge.relation_type.to_lowercase();
 
         // 1. Semantic similarity
         let mut similarity = 0.0_f32;
-        if target_lower.contains(&query_lower) || query_lower.contains(&target_lower) {
+        if target_lower.contains(query_lower) || query_lower.contains(target_lower) {
             similarity = 1.0;
         } else {
             let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
@@ -250,5 +253,28 @@ mod tests {
         edge.source_language = Some("rust".to_string());
         let score = policy.score_transition("Rust", &edge, chrono::Utc::now(), 1, 1);
         assert!(score > 0.0);
+    }
+
+    #[test]
+    fn test_score_transition_normalized_id_reconciliation() {
+        let policy = NavigationPolicy::with_defaults();
+        let edge = BeliefEdge::new(
+            "source_node".to_string(),
+            "My.Target_Node!!".to_string(),
+            "related_to".to_string(),
+            1.0,
+            "prov".to_string(),
+        );
+
+        // Different formatting but same normalized content
+        let queries = vec!["my_target_node", "MY.TARGET.NODE", "My Target Node"];
+
+        for query in queries {
+            let score = policy.score_transition(query, &edge, chrono::Utc::now(), 1, 1);
+            assert!(score > 0.0, "Score should be positive for query: {}", query);
+
+            let components = policy.calculate_score_components(query, &edge, chrono::Utc::now(), 1, 1);
+            assert_eq!(components.semantic_similarity, 1.0, "Semantic similarity should be 1.0 for query: {}", query);
+        }
     }
 }
