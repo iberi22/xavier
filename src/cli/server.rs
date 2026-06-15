@@ -284,6 +284,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         )
         .route("/mcp/tools", get(mcp_tools_handler))
         .route("/code/find", post(code_find_handler))
+        .route("/code/index", post(code_index_handler))
         .route("/code/context", post(code_context_handler))
         .route("/code/stats", get(code_stats_handler))
         .route("/code/dependencies", post(code_dependencies_handler))
@@ -305,6 +306,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             post(xavier::api::skills::dispatch_skill),
         )
         .route("/api/skill/list", get(xavier::api::skills::list_skills))
+        .route("/skills", get(xavier::api::skills::list_skills))
         .route(
             "/api/memory/health",
             get(xavier::api::skills::memory_health),
@@ -313,6 +315,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             "/api/timeline/slice",
             post(xavier::api::timeline::get_time_slice),
         )
+        .route("/timeline", get(xavier::api::timeline::timeline_summary))
         .route(
             "/api/settings/cloud-node",
             get(xavier::api::settings::get_cloud_node).post(xavier::api::settings::update_cloud_node),
@@ -383,6 +386,8 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/v1/usage/status/{provider}", get(usage_status_handler))
         .route("/v1/usage/update", post(usage_update_handler))
         .route("/v1/usage/cooldown", post(usage_cooldown_handler))
+        .route("/v1/tasks", get(tasks_list_handler))
+        .route("/v1/tasks/sync", post(tasks_sync_handler))
         .route("/v1/usage/track", post(usage_track_handler))
         .route("/v1/usage/summary/{provider}", get(usage_summary_handler))
         .route(

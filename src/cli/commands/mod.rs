@@ -14,6 +14,7 @@
 //! The top-level [`Command`] enum and [`Cli::run()`] dispatch remain visible
 //! through re-exports so that external consumers are unaffected.
 
+pub mod billing;
 pub mod code;
 pub mod data_commons;
 pub mod enums;
@@ -24,8 +25,10 @@ pub mod provider;
 pub mod secrets;
 pub mod session;
 pub mod spawn;
+pub mod tasks;
 pub mod token;
 pub mod usage;
+pub mod verify;
 
 // Re-export for backward compatibility
 pub use enums::*;
@@ -66,6 +69,9 @@ impl Cli {
                 search_memories_filtered(query, lim, cluster.clone(), level.clone()).await
             }
             Command::Usage { cmd } => usage::handle_usage_command(cmd.clone()).await,
+            Command::Billing => billing::handle_billing_command().await,
+            Command::Tasks { cmd } => tasks::handle_tasks_command(cmd.clone()).await,
+            Command::Verify { cmd } => verify::handle_verify_command(cmd.clone()).await,
             Command::Add {
                 content,
                 title,

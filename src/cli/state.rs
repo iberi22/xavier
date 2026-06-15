@@ -45,10 +45,6 @@ pub struct CliState {
         reason = "Wire event_bus into event-driven architecture (e.g. system3 event bus integration)"
     )]
     pub event_bus: XavierEventBus,
-    #[expect(
-        dead_code,
-        reason = "Migrate tasks from InMemoryTaskStore to persistent SQLite store"
-    )]
     pub tasks: Arc<TaskService<InMemoryTaskStore>>,
     pub rate_manager: Arc<RateLimitManager>,
     #[expect(
