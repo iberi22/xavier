@@ -11,6 +11,7 @@ use tracing::info;
 pub mod cache;
 pub mod gllm;
 pub mod openai;
+pub mod pipeline;
 
 const DEFAULT_LOCAL_EMBEDDING_ENDPOINT: &str = "http://localhost:11434/v1/embeddings";
 const DEFAULT_LOCAL_EMBEDDING_MODEL: &str = "embeddinggemma";
