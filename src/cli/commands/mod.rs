@@ -69,9 +69,6 @@ impl Cli {
                 search_memories_filtered(query, lim, cluster.clone(), level.clone()).await
             }
             Command::Usage { cmd } => usage::handle_usage_command(cmd.clone()).await,
-            Command::Billing => billing::handle_billing_command().await,
-            Command::Tasks { cmd } => tasks::handle_tasks_command(cmd.clone()).await,
-            Command::Verify { cmd } => verify::handle_verify_command(cmd.clone()).await,
             Command::Add {
                 content,
                 title,
@@ -100,6 +97,10 @@ impl Cli {
             Command::Stats => {
                 println!("Fetching Xavier statistics...");
                 http::show_stats().await
+            }
+            Command::Reindex => {
+                println!("Re-indexing memories missing embeddings...");
+                http::reindex_memories().await
             }
             Command::Code { cmd } => code::handle_code_command(cmd.clone()).await,
             Command::Ls { path } => navigation::handle_ls(path.clone()).await,
@@ -184,6 +185,14 @@ impl Cli {
             Command::Secrets { cmd } => secrets::handle_secrets_command(cmd.clone()).await,
             Command::Vault { cmd } => secrets::handle_vault_command(cmd.clone()).await,
             Command::Quota => crate::cli::handlers::quota::handle_quota_command().await,
+            Command::Tasks { cmd } => tasks::handle_tasks_command(cmd.clone()).await,
+            Command::Billing => crate::cli::handlers::billing::handle_billing_command().await,
+            Command::Task { cmd } => crate::cli::handlers::tasks::handle_task_command(cmd.clone()).await,
+            Command::Sync { cmd: _ } => crate::cli::handlers::sync::handle_sync_command().await,
+            Command::Verify { cmd } => verify::handle_verify_command(cmd.clone()).await,
+            Command::Scan { cmd: _ } => {
+                crate::cli::handlers::system_scan_cli::handle_scan_command().await
+            }
             Command::Export {
                 public,
                 output,
