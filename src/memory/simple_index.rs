@@ -88,7 +88,7 @@ impl SimpleMemoryIndex {
         for kw in &doc.keywords {
             self.keyword_index
                 .entry(kw.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(idx);
         }
 
@@ -135,6 +135,12 @@ impl SimpleMemoryIndex {
 
     pub fn count(&self) -> usize {
         self.docs.len()
+    }
+}
+
+impl Default for SimpleMemoryIndex {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

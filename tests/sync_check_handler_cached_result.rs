@@ -172,6 +172,9 @@ fn make_session_record(seconds_ago: i64) -> MemoryRecord {
         level: xavier::memory::schema::MemoryLevel::Raw,
         relation: None,
         clearance: Default::default(),
+        content_iv: None,
+        encrypted_dek: None,
+        metadata_iv: None,
     }
 }
 

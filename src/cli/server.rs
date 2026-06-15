@@ -83,6 +83,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     cm.connect("memory", ".")?;
     cm.connect("vec_store", ".")?;
     cm.connect("metrics", ".")?;
+    cm.connect("security", ".")?;
     cm.set_active("default", ".").await?;
 
     let mut store_inner = VecSqliteMemoryStore::new(config.clone()).await?;
@@ -377,8 +378,8 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/v1/proxy/request", post(crate::cli::proxy::generic_proxy))
         .route("/v1/security/approve", post(security_approve_handler))
         .route("/security/tokens", get(list_tokens_handler).post(create_token_handler))
-        .route("/security/tokens/:id", delete(revoke_token_handler))
-        .route("/security/tokens/:id/rotate", post(rotate_token_handler))
+        .route("/security/tokens/{id}", delete(revoke_token_handler))
+        .route("/security/tokens/{id}/rotate", post(rotate_token_handler))
         .route("/v1/usage/status/{provider}", get(usage_status_handler))
         .route("/v1/usage/update", post(usage_update_handler))
         .route("/v1/usage/cooldown", post(usage_cooldown_handler))

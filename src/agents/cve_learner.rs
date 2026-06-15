@@ -59,6 +59,12 @@ impl CveLearningAgent {
     }
 }
 
+impl Default for CveLearningAgent {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

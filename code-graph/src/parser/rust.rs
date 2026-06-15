@@ -203,6 +203,7 @@ impl RustParser {
         None
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn extract_identifiers_from_pattern(
         &self,
         node: Node,
@@ -260,6 +261,7 @@ impl RustParser {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn push_symbol(
         &self,
         symbols: &mut Vec<Symbol>,

@@ -3,6 +3,8 @@
 //! Run: cargo test --test quick_embed_test --features local-gllm -- --nocapture
 //! Env: XAVIER_GLLM_MODEL=all-MiniLM-L6-v2 (or mpnet, Qwen3-Embedding)
 
+#![cfg(feature = "local-gllm")]
+
 use std::time::Instant;
 use xavier::embedding::Embedder;
 

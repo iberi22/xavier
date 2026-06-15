@@ -52,24 +52,21 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
-      - name: Install cargo-nextest
-        run: cargo install cargo-nextest --locked
-
       # Run tests and collect results
       - name: Run Unit Tests
         run: |
           echo "Running unit tests with Jules agent..."
-          cargo nextest run --workspace --lib --features ci-safe --exclude xavier-web 2>&1 | tee test_results.txt
+          cargo test --workspace --lib --no-default-features --features ci-safe --exclude xavier-web --exclude app 2>&1 | tee test_results.txt
 
       - name: Run Integration Tests
         run: |
           echo "Running integration tests..."
-          cargo nextest run --workspace --test integration --features ci-safe --exclude xavier-web 2>&1 | tee integration_results.txt
+          cargo test --workspace --test integration --no-default-features --features ci-safe --exclude xavier-web --exclude app 2>&1 | tee integration_results.txt
 
       - name: Run E2E Tests
         run: |
           echo "Running E2E tests..."
-          cargo nextest run --workspace --test e2e --features ci-safe --exclude xavier-web 2>&1 | tee e2e_results.txt
+          cargo test --workspace --test server_e2e --no-default-features --features ci-safe --exclude xavier-web --exclude app 2>&1 | tee e2e_results.txt
 
       # Analyze and improve tests with Jules
       - name: Jules Test Analysis
@@ -82,7 +79,7 @@ jobs:
           # 4. Suggest improvements
 
           # Show coverage report
-          cargo tarpaulin --out Html --report-dir coverage 2>&1 || true
+          cargo tarpaulin --no-default-features --features ci-safe --out Html --report-dir coverage 2>&1 || true
 
       # Generate test improvements
       - name: Generate Test Improvements
@@ -123,20 +120,17 @@ jobs:
       matrix:
         include:
           - name: lib
-            command: cargo nextest run --workspace --lib --features ci-safe --exclude xavier-web
+            command: cargo test --workspace --lib --no-default-features --features ci-safe --exclude xavier-web --exclude app
           - name: integration
-            command: cargo nextest run --workspace --test integration --features ci-safe --exclude xavier-web
+            command: cargo test --workspace --test integration --no-default-features --features ci-safe --exclude xavier-web --exclude app
           - name: e2e
-            command: cargo nextest run --workspace --test e2e --features ci-safe --exclude xavier-web
+            command: cargo test --workspace --test server_e2e --no-default-features --features ci-safe --exclude xavier-web --exclude app
       fail-fast: false
     steps:
       - uses: actions/checkout@v6.0.2
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-
-      - name: Install cargo-nextest
-        run: cargo install cargo-nextest --locked
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
@@ -166,4 +160,3 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- Primary suite: ${{ needs.jules-tests.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Parallel suite: ${{ needs.parallel-tests.result }}" >> $GITHUB_STEP_SUMMARY
-

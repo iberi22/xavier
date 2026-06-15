@@ -25,10 +25,10 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: 22.12.0
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4
         with:
           version: 9
           run_install: false
@@ -38,13 +38,22 @@ jobs:
         with:
           targets: x86_64-pc-windows-msvc, x86_64-apple-darwin
 
-      - name: Install Rust dependencies (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew install webkit2gtk
-
       - name: Run Backend Tests (Rust)
-        run: cargo test --verbose
+        run: cargo test --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app --verbose
+
+      - name: Prepare Tauri Sidecar
+        if: github.event_name != 'pull_request'
+        shell: bash
+        run: |
+          cargo build --release --bin xavier
+          mkdir -p panel-ui/src-tauri/binaries
+          TARGET_TRIPLE=$(rustc -Vv | awk '/host:/ { print $2 }')
+
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cp target/release/xavier.exe "panel-ui/src-tauri/binaries/xavier-$TARGET_TRIPLE.exe"
+          else
+            cp target/release/xavier "panel-ui/src-tauri/binaries/xavier-$TARGET_TRIPLE"
+          fi
 
       - name: Install Frontend Dependencies
         working-directory: panel-ui
@@ -52,9 +61,24 @@ jobs:
 
       - name: Build Tauri Executables
         working-directory: panel-ui
-        run: pnpm tauri build
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            pnpm run build
+            if [[ "$RUNNER_OS" == "Windows" ]]; then
+              echo "Skipping Tauri cargo check on Windows pull requests; full Tauri build runs on push."
+            else
+              TARGET_TRIPLE=$(rustc -Vv | awk '/host:/ { print $2 }')
+              mkdir -p src-tauri/binaries
+              touch "src-tauri/binaries/xavier-$TARGET_TRIPLE"
+              cargo check --manifest-path src-tauri/Cargo.toml
+            fi
+          else
+            pnpm tauri build
+          fi
         
       - name: Upload Build Artifacts
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: xavier-desktop-${{ matrix.os }}

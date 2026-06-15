@@ -5,7 +5,7 @@ use crate::cli::config::resolve_http_token;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
-use xavier::mesh::{NodeId, NodeIdentity, PeerInfo, PeerRegistry, MeshTransport};
+use xavier::mesh::{NodeId, NodeIdentity, PeerInfo, PeerRegistry, MeshTransport, pairing_registry::PairingSecretRegistry};
 use xavier::sync::SyncTransport;
 
 pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
@@ -253,6 +253,11 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 hex::encode(&identity.public_key),
             );
 
+            // Register the secret locally
+            let mut secret_registry = PairingSecretRegistry::load()?;
+            let expires_at = xavier::mesh::pairing::decode_pairing_code(&code)?.expires_at;
+            secret_registry.register_secret(secret.clone(), expires_at)?;
+
             println!("✨ Xavier Mesh Pairing Code generated (valid for 1 hour):");
             println!("\n  {}\n", code);
             println!("Verification Secret (share separately): {}", secret);
@@ -283,9 +288,9 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
             let transport = MeshTransport::new(identity);
             let token = resolve_http_token().unwrap_or_default();
 
-            println!("Verifying connection...");
-            match transport.handshake(&data.endpoint, &token).await {
-                Ok(_) => println!("✅ Connection verified!"),
+            println!("Verifying connection with pairing secret...");
+            match transport.handshake_with_secret(&data.endpoint, &token, Some(data.secret)).await {
+                Ok(_) => println!("✅ Connection verified and node registered!"),
                 Err(e) => println!("⚠️ Could not verify connection immediately: {}", e),
             }
         }
