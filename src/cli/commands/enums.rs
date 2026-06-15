@@ -132,6 +132,18 @@ pub enum Command {
         #[command(subcommand)]
         cmd: UsageCommand,
     },
+    /// Show API usage and account balance
+    Billing,
+    /// List and synchronize Xavier tasks
+    Tasks {
+        #[command(subcommand)]
+        cmd: TasksCommand,
+    },
+    /// Run Xavier system verification
+    Verify {
+        #[command(subcommand)]
+        cmd: VerifyCommand,
+    },
     /// Generate authentication tokens
     Token {
         #[command(subcommand)]
@@ -245,6 +257,36 @@ pub enum UsageCommand {
     Update { provider: String, percentage: f32 },
     /// Set a manual cooldown for a provider (in minutes)
     Cooldown { provider: String, minutes: i64 },
+}
+
+/// Task management subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum TasksCommand {
+    /// List tasks from Xavier
+    List {
+        #[arg(short, long)]
+        project: Option<String>,
+        #[arg(short, long)]
+        status: Option<String>,
+        #[arg(short, long)]
+        search: Option<String>,
+    },
+    /// Synchronize tasks with configured backends
+    Sync,
+}
+
+/// Verification subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum VerifyCommand {
+    /// Run a system scan and verification summary
+    Scan {
+        /// Output format: table, json, or markdown
+        #[arg(short, long, default_value = "table")]
+        format: String,
+        /// Show detailed information including masked API key status
+        #[arg(short, long)]
+        detailed: bool,
+    },
 }
 
 /// Code graph query subcommands

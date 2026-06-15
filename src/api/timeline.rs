@@ -84,3 +84,39 @@ pub async fn get_time_slice(
         Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
     }
 }
+
+// ---------------------------------------------------------------------------
+// GET /timeline
+// ---------------------------------------------------------------------------
+
+pub async fn timeline_summary(
+    Extension(workspace): Extension<WorkspaceContext>,
+) -> impl IntoResponse {
+    let engine = TimelineEngine::new(workspace.workspace.memory.clone());
+    let query = TimelineQuery {
+        query: String::new(),
+        start_date: None,
+        end_date: None,
+        agent_id: None,
+        limit: default_limit(),
+    };
+
+    match engine.get_time_slice(&query).await {
+        Ok(slice) => Json(serde_json::json!({
+            "ok": true,
+            "data": {
+                "period_start": slice.period_start,
+                "period_end": slice.period_end,
+                "memories_count": slice.memories.len(),
+                "timeline_events_count": slice.timeline_events.len(),
+                "timeline_events": slice.timeline_events.into_iter().map(|e| serde_json::json!({
+                    "timestamp": e.timestamp,
+                    "operation": e.operation,
+                    "summary": e.summary,
+                    "agent_id": e.agent_id,
+                })).collect::<Vec<_>>()
+            }
+        })),
+        Err(e) => Json(serde_json::json!({ "ok": false, "error": e.to_string() })),
+    }
+}
