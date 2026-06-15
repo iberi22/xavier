@@ -15,6 +15,14 @@ env:
 jobs:
   docker:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: linux-amd64
+            platform: linux/amd64
+          - name: linux-arm64
+            platform: linux/arm64
     permissions:
       contents: read
       packages: write
@@ -39,6 +47,8 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          flavor: |
+            suffix=-${{ matrix.target.name }},onlatest=true
           tags: |
             type=ref,event=branch
             type=ref,event=pr
@@ -50,10 +60,11 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
+          platforms: ${{ matrix.target.platform }}
           push: ${{ github.event_name != 'pull_request' && vars.ENABLE_GHCR_PUSH == 'true' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=docker-${{ matrix.target.name }}
+          cache-to: type=gha,mode=max,scope=docker-${{ matrix.target.name }}
           build-args: |
             FEATURES=local-gllm,cli-interactive
