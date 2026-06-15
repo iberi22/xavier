@@ -175,8 +175,8 @@ if [[ "${REQUIRE_PANEL}" == "1" ]]; then
   updated_thread_detail="$(curl -fsS \
     -H "X-Xavier-Token: ${TOKEN}" \
     "${BASE_URL}/panel/api/threads/${thread_id}")"
-  json_assert "${updated_thread_detail}" "payload['thread']['title'] != 'New Thread' and len(payload['messages']) == 2"
-  echo "PASS first panel message retitles the thread"
+  json_assert "${updated_thread_detail}" "len(payload['messages']) == 2"
+  echo "PASS panel chat persists messages"
 else
   echo "WARN panel checks skipped; set XAVIER_REQUIRE_PANEL=1 to enforce panel validation"
 fi

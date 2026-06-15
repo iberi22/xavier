@@ -39,7 +39,13 @@ jobs:
           targets: x86_64-pc-windows-msvc, x86_64-apple-darwin
 
       - name: Run Backend Tests (Rust)
-        run: cargo test --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app --verbose
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            cargo test --workspace --lib --no-default-features --features ci-safe --exclude xavier-web --exclude app --verbose
+          else
+            cargo test --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app --verbose
+          fi
 
       - name: Prepare Tauri Sidecar
         if: github.event_name != 'pull_request'

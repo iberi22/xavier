@@ -16,7 +16,7 @@ jobs:
     name: Panel Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v4
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -37,7 +37,7 @@ jobs:
     name: Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
@@ -49,7 +49,7 @@ jobs:
     name: Enterprise Check
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
@@ -61,7 +61,7 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
@@ -73,7 +73,7 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-tarpaulin
@@ -96,7 +96,7 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
       - name: Cache cargo
@@ -118,7 +118,7 @@ jobs:
       PANEL_UI_BASE_URL: http://127.0.0.1:8003
       PANEL_UI_APP_PATH: /panel
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v4
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -157,7 +157,7 @@ jobs:
         run: pnpm --filter panel-ui test:e2e:generative
       - name: Upload panel e2e log on failure
         if: failure()
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@v4
         with:
           name: xavier-panel-e2e-log
           path: panel-e2e.log
@@ -172,14 +172,15 @@ jobs:
       XAVIER_URL: http://127.0.0.1:8003
       XAVIER_HOST: 127.0.0.1
       XAVIER_PORT: 8003
-      XAVIER_DATA_DIR: ${{ runner.temp }}/xavier-release-smoke/data
-      XAVIER_WORKSPACE_DIR: ${{ runner.temp }}/xavier-release-smoke/workspaces
-      XAVIER_CODE_GRAPH_DB_PATH: ${{ runner.temp }}/xavier-release-smoke/code_graph.db
-      XAVIER_EMBEDDING_CACHE_DB_PATH: ${{ runner.temp }}/xavier-release-smoke/embedding_cache.db
-      XAVIER_ENTERPRISE_DB_PATH: ${{ runner.temp }}/xavier-release-smoke/enterprise.db
+      XAVIER_DATA_DIR: ${{ github.workspace }}/.tmp/xavier-release-smoke/data
+      XAVIER_WORKSPACE_DIR: ${{ github.workspace }}/.tmp/xavier-release-smoke/workspaces
+      XAVIER_CODE_GRAPH_DB_PATH: ${{ github.workspace }}/.tmp/xavier-release-smoke/code_graph.db
+      XAVIER_EMBEDDING_CACHE_DB_PATH: ${{ github.workspace }}/.tmp/xavier-release-smoke/embedding_cache.db
+      XAVIER_ENTERPRISE_DB_PATH: ${{ github.workspace }}/.tmp/xavier-release-smoke/enterprise.db
+      XAVIER_EMBEDDER: disabled
       XAVIER_REQUIRE_PANEL: 1
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v4
       - name: Prepare smoke storage
         run: mkdir -p "$XAVIER_DATA_DIR" "$XAVIER_WORKSPACE_DIR"
       - name: Setup Node
@@ -218,7 +219,7 @@ jobs:
         run: bash scripts/release-smoke.sh
       - name: Upload smoke log on failure
         if: failure()
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@v4
         with:
           name: xavier-release-smoke-log
           path: smoke.log
