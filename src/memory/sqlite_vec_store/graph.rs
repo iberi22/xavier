@@ -79,7 +79,7 @@ pub fn sync_memory_entities(
 
     let memory_node_id = memory_node_id(workspace_id, &record.id);
     conn.execute(
-        "INSERT OR REPLACE INTO entities (id, name, entity_type, properties) VALUES (?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO entities (id, name, entity_type, properties, workspace_id) VALUES (?, ?, ?, ?, ?)",
         params![
             memory_node_id,
             record.path,
@@ -89,7 +89,8 @@ pub fn sync_memory_entities(
                 "path": record.path,
                 "workspace_id": workspace_id,
             })
-            .to_string()
+            .to_string(),
+            workspace_id
         ],
     )?;
 
@@ -98,14 +99,14 @@ pub fn sync_memory_entities(
         params![workspace_id, record.id],
     )?;
     conn.execute(
-        "DELETE FROM relations WHERE source_id = ?",
-        params![memory_node_id],
+        "DELETE FROM relations WHERE workspace_id = ? AND source_id = ?",
+        params![workspace_id, memory_node_id],
     )?;
 
     for entity in extract_entities(&record.content) {
         let entity_id = entity_node_id(workspace_id, entity.entity_type, &entity.value);
         conn.execute(
-            "INSERT OR REPLACE INTO entities (id, name, entity_type, properties) VALUES (?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO entities (id, name, entity_type, properties, workspace_id) VALUES (?, ?, ?, ?, ?)",
             params![
                 entity_id,
                 entity.value,
@@ -114,7 +115,8 @@ pub fn sync_memory_entities(
                     "workspace_id": workspace_id,
                     "normalized": entity.value.to_ascii_lowercase(),
                 })
-                .to_string()
+                .to_string(),
+                workspace_id
             ],
         )?;
         conn.execute(
@@ -128,7 +130,7 @@ pub fn sync_memory_entities(
             ],
         )?;
         conn.execute(
-            "INSERT OR REPLACE INTO relations (id, source_id, target_id, relation_type, properties, confidence_score, provenance_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO relations (id, source_id, target_id, relation_type, properties, confidence_score, provenance_id, workspace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 stable_key("memory_relation", &[workspace_id, &memory_node_id, &entity_id, entity.relation_type]),
                 memory_node_id,
@@ -141,7 +143,8 @@ pub fn sync_memory_entities(
                 })
                 .to_string(),
                 1.0,
-                record.id
+                record.id,
+                workspace_id
             ],
         )?;
     }
@@ -160,9 +163,10 @@ pub fn resolve_graph_seed_entities(
 
     // Also seed from entities mentioned in the query
     let terms = utils::search_tokens(query);
-    let mut entity_stmt = conn.prepare("SELECT id FROM entities WHERE name LIKE ?")?;
+    let mut entity_stmt =
+        conn.prepare("SELECT id FROM entities WHERE workspace_id = ? AND name LIKE ?")?;
     for term in terms {
-        let mut entity_rows = entity_stmt.query(params![format!("%{term}%")])?;
+        let mut entity_rows = entity_stmt.query(params![workspace_id, format!("%{term}%")])?;
         while let Some(row) = entity_rows.next()? {
             seeds.insert(row.get(0)?);
         }
@@ -180,4 +184,24 @@ pub fn traverse_recursive(
 ) -> Result<Vec<GraphHopPath>> {
     // Unused: Recursive traversal is currently handled via CTE in backend_impl.rs
     Ok(Vec::new())
+}
+
+pub fn ensure_seed_entities(
+    conn: &Connection,
+    workspace_id: &str,
+    entities: &[(&str, &str)],
+) -> Result<()> {
+    for (id, name) in entities {
+        conn.execute(
+            "INSERT OR REPLACE INTO entities (id, name, entity_type, properties, workspace_id) VALUES (?, ?, ?, ?, ?)",
+            params![
+                id,
+                name,
+                "manual",
+                serde_json::json!({ "workspace_id": workspace_id }).to_string(),
+                workspace_id
+            ],
+        )?;
+    }
+    Ok(())
 }
