@@ -83,6 +83,10 @@ impl Notification {
 /// The notifier — sends notifications via configured channels.
 pub struct Notifier {
     discord: Option<DiscordClient>,
+    #[cfg(feature = "telegram")]
+    telegram_bot: Option<teloxide::prelude::Bot>,
+    #[cfg(feature = "telegram")]
+    notification_chat_id: Option<String>,
 }
 
 impl Notifier {
@@ -98,7 +102,26 @@ impl Notifier {
             None
         };
 
-        Self { discord }
+        #[cfg(feature = "telegram")]
+        let (telegram_bot, notification_chat_id) =
+            if settings.telegram.enabled && settings.telegram.bot_token.is_some() {
+                (
+                    Some(teloxide::prelude::Bot::new(
+                        settings.telegram.bot_token.unwrap(),
+                    )),
+                    settings.telegram.notification_chat_id,
+                )
+            } else {
+                (None, None)
+            };
+
+        Self {
+            discord,
+            #[cfg(feature = "telegram")]
+            telegram_bot,
+            #[cfg(feature = "telegram")]
+            notification_chat_id,
+        }
     }
 
     /// Notify about a detected error.
@@ -129,21 +152,9 @@ impl Notifier {
         };
 
         notif.log();
-        std::mem::drop(self.send_discord(&notif));
+        self.send_background(notif.clone());
         self.emit_tauri(&notif);
         notif
-    }
-
-    async fn send_discord(&self, notif: &Notification) {
-        if let Some(ref client) = self.discord {
-            let _ = client
-                .send_embed(
-                    Some(notif.title.clone()),
-                    notif.message.clone(),
-                    Some(notif.discord_color()),
-                )
-                .await;
-        }
     }
 
     #[cfg(feature = "tauri")]
@@ -156,6 +167,47 @@ impl Notifier {
     #[cfg(not(feature = "tauri"))]
     fn emit_tauri(&self, _notif: &Notification) {
         // No-op when tauri feature is disabled
+    }
+
+    fn send_background(&self, notif: Notification) {
+        let Ok(handle) = tokio::runtime::Handle::try_current() else {
+            tracing::debug!("Skipping async notification delivery: no Tokio runtime is active");
+            return;
+        };
+
+        let notif_clone = notif.clone();
+        if let Some(client) = self.discord.clone() {
+            handle.spawn(async move {
+                let _ = client
+                    .send_embed(
+                        Some(notif_clone.title.clone()),
+                        notif_clone.message.clone(),
+                        Some(notif_clone.discord_color()),
+                    )
+                    .await;
+            });
+        }
+
+        #[cfg(feature = "telegram")]
+        {
+            let notif_clone = notif.clone();
+            let bot = self.telegram_bot.clone();
+            let chat_id = self.notification_chat_id.clone();
+            handle.spawn(async move {
+                if let (Some(bot), Some(chat_id)) = (bot, chat_id) {
+                    use teloxide::payloads::SendMessageSetters;
+                    use teloxide::requests::Requester;
+                    let text = notif_clone.to_telegram_text();
+                    let chat_id = teloxide::types::ChatId(chat_id.parse().unwrap_or(0));
+                    if chat_id.0 != 0 {
+                        let _ = bot
+                            .send_message(chat_id, text)
+                            .parse_mode(teloxide::types::ParseMode::MarkdownV2)
+                            .await;
+                    }
+                }
+            });
+        }
     }
 
     /// Notify about a fixer action result.
@@ -186,7 +238,7 @@ impl Notifier {
         };
 
         notif.log();
-        std::mem::drop(self.send_discord(&notif));
+        self.send_background(notif.clone());
         self.emit_tauri(&notif);
         notif
     }
@@ -204,6 +256,7 @@ impl Notifier {
         };
 
         notif.log();
+        self.send_background(notif.clone());
         self.emit_tauri(&notif);
         notif
     }
@@ -228,7 +281,7 @@ impl Notifier {
         };
 
         notif.log();
-        std::mem::drop(self.send_discord(&notif));
+        self.send_background(notif.clone());
         self.emit_tauri(&notif);
         notif
     }

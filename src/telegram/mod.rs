@@ -8,7 +8,10 @@ use teloxide::utils::command::BotCommands;
 use tracing::{error, info};
 
 #[derive(BotCommands, Clone)]
-#[command(rename_rule = "lowercase", description = "These commands are supported:")]
+#[command(
+    rename_rule = "lowercase",
+    description = "These commands are supported:"
+)]
 pub enum Command {
     #[command(description = "display this text.")]
     Help,
@@ -35,6 +38,7 @@ pub struct TelegramConfig {
     pub enabled: bool,
     pub webhook_url: Option<String>,
     pub webhook_port: u16,
+    pub notification_chat_id: Option<String>,
 }
 
 impl fmt::Debug for TelegramConfig {
@@ -45,6 +49,10 @@ impl fmt::Debug for TelegramConfig {
             .field("enabled", &self.enabled)
             .field("webhook_url", &self.webhook_url)
             .field("webhook_port", &self.webhook_port)
+            .field(
+                "notification_chat_id",
+                &self.notification_chat_id.as_ref().map(|_| "[REDACTED]"),
+            )
             .finish()
     }
 }
@@ -58,16 +66,17 @@ impl Default for TelegramConfig {
             enabled: settings.telegram.enabled,
             webhook_url: settings.telegram.webhook_url.clone(),
             webhook_port: settings.telegram.webhook_port,
+            notification_chat_id: settings.telegram.notification_chat_id.clone(),
         }
     }
 }
 
-use std::sync::Arc;
-use crate::ports::inbound::{MemoryQueryPort, AgentLifecyclePort, SecurityScanPort};
 use crate::domain::memory::MemoryRecord;
-use serde_json::json;
-use uuid::Uuid;
+use crate::ports::inbound::{AgentLifecyclePort, MemoryQueryPort, SecurityScanPort};
 use chrono::Utc;
+use serde_json::json;
+use std::sync::Arc;
+use uuid::Uuid;
 
 fn escape_markdown_v2(text: &str) -> String {
     let escapes = [
@@ -96,7 +105,13 @@ impl XavierBot {
         security: Arc<dyn SecurityScanPort>,
     ) -> Self {
         let bot = Bot::new(&config.bot_token);
-        Self { bot, config, memory, agents, security }
+        Self {
+            bot,
+            config,
+            memory,
+            agents,
+            security,
+        }
     }
 
     pub async fn start(&self) {
@@ -113,7 +128,9 @@ impl XavierBot {
         let me = self.bot.get_me().await.expect("Failed to get bot info");
         info!("Bot username: @{}", me.username());
 
-        let handler = Update::filter_message().filter_command::<Command>().endpoint(Self::handle_command);
+        let handler = Update::filter_message()
+            .filter_command::<Command>()
+            .endpoint(Self::handle_command);
 
         Dispatcher::builder(self.bot.clone(), handler)
             .dependencies(dptree::deps![
@@ -134,7 +151,9 @@ impl XavierBot {
         let addr = ([0, 0, 0, 0], self.config.webhook_port).into();
         let url = url.parse().expect("Invalid webhook URL");
 
-        let handler = Update::filter_message().filter_command::<Command>().endpoint(Self::handle_command);
+        let handler = Update::filter_message()
+            .filter_command::<Command>()
+            .endpoint(Self::handle_command);
 
         let listener = teloxide::update_listeners::webhooks::axum(
             self.bot.clone(),
@@ -171,7 +190,8 @@ impl XavierBot {
         if !config.admin_ids.is_empty() {
             let user_id = msg.from().map(|u| u.id.0).unwrap_or(0);
             if !config.admin_ids.contains(&user_id) {
-                bot.send_message(msg.chat.id, "⛔ Access denied. You are not an admin.").await?;
+                bot.send_message(msg.chat.id, "⛔ Access denied. You are not an admin.")
+                    .await?;
                 return Ok(());
             }
         }
@@ -197,28 +217,34 @@ impl XavierBot {
                 .parse_mode(ParseMode::MarkdownV2)
                 .await?;
             }
-            Command::Stats => {
-                match memory.list("default", 1).await {
-                    Ok(_) => {
-                        bot.send_message(
-                            msg.chat.id,
-                            "📊 *Memory Statistics*\n\n✅ Memory system is online and accessible\\.",
-                        )
-                        .parse_mode(ParseMode::MarkdownV2)
-                        .await?;
-                    }
-                    Err(e) => {
-                        bot.send_message(msg.chat.id, format!("❌ Failed to access memory: {}", e)).await?;
-                    }
+            Command::Stats => match memory.list("default", 1).await {
+                Ok(_) => {
+                    bot.send_message(
+                        msg.chat.id,
+                        "📊 *Memory Statistics*\n\n✅ Memory system is online and accessible\\.",
+                    )
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .await?;
                 }
-            }
+                Err(e) => {
+                    bot.send_message(msg.chat.id, format!("❌ Failed to access memory: {}", e))
+                        .await?;
+                }
+            },
             Command::Search(query) => {
                 if query.is_empty() {
-                    bot.send_message(msg.chat.id, "Usage: /search <query>").await?;
-                } else {
-                    bot.send_message(msg.chat.id, format!("🔍 Searching for: `{}`\\.\\.\\.", escape_markdown_v2(&query)))
-                        .parse_mode(ParseMode::MarkdownV2)
+                    bot.send_message(msg.chat.id, "Usage: /search <query>")
                         .await?;
+                } else {
+                    bot.send_message(
+                        msg.chat.id,
+                        format!(
+                            "🔍 Searching for: `{}`\\.\\.\\.",
+                            escape_markdown_v2(&query)
+                        ),
+                    )
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .await?;
 
                     match memory.search(&query, None).await {
                         Ok(results) => {
@@ -227,9 +253,19 @@ impl XavierBot {
                             } else {
                                 let mut response = String::from("✅ *Search Results:*\n\n");
                                 for (i, doc) in results.iter().take(5).enumerate() {
-                                    let title = doc.metadata.get("title").and_then(|t| t.as_str()).unwrap_or("Untitled");
-                                    let content_preview = doc.content.chars().take(100).collect::<String>();
-                                    response.push_str(&format!("{}\\. *{}*\n_{}_\n\n", i + 1, escape_markdown_v2(title), escape_markdown_v2(&content_preview)));
+                                    let title = doc
+                                        .metadata
+                                        .get("title")
+                                        .and_then(|t| t.as_str())
+                                        .unwrap_or("Untitled");
+                                    let content_preview =
+                                        doc.content.chars().take(100).collect::<String>();
+                                    response.push_str(&format!(
+                                        "{}\\. *{}*\n_{}_\n\n",
+                                        i + 1,
+                                        escape_markdown_v2(title),
+                                        escape_markdown_v2(&content_preview)
+                                    ));
                                 }
                                 bot.send_message(msg.chat.id, response)
                                     .parse_mode(ParseMode::MarkdownV2)
@@ -237,14 +273,16 @@ impl XavierBot {
                             }
                         }
                         Err(e) => {
-                            bot.send_message(msg.chat.id, format!("❌ Search failed: {}", e)).await?;
+                            bot.send_message(msg.chat.id, format!("❌ Search failed: {}", e))
+                                .await?;
                         }
                     }
                 }
             }
             Command::Add(content) => {
                 if content.is_empty() {
-                    bot.send_message(msg.chat.id, "Usage: /add <content>").await?;
+                    bot.send_message(msg.chat.id, "Usage: /add <content>")
+                        .await?;
                 } else {
                     let record = MemoryRecord {
                         id: Uuid::new_v4().to_string(),
@@ -258,10 +296,15 @@ impl XavierBot {
 
                     match memory.add(record).await {
                         Ok(_) => {
-                            bot.send_message(msg.chat.id, "✅ Memory added successfully.").await?;
+                            bot.send_message(msg.chat.id, "✅ Memory added successfully.")
+                                .await?;
                         }
                         Err(e) => {
-                            bot.send_message(msg.chat.id, format!("❌ Failed to add memory: {}", e)).await?;
+                            bot.send_message(
+                                msg.chat.id,
+                                format!("❌ Failed to add memory: {}", e),
+                            )
+                            .await?;
                         }
                     }
                 }
@@ -270,19 +313,29 @@ impl XavierBot {
                 if text.is_empty() {
                     bot.send_message(msg.chat.id, "Usage: /scan <text>").await?;
                 } else {
-                    bot.send_message(msg.chat.id, "🔒 Scanning for threats...").await?;
+                    bot.send_message(msg.chat.id, "🔒 Scanning for threats...")
+                        .await?;
                     match security.scan(&text, None).await {
                         Ok(report) => {
-                            let status = if report.threats.is_empty() { "✅ Clean" } else { "⚠️ Threats Found" };
+                            let status = if report.threats.is_empty() {
+                                "✅ Clean"
+                            } else {
+                                "⚠️ Threats Found"
+                            };
                             bot.send_message(
                                 msg.chat.id,
-                                format!("🛡 *Scan Report*\n\nStatus: {}\nFound: {} threats", status, report.threats.len()),
+                                format!(
+                                    "🛡 *Scan Report*\n\nStatus: {}\nFound: {} threats",
+                                    status,
+                                    report.threats.len()
+                                ),
                             )
                             .parse_mode(ParseMode::MarkdownV2)
                             .await?;
                         }
                         Err(e) => {
-                            bot.send_message(msg.chat.id, format!("❌ Scan failed: {}", e)).await?;
+                            bot.send_message(msg.chat.id, format!("❌ Scan failed: {}", e))
+                                .await?;
                         }
                     }
                 }
@@ -290,12 +343,17 @@ impl XavierBot {
             Command::Agents => {
                 let active = agents.get_active_agents().await;
                 if active.is_empty() {
-                    bot.send_message(msg.chat.id, "🤖 No active agents.").await?;
+                    bot.send_message(msg.chat.id, "🤖 No active agents.")
+                        .await?;
                 } else {
                     let mut response = String::from("🤖 *Active Agents*\n\n");
                     for agent in active {
                         let name = agent.metadata.name.as_deref().unwrap_or("Unknown");
-                        response.push_str(&format!("• `{}` ({}): ✅ Running\n", escape_markdown_v2(&agent.agent_id), escape_markdown_v2(name)));
+                        response.push_str(&format!(
+                            "• `{}` ({}): ✅ Running\n",
+                            escape_markdown_v2(&agent.agent_id),
+                            escape_markdown_v2(name)
+                        ));
                     }
                     bot.send_message(msg.chat.id, response)
                         .parse_mode(ParseMode::MarkdownV2)
@@ -303,7 +361,8 @@ impl XavierBot {
                 }
             }
             Command::Help => {
-                bot.send_message(msg.chat.id, Command::descriptions().to_string()).await?;
+                bot.send_message(msg.chat.id, Command::descriptions().to_string())
+                    .await?;
             }
         }
         Ok(())

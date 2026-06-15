@@ -97,7 +97,10 @@ impl fmt::Debug for DiscordSettings {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("DiscordSettings")
             .field("enabled", &self.enabled)
-            .field("webhook_url", &self.webhook_url.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "webhook_url",
+                &self.webhook_url.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("bot_token", &self.bot_token.as_ref().map(|_| "[REDACTED]"))
             .field("rate_limit_per_min", &self.rate_limit_per_min)
             .finish()
@@ -375,6 +378,8 @@ pub struct TelegramSettings {
     pub webhook_port: u16,
     #[serde(default)]
     pub admin_ids: Vec<u64>,
+    #[serde(default)]
+    pub notification_chat_id: Option<String>,
 }
 
 fn default_telegram_webhook_port() -> u16 {
@@ -386,9 +391,16 @@ impl fmt::Debug for TelegramSettings {
         f.debug_struct("TelegramSettings")
             .field("enabled", &self.enabled)
             .field("bot_token", &self.bot_token.as_ref().map(|_| "[REDACTED]"))
-            .field("webhook_url", &self.webhook_url.as_ref().map(|_| "[REDACTED]"))
+            .field(
+                "webhook_url",
+                &self.webhook_url.as_ref().map(|_| "[REDACTED]"),
+            )
             .field("webhook_port", &self.webhook_port)
             .field("admin_ids", &self.admin_ids)
+            .field(
+                "notification_chat_id",
+                &self.notification_chat_id.as_ref().map(|_| "[REDACTED]"),
+            )
             .finish()
     }
 }
