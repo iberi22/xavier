@@ -8,18 +8,26 @@ export function CloudRelayConfig({ token }: { token: string }) {
     url: "",
     token: "",
     instance_id: "",
+    sync_interval_ms: 300000,
+    auto_heartbeat: true,
   });
   const [cloudSaved, setCloudSaved] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    client.getCloudNode()
+    client
+      .getCloudNode()
       .then((res) => {
         if (res.status === "ok" && res.data) {
           setCloudSettings({
             url: res.data.url || "",
             token: res.data.token || "",
             instance_id: res.data.instance_id || "",
+            sync_interval_ms: res.data.sync_interval_ms || 300000,
+            auto_heartbeat:
+              res.data.auto_heartbeat !== undefined
+                ? res.data.auto_heartbeat
+                : true,
           });
         }
       })
@@ -103,6 +111,54 @@ export function CloudRelayConfig({ token }: { token: string }) {
               className="w-full bg-black/40 border border-white/5 rounded-lg px-4 py-2 text-xs font-mono outline-none focus:border-[#39ff14]/30 text-white/80"
             />
           </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-[10px] uppercase text-white/50 tracking-widest">
+              Sync Interval (ms)
+            </label>
+            <input
+              type="number"
+              value={cloudSettings.sync_interval_ms}
+              onChange={(e) =>
+                setCloudSettings({
+                  ...cloudSettings,
+                  sync_interval_ms: Number.parseInt(e.target.value, 10),
+                })
+              }
+              className="w-full bg-black/40 border border-white/5 rounded-lg px-4 py-2 text-xs font-mono outline-none focus:border-[#39ff14]/30 text-white/80"
+            />
+          </div>
+          <div className="flex items-center justify-between p-3 bg-black/20 rounded-xl border border-white/5">
+            <div>
+              <h4 className="text-white/70 text-[10px] uppercase tracking-widest">
+                Auto Heartbeat
+              </h4>
+              <p className="text-[9px] text-white/30 uppercase mt-0.5">
+                Keep cloud connection alive
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setCloudSettings({
+                  ...cloudSettings,
+                  auto_heartbeat: !cloudSettings.auto_heartbeat,
+                })
+              }
+              className={`relative w-10 h-5 rounded-full transition-all duration-300 ${
+                cloudSettings.auto_heartbeat
+                  ? "bg-[#39ff14] shadow-[0_0_10px_rgba(57,255,20,0.3)]"
+                  : "bg-white/10"
+              }`}
+            >
+              <div
+                className={`absolute top-1 left-1 w-3 h-3 rounded-full bg-white transition-transform duration-300 ${
+                  cloudSettings.auto_heartbeat
+                    ? "translate-x-5"
+                    : "translate-x-0 opacity-60"
+                }`}
+              />
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-3 pt-2">
           <button
@@ -113,7 +169,7 @@ export function CloudRelayConfig({ token }: { token: string }) {
             {loading ? "Saving..." : "Save Relay Config"}
           </button>
           {cloudSaved && (
-            <span className="text-xs text-[#39ff14]">✓ Settings Applied</span>
+            <span className="text-xs text-[#39ff14]">Settings applied</span>
           )}
         </div>
       </form>

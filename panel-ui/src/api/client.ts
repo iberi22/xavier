@@ -103,6 +103,8 @@ export class ApiClient {
         url: data.url ?? "",
         token: data.token ?? "",
         instance_id: data.instance_id ?? "",
+        sync_interval_ms: data.sync_interval_ms ?? 300000,
+        auto_heartbeat: data.auto_heartbeat ?? true,
       },
     };
   }
@@ -207,9 +209,11 @@ interface PgHeartSettings {
 }
 
 export interface CloudNodeConfig {
-  url: string;
-  token: string;
-  instance_id: string;
+    url: string;
+    token: string;
+    instance_id: string;
+    sync_interval_ms?: number;
+    auto_heartbeat?: boolean;
 }
 
 export interface DataCommonsConfig {

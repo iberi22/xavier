@@ -11,6 +11,8 @@ pub struct CloudNodeConfig {
     pub url: Option<String>,
     pub token: Option<String>,
     pub instance_id: Option<String>,
+    pub sync_interval_ms: Option<u64>,
+    pub auto_heartbeat: Option<bool>,
 }
 
 pub async fn get_cloud_node() -> impl IntoResponse {
@@ -23,6 +25,8 @@ pub async fn get_cloud_node() -> impl IntoResponse {
             .as_ref()
             .map(|_| "********".to_string()),
         instance_id: settings.pgheart.instance_id,
+        sync_interval_ms: Some(settings.pgheart.sync_interval_ms),
+        auto_heartbeat: Some(settings.pgheart.auto_heartbeat),
     };
     Json(serde_json::json!({ "status": "ok", "data": config }))
 }
@@ -36,12 +40,24 @@ pub async fn update_cloud_node(Json(payload): Json<CloudNodeConfig>) -> impl Int
 
     if let Some(token) = payload.token {
         if !token.contains("********") {
+            let vault = HardwareVault::new("xavier-cloud");
+            if let Err(e) = vault.store_secret("token", &token) {
+                return Json(serde_json::json!({ "status": "error", "message": format!("Vault error: {}", e) }));
+            }
             settings.pgheart.token = Some(token);
         }
     }
 
     if let Some(instance_id) = payload.instance_id {
         settings.pgheart.instance_id = Some(instance_id);
+    }
+
+    if let Some(interval) = payload.sync_interval_ms {
+        settings.pgheart.sync_interval_ms = interval;
+    }
+
+    if let Some(auto) = payload.auto_heartbeat {
+        settings.pgheart.auto_heartbeat = auto;
     }
 
     match settings.save().await {
