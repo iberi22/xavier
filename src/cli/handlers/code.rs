@@ -1,6 +1,7 @@
 //! Code handlers for scanning, searching, and analyzing codebases.
 
 use axum::extract::State;
+use axum::Json;
 use serde::Serialize;
 use std::path::PathBuf;
 use tracing::{info, warn};
@@ -12,6 +13,40 @@ use crate::cli::types::*;
 use crate::cli::utils::estimate_tokens;
 
 use xavier::ports::inbound::input_security_port::SecureInputResult;
+
+/// Auto-index `src/` directory into the code graph.
+///
+/// Scans all source files under the project's `src/` directory and builds
+/// the code graph with symbols, imports, and relationships.
+pub async fn code_index_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<serde_json::Value>,
+) -> Json<serde_json::Value> {
+    let base_path = payload.get("path").and_then(|v| v.as_str()).unwrap_or("src");
+    info!("Code index request: path={}", base_path);
+
+    match state.code_indexer.index(std::path::Path::new(base_path)).await {
+        Ok(stats) => Json(serde_json::json!({
+            "status": "ok",
+            "indexed_files": stats.total_files,
+            "indexed_symbols": stats.total_symbols,
+            "indexed_imports": stats.total_imports,
+            "duration_ms": stats.duration_ms,
+            "paths": [base_path],
+            "languages": stats.languages,
+            "message": format!("Indexed {} files, {} symbols, {} imports across {:?}",
+                stats.total_files, stats.total_symbols, stats.total_imports, stats.languages),
+        })),
+        Err(error) => Json(serde_json::json!({
+            "status": "error",
+            "message": error.to_string(),
+            "indexed_files": 0,
+            "indexed_symbols": 0,
+            "indexed_imports": 0,
+            "paths": [base_path],
+        })),
+    }
+}
 
 pub async fn code_scan_handler(
     State(state): State<CliState>,
