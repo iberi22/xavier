@@ -94,7 +94,8 @@ scripts/fix_*.py
 
 # Xavier runtime state (SQLite databases)
 .xavier/
-# Playwright last-run artifact
-panel-ui/test-results/.last-run.json
+# Playwright artifacts
+panel-ui/test-results/
+panel-ui/playwright-report/
 
 *.sqlite3*
