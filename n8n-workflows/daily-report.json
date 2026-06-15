@@ -1,0 +1,166 @@
+{
+  "name": "Xavier Daily Report",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "triggerAtHour": 8,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "f061f1bd-c017-4491-912a-7fc2718a5edb",
+      "name": "Every Day at 08:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        180,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{($env.XAVIER_URL || 'http://localhost:8006') + '/health'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Xavier-Token",
+              "value": "={{$env.XAVIER_TOKEN || ''}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "ca6d3af3-24f4-41b7-ab4d-fcbfc6776413",
+      "name": "GET Health",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{($env.XAVIER_URL || 'http://localhost:8006') + '/memory/stats'}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Xavier-Token",
+              "value": "={{$env.XAVIER_TOKEN}}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "37a212f4-8975-444c-a313-cc12008b59de6",
+      "name": "GET Memory Stats",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "c532fbfd-9f04-4997-a9a4-5fd6f4c483e9",
+      "name": "Combine Responses",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [
+        700,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const health = $('GET Health').first().json;\nconst memory = $('GET Memory Stats').first().json;\nconst generatedAt = new Date().toISOString();\n\nreturn [\n  {\n    json: {\n      title: 'Xavier Daily Report',\n      generatedAt,\n      xavierUrl: $env.XAVIER_URL || 'http://localhost:8006',\n      health,\n      memoryStats: memory,\n      summary: {\n        status: health.status || 'unknown',\n        service: health.service || 'xavier',\n        version: health.version || null,\n        uptime: health.uptime || null\n      }\n    }\n  }\n];"
+      },
+      "id": "4e44d08a-b615-4e41-bc34-c7fa43bc71f0",
+      "name": "Generate Daily Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        300
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every Day at 08:00": {
+      "main": [
+        [
+          {
+            "node": "GET Health",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "GET Memory Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET Health": {
+      "main": [
+        [
+          {
+            "node": "Combine Responses",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GET Memory Stats": {
+      "main": [
+        [
+          {
+            "node": "Combine Responses",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Combine Responses": {
+      "main": [
+        [
+          {
+            "node": "Generate Daily Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "America/Bogota"
+  },
+  "versionId": "a1bf2a5e-54af-44f8-a517-80685da0ea91",
+  "id": "xavier-daily-report",
+  "tags": []
+}
