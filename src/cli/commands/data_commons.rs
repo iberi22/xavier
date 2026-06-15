@@ -1,6 +1,7 @@
 use crate::cli::commands::DataCommonsCommand;
 use anyhow::{bail, Result};
 use std::path::PathBuf;
+use xavier::data_commons::readiness::ReadinessValidator;
 use xavier::data_commons::training::TrainingExporter;
 
 pub async fn handle_data_commons_command(cmd: DataCommonsCommand) -> Result<()> {
@@ -10,6 +11,7 @@ pub async fn handle_data_commons_command(cmd: DataCommonsCommand) -> Result<()> 
             seed,
             eval_ratio,
         } => export_training_bundle(output, seed, eval_ratio).await,
+        DataCommonsCommand::Validate { bundle_path } => validate_training_bundle(bundle_path).await,
     }
 }
 
@@ -56,6 +58,37 @@ async fn export_training_bundle(output: PathBuf, seed: u64, eval_ratio: f32) -> 
         Err(e) => {
             println!("Export failed: {}", e);
         }
+    }
+
+    Ok(())
+}
+
+async fn validate_training_bundle(bundle_path: PathBuf) -> Result<()> {
+    println!("Validating training bundle at: {}", bundle_path.display());
+
+    let validator = ReadinessValidator::new(bundle_path);
+    let report = validator.validate();
+
+    if report.is_ready {
+        println!();
+        println!("Bundle is READY for fine-tuning.");
+    } else {
+        println!();
+        println!("Bundle is NOT READY for fine-tuning.");
+        println!("Errors found:");
+        for error in &report.errors {
+            println!("  - {}", error);
+        }
+    }
+
+    println!();
+    println!("Checks performed:");
+    for check in &report.checks_performed {
+        println!("  [ok] {}", check);
+    }
+
+    if !report.is_ready {
+        bail!("Readiness validation failed.");
     }
 
     Ok(())
