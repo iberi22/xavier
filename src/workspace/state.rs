@@ -509,6 +509,13 @@ impl WorkspaceState {
                 &format!("New memory indexed: {}", memory_id),
                 "success"
             ).await;
+        } else if let Err(ref e) = result {
+            let _ = crate::notifications::NOTIFICATIONS.notify(
+                crate::notifications::IslandId::Errors,
+                "Entity Indexing Failed",
+                &format!("Failed to index entities for {}: {}", memory_id, e),
+                "error"
+            ).await;
         }
 
         result

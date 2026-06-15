@@ -300,6 +300,9 @@ pub fn run() {
             // Initialize Xavier's Tauri AppHandle
             xavier::utils::tauri_utils::set_tauri_app_handle(app.handle().clone());
 
+            // Initialize Notification Forwarder
+            xavier::notifications::NOTIFICATIONS.spawn_tauri_forwarder();
+
             // ── Build tray menu ─────────────────────────────────────
             let open_app = MenuItemBuilder::with_id("open_app", "Open Xavier")
                 .build(app)

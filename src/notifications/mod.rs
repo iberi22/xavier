@@ -61,6 +61,19 @@ impl NotificationManager {
         self.event_tx.subscribe()
     }
 
+    #[cfg(feature = "tauri")]
+    pub fn spawn_tauri_forwarder(&self) {
+        use tauri::Emitter;
+        let mut rx = self.subscribe();
+        tokio::spawn(async move {
+            while let Ok(notification) = rx.recv().await {
+                if let Some(handle) = crate::utils::tauri_utils::get_tauri_app_handle() {
+                    let _ = handle.emit("new-notification", notification);
+                }
+            }
+        });
+    }
+
     pub async fn notify(&self, island_id: IslandId, title: &str, body: &str, severity: &str) -> Result<Notification> {
         let notification = Notification {
             id: uuid::Uuid::new_v4().to_string(),
@@ -160,3 +173,33 @@ impl Default for NotificationManager {
 
 pub static NOTIFICATIONS: std::sync::LazyLock<NotificationManager> =
     std::sync::LazyLock::new(NotificationManager::new);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_notification_broadcast() {
+        let manager = NotificationManager::new();
+        let mut rx = manager.subscribe();
+
+        // Use a mock notification that doesn't trigger persistence for this test
+        // Or handle the fact that notify() calls persist_notification()
+        let notification = Notification {
+            id: "test-id".to_string(),
+            island_id: IslandId::System,
+            title: "Test Title".to_string(),
+            body: "Test Body".to_string(),
+            timestamp: Utc::now(),
+            read: false,
+            severity: "info".to_string(),
+        };
+
+        let _ = manager.event_tx.send(notification);
+
+        let received = rx.recv().await.unwrap();
+        assert_eq!(received.title, "Test Title");
+        assert_eq!(received.body, "Test Body");
+        assert_eq!(received.severity, "info");
+    }
+}
