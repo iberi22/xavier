@@ -345,6 +345,55 @@ impl MemoryRecord {
                 .to_ascii_lowercase()
                 .contains(&lowered)
     }
+
+    /// Check if the record is authorized for the local embeddings pipeline.
+    ///
+    /// Authorized records must:
+    /// 1. Have user consent.
+    /// 2. Not be marked as private or revoked in metadata.
+    /// 3. Not exceed the maximum allowed clearance depth.
+    pub fn is_authorized_for_embedding(
+        &self,
+        consent_given: bool,
+        max_clearance: crate::memory::schema::ClearanceLevel,
+    ) -> bool {
+        if !consent_given {
+            return false;
+        }
+
+        // Refuse revoked records
+        if self
+            .metadata
+            .get("revoked")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+        {
+            return false;
+        }
+
+        // Refuse private records
+        let is_private = self
+            .metadata
+            .get("is_private")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let visibility = self
+            .metadata
+            .get("visibility")
+            .and_then(|v| v.as_str())
+            .unwrap_or("public");
+
+        if is_private || visibility == "private" {
+            return false;
+        }
+
+        // Refuse over-depth records
+        if self.clearance > max_clearance {
+            return false;
+        }
+
+        true
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -901,7 +950,6 @@ impl MemoryStore for InMemoryMemoryStore {
         }
         Ok(())
     }
-
 }
 
 // ---------------------------------------------------------------------------

@@ -4,8 +4,8 @@
 
 use super::types::XavierSettings;
 use anyhow::{Context, Result};
-use tokio::fs;
 use std::path::PathBuf;
+use tokio::fs;
 
 const DEFAULT_CONFIG_PATH: &str = "config/xavier.config.json";
 
@@ -97,6 +97,26 @@ pub fn current() -> XavierSettings {
     }
     if settings.models.local_llm_api_key.is_none() {
         settings.models.local_llm_api_key = std::env::var("XAVIER_LOCAL_LLM_API_KEY").ok();
+    }
+    if let Ok(data_dir) = std::env::var("XAVIER_DATA_DIR") {
+        settings.memory.data_dir = data_dir;
+    }
+    if let Ok(workspace_dir) = std::env::var("XAVIER_WORKSPACE_DIR") {
+        settings.memory.workspace_dir = workspace_dir;
+    }
+    if let Ok(file_path) = std::env::var("XAVIER_MEMORY_FILE_PATH") {
+        settings.memory.file_path = file_path;
+    }
+    if let Ok(sqlite_path) = std::env::var("XAVIER_MEMORY_SQLITE_PATH") {
+        settings.memory.sqlite_path = sqlite_path;
+    }
+    if let Ok(vec_path) = std::env::var("XAVIER_MEMORY_VEC_PATH") {
+        settings.memory.vec_path = vec_path;
+    }
+    if let Ok(dimensions) = std::env::var("XAVIER_EMBEDDING_DIMENSIONS") {
+        if let Ok(v) = dimensions.parse() {
+            settings.memory.embedding_dimensions = v;
+        }
     }
     if let Ok(embedding_url) = std::env::var("XAVIER_EMBEDDING_URL") {
         settings.models.embedding_url = embedding_url;
