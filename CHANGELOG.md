@@ -2,6 +2,29 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## v0.10.0 (2026-06-15)
+
+### Added
+
+- **Mesh Network Phase 2** - Added node discovery, signed identity handshakes, pairing codes, peer registry operations, ACL/governance-aware manifests, chunk request/push sync, cloud node settings, and session sharing over trusted peers.
+- **Data Commons** - Added consent-gated Data Commons settings, anonymized training-bundle export and validation, crypto-gated Data Commons E2E coverage, DAO governance tests, and post-quantum encryption design for protected data exchange.
+- **CI/CD Pipeline** - Added/expanded multi-OS `fmt`, `check`, `clippy`, `test`, and release build matrix; panel validation and Playwright E2E; release smoke workflow; multi-architecture Docker publishing to GHCR; and GitHub release packaging for Linux, Windows, and macOS.
+- **n8n Monitoring Workflows** - Added monitoring workflow integration points for health checks, notifications, and operational automation around Xavier services.
+- **Backup Script** - Added backup automation for preserving Xavier runtime state, memory stores, and operational artifacts before upgrades or maintenance.
+- **CLI Improvements** - Expanded CLI coverage across `billing`, `code`, `data-commons`, `mesh`, `navigation`, `provider`, `secrets`, `session`, `spawn`, `tasks`, `token`, `usage`, and `verify`, while retaining core `add`, `search`, `stats`, `http`, `mcp`, and `export` workflows.
+- **API Enhancements** - Added/standardized REST endpoints for v1 memories, mesh identity/handshake/manifest/chunks/session/cloud/Data Commons, session export/import, code graph queries, usage tracking, tasks, provider routing, secrets, panel state, and headless automation.
+
+### Changed
+
+- Updated public documentation for v0.10.0-12-06-2026, including current quickstart, API, CLI, and deployment references.
+- Clarified token-protected HTTP access through the `X-Xavier-Token` header.
+- Documented Docker, systemd, Windows Scheduled Task, Docker Compose, persistent storage, and CI/CD deployment paths.
+
+### Verified
+
+- Xavier local health endpoint reports version `0.10.0-12-06-2026`.
+- CI definitions include multi-OS Rust checks, Docker buildx targets for `linux/amd64` and `linux/arm64`, release artifacts, docs deployment, and Data Commons E2E tests.
+
 ### [0.6.1](https://github.com/iberi22/xavier/compare/v1.0.0...v0.6.1) (2026-06-09)
 
 
