@@ -267,6 +267,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/memory/search", post(search_handler))
         .route("/memory/update", post(update_handler))
         .route("/memory/delete", post(delete_handler))
+        .route("/memory/reindex", post(reindex_handler))
         .route("/memory/stats", get(stats_handler))
         .route("/memory/export", get(export_handler))
         .route("/memory/decay", post(decay_handler))
@@ -283,8 +284,8 @@ pub async fn start_http_server(port: u16) -> Result<()> {
             get(onboarding_suggestions_handler),
         )
         .route("/mcp/tools", get(mcp_tools_handler))
-        .route("/code/find", post(code_find_handler))
         .route("/code/index", post(code_index_handler))
+        .route("/code/find", post(code_find_handler))
         .route("/code/context", post(code_context_handler))
         .route("/code/stats", get(code_stats_handler))
         .route("/code/dependencies", post(code_dependencies_handler))

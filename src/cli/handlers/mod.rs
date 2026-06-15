@@ -3,6 +3,11 @@
 //! This module re-exports handlers from sub-modules for cleaner organization.
 
 pub mod agent;
+pub mod billing;
+pub mod sync;
+pub mod system_scan_cli;
+pub mod tasks;
+pub mod verify;
 pub mod code;
 pub mod headless_api;
 pub mod headless_e2e;
@@ -18,7 +23,6 @@ pub mod security;
 pub mod setup;
 pub mod system;
 pub mod system_scan;
-pub mod tasks;
 pub mod tokens;
 pub mod usage;
 pub mod workspace;
