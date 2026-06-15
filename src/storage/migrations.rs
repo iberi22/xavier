@@ -246,6 +246,84 @@ impl Migration for MigrationV1InitialSchema {
     }
 }
 
+pub struct MigrationV3UnifiedExtensions;
+
+impl Migration for MigrationV3UnifiedExtensions {
+    fn version(&self) -> u32 {
+        3
+    }
+
+    fn description(&self) -> &str {
+        "Unified Vector and FTS extensions"
+    }
+
+    fn run(&self, conn: &Connection) -> Result<()> {
+        // Unified memory_embeddings table for sqlite-vec
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS memory_embeddings (
+                id TEXT PRIMARY KEY,
+                workspace_id TEXT NOT NULL,
+                embedding BLOB NOT NULL
+            )",
+            [],
+        )?;
+
+        // Unified memory_fts for full-text search
+        conn.execute(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS memory_fts USING fts5(
+                id UNINDEXED,
+                path,
+                content,
+                code_tokens
+            )",
+            [],
+        )?;
+
+        Ok(())
+    }
+}
+
+pub struct MigrationV4UnifiedIsolation;
+
+impl Migration for MigrationV4UnifiedIsolation {
+    fn version(&self) -> u32 {
+        4
+    }
+
+    fn description(&self) -> &str {
+        "Fix workspace isolation for graph data and event sequences"
+    }
+
+    fn run(&self, conn: &Connection) -> Result<()> {
+        // Add workspace_id to entities if not present
+        if !table_has_column(conn, "entities", "workspace_id")? {
+            conn.execute("ALTER TABLE entities ADD COLUMN workspace_id TEXT", [])?;
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_entities_workspace ON entities (workspace_id)", [])?;
+        }
+
+        // Add workspace_id to relations if not present
+        if !table_has_column(conn, "relations", "workspace_id")? {
+            conn.execute("ALTER TABLE relations ADD COLUMN workspace_id TEXT", [])?;
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_relations_workspace ON relations (workspace_id)", [])?;
+        }
+
+        // timeline_sequence for event ordering
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS timeline_sequence (
+                workspace_id TEXT PRIMARY KEY,
+                last_sequence INTEGER NOT NULL DEFAULT 0
+            );"
+        )?;
+
+        // Extra indices for traversal performance
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_relations_source ON relations (source_id)", [])?;
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_relations_target ON relations (target_id)", [])?;
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_entities_name ON entities (name)", [])?;
+
+        Ok(())
+    }
+}
+
 pub struct MigrationV2ColumnarIndices;
 
 impl Migration for MigrationV2ColumnarIndices {

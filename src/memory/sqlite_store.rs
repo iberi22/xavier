@@ -102,6 +102,8 @@ impl SqliteMemoryStore {
                 let mut manager = crate::storage::MigrationManager::new();
                 manager.add_migration(crate::storage::migrations::MigrationV1InitialSchema);
                 manager.add_migration(crate::storage::migrations::MigrationV2ColumnarIndices);
+                manager.add_migration(crate::storage::migrations::MigrationV3UnifiedExtensions);
+                manager.add_migration(crate::storage::migrations::MigrationV4UnifiedIsolation);
                 manager.run_migrations(conn)
             })
             .await?;

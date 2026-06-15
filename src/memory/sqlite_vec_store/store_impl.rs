@@ -73,7 +73,9 @@ impl MemoryStore for VecSqliteMemoryStore {
 
             // Generate DEK
             let dek = mgr.generate_dek();
-            let encrypted_dek = mgr.encrypt_dek(&dek, &kek).map_err(|e| anyhow::anyhow!("DEK encryption failed: {}", e))?;
+            let encrypted_dek = mgr
+                .encrypt_dek(&dek, &kek)
+                .map_err(|e| anyhow::anyhow!("DEK encryption failed: {}", e))?;
 
             // Encrypt content
             let content_nonce = crate::crypto::encryption::NonceBytes::generate();
@@ -81,7 +83,8 @@ impl MemoryStore for VecSqliteMemoryStore {
                 record.content.as_bytes(),
                 dek.as_bytes(),
                 &content_nonce,
-            ).map_err(|e| anyhow::anyhow!("Content encryption failed: {}", e))?;
+            )
+            .map_err(|e| anyhow::anyhow!("Content encryption failed: {}", e))?;
 
             // Encrypt metadata
             let metadata_nonce = crate::crypto::encryption::NonceBytes::generate();
@@ -90,7 +93,8 @@ impl MemoryStore for VecSqliteMemoryStore {
                 metadata_json.as_bytes(),
                 dek.as_bytes(),
                 &metadata_nonce,
-            ).map_err(|e| anyhow::anyhow!("Metadata encryption failed: {}", e))?;
+            )
+            .map_err(|e| anyhow::anyhow!("Metadata encryption failed: {}", e))?;
 
             record.content = crate::utils::crypto::hex_encode(&encrypted_content.ciphertext);
             record.metadata = serde_json::json!({
@@ -200,7 +204,7 @@ impl MemoryStore for VecSqliteMemoryStore {
             if !record_c.embedding.is_empty() {
                 let embedding_json = serde_json::to_string(&record_c.embedding).unwrap_or_default();
                 conn.execute(
-                    "INSERT OR REPLACE INTO memory_embeddings(id, workspace_id, embedding) VALUES (?1, ?2, vector32(?3))",
+                    "INSERT OR REPLACE INTO memory_embeddings(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
                     params![record_c.id, record_c.workspace_id, embedding_json],
                 )?;
             }
@@ -316,16 +320,19 @@ impl MemoryStore for VecSqliteMemoryStore {
                     let memory_node_id = graph::memory_node_id(&workspace_id, &record_id);
 
                     tx.execute(
-                        "DELETE FROM relations WHERE source_id = ?",
-                        params![memory_node_id],
+                        "DELETE FROM relations WHERE workspace_id = ? AND source_id = ?",
+                        params![workspace_id, memory_node_id],
                     )?;
 
                     tx.execute(
-                        "DELETE FROM relations WHERE target_id = ?",
-                        params![memory_node_id],
+                        "DELETE FROM relations WHERE workspace_id = ? AND target_id = ?",
+                        params![workspace_id, memory_node_id],
                     )?;
 
-                    tx.execute("DELETE FROM entities WHERE id = ?", params![memory_node_id])?;
+                    tx.execute(
+                        "DELETE FROM entities WHERE workspace_id = ? AND id = ?",
+                        params![workspace_id, memory_node_id],
+                    )?;
 
                     // Remove child memories before parent.
                     tx.execute(
@@ -413,10 +420,8 @@ impl MemoryStore for VecSqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
 
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let mut stmt = conn.prepare("SELECT id, source_id, target_id, relation_type, weight, confidence_score, provenance_id, contradicts_edge_id, is_inferred, source_language, target_language, created_at, updated_at FROM relations WHERE source_id LIKE ? OR target_id LIKE ?")?;
-            let workspace_prefix = format!("entity:{}%", workspace_id);
-            let mut rows = stmt
-                .query(params![workspace_prefix.clone(), workspace_prefix.clone()])?;
+            let mut stmt = conn.prepare("SELECT id, source_id, target_id, relation_type, weight, confidence_score, provenance_id, contradicts_edge_id, is_inferred, source_language, target_language, created_at, updated_at FROM relations WHERE workspace_id = ?")?;
+            let mut rows = stmt.query(params![workspace_id])?;
 
             let mut beliefs = Vec::new();
             while let Some(row) = rows.next()? {
@@ -459,11 +464,19 @@ impl MemoryStore for VecSqliteMemoryStore {
         }).await
     }
 
-    async fn save_beliefs(&self, _workspace_id: &str, beliefs: Vec<BeliefEdge>) -> Result<()> {
+    async fn save_beliefs(&self, workspace_id: &str, beliefs: Vec<BeliefEdge>) -> Result<()> {
+        let workspace_id = workspace_id.to_string();
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+            for belief in &beliefs {
+                super::graph::ensure_seed_entities(
+                    conn,
+                    &workspace_id,
+                    &[(&belief.source, "source"), (&belief.target, "target")],
+                )?;
+            }
             for belief in beliefs {
                 conn.execute(
-                    "INSERT OR REPLACE INTO relations (id, source_id, target_id, relation_type, weight, confidence_score, provenance_id, contradicts_edge_id, is_inferred, source_language, target_language, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT OR REPLACE INTO relations (id, source_id, target_id, relation_type, weight, confidence_score, provenance_id, contradicts_edge_id, is_inferred, source_language, target_language, created_at, updated_at, workspace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     params![
                         belief.id,
                         belief.source,
@@ -478,6 +491,7 @@ impl MemoryStore for VecSqliteMemoryStore {
                         belief.target_language,
                         belief.created_at.to_rfc3339(),
                         belief.updated_at.to_rfc3339(),
+                        workspace_id,
                     ],
                 )?;
             }
@@ -661,5 +675,4 @@ impl MemoryStore for VecSqliteMemoryStore {
             })
             .await
     }
-
 }

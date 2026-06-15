@@ -29,7 +29,7 @@ impl VecSqliteMemoryStore {
 
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
             conn.execute(
-                "INSERT OR REPLACE INTO memory_embeddings(id, workspace_id, embedding) VALUES (?1, ?2, vector32(?3))",
+                "INSERT OR REPLACE INTO memory_embeddings(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
                 params![memory_id, workspace_id, embedding_json],
             )
             .context("failed to upsert memory_embeddings row")?;
@@ -77,7 +77,7 @@ impl VecSqliteMemoryStore {
                         SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
                                m.created_at, m.updated_at, m.revision, m.primary_flag,
                                m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
-                               vector_distance_cos(e.embedding, vector32(?1)) AS distance
+                               CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
                         FROM memory_embeddings e
                         JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
                         WHERE e.workspace_id = ?2
@@ -94,7 +94,11 @@ impl VecSqliteMemoryStore {
                         ])?;
                     let mut rank = 0usize;
                     while let Some(row) = rows.next()? {
-                        let distance = row.get::<_, f64>(15)? as f32;
+                        let distance = match row.get::<_, rusqlite::types::Value>(15)? {
+                            rusqlite::types::Value::Real(v) => v as f32,
+                            rusqlite::types::Value::Integer(v) => v as f32,
+                            _ => 0.0,
+                        };
                         let similarity = 1.0 - distance;
                         let record = Self::deserialize_record(row)?;
                         if Self::row_matches_filters(&workspace_id_c, &record, filters_c.as_ref()) {
@@ -117,7 +121,7 @@ impl VecSqliteMemoryStore {
                     let fts_sql = r#"
                         SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
                                m.created_at, m.updated_at, m.revision, m.primary_flag,
-                               m.parent_id, m.cluster_id, m.level, m.relation, m.revisions, bm25(f, 1.0, 0.8) AS rank
+                               m.parent_id, m.cluster_id, m.level, m.relation, m.revisions, CAST(bm25(memory_fts, 1.0, 0.8) AS REAL) AS rank
                         FROM memory_fts f
                         JOIN memory_records m ON m.id = f.id AND m.workspace_id = ?
                         WHERE f.memory_fts MATCH ?
@@ -130,7 +134,11 @@ impl VecSqliteMemoryStore {
                         .query(params![workspace_id_c, fts_query, candidate_limit as i64])?;
                     let mut rank = 0usize;
                     while let Some(row) = rows.next()? {
-                        let bm25_score = row.get::<_, f64>(15).ok().map(|v| v as f32);
+                        let bm25_score = match row.get::<_, rusqlite::types::Value>(15)? {
+                            rusqlite::types::Value::Real(v) => Some(v as f32),
+                            rusqlite::types::Value::Integer(v) => Some(v as f32),
+                            _ => None,
+                        };
                         let record = Self::deserialize_record(row)?;
                         if Self::row_matches_filters(&workspace_id_c, &record, filters_c.as_ref()) {
                             rank += 1;
@@ -153,10 +161,10 @@ impl VecSqliteMemoryStore {
 
                     // Seed from entities mentioned in the query
                     let mut entity_stmt = conn
-                        .prepare("SELECT id FROM entities WHERE name LIKE ?")?;
+                        .prepare("SELECT id FROM entities WHERE workspace_id = ? AND name LIKE ?")?;
                     for term in entity_terms {
                         let mut entity_rows =
-                            entity_stmt.query(params![format!("%{term}%")])?;
+                            entity_stmt.query(params![workspace_id_c, format!("%{term}%")])?;
                         while let Some(row) = entity_rows.next()? {
                             let entity_id: String = row.get(0)?;
                             // Find memories linked to this entity
@@ -254,6 +262,7 @@ impl VecSqliteMemoryStore {
                     SELECT e.id, e.id, e.name, 0, e.name, ''
                     FROM entities e
                     WHERE e.id IN ({sql_params})
+                      AND e.workspace_id = ?
                     UNION ALL
                     SELECT
                         graph_walk.root_id,
@@ -267,7 +276,9 @@ impl VecSqliteMemoryStore {
                         END
                     FROM graph_walk
                     JOIN relations r ON r.source_id = graph_walk.current_id
+                                    AND r.workspace_id = ?
                     JOIN entities target ON target.id = r.target_id
+                                        AND target.workspace_id = ?
                     WHERE graph_walk.depth < ?
                       AND instr(graph_walk.entity_path, target.name) = 0
                 )
@@ -284,6 +295,9 @@ impl VecSqliteMemoryStore {
             for id in seed_ids {
                 params_vec.push(Box::new(id));
             }
+            params_vec.push(Box::new(workspace_id_c.clone()));
+            params_vec.push(Box::new(workspace_id_c.clone()));
+            params_vec.push(Box::new(workspace_id_c.clone()));
             params_vec.push(Box::new(max_hops as i64));
 
             let mut rows = stmt.query(rusqlite::params_from_iter(params_vec))?;

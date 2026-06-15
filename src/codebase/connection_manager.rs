@@ -37,7 +37,9 @@ impl r2d2::CustomizeConnection<Connection, rusqlite::Error> for PragmaCustomizer
         conn.execute_batch(
             "PRAGMA busy_timeout=5000; \
              PRAGMA journal_mode=WAL; \
-             PRAGMA synchronous=NORMAL;",
+             PRAGMA synchronous=NORMAL; \
+             PRAGMA mmap_size=268435456; \
+             PRAGMA foreign_keys=ON;",
         )
         .map_err(|e| {
             eprintln!("PragmaCustomizer: PRAGMA error: {}", e);

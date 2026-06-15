@@ -114,9 +114,9 @@ impl VecSqliteMemoryStore {
                 .get::<_, Option<String>>(14)?
                 .and_then(|s| serde_json::from_str(&s).ok())
                 .unwrap_or_default(),
-            encrypted_dek: row.get(15)?,
-            content_iv: row.get(16)?,
-            metadata_iv: row.get(17)?,
+            encrypted_dek: row.get(15).ok(),
+            content_iv: row.get(16).ok(),
+            metadata_iv: row.get(17).ok(),
         })
     }
 
