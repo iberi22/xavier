@@ -54,7 +54,7 @@ pub fn anonymize_log(entry: &LogEntry) -> serde_json::Value {
 }
 
 /// Configuración del funnel de recompensas
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FunnelConfig {
     /// Parámetros del sistema (gobernables)
     pub params: SystemParams,
@@ -62,16 +62,6 @@ pub struct FunnelConfig {
     pub rate_limits: RateLimits,
     /// Consentimiento del usuario
     pub user_consent: bool,
-}
-
-impl Default for FunnelConfig {
-    fn default() -> Self {
-        Self {
-            params: SystemParams::default(),
-            rate_limits: RateLimits::default(),
-            user_consent: false,
-        }
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -172,14 +162,10 @@ impl Minter {
             .copied()
             .unwrap_or(1.0);
 
-        let final_amount = (base_price as f32
-            * rarity_multiplier
-            * trust_multiplier
-            * category_multiplier) as u64;
+        let final_amount =
+            (base_price as f32 * rarity_multiplier * trust_multiplier * category_multiplier) as u64;
 
-        let final_amount = final_amount
-            .max(params.min_price)
-            .min(params.max_price);
+        let final_amount = final_amount.max(params.min_price).min(params.max_price);
 
         let node_reward = (final_amount * params.reward_split[0] as u64) / 100;
         let wallet_reward = (final_amount * params.reward_split[1] as u64) / 100;
@@ -237,25 +223,28 @@ impl Minter {
         db_path: &std::path::Path,
     ) -> Result<MinterEvent, MinterError> {
         let event = self.mint(offer)?;
-        
-        // Cifrar el payload asimétricamente para el nodo mantenedor (ECIES)
-        let (encrypted_payload, ephemeral_pubkey) = crate::data_commons::maintainer::encrypt_for_maintainer(payload_json)
-            .map_err(|_| MinterError::InvalidContext)?;
 
-        let maintainer_pubkey = crate::data_commons::maintainer::get_maintainer_public_key().to_bytes();
+        // Cifrar el payload asimétricamente para el nodo mantenedor (ECIES)
+        let (encrypted_payload, ephemeral_pubkey) =
+            crate::data_commons::maintainer::encrypt_for_maintainer(payload_json)
+                .map_err(|_| MinterError::InvalidContext)?;
+
+        let maintainer_pubkey =
+            crate::data_commons::maintainer::get_maintainer_public_key().to_bytes();
 
         // Instanciar DB y guardar
         let db = crate::data_commons::telemetry_db::TelemetryDb::new(db_path)
             .map_err(|_| MinterError::InvalidContext)?;
-            
+
         db.save_encrypted_log(
             &offer.context_hash,
             &encrypted_payload,
             &ephemeral_pubkey, // guardamos la llave pública efímera como el 'DEK' para que el mantenedor descifre
             &maintainer_pubkey,
             &offer.seller_address.0,
-        ).map_err(|_| MinterError::InvalidContext)?;
-        
+        )
+        .map_err(|_| MinterError::InvalidContext)?;
+
         Ok(event)
     }
 
@@ -333,7 +322,10 @@ impl std::fmt::Display for MinterError {
             Self::CollusionDetected => write!(f, "Colusión detectada — transacción rechazada"),
             Self::InvalidContext => write!(f, "El contexto no es válido o está corrupto"),
             Self::BurnFailed => write!(f, "Error al quemar tokens"),
-            Self::NoConsent => write!(f, "El usuario no ha dado su consentimiento para compartir datos"),
+            Self::NoConsent => write!(
+                f,
+                "El usuario no ha dado su consentimiento para compartir datos"
+            ),
         }
     }
 }
@@ -375,8 +367,8 @@ mod tests {
             "normal_data": "visible"
         });
 
-        let entry = LogEntry::error(LogSource::HttpServer, "auth", "login failed")
-            .with_metadata(meta);
+        let entry =
+            LogEntry::error(LogSource::HttpServer, "auth", "login failed").with_metadata(meta);
 
         let anonymized = anonymize_log(&entry);
 
@@ -393,15 +385,17 @@ mod tests {
 
     #[test]
     fn test_calculate_reward() {
-        let mut config = FunnelConfig::default();
-        config.user_consent = true;
+        let config = FunnelConfig {
+            user_consent: true,
+            ..Default::default()
+        };
         let minter = Minter::new(config);
 
         let offer = ContextOffer {
             context_hash: "hash123".into(),
             category: DataCategory::CriticalError,
             module: "core".into(),
-            rarity: 0.1, // 1/0.1 = 10x multiplier
+            rarity: 0.1,        // 1/0.1 = 10x multiplier
             seller_trust: 1000, // 1.0x multiplier
             price: 0,
             published_at: 0,
@@ -419,8 +413,10 @@ mod tests {
 
     #[test]
     fn test_mint_duplicate_fails() {
-        let mut config = FunnelConfig::default();
-        config.user_consent = true;
+        let config = FunnelConfig {
+            user_consent: true,
+            ..Default::default()
+        };
         let mut minter = Minter::new(config);
 
         let offer = ContextOffer {

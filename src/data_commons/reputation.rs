@@ -127,11 +127,11 @@ impl EigenTrustEngine {
         }
 
         // Normalizar filas
-        for i in 0..n {
-            let row_sum: f64 = c[i].iter().sum();
+        for row in c.iter_mut().take(n) {
+            let row_sum: f64 = row.iter().sum();
             if row_sum > 0.0 {
-                for j in 0..n {
-                    c[i][j] /= row_sum;
+                for value in row.iter_mut().take(n) {
+                    *value /= row_sum;
                 }
             } else {
                 // Si no confía en nadie, confía uniformemente en pre-trusted o en todos
@@ -139,13 +139,13 @@ impl EigenTrustEngine {
                     let pt_weight = 1.0 / self.pre_trusted.len() as f64;
                     for pt in &self.pre_trusted {
                         if let Some(&idx) = wallet_to_idx.get(pt) {
-                            c[i][idx] = pt_weight;
+                            row[idx] = pt_weight;
                         }
                     }
                 } else {
                     let weight = 1.0 / n as f64;
-                    for j in 0..n {
-                        c[i][j] = weight;
+                    for value in row.iter_mut().take(n) {
+                        *value = weight;
                     }
                 }
             }
@@ -181,7 +181,11 @@ impl EigenTrustEngine {
             }
 
             // Verificar convergencia
-            let diff: f64 = t.iter().zip(t_next.iter()).map(|(a, b)| (a - b).abs()).sum();
+            let diff: f64 = t
+                .iter()
+                .zip(t_next.iter())
+                .map(|(a, b)| (a - b).abs())
+                .sum();
             t = t_next;
             final_diff = diff;
             final_iterations = k + 1;
@@ -405,11 +409,19 @@ mod tests {
         let w = WalletAddress("xv1_test".into());
         let history = ContributionHistory {
             shared_contexts: vec!["h1".into(), "h2".into(), "h3".into()], // 3 * 10 = 30 pts
-            purchased_contexts: vec!["h1".into()], // 1/3 utility = 100 pts
-            total_uptime: 3600 * 50, // 50h = 50 pts
+            purchased_contexts: vec!["h1".into()],                        // 1/3 utility = 100 pts
+            total_uptime: 3600 * 50,                                      // 50h = 50 pts
             validations: vec![
-                ValidationRecord { context_hash: "c1".into(), was_correct: true, timestamp: 0 },
-                ValidationRecord { context_hash: "c2".into(), was_correct: true, timestamp: 0 },
+                ValidationRecord {
+                    context_hash: "c1".into(),
+                    was_correct: true,
+                    timestamp: 0,
+                },
+                ValidationRecord {
+                    context_hash: "c2".into(),
+                    was_correct: true,
+                    timestamp: 0,
+                },
             ], // 2 * 20 = 40 pts
             node_version: "1.0.0".into(),
         };

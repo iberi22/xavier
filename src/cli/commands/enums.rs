@@ -147,6 +147,12 @@ pub enum Command {
     /// Run interactive system detection and setup
     Setup,
 
+    /// Manage Xavier Data Commons ($XAV)
+    DataCommons {
+        #[command(subcommand)]
+        cmd: DataCommonsCommand,
+    },
+
     /// Manage Xavier sessions
     Session {
         #[command(subcommand)]
@@ -370,9 +376,7 @@ pub enum MeshCommand {
         endpoint: Option<String>,
     },
     /// Join a mesh using a pairing code
-    Join {
-        code: String,
-    },
+    Join { code: String },
     /// Show mesh network status
     Status,
 }
@@ -419,4 +423,20 @@ pub enum SecretsCommand {
     Revoke { token: String },
     /// Check the status of a lease
     Status { token: String },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum DataCommonsCommand {
+    /// Export anonymized telemetry to a training bundle
+    ExportTrainingBundle {
+        /// Output file path
+        #[arg(short, long)]
+        output: PathBuf,
+        /// Seed for deterministic split and anonymization
+        #[arg(short, long, default_value_t = 42)]
+        seed: u64,
+        /// Ratio for eval split (0.0 to 1.0)
+        #[arg(short, long, default_value_t = 0.2)]
+        eval_ratio: f32,
+    },
 }

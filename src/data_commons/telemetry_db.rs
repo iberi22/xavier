@@ -2,6 +2,8 @@ use rusqlite::{params, Connection, Result};
 use std::path::Path;
 use tracing::info;
 
+pub type UsageLogRecord = (String, Vec<u8>, Vec<u8>, String, u64);
+
 /// Tabla para almacenar logs de uso y ejecución (Telemetría Alterna).
 /// Exclusivo para nodos mantenedores.
 const INIT_SQL: &str = "
@@ -55,13 +57,38 @@ impl TelemetryDb {
     }
 
     /// Obtiene todos los logs cifrados para su análisis (solo el nodo mantenedor puede descifrarlos luego).
-    pub fn get_recent_logs(&self, limit: u32) -> Result<Vec<(String, Vec<u8>, Vec<u8>, String, u64)>> {
+    pub fn get_recent_logs(&self, limit: u32) -> Result<Vec<UsageLogRecord>> {
         let mut stmt = self.conn.prepare(
             "SELECT context_hash, encrypted_payload, encrypted_dek, wallet_address, timestamp 
-             FROM usage_logs ORDER BY timestamp DESC LIMIT ?1"
+             FROM usage_logs ORDER BY timestamp DESC LIMIT ?1",
         )?;
 
         let rows = stmt.query_map([limit], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Vec<u8>>(1)?,
+                row.get::<_, Vec<u8>>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, u64>(4)?,
+            ))
+        })?;
+
+        let mut results = Vec::new();
+        for row in rows {
+            results.push(row?);
+        }
+
+        Ok(results)
+    }
+
+    /// Obtiene todos los logs registrados para exportación de entrenamiento.
+    pub fn get_all_logs(&self) -> Result<Vec<UsageLogRecord>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT context_hash, encrypted_payload, encrypted_dek, wallet_address, timestamp
+             FROM usage_logs ORDER BY timestamp DESC",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
             Ok((
                 row.get::<_, String>(0)?,
                 row.get::<_, Vec<u8>>(1)?,

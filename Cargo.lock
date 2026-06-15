@@ -217,6 +217,7 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 name = "app"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "log",
  "serde",
  "serde_json",
@@ -12414,6 +12415,7 @@ dependencies = [
  "r2d2",
  "r2d2_sqlite",
  "rand 0.8.6",
+ "rand_chacha 0.3.1",
  "ratatui",
  "rayon",
  "regex",
