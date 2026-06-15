@@ -8,6 +8,8 @@ use std::path::PathBuf;
 use std::sync::LazyLock;
 use std::time::Duration;
 
+use super::reindex::ReindexArgs;
+
 /// Global HTTP client shared across all CLI commands
 pub static CLI_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     reqwest::Client::builder()
@@ -57,6 +59,8 @@ pub enum Command {
         #[arg(short, long, default_value_t = 10)]
         limit: usize,
     },
+    /// Generate missing memory embeddings and persist them in sqlite-vec
+    Reindex(ReindexArgs),
     /// Export structured context pack (.xcp) for LLMs
     ExportPack {
         #[arg(short, long)]

@@ -21,6 +21,7 @@ pub mod http;
 pub mod mesh;
 pub mod navigation;
 pub mod provider;
+pub mod reindex;
 pub mod secrets;
 pub mod session;
 pub mod spawn;
@@ -86,6 +87,7 @@ impl Cli {
                 .await
             }
             Command::Recall { query, limit } => http::recall_memories(query, *limit).await,
+            Command::Reindex(args) => reindex::handle_reindex(args.clone()).await,
             Command::ExportPack {
                 topic,
                 max_level,
