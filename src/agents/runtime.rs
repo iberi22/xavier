@@ -315,6 +315,28 @@ impl AgentRuntime {
         filters: Option<MemoryQueryFilters>,
         system3_mode: System3Mode,
     ) -> Result<AgentRunTrace> {
+        match self.run_inner(query, session_id, category, filters, system3_mode).await {
+            Ok(trace) => Ok(trace),
+            Err(e) => {
+                let _ = crate::notifications::NOTIFICATIONS.notify(
+                    crate::notifications::IslandId::Errors,
+                    "Agent Execution Failed",
+                    &format!("Error running agent for query: {}", e),
+                    "error"
+                ).await;
+                Err(e)
+            }
+        }
+    }
+
+    async fn run_inner(
+        &self,
+        query: &str,
+        session_id: Option<String>,
+        category: Option<String>,
+        filters: Option<MemoryQueryFilters>,
+        system3_mode: System3Mode,
+    ) -> Result<AgentRunTrace> {
         let start = std::time::Instant::now();
         let session_id = session_id.unwrap_or_else(|| ulid::Ulid::new().to_string());
         let query_fingerprint = query_fingerprint(query);

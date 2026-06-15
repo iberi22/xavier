@@ -7,7 +7,7 @@ import type {
   PairingCodeResponse,
 } from "../types";
 
-const getApiUrl = (path: string) => {
+export const getApiUrl = (path: string) => {
   const isTauri =
     typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
   return isTauri ? `http://127.0.0.1:8006${path}` : path;
