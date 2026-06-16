@@ -114,7 +114,8 @@
     "bot_token": null,
     "webhook_url": null,
     "webhook_port": 8009,
-    "admin_ids": []
+    "admin_ids": [],
+    "notification_chat_id": null
   },
   "discord": {
     "enabled": false,
