@@ -68,9 +68,9 @@
     "cache_warming_enabled": false,
     "cache_warming_threshold": null,
     "learned_policy": {
-      "working_weight": 0.3,
-      "episodic_weight": 0.3,
-      "semantic_weight": 0.4,
+      "working_weight": 0.31236818,
+      "episodic_weight": 0.29587728,
+      "semantic_weight": 0.39175457,
       "semantic_similarity_weight": 0.49999994,
       "confidence_weight": 0.09999999,
       "edge_weight": 0.09999999,
@@ -114,7 +114,8 @@
     "bot_token": null,
     "webhook_url": null,
     "webhook_port": 8009,
-    "admin_ids": []
+    "admin_ids": [],
+    "notification_chat_id": null
   },
   "discord": {
     "enabled": false,
