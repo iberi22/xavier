@@ -56,6 +56,9 @@ async fn main() -> Result<()> {
         format!("{}/.xavier/logs", home)
     }));
 
+    // Initialize logging
+    observability::init_logger(&log_dir, &log_filter);
+
     // Parse and run CLI
     let cli = Cli::parse();
     cli.run().await
