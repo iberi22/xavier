@@ -137,18 +137,25 @@ impl WorkspaceState {
             .await
             .replace_relations(durable_state.beliefs.clone());
         let entity_graph = Arc::new(EntityGraph::new());
-        for document in memory.all_documents().await {
-            let memory_id = document
-                .id
-                .as_deref()
-                .unwrap_or(document.path.as_str())
-                .to_string();
-            if let Err(error) = entity_graph
-                .upsert_memory(&memory_id, &document.content, Some(&document.metadata))
-                .await
-            {
-                tracing::warn!(%error, memory_id = %memory_id, "failed to index entity graph from existing memory");
-            }
+        {
+            let eg = Arc::clone(&entity_graph);
+            let docs = memory.all_documents().await;
+            tokio::spawn(async move {
+                for document in &docs {
+                    let memory_id = document
+                        .id
+                        .as_deref()
+                        .unwrap_or(document.path.as_str())
+                        .to_string();
+                    if let Err(error) = eg
+                        .upsert_memory(&memory_id, &document.content, Some(&document.metadata))
+                        .await
+                    {
+                        tracing::warn!(%error, memory_id = %memory_id, "failed to index entity graph from existing memory");
+                    }
+                }
+                tracing::info!("entity graph indexing complete for {} documents", docs.len());
+            });
         }
         let semantic_memory = Arc::new(SemanticMemory::new());
         let memory_manager = Arc::new(crate::memory::manager::MemoryManager::new(

@@ -38,7 +38,7 @@ path = "src/lib.rs"
 members = ["code-graph", "panel-ui/src-tauri"]
 
 [features]
-default = ["cli-interactive", "local-gllm"]
+default = ["cli-interactive"]
 data-commons = ["post-quantum"]
 post-quantum = ["oqs"]
 cli-interactive = ["ratatui", "crossterm"]
