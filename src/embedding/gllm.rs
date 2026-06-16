@@ -13,11 +13,8 @@ use crate::embedding::{Embedder, EmbeddingError};
 pub const DEFAULT_GLLM_MODEL: &str = "Qwen/Qwen3-Embedding-0.6B";
 pub const DEFAULT_GLLM_DIMENSION: usize = 1024;
 
-#[cfg(feature = "local-gllm")]
-type InnerEmbedder = ::gllm::FallbackEmbedder;
-
-#[cfg(feature = "local-gllm-cuda")]
-type InnerEmbedder = ::gllm::FallbackEmbedder;
+#[cfg(any(feature = "local-gllm", feature = "local-gllm-cuda"))]
+type InnerEmbedder = gllm::FallbackEmbedder;
 
 pub struct GllmEmbedder {
     #[cfg(any(feature = "local-gllm", feature = "local-gllm-cuda"))]
@@ -38,7 +35,7 @@ impl fmt::Debug for GllmEmbedder {
 impl GllmEmbedder {
     #[cfg(any(feature = "local-gllm", feature = "local-gllm-cuda"))]
     pub fn new(model: String, dimension: usize) -> Result<Self, EmbeddingError> {
-        let inner = ::gllm::FallbackEmbedder::new(&model)
+        let inner = gllm::FallbackEmbedder::new(&model)
             .map_err(|error| EmbeddingError::Config(error.to_string()))?;
 
         Ok(Self {
