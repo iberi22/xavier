@@ -666,7 +666,9 @@ pub async fn v1_memories_search(
         .active_zones
         .clone()
         .unwrap_or_else(|| crate::memory::schema::parse_zones_from_prompt(&payload.query));
-    filters.zones = Some(zones);
+    if !zones.is_empty() {
+        filters.zones = Some(zones);
+    }
 
     let results = query_with_embedding_filtered(
         &workspace.workspace.memory,
