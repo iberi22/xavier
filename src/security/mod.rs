@@ -5,6 +5,7 @@
 
 pub mod anticipator;
 pub mod auth;
+pub mod license;
 pub mod detections;
 pub mod layers;
 pub mod prompt_guard;

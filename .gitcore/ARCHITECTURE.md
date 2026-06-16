@@ -96,7 +96,9 @@ src/
 │   ├── governance.rs       # Bicameral DAO implementation
 │   ├── reputation.rs       # EigenTrust-based reputation
 │   └── funnel.rs           # Data contribution pipeline
-├── security/               # Auth, encryption, sessions
+├── security/               # Auth, encryption, sessions, license
+├── health/                 # Runtime health monitoring (CPU, disk, DB, mesh, embedding)
+├── auto_improvement/       # Closed-loop auto-improvement (benchmark → gap → experiment → fix)
 ├── observability/          # Logging, tracing, health
 ├── embedding/              # Cloud + local embedding providers
 └── storage/                # SQLite + sqlite-vec

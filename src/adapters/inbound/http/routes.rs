@@ -83,10 +83,28 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
 }
 
 async fn health_handler() -> Json<serde_json::Value> {
+    let health = crate::health::collect_health_sync();
     Json(serde_json::json!({
-        "status": "ok",
+        "status": health.status,
         "service": "xavier",
-        "version": env!("CARGO_PKG_VERSION"),
+        "version": health.version,
+        "uptime_secs": health.uptime_secs,
+        "system": {
+            "cpu_usage_pct": health.system.cpu_usage_pct,
+            "memory_used_mb": health.system.memory_used_mb,
+            "memory_total_mb": health.system.memory_total_mb,
+            "disk_usage_pct": health.system.disk_usage_pct,
+        },
+        "database": {
+            "size_mb": health.database.size_mb,
+            "needs_vacuum": health.database.needs_vacuum,
+        },
+        "mesh": health.mesh.connectivity,
+        "checks": health.checks.iter().map(|c| serde_json::json!({
+            "name": c.name,
+            "status": format!("{:?}", c.status),
+            "detail": c.detail,
+        })).collect::<Vec<_>>()
     }))
 }
 
