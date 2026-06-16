@@ -20,6 +20,7 @@ pub mod data_commons;
 pub mod wallet;
 pub mod enums;
 pub mod http;
+pub mod license;
 pub mod mesh;
 pub mod navigation;
 pub mod provider;
@@ -197,6 +198,7 @@ impl Cli {
             Command::Scan { cmd: _ } => {
                 crate::cli::handlers::system_scan_cli::handle_scan_command().await
             }
+            Command::License { cmd } => crate::cli::commands::license::handle_license_command(cmd.clone()).await,
             Command::Export {
                 public,
                 output,
