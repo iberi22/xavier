@@ -229,6 +229,12 @@ pub enum Command {
         cmd: SyncCommand,
     },
 
+    /// Manage Xavier license (MIT / Mesh License)
+    License {
+        #[command(subcommand)]
+        cmd: LicenseCommand,
+    },
+
     /// System & security scanning
     Scan {
         #[command(subcommand)]
@@ -624,6 +630,17 @@ pub enum ScanCommand {
         #[arg(short, long, default_value = "table")]
         format: String,
     },
+}
+
+/// License management subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum LicenseCommand {
+    /// Show current license status
+    Status,
+    /// Accept the Xavier Mesh License (enables mesh features)
+    Accept,
+    /// Show license terms
+    Show,
 }
 
 /// XP wallet subcommands [SKELETON — decisions pending with BELA]
