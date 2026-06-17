@@ -21,15 +21,20 @@ use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
 
 #[derive(Clone)]
+pub struct CodeGraphState {
+    pub db: Arc<::code_graph::db::CodeGraphDB>,
+    pub indexer: Arc<::code_graph::indexer::Indexer>,
+    pub query: Arc<::code_graph::query::QueryEngine>,
+}
+
+#[derive(Clone)]
 pub struct CliState {
     pub memory: Arc<dyn MemoryQueryPort>,
     pub qmd_memory: Arc<QmdMemory>,
     pub store: Arc<dyn MemoryStore>,
     pub workspace_id: String,
     pub workspace_dir: PathBuf,
-    pub code_db: Arc<::code_graph::db::CodeGraphDB>,
-    pub code_indexer: Arc<::code_graph::indexer::Indexer>,
-    pub code_query: Arc<::code_graph::query::QueryEngine>,
+    pub code_graph: Arc<tokio::sync::RwLock<CodeGraphState>>,
     pub security: Arc<dyn InputSecurityPort>,
     #[expect(
         dead_code,
