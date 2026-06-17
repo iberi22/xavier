@@ -63,6 +63,12 @@ pub use crate::cli::websocket::*;
 pub static START_TIME: once_cell::sync::Lazy<Instant> = once_cell::sync::Lazy::new(Instant::now);
 
 pub async fn start_http_server(port: u16) -> Result<()> {
+    // Initial health check run to populate the static HEALTH instance
+    tokio::spawn(async {
+        let _ = xavier::observability::health::HEALTH.run_checks().await;
+    });
+    Arc::clone(&*xavier::observability::health::HEALTH).spawn();
+
     let settings = XavierSettings::current();
     settings.apply_to_env();
     std::env::set_var("XAVIER_PORT", port.to_string());
@@ -150,6 +156,12 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         Arc::new(TimeMetricsAdapter::new(Arc::clone(&time_store))) as Arc<dyn TimeMetricsPort>;
     init_time_store(time_adapter);
     init_health_port(health_adapter.clone());
+
+    // Update the global health monitor with the embedder
+    xavier::observability::health::HEALTH.set_embedder(embedder.clone()).await;
+    if let Ok(peers) = xavier::mesh::PeerRegistry::load() {
+        xavier::observability::health::HEALTH.set_peer_registry(Arc::new(peers)).await;
+    }
 
     let code_db_path = code_graph_db_path();
     if let Some(parent) = code_db_path.parent() {
