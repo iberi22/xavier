@@ -7,6 +7,7 @@ pub mod reward;
 #[cfg(test)]
 mod tests;
 
+use crate::memory::telemetry::NavTelemetry;
 use crate::retrieval::{LayerWeights, NavigationPolicy};
 use crate::search::rrf::ScoredResult;
 use reward::RewardModel;
@@ -24,6 +25,8 @@ pub struct Hormer {
     non_navigated_queries: AtomicU64,
     /// Histogram of retrieval scores (10 buckets: 0.0-0.1, 0.1-0.2, ..., 0.9-1.0)
     score_histogram: Arc<RwLock<[u64; 10]>>,
+    /// Navigation telemetry: node hotspots, path counts, avg path length.
+    telemetry: Arc<NavTelemetry>,
 }
 
 impl Hormer {
@@ -34,11 +37,17 @@ impl Hormer {
             navigated_queries: AtomicU64::new(0),
             non_navigated_queries: AtomicU64::new(0),
             score_histogram: Arc::new(RwLock::new([0; 10])),
+            telemetry: Arc::new(NavTelemetry::new()),
         }
     }
 
     pub fn policy(&self) -> &Arc<RwLock<NavigationPolicy>> {
         &self.policy
+    }
+
+    /// Access the navigation telemetry collector (node visits, path lengths).
+    pub fn telemetry(&self) -> &Arc<NavTelemetry> {
+        &self.telemetry
     }
 
     /// Record a query that did not use the learned policy
@@ -49,6 +58,12 @@ impl Hormer {
     /// Update telemetry metrics from retrieval results
     async fn update_metrics(&self, results: &[ScoredResult]) {
         self.navigated_queries.fetch_add(1, Ordering::Relaxed);
+
+        // Navigation telemetry: count the completed path and each visited node.
+        self.telemetry.record_path(results.len());
+        for res in results {
+            self.telemetry.record_visit(&res.id).await;
+        }
 
         let mut histogram = self.score_histogram.write().await;
         for res in results {
