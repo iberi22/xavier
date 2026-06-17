@@ -147,9 +147,10 @@ pub fn init_health() -> Arc<RwLock<HealthState>> {
     }
 
     let state = Arc::new(RwLock::new(HealthState::default()));
-    HEALTH_REGISTRY
-        .set(state.clone())
-        .expect("health registry already set");
+    if HEALTH_REGISTRY.set(state.clone()).is_err() {
+        // Already set by another thread – safe to return existing
+        return HEALTH_REGISTRY.get().expect("registry just set").clone();
+    }
     HEALTH_INITIALIZED.store(true, Ordering::Release);
     state
 }
@@ -171,11 +172,11 @@ pub fn collect_health_sync() -> HealthResponse {
 }
 
 /// Run a health check and return a structured response
-pub async fn collect_health(settings: &XavierSettings, _db: Option<&rusqlite::Connection>) -> HealthResponse {
-    collect_health_impl(settings, _db).await
+pub async fn collect_health(settings: &XavierSettings, db: Option<&rusqlite::Connection>) -> HealthResponse {
+    collect_health_impl(settings, db).await
 }
 
-async fn collect_health_impl(settings: &XavierSettings, _db: Option<&rusqlite::Connection>) -> HealthResponse {
+async fn collect_health_impl(settings: &XavierSettings, db: Option<&rusqlite::Connection>) -> HealthResponse {
     let registry = init_health();
     let now_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -271,6 +272,36 @@ async fn collect_health_impl(settings: &XavierSettings, _db: Option<&rusqlite::C
         });
     }
 
+    // 2b. SQLite integrity check (when connection is available)
+    if let Some(conn) = db {
+        match run_integrity_check(conn) {
+            Ok(ref msg) if msg == "ok" => {
+                checks.push(HealthCheck {
+                    name: "sqlite_integrity".into(),
+                    status: CheckStatus::Pass,
+                    detail: "PRAGMA integrity_check: ok".into(),
+                    timestamp_secs: now_secs,
+                });
+            }
+            Ok(msg) => {
+                checks.push(HealthCheck {
+                    name: "sqlite_integrity".into(),
+                    status: CheckStatus::Fail,
+                    detail: format!("PRAGMA integrity_check: {}", msg),
+                    timestamp_secs: now_secs,
+                });
+            }
+            Err(e) => {
+                checks.push(HealthCheck {
+                    name: "sqlite_integrity".into(),
+                    status: CheckStatus::Fail,
+                    detail: format!("integrity_check error: {}", e),
+                    timestamp_secs: now_secs,
+                });
+            }
+        }
+    }
+
     // 3. Memory check
     if mem_total > 0 {
         let mem_pct = (mem_used as f64 / mem_total as f64) * 100.0;
@@ -331,6 +362,28 @@ async fn collect_health_impl(settings: &XavierSettings, _db: Option<&rusqlite::C
     response
 }
 
+/// Run SQLite PRAGMA integrity_check on the database connection
+pub fn run_integrity_check(conn: &rusqlite::Connection) -> Result<String, String> {
+    let mut stmt = conn
+        .prepare("PRAGMA integrity_check")
+        .map_err(|e| format!("integrity_check prepare: {}", e))?;
+    let result: String = stmt
+        .query_row([], |row| row.get(0))
+        .map_err(|e| format!("integrity_check failed: {}", e))?;
+    Ok(result)
+}
+
+/// Get page count and page size from a connection
+pub fn get_db_page_stats(conn: &rusqlite::Connection) -> (u64, u64) {
+    let page_count: u64 = conn
+        .pragma_query_value(None, "page_count", |r| r.get(0))
+        .unwrap_or(0);
+    let page_size: u64 = conn
+        .pragma_query_value(None, "page_size", |r| r.get(0))
+        .unwrap_or(4096);
+    (page_count, page_size)
+}
+
 /// Auto-repair: run VACUUM if fragmentation > 30%
 pub async fn auto_vacuum_if_needed(
     conn: &rusqlite::Connection,
@@ -345,6 +398,19 @@ pub async fn auto_vacuum_if_needed(
         conn.execute_batch("VACUUM;")
             .map_err(|e| format!("VACUUM failed: {}", e))?;
         tracing::info!("Auto-VACUUM completed successfully");
+
+        // Run integrity check after VACUUM
+        match run_integrity_check(conn) {
+            Ok(msg) if msg == "ok" => {
+                tracing::info!("Database integrity check passed post-VACUUM");
+            }
+            Ok(msg) => {
+                tracing::warn!("Database integrity check post-VACUUM: {}", msg);
+            }
+            Err(e) => {
+                tracing::error!("Database integrity check failed post-VACUUM: {}", e);
+            }
+        }
     }
     Ok(())
 }
@@ -373,12 +439,30 @@ fn gather_system_metrics() -> (f64, u64, u64, f64, f64) {
     (0.0, mem_used, mem_total, disk_used, disk_total)
 }
 
-fn gather_db_health(_settings: &XavierSettings) -> DatabaseHealth {
-    // We try to open the configured memory database or fail gracefully
-    let db_path = std::path::Path::new("data/memory.db");
+fn gather_db_health(settings: &XavierSettings) -> DatabaseHealth {
+    // Use configured path or fall back to default
+    let db_path_str = if !settings.memory.sqlite_path.is_empty() {
+        settings.memory.sqlite_path.clone()
+    } else if !settings.memory.file_path.is_empty() {
+        settings.memory.file_path.clone()
+    } else {
+        format!("{}/memory.db", settings.memory.data_dir)
+    };
+    let db_path = std::path::Path::new(&db_path_str);
     let (size_mb, wal_size_mb, page_count, fragmentation) = if db_path.exists() {
         let size = db_path.metadata().map(|m| m.len() as f64 / (1024.0 * 1024.0)).unwrap_or(0.0);
-        let wal_path = db_path.with_extension("db-wal");
+        // SQLite WAL file: <name>-wal and <name>-shm
+        let wal_path = {
+            let mut w = db_path.to_path_buf();
+            let name = db_path.file_name().unwrap_or_default().to_str().unwrap_or("memory.db");
+            w.set_file_name(format!("{}-wal", name));
+            if !w.exists() {
+                // Try with original extension: memory.db-wal
+                let mut w2 = db_path.to_path_buf();
+                w2.set_file_name(format!("{}.db-wal", db_path.file_stem().unwrap_or_default().to_str().unwrap_or("memory")));
+                w2
+            } else { w }
+        };
         let wal = if wal_path.exists() {
             wal_path.metadata().map(|m| m.len() as f64 / (1024.0 * 1024.0)).unwrap_or(0.0)
         } else {
@@ -392,12 +476,12 @@ fn gather_db_health(_settings: &XavierSettings) -> DatabaseHealth {
     };
 
     DatabaseHealth {
-        path: "data/memory.db".to_string(),
+        path: db_path_str.clone(),
         size_mb,
         wal_size_mb,
         page_count,
         fragmentation_pct: fragmentation,
-        needs_vacuum: fragmentation > 30.0,
+        needs_vacuum: fragmentation > 30.0 || page_count > 100000,
         last_vacuum: None,
     }
 }
@@ -413,8 +497,12 @@ mod tests {
 
     #[test]
     fn test_health_registry_init() {
+        // If called after other tests already initialized the singleton,
+        // init_health() just returns the existing registry — that's fine.
         let reg = init_health();
-        assert!(!reg.try_read().is_err());
+        // Registry should always be readable
+        let read = reg.try_read();
+        assert!(read.is_ok(), "registry should always be readable");
     }
 
     #[test]
@@ -440,5 +528,39 @@ mod tests {
         let health = collect_health(&settings, None).await;
         let disk_check = health.checks.iter().find(|c| c.name == "disk_space");
         assert!(disk_check.is_some());
+    }
+
+    #[test]
+    fn test_integrity_check_on_dummy_db() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE t (x); INSERT INTO t VALUES (1);")
+            .unwrap();
+        let result = run_integrity_check(&conn);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "ok");
+    }
+
+    #[test]
+    fn test_db_page_stats() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE t (x); INSERT INTO t VALUES (1);")
+            .unwrap();
+        let (count, size) = get_db_page_stats(&conn);
+        assert!(count > 0);
+        assert!(size == 4096 || size > 0);
+    }
+
+    #[test]
+    fn test_auto_vacuum_no_op_on_healthy_db() {
+        let settings = XavierSettings::default();
+        // A fresh in-memory DB won't need vacuum
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let conn = rusqlite::Connection::open_in_memory().unwrap();
+            conn.execute_batch("CREATE TABLE t (x); INSERT INTO t VALUES (1);")
+                .unwrap();
+            let result = auto_vacuum_if_needed(&conn, &settings).await;
+            assert!(result.is_ok());
+        });
     }
 }
