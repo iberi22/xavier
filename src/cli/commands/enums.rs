@@ -379,6 +379,16 @@ pub enum CodeCommand {
     Hotspots,
     /// Show code graph stats
     Stats,
+    /// Dump portable code graph to .xavier/codegraph.json
+    Dump {
+        /// Optional path to the codebase (defaults to '.')
+        path: Option<String>,
+    },
+    /// Load portable code graph from .xavier/codegraph.json
+    Load {
+        /// Optional path to the codebase (defaults to '.')
+        path: Option<String>,
+    },
 }
 
 /// Provider management subcommands

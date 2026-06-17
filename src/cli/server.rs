@@ -158,6 +158,11 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     let code_db = Arc::new(::code_graph::db::CodeGraphDB::new(&code_db_path)?);
     let code_indexer = Arc::new(::code_graph::indexer::Indexer::new(Arc::clone(&code_db)));
     let code_query = Arc::new(::code_graph::query::QueryEngine::new(Arc::clone(&code_db)));
+    let code_graph_state = Arc::new(tokio::sync::RwLock::new(crate::cli::state::CodeGraphState {
+        db: code_db.clone(),
+        indexer: code_indexer.clone(),
+        query: code_query.clone(),
+    }));
 
     let workspace_dir = PathBuf::from(XavierSettings::current().memory.workspace_dir);
     info!(
@@ -229,9 +234,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         store,
         workspace_id,
         workspace_dir,
-        code_db: code_db.clone(),
-        code_indexer: code_indexer.clone(),
-        code_query,
+        code_graph: code_graph_state,
         security: security_service.clone() as Arc<dyn InputSecurityPort>,
         security_scan: security_service.clone() as Arc<dyn SecurityScanPort>,
         _time_store: Some(time_store),
@@ -288,6 +291,8 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/code/find", post(code_find_handler))
         .route("/code/context", post(code_context_handler))
         .route("/code/stats", get(code_stats_handler))
+        .route("/code/dump", post(code_dump_handler))
+        .route("/code/load", post(code_load_handler))
         .route("/code/dependencies", post(code_dependencies_handler))
         .route(
             "/code/reverse-dependencies",
