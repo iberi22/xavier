@@ -30,6 +30,14 @@ pub struct AffectedParams {
     pub exclude_file_type: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct TelemetryParams {
+    /// When true, return only the top-N hotspots instead of the full summary.
+    pub hotspots: Option<bool>,
+    /// Number of hotspot entries to include (default 10).
+    pub top: Option<usize>,
+}
+
 pub async fn ls_handler(
     State(state): State<CliState>,
     Query(params): Query<LsParams>,
@@ -204,10 +212,34 @@ pub async fn visualize_handler(Extension(ctx): Extension<WorkspaceContext>) -> i
     }))
 }
 
+pub async fn telemetry_handler(
+    Extension(ctx): Extension<WorkspaceContext>,
+    Query(params): Query<TelemetryParams>,
+) -> impl IntoResponse {
+    let telemetry = ctx.workspace.hormer.telemetry();
+    let top = params.top.unwrap_or(10).max(1);
+
+    if params.hotspots.unwrap_or(false) {
+        let hotspots = telemetry.get_hotspots(top).await;
+        Json(json!({
+            "status": "ok",
+            "hotspots": hotspots,
+        }))
+        .into_response()
+    } else {
+        let summary = telemetry.get_summary().await;
+        Json(json!({
+            "status": "ok",
+            "telemetry": summary,
+        }))
+        .into_response()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cli::state::CliState;
+    use crate::cli::state::{CliState, CodeGraphState};
     use axum::{
         body::Body,
         http::{Request, StatusCode},
@@ -251,21 +283,21 @@ mod tests {
         };
         let store = Arc::new(VecSqliteMemoryStore::new(config).await.unwrap());
 
+        let cg_db = Arc::new(
+            code_graph::db::CodeGraphDB::new(&PathBuf::from(":memory:")).unwrap(),
+        );
+        let cg_state = Arc::new(tokio::sync::RwLock::new(CodeGraphState {
+            db: cg_db.clone(),
+            indexer: Arc::new(code_graph::indexer::Indexer::new(cg_db.clone())),
+            query: Arc::new(code_graph::query::QueryEngine::new(cg_db)),
+        }));
         CliState {
             memory: memory_port,
             qmd_memory,
             store: store.clone(),
             workspace_id: "test-ws".to_string(),
             workspace_dir: PathBuf::from("."),
-            code_db: Arc::new(
-                code_graph::db::CodeGraphDB::new(&PathBuf::from(":memory:")).unwrap(),
-            ),
-            code_indexer: Arc::new(code_graph::indexer::Indexer::new(Arc::new(
-                code_graph::db::CodeGraphDB::new(&PathBuf::from(":memory:")).unwrap(),
-            ))),
-            code_query: Arc::new(code_graph::query::QueryEngine::new(Arc::new(
-                code_graph::db::CodeGraphDB::new(&PathBuf::from(":memory:")).unwrap(),
-            ))),
+            code_graph: cg_state,
             security: Arc::new(SecurityService::new()),
             security_scan: Arc::new(SecurityService::new()),
             _time_store: None,

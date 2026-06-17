@@ -210,6 +210,86 @@ pub async fn handle_pwd() -> Result<()> {
     Ok(())
 }
 
+pub async fn handle_telemetry(kind: Option<String>) -> Result<()> {
+    let token = require_xavier_token()?;
+    let base_url = resolve_base_url();
+    let client = CLI_HTTP_CLIENT.clone();
+
+    let hotspots_mode = matches!(
+        kind.as_deref().map(|s| s.to_ascii_lowercase()).as_deref(),
+        Some("hotspots")
+    );
+    let top = 10usize;
+    let url = format!(
+        "{}/v1/nav/telemetry?hotspots={}&top={}",
+        base_url, hotspots_mode, top
+    );
+
+    let response = client
+        .get(url)
+        .header("X-Xavier-Token", &token)
+        .send()
+        .await?;
+
+    if response.status().is_success() {
+        let body: serde_json::Value = response.json().await?;
+        if hotspots_mode {
+            println!("Top {} Navigation Hotspots:", top);
+            let hotspots = body["hotspots"].as_array();
+            match hotspots {
+                Some(entries) if !entries.is_empty() => {
+                    println!("{:<40} | {:<8}", "Node", "Visits");
+                    println!("{:-<40}-+-{:-<8}", "", "");
+                    for entry in entries {
+                        // Hotspots serialize as [node, VisitInfo] tuples.
+                        let node = entry[0].as_str().unwrap_or("(unknown)");
+                        let count = entry[1]["count"].as_u64().unwrap_or(0);
+                        println!("{:<40} | {:<8}", node, count);
+                    }
+                }
+                _ => println!("  (no nodes visited yet)"),
+            }
+        } else {
+            let t = &body["telemetry"];
+            println!("Navigation Telemetry Summary:");
+            println!(
+                "  Total visits:     {}",
+                t["total_visits"].as_u64().unwrap_or(0)
+            );
+            println!(
+                "  Unique nodes:     {}",
+                t["unique_nodes"].as_u64().unwrap_or(0)
+            );
+            println!(
+                "  Paths recorded:   {}",
+                t["total_paths"].as_u64().unwrap_or(0)
+            );
+            println!(
+                "  Avg path length:  {:.2}",
+                t["avg_path_length"].as_f64().unwrap_or(0.0)
+            );
+
+            let hotspots = t["hotspots"].as_array();
+            if let Some(entries) = hotspots {
+                if !entries.is_empty() {
+                    println!("\nTop {} Hotspots:", entries.len());
+                    println!("{:<40} | {:<8}", "Node", "Visits");
+                    println!("{:-<40}-+-{:-<8}", "", "");
+                    for entry in entries {
+                        // Hotspots serialize as [node, VisitInfo] tuples.
+                        let node = entry[0].as_str().unwrap_or("(unknown)");
+                        let count = entry[1]["count"].as_u64().unwrap_or(0);
+                        println!("{:<40} | {:<8}", node, count);
+                    }
+                }
+            }
+        }
+    } else {
+        println!("telemetry failed: {}", response.text().await?);
+    }
+    Ok(())
+}
+
 pub async fn handle_affected(
     path: String,
     depth: usize,
