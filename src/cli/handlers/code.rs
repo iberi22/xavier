@@ -6,6 +6,7 @@ use serde::Serialize;
 use std::path::PathBuf;
 use tracing::{info, warn};
 
+use crate::cli::code_dump::{perform_dump, perform_load};
 use crate::cli::code_graph::{code_find_symbols, filter_symbols_by_query};
 use crate::cli::security::secure_optional_request_field;
 use crate::cli::state::CliState;
@@ -29,11 +30,8 @@ pub async fn code_index_handler(
         .unwrap_or("src");
     info!("Code index request: path={}", base_path);
 
-    match state
-        .code_indexer
-        .index(std::path::Path::new(base_path))
-        .await
-    {
+    let code_graph = state.code_graph.read().await;
+    match code_graph.indexer.index(std::path::Path::new(base_path)).await {
         Ok(stats) => Json(serde_json::json!({
             "status": "ok",
             "indexed_files": stats.total_files,
@@ -52,6 +50,54 @@ pub async fn code_index_handler(
             "indexed_symbols": 0,
             "indexed_imports": 0,
             "paths": [base_path],
+        })),
+    }
+}
+
+pub async fn code_dump_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    let path = payload
+        .get("path")
+        .and_then(|v| v.as_str())
+        .unwrap_or(".");
+
+    let code_graph = state.code_graph.read().await;
+    match perform_dump(&code_graph, path).await {
+        Ok(dump_path) => axum::Json(serde_json::json!({
+            "status": "ok",
+            "message": format!("Code graph dumped to {}", dump_path.display()),
+            "path": dump_path.to_string_lossy(),
+        })),
+        Err(error) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": error.to_string(),
+        })),
+    }
+}
+
+pub async fn code_load_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    let path = payload
+        .get("path")
+        .and_then(|v| v.as_str())
+        .unwrap_or(".");
+
+    match perform_load(path).await {
+        Ok(new_state) => {
+            let mut code_graph = state.code_graph.write().await;
+            *code_graph = new_state;
+            axum::Json(serde_json::json!({
+                "status": "ok",
+                "message": "Code graph loaded successfully from dump",
+            }))
+        }
+        Err(error) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": error.to_string(),
         })),
     }
 }
@@ -116,16 +162,26 @@ pub async fn code_scan_handler(
     let path = requested_path;
     info!("Code scan request: path={}", path);
 
-    match state.code_indexer.index(std::path::Path::new(&path)).await {
-        Ok(stats) => axum::Json(serde_json::json!({
-            "status": "ok",
-            "indexed_files": stats.total_files,
-            "indexed_symbols": stats.total_symbols,
-            "indexed_imports": stats.total_imports,
-            "duration_ms": stats.duration_ms,
-            "paths": [path],
-            "languages": stats.languages,
-        })),
+    let code_graph = state.code_graph.read().await;
+    match code_graph.indexer.index(std::path::Path::new(&path)).await {
+        Ok(stats) => {
+            // Automatically trigger dump after successful scan
+            let dump_msg = match perform_dump(&code_graph, &path).await {
+                Ok(dump_path) => format!(" (Dumped to {})", dump_path.display()),
+                Err(e) => format!(" (Dump failed: {})", e),
+            };
+
+            axum::Json(serde_json::json!({
+                "status": "ok",
+                "indexed_files": stats.total_files,
+                "indexed_symbols": stats.total_symbols,
+                "indexed_imports": stats.total_imports,
+                "duration_ms": stats.duration_ms,
+                "paths": [path],
+                "languages": stats.languages,
+                "message": format!("Scan complete. {}{}", stats.to_string(), dump_msg),
+            }))
+        }
         Err(error) => axum::Json(serde_json::json!({
             "status": "error",
             "message": error.to_string(),
@@ -234,8 +290,9 @@ pub async fn code_find_handler(
         query, limit, kind, pattern
     );
 
+    let code_graph = state.code_graph.read().await;
     let symbols = code_find_symbols(
-        &state.code_query,
+        &code_graph.query,
         &query,
         kind.as_deref(),
         pattern.as_deref(),
@@ -272,7 +329,8 @@ pub async fn code_find_handler(
 pub async fn code_stats_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
-    match state.code_db.stats() {
+    let code_graph = state.code_graph.read().await;
+    match code_graph.db.stats() {
         Ok(stats) => axum::Json(serde_json::json!({
             "status": "ok",
             "total_files": stats.total_files,
@@ -332,21 +390,22 @@ pub async fn code_context_handler(
     };
     let budget_tokens = payload.budget_tokens.clamp(100, 8000);
 
+    let code_graph = state.code_graph.read().await;
     let mut symbols = if let Some(kind) = payload.kind.as_deref() {
         match kind.to_ascii_lowercase().as_str() {
-            "function" | "fn" => state.code_query.functions(kind_limit).unwrap_or_default(),
-            "struct" => state.code_query.structs(kind_limit).unwrap_or_default(),
-            "class" => state.code_query.classes(kind_limit).unwrap_or_default(),
-            "enum" => state.code_query.enums(kind_limit).unwrap_or_default(),
-            _ => state
-                .code_query
+            "function" | "fn" => code_graph.query.functions(kind_limit).unwrap_or_default(),
+            "struct" => code_graph.query.structs(kind_limit).unwrap_or_default(),
+            "class" => code_graph.query.classes(kind_limit).unwrap_or_default(),
+            "enum" => code_graph.query.enums(kind_limit).unwrap_or_default(),
+            _ => code_graph
+                .query
                 .search(&payload.query, limit)
                 .map(|result| result.symbols)
                 .unwrap_or_default(),
         }
     } else {
-        state
-            .code_query
+        code_graph
+            .query
             .search(&payload.query, limit)
             .map(|result| result.symbols)
             .unwrap_or_default()
@@ -410,8 +469,9 @@ pub async fn code_call_chain_handler(
 }
 
 pub async fn code_hubs_handler(State(state): State<CliState>) -> impl axum::response::IntoResponse {
-    match state
-        .code_query
+    let code_graph = state.code_graph.read().await;
+    match code_graph
+        .query
         .hubs(default_min_degree(), default_graph_limit())
     {
         Ok(hubs) => {
@@ -436,8 +496,9 @@ pub async fn code_hubs_handler(State(state): State<CliState>) -> impl axum::resp
 pub async fn code_hotspots_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
-    match state
-        .code_query
+    let code_graph = state.code_graph.read().await;
+    match code_graph
+        .query
         .hotspots(default_min_complexity(), default_graph_limit())
     {
         Ok(hotspots) => {
@@ -511,15 +572,16 @@ async fn code_graph_edges_response(
     let limit = payload.limit.clamp(1, 1000);
     let budget_tokens = payload.budget_tokens.clamp(100, 16_000);
 
+    let code_graph = state.code_graph.read().await;
     let result = if call_chain {
-        state.code_query.call_chain(&query, depth, limit)
+        code_graph.query.call_chain(&query, depth, limit)
     } else if reverse {
-        state
-            .code_query
+        code_graph
+            .query
             .reverse_dependencies(&query, edge_type, depth, limit)
     } else {
-        state
-            .code_query
+        code_graph
+            .query
             .dependencies(&query, edge_type, depth, limit)
     };
 

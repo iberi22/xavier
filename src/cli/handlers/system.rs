@@ -144,8 +144,9 @@ pub async fn readiness_handler(State(state): State<CliState>) -> Response {
             "detail": error.to_string(),
         }),
     };
-    let code_graph = state
-        .code_db
+    let code_graph_state = state.code_graph.read().await;
+    let code_graph = code_graph_state
+        .db
         .stats()
         .map(|stats| {
             serde_json::json!({
@@ -155,7 +156,7 @@ pub async fn readiness_handler(State(state): State<CliState>) -> Response {
                 "total_imports": stats.total_imports,
             })
         })
-        .unwrap_or_else(|error| {
+        .unwrap_or_else(|error: code_graph::GraphError| {
             serde_json::json!({
                 "ready": false,
                 "error": error.to_string(),
