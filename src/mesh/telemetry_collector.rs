@@ -6,7 +6,7 @@
 //!
 //! # Architecture
 //!
-//! ```
+//! ```text
 //! TelemetryCollector
 //!   └─ HashMap<metric_name, Vec<TelemetrySample>>
 //!        └─ TelemetrySample { timestamp, metric_name, value, labels }
