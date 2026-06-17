@@ -13,10 +13,7 @@ use crate::embedding::{Embedder, EmbeddingError};
 pub const DEFAULT_GLLM_MODEL: &str = "Qwen/Qwen3-Embedding-0.6B";
 pub const DEFAULT_GLLM_DIMENSION: usize = 1024;
 
-#[cfg(feature = "local-gllm")]
-type InnerEmbedder = ::gllm::FallbackEmbedder;
-
-#[cfg(feature = "local-gllm-cuda")]
+#[cfg(any(feature = "local-gllm", feature = "local-gllm-cuda"))]
 type InnerEmbedder = ::gllm::FallbackEmbedder;
 
 pub struct GllmEmbedder {
