@@ -565,6 +565,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/v1/nav/pwd", get(crate::cli::handlers::navigation::pwd_handler))
         .route("/v1/nav/affected", get(crate::cli::handlers::navigation::affected_handler))
         .route("/v1/nav/visualize", get(crate::cli::handlers::navigation::visualize_handler))
+        .route("/v1/nav/telemetry", get(crate::cli::handlers::navigation::telemetry_handler))
         .route("/notifications", get(crate::cli::handlers::notifications::list_notifications_handler))
         .route(
             "/notifications/{id}/read",

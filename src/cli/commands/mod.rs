@@ -130,6 +130,9 @@ impl Cli {
                 NavCommand::Visualize { format } => {
                     navigation::handle_visualize(format.clone()).await
                 }
+                NavCommand::Telemetry { kind } => {
+                    navigation::handle_telemetry(kind.clone()).await
+                }
             },
             Command::SessionSave {
                 session_id,

@@ -44,7 +44,7 @@
     "api_flavor": "openai-compatible",
     "local_llm_url": "http://localhost:11434/v1",
     "local_llm_model": "qwen3-coder",
-    "embedding_url": "http://localhost:11434/v1",
+    "embedding_url": "https://opencode.ai/zen/go/v1/embeddings",
     "embedding_model": "embeddinggemma",
     "router_retrieved_model": "",
     "router_complex_model": "",
@@ -68,9 +68,9 @@
     "cache_warming_enabled": false,
     "cache_warming_threshold": null,
     "learned_policy": {
-      "working_weight": 0.31236818,
-      "episodic_weight": 0.29587728,
-      "semantic_weight": 0.39175457,
+      "working_weight": 0.3,
+      "episodic_weight": 0.3,
+      "semantic_weight": 0.4,
       "semantic_similarity_weight": 0.49999994,
       "confidence_weight": 0.09999999,
       "edge_weight": 0.09999999,
@@ -96,7 +96,7 @@
     "embedder": "",
     "gllm_model": "",
     "api_flavor": "openai-compatible",
-    "api_key": null,
+    "api_key": "sk-0VU4aRkJ0mEpBDk6H87fv23ilgvhadJwHuHM9EZB7fxwAWPm4nrpWwtg2X8uPKKI",
     "gllm_dimension": null,
     "cache_enabled": true,
     "cache_size": 10000,
@@ -155,5 +155,9 @@
     "consent_given": false,
     "data_dir": "data/commons",
     "wallet_address": null
+  },
+  "license": {
+    "mesh_accepted": false,
+    "license_type": "MIT"
   }
 }
