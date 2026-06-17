@@ -14,6 +14,7 @@ pub mod query_processor;
 pub mod skill_dispatcher;
 pub mod skill_registry;
 pub mod skills;
+pub mod regen_loop;
 pub mod timeline;
 
 use chrono::{DateTime, Utc};
@@ -24,6 +25,7 @@ pub use classifier::{ContextClassifier, ContextLevel};
 pub use executor::SkillExecutor;
 pub use indexer::ContextIndexer;
 pub use manager::ContextManager;
+pub use regen_loop::{RegenerationConfig, RegenerationLoop, RegenDecision, SessionRegenStats};
 pub use monitoring::ContextMetrics;
 pub use orchestrator::{ContextBudgetConfig, ExecutionPlan, HookKind, Orchestrator};
 pub use query_processor::QueryProcessor;
