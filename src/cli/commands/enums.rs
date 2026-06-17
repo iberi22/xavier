@@ -277,6 +277,13 @@ pub enum NavCommand {
         #[arg(short, long, default_value = "text")]
         format: String,
     },
+    /// Show navigation telemetry: node hotspots, path counts, avg path length.
+    ///
+    /// With no argument prints a summary; pass `hotspots` for the top 10 nodes.
+    Telemetry {
+        /// Optional sub-selector: `hotspots` to list the top-10 visited nodes.
+        kind: Option<String>,
+    },
 }
 
 /// Provider usage subcommands

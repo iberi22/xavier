@@ -13,6 +13,7 @@ use unicode_normalization::UnicodeNormalization;
 use regex::Regex;
 use once_cell::sync::Lazy;
 
+pub mod cache_warming;
 pub mod config;
 pub mod hash;
 pub mod query_builder;
@@ -22,6 +23,7 @@ pub mod types;
 pub mod utils;
 pub mod writer;
 
+pub use cache_warming::*;
 pub use config::*;
 pub use hash::*;
 pub use query_builder::*;
@@ -42,6 +44,7 @@ pub struct QmdMemory {
     pub(crate) search_cache: Arc<AsyncRwLock<HashMap<SearchCacheKey, Vec<MemoryDocument>>>>,
     pub(crate) cache_counters: Arc<CacheCounters>,
     pub(crate) store: Arc<AsyncRwLock<Option<Arc<dyn MemoryStore>>>>,
+    pub(crate) cache_warmup: Option<Arc<PredictiveCacheWarmup>>,
 }
 
 impl fmt::Debug for QmdMemory {
@@ -109,6 +112,7 @@ impl QmdMemory {
             search_cache: Arc::new(AsyncRwLock::new(HashMap::new())),
             cache_counters: Arc::new(CacheCounters::default()),
             store: Arc::new(AsyncRwLock::new(None)),
+            cache_warmup: Some(Arc::new(PredictiveCacheWarmup::new())),
         }
     }
 
@@ -129,6 +133,16 @@ impl QmdMemory {
     /// before a restart would be lost on restart.
     pub async fn init(&self) -> Result<()> {
         reader::init(self).await
+    }
+
+    /// Activate or deactivate cache warming.
+    /// When enabled, the most frequently accessed documents are
+    /// kept in cache for faster retrieval.
+    pub async fn set_cache_warming(&self, enabled: bool, top_k: usize) {
+        if let Some(ref warmup) = self.cache_warmup {
+            warmup.set_enabled(enabled).await;
+            let _ = top_k;
+        }
     }
 
     pub async fn search(&self, query_text: &str, limit: usize) -> Result<Vec<MemoryDocument>> {

@@ -5,7 +5,10 @@
 
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::collections::HashSet;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use super::policy::NavigationPolicy;
 use super::scoring::*;
@@ -160,7 +163,138 @@ pub struct LayeredSearchResult {
     pub level_3_episodic: Vec<ScoredResult>,
 }
 
-use std::sync::Arc;
+/// Adaptive zone booster that adjusts zone multipliers dynamically
+/// based on per-user/session feedback.
+///
+/// Tracks which zones produce better results for each user and
+/// adjusts boost/penalty multipliers accordingly.
+#[derive(Debug, Clone)]
+pub struct AdaptiveZoneBooster {
+    /// Per-user/zone performance scores
+    user_zone_scores: Arc<Mutex<HashMap<String, HashMap<String, ZonePerformance>>>>,
+    /// Base boost multiplier (starting point before adaptation)
+    base_boost: f32,
+    /// Base penalty multiplier
+    base_penalty: f32,
+    /// Learning rate for score updates
+    learning_rate: f32,
+}
+
+/// Performance tracking for a single zone per user
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ZonePerformance {
+    /// Number of queries where this zone was relevant
+    pub hits: u64,
+    /// Total queries where this zone was considered
+    pub total: u64,
+    /// Average score of results from this zone
+    pub avg_score: f32,
+}
+
+impl Default for AdaptiveZoneBooster {
+    fn default() -> Self {
+        Self {
+            user_zone_scores: Arc::new(Mutex::new(HashMap::new())),
+            base_boost: config::DEFAULT_ZONE_BOOST_MULTIPLIER,
+            base_penalty: config::DEFAULT_ZONE_PENALTY_MULTIPLIER,
+            learning_rate: 0.1,
+        }
+    }
+}
+
+impl AdaptiveZoneBooster {
+    /// Creates a new adaptive zone booster with default parameters.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Records feedback for a user's zone: whether results were relevant and the avg score.
+    pub async fn record_feedback(
+        &self,
+        user_id: &str,
+        zone: &str,
+        was_relevant: bool,
+        score: f32,
+    ) {
+        let mut user_zones = self.user_zone_scores.lock().await;
+        let entry = user_zones
+            .entry(user_id.to_string())
+            .or_default()
+            .entry(zone.to_string())
+            .or_insert(ZonePerformance {
+                hits: 0,
+                total: 0,
+                avg_score: 0.0,
+            });
+
+        entry.total += 1;
+        if was_relevant {
+            entry.hits += 1;
+        }
+        // Running average
+        let n = entry.total as f32;
+        entry.avg_score = entry.avg_score * ((n - 1.0) / n) + score * (1.0 / n);
+    }
+
+    /// Gets the adaptive boost multiplier for a specific user and zone.
+    /// Zones with high hit rates get boosted more; low-rate zones get penalized.
+    pub async fn get_boost(&self, user_id: &str, zone: &str) -> f32 {
+        let user_zones = self.user_zone_scores.lock().await;
+        if let Some(zones) = user_zones.get(user_id) {
+            if let Some(perf) = zones.get(zone) {
+                if perf.total > 5 {
+                    // Enough data to adapt
+                    let hit_rate = perf.hits as f32 / perf.total as f32;
+                    // Scale: hit_rate 1.0 → max boost, 0.5 → base, 0.0 → min
+                    let factor = 1.0 + (hit_rate - 0.5) * self.learning_rate * 10.0;
+                    return (self.base_boost * factor).clamp(0.1, 5.0);
+                }
+            }
+        }
+        self.base_boost
+    }
+
+    /// Gets the adaptive penalty multiplier for a specific user and zone.
+    pub async fn get_penalty(&self, user_id: &str, zone: &str) -> f32 {
+        let user_zones = self.user_zone_scores.lock().await;
+        if let Some(zones) = user_zones.get(user_id) {
+            if let Some(perf) = zones.get(zone) {
+                if perf.total > 5 {
+                    let hit_rate = perf.hits as f32 / perf.total as f32;
+                    // Inverse: low hit rate → higher penalty
+                    let factor = 1.0 - (hit_rate - 0.5) * self.learning_rate * 5.0;
+                    return (self.base_penalty * factor).clamp(0.1, 2.0);
+                }
+            }
+        }
+        self.base_penalty
+    }
+
+    /// Returns the hit rate for a user/zone combination (0.0 to 1.0).
+    pub async fn hit_rate(&self, user_id: &str, zone: &str) -> f32 {
+        let user_zones = self.user_zone_scores.lock().await;
+        if let Some(zones) = user_zones.get(user_id) {
+            if let Some(perf) = zones.get(zone) {
+                if perf.total > 0 {
+                    return perf.hits as f32 / perf.total as f32;
+                }
+            }
+        }
+        0.0
+    }
+
+    /// Resets data for all users.
+    pub async fn reset_all(&self) {
+        self.user_zone_scores.lock().await.clear();
+    }
+
+    /// Resets data for a specific user.
+    pub async fn reset_user(&self, user_id: &str) {
+        let mut user_zones = self.user_zone_scores.lock().await;
+        user_zones.remove(user_id);
+    }
+}
+
 use tokio::sync::RwLock;
 
 /// Adaptive gating for multi-layer memory retrieval
@@ -1249,5 +1383,91 @@ mod tests {
 
         let predictions = gating.predict_next_queries(&results, Some(graph)).await;
         assert!(predictions.contains(&"Cargo".to_string()));
+    }
+
+    // -----------------------------------------------------------------------
+    // AdaptiveZoneBooster tests
+    // -----------------------------------------------------------------------
+
+    #[tokio::test]
+    async fn test_adaptive_booster_defaults() {
+        let booster = AdaptiveZoneBooster::new();
+        let boost = booster.get_boost("user1", "decision").await;
+        let penalty = booster.get_penalty("user1", "decision").await;
+        assert!((boost - 1.5).abs() < 0.01);
+        assert!((penalty - 0.5).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn test_adaptive_booster_feedback_adapts() {
+        let booster = AdaptiveZoneBooster::new();
+        // Give 10 positive feedbacks for user1/decision
+        for _ in 0..10 {
+            booster.record_feedback("user1", "decision", true, 0.9).await;
+        }
+        // Give 5/10 negative feedbacks for user1/code
+        for i in 0..10 {
+            let relevant = i < 3;
+            booster.record_feedback("user1", "code", relevant, 0.5).await;
+        }
+
+        let decision_boost = booster.get_boost("user1", "decision").await;
+        let code_boost = booster.get_boost("user1", "code").await;
+
+        // decision has 100% hit rate → boost should be higher than base
+        assert!(decision_boost > 1.6, "decision boost should be high, got {}", decision_boost);
+        // code has 30% hit rate → boost should be lower than decision
+        assert!(code_boost < decision_boost, "code boost ({}) should be < decision boost ({})", code_boost, decision_boost);
+    }
+
+    #[tokio::test]
+    async fn test_adaptive_booster_hit_rate() {
+        let booster = AdaptiveZoneBooster::new();
+        assert!((booster.hit_rate("user", "zone").await - 0.0).abs() < 0.001);
+
+        booster.record_feedback("user", "zone", true, 1.0).await;
+        booster.record_feedback("user", "zone", false, 0.0).await;
+        booster.record_feedback("user", "zone", true, 0.8).await;
+
+        let rate = booster.hit_rate("user", "zone").await;
+        assert!((rate - 2.0 / 3.0).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn test_adaptive_booster_reset_user() {
+        let booster = AdaptiveZoneBooster::new();
+        booster.record_feedback("user1", "zone", true, 1.0).await;
+        booster.record_feedback("user2", "zone", true, 1.0).await;
+
+        booster.reset_user("user1").await;
+
+        assert!((booster.hit_rate("user1", "zone").await - 0.0).abs() < 0.001);
+        assert!((booster.hit_rate("user2", "zone").await - 1.0).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_adaptive_booster_reset_all() {
+        let booster = AdaptiveZoneBooster::new();
+        booster.record_feedback("user1", "zone", true, 1.0).await;
+        booster.record_feedback("user2", "zone", false, 0.0).await;
+
+        booster.reset_all().await;
+
+        assert!((booster.hit_rate("user1", "zone").await - 0.0).abs() < 0.001);
+        assert!((booster.hit_rate("user2", "zone").await - 0.0).abs() < 0.001);
+    }
+
+    #[tokio::test]
+    async fn test_adaptive_booster_insufficient_data() {
+        let booster = AdaptiveZoneBooster::new();
+        // Less than 5 feedbacks — should return base values
+        for _ in 0..3 {
+            booster.record_feedback("user", "zone", true, 1.0).await;
+        }
+        let boost = booster.get_boost("user", "zone").await;
+        let penalty = booster.get_penalty("user", "zone").await;
+        // With <5 data points, should use base (not adapted)
+        assert!((boost - 1.5).abs() < 0.01);
+        assert!((penalty - 0.5).abs() < 0.01);
     }
 }
