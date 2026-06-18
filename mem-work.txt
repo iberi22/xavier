@@ -1,1 +1,0 @@
-Proyecto: Xavier, version 0.10.0. Branch main. Phase 1 Memory Sync completa (src/memory/sync/) con LWW merge, JSON serialization, 13 tests. Issues abiertas: #124 Embeddings export, #170 Context Regeneration, #14 E2EE Wallet, #193 HTTP endpoints Phase 2 (Jules), #194 libp2p transport (Jules). Pipeline actual: esperar PRs de Jules para #193 y #194.
