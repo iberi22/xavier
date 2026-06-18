@@ -129,7 +129,8 @@ impl TgdConsolidationScheduler {
             };
         }
 
-        let task = ConsolidationTask::default();
+        let mut task = ConsolidationTask::default();
+        task.enable_tgd_in_consolidation = true; // Ensure it's enabled for scheduled runs
 
         // 1. Run Memory Consolidation
         info!("🧠 Phase 1: Memory Consolidation...");

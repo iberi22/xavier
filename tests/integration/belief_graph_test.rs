@@ -132,8 +132,8 @@ mod belief_graph_tests {
 
         // BFS from A should find B and C
         let reachable = graph.bfs("A").await;
-        assert!(reachable.contains(&"B".to_string()));
-        assert!(reachable.contains(&"C".to_string()));
+        assert!(reachable.contains(&"b".to_string()));
+        assert!(reachable.contains(&"c".to_string()));
     }
 
     #[tokio::test]
