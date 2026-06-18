@@ -238,7 +238,7 @@ pub enum Command {
     /// Memory management and consolidation
     Memory {
         #[command(subcommand)]
-        cmd: crate::cli::commands::memory::MemoryCommand,
+        cmd: memory::MemoryCommand,
     },
 
     /// System & security scanning
