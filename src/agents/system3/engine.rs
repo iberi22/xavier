@@ -177,7 +177,7 @@ impl System3Actor {
                 semantic_cache_hit: false,
                 llm_used: false,
                 model: self.llm_client.model_label(),
-                meta_observations: Some(reasoning_result.meta_observations.clone()),
+                meta_observations: None,
             });
         }
 
@@ -198,7 +198,7 @@ impl System3Actor {
                             semantic_cache_hit: true,
                             llm_used: false,
                             model: self.llm_client.model_label(),
-                            meta_observations: Some(reasoning_result.meta_observations.clone()),
+                            meta_observations: None,
                         });
                     }
                     Ok(None) => {
@@ -269,7 +269,7 @@ impl System3Actor {
             semantic_cache_hit: false,
             llm_used,
             model: self.llm_client.model_label(),
-            meta_observations: Some(reasoning_result.meta_observations.clone()),
+            meta_observations: None,
         })
     }
 
