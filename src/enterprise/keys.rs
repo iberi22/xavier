@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use thiserror::Error;
 
-use crate::enterprise::tenancy::TenantId;
+use crate::enterprise::tenant::TenantId;
 
 /// API key types
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

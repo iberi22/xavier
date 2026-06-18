@@ -71,6 +71,7 @@ pub struct HealthStatus {
     pub database: DbHealth,
     pub embedding: EmbeddingHealth,
     pub mesh: MeshHealth,
+    pub tgd_consolidation: Option<crate::tgd::consolidation::ProgressReport>,
 }
 
 impl Default for HealthStatus {
@@ -103,6 +104,7 @@ impl Default for HealthStatus {
                 peers: vec![],
                 status: HealthLevel::Healthy,
             },
+            tgd_consolidation: None,
         }
     }
 }
@@ -112,6 +114,7 @@ pub struct HealthMonitor {
     cm: &'static ConnectionManager,
     peer_registry: Arc<RwLock<Option<Arc<PeerRegistry>>>>,
     embedder: Arc<RwLock<Option<Arc<dyn Embedder>>>>,
+    tgd_progress: Arc<RwLock<Option<Arc<RwLock<crate::tgd::consolidation::ProgressReport>>>>>,
 }
 
 impl HealthMonitor {
@@ -121,7 +124,13 @@ impl HealthMonitor {
             cm,
             peer_registry: Arc::new(RwLock::new(None)),
             embedder: Arc::new(RwLock::new(None)),
+            tgd_progress: Arc::new(RwLock::new(None)),
         }
+    }
+
+    pub async fn set_tgd_progress(&self, progress: Arc<RwLock<crate::tgd::consolidation::ProgressReport>>) {
+        let mut prg = self.tgd_progress.write().await;
+        *prg = Some(progress);
     }
 
     pub async fn set_peer_registry(&self, peer_registry: Arc<PeerRegistry>) {
@@ -145,6 +154,7 @@ impl HealthMonitor {
         let database = self.check_database().await;
         let embedding = self.check_embedding().await;
         let mesh = self.check_mesh().await;
+        let tgd_consolidation = self.check_tgd_progress().await;
 
         let mut status = HealthLevel::Healthy;
         if system.status == HealthLevel::Unhealthy
@@ -167,6 +177,7 @@ impl HealthMonitor {
             database,
             embedding,
             mesh,
+            tgd_consolidation,
         };
 
         // Notify if status changed
@@ -328,6 +339,15 @@ impl HealthMonitor {
             latency_ms,
             error_rate: 0.0,
             status,
+        }
+    }
+
+    async fn check_tgd_progress(&self) -> Option<crate::tgd::consolidation::ProgressReport> {
+        let prg_opt = self.tgd_progress.read().await;
+        if let Some(ref prg) = *prg_opt {
+            Some(prg.read().await.clone())
+        } else {
+            None
         }
     }
 

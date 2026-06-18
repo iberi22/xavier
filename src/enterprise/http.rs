@@ -21,7 +21,7 @@ use crate::enterprise::{
     keys::{ApiKey, ApiKeyStore, ApiKeyType},
     persistence::{populate_stores_from_db, EnterpriseDb},
     rate_limit::{RateLimitConfig, RateLimitKey, RateLimiter},
-    tenancy::{Plan, Tenant, TenantId, TenantStore},
+    tenant::{Plan, Tenant, TenantId, TenantStore},
 };
 
 /// Shared enterprise state accessible by all handlers

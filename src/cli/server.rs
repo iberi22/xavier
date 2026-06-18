@@ -696,6 +696,21 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         info!("SessionSyncTask cron already running; skipped duplicate start");
     }
 
+    // TGD Consolidation Scheduler (Nightly)
+    let tgd_engine = state.tgd_engine().await;
+    let tgd_state_path = state.workspace_dir.join(".xavier").join("tgd_consolidation_state.json");
+    let tgd_scheduler = Arc::new(xavier::tgd::TgdConsolidationScheduler::new(
+        workspace_ctx.clone(),
+        tgd_engine,
+        tgd_state_path,
+    ));
+    // Run every night at 2 AM
+    let cron_expr = "0 0 2 * * *".to_string();
+    tgd_scheduler.clone().spawn(cron_expr).await;
+
+    // Register TGD progress with health monitor
+    xavier::observability::health::HEALTH.set_tgd_progress(tgd_scheduler.progress()).await;
+
     #[cfg(feature = "telegram")]
     {
         let memory_bot = state.memory.clone();

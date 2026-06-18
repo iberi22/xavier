@@ -56,6 +56,7 @@ pub async fn auth_middleware(
     let is_match: bool = provided_bytes.ct_eq(expected_bytes).into();
 
     if is_match {
+        // Root token bypasses RBAC for now as "Super Admin"
         let mut req = req;
         req.extensions_mut().insert(SessionInfo {
             is_ephemeral: false,
@@ -93,6 +94,26 @@ pub async fn auth_middleware(
                 return json_response(
                     StatusCode::FORBIDDEN,
                     serde_json::json!({"status":"error","message":"Insufficient scopes"}),
+                );
+            }
+
+            // Integrate RBAC authorization check for persistent tokens
+            let permission = match path {
+                p if p.contains("/add") || p.contains("/update") || p.contains("/delete") => {
+                    xavier::enterprise::rbac::Permission::Write
+                }
+                _ => xavier::enterprise::rbac::Permission::Read,
+            };
+
+            // Scaffolding for RBAC authorize call
+            if let Err(e) = xavier::enterprise::rbac::authorize(
+                uuid::Uuid::nil(), // Placeholder for real user_id from token_meta
+                permission,
+                path.to_string(),
+            ) {
+                return json_response(
+                    StatusCode::FORBIDDEN,
+                    serde_json::json!({"status":"error","message": e.to_string()}),
                 );
             }
 

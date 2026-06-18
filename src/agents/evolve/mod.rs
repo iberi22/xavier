@@ -18,15 +18,24 @@ pub mod config;
 pub mod experiment;
 pub mod evaluator;
 pub mod integrator;
+pub mod mutator;
 pub mod reflector;
 pub mod researcher;
 pub mod results;
+pub mod gap_analyzer;
+
+#[cfg(test)]
+mod tests;
 
 use anyhow::Result;
 use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
+
+use crate::observability::analyzer::{ErrorDiagnosis, Urgency};
+use crate::observability::service_log::LogLevel;
+use crate::agents::evolve::experiment::Hypothesis;
 
 pub use config::EvolveConfig;
 pub use results::ExperimentResult;
@@ -35,9 +44,14 @@ pub use results::ExperimentResult;
 pub struct EvolveModule {
     config: EvolveConfig,
     state: Arc<RwLock<EvolveState>>,
+    #[allow(dead_code)]
     researcher: researcher::Researcher,
     evaluator: evaluator::Evaluator,
     integrator: integrator::Integrator,
+    #[allow(dead_code)]
+    gap_analyzer: gap_analyzer::GapAnalyzer,
+    mutator: mutator::Mutator,
+    reflector: reflector::Reflector,
 }
 
 #[derive(Debug, Clone)]
@@ -67,16 +81,26 @@ impl Default for EvolveState {
     }
 }
 
+/// Result of an evolution cycle
+#[derive(Debug, Clone)]
+pub struct EvolutionResult {
+    pub experiment: ExperimentResult,
+    pub improved: bool,
+}
+
 impl EvolveModule {
     /// Create a new Evolve Module
-    pub fn new(config: EvolveConfig) -> Self {
-        Self {
+    pub async fn new(config: EvolveConfig) -> Result<Self> {
+        Ok(Self {
             state: Arc::new(RwLock::new(EvolveState::default())),
             researcher: researcher::Researcher::new(),
             evaluator: evaluator::Evaluator::new(config.benchmark),
             integrator: integrator::Integrator::new(),
+            gap_analyzer: gap_analyzer::GapAnalyzer::new().await?,
+            mutator: mutator::Mutator::new(),
+            reflector: reflector::Reflector::new(),
             config,
-        }
+        })
     }
 
     /// Start the autonomous evolution loop
@@ -103,13 +127,14 @@ impl EvolveModule {
                 break;
             }
 
-            match self.run_single_experiment().await {
-                Ok(result) => {
+            match self.run_evolution_cycle().await {
+                Ok(evolution_result) => {
+                    let result = evolution_result.experiment;
                     let mut state = self.state.write().await;
                     state.experiments_run += 1;
                     state.last_metric = Some(result.metric_value);
 
-                    if result.metric_value < state.best_metric.unwrap_or(f32::MAX) {
+                    if evolution_result.improved {
                         state.best_metric = Some(result.metric_value);
                         state.experiments_kept += 1;
                         info!(
@@ -146,6 +171,87 @@ impl EvolveModule {
         Ok(())
     }
 
+    /// Run a single evolution cycle: verify → mutate → evaluate → accept/reject
+    pub async fn run_evolution_cycle(&self) -> Result<EvolutionResult> {
+        // 1. Verify (Baseline Evaluation)
+        info!("Step 1: Verifying baseline...");
+        let pre_metric = self.evaluator.evaluate().await?;
+
+        // 2. Mutate
+        info!("Step 2: Generating mutation...");
+        // In a real scenario, we would use reflector insights.
+        // For now, we'll use empty insights to get a default mutation.
+        let insights = self.reflector.analyze(&[]).await?;
+        let mutations = self.mutator.generate_mutations(&insights)?;
+        let mutation = mutations.first().ok_or_else(|| anyhow::anyhow!("No mutations generated"))?;
+        let hypothesis = self.mutator.mutation_to_hypothesis(mutation);
+
+        // 3. Apply and Evaluate
+        info!(hypothesis = %hypothesis.description, "Step 3: Applying and evaluating hypothesis...");
+        let backup = self.integrator.backup_memory_modules().await?;
+        let modified = self.integrator.apply_hypothesis(&hypothesis).await?;
+
+        if !modified {
+            self.integrator.restore(backup).await?;
+            return Ok(EvolutionResult {
+                experiment: ExperimentResult::baseline(),
+                improved: false,
+            });
+        }
+
+        let post_metric_result = tokio::time::timeout(
+            std::time::Duration::from_secs(self.config.time_budget_secs),
+            self.evaluator.evaluate(),
+        ).await;
+
+        // 4. Accept or Reject
+        match post_metric_result {
+            Ok(Ok(post_metric)) => {
+                let is_lower_better = self.config.metric == config::MetricType::ValBpb;
+                let improved = self.evaluator.compare(pre_metric, post_metric, is_lower_better);
+                let regression = self.evaluator.is_regression(post_metric, is_lower_better).await;
+
+                if improved && !regression {
+                    info!(pre = pre_metric, post = post_metric, "✅ Improvement detected and accepted");
+                    self.integrator.commit(&hypothesis).await?;
+                    Ok(EvolutionResult {
+                        experiment: ExperimentResult {
+                            hypothesis_id: hypothesis.id,
+                            metric_value: post_metric,
+                            status: experiment::ExperimentStatus::Kept,
+                            commit_hash: None,
+                            crashed: false,
+                        },
+                        improved: true,
+                    })
+                } else {
+                    info!(pre = pre_metric, post = post_metric, regression = regression, "❌ No improvement or regression detected. Rejecting.");
+                    self.integrator.restore(backup).await?;
+                    self.integrator.reset_to_baseline().await?;
+                    Ok(EvolutionResult {
+                        experiment: ExperimentResult {
+                            hypothesis_id: hypothesis.id,
+                            metric_value: post_metric,
+                            status: experiment::ExperimentStatus::Discarded,
+                            commit_hash: None,
+                            crashed: false,
+                        },
+                        improved: false,
+                    })
+                }
+            }
+            Ok(Err(e)) => {
+                self.integrator.restore(backup).await?;
+                Err(e)
+            }
+            Err(_) => {
+                self.integrator.restore(backup).await?;
+                self.integrator.reset_to_baseline().await?;
+                Err(anyhow::anyhow!("Experiment timed out"))
+            }
+        }
+    }
+
     /// Stop the evolution loop
     pub async fn stop(&self) {
         let mut state = self.state.write().await;
@@ -153,78 +259,71 @@ impl EvolveModule {
         info!("Stopping Evolve Module after {} experiments", state.experiments_run);
     }
 
-    /// Run a single experiment
+    /// Run a single experiment (deprecated in favor of run_evolution_cycle)
+    #[allow(dead_code)]
     async fn run_single_experiment(&self) -> Result<ExperimentResult> {
-        // 1. Researcher generates hypothesis
-        let hypothesis = self.researcher.generate_hypothesis().await?;
-
-        info!(hypothesis = %hypothesis.description, "🔬 Running experiment");
-
-        // 2. Experimenter applies changes (if any)
-        let backup = self.integrator.backup_memory_modules().await?;
-
-        let modified = self
-            .integrator
-            .apply_hypothesis(&hypothesis)
-            .await?;
-
-        if !modified {
-            info!("No changes applied - using baseline");
-            self.integrator.restore(backup).await?;
-            return Ok(ExperimentResult::baseline());
-        }
-
-        // 3. Run experiment with time budget
-        let result = tokio::time::timeout(
-            std::time::Duration::from_secs(self.config.time_budget_secs),
-            self.evaluator.evaluate(),
-        )
-        .await;
-
-        // 4. Restore or keep changes based on result
-        match result {
-            Ok(Ok(metric_value)) => {
-                let improved = self.is_improvement(metric_value).await;
-                if improved {
-                    // Keep changes - commit
-                    self.integrator.commit(&hypothesis).await?;
-                } else {
-                    // Discard - restore
-                    self.integrator.restore(backup).await?;
-                    self.integrator.reset_to_baseline().await?;
-                }
-                Ok(ExperimentResult {
-                    hypothesis_id: hypothesis.id,
-                    metric_value,
-                    status: if improved {
-                        experiment::ExperimentStatus::Kept
-                    } else {
-                        experiment::ExperimentStatus::Discarded
-                    },
-                    commit_hash: None,
-                    crashed: false,
-                })
-            }
-            Ok(Err(e)) => {
-                // Evaluation failed
-                self.integrator.restore(backup).await?;
-                Err(e)
-            }
-            Err(_) => {
-                // Timeout - experiment took too long
-                self.integrator.restore(backup).await?;
-                self.integrator.reset_to_baseline().await?;
-                Err(anyhow::anyhow!("Experiment timed out after {}s", self.config.time_budget_secs))
-            }
-        }
+        // 0. Analyze gaps to guide research
+        let res = self.run_evolution_cycle().await?;
+        Ok(res.experiment)
     }
 
     /// Check if metric is an improvement (lower is better for val_bpb)
+    #[allow(dead_code)]
     async fn is_improvement(&self, metric: f32) -> bool {
         let state = self.state.read().await;
         match state.best_metric {
-            Some(best) => metric < best,
+            Some(best) => {
+                let is_lower_better = self.config.metric == config::MetricType::ValBpb;
+                if is_lower_better {
+                    metric < best
+                } else {
+                    metric > best
+                }
+            }
             None => true, // First experiment is always improvement
+        }
+    }
+
+    /// Check if improvement is significant enough for a PR (e.g. > 2%)
+    #[allow(dead_code)]
+    async fn is_significant_improvement(&self, metric: f32) -> bool {
+        let state = self.state.read().await;
+        match state.best_metric {
+            Some(best) if best > 0.0 => {
+                let diff = (best - metric) / best;
+                diff > 0.02
+            }
+            _ => true,
+        }
+    }
+
+    #[allow(dead_code)]
+    async fn create_improvement_pr(&self, hypothesis: &Hypothesis, _metric: f32) {
+        info!("Significant improvement detected, creating PR...");
+
+        let fixer = crate::observability::Fixer::new();
+        let diagnosis = ErrorDiagnosis {
+            pattern: crate::observability::service_log::ErrorPattern {
+                module: "evolve".to_string(),
+                level: LogLevel::Info,
+                frequency: 1,
+                sample_message: format!("Autonomous improvement: {}", hypothesis.description),
+                first_seen: chrono::Utc::now().to_rfc3339(),
+                last_seen: chrono::Utc::now().to_rfc3339(),
+            },
+            analyzed_at: chrono::Utc::now().to_rfc3339(),
+            root_cause: format!("Identified optimization: {}", hypothesis.description),
+            source_location: Some(hypothesis.files.join(", ")),
+            suggested_fix: hypothesis.patch.clone(),
+            confidence: 0.95,
+            urgency: Urgency::High,
+        };
+
+        let result = fixer.process_diagnosis(&diagnosis).await;
+        if result.success {
+            info!("Improvement PR created: {:?}", result.url);
+        } else {
+            warn!("Failed to create improvement PR: {}", result.message);
         }
     }
 
@@ -245,7 +344,9 @@ impl EvolveModule {
             state.experiments_run
         );
 
-        tokio::fs::create_dir_all(results_path.parent().expect("test assertion")).await?;
+        if let Some(parent) = results_path.parent() {
+            tokio::fs::create_dir_all(parent).await?;
+        }
         tokio::fs::OpenOptions::new()
             .create(true)
             .append(true)

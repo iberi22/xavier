@@ -306,7 +306,7 @@ pub async fn v1_mesh_handshake(
 
                 if let Ok(mut acl) = crate::mesh::MeshAcl::load() {
                     let _ = acl.set_entry(payload.node_id.clone(), crate::mesh::NodeAclEntry {
-                        role: crate::enterprise::rbac::Role::Reader,
+                        role: crate::enterprise::rbac::Role::Viewer,
                         clearance: crate::memory::schema::ClearanceLevel::Unclassified,
                         namespaces: None,
                         public_key_hex: payload.public_key_hex.clone(),

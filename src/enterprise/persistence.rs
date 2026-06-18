@@ -18,7 +18,7 @@ use crate::enterprise::{
     audit::{AuditAction, AuditEntry},
     keys::{ApiKey, ApiKeyType},
     rate_limit::{RateLimitConfig, RateLimitKey},
-    tenancy::{Plan, Tenant, TenantId},
+    tenant::{Plan, Tenant, TenantId},
 };
 
 /// Enterprise database for persistent storage of enterprise state.
@@ -134,7 +134,7 @@ impl EnterpriseDb {
 
     /// Insert or update a tenant in the database.
     pub fn save_tenant(&self, tenant: &Tenant) -> Result<()> {
-        let metadata_json = serde_json::to_string(&tenant.metadata)
+        let metadata_json = serde_json::to_string(&tenant.settings)
             .context("failed to serialize tenant metadata")?;
         let plan_str = plan_to_string(&tenant.plan);
         let conn = self.conn.lock().expect("poisoned lock in save_tenant");
@@ -185,7 +185,7 @@ impl EnterpriseDb {
                     name,
                     plan,
                     created_at,
-                    metadata,
+                    settings: metadata,
                 },
             );
         }
@@ -611,7 +611,7 @@ fn parse_audit_action(s: &str) -> AuditAction {
 /// state survives restarts.
 pub fn populate_stores_from_db(
     db: &EnterpriseDb,
-    tenant_store: &mut crate::enterprise::tenancy::TenantStore,
+    tenant_store: &mut crate::enterprise::tenant::TenantStore,
     api_key_store: &mut crate::enterprise::keys::ApiKeyStore,
     rate_limiter: &mut crate::enterprise::rate_limit::RateLimiter,
 ) -> Result<()> {
