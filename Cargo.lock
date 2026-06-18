@@ -13460,6 +13460,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "xavier-core"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "dirs 6.0.0",
+ "hex",
+ "libc",
+ "once_cell",
+ "rand 0.8.6",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "sqlite-vec",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "ulid",
+ "uuid",
+ "walkdir",
+]
+
+[[package]]
 name = "xml-rs"
 version = "0.8.28"
 source = "registry+https://github.com/rust-lang/crates.io-index"
