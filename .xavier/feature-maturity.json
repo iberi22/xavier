@@ -1,8 +1,8 @@
 {
   "meta": {
     "format_version": "1.0.0",
-    "generated": "2026-06-18T21:30:00Z",
-    "head": "5fd9026",
+    "generated": "2026-06-18T22:00:00Z",
+    "head": "1d82055",
     "project": "Xavier v0.10.0 → v0.11.0",
     "gitcore_protocol": "v3.6.1"
   },
@@ -35,7 +35,7 @@
         {"name": "CLI code_dump.rs", "maturity": 65, "status": "done"},
         {"name": "CLI code_graph.rs", "maturity": 60, "status": "done"},
         {"name": "Portable JSON dump (.xavier/codegraph.json)", "maturity": 30, "status": "needs_work"},
-        {"name": "Integración con MCP Server", "maturity": 20, "status": "needs_work"}
+        {"name": "Integracion con MCP Server", "maturity": 20, "status": "needs_work"}
       ]
     },
     {
@@ -63,7 +63,7 @@
         {"name": "HTTP+SSE transport", "maturity": 85, "status": "done"},
         {"name": "Stdio transport", "maturity": 80, "status": "done"},
         {"name": "Memory tools (search, store, retrieve)", "maturity": 75, "status": "done"},
-        {"name": "Documentación de integración para agentes", "maturity": 5, "status": "needs_work"},
+        {"name": "Documentacion de integracion para agentes", "maturity": 5, "status": "needs_work"},
         {"name": "Auth/security", "maturity": 40, "status": "needs_work"}
       ]
     },
@@ -79,20 +79,21 @@
         {"name": "Predictive cache warming", "maturity": 40, "status": "done"},
         {"name": "CLI navigation visualize", "maturity": 10, "status": "needs_work"},
         {"name": "Navigation telemetry metrics", "maturity": 50, "status": "done"},
-        {"name": "Consolidación nav-aware con TGD", "maturity": 15, "status": "needs_work"}
+        {"name": "Consolidacion nav-aware con TGD", "maturity": 15, "status": "needs_work"}
       ]
     },
     {
       "id": "tgd-optimization",
       "name": "TGD (Textual Gradient Descent)",
       "category": "memory",
-      "maturity_percent": 50,
-      "status": "needs_work",
+      "maturity_percent": 75,
+      "status": "production_ready",
       "dependencies": ["memory-rag"],
       "subcomponents": [
         {"name": "TGD algorithm (runner + config)", "maturity": 80, "status": "done"},
-        {"name": "Nightly consolidation scheduler", "maturity": 5, "status": "needs_work"},
-        {"name": "Incremental mode (only new chunks)", "maturity": 10, "status": "needs_work"},
+        {"name": "Nightly consolidation scheduler", "maturity": 70, "status": "done (PR #206)"},
+        {"name": "Incremental mode (only new chunks)", "maturity": 70, "status": "done (PR #206)"},
+        {"name": "Test suite (91 lines)", "maturity": 75, "status": "done (PR #206)"},
         {"name": "Rollback support", "maturity": 5, "status": "needs_work"}
       ]
     },
@@ -148,14 +149,14 @@
       "id": "benchmarks",
       "name": "Benchmarks & Testing",
       "category": "qa",
-      "maturity_percent": 50,
+      "maturity_percent": 60,
       "status": "in_progress",
       "dependencies": [],
       "subcomponents": [
         {"name": "Embedding benchmark", "maturity": 75, "status": "done"},
         {"name": "Entity graph benchmark", "maturity": 60, "status": "done"},
         {"name": "Hybrid search benchmark", "maturity": 60, "status": "done"},
-        {"name": "Tri-memory benchmark (OpenClaw vs Xavier vs Engram)", "maturity": 80, "status": "done"},
+        {"name": "Tri-memory benchmark (OpenClaw vs Xavier vs Engram)", "maturity": 80, "status": "done (PR #205)"},
         {"name": "CI benchmark workflow", "maturity": 70, "status": "done"},
         {"name": "MinHash benchmark", "maturity": 50, "status": "needs_work"}
       ]
@@ -163,19 +164,22 @@
   ],
   "summary": {
     "total_features": 10,
-    "production_ready": 5,
-    "needs_work": 3,
+    "production_ready": 6,
+    "needs_work": 2,
     "in_progress": 2,
-    "overall_maturity": 66
+    "overall_maturity": 70
   },
   "sprint": {
     "id": "SPRINT-JULES-001",
     "name": "Estabilización RAG + Code Graph + Mesh",
     "start": "2026-06-18",
     "target_end": "2026-06-25",
-    "focus": ["tgd-optimization", "hormer-navigation", "mesh-network", "code-graph"],
+    "focus": ["hormer-navigation", "mesh-network", "code-graph"],
+    "completed_in_sprint": [
+      {"number": 198, "title": "TGD nightly consolidation", "pr": 206, "by": "jules"},
+      {"number": 197, "title": "Tri-memory benchmark", "pr": 205, "by": "jules"}
+    ],
     "jules_issues": [
-      {"number": 198, "title": "TGD nightly consolidation", "assigned_to": "jules", "maturity_target": 80},
       {"number": 199, "title": "HORMER navigation v2", "assigned_to": "jules", "maturity_target": 80},
       {"number": 196, "title": "Android APK", "assigned_to": "jules", "maturity_target": 60}
     ],
