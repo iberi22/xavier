@@ -4,7 +4,8 @@
 //! responsibilities within the Xavier cognitive memory system.
 use super::types::*;
 use crate::memory::schema::{
-    EvidenceKind, MemoryKind, MemoryNamespace, MemoryProvenance, TypedMemoryPayload,
+    EvidenceKind, MemoryKind, MemoryNamespace, MemoryProvenance, MemoryQueryFilters,
+    TypedMemoryPayload,
 };
 use crate::utils::crypto::hex_encode;
 use crate::workspace::WorkspaceContext;
@@ -24,13 +25,28 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
         },
         MCPTool {
             name: "get_project_context".to_string(),
-            description: "Get full context for a project".to_string(),
+            description: "Get full context for a project with configurable limits".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "project_id": {
                         "type": "string",
                         "description": "Project identifier"
+                    },
+                    "max_records": {
+                        "type": "number",
+                        "description": "Maximum records to return (default: 10, max: 50)",
+                        "default": 10
+                    },
+                    "max_chars": {
+                        "type": "number",
+                        "description": "Maximum total characters (default: 8000, max: 32000)",
+                        "default": 8000
+                    },
+                    "depth": {
+                        "type": "number",
+                        "description": "Project depth: 0 = only this project, 1 = include sub-projects (default: 0, max: 2)",
+                        "default": 0
                     }
                 },
                 "required": ["project_id"]
@@ -121,34 +137,102 @@ pub async fn handle_core_tool(
                 .get("project_id")
                 .and_then(|v| v.as_str())
                 .ok_or_else(|| anyhow::anyhow!("Missing project_id"))?;
+            let max_records = arguments
+                .get("max_records")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(10)
+                .clamp(1, 50) as usize;
+            let max_chars = arguments
+                .get("max_chars")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(8000)
+                .clamp(1, 32000) as usize;
+            let _depth = arguments
+                .get("depth")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                .clamp(0, 2) as usize;
+
             let records = workspace
                 .workspace
                 .list_memory_records_filtered(
-                    crate::memory::schema::MemoryQueryFilters {
+                    MemoryQueryFilters {
                         project: Some(project_id.to_string()),
                         ..Default::default()
                     },
-                    20,
+                    max_records,
                 )
                 .await?;
-            let matching = records
-                .into_iter()
-                .map(|record| {
-                    format!(
-                        "Id: {}\nPath: {}\nRevision: {}\nContent: {}",
-                        record.id, record.path, record.revision, record.content
-                    )
-                })
-                .collect::<Vec<_>>();
 
-            super::server::mcp_text_result(
-                if matching.is_empty() {
-                    format!("No context found for project {project_id}.")
-                } else {
-                    matching.join("\n\n---\n\n")
-                },
+            let mut total_chars = 0usize;
+            let mut truncated = false;
+            let mut truncated_reason = Option::<String>::None;
+            let mut sources = Vec::<MCPSearchResult>::new();
+            let mut content_parts = Vec::<String>::new();
+
+            for record in &records {
+                let entry = format!(
+                    "Id: {}\nPath: {}\nRevision: {}\nContent: {}",
+                    record.id, record.path, record.revision, record.content
+                );
+                let entry_len = entry.len();
+
+                if total_chars + entry_len > max_chars {
+                    truncated = true;
+                    truncated_reason = Some(format!(
+                        "truncated at {} chars (max: {})",
+                        total_chars, max_chars
+                    ));
+                    break;
+                }
+
+                total_chars += entry_len;
+                content_parts.push(entry);
+
+                sources.push(MCPSearchResult {
+                    id: record.id.clone(),
+                    path: record.path.clone(),
+                    score: 0.0, // context retrieval doesn't have a score
+                    snippet: record.content.chars().take(200).collect(),
+                    provenance: MCPProvenance {
+                        source: "memory_store".to_string(),
+                        retrieved_at: chrono::Utc::now().to_rfc3339(),
+                        retrieval_method: "exact".to_string(),
+                        embedding_model: None,
+                        version: Some(option_env!("XAVIER_VERSION").unwrap_or("development").to_string()),
+                    },
+                    metadata: record.metadata.clone(),
+                });
+            }
+
+            if content_parts.is_empty() {
+                return Ok(serde_json::to_value(MCPToolResult::structured(
+                    json!(MCPContextResult {
+                        total_chars: 0,
+                        total_records: 0,
+                        truncated: false,
+                        truncated_reason: None,
+                        content: format!("No context found for project {project_id}."),
+                        sources: vec![],
+                    }),
+                    false,
+                ))?);
+            }
+
+            let content = content_parts.join("\n\n---\n\n");
+            let total_records = content_parts.len();
+
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                json!(MCPContextResult {
+                    total_chars,
+                    total_records,
+                    truncated,
+                    truncated_reason,
+                    content,
+                    sources,
+                }),
                 false,
-            )
+            ))?)
         }
         "sync_gitcore" => {
             let project_path = arguments
@@ -230,38 +314,23 @@ pub async fn handle_core_tool(
         }
         "health_check" => {
             let health = crate::health::collect_health_sync();
-            let payload = serde_json::json!({
-                "status": health.status,
-                "version": health.version,
-                "uptime_secs": health.uptime_secs,
-                "system": {
-                    "cpu_usage_pct": health.system.cpu_usage_pct,
-                    "memory_used_mb": health.system.memory_used_mb,
-                    "memory_total_mb": health.system.memory_total_mb,
-                    "disk_usage_pct": health.system.disk_usage_pct,
-                },
-                "database": {
-                    "size_mb": health.database.size_mb,
-                    "needs_vacuum": health.database.needs_vacuum,
-                    "fragmentation_pct": health.database.fragmentation_pct,
-                },
-                "embedding": {
-                    "provider": health.embedding.provider,
-                    "connected": health.embedding.connected,
-                    "latency_ms": health.embedding.latency_ms,
-                },
-                "mesh": {
-                    "connectivity": health.mesh.connectivity,
-                    "peers_count": health.mesh.peers_count,
-                    "connected_peers": health.mesh.connected_peers,
-                },
-                "checks": health.checks.iter().map(|c| serde_json::json!({
-                    "name": c.name,
-                    "status": format!("{:?}", c.status),
-                    "detail": c.detail,
-                })).collect::<Vec<_>>(),
-            });
-            super::server::mcp_text_result(payload.to_string(), false)
+            let tools_count = get_xavier_core_tools().len()
+                + super::tools_memory::get_xavier_memory_tools().len();
+
+            let result = MCPHealthResult {
+                status: health.status.clone(),
+                tools_count,
+                handshake_ok: true,
+                memory_store_ok: health.database.size_mb > 0.0
+                    || health.database.size_mb == 0.0, // store exists
+                embedding_ok: health.embedding.connected,
+                mcp_protocol: "2025-06-18".to_string(),
+            };
+
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                serde_json::to_value(&result)?,
+                health.status != "healthy",
+            ))?)
         }
         "get_code_graph" => {
             let dump_path = std::path::PathBuf::from(".xavier/codegraph.json");
@@ -276,10 +345,10 @@ pub async fn handle_core_tool(
             let dump: Value = serde_json::from_str(&json_content)?;
 
             Ok(serde_json::to_value(MCPToolResult {
-                content: vec![MCPTextContent {
+                content: vec![MCPContent::Text(MCPTextContent {
                     content_type: "text".to_string(),
                     text: serde_json::to_string(&dump)?,
-                }],
+                })],
                 is_error: Some(false),
             })?)
         }

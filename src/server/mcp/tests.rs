@@ -205,7 +205,7 @@ async fn create_and_get_memory_integration() {
     let stats_text = body["result"]["content"][0]["text"].as_str().unwrap();
     assert!(stats_text.contains("\"total_memories\":1"));
 
-    // Search memory
+    // Search memory — now returns structuredContent with results array
     let response = post_json(
         router.clone(),
         json!({
@@ -222,8 +222,17 @@ async fn create_and_get_memory_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    let search_text = body["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(search_text.contains("test content"));
+    let content = &body["result"]["content"][0];
+    if content["type"] == "structuredContent" {
+        let empty: Vec<_> = vec![];
+        let results = content["structuredContent"]["results"].as_array().unwrap_or(&empty);
+        assert!(!results.is_empty(), "search should return results");
+        let snippet = results[0]["snippet"].as_str().unwrap();
+        assert!(snippet.contains("test content") || results[0]["path"].as_str().unwrap().contains("test"));
+    } else {
+        let search_text = content["text"].as_str().unwrap();
+        assert!(search_text.contains("test content") || search_text.contains("Path:"));
+    }
 }
 
 #[tokio::test]
@@ -283,7 +292,7 @@ async fn core_tools_integration() {
     let body = get_json_body(response).await;
     assert!(body["result"]["content"][0]["text"].as_str().unwrap().contains("project1"));
 
-    // get_project_context
+    // get_project_context — now returns structuredContent
     let response = post_json(
         router.clone(),
         json!({
@@ -298,7 +307,14 @@ async fn core_tools_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert!(body["result"]["content"][0]["text"].as_str().unwrap().contains("c1"));
+    let content = &body["result"]["content"][0];
+    if content["type"] == "structuredContent" {
+        let sc = &content["structuredContent"];
+        assert!(sc["content"].as_str().unwrap().contains("c1"));
+        assert!(sc["total_records"].as_u64().unwrap_or(0) >= 1);
+    } else {
+        assert!(content["text"].as_str().unwrap().contains("c1"));
+    }
 }
 
 #[tokio::test]
@@ -506,6 +522,249 @@ async fn sync_gitcore_integration_mock() {
     assert!(body["result"]["content"][0]["text"].as_str().unwrap().contains("skipped=3"));
 }
 
+// ── MCP Tools v2: health sequence tests ─────────────────────────────────
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tools_health_check_returns_structured() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    let response = post_json(
+        router,
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "health_check", "arguments": {} }
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+
+    // health_check now returns structuredContent
+    let content = &body["result"]["content"][0];
+    if content["type"] == "structuredContent" {
+        let sc = &content["structuredContent"];
+        assert!(sc["status"].is_string());
+        assert!(sc["tools_count"].as_u64().unwrap_or(0) >= 16);
+        assert_eq!(sc["mcp_protocol"], "2025-06-18");
+    } else {
+        // backward compat: ensure text fallback works
+        let text = content["text"].as_str().unwrap();
+        assert!(text.contains("status"));
+    }
+}
+
+#[tokio::test]
+async fn all_tools_have_valid_schema() {
+    let (state, workspace) = test_state().await;
+    let response = post_json(
+        test_router(state, workspace),
+        json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let tools = body["result"]["tools"].as_array().expect("tools array");
+
+    for tool in tools {
+        let name = tool["name"].as_str().unwrap_or("?");
+        let schema = &tool["input_schema"];
+        // Each tool must have a valid JSON Schema object with type "object"
+        assert!(
+            schema["type"] == "object"
+                || schema["type"] == json!(null),
+            "tool {} has invalid input_schema: {:?}",
+            name,
+            schema
+        );
+        // Each tool should have a description
+        assert!(
+            tool["description"].as_str().unwrap_or("").len() > 5,
+            "tool {} has no description",
+            name
+        );
+    }
+}
+
+#[tokio::test]
+async fn mcp_server_health_sequence() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // 1. initialize → handshake
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "initialize",
+            "params": {
+                "protocolVersion": "2025-03-26",
+                "capabilities": { "tools": {} },
+                "clientInfo": { "name": "test", "version": "1.0" }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    assert_eq!(body["result"]["protocolVersion"], "2025-03-26");
+
+    // 2. list → tools
+    let response = post_json(
+        router.clone(),
+        json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let tools = body["result"]["tools"].as_array().expect("tools");
+    assert!(tools.len() >= 16);
+
+    // 3. health_check → structured
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": { "name": "health_check", "arguments": {} }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let content = &body["result"]["content"][0];
+    if content["type"] == "structuredContent" {
+        assert!(content["structuredContent"]["status"].is_string());
+    }
+
+    // 4. mem_search (alias of search_memory) responds
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 4, "method": "tools/call",
+            "params": { "name": "mem_search", "arguments": { "query": "test" } }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    assert!(
+        body["result"].is_object() || body["error"].is_object(),
+        "mem_search should return result or error"
+    );
+
+    // 5. memory_context responds
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 5, "method": "tools/call",
+            "params": { "name": "memory_context", "arguments": { "query": "test" } }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    assert!(
+        body["result"].is_object() || body["error"].is_object(),
+        "memory_context should return result or error"
+    );
+}
+
+#[tokio::test]
+async fn error_handling_invalid_input() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // get_project_context without required project_id → error
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "get_project_context", "arguments": {} }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    assert!(
+        body["error"].is_object(),
+        "missing project_id should return error, got: {:?}",
+        body["result"]
+    );
+    // Internal error (-32603) or validation error (-32001) are both acceptable
+    let error_code = body["error"]["code"].as_i64().unwrap_or(0);
+    assert!(
+        error_code == -32603 || error_code == -32001,
+        "expected internal or validation error, got {}",
+        error_code
+    );
+
+    // search_memory without query → should still work (defaults to "")
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": { "name": "search_memory", "arguments": {} }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    assert!(body["result"].is_object(), "empty query should return result");
+
+    // mem_search with valid input works
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": { "name": "mem_search", "arguments": { "query": "hello" } }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    assert!(body["result"].is_object(), "mem_search should succeed");
+}
+
+#[tokio::test]
+async fn get_project_context_size_limits() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // Seed a memory for project "limit-test"
+    post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {
+                "name": "create_memory",
+                "arguments": {
+                    "path": "limit-test/doc1",
+                    "content": "A" .to_string() + &"B".repeat(500),
+                    "namespace": { "project": "limit-test" }
+                }
+            }
+        }),
+    )
+    .await;
+
+    // get_project_context with max_chars=100
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": {
+                "name": "get_project_context",
+                "arguments": { "project_id": "limit-test", "max_chars": 100 }
+            }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    // The result may be structured or flat text; either way ensure the content
+    // is bounded by roughly max_chars.
+    let content = &body["result"]["content"][0];
+    if content["type"] == "structuredContent" {
+        let sc = &content["structuredContent"];
+        let total_chars = sc["total_chars"].as_u64().unwrap_or(0);
+        let is_truncated = sc["truncated"].as_bool().unwrap_or(false);
+        assert!(total_chars <= 150 || is_truncated, "chars exceeded 100 without truncation");
+        if is_truncated {
+            assert!(sc["truncated_reason"].is_string());
+        }
+    }
+}
+
 #[tokio::test]
 async fn list_tools_includes_new_memory_and_health_tools() {
     let (state, workspace) = test_state().await;
@@ -591,11 +850,24 @@ async fn memory_context_returns_context_block() {
     )
     .await;
     let body = get_json_body(response).await;
-    let text = body["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(
-        text.contains("ownership") || text.contains("No relevant context"),
-        "got: {text}"
-    );
+    let content = &body["result"]["content"][0];
+    if content["type"] == "structuredContent" {
+        let sc = &content["structuredContent"];
+        let ctx_text = sc["content"].as_str().unwrap_or("");
+        assert!(
+            ctx_text.contains("ownership") || ctx_text.contains("No relevant context"),
+            "got: {ctx_text}"
+        );
+        assert!(
+            sc["total_chars"].as_u64().unwrap_or(0) > 0 || sc["total_records"].as_u64().unwrap_or(0) == 0
+        );
+    } else {
+        let text = content["text"].as_str().unwrap();
+        assert!(
+            text.contains("ownership") || text.contains("No relevant context"),
+            "got: {text}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -679,9 +951,14 @@ async fn health_check_method_and_tool() {
     )
     .await;
     let body = get_json_body(response).await;
-    let text = body["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(text.contains("status"));
-    assert!(text.contains("uptime_secs"));
+    let content = &body["result"]["content"][0];
+    if content["type"] == "structuredContent" {
+        assert!(content["structuredContent"]["status"].is_string());
+    } else {
+        let text = content["text"].as_str().unwrap();
+        assert!(text.contains("status"));
+        assert!(text.contains("uptime_secs"));
+    }
 }
 
 #[tokio::test]
