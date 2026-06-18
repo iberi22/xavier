@@ -57,9 +57,9 @@ impl Plan {
 pub struct Tenant {
     pub id: TenantId,
     pub name: String,
-    pub plan: Plan,
     pub created_at: chrono::DateTime<chrono::Utc>,
-    pub metadata: HashMap<String, String>,
+    pub settings: HashMap<String, String>,
+    pub plan: Plan,
 }
 
 impl Tenant {
@@ -69,13 +69,31 @@ impl Tenant {
             name: name.into(),
             plan,
             created_at: chrono::Utc::now(),
-            metadata: HashMap::new(),
+            settings: HashMap::new(),
         }
     }
 
-    pub fn with_metadata(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.metadata.insert(key.into(), value.into());
+    pub fn with_setting(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.settings.insert(key.into(), value.into());
         self
+    }
+}
+
+/// Workspace entity
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Workspace {
+    pub id: Uuid,
+    pub tenant_id: TenantId,
+    pub name: String,
+}
+
+impl Workspace {
+    pub fn new(tenant_id: TenantId, name: impl Into<String>) -> Self {
+        Self {
+            id: Uuid::new_v4(),
+            tenant_id,
+            name: name.into(),
+        }
     }
 }
 
