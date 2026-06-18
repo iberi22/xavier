@@ -237,6 +237,7 @@ mod tests {
                 }],
                 beliefs_updated: vec![],
                 reasoning_chain: vec![],
+                meta_observations: crate::agents::system3::MetaObservations::default(),
             },
             action: ActionResult {
                 query: "What happened?".to_string(),
@@ -248,6 +249,7 @@ mod tests {
                 semantic_cache_hit: false,
                 llm_used: false,
                 model: None,
+                meta_observations: None,
             },
             optimization: RunOptimizationTrace {
                 route_category: RouteCategory::Retrieved,

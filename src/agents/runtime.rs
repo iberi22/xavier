@@ -401,6 +401,7 @@ impl AgentRuntime {
                     supporting_evidence: vec![],
                     beliefs_updated: vec![],
                     reasoning_chain: vec![],
+                    meta_observations: crate::agents::system3::MetaObservations::default(),
                 },
                 action: crate::agents::system3::ActionResult {
                     query: query.to_string(),
@@ -412,6 +413,7 @@ impl AgentRuntime {
                     semantic_cache_hit: true,
                     llm_used: false,
                     model: None,
+                    meta_observations: None,
                 },
                 optimization: RunOptimizationTrace {
                     route_category: route.category,
@@ -456,6 +458,7 @@ impl AgentRuntime {
                     supporting_evidence: vec![],
                     beliefs_updated: vec![],
                     reasoning_chain: vec![],
+                    meta_observations: crate::agents::system3::MetaObservations::default(),
                 },
                 action: crate::agents::system3::ActionResult {
                     query: query.to_string(),
@@ -467,6 +470,7 @@ impl AgentRuntime {
                     semantic_cache_hit: false,
                     llm_used: false,
                     model: None,
+                    meta_observations: None,
                 },
                 optimization: RunOptimizationTrace {
                     route_category: route.category,
@@ -614,6 +618,7 @@ impl AgentRuntime {
                     semantic_cache_hit: false,
                     llm_used: false,
                     model: None,
+                    meta_observations: Some(reasoning_result.meta_observations.clone()),
                 },
                 0,
             )

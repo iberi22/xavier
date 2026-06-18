@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
 
-use crate::enterprise::tenancy::TenantId;
+use crate::enterprise::tenant::TenantId;
 
 /// Rate limit configuration per tenant/API key
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -8,6 +8,25 @@ use std::sync::Arc;
 
 /// Response del System 3
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetaObservations {
+    pub reasoning_consistency: f64,
+    pub bias_score: f64,
+    pub confidence_drift: f64,
+    pub dominant_framework: String,
+}
+
+impl Default for MetaObservations {
+    fn default() -> Self {
+        Self {
+            reasoning_consistency: 1.0,
+            bias_score: 0.0,
+            confidence_drift: 0.0,
+            dominant_framework: "neutral".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ActionResult {
     pub query: String,
     pub response: String,
@@ -18,6 +37,7 @@ pub struct ActionResult {
     pub semantic_cache_hit: bool,
     pub llm_used: bool,
     pub model: Option<String>,
+    pub meta_observations: Option<MetaObservations>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -8,6 +8,8 @@
 //!
 //! Exposes `GET /health` endpoint and auto-repair actions.
 
+pub mod mesh_telemetry;
+
 use crate::settings::XavierSettings;
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -70,6 +72,7 @@ pub struct MeshHealth {
     pub peers_count: u32,
     pub connected_peers: u32,
     pub sync_lag_ms: f64,
+    pub peer_agreement_ratio: f64,
     pub connectivity: String,
 }
 
@@ -96,6 +99,7 @@ pub struct HealthState {
     pub database: DatabaseHealth,
     pub embedding: EmbeddingHealth,
     pub mesh: MeshHealth,
+    pub mesh_telemetry: Arc<mesh_telemetry::MeshTelemetryCollector>,
     pub checks: Vec<HealthCheck>,
 }
 
@@ -131,8 +135,10 @@ impl Default for HealthState {
                 peers_count: 0,
                 connected_peers: 0,
                 sync_lag_ms: 0.0,
+                peer_agreement_ratio: 1.0,
                 connectivity: "unknown".to_string(),
             },
+            mesh_telemetry: Arc::new(mesh_telemetry::MeshTelemetryCollector::new()),
             checks: Vec::new(),
         }
     }
@@ -212,10 +218,35 @@ async fn collect_health_impl(settings: &XavierSettings, _db: Option<&rusqlite::C
     };
 
     // --- Mesh health ---
+    let (peers_count, connected_peers, sync_lag_ms, peer_agreement_ratio, unhealthy_peers) = {
+        let reg = registry.write().await;
+        reg.mesh_telemetry.update_uptimes();
+
+        // Mock some activity if there's no real mesh logic yet
+        // In real use, this would be triggered by p2p events
+        #[cfg(feature = "mesh")]
+        {
+            // Simulate consensus round for metrics visibility
+            let peers: Vec<_> = reg.mesh.peers.iter().map(|p| crate::mesh::NodeId(p.node_id.clone())).collect();
+            if !peers.is_empty() {
+                reg.mesh_telemetry.run_consensus_round(peers).await;
+            }
+        }
+
+        (
+            reg.mesh.peers_count,
+            reg.mesh.connected_peers,
+            reg.mesh.sync_lag_ms,
+            reg.mesh_telemetry.get_overall_agreement_ratio(),
+            reg.mesh_telemetry.get_unhealthy_peers(0.5)
+        )
+    };
+
     let mesh = MeshHealth {
-        peers_count: 0,
-        connected_peers: 0,
-        sync_lag_ms: 0.0,
+        peers_count,
+        connected_peers,
+        sync_lag_ms,
+        peer_agreement_ratio,
         connectivity: if settings.license.mesh_accepted {
             if cfg!(feature = "mesh") { "online" } else { "disabled (mesh feature not compiled)" }
         } else {
@@ -271,7 +302,17 @@ async fn collect_health_impl(settings: &XavierSettings, _db: Option<&rusqlite::C
         });
     }
 
-    // 3. Memory check
+    // 3. Consensus health check
+    for node_id in unhealthy_peers {
+        checks.push(HealthCheck {
+            name: "consensus_agreement".into(),
+            status: CheckStatus::Fail,
+            detail: format!("Peer {} has agreement ratio < 50%", node_id),
+            timestamp_secs: now_secs,
+        });
+    }
+
+    // 4. Memory check
     if mem_total > 0 {
         let mem_pct = (mem_used as f64 / mem_total as f64) * 100.0;
         if mem_pct > 85.0 {
@@ -373,7 +414,7 @@ fn gather_system_metrics() -> (f64, u64, u64, f64, f64) {
     (0.0, mem_used, mem_total, disk_used, disk_total)
 }
 
-fn gather_db_health(settings: &XavierSettings) -> DatabaseHealth {
+fn gather_db_health(_settings: &XavierSettings) -> DatabaseHealth {
     // We try to open the configured memory database or fail gracefully
     let db_path = std::path::Path::new("data/memory.db");
     let (size_mb, wal_size_mb, page_count, fragmentation) = if db_path.exists() {

@@ -8,7 +8,7 @@ use std::collections::VecDeque;
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::enterprise::tenancy::TenantId;
+use crate::enterprise::tenant::TenantId;
 
 /// Audit action types
 #[derive(Debug, Clone, Serialize, Deserialize)]
