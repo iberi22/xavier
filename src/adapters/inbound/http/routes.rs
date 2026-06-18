@@ -71,7 +71,24 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         .route("/xavier/verify/save", post(verify_save_handler))
         .route("/xavier/time/metric", post(time_metric_handler))
         .route("/xavier/events/session", post(session_event_handler))
-        .route("/xavier/sync/check", post(sync_check_handler));
+        .route("/xavier/sync/check", post(sync_check_handler))
+        // ── Memory Sync (peer-to-peer memory synchronisation) ─────────────────
+        .route(
+            "/api/v1/memory/sync/push",
+            post(crate::adapters::inbound::http::handlers::sync::sync_push_handler),
+        )
+        .route(
+            "/api/v1/memory/sync/pull",
+            post(crate::adapters::inbound::http::handlers::sync::sync_pull_handler),
+        )
+        .route(
+            "/api/v1/memory/sync/status",
+            get(crate::adapters::inbound::http::handlers::sync::sync_status_handler),
+        )
+        .route(
+            "/api/v1/memory/sync/resolve/{conflict_id}",
+            post(crate::adapters::inbound::http::handlers::sync::sync_resolve_handler),
+        );
 
     // Add enterprise plugin routes if feature is enabled
     #[cfg(feature = "enterprise")]
