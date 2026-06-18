@@ -9,6 +9,10 @@ Xavier supports the Model Context Protocol (MCP) for seamless integration with A
 - **Windsurf**
 - **Other MCP-compatible clients**
 
+## RAG Capabilities
+
+AI agents can use Xavier via MCP as a Retrieval-Augmented Generation (RAG) backend. For detailed information on tools and strategies, see the [RAG Usage Guide](./RAG_USAGE_GUIDE.md).
+
 ## Setup
 
 ### 1. Configure Claude Desktop
@@ -41,7 +45,7 @@ After saving the configuration, restart Claude Desktop.
 | Tool | Description |
 |------|-------------|
 | `memory_search` | Vector search over memories |
-| `memory_add` | Add a new memory |
+| `memory_save` | Add a new memory |
 | `memory_stats` | Get memory statistics |
 | `code_find` | Search code symbols |
 

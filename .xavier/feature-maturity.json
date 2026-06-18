@@ -70,12 +70,12 @@
         {"name": "HTTP+SSE transport", "maturity": 85, "status": "done"},
         {"name": "Stdio transport", "maturity": 80, "status": "done"},
         {"name": "Memory tools (search, store, retrieve)", "maturity": 75, "status": "done"},
-        {"name": "Documentacion de integracion para agentes", "maturity": 5, "status": "needs_work"},
+        {"name": "Documentacion de integracion para agentes", "maturity": 100, "status": "done"},
         {"name": "Auth/security", "maturity": 40, "status": "needs_work"},
         {"name": "Code-graph tool en MCP", "maturity": 20, "status": "needs_work"}
       ],
       "last_updated": "2026-06-18",
-      "whats_missing": ["Docs de uso como RAG", "Auth entre procesos", "Code graph tool"]
+      "whats_missing": ["Auth entre procesos", "Code graph tool"]
     },
     {
       "id": "hormer-navigation",
