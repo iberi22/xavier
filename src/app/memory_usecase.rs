@@ -42,15 +42,9 @@ impl MemoryQueryPort for MemoryUseCase {
         filters: Option<MemoryQueryFilters>,
     ) -> anyhow::Result<Vec<MemoryRecord>> {
         if let Some(ref guard) = self.rbac_guard {
-            // Prefer granular permission if workspace/agent context is available
-            let perm = if let Some(ref f) = filters {
-                Permission::AgentMemoryRead(f.workspace_id.clone().unwrap_or("*".to_string()))
-            } else {
-                Permission::MemoryRead
-            };
-
-            if !guard.can(&perm) && !guard.can(&Permission::MemoryRead) {
-                return Err(anyhow::anyhow!("Permission denied: {}", perm));
+            // Scaffolding for RBAC check using new Permission model
+            if !guard.can(&Permission::Read) {
+                return Err(anyhow::anyhow!("Permission denied: Read"));
             }
         }
         if let Some(ref detector) = self.threat_detector {
@@ -67,9 +61,8 @@ impl MemoryQueryPort for MemoryUseCase {
 
     async fn add(&self, record: MemoryRecord) -> anyhow::Result<String> {
         if let Some(ref guard) = self.rbac_guard {
-            let perm = Permission::AgentMemoryWrite(record.workspace_id.clone());
-            if !guard.can(&perm) && !guard.can(&Permission::MemoryWrite) {
-                return Err(anyhow::anyhow!("Permission denied: {}", perm));
+            if !guard.can(&Permission::Write) {
+                return Err(anyhow::anyhow!("Permission denied: Write"));
             }
         }
         if let Some(ref detector) = self.threat_detector {
@@ -86,9 +79,8 @@ impl MemoryQueryPort for MemoryUseCase {
 
     async fn update(&self, id: &str, record: MemoryRecord) -> anyhow::Result<MemoryRecord> {
         if let Some(ref guard) = self.rbac_guard {
-            let perm = Permission::AgentMemoryWrite(record.workspace_id.clone());
-            if !guard.can(&perm) && !guard.can(&Permission::MemoryWrite) {
-                return Err(anyhow::anyhow!("Permission denied: {}", perm));
+            if !guard.can(&Permission::Write) {
+                return Err(anyhow::anyhow!("Permission denied: Write"));
             }
         }
         if let Some(ref detector) = self.threat_detector {
@@ -107,10 +99,8 @@ impl MemoryQueryPort for MemoryUseCase {
 
     async fn delete(&self, id: &str) -> anyhow::Result<Option<MemoryRecord>> {
         if let Some(ref guard) = self.rbac_guard {
-            // For delete, we still use MemoryDelete as a baseline,
-            // but we could also check AgentMemoryWrite for the workspace if we had it.
             guard
-                .require(Permission::MemoryDelete)
+                .require(Permission::Delete)
                 .map_err(|e| anyhow::anyhow!(e))?;
         }
 

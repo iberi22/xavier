@@ -22,8 +22,10 @@
 
 use crate::health::collect_health;
 use crate::settings::XavierSettings;
+use crate::agents::evolve::{EvolveModule, EvolveConfig};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 /// KPI snapshot for a single benchmark run
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -84,6 +86,32 @@ pub struct ImprovementCycle {
     pub experiments: Vec<Experiment>,
     pub accepted_changes: Vec<String>,
     pub improvement_pct: f64,
+}
+
+/// Main engine for auto-improvement
+pub struct AutoImprovementEngine {
+    settings: XavierSettings,
+    evolve_module: Arc<EvolveModule>,
+}
+
+impl AutoImprovementEngine {
+    pub fn new(settings: XavierSettings) -> Self {
+        let evolve_config = EvolveConfig::new("auto-improve".to_string());
+        Self {
+            settings,
+            evolve_module: Arc::new(EvolveModule::new(evolve_config)),
+        }
+    }
+
+    /// Trigger an evolution cycle
+    pub async fn trigger_evolution(&self) -> anyhow::Result<()> {
+        self.evolve_module.run_evolution_cycle().await.map(|_| ())
+    }
+
+    /// Run full improvement cycle
+    pub async fn run_cycle(&self, previous: Option<&BenchmarkSnapshot>) -> ImprovementCycle {
+        run_improvement_cycle(&self.settings, previous).await
+    }
 }
 
 /// Run a full cycle: benchmark → gaps → experiments → validate
