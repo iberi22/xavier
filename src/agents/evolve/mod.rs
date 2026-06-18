@@ -22,6 +22,7 @@ pub mod mutator;
 pub mod reflector;
 pub mod researcher;
 pub mod results;
+pub mod gap_analyzer;
 
 #[cfg(test)]
 mod tests;
@@ -31,6 +32,10 @@ use std::sync::Arc;
 use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
+
+use crate::observability::analyzer::{ErrorDiagnosis, Urgency};
+use crate::observability::service_log::LogLevel;
+use crate::agents::evolve::experiment::Hypothesis;
 
 pub use config::EvolveConfig;
 pub use results::ExperimentResult;
@@ -42,6 +47,7 @@ pub struct EvolveModule {
     researcher: researcher::Researcher,
     evaluator: evaluator::Evaluator,
     integrator: integrator::Integrator,
+    gap_analyzer: gap_analyzer::GapAnalyzer,
     mutator: mutator::Mutator,
     reflector: reflector::Reflector,
 }
@@ -82,16 +88,17 @@ pub struct EvolutionResult {
 
 impl EvolveModule {
     /// Create a new Evolve Module
-    pub fn new(config: EvolveConfig) -> Self {
-        Self {
+    pub async fn new(config: EvolveConfig) -> Result<Self> {
+        Ok(Self {
             state: Arc::new(RwLock::new(EvolveState::default())),
             researcher: researcher::Researcher::new(),
             evaluator: evaluator::Evaluator::new(config.benchmark),
             integrator: integrator::Integrator::new(),
+            gap_analyzer: gap_analyzer::GapAnalyzer::new().await?,
             mutator: mutator::Mutator::new(),
             reflector: reflector::Reflector::new(),
             config,
-        }
+        })
     }
 
     /// Start the autonomous evolution loop
@@ -253,6 +260,7 @@ impl EvolveModule {
     /// Run a single experiment (deprecated in favor of run_evolution_cycle)
     #[allow(dead_code)]
     async fn run_single_experiment(&self) -> Result<ExperimentResult> {
+        // 0. Analyze gaps to guide research
         let res = self.run_evolution_cycle().await?;
         Ok(res.experiment)
     }
@@ -270,6 +278,47 @@ impl EvolveModule {
                 }
             }
             None => true, // First experiment is always improvement
+        }
+    }
+
+    /// Check if improvement is significant enough for a PR (e.g. > 2%)
+    async fn is_significant_improvement(&self, metric: f32) -> bool {
+        let state = self.state.read().await;
+        match state.best_metric {
+            Some(best) if best > 0.0 => {
+                let diff = (best - metric) / best;
+                diff > 0.02
+            }
+            _ => true,
+        }
+    }
+
+    async fn create_improvement_pr(&self, hypothesis: &Hypothesis, _metric: f32) {
+        info!("Significant improvement detected, creating PR...");
+
+        let fixer = crate::observability::Fixer::new();
+        let diagnosis = ErrorDiagnosis {
+            pattern: crate::observability::service_log::ErrorPattern {
+                module: "evolve".to_string(),
+                level: LogLevel::Info,
+                frequency: 1,
+                sample_message: format!("Autonomous improvement: {}", hypothesis.description),
+                first_seen: chrono::Utc::now().to_rfc3339(),
+                last_seen: chrono::Utc::now().to_rfc3339(),
+            },
+            analyzed_at: chrono::Utc::now().to_rfc3339(),
+            root_cause: format!("Identified optimization: {}", hypothesis.description),
+            source_location: Some(hypothesis.files.join(", ")),
+            suggested_fix: hypothesis.patch.clone(),
+            confidence: 0.95,
+            urgency: Urgency::High,
+        };
+
+        let result = fixer.process_diagnosis(&diagnosis).await;
+        if result.success {
+            info!("Improvement PR created: {:?}", result.url);
+        } else {
+            warn!("Failed to create improvement PR: {}", result.message);
         }
     }
 
