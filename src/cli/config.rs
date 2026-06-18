@@ -74,6 +74,24 @@ pub fn resolve_http_port() -> u16 {
         .unwrap_or_else(|| XavierSettings::current().server.port)
 }
 
+/// Resolve the MCP HTTP+SSE server port.
+///
+/// Priority:
+/// 1. Explicit `--mcp-port` flag value
+/// 2. `XAVIER_MCP_PORT` env var
+/// 3. Default `8100`
+///
+/// A resolved value of `0` disables the MCP HTTP server (useful when running
+/// `xavier http` without the MCP endpoint, or to avoid a port conflict).
+pub fn resolve_mcp_port(flag: Option<u16>) -> u16 {
+    flag.or_else(|| {
+        std::env::var("XAVIER_MCP_PORT")
+            .ok()
+            .and_then(|value| value.parse::<u16>().ok())
+    })
+    .unwrap_or(crate::cli::mcp::DEFAULT_MCP_PORT)
+}
+
 pub fn xavier_token() -> String {
     xavier::security::auth::resolve_xavier_token().unwrap_or_default()
 }

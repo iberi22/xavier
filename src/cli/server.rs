@@ -62,7 +62,7 @@ pub use crate::cli::websocket::*;
 
 pub static START_TIME: once_cell::sync::Lazy<Instant> = once_cell::sync::Lazy::new(Instant::now);
 
-pub async fn start_http_server(port: u16) -> Result<()> {
+pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     // Initial health check run to populate the static HEALTH instance
     tokio::spawn(async {
         let _ = xavier::observability::health::HEALTH.run_checks().await;
@@ -673,6 +673,26 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     info!("Xavier HTTP server listening on http://{}", bound_addr);
     println!("Xavier HTTP server listening on http://{}", bound_addr);
     println!("Press Ctrl+C to stop");
+
+    // Spawn the MCP HTTP+SSE (Streamable HTTP) server alongside the main API.
+    // It shares the same memory store as stdio `xavier mcp` and exposes the
+    // identical JSON-RPC tool surface for remote agents. Non-fatal: a bind
+    // failure (e.g. port in use) is logged without taking down the main server.
+    let mcp_port = crate::cli::config::resolve_mcp_port(mcp_port);
+    if mcp_port > 0 {
+        info!("Starting MCP HTTP+SSE server on port {}", mcp_port);
+        tokio::spawn(async move {
+            if let Err(error) = crate::cli::mcp::start_mcp_http(mcp_port).await {
+                tracing::error!(
+                    "MCP HTTP+SSE server on port {} failed: {}",
+                    mcp_port,
+                    error
+                );
+            }
+        });
+    } else {
+        info!("MCP HTTP+SSE server disabled (resolved port 0)");
+    }
 
     let _ = xavier::notifications::NOTIFICATIONS.notify(
         xavier::notifications::IslandId::System,
