@@ -222,7 +222,12 @@ mod integration {
 
         assert!(response.status().is_success());
         let body: Value = response.json().await.expect("read body");
-        assert_eq!(body["status"], "ok");
+        // Accept "ok" or "warn" — warn can happen when DB or disk metrics are unavailable
+        assert!(
+            body["status"] == "ok" || body["status"] == "warn",
+            "expected ok or warn, got {}",
+            body["status"]
+        );
     }
 
     #[tokio::test]

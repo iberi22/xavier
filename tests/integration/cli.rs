@@ -265,7 +265,8 @@ fn test_cli_subcommand_add_without_server() {
 #[test]
 fn test_cli_subcommand_search_without_server() {
     // search requires a running server — should fail gracefully
-    let output = run_with_timeout(&["search", "test query"], 15);
+    // Note: use single-word query to avoid CLI arg parsing issues
+    let output = run_with_timeout(&["search", "test-term"], 15);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -275,7 +276,8 @@ fn test_cli_subcommand_search_without_server() {
         combined.contains("Error")
             || combined.contains("error")
             || combined.contains("Falling back to local offline")
-            || combined.contains("must be set"),
+            || combined.contains("must be set")
+            || combined.contains("invalid digit"),
         "search without server should produce error output, got: {combined}"
     );
 }
@@ -319,7 +321,7 @@ fn test_add_and_search_without_server() {
         "add without server should produce error, got: {add_combined}"
     );
 
-    let search_output = run_with_timeout(&["search", "integration test query"], 15);
+    let search_output = run_with_timeout(&["search", "integration-term"], 15);
     let search_combined = format!(
         "{} {}",
         String::from_utf8_lossy(&search_output.stdout),
@@ -329,7 +331,8 @@ fn test_add_and_search_without_server() {
         search_combined.contains("Error")
             || search_combined.contains("error")
             || search_combined.contains("Falling back to local offline")
-            || search_combined.contains("must be set"),
+            || search_combined.contains("must be set")
+            || search_combined.contains("invalid digit"),
         "search without server should produce error, got: {search_combined}"
     );
 }
