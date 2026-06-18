@@ -277,4 +277,102 @@ mod tests {
             assert_eq!(components.semantic_similarity, 1.0, "Semantic similarity should be 1.0 for query: {}", query);
         }
     }
+
+    #[test]
+    fn test_score_transition_weight_variation() {
+        let mut traversal_weights = TraversalWeights::default();
+        traversal_weights.semantic_similarity = 1.0;
+        traversal_weights.confidence = 0.0;
+        traversal_weights.edge_weight = 0.0;
+        traversal_weights.recency = 0.0;
+        traversal_weights.cross_layer = 0.0;
+        traversal_weights.cross_dir = 0.0;
+        traversal_weights.peripheral_hub = 0.0;
+
+        let policy = NavigationPolicy::new(
+            LayerWeights::default(),
+            traversal_weights,
+            0.01
+        );
+
+        let edge = BeliefEdge::new(
+            "src/main.rs".to_string(),
+            "target".to_string(),
+            "rel".to_string(),
+            0.5,
+            "prov".to_string(),
+        );
+
+        // query matches target -> similarity 1.0 -> total score 1.0
+        let score = policy.score_transition("target", &edge, chrono::Utc::now(), 1, 1);
+        assert_eq!(score, 1.0);
+
+        // query doesn't match -> similarity 0.0 -> total score 0.0
+        let score = policy.score_transition("nomatch", &edge, chrono::Utc::now(), 1, 1);
+        assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn test_peripheral_hub_boost() {
+        let mut traversal_weights = TraversalWeights::default();
+        traversal_weights.semantic_similarity = 0.0;
+        traversal_weights.peripheral_hub = 1.0;
+
+        let policy = NavigationPolicy::new(
+            LayerWeights::default(),
+            traversal_weights,
+            0.01
+        );
+
+        let edge = BeliefEdge::new("A".to_string(), "B".to_string(), "rel".to_string(), 1.0, "prov".to_string());
+
+        // source_degree <= 3, target_degree >= 10 -> peripheral_hub 1.2
+        let components = policy.calculate_score_components("q", &edge, chrono::Utc::now(), 3, 10);
+        assert_eq!(components.peripheral_hub, 1.2);
+
+        // source_degree <= 2, target_degree >= 5 -> peripheral_hub 1.0
+        let components = policy.calculate_score_components("q", &edge, chrono::Utc::now(), 2, 5);
+        assert_eq!(components.peripheral_hub, 1.0);
+
+        // No boost
+        let components = policy.calculate_score_components("q", &edge, chrono::Utc::now(), 5, 5);
+        assert_eq!(components.peripheral_hub, 0.0);
+    }
+
+    #[test]
+    fn test_get_parent_dir_edge_cases() {
+        assert_eq!(get_parent_dir("src/main.rs"), Some("src".to_string()));
+        assert_eq!(get_parent_dir("src/retrieval/navigation.rs"), Some("src/retrieval".to_string()));
+        assert_eq!(get_parent_dir("main.rs"), None);
+        assert_eq!(get_parent_dir(""), None);
+        // get_parent_dir("/") returns Some("") because it contains '/' and parts.len() > 1 (["", ""])
+        assert_eq!(get_parent_dir("/"), Some("".to_string()));
+        assert_eq!(get_parent_dir("C:\\Users\\Main.rs"), Some("C:/Users".to_string()));
+    }
+
+    #[test]
+    fn test_score_transition_binary_and_empty_paths() {
+        let policy = NavigationPolicy::with_defaults();
+        let edge = BeliefEdge::new(
+            "bin/executable".to_string(),
+            "data/blob.bin".to_string(),
+            "processes".to_string(),
+            1.0,
+            "prov".to_string(),
+        );
+
+        // Should handle "binary" extensions just fine as they are just strings
+        let score = policy.score_transition("blob.bin", &edge, chrono::Utc::now(), 1, 1);
+        assert!(score > 0.0);
+
+        let edge_empty = BeliefEdge::new(
+            "".to_string(),
+            "".to_string(),
+            "".to_string(),
+            1.0,
+            "prov".to_string(),
+        );
+        let score_empty = policy.score_transition("", &edge_empty, chrono::Utc::now(), 1, 1);
+        assert!(score_empty >= 0.0);
+    }
 }
