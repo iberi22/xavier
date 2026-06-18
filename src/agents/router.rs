@@ -479,6 +479,7 @@ fn is_complex_query(trimmed: &str, lowered: &str) -> bool {
 mod tests {
     use super::*;
     use crate::agents::system1::SearchType;
+    use crate::agents::system2::ConfidenceCalibration;
     use std::sync::{Mutex, OnceLock};
 
     fn env_lock() -> &'static Mutex<()> {
