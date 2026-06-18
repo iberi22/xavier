@@ -3,13 +3,12 @@
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
 use super::client::{LlmClient, ResponseGenerator};
-use super::engine::observe;
 use super::helpers::*;
 use super::types::ActorConfig;
 use super::System3Actor;
 use crate::agents::system1::RetrievedDocument;
 use crate::agents::system1::{RetrievalResult, SearchType};
-use crate::agents::system2::{ReasoningResult, ReasoningStep};
+use crate::agents::system2::ReasoningResult;
 use crate::memory::semantic_cache::{QueryEmbedder, SemanticCache};
 use anyhow::Result;
 use std::collections::HashMap;
@@ -86,7 +85,16 @@ fn reasoning_result() -> ReasoningResult {
         supporting_evidence: vec![],
         beliefs_updated: vec![],
         reasoning_chain: vec![],
-        meta_observations: Default::default(),
+        step_count: 0,
+        total_tokens_used: 0,
+        reasoning_elapsed_ms: 0,
+        calibration: crate::agents::system2::ConfidenceCalibration {
+            raw_confidence: 1.0,
+            entropy: 0.0,
+            calibrated_confidence: 1.0,
+            has_contradiction: false,
+            contradiction_count: 0,
+        },
     }
 }
 
@@ -503,98 +511,4 @@ async fn failed_llm_fallback_does_not_populate_cache() {
 
     assert_eq!(first.response, "Not discussed in the available memories.");
     assert!(second.is_none());
-}
-
-#[test]
-fn test_observe_empty_chain() {
-    let obs = observe(&[]);
-    assert_eq!(obs.reasoning_consistency, 1.0);
-    assert_eq!(obs.bias_score, 0.0);
-    assert_eq!(obs.confidence_drift, 0.0);
-    assert_eq!(obs.dominant_framework, "neutral");
-}
-
-#[test]
-fn test_observe_consistency_and_contradiction() {
-    let chain = vec![
-        ReasoningStep {
-            step: 1,
-            thought: "I think A is true.".to_string(),
-            conclusion: "A.".to_string(),
-        },
-        ReasoningStep {
-            step: 2,
-            thought: "However, evidence suggests B.".to_string(),
-            conclusion: "Not A.".to_string(),
-        },
-    ];
-    let obs = observe(&chain);
-    assert!(obs.reasoning_consistency < 1.0);
-    assert!(obs.reasoning_consistency > 0.0);
-}
-
-#[test]
-fn test_observe_confidence_drift() {
-    let chain = vec![
-        ReasoningStep {
-            step: 1,
-            thought: "Maybe this is true.".to_string(),
-            conclusion: "Possible.".to_string(),
-        },
-        ReasoningStep {
-            step: 2,
-            thought: "It is certain and confirmed.".to_string(),
-            conclusion: "Proven.".to_string(),
-        },
-    ];
-    let obs = observe(&chain);
-    assert!(obs.confidence_drift > 0.0);
-}
-
-#[test]
-fn test_observe_bias_detection() {
-    let chain = vec![ReasoningStep {
-        step: 1,
-        thought: "It must always be clearly this way.".to_string(),
-        conclusion: "Obviously.".to_string(),
-    }];
-    let obs = observe(&chain);
-    assert!(obs.bias_score > 0.0);
-}
-
-#[test]
-fn test_observe_dominant_framework() {
-    let chain = vec![ReasoningStep {
-        step: 1,
-        thought: "I deduce that therefore it is so.".to_string(),
-        conclusion: "QED.".to_string(),
-    }];
-    let obs = observe(&chain);
-    assert_eq!(obs.dominant_framework, "deductive");
-
-    let chain2 = vec![ReasoningStep {
-        step: 1,
-        thought: "I observe a pattern.".to_string(),
-        conclusion: "Induction.".to_string(),
-    }];
-    let obs2 = observe(&chain2);
-    assert_eq!(obs2.dominant_framework, "inductive");
-}
-
-#[tokio::test]
-async fn test_system3_returns_meta_observations() {
-    let mut reasoning = reasoning_result();
-    reasoning.meta_observations.dominant_framework = "test_framework".to_string();
-
-    let actor = System3Actor::new(ActorConfig::default());
-    let result = actor
-        .run("test", &retrieval_result(), &reasoning, None)
-        .await
-        .unwrap();
-
-    assert!(result.meta_observations.is_some());
-    assert_eq!(
-        result.meta_observations.unwrap().dominant_framework,
-        "test_framework"
-    );
 }
