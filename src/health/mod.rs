@@ -160,31 +160,61 @@ pub fn health_registry() -> Option<Arc<RwLock<HealthState>>> {
     HEALTH_REGISTRY.get().cloned()
 }
 
-/// Synchronous version — called from axum handlers
+/// Synchronous version — called from axum handlers.
+///
+/// Spawns a dedicated OS thread with its own multi-threaded tokio runtime
+/// so that sysinfo calls and async health gathering never collide with
+/// any existing tokio context (e.g. `#[tokio::test]`).
 pub fn collect_health_sync() -> HealthResponse {
     let settings = XavierSettings::current();
-    // Use a quick tokio block_on for the async parts
-    tokio::task::block_in_place(|| {
-        tokio::runtime::Handle::current().block_on(async {
-            collect_health_impl(&settings, None).await
+    std::thread::scope(|scope| {
+        scope.spawn(|| {
+            let rt = tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+                .expect("Failed to create health check runtime");
+            rt.block_on(async {
+                let (cpu, mem_used, mem_total, disk_used, disk_total) =
+                    tokio::task::spawn_blocking(gather_system_metrics)
+                        .await
+                        .unwrap_or((0.0, 0, 0, 0.0, 0.0));
+                collect_health_impl(&settings, None, cpu, mem_used, mem_total, disk_used, disk_total).await
+            })
         })
+        .join()
+        .expect("health thread panicked")
     })
 }
 
-/// Run a health check and return a structured response
+/// Async version — called from async contexts like `collect_health_sync` internals.
 pub async fn collect_health(settings: &XavierSettings, db: Option<&rusqlite::Connection>) -> HealthResponse {
-    collect_health_impl(settings, db).await
+    let (cpu, mem_used, mem_total, disk_used, disk_total) =
+        tokio::task::spawn_blocking(gather_system_metrics)
+            .await
+            .unwrap_or((0.0, 0, 0, 0.0, 0.0));
+    collect_health_impl(settings, db, cpu, mem_used, mem_total, disk_used, disk_total).await
 }
 
-async fn collect_health_impl(settings: &XavierSettings, db: Option<&rusqlite::Connection>) -> HealthResponse {
+/// Run a health check and return a structured response
+/// Internal impl shared by both `collect_health` and `collect_health_sync`.
+/// Metrics are passed in because `gather_system_metrics` contains
+/// blocking sysinfo calls and must be collected on a blocking thread.
+async fn collect_health_impl(
+    settings: &XavierSettings,
+    db: Option<&rusqlite::Connection>,
+    cpu: f64,
+    mem_used: u64,
+    mem_total: u64,
+    disk_used: f64,
+    disk_total: f64,
+) -> HealthResponse {
     let registry = init_health();
     let now_secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs();
 
-    // --- System health ---
-    let (cpu, mem_used, mem_total, disk_used, disk_total) = gather_system_metrics();
     let disk_pct = if disk_total > 0.0 {
         (disk_used / disk_total) * 100.0
     } else {
@@ -514,7 +544,7 @@ mod tests {
         assert!(Arc::ptr_eq(&r1, &r2));
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_collect_health_returns_valid_structure() {
         let settings = XavierSettings::default();
         let health = collect_health(&settings, None).await;
@@ -524,7 +554,7 @@ mod tests {
         assert!(true);
     }
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_health_check_disk_pass() {
         let settings = XavierSettings::default();
         let health = collect_health(&settings, None).await;
