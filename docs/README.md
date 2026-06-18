@@ -10,6 +10,7 @@ Welcome to the Xavier documentation!
 ## Integration
 
 - [MCP Integration](./guides/MCP_INTEGRATION.md) - Connect to Claude Desktop, Cursor, etc.
+- [RAG Usage Guide](./guides/RAG_USAGE_GUIDE.md) - Using Xavier as a memory backend for AI agents.
 
 ## Reference
 

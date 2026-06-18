@@ -198,6 +198,7 @@ Runtime configuration is read from environment variables and Xavier config files
 
 - [API Reference](docs/API.md)
 - [CLI Reference](docs/CLI.md)
+- [RAG Usage Guide](docs/guides/RAG_USAGE_GUIDE.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Feature Status](docs/FEATURE_STATUS.md)
