@@ -235,6 +235,12 @@ pub enum Command {
         cmd: LicenseCommand,
     },
 
+    /// Memory management and consolidation
+    Memory {
+        #[command(subcommand)]
+        cmd: crate::cli::commands::memory::MemoryCommand,
+    },
+
     /// System & security scanning
     Scan {
         #[command(subcommand)]
@@ -651,6 +657,26 @@ pub enum LicenseCommand {
     Accept,
     /// Show license terms
     Show,
+}
+
+pub mod memory {
+    use clap::Subcommand;
+
+    #[derive(Subcommand, Debug, Clone)]
+    pub enum MemoryCommand {
+        /// Consolidate memories and run TGD
+        Consolidate {
+            /// Start background scheduler
+            #[arg(long)]
+            start: bool,
+            /// Stop background scheduler
+            #[arg(long)]
+            stop: bool,
+            /// Show current consolidation status
+            #[arg(long)]
+            status: bool,
+        },
+    }
 }
 
 /// XP wallet subcommands [SKELETON — decisions pending with BELA]
