@@ -11,7 +11,11 @@ use tracing::{info, warn};
 use crate::agents::runtime::ConversationMessage;
 use crate::agents::system1::RetrievedDocument;
 use crate::agents::provider::ModelProviderClient;
-use crate::agents::tgd_cache::TgdCache;
+pub mod cache;
+pub mod consolidation;
+
+use crate::tgd::cache::TgdCache;
+pub use consolidation::TgdConsolidationScheduler;
 
 /// Configuration for TGD engine
 #[derive(Debug, Clone)]

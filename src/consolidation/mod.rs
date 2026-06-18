@@ -10,10 +10,12 @@ use anyhow::Result;
 use chrono::Utc;
 use serde::Serialize;
 use std::collections::HashSet;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 use crate::{
-    agents::tgd::TgdEngine,
+    tgd::{TgdEngine, consolidation::ProgressReport},
     memory::{
         manager::ManagedMemory,
         qmd_memory::MemoryDocument,
@@ -77,7 +79,11 @@ pub struct ReflectionStats {
 }
 
 impl ConsolidationTask {
-    pub async fn consolidate(&self, workspace: &WorkspaceContext) -> Result<ConsolidationStats> {
+    pub async fn consolidate(
+        &self,
+        workspace: &WorkspaceContext,
+        progress: Option<Arc<RwLock<ProgressReport>>>,
+    ) -> Result<ConsolidationStats> {
         let start = std::time::Instant::now();
         let mut stats = ConsolidationStats::default();
         let memories = workspace
@@ -98,13 +104,25 @@ impl ConsolidationTask {
         let selected: Vec<ManagedMemory> = selected.into_iter().take(self.batch_size).collect();
         stats.selected = selected.len();
 
+        if let Some(ref p) = progress {
+            let mut p = p.write().await;
+            p.total = stats.selected;
+            p.processed = 0;
+        }
+
         let memory = workspace.workspace.memory_manager.memory();
         let clusters = merger::cluster_similar_memories(&selected, self.similarity_threshold);
         stats.grouped = clusters.iter().filter(|cluster| cluster.len() > 1).count();
 
         let mut seen_ids = HashSet::new();
         let mut removed_ids = HashSet::new();
-        for cluster in clusters {
+        let total_clusters = clusters.len();
+        for (i, cluster) in clusters.into_iter().enumerate() {
+            if let Some(ref p) = progress {
+                let mut p = p.write().await;
+                p.processed = (i * stats.selected) / total_clusters;
+            }
+
             if cluster.len() < 2 {
                 continue;
             }

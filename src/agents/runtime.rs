@@ -198,7 +198,7 @@ pub struct AgentRuntime {
     scheduler: Option<Arc<tokio::sync::Mutex<JobScheduler>>>,
     orchestrator: Option<Orchestrator>,
     rate_manager: Option<Arc<RateLimitManager>>,
-    tgd_engine: Option<crate::agents::tgd::TgdEngine>,
+    tgd_engine: Option<crate::tgd::TgdEngine>,
 }
 
 impl AgentRuntime {
@@ -249,7 +249,7 @@ impl AgentRuntime {
         self
     }
 
-    pub fn with_tgd_engine(mut self, engine: crate::agents::tgd::TgdEngine) -> Self {
+    pub fn with_tgd_engine(mut self, engine: crate::tgd::TgdEngine) -> Self {
         self.tgd_engine = Some(engine);
         self
     }
@@ -280,7 +280,7 @@ impl AgentRuntime {
     ) -> Self {
         let provider = crate::agents::provider::ModelProviderClient::new(provider_config.clone());
         self.system2 = System2Reasoner::with_provider(ReasonerConfig::default(), provider.clone());
-        self.tgd_engine = Some(crate::agents::tgd::TgdEngine::new(provider));
+        self.tgd_engine = Some(crate::tgd::TgdEngine::new(provider));
         self
     }
 
