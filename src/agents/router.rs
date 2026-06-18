@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use crate::{
-    agents::{system1::RetrievalResult, system2::ReasoningResult},
+    agents::{system1::RetrievalResult, system2::{ConfidenceCalibration, ReasoningResult}},
     memory::manager::MemoryPriority,
 };
 
@@ -547,6 +547,16 @@ mod tests {
             supporting_evidence: vec![],
             beliefs_updated: vec![],
             reasoning_chain: vec![],
+            step_count: 0,
+            total_tokens_used: 0,
+            reasoning_elapsed_ms: 0,
+            calibration: ConfidenceCalibration {
+                raw_confidence: 0.9,
+                entropy: 0.0,
+                calibrated_confidence: 0.9,
+                has_contradiction: false,
+                contradiction_count: 0,
+            },
         };
 
         assert_eq!(
@@ -576,6 +586,16 @@ mod tests {
             supporting_evidence: vec![],
             beliefs_updated: vec![],
             reasoning_chain: vec![],
+            step_count: 0,
+            total_tokens_used: 0,
+            reasoning_elapsed_ms: 0,
+            calibration: ConfidenceCalibration {
+                raw_confidence: 0.9,
+                entropy: 0.0,
+                calibrated_confidence: 0.9,
+                has_contradiction: false,
+                contradiction_count: 0,
+            },
         };
 
         assert_eq!(
