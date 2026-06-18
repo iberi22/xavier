@@ -4,6 +4,7 @@
 //! providing the public API surface for module consumers.
 pub mod belief_evaluator;
 pub mod curation;
+pub mod evolve;
 pub mod extraction;
 pub mod hormer;
 pub mod provider;
