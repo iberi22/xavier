@@ -229,6 +229,12 @@ pub enum Command {
         cmd: SyncCommand,
     },
 
+    /// Manage Xavier license (MIT / Mesh License)
+    License {
+        #[command(subcommand)]
+        cmd: LicenseCommand,
+    },
+
     /// System & security scanning
     Scan {
         #[command(subcommand)]
@@ -373,6 +379,16 @@ pub enum CodeCommand {
     Hotspots,
     /// Show code graph stats
     Stats,
+    /// Dump portable code graph to .xavier/codegraph.json
+    Dump {
+        /// Optional path to the codebase (defaults to '.')
+        path: Option<String>,
+    },
+    /// Load portable code graph from .xavier/codegraph.json
+    Load {
+        /// Optional path to the codebase (defaults to '.')
+        path: Option<String>,
+    },
 }
 
 /// Provider management subcommands
@@ -624,6 +640,17 @@ pub enum ScanCommand {
         #[arg(short, long, default_value = "table")]
         format: String,
     },
+}
+
+/// License management subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum LicenseCommand {
+    /// Show current license status
+    Status,
+    /// Accept the Xavier Mesh License (enables mesh features)
+    Accept,
+    /// Show license terms
+    Show,
 }
 
 /// XP wallet subcommands [SKELETON — decisions pending with BELA]

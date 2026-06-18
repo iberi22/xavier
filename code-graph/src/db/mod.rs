@@ -867,6 +867,68 @@ impl CodeGraphDB {
         Ok(hotspots)
     }
 
+    /// Get all symbols in the database
+    pub fn get_all_symbols(&self) -> Result<Vec<Symbol>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let mut stmt = conn
+            .prepare(
+                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
+                   FROM symbols"#,
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let symbols = stmt
+            .query_map([], |row| {
+                Ok(Symbol {
+                    id: Some(row.get(0)?),
+                    stable_id: Some(row.get(1)?),
+                    name: row.get(2)?,
+                    kind: parse_symbol_kind(&row.get::<_, String>(3)?),
+                    lang: parse_language(&row.get::<_, String>(4)?),
+                    file_path: row.get(5)?,
+                    start_line: row.get(6)?,
+                    end_line: row.get(7)?,
+                    start_col: row.get(8)?,
+                    end_col: row.get(9)?,
+                    signature: row.get(10)?,
+                    parent: row.get(11)?,
+                    complexity: row.get(12)?,
+                })
+            })
+            .map_err(|e| GraphError::Database(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(symbols)
+    }
+
+    /// Get all edges in the database
+    pub fn get_all_edges(&self) -> Result<Vec<CodeEdge>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let mut stmt = conn
+            .prepare(
+                r#"SELECT id, from_symbol, to_symbol, edge_type, file_path, line, confidence, metadata
+                   FROM edges"#,
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let edges = stmt
+            .query_map([], edge_from_row)
+            .map_err(|e| GraphError::Database(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(edges)
+    }
+
     /// Clear all data
     pub fn clear(&self) -> Result<()> {
         let conn = self

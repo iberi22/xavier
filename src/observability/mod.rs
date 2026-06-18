@@ -36,6 +36,7 @@
 pub mod analyzer;
 pub mod detector;
 pub mod fixer;
+pub mod health;
 pub mod middleware;
 pub mod notifier;
 pub mod service_log;
@@ -43,6 +44,7 @@ pub mod service_log;
 pub use analyzer::ErrorAnalyzer;
 pub use detector::LogDetector;
 pub use fixer::Fixer;
+pub use health::{HealthMonitor, HealthStatus, HEALTH};
 pub use middleware::{request_logger, ObservabilityState};
 pub use notifier::Notifier;
 pub use service_log::{LogEntry, LogLevel, LogSource, ServiceLogStore};

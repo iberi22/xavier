@@ -43,6 +43,8 @@ pub struct XavierSettings {
     pub pgheart: PgHeartSettings,
     #[serde(default)]
     pub data_commons: DataCommonsSettings,
+    #[serde(default)]
+    pub license: LicenseSettings,
     #[serde(skip)]
     pub auth_token: Option<String>,
 }
@@ -448,6 +450,22 @@ pub struct PgHeartSettings {
     pub instance_id: Option<String>,
     pub sync_interval_ms: u64,
     pub auto_heartbeat: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct LicenseSettings {
+    pub mesh_accepted: bool,
+    pub license_type: String,
+}
+
+impl Default for LicenseSettings {
+    fn default() -> Self {
+        Self {
+            mesh_accepted: false,
+            license_type: "MIT".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
