@@ -6,6 +6,7 @@
 //! - Can work fully offline without Planka
 
 pub mod models;
+pub mod scoring;
 pub mod session_sync_task;
 pub mod store;
 pub mod sync;

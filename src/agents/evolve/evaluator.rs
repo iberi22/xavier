@@ -3,24 +3,66 @@
 use crate::agents::evolve::config::BenchmarkType;
 use anyhow::{anyhow, Context, Result};
 use std::path::PathBuf;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::info;
 
 /// Evaluator - Measures the metric for the current implementation
 pub struct Evaluator {
     benchmark: BenchmarkType,
+    history: Arc<RwLock<Vec<f32>>>,
 }
 
 impl Evaluator {
     pub fn new(benchmark: BenchmarkType) -> Self {
-        Self { benchmark }
+        Self {
+            benchmark,
+            history: Arc::new(RwLock::new(Vec::new())),
+        }
     }
 
     /// Evaluate the current implementation
     pub async fn evaluate(&self) -> Result<f32> {
-        match self.benchmark {
-            BenchmarkType::Locomo => self.run_locomo_benchmark().await,
-            BenchmarkType::EvoMemory => self.run_evomemory_benchmark().await,
-            BenchmarkType::Custom => self.run_custom_benchmark().await,
+        let score = match self.benchmark {
+            BenchmarkType::Locomo => self.run_locomo_benchmark().await?,
+            BenchmarkType::EvoMemory => self.run_evomemory_benchmark().await?,
+            BenchmarkType::Custom => self.run_custom_benchmark().await?,
+        };
+
+        // Track history
+        let mut history = self.history.write().await;
+        history.push(score);
+
+        Ok(score)
+    }
+
+    /// Compare pre-mutation vs post-mutation results with statistical significance
+    pub fn compare(&self, pre: f32, post: f32, is_lower_better: bool) -> bool {
+        if is_lower_better {
+            // Check if post is significantly lower than pre
+            // Using a simple 1% threshold for "significance" in this implementation
+            post < pre * 0.99
+        } else {
+            // Check if post is significantly higher than pre
+            post > pre * 1.01
+        }
+    }
+
+    /// Check if the latest score represents a regression compared to history
+    pub async fn is_regression(&self, current_score: f32, is_lower_better: bool) -> bool {
+        let history = self.history.read().await;
+        if history.is_empty() {
+            return false;
+        }
+
+        // Calculate rolling average of last 5 runs
+        let window = history.iter().rev().take(5).cloned().collect::<Vec<f32>>();
+        let avg: f32 = window.iter().sum::<f32>() / window.len() as f32;
+
+        if is_lower_better {
+            current_score > avg * 1.05 // 5% regression threshold
+        } else {
+            current_score < avg * 0.95 // 5% regression threshold
         }
     }
 

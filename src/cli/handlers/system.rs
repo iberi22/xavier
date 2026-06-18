@@ -6,51 +6,9 @@ use crate::cli::state::CliState;
 use axum::{extract::State, http::StatusCode, response::Response};
 use xavier::server::alerts::SYSTEM_ALERTS;
 
-pub async fn health_handler(State(state): State<CliState>) -> Response {
-    let uptime_secs = crate::cli::server::START_TIME.elapsed().as_secs();
-
-    let lag_ms = xavier::tasks::session_sync_task::calculate_indexing_lag(
-        state.store.as_ref(),
-        &state.workspace_id,
-    )
-    .await;
-
-    let embedding_provider = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
-        .ok()
-        .map(|v| v.trim().to_ascii_lowercase())
-        .filter(|v| !v.is_empty())
-        .unwrap_or_else(|| {
-            if std::env::var("XAVIER_EMBEDDER")
-                .ok()
-                .map(|v| v.trim().to_ascii_lowercase())
-                .as_deref()
-                == Some("gllm")
-                || std::env::var("XAVIER_GLLM_MODEL").is_ok()
-            {
-                "gllm".to_string()
-            } else if std::env::var("OPENAI_API_KEY").is_ok()
-                || std::env::var("XAVIER_EMBEDDING_API_KEY").is_ok()
-            {
-                "openai".to_string()
-            } else {
-                "none".to_string()
-            }
-        });
-
-    let sqlite_db_size = calculate_data_dir_size().unwrap_or(0);
-
-    json_response(
-        StatusCode::OK,
-        serde_json::json!({
-            "status": "ok",
-            "service": "xavier",
-            "version": env!("CARGO_PKG_VERSION"),
-            "embedding_provider": embedding_provider,
-            "sqlite_db_size": sqlite_db_size,
-            "uptime": uptime_secs,
-            "lag_ms": lag_ms,
-        }),
-    )
+pub async fn health_handler() -> Response {
+    let status = xavier::observability::health::HEALTH.get_status().await;
+    json_response(StatusCode::OK, serde_json::to_value(status).unwrap_or_default())
 }
 
 pub async fn system_alerts_handler() -> Response {
@@ -144,8 +102,9 @@ pub async fn readiness_handler(State(state): State<CliState>) -> Response {
             "detail": error.to_string(),
         }),
     };
-    let code_graph = state
-        .code_db
+    let code_graph_state = state.code_graph.read().await;
+    let code_graph = code_graph_state
+        .db
         .stats()
         .map(|stats| {
             serde_json::json!({
@@ -155,7 +114,7 @@ pub async fn readiness_handler(State(state): State<CliState>) -> Response {
                 "total_imports": stats.total_imports,
             })
         })
-        .unwrap_or_else(|error| {
+        .unwrap_or_else(|error: code_graph::GraphError| {
             serde_json::json!({
                 "ready": false,
                 "error": error.to_string(),
