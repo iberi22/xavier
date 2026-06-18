@@ -1,7 +1,7 @@
 # Xavier Architecture
 
 > **GitCore Protocol v3.6.1** | Feature tracking: [.xavier/feature-maturity.json](.xavier/feature-maturity.json)
-> Sprint JULES-002: 2026-06-18 → 2026-06-25 | Target: 85%
+> Sprint JULES-002: 2026-06-18 → 2026-06-25 | Target: 88%
 
 ## Core Modules
 
@@ -26,31 +26,32 @@ src/
 xavier-core/       — Extracted core crate for Android/FFI (PR #207)
 ```
 
-## Feature Maturity (v0.11.0 target: 90%)
+## Feature Maturity
 
-| Feature | % | Status | Sprint |
-|---------|---|--------|--------|
-| Memoria RAG | **85** | ✅ Production | — |
-| CLI Tools | **80** | ✅ Production | — |
-| Self-monitoring | **80** | ✅ Production | — |
-| MCP Server | **80** | ✅ Production | Sprint 002 |
-| HORMER Nav | **80** | ✅ Production | ✅ Sprint 001 |
-| Memory Sync | **75** | ✅ Production | — |
-| TGD | **75** | ✅ Production | ✅ Sprint 001 |
-| Code Graph | **60** | ⚠️ Needs review | Sprint 002 |
-| Benchmarks | **60** | ⚠️ In progress | ✅ Sprint 001 |
-| Mesh Network | **45** | 🛠️ In progress | Sprint 002 |
-| **Overall** | **78** | | **Target: 85%** |
+| Feature | % | Status | Jules | Target |
+|---------|---|--------|-------|--------|
+| Memoria RAG | **85** | ✅ | — | — |
+| CLI Tools | **80** | ✅ | — | — |
+| Self-monitoring | **80** | ✅ | — | — |
+| MCP Server | **80** | ✅ | #211 | 100 |
+| HORMER Nav | **80** | ✅ | — | — |
+| Memory Sync | **75** | ✅ | — | — |
+| TGD | **75** | ✅ | — | — |
+| Code Graph | **60** | ⚠️ | #210 | 80 |
+| Benchmarks | **60** | ⚠️ | #212 | 60 |
+| Mesh Network | **45** | 🛠️ | #166, #209, #169 | 60 |
+| **Overall** | **78** | | **6 issues** | **88** |
 
-## Sprint JULES-002
+## Sprint JULES-002 — Todos los issues asignados a Jules
 
-| Issue | Feature | Target | Assigned |
-|-------|---------|--------|----------|
-| #166 | Governance DAO on-chain | 60% | Jules |
-| — | Code graph dump + MCP | 80% | Manual |
-| — | Docs RAG via MCP | 100% | Manual |
-| — | E2E multi-node | 50% | Manual |
-| #169 | Dual License | design | BELA |
+| # | Issue | Feature | Target |
+|---|-------|---------|--------|
+| #166 | Governance DAO on-chain | Mesh | 60% |
+| #209 | Data Commons economy | Mesh | 50% |
+| #210 | Code Graph dump + MCP | Code Graph | 80% |
+| #211 | Docs RAG usage guide | MCP Server | 100% |
+| #212 | E2E multi-node tests | Benchmarks | 60% |
+| #169 | Dual License design | Mesh | 50% |
 
 ## MCP Server (agent consumption)
 
@@ -59,5 +60,3 @@ Agent → MCP Client → HTTP+SSE → Xavier MCP Server → Memory/Retrieval/Sea
 ```
 
 Default: `localhost:7377` | Transports: HTTP+SSE, Stdio
-
-See [mcp.rs](src/cli/mcp.rs) for CLI integration.
