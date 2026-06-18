@@ -10,7 +10,7 @@
   "workspace": {
     "default_workspace_id": "default",
     "default_plan": "community",
-    "storage_limit_bytes": null,
+    "storage_limit_bytes": 1073741824,
     "request_limit": null,
     "request_unit_limit": null,
     "embedding_provider_mode": "bring_your_own",
@@ -19,12 +19,12 @@
   },
   "memory": {
     "backend": "vec",
-    "data_dir": "/home/jules/.local/share/xavier",
-    "embedding_dimensions": 768,
-    "workspace_dir": "/home/jules/.local/share/xavier/workspaces",
-    "file_path": "/home/jules/.local/share/xavier/workspaces/default/memory-store.json",
-    "sqlite_path": "/home/jules/.local/share/xavier/memory-store.sqlite3",
-    "vec_path": "/home/jules/.local/share/xavier/vec-store.sqlite3"
+    "data_dir": "data",
+    "embedding_dimensions": 384,
+    "workspace_dir": "data/workspaces",
+    "file_path": "data/workspaces/default/memory-store.json",
+    "sqlite_path": "data/memory-store.sqlite3",
+    "vec_path": "data/vec-store.sqlite3"
   },
   "memory_layers": {
     "working": {
@@ -44,7 +44,7 @@
     "api_flavor": "openai-compatible",
     "local_llm_url": "http://localhost:11434/v1",
     "local_llm_model": "qwen3-coder",
-    "embedding_url": "http://localhost:11434/v1",
+    "embedding_url": "https://opencode.ai/zen/go/v1/embeddings",
     "embedding_model": "embeddinggemma",
     "router_retrieved_model": "",
     "router_complex_model": "",
@@ -68,18 +68,18 @@
     "cache_warming_enabled": false,
     "cache_warming_threshold": null,
     "learned_policy": {
-      "working_weight": 0.3,
-      "episodic_weight": 0.3,
-      "semantic_weight": 0.4,
-      "semantic_similarity_weight": 0.49999994,
-      "confidence_weight": 0.09999999,
-      "edge_weight": 0.09999999,
-      "recency_weight": 0.09999999,
-      "cross_layer_weight": 0.049999993,
-      "cross_dir_weight": 0.09999999,
-      "peripheral_hub_weight": 0.049999993,
+      "working_weight": 0.3000005,
+      "episodic_weight": 0.3000005,
+      "semantic_weight": 0.399999,
+      "semantic_similarity_weight": 0.5,
+      "confidence_weight": 0.1,
+      "edge_weight": 0.1,
+      "recency_weight": 0.1,
+      "cross_layer_weight": 0.05,
+      "cross_dir_weight": 0.1,
+      "peripheral_hub_weight": 0.05,
       "learning_rate": 0.01,
-      "update_count": 1
+      "update_count": 50
     }
   },
   "sync": {
@@ -96,7 +96,7 @@
     "embedder": "",
     "gllm_model": "",
     "api_flavor": "openai-compatible",
-    "api_key": null,
+    "api_key": "sk-0VU4aRkJ0mEpBDk6H87fv23ilgvhadJwHuHM9EZB7fxwAWPm4nrpWwtg2X8uPKKI",
     "gllm_dimension": null,
     "cache_enabled": true,
     "cache_size": 10000,
@@ -107,13 +107,13 @@
     "allowed_domains": "",
     "token_secret": null,
     "encryption_at_rest_enabled": false,
-    "master_key_name": ""
+    "master_key_name": "xavier_master_key"
   },
   "telegram": {
     "enabled": false,
     "bot_token": null,
     "webhook_url": null,
-    "webhook_port": 0,
+    "webhook_port": 8009,
     "admin_ids": [],
     "notification_chat_id": null
   },
