@@ -547,6 +547,7 @@ mod tests {
             supporting_evidence: vec![],
             beliefs_updated: vec![],
             reasoning_chain: vec![],
+            meta_observations: crate::agents::system3::MetaObservations::default(),
         };
 
         assert_eq!(
@@ -576,6 +577,7 @@ mod tests {
             supporting_evidence: vec![],
             beliefs_updated: vec![],
             reasoning_chain: vec![],
+            meta_observations: crate::agents::system3::MetaObservations::default(),
         };
 
         assert_eq!(
