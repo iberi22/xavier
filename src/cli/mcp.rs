@@ -1,8 +1,10 @@
-//! MCP stdio server — delegates to the unified dispatch in server::mcp_server
+//! MCP transports — stdio and HTTP+SSE entry points.
 //!
-//! This is the entry point for `xavier mcp`.  It initializes the memory store,
-//! builds the shared application state, and hands control to the same
-//! `dispatch_mcp_value` that the HTTP /mcp endpoint uses.
+//! Both transports share a single [`build_mcp_state`] that initializes the
+//! memory store, builds the shared application state, and authenticates the
+//! MCP workspace. The actual JSON-RPC dispatch lives in
+//! [`xavier::server::mcp::session::dispatch_mcp_value`], so both transports
+//! expose identical protocol behavior with no duplicated logic.
 
 use anyhow::Result;
 use std::sync::Arc;
@@ -11,11 +13,21 @@ use xavier::app::security_service::SecurityService;
 use xavier::memory::qmd_memory::{MemoryDocument, QmdMemory};
 use xavier::memory::sqlite_vec_store::VecSqliteMemoryStore;
 use xavier::memory::store::{MemoryRecord, MemoryStore};
+use xavier::server::mcp::transport::start_mcp_http_server;
 use xavier::server::mcp_stdio::run_stdio_loop;
 use xavier::workspace::{WorkspaceConfig, WorkspaceRegistry, WorkspaceState};
 use xavier::AppState;
 
-pub async fn start_mcp_stdio() -> Result<()> {
+use crate::cli::config::resolve_http_bind_host;
+
+/// Default port for the MCP HTTP+SSE server.
+pub const DEFAULT_MCP_PORT: u16 = 8100;
+
+/// Build the shared MCP application state and authenticated workspace.
+///
+/// Used by both the stdio and HTTP+SSE transports so they share identical
+/// initialization and core wiring (memory store, security service, workspace).
+pub async fn build_mcp_state() -> Result<(AppState, xavier::workspace::WorkspaceContext)> {
     // Initialize memory store (same as HTTP server)
     let store: Arc<dyn MemoryStore> = Arc::new(VecSqliteMemoryStore::from_env().await?);
     let workspace_id =
@@ -62,7 +74,7 @@ pub async fn start_mcp_stdio() -> Result<()> {
     let workspace = WorkspaceState::new(
         WorkspaceConfig {
             id: workspace_id.clone(),
-            token: "mcp-stdio-token".to_string(),
+            token: "mcp-token".to_string(),
             plan: xavier::workspace::PlanTier::Personal,
             memory_backend: xavier::memory::store::MemoryBackend::Sqlite,
             storage_limit_bytes: None,
@@ -73,15 +85,33 @@ pub async fn start_mcp_stdio() -> Result<()> {
             sync_policy: xavier::workspace::SyncPolicy::CloudMirror,
         },
         xavier::agents::RuntimeConfig::default(),
-        std::env::temp_dir().join("xavier-mcp-stdio"),
+        std::env::temp_dir().join("xavier-mcp"),
     )
     .await?;
     workspace_registry.insert(workspace).await?;
     let workspace = workspace_registry
-        .authenticate("mcp-stdio-token")
+        .authenticate("mcp-token")
         .await
-        .ok_or_else(|| anyhow::anyhow!("failed to authenticate MCP stdio workspace"))?;
+        .ok_or_else(|| anyhow::anyhow!("failed to authenticate MCP workspace"))?;
 
-    // Delegate to the unified MCP stdio loop.
+    Ok((state, workspace))
+}
+
+/// `xavier mcp` — start the MCP stdio transport (for local/OpenClaw integration).
+pub async fn start_mcp_stdio() -> Result<()> {
+    let (state, workspace) = build_mcp_state().await?;
     run_stdio_loop(state, workspace).await
 }
+
+/// Start the MCP HTTP+SSE (Streamable HTTP) transport on `port`.
+///
+/// Binds to the resolved HTTP host (default `127.0.0.1`). Intended to be
+/// spawned alongside the main HTTP server or run standalone.
+pub async fn start_mcp_http(port: u16) -> Result<()> {
+    let (state, workspace) = build_mcp_state().await?;
+    let bind_host = resolve_http_bind_host();
+    let bind_addr = format!("{bind_host}:{port}");
+    tracing::info!("Starting Xavier MCP HTTP+SSE server on {}", bind_addr);
+    start_mcp_http_server(state, workspace, bind_addr).await
+}
+

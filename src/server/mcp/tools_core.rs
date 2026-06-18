@@ -50,13 +50,21 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
                 "required": ["project_path"]
             }),
         },
+        MCPTool {
+            name: "health_check".to_string(),
+            description: "Report Xavier system health (status, system resources, database, embedding, mesh, checks)".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {}
+            }),
+        },
     ]
 }
 
 pub fn is_core_tool(name: &str) -> bool {
     matches!(
         name,
-        "list_projects" | "get_project_context" | "sync_gitcore"
+        "list_projects" | "get_project_context" | "sync_gitcore" | "health_check"
     )
 }
 
@@ -207,6 +215,41 @@ pub async fn handle_core_tool(
                 ),
                 false
             )
+        }
+        "health_check" => {
+            let health = crate::health::collect_health_sync();
+            let payload = serde_json::json!({
+                "status": health.status,
+                "version": health.version,
+                "uptime_secs": health.uptime_secs,
+                "system": {
+                    "cpu_usage_pct": health.system.cpu_usage_pct,
+                    "memory_used_mb": health.system.memory_used_mb,
+                    "memory_total_mb": health.system.memory_total_mb,
+                    "disk_usage_pct": health.system.disk_usage_pct,
+                },
+                "database": {
+                    "size_mb": health.database.size_mb,
+                    "needs_vacuum": health.database.needs_vacuum,
+                    "fragmentation_pct": health.database.fragmentation_pct,
+                },
+                "embedding": {
+                    "provider": health.embedding.provider,
+                    "connected": health.embedding.connected,
+                    "latency_ms": health.embedding.latency_ms,
+                },
+                "mesh": {
+                    "connectivity": health.mesh.connectivity,
+                    "peers_count": health.mesh.peers_count,
+                    "connected_peers": health.mesh.connected_peers,
+                },
+                "checks": health.checks.iter().map(|c| serde_json::json!({
+                    "name": c.name,
+                    "status": format!("{:?}", c.status),
+                    "detail": c.detail,
+                })).collect::<Vec<_>>(),
+            });
+            super::server::mcp_text_result(payload.to_string(), false)
         }
         _ => Err(anyhow::anyhow!("Unknown core tool: {}", name)),
     }

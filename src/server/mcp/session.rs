@@ -8,7 +8,7 @@ use crate::AppState;
 use axum::{
     body::Bytes,
     extract::State,
-    http::{header::HeaderName, HeaderMap, HeaderValue, StatusCode},
+    http::{header::{self, HeaderName}, HeaderMap, HeaderValue, StatusCode},
     response::{IntoResponse, Response},
     Extension, Json,
 };
@@ -50,11 +50,61 @@ pub async fn mcp_post_handler(
     }
 }
 
-pub async fn mcp_get_handler() -> impl IntoResponse {
-    StatusCode::METHOD_NOT_ALLOWED
+/// MCP Streamable HTTP GET handler — opens the server→client SSE stream.
+///
+/// The client opens a long-lived `text/event-stream` connection to receive
+/// server-pushed notifications. Xavier currently has none to push, so the
+/// stream emits an initial `endpoint` event (announcing the JSON-RPC POST
+/// endpoint per the Streamable HTTP spec) and then keeps the connection alive
+/// with periodic comments until the client disconnects.
+pub async fn mcp_get_handler(headers: HeaderMap) -> Response {
+    use axum::response::sse::{Event, KeepAlive, Sse};
+    use futures_util::stream;
+    use futures_util::StreamExt;
+    use std::convert::Infallible;
+    use std::time::Duration;
+
+    let accepts_sse = headers
+        .get(header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|accept| accept.contains("text/event-stream"));
+
+    if !accepts_sse {
+        return (
+            StatusCode::METHOD_NOT_ALLOWED,
+            "MCP GET requires Accept: text/event-stream",
+        )
+            .into_response();
+    }
+
+    let session_id = format!("xavier-{}", Ulid::new());
+    let header_value = HeaderValue::from_str(&session_id)
+        .unwrap_or_else(|_| HeaderValue::from_static("xavier-mcp-session"));
+
+    // Initial `endpoint` event, then indefinite keepalives (one every 30s).
+    // Built with futures-util `unfold` + `tokio::time::sleep` so we don't pull
+    // in tokio-stream's `time` feature.
+    let initial = stream::once(async {
+        Ok::<Event, Infallible>(Event::default().event("endpoint").data("/mcp"))
+    });
+    let keepalives = stream::unfold((), |()| async move {
+        tokio::time::sleep(Duration::from_secs(30)).await;
+        Some((
+            Ok::<Event, Infallible>(Event::default().comment("keepalive")),
+            (),
+        ))
+    });
+
+    let sse = Sse::new(initial.chain(keepalives))
+        .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)).text("keepalive"));
+
+    with_session_header(sse.into_response(), Some(header_value))
 }
-pub async fn mcp_delete_handler() -> impl IntoResponse {
-    StatusCode::METHOD_NOT_ALLOWED
+
+/// MCP Streamable HTTP DELETE handler — acknowledge session termination.
+pub async fn mcp_delete_handler(headers: HeaderMap) -> Response {
+    let session_header = headers.get(MCP_SESSION_HEADER).cloned();
+    with_session_header(StatusCode::OK.into_response(), session_header)
 }
 
 fn resolve_mcp_session_header(
@@ -183,7 +233,14 @@ async fn handle_mcp_request(
             jsonrpc: "2.0".to_string(),
             id: request.id.unwrap_or(Value::Null),
             result: Some(
-                serde_json::json!({ "protocolVersion": "2025-03-26", "capabilities": { "tools": {} }, "serverInfo": { "name": "xavier-memory", "version": env!("CARGO_PKG_VERSION") } }),
+                serde_json::json!({
+                    "protocolVersion": "2025-03-26",
+                    "capabilities": {
+                        "tools": { "listChanged": false },
+                        "resources": { "listChanged": false }
+                    },
+                    "serverInfo": { "name": "xavier-memory", "version": env!("CARGO_PKG_VERSION") }
+                }),
             ),
             error: None,
         }),
@@ -194,6 +251,41 @@ async fn handle_mcp_request(
             result: Some(serde_json::json!({ "resources": super::server::get_xavier_resources() })),
             error: None,
         }),
+        "resources/read" => {
+            let params = request.params.clone().unwrap_or_else(|| serde_json::json!({}));
+            let uri = params.get("uri").and_then(|v| v.as_str()).unwrap_or("");
+            match read_xavier_resource(&workspace, uri).await {
+                Ok(Some((mime_type, text))) => Some(MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: request_id.clone().unwrap_or(Value::Null),
+                    result: Some(serde_json::json!({
+                        "contents": [{ "uri": uri, "mimeType": mime_type, "text": text }]
+                    })),
+                    error: None,
+                }),
+                Ok(None) => error_response(
+                    request_id.clone(),
+                    -32602,
+                    format!("Unknown resource: {uri}"),
+                ),
+                Err(error) => error_response(
+                    request_id.clone(),
+                    XAVIER_ERROR_INTERNAL,
+                    error,
+                ),
+            }
+        }
+        "health/check" => {
+            let health = crate::health::collect_health_sync();
+            Some(MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: request_id.clone().unwrap_or(Value::Null),
+                result: Some(
+                    serde_json::to_value(&health).unwrap_or_else(|_| serde_json::json!({})),
+                ),
+                error: None,
+            })
+        }
         "tools/list" => Some(MCPResponse {
             jsonrpc: "2.0".to_string(),
             id: request.id.unwrap_or(Value::Null),
@@ -272,5 +364,53 @@ fn classify_mcp_error(err: anyhow::Error) -> MCPError {
         code,
         message,
         data: None,
+    }
+}
+
+/// Read a named Xavier MCP resource by URI.
+///
+/// Returns `Ok(Some((mime_type, text)))` when the URI is known, `Ok(None)` when
+/// it is not recognized (so the caller can emit a `-32602` params error), and
+/// `Err` on a genuine failure reading the resource.
+async fn read_xavier_resource(
+    workspace: &crate::workspace::WorkspaceContext,
+    uri: &str,
+) -> Result<Option<(String, String)>, String> {
+    match uri {
+        "xavier://memory" => {
+            let records = workspace
+                .workspace
+                .list_memory_records()
+                .await
+                .map_err(|e| e.to_string())?;
+            let text = serde_json::to_string_pretty(&records).map_err(|e| e.to_string())?;
+            Ok(Some(("application/json".to_string(), text)))
+        }
+        "xavier://projects" => {
+            let records = workspace
+                .workspace
+                .list_memory_records()
+                .await
+                .map_err(|e| e.to_string())?;
+            let mut projects = std::collections::BTreeMap::<String, usize>::new();
+            for record in records {
+                if let Some(project) = record
+                    .metadata
+                    .get("namespace")
+                    .and_then(|n| n.get("project"))
+                    .and_then(|p| p.as_str())
+                {
+                    *projects.entry(project.to_string()).or_insert(0) += 1;
+                }
+            }
+            let text = serde_json::to_string_pretty(&projects).map_err(|e| e.to_string())?;
+            Ok(Some(("application/json".to_string(), text)))
+        }
+        "xavier://health" => {
+            let health = crate::health::collect_health_sync();
+            let text = serde_json::to_string_pretty(&health).map_err(|e| e.to_string())?;
+            Ok(Some(("application/json".to_string(), text)))
+        }
+        _ => Ok(None),
     }
 }

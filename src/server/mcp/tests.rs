@@ -160,7 +160,7 @@ async fn list_tools_returns_all_tools() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = get_json_body(response).await;
     let tools = body["result"]["tools"].as_array().expect("tools should be an array");
-    assert!(tools.len() >= 12);
+    assert!(tools.len() >= 16);
 }
 
 #[tokio::test]
@@ -504,4 +504,234 @@ async fn sync_gitcore_integration_mock() {
     .await;
     let body = get_json_body(response).await;
     assert!(body["result"]["content"][0]["text"].as_str().unwrap().contains("skipped=3"));
+}
+
+#[tokio::test]
+async fn list_tools_includes_new_memory_and_health_tools() {
+    let (state, workspace) = test_state().await;
+    let response = post_json(
+        test_router(state, workspace),
+        json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let names: Vec<&str> = body["result"]["tools"]
+        .as_array()
+        .expect("tools should be an array")
+        .iter()
+        .map(|t| t["name"].as_str().unwrap())
+        .collect();
+    for required in ["memory_save", "memory_search", "memory_context", "health_check"] {
+        assert!(
+            names.contains(&required),
+            "tools/list missing required tool: {required}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn memory_save_and_search_roundtrip() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // memory_save with a namespace (project string)
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "memory_save", "arguments": {
+                "text": "the cortical stack persists agent state across runs",
+                "namespace": "cortex"
+            }}
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let text = body["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("Memory saved. id="), "got: {text}");
+
+    // memory_search scoped to the same namespace
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": { "name": "memory_search", "arguments": {
+                "query": "cortical", "namespace": "cortex"
+            }}
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let search_text = body["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(search_text.contains("cortical stack persists"));
+}
+
+#[tokio::test]
+async fn memory_context_returns_context_block() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "memory_save", "arguments": {
+                "text": "Rust ownership prevents data races at compile time"
+            }}
+        }),
+    )
+    .await;
+
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": { "name": "memory_context", "arguments": { "query": "rust ownership" }}
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let text = body["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(
+        text.contains("ownership") || text.contains("No relevant context"),
+        "got: {text}"
+    );
+}
+
+#[tokio::test]
+async fn resources_read_memory_and_health() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // Seed a memory so xavier://memory is non-empty.
+    post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "memory_save", "arguments": { "text": "hello resource reader" }}
+        }),
+    )
+    .await;
+
+    // xavier://memory
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 2, "method": "resources/read",
+            "params": { "uri": "xavier://memory" }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let text = body["result"]["contents"][0]["text"].as_str().unwrap();
+    assert!(text.contains("hello resource reader"));
+    assert_eq!(body["result"]["contents"][0]["mimeType"], "application/json");
+
+    // xavier://health
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 3, "method": "resources/read",
+            "params": { "uri": "xavier://health" }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let text = body["result"]["contents"][0]["text"].as_str().unwrap();
+    assert!(text.contains("status"));
+
+    // unknown uri -> -32602
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 4, "method": "resources/read",
+            "params": { "uri": "xavier://bogus" }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    assert_eq!(body["error"]["code"], -32602);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn health_check_method_and_tool() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // JSON-RPC method health/check returns structured health.
+    let response = post_json(
+        router.clone(),
+        json!({ "jsonrpc": "2.0", "id": 1, "method": "health/check" }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    assert!(body["result"]["status"].is_string());
+    assert!(body["result"]["system"].is_object());
+    assert!(body["result"]["checks"].is_array());
+
+    // tool health_check returns a text content blob with health JSON.
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": { "name": "health_check", "arguments": {} }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let text = body["result"]["content"][0]["text"].as_str().unwrap();
+    assert!(text.contains("status"));
+    assert!(text.contains("uptime_secs"));
+}
+
+#[tokio::test]
+async fn mcp_get_opens_sse_stream() {
+    let (state, workspace) = test_state().await;
+    let app = test_router(state, workspace);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/mcp")
+                .header("accept", "text/event-stream")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("GET /mcp should respond");
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or(""),
+        "text/event-stream"
+    );
+    // A session id header should be assigned.
+    assert!(response.headers().get("mcp-session-id").is_some());
+    // NOTE: the SSE body is a long-lived keepalive stream, so we deliberately
+    // do NOT collect it here (that would hang waiting for an EOF that never
+    // arrives). Dropping `response` cancels the stream.
+}
+
+#[tokio::test]
+async fn mcp_get_without_accept_returns_405() {
+    let (state, workspace) = test_state().await;
+    let app = test_router(state, workspace);
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::GET)
+                .uri("/mcp")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("GET /mcp should respond");
+
+    assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
 }

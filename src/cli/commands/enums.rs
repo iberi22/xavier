@@ -23,7 +23,13 @@ pub static CLI_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
 #[derive(Subcommand, Debug, Clone)]
 pub enum Command {
     /// Start Xavier HTTP server
-    Http { port: Option<u16> },
+    Http {
+        /// Port for the main HTTP API (default: settings/XAVIER_PORT, fallback 8006)
+        port: Option<u16>,
+        /// Port for the MCP HTTP+SSE server (default: 8100; set to 0 to disable)
+        #[arg(long)]
+        mcp_port: Option<u16>,
+    },
     /// Start Xavier MCP-stdio server
     Mcp,
     /// Search memories
