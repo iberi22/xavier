@@ -154,7 +154,7 @@ impl System3Actor {
         &self,
         query: &str,
         retrieval_result: &RetrievalResult,
-        reasoning_result: &ReasoningResult,
+        _reasoning_result: &ReasoningResult,
         category: Option<&str>,
     ) -> Result<ActionResult> {
         let query_fingerprint = query_fingerprint(query);
