@@ -372,6 +372,17 @@ async fn collect_health_impl(settings: &XavierSettings, _db: Option<&rusqlite::C
     response
 }
 
+/// Run PRAGMA integrity_check on a SQLite connection
+pub fn run_integrity_check(conn: &rusqlite::Connection) -> Result<String, String> {
+    let mut stmt = conn
+        .prepare("PRAGMA integrity_check")
+        .map_err(|e| format!("integrity_check prepare: {}", e))?;
+    let result: String = stmt
+        .query_row([], |row| row.get(0))
+        .map_err(|e| format!("integrity_check failed: {}", e))?;
+    Ok(result)
+}
+
 /// Auto-repair: run VACUUM if fragmentation > 30%
 pub async fn auto_vacuum_if_needed(
     conn: &rusqlite::Connection,
