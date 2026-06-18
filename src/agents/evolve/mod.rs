@@ -44,9 +44,11 @@ pub use results::ExperimentResult;
 pub struct EvolveModule {
     config: EvolveConfig,
     state: Arc<RwLock<EvolveState>>,
+    #[allow(dead_code)]
     researcher: researcher::Researcher,
     evaluator: evaluator::Evaluator,
     integrator: integrator::Integrator,
+    #[allow(dead_code)]
     gap_analyzer: gap_analyzer::GapAnalyzer,
     mutator: mutator::Mutator,
     reflector: reflector::Reflector,
@@ -266,6 +268,7 @@ impl EvolveModule {
     }
 
     /// Check if metric is an improvement (lower is better for val_bpb)
+    #[allow(dead_code)]
     async fn is_improvement(&self, metric: f32) -> bool {
         let state = self.state.read().await;
         match state.best_metric {
@@ -282,6 +285,7 @@ impl EvolveModule {
     }
 
     /// Check if improvement is significant enough for a PR (e.g. > 2%)
+    #[allow(dead_code)]
     async fn is_significant_improvement(&self, metric: f32) -> bool {
         let state = self.state.read().await;
         match state.best_metric {
@@ -293,6 +297,7 @@ impl EvolveModule {
         }
     }
 
+    #[allow(dead_code)]
     async fn create_improvement_pr(&self, hypothesis: &Hypothesis, _metric: f32) {
         info!("Significant improvement detected, creating PR...");
 
