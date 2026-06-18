@@ -4,6 +4,7 @@
 //! providing the public API surface for module consumers.
 pub mod belief_evaluator;
 pub mod curation;
+pub mod evolve;
 pub mod extraction;
 pub mod hormer;
 pub mod provider;
@@ -17,8 +18,6 @@ pub mod anomaly_scanner;
 pub mod cve_learner;
 pub mod system2;
 pub mod system3;
-pub mod tgd;
-pub mod tgd_cache;
 pub mod ui_render;
 pub mod unregister_agent_handler;
 

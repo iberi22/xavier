@@ -8,9 +8,8 @@
 //!
 //! ```text
 //! TelemetryCollector
-//!   └─ HashMap<metric_name, Vec<TelemetrySample>>
-//!        └─ TelemetrySample { timestamp, metric_name, value, labels }
-//! ```
+//!   - HashMap<metric_name, Vec<TelemetrySample>>
+//!        - TelemetrySample { timestamp, metric_name, value, labels }
 
 use crate::mesh::NodeId;
 use chrono::Utc;

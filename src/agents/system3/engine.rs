@@ -4,9 +4,9 @@
 //! responsibilities within the Xavier cognitive memory system.
 use super::client::LlmClient;
 use super::helpers::*;
-use super::types::{ActionResult, ActorConfig};
+use super::types::{ActionResult, ActorConfig, MetaObservations};
 use crate::agents::system1::{RetrievalResult, RetrievedDocument};
-use crate::agents::system2::ReasoningResult;
+use crate::agents::system2::{ReasoningResult, ReasoningStep};
 use anyhow::Result;
 use tracing::{info, warn};
 
@@ -177,6 +177,7 @@ impl System3Actor {
                 semantic_cache_hit: false,
                 llm_used: false,
                 model: self.llm_client.model_label(),
+                meta_observations: None,
             });
         }
 
@@ -197,6 +198,7 @@ impl System3Actor {
                             semantic_cache_hit: true,
                             llm_used: false,
                             model: self.llm_client.model_label(),
+                            meta_observations: None,
                         });
                     }
                     Ok(None) => {
@@ -267,6 +269,7 @@ impl System3Actor {
             semantic_cache_hit: false,
             llm_used,
             model: self.llm_client.model_label(),
+            meta_observations: None,
         })
     }
 
@@ -276,5 +279,74 @@ impl System3Actor {
         category: Option<&str>,
     ) -> String {
         Self::heuristic_answer(query, docs, category)
+    }
+}
+
+pub fn observe(chain: &[ReasoningStep]) -> MetaObservations {
+    if chain.is_empty() {
+        return MetaObservations::default();
+    }
+
+    let mut contradictions = 0;
+    let mut bias_indicators = 0;
+    let mut certainty_scores = Vec::new();
+
+    let contradiction_keywords = ["however", "but", "contradict", "disagree", "alternatively"];
+    let bias_keywords = ["always", "never", "only", "must", "clearly", "obviously", "undoubtedly"];
+    let high_certainty = ["certain", "sure", "confirmed", "proven", "absolute"];
+    let low_certainty = ["maybe", "perhaps", "likely", "unlikely", "possible", "suggests"];
+
+    for step in chain {
+        let text = format!("{} {}", step.thought, step.conclusion).to_lowercase();
+
+        // Consistency
+        if contradiction_keywords.iter().any(|&kw| text.contains(kw)) {
+            contradictions += 1;
+        }
+
+        // Bias
+        bias_indicators += bias_keywords.iter().filter(|&&kw| text.contains(kw)).count();
+
+        // Confidence estimation per step
+        let high = high_certainty.iter().filter(|&&kw| text.contains(kw)).count();
+        let low = low_certainty.iter().filter(|&&kw| text.contains(kw)).count();
+        let score = 0.5 + (high as f64 * 0.1) - (low as f64 * 0.1);
+        certainty_scores.push(score.clamp(0.0, 1.0));
+    }
+
+    let reasoning_consistency = 1.0 - (contradictions as f64 / chain.len() as f64);
+    let bias_score = (bias_indicators as f64 / (chain.len() * 2) as f64).min(1.0);
+
+    // Confidence drift: difference between first and last steps
+    let confidence_drift = if certainty_scores.len() >= 2 {
+        certainty_scores.last().unwrap() - certainty_scores.first().unwrap()
+    } else {
+        0.0
+    };
+
+    // Dominant Framework
+    let full_text = chain
+        .iter()
+        .map(|s| format!("{} {}", s.thought, s.conclusion))
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
+
+    let dominant_framework = if full_text.contains("deduce") || full_text.contains("therefore") {
+        "deductive"
+    } else if full_text.contains("pattern") || full_text.contains("observe") {
+        "inductive"
+    } else if full_text.contains("best explanation") || full_text.contains("hypothesis") {
+        "abductive"
+    } else {
+        "heuristic"
+    }
+    .to_string();
+
+    MetaObservations {
+        reasoning_consistency,
+        bias_score,
+        confidence_drift,
+        dominant_framework,
     }
 }
