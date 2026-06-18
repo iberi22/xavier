@@ -85,6 +85,16 @@ fn reasoning_result() -> ReasoningResult {
         supporting_evidence: vec![],
         beliefs_updated: vec![],
         reasoning_chain: vec![],
+        step_count: 0,
+        total_tokens_used: 0,
+        reasoning_elapsed_ms: 0,
+        calibration: crate::agents::system2::ConfidenceCalibration {
+            raw_confidence: 1.0,
+            entropy: 0.0,
+            calibrated_confidence: 1.0,
+            has_contradiction: false,
+            contradiction_count: 0,
+        },
     }
 }
 
