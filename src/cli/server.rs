@@ -63,6 +63,12 @@ pub use crate::cli::websocket::*;
 pub static START_TIME: once_cell::sync::Lazy<Instant> = once_cell::sync::Lazy::new(Instant::now);
 
 pub async fn start_http_server(port: u16) -> Result<()> {
+    // Initial health check run to populate the static HEALTH instance
+    tokio::spawn(async {
+        let _ = xavier::observability::health::HEALTH.run_checks().await;
+    });
+    Arc::clone(&*xavier::observability::health::HEALTH).spawn();
+
     let settings = XavierSettings::current();
     settings.apply_to_env();
     std::env::set_var("XAVIER_PORT", port.to_string());
@@ -151,6 +157,12 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     init_time_store(time_adapter);
     init_health_port(health_adapter.clone());
 
+    // Update the global health monitor with the embedder
+    xavier::observability::health::HEALTH.set_embedder(embedder.clone()).await;
+    if let Ok(peers) = xavier::mesh::PeerRegistry::load() {
+        xavier::observability::health::HEALTH.set_peer_registry(Arc::new(peers)).await;
+    }
+
     let code_db_path = code_graph_db_path();
     if let Some(parent) = code_db_path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -158,6 +170,11 @@ pub async fn start_http_server(port: u16) -> Result<()> {
     let code_db = Arc::new(::code_graph::db::CodeGraphDB::new(&code_db_path)?);
     let code_indexer = Arc::new(::code_graph::indexer::Indexer::new(Arc::clone(&code_db)));
     let code_query = Arc::new(::code_graph::query::QueryEngine::new(Arc::clone(&code_db)));
+    let code_graph_state = Arc::new(tokio::sync::RwLock::new(crate::cli::state::CodeGraphState {
+        db: code_db.clone(),
+        indexer: code_indexer.clone(),
+        query: code_query.clone(),
+    }));
 
     let workspace_dir = PathBuf::from(XavierSettings::current().memory.workspace_dir);
     info!(
@@ -229,9 +246,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         store,
         workspace_id,
         workspace_dir,
-        code_db: code_db.clone(),
-        code_indexer: code_indexer.clone(),
-        code_query,
+        code_graph: code_graph_state,
         security: security_service.clone() as Arc<dyn InputSecurityPort>,
         security_scan: security_service.clone() as Arc<dyn SecurityScanPort>,
         _time_store: Some(time_store),
@@ -288,6 +303,8 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/code/find", post(code_find_handler))
         .route("/code/context", post(code_context_handler))
         .route("/code/stats", get(code_stats_handler))
+        .route("/code/dump", post(code_dump_handler))
+        .route("/code/load", post(code_load_handler))
         .route("/code/dependencies", post(code_dependencies_handler))
         .route(
             "/code/reverse-dependencies",

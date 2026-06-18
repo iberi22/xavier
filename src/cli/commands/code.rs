@@ -104,6 +104,22 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
                 .send()
                 .await?
         }
+        CodeCommand::Dump { path } => {
+            client
+                .post(format!("{}/code/dump", base_url))
+                .header("X-Xavier-Token", &token)
+                .json(&serde_json::json!({ "path": path }))
+                .send()
+                .await?
+        }
+        CodeCommand::Load { path } => {
+            client
+                .post(format!("{}/code/load", base_url))
+                .header("X-Xavier-Token", &token)
+                .json(&serde_json::json!({ "path": path }))
+                .send()
+                .await?
+        }
     };
 
     let status = response.status();

@@ -17,6 +17,16 @@ pub enum Language {
     Unknown,
 }
 
+impl std::fmt::Display for IndexStats {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} files, {} symbols, {} imports across {:?}",
+            self.total_files, self.total_symbols, self.total_imports, self.languages
+        )
+    }
+}
+
 impl Language {
     pub fn from_extension(ext: &str) -> Self {
         match ext.to_lowercase().as_str() {

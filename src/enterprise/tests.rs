@@ -7,7 +7,7 @@ use crate::enterprise::{
     audit::{AuditAction, AuditEntry, AuditLog},
     keys::{ApiKeyStore, ApiKeyType},
     rate_limit::{RateLimitConfig, RateLimitKey, RateLimiter},
-    tenancy::{Plan, TenantStore},
+    tenant::{Plan, TenantStore},
 };
 use uuid::Uuid;
 

@@ -1,0 +1,40 @@
+# Xavier Mesh License v1.0
+
+## Preamble
+Xavier is an open-source cognitive memory system licensed under MIT for standalone use.
+This Mesh License applies when you activate Xavier's peer-to-peer, governance, or Data Commons features.
+
+## Acceptance
+By enabling any feature behind the `mesh` feature gate (`--features mesh` or `mesh.enabled = true` in config),
+you agree to the following terms:
+
+## Terms
+
+### 1. Network Participation
+- Your node becomes part of the Xavier Mesh network
+- Node identity is derived from an Ed25519 keypair
+- You may opt in or out of Data Commons telemetry at any time
+- Data Commons data is anonymized by default
+
+### 2. Governance Rights
+- Active nodes earn voting rights proportional to XP + reputation + activity
+- Voting is anonymous, non-delegable, and requires activity in the last 7 days
+- The Xavier Core Council retains veto power over security-critical proposals (66% vote)
+
+### 3. XP Tokenomics
+- XP tokens are earned through contribution to the mesh (telemetry, validation, sync)
+- XP can be staked, spent, or transferred
+- XP has no monetary value and is non-redeemable for fiat currency
+
+### 4. Data Sovereignty
+- Your data never leaves your node encrypted at rest
+- Data Commons sharing is opt-in with granular consent levels (None/Metadata/Anonymized/Full)
+- You may revoke consent at any time
+
+### 5. Termination
+- You may exit the mesh at any time by disabling mesh features
+- XP balance is preserved locally but becomes non-transferable
+- Governance rights cease upon exit
+
+### 6. No Warranty
+This software is provided "as is", without warranty of any kind, express or implied.
