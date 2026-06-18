@@ -1,0 +1,142 @@
+[
+  {
+    "id": "semantic_001",
+    "query": "¿Qué decisión tomamos sobre la base de datos principal?",
+    "category": "semantic",
+    "expected_facts": ["SQLite", "FTS5", "persistence"],
+    "context": "database architecture"
+  },
+  {
+    "id": "semantic_002",
+    "query": "Who is Leonardo Duque and where does he work?",
+    "category": "semantic",
+    "expected_facts": ["Leonardo Duque", "partner", "Rodacenter Chile"],
+    "context": "client info"
+  },
+  {
+    "id": "fts_001",
+    "query": "Xavier port 8006",
+    "category": "fts",
+    "expected_facts": ["port 8006", "xavier"],
+    "context": "ports configuration"
+  },
+  {
+    "id": "fts_002",
+    "query": "MiniMax-M2.7",
+    "category": "fts",
+    "expected_facts": ["MiniMax", "M2.7", "default model"],
+    "context": "model preference"
+  },
+  {
+    "id": "episodic_001",
+    "query": "What did we discuss in the last debugging session about health endpoint?",
+    "category": "episodic",
+    "expected_facts": ["health endpoint", "multi-threaded runtime", "block_in_place"],
+    "context": "debugging session"
+  },
+  {
+    "id": "decision_001",
+    "query": "Why does Xavier Docker use multi-stage build?",
+    "category": "decision",
+    "expected_facts": ["minimal image", "multi-stage build"],
+    "context": "docker architecture"
+  },
+  {
+    "id": "semantic_003",
+    "query": "How is the Xavier Sovereign Mesh boundary defined?",
+    "category": "semantic",
+    "expected_facts": ["ADR 006", "internal replication network", "external network", "governance"],
+    "context": "mesh architecture"
+  },
+  {
+    "id": "semantic_004",
+    "query": "What cryptographic algorithms are used in XavierWallet?",
+    "category": "semantic",
+    "expected_facts": ["ML-KEM-1024", "ML-DSA-87", "AES-256-GCM"],
+    "context": "security"
+  },
+  {
+    "id": "fts_003",
+    "query": "CapabilityToken validation",
+    "category": "fts",
+    "expected_facts": ["src/mesh/acl.rs", "validate_capability"],
+    "context": "access control"
+  },
+  {
+    "id": "episodic_002",
+    "query": "What are the latest changes in the HORMER agent?",
+    "category": "episodic",
+    "expected_facts": ["GRPO", "retrieval layer weights", "RewardModel"],
+    "context": "hormer updates"
+  },
+  {
+    "id": "decision_002",
+    "query": "What is the policy for adding regression tests?",
+    "category": "decision",
+    "expected_facts": ["focused PR", "current tests do not cover"],
+    "context": "testing policy"
+  },
+  {
+    "id": "semantic_005",
+    "query": "How does the System 3 engine analyze reasoning?",
+    "category": "semantic",
+    "expected_facts": ["meta-cognitive analysis", "observe", "confidence drift"],
+    "context": "system 3"
+  },
+  {
+    "id": "fts_004",
+    "query": "Vite port 4174",
+    "category": "fts",
+    "expected_facts": ["panel-ui", "Playwright"],
+    "context": "frontend ports"
+  },
+  {
+    "id": "episodic_003",
+    "query": "What did we learn from the swal-bench run?",
+    "category": "episodic",
+    "expected_facts": ["low recall", "infrastructure unavailable"],
+    "context": "benchmarking"
+  },
+  {
+    "id": "decision_003",
+    "query": "How should we handle backend CI regression for resource-intensive features?",
+    "category": "decision",
+    "expected_facts": ["--no-default-features", "--features ci-safe"],
+    "context": "CI configuration"
+  },
+  {
+    "id": "semantic_006",
+    "query": "What are the four category islands for notifications?",
+    "category": "semantic",
+    "expected_facts": ["System", "Memory", "Agents", "Errors"],
+    "context": "notification system"
+  },
+  {
+    "id": "fts_005",
+    "query": "moka crate capacity",
+    "category": "fts",
+    "expected_facts": ["1000 capacity", "1h TTL", "HybridSearcher"],
+    "context": "caching"
+  },
+  {
+    "id": "episodic_004",
+    "query": "What is the status of the Evolve Module?",
+    "category": "episodic",
+    "expected_facts": ["AutoImprovementEngine", "mutate", "evaluate"],
+    "context": "agent evolution"
+  },
+  {
+    "id": "decision_004",
+    "query": "When is a peer flagged as unhealthy in Xavier consensus?",
+    "category": "decision",
+    "expected_facts": ["agreement ratio below 50%"],
+    "context": "consensus health"
+  },
+  {
+    "id": "semantic_007",
+    "query": "What tools does the Telegram bot provide?",
+    "category": "semantic",
+    "expected_facts": ["MemoryQueryPort", "AgentLifecyclePort", "SecurityScanPort"],
+    "context": "telegram integration"
+  }
+]
