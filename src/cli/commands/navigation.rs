@@ -84,10 +84,42 @@ pub async fn handle_visualize(format: String) -> Result<()> {
                 body["weights"]["semantic"].as_f64().unwrap_or(0.0)
             );
 
+            println!("\n[Traversal Weights]");
+            let tw = &body["traversal_weights"];
+            println!("  Semantic Sim: {:.4}", tw["semantic_similarity"].as_f64().unwrap_or(0.0));
+            println!("  Confidence:   {:.4}", tw["confidence"].as_f64().unwrap_or(0.0));
+            println!("  Edge Weight:  {:.4}", tw["edge_weight"].as_f64().unwrap_or(0.0));
+            println!("  Recency:      {:.4}", tw["recency"].as_f64().unwrap_or(0.0));
+            println!("  Cross-Layer:  {:.4}", tw["cross_layer"].as_f64().unwrap_or(0.0));
+            println!("  Cross-Dir:    {:.4}", tw["cross_dir"].as_f64().unwrap_or(0.0));
+            println!("  Periph-Hub:   {:.4}", tw["peripheral_hub"].as_f64().unwrap_or(0.0));
+
+            let hotspots_val = body["hotspots"].as_array();
+            if let Some(hs) = hotspots_val {
+                if !hs.is_empty() {
+                    println!("\n[Top Hotspots]");
+                    for (i, entry) in hs.iter().take(3).enumerate() {
+                        let node = entry[0].as_str().unwrap_or("(unknown)");
+                        let count = entry[1]["count"].as_u64().unwrap_or(0);
+                        println!("  {}. {} ({} visits)", i + 1, node, count);
+                    }
+                }
+            }
+
             println!("\n[Directory Structure]");
             let docs: Vec<xavier::memory::qmd::MemoryDocument> =
                 serde_json::from_value(body["documents"].clone())?;
-            render_tree(&docs);
+
+            use std::collections::HashMap;
+            let mut hotspot_map = HashMap::new();
+            if let Some(hs) = hotspots_val {
+                for entry in hs {
+                    if let (Some(node), Some(count)) = (entry[0].as_str(), entry[1]["count"].as_u64()) {
+                        hotspot_map.insert(node.to_string(), count);
+                    }
+                }
+            }
+            render_tree(&docs, &hotspot_map);
 
             println!("\n[Belief Graph Edges]");
             let edges: Vec<xavier::domain::memory::belief::BeliefEdge> =
@@ -109,36 +141,45 @@ pub async fn handle_visualize(format: String) -> Result<()> {
     Ok(())
 }
 
-fn render_tree(docs: &[xavier::memory::qmd::MemoryDocument]) {
+fn render_tree(docs: &[xavier::memory::qmd::MemoryDocument], hotspots: &std::collections::HashMap<String, u64>) {
     use std::collections::BTreeMap;
 
     #[derive(Default)]
     struct Node {
         children: BTreeMap<String, Node>,
         is_doc: bool,
+        full_path: String,
     }
 
     let mut root = Node::default();
     for doc in docs {
         let mut curr = &mut root;
         let parts: Vec<&str> = doc.path.split('/').filter(|s| !s.is_empty()).collect();
+        let mut current_full_path = String::new();
         for (i, part) in parts.iter().enumerate() {
+            if !current_full_path.is_empty() {
+                current_full_path.push('/');
+            }
+            current_full_path.push_str(part);
             curr = curr.children.entry(part.to_string()).or_default();
+            curr.full_path = current_full_path.clone();
             if i == parts.len() - 1 {
                 curr.is_doc = true;
             }
         }
     }
 
-    fn print_node(name: &str, node: &Node, indent: &str, is_last: bool) {
+    fn print_node(name: &str, node: &Node, indent: &str, is_last: bool, hotspots: &std::collections::HashMap<String, u64>) {
         let branch = if is_last { "`-- " } else { "|-- " };
         let prefix = if node.is_doc { "DOC " } else { "DIR " };
-        println!("{}{}{}{}", indent, branch, prefix, name);
+        let visits = hotspots.get(&node.full_path).copied().unwrap_or(0);
+        let visit_str = if visits > 0 { format!(" ({} visits)", visits) } else { "".to_string() };
+        println!("{}{}{}{}{}", indent, branch, prefix, name, visit_str);
 
         let new_indent = format!("{}{}", indent, if is_last { "    " } else { "|   " });
         let count = node.children.len();
         for (i, (child_name, child_node)) in node.children.iter().enumerate() {
-            print_node(child_name, child_node, &new_indent, i == count - 1);
+            print_node(child_name, child_node, &new_indent, i == count - 1, hotspots);
         }
     }
 
@@ -149,7 +190,7 @@ fn render_tree(docs: &[xavier::memory::qmd::MemoryDocument]) {
 
     let count = root.children.len();
     for (i, (name, node)) in root.children.iter().enumerate() {
-        print_node(name, node, "", i == count - 1);
+        print_node(name, node, "", i == count - 1, hotspots);
     }
 }
 

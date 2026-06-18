@@ -354,37 +354,37 @@ mod tests {
 
         let pathfinder = Pathfinder::new(&graph);
 
-        let shortest = pathfinder.shortest_path("A", "C");
+        let shortest = pathfinder.shortest_path("a", "c");
         assert_eq!(shortest.len(), 2);
-        assert_eq!(shortest[0].source, "A");
-        assert_eq!(shortest[0].target, "B");
-        assert_eq!(shortest[1].source, "B");
-        assert_eq!(shortest[1].target, "C");
+        assert_eq!(shortest[0].source, "a");
+        assert_eq!(shortest[0].target, "b");
+        assert_eq!(shortest[1].source, "b");
+        assert_eq!(shortest[1].target, "c");
 
-        let expansion = pathfinder.k_hop_expansion("A", 1);
+        let expansion = pathfinder.k_hop_expansion("a", 1);
         assert_eq!(expansion.len(), 2);
 
-        let all = pathfinder.all_paths("A", "C", 3);
+        let all = pathfinder.all_paths("a", "c", 3);
         assert_eq!(all.len(), 2);
 
-        let affected = pathfinder.affected_bfs("A", 2);
+        let affected = pathfinder.affected_bfs("a", 2);
         assert_eq!(affected.len(), 3); // B, D, C (via B or D)
-        assert!(affected.iter().any(|a| a.node == "B" && a.depth == 1));
-        assert!(affected.iter().any(|a| a.node == "D" && a.depth == 1));
-        assert!(affected.iter().any(|a| a.node == "C" && a.depth == 2));
+        assert!(affected.iter().any(|a| a.node == "b" && a.depth == 1));
+        assert!(affected.iter().any(|a| a.node == "d" && a.depth == 1));
+        assert!(affected.iter().any(|a| a.node == "c" && a.depth == 2));
     }
 
     #[tokio::test]
     async fn test_guided_search() {
         let graph = BeliefGraph::new();
-        graph.add_node("A".to_string(), 1.0, None);
-        graph.add_node("B".to_string(), 1.0, None);
-        graph.add_node("D".to_string(), 1.0, None);
+        graph.add_node("a".to_string(), 1.0, None);
+        graph.add_node("b".to_string(), 1.0, None);
+        graph.add_node("d".to_string(), 1.0, None);
 
         graph
             .add_relation(
-                "A".to_string(),
-                "B".to_string(),
+                "a".to_string(),
+                "b".to_string(),
                 "rust_expert".to_string(),
                 Some("mem1".to_string()),
                 None,
@@ -393,8 +393,8 @@ mod tests {
             .unwrap();
         graph
             .add_relation(
-                "A".to_string(),
-                "D".to_string(),
+                "a".to_string(),
+                "d".to_string(),
                 "cooks_pasta".to_string(),
                 Some("mem2".to_string()),
                 None,
@@ -403,11 +403,11 @@ mod tests {
             .unwrap();
 
         let pathfinder = Pathfinder::new(&graph);
-        let results = pathfinder.guided_search("A", "Rust", 1);
+        let results = pathfinder.guided_search("a", "rust", 1);
 
         assert!(!results.is_empty());
-        assert!(results.iter().any(|r| r.edge.target == "B"));
-        assert!(results[0].edge.target == "B");
+        assert!(results.iter().any(|r| r.edge.target == "b"));
+        assert!(results[0].edge.target == "b");
         assert!(results[0].policy_score > 0.5);
     }
 }

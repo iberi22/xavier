@@ -198,6 +198,9 @@ pub async fn visualize_handler(Extension(ctx): Extension<WorkspaceContext>) -> i
     let weights = &policy.layer_weights;
     let traversal_weights = &policy.traversal_weights;
 
+    let telemetry = ctx.workspace.hormer.telemetry();
+    let hotspots = telemetry.get_hotspots(10).await;
+
     Json(json!({
         "status": "ok",
         "workspace_id": ctx.workspace_id,
@@ -209,6 +212,7 @@ pub async fn visualize_handler(Extension(ctx): Extension<WorkspaceContext>) -> i
             "semantic": weights.semantic,
         },
         "traversal_weights": traversal_weights,
+        "hotspots": hotspots,
     }))
 }
 
@@ -221,9 +225,16 @@ pub async fn telemetry_handler(
 
     if params.hotspots.unwrap_or(false) {
         let hotspots = telemetry.get_hotspots(top).await;
+        let summary = telemetry.get_summary().await;
         Json(json!({
             "status": "ok",
             "hotspots": hotspots,
+            "metrics": {
+                "total_visits": summary.total_visits,
+                "unique_nodes": summary.unique_nodes,
+                "avg_path_length": summary.avg_path_length,
+                "total_paths": summary.total_paths,
+            }
         }))
         .into_response()
     } else {

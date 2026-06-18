@@ -1,0 +1,65 @@
+## Phase 2b: libp2p Transport for Mesh Sync
+
+### Context
+Phase 1 Memory Sync module is complete (src/memory/sync/). We need a libp2p-based transport layer for encrypted peer-to-peer communication with auto-discovery (mdns for LAN, Kademlia for WAN).
+
+### What exists
+- src/mesh/transport.rs: HTTP REST peer (reqwest::Client based, push/pull json)
+- Cargo.toml has libp2p = 0.56 behind `mesh` feature with:
+  - noise — encrypted handshake
+  - kad — Kademlia DHT for peer discovery
+  - gossipsub — pub/sub for chunk broadcasts
+  - mdns — LAN auto-discovery
+  - tcp, yamux — transport + multiplex
+  - identify — version/capability exchange
+
+### Requirements
+
+Create a new module src/mesh/transport_libp2p.rs with:
+
+1. **MeshP2pTransport struct**
+   - swarm with all behaviours (mdns, kademlia, gossipsub, identify)
+   - ed25519 identity keypair
+   - PeerRegistry
+
+2. **Auto-discovery via mdns** (LAN)
+   - Automatically discover peers on same WiFi
+   - Add to peer store when discovered
+
+3. **Kademlia DHT** (WAN)
+   - Bootstrap to known peers
+   - Provider/advertisement records
+
+4. **Gossipsub pub/sub**
+   - Broadcast "chunk_available" messages
+   - Subscribe to sync topics
+
+5. **announce_chunk()**
+   - Publish chunk hash + namespace via gossipsub
+
+6. **request_sync()**
+   - Send direct message to peer requesting sync
+
+### Integration with sync module
+- PeerMemorySync.announce_chunk() should call MeshP2pTransport.announce_chunk()
+- Wire peer discovery to sync_loop()
+
+### Tests
+- Two swarms on loopback discover each other via mdns
+- kad put/get provider record
+- gossipsub pub/sub message roundtrip
+- noise handshake establishes encrypted channel
+- identify reports correct version
+
+### Files to create/modify
+- src/mesh/transport_libp2p.rs — NEW
+- src/mesh/mod.rs — add pub mod transport_libp2p
+- Cargo.toml — verify libp2p features are correct
+
+### Acceptance criteria
+- [ ] MeshP2pTransport compiles
+- [ ] Two loopback instances discover each other
+- [ ] gossipsub roundtrip works
+- [ ] Integration with PeerMemorySync
+- [ ] cargo check --lib passes
+- [ ] cargo test --lib passes
