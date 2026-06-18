@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use crate::{
-    agents::{system1::RetrievalResult, system2::{ConfidenceCalibration, ReasoningResult}},
+    agents::{system1::RetrievalResult, system2::ReasoningResult},
     memory::manager::MemoryPriority,
 };
 
