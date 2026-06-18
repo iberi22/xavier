@@ -49,7 +49,7 @@ impl Default for ConsolidationTask {
             reflection_batch_size: 8,
             reflection_age_days: 30,
             cleanup_similarity_threshold: 0.91,
-            enable_tgd_in_consolidation: false,
+            enable_tgd_in_consolidation: true,
             tgd_min_new_history: 20,
         }
     }

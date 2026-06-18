@@ -502,7 +502,23 @@ impl AdaptiveGating {
         results: &[ScoredResult],
         belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
     ) -> Vec<String> {
+        self.predict_next_queries_with_telemetry(results, belief_graph, None).await
+    }
+
+    /// Enhanced next query prediction with sibling detection and telemetry hotspots
+    pub async fn predict_next_queries_with_telemetry(
+        &self,
+        results: &[ScoredResult],
+        belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
+        telemetry: Option<Arc<crate::memory::telemetry::NavTelemetry>>,
+    ) -> Vec<String> {
         let mut predictions = HashSet::new();
+        let hotspots = if let Some(ref t) = telemetry {
+            let hs = t.get_hotspots(10).await;
+            hs.into_iter().map(|(id, _)| id).collect::<HashSet<_>>()
+        } else {
+            HashSet::new()
+        };
 
         // 1. Graph-based prediction: Explore neighbors of top hits in the belief graph
         if let (Some(graph_lock), Some(policy)) = (belief_graph, &self.config.navigation_policy) {
@@ -512,8 +528,8 @@ impl AdaptiveGating {
                 let graph = graph_lock.read().await;
                 for hit in results.iter().take(3) {
                     // Try to find if the content represents a concept in the graph
-                    if graph.get_node(&hit.content).is_some() {
-                        top_concepts.push(hit.content.clone());
+                    if let Some(node) = graph.get_node(&hit.content) {
+                        top_concepts.push(node.concept);
                     }
                 }
             }
@@ -526,7 +542,14 @@ impl AdaptiveGating {
                 // Perform a 1-hop guided search to find relevant neighbors
                 let neighbors = pathfinder.guided_search(&concept, "", 1);
                 for scored_edge in neighbors {
-                    if scored_edge.policy_score >= self.config.cache_warming_threshold {
+                    let mut threshold = self.config.cache_warming_threshold;
+
+                    // Boost if the target is a hotspot
+                    if hotspots.contains(&scored_edge.edge.target) {
+                        threshold *= 0.7; // Lower threshold = easier to include
+                    }
+
+                    if scored_edge.policy_score >= threshold {
                         predictions.insert(scored_edge.edge.target);
                     }
                 }
@@ -547,6 +570,17 @@ impl AdaptiveGating {
                     if !parent_str.is_empty() && parent_str != "." {
                         // Predict the parent directory as a potential future search scope
                         predictions.insert(parent_str.to_string());
+
+                        // [B4] Predict siblings: suggest files in the same directory
+                        if let Some(ref mem) = self.memory {
+                            if let Ok(entries) = mem.ls(parent_str).await {
+                                for entry in entries.iter().take(5) {
+                                    if entry.is_doc && &entry.path != path {
+                                        predictions.insert(entry.path.clone());
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1356,6 +1390,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_predict_next_queries_with_siblings() {
+        use crate::memory::qmd_memory::QmdMemory;
+        let docs_arc = Arc::new(tokio::sync::RwLock::new(Vec::new()));
+        let memory = Arc::new(QmdMemory::new(docs_arc));
+
+        memory.add_document("docs/rust/main.rs".to_string(), "main".to_string(), serde_json::json!({})).await.unwrap();
+        memory.add_document("docs/rust/lib.rs".to_string(), "lib".to_string(), serde_json::json!({})).await.unwrap();
+
+        let mut gating = AdaptiveGating::with_defaults();
+        gating = gating.with_memory(memory);
+
+        let results = vec![
+            ScoredResult {
+                id: "1".to_string(),
+                path: "docs/rust/main.rs".to_string(),
+                content: "content".to_string(),
+                score: 1.0,
+                source: "working".to_string(),
+                ..Default::default()
+            },
+        ];
+
+        let predictions = gating.predict_next_queries(&results, None).await;
+        // Should contain parent
+        assert!(predictions.contains(&"docs/rust".to_string()));
+        // Should contain sibling
+        assert!(predictions.contains(&"docs/rust/lib.rs".to_string()));
+    }
+
+    #[tokio::test]
     async fn test_predict_next_queries_graph() {
         let config = GatingConfig {
             cache_warming_threshold: 0.5,
@@ -1382,7 +1446,7 @@ mod tests {
         ];
 
         let predictions = gating.predict_next_queries(&results, Some(graph)).await;
-        assert!(predictions.contains(&"Cargo".to_string()));
+        assert!(predictions.contains(&"cargo".to_string()));
     }
 
     // -----------------------------------------------------------------------
