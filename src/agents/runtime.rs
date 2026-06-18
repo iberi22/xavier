@@ -198,7 +198,7 @@ pub struct AgentRuntime {
     scheduler: Option<Arc<tokio::sync::Mutex<JobScheduler>>>,
     orchestrator: Option<Orchestrator>,
     rate_manager: Option<Arc<RateLimitManager>>,
-    tgd_engine: Option<crate::tgd::TgdEngine>,
+    tgd_engine: Option<crate::agents::tgd::TgdEngine>,
 }
 
 impl AgentRuntime {
@@ -249,7 +249,7 @@ impl AgentRuntime {
         self
     }
 
-    pub fn with_tgd_engine(mut self, engine: crate::tgd::TgdEngine) -> Self {
+    pub fn with_tgd_engine(mut self, engine: crate::agents::tgd::TgdEngine) -> Self {
         self.tgd_engine = Some(engine);
         self
     }
@@ -280,7 +280,7 @@ impl AgentRuntime {
     ) -> Self {
         let provider = crate::agents::provider::ModelProviderClient::new(provider_config.clone());
         self.system2 = System2Reasoner::with_provider(ReasonerConfig::default(), provider.clone());
-        self.tgd_engine = Some(crate::tgd::TgdEngine::new(provider));
+        self.tgd_engine = Some(crate::agents::tgd::TgdEngine::new(provider));
         self
     }
 
@@ -401,7 +401,16 @@ impl AgentRuntime {
                     supporting_evidence: vec![],
                     beliefs_updated: vec![],
                     reasoning_chain: vec![],
-                    meta_observations: crate::agents::system3::MetaObservations::default(),
+                    step_count: 0,
+                    total_tokens_used: 0,
+                    reasoning_elapsed_ms: 0,
+                    calibration: crate::agents::system2::ConfidenceCalibration {
+                        raw_confidence: 1.0,
+                        entropy: 0.0,
+                        calibrated_confidence: 1.0,
+                        has_contradiction: false,
+                        contradiction_count: 0,
+                    },
                 },
                 action: crate::agents::system3::ActionResult {
                     query: query.to_string(),
@@ -413,7 +422,6 @@ impl AgentRuntime {
                     semantic_cache_hit: true,
                     llm_used: false,
                     model: None,
-                    meta_observations: None,
                 },
                 optimization: RunOptimizationTrace {
                     route_category: route.category,
@@ -458,7 +466,16 @@ impl AgentRuntime {
                     supporting_evidence: vec![],
                     beliefs_updated: vec![],
                     reasoning_chain: vec![],
-                    meta_observations: crate::agents::system3::MetaObservations::default(),
+                    step_count: 0,
+                    total_tokens_used: 0,
+                    reasoning_elapsed_ms: 0,
+                    calibration: crate::agents::system2::ConfidenceCalibration {
+                        raw_confidence: 1.0,
+                        entropy: 0.0,
+                        calibrated_confidence: 1.0,
+                        has_contradiction: false,
+                        contradiction_count: 0,
+                    },
                 },
                 action: crate::agents::system3::ActionResult {
                     query: query.to_string(),
@@ -470,7 +487,6 @@ impl AgentRuntime {
                     semantic_cache_hit: false,
                     llm_used: false,
                     model: None,
-                    meta_observations: None,
                 },
                 optimization: RunOptimizationTrace {
                     route_category: route.category,
@@ -618,7 +634,6 @@ impl AgentRuntime {
                     semantic_cache_hit: false,
                     llm_used: false,
                     model: None,
-                    meta_observations: Some(reasoning_result.meta_observations.clone()),
                 },
                 0,
             )

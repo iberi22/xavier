@@ -5,7 +5,7 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use crate::agents::{runtime::AgentRunTrace, system1::RetrievedDocument, system2::Evidence};
+use crate::agents::{runtime::AgentRunTrace, system1::RetrievedDocument, system2::{ConfidenceCalibration, Evidence}};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UiRenderResult {
@@ -237,7 +237,16 @@ mod tests {
                 }],
                 beliefs_updated: vec![],
                 reasoning_chain: vec![],
-                meta_observations: crate::agents::system3::MetaObservations::default(),
+                step_count: 1,
+                total_tokens_used: 50,
+                reasoning_elapsed_ms: 100,
+                calibration: ConfidenceCalibration {
+                    raw_confidence: 0.82,
+                    entropy: 0.1,
+                    calibrated_confidence: 0.80,
+                    has_contradiction: false,
+                    contradiction_count: 0,
+                },
             },
             action: ActionResult {
                 query: "What happened?".to_string(),
@@ -249,7 +258,6 @@ mod tests {
                 semantic_cache_hit: false,
                 llm_used: false,
                 model: None,
-                meta_observations: None,
             },
             optimization: RunOptimizationTrace {
                 route_category: RouteCategory::Retrieved,
