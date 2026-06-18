@@ -486,6 +486,8 @@ fn gather_db_health(settings: &XavierSettings) -> DatabaseHealth {
     }
 }
 
+pub mod repair;
+
 // ═══════════════════════════════════════════════
 // Tests
 // ═══════════════════════════════════════════════
