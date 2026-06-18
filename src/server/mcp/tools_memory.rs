@@ -38,8 +38,22 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
             }),
         },
         MCPTool {
+            name: "mem_search".to_string(),
+            description: "Search memory and return candidates with scores, snippets, and provenance. Use this to FIND relevant memories. Use mem_context to retrieve full content.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Search query" },
+                    "limit": { "type": "number", "description": "Maximum results (default: 10, max: 100)", "default": 10 },
+                    "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "Search mode (default: hybrid)", "default": "hybrid" },
+                    "filters": { "type": "object", "description": "Optional filters" }
+                },
+                "required": ["query"]
+            }),
+        },
+        MCPTool {
             name: "search_memory".to_string(),
-            description: "Search memory documents in Xavier".to_string(),
+            description: "[DEPRECATED — use mem_search instead] Search memory documents in Xavier".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -192,7 +206,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
         },
         MCPTool {
             name: "memory_context".to_string(),
-            description: "Build an aggregated context block from the most relevant memories for a query".to_string(),
+            description: "Build an aggregated context block from the most relevant memories for a query. Returns full content bounded by max_chars. Use AFTER mem_search to identify the right memories.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -212,7 +226,7 @@ pub async fn handle_memory_tool(
     arguments: Value,
 ) -> anyhow::Result<Value> {
     match name {
-        "search_memory" => {
+        "mem_search" | "search_memory" => {
             let query = arguments
                 .get("query")
                 .and_then(|v| v.as_str())
@@ -234,13 +248,13 @@ pub async fn handle_memory_tool(
                 .await?;
             let content = results
                 .into_iter()
-                .map(|doc| MCPTextContent {
+                .map(|doc| MCPContent::Text(MCPTextContent {
                     content_type: "text".to_string(),
                     text: format!(
                         "Path: {}\nContent: {}\nMetadata: {:?}",
                         doc.path, doc.content, doc.metadata
                     ),
-                })
+                            }))
                 .collect();
 
             Ok(serde_json::to_value(MCPToolResult {
@@ -260,7 +274,7 @@ pub async fn handle_memory_tool(
                 .ok_or_else(|| anyhow::anyhow!("Memory not found: {id}"))?;
 
             Ok(serde_json::to_value(MCPToolResult {
-                content: vec![MCPTextContent {
+                content: vec![MCPContent::Text(MCPTextContent {
                     content_type: "text".to_string(),
                     text: format!(
                         "Id: {}\nPath: {}\nRevision: {}\nPrimary: {}\nContent: {}\nMetadata: {}",
@@ -271,7 +285,7 @@ pub async fn handle_memory_tool(
                         record.content,
                         serde_json::to_string_pretty(&record.metadata)?
                     ),
-                }],
+                })],
                 is_error: Some(false),
             })?)
         }
@@ -446,7 +460,7 @@ pub async fn handle_memory_tool(
 
             let content = filtered
                 .into_iter()
-                .map(|doc| MCPTextContent {
+                .map(|doc| MCPContent::Text(MCPTextContent {
                     content_type: "text".to_string(),
                     text: format!(
                         "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
@@ -456,7 +470,7 @@ pub async fn handle_memory_tool(
                         doc.metadata.get("gestalt_context"),
                         doc.metadata.get("tags")
                     ),
-                })
+                }))
                 .collect();
 
             Ok(serde_json::to_value(MCPToolResult {
@@ -482,7 +496,7 @@ pub async fn handle_memory_tool(
                 .await?;
             let content = records
                 .into_iter()
-                .map(|record| MCPTextContent {
+                .map(|record| MCPContent::Text(MCPTextContent {
                     content_type: "text".to_string(),
                     text: format!(
                         "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
@@ -492,7 +506,7 @@ pub async fn handle_memory_tool(
                         record.metadata.get("gestalt_context"),
                         record.metadata.get("tags")
                     ),
-                })
+                }))
                 .collect();
 
             Ok(serde_json::to_value(MCPToolResult {
@@ -512,10 +526,10 @@ pub async fn handle_memory_tool(
                 .ok_or_else(|| anyhow::anyhow!("Memory not found: {}", id))?;
 
             Ok(serde_json::to_value(MCPToolResult {
-                content: vec![MCPTextContent {
+                content: vec![MCPContent::Text(MCPTextContent {
                     content_type: "text".to_string(),
                     text: format!("Id: {}\nPath: {}\nRevision: {}\nContent: {}\nContext: {:?}\nTags: {:?}\nMetadata: {}", record.id, record.path, record.revision, record.content, record.metadata.get("gestalt_context"), record.metadata.get("tags"), serde_json::to_string_pretty(&record.metadata)?),
-                }],
+                })],
                 is_error: Some(false),
             })?)
         }
@@ -630,13 +644,13 @@ pub async fn handle_memory_tool(
                 .await?;
             let content = results
                 .into_iter()
-                .map(|doc| MCPTextContent {
+                .map(|doc| MCPContent::Text(MCPTextContent {
                     content_type: "text".to_string(),
                     text: format!(
                         "Path: {}\nContent: {}\nMetadata: {:?}",
                         doc.path, doc.content, doc.metadata
                     ),
-                })
+                }))
                 .collect();
 
             Ok(serde_json::to_value(MCPToolResult {
