@@ -7,7 +7,7 @@ use std::path::PathBuf;
 use tokio::sync::Mutex;
 
 use anyhow::Result;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use crate::agents::runtime::ConversationMessage;
 use crate::agents::system1::RetrievedDocument;
 use crate::agents::provider::ModelProviderClient;
@@ -30,6 +30,10 @@ pub struct TgdConfig {
     pub cache_path: PathBuf,
     /// Minimum interval between TGD executions in seconds (default: 3600)
     pub min_interval_seconds: i64,
+    /// Learning rate for textual refinement (default: 0.1)
+    pub learning_rate: f32,
+    /// Number of iterations for refinement (default: 3)
+    pub iterations: usize,
 }
 
 impl Default for TgdConfig {
@@ -40,6 +44,8 @@ impl Default for TgdConfig {
             max_rules_count: 100,
             cache_path: PathBuf::from(".xavier/tgd_cache.json"),
             min_interval_seconds: 3600,
+            learning_rate: 0.1,
+            iterations: 3,
         }
     }
 }
@@ -153,6 +159,52 @@ impl TgdEngine {
                 Err(e)
             }
         }
+    }
+
+    /// Refines the content of a memory document using iterative Textual Gradient Descent.
+    pub async fn refine_memory_content(&self, content: &str, iterations: Option<usize>) -> Result<(String, f32)> {
+        let iterations = iterations.unwrap_or(self.config.iterations);
+        let mut current_content = content.to_string();
+        let mut total_score = 0.0;
+
+        info!("🧠 TGD: Starting memory refinement ({} iterations)...", iterations);
+
+        let learning_rate = self.config.learning_rate;
+
+        for i in 0..iterations {
+            let system_prompt = format!("You are a Textual Gradient Descent (TGD) optimizer. \
+                Your goal is to refine the provided memory content to be more accurate, concise, and structured. \
+                Analyze the current version and apply 'gradients' by improving clarity and removing redundancy. \
+                Apply a learning rate of {} to your refinements (where 0.1 is subtle and 1.0 is aggressive). \
+                Return ONLY the refined Markdown content.", learning_rate);
+
+            let user_prompt = format!("### Current Memory Content\n{}\n\nRefine the content:", current_content);
+
+            let response = self.provider.generate_text(&system_prompt, &user_prompt, false).await?;
+            let refined = response.text.trim().to_string();
+
+            // Evaluation step (simplified for now: calculate a 'gradient' improvement score)
+            // In a real TGD loop, we'd use a loss function. Here we use LLM-based evaluation.
+            let eval_system = "You are an evaluator for memory quality. \
+                Rate the following memory content on a scale from 0.0 to 1.0 based on clarity, structure, and density of information. \
+                Return ONLY the numeric score.";
+
+            let eval_response = self.provider.generate_text(eval_system, &refined, false).await?;
+            let score: f32 = eval_response.text.trim().parse().unwrap_or(0.5);
+
+            debug!("TGD iteration {}: score={:.2}", i + 1, score);
+
+            // Only update if it's an improvement or first iteration
+            if i == 0 || score > (total_score / i as f32) {
+                current_content = refined;
+            }
+            total_score += score;
+        }
+
+        let avg_score = total_score / iterations as f32;
+        info!("✅ TGD: Refinement complete. Avg score: {:.2}", avg_score);
+
+        Ok((current_content, avg_score))
     }
 
     /// Persists rules to the local improvement file using atomic write (tmp + rename).
