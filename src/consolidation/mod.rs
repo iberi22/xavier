@@ -37,6 +37,14 @@ pub struct ConsolidationTask {
     pub enable_tgd_in_consolidation: bool,
     /// Minimum number of new conversation turns since last TGD to trigger
     pub tgd_min_new_history: usize,
+    /// Number of iterations for TGD refinement
+    pub tgd_iterations: usize,
+    /// Learning rate for TGD refinement
+    pub tgd_learning_rate: f32,
+    /// Quality threshold for TGD refinement
+    pub tgd_refinement_threshold: f32,
+    /// Batch size for TGD refinement (default: 5)
+    pub tgd_refinement_batch_size: usize,
 }
 
 impl Default for ConsolidationTask {
@@ -51,6 +59,10 @@ impl Default for ConsolidationTask {
             cleanup_similarity_threshold: 0.91,
             enable_tgd_in_consolidation: false,
             tgd_min_new_history: 20,
+            tgd_iterations: 3,
+            tgd_learning_rate: 0.1,
+            tgd_refinement_threshold: 0.6,
+            tgd_refinement_batch_size: 5,
         }
     }
 }
@@ -63,6 +75,8 @@ pub struct ConsolidationStats {
     pub decayed_documents: usize,
     pub deleted_redundant_documents: usize,
     pub importance_updates: usize,
+    pub memories_refined: usize,
+    pub avg_score_improvement: f32,
     pub errors: usize,
     pub duration_ms: u64,
 }
@@ -195,10 +209,12 @@ impl ConsolidationTask {
 
             if (decayed - importance).abs() >= 0.01 {
                 let mut updated = managed.doc.clone();
-                updated.metadata["memory_importance"] = serde_json::json!(decayed);
-                updated.metadata["memory_decay_rate"] = serde_json::json!(self.decay_rate);
-                updated.metadata["memory_last_consolidated_at"] =
-                    serde_json::json!(Utc::now().to_rfc3339());
+                if let Some(meta) = updated.metadata.as_object_mut() {
+                    meta.insert("memory_importance".to_string(), serde_json::json!(decayed));
+                    meta.insert("memory_decay_rate".to_string(), serde_json::json!(self.decay_rate));
+                    meta.insert("memory_last_consolidated_at".to_string(),
+                        serde_json::json!(Utc::now().to_rfc3339()));
+                }
                 if memory.update(updated).await.is_ok() {
                     decay_updates += 1;
                     stats.importance_updates += 1;
@@ -276,6 +292,72 @@ impl ConsolidationTask {
         }
 
         Ok(())
+    }
+
+    /// Performs iterative refinement of selected memories using TGD
+    pub async fn run_tgd_memory_refinement(
+        &self,
+        workspace: &WorkspaceContext,
+        tgd_engine: Option<&TgdEngine>,
+    ) -> Result<ConsolidationStats> {
+        let mut stats = ConsolidationStats::default();
+        if !self.enable_tgd_in_consolidation {
+            return Ok(stats);
+        }
+
+        let Some(engine) = tgd_engine else {
+            return Ok(stats);
+        };
+
+        let memories = workspace
+            .workspace
+            .memory_manager
+            .get_all_memories()
+            .await?;
+
+        // Selection: memories with low quality but high access, or simply low overall quality
+        let mut candidates: Vec<ManagedMemory> = memories
+            .into_iter()
+            .filter(|m| {
+                m.quality.overall < self.tgd_refinement_threshold && m.quality.overall > 0.1 // Not too low (trash) but needs improvement
+            })
+            .collect();
+
+        candidates.sort_by(|a, b| {
+            b.access_count.cmp(&a.access_count)
+                .then_with(|| a.quality.overall.partial_cmp(&b.quality.overall).unwrap_or(std::cmp::Ordering::Equal))
+        });
+
+        // Limit to small batch per night to avoid high LLM costs
+        let batch = candidates.into_iter().take(self.tgd_refinement_batch_size).collect::<Vec<_>>();
+        stats.selected = batch.len();
+
+        let mut total_improvement = 0.0;
+        for managed in batch {
+            let (refined_content, avg_score) = engine.refine_memory_content(&managed.doc.content, Some(self.tgd_iterations)).await?;
+
+            if avg_score > managed.quality.overall {
+                let mut updated = managed.doc.clone();
+                updated.content = refined_content;
+                if let Some(meta) = updated.metadata.as_object_mut() {
+                    meta.insert("tgd_refined".to_string(), serde_json::json!(true));
+                    meta.insert("tgd_refinement_score".to_string(), serde_json::json!(avg_score));
+                    meta.insert("tgd_refined_at".to_string(), serde_json::json!(Utc::now().to_rfc3339()));
+                }
+
+                if workspace.workspace.memory_manager.memory().update(updated).await.is_ok() {
+                    stats.memories_refined += 1;
+                    total_improvement += avg_score - managed.quality.overall;
+                    info!("🧠 TGD: Refined memory {}", managed.doc.id.as_deref().unwrap_or("unknown"));
+                }
+            }
+        }
+
+        if stats.memories_refined > 0 {
+            stats.avg_score_improvement = total_improvement / stats.memories_refined as f32;
+        }
+
+        Ok(stats)
     }
 
     pub async fn reflect(&self, workspace: &WorkspaceContext) -> Result<ReflectionStats> {
