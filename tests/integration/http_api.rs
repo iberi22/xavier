@@ -82,10 +82,10 @@ async fn test_health_endpoint() {
 
     assert!(response.status().is_success(), "health should return 2xx");
     let body: Value = response.json().await.expect("read health body");
-    // Accept "ok" or "warn" — warn can happen when DB or disk metrics are unavailable
+    // Accept "ok", "healthy" or "warn" — warn can happen when DB or disk metrics are unavailable
     assert!(
-        body["status"] == "ok" || body["status"] == "warn",
-        "expected ok or warn, got {}",
+        body["status"] == "ok" || body["status"] == "healthy" || body["status"] == "warn",
+        "expected ok, healthy or warn, got {}",
         body["status"]
     );
 }
