@@ -58,13 +58,25 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
                 "properties": {}
             }),
         },
+        MCPTool {
+            name: "get_code_graph".to_string(),
+            description: "Get the portable code graph dump (.xavier/codegraph.json)".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {}
+            }),
+        },
     ]
 }
 
 pub fn is_core_tool(name: &str) -> bool {
     matches!(
         name,
-        "list_projects" | "get_project_context" | "sync_gitcore" | "health_check"
+        "list_projects"
+            | "get_project_context"
+            | "sync_gitcore"
+            | "health_check"
+            | "get_code_graph"
     )
 }
 
@@ -250,6 +262,26 @@ pub async fn handle_core_tool(
                 })).collect::<Vec<_>>(),
             });
             super::server::mcp_text_result(payload.to_string(), false)
+        }
+        "get_code_graph" => {
+            let dump_path = std::path::PathBuf::from(".xavier/codegraph.json");
+            if !tokio::fs::try_exists(&dump_path).await.unwrap_or(false) {
+                return Err(anyhow::anyhow!(
+                    "Code graph dump not found at {}. Run 'xavier code scan' to generate it.",
+                    dump_path.display()
+                ));
+            }
+
+            let json_content = tokio::fs::read_to_string(&dump_path).await?;
+            let dump: Value = serde_json::from_str(&json_content)?;
+
+            Ok(serde_json::to_value(MCPToolResult {
+                content: vec![MCPTextContent {
+                    content_type: "text".to_string(),
+                    text: serde_json::to_string(&dump)?,
+                }],
+                is_error: Some(false),
+            })?)
         }
         _ => Err(anyhow::anyhow!("Unknown core tool: {}", name)),
     }
