@@ -99,3 +99,10 @@ panel-ui/test-results/
 panel-ui/playwright-report/
 
 *.sqlite3*
+
+# Temporales
+.claude-task-*.md
+audit-*.ps1
+index-*.ps1
+issue-body.txt
+mem-work.txt
