@@ -1,0 +1,193 @@
+{
+  "meta": {
+    "format_version": "1.0.0",
+    "generated": "2026-06-18T22:00:00Z",
+    "head": "1d82055",
+    "project": "Xavier v0.10.0 → v0.11.0",
+    "gitcore_protocol": "v3.6.1"
+  },
+  "features": [
+    {
+      "id": "memory-rag",
+      "name": "Memoria RAG (SQLite + BM25 híbrido + semantic + entity graph)",
+      "category": "core",
+      "maturity_percent": 85,
+      "status": "production_ready",
+      "dependencies": [],
+      "subcomponents": [
+        {"name": "SQLite vec store", "maturity": 90, "status": "done"},
+        {"name": "BM25 search", "maturity": 90, "status": "done"},
+        {"name": "Hybrid search (BM25+embedding+RRF)", "maturity": 85, "status": "done"},
+        {"name": "Semantic cache", "maturity": 70, "status": "done"},
+        {"name": "Entity graph (extraction+inference)", "maturity": 80, "status": "done"},
+        {"name": "Embedding pipeline (GLLM/OpenAI)", "maturity": 85, "status": "done"}
+      ]
+    },
+    {
+      "id": "code-graph",
+      "name": "Code Graph (crate separado + dump CLI)",
+      "category": "core",
+      "maturity_percent": 60,
+      "status": "needs_review",
+      "dependencies": [],
+      "subcomponents": [
+        {"name": "code-graph crate (workspace dep)", "maturity": 70, "status": "done"},
+        {"name": "CLI code_dump.rs", "maturity": 65, "status": "done"},
+        {"name": "CLI code_graph.rs", "maturity": 60, "status": "done"},
+        {"name": "Portable JSON dump (.xavier/codegraph.json)", "maturity": 30, "status": "needs_work"},
+        {"name": "Integracion con MCP Server", "maturity": 20, "status": "needs_work"}
+      ]
+    },
+    {
+      "id": "memory-sync",
+      "name": "Memory Sync P2P",
+      "category": "mesh",
+      "maturity_percent": 75,
+      "status": "production_ready",
+      "dependencies": ["memory-rag"],
+      "subcomponents": [
+        {"name": "Sync module (diff/merge/manifest/push_pull)", "maturity": 90, "status": "done"},
+        {"name": "HTTP sync endpoints (push, pull, status, resolve)", "maturity": 85, "status": "done"},
+        {"name": "libp2p transport (mDNS, Kademlia, GossipSub)", "maturity": 70, "status": "done"},
+        {"name": "E2E multi-node tests", "maturity": 10, "status": "needs_work"}
+      ]
+    },
+    {
+      "id": "mcp-server",
+      "name": "MCP Server (HTTP+SSE + Stdio)",
+      "category": "api",
+      "maturity_percent": 80,
+      "status": "production_ready",
+      "dependencies": ["memory-rag"],
+      "subcomponents": [
+        {"name": "HTTP+SSE transport", "maturity": 85, "status": "done"},
+        {"name": "Stdio transport", "maturity": 80, "status": "done"},
+        {"name": "Memory tools (search, store, retrieve)", "maturity": 75, "status": "done"},
+        {"name": "Documentacion de integracion para agentes", "maturity": 5, "status": "needs_work"},
+        {"name": "Auth/security", "maturity": 40, "status": "needs_work"}
+      ]
+    },
+    {
+      "id": "hormer-navigation",
+      "name": "HORMER Navigation",
+      "category": "memory",
+      "maturity_percent": 65,
+      "status": "needs_improvement",
+      "dependencies": ["memory-rag"],
+      "subcomponents": [
+        {"name": "HORMER v1 (dynamic hierarchy, policy, GRPO)", "maturity": 85, "status": "done"},
+        {"name": "Predictive cache warming", "maturity": 40, "status": "done"},
+        {"name": "CLI navigation visualize", "maturity": 10, "status": "needs_work"},
+        {"name": "Navigation telemetry metrics", "maturity": 50, "status": "done"},
+        {"name": "Consolidacion nav-aware con TGD", "maturity": 15, "status": "needs_work"}
+      ]
+    },
+    {
+      "id": "tgd-optimization",
+      "name": "TGD (Textual Gradient Descent)",
+      "category": "memory",
+      "maturity_percent": 75,
+      "status": "production_ready",
+      "dependencies": ["memory-rag"],
+      "subcomponents": [
+        {"name": "TGD algorithm (runner + config)", "maturity": 80, "status": "done"},
+        {"name": "Nightly consolidation scheduler", "maturity": 70, "status": "done (PR #206)"},
+        {"name": "Incremental mode (only new chunks)", "maturity": 70, "status": "done (PR #206)"},
+        {"name": "Test suite (91 lines)", "maturity": 75, "status": "done (PR #206)"},
+        {"name": "Rollback support", "maturity": 5, "status": "needs_work"}
+      ]
+    },
+    {
+      "id": "cli-tools",
+      "name": "CLI Tools",
+      "category": "devops",
+      "maturity_percent": 80,
+      "status": "production_ready",
+      "dependencies": [],
+      "subcomponents": [
+        {"name": "Server management (start/stop/status)", "maturity": 85, "status": "done"},
+        {"name": "MCP mode", "maturity": 80, "status": "done"},
+        {"name": "Code dump + code graph commands", "maturity": 60, "status": "done"},
+        {"name": "Security commands", "maturity": 75, "status": "done"},
+        {"name": "Config management", "maturity": 85, "status": "done"}
+      ]
+    },
+    {
+      "id": "self-monitoring",
+      "name": "Self-monitoring & Health",
+      "category": "devops",
+      "maturity_percent": 80,
+      "status": "production_ready",
+      "dependencies": [],
+      "subcomponents": [
+        {"name": "Health check endpoints", "maturity": 90, "status": "done"},
+        {"name": "Runtime self-monitoring loop", "maturity": 85, "status": "done"},
+        {"name": "Telemetry metrics", "maturity": 70, "status": "done"},
+        {"name": "Integration tests (135/135)", "maturity": 95, "status": "done"}
+      ]
+    },
+    {
+      "id": "mesh-network",
+      "name": "Mesh Network (Sovereign Mesh)",
+      "category": "mesh",
+      "maturity_percent": 35,
+      "status": "in_progress",
+      "dependencies": ["memory-sync"],
+      "subcomponents": [
+        {"name": "Transport HTTP", "maturity": 80, "status": "done"},
+        {"name": "Transport libp2p", "maturity": 70, "status": "done"},
+        {"name": "Wallet & tokenomics", "maturity": 60, "status": "done"},
+        {"name": "Governance DAO (mock)", "maturity": 30, "status": "done"},
+        {"name": "Governance DAO (on-chain real)", "maturity": 5, "status": "needs_work"},
+        {"name": "Data Commons economy", "maturity": 15, "status": "needs_work"},
+        {"name": "ACL & permissions", "maturity": 70, "status": "done"},
+        {"name": "Dual License (MIT + Mesh)", "maturity": 10, "status": "needs_work"},
+        {"name": "Android APK (Flutter+Rust)", "maturity": 5, "status": "needs_work"}
+      ]
+    },
+    {
+      "id": "benchmarks",
+      "name": "Benchmarks & Testing",
+      "category": "qa",
+      "maturity_percent": 60,
+      "status": "in_progress",
+      "dependencies": [],
+      "subcomponents": [
+        {"name": "Embedding benchmark", "maturity": 75, "status": "done"},
+        {"name": "Entity graph benchmark", "maturity": 60, "status": "done"},
+        {"name": "Hybrid search benchmark", "maturity": 60, "status": "done"},
+        {"name": "Tri-memory benchmark (OpenClaw vs Xavier vs Engram)", "maturity": 80, "status": "done (PR #205)"},
+        {"name": "CI benchmark workflow", "maturity": 70, "status": "done"},
+        {"name": "MinHash benchmark", "maturity": 50, "status": "needs_work"}
+      ]
+    }
+  ],
+  "summary": {
+    "total_features": 10,
+    "production_ready": 6,
+    "needs_work": 2,
+    "in_progress": 2,
+    "overall_maturity": 70
+  },
+  "sprint": {
+    "id": "SPRINT-JULES-001",
+    "name": "Estabilización RAG + Code Graph + Mesh",
+    "start": "2026-06-18",
+    "target_end": "2026-06-25",
+    "focus": ["hormer-navigation", "mesh-network", "code-graph"],
+    "completed_in_sprint": [
+      {"number": 198, "title": "TGD nightly consolidation", "pr": 206, "by": "jules"},
+      {"number": 197, "title": "Tri-memory benchmark", "pr": 205, "by": "jules"}
+    ],
+    "jules_issues": [
+      {"number": 199, "title": "HORMER navigation v2", "assigned_to": "jules", "maturity_target": 80},
+      {"number": 196, "title": "Android APK", "assigned_to": "jules", "maturity_target": 60}
+    ],
+    "manual_tasks": [
+      "Docs: Guia de uso como memoria RAG via MCP Server",
+      "Code graph: Verificar dump JSON + integrar con MCP",
+      "E2E multi-node test",
+      "Architecture.md: linkear feature-maturity.json"
+    ]
+  }
+}

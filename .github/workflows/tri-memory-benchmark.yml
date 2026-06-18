@@ -1,0 +1,36 @@
+name: Tri-Memory Benchmark
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/**'
+      - 'scripts/**'
+      - 'benchmarks/**'
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install aiohttp
+
+      - name: Run Tri-Memory Benchmark (Mock Mode)
+        run: |
+          # We use mock mode in CI as the real systems are not running
+          python scripts/benchmark_tri_memory.py --mock-llm
+
+      - name: Upload Benchmark Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: tri-memory-benchmark-results
+          path: benchmarks/results/

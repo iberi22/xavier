@@ -140,11 +140,21 @@ impl TgdConsolidationScheduler {
         info!("🧠 Phase 2: TGD Rule Generation...");
         task.run_tgd_if_enabled(&self.workspace, self.tgd_engine.as_ref()).await?;
 
+        // 3. Run TGD Memory Refinement
+        info!("🧠 Phase 3: TGD Memory Refinement...");
+        let refinement_stats = task.run_tgd_memory_refinement(&self.workspace, self.tgd_engine.as_ref()).await?;
+
+        let mut final_stats = stats;
+        final_stats.selected += refinement_stats.selected;
+        final_stats.memories_refined = refinement_stats.memories_refined;
+        final_stats.avg_score_improvement = refinement_stats.avg_score_improvement;
+        final_stats.errors += refinement_stats.errors;
+
         let duration = start.elapsed();
         let state = SchedulerState {
             last_run_at: Some(Utc::now()),
             last_duration_ms: duration.as_millis() as u64,
-            items_processed: stats.selected,
+            items_processed: final_stats.selected,
         };
 
         self.save_state(&state).await?;
@@ -152,8 +162,8 @@ impl TgdConsolidationScheduler {
         {
             let mut p = self.progress.write().await;
             p.status = "completed".to_string();
-            p.processed = stats.selected;
-            p.errors = stats.errors;
+            p.processed = final_stats.selected;
+            p.errors = final_stats.errors;
         }
 
         info!("✅ Scheduled consolidation completed in {}ms", duration.as_millis());
