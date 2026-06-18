@@ -110,6 +110,14 @@ impl PeerMemorySync {
         }
     }
 
+    /// Borrow the underlying memory store.
+    ///
+    /// Used by the HTTP sync handlers (e.g. conflict resolution that must
+    /// force-apply a remote chunk, bypassing the normal LWW transport).
+    pub fn store(&self) -> &Arc<dyn MemoryStore> {
+        &self.store
+    }
+
     /// Full two-way sync against a remote peer.
     ///
     /// 1. Pull the peer's manifest
