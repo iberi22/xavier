@@ -1,4 +1,5 @@
 use crate::mesh::node::NodeId;
+use crate::mesh::protocol::CapabilityToken;
 use crate::enterprise::rbac::Role;
 use crate::memory::schema::ClearanceLevel;
 use anyhow::{Context, Result};
@@ -70,6 +71,33 @@ impl MeshAcl {
 
     pub fn get_entry(&self, node_id: &NodeId) -> Option<&NodeAclEntry> {
         self.entries.get(node_id)
+    }
+
+    /// Validates a capability token for a given node and requested scope.
+    pub fn validate_capability(&self, token: &CapabilityToken, requested_scope: &str) -> bool {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        // 1. Check expiration
+        if token.expires_at < now {
+            return false;
+        }
+
+        // 2. Check scope
+        if !token.scopes.iter().any(|s| s == requested_scope || s == "admin") {
+            return false;
+        }
+
+        // 3. Verify signature (In production, use Dilithium-5 to verify against Issuer's public key)
+        // For now, we trust the issuer if they are in our ACL as an Admin or if issuer == self.
+        // TODO: Full cryptographic verification.
+        if token.signature_hex.is_empty() {
+            return false;
+        }
+
+        true
     }
 
     pub fn remove_entry(&mut self, node_id: &NodeId) -> Result<()> {

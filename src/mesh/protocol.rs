@@ -7,6 +7,21 @@ use crate::mesh::node::NodeId;
 use crate::session::sharing::SessionBundle;
 use serde::{Deserialize, Serialize};
 
+/// A capability grant for internal mesh operations.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct CapabilityToken {
+    /// The NodeID this token is granted to.
+    pub grantee: NodeId,
+    /// The NodeID that issued the token.
+    pub issuer: NodeId,
+    /// List of allowed operations (e.g., "sync", "replicate", "admin").
+    pub scopes: Vec<String>,
+    /// Unix timestamp when the token expires.
+    pub expires_at: i64,
+    /// Dilithium-5 signature of (grantee + issuer + scopes + expires_at).
+    pub signature_hex: String,
+}
+
 /// Initial handshake sent by a node to a peer.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MeshHandshake {
@@ -18,6 +33,8 @@ pub struct MeshHandshake {
     pub nonce: String,
     pub signature_hex: String,
     pub pairing_secret: Option<String>,
+    /// Optional capability token for internal network access.
+    pub capability_token: Option<CapabilityToken>,
 }
 
 /// Response to a [`MeshHandshake`].
@@ -53,6 +70,8 @@ pub struct MeshSyncRequest {
     pub timestamp: i64,
     pub nonce: String,
     pub signature_hex: String,
+    /// Capability token proving authorization for this request.
+    pub capability_token: Option<CapabilityToken>,
 }
 
 /// Result of a sync operation.
@@ -85,6 +104,7 @@ mod tests {
             nonce: "nonce123".to_string(),
             signature_hex: "sig123".to_string(),
             pairing_secret: None,
+            capability_token: None,
         };
 
         let json = serde_json::to_string(&handshake).unwrap();

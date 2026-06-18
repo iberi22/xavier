@@ -56,6 +56,7 @@ impl MeshTransport {
             nonce,
             signature_hex: hex::encode(signature),
             pairing_secret,
+            capability_token: None,
         };
 
         let url = format!("{}/v1/mesh/handshake", peer_url.trim_end_matches('/'));
@@ -133,6 +134,7 @@ impl MeshTransport {
             timestamp,
             nonce,
             signature_hex,
+            capability_token: None,
         };
 
         let resp = self

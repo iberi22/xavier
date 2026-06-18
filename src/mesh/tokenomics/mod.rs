@@ -7,6 +7,8 @@
 
 pub mod wallet;
 pub mod rewards;
+pub mod ledger;
 
 pub use wallet::{Wallet, WalletBalance, Transaction, TransactionKind};
 pub use rewards::{RewardEngine, RewardEvent, ContributionType};
+pub use ledger::{RewardLedger, LedgerEntry};

@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use anyhow::{bail, Result};
 use chrono::Utc;
+use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -19,7 +20,7 @@ use super::wallet::{TransactionKind, Wallet};
 // ---------------------------------------------------------------------------
 
 /// The type of resource contribution a node made to the mesh.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ContributionType {
     /// Provided storage space over a period of time
     StorageProvided {
@@ -55,7 +56,7 @@ pub enum ContributionType {
 // ---------------------------------------------------------------------------
 
 /// Records a single reward event that occurred.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RewardEvent {
     /// Unique event identifier
     pub event_id: Uuid,
