@@ -17,6 +17,7 @@ pub struct ReasoningResult {
     pub supporting_evidence: Vec<Evidence>,
     pub beliefs_updated: Vec<BeliefUpdate>,
     pub reasoning_chain: Vec<ReasoningStep>,
+    pub meta_observations: crate::agents::system3::MetaObservations,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -131,13 +132,17 @@ impl System2Reasoner {
 
         info!("✅ System2 completed in {:?}", start.elapsed());
 
+        let reasoning_chain = vec![];
+        let meta_observations = crate::agents::system3::observe(&reasoning_chain);
+
         Ok(ReasoningResult {
             query: query.to_string(),
             analysis,
             confidence,
             supporting_evidence: evidence,
             beliefs_updated: vec![],
-            reasoning_chain: vec![],
+            reasoning_chain,
+            meta_observations,
         })
     }
 }
