@@ -152,6 +152,56 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                 "properties": {}
             }),
         },
+        MCPTool {
+            name: "memory_save".to_string(),
+            description: "Save a memory document (text) with optional metadata and namespace".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "text": { "type": "string", "description": "Content of the memory to store" },
+                    "metadata": { "type": "object", "description": "Optional free-form metadata" },
+                    "namespace": {
+                        "description": "Optional namespace: a project string (e.g. \"cortex\") or an object {project, agent_id, scope, session_id}",
+                        "oneOf": [
+                            { "type": "string" },
+                            { "type": "object" }
+                        ]
+                    }
+                },
+                "required": ["text"]
+            }),
+        },
+        MCPTool {
+            name: "memory_search".to_string(),
+            description: "Hybrid search over memory documents, optionally scoped to a namespace".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Search query" },
+                    "limit": { "type": "number", "description": "Maximum results", "default": 10 },
+                    "namespace": {
+                        "description": "Optional namespace filter: a project string or an object {project, agent_id, scope, session_id}",
+                        "oneOf": [
+                            { "type": "string" },
+                            { "type": "object" }
+                        ]
+                    }
+                },
+                "required": ["query"]
+            }),
+        },
+        MCPTool {
+            name: "memory_context".to_string(),
+            description: "Build an aggregated context block from the most relevant memories for a query".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Query describing the desired context" },
+                    "limit": { "type": "number", "description": "Maximum memories to include", "default": 5 }
+                },
+                "required": ["query"]
+            }),
+        },
     ]
 }
 
@@ -509,7 +559,143 @@ pub async fn handle_memory_tool(
 
             super::server::mcp_text_result(serde_json::json!({ "total_memories": records.len(), "projects": projects.len(), "agents": agents.len(), "total_entities": entity_count, "semantic_entities": semantic_stats.total_entities, "semantic_relations": semantic_stats.total_relations }).to_string(), false)
         }
+        "memory_save" => {
+            let text = arguments
+                .get("text")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing text"))?;
+            let metadata = arguments
+                .get("metadata")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
+            let namespace = parse_namespace_arg(&arguments)?;
+
+            let unique_id = Ulid::new().to_string();
+            let path = match &namespace {
+                Some(ns) if ns.project.is_some() => {
+                    format!("mcp/{}/{}", ns.project.as_ref().unwrap(), unique_id)
+                }
+                Some(ns) if ns.agent_id.is_some() => {
+                    format!("mcp/agent/{}/{}", ns.agent_id.as_ref().unwrap(), unique_id)
+                }
+                _ => format!("mcp/save/{unique_id}"),
+            };
+
+            let typed = Some(TypedMemoryPayload {
+                kind: Some(MemoryKind::Document),
+                evidence_kind: Some(EvidenceKind::Observation),
+                namespace: namespace.clone(),
+                provenance: Some(MemoryProvenance {
+                    source_app: Some("mcp".to_string()),
+                    source_type: Some("tool:memory_save".to_string()),
+                    ..MemoryProvenance::default()
+                }),
+                ..Default::default()
+            });
+
+            let doc_id = workspace
+                .workspace
+                .ingest_typed(path, text.to_string(), metadata, typed, None, false)
+                .await?;
+            super::server::mcp_text_result(
+                format!("Memory saved. id={doc_id}"),
+                false,
+            )
+        }
+        "memory_search" => {
+            let query = arguments
+                .get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let limit = arguments
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(10)
+                .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
+            let namespace = parse_namespace_arg(&arguments)?;
+
+            let mut filters = MemoryQueryFilters::default();
+            if let Some(ns) = &namespace {
+                filters.project = ns.project.clone();
+                filters.agent_id = ns.agent_id.clone();
+                filters.scope = ns.scope.clone();
+                filters.session_id = ns.session_id.clone();
+                filters.user_id = ns.user_id.clone();
+            }
+
+            let results = workspace
+                .workspace
+                .memory
+                .search_filtered(query, limit, Some(&filters))
+                .await?;
+            let content = results
+                .into_iter()
+                .map(|doc| MCPTextContent {
+                    content_type: "text".to_string(),
+                    text: format!(
+                        "Path: {}\nContent: {}\nMetadata: {:?}",
+                        doc.path, doc.content, doc.metadata
+                    ),
+                })
+                .collect();
+
+            Ok(serde_json::to_value(MCPToolResult {
+                content,
+                is_error: Some(false),
+            })?)
+        }
+        "memory_context" => {
+            let query = arguments
+                .get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let limit = arguments
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(5)
+                .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
+
+            let results = workspace
+                .workspace
+                .memory
+                .search_filtered(query, limit, None)
+                .await?;
+
+            if results.is_empty() {
+                super::server::mcp_text_result(
+                    format!("No relevant context found for query: {query}"),
+                    false,
+                )
+            } else {
+                let mut context = String::from("# Relevant Memory Context\n\n");
+                for (i, doc) in results.iter().enumerate() {
+                    context.push_str(&format!("## [{}] {}\n{}\n\n", i + 1, doc.path, doc.content));
+                }
+                super::server::mcp_text_result(context, false)
+            }
+        }
         _ => Err(anyhow::anyhow!("Tool not implemented: {}", name)),
+    }
+}
+
+/// Parse the flexible `namespace` argument used by `memory_save` / `memory_search`.
+///
+/// Accepts either a project string (e.g. `"cortex"`) or an object matching
+/// [`MemoryNamespace`] (e.g. `{"project": "cortex", "agent_id": "a1"}`).
+fn parse_namespace_arg(arguments: &Value) -> anyhow::Result<Option<MemoryNamespace>> {
+    let Some(ns_value) = arguments.get("namespace") else {
+        return Ok(None);
+    };
+    match ns_value {
+        Value::Null => Ok(None),
+        Value::String(s) => Ok(Some(MemoryNamespace {
+            project: Some(s.clone()),
+            ..MemoryNamespace::default()
+        })),
+        Value::Object(_) => Ok(Some(serde_json::from_value::<MemoryNamespace>(
+            ns_value.clone(),
+        )?)),
+        _ => Err(anyhow::anyhow!("namespace must be a string or object")),
     }
 }
 

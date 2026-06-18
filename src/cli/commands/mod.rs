@@ -52,10 +52,13 @@ impl Cli {
     pub async fn run(&self) -> Result<()> {
         use enums::Command;
 
-        match self.cmd.as_ref().unwrap_or(&Command::Http { port: None }) {
-            Command::Http { port } => {
+        match self.cmd.as_ref().unwrap_or(&Command::Http {
+            port: None,
+            mcp_port: None,
+        }) {
+            Command::Http { port, mcp_port } => {
                 let port = port.unwrap_or_else(resolve_http_port);
-                start_http_server(port).await
+                start_http_server(port, *mcp_port).await
             }
             Command::Mcp => start_mcp_stdio().await,
             Command::Search {
