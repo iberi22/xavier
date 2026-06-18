@@ -60,7 +60,7 @@ pub struct SelfImproveAgent {
     config: SelfImproveConfig,
     metrics: Arc<RwLock<AgentMetrics>>,
     improvements: Arc<RwLock<Vec<Improvement>>>,
-    tgd: Option<crate::agents::tgd::TgdEngine>,
+    tgd: Option<crate::tgd::TgdEngine>,
 }
 
 impl SelfImproveAgent {
@@ -79,7 +79,7 @@ impl SelfImproveAgent {
         }
     }
 
-    pub fn with_tgd(mut self, tgd: crate::agents::tgd::TgdEngine) -> Self {
+    pub fn with_tgd(mut self, tgd: crate::tgd::TgdEngine) -> Self {
         self.tgd = Some(tgd);
         self
     }

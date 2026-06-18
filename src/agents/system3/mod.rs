@@ -9,7 +9,8 @@ pub mod helpers;
 pub mod tests;
 pub mod types;
 
-pub use engine::System3Actor;
+pub use engine::{observe, System3Actor};
 pub use types::{
-    Action, ActionResult, ActionType, ActorConfig, MemoryOperation, MemoryUpdate, ToolCall,
+    Action, ActionResult, ActionType, ActorConfig, MemoryOperation, MemoryUpdate, MetaObservations,
+    ToolCall,
 };

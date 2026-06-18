@@ -62,12 +62,15 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
         hormer_metrics = context.workspace.hormer.get_metrics().await;
     }
 
+    let xavier_health = crate::health::collect_health_sync();
+
     Json(serde_json::json!({
-        "status": "ok",
+        "status": xavier_health.status,
         "service": "xavier",
         "version": env!("CARGO_PKG_VERSION"),
         "lag_ms": lag_ms,
-        "hormer": hormer_metrics
+        "hormer": hormer_metrics,
+        "health": xavier_health
     }))
 }
 
