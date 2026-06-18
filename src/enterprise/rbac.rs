@@ -5,98 +5,65 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use thiserror::Error;
+use uuid::Uuid;
 
-/// Permission types for memory operations
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+/// Permission types
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Permission {
-    MemoryRead,
-    MemoryWrite,
-    MemoryDelete,
-    TenantManage,
-    ApiKeyManage,
-    AuditView,
-    AgentMemoryRead(String),
-    AgentMemoryWrite(String),
-    Admin,
+    Read,
+    Write,
+    Delete,
+    Share,
+    Manage,
 }
 
 impl Permission {
-    /// Get all permissions for a role
+    /// Get all permissions
     pub fn all() -> Vec<Permission> {
         vec![
-            Permission::MemoryRead,
-            Permission::MemoryWrite,
-            Permission::MemoryDelete,
-            Permission::TenantManage,
-            Permission::ApiKeyManage,
-            Permission::AuditView,
-            Permission::AgentMemoryRead("*".to_string()),
-            Permission::AgentMemoryWrite("*".to_string()),
-            Permission::Admin,
+            Permission::Read,
+            Permission::Write,
+            Permission::Delete,
+            Permission::Share,
+            Permission::Manage,
         ]
-    }
-
-    /// Check if this permission implies another
-    pub fn implies(&self, other: &Permission) -> bool {
-        match (self, other) {
-            (Permission::Admin, _) => true,
-            (_, Permission::Admin) => false,
-            _ => self == other,
-        }
     }
 }
 
 impl fmt::Display for Permission {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Permission::MemoryRead => write!(f, "memory:read"),
-            Permission::MemoryWrite => write!(f, "memory:write"),
-            Permission::MemoryDelete => write!(f, "memory:delete"),
-            Permission::TenantManage => write!(f, "tenant:manage"),
-            Permission::ApiKeyManage => write!(f, "api_key:manage"),
-            Permission::AuditView => write!(f, "audit:view"),
-            Permission::AgentMemoryRead(agent) => write!(f, "agent:{}:read", agent),
-            Permission::AgentMemoryWrite(agent) => write!(f, "agent:{}:write", agent),
-            Permission::Admin => write!(f, "admin"),
+            Permission::Read => write!(f, "read"),
+            Permission::Write => write!(f, "write"),
+            Permission::Delete => write!(f, "delete"),
+            Permission::Share => write!(f, "share"),
+            Permission::Manage => write!(f, "manage"),
         }
     }
 }
 
 /// Role types with associated permissions
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
-    #[serde(alias = "Admin")]
     Admin,
-    #[serde(alias = "Editor")]
     Editor,
-    #[serde(alias = "Reader")]
-    Reader,
+    Viewer,
+    Custom(String),
 }
 
 impl Role {
-    /// Get permissions for this role
-    pub fn permissions(&self) -> Vec<Permission> {
-        match self {
-            Role::Admin => Permission::all(),
-            Role::Editor => vec![
-                Permission::MemoryRead,
-                Permission::MemoryWrite,
-                Permission::AuditView,
-            ],
-            Role::Reader => vec![Permission::MemoryRead],
-        }
-    }
-
     /// Check if this role has a permission
     pub fn has_permission(&self, perm: &Permission) -> bool {
         match self {
             Role::Admin => true,
             Role::Editor => matches!(
                 perm,
-                Permission::MemoryRead | Permission::MemoryWrite | Permission::AuditView
+                Permission::Read | Permission::Write | Permission::Share
             ),
-            Role::Reader => *perm == Permission::MemoryRead,
+            Role::Viewer => matches!(perm, Permission::Read),
+            Role::Custom(_) => false, // Custom role logic would be implemented here
         }
     }
 }
@@ -106,16 +73,44 @@ impl fmt::Display for Role {
         match self {
             Role::Admin => write!(f, "admin"),
             Role::Editor => write!(f, "editor"),
-            Role::Reader => write!(f, "reader"),
+            Role::Viewer => write!(f, "viewer"),
+            Role::Custom(s) => write!(f, "custom({})", s),
         }
     }
+}
+
+/// Role assignment for a user in a workspace
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RoleAssignment {
+    pub user_id: Uuid,
+    pub role: Role,
+    pub workspace_id: Uuid,
+}
+
+/// RBAC error types
+#[derive(Error, Debug)]
+pub enum RbacError {
+    #[error("Permission denied: {0}")]
+    PermissionDenied(Permission),
+    #[error("Invalid role for operation")]
+    InvalidRole,
+    #[error("User not found: {0}")]
+    UserNotFound(Uuid),
+}
+
+/// Authorization check
+pub fn authorize(user_id: Uuid, action: Permission, _resource: String) -> Result<(), RbacError> {
+    // Scaffolding: In a real implementation, this would look up the user's role
+    // for the relevant workspace/resource. For now, we assume success for scaffolding.
+    tracing::debug!(?user_id, ?action, "Authorizing action on resource");
+    Ok(())
 }
 
 /// User entity with role
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct User {
-    pub id: uuid::Uuid,
-    pub tenant_id: uuid::Uuid,
+    pub id: Uuid,
+    pub tenant_id: Uuid,
     pub role: Role,
     pub email: Option<String>,
     pub name: Option<String>,
@@ -123,9 +118,9 @@ pub struct User {
 }
 
 impl User {
-    pub fn new(tenant_id: uuid::Uuid, role: Role) -> Self {
+    pub fn new(tenant_id: Uuid, role: Role) -> Self {
         Self {
-            id: uuid::Uuid::new_v4(),
+            id: Uuid::new_v4(),
             tenant_id,
             role,
             email: None,
@@ -145,28 +140,17 @@ impl User {
     }
 }
 
-/// RBAC error types
-#[derive(Error, Debug)]
-pub enum RbacError {
-    #[error("Permission denied: {0}")]
-    PermissionDenied(Permission),
-    #[error("Invalid role for operation")]
-    InvalidRole,
-    #[error("User not found: {0}")]
-    UserNotFound(uuid::Uuid),
-}
-
 /// Check permission result
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PermissionCheck {
     pub allowed: bool,
     pub permission: Permission,
-    pub user_id: Option<uuid::Uuid>,
+    pub user_id: Option<Uuid>,
     pub reason: Option<String>,
 }
 
 impl PermissionCheck {
-    pub fn allow(permission: Permission, user_id: uuid::Uuid) -> Self {
+    pub fn allow(permission: Permission, user_id: Uuid) -> Self {
         Self {
             allowed: true,
             permission,
@@ -175,7 +159,7 @@ impl PermissionCheck {
         }
     }
 
-    pub fn deny(permission: Permission, user_id: uuid::Uuid, reason: impl Into<String>) -> Self {
+    pub fn deny(permission: Permission, user_id: Uuid, reason: impl Into<String>) -> Self {
         Self {
             allowed: false,
             permission,
@@ -188,11 +172,11 @@ impl PermissionCheck {
 /// Role guard for checking permissions
 pub struct RoleGuard {
     role: Role,
-    user_id: uuid::Uuid,
+    user_id: Uuid,
 }
 
 impl RoleGuard {
-    pub fn new(role: Role, user_id: uuid::Uuid) -> Self {
+    pub fn new(role: Role, user_id: Uuid) -> Self {
         Self { role, user_id }
     }
 
@@ -226,28 +210,24 @@ mod tests {
 
     #[test]
     fn test_role_permissions() {
-        assert!(Role::Admin.has_permission(&Permission::Admin));
-        assert!(Role::Admin.has_permission(&Permission::MemoryRead));
-        assert!(Role::Admin.has_permission(&Permission::MemoryWrite));
-        assert!(Role::Admin.has_permission(&Permission::MemoryDelete));
+        assert!(Role::Admin.has_permission(&Permission::Delete));
+        assert!(Role::Editor.has_permission(&Permission::Read));
+        assert!(Role::Editor.has_permission(&Permission::Write));
+        assert!(!Role::Editor.has_permission(&Permission::Delete));
 
-        assert!(Role::Editor.has_permission(&Permission::MemoryRead));
-        assert!(Role::Editor.has_permission(&Permission::MemoryWrite));
-        assert!(!Role::Editor.has_permission(&Permission::MemoryDelete));
-
-        assert!(Role::Reader.has_permission(&Permission::MemoryRead));
-        assert!(!Role::Reader.has_permission(&Permission::MemoryWrite));
+        assert!(Role::Viewer.has_permission(&Permission::Read));
+        assert!(!Role::Viewer.has_permission(&Permission::Write));
     }
 
     #[test]
     fn test_role_guard() {
-        let guard = RoleGuard::new(Role::Editor, uuid::Uuid::new_v4());
+        let guard = RoleGuard::new(Role::Editor, Uuid::new_v4());
 
-        assert!(guard.can(&Permission::MemoryRead));
-        assert!(guard.can(&Permission::MemoryWrite));
-        assert!(!guard.can(&Permission::MemoryDelete));
+        assert!(guard.can(&Permission::Read));
+        assert!(guard.can(&Permission::Write));
+        assert!(!guard.can(&Permission::Delete));
 
-        assert!(guard.require(Permission::MemoryRead).is_ok());
-        assert!(guard.require(Permission::MemoryDelete).is_err());
+        assert!(guard.require(Permission::Read).is_ok());
+        assert!(guard.require(Permission::Delete).is_err());
     }
 }
