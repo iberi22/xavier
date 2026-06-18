@@ -133,7 +133,7 @@ async fn test_mesh_handshake_and_sync() {
     // Let's manually add it to the ACL file.
     let mut acl_b = xavier::mesh::MeshAcl::load().unwrap();
     acl_b.set_entry(identity_a.node_id.clone(), xavier::mesh::NodeAclEntry {
-        role: Role::Reader,
+        role: Role::Viewer,
         clearance: ClearanceLevel::TopSecret,
         namespaces: None,
         public_key_hex: hex::encode(&identity_a.public_key),

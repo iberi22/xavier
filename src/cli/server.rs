@@ -647,7 +647,7 @@ pub async fn start_http_server(port: u16) -> Result<()> {
         .route("/panel/assets/{*path}", get(panel_asset))
         .merge(protected_routes)
         .merge(large_body_routes)
-        .layer(Extension(workspace_ctx))
+        .layer(Extension(workspace_ctx.clone()))
         .layer(CorsLayer::permissive());
 
     let agent_indexer_cron = state.agent_indexer.clone();
