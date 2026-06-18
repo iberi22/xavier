@@ -45,11 +45,13 @@ async fn handle_license_accept() -> Result<()> {
     println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!();
     println!("By accepting this license, you agree to:");
-    println!("  1. Network Participation — your node joins the Xavier Mesh");
-    println!("  2. Governance Rights — earn voting rights via XP + reputation");
-    println!("  3. Data Sovereignty — your data never leaves your node encrypted");
-    println!("  4. XP Tokenomics — earn XP for contributions (no monetary value)");
+    println!("  1. Usage Tiers — Free for individuals/OSS, paid for large commercial entities");
+    println!("  2. Network Participation — your node joins the Xavier Mesh");
+    println!("  3. Governance Rights — earn voting rights via XP + reputation");
+    println!("  4. Data Sovereignty — your data remains yours and encrypted");
+    println!("  5. XP Tokenomics — earn XP for contributions (no monetary value)");
     println!();
+    println!("Commercial terms: see docs/PRICING.md or contact iberi22");
     println!("Full terms: LICENSE-MESH");
     println!();
 

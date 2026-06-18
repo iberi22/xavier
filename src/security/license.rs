@@ -40,8 +40,7 @@ pub fn require_mesh_license(settings: &XavierSettings) -> Result<(), String> {
         Ok(())
     } else {
         Err(
-            "Mesh features require the Xavier Mesh License. "
-                .to_owned()
+            "Mesh, Data Commons, and Enterprise features require the Xavier Mesh License. "
                 .to_owned()
                 + "Run `xavier license accept` to accept the terms in LICENSE-MESH.",
         )

@@ -6,14 +6,15 @@
 Xavier core (memory, search, encryption, session management) remains **MIT licensed**.
 Anyone can use, modify, and distribute Xavier as a local memory system without restrictions.
 
-### Mesh License (Network Participation)
-When a node operator activates mesh features, they agree to:
-1. **Governance participation** — node earns voting rights proportional to activity + reputation
-2. **Data Commons opt-in** — anonymized telemetry contributes to network health (or can be declined)
-3. **XP token rewards** — active participants earn XP for contributing compute, data, or validation
-4. **License enforcement** — mesh license is cryptographically verified during handshake
+### Mesh License (Network participation & Commercial use)
+When a node operator activates mesh, Data Commons, or Enterprise features, they agree to the Xavier Mesh License:
+1. **Usage Tiers** — Free for individuals and open-source projects. Commercial entities exceeding revenue ($5M) or employee (50) thresholds require a commercial license.
+2. **Governance participation** — node earns voting rights proportional to activity + reputation.
+3. **Data Commons opt-in** — anonymized telemetry contributes to network health.
+4. **XP token rewards** — active participants earn XP for contributing compute, data, or validation.
+5. **License enforcement** — mesh license is verified during CLI execution and network handshake.
 
-The Mesh License is **not a subscription** — it's a covenant for participation. If you only use Xavier locally, you never need it.
+The Mesh License is a covenant for participation and commercial alignment. If you only use Xavier locally as a standalone tool, you never need it.
 
 ## Governance Architecture
 
