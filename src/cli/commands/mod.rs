@@ -22,6 +22,7 @@ pub mod enums;
 pub mod http;
 pub mod license;
 pub mod mesh;
+pub mod memory;
 pub mod navigation;
 pub mod provider;
 pub mod secrets;
@@ -199,6 +200,7 @@ impl Cli {
                 crate::cli::handlers::system_scan_cli::handle_scan_command().await
             }
             Command::License { cmd } => crate::cli::commands::license::handle_license_command(cmd.clone()).await,
+            Command::Memory { cmd } => memory::handle_memory_command(cmd.clone()).await,
             Command::Export {
                 public,
                 output,

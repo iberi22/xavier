@@ -35,6 +35,7 @@ pub mod settings;
 pub mod storage;
 pub mod sync;
 pub mod tasks;
+pub mod tgd;
 #[cfg(feature = "telegram")]
 pub mod telegram;
 pub mod tools;

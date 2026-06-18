@@ -74,6 +74,7 @@ serde_json = "1.0.150"
 thiserror = "2.0.18"
 flate2 = "1.0"
 tokio = { version = "1.52.2", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 tokio-stream = "0.1"
 ulid = "1.1"
 uuid = { version = "1.23", features = ["v4", "serde"] }

@@ -239,7 +239,7 @@ pub async fn memory_consolidate(
     Extension(workspace): Extension<WorkspaceContext>,
 ) -> impl IntoResponse {
     let task = ConsolidationTask::default();
-    match task.consolidate(&workspace).await {
+    match task.consolidate(&workspace, None).await {
         Ok(stats) => Json(serde_json::json!({ "status": "ok", "stats": stats })),
         Err(e) => Json(serde_json::json!({"status": "error", "message": e.to_string() })),
     }
