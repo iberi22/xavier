@@ -1,0 +1,72 @@
+//! Shared retrieval tuning defaults.
+
+pub const DEFAULT_WORKING_WEIGHT: f32 = 0.3;
+pub const DEFAULT_EPISODIC_WEIGHT: f32 = 0.3;
+pub const DEFAULT_SEMANTIC_WEIGHT: f32 = 0.4;
+pub const DEFAULT_RELEVANCE_THRESHOLD: f32 = 0.5;
+pub const DEFAULT_RECENCY_WEIGHT: f32 = 0.3;
+pub const DEFAULT_HALF_LIFE_HOURS: f32 = 168.0;
+pub const DEFAULT_RRF_K: u32 = 60;
+
+pub fn configured_rrf_k() -> u32 {
+    crate::settings::XavierSettings::current()
+        .retrieval
+        .rrf_k
+        .unwrap_or(DEFAULT_RRF_K)
+}
+
+pub fn configured_keyword_weight() -> f32 {
+    crate::settings::XavierSettings::current()
+        .retrieval
+        .keyword_weight
+        .unwrap_or(DEFAULT_KEYWORD_WEIGHT)
+}
+
+pub fn configured_vector_weight() -> f32 {
+    crate::settings::XavierSettings::current()
+        .retrieval
+        .vector_weight
+        .unwrap_or(DEFAULT_VECTOR_WEIGHT)
+}
+
+pub const DEFAULT_MAX_RESULTS: usize = 20;
+pub const DEFAULT_SEARCH_LIMIT: usize = 10;
+pub const DEFAULT_RERANK_LIMIT: usize = 50;
+pub const DEFAULT_KEYWORD_WEIGHT: f32 = 0.5;
+pub const DEFAULT_VECTOR_WEIGHT: f32 = 0.5;
+
+pub const WEIGHT_SUM_TOLERANCE: f32 = 0.001;
+pub const MIN_RELEVANCE_THRESHOLD: f32 = 0.0;
+pub const MAX_RELEVANCE_THRESHOLD: f32 = 1.0;
+
+pub const EXACT_PHRASE_MATCH_BONUS: f32 = 0.5;
+pub const TERM_MATCH_BONUS: f32 = 0.1;
+pub const TERM_OCCURRENCE_BONUS: f32 = 0.05;
+pub const MAX_TERM_OCCURRENCE_BONUS: f32 = 0.3;
+pub const EVENT_PHRASE_MATCH_BONUS: f32 = 0.3;
+pub const EVENT_TERM_MATCH_BONUS: f32 = 0.05;
+
+pub const EXACT_ENTITY_MATCH_SCORE: f32 = 1.0;
+pub const PARTIAL_ENTITY_MATCH_SCORE: f32 = 0.7;
+pub const ENTITY_DESCRIPTION_MATCH_SCORE: f32 = 0.4;
+pub const ENTITY_DESCRIPTION_TERM_BONUS: f32 = 0.1;
+pub const ENTITY_ALIAS_MATCH_SCORE: f32 = 0.6;
+pub const SEMANTIC_CONFIDENCE_MULTIPLIER: f32 = 0.5;
+
+pub const DEFAULT_ZONE_BOOST_MULTIPLIER: f32 = 1.5;
+pub const DEFAULT_ZONE_PENALTY_MULTIPLIER: f32 = 0.5;
+pub const DEFAULT_CACHE_WARMING_THRESHOLD: f32 = 0.5;
+
+pub fn configured_zone_boost() -> f32 {
+    std::env::var("XAVIER_ZONE_BOOST")
+        .ok()
+        .and_then(|value| value.parse::<f32>().ok())
+        .unwrap_or(DEFAULT_ZONE_BOOST_MULTIPLIER)
+}
+
+pub fn configured_zone_penalty() -> f32 {
+    std::env::var("XAVIER_ZONE_PENALTY")
+        .ok()
+        .and_then(|value| value.parse::<f32>().ok())
+        .unwrap_or(DEFAULT_ZONE_PENALTY_MULTIPLIER)
+}
