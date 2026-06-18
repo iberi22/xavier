@@ -212,6 +212,16 @@ pub async fn v1_memories_add(
 pub async fn v1_mesh_identity(
     Extension(_workspace): Extension<WorkspaceContext>,
 ) -> impl IntoResponse {
+    // License check
+    let settings = crate::settings::XavierSettings::current();
+    if let Err(e) = crate::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
     match NodeIdentity::load_or_create() {
         Ok(identity) => Json(identity.public_info()).into_response(),
         Err(e) => (
@@ -226,6 +236,16 @@ pub async fn v1_mesh_handshake(
     Extension(_workspace): Extension<WorkspaceContext>,
     Json(payload): Json<MeshHandshake>,
 ) -> impl IntoResponse {
+    // License check
+    let settings = crate::settings::XavierSettings::current();
+    if let Err(e) = crate::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "accepted": false, "reason": e })),
+        )
+            .into_response();
+    }
+
     info!("Received mesh handshake from {}", payload.node_id);
 
     // 1. Verify Signature
@@ -335,6 +355,16 @@ pub async fn v1_mesh_manifest(
     Extension(workspace): Extension<WorkspaceContext>,
     Query(payload): Query<std::collections::HashMap<String, String>>,
 ) -> impl IntoResponse {
+    // License check
+    let settings = crate::settings::XavierSettings::current();
+    if let Err(e) = crate::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
     let node_id_str = payload.get("node_id");
     let timestamp_str = payload.get("timestamp");
     let nonce = payload.get("nonce");
@@ -455,6 +485,16 @@ pub async fn v1_mesh_chunks_request(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<MeshSyncRequest>,
 ) -> impl IntoResponse {
+    // License check
+    let settings = crate::settings::XavierSettings::current();
+    if let Err(e) = crate::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
     use std::collections::HashMap;
 
     let acl = crate::mesh::acl::MeshAcl::load().unwrap_or_else(|e| {
@@ -515,6 +555,16 @@ pub async fn v1_mesh_chunks_push(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(chunks): Json<std::collections::HashMap<String, Vec<u8>>>,
 ) -> impl IntoResponse {
+    // License check
+    let settings = crate::settings::XavierSettings::current();
+    if let Err(e) = crate::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
     let mut synced_hashes = Vec::new();
     let sync_dir = workspace
         .workspace
@@ -542,7 +592,7 @@ pub async fn v1_mesh_chunks_push(
         }
     }
 
-    Json(synced_hashes)
+    Json(synced_hashes).into_response()
 }
 
 // ── Session Sharing API ───────────────────────────────────────────────────
@@ -556,6 +606,18 @@ pub async fn v1_session_export(
     Extension(workspace): Extension<WorkspaceContext>,
     Path(session_id): Path<String>,
 ) -> impl IntoResponse {
+    // Session export/import is often used for mesh sharing, but can be standalone.
+    // However, the design docs link it to the Mesh License when used for network sharing.
+    // We'll gate it if it's part of the Mesh/V1 API surface.
+    let settings = crate::settings::XavierSettings::current();
+    if let Err(e) = crate::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
     match export_session(&workspace.workspace.memory, &session_id).await {
         Ok(bundle) => Json(bundle).into_response(),
         Err(e) => (
@@ -570,6 +632,16 @@ pub async fn v1_session_import(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(bundle): Json<SessionBundle>,
 ) -> impl IntoResponse {
+    // License check
+    let settings = crate::settings::XavierSettings::current();
+    if let Err(e) = crate::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
     match import_session(&workspace.workspace.memory, bundle).await {
         Ok(_) => Json(serde_json::json!({ "status": "ok" })).into_response(),
         Err(e) => (
@@ -585,6 +657,16 @@ pub async fn v1_mesh_session_share(
     Path(session_id): Path<String>,
     Json(payload): Json<V1SessionShareRequest>,
 ) -> impl IntoResponse {
+    // License check
+    let settings = crate::settings::XavierSettings::current();
+    if let Err(e) = crate::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
     let registry = match PeerRegistry::load() {
         Ok(r) => r,
         Err(e) => {
@@ -874,12 +956,30 @@ pub struct CloudNodeRequest {
 }
 
 pub async fn v1_mesh_cloud_get() -> impl IntoResponse {
+    // License check
     let settings = crate::settings::XavierSettings::current();
-    Json(settings.pgheart)
+    if let Err(e) = crate::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
+    Json(settings.pgheart).into_response()
 }
 
 pub async fn v1_mesh_cloud_update(Json(payload): Json<CloudNodeRequest>) -> impl IntoResponse {
+    // License check
     let mut settings = crate::settings::XavierSettings::current();
+    if let Err(e) = crate::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
     settings.pgheart.url = Some(payload.url);
     settings.pgheart.token = Some(payload.token);
     settings.pgheart.instance_id = Some(payload.instance_id);
@@ -899,12 +999,30 @@ pub struct DataCommonsOptInRequest {
 }
 
 pub async fn v1_mesh_data_commons_get() -> impl IntoResponse {
+    // License check
     let settings = crate::settings::XavierSettings::current();
-    Json(settings.data_commons)
+    if let Err(e) = crate::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
+    Json(settings.data_commons).into_response()
 }
 
 pub async fn v1_mesh_data_commons_opt_in(Json(payload): Json<DataCommonsOptInRequest>) -> impl IntoResponse {
+    // License check
     let mut settings = crate::settings::XavierSettings::current();
+    if let Err(e) = crate::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
     settings.data_commons.enabled = payload.enabled;
     settings.data_commons.consent_given = payload.consent_given;
     if payload.wallet_address.is_some() {

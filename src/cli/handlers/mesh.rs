@@ -47,6 +47,16 @@ pub struct PairingCodeResponse {
 }
 
 pub async fn list_peers_handler() -> impl IntoResponse {
+    // License check
+    let settings = xavier::settings::XavierSettings::current();
+    if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
     let registry = match PeerRegistry::load() {
         Ok(r) => r,
         Err(e) => {
@@ -105,6 +115,16 @@ pub async fn list_peers_handler() -> impl IntoResponse {
 pub async fn generate_pairing_code_handler(
     Json(payload): Json<serde_json::Value>,
 ) -> impl IntoResponse {
+    // License check
+    let settings = xavier::settings::XavierSettings::current();
+    if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
     let endpoint = payload
         .get("endpoint")
         .and_then(|v| v.as_str())
@@ -136,6 +156,16 @@ pub struct DecodedPairingCodeResponse {
 }
 
 pub async fn decode_pairing_code_handler(Json(payload): Json<PairRequest>) -> impl IntoResponse {
+    // License check
+    let settings = xavier::settings::XavierSettings::current();
+    if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
     match xavier::mesh::pairing::decode_pairing_code(&payload.code) {
         Ok(data) => Json(DecodedPairingCodeResponse {
             node_id: data.node_id.0,
@@ -151,6 +181,16 @@ pub async fn decode_pairing_code_handler(Json(payload): Json<PairRequest>) -> im
 }
 
 pub async fn pair_peer_handler(Json(payload): Json<PairRequest>) -> impl IntoResponse {
+    // License check
+    let settings = xavier::settings::XavierSettings::current();
+    if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
     let data = match xavier::mesh::pairing::decode_pairing_code(&payload.code) {
         Ok(d) => d,
         Err(e) => {
@@ -232,6 +272,16 @@ pub async fn update_peer_acl_handler(
     Path(node_id): Path<String>,
     Json(payload): Json<UpdateAclRequest>,
 ) -> impl IntoResponse {
+    // License check
+    let settings = xavier::settings::XavierSettings::current();
+    if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
     let node_id = NodeId(node_id);
     let mut acl = match MeshAcl::load() {
         Ok(a) => a,
@@ -268,6 +318,16 @@ pub async fn update_peer_acl_handler(
 }
 
 pub async fn remove_peer_handler(Path(node_id): Path<String>) -> impl IntoResponse {
+    // License check
+    let settings = xavier::settings::XavierSettings::current();
+    if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
     let node_id = NodeId(node_id);
     let mut registry = match PeerRegistry::load() {
         Ok(r) => r,

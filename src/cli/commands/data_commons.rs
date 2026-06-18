@@ -5,6 +5,10 @@ use xavier::data_commons::readiness::ReadinessValidator;
 use xavier::data_commons::training::TrainingExporter;
 
 pub async fn handle_data_commons_command(cmd: DataCommonsCommand) -> Result<()> {
+    // License check for Data Commons features
+    let settings = xavier::settings::XavierSettings::current();
+    xavier::security::license::require_mesh_license(&settings).map_err(|e| anyhow::anyhow!(e))?;
+
     match cmd {
         DataCommonsCommand::ExportTrainingBundle {
             output,

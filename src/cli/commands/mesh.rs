@@ -9,6 +9,10 @@ use xavier::mesh::{NodeId, NodeIdentity, PeerInfo, PeerRegistry, MeshTransport, 
 use xavier::sync::SyncTransport;
 
 pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
+    // License check for Mesh features
+    let settings = xavier::settings::XavierSettings::current();
+    xavier::security::license::require_mesh_license(&settings).map_err(|e| anyhow::anyhow!(e))?;
+
     match cmd {
         MeshCommand::Id => {
             let identity = NodeIdentity::load_or_create()?;
