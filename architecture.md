@@ -1,6 +1,7 @@
 # Xavier Architecture
 
 > **GitCore Protocol v3.6.1** | Feature tracking: [.xavier/feature-maturity.json](.xavier/feature-maturity.json)
+> Sprint JULES-002: 2026-06-18 → 2026-06-25 | Target: 85%
 
 ## Core Modules
 
@@ -21,36 +22,35 @@ src/
 ├── security/      — ACL, permissions, secrets
 ├── sync/          — Memory sync primitives
 └── tgd/           — Textual Gradient Descent optimization
+
+xavier-core/       — Extracted core crate for Android/FFI (PR #207)
 ```
 
-## Feature Maturity (v0.11.0 target)
+## Feature Maturity (v0.11.0 target: 90%)
 
-| Feature | Maturity | Status | Sprint |
-|---------|----------|--------|--------|
-| Memoria RAG | 85% | ✅ Production Ready | — |
-| CLI Tools | 80% | ✅ Production Ready | — |
-| Self-monitoring | 80% | ✅ Production Ready | — |
-| MCP Server | 80% | ✅ Production Ready | — |
-| Memory Sync P2P | 75% | ✅ Production Ready | — |
-| HORMER Navigation | 65% | ⚠️ Needs improvement | Sprint Jules |
-| Code Graph | 60% | ⚠️ Needs review | Sprint Jules |
-| TGD Optimization | 50% | 🛠️ Needs work | Sprint Jules |
-| Benchmarks | 50% | 🛠️ In progress | Sprint Jules |
-| Mesh Network | 35% | 🛠️ In progress | Sprint Jules |
+| Feature | % | Status | Sprint |
+|---------|---|--------|--------|
+| Memoria RAG | **85** | ✅ Production | — |
+| CLI Tools | **80** | ✅ Production | — |
+| Self-monitoring | **80** | ✅ Production | — |
+| MCP Server | **80** | ✅ Production | Sprint 002 |
+| HORMER Nav | **80** | ✅ Production | ✅ Sprint 001 |
+| Memory Sync | **75** | ✅ Production | — |
+| TGD | **75** | ✅ Production | ✅ Sprint 001 |
+| Code Graph | **60** | ⚠️ Needs review | Sprint 002 |
+| Benchmarks | **60** | ⚠️ In progress | ✅ Sprint 001 |
+| Mesh Network | **45** | 🛠️ In progress | Sprint 002 |
+| **Overall** | **78** | | **Target: 85%** |
 
-**Overall: 66%** toward v0.11.0
+## Sprint JULES-002
 
-## Sprint Jules #001
-
-Active: **2026-06-18 → 2026-06-25**
-
-| Issue | Feature | Target |
-|-------|---------|--------|
-| #198 | TGD nightly consolidation | 80% |
-| #199 | HORMER navigation v2 | 80% |
-| #196 | Android APK | 60% |
-| — | Docs: RAG usage guide | 100% |
-| — | Code graph MCP integration | 80% |
+| Issue | Feature | Target | Assigned |
+|-------|---------|--------|----------|
+| #166 | Governance DAO on-chain | 60% | Jules |
+| — | Code graph dump + MCP | 80% | Manual |
+| — | Docs RAG via MCP | 100% | Manual |
+| — | E2E multi-node | 50% | Manual |
+| #169 | Dual License | design | BELA |
 
 ## MCP Server (agent consumption)
 
