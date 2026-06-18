@@ -206,4 +206,8 @@ Runtime configuration is read from environment variables and Xavier config files
 
 ## License
 
-MIT - see [LICENSE](LICENSE) for details.
+Xavier is dual-licensed:
+- **MIT License**: For standalone, local-first use of the core memory engine.
+- **Xavier Mesh License**: For network participation (Mesh), Governance, Data Commons, and Enterprise features. Free for individuals/OSS; paid for commercial entities above certain thresholds.
+
+See [LICENSE](LICENSE) and [LICENSE-MESH](LICENSE-MESH) for details. Commercial terms are documented in [docs/PRICING.md](docs/PRICING.md).
