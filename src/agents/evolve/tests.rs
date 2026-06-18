@@ -46,7 +46,7 @@ mod tests {
     #[tokio::test]
     async fn test_evolution_does_not_panic_on_empty_config() {
         let config = EvolveConfig::new("test".to_string());
-        let evolve = EvolveModule::new(config);
+        let evolve = EvolveModule::new(config).await.unwrap();
         // This test ensures that we can at least initialize and get state
         let state = evolve.state().await;
         assert_eq!(state.experiments_run, 0);
@@ -97,7 +97,7 @@ mod tests {
         // Mocking the full cycle is hard due to file system and script dependencies
         // But we can verify the EvolveModule can be created and has the expected members
         let config = EvolveConfig::new("test".to_string());
-        let evolve = EvolveModule::new(config);
+        let evolve = EvolveModule::new(config).await.unwrap();
         let state = evolve.state().await;
         assert!(!state.running);
     }

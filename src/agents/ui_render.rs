@@ -190,6 +190,7 @@ fn escape_attr(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::agents::system2::ConfidenceCalibration;
     use crate::agents::{
         router::RouteCategory,
         runtime::{AgentResponse, AgentRunTrace, RunOptimizationTrace, SystemTimings},
@@ -258,6 +259,7 @@ mod tests {
                 semantic_cache_hit: false,
                 llm_used: false,
                 model: None,
+                meta_observations: None,
             },
             optimization: RunOptimizationTrace {
                 route_category: RouteCategory::Retrieved,
