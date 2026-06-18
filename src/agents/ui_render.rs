@@ -5,7 +5,7 @@
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
-use crate::agents::{runtime::AgentRunTrace, system1::RetrievedDocument, system2::{ConfidenceCalibration, Evidence}};
+use crate::agents::{runtime::AgentRunTrace, system1::RetrievedDocument, system2::Evidence};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UiRenderResult {
