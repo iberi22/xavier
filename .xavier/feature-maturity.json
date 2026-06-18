@@ -1,8 +1,8 @@
 {
   "meta": {
     "format_version": "1.0.0",
-    "generated": "2026-06-18T22:50:00Z",
-    "head": "6f37d69",
+    "generated": "2026-06-18T23:00:00Z",
+    "head": "7acdc56",
     "project": "Xavier v0.10.0 → v0.11.0",
     "gitcore_protocol": "v3.6.1"
   },
@@ -158,14 +158,14 @@
         {"name": "Transport libp2p", "maturity": 70, "status": "done"},
         {"name": "Wallet & tokenomics", "maturity": 60, "status": "done"},
         {"name": "Governance DAO (mock)", "maturity": 30, "status": "done"},
-        {"name": "Governance DAO (on-chain)", "maturity": 5, "status": "sprint_2 (Jules)"},
-        {"name": "Data Commons economy", "maturity": 15, "status": "needs_work"},
+        {"name": "Governance DAO (on-chain)", "maturity": 5, "status": "jules (#166)"},
+        {"name": "Data Commons economy", "maturity": 15, "status": "jules (#209)"},
         {"name": "ACL & permissions", "maturity": 70, "status": "done"},
-        {"name": "Dual License (MIT + Mesh)", "maturity": 10, "status": "needs_design"},
+        {"name": "Dual License (MIT + Mesh)", "maturity": 10, "status": "jules (#169)"},
         {"name": "Android APK / xavier-core", "maturity": 55, "status": "done (PR #207)"}
       ],
       "last_updated": "2026-06-18",
-      "whats_missing": ["Governance on-chain real", "Data Commons economy", "Dual License docs"]
+      "whats_missing": ["Governance on-chain (#166)", "Data Commons (#209)", "Dual License (#169)"]
     },
     {
       "id": "benchmarks",
@@ -183,7 +183,7 @@
         {"name": "MinHash benchmark", "maturity": 50, "status": "needs_work"}
       ],
       "last_updated": "2026-06-18",
-      "whats_missing": ["MinHash benchmark", "E2E multi-nodo benchmark"]
+      "whats_missing": ["MinHash benchmark", "E2E multi-nodo benchmark (#212)"]
     }
   ],
   "summary": {
@@ -199,8 +199,8 @@
     "name": "Mesh Network + Code Graph Integration",
     "start": "2026-06-18",
     "target_end": "2026-06-25",
-    "focus": ["mesh-network", "code-graph", "mcp-server"],
-    "maturity_target": 85,
+    "focus": ["mesh-network", "code-graph", "mcp-server", "qa"],
+    "maturity_target": 88,
     "completed_in_sprint_001": [
       {"number": 198, "title": "TGD nightly consolidation", "pr": 206, "by": "jules"},
       {"number": 197, "title": "Tri-memory benchmark", "pr": 205, "by": "jules"},
@@ -208,14 +208,13 @@
       {"number": 196, "title": "Android APK (xavier-core)", "pr": 207, "by": "jules"}
     ],
     "jules_issues": [
-      {"number": 166, "title": "Governance DAO on-chain", "assigned_to": "jules", "maturity_target": 60}
+      {"number": 166, "title": "Governance DAO on-chain", "target": 60},
+      {"number": 209, "title": "Data Commons economy", "target": 50},
+      {"number": 210, "title": "Code Graph dump + MCP", "target": 80},
+      {"number": 211, "title": "Docs RAG usage guide", "target": 100},
+      {"number": 212, "title": "E2E multi-node tests", "target": 60},
+      {"number": 169, "title": "Dual License design", "target": 50}
     ],
-    "manual_tasks": [
-      "Docs: Guia de uso como memoria RAG via MCP Server",
-      "Code graph: Verificar dump JSON + integrar con MCP",
-      "E2E multi-node test",
-      "Cerrados #160 (Roadmap) y #200 (EPIC v1.0) — tracking en este JSON",
-      "Dual License (#169) — diseno legal, requiere decision humana"
-    ]
+    "manual_tasks": []
   }
 }
