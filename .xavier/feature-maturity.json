@@ -1,15 +1,15 @@
 {
   "meta": {
     "format_version": "1.0.0",
-    "generated": "2026-06-18T22:00:00Z",
-    "head": "1d82055",
+    "generated": "2026-06-18T22:30:00Z",
+    "head": "8f0b7d2",
     "project": "Xavier v0.10.0 → v0.11.0",
     "gitcore_protocol": "v3.6.1"
   },
   "features": [
     {
       "id": "memory-rag",
-      "name": "Memoria RAG (SQLite + BM25 híbrido + semantic + entity graph)",
+      "name": "Memoria RAG (SQLite + BM25 hibrido + semantic + entity graph)",
       "category": "core",
       "maturity_percent": 85,
       "status": "production_ready",
@@ -71,15 +71,17 @@
       "id": "hormer-navigation",
       "name": "HORMER Navigation",
       "category": "memory",
-      "maturity_percent": 65,
-      "status": "needs_improvement",
+      "maturity_percent": 80,
+      "status": "production_ready",
       "dependencies": ["memory-rag"],
       "subcomponents": [
-        {"name": "HORMER v1 (dynamic hierarchy, policy, GRPO)", "maturity": 85, "status": "done"},
-        {"name": "Predictive cache warming", "maturity": 40, "status": "done"},
-        {"name": "CLI navigation visualize", "maturity": 10, "status": "needs_work"},
-        {"name": "Navigation telemetry metrics", "maturity": 50, "status": "done"},
-        {"name": "Consolidacion nav-aware con TGD", "maturity": 15, "status": "needs_work"}
+        {"name": "HORMER v1 (dynamic hierarchy, policy, GRPO)", "maturity": 90, "status": "done"},
+        {"name": "Predictive cache warming (sibling docs + hotspots)", "maturity": 75, "status": "done (PR #208)"},
+        {"name": "CLI navigation visualize (weights + hotspots)", "maturity": 70, "status": "done (PR #208)"},
+        {"name": "Navigation telemetry metrics", "maturity": 65, "status": "done"},
+        {"name": "Consolidacion nav-aware con TGD", "maturity": 60, "status": "done (PR #208)"},
+        {"name": "Scale test (1000+ nodes)", "maturity": 75, "status": "done (PR #208)"},
+        {"name": "Normalized ID (BeliefGraph)", "maturity": 80, "status": "done (PR #208)"}
       ]
     },
     {
@@ -130,7 +132,7 @@
       "id": "mesh-network",
       "name": "Mesh Network (Sovereign Mesh)",
       "category": "mesh",
-      "maturity_percent": 35,
+      "maturity_percent": 45,
       "status": "in_progress",
       "dependencies": ["memory-sync"],
       "subcomponents": [
@@ -142,7 +144,8 @@
         {"name": "Data Commons economy", "maturity": 15, "status": "needs_work"},
         {"name": "ACL & permissions", "maturity": 70, "status": "done"},
         {"name": "Dual License (MIT + Mesh)", "maturity": 10, "status": "needs_work"},
-        {"name": "Android APK (Flutter+Rust)", "maturity": 5, "status": "needs_work"}
+        {"name": "Android APK (Flutter+Rust)", "maturity": 55, "status": "done (PR #207)"},
+        {"name": "xavier-core crate (extracted)", "maturity": 80, "status": "done (PR #207)"}
       ]
     },
     {
@@ -164,25 +167,24 @@
   ],
   "summary": {
     "total_features": 10,
-    "production_ready": 6,
-    "needs_work": 2,
+    "production_ready": 7,
+    "needs_work": 1,
     "in_progress": 2,
-    "overall_maturity": 70
+    "overall_maturity": 78
   },
   "sprint": {
     "id": "SPRINT-JULES-001",
-    "name": "Estabilización RAG + Code Graph + Mesh",
+    "name": "Estabilizacion RAG + Code Graph + Mesh",
     "start": "2026-06-18",
     "target_end": "2026-06-25",
-    "focus": ["hormer-navigation", "mesh-network", "code-graph"],
+    "focus": ["code-graph", "mesh-network"],
     "completed_in_sprint": [
       {"number": 198, "title": "TGD nightly consolidation", "pr": 206, "by": "jules"},
-      {"number": 197, "title": "Tri-memory benchmark", "pr": 205, "by": "jules"}
+      {"number": 197, "title": "Tri-memory benchmark", "pr": 205, "by": "jules"},
+      {"number": 199, "title": "HORMER navigation v2", "pr": 208, "by": "jules"},
+      {"number": 196, "title": "Android APK (xavier-core extract)", "pr": 207, "by": "jules"}
     ],
-    "jules_issues": [
-      {"number": 199, "title": "HORMER navigation v2", "assigned_to": "jules", "maturity_target": 80},
-      {"number": 196, "title": "Android APK", "assigned_to": "jules", "maturity_target": 60}
-    ],
+    "jules_issues": [],
     "manual_tasks": [
       "Docs: Guia de uso como memoria RAG via MCP Server",
       "Code graph: Verificar dump JSON + integrar con MCP",
