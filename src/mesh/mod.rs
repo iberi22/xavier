@@ -54,6 +54,8 @@ pub mod telemetry;
 pub mod telemetry_collector;
 pub mod tokenomics;
 pub mod transport;
+#[cfg(feature = "mesh")]
+pub mod libp2p_transport;
 
 pub use acl::{MeshAcl, NodeAclEntry};
 #[cfg(feature = "mesh")]
