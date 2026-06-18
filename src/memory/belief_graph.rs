@@ -68,10 +68,19 @@ impl BeliefGraph {
     }
 
     pub fn add_node(&self, concept: String, confidence: f32, language_family: Option<String>) {
+        use std::str::FromStr;
+        use crate::memory::qmd::NormalizedId;
+        let normalized = NormalizedId::from_str(&concept).unwrap_or_else(|_| NormalizedId::from_str_unchecked(&concept));
+        let concept_norm = normalized.to_string();
+
+        if self.get_node(&concept_norm).is_some() {
+            return;
+        }
+
         let id = ulid::Ulid::new().to_string();
         let node = BeliefNode {
             id: id.clone(),
-            concept: concept.clone(),
+            concept: concept_norm.clone(),
             confidence,
             language_family,
             created_at: Utc::now(),
@@ -84,10 +93,10 @@ impl BeliefGraph {
         self.adjacency
             .write()
             .expect("belief_graph: adjacency write lock poisoned")
-            .entry(concept.clone())
+            .entry(concept_norm.clone())
             .or_default();
 
-        info!("Added node: {}", concept);
+        info!("Added node: {}", concept_norm);
     }
 
     pub async fn add_edge(&self, from: String, to: String, relation: String) {
@@ -102,6 +111,11 @@ impl BeliefGraph {
         provenance_id: Option<String>,
         source_type: Option<&str>,
     ) -> Result<()> {
+        use std::str::FromStr;
+        use crate::memory::qmd::NormalizedId;
+        let source_norm = NormalizedId::from_str(&source).unwrap_or_else(|_| NormalizedId::from_str_unchecked(&source)).to_string();
+        let target_norm = NormalizedId::from_str(&target).unwrap_or_else(|_| NormalizedId::from_str_unchecked(&target)).to_string();
+
         let provenance_id = provenance_id.unwrap_or_else(|| "unknown".to_string());
         let confidence_score = self
             .evaluator
@@ -110,16 +124,16 @@ impl BeliefGraph {
 
         let lang_family = crate::memory::languages::get_language_family(&provenance_id);
 
-        if self.get_node(&source).is_none() {
-            self.add_node(source.clone(), 0.5, lang_family.clone());
+        if self.get_node(&source_norm).is_none() {
+            self.add_node(source_norm.clone(), 0.5, lang_family.clone());
         }
-        if self.get_node(&target).is_none() {
-            self.add_node(target.clone(), 0.5, lang_family.clone());
+        if self.get_node(&target_norm).is_none() {
+            self.add_node(target_norm.clone(), 0.5, lang_family.clone());
         }
 
         let mut new_edge = BeliefEdge::new(
-            source.clone(),
-            target.clone(),
+            source_norm.clone(),
+            target_norm.clone(),
             relation_type,
             confidence_score,
             provenance_id,
@@ -129,10 +143,10 @@ impl BeliefGraph {
             new_edge.is_inferred = true;
         }
 
-        if let Some(src_node) = self.get_node(&source) {
+        if let Some(src_node) = self.get_node(&source_norm) {
             new_edge.source_language = src_node.language_family;
         }
-        if let Some(tgt_node) = self.get_node(&target) {
+        if let Some(tgt_node) = self.get_node(&target_norm) {
             new_edge.target_language = tgt_node.language_family;
         }
 
@@ -144,7 +158,7 @@ impl BeliefGraph {
             new_edge.contradicts_edge_id = Some(contradicts_id);
             info!(
                 "Contradiction detected for {} -> {} ({}). Adding competing belief.",
-                source, target, new_edge.relation_type
+                source_norm, target_norm, new_edge.relation_type
             );
         }
 
@@ -158,34 +172,44 @@ impl BeliefGraph {
             .write()
             .expect("belief_graph: adjacency write lock poisoned");
         adjacency
-            .entry(source.clone())
+            .entry(source_norm.clone())
             .or_default()
-            .insert(target.clone());
-        adjacency.entry(target.clone()).or_default();
+            .insert(target_norm.clone());
+        adjacency.entry(target_norm.clone()).or_default();
 
         info!(
             "Added relation: {} -> {} ({}) [confidence: {}]",
-            source, target, new_edge.relation_type, confidence_score
+            source_norm, target_norm, new_edge.relation_type, confidence_score
         );
 
         Ok(())
     }
 
     pub fn get_related(&self, concept: &str) -> Vec<String> {
+        use std::str::FromStr;
+        use crate::memory::qmd::NormalizedId;
+        let normalized = NormalizedId::from_str(concept).unwrap_or_else(|_| NormalizedId::from_str_unchecked(concept));
+        let concept_norm = normalized.as_str();
+
         self.adjacency
             .read()
             .expect("belief_graph: adjacency read lock poisoned")
-            .get(concept)
+            .get(concept_norm)
             .map(|set| set.iter().cloned().collect())
             .unwrap_or_default()
     }
 
     pub fn get_node(&self, concept: &str) -> Option<BeliefNode> {
+        use std::str::FromStr;
+        use crate::memory::qmd::NormalizedId;
+        let normalized = NormalizedId::from_str(concept).unwrap_or_else(|_| NormalizedId::from_str_unchecked(concept));
+        let concept_norm = normalized.as_str();
+
         self.nodes
             .read()
             .expect("belief_graph: nodes read lock poisoned")
             .values()
-            .find(|node| node.concept == concept)
+            .find(|node| node.concept == concept_norm)
             .cloned()
     }
 
@@ -214,30 +238,42 @@ impl BeliefGraph {
     }
 
     pub fn replace_relations(&self, edges: Vec<BeliefEdge>) {
+        use std::str::FromStr;
+        use crate::memory::qmd::NormalizedId;
+
         let mut nodes = HashMap::new();
         let mut adjacency = HashMap::<String, HashSet<String>>::new();
+        let mut normalized_edges = Vec::new();
 
-        for edge in &edges {
-            nodes.entry(edge.source.clone()).or_insert(BeliefNode {
-                id: edge.source.clone(),
-                concept: edge.source.clone(),
+        for mut edge in edges {
+            let source_norm = NormalizedId::from_str(&edge.source).unwrap_or_else(|_| NormalizedId::from_str_unchecked(&edge.source)).to_string();
+            let target_norm = NormalizedId::from_str(&edge.target).unwrap_or_else(|_| NormalizedId::from_str_unchecked(&edge.target)).to_string();
+
+            edge.source = source_norm.clone();
+            edge.target = target_norm.clone();
+
+            nodes.entry(source_norm.clone()).or_insert(BeliefNode {
+                id: source_norm.clone(),
+                concept: source_norm.clone(),
                 confidence: edge.confidence_score,
                 language_family: edge.source_language.clone(),
                 created_at: edge.created_at,
             });
-            nodes.entry(edge.target.clone()).or_insert(BeliefNode {
-                id: edge.target.clone(),
-                concept: edge.target.clone(),
+            nodes.entry(target_norm.clone()).or_insert(BeliefNode {
+                id: target_norm.clone(),
+                concept: target_norm.clone(),
                 confidence: edge.confidence_score,
                 language_family: edge.target_language.clone(),
                 created_at: edge.created_at,
             });
 
             adjacency
-                .entry(edge.source.clone())
+                .entry(source_norm)
                 .or_default()
-                .insert(edge.target.clone());
+                .insert(target_norm);
             adjacency.entry(edge.target.clone()).or_default();
+
+            normalized_edges.push(edge);
         }
 
         *self
@@ -251,7 +287,7 @@ impl BeliefGraph {
         *self
             .edges
             .write()
-            .expect("belief_graph: edges write lock poisoned") = edges;
+            .expect("belief_graph: edges write lock poisoned") = normalized_edges;
     }
 
     pub async fn add_belief(&self, belief: Belief, source_memory_id: Option<String>) -> Result<()> {
@@ -313,13 +349,18 @@ impl BeliefGraph {
     }
 
     pub async fn bfs(&self, start: &str) -> Vec<String> {
+        use std::str::FromStr;
+        use crate::memory::qmd::NormalizedId;
+        let normalized = NormalizedId::from_str(start).unwrap_or_else(|_| NormalizedId::from_str_unchecked(start));
+        let start_norm = normalized.to_string();
+
         let adjacency = self
             .adjacency
             .read()
             .expect("belief_graph: adjacency read lock poisoned")
             .clone();
         let mut visited = HashSet::new();
-        let mut queue = VecDeque::from([start.to_string()]);
+        let mut queue = VecDeque::from([start_norm]);
         let mut ordered = Vec::new();
 
         while let Some(current) = queue.pop_front() {
@@ -345,13 +386,18 @@ impl BeliefGraph {
 
     /// Finds the highest-confidence path between two concepts.
     pub async fn find_highest_confidence_path(&self, start: &str, end: &str) -> Vec<BeliefEdge> {
+        use std::str::FromStr;
+        use crate::memory::qmd::NormalizedId;
+        let start_norm = NormalizedId::from_str(start).unwrap_or_else(|_| NormalizedId::from_str_unchecked(start)).to_string();
+        let end_norm = NormalizedId::from_str(end).unwrap_or_else(|_| NormalizedId::from_str_unchecked(end)).to_string();
+
         let edges = self.get_edges();
         let mut distances = HashMap::new();
         let mut previous = HashMap::new();
         let mut queue = HashSet::new();
 
-        distances.insert(start.to_string(), 0.0f32);
-        queue.insert(start.to_string());
+        distances.insert(start_norm.clone(), 0.0f32);
+        queue.insert(start_norm.clone());
 
         // Simple Dijkstra-like approach using confidence as weight (higher is better, so we use 1.0 - confidence as cost)
         while !queue.is_empty() {
@@ -367,7 +413,7 @@ impl BeliefGraph {
 
             queue.remove(&current);
 
-            if current == end {
+            if current == end_norm {
                 break;
             }
 
@@ -530,13 +576,13 @@ mod grounding_tests {
         let results = graph.validate_grounding(&docs, 0.5).await;
         assert_eq!(results.len(), 1);
         assert!(results[0].1);
-        assert!(results[0].2.contains("Xavier"));
-        assert!(!results[0].2.contains("Rust"));
+        assert!(results[0].2.contains("xavier"));
+        assert!(!results[0].2.contains("rust"));
 
         // With min_confidence 0.3, both should match
         let results = graph.validate_grounding(&docs, 0.3).await;
-        assert!(results[0].2.contains("Xavier"));
-        assert!(results[0].2.contains("Rust"));
+        assert!(results[0].2.contains("xavier"));
+        assert!(results[0].2.contains("rust"));
     }
 
     #[tokio::test]
@@ -553,5 +599,17 @@ mod grounding_tests {
         let results = graph.validate_grounding(&docs, 0.5).await;
         assert_eq!(results.len(), 1);
         assert!(!results[0].1);
+    }
+
+    #[tokio::test]
+    async fn test_node_id_normalization() {
+        let graph = BeliefGraph::new();
+        graph.add_node("My Concept".to_string(), 0.9, None);
+        graph.add_node("my_concept".to_string(), 0.8, None);
+
+        let nodes = graph.list_nodes();
+        // Should only have 1 node due to normalization
+        assert_eq!(nodes.len(), 1);
+        assert_eq!(nodes[0].concept, "my_concept");
     }
 }
