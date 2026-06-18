@@ -63,8 +63,8 @@
       "id": "mcp-server",
       "name": "MCP Server (HTTP+SSE + Stdio)",
       "category": "api",
-      "maturity_percent": 80,
-      "status": "production_ready",
+      "maturity_percent": 48,
+      "status": "in_progress",
       "dependencies": ["memory-rag"],
       "subcomponents": [
         {"name": "HTTP+SSE transport", "maturity": 85, "status": "done"},
@@ -191,7 +191,7 @@
     "production_ready": 7,
     "needs_work": 1,
     "in_progress": 2,
-    "overall_maturity": 78,
+    "overall_maturity": 69,
     "target_maturity_v011": 90
   },
   "sprint": {
@@ -200,7 +200,7 @@
     "start": "2026-06-18",
     "target_end": "2026-06-25",
     "focus": ["mesh-network", "code-graph", "mcp-server", "qa"],
-    "maturity_target": 88,
+    "maturity_target": 82,
     "completed_in_sprint_001": [
       {"number": 198, "title": "TGD nightly consolidation", "pr": 206, "by": "jules"},
       {"number": 197, "title": "Tri-memory benchmark", "pr": 205, "by": "jules"},
