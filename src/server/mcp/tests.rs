@@ -735,3 +735,56 @@ async fn mcp_get_without_accept_returns_405() {
 
     assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
 }
+
+#[tokio::test]
+async fn test_get_code_graph_success() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // Create a mock codegraph.json file
+    let xavier_dir = std::path::Path::new(".xavier");
+    if !xavier_dir.exists() {
+        std::fs::create_dir_all(xavier_dir).unwrap();
+    }
+    let dump_path = xavier_dir.join("codegraph.json");
+    let mock_data = json!({
+        "_meta": {
+            "repo": "test-repo",
+            "scanned_at": "2024-01-01T00:00:00Z",
+            "total_files": 1,
+            "total_symbols": 1,
+            "total_edges": 0,
+            "version": "1.0"
+        },
+        "symbols": [],
+        "edges": [],
+        "hotspots": [],
+        "hubs": []
+    });
+    std::fs::write(&dump_path, serde_json::to_string(&mock_data).unwrap()).unwrap();
+
+    let response = post_json(
+        router,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "get_code_graph",
+                "arguments": {}
+            }
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    let text = body["result"]["content"][0]["text"].as_str().unwrap();
+    let result_data: Value = serde_json::from_str(text).unwrap();
+    assert_eq!(result_data["_meta"]["repo"], "test-repo");
+
+    // Cleanup
+    if dump_path.exists() {
+        std::fs::remove_file(dump_path).unwrap();
+    }
+}
