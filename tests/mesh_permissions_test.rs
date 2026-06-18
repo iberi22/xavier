@@ -161,7 +161,7 @@ async fn test_mesh_permissions_and_pairing() {
     // Update Node A's entry on B to restrict to "project-x"
     let mut acl_b = MeshAcl::load().unwrap();
     acl_b.set_entry(identity_a.node_id.clone(), NodeAclEntry {
-        role: Role::Reader,
+        role: Role::Viewer,
         clearance: ClearanceLevel::TopSecret, // High clearance but...
         namespaces: Some(vec!["project-x".to_string()]), // ...restricted namespace
         public_key_hex: hex::encode(&identity_a.public_key),
@@ -176,7 +176,7 @@ async fn test_mesh_permissions_and_pairing() {
     // 6. Test Success with Namespace
     let mut acl_b = MeshAcl::load().unwrap();
     acl_b.set_entry(identity_a.node_id.clone(), NodeAclEntry {
-        role: Role::Reader,
+        role: Role::Viewer,
         clearance: ClearanceLevel::TopSecret,
         namespaces: Some(vec!["open".to_string()]),
         public_key_hex: hex::encode(&identity_a.public_key),
