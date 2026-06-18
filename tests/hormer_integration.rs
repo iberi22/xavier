@@ -5,7 +5,7 @@ use xavier::retrieval::{AdaptiveGating, GatingConfig, LayerWeights, NavigationPo
 use xavier::memory::qmd_memory::MemoryDocument;
 use xavier::consolidation::merger::similarity;
 use xavier::search::rrf::ScoredResult;
-use xavier::agents::tgd::{TgdEngine, TgdConfig};
+use xavier::tgd::{TgdEngine, TgdConfig};
 use xavier::agents::provider::ModelProviderClient;
 use xavier::agents::runtime::{ConversationMessage, MessageRole};
 use xavier::agents::system1::RetrievedDocument;
