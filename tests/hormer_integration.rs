@@ -104,7 +104,7 @@ async fn test_tgd_generation() {
         improvements_path: std::path::PathBuf::from(".xavier/test_improvements.md"),
         ..Default::default()
     };
-    let tgd = TgdEngine::with_config(provider, config);
+    let tgd = TgdEngine::with_config(Arc::new(provider), config);
 
     let history = vec![
         ConversationMessage {

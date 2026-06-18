@@ -373,7 +373,7 @@ fn gather_system_metrics() -> (f64, u64, u64, f64, f64) {
     (0.0, mem_used, mem_total, disk_used, disk_total)
 }
 
-fn gather_db_health(settings: &XavierSettings) -> DatabaseHealth {
+fn gather_db_health(_settings: &XavierSettings) -> DatabaseHealth {
     // We try to open the configured memory database or fail gracefully
     let db_path = std::path::Path::new("data/memory.db");
     let (size_mb, wal_size_mb, page_count, fragmentation) = if db_path.exists() {
