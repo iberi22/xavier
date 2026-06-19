@@ -131,10 +131,13 @@ web-sys = { version = "0.3", optional = true, features = ["console"] }
 js-sys = { version = "0.3", optional = true }
 console_error_panic_hook = { version = "0.1", optional = true }
 
+# URL parsing (Origin validation for MCP 2026-07-28)
+url = "2"
+
 # Security - Pattern matching
 regex = "1.10"
-memchr = "2.5"
 once_cell = "1.19"
+memchr = "2.5"
 
 # Security - Prompt Injection Detection
 sha2 = "0.10"
