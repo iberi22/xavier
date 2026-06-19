@@ -1,8 +1,8 @@
 {
   "meta": {
     "format_version": "1.0.0",
-    "generated": "2026-06-18T23:45:00Z",
-    "head": "528db7e",
+    "generated": "2026-06-18T23:55:00Z",
+    "head": "c4bf149",
     "project": "Xavier v0.10.0 → v0.11.0",
     "gitcore_protocol": "v3.6.1"
   },
@@ -14,14 +14,40 @@
       "maturity_percent": 85,
       "status": "production_ready",
       "subcomponents": [
-        {"name": "SQLite vec store", "maturity": 90, "status": "done"},
-        {"name": "BM25 search", "maturity": 90, "status": "done"},
-        {"name": "Hybrid search (BM25+embedding+RRF)", "maturity": 85, "status": "done"},
-        {"name": "Semantic cache", "maturity": 70, "status": "done"},
-        {"name": "Entity graph (extraction+inference)", "maturity": 80, "status": "done"},
-        {"name": "Embedding pipeline (GLLM/OpenAI)", "maturity": 85, "status": "done"}
+        {
+          "name": "SQLite vec store",
+          "maturity": 90,
+          "status": "done"
+        },
+        {
+          "name": "BM25 search",
+          "maturity": 90,
+          "status": "done"
+        },
+        {
+          "name": "Hybrid search (BM25+embedding+RRF)",
+          "maturity": 85,
+          "status": "done"
+        },
+        {
+          "name": "Semantic cache",
+          "maturity": 70,
+          "status": "done"
+        },
+        {
+          "name": "Entity graph (extraction+inference)",
+          "maturity": 80,
+          "status": "done"
+        },
+        {
+          "name": "Embedding pipeline (GLLM/OpenAI)",
+          "maturity": 85,
+          "status": "done"
+        }
       ],
-      "whats_missing": ["Rollback en entity graph mutations"]
+      "whats_missing": [
+        "Rollback en entity graph mutations"
+      ]
     },
     {
       "id": "code-graph",
@@ -30,14 +56,42 @@
       "maturity_percent": 60,
       "status": "needs_review",
       "subcomponents": [
-        {"name": "code-graph crate (workspace dep)", "maturity": 70, "status": "done"},
-        {"name": "CLI code_dump.rs", "maturity": 65, "status": "done"},
-        {"name": "CLI code_graph.rs", "maturity": 60, "status": "done"},
-        {"name": "Portable JSON dump (.xavier/codegraph.json)", "maturity": 30, "status": "needs_work"},
-        {"name": "Integracion con MCP Server (tool)", "maturity": 20, "status": "needs_work"},
-        {"name": "Documentacion formato dump", "maturity": 10, "status": "needs_work"}
+        {
+          "name": "code-graph crate (workspace dep)",
+          "maturity": 70,
+          "status": "done"
+        },
+        {
+          "name": "CLI code_dump.rs",
+          "maturity": 65,
+          "status": "done"
+        },
+        {
+          "name": "CLI code_graph.rs",
+          "maturity": 60,
+          "status": "done"
+        },
+        {
+          "name": "Portable JSON dump (.xavier/codegraph.json)",
+          "maturity": 30,
+          "status": "needs_work"
+        },
+        {
+          "name": "Integracion con MCP Server (tool)",
+          "maturity": 20,
+          "status": "needs_work"
+        },
+        {
+          "name": "Documentacion formato dump",
+          "maturity": 10,
+          "status": "needs_work"
+        }
       ],
-      "whats_missing": ["Dump JSON portable funcional", "MCP tool para code-graph", "Docs de formato"]
+      "whats_missing": [
+        "Dump JSON portable funcional",
+        "MCP tool para code-graph",
+        "Docs de formato"
+      ]
     },
     {
       "id": "memory-sync",
@@ -46,12 +100,30 @@
       "maturity_percent": 75,
       "status": "production_ready",
       "subcomponents": [
-        {"name": "Sync module (diff/merge/manifest/push_pull)", "maturity": 90, "status": "done"},
-        {"name": "HTTP sync endpoints (push, pull, status, resolve)", "maturity": 85, "status": "done"},
-        {"name": "libp2p transport (mDNS, Kademlia, GossipSub)", "maturity": 70, "status": "done"},
-        {"name": "E2E multi-node tests", "maturity": 10, "status": "needs_work"}
+        {
+          "name": "Sync module (diff/merge/manifest/push_pull)",
+          "maturity": 90,
+          "status": "done"
+        },
+        {
+          "name": "HTTP sync endpoints (push, pull, status, resolve)",
+          "maturity": 85,
+          "status": "done"
+        },
+        {
+          "name": "libp2p transport (mDNS, Kademlia, GossipSub)",
+          "maturity": 70,
+          "status": "done"
+        },
+        {
+          "name": "E2E multi-node tests",
+          "maturity": 10,
+          "status": "needs_work"
+        }
       ],
-      "whats_missing": ["Tests E2E con 2+ nodos Xavier"]
+      "whats_missing": [
+        "Tests E2E con 2+ nodos Xavier"
+      ]
     },
     {
       "id": "mcp-server",
@@ -60,19 +132,65 @@
       "maturity_percent": 78,
       "status": "production_ready",
       "subcomponents": [
-        {"name": "HTTP+SSE transport", "maturity": 85, "status": "done"},
-        {"name": "Stdio transport", "maturity": 80, "status": "done"},
-        {"name": "Memory tools (search, store, retrieve, context)", "maturity": 90, "status": "done"},
-        {"name": "Tools v2: structured output + provenance", "maturity": 100, "status": "done"},
-        {"name": "Tools v2: depth-based tree context (mem_context)", "maturity": 100, "status": "done"},
-        {"name": "Tools v2: search vs context separation", "maturity": 100, "status": "done"},
-        {"name": "Tools v2: health_check structured (MCPHealthResult)", "maturity": 100, "status": "done"},
-        {"name": "Tools v2: get_project_context bounded (max_records/max_chars/depth)", "maturity": 100, "status": "done"},
-        {"name": "Documentacion de integracion para agentes", "maturity": 100, "status": "done"},
-        {"name": "Auth/security", "maturity": 40, "status": "needs_work"},
-        {"name": "Code-graph tool en MCP", "maturity": 20, "status": "needs_work"}
+        {
+          "name": "HTTP+SSE transport",
+          "maturity": 85,
+          "status": "done"
+        },
+        {
+          "name": "Stdio transport",
+          "maturity": 80,
+          "status": "done"
+        },
+        {
+          "name": "Memory tools (search, store, retrieve, context)",
+          "maturity": 90,
+          "status": "done"
+        },
+        {
+          "name": "Tools v2: structured output + provenance",
+          "maturity": 100,
+          "status": "done"
+        },
+        {
+          "name": "Tools v2: depth-based tree context (mem_context)",
+          "maturity": 100,
+          "status": "done"
+        },
+        {
+          "name": "Tools v2: search vs context separation",
+          "maturity": 100,
+          "status": "done"
+        },
+        {
+          "name": "Tools v2: health_check structured (MCPHealthResult)",
+          "maturity": 100,
+          "status": "done"
+        },
+        {
+          "name": "Tools v2: get_project_context bounded (max_records/max_chars/depth)",
+          "maturity": 100,
+          "status": "done"
+        },
+        {
+          "name": "Documentacion de integracion para agentes",
+          "maturity": 100,
+          "status": "done"
+        },
+        {
+          "name": "Auth/security",
+          "maturity": 40,
+          "status": "needs_work"
+        },
+        {
+          "name": "Code-graph tool en MCP",
+          "maturity": 50,
+          "status": "done (PR #213)"
+        }
       ],
-      "whats_missing": ["Auth entre procesos (plan de implementacion)", "Code graph tool en MCP"]
+      "whats_missing": [
+        "Auth entre procesos (plan de implementacion)"
+      ]
     },
     {
       "id": "hormer-navigation",
@@ -80,15 +198,46 @@
       "category": "memory",
       "maturity_percent": 80,
       "subcomponents": [
-        {"name": "HORMER v1 (dynamic hierarchy, policy, GRPO)", "maturity": 90, "status": "done"},
-        {"name": "Predictive cache warming (sibling docs + hotspots)", "maturity": 75, "status": "done"},
-        {"name": "CLI navigation visualize (weights + hotspots)", "maturity": 70, "status": "done"},
-        {"name": "Navigation telemetry metrics", "maturity": 65, "status": "done"},
-        {"name": "Consolidacion nav-aware con TGD", "maturity": 60, "status": "done"},
-        {"name": "Scale test (1000+ nodes)", "maturity": 75, "status": "done"},
-        {"name": "Normalized ID (BeliefGraph)", "maturity": 80, "status": "done"}
+        {
+          "name": "HORMER v1 (dynamic hierarchy, policy, GRPO)",
+          "maturity": 90,
+          "status": "done"
+        },
+        {
+          "name": "Predictive cache warming (sibling docs + hotspots)",
+          "maturity": 75,
+          "status": "done"
+        },
+        {
+          "name": "CLI navigation visualize (weights + hotspots)",
+          "maturity": 70,
+          "status": "done"
+        },
+        {
+          "name": "Navigation telemetry metrics",
+          "maturity": 65,
+          "status": "done"
+        },
+        {
+          "name": "Consolidacion nav-aware con TGD",
+          "maturity": 60,
+          "status": "done"
+        },
+        {
+          "name": "Scale test (1000+ nodes)",
+          "maturity": 75,
+          "status": "done"
+        },
+        {
+          "name": "Normalized ID (BeliefGraph)",
+          "maturity": 80,
+          "status": "done"
+        }
       ],
-      "whats_missing": ["Telemetria avanzada de hit rate", "Dashboard de navegacion"]
+      "whats_missing": [
+        "Telemetria avanzada de hit rate",
+        "Dashboard de navegacion"
+      ]
     },
     {
       "id": "tgd-optimization",
@@ -96,13 +245,36 @@
       "category": "memory",
       "maturity_percent": 75,
       "subcomponents": [
-        {"name": "TGD algorithm (runner + config)", "maturity": 80, "status": "done"},
-        {"name": "Nightly consolidation scheduler", "maturity": 70, "status": "done"},
-        {"name": "Incremental mode (only new chunks)", "maturity": 70, "status": "done"},
-        {"name": "Test suite (91 lines)", "maturity": 75, "status": "done"},
-        {"name": "Rollback support", "maturity": 5, "status": "needs_work"}
+        {
+          "name": "TGD algorithm (runner + config)",
+          "maturity": 80,
+          "status": "done"
+        },
+        {
+          "name": "Nightly consolidation scheduler",
+          "maturity": 70,
+          "status": "done"
+        },
+        {
+          "name": "Incremental mode (only new chunks)",
+          "maturity": 70,
+          "status": "done"
+        },
+        {
+          "name": "Test suite (91 lines)",
+          "maturity": 75,
+          "status": "done"
+        },
+        {
+          "name": "Rollback support",
+          "maturity": 5,
+          "status": "needs_work"
+        }
       ],
-      "whats_missing": ["Rollback de optimizaciones", "Reporte de impacto por sesion"]
+      "whats_missing": [
+        "Rollback de optimizaciones",
+        "Reporte de impacto por sesion"
+      ]
     },
     {
       "id": "cli-tools",
@@ -110,13 +282,35 @@
       "category": "devops",
       "maturity_percent": 80,
       "subcomponents": [
-        {"name": "Server management (start/stop/status)", "maturity": 85, "status": "done"},
-        {"name": "MCP mode", "maturity": 80, "status": "done"},
-        {"name": "Code dump + code graph commands", "maturity": 60, "status": "done"},
-        {"name": "Security commands", "maturity": 75, "status": "done"},
-        {"name": "Config management", "maturity": 85, "status": "done"}
+        {
+          "name": "Server management (start/stop/status)",
+          "maturity": 85,
+          "status": "done"
+        },
+        {
+          "name": "MCP mode",
+          "maturity": 80,
+          "status": "done"
+        },
+        {
+          "name": "Code dump + code graph commands",
+          "maturity": 60,
+          "status": "done"
+        },
+        {
+          "name": "Security commands",
+          "maturity": 75,
+          "status": "done"
+        },
+        {
+          "name": "Config management",
+          "maturity": 85,
+          "status": "done"
+        }
       ],
-      "whats_missing": ["Comando nav visualize CLI completo"]
+      "whats_missing": [
+        "Comando nav visualize CLI completo"
+      ]
     },
     {
       "id": "self-monitoring",
@@ -124,12 +318,30 @@
       "category": "devops",
       "maturity_percent": 80,
       "subcomponents": [
-        {"name": "Health check endpoints", "maturity": 90, "status": "done"},
-        {"name": "Runtime self-monitoring loop", "maturity": 85, "status": "done"},
-        {"name": "Telemetry metrics", "maturity": 70, "status": "done"},
-        {"name": "Integration tests (135/135)", "maturity": 95, "status": "done"}
+        {
+          "name": "Health check endpoints",
+          "maturity": 90,
+          "status": "done"
+        },
+        {
+          "name": "Runtime self-monitoring loop",
+          "maturity": 85,
+          "status": "done"
+        },
+        {
+          "name": "Telemetry metrics",
+          "maturity": 70,
+          "status": "done"
+        },
+        {
+          "name": "Integration tests (135/135)",
+          "maturity": 95,
+          "status": "done"
+        }
       ],
-      "whats_missing": ["Alertas automaticas en fallo de health"]
+      "whats_missing": [
+        "Alertas automaticas en fallo de health"
+      ]
     },
     {
       "id": "mesh-network",
@@ -137,17 +349,55 @@
       "category": "mesh",
       "maturity_percent": 45,
       "subcomponents": [
-        {"name": "Transport HTTP", "maturity": 80, "status": "done"},
-        {"name": "Transport libp2p", "maturity": 70, "status": "done"},
-        {"name": "Wallet & tokenomics", "maturity": 60, "status": "done"},
-        {"name": "Governance DAO (mock)", "maturity": 30, "status": "done"},
-        {"name": "Governance DAO (on-chain)", "maturity": 5, "status": "jules (#166)"},
-        {"name": "Data Commons economy", "maturity": 15, "status": "jules (#209)"},
-        {"name": "ACL & permissions", "maturity": 70, "status": "done"},
-        {"name": "Dual License (MIT + Mesh)", "maturity": 10, "status": "jules (#169)"},
-        {"name": "Android APK / xavier-core", "maturity": 55, "status": "done"}
+        {
+          "name": "Transport HTTP",
+          "maturity": 80,
+          "status": "done"
+        },
+        {
+          "name": "Transport libp2p",
+          "maturity": 70,
+          "status": "done"
+        },
+        {
+          "name": "Wallet & tokenomics",
+          "maturity": 60,
+          "status": "done"
+        },
+        {
+          "name": "Governance DAO (mock)",
+          "maturity": 30,
+          "status": "done"
+        },
+        {
+          "name": "Governance DAO (on-chain)",
+          "maturity": 5,
+          "status": "jules (#166)"
+        },
+        {
+          "name": "Data Commons economy",
+          "maturity": 15,
+          "status": "jules (#209)"
+        },
+        {
+          "name": "ACL & permissions",
+          "maturity": 70,
+          "status": "done"
+        },
+        {
+          "name": "Dual License (MIT + Mesh)",
+          "maturity": 10,
+          "status": "jules (#169)"
+        },
+        {
+          "name": "Android APK / xavier-core",
+          "maturity": 55,
+          "status": "done"
+        }
       ],
-      "whats_missing": ["Governance on-chain (#166)", "Data Commons (#209)", "Dual License (#169)"]
+      "whats_missing": [
+        "Governance on-chain (#166)"
+      ]
     },
     {
       "id": "benchmarks",
@@ -155,12 +405,36 @@
       "category": "qa",
       "maturity_percent": 60,
       "subcomponents": [
-        {"name": "Embedding benchmark", "maturity": 75, "status": "done"},
-        {"name": "Entity graph benchmark", "maturity": 60, "status": "done"},
-        {"name": "Hybrid search benchmark", "maturity": 60, "status": "done"},
-        {"name": "Tri-memory benchmark", "maturity": 80, "status": "done"},
-        {"name": "CI benchmark workflow", "maturity": 70, "status": "done"},
-        {"name": "MinHash benchmark", "maturity": 50, "status": "needs_work"}
+        {
+          "name": "Embedding benchmark",
+          "maturity": 75,
+          "status": "done"
+        },
+        {
+          "name": "Entity graph benchmark",
+          "maturity": 60,
+          "status": "done"
+        },
+        {
+          "name": "Hybrid search benchmark",
+          "maturity": 60,
+          "status": "done"
+        },
+        {
+          "name": "Tri-memory benchmark",
+          "maturity": 80,
+          "status": "done"
+        },
+        {
+          "name": "CI benchmark workflow",
+          "maturity": 70,
+          "status": "done"
+        },
+        {
+          "name": "MinHash benchmark",
+          "maturity": 50,
+          "status": "needs_work"
+        }
       ]
     }
   ],
@@ -169,7 +443,7 @@
     "production_ready": 8,
     "needs_work": 1,
     "in_progress": 1,
-    "overall_maturity": 72,
+    "overall_maturity": 75,
     "target_maturity_v011": 90
   },
   "sprint": {
@@ -177,9 +451,26 @@
     "name": "Mesh Network + Code Graph Integration",
     "start": "2026-06-18",
     "target_end": "2026-06-25",
-    "maturity_target": 82,
+    "maturity_target": 90,
     "manual_tasks": [
-      {"number": 218, "title": "MCP Tools v2: structured output, depth tree, search/context separation", "pr": "495e3ac+3145e02", "by": "manual+claude-code", "maturity_delta_mcp": "+30%", "status": "done"}
-    ]
+      {
+        "number": 218,
+        "title": "MCP Tools v2: structured output, depth tree, search/context separation",
+        "pr": "495e3ac+3145e02",
+        "by": "manual+claude-code",
+        "maturity_delta_mcp": "+30%",
+        "status": "done"
+      }
+    ],
+    "repo_cleanup": {
+      "branches_deleted": 7,
+      "issues_remaining": [
+        115,
+        166
+      ],
+      "prs_open": 0,
+      "sanitized_at": "2026-06-18T23:55:00Z"
+    },
+    "next_action": "Launch Jules on #166 Governance DAO on-chain"
   }
 }
