@@ -2,12 +2,15 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+use crate::server::mcp::auth::validate_stdio_connection;
 use crate::server::mcp::session::dispatch_mcp_value;
 use crate::{workspace::WorkspaceContext, AppState};
 use anyhow::Result;
 use std::io::{self, BufRead, Write};
 
 pub async fn run_stdio_loop(state: AppState, workspace: WorkspaceContext) -> Result<()> {
+    validate_stdio_connection()?;
+
     let stdin = io::stdin();
     let mut stdin = stdin.lock();
     let stdout = io::stdout();

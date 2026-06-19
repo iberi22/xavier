@@ -96,20 +96,32 @@ fn test_router(state: AppState, workspace: WorkspaceContext) -> Router {
                 .get(mcp_get_handler)
                 .delete(mcp_delete_handler),
         )
+        .layer(axum::middleware::from_fn(super::auth::mcp_auth_middleware))
         .layer(axum::Extension(workspace))
         .with_state(state)
 }
 
 async fn post_json(app: Router, body: Value) -> axum::response::Response {
+    post_json_with_token(app, body, None).await
+}
+
+async fn post_json_with_token(app: Router, body: Value, token: Option<&str>) -> axum::response::Response {
+    let mut req = Request::builder()
+        .method(Method::POST)
+        .uri("/mcp")
+        .header("content-type", "application/json");
+
+    if let Some(t) = token {
+        req = req.header("X-Xavier-Token", t);
+    } else if let Ok(t) = std::env::var("XAVIER_TOKEN") {
+        req = req.header("X-Xavier-Token", t);
+    }
+
     app.oneshot(
-        Request::builder()
-            .method(Method::POST)
-            .uri("/mcp")
-            .header("content-type", "application/json")
-            .body(Body::from(
-                serde_json::to_vec(&body).expect("serialize json body failed"),
-            ))
-            .expect("build POST request failed"),
+        req.body(Body::from(
+            serde_json::to_vec(&body).expect("serialize json body failed"),
+        ))
+        .expect("build POST request failed"),
     )
     .await
     .expect("POST request to MCP endpoint failed")
@@ -1071,6 +1083,7 @@ async fn mcp_get_opens_sse_stream() {
                 .method(Method::GET)
                 .uri("/mcp")
                 .header("accept", "text/event-stream")
+                .header("X-Xavier-Token", "test-secret")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -1103,6 +1116,7 @@ async fn mcp_get_without_accept_returns_405() {
             Request::builder()
                 .method(Method::GET)
                 .uri("/mcp")
+                .header("X-Xavier-Token", "test-secret")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -1163,4 +1177,77 @@ async fn test_get_code_graph_success() {
     if dump_path.exists() {
         std::fs::remove_file(dump_path).unwrap();
     }
+}
+
+#[tokio::test]
+async fn auth_success_with_valid_token() {
+    std::env::set_var("XAVIER_TOKEN", "test-secret");
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    let response = post_json_with_token(
+        router,
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/list"
+        }),
+        Some("test-secret")
+    ).await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn auth_failure_with_invalid_token() {
+    std::env::set_var("XAVIER_TOKEN", "test-secret");
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    let response = post_json_with_token(
+        router,
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/list"
+        }),
+        Some("wrong-secret")
+    ).await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn rate_limiting_per_session() {
+    std::env::set_var("XAVIER_TOKEN", "test-secret");
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // We configured 60 requests per minute with burst of 10.
+    // Let's fire 15 requests and expect some to be rate limited.
+    // Note: Since RATE_LIMITER is static Lazy, we might need a unique session ID per test.
+    let session_id = format!("rate-test-{}", ulid::Ulid::new());
+
+    for i in 1..=10 {
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/mcp")
+            .header("X-Xavier-Token", "test-secret")
+            .header("mcp-session-id", &session_id)
+            .header("content-type", "application/json")
+            .body(Body::from(json!({"jsonrpc": "2.0", "id": i, "method": "tools/list"}).to_string()))
+            .unwrap();
+
+        let response = router.clone().oneshot(req).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK, "Request {} should have been allowed", i);
+    }
+
+    // 11th request should be blocked
+    let req = Request::builder()
+        .method(Method::POST)
+        .uri("/mcp")
+        .header("X-Xavier-Token", "test-secret")
+        .header("mcp-session-id", &session_id)
+        .header("content-type", "application/json")
+        .body(Body::from(json!({"jsonrpc": "2.0", "id": 11, "method": "tools/list"}).to_string()))
+        .unwrap();
+
+    let response = router.oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
 }

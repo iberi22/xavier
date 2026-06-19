@@ -2,6 +2,7 @@
 //!
 //! Aggregates and re-exports the sub-modules within this module,
 //! providing the public API surface for module consumers.
+pub mod auth;
 pub mod server;
 pub mod session;
 pub mod tools_core;

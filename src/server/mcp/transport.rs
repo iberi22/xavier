@@ -19,6 +19,7 @@ use axum::{routing::post, Router};
 use tokio::net::TcpListener;
 use tracing::info;
 
+use super::auth::mcp_auth_middleware;
 use super::session::{mcp_delete_handler, mcp_get_handler, mcp_post_handler};
 
 /// Build the MCP Streamable HTTP router.
@@ -34,6 +35,7 @@ pub fn build_mcp_http_router(state: AppState, workspace: WorkspaceContext) -> Ro
                 .get(mcp_get_handler)
                 .delete(mcp_delete_handler),
         )
+        .layer(axum::middleware::from_fn(mcp_auth_middleware))
         .layer(axum::Extension(workspace))
         .with_state(state)
 }
