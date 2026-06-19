@@ -18,7 +18,6 @@ use regex::Regex;
 use serde::Serialize;
 use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
-use hex;
 
 // ---------------------------------------------------------------------------
 // SanitizationAction
@@ -178,7 +177,7 @@ impl DataSanitizer {
         let mut hasher = Sha256::new();
         hasher.update(input.as_bytes());
         let result = hasher.finalize();
-        hex::encode(result)
+        crate::crypto::hex_encode(&result)
     }
 
     /// Returns the list of rules currently registered.

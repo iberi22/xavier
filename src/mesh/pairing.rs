@@ -28,12 +28,12 @@ pub fn generate_pairing_code(node_id: NodeId, endpoint: String, public_key_hex: 
     };
 
     let json = serde_json::to_string(&data).unwrap();
-    (base64::Engine::encode(&base64::engine::general_purpose::STANDARD_NO_PAD, json), secret)
+    (crate::crypto::base64_encode(json), secret)
 }
 
 pub fn decode_pairing_code(code: &str) -> Result<PairingCodeData> {
-    let decoded = base64::Engine::decode(&base64::engine::general_purpose::STANDARD_NO_PAD, code)
-        .context("Failed to decode base64 pairing code")?;
+    let decoded = crate::crypto::base64_decode(code)
+        .ok_or_else(|| anyhow::anyhow!("Failed to decode base64 pairing code"))?;
     let data: PairingCodeData = serde_json::from_slice(&decoded)
         .context("Failed to parse pairing code JSON")?;
 
@@ -84,7 +84,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&data).unwrap();
-        let code = base64::Engine::encode(&base64::engine::general_purpose::STANDARD_NO_PAD, json);
+        let code = crate::crypto::base64_encode(json);
 
         let result = decode_pairing_code(&code);
         assert!(result.is_err());

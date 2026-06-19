@@ -7,8 +7,7 @@
 //! - Alerts if lag > 30s or save_ok_rate < 95%
 //!
 //! Also provides on-demand sync check via POST /xavier/sync/check
-
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock as StdRwLock};
 use std::time::{Duration, Instant};
@@ -24,8 +23,8 @@ use crate::settings::XavierSettings;
 
 /// Last sync check result stored in memory (static)
 /// Unified last sync check result (single lock — no data race).
-pub(crate) static LAST_CHECK_RESULT: Lazy<StdRwLock<SyncCheckResult>> =
-    Lazy::new(|| StdRwLock::new(SyncCheckResult::default()));
+pub(crate) static LAST_CHECK_RESULT: LazyLock<StdRwLock<SyncCheckResult>> =
+    LazyLock::new(|| StdRwLock::new(SyncCheckResult::default()));
 static SYNC_CRON_STARTED: AtomicBool = AtomicBool::new(false);
 
 /// Handle used by the HTTP server to request a graceful cron shutdown.

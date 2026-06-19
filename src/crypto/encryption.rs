@@ -7,7 +7,7 @@ use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use rand::RngCore;
 use std::sync::RwLock;
 
@@ -124,8 +124,8 @@ impl SessionKeyManager {
     }
 }
 
-static SESSION_KEY: Lazy<RwLock<SessionKeyManager>> =
-    Lazy::new(|| RwLock::new(SessionKeyManager::new()));
+static SESSION_KEY: LazyLock<RwLock<SessionKeyManager>> =
+    LazyLock::new(|| RwLock::new(SessionKeyManager::new()));
 
 pub fn get_node_session_key() -> [u8; AES_KEY_SIZE] {
     *SESSION_KEY.read().unwrap().get_key()

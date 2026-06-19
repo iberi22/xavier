@@ -12,7 +12,7 @@ pub fn get_maintainer_secret() -> StaticSecret {
     match env::var("XAVIER_MAINTAINER_PRIVATE_KEY_HEX") {
         Ok(hex_val) => {
             let mut bytes = [0u8; 32];
-            if let Ok(decoded) = hex::decode(&hex_val) {
+            if let Ok(decoded) = crate::crypto::hex_decode(&hex_val) {
                 if decoded.len() == 32 {
                     bytes.copy_from_slice(&decoded);
                     return StaticSecret::from(bytes);

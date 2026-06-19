@@ -83,7 +83,7 @@ impl TokenStore {
 
         let mut hasher = Sha256::new();
         hasher.update(plaintext.as_bytes());
-        let full_hash = hex::encode(hasher.finalize());
+        let full_hash = crate::crypto::hex_encode(&hasher.finalize());
         let partial_hash = format!("{}...", &full_hash[0..12]);
 
         let id = Uuid::new_v4().to_string();
@@ -168,7 +168,7 @@ impl TokenStore {
 
         let mut hasher = Sha256::new();
         hasher.update(plaintext.as_bytes());
-        let full_hash = hex::encode(hasher.finalize());
+        let full_hash = crate::crypto::hex_encode(&hasher.finalize());
         let partial_hash = format!("{}...", &full_hash[0..12]);
 
         let matches = self.get_by_partial_hash(&partial_hash).await?;

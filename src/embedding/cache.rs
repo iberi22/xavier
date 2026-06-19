@@ -92,7 +92,7 @@ impl EmbeddingCacheConfig {
 pub fn content_hash(text: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(text.as_bytes());
-    hex::encode(hasher.finalize())
+    crate::crypto::hex_encode(&hasher.finalize())
 }
 
 // ---------------------------------------------------------------------------

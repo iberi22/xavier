@@ -249,7 +249,7 @@ pub async fn v1_mesh_handshake(
     info!("Received mesh handshake from {}", payload.node_id);
 
     // 1. Verify Signature
-    let Ok(public_key) = hex::decode(&payload.public_key_hex) else {
+    let Ok(public_key) = crate::crypto::hex_decode(&payload.public_key_hex) else {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({ "accepted": false, "reason": "Invalid public key hex" })),
@@ -257,7 +257,7 @@ pub async fn v1_mesh_handshake(
             .into_response();
     };
 
-    let Ok(signature) = hex::decode(&payload.signature_hex) else {
+    let Ok(signature) = crate::crypto::hex_decode(&payload.signature_hex) else {
         return (
             StatusCode::BAD_REQUEST,
             Json(serde_json::json!({ "accepted": false, "reason": "Invalid signature hex" })),
@@ -338,7 +338,7 @@ pub async fn v1_mesh_handshake(
             let response = MeshHandshakeResponse {
                 accepted: true,
                 node_id: identity.node_id.clone(),
-                public_key_hex: hex::encode(&identity.public_key),
+                public_key_hex: crate::crypto::hex_encode(&identity.public_key),
                 reason: None,
             };
             Json(response).into_response()
@@ -380,8 +380,8 @@ pub async fn v1_mesh_manifest(
             // VERIFY SIGNATURE
             if let (Some(ts), Some(n), Some(sig)) = (timestamp_str, nonce, signature_hex) {
                 let message = format!("{}:{}", ts, n);
-                let pubkey = hex::decode(&entry.public_key_hex).unwrap_or_default();
-                let signature = hex::decode(sig).unwrap_or_default();
+                let pubkey = crate::crypto::hex_decode(&entry.public_key_hex).unwrap_or_default();
+                let signature = crate::crypto::hex_decode(sig).unwrap_or_default();
                 if !NodeIdentity::verify(&pubkey, message.as_bytes(), &signature) {
                     return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid signature" }))).into_response();
                 }
@@ -505,8 +505,8 @@ pub async fn v1_mesh_chunks_request(
     let (clearance, namespaces) = if let Some(entry) = acl.get_entry(&payload.requesting_node_id) {
         // VERIFY SIGNATURE
         let message = format!("{}:{}", payload.timestamp, payload.nonce);
-        let pubkey = hex::decode(&entry.public_key_hex).unwrap_or_default();
-        let signature = hex::decode(&payload.signature_hex).unwrap_or_default();
+        let pubkey = crate::crypto::hex_decode(&entry.public_key_hex).unwrap_or_default();
+        let signature = crate::crypto::hex_decode(&payload.signature_hex).unwrap_or_default();
         if !NodeIdentity::verify(&pubkey, message.as_bytes(), &signature) {
             return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid signature" }))).into_response();
         }

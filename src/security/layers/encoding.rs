@@ -1,6 +1,5 @@
 //! Encoding detection layer - Base64, Hex, URL decode + rescan
 
-use base64::{engine::general_purpose::STANDARD, Engine};
 use regex::Regex;
 use std::collections::HashSet;
 use std::sync::LazyLock;
@@ -33,10 +32,8 @@ fn try_base64(encoded: &str) -> Option<String> {
         return None;
     }
 
-    match STANDARD.decode(cleaned) {
-        Ok(bytes) => String::from_utf8(bytes).ok(),
-        Err(_) => None,
-    }
+    crate::crypto::base64_decode(cleaned)
+        .and_then(|bytes| String::from_utf8(bytes).ok())
 }
 
 /// Try to decode hex
@@ -46,7 +43,7 @@ fn try_hex(encoded: &str) -> Option<String> {
         return None;
     }
 
-    match hex::decode(without_prefix) {
+    match crate::crypto::hex_decode(without_prefix) {
         Ok(bytes) => String::from_utf8(bytes).ok(),
         Err(_) => None,
     }
@@ -214,8 +211,7 @@ mod tests {
     fn test_clean_base64() {
         let mut result = ScanResult::new();
         // Normal base64 text
-        let encoded = base64::engine::general_purpose::STANDARD
-            .encode(b"Hello world, this is a test message");
+        let encoded = crate::crypto::base64_encode(b"Hello world, this is a test message");
         detect_encoding_attacks(&encoded, &mut result);
         // May trigger encoding detection but not injection
         let has_injection = result

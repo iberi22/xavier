@@ -211,7 +211,7 @@ impl ProxyUseCase {
 
         let mut hasher = Sha256::new();
         hasher.update(system_msg.as_bytes());
-        let system_hash = hex::encode(hasher.finalize());
+        let system_hash = crate::crypto::hex_encode(&hasher.finalize());
 
         let is_cache_hit = {
             let mut cache = self.prompt_cache.lock();

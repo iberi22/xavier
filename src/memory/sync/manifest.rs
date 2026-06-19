@@ -34,7 +34,7 @@ pub async fn build_manifest(store: &dyn MemoryStore) -> Result<Manifest> {
             hasher.update(rec.path.as_bytes());
             hasher.update(&rec.revision.to_le_bytes());
             hasher.update(&rec.updated_at.timestamp().to_le_bytes());
-            let hash = hex::encode(hasher.finalize());
+            let hash = crate::crypto::hex_encode(&hasher.finalize());
 
             if seen.insert(hash.clone()) {
                 entries.push(ManifestEntry {

@@ -287,7 +287,7 @@ impl SecurityScanner {
 
         // Try hex
         let without_prefix = encoded.trim_start_matches("0x").trim_start_matches("0X");
-        if let Ok(decoded) = hex::decode(without_prefix) {
+        if let Ok(decoded) = crate::crypto::hex_decode(without_prefix) {
             if let Ok(s) = String::from_utf8(decoded) {
                 return Some(s);
             }
@@ -507,8 +507,8 @@ impl SecurityScanner {
 
 // Base64 decode helper
 fn base64_decode(input: &str) -> Result<String, &'static str> {
-    use base64::{engine::general_purpose::STANDARD, Engine};
-    let decoded = STANDARD.decode(input).map_err(|_| "invalid base64")?;
+
+    let decoded = crate::crypto::base64_decode(input).ok_or("invalid base64")?;
     String::from_utf8(decoded).map_err(|_| "invalid utf8")
 }
 

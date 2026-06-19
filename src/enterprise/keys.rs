@@ -255,14 +255,14 @@ pub enum ApiKeyError {
 fn generate_random_key() -> String {
     let mut rng = rand::thread_rng();
     let bytes: Vec<u8> = (0..32).map(|_| rng.gen::<u8>()).collect();
-    hex::encode(bytes)
+    crate::crypto::hex_encode(bytes)
 }
 
 /// Hash a key for storage
 fn hash_key(key: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(key.as_bytes());
-    hex::encode(hasher.finalize())
+    crate::crypto::hex_encode(&hasher.finalize())
 }
 
 /// Extract key prefix from full key (pk_live_xxxxxxxx)

@@ -144,9 +144,8 @@ impl CloudPeer {
                     let chunks: Vec<serde_json::Value> = resp.json().await?;
                     if let Some(chunk) = chunks.into_iter().next() {
                         if let Some(data_b64) = chunk["data"].as_str() {
-                            use base64::{engine::general_purpose, Engine as _};
-                            let data = general_purpose::STANDARD
-                                .decode(data_b64)
+
+                            let data = crate::crypto::base64_decode(data_b64)
                                 .context("Failed to decode base64 chunk data")?;
                             return Ok(Some((hash, data)));
                         }
@@ -179,13 +178,12 @@ impl CloudPeer {
         chunks: &[(String, Vec<u8>)],
     ) -> Result<Vec<String>> {
         let mut pushed = Vec::new();
-        use base64::{engine::general_purpose, Engine as _};
 
         for (hash, data) in chunks {
             let payload = json!({
                 "node_id": self.local_identity.node_id.as_str(),
                 "hash": hash,
-                "data": general_purpose::STANDARD.encode(data),
+                "data": crate::crypto::base64_encode(data),
                 "created_at": chrono::Utc::now().to_rfc3339()
             });
 

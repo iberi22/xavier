@@ -17,7 +17,7 @@ pub fn hash(password: &str, cost: u32) -> Result<String> {
     let effective_cost = cost.min(MAX_COST);
     let hash = compute_hash(password, &salt, effective_cost);
 
-    Ok(format!("{}:{}:{}", effective_cost, hex::encode(salt), hex::encode(hash)))
+    Ok(format!("{}:{}:{}", effective_cost, crate::crypto::hex_encode(salt), crate::crypto::hex_encode(hash)))
 }
 
 /// Verifies a password against a previously generated hash string.
@@ -32,8 +32,8 @@ pub fn verify(password: &str, hashed: &str) -> Result<bool> {
         return Ok(false);
     }
 
-    let salt = hex::decode(parts[1])?;
-    let original_hash = hex::decode(parts[2])?;
+    let salt = crate::crypto::hex_decode(parts[1])?;
+    let original_hash = crate::crypto::hex_decode(parts[2])?;
 
     let hash = compute_hash(password, &salt, cost);
 

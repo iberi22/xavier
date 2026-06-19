@@ -32,10 +32,10 @@ impl CryptoGatingService {
     /// Encrypts a serialized payload locally before sending to the Mesh.
     pub fn encrypt_payload(&self, raw_json: &str) -> EncryptedPayload {
         // MOCK: In production use AES-GCM.
-        let hex_encoded = hex::encode(raw_json);
+        let hex_encoded = crate::crypto::hex_encode(raw_json);
         
         // Generate a mock IPFS Content ID (CID) PIN based on the payload hash
-        let mock_cid = format!("Qm{}", hex::encode(&hex_encoded[0..std::cmp::min(10, hex_encoded.len())]));
+        let mock_cid = format!("Qm{}", crate::crypto::hex_encode(&hex_encoded[0..std::cmp::min(10, hex_encoded.len())]));
         
         EncryptedPayload {
             cipher_text: hex_encoded,
@@ -52,7 +52,7 @@ impl CryptoGatingService {
         }
 
         // MOCK: In production use AES-GCM.
-        let decoded = hex::decode(&payload.cipher_text)
+        let decoded = crate::crypto::hex_decode(&payload.cipher_text)
             .map_err(|e| format!("Hex decode error: {}", e))?;
         
         String::from_utf8(decoded)

@@ -222,7 +222,7 @@ impl StripeClient {
         let signed_payload = format!("{}.{}", timestamp, String::from_utf8_lossy(payload));
 
         // Use HMAC SHA256
-        let expected = hex::encode(crate::crypto::hmac::hmac_sha256(
+        let expected = crate::crypto::hex_encode(crate::crypto::hmac::hmac_sha256(
             self.webhook_secret.as_bytes(),
             signed_payload.as_bytes(),
         ));

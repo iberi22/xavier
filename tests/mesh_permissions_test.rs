@@ -94,7 +94,7 @@ async fn test_mesh_permissions_and_pairing() {
     let (code, secret) = xavier::mesh::pairing::generate_pairing_code(
         identity_b.node_id.clone(),
         url_b.clone(),
-        hex::encode(&identity_b.public_key),
+        xavier::crypto::hex_encode(&identity_b.public_key),
     );
 
     let mut secret_registry = xavier::mesh::pairing_registry::PairingSecretRegistry::load().unwrap();
@@ -144,7 +144,7 @@ async fn test_mesh_permissions_and_pairing() {
         node_id: identity_b.node_id.clone(),
         alias: None,
         endpoint_url: url_b.clone(),
-        public_key_hex: hex::encode(&identity_b.public_key),
+        public_key_hex: xavier::crypto::hex_encode(&identity_b.public_key),
         added_at: 0,
         last_seen_at: None,
         sync_enabled: true,
@@ -164,7 +164,7 @@ async fn test_mesh_permissions_and_pairing() {
         role: Role::Viewer,
         clearance: ClearanceLevel::TopSecret, // High clearance but...
         namespaces: Some(vec!["project-x".to_string()]), // ...restricted namespace
-        public_key_hex: hex::encode(&identity_a.public_key),
+        public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
     }).unwrap();
 
     let manifest_a_restricted = transport_a.fetch_manifest(&peer_b, &token_b).await.unwrap();
@@ -179,7 +179,7 @@ async fn test_mesh_permissions_and_pairing() {
         role: Role::Viewer,
         clearance: ClearanceLevel::TopSecret,
         namespaces: Some(vec!["open".to_string()]),
-        public_key_hex: hex::encode(&identity_a.public_key),
+        public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
     }).unwrap();
 
     let manifest_a_open = transport_a.fetch_manifest(&peer_b, &token_b).await.unwrap();

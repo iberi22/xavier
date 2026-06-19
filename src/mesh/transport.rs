@@ -49,12 +49,12 @@ impl MeshTransport {
 
         let handshake = MeshHandshake {
             node_id: self.local_identity.node_id.clone(),
-            public_key_hex: hex::encode(&self.local_identity.public_key),
+            public_key_hex: crate::crypto::hex_encode(&self.local_identity.public_key),
             xavier_version: env!("CARGO_PKG_VERSION").to_string(),
             capabilities: vec!["sync-v1".to_string()],
             timestamp: chrono::Utc::now().timestamp(),
             nonce,
-            signature_hex: hex::encode(signature),
+            signature_hex: crate::crypto::hex_encode(signature),
             pairing_secret,
         };
 
@@ -84,7 +84,7 @@ impl MeshTransport {
         let timestamp = chrono::Utc::now().timestamp().to_string();
         let nonce = uuid::Uuid::new_v4().to_string();
         let message = format!("{}:{}", timestamp, nonce);
-        let signature = hex::encode(self.local_identity.sign(message.as_bytes()));
+        let signature = crate::crypto::hex_encode(self.local_identity.sign(message.as_bytes()));
 
         let url = format!(
             "{}/v1/mesh/manifest?node_id={}&timestamp={}&nonce={}&signature={}",
@@ -125,7 +125,7 @@ impl MeshTransport {
         let timestamp = chrono::Utc::now().timestamp();
         let nonce = uuid::Uuid::new_v4().to_string();
         let message = format!("{}:{}", timestamp, nonce);
-        let signature_hex = hex::encode(self.local_identity.sign(message.as_bytes()));
+        let signature_hex = crate::crypto::hex_encode(self.local_identity.sign(message.as_bytes()));
 
         let request = MeshSyncRequest {
             requesting_node_id: self.local_identity.node_id.clone(),

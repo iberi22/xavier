@@ -16,7 +16,6 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use sha2::{Sha256, Digest};
-use hex;
 
 // ---------------------------------------------------------------------------
 // ConsentLevel
@@ -129,7 +128,7 @@ impl DataConsentManager {
         let mut hasher = Sha256::new();
         hasher.update(self.node_id.0.as_bytes());
         let result = hasher.finalize();
-        format!("anon-{}", &hex::encode(result)[..16])
+        format!("anon-{}", &crate::crypto::hex_encode(&result)[..16])
     }
 
     /// Returns the node ID this manager belongs to.

@@ -143,7 +143,7 @@ pub async fn generate_pairing_code_handler(
     let (code, secret) = xavier::mesh::pairing::generate_pairing_code(
         identity.node_id.clone(),
         endpoint.to_string(),
-        hex::encode(&identity.public_key),
+        xavier::crypto::hex_encode(&identity.public_key),
     );
 
     Json(PairingCodeResponse { code, secret }).into_response()
