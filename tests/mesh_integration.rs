@@ -136,7 +136,7 @@ async fn test_mesh_handshake_and_sync() {
         role: Role::Viewer,
         clearance: ClearanceLevel::TopSecret,
         namespaces: None,
-        public_key_hex: hex::encode(&identity_a.public_key),
+        public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
     }).unwrap();
 
     // Export B's data to chunks so it appears in manifest

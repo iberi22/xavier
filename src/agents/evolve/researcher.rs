@@ -141,7 +141,7 @@ use sha2::{Digest, Sha256};
 pub fn hash_embedding(embedding: &[f32]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(embedding.as_bytes());
-    hex::encode(hasher.finalize())
+    crate::crypto::hex_encode(&hasher.finalize())
 }
 =======
 use xxhash_rust::xxhash64;

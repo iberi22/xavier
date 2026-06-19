@@ -18,7 +18,7 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
             let identity = NodeIdentity::load_or_create()?;
             println!("Xavier Mesh Identity:");
             println!("  NodeID:     {}", identity.node_id);
-            println!("  Public Key: {}", hex::encode(&identity.public_key));
+            println!("  Public Key: {}", xavier::crypto::hex_encode(&identity.public_key));
             println!("  Version:    {}", env!("CARGO_PKG_VERSION"));
         }
         MeshCommand::AddPeer {
@@ -254,7 +254,7 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
             let (code, secret) = xavier::mesh::pairing::generate_pairing_code(
                 identity.node_id.clone(),
                 endpoint,
-                hex::encode(&identity.public_key),
+                xavier::crypto::hex_encode(&identity.public_key),
             );
 
             // Register the secret locally

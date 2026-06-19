@@ -109,7 +109,7 @@ fn validate_request_headers(headers: &HeaderMap, body: &Value) -> Result<(), Str
 fn decode_mcp_header_value(value: &str) -> String {
     if value.starts_with("=?base64?") && value.ends_with("?=") {
         let b64 = &value[9..value.len() - 2];
-        if let Ok(decoded) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64) {
+        if let Some(decoded) = crate::crypto::base64_decode(b64) {
             if let Ok(utf8) = String::from_utf8(decoded) {
                 return utf8;
             }

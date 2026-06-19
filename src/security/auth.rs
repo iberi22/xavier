@@ -104,7 +104,7 @@ impl User {
             api_key: {
                 let mut bytes = [0u8; 32];
                 OsRng.fill_bytes(&mut bytes);
-                hex::encode(bytes)
+                crate::crypto::hex_encode(bytes)
             },
             created_at: now,
             updated_at: now,
