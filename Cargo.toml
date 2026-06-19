@@ -154,13 +154,8 @@ aes-gcm = "0.10"
 argon2 = "0.5"
 rand = "0.8"
 rand_chacha = "0.3"
-governor = { version = "0.10", default-features = false, features = ["std", "jitter", "dashmap"] }
-dashmap = "6.1"
 r2d2 = "0.8"
 r2d2_sqlite = "0.25"
-
-# HMAC for webhook signature verification
-hmac = "0.12"
 
 # HTTP body utilities for webhook handling
 http-body-util = "0.1"
@@ -170,7 +165,6 @@ oqs = { version = "0.11.0", features = ["kems", "sigs", "serde"], optional = tru
 bip39 = { version = "2.2.2", features = ["rand", "spanish"] }
 ed25519-dalek = { version = "2.2.0", features = ["rand_core", "serde"] }
 bech32 = "0.9.1"
-bcrypt = "0.16.0"
 bincode = "1.3.3"
 x25519-dalek = { version = "2.0.1", features = ["static_secrets", "reusable_secrets"] }
 sqlite-vec = "0.1.0"

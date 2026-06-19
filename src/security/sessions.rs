@@ -4,7 +4,8 @@
 //! interact with the Xavier backend without exposure of root tokens.
 
 use chrono::{DateTime, Duration, Utc};
-use dashmap::DashMap;
+use parking_lot::RwLock;
+use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -22,14 +23,14 @@ impl EphemeralSession {
 }
 
 pub struct SessionManager {
-    sessions: Arc<DashMap<String, EphemeralSession>>,
+    sessions: Arc<RwLock<HashMap<String, EphemeralSession>>>,
     default_ttl: Duration,
 }
 
 impl SessionManager {
     pub fn new(ttl_minutes: i64) -> Self {
         Self {
-            sessions: Arc::new(DashMap::new()),
+            sessions: Arc::new(RwLock::new(HashMap::new())),
             default_ttl: Duration::minutes(ttl_minutes),
         }
     }
@@ -43,19 +44,19 @@ impl SessionManager {
             expires_at: now + self.default_ttl,
             created_at: now,
         };
-        self.sessions.insert(id, session.clone());
+        self.sessions.write().insert(id, session.clone());
         session
     }
 
     /// Validate a session ID
     pub fn validate_session(&self, id: &str) -> bool {
-        if let Some(session) = self.sessions.get(id) {
+        if let Some(session) = self.sessions.read().get(id) {
             if !session.is_expired() {
                 return true;
             }
         }
         // Cleanup expired session if found
-        self.sessions.remove(id);
+        self.sessions.write().remove(id);
         false
     }
 
@@ -63,7 +64,7 @@ impl SessionManager {
     pub fn cleanup_expired(&self) -> usize {
         let now = Utc::now();
         let mut count = 0;
-        self.sessions.retain(|_, session| {
+        self.sessions.write().retain(|_, session| {
             let expired = session.expires_at < now;
             if expired {
                 count += 1;

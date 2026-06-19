@@ -14,8 +14,7 @@ use std::sync::Arc;
 use tracing::{warn, info};
 use crate::security::auth::resolve_xavier_token;
 use subtle::ConstantTimeEq;
-use governor::{Quota, RateLimiter, state::InMemoryState, clock::DefaultClock};
-use std::num::NonZeroU32;
+use crate::middleware::token_bucket::RateLimiter;
 use once_cell::sync::Lazy;
 use moka::future::Cache;
 use std::time::Duration;
@@ -24,8 +23,7 @@ static RATE_LIMITER: Lazy<McpRateLimiter> = Lazy::new(McpRateLimiter::new);
 
 /// Rate limiter for MCP sessions with TTL and size limit
 pub struct McpRateLimiter {
-    #[allow(dead_code)]
-    limiters: Cache<String, Arc<RateLimiter<governor::state::direct::NotKeyed, InMemoryState, DefaultClock>>>,
+    limiters: Cache<String, Arc<RateLimiter>>,
 }
 
 impl McpRateLimiter {
@@ -39,15 +37,13 @@ impl McpRateLimiter {
     }
 
     pub async fn check(&self, session_id: &str) -> bool {
-        let quota = Quota::per_minute(NonZeroU32::new(60).unwrap())
-            .allow_burst(NonZeroU32::new(10).unwrap());
-
         // Use get_with for atomic "get or insert"
         let limiter = self.limiters.get_with(session_id.to_string(), async {
-            Arc::new(RateLimiter::direct(quota))
+            // 60 RPM, burst of 10
+            Arc::new(RateLimiter::new(10.0, 1.0))
         }).await;
 
-        limiter.check().is_ok()
+        limiter.try_consume(1.0).await
     }
 }
 
