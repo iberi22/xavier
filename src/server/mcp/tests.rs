@@ -482,10 +482,8 @@ async fn validation_error_returns_standard_code() {
     )
     .await;
     let body = get_json_body(response).await;
-    // Currently returns XAVIER_ERROR_INTERNAL (-32603) because schema validation
-    // for required parameters is not yet implemented in the session handler.
-    // TODO: Implement schema validation that returns XAVIER_ERROR_VALIDATION (-32001)
-    assert!(body["error"]["code"].as_i64().is_some(), "Expected an error code in response body: {}", body);
+    assert_eq!(body["error"]["code"], super::types::XAVIER_ERROR_VALIDATION);
+    assert!(body["error"]["message"].as_str().unwrap().contains("Missing required parameter: content"));
 }
 
 #[tokio::test]
@@ -706,7 +704,7 @@ async fn error_handling_invalid_input() {
         error_code
     );
 
-    // search_memory without query → should still work (defaults to "")
+    // search_memory without query → should return validation error (query is required)
     let response = post_json(
         router.clone(),
         json!({
@@ -716,7 +714,7 @@ async fn error_handling_invalid_input() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert!(body["result"].is_object(), "empty query should return result");
+    assert_eq!(body["error"]["code"], super::types::XAVIER_ERROR_VALIDATION);
 
     // mem_search with valid input works
     let response = post_json(
