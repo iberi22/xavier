@@ -31,14 +31,11 @@ use std::collections::HashMap;
 use std::sync::RwLock;
 
 use anyhow::{anyhow, Result};
-use dashmap::DashMap;
 use std::sync::Arc;
 
+use crate::crypto::hmac::hmac_sha256;
+use crate::crypto::password;
 use crate::utils::crypto::{hex_decode, hex_encode};
-use argon2::password_hash::{rand_core::OsRng, SaltString};
-use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
-use hmac::{Hmac, Mac};
-use sha2::Sha256;
 
 /// Servicio de seguridad principal que integra todas las funcionalidades
 pub struct SecurityService {
@@ -125,20 +122,11 @@ impl SecurityManager {
     }
 
     pub fn hash_password(&self, password: &str) -> Result<String> {
-        let salt = SaltString::generate(&mut OsRng);
-        let argon2 = Argon2::default();
-        let hash = argon2
-            .hash_password(password.as_bytes(), &salt)
-            .map_err(|e| anyhow!("argon2 error: {}", e))?;
-        Ok(hash.to_string())
+        password::hash(password, password::DEFAULT_COST)
     }
 
     pub fn verify_password(&self, password: &str, hash: &str) -> Result<bool> {
-        let parsed_hash =
-            PasswordHash::new(hash).map_err(|e| anyhow!("invalid hash format: {}", e))?;
-        Ok(Argon2::default()
-            .verify_password(password.as_bytes(), &parsed_hash)
-            .is_ok())
+        password::verify(password, hash)
     }
 
     pub fn generate_token(&self, user_id: &str) -> Result<String> {
@@ -146,8 +134,6 @@ impl SecurityManager {
             .security
             .token_secret
             .ok_or_else(|| anyhow!("XAVIER_TOKEN_SECRET is not configured"))?;
-        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
-            .map_err(|e| anyhow!("hmac error: {}", e))?;
 
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -155,11 +141,12 @@ impl SecurityManager {
             .as_secs();
         let token_id = ulid::Ulid::new().to_string();
 
-        mac.update(user_id.as_bytes());
-        mac.update(&timestamp.to_le_bytes());
-        mac.update(token_id.as_bytes());
+        let mut data = Vec::new();
+        data.extend_from_slice(user_id.as_bytes());
+        data.extend_from_slice(&timestamp.to_le_bytes());
+        data.extend_from_slice(token_id.as_bytes());
 
-        let signature = hex_encode(&mac.finalize().into_bytes());
+        let signature = hex_encode(&hmac_sha256(secret.as_bytes(), &data));
         Ok(format!(
             "xavier.hmac.v1:{}:{}:{}:{}",
             user_id, timestamp, token_id, signature
@@ -185,17 +172,19 @@ impl SecurityManager {
             .security
             .token_secret
             .ok_or_else(|| anyhow!("XAVIER_TOKEN_SECRET is not configured"))?;
-        let mut mac = Hmac::<Sha256>::new_from_slice(secret.as_bytes())
-            .map_err(|e| anyhow!("hmac error: {}", e))?;
 
-        mac.update(user_id.as_bytes());
-        mac.update(&timestamp.to_le_bytes());
-        mac.update(token_id.as_bytes());
+        let mut data = Vec::new();
+        data.extend_from_slice(user_id.as_bytes());
+        data.extend_from_slice(&timestamp.to_le_bytes());
+        data.extend_from_slice(token_id.as_bytes());
 
         let expected =
             hex_decode(signature).map_err(|e| anyhow!("invalid signature hex: {}", e))?;
-        mac.verify_slice(&expected)
-            .map_err(|e| anyhow!("invalid signature: {}", e))?;
+        let actual = hmac_sha256(secret.as_bytes(), &data);
+
+        if actual != expected.as_slice() {
+            return Err(anyhow!("invalid signature"));
+        }
         Ok(())
     }
 }
@@ -414,7 +403,7 @@ impl ProcessResult {
 /// Store for Human-in-the-Loop approvals
 pub struct ApprovalStore {
     /// Map of action:target -> timestamp of approval
-    approvals: DashMap<String, u64>,
+    approvals: Arc<RwLock<HashMap<String, u64>>>,
 }
 
 impl Default for ApprovalStore {
@@ -426,7 +415,7 @@ impl Default for ApprovalStore {
 impl ApprovalStore {
     pub fn new() -> Self {
         Self {
-            approvals: DashMap::new(),
+            approvals: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -436,29 +425,36 @@ impl ApprovalStore {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        self.approvals.insert(key, now);
+        if let Ok(mut approvals) = self.approvals.write() {
+            approvals.insert(key, now);
+        }
     }
 
     pub fn is_approved(&self, action: &str, target: &str) -> bool {
         let key = format!("{}:{}", action, target);
-        if let Some(timestamp) = self.approvals.get(&key) {
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs();
-            // Approval is valid for 5 minutes
-            if now - *timestamp < 300 {
-                return true;
-            } else {
-                self.approvals.remove(&key);
+        if let Ok(approvals) = self.approvals.read() {
+            if let Some(timestamp) = approvals.get(&key) {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs();
+                // Approval is valid for 5 minutes
+                if now - *timestamp < 300 {
+                    return true;
+                }
             }
         }
+
+        // Cleanup expired session if it exists
+        self.revoke(action, target);
         false
     }
 
     pub fn revoke(&self, action: &str, target: &str) {
         let key = format!("{}:{}", action, target);
-        self.approvals.remove(&key);
+        if let Ok(mut approvals) = self.approvals.write() {
+            approvals.remove(&key);
+        }
     }
 }
 
