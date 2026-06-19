@@ -8,15 +8,15 @@ use crate::AppState;
 use axum::{
     body::Bytes,
     extract::State,
-    http::{header::{self, HeaderName}, HeaderMap, HeaderValue, StatusCode},
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     Extension, Json,
 };
 use serde_json::Value;
 use tracing::info;
-use ulid::Ulid;
 
-const MCP_SESSION_HEADER: &str = "mcp-session-id";
+pub const MCP_PROTOCOL_VERSION: &str = "2026-07-28";
+pub const ERROR_HEADER_MISMATCH: i32 = -32020;
 
 pub async fn mcp_post_handler(
     State(state): State<AppState>,
@@ -35,113 +35,87 @@ pub async fn mcp_post_handler(
         }
     };
 
-    let session_header = match resolve_mcp_session_header(&headers, &payload) {
-        Ok(value) => value,
-        Err(error) => return (StatusCode::BAD_REQUEST, error).into_response(),
-    };
-
-    match dispatch_mcp_value(state, workspace, payload).await {
-        Ok(Some(response)) => with_session_header(
-            (StatusCode::OK, Json(response)).into_response(),
-            session_header,
-        ),
-        Ok(None) => with_session_header(StatusCode::ACCEPTED.into_response(), session_header),
-        Err(error) => (StatusCode::BAD_REQUEST, error).into_response(),
-    }
-}
-
-/// MCP Streamable HTTP GET handler — opens the server→client SSE stream.
-///
-/// The client opens a long-lived `text/event-stream` connection to receive
-/// server-pushed notifications. Xavier currently has none to push, so the
-/// stream emits an initial `endpoint` event (announcing the JSON-RPC POST
-/// endpoint per the Streamable HTTP spec) and then keeps the connection alive
-/// with periodic comments until the client disconnects.
-pub async fn mcp_get_handler(headers: HeaderMap) -> Response {
-    use axum::response::sse::{Event, KeepAlive, Sse};
-    use futures_util::stream;
-    use futures_util::StreamExt;
-    use std::convert::Infallible;
-    use std::time::Duration;
-
-    let accepts_sse = headers
-        .get(header::ACCEPT)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|accept| accept.contains("text/event-stream"));
-
-    if !accepts_sse {
+    // Spec 2026-07-28: Request Metadata Validation
+    if let Err(mismatch) = validate_request_headers(&headers, &payload) {
         return (
-            StatusCode::METHOD_NOT_ALLOWED,
-            "MCP GET requires Accept: text/event-stream",
+            StatusCode::BAD_REQUEST,
+            Json(error_response(None, ERROR_HEADER_MISMATCH, mismatch)),
         )
             .into_response();
     }
 
-    let session_id = format!("xavier-{}", Ulid::new());
-    let header_value = HeaderValue::from_str(&session_id)
-        .unwrap_or_else(|_| HeaderValue::from_static("xavier-mcp-session"));
-
-    // Initial `endpoint` event, then indefinite keepalives (one every 30s).
-    // Built with futures-util `unfold` + `tokio::time::sleep` so we don't pull
-    // in tokio-stream's `time` feature.
-    let initial = stream::once(async {
-        Ok::<Event, Infallible>(Event::default().event("endpoint").data("/mcp"))
-    });
-    let keepalives = stream::unfold((), |()| async move {
-        tokio::time::sleep(Duration::from_secs(30)).await;
-        Some((
-            Ok::<Event, Infallible>(Event::default().comment("keepalive")),
-            (),
-        ))
-    });
-
-    let sse = Sse::new(initial.chain(keepalives))
-        .keep_alive(KeepAlive::new().interval(Duration::from_secs(15)).text("keepalive"));
-
-    with_session_header(sse.into_response(), Some(header_value))
+    match dispatch_mcp_value(state, workspace, payload).await {
+        Ok(Some(response)) => (StatusCode::OK, Json(response)).into_response(),
+        Ok(None) => StatusCode::ACCEPTED.into_response(),
+        Err(error) => (StatusCode::BAD_REQUEST, error).into_response(),
+    }
 }
 
-/// MCP Streamable HTTP DELETE handler — acknowledge session termination.
-pub async fn mcp_delete_handler(headers: HeaderMap) -> Response {
-    let session_header = headers.get(MCP_SESSION_HEADER).cloned();
-    with_session_header(StatusCode::OK.into_response(), session_header)
-}
+fn validate_request_headers(headers: &HeaderMap, body: &Value) -> Result<(), String> {
+    // 1. Protocol Version
+    let header_version = headers
+        .get("mcp-protocol-version")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| "Missing MCP-Protocol-Version header".to_string())?;
 
-fn resolve_mcp_session_header(
-    headers: &HeaderMap,
-    payload: &Value,
-) -> Result<Option<HeaderValue>, String> {
-    if let Some(value) = headers.get(MCP_SESSION_HEADER) {
-        if value.as_bytes().is_empty() {
-            return Err("Mcp-Session-Id header must not be empty".to_string());
+    if header_version != MCP_PROTOCOL_VERSION {
+        return Err(format!(
+            "Protocol version mismatch: header='{header_version}', expected='{MCP_PROTOCOL_VERSION}'"
+        ));
+    }
+
+    // 2. Method
+    let header_method = headers
+        .get("mcp-method")
+        .and_then(|v| v.to_str().ok())
+        .ok_or_else(|| "Missing Mcp-Method header".to_string())?;
+
+    let body_method = body
+        .get("method")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "Missing 'method' in request body".to_string())?;
+
+    if header_method != body_method {
+        return Err(format!(
+            "Method mismatch: header='{header_method}', body='{body_method}'"
+        ));
+    }
+
+    // 3. Name (required for tools/call, resources/read, prompts/get)
+    if ["tools/call", "resources/read", "prompts/get"].contains(&body_method) {
+        let header_name = headers
+            .get("mcp-name")
+            .and_then(|v| v.to_str().ok())
+            .map(decode_mcp_header_value)
+            .ok_or_else(|| "Missing Mcp-Name header".to_string())?;
+
+        let body_name = match body_method {
+            "tools/call" => body.get("params").and_then(|p| p.get("name")).and_then(|n| n.as_str()),
+            "resources/read" => body.get("params").and_then(|p| p.get("uri")).and_then(|n| n.as_str()),
+            "prompts/get" => body.get("params").and_then(|p| p.get("name")).and_then(|n| n.as_str()),
+            _ => None,
+        }.ok_or_else(|| "Missing name/uri in request params".to_string())?;
+
+        if header_name != body_name {
+            return Err(format!(
+                "Name mismatch: header='{header_name}', body='{body_name}'"
+            ));
         }
-        return Ok(Some(value.clone()));
     }
 
-    if payload_method(payload).is_some_and(|method| method == "initialize") {
-        let session_id = format!("xavier-{}", Ulid::new());
-        let value = HeaderValue::from_str(&session_id)
-            .map_err(|_| "Failed to generate MCP session header".to_string())?;
-        return Ok(Some(value));
-    }
-    Ok(None)
+    Ok(())
 }
 
-fn payload_method(payload: &Value) -> Option<&str> {
-    match payload {
-        Value::Object(map) => map.get("method").and_then(|value| value.as_str()),
-        Value::Array(items) => items.iter().find_map(payload_method),
-        _ => None,
+fn decode_mcp_header_value(value: &str) -> String {
+    if value.starts_with("=?base64?") && value.ends_with("?=") {
+        let b64 = &value[9..value.len() - 2];
+        if let Ok(decoded) = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, b64) {
+            if let Ok(utf8) = String::from_utf8(decoded) {
+                return utf8;
+            }
+        }
     }
-}
-
-fn with_session_header(mut response: Response, session_header: Option<HeaderValue>) -> Response {
-    if let Some(value) = session_header {
-        response
-            .headers_mut()
-            .insert(HeaderName::from_static(MCP_SESSION_HEADER), value);
-    }
-    response
+    value.to_string()
 }
 
 pub async fn dispatch_mcp_value(
@@ -259,7 +233,7 @@ async fn handle_mcp_request(
             id: request.id.unwrap_or(Value::Null),
             result: Some(
                 serde_json::json!({
-                    "protocolVersion": "2025-03-26",
+                    "protocolVersion": "2026-07-28",
                     "capabilities": {
                         "tools": { "listChanged": false },
                         "resources": { "listChanged": false }
