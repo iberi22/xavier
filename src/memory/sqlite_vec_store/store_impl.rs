@@ -416,11 +416,12 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     async fn load_workspace_state(&self, workspace_id: &str) -> Result<DurableWorkspaceState> {
         let memories = self.list(workspace_id).await?;
-        let workspace_id = workspace_id.to_string();
+        let workspace_id_c = workspace_id.to_string();
 
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+            // Load beliefs
             let mut stmt = conn.prepare("SELECT id, source_id, target_id, relation_type, weight, confidence_score, provenance_id, contradicts_edge_id, is_inferred, source_language, target_language, created_at, updated_at FROM relations WHERE workspace_id = ?")?;
-            let mut rows = stmt.query(params![workspace_id])?;
+            let mut rows = stmt.query(params![workspace_id_c])?;
 
             let mut beliefs = Vec::new();
             while let Some(row) = rows.next()? {
@@ -454,11 +455,53 @@ impl MemoryStore for VecSqliteMemoryStore {
                 });
             }
 
+            // Load session tokens (filter expired)
+            let now = chrono::Utc::now();
+            let session_tokens = {
+                let mut stmt = conn.prepare("SELECT id, workspace_id, token, created_at, expires_at FROM session_tokens WHERE workspace_id = ?")?;
+                let mut rows = stmt.query([&workspace_id_c])?;
+                let mut tokens = Vec::new();
+                while let Some(row) = rows.next()? {
+                    let expires_at = chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(4)?)
+                            .map(|dt| dt.with_timezone(&chrono::Utc))
+                            .unwrap_or_else(|_| chrono::Utc::now());
+
+                    if expires_at > now {
+                        tokens.push(SessionTokenRecord {
+                            token: row.get(2)?,
+                            created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(3)?)
+                                .map(|dt| dt.with_timezone(&chrono::Utc))
+                                .unwrap_or_else(|_| chrono::Utc::now()),
+                            expires_at,
+                        });
+                    }
+                }
+                tokens
+            };
+
+            // Load checkpoints
+            let checkpoints = {
+                let mut stmt = conn.prepare(&format!(
+                    "SELECT task_id, name, data FROM {} WHERE workspace_id = ?",
+                    TABLE_CHECKPOINTS
+                ))?;
+                let mut rows = stmt.query([&workspace_id_c])?;
+                let mut checkpoints = Vec::new();
+                while let Some(row) = rows.next()? {
+                    checkpoints.push(Checkpoint {
+                        task_id: row.get(0)?,
+                        name: row.get(1)?,
+                        data: serde_json::from_str(&row.get::<_, String>(2)?).unwrap_or_default(),
+                    });
+                }
+                checkpoints
+            };
+
             Ok(DurableWorkspaceState {
                 memories,
                 beliefs,
-                session_tokens: Vec::new(),
-                checkpoints: Vec::new(),
+                session_tokens,
+                checkpoints,
             })
         }).await
     }
@@ -504,14 +547,20 @@ impl MemoryStore for VecSqliteMemoryStore {
         token: SessionTokenRecord,
     ) -> Result<()> {
         let workspace_id = workspace_id.to_string();
+        let token_key = crate::memory::store::stable_key("session_token_row", &[&workspace_id, &token.token]);
+        let token_val = token.token;
+        let created_at = token.created_at.to_rfc3339();
+        let expires_at = token.expires_at.to_rfc3339();
+
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
             conn.execute(
-                "INSERT OR REPLACE INTO session_tokens (token, workspace_id, created_at, expires_at) VALUES (?, ?, ?, ?)",
+                "INSERT OR REPLACE INTO session_tokens (id, workspace_id, token, created_at, expires_at) VALUES (?, ?, ?, ?, ?)",
                 params![
-                    token.token,
+                    token_key,
                     workspace_id,
-                    token.created_at.to_rfc3339(),
-                    token.expires_at.to_rfc3339(),
+                    token_val,
+                    created_at,
+                    expires_at,
                 ],
             )?;
             Ok(())
@@ -523,24 +572,29 @@ impl MemoryStore for VecSqliteMemoryStore {
         let token = token.to_string();
 
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let mut stmt = conn.prepare("SELECT COUNT(*) FROM session_tokens WHERE token = ? AND workspace_id = ? AND expires_at > ?")?;
-            let mut rows = stmt
-                .query(params![
-                    token,
-                    workspace_id,
-                    chrono::Utc::now().to_rfc3339()
-                ])?;
-            let valid = if let Some(row) = rows.next()? {
-                row.get::<_, i64>(0).unwrap_or(0) > 0
-            } else {
-                false
-            };
-            Ok(valid)
+            let token_key = crate::memory::store::stable_key("session_token_row", &[&workspace_id, &token]);
+            let now = chrono::Utc::now().to_rfc3339();
+
+            let count: i32 = conn.query_row(
+                "SELECT COUNT(*) FROM session_tokens WHERE id = ? AND expires_at > ?",
+                params![token_key, now],
+                |row| row.get(0),
+            )?;
+
+            Ok(count > 0)
         }).await
     }
 
     async fn save_checkpoint(&self, workspace_id: &str, checkpoint: Checkpoint) -> Result<()> {
         let workspace_id = workspace_id.to_string();
+        let checkpoint_key = crate::memory::store::stable_key(
+            "checkpoint_row",
+            &[&workspace_id, &checkpoint.task_id, &checkpoint.name],
+        );
+        let task_id = checkpoint.task_id;
+        let name = checkpoint.name;
+        let data_json = serde_json::to_string(&checkpoint.data)?;
+
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
             conn.execute(
                 &format!(
@@ -548,11 +602,11 @@ impl MemoryStore for VecSqliteMemoryStore {
                     TABLE_CHECKPOINTS
                 ),
                 params![
-                    ulid::Ulid::new().to_string(),
+                    checkpoint_key,
                     workspace_id,
-                    checkpoint.task_id,
-                    checkpoint.name,
-                    serde_json::to_string(&checkpoint.data).unwrap_or_default(),
+                    task_id,
+                    name,
+                    data_json,
                     chrono::Utc::now().to_rfc3339(),
                 ],
             )?;
