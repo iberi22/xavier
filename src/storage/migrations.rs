@@ -75,8 +75,9 @@ impl Migration for MigrationV1InitialSchema {
         // Session tokens
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS session_tokens (
-                token TEXT PRIMARY KEY,
+                id TEXT PRIMARY KEY,
                 workspace_id TEXT NOT NULL,
+                token TEXT NOT NULL,
                 created_at DATETIME NOT NULL,
                 expires_at DATETIME NOT NULL
             );"
@@ -242,6 +243,35 @@ impl Migration for MigrationV1InitialSchema {
             );"
         )?;
 
+        Ok(())
+    }
+}
+
+pub struct MigrationV5SessionTokensId;
+
+impl Migration for MigrationV5SessionTokensId {
+    fn version(&self) -> u32 {
+        5
+    }
+
+    fn description(&self) -> &str {
+        "Add id column to session_tokens"
+    }
+
+    fn run(&self, conn: &Connection) -> Result<()> {
+        if !crate::storage::table_has_column(conn, "session_tokens", "id")? {
+            // Recreate table with id column. We drop existing tokens as they are ephemeral.
+            conn.execute_batch(
+                "DROP TABLE IF EXISTS session_tokens;
+                 CREATE TABLE session_tokens (
+                    id TEXT PRIMARY KEY,
+                    workspace_id TEXT NOT NULL,
+                    token TEXT NOT NULL,
+                    created_at DATETIME NOT NULL,
+                    expires_at DATETIME NOT NULL
+                 );",
+            )?;
+        }
         Ok(())
     }
 }
