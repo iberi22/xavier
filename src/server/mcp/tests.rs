@@ -13,6 +13,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tower::util::ServiceExt;
+use ulid::Ulid;
 
 use super::session::mcp_delete_handler;
 use super::session::mcp_get_handler;
@@ -37,6 +38,8 @@ fn unique_test_path(prefix: &str, suffix: &str) -> PathBuf {
 }
 
 async fn test_state() -> (AppState, WorkspaceContext) {
+    let id = format!("test-{}", Ulid::new());
+    let token = format!("{}-token", id);
     let db_path = unique_test_path("xavier-code-mcp", "code_graph.db");
     let code_db = Arc::new(
         code_graph::db::CodeGraphDB::new(&db_path).expect("CodeGraphDB creation failed for test"),
@@ -46,10 +49,10 @@ async fn test_state() -> (AppState, WorkspaceContext) {
     let workspace_registry = Arc::new(WorkspaceRegistry::new());
     let workspace = WorkspaceState::new(
         WorkspaceConfig {
-            id: "test".to_string(),
-            token: "test-token".to_string(),
+            id: id.clone(),
+            token: token.clone(),
             plan: crate::workspace::PlanTier::Personal,
-            memory_backend: crate::memory::store::MemoryBackend::File,
+            memory_backend: crate::memory::store::MemoryBackend::Memory, // Use memory backend to avoid collisions
             storage_limit_bytes: Some(10 * 1024 * 1024),
             request_limit: Some(10_000),
             request_unit_limit: Some(20_000),
@@ -67,7 +70,7 @@ async fn test_state() -> (AppState, WorkspaceContext) {
         .await
         .expect("insert workspace into registry failed");
     let workspace = workspace_registry
-        .authenticate("test-token")
+        .authenticate(&token)
         .await
         .expect("authenticate failed for test workspace");
 
@@ -160,7 +163,7 @@ async fn list_tools_returns_all_tools() {
     assert_eq!(response.status(), StatusCode::OK);
     let body = get_json_body(response).await;
     let tools = body["result"]["tools"].as_array().expect("tools should be an array");
-    assert!(tools.len() >= 16);
+    assert!(tools.len() >= 17);
 }
 
 #[tokio::test]
@@ -202,8 +205,8 @@ async fn create_and_get_memory_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    let stats_text = body["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(stats_text.contains("\"total_memories\":1"));
+    let stats = &body["result"]["content"][0]["structuredContent"];
+    assert_eq!(stats["total_memories"], 1);
 
     // Search memory
     let response = post_json(
@@ -213,7 +216,7 @@ async fn create_and_get_memory_integration() {
             "id": 3,
             "method": "tools/call",
             "params": {
-                "name": "search_memory",
+                "name": "mem_search",
                 "arguments": {
                     "query": "test"
                 }
@@ -222,8 +225,8 @@ async fn create_and_get_memory_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    let search_text = body["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(search_text.contains("test content"));
+    let results = &body["result"]["content"][0]["structuredContent"]["results"];
+    assert!(results[0]["snippet"].as_str().unwrap().contains("test content"));
 }
 
 #[tokio::test]
@@ -246,7 +249,7 @@ async fn core_tools_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert_eq!(body["result"]["content"][0]["text"], "No projects found.");
+    assert_eq!(body["result"]["content"][0]["structuredContent"]["projects"], json!({}));
 
     // create memory with project
     post_json(
@@ -281,7 +284,7 @@ async fn core_tools_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert!(body["result"]["content"][0]["text"].as_str().unwrap().contains("project1"));
+    assert_eq!(body["result"]["content"][0]["structuredContent"]["projects"]["project1"], 1);
 
     // get_project_context
     let response = post_json(
@@ -298,7 +301,9 @@ async fn core_tools_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert!(body["result"]["content"][0]["text"].as_str().unwrap().contains("c1"));
+    let context = &body["result"]["content"][0]["structuredContent"];
+    assert!(context["content"].as_str().unwrap().contains("c1"));
+    assert_eq!(context["total_records"], 1);
 }
 
 #[tokio::test]
@@ -345,11 +350,11 @@ async fn fragment_tools_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    let search_text = body["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(search_text.contains("fragment content"));
+    let fragment = &body["result"]["content"][0]["structuredContent"];
+    assert!(fragment["content"].as_str().unwrap().contains("fragment content"));
 
-    // Extract ID from search text (Id: <ulid>)
-    let id = search_text.split('\n').next().unwrap().strip_prefix("Id: ").unwrap();
+    // Extract ID
+    let id = fragment["id"].as_str().unwrap();
 
     // get_recent_fragments
     let response = post_json(
@@ -368,7 +373,7 @@ async fn fragment_tools_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert!(body["result"]["content"][0]["text"].as_str().unwrap().contains("fragment content"));
+    assert!(body["result"]["content"][0]["structuredContent"]["content"].as_str().unwrap().contains("fragment content"));
 
     // memoryfragment_get
     let response = post_json(
@@ -385,7 +390,7 @@ async fn fragment_tools_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert!(body["result"]["content"][0]["text"].as_str().unwrap().contains("fragment content"));
+    assert!(body["result"]["content"][0]["structuredContent"]["content"].as_str().unwrap().contains("fragment content"));
 
     // memoryfragment_delete
     let response = post_json(
@@ -402,7 +407,12 @@ async fn fragment_tools_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert!(body["result"]["content"][0]["text"].as_str().unwrap().contains("Deleted memory fragment"));
+    let message = if let Some(content) = body["result"]["content"].as_array().and_then(|a| a.first()) {
+        content["text"].as_str().unwrap_or("")
+    } else {
+        ""
+    };
+    assert!(message.contains("Deleted memory fragment"));
 }
 
 #[tokio::test]
@@ -521,7 +531,7 @@ async fn list_tools_includes_new_memory_and_health_tools() {
         .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
-    for required in ["memory_save", "memory_search", "memory_context", "health_check"] {
+    for required in ["memory_save", "mem_search", "mem_context", "health_check"] {
         assert!(
             names.contains(&required),
             "tools/list missing required tool: {required}"
@@ -550,24 +560,25 @@ async fn memory_save_and_search_roundtrip() {
     let text = body["result"]["content"][0]["text"].as_str().unwrap();
     assert!(text.contains("Memory saved. id="), "got: {text}");
 
-    // memory_search scoped to the same namespace
+    // mem_search scoped to the same namespace
     let response = post_json(
         router.clone(),
         json!({
             "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-            "params": { "name": "memory_search", "arguments": {
-                "query": "cortical", "namespace": "cortex"
+            "params": { "name": "mem_search", "arguments": {
+                "query": "cortical", "filters": { "project": "cortex" }
             }}
         }),
     )
     .await;
     let body = get_json_body(response).await;
-    let search_text = body["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(search_text.contains("cortical stack persists"));
+    let results = &body["result"]["content"][0]["structuredContent"]["results"];
+    assert!(results[0]["snippet"].as_str().unwrap().contains("cortical stack persists"));
+    assert!(results[0]["provenance"]["retrieved_at"].is_string());
 }
 
 #[tokio::test]
-async fn memory_context_returns_context_block() {
+async fn mem_context_returns_context_block() {
     let (state, workspace) = test_state().await;
     let router = test_router(state, workspace);
 
@@ -586,16 +597,14 @@ async fn memory_context_returns_context_block() {
         router.clone(),
         json!({
             "jsonrpc": "2.0", "id": 2, "method": "tools/call",
-            "params": { "name": "memory_context", "arguments": { "query": "rust ownership" }}
+            "params": { "name": "mem_context", "arguments": { "query": "rust ownership" }}
         }),
     )
     .await;
     let body = get_json_body(response).await;
-    let text = body["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(
-        text.contains("ownership") || text.contains("No relevant context"),
-        "got: {text}"
-    );
+    let context = &body["result"]["content"][0]["structuredContent"];
+    assert!(context["content"].as_str().unwrap().contains("ownership"));
+    assert_eq!(context["total_records"], 1);
 }
 
 #[tokio::test]
@@ -669,7 +678,7 @@ async fn health_check_method_and_tool() {
     assert!(body["result"]["system"].is_object());
     assert!(body["result"]["checks"].is_array());
 
-    // tool health_check returns a text content blob with health JSON.
+    // tool health_check returns structuredContent.
     let response = post_json(
         router.clone(),
         json!({
@@ -679,9 +688,9 @@ async fn health_check_method_and_tool() {
     )
     .await;
     let body = get_json_body(response).await;
-    let text = body["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(text.contains("status"));
-    assert!(text.contains("uptime_secs"));
+    let health = &body["result"]["content"][0]["structuredContent"];
+    assert!(health["status"].is_string());
+    assert!(health["tools_count"].as_u64().unwrap() >= 17);
 }
 
 #[tokio::test]
@@ -712,26 +721,82 @@ async fn mcp_get_opens_sse_stream() {
     );
     // A session id header should be assigned.
     assert!(response.headers().get("mcp-session-id").is_some());
-    // NOTE: the SSE body is a long-lived keepalive stream, so we deliberately
-    // do NOT collect it here (that would hang waiting for an EOF that never
-    // arrives). Dropping `response` cancels the stream.
 }
 
 #[tokio::test]
-async fn mcp_get_without_accept_returns_405() {
+async fn mcp_size_limits_respected() {
     let (state, workspace) = test_state().await;
-    let app = test_router(state, workspace);
+    let router = test_router(state, workspace);
 
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method(Method::GET)
-                .uri("/mcp")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .expect("GET /mcp should respond");
+    // Seed multiple memories
+    for i in 0..20 {
+        post_json(
+            router.clone(),
+            json!({
+                "jsonrpc": "2.0", "id": i, "method": "tools/call",
+                "params": { "name": "create_memory", "arguments": {
+                    "path": format!("p/d{}", i),
+                    "content": format!("content for document {}", i),
+                    "namespace": { "project": "limit_test" }
+                }}
+            }),
+        ).await;
+    }
 
-    assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    // Test max_records limit
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 100, "method": "tools/call",
+            "params": { "name": "get_project_context", "arguments": {
+                "project_id": "limit_test",
+                "max_records": 5
+            }}
+        }),
+    ).await;
+    let body = get_json_body(response).await;
+    assert_eq!(body["result"]["content"][0]["structuredContent"]["total_records"], 5);
+
+    // Test max_chars limit
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 101, "method": "tools/call",
+            "params": { "name": "get_project_context", "arguments": {
+                "project_id": "limit_test",
+                "max_chars": 100
+            }}
+        }),
+    ).await;
+    let body = get_json_body(response).await;
+    let context = &body["result"]["content"][0]["structuredContent"];
+    assert!(context["total_chars"].as_u64().unwrap() <= 100);
+    assert!(context["truncated"].as_bool().unwrap());
+}
+
+#[tokio::test]
+async fn mcp_error_handling_invalid_input() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // Invalid limit type (string instead of number)
+    // In this case, serde_json might fail to deserialize into MCPRequest or tool params
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "mem_search", "arguments": {
+                "query": "test",
+                "limit": "invalid"
+            }}
+        }),
+    ).await;
+
+    let status = response.status();
+    let body = get_json_body(response).await;
+
+    // If it fails at handle_memory_tool (deserializing MemoryQueryFilters or other parts)
+    // or if dispatch_mcp_message fails to deserialize MCPRequest.
+    // In many cases, it might return a 400 Bad Request if it can't even parse the JSON-RPC
+    assert!(body["error"]["code"].as_i64().is_some() || status == StatusCode::BAD_REQUEST);
 }

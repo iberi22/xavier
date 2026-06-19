@@ -69,9 +69,10 @@ fn should_prescan_tool_argument(tool_name: &str, argument_name: &str) -> bool {
 
 pub fn mcp_text_result(text: impl Into<String>, is_error: bool) -> anyhow::Result<Value> {
     Ok(serde_json::to_value(MCPToolResult {
-        content: vec![MCPTextContent {
+        content: vec![MCPContent {
             content_type: "text".to_string(),
-            text: text.into(),
+            text: Some(text.into()),
+            structured_content: None,
         }],
         is_error: Some(is_error),
     })?)

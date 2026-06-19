@@ -54,15 +54,58 @@ pub struct MCPResource {
     pub mime_type: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MCPToolResult {
-    pub content: Vec<MCPTextContent>,
+    pub content: Vec<MCPContent>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub is_error: Option<bool>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct MCPTextContent {
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MCPContent {
     #[serde(rename = "type")]
     pub content_type: String,
-    pub text: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub text: Option<String>,
+    #[serde(rename = "structuredContent", skip_serializing_if = "Option::is_none")]
+    pub structured_content: Option<Value>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MCPSearchResult {
+    pub id: String,
+    pub path: String,
+    pub score: f64,
+    pub snippet: String,
+    pub provenance: MCPProvenance,
+    pub metadata: Value,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MCPProvenance {
+    pub source: String,
+    pub retrieved_at: String,
+    pub retrieval_method: String,
+    pub embedding_model: Option<String>,
+    pub version: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MCPContextResult {
+    pub total_chars: usize,
+    pub total_records: usize,
+    pub truncated: bool,
+    pub truncated_reason: Option<String>,
+    pub content: String,
+    pub sources: Vec<MCPSearchResult>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct MCPHealthResult {
+    pub status: String,
+    pub tools_count: usize,
+    pub handshake_ok: bool,
+    pub memory_store_ok: bool,
+    pub embedding_ok: bool,
+    pub mcp_protocol: String,
 }

@@ -9,6 +9,7 @@ use crate::memory::schema::{
 };
 use crate::workspace::WorkspaceContext;
 use crate::AppState;
+use chrono::Utc;
 use serde_json::{json, Value};
 use ulid::Ulid;
 
@@ -17,6 +18,9 @@ const MEMORYFRAGMENT_MAX_COMPONENT_CHARS: usize = 128;
 const MEMORYFRAGMENT_MAX_TAGS: usize = 32;
 const MEMORYFRAGMENT_MAX_TAG_CHARS: usize = 64;
 const MEMORYFRAGMENT_MAX_PROVENANCE_CHARS: usize = 2048;
+
+const CONTEXT_DEFAULT_MAX_CHARS: usize = 4000;
+const CONTEXT_ABSOLUTE_MAX_CHARS: usize = 16000;
 
 pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
     vec![
@@ -38,8 +42,22 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
             }),
         },
         MCPTool {
+            name: "mem_search".to_string(),
+            description: "Search candidates for a query. Returns IDs, snippets and scores for decision making.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Search query" },
+                    "limit": { "type": "number", "description": "Maximum results", "default": 10 },
+                    "search_mode": { "type": "string", "enum": ["hybrid", "semantic", "bm25"], "default": "hybrid" },
+                    "filters": { "type": "object", "description": "Optional filters" }
+                },
+                "required": ["query"]
+            }),
+        },
+        MCPTool {
             name: "search_memory".to_string(),
-            description: "Search memory documents in Xavier".to_string(),
+            description: "Alias for mem_search (backward compatibility)".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -48,6 +66,20 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                     "filters": { "type": "object", "description": "Optional filters" }
                 },
                 "required": ["query"]
+            }),
+        },
+        MCPTool {
+            name: "mem_context".to_string(),
+            description: "Get full aggregated context ready for prompt injection. Use after selecting candidates with mem_search.".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "memory_ids": { "type": "array", "items": { "type": "string" }, "description": "Specific memory IDs to include" },
+                    "query": { "type": "string", "description": "Optional query to find relevant memories if IDs are not provided" },
+                    "project_id": { "type": "string", "description": "Optional project scope" },
+                    "max_chars": { "type": "number", "description": "Limit context size in characters", "default": 4000 },
+                    "depth": { "type": "number", "description": "Relationship depth to explore", "default": 1 }
+                }
             }),
         },
         MCPTool {
@@ -212,7 +244,7 @@ pub async fn handle_memory_tool(
     arguments: Value,
 ) -> anyhow::Result<Value> {
     match name {
-        "search_memory" => {
+        "mem_search" | "search_memory" | "memory_search" => {
             let query = arguments
                 .get("query")
                 .and_then(|v| v.as_str())
@@ -220,31 +252,183 @@ pub async fn handle_memory_tool(
             let limit = arguments
                 .get("limit")
                 .and_then(|v| v.as_u64())
-                .unwrap_or(10) as usize;
-            let filters = arguments
+                .unwrap_or(10)
+                .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
+
+            let search_mode = arguments
+                .get("search_mode")
+                .and_then(|v| v.as_str())
+                .unwrap_or("hybrid");
+
+            let mut filters = arguments
                 .get("filters")
                 .cloned()
                 .map(serde_json::from_value::<MemoryQueryFilters>)
-                .transpose()?;
+                .transpose()?
+                .unwrap_or_default();
 
-            let results = workspace
-                .workspace
-                .memory
-                .search_filtered(query, limit, filters.as_ref())
-                .await?;
-            let content = results
-                .into_iter()
-                .map(|doc| MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: format!(
-                        "Path: {}\nContent: {}\nMetadata: {:?}",
-                        doc.path, doc.content, doc.metadata
-                    ),
-                })
-                .collect();
+            if name == "memory_search" {
+                if let Some(ns) = parse_namespace_arg(&arguments)? {
+                    filters.project = ns.project;
+                    filters.agent_id = ns.agent_id;
+                    filters.scope = ns.scope;
+                    filters.session_id = ns.session_id;
+                    filters.user_id = ns.user_id;
+                }
+            }
+
+            let results = match search_mode {
+                "bm25" => {
+                    workspace
+                        .workspace
+                        .memory
+                        .bm25_search(query, limit, Some(&filters))
+                        .await?
+                }
+                "semantic" => {
+                    let embedder = crate::embedding::build_embedder_from_env()
+                        .await
+                        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                    let embedding = embedder
+                        .encode(query)
+                        .await
+                        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                    workspace
+                        .workspace
+                        .memory
+                        .query_filtered(query, embedding, limit, Some(&filters))
+                        .await?
+                }
+                _ => {
+                    workspace
+                        .workspace
+                        .memory
+                        .search_filtered(query, limit, Some(&filters))
+                        .await?
+                }
+            };
+
+            let settings = crate::settings::XavierSettings::current();
+            let version = env!("CARGO_PKG_VERSION").to_string();
+            let retrieved_at = Utc::now().to_rfc3339();
+
+            let search_results: Vec<MCPSearchResult> = results.into_iter().map(|doc| {
+                let id = doc.id.clone().unwrap_or_else(|| doc.path.clone());
+                let snippet = if doc.content.len() > 200 {
+                    format!("{}...", &doc.content[..200])
+                } else {
+                    doc.content.clone()
+                };
+
+                MCPSearchResult {
+                    id,
+                    path: doc.path,
+                    score: 0.9, // Default for now as QmdMemory results don't always expose raw scores here
+                    snippet,
+                    provenance: MCPProvenance {
+                        source: "memory_store".to_string(),
+                        retrieved_at: retrieved_at.clone(),
+                        retrieval_method: search_mode.to_string(),
+                        embedding_model: Some(settings.models.embedding_model.clone()),
+                        version: Some(version.clone()),
+                    },
+                    metadata: doc.metadata,
+                }
+            }).collect();
 
             Ok(serde_json::to_value(MCPToolResult {
-                content,
+                content: vec![MCPContent {
+                    content_type: "structuredContent".to_string(),
+                    text: None,
+                    structured_content: Some(json!({
+                        "results": search_results,
+                        "meta": {
+                            "total_results": search_results.len(),
+                            "query": query,
+                            "search_mode": search_mode,
+                        }
+                    })),
+                }],
+                is_error: Some(false),
+            })?)
+        }
+        "mem_context" | "memory_context" => {
+            let query = arguments.get("query").and_then(|v| v.as_str());
+            let memory_ids = arguments.get("memory_ids").and_then(|v| v.as_array());
+            let max_chars = arguments.get("max_chars").and_then(|v| v.as_u64()).unwrap_or(CONTEXT_DEFAULT_MAX_CHARS as u64).clamp(1, CONTEXT_ABSOLUTE_MAX_CHARS as u64) as usize;
+            let project_id = arguments.get("project_id").and_then(|v| v.as_str());
+
+            let mut records = Vec::new();
+
+            if let Some(ids) = memory_ids {
+                for id_val in ids {
+                    if let Some(id) = id_val.as_str() {
+                        if let Ok(Some(rec)) = workspace.workspace.get_memory_record(id).await {
+                            records.push(rec);
+                        }
+                    }
+                }
+            } else if let Some(q) = query {
+                let limit = arguments.get("limit").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
+                let mut filters = MemoryQueryFilters::default();
+                if let Some(p) = project_id {
+                    filters.project = Some(p.to_string());
+                }
+                let results = workspace.workspace.memory.search_filtered(q, limit, Some(&filters)).await?;
+                for doc in results {
+                    records.push(crate::memory::store::MemoryRecord::from_document(&workspace.workspace_id, &doc, true, None));
+                }
+            }
+
+            let mut aggregated_content = String::new();
+            let mut sources = Vec::new();
+            let mut total_chars = 0;
+            let mut truncated = false;
+
+            let settings = crate::settings::XavierSettings::current();
+            let version = env!("CARGO_PKG_VERSION").to_string();
+            let retrieved_at = Utc::now().to_rfc3339();
+
+            for rec in records {
+                let doc_content = format!("## Source: {}\n{}\n\n", rec.path, rec.content);
+                if total_chars + doc_content.len() > max_chars {
+                    truncated = true;
+                    break;
+                }
+                aggregated_content.push_str(&doc_content);
+                total_chars += doc_content.len();
+
+                sources.push(MCPSearchResult {
+                    id: rec.id,
+                    path: rec.path,
+                    score: 1.0,
+                    snippet: if rec.content.len() > 100 { format!("{}...", &rec.content[..100]) } else { rec.content.clone() },
+                    provenance: MCPProvenance {
+                        source: "memory_store".to_string(),
+                        retrieved_at: retrieved_at.clone(),
+                        retrieval_method: "explicit_id_or_context".to_string(),
+                        embedding_model: Some(settings.models.embedding_model.clone()),
+                        version: Some(version.clone()),
+                    },
+                    metadata: rec.metadata,
+                });
+            }
+
+            let result = MCPContextResult {
+                total_chars,
+                total_records: sources.len(),
+                truncated,
+                truncated_reason: if truncated { Some("max_chars reached".to_string()) } else { None },
+                content: aggregated_content,
+                sources,
+            };
+
+            Ok(serde_json::to_value(MCPToolResult {
+                content: vec![MCPContent {
+                    content_type: "structuredContent".to_string(),
+                    text: None,
+                    structured_content: Some(serde_json::to_value(result)?),
+                }],
                 is_error: Some(false),
             })?)
         }
@@ -260,17 +444,17 @@ pub async fn handle_memory_tool(
                 .ok_or_else(|| anyhow::anyhow!("Memory not found: {id}"))?;
 
             Ok(serde_json::to_value(MCPToolResult {
-                content: vec![MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: format!(
-                        "Id: {}\nPath: {}\nRevision: {}\nPrimary: {}\nContent: {}\nMetadata: {}",
-                        record.id,
-                        record.path,
-                        record.revision,
-                        record.primary,
-                        record.content,
-                        serde_json::to_string_pretty(&record.metadata)?
-                    ),
+                content: vec![MCPContent {
+                    content_type: "structuredContent".to_string(),
+                    text: None,
+                    structured_content: Some(json!({
+                        "id": record.id,
+                        "path": record.path,
+                        "revision": record.revision,
+                        "primary": record.primary,
+                        "content": record.content,
+                        "metadata": record.metadata
+                    })),
                 }],
                 is_error: Some(false),
             })?)
@@ -446,16 +630,16 @@ pub async fn handle_memory_tool(
 
             let content = filtered
                 .into_iter()
-                .map(|doc| MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: format!(
-                        "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
-                        doc.id.as_deref().unwrap_or("none"),
-                        doc.path,
-                        doc.content,
-                        doc.metadata.get("gestalt_context"),
-                        doc.metadata.get("tags")
-                    ),
+                .map(|doc| MCPContent {
+                    content_type: "structuredContent".to_string(),
+                    text: None,
+                    structured_content: Some(json!({
+                        "id": doc.id.as_deref().unwrap_or("none"),
+                        "path": doc.path,
+                        "content": doc.content,
+                        "context": doc.metadata.get("gestalt_context"),
+                        "tags": doc.metadata.get("tags")
+                    })),
                 })
                 .collect();
 
@@ -482,16 +666,16 @@ pub async fn handle_memory_tool(
                 .await?;
             let content = records
                 .into_iter()
-                .map(|record| MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: format!(
-                        "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
-                        record.id,
-                        record.path,
-                        record.content,
-                        record.metadata.get("gestalt_context"),
-                        record.metadata.get("tags")
-                    ),
+                .map(|record| MCPContent {
+                    content_type: "structuredContent".to_string(),
+                    text: None,
+                    structured_content: Some(json!({
+                        "id": record.id,
+                        "path": record.path,
+                        "content": record.content,
+                        "context": record.metadata.get("gestalt_context"),
+                        "tags": record.metadata.get("tags")
+                    })),
                 })
                 .collect();
 
@@ -512,9 +696,10 @@ pub async fn handle_memory_tool(
                 .ok_or_else(|| anyhow::anyhow!("Memory not found: {}", id))?;
 
             Ok(serde_json::to_value(MCPToolResult {
-                content: vec![MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: format!("Id: {}\nPath: {}\nRevision: {}\nContent: {}\nContext: {:?}\nTags: {:?}\nMetadata: {}", record.id, record.path, record.revision, record.content, record.metadata.get("gestalt_context"), record.metadata.get("tags"), serde_json::to_string_pretty(&record.metadata)?),
+                content: vec![MCPContent {
+                    content_type: "structuredContent".to_string(),
+                    text: None,
+                    structured_content: Some(json!({ "id": record.id, "path": record.path, "revision": record.revision, "content": record.content, "context": record.metadata.get("gestalt_context"), "tags": record.metadata.get("tags"), "metadata": record.metadata })),
                 }],
                 is_error: Some(false),
             })?)
@@ -557,7 +742,14 @@ pub async fn handle_memory_tool(
             let entity_count = workspace.workspace.entity_graph.all_entities().await.len();
             let semantic_stats = workspace.workspace.semantic_memory.stats().await;
 
-            super::server::mcp_text_result(serde_json::json!({ "total_memories": records.len(), "projects": projects.len(), "agents": agents.len(), "total_entities": entity_count, "semantic_entities": semantic_stats.total_entities, "semantic_relations": semantic_stats.total_relations }).to_string(), false)
+            Ok(serde_json::to_value(MCPToolResult {
+                content: vec![MCPContent {
+                    content_type: "structuredContent".to_string(),
+                    text: None,
+                    structured_content: Some(json!({ "total_memories": records.len(), "projects": projects.len(), "agents": agents.len(), "total_entities": entity_count, "semantic_entities": semantic_stats.total_entities, "semantic_relations": semantic_stats.total_relations })),
+                }],
+                is_error: Some(false),
+            })?)
         }
         "memory_save" => {
             let text = arguments
@@ -601,78 +793,6 @@ pub async fn handle_memory_tool(
                 format!("Memory saved. id={doc_id}"),
                 false,
             )
-        }
-        "memory_search" => {
-            let query = arguments
-                .get("query")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let limit = arguments
-                .get("limit")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(10)
-                .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
-            let namespace = parse_namespace_arg(&arguments)?;
-
-            let mut filters = MemoryQueryFilters::default();
-            if let Some(ns) = &namespace {
-                filters.project = ns.project.clone();
-                filters.agent_id = ns.agent_id.clone();
-                filters.scope = ns.scope.clone();
-                filters.session_id = ns.session_id.clone();
-                filters.user_id = ns.user_id.clone();
-            }
-
-            let results = workspace
-                .workspace
-                .memory
-                .search_filtered(query, limit, Some(&filters))
-                .await?;
-            let content = results
-                .into_iter()
-                .map(|doc| MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: format!(
-                        "Path: {}\nContent: {}\nMetadata: {:?}",
-                        doc.path, doc.content, doc.metadata
-                    ),
-                })
-                .collect();
-
-            Ok(serde_json::to_value(MCPToolResult {
-                content,
-                is_error: Some(false),
-            })?)
-        }
-        "memory_context" => {
-            let query = arguments
-                .get("query")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            let limit = arguments
-                .get("limit")
-                .and_then(|v| v.as_u64())
-                .unwrap_or(5)
-                .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
-
-            let results = workspace
-                .workspace
-                .memory
-                .search_filtered(query, limit, None)
-                .await?;
-
-            if results.is_empty() {
-                super::server::mcp_text_result(
-                    format!("No relevant context found for query: {query}"),
-                    false,
-                )
-            } else {
-                let mut context = String::from("# Relevant Memory Context\n\n");
-                for (i, doc) in results.iter().enumerate() {
-                    context.push_str(&format!("## [{}] {}\n{}\n\n", i + 1, doc.path, doc.content));
-                }
-                super::server::mcp_text_result(context, false)
-            }
         }
         _ => Err(anyhow::anyhow!("Tool not implemented: {}", name)),
     }
