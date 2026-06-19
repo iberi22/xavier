@@ -246,6 +246,9 @@ impl Cli {
                 }
                 Ok(())
             }
+            Command::Maturity { cmd } => {
+                xavier::maturity::cli::handle_maturity_command(cmd.clone()).await
+            }
         }
     }
 }
