@@ -64,6 +64,8 @@ impl DaoGovernanceSystem {
         system
     }
 
+
+
     /// Submits a newly clustered anomaly to the governance board.
     pub fn submit_proposal(&mut self, cluster_id: &str, title: &str, description: &str) {
         if !self.active_proposals.contains_key(cluster_id) {
@@ -81,6 +83,8 @@ impl DaoGovernanceSystem {
             );
         }
     }
+
+
 
     /// Simulates a vote cast via GitHub Reaction (👍 or 👎).
     pub fn cast_vote(&mut self, cluster_id: &str, approve: bool) -> Result<(), String> {
@@ -126,6 +130,8 @@ impl DaoGovernanceSystem {
             }
         }
     }
+
+
 }
 
 impl Default for DaoGovernanceSystem {
