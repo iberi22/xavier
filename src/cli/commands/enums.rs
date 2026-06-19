@@ -252,6 +252,12 @@ pub enum Command {
         #[command(subcommand)]
         cmd: ScanCommand,
     },
+
+    /// Run feature maturity scan and reporting
+    Maturity {
+        #[command(subcommand)]
+        cmd: xavier::maturity::cli::MaturityCommand,
+    },
 }
 
 /// Navigation and impact analysis subcommands
