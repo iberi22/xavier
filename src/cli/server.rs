@@ -60,7 +60,7 @@ pub use crate::cli::http_setup::*;
 pub use crate::cli::types::*;
 pub use crate::cli::websocket::*;
 
-pub static START_TIME: once_cell::sync::Lazy<Instant> = once_cell::sync::Lazy::new(Instant::now);
+pub static START_TIME: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
 
 pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     // Initial health check run to populate the static HEALTH instance

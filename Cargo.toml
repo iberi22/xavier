@@ -1,8 +1,6 @@
 [patch.crates-io]
 burn-candle = { path = "patches/burn-candle" }
 
-
-
 [package]
 name = "xavier"
 version = "0.10.0-12-06-2026"
@@ -136,17 +134,16 @@ url = "2"
 
 # Security - Pattern matching
 regex = "1.10"
-once_cell = "1.19"
+
 memchr = "2.5"
 
 # Security - Prompt Injection Detection
 sha2 = "0.10"
-hex = "0.4"
 
 # Security - Phrase matching (Aho-Corasick)
 aho-corasick = "1.1"
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
-base64 = "0.22"
+
 unicode-normalization = "0.1"
 
 # Embedding cache (LRU + TTL)
@@ -174,9 +171,6 @@ sqlite-vec = "0.1.0"
 libp2p = { version = "0.56", optional = true, default-features = false, features = ["noise", "kad", "gossipsub", "mdns", "tcp", "tokio", "serde", "identify", "yamux"] }
 alloy = { version = "2.1", optional = true, default-features = false, features = ["providers", "consensus", "signers", "signer-local", "contract"] }
 
-
-
-
 [dev-dependencies]
 image = "0.25"
 proptest = "1.11.0"
@@ -200,6 +194,4 @@ required-features = ["cli-interactive"]
 [profile.release]
 opt-level = 3
 lto = false
-
-
 

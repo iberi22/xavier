@@ -94,7 +94,7 @@ fn make_test_peer(identity: &NodeIdentity, url: &str) -> PeerInfo {
         node_id: identity.node_id.clone(),
         alias: Some("test-node".to_string()),
         endpoint_url: url.to_string(),
-        public_key_hex: hex::encode(&identity.public_key),
+        public_key_hex: xavier::crypto::hex_encode(&identity.public_key),
         added_at: 0,
         last_seen_at: None,
         sync_enabled: true,
@@ -146,7 +146,7 @@ async fn test_chunk_payload_encryption_roundtrip() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::TopSecret,
                 namespaces: None,
-                public_key_hex: hex::encode(&identity_b.public_key),
+                public_key_hex: xavier::crypto::hex_encode(&identity_b.public_key),
             },
         )
         .unwrap();
@@ -347,7 +347,7 @@ async fn test_handshake_signature_verification() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::Unclassified,
                 namespaces: None,
-                public_key_hex: hex::encode(&identity_a.public_key),
+                public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
             },
         )
         .unwrap();
@@ -429,7 +429,7 @@ async fn test_acl_clearance_enforcement() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::Unclassified,
                 namespaces: None,
-                public_key_hex: hex::encode(&identity_a.public_key),
+                public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
             },
         )
         .unwrap();
@@ -457,7 +457,7 @@ async fn test_acl_clearance_enforcement() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::TopSecret,
                 namespaces: None,
-                public_key_hex: hex::encode(&identity_a.public_key),
+                public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
             },
         )
         .unwrap();
@@ -522,7 +522,7 @@ async fn test_acl_namespace_isolation() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::TopSecret,
                 namespaces: Some(vec!["open".to_string()]),
-                public_key_hex: hex::encode(&identity_a.public_key),
+                public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
             },
         )
         .unwrap();
@@ -546,7 +546,7 @@ async fn test_acl_namespace_isolation() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::TopSecret,
                 namespaces: Some(vec!["closed".to_string()]),
-                public_key_hex: hex::encode(&identity_a.public_key),
+                public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
             },
         )
         .unwrap();
@@ -589,7 +589,7 @@ async fn test_acl_role_enforcement() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::Unclassified,
                 namespaces: None,
-                public_key_hex: hex::encode(&identity_a.public_key),
+                public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
             },
         )
         .unwrap();
@@ -755,7 +755,7 @@ async fn test_acl_persistence_across_load() {
         let id_2 = NodeIdentity::generate();
 
         id1_node_id = id_1.node_id.clone();
-        id1_pk_hex = hex::encode(&id_1.public_key);
+        id1_pk_hex = xavier::crypto::hex_encode(&id_1.public_key);
         acl.set_entry(
             id_1.node_id.clone(),
             NodeAclEntry {
@@ -772,7 +772,7 @@ async fn test_acl_persistence_across_load() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::Unclassified,
                 namespaces: None,
-                public_key_hex: hex::encode(&id_2.public_key),
+                public_key_hex: xavier::crypto::hex_encode(&id_2.public_key),
             },
         )
         .unwrap();
@@ -819,7 +819,7 @@ async fn test_full_e2e_encrypted_mesh_sync_with_acl() {
                 role: Role::Admin,
                 clearance: ClearanceLevel::TopSecret,
                 namespaces: None,
-                public_key_hex: hex::encode(&identity_a.public_key),
+                public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
             },
         )
         .unwrap();
@@ -900,7 +900,7 @@ async fn test_empty_workspace_sync() {
             role: Role::Viewer,
             clearance: ClearanceLevel::Unclassified,
             namespaces: None,
-            public_key_hex: hex::encode(&identity_a.public_key),
+            public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
         },
     )
     .unwrap();

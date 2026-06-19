@@ -100,7 +100,7 @@ impl fmt::Debug for NodeIdentity {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("NodeIdentity")
             .field("node_id", &self.node_id)
-            .field("public_key", &hex::encode(&self.public_key))
+            .field("public_key", &crate::crypto::hex_encode(&self.public_key))
             .field("private_key", &"[REDACTED]")
             .finish()
     }
@@ -175,8 +175,8 @@ impl NodeIdentity {
         let stored = StoredIdentity {
             version: 1,
             node_id: identity.node_id.0.clone(),
-            public_key_hex: hex::encode(&identity.public_key),
-            private_key_hex: hex::encode(&identity.private_key),
+            public_key_hex: crate::crypto::hex_encode(&identity.public_key),
+            private_key_hex: crate::crypto::hex_encode(&identity.private_key),
         };
 
         let json = serde_json::to_string_pretty(&stored)?;
@@ -200,9 +200,9 @@ impl NodeIdentity {
     }
 
     fn from_stored(stored: StoredIdentity) -> Result<Self> {
-        let public_key = hex::decode(&stored.public_key_hex)
+        let public_key = crate::crypto::hex_decode(&stored.public_key_hex)
             .context("Invalid public key hex in identity file")?;
-        let private_key = hex::decode(&stored.private_key_hex)
+        let private_key = crate::crypto::hex_decode(&stored.private_key_hex)
             .context("Invalid private key hex in identity file")?;
         let node_id = NodeId(stored.node_id);
 
@@ -222,7 +222,7 @@ impl NodeIdentity {
     pub fn public_info(&self) -> PublicNodeInfo {
         PublicNodeInfo {
             node_id: self.node_id.clone(),
-            public_key_hex: hex::encode(&self.public_key),
+            public_key_hex: crate::crypto::hex_encode(&self.public_key),
             xavier_version: env!("CARGO_PKG_VERSION").to_string(),
         }
     }

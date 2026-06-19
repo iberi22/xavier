@@ -5,18 +5,18 @@
 //! unstructured memory text for the entity graph.
 
 use super::types::*;
-use once_cell::sync::Lazy;
+use std::sync::LazyLock;
 use regex::Regex;
 use std::collections::HashSet;
 
-pub(super) static CANDIDATE_ENTITY_RE: Lazy<Regex> = Lazy::new(|| {
+pub(super) static CANDIDATE_ENTITY_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\b(?:[A-Z]{2,}(?:[A-Z0-9_-]*[A-Z0-9])?|[A-Z][a-z0-9]+(?:[A-Z][A-Za-z0-9_-]*)+(?:\s+[A-Z][A-Za-z0-9_-]*)*|[A-Z][a-z0-9]+(?:\s+[A-Z][a-z0-9]+)*|[A-Za-z]+[0-9]+[A-Za-z0-9_-]*)\b")
         .expect("valid entity regex")
 });
-pub(super) static EMAIL_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"[\w.+-]+@[\w-]+\.[\w.-]+").expect("valid email regex"));
-pub(super) static URL_RE: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"https?://[^\s]+").expect("valid URL regex"));
+pub(super) static EMAIL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"[\w.+-]+@[\w-]+\.[\w.-]+").expect("valid email regex"));
+pub(super) static URL_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"https?://[^\s]+").expect("valid URL regex"));
 
 pub(super) static RELATION_PATTERNS: &[(&str, &str, f32)] = &[
     (

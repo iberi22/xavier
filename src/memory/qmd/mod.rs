@@ -11,8 +11,7 @@ use std::fmt;
 use std::str::FromStr;
 use unicode_normalization::UnicodeNormalization;
 use regex::Regex;
-use once_cell::sync::Lazy;
-
+use std::sync::LazyLock;
 pub mod cache_warming;
 pub mod config;
 pub mod hash;
@@ -62,8 +61,8 @@ impl FromStr for NormalizedId {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        static RE_NON_WORD: Lazy<Regex> = Lazy::new(|| Regex::new(r"[^\w]+").unwrap());
-        static RE_UNDERSCORES: Lazy<Regex> = Lazy::new(|| Regex::new(r"_+").unwrap());
+        static RE_NON_WORD: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[^\w]+").unwrap());
+        static RE_UNDERSCORES: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"_+").unwrap());
 
         // 1. NFKC normalization
         let nfkc = s.nfkc().collect::<String>();
