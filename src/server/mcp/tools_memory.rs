@@ -9,6 +9,7 @@ use crate::memory::schema::{
 };
 use crate::workspace::WorkspaceContext;
 use crate::AppState;
+use chrono::Utc;
 use serde_json::{json, Value};
 use ulid::Ulid;
 
@@ -17,6 +18,8 @@ const MEMORYFRAGMENT_MAX_COMPONENT_CHARS: usize = 128;
 const MEMORYFRAGMENT_MAX_TAGS: usize = 32;
 const MEMORYFRAGMENT_MAX_TAG_CHARS: usize = 64;
 const MEMORYFRAGMENT_MAX_PROVENANCE_CHARS: usize = 2048;
+const CONTEXT_DEFAULT_MAX_CHARS: usize = 4000;
+const CONTEXT_ABSOLUTE_MAX_CHARS: usize = 16000;
 
 pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
     vec![
@@ -211,7 +214,10 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "Query describing the desired context" },
-                    "limit": { "type": "number", "description": "Maximum memories to include", "default": 5 }
+                    "limit": { "type": "number", "description": "Maximum memories to include", "default": 5 },
+                    "max_chars": { "type": "number", "description": "Maximum characters to include in context output", "default": 4000 },
+                    "depth": { "type": "number", "description": "Relationship depth to explore (0=flat, 1=direct, 2=two-hop)", "default": 0 },
+                    "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "Search mode", "default": "hybrid" }
                 },
                 "required": ["query"]
             }),
@@ -658,7 +664,7 @@ pub async fn handle_memory_tool(
                 is_error: Some(false),
             })?)
         }
-        "memory_context" => {
+        "memory_context" | "mem_context" => {
             let query = arguments
                 .get("query")
                 .and_then(|v| v.as_str())
@@ -668,6 +674,16 @@ pub async fn handle_memory_tool(
                 .and_then(|v| v.as_u64())
                 .unwrap_or(5)
                 .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
+            let max_chars = arguments
+                .get("max_chars")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(CONTEXT_DEFAULT_MAX_CHARS as u64)
+                .clamp(1, CONTEXT_ABSOLUTE_MAX_CHARS as u64) as usize;
+            let depth = arguments
+                .get("depth")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                .clamp(0, 2) as usize;
 
             let results = workspace
                 .workspace
@@ -676,16 +692,172 @@ pub async fn handle_memory_tool(
                 .await?;
 
             if results.is_empty() {
-                super::server::mcp_text_result(
-                    format!("No relevant context found for query: {query}"),
-                    false,
-                )
+                let payload = MCPContextResult {
+                    total_chars: 0,
+                    total_records: 0,
+                    truncated: false,
+                    truncated_reason: None,
+                    content: format!("No relevant context found for query: {query}"),
+                    sources: Vec::new(),
+                };
+                Ok(serde_json::to_value(MCPToolResult {
+                    content: vec![MCPContent::Structured(MCPStructuredContent {
+                        content_type: "structuredContent".to_string(),
+                        structured_content: serde_json::to_value(payload)?,
+                    })],
+                    is_error: Some(false),
+                })?)
             } else {
-                let mut context = String::from("# Relevant Memory Context\n\n");
-                for (i, doc) in results.iter().enumerate() {
-                    context.push_str(&format!("## [{}] {}\n{}\n\n", i + 1, doc.path, doc.content));
+                let mut all_docs: Vec<(String, usize)> = Vec::new(); // (doc_id, depth_level)
+                let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+                let mut sources: Vec<MCPSearchResult> = Vec::new();
+
+                // Phase 1: collect initial search results
+                for doc in &results {
+                    let doc_id = doc.id.clone().unwrap_or_default();
+                    if !doc_id.is_empty() && seen_ids.insert(doc_id.clone()) {
+                        all_docs.push((doc_id.clone(), 0));
+                        sources.push(MCPSearchResult {
+                            id: doc_id.clone(),
+                            path: doc.path.clone(),
+                            score: 0.0,
+                            snippet: doc.content.chars().take(200).collect(),
+                            provenance: MCPProvenance {
+                                source: "search_filtered".to_string(),
+                                retrieved_at: chrono::Utc::now().to_rfc3339(),
+                                retrieval_method: "context_depth_search".to_string(),
+                                embedding_model: None,
+                                version: None,
+                            },
+                            metadata: doc.metadata.clone(),
+                        });
+                    }
                 }
-                super::server::mcp_text_result(context, false)
+
+                // Phase 2: expand by depth
+                if depth > 0 {
+                    let mut current_idxs: Vec<String> = all_docs.iter().map(|(id, _)| id.clone()).collect();
+                    for current_depth in 1..=depth {
+                        let mut next_ids: Vec<String> = Vec::new();
+                        for doc_id in &current_idxs {
+                            if let Ok(Some(record)) = workspace.workspace.get_memory_record(doc_id).await {
+                                // Fetch parent
+                                if let Some(ref parent_id) = record.parent_id {
+                                    if seen_ids.insert(parent_id.clone()) {
+                                        if let Ok(Some(parent)) = workspace.workspace.get_memory_record(parent_id).await {
+                                            next_ids.push(parent_id.clone());
+                                            all_docs.push((parent_id.clone(), current_depth));
+                                            sources.push(MCPSearchResult {
+                                                id: parent_id.clone(),
+                                                path: parent.path.clone(),
+                                                score: 0.0,
+                                                snippet: parent.content.chars().take(200).collect(),
+                                                provenance: MCPProvenance {
+                                                    source: "parent_relation".to_string(),
+                                                    retrieved_at: chrono::Utc::now().to_rfc3339(),
+                                                    retrieval_method: "context_depth_expansion".to_string(),
+                                                    embedding_model: None,
+                                                    version: None,
+                                                },
+                                                metadata: parent.metadata.clone(),
+                                            });
+                                        }
+                                    }
+                                }
+
+                                // Fetch children (documents whose parent_id matches this id)
+                                // We search filtered with cluster_ids to find children in same cluster
+                                if let Some(ref cluster) = record.cluster_id {
+                                    let mut child_filters = crate::memory::schema::MemoryQueryFilters::default();
+                                    child_filters.cluster_ids = Some(vec![cluster.clone()]);
+                                    if let Ok(children) = workspace
+                                        .workspace
+                                        .memory
+                                        .search_filtered("", 50, Some(&child_filters))
+                                        .await
+                                    {
+                                        for child in children {
+                                            if let Some(ref cid) = child.id {
+                                                if cid != doc_id && seen_ids.insert(cid.clone()) {
+                                                    next_ids.push(cid.clone());
+                                                    all_docs.push((cid.clone(), current_depth));
+                                                    sources.push(MCPSearchResult {
+                                                        id: cid.clone(),
+                                                        path: child.path.clone(),
+                                                        score: 0.0,
+                                                        snippet: child.content.chars().take(200).collect(),
+                                                        provenance: MCPProvenance {
+                                                            source: "child_relation".to_string(),
+                                                            retrieved_at: chrono::Utc::now().to_rfc3339(),
+                                                            retrieval_method: "context_depth_expansion".to_string(),
+                                                            embedding_model: None,
+                                                            version: None,
+                                                        },
+                                                        metadata: child.metadata.clone(),
+                                                    });
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        current_idxs = next_ids;
+                    }
+                }
+
+                // Phase 3: fetch full records for all collected ids and build context string
+                let mut context = String::from("# Relevant Memory Context\n\n");
+                for (doc_id, depth_level) in &all_docs {
+                    if let Ok(Some(record)) = workspace.workspace.get_memory_record(doc_id).await {
+                        let indent = "  ".repeat(*depth_level);
+                        let depth_label = if *depth_level == 0 {
+                            String::from("[ROOT]")
+                        } else {
+                            format!("[DEPTH-{}]", depth_level)
+                        };
+                        context.push_str(&format!(
+                            "{}### {} {} (id: {})\n{}{}\n\n",
+                            indent, depth_label, record.path, record.id, indent, record.content
+                        ));
+                    }
+                }
+
+                // Phase 4: enforce max_chars truncation
+                let truncated;
+                let truncated_reason;
+                let total_chars = context.chars().count();
+                if total_chars > max_chars {
+                    truncated = true;
+                    truncated_reason = Some(format!(
+                        "Context truncated from {} to {} characters",
+                        total_chars, max_chars
+                    ));
+                    // Truncate at character boundary
+                    let mut truncated_text: String = context.chars().take(max_chars).collect();
+                    truncated_text.push_str("\n[... truncated ...]");
+                    context = truncated_text;
+                } else {
+                    truncated = false;
+                    truncated_reason = None;
+                }
+
+                let final_total_chars = context.chars().count();
+                let payload = MCPContextResult {
+                    total_chars: final_total_chars,
+                    total_records: all_docs.len(),
+                    truncated,
+                    truncated_reason,
+                    content: context,
+                    sources,
+                };
+                Ok(serde_json::to_value(MCPToolResult {
+                    content: vec![MCPContent::Structured(MCPStructuredContent {
+                        content_type: "structuredContent".to_string(),
+                        structured_content: serde_json::to_value(payload)?,
+                    })],
+                    is_error: Some(false),
+                })?)
             }
         }
         _ => Err(anyhow::anyhow!("Tool not implemented: {}", name)),
