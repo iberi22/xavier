@@ -324,7 +324,7 @@ pub async fn handle_core_tool(
                 memory_store_ok: health.database.size_mb > 0.0
                     || health.database.size_mb == 0.0, // store exists
                 embedding_ok: health.embedding.connected,
-                mcp_protocol: "2025-06-18".to_string(),
+                mcp_protocol: "2026-07-28".to_string(),
             };
 
             Ok(serde_json::to_value(MCPToolResult::structured(

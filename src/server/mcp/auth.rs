@@ -10,46 +10,9 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use std::sync::Arc;
 use tracing::{warn, info};
 use crate::security::auth::resolve_xavier_token;
 use subtle::ConstantTimeEq;
-use governor::{Quota, RateLimiter, state::InMemoryState, clock::DefaultClock};
-use std::num::NonZeroU32;
-use once_cell::sync::Lazy;
-use moka::future::Cache;
-use std::time::Duration;
-
-static RATE_LIMITER: Lazy<McpRateLimiter> = Lazy::new(McpRateLimiter::new);
-
-/// Rate limiter for MCP sessions with TTL and size limit
-pub struct McpRateLimiter {
-    #[allow(dead_code)]
-    limiters: Cache<String, Arc<RateLimiter<governor::state::direct::NotKeyed, InMemoryState, DefaultClock>>>,
-}
-
-impl McpRateLimiter {
-    pub fn new() -> Self {
-        Self {
-            limiters: Cache::builder()
-                .max_capacity(1000)
-                .time_to_idle(Duration::from_secs(3600))
-                .build(),
-        }
-    }
-
-    pub async fn check(&self, session_id: &str) -> bool {
-        let quota = Quota::per_minute(NonZeroU32::new(60).unwrap())
-            .allow_burst(NonZeroU32::new(10).unwrap());
-
-        // Use get_with for atomic "get or insert"
-        let limiter = self.limiters.get_with(session_id.to_string(), async {
-            Arc::new(RateLimiter::direct(quota))
-        }).await;
-
-        limiter.check().is_ok()
-    }
-}
 
 /// Authentication middleware for MCP HTTP+SSE transport
 pub async fn mcp_auth_middleware(
@@ -60,6 +23,37 @@ pub async fn mcp_auth_middleware(
     // Check if path starts with /mcp to be more robust
     if !path.starts_with("/mcp") {
         return next.run(req).await;
+    }
+
+    // Spec 2026-07-28: Validate Origin header
+    if let Some(origin) = req.headers().get("Origin") {
+        let origin_str = origin.to_str().unwrap_or("");
+
+        let is_trusted = if origin_str.is_empty() {
+            false
+        } else {
+            // Robust validation: must be exactly localhost or 127.0.0.1 with any port
+            let url = url::Url::parse(origin_str);
+            match url {
+                Ok(u) => {
+                    let host = u.host_str().unwrap_or("");
+                    host == "localhost" || host == "127.0.0.1"
+                }
+                Err(_) => false,
+            }
+        };
+
+        if !is_trusted {
+             warn!(origin = %origin_str, "MCP access rejected: invalid Origin");
+             return (StatusCode::FORBIDDEN, "Forbidden: Invalid Origin").into_response();
+        }
+    } else {
+        // According to some stricter interpretations of 2026-07-28 draft,
+        // Origin might be required for all HTTP transport connections.
+        // For now we warn and allow if missing, or we can enforce.
+        // Let's enforce it to be fully compliant with "Validate Origin header in ALL connections".
+        warn!("MCP access rejected: missing Origin header");
+        return (StatusCode::FORBIDDEN, "Forbidden: Missing Origin header").into_response();
     }
 
     // 1. Validate Token
@@ -87,20 +81,6 @@ pub async fn mcp_auth_middleware(
     if !is_match {
         warn!("Unauthorized MCP access attempt from {}", req.uri());
         return (StatusCode::UNAUTHORIZED, "Unauthorized").into_response();
-    }
-
-    // 2. Rate Limiting by Session ID
-    let session_id = req
-        .headers()
-        .get("mcp-session-id")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-
-    if let Some(sid) = session_id {
-        if !RATE_LIMITER.check(&sid).await {
-            warn!(session_id = %sid, "MCP rate limit exceeded");
-            return (StatusCode::TOO_MANY_REQUESTS, "Rate limit exceeded").into_response();
-        }
     }
 
     next.run(req).await

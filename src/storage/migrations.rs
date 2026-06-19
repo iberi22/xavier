@@ -246,6 +246,25 @@ impl Migration for MigrationV1InitialSchema {
     }
 }
 
+pub struct MigrationV5SessionTokensId;
+
+impl Migration for MigrationV5SessionTokensId {
+    fn version(&self) -> u32 {
+        5
+    }
+
+    fn description(&self) -> &str {
+        "Add id column to session_tokens"
+    }
+
+    fn run(&self, conn: &Connection) -> Result<()> {
+        if !table_has_column(conn, "session_tokens", "id")? {
+            conn.execute("ALTER TABLE session_tokens ADD COLUMN id TEXT", [])?;
+        }
+        Ok(())
+    }
+}
+
 pub struct MigrationV3UnifiedExtensions;
 
 impl Migration for MigrationV3UnifiedExtensions {

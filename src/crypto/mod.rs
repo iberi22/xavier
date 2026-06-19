@@ -25,6 +25,7 @@
 //! ```
 
 pub mod encryption;
+pub mod hmac;
 pub mod keys;
 
 pub use encryption::{decrypt_data, encrypt_data, EncryptedBlob};
