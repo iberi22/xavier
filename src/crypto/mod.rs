@@ -25,7 +25,9 @@
 //! ```
 
 pub mod encryption;
+pub mod hmac;
 pub mod keys;
+pub mod password;
 
 pub use encryption::{decrypt_data, encrypt_data, EncryptedBlob};
 pub use keys::{derive_kek_from_password, generate_dek, KeyManager};

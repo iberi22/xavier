@@ -21,6 +21,7 @@ pub mod enterprise;
 pub mod health;
 pub mod maturity;
 pub mod memory;
+pub mod middleware;
 pub mod mesh;
 pub mod messaging;
 pub mod notifications;

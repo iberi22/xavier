@@ -222,14 +222,10 @@ impl StripeClient {
         let signed_payload = format!("{}.{}", timestamp, String::from_utf8_lossy(payload));
 
         // Use HMAC SHA256
-        use hmac::{Hmac, Mac};
-        type HmacSha256 = Hmac<sha2::Sha256>;
-
-        let mut mac = HmacSha256::new_from_slice(self.webhook_secret.as_bytes())
-            .map_err(|_| anyhow!("HMAC error"))?;
-        mac.update(signed_payload.as_bytes());
-
-        let expected = hex::encode(mac.finalize().into_bytes());
+        let expected = hex::encode(crate::crypto::hmac::hmac_sha256(
+            self.webhook_secret.as_bytes(),
+            signed_payload.as_bytes(),
+        ));
 
         if sig != expected {
             return Err(anyhow!("Webhook signature verification failed"));
