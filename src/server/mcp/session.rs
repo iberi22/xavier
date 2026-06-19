@@ -212,6 +212,31 @@ fn classify_message(object: &serde_json::Map<String, Value>) -> Result<IncomingK
     Err("Invalid JSON-RPC message: missing method/result/error".to_string())
 }
 
+fn validate_tool_call_args(name: &str, arguments: &Value) -> Result<(), MCPError> {
+    let tools = super::server::get_xavier_tools();
+    let tool = tools.iter().find(|t| t.name == name);
+
+    if let Some(tool) = tool {
+        if let Some(required) = tool.input_schema.get("required").and_then(|r| r.as_array()) {
+            for field in required {
+                if let Some(field_name) = field.as_str() {
+                    if arguments.get(field_name).is_none()
+                        || arguments.get(field_name) == Some(&Value::Null)
+                    {
+                        return Err(MCPError {
+                            code: XAVIER_ERROR_VALIDATION,
+                            message: format!("Missing required parameter: {}", field_name),
+                            data: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
 async fn handle_mcp_request(
     state: AppState,
     workspace: WorkspaceContext,
@@ -299,22 +324,32 @@ async fn handle_mcp_request(
                 .get("arguments")
                 .cloned()
                 .unwrap_or_else(|| serde_json::json!({}));
-            Some(
-                match super::server::handle_tool_call(state, workspace, name, arguments).await {
-                    Ok(result) => MCPResponse {
-                        jsonrpc: "2.0".to_string(),
-                        id: request.id.unwrap_or(Value::Null),
-                        result: Some(result),
-                        error: None,
+
+            if let Err(error) = validate_tool_call_args(name, &arguments) {
+                Some(MCPResponse {
+                    jsonrpc: "2.0".to_string(),
+                    id: request.id.unwrap_or(Value::Null),
+                    result: None,
+                    error: Some(error),
+                })
+            } else {
+                Some(
+                    match super::server::handle_tool_call(state, workspace, name, arguments).await {
+                        Ok(result) => MCPResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id: request.id.unwrap_or(Value::Null),
+                            result: Some(result),
+                            error: None,
+                        },
+                        Err(error) => MCPResponse {
+                            jsonrpc: "2.0".to_string(),
+                            id: request.id.unwrap_or(Value::Null),
+                            result: None,
+                            error: Some(classify_mcp_error(error)),
+                        },
                     },
-                    Err(error) => MCPResponse {
-                        jsonrpc: "2.0".to_string(),
-                        id: request.id.unwrap_or(Value::Null),
-                        result: None,
-                        error: Some(classify_mcp_error(error)),
-                    },
-                },
-            )
+                )
+            }
         }
         _ if is_notification => None,
         _ => error_response(
