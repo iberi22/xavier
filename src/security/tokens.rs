@@ -1,11 +1,11 @@
 //! API Token Management for Xavier
 //!
-//! Provides secure storage and validation of API tokens using bcrypt hashing
+//! Provides secure storage and validation of API tokens using SHA-256 hashing
 //! and SQLite for persistence.
 
 use crate::codebase::connection_manager::ConnectionManager;
+use crate::crypto::password::{hash, verify, DEFAULT_COST};
 use anyhow::Result;
-use bcrypt::{hash, verify, DEFAULT_COST};
 use chrono::{DateTime, Utc};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
