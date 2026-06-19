@@ -99,7 +99,6 @@ tracing-appender = "0.2"
 
 # CLI arguments
 clap = { version = "4", features = ["derive"] }
-pico-args = "0.5"
 pulldown-cmark = "0.13.4"
 
 # TUI Dashboard
