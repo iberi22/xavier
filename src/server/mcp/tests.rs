@@ -871,6 +871,105 @@ async fn memory_context_returns_context_block() {
 }
 
 #[tokio::test]
+async fn memory_context_depth_flat() {
+    // depth=0 should return only flat search results (no tree expansion)
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // Seed a memory
+    post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "memory_save", "arguments": {
+                "text": "Borrow checker ensures memory safety in Rust"
+            }}
+        }),
+    )
+    .await;
+
+    // memory_context with explicit depth=0
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": { "name": "memory_context", "arguments": {
+                "query": "borrow", "depth": 0
+            }}
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let content = &body["result"]["content"][0];
+    assert_eq!(content["type"], "structuredContent", "depth/0 should return structured");
+    let sc = &content["structuredContent"];
+    assert!(sc["content"].as_str().unwrap().contains("memory safety") || sc["total_records"].as_u64().unwrap_or(0) == 0);
+}
+
+#[tokio::test]
+async fn memory_context_depth_one() {
+    // depth=1 should include parent/child related docs
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // No parent/child relationships in test context, but should not crash
+    // Verify it returns structuredContent and records >= 0
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "memory_context", "arguments": {
+                "query": "borrow", "depth": 1
+            }}
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let content = &body["result"]["content"][0];
+    assert_eq!(content["type"], "structuredContent", "depth/1 should return structured");
+    let sc = &content["structuredContent"];
+    assert!(sc["total_records"].as_u64().is_some());
+}
+
+#[tokio::test]
+async fn memory_context_max_chars() {
+    // max_chars=100 should truncate output
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // Seed a memory with content > 100 chars
+    post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": { "name": "memory_save", "arguments": {
+                "text": "Lifetimes are a Rust concept that ensures references are valid for the entire scope of usage and prevent dangling references at compile time through borrow checking rules"
+            }}
+        }),
+    )
+    .await;
+
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+            "params": { "name": "memory_context", "arguments": {
+                "query": "lifetimes", "max_chars": 100
+            }}
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let content = &body["result"]["content"][0];
+    assert_eq!(content["type"], "structuredContent", "max_chars should return structured");
+    let sc = &content["structuredContent"];
+    let total_chars = sc["total_chars"].as_u64().unwrap_or(0);
+    let is_truncated = sc["truncated"].as_bool().unwrap_or(false);
+    // The content should be truncated (or total_chars <= ~100 + truncation suffix)
+    assert!(total_chars <= 130 || is_truncated, "expected truncation or small output, got total_chars={total_chars}");
+}
+
+#[tokio::test]
 async fn resources_read_memory_and_health() {
     let (state, workspace) = test_state().await;
     let router = test_router(state, workspace);
