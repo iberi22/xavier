@@ -1,8 +1,8 @@
 {
   "meta": {
     "format_version": "1.0.0",
-    "generated": "2026-06-18T23:55:00Z",
-    "head": "c4bf149",
+    "generated": "2026-06-19T00:30:00Z",
+    "head": "7643492",
     "project": "Xavier v0.10.0 → v0.11.0",
     "gitcore_protocol": "v3.6.1"
   },
@@ -447,10 +447,10 @@
     "target_maturity_v011": 90
   },
   "sprint": {
-    "id": "SPRINT-JULES-002",
-    "name": "Mesh Network + Code Graph Integration",
-    "start": "2026-06-18",
-    "target_end": "2026-06-25",
+    "id": "SPRINT-FINAL-003",
+    "name": "Governance DAO + Maturity 90%",
+    "start": "2026-06-19",
+    "target_end": "2026-06-22",
     "maturity_target": 90,
     "manual_tasks": [
       {
@@ -471,6 +471,32 @@
       "prs_open": 0,
       "sanitized_at": "2026-06-18T23:55:00Z"
     },
-    "next_action": "Launch Jules on #166 Governance DAO on-chain"
+    "next_action": "Launching: Claude Code audits governance, Jules implements DAO on-chain integration",
+    "focus": [
+      "mesh-network",
+      "governance-dao",
+      "code-graph",
+      "mcp-auth"
+    ],
+    "active_issues": [
+      {
+        "number": 166,
+        "title": "Governance DAO on-chain",
+        "target_maturity": 60,
+        "by": "jules+claude-code"
+      },
+      {
+        "number": 219,
+        "title": "Code Graph docs + MCP tool full integration",
+        "target_maturity": 80,
+        "by": "jules"
+      },
+      {
+        "number": 220,
+        "title": "MCP Auth/Security plan + implementation",
+        "target_maturity": 60,
+        "by": "jules"
+      }
+    ]
   }
 }
