@@ -14919,6 +14919,7 @@ dependencies = [
  "tracing-subscriber",
  "ulid",
  "unicode-normalization",
+ "url",
  "uuid",
  "walkdir",
  "wasm-bindgen",
