@@ -14,8 +14,6 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tower::util::ServiceExt;
 
-use super::session::mcp_delete_handler;
-use super::session::mcp_get_handler;
 use super::session::mcp_post_handler;
 use crate::workspace::WorkspaceContext;
 use crate::{
@@ -90,12 +88,7 @@ async fn test_state() -> (AppState, WorkspaceContext) {
 
 fn test_router(state: AppState, workspace: WorkspaceContext) -> Router {
     Router::new()
-        .route(
-            "/mcp",
-            post(mcp_post_handler)
-                .get(mcp_get_handler)
-                .delete(mcp_delete_handler),
-        )
+        .route("/mcp", post(mcp_post_handler))
         .layer(axum::middleware::from_fn(super::auth::mcp_auth_middleware))
         .layer(axum::Extension(workspace))
         .with_state(state)
@@ -109,7 +102,8 @@ async fn post_json_with_token(app: Router, body: Value, token: Option<&str>) -> 
     let mut req = Request::builder()
         .method(Method::POST)
         .uri("/mcp")
-        .header("content-type", "application/json");
+        .header("content-type", "application/json")
+        .header("Origin", "http://localhost:8080");
 
     if let Some(t) = token {
         req = req.header("X-Xavier-Token", t);
@@ -144,7 +138,7 @@ async fn initialize_returns_current_protocol_version() {
             "id": 1,
             "method": "initialize",
             "params": {
-                "protocolVersion": "2025-03-26",
+                "protocolVersion": "2026-07-28",
                 "capabilities": { "tools": {} },
                 "clientInfo": { "name": "test", "version": "1.0" }
             }
@@ -153,7 +147,7 @@ async fn initialize_returns_current_protocol_version() {
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = get_json_body(response).await;
-    assert_eq!(body["result"]["protocolVersion"], "2025-03-26");
+    assert_eq!(body["result"]["protocolVersion"], "2026-07-28");
     assert_eq!(body["result"]["serverInfo"]["name"], "xavier-memory");
 }
 
@@ -561,7 +555,7 @@ async fn tools_health_check_returns_structured() {
         let sc = &content["structuredContent"];
         assert!(sc["status"].is_string());
         assert!(sc["tools_count"].as_u64().unwrap_or(0) >= 16);
-        assert_eq!(sc["mcp_protocol"], "2025-06-18");
+        assert_eq!(sc["mcp_protocol"], "2026-07-28");
     } else {
         // backward compat: ensure text fallback works
         let text = content["text"].as_str().unwrap();
@@ -611,7 +605,7 @@ async fn mcp_server_health_sequence() {
         json!({
             "jsonrpc": "2.0", "id": 1, "method": "initialize",
             "params": {
-                "protocolVersion": "2025-03-26",
+                "protocolVersion": "2026-07-28",
                 "capabilities": { "tools": {} },
                 "clientInfo": { "name": "test", "version": "1.0" }
             }
@@ -620,7 +614,7 @@ async fn mcp_server_health_sequence() {
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = get_json_body(response).await;
-    assert_eq!(body["result"]["protocolVersion"], "2025-03-26");
+    assert_eq!(body["result"]["protocolVersion"], "2026-07-28");
 
     // 2. list → tools
     let response = post_json(
@@ -1076,41 +1070,7 @@ async fn health_check_method_and_tool() {
 }
 
 #[tokio::test]
-async fn mcp_get_opens_sse_stream() {
-    let (state, workspace) = test_state().await;
-    let app = test_router(state, workspace);
-
-    let response = app
-        .oneshot(
-            Request::builder()
-                .method(Method::GET)
-                .uri("/mcp")
-                .header("accept", "text/event-stream")
-                .header("X-Xavier-Token", "test-secret")
-                .body(Body::empty())
-                .unwrap(),
-        )
-        .await
-        .expect("GET /mcp should respond");
-
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response
-            .headers()
-            .get("content-type")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or(""),
-        "text/event-stream"
-    );
-    // A session id header should be assigned.
-    assert!(response.headers().get("mcp-session-id").is_some());
-    // NOTE: the SSE body is a long-lived keepalive stream, so we deliberately
-    // do NOT collect it here (that would hang waiting for an EOF that never
-    // arrives). Dropping `response` cancels the stream.
-}
-
-#[tokio::test]
-async fn mcp_get_without_accept_returns_405() {
+async fn mcp_get_not_found() {
     let (state, workspace) = test_state().await;
     let app = test_router(state, workspace);
 
@@ -1120,6 +1080,7 @@ async fn mcp_get_without_accept_returns_405() {
                 .method(Method::GET)
                 .uri("/mcp")
                 .header("X-Xavier-Token", "test-secret")
+                .header("Origin", "http://localhost:8080")
                 .body(Body::empty())
                 .unwrap(),
         )
@@ -1217,40 +1178,40 @@ async fn auth_failure_with_invalid_token() {
 }
 
 #[tokio::test]
-async fn rate_limiting_per_session() {
-    std::env::set_var("XAVIER_TOKEN", "test-secret");
+async fn origin_validation_enforced() {
     let (state, workspace) = test_state().await;
-    let router = test_router(state, workspace);
+    let app = test_router(state, workspace);
 
-    // We configured 60 requests per minute with burst of 10.
-    // Let's fire 15 requests and expect some to be rate limited.
-    // Note: Since RATE_LIMITER is static Lazy, we might need a unique session ID per test.
-    let session_id = format!("rate-test-{}", ulid::Ulid::new());
+    // Missing Origin
+    let response = app.clone()
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/mcp")
+                .header("X-Xavier-Token", "test-secret")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).to_string()))
+                .unwrap(),
+        )
+        .await
+        .expect("POST /mcp should respond");
 
-    for i in 1..=10 {
-        let req = Request::builder()
-            .method(Method::POST)
-            .uri("/mcp")
-            .header("X-Xavier-Token", "test-secret")
-            .header("mcp-session-id", &session_id)
-            .header("content-type", "application/json")
-            .body(Body::from(json!({"jsonrpc": "2.0", "id": i, "method": "tools/list"}).to_string()))
-            .unwrap();
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 
-        let response = router.clone().oneshot(req).await.unwrap();
-        assert_eq!(response.status(), StatusCode::OK, "Request {} should have been allowed", i);
-    }
+    // Invalid Origin
+    let response = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/mcp")
+                .header("X-Xavier-Token", "test-secret")
+                .header("Origin", "http://malicious.com")
+                .header("content-type", "application/json")
+                .body(Body::from(json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).to_string()))
+                .unwrap(),
+        )
+        .await
+        .expect("POST /mcp should respond");
 
-    // 11th request should be blocked
-    let req = Request::builder()
-        .method(Method::POST)
-        .uri("/mcp")
-        .header("X-Xavier-Token", "test-secret")
-        .header("mcp-session-id", &session_id)
-        .header("content-type", "application/json")
-        .body(Body::from(json!({"jsonrpc": "2.0", "id": 11, "method": "tools/list"}).to_string()))
-        .unwrap();
-
-    let response = router.oneshot(req).await.unwrap();
-    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
 }
