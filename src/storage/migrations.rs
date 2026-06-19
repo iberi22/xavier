@@ -259,7 +259,7 @@ impl Migration for MigrationV5SessionTokensId {
     }
 
     fn run(&self, conn: &Connection) -> Result<()> {
-        if !crate::storage::table_has_column(conn, "session_tokens", "id")? {
+        if !table_has_column(conn, "session_tokens", "id")? {
             // Recreate table with id column. We drop existing tokens as they are ephemeral.
             conn.execute_batch(
                 "DROP TABLE IF EXISTS session_tokens;
