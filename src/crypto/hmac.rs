@@ -60,3 +60,13 @@ pub fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
     hmac.update(data);
     hmac.finalize()
 }
+
+/// Compute HMAC-SHA256 of the given data with the provided key.
+pub fn compute_hmac_sha256(key: &[u8], data: &[u8]) -> Vec<u8> {
+    hmac_sha256(key, data).to_vec()
+}
+
+/// Verify HMAC-SHA256 of the given data with the provided key and signature.
+pub fn verify_hmac_sha256(key: &[u8], data: &[u8], signature: &[u8]) -> bool {
+    HmacSha256::verify(key, data, signature)
+}
