@@ -3,7 +3,7 @@
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
 use anyhow::{Context, Result};
-use dashmap::DashMap;
+use parking_lot::RwLock;
 use r2d2::Pool;
 use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{Connection, ErrorCode};
@@ -23,7 +23,7 @@ static WAL_INIT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// Unified SQLite connection manager for Xavier.
 /// Manages connection pools by project_id with LRU eviction and PRAGMA optimizations.
 pub struct ConnectionManager {
-    pools: DashMap<String, ProjectPool>,
+    pools: RwLock<std::collections::HashMap<String, ProjectPool>>,
     active: Arc<tokio::sync::RwLock<Option<String>>>,
     idle_timeout_secs: u64,
 }
@@ -101,7 +101,7 @@ impl ConnectionManager {
     /// Create a new connection manager instance.
     pub fn new() -> Self {
         Self {
-            pools: DashMap::new(),
+            pools: RwLock::new(std::collections::HashMap::new()),
             active: Arc::new(tokio::sync::RwLock::new(None)),
             idle_timeout_secs: 1800, // 30 minutes
         }
@@ -115,7 +115,7 @@ impl ConnectionManager {
     /// Connect to a database by project_id.
     /// If the pool doesn't exist, it is created lazily.
     pub fn connect(&self, project_id: &str, project_root: &str) -> Result<()> {
-        if !self.pools.contains_key(project_id) {
+        if !self.pools.read().contains_key(project_id) {
             let db_path = if project_id == "memory" {
                 PathBuf::from(project_root).join("xavier_memory.db")
             } else if project_id == "vec_store" {
@@ -154,7 +154,7 @@ impl ConnectionManager {
             self.connect_with_path(project_id, db_path)
         } else {
             // Update last accessed time
-            if let Some(mut entry) = self.pools.get_mut(project_id) {
+            if let Some(entry) = self.pools.write().get_mut(project_id) {
                 entry.activated_at = Instant::now();
             }
             Ok(())
@@ -163,7 +163,7 @@ impl ConnectionManager {
 
     /// Explicitly connect to a database file with a given project_id.
     pub fn connect_with_path(&self, project_id: &str, db_path: PathBuf) -> Result<()> {
-        if !self.pools.contains_key(project_id) {
+        if !self.pools.read().contains_key(project_id) {
             if let Some(parent) = db_path.parent() {
                 if !parent.exists() {
                     std::fs::create_dir_all(parent).with_context(|| {
@@ -187,14 +187,14 @@ impl ConnectionManager {
 
             self.evict_if_needed();
 
-            self.pools.insert(
+            self.pools.write().insert(
                 project_id.to_string(),
                 ProjectPool {
                     pool: Arc::new(pool),
                     activated_at: Instant::now(),
                 },
             );
-        } else if let Some(mut entry) = self.pools.get_mut(project_id) {
+        } else if let Some(entry) = self.pools.write().get_mut(project_id) {
             entry.activated_at = Instant::now();
         }
         Ok(())
@@ -202,7 +202,7 @@ impl ConnectionManager {
 
     /// Manually disconnect and drop a pool.
     pub fn disconnect(&self, project_id: &str) {
-        self.pools.remove(project_id);
+        self.pools.write().remove(project_id);
     }
 
     /// Set a project as active.
@@ -236,8 +236,8 @@ impl ConnectionManager {
         T: Send + 'static,
     {
         let pool = {
-            let mut entry = self
-                .pools
+            let mut pools = self.pools.write();
+            let entry = pools
                 .get_mut(project_id)
                 .ok_or_else(|| anyhow::anyhow!("pool for {} not found", project_id))?;
             entry.activated_at = Instant::now();
@@ -259,8 +259,8 @@ impl ConnectionManager {
         T: Send + 'static,
     {
         let pool = {
-            let mut entry = self
-                .pools
+            let mut pools = self.pools.write();
+            let entry = pools
                 .get_mut(project_id)
                 .ok_or_else(|| anyhow::anyhow!("pool for {} not found", project_id))?;
             entry.activated_at = Instant::now();
@@ -275,22 +275,22 @@ impl ConnectionManager {
     /// Evict pools that are idle for too long or if we exceed the max capacity.
     fn evict_if_needed(&self) {
         let now = Instant::now();
+        let mut pools = self.pools.write();
 
         // 1. Remove expired pools
-        self.pools.retain(|_, pool| {
+        pools.retain(|_, pool| {
             now.duration_since(pool.activated_at).as_secs() < self.idle_timeout_secs
         });
 
         // 2. If still too many, remove least recently used
-        while self.pools.len() >= MAX_POOLS {
-            let oldest = self
-                .pools
+        while pools.len() >= MAX_POOLS {
+            let oldest = pools
                 .iter()
-                .map(|e| (e.key().clone(), e.activated_at))
+                .map(|(k, v)| (k.clone(), v.activated_at))
                 .min_by_key(|e| e.1);
 
             if let Some((key, _)) = oldest {
-                self.pools.remove(&key);
+                pools.remove(&key);
             } else {
                 break;
             }
@@ -311,9 +311,9 @@ mod tests {
 
         cm.connect("p1", project_root).unwrap();
         cm.connect("p2", project_root).unwrap();
-        assert_eq!(cm.pools.len(), 2);
-        assert!(cm.pools.contains_key("p1"));
-        assert!(cm.pools.contains_key("p2"));
+        assert_eq!(cm.pools.read().len(), 2);
+        assert!(cm.pools.read().contains_key("p1"));
+        assert!(cm.pools.read().contains_key("p2"));
     }
 
     #[tokio::test]

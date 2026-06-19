@@ -1,17 +1,14 @@
 //! Rate limiting using token bucket algorithm
 //!
-//! Per-tenant, per-API-key, and per-IP rate limiting with governor library.
+//! Per-tenant, per-API-key, and per-IP rate limiting.
 
-use governor::middleware::StateInformationMiddleware;
-use governor::{Quota, RateLimiter as GovRateLimiter};
+use crate::enterprise::tenant::TenantId;
+use crate::middleware::token_bucket::TokenBucket;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::num::NonZeroU32;
 use std::sync::Arc;
 use std::time::Duration;
 use thiserror::Error;
-
-use crate::enterprise::tenant::TenantId;
 
 /// Rate limit configuration per tenant/API key
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,17 +77,7 @@ pub enum RateLimitKey {
 
 /// Token bucket rate limiter
 pub struct RateLimiter {
-    limiters: HashMap<
-        RateLimitKey,
-        Arc<
-            GovRateLimiter<
-                governor::state::direct::NotKeyed,
-                governor::state::InMemoryState,
-                governor::clock::DefaultClock,
-                StateInformationMiddleware,
-            >,
-        >,
-    >,
+    limiters: HashMap<RateLimitKey, Arc<parking_lot::Mutex<TokenBucket>>>,
     config: HashMap<RateLimitKey, RateLimitConfig>,
 }
 
@@ -103,17 +90,7 @@ impl RateLimiter {
     }
 
     /// Get or create a limiter for a key
-    fn get_limiter(
-        &mut self,
-        key: RateLimitKey,
-    ) -> Arc<
-        GovRateLimiter<
-            governor::state::direct::NotKeyed,
-            governor::state::InMemoryState,
-            governor::clock::DefaultClock,
-            StateInformationMiddleware,
-        >,
-    > {
+    fn get_limiter(&mut self, key: RateLimitKey) -> Arc<parking_lot::Mutex<TokenBucket>> {
         // Check if limiter already exists
         if let Some(existing) = self.limiters.get(&key) {
             return existing.clone();
@@ -121,37 +98,26 @@ impl RateLimiter {
 
         let config = self.config.get(&key).cloned().unwrap_or_default();
 
-        // Create quota based on config
-        let rpm = NonZeroU32::new(config.rpm).unwrap_or(unsafe { NonZeroU32::new_unchecked(1) });
-        let burst = NonZeroU32::new(config.burst).unwrap_or(rpm);
+        // RPM to tokens per second
+        let fill_rate = config.rpm as f64 / 60.0;
+        let burst = config.burst as f64;
 
-        // Validate: burst should not exceed rpm (per minute quota)
-        let burst = std::cmp::min(burst, rpm);
+        let limiter = Arc::new(parking_lot::Mutex::new(TokenBucket::new(burst, fill_rate)));
 
-        let quota = Quota::per_minute(rpm).allow_burst(burst);
-        let limiter = GovRateLimiter::direct(quota).with_middleware::<StateInformationMiddleware>();
-
-        self.limiters
-            .entry(key.clone())
-            .or_insert_with(|| Arc::new(limiter))
-            .clone()
+        self.limiters.insert(key.clone(), limiter.clone());
+        limiter
     }
 
     /// Check if request is allowed and consume a token
     pub fn check(&mut self, key: RateLimitKey) -> RateLimitResult {
         let limiter = self.get_limiter(key.clone());
+        let mut bucket = limiter.lock();
 
-        // Try to acquire a token
-        match limiter.check() {
-            Ok(snapshot) => {
-                let remaining = snapshot.remaining_burst_capacity();
-                RateLimitResult::allowed(remaining, 0)
-            }
-            Err(not_until) => {
-                let wait = not_until.wait_time_from(std::time::Instant::now());
-                let retry_after_ms = wait.as_millis() as u64;
-                RateLimitResult::denied(0, retry_after_ms)
-            }
+        if bucket.try_consume(1.0) {
+            RateLimitResult::allowed(bucket.tokens() as u32, 0)
+        } else {
+            let retry_after = bucket.retry_after(1.0);
+            RateLimitResult::denied(0, retry_after.as_millis() as u64)
         }
     }
 

@@ -1,10 +1,9 @@
 //! Discord messaging integration for Xavier
 
 use anyhow::{Context, Result};
+use crate::middleware::token_bucket::RateLimiter;
 use crate::secrets::vault::HardwareVault;
-use governor::{Quota, RateLimiter};
 use serde::Serialize;
-use std::num::NonZeroU32;
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
@@ -12,7 +11,7 @@ use tracing::{debug, error, info};
 #[derive(Clone)]
 pub struct DiscordClient {
     webhook_url: String,
-    limiter: Arc<RateLimiter<governor::state::direct::NotKeyed, governor::state::InMemoryState, governor::clock::DefaultClock>>,
+    limiter: Arc<RateLimiter>,
 }
 
 #[derive(Serialize)]
@@ -39,9 +38,8 @@ impl DiscordClient {
             vault.get_secret("webhook_url").unwrap_or_default()
         });
 
-        let rpm = NonZeroU32::new(rate_limit_per_min).unwrap_or(NonZeroU32::new(30).unwrap());
-        let quota = Quota::per_minute(rpm);
-        let limiter = Arc::new(RateLimiter::direct(quota));
+        let fill_rate = rate_limit_per_min as f64 / 60.0;
+        let limiter = Arc::new(RateLimiter::new(rate_limit_per_min as f64, fill_rate));
 
         Self {
             webhook_url,
@@ -52,8 +50,8 @@ impl DiscordClient {
     /// Send a message to Discord via webhook in embed format
     pub async fn send_embed(&self, title: Option<String>, description: String, color: Option<u32>) -> Result<()> {
         // Check rate limit
-        if let Err(not_until) = self.limiter.check() {
-            let wait = not_until.wait_time_from(std::time::Instant::now());
+        if !self.limiter.try_consume(1.0).await {
+            let wait = self.limiter.retry_after(1.0).await;
             error!("Discord rate limit exceeded, wait {}ms", wait.as_millis());
             return Err(anyhow::anyhow!("Rate limit exceeded"));
         }
