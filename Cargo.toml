@@ -202,7 +202,7 @@ required-features = ["cli-interactive"]
 
 [profile.release]
 opt-level = 3
-lto = "thin"
+lto = false
 
 
 
