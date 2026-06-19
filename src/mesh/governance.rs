@@ -1,5 +1,18 @@
+#[cfg(feature = "dao-evm")]
+use alloy::primitives::Address;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+/// Configuration for on-chain EVM integration.
+/// Feature-gated behind `cfg(feature = "dao-evm")`.
+#[cfg(feature = "dao-evm")]
+#[derive(Debug, Clone)]
+pub struct EvmDaoConfig {
+    pub rpc_url: String,
+    pub contract_address: Address,
+    pub chain_id: u64,
+    pub private_key: String,
+}
 
 /// Represents a grouped Issue (Epic) waiting for community consensus.
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -19,6 +32,9 @@ pub struct DaoGovernanceSystem {
     pub required_approval_threshold: f64, // 0.0 to 1.0 (e.g., 0.8 = 80% approval)
     pub minimum_quorum: u64,              // Minimum total votes required
     pub maintainer_registry: HashMap<String, u64>, // Maps NodeID/Wallet to their Trust Score
+    /// Optional EVM on-chain config. When Some, votes go on-chain via alloy.
+    #[cfg(feature = "dao-evm")]
+    pub evm_config: Option<EvmDaoConfig>,
 }
 
 impl DaoGovernanceSystem {
@@ -34,7 +50,18 @@ impl DaoGovernanceSystem {
             required_approval_threshold: 0.80, // 80% consensus required
             minimum_quorum: 5,                 // At least 5 maintainers must vote
             maintainer_registry: registry,
+            #[cfg(feature = "dao-evm")]
+            evm_config: None,
         }
+    }
+
+    /// Creates a new DAO governance system with on-chain EVM integration.
+    /// Requires feature `dao-evm` enabled.
+    #[cfg(feature = "dao-evm")]
+    pub fn with_evm(config: EvmDaoConfig) -> Self {
+        let mut system = Self::new();
+        system.evm_config = Some(config);
+        system
     }
 
     /// Submits a newly clustered anomaly to the governance board.
