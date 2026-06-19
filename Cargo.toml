@@ -175,7 +175,7 @@ bincode = "1.3.3"
 x25519-dalek = { version = "2.0.1", features = ["static_secrets", "reusable_secrets"] }
 sqlite-vec = "0.1.0"
 libp2p = { version = "0.56", optional = true, default-features = false, features = ["noise", "kad", "gossipsub", "mdns", "tcp", "tokio", "serde", "identify", "yamux"] }
-alloy = { version = "0.12", optional = true, default-features = false, features = ["providers", "consensus", "signers", "contract"] }
+alloy = { version = "2.1", optional = true, default-features = false, features = ["providers", "consensus", "signers", "contract"] }
 
 
 
