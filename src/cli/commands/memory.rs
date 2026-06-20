@@ -6,7 +6,7 @@ use crate::cli::config::{require_xavier_token, resolve_base_url};
 
 pub async fn handle_memory_command(cmd: crate::cli::commands::enums::memory::MemoryCommand) -> Result<()> {
     match cmd {
-        crate::cli::commands::enums::memory::MemoryCommand::Consolidate { start, stop, status } => {
+        crate::cli::commands::enums::memory::MemoryCommand::Consolidate { start, stop, status, nightly } => {
             if start {
                 start_consolidation().await
             } else if stop {
@@ -15,21 +15,27 @@ pub async fn handle_memory_command(cmd: crate::cli::commands::enums::memory::Mem
                 show_consolidation_status().await
             } else {
                 // Default to one-off consolidation
-                run_consolidation().await
+                run_consolidation(nightly).await
             }
         }
     }
 }
 
-async fn run_consolidation() -> Result<()> {
+async fn run_consolidation(nightly: bool) -> Result<()> {
     let base_url = resolve_base_url();
     let token = require_xavier_token()?;
     let client = CLI_HTTP_CLIENT.clone();
 
-    println!("🚀 Triggering one-off memory consolidation...");
+    if nightly {
+        println!("🚀 Triggering nightly memory consolidation (with TGD)...");
+    } else {
+        println!("🚀 Triggering one-off memory consolidation...");
+    }
+
     let resp = client
         .post(format!("{}/memory/consolidate", base_url))
         .header("X-Xavier-Token", &token)
+        .json(&serde_json::json!({ "nightly": nightly }))
         .send()
         .await?;
 
