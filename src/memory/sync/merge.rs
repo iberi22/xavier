@@ -114,7 +114,7 @@ pub fn chunk_hash(record: &MemoryRecord) -> String {
 mod tests {
     use super::*;
     use crate::memory::store::MemoryRecord;
-    use chrono::TimeDelta;
+    use chrono::{TimeDelta, Utc};
     use std::sync::Arc;
 
     // Reuse TestStore from manifest.rs

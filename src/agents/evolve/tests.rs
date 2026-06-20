@@ -2,7 +2,7 @@
 mod tests {
     use crate::agents::evolve::mutator::{Mutator, Mutation};
     use crate::agents::evolve::evaluator::Evaluator;
-    use crate::agents::evolve::config::{BenchmarkType, EvolveConfig, MetricType};
+    use crate::agents::evolve::config::{BenchmarkType, EvolveConfig};
     use crate::agents::evolve::reflector::{Reflector, Insights};
     use crate::agents::evolve::EvolveModule;
     use crate::agents::evolve::experiment::HypothesisType;

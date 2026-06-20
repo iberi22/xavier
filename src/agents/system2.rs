@@ -580,7 +580,8 @@ mod tests {
 
         let result = reasoner.run("sky color", &context).await.unwrap();
         assert!(result.calibration.has_contradiction || result.supporting_evidence.len() >= 2);
-        assert!(result.calibration.contradiction_count >= 0);
+        // contradiction_count is usize, always >= 0 by construction
+        let _ = result.calibration.contradiction_count;
     }
 
     #[tokio::test]
@@ -651,7 +652,8 @@ mod tests {
 
         let result = reasoner.run("test", &context).await.unwrap();
         assert!(result.confidence >= 0.0);
-        assert!(result.reasoning_elapsed_ms >= 0);
+        // reasoning_elapsed_ms is u64, always >= 0 by construction
+        let _ = result.reasoning_elapsed_ms;
         assert!(!result.analysis.is_empty());
     }
 
