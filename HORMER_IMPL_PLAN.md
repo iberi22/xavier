@@ -2,7 +2,7 @@
 
 > Based on HORMER (Hierarchical Memory Navigation for Efficient Agents) by Duke University + Snowflake AI Research, 2026
 
-## Score de alineación actual: ~95%
+## Score de alineación actual: ~97%
 
 | Feature | Score | Status | PR |
 |---------|-------|--------|----|
@@ -87,6 +87,7 @@ Todos los PRs mergeados, tests pasando, servidor funcional.
 | **Integration Tests** | — | **85%** | B6 |
 | **Dependency Hygiene** | — | **95%** | — |
 | **Warnings (lib)** | — | **100%** | ✅ (A1 completo, 0 warnings) |
+| **Integration Tests** | 85% | **95%** | ✅ (B6: test hormer navigation policy) |
 
 ---
 
@@ -97,9 +98,9 @@ Todos los PRs mergeados, tests pasando, servidor funcional.
 | Issue | Descripción | Status |
 |-------|-------------|--------|
 | A1 | Limpiar warnings (unused imports, dead code) | ✅ Completo |
-| A2 | Fix tests preexistentes (keyword extraction, search, v1) | 🔵 Pendiente |
-| B6 | Tests de integración HORMER | 🔵 Pendiente |
-| A5 | Fix wallet MutexGuard Send | 🔵 Pendiente |
+| A2 | Fix tests preexistentes (keyword extraction, search, v1) | ✅ Completo (5 tests) |
+| B6 | Tests de integración HORMER | ✅ Completo (test navigation policy) |
+| A5 | Fix wallet MutexGuard Send | ✅ No aplica (wallet.rs sin Mutex) |
 
 ### Sprint SUG-002: Features
 
