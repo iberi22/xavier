@@ -99,11 +99,27 @@ async fn post_json(app: Router, body: Value) -> axum::response::Response {
 }
 
 async fn post_json_with_token(app: Router, body: Value, token: Option<&str>) -> axum::response::Response {
+    // Extract method from JSON body for MCP spec 2026-07-28 headers
+    let method = body.get("method").and_then(|v| v.as_str()).unwrap_or("initialize");
+
     let mut req = Request::builder()
         .method(Method::POST)
         .uri("/mcp")
         .header("content-type", "application/json")
-        .header("Origin", "http://localhost:8080");
+        .header("Origin", "http://localhost:8080")
+        .header("MCP-Protocol-Version", "2026-07-28")
+        .header("Mcp-Method", method);
+
+    // Add Mcp-Name header for requests that require it (tools/call, resources/read, prompts/get)
+    if method == "tools/call" {
+        if let Some(name) = body.get("params").and_then(|p| p.get("name")).and_then(|n| n.as_str()) {
+            req = req.header("Mcp-Name", name);
+        }
+    } else if method == "resources/read" {
+        if let Some(uri) = body.get("params").and_then(|p| p.get("uri")).and_then(|n| n.as_str()) {
+            req = req.header("Mcp-Name", uri);
+        }
+    }
 
     if let Some(t) = token {
         req = req.header("X-Xavier-Token", t);
