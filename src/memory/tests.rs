@@ -229,7 +229,101 @@ mod tests {
         assert!(entry.summary.len() < 1000);
     }
 
-    // ==================== Integration Tests ====================
+    // ==================== HORMER Integration Tests ====================
+
+    /// Test hierarchy navigation with HORMER policy scoring
+    /// Creates documents with hierarchical directories, verifies ls/paths
+    /// and ensures NavigationPolicy assigns scores correctly
+    #[tokio::test]
+    async fn test_hormer_navigation_policy_integration() {
+        use crate::retrieval::NavigationPolicy;
+        use crate::retrieval::policy::TraversalWeights;
+        use crate::retrieval::gating::LayerWeights;
+
+        // 1. Create hierarchical documents in memory store
+        let store = crate::memory::store::InMemoryMemoryStore::new();
+
+        // docs/project/api/v1.md
+        store.put(mock_record("docs/project/api/v1.md")).await.expect("test assertion");
+        store.put(mock_record("docs/project/api/v2.md")).await.expect("test assertion");
+        // docs/project/readme.md
+        store.put(mock_record("docs/project/readme.md")).await.expect("test assertion");
+        // docs/config/settings.yaml
+        store.put(mock_record("docs/config/settings.yaml")).await.expect("test assertion");
+        // src/lib/core.rs
+        store.put(mock_record("src/lib/core.rs")).await.expect("test assertion");
+        store.put(mock_record("src/lib/utils.rs")).await.expect("test assertion");
+        // src/main.rs
+        store.put(mock_record("src/main.rs")).await.expect("test assertion");
+
+        // 2. Verify ls navigation at root
+        let root = store.ls("test", "").await.expect("test assertion");
+        assert_eq!(root.len(), 2, "Expected 2 top-level directories (docs, src)");
+        assert!(
+            root.iter().any(|n| matches!(n, MemoryHierarchyNode::Directory { name, .. } if name == "docs")),
+            "Expected docs/ directory"
+        );
+        assert!(
+            root.iter().any(|n| matches!(n, MemoryHierarchyNode::Directory { name, .. } if name == "src")),
+            "Expected src/ directory"
+        );
+
+        // 3. Verify ls on nested path: docs/project/
+        let project = store.ls("test", "docs/project").await.expect("test assertion");
+        assert_eq!(project.len(), 2, "Expected 2 entries under docs/project/ (api/, readme.md)");
+        assert!(
+            project.iter().any(|n| matches!(n, MemoryHierarchyNode::Directory { name, .. } if name == "api")),
+            "Expected api/ subdirectory"
+        );
+        assert!(
+            project.iter().any(|n| matches!(n, MemoryHierarchyNode::File(r) if r.path == "docs/project/readme.md")),
+            "Expected docs/project/readme.md file"
+        );
+
+        // 4. Verify ls on deeply nested path: docs/project/api/
+        let api = store.ls("test", "docs/project/api").await.expect("test assertion");
+        assert_eq!(api.len(), 2, "Expected 2 files under docs/project/api/");
+
+        // 5. Create a NavigationPolicy and verify score assignment
+        let policy = NavigationPolicy::new(
+            LayerWeights::new(0.3, 0.3, 0.4),
+            TraversalWeights::default(),
+            0.01,
+        );
+
+        // Default weights: working=0.3, episodic=0.3, semantic=0.4
+        let score_working = policy.score_for_prefetch("working", 0.8);
+        assert!((score_working - 0.24).abs() < 0.001, "Expected 0.24 for working layer, got {}", score_working);
+
+        let score_semantic = policy.score_for_prefetch("semantic", 0.8);
+        assert!((score_semantic - 0.32).abs() < 0.001, "Expected 0.32 for semantic layer, got {}", score_semantic);
+
+        let score_episodic = policy.score_for_prefetch("episodic", 0.5);
+        assert!((score_episodic - 0.15).abs() < 0.001, "Expected 0.15 for episodic layer, got {}", score_episodic);
+
+        // Unknown layer returns 0
+        let score_unknown = policy.score_for_prefetch("unknown", 0.8);
+        assert_eq!(score_unknown, 0.0);
+
+        // 6. Test policy update maintains normalized weights
+        let mut mutable_policy = policy.clone();
+        let delta = LayerWeights::new(0.1, -0.05, 0.0);
+        let traversal_delta = TraversalWeights {
+            semantic_similarity: 0.1,
+            ..Default::default()
+        };
+        mutable_policy.update(delta, traversal_delta);
+
+        // After update, weights should still sum to ~1.0
+        let lw = mutable_policy.layer_weights;
+        let sum = lw.working + lw.episodic + lw.semantic;
+        assert!((sum - 1.0).abs() < 0.01, "Layer weights should sum to ~1.0 after update, got {}", sum);
+
+        // Update count should be incremented
+        assert_eq!(mutable_policy.update_count, 1);
+    }
+
+    // ==================== Integration Tests ===
 
     #[test]
     fn test_hybrid_search() {
