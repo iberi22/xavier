@@ -4,7 +4,6 @@ use clap::Subcommand;
 use std::path::PathBuf;
 
 use crate::maturity::{MaturityResult, MaturityScanner};
-use crate::maturity::reporter::Summary;
 use anyhow::Result;
 
 /// Maturity scanning & reporting subcommands
