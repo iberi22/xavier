@@ -40,7 +40,7 @@ impl Default for TgdConfig {
     fn default() -> Self {
         Self {
             confidence_threshold: 0.7,
-            improvements_path: PathBuf::from(".xavier/agent_improvements.md"),
+            improvements_path: PathBuf::from(".xavier/tgd.md"),
             max_rules_count: 100,
             cache_path: PathBuf::from(".xavier/tgd_cache.json"),
             min_interval_seconds: 3600,
