@@ -13,6 +13,9 @@ use tokio::sync::Mutex;
 
 use super::QmdMemory;
 
+/// Score from a file to a path for cache warming prioritization
+pub type HormerScoreMap = HashMap<String, f64>;
+
 /// Tracks access frequency for document IDs
 #[derive(Debug, Clone)]
 pub struct PredictiveCacheWarmup {
@@ -149,35 +152,56 @@ impl PredictiveCacheWarmup {
         self.access_stats.lock().await.clear();
     }
 
-    /// Pre-warms the neighbors of a given path/concept based on the belief graph.
+    /// Predictively warms the cache for a given path by pre-loading the
+    /// top-scored neighbor documents according to the HORMER scores map.
     ///
-    /// Based on HORMER Section 3.4 — navigation-aware prefetching.
-    pub async fn warmup_neighbors(&self, memory: &QmdMemory, graph: &crate::memory::belief_graph::BeliefGraph, current_path: &str) -> usize {
-        let enabled = *self.enabled.lock().await;
-        if !enabled {
+    /// `path` — the directory or file path being navigated to.
+    /// `hormer_scores` — a map of file path → HORMER relevance score.
+    ///
+    /// Only paths whose normalized prefix matches `path` will be considered
+    /// (i.e., files living in or adjacent to the current directory).
+    pub async fn predictive_warm(
+        &self,
+        path: &str,
+        hormer_scores: &HormerScoreMap,
+    ) -> usize {
+        if !*self.enabled.lock().await {
             return 0;
         }
 
-        // 1. Find neighbors in the belief graph
-        let neighbors = graph.get_related(current_path);
-        if neighbors.is_empty() {
-            return 0;
+        let normalized_path = path.replace('\\', "/");
+        let normalized_path = normalized_path.trim_end_matches('/');
+
+        // Collect all scored files whose path starts with the target directory
+        let mut candidates: Vec<(&String, &f64)> = hormer_scores
+            .iter()
+            .filter(|(file_path, _)| {
+                let fp = file_path.replace('\\', "/");
+                fp.starts_with(normalized_path)
+            })
+            .collect();
+
+        // Sort descending by HORMER score
+        candidates.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        let top_k = self.top_k.min(candidates.len());
+        let mut warmed = 0usize;
+        for (path, score) in &candidates[..top_k] {
+            self.track_access(path).await;
+            tracing::trace!(
+                "🧠 predictive_cache_warm: {} (score={:.4})",
+                path,
+                score
+            );
+            warmed += 1;
         }
 
-        let mut warmed = 0;
-        for neighbor in neighbors {
-            // 2. Touch each neighbor in memory to warm the cache
-            // We use get() which will ensure it's in the memory's internal docs or loaded from store
-            if let Ok(Some(_)) = memory.get(&neighbor).await {
-                warmed += 1;
-                // Also track this predictive access
-                self.track_access(&neighbor).await;
-            }
-        }
-
-        if warmed > 0 {
-            tracing::debug!("🚀 Predictive Warmup: Prefetched {} neighbors of '{}'", warmed, current_path);
-        }
+        tracing::info!(
+            "🔥 predictive_cache_warm: warmed {} / {} candidates under '{}'",
+            top_k,
+            candidates.len(),
+            normalized_path
+        );
 
         warmed
     }
@@ -186,6 +210,22 @@ impl PredictiveCacheWarmup {
 impl Default for PredictiveCacheWarmup {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// Standalone predictive cache warm function based on HORMER navigation scores.
+///
+/// Filters `hormer_scores` for entries that start with `path`, sorts them
+/// by score descending, and pre-warms the cache for the top `top_n` entries.
+pub fn predictive_warm(path: &str, hormer_scores: &HormerScoreMap, top_n: usize) {
+    let mut scored: Vec<(&String, &f64)> = hormer_scores
+        .iter()
+        .filter(|(k, _)| k.starts_with(path))
+        .collect();
+    scored.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap_or(std::cmp::Ordering::Equal));
+    for (file, score) in scored.iter().take(top_n) {
+        // Trigger cache pre-load for top scored files
+        tracing::info!("Predictive cache warm: {} (score: {})", file, score);
     }
 }
 

@@ -188,3 +188,72 @@ impl TgdConsolidationScheduler {
         Ok(state)
     }
 }
+
+/// Run a standalone nightly TGD consolidation: updates .xavier/tgd.md
+/// with new generated rules and runs memory refinement.
+pub async fn run_nightly_tgd() -> anyhow::Result<()> {
+    use crate::consolidation::ConsolidationTask;
+    use crate::workspace::{WorkspaceConfig, WorkspaceContext, WorkspaceState};
+
+    info!("🌙 Running nightly TGD consolidation...");
+
+    // Build a minimal workspace context from env / defaults
+    let workspace_id = std::env::var("XAVIER_DEFAULT_WORKSPACE_ID")
+        .unwrap_or_else(|_| "default".to_string());
+    let root = std::env::var("XAVIER_ROOT")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| PathBuf::from("."));
+    let workspace_state = WorkspaceState::new(
+        WorkspaceConfig {
+            id: workspace_id.clone(),
+            token: std::env::var("XAVIER_TOKEN").unwrap_or_default(),
+            plan: crate::workspace::PlanTier::Personal,
+            memory_backend: crate::memory::store::MemoryBackend::Sqlite,
+            storage_limit_bytes: None,
+            request_limit: None,
+            request_unit_limit: None,
+            embedding_provider_mode: crate::workspace::EmbeddingProviderMode::BringYourOwn,
+            managed_google_embeddings: false,
+            sync_policy: crate::workspace::SyncPolicy::CloudMirror,
+        },
+        crate::agents::RuntimeConfig::default(),
+        root.join(".xavier"),
+    ).await?;
+    let workspace = WorkspaceContext {
+        workspace_id,
+        workspace: std::sync::Arc::new(workspace_state),
+    };
+
+    let task = ConsolidationTask {
+        enable_tgd_in_consolidation: true,
+        ..Default::default()
+    };
+
+    // Create a TGD engine from environment config
+    let tgd_engine = crate::tgd::TgdEngine::new(
+        crate::agents::provider::ModelProviderClient::from_env()
+    );
+
+    // Run TGD rule generation
+    task.run_tgd_if_enabled(&workspace, Some(&tgd_engine)).await?;
+
+    // Run TGD memory refinement
+    let stats = task.run_tgd_memory_refinement(&workspace, Some(&tgd_engine)).await?;
+
+    // Update .xavier/tgd.md with latest status
+    let tgd_status_path = root.join(".xavier/tgd.md");
+    if let Some(parent) = tgd_status_path.parent() {
+        tokio::fs::create_dir_all(parent).await?;
+    }
+    let report = format!(
+        "# Nightly TGD Report\n\n- Time: {}\n- Memories refined: {}\n- Avg score improvement: {:.4}\n- Errors: {}\n",
+        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC"),
+        stats.memories_refined,
+        stats.avg_score_improvement,
+        stats.errors,
+    );
+    tokio::fs::write(&tgd_status_path, report).await?;
+
+    info!("✅ Nightly TGD complete — {} memories refined", stats.memories_refined);
+    Ok(())
+}

@@ -201,6 +201,23 @@ pub async fn visualize_handler(Extension(ctx): Extension<WorkspaceContext>) -> i
     let telemetry = ctx.workspace.hormer.telemetry();
     let hotspots = telemetry.get_hotspots(10).await;
 
+    // Compute a per-document HORMER score based on policy weights and telemetry.
+    let hormer_scores: std::collections::HashMap<String, f64> = {
+        let mut visited_nodes = std::collections::HashMap::new();
+        for (node, info) in &hotspots {
+            visited_nodes.insert(node.clone(), info.count as f64);
+        }
+        all_docs
+            .iter()
+            .map(|doc| {
+                let visit_factor = visited_nodes.get(&doc.path).copied().unwrap_or(0.0);
+                let layer_avg = (weights.working + weights.episodic + weights.semantic) / 3.0;
+                let score = visit_factor * layer_avg as f64;
+                (doc.path.clone(), score)
+            })
+            .collect()
+    };
+
     Json(json!({
         "status": "ok",
         "workspace_id": ctx.workspace_id,
@@ -213,6 +230,7 @@ pub async fn visualize_handler(Extension(ctx): Extension<WorkspaceContext>) -> i
         },
         "traversal_weights": traversal_weights,
         "hotspots": hotspots,
+        "hormer_scores": hormer_scores,
     }))
 }
 

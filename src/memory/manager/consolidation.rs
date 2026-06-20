@@ -17,6 +17,23 @@ use super::core::MemoryManager;
 use super::types::{ManagementResult, MemoryManagementAction};
 
 impl MemoryManager {
+    /// Run full nightly consolidation pipeline: memory dedup + TGD
+    pub async fn nightly_consolidate(&self) -> Result<ManagementResult> {
+        info!("🌙 Running nightly consolidation with TGD...");
+
+        // Phase 1: Standard memory dedup consolidation
+        let result = self.consolidate_memories().await?;
+
+        // Phase 2: Run TGD nightly
+        info!("🌙 Phase 2: Triggering TGD nightly...");
+        if let Err(e) = crate::tgd::consolidation::run_nightly_tgd().await {
+            info!("⚠️ TGD nightly encountered an issue: {}", e);
+            // Don't fail the whole consolidation — TGD is optional
+        }
+
+        Ok(result)
+    }
+
     /// Consolidate similar memories — merge duplicates and near-duplicates
     pub async fn consolidate_memories(&self) -> Result<ManagementResult> {
         let docs = self.memory.all_documents().await;

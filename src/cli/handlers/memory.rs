@@ -912,54 +912,28 @@ pub async fn decay_handler(State(state): State<CliState>, headers: HeaderMap) ->
 pub async fn consolidate_handler(
     State(state): State<CliState>,
     headers: HeaderMap,
-    Json(payload): Json<ConsolidatePayload>,
-    Extension(workspace_ctx): Extension<xavier::workspace::WorkspaceContext>,
+    axum::extract::Json(payload): axum::extract::Json<serde_json::Value>,
 ) -> Response {
     if let Err(r) = check_cli_token(&headers) {
         return r;
     }
-
-    if payload.nightly {
-        // Nightly consolidation includes TGD improvement (HORMER section 3.5)
-        let tgd_engine = state.tgd_engine().await;
-        let mut task = xavier::consolidation::ConsolidationTask::default();
-        task.enable_tgd_in_consolidation = true;
-
-        match task.consolidate(&workspace_ctx, None).await {
-            Ok(stats) => {
-                // Run TGD
-                let _ = task.run_tgd_if_enabled(&workspace_ctx, tgd_engine.as_ref()).await;
-                let _ = task.run_tgd_memory_refinement(&workspace_ctx, tgd_engine.as_ref()).await;
-
-                json_response(
-                    StatusCode::OK,
-                    serde_json::json!({
-                        "status": "ok",
-                        "nightly": true,
-                        "documents_affected": stats.selected,
-                        "merged": stats.merged_documents,
-                        "memories_refined": stats.memories_refined
-                    }),
-                )
-            }
-            Err(e) => json_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                serde_json::json!({ "status": "error", "message": e.to_string() }),
-            ),
-        }
+    let nightly = payload.get("nightly").and_then(|v| v.as_bool()).unwrap_or(false);
+    let manager =
+        xavier::memory::manager::core::MemoryManager::new(Arc::clone(&state.qmd_memory), None);
+    let result = if nightly {
+        manager.nightly_consolidate().await
     } else {
-        let manager =
-            xavier::memory::manager::core::MemoryManager::new(Arc::clone(&state.qmd_memory), None);
-        match manager.consolidate_memories().await {
-            Ok(res) => json_response(
-                StatusCode::OK,
-                serde_json::json!({ "status": "ok", "documents_affected": res.documents_affected, "bytes_freed": res.bytes_freed }),
-            ),
-            Err(e) => json_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                serde_json::json!({ "status": "error", "message": e.to_string() }),
-            ),
-        }
+        manager.consolidate_memories().await
+    };
+    match result {
+        Ok(res) => json_response(
+            StatusCode::OK,
+            serde_json::json!({ "status": "ok", "documents_affected": res.documents_affected, "bytes_freed": res.bytes_freed }),
+        ),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "status": "error", "message": e.to_string() }),
+        ),
     }
 }
 

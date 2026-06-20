@@ -294,6 +294,15 @@ pub enum NavCommand {
         /// Output format: text or json
         #[arg(short, long, default_value = "text")]
         format: String,
+        /// Show top navigation hotspots alongside the tree
+        #[arg(long)]
+        hotspots: bool,
+        /// Show directory tree view with HORMER scores
+        #[arg(long)]
+        tree: bool,
+        /// Write output to a file instead of stdout (supports .json or .txt)
+        #[arg(short, long)]
+        output: Option<std::path::PathBuf>,
     },
     /// Show navigation telemetry: node hotspots, path counts, avg path length.
     ///
@@ -694,7 +703,7 @@ pub mod memory {
             /// Show current consolidation status
             #[arg(long)]
             status: bool,
-            /// Run TGD as part of consolidation (HORMER section 3.5)
+            /// Enable nightly consolidation with full TGD pipeline
             #[arg(long)]
             nightly: bool,
         },

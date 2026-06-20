@@ -49,7 +49,12 @@ pub async fn handle_ls(path: Option<String>) -> Result<()> {
     Ok(())
 }
 
-pub async fn handle_visualize(format: String) -> Result<()> {
+pub async fn handle_visualize(
+    format: String,
+    show_hotspots: bool,
+    show_tree: bool,
+    output_file: Option<std::path::PathBuf>,
+) -> Result<()> {
     let token = require_xavier_token()?;
     let base_url = resolve_base_url();
     let client = CLI_HTTP_CLIENT.clone();
@@ -60,85 +65,231 @@ pub async fn handle_visualize(format: String) -> Result<()> {
         .send()
         .await?;
 
-    if response.status().is_success() {
-        let body: serde_json::Value = response.json().await?;
+    if !response.status().is_success() {
+        println!("visualize failed: {}", response.text().await?);
+        return Ok(());
+    }
 
-        if format == "json" {
-            println!("{}", serde_json::to_string_pretty(&body)?);
-        } else {
-            println!(
-                "Memory Graph Visualization for workspace: {}",
-                body["workspace_id"]
-            );
-            println!("\n[Navigation Weights]");
-            println!(
-                "  Working:  {:.4}",
-                body["weights"]["working"].as_f64().unwrap_or(0.0)
-            );
-            println!(
-                "  Episodic: {:.4}",
-                body["weights"]["episodic"].as_f64().unwrap_or(0.0)
-            );
-            println!(
-                "  Semantic: {:.4}",
-                body["weights"]["semantic"].as_f64().unwrap_or(0.0)
-            );
+    let body: serde_json::Value = response.json().await?;
+    let output_text: String;
 
-            println!("\n[Traversal Weights]");
-            let tw = &body["traversal_weights"];
-            println!("  Semantic Sim: {:.4}", tw["semantic_similarity"].as_f64().unwrap_or(0.0));
-            println!("  Confidence:   {:.4}", tw["confidence"].as_f64().unwrap_or(0.0));
-            println!("  Edge Weight:  {:.4}", tw["edge_weight"].as_f64().unwrap_or(0.0));
-            println!("  Recency:      {:.4}", tw["recency"].as_f64().unwrap_or(0.0));
-            println!("  Cross-Layer:  {:.4}", tw["cross_layer"].as_f64().unwrap_or(0.0));
-            println!("  Cross-Dir:    {:.4}", tw["cross_dir"].as_f64().unwrap_or(0.0));
-            println!("  Periph-Hub:   {:.4}", tw["peripheral_hub"].as_f64().unwrap_or(0.0));
+    if format == "json" {
+        output_text = serde_json::to_string_pretty(&body)?;
+    } else {
+        let mut lines = Vec::new();
 
-            let hotspots_val = body["hotspots"].as_array();
+        lines.push(format!(
+            "Memory Graph Visualization for workspace: {}",
+            body["workspace_id"]
+        ));
+
+        let hotspots_val = body["hotspots"].as_array();
+
+        // --hotspots: show top hotspots section prominently
+        if show_hotspots {
+            lines.push("\n[🔥 Hotspots]".to_string());
             if let Some(hs) = hotspots_val {
-                if !hs.is_empty() {
-                    println!("\n[Top Hotspots]");
-                    for (i, entry) in hs.iter().take(3).enumerate() {
+                if hs.is_empty() {
+                    lines.push("  (none)".to_string());
+                } else {
+                    for (i, entry) in hs.iter().enumerate() {
                         let node = entry[0].as_str().unwrap_or("(unknown)");
                         let count = entry[1]["count"].as_u64().unwrap_or(0);
-                        println!("  {}. {} ({} visits)", i + 1, node, count);
+                        lines.push(format!("  {}. {} ({} visits)", i + 1, node, count));
                     }
                 }
-            }
-
-            println!("\n[Directory Structure]");
-            let docs: Vec<xavier::memory::qmd::MemoryDocument> =
-                serde_json::from_value(body["documents"].clone())?;
-
-            use std::collections::HashMap;
-            let mut hotspot_map = HashMap::new();
-            if let Some(hs) = hotspots_val {
-                for entry in hs {
-                    if let (Some(node), Some(count)) = (entry[0].as_str(), entry[1]["count"].as_u64()) {
-                        hotspot_map.insert(node.to_string(), count);
-                    }
-                }
-            }
-            render_tree(&docs, &hotspot_map);
-
-            println!("\n[Belief Graph Edges]");
-            let edges: Vec<xavier::domain::memory::belief::BeliefEdge> =
-                serde_json::from_value(body["edges"].clone())?;
-            if edges.is_empty() {
-                println!("  (no edges)");
             } else {
-                for edge in edges {
-                    println!(
-                        "  {} --[{}]--> {} (conf: {:.2})",
-                        edge.source, edge.relation_type, edge.target, edge.confidence_score
-                    );
+                lines.push("  (none)".to_string());
+            }
+        }
+
+        lines.push("\n[Navigation Weights]".to_string());
+        lines.push(format!(
+            "  Working:  {:.4}",
+            body["weights"]["working"].as_f64().unwrap_or(0.0)
+        ));
+        lines.push(format!(
+            "  Episodic: {:.4}",
+            body["weights"]["episodic"].as_f64().unwrap_or(0.0)
+        ));
+        lines.push(format!(
+            "  Semantic: {:.4}",
+            body["weights"]["semantic"].as_f64().unwrap_or(0.0)
+        ));
+
+        lines.push("\n[Traversal Weights]".to_string());
+        let tw = &body["traversal_weights"];
+        lines.push(format!("  Semantic Sim: {:.4}", tw["semantic_similarity"].as_f64().unwrap_or(0.0)));
+        lines.push(format!("  Confidence:   {:.4}", tw["confidence"].as_f64().unwrap_or(0.0)));
+        lines.push(format!("  Edge Weight:  {:.4}", tw["edge_weight"].as_f64().unwrap_or(0.0)));
+        lines.push(format!("  Recency:      {:.4}", tw["recency"].as_f64().unwrap_or(0.0)));
+        lines.push(format!("  Cross-Layer:  {:.4}", tw["cross_layer"].as_f64().unwrap_or(0.0)));
+        lines.push(format!("  Cross-Dir:    {:.4}", tw["cross_dir"].as_f64().unwrap_or(0.0)));
+        lines.push(format!("  Periph-Hub:   {:.4}", tw["peripheral_hub"].as_f64().unwrap_or(0.0)));
+
+        // Build hotspot map from the response
+        use std::collections::HashMap;
+        let mut hotspot_map = HashMap::new();
+        if let Some(hs) = hotspots_val {
+            for entry in hs {
+                if let (Some(node), Some(count)) = (entry[0].as_str(), entry[1]["count"].as_u64()) {
+                    hotspot_map.insert(node.to_string(), count);
                 }
             }
         }
-    } else {
-        println!("visualize failed: {}", response.text().await?);
+
+        // Extract HORMER scores from the response (if the API returns them)
+        let hormer_scores: HashMap<String, f64> = body["hormer_scores"]
+            .as_object()
+            .map(|obj| {
+                obj.iter()
+                    .map(|(k, v)| (k.clone(), v.as_f64().unwrap_or(0.0)))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if show_tree {
+            lines.push("\n[Directory Tree — HORMER Scores]".to_string());
+        } else {
+            lines.push("\n[Directory Structure]".to_string());
+        }
+
+        let docs: Vec<xavier::memory::qmd::MemoryDocument> =
+            serde_json::from_value(body["documents"].clone())?;
+
+        // --tree flag: pass HORMER scores for enriched rendering
+        let tree_lines = render_tree_lines(&docs, &hotspot_map, &hormer_scores, show_tree);
+        lines.extend(tree_lines);
+
+        lines.push("\n[Belief Graph Edges]".to_string());
+        let edges: Vec<xavier::domain::memory::belief::BeliefEdge> =
+            serde_json::from_value(body["edges"].clone())?;
+        if edges.is_empty() {
+            lines.push("  (no edges)".to_string());
+        } else {
+            for edge in &edges {
+                lines.push(format!(
+                    "  {} --[{}]--> {} (conf: {:.2})",
+                    edge.source, edge.relation_type, edge.target, edge.confidence_score
+                ));
+            }
+        }
+
+        output_text = lines.join("\n");
     }
+
+    // --output <file>: write to file instead of stdout
+    match output_file {
+        Some(path) => {
+            std::fs::write(&path, &output_text)?;
+            println!("✅ visualize output written to: {}", path.display());
+        }
+        None => {
+            println!("{}", output_text);
+        }
+    }
+
     Ok(())
+}
+
+/// Build a tree as a list of text lines.
+/// When `show_hormer` is true, HORMER scores are appended after each doc/dir name.
+fn render_tree_lines(
+    docs: &[xavier::memory::qmd::MemoryDocument],
+    hotspots: &std::collections::HashMap<String, u64>,
+    hormer_scores: &std::collections::HashMap<String, f64>,
+    show_hormer: bool,
+) -> Vec<String> {
+    use std::collections::BTreeMap;
+
+    #[derive(Default)]
+    struct Node {
+        children: BTreeMap<String, Node>,
+        is_doc: bool,
+        full_path: String,
+    }
+
+    let mut root = Node::default();
+    for doc in docs {
+        let mut curr = &mut root;
+        let parts: Vec<&str> = doc.path.split('/').filter(|s| !s.is_empty()).collect();
+        let mut current_full_path = String::new();
+        for (i, part) in parts.iter().enumerate() {
+            if !current_full_path.is_empty() {
+                current_full_path.push('/');
+            }
+            current_full_path.push_str(part);
+            curr = curr.children.entry(part.to_string()).or_default();
+            curr.full_path = current_full_path.clone();
+            if i == parts.len() - 1 {
+                curr.is_doc = true;
+            }
+        }
+    }
+
+    fn print_node_lines(
+        name: &str,
+        node: &Node,
+        indent: &str,
+        is_last: bool,
+        hotspots: &std::collections::HashMap<String, u64>,
+        hormer_scores: &std::collections::HashMap<String, f64>,
+        show_hormer: bool,
+        lines: &mut Vec<String>,
+    ) {
+        let branch = if is_last { "`-- " } else { "|-- " };
+        let prefix = if node.is_doc { "DOC " } else { "DIR " };
+        let visits = hotspots.get(&node.full_path).copied().unwrap_or(0);
+        let hormer = hormer_scores.get(&node.full_path).copied().unwrap_or(0.0);
+
+        let snippet = if show_hormer && hormer > 0.0 {
+            format!("{}{}{}{} ({} visits, H={:.4})", indent, branch, prefix, name, visits, hormer)
+        } else if visits > 0 {
+            format!("{}{}{}{} ({} visits)", indent, branch, prefix, name, visits)
+        } else if show_hormer && hormer_scores.contains_key(&node.full_path) {
+            format!("{}{}{}{} (H={:.4})", indent, branch, prefix, name, hormer)
+        } else {
+            format!("{}{}{}{}", indent, branch, prefix, name)
+        };
+        lines.push(snippet);
+
+        let new_indent = format!("{}{}", indent, if is_last { "    " } else { "|   " });
+        let count = node.children.len();
+        for (i, (child_name, child_node)) in node.children.iter().enumerate() {
+            print_node_lines(
+                child_name,
+                child_node,
+                &new_indent,
+                i == count - 1,
+                hotspots,
+                hormer_scores,
+                show_hormer,
+                lines,
+            );
+        }
+    }
+
+    let mut lines = Vec::new();
+    if root.children.is_empty() {
+        lines.push("  (no documents)".to_string());
+        return lines;
+    }
+
+    let count = root.children.len();
+    for (i, (name, node)) in root.children.iter().enumerate() {
+        print_node_lines(
+            name,
+            node,
+            "",
+            i == count - 1,
+            hotspots,
+            hormer_scores,
+            show_hormer,
+            &mut lines,
+        );
+    }
+
+    lines
 }
 
 fn render_tree(docs: &[xavier::memory::qmd::MemoryDocument], hotspots: &std::collections::HashMap<String, u64>) {

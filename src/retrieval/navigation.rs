@@ -7,6 +7,8 @@
 use crate::domain::memory::belief::BeliefEdge;
 use super::policy::{NavigationPolicy, NavigationScore};
 use crate::memory::qmd::NormalizedId;
+use crate::memory::qmd::cache_warming::PredictiveCacheWarmup;
+use std::collections::HashMap;
 
 impl NavigationPolicy {
     /// Scores a transition (edge) from a current node towards a target given a query.
@@ -145,6 +147,19 @@ fn get_parent_dir(path: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Trigger predictive cache warming when navigating into a directory.
+///
+/// Scans `hormer_scores` for files whose path starts with `dir_path`,
+/// selects the top-scored entries up to `warmer.top_k`, and marks them
+/// as recently accessed so the cache stays hot for subsequent queries.
+pub async fn warm_cache_on_navigate(
+    dir_path: &str,
+    warmer: &PredictiveCacheWarmup,
+    hormer_scores: &HashMap<String, f64>,
+) -> usize {
+    warmer.predictive_warm(dir_path, hormer_scores).await
 }
 
 #[cfg(test)]
