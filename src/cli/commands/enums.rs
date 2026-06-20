@@ -694,6 +694,9 @@ pub mod memory {
             /// Show current consolidation status
             #[arg(long)]
             status: bool,
+            /// Run TGD as part of consolidation (HORMER section 3.5)
+            #[arg(long)]
+            nightly: bool,
         },
     }
 }

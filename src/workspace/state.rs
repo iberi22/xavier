@@ -127,7 +127,7 @@ impl WorkspaceState {
                 .map(MemoryRecord::to_document)
                 .collect(),
         ));
-        let memory = Arc::new(QmdMemory::new_with_workspace(docs, config.id.clone()));
+        let mut memory = QmdMemory::new_with_workspace(docs, config.id.clone());
         memory.set_store(Arc::clone(&store)).await;
         memory.init().await?;
 
@@ -136,6 +136,8 @@ impl WorkspaceState {
             .read()
             .await
             .replace_relations(durable_state.beliefs.clone());
+        memory.set_belief_graph(Arc::clone(&belief_graph));
+        let memory = Arc::new(memory);
         let entity_graph = Arc::new(EntityGraph::new());
         {
             let eg = Arc::clone(&entity_graph);
@@ -701,6 +703,78 @@ impl WorkspaceState {
             .is_session_token_valid(&self.config.id, token_str)
             .await
             .unwrap_or(false)
+    }
+
+    /// Creates a minimal workspace state for internal background tasks.
+    pub async fn new_minimal(
+        workspace_id: String,
+        workspace_root: PathBuf,
+        memory: Arc<QmdMemory>,
+        store: Arc<dyn MemoryStore>,
+    ) -> Self {
+        use crate::workspace::config::{WorkspaceConfig, PlanTier, SyncPolicy, EmbeddingProviderMode};
+        use crate::checkpoint::CheckpointManager;
+        use crate::memory::belief_graph::BeliefGraph;
+        use crate::memory::entity_graph::EntityGraph;
+        use crate::memory::semantic::SemanticMemory;
+
+        let belief_graph = Arc::new(RwLock::new(BeliefGraph::new()));
+        let entity_graph = Arc::new(EntityGraph::new());
+        let semantic_memory = Arc::new(SemanticMemory::new());
+        let memory_manager = Arc::new(crate::memory::manager::MemoryManager::new(
+            Arc::clone(&memory),
+            Some(Arc::clone(&belief_graph)),
+        ));
+        let checkpoint_manager = Arc::new(CheckpointManager::with_store(
+            workspace_id.clone(),
+            Arc::clone(&store),
+        ));
+
+        // Mocking conversations_db for minimal state
+        #[cfg(any(test, feature = "test-utils"))]
+        let conversations_db = Arc::new(ConversationsDb::new_test());
+        #[cfg(not(any(test, feature = "test-utils")))]
+        let conversations_db = Arc::new(ConversationsDb::open("minimal").await.expect("failed to open minimal conversations_db"));
+
+        let navigation_policy = Arc::new(RwLock::new(crate::retrieval::NavigationPolicy::with_defaults()));
+        let hormer = Arc::new(crate::agents::hormer::Hormer::new(navigation_policy));
+
+        #[cfg(any(test, feature = "test-utils"))]
+        let runtime = Arc::new(AgentRuntime::new_test());
+        #[cfg(not(any(test, feature = "test-utils")))]
+        let runtime = Arc::new(AgentRuntime::new(memory.clone(), None, RuntimeConfig::default()).expect("failed to create minimal runtime"));
+
+        Self {
+            config: WorkspaceConfig {
+                id: workspace_id,
+                token: "minimal-token".to_string(),
+                plan: PlanTier::Community,
+                memory_backend: store.backend(),
+                storage_limit_bytes: None,
+                request_limit: None,
+                request_unit_limit: None,
+                embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
+                managed_google_embeddings: false,
+                sync_policy: SyncPolicy::LocalOnly,
+            },
+            memory,
+            runtime,
+            belief_graph,
+            entity_graph,
+            semantic_memory,
+            memory_manager,
+            checkpoint_manager,
+            conversations_db,
+            store,
+            store_migrated_from_file: false,
+            store_migration_detail: "minimal".to_string(),
+            usage_state_path: workspace_root.join("usage.json"),
+            persist_lock: Mutex::new(()),
+            requests_used: AtomicUsize::new(0),
+            usage_metrics: UsageMetrics::new(),
+            optimization_metrics: OptimizationMetrics::new(),
+            hormer,
+        }
     }
 }
 

@@ -148,6 +148,39 @@ impl PredictiveCacheWarmup {
     pub async fn reset(&self) {
         self.access_stats.lock().await.clear();
     }
+
+    /// Pre-warms the neighbors of a given path/concept based on the belief graph.
+    ///
+    /// Based on HORMER Section 3.4 — navigation-aware prefetching.
+    pub async fn warmup_neighbors(&self, memory: &QmdMemory, graph: &crate::memory::belief_graph::BeliefGraph, current_path: &str) -> usize {
+        let enabled = *self.enabled.lock().await;
+        if !enabled {
+            return 0;
+        }
+
+        // 1. Find neighbors in the belief graph
+        let neighbors = graph.get_related(current_path);
+        if neighbors.is_empty() {
+            return 0;
+        }
+
+        let mut warmed = 0;
+        for neighbor in neighbors {
+            // 2. Touch each neighbor in memory to warm the cache
+            // We use get() which will ensure it's in the memory's internal docs or loaded from store
+            if let Ok(Some(_)) = memory.get(&neighbor).await {
+                warmed += 1;
+                // Also track this predictive access
+                self.track_access(&neighbor).await;
+            }
+        }
+
+        if warmed > 0 {
+            tracing::debug!("🚀 Predictive Warmup: Prefetched {} neighbors of '{}'", warmed, current_path);
+        }
+
+        warmed
+    }
 }
 
 impl Default for PredictiveCacheWarmup {

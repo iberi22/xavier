@@ -867,6 +867,16 @@ impl ConversationsDb {
 
         Ok(count)
     }
+
+    /// Open an in-memory conversations database (for testing).
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn new_test() -> Self {
+        Self {
+            project_id: "test".to_string(),
+            full_project_id: "conv_test_default".to_string(),
+            schema_initialized: OnceCell::new(),
+        }
+    }
 }
 
 /// Parse an RFC 3339 datetime string.

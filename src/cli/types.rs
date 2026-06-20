@@ -159,6 +159,12 @@ pub(crate) struct ExportPayload {
 }
 
 #[derive(Debug, Deserialize)]
+pub(crate) struct ConsolidatePayload {
+    #[serde(default)]
+    pub nightly: bool,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct SwarmConfig {
     pub agents: Vec<SwarmAgentConfig>,
 }

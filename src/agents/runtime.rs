@@ -784,6 +784,16 @@ impl AgentRuntime {
     }
 }
 
+impl AgentRuntime {
+    /// Creates a test instance of the runtime with no-op components.
+    #[cfg(any(test, feature = "test-utils"))]
+    pub fn new_test() -> Self {
+        let docs = Arc::new(tokio::sync::RwLock::new(Vec::new()));
+        let memory = Arc::new(QmdMemory::new_with_workspace(docs, "test-ws"));
+        Self::new(memory, None, RuntimeConfig::default()).expect("failed to create test runtime")
+    }
+}
+
 fn should_answer_from_evidence(
     query: &str,
     category: Option<&str>,

@@ -149,6 +149,7 @@ fn render_tree(docs: &[xavier::memory::qmd::MemoryDocument], hotspots: &std::col
         children: BTreeMap<String, Node>,
         is_doc: bool,
         full_path: String,
+        score: Option<f32>,
     }
 
     let mut root = Node::default();
@@ -165,6 +166,10 @@ fn render_tree(docs: &[xavier::memory::qmd::MemoryDocument], hotspots: &std::col
             curr.full_path = current_full_path.clone();
             if i == parts.len() - 1 {
                 curr.is_doc = true;
+                curr.score = doc.metadata.get("memory_importance")
+                    .or_else(|| doc.metadata.get("quality").and_then(|q| q.get("overall")))
+                    .and_then(|v| v.as_f64())
+                    .map(|v| v as f32);
             }
         }
     }
@@ -173,8 +178,19 @@ fn render_tree(docs: &[xavier::memory::qmd::MemoryDocument], hotspots: &std::col
         let branch = if is_last { "`-- " } else { "|-- " };
         let prefix = if node.is_doc { "DOC " } else { "DIR " };
         let visits = hotspots.get(&node.full_path).copied().unwrap_or(0);
-        let visit_str = if visits > 0 { format!(" ({} visits)", visits) } else { "".to_string() };
-        println!("{}{}{}{}{}", indent, branch, prefix, name, visit_str);
+
+        let mut meta_str = String::new();
+        if let Some(s) = node.score {
+            meta_str.push_str(&format!(" [score: {:.2}]", s));
+        }
+        if visits > 0 {
+            meta_str.push_str(&format!(" ({} visits)", visits));
+            if visits > 5 {
+                meta_str.push_str(" 🔥"); // Hotspot highlight
+            }
+        }
+
+        println!("{}{}{}{}{}", indent, branch, prefix, name, meta_str);
 
         let new_indent = format!("{}{}", indent, if is_last { "    " } else { "|   " });
         let count = node.children.len();
