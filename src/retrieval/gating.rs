@@ -378,7 +378,22 @@ impl AdaptiveGating {
         query: &str,
         belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
     ) -> Vec<ScoredResult> {
+        self.retrieve_with_telemetry(working, episodic, semantic, query, belief_graph, None).await
+    }
+
+    /// Retrieve from all memory layers with telemetry recording
+    pub async fn retrieve_with_telemetry(
+        &self,
+        working: &[MemoryDocument],
+        episodic: &[SessionSummary],
+        semantic: &[EntityRecord],
+        query: &str,
+        belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
+        telemetry: Option<Arc<crate::memory::telemetry::NavTelemetry>>,
+    ) -> Vec<ScoredResult> {
         let now = chrono::Utc::now();
+        let start_time = std::time::Instant::now();
+
         // 1. Score each layer independently (may use parallel execution internally)
         let working_results = self.score_working_layer_at(working, query, now).await;
         let episodic_results = self.score_episodic_layer_at(episodic, query, now).await;
@@ -493,7 +508,16 @@ impl AdaptiveGating {
         }
 
         // 7. Limit results
-        results.into_iter().take(self.config.max_results).collect()
+        let final_results: Vec<ScoredResult> = results.into_iter().take(self.config.max_results).collect();
+
+        // 8. Record telemetry
+        let latency = start_time.elapsed().as_millis() as u64;
+        if let Some(t) = telemetry {
+            t.record_latency(latency);
+        }
+        tracing::debug!("Retrieval latency: {}ms", latency);
+
+        final_results
     }
 
     /// Predict likely future queries based on current results and navigation patterns

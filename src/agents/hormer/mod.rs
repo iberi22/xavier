@@ -15,21 +15,26 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-/// HORMER Coordinator
+/// HORMER (Heuristic Online Retrieval Model for Enhanced Ranking) Coordinator.
+///
+/// HORMER implements a simplified Group Relative Policy Optimization (GRPO)
+/// to dynamically adjust memory layer weights and graph traversal parameters
+/// based on the quality of retrieved results.
 pub struct Hormer {
     policy: Arc<RwLock<NavigationPolicy>>,
     reward_model: RewardModel,
-    /// Counter for queries that used the learned policy
+    /// Counter for queries that used the learned policy.
     navigated_queries: AtomicU64,
-    /// Counter for queries that used manual weights
+    /// Counter for queries that used manual weights.
     non_navigated_queries: AtomicU64,
-    /// Histogram of retrieval scores (10 buckets: 0.0-0.1, 0.1-0.2, ..., 0.9-1.0)
+    /// Histogram of retrieval scores (10 buckets: 0.0-0.1, 0.1-0.2, ..., 0.9-1.0).
     score_histogram: Arc<RwLock<[u64; 10]>>,
     /// Navigation telemetry: node hotspots, path counts, avg path length.
     telemetry: Arc<NavTelemetry>,
 }
 
 impl Hormer {
+    /// Creates a new HORMER instance with the given shared navigation policy.
     pub fn new(policy: Arc<RwLock<NavigationPolicy>>) -> Self {
         Self {
             policy,
@@ -41,6 +46,7 @@ impl Hormer {
         }
     }
 
+    /// Returns a reference to the shared navigation policy.
     pub fn policy(&self) -> &Arc<RwLock<NavigationPolicy>> {
         &self.policy
     }
@@ -50,7 +56,7 @@ impl Hormer {
         &self.telemetry
     }
 
-    /// Record a query that did not use the learned policy
+    /// Record a query that did not use the learned policy.
     pub fn record_non_navigated(&self) {
         self.non_navigated_queries.fetch_add(1, Ordering::Relaxed);
     }
@@ -65,6 +71,15 @@ impl Hormer {
             self.telemetry.record_visit(&res.id).await;
         }
 
+        // record cache hit/miss if available in metadata
+        for res in results {
+            if res.id.starts_with("cache:") {
+                 self.telemetry.record_cache_hit();
+            } else {
+                 self.telemetry.record_cache_miss();
+            }
+        }
+
         let mut histogram = self.score_histogram.write().await;
         for res in results {
             let bucket = (res.score * 10.0).floor() as usize;
@@ -73,15 +88,16 @@ impl Hormer {
         }
     }
 
-    /// Update the policy using a simplified GRPO approach
+    /// Update the policy using a simplified GRPO approach.
     ///
     /// GRPO (Group Relative Policy Optimization) updates the policy based on
-    /// the relative advantage of a group of samples.
+    /// the relative advantage of retrieval results.
     ///
-    /// En esta versión simplificada:
-    /// 1. Tomamos los resultados de una navegación.
-    /// 2. Evaluamos el reward.
-    /// 3. Si el reward es superior al promedio histórico (o una base), ajustamos pesos.
+    /// In this simplified version:
+    /// 1. Take the results of a navigation operation.
+    /// 2. Evaluate the reward using the `RewardModel`.
+    /// 3. Calculate "advantage" relative to a baseline (0.5).
+    /// 4. If advantage is significant, update policy weights and persist to settings.
     pub async fn update_from_interaction(&self, weights_used: LayerWeights, results: &[ScoredResult]) {
         self.update_metrics(results).await;
         if results.is_empty() {
@@ -151,7 +167,7 @@ impl Hormer {
         }
     }
 
-    /// Get telemetry metrics
+    /// Returns current HORMER performance metrics, including average reward and score histogram.
     pub async fn get_metrics(&self) -> serde_json::Value {
         let histogram = self.score_histogram.read().await;
         serde_json::json!({
@@ -162,7 +178,7 @@ impl Hormer {
         })
     }
 
-    /// Get current weights from policy
+    /// Returns the current layer weights from the policy.
     pub async fn get_weights(&self) -> LayerWeights {
         self.policy.read().await.layer_weights
     }

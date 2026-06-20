@@ -29,15 +29,26 @@ pub struct TelemetrySummary {
     pub avg_path_length: f64,
     pub total_paths: u64,
     pub hotspots: Vec<(String, VisitInfo)>,
+    pub cache_hits: u64,
+    pub cache_misses: u64,
+    pub avg_retrieval_latency_ms: f64,
 }
 
-/// Core telemetry tracker for navigation operations
+/// Core telemetry tracker for navigation operations.
+///
+/// `NavTelemetry` tracks how the agent explores the belief graph,
+/// identifying frequently visited nodes ("hotspots") and monitoring
+/// average navigation path lengths.
 #[derive(Debug)]
 pub struct NavTelemetry {
     visited: Arc<Mutex<HashMap<String, VisitInfo>>>,
     path_count: Arc<AtomicU64>,
     total_path_length: Arc<AtomicU64>,
     avg_path_length: Arc<Mutex<f64>>,
+    cache_hits: Arc<AtomicU64>,
+    cache_misses: Arc<AtomicU64>,
+    total_latency_ms: Arc<AtomicU64>,
+    latency_samples: Arc<AtomicU64>,
 }
 
 impl NavTelemetry {
@@ -48,6 +59,10 @@ impl NavTelemetry {
             path_count: Arc::new(AtomicU64::new(0)),
             total_path_length: Arc::new(AtomicU64::new(0)),
             avg_path_length: Arc::new(Mutex::new(0.0)),
+            cache_hits: Arc::new(AtomicU64::new(0)),
+            cache_misses: Arc::new(AtomicU64::new(0)),
+            total_latency_ms: Arc::new(AtomicU64::new(0)),
+            latency_samples: Arc::new(AtomicU64::new(0)),
         }
     }
 
@@ -112,13 +127,40 @@ impl NavTelemetry {
                 .then_with(|| b.1.last_accessed.cmp(&a.1.last_accessed))
         });
 
+        let latency_samples = self.latency_samples.load(Ordering::Relaxed);
+        let total_latency = self.total_latency_ms.load(Ordering::Relaxed);
+        let avg_latency = if latency_samples > 0 {
+            total_latency as f64 / latency_samples as f64
+        } else {
+            0.0
+        };
+
         TelemetrySummary {
             total_visits: visited.values().map(|v| v.count).sum(),
             unique_nodes: visited.len(),
             avg_path_length: avg_len,
             total_paths: path_count,
             hotspots: sorted.into_iter().take(10).collect(),
+            cache_hits: self.cache_hits.load(Ordering::Relaxed),
+            cache_misses: self.cache_misses.load(Ordering::Relaxed),
+            avg_retrieval_latency_ms: avg_latency,
         }
+    }
+
+    /// Records a cache hit.
+    pub fn record_cache_hit(&self) {
+        self.cache_hits.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Records a cache miss.
+    pub fn record_cache_miss(&self) {
+        self.cache_misses.fetch_add(1, Ordering::Relaxed);
+    }
+
+    /// Records the latency of a retrieval operation in milliseconds.
+    pub fn record_latency(&self, latency_ms: u64) {
+        self.total_latency_ms.fetch_add(latency_ms, Ordering::Relaxed);
+        self.latency_samples.fetch_add(1, Ordering::Relaxed);
     }
 
     /// Resets all telemetry data to zero.
@@ -127,6 +169,10 @@ impl NavTelemetry {
         self.path_count.store(0, Ordering::Relaxed);
         self.total_path_length.store(0, Ordering::Relaxed);
         *self.avg_path_length.lock().await = 0.0;
+        self.cache_hits.store(0, Ordering::Relaxed);
+        self.cache_misses.store(0, Ordering::Relaxed);
+        self.total_latency_ms.store(0, Ordering::Relaxed);
+        self.latency_samples.store(0, Ordering::Relaxed);
     }
 
     /// Returns the total number of unique nodes visited.

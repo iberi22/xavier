@@ -17,22 +17,23 @@ pub mod consolidation;
 use crate::tgd::cache::TgdCache;
 pub use consolidation::TgdConsolidationScheduler;
 
-/// Configuration for TGD engine
+/// Configuration for the Textual Gradient Descent (TGD) engine.
 #[derive(Debug, Clone)]
 pub struct TgdConfig {
-    /// Confidence threshold below which TGD triggers (default: 0.7)
+    /// Confidence threshold (0.0-1.0) below which TGD triggers rule generation.
+    /// If average retrieval relevance is below this, the agent considers it a "gap".
     pub confidence_threshold: f32,
-    /// Path to the improvements rules file
+    /// Path to the Markdown file where generated improvement rules are persisted.
     pub improvements_path: PathBuf,
-    /// Maximum number of rules to keep (default: 100)
+    /// Maximum number of rules to maintain in the improvements file.
     pub max_rules_count: usize,
-    /// Path to the TGD cache file
+    /// Path to the JSON file used for TGD execution caching.
     pub cache_path: PathBuf,
-    /// Minimum interval between TGD executions in seconds (default: 3600)
+    /// Minimum interval between successive TGD executions to avoid LLM spam.
     pub min_interval_seconds: i64,
-    /// Learning rate for textual refinement (default: 0.1)
+    /// Learning rate for textual refinement (0.1 = subtle, 1.0 = aggressive).
     pub learning_rate: f32,
-    /// Number of iterations for refinement (default: 3)
+    /// Number of LLM iterations to perform during memory content refinement.
     pub iterations: usize,
 }
 
@@ -53,19 +54,25 @@ impl Default for TgdConfig {
 use crate::agents::provider::LlmProvider;
 use std::sync::Arc;
 
-/// TGD Engine for autonomous rule generation
+/// TGD Engine for autonomous rule generation and memory refinement.
+///
+/// The `TgdEngine` implements "Textual Gradient Descent", a process where an LLM
+/// analyzes the delta between conversation history and retrieved context to
+/// generate behavioral rules or refine existing memory content.
 pub struct TgdEngine {
     provider: Arc<dyn LlmProvider>,
     config: TgdConfig,
-    /// Mutex to prevent concurrent read/write to the rules file
+    /// Mutex to prevent concurrent read/write to the rules file.
     io_lock: Mutex<()>,
 }
 
 impl TgdEngine {
+    /// Creates a new TGD engine with the default configuration.
     pub fn new(provider: ModelProviderClient) -> Self {
         Self::with_config(Arc::new(provider), TgdConfig::default())
     }
 
+    /// Creates a new TGD engine with an explicit configuration.
     pub fn with_config(provider: Arc<dyn LlmProvider>, config: TgdConfig) -> Self {
         Self {
             provider,
@@ -74,11 +81,15 @@ impl TgdEngine {
         }
     }
 
+    /// Returns a reference to the engine's configuration.
     pub fn config(&self) -> &TgdConfig {
         &self.config
     }
 
-    /// Generates new rules by analyzing the gap between history and context
+    /// Generates new behavioral rules by analyzing the gap between conversation history and retrieved context.
+    ///
+    /// If the average relevance of retrieved documents is below the `confidence_threshold`,
+    /// the engine asks an LLM to identify what was missing and generate Markdown rules.
     pub async fn generate_rules(
         &self,
         history: &[ConversationMessage],
@@ -162,6 +173,9 @@ impl TgdEngine {
     }
 
     /// Refines the content of a memory document using iterative Textual Gradient Descent.
+    ///
+    /// This process repeatedly asks an LLM to improve the clarity, structure, and
+    /// density of the provided content, scoring each iteration to ensure improvement.
     pub async fn refine_memory_content(&self, content: &str, iterations: Option<usize>) -> Result<(String, f32)> {
         let iterations = iterations.unwrap_or(self.config.iterations);
         let mut current_content = content.to_string();
