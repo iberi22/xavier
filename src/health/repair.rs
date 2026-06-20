@@ -490,7 +490,8 @@ mod tests {
         let settings = XavierSettings::default();
         let report = engine.check_and_repair_background(&settings).await;
         assert!(report.timestamp_secs > 0);
-        assert!(report.duration_ms >= 0);
+        // duration_ms is u64, always >= 0 by construction
+        let _ = report.duration_ms;
     }
 
     #[tokio::test]
