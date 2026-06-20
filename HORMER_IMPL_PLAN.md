@@ -129,7 +129,7 @@ Todos los PRs mergeados, tests pasando, servidor funcional.
 
 | Prioridad | Tarea | Descripción |
 |-----------|-------|-------------|
-| 🔴 Alta | API Key OpenAI | Configurar embeddings provider para memoria semántica |
+| 🔴 Alta | API Key OpenRouter | Configurar `OPENAI_API_KEY` con key de OpenRouter + `XAVIER_EMBEDDING_URL=https://openrouter.ai/api/v1` |
 | 🟡 Media | Mesh P2P | Revisar conexión Supabase, 1 peer con lag alto |
 | 🟢 Baja | Roadmap v0.11.0 | Definir features post-HORMER |
 | 🟢 Baja | Sovereign Mesh (#115) | EPIC para siguiente major version |
@@ -163,5 +163,7 @@ powershell -File C:\Users\belal\.openclaw\skills\jules-integration\scripts\check
 - **HTTP API**: `http://localhost:8006`
 - **MCP**: `http://localhost:8100/mcp`
 - **Health**: ✅ Respondiendo
-- **Embeddings**: ❌ OpenAI API key no configurada (provider unhealthy)
+- **Embeddings**: ❌ OpenRouter API key no configurada (provider unhealthy)
+  - Solución: `set XAVIER_EMBEDDING_URL=https://openrouter.ai/api/v1 && set OPENAI_API_KEY=sk-or-v1-...`
+  - O en settings TOML: `models.embedding_url = "https://openrouter.ai/api/v1"` + `embedding.api_key = "sk-or-v1-..."`
 - **Mesh**: ⚠️ 1 peer conectado (xv1-cloud-supabase, lag alto)
