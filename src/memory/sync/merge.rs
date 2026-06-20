@@ -6,7 +6,6 @@
 //! 3. Delete always wins over Add/Update (tombstone semantics).
 
 use anyhow::Result;
-use chrono::Utc;
 use sha2::{Digest, Sha256};
 
 use crate::memory::store::{MemoryRecord, MemoryStore};
