@@ -31,7 +31,9 @@ fn unique_test_path(prefix: &str, suffix: &str) -> PathBuf {
         .duration_since(UNIX_EPOCH)
         .expect("SystemTime before UNIX_EPOCH")
         .as_nanos();
-    std::env::temp_dir().join(format!("{prefix}-{unique}-{suffix}"))
+    // Add thread ID to avoid collisions between concurrent tests
+    let tid = std::thread::current().id();
+    std::env::temp_dir().join(format!("{prefix}-{unique:016x}-{tid:?}-{suffix}"))
 }
 
 async fn test_state() -> (AppState, WorkspaceContext) {
@@ -547,7 +549,7 @@ async fn sync_gitcore_integration_mock() {
 
 // ── MCP Tools v2: health sequence tests ─────────────────────────────────
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn tools_health_check_returns_structured() {
     let (state, workspace) = test_state().await;
     let router = test_router(state, workspace);
@@ -1047,7 +1049,7 @@ async fn resources_read_memory_and_health() {
     assert_eq!(body["error"]["code"], -32602);
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn health_check_method_and_tool() {
     let (state, workspace) = test_state().await;
     let router = test_router(state, workspace);
