@@ -86,6 +86,7 @@ Todos los PRs mergeados, tests pasando, servidor funcional.
 | **Code Health** | — | **90%** | Lote A |
 | **Integration Tests** | — | **85%** | B6 |
 | **Dependency Hygiene** | — | **95%** | — |
+| **Warnings (lib)** | — | **100%** | ✅ (A1 completo, 0 warnings) |
 
 ---
 
@@ -95,7 +96,7 @@ Todos los PRs mergeados, tests pasando, servidor funcional.
 
 | Issue | Descripción | Status |
 |-------|-------------|--------|
-| A1 | Limpiar warnings (unused imports, dead code) | 🔵 Pendiente |
+| A1 | Limpiar warnings (unused imports, dead code) | ✅ Completo |
 | A2 | Fix tests preexistentes (keyword extraction, search, v1) | 🔵 Pendiente |
 | B6 | Tests de integración HORMER | 🔵 Pendiente |
 | A5 | Fix wallet MutexGuard Send | 🔵 Pendiente |
