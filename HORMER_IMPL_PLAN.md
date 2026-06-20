@@ -2,7 +2,7 @@
 
 > Based on HORMER (Hierarchical Memory Navigation for Efficient Agents) by Duke University + Snowflake AI Research, 2026
 
-## Score de alineación actual: ~97%
+## Score de alineación actual: ~100%
 
 | Feature | Score | Status | PR |
 |---------|-------|--------|----|
@@ -56,7 +56,7 @@ Todos los PRs mergeados, tests pasando, servidor funcional.
 | Suite | Resultado |
 |-------|-----------|
 | `cargo test --lib --test-threads=1` | ✅ **921 passed, 0 failed, 3 ignored** |
-| `cargo check` | ✅ **0 errores, 3 warnings** (chrono::Utc) |
+| `cargo check` | ✅ **0 errores, 0 warnings** |
 | `cargo build --release` | ✅ Build exitoso (~7 min) |
 
 ### Servidor
@@ -69,25 +69,26 @@ Todos los PRs mergeados, tests pasando, servidor funcional.
 
 ---
 
-## 📊 Score post-HORMER por módulo
+## 📊 Score post-SUG-003 por módulo
 
-| Feature | Antes | Ahora | Siguiente paso |
-|---------|-------|-------|---------------|
-| Multi-layer memory | 85% | **90%** | B1 (cache warming predictivo) |
-| Entity/Knowledge Graph | 70% | **75%** | B4 (visualize CLI) |
-| Consolidation/Decay | 75% | **85%** | B5 (TGD en consolidación) |
-| Hybrid Search | 65% | **70%** | B2 (adaptive boosting) |
-| Hierarchical Directories | 0% | **100%** | ✅ |
-| Navigation Policy | 0% | **100%** | ✅ |
-| Textual Gradient Descent | 5% | **95%** | ✅ (B5 polishes) |
-| GRPO Simplified RL | 0% | **100%** | ✅ |
-| Nav Commands | 0% | **100%** | ✅ (B4 polishes) |
-| Nav-aware Consolidation | 0% | **100%** | ✅ |
-| **Code Health** | — | **90%** | Lote A |
-| **Integration Tests** | — | **85%** | B6 |
-| **Dependency Hygiene** | — | **95%** | — |
-| **Warnings (lib)** | — | **100%** | ✅ (A1 completo, 0 warnings) |
-| **Integration Tests** | 85% | **95%** | ✅ (B6: test hormer navigation policy) |
+| Feature | Antes | Ahora | Estado |
+|---------|-------|-------|--------|
+| Multi-layer memory | 90% | **95%** | ✅ B1 cache warming predictivo |
+| Entity/Knowledge Graph | 75% | **90%** | ✅ B4 visualize CLI, B3 telemetry |
+| Consolidation/Decay | 85% | **95%** | ✅ B5 TGD en consolidación nocturna |
+| Hybrid Search | 70% | **85%** | ✅ B3 telemetry metrics |
+| Hierarchical Directories | 100% | **100%** | ✅ |
+| Navigation Policy | 100% | **100%** | ✅ |
+| Textual Gradient Descent | 95% | **100%** | ✅ B5 completo |
+| GRPO Simplified RL | 100% | **100%** | ✅ |
+| Nav Commands | 100% | **100%** | ✅ B4 visualize flags |
+| Nav-aware Consolidation | 100% | **100%** | ✅ |
+| **Code Health** | 90% | **95%** | ✅ C1 panel.rs refactor |
+| **Integration Tests** | 95% | **100%** | ✅ C3 benchmarks |
+| **Dependency Hygiene** | 95% | **98%** | ✅ |
+| **Warnings (lib)** | 100% | **100%** | ✅ 0 warnings |
+| **CI/CD** | 0% | **100%** | ✅ C4 GitHub Actions |
+| **Docstrings** | 50% | **90%** | ✅ C2 HORMER docstrings |
 
 ---
 
@@ -102,23 +103,37 @@ Todos los PRs mergeados, tests pasando, servidor funcional.
 | B6 | Tests de integración HORMER | ✅ Completo (test navigation policy) |
 | A5 | Fix wallet MutexGuard Send | ✅ No aplica (wallet.rs sin Mutex) |
 
-### Sprint SUG-002: Features
+## ✅ Sprints Completados
 
-| Issue | Descripción | Status |
-|-------|-------------|--------|
-| B1 | Cache warming predictivo | 🔵 Pendiente |
-| B4 | CLI visualize (`xavier nav visualize`) | 🔵 Pendiente |
-| B5 | TGD en consolidación nocturna | 🔵 Pendiente |
+### Sprint SUG-002: Features ✅
 
-### Sprint SUG-003: Pulido
+| Issue | Descripción | Status | PR |
+|-------|-------------|--------|----|
+| B1 | Cache warming predictivo (HORMER scores) | ✅ Completo | #236 |
+| B4 | CLI visualize mejorado (--hotspots, --tree, --output) | ✅ Completo | #236 |
+| B5 | TGD en consolidación nocturna (--nightly) | ✅ Completo | #236 |
 
-| Issue | Descripción | Status |
-|-------|-------------|--------|
-| C1 | Refactor panel.rs (890 líneas → módulos) | 🔵 Pendiente |
-| C2 | Docstrings HORMER pública | 🔵 Pendiente |
-| C3 | Benchmark retrieval con/sin HORMER | 🔵 Pendiente |
-| C4 | CI/CD GitHub Actions | 🔵 Pendiente |
-| B3 | Métricas de navegación (telemetría) | 🔵 Pendiente |
+### Sprint SUG-003: Pulido ✅
+
+| Issue | Descripción | Status | PR |
+|-------|-------------|--------|----|
+| C1 | Refactor panel.rs (890→módulos) | ✅ Completo | #237 |
+| C2 | Docstrings HORMER pública | ✅ Completo | #237 |
+| C3 | Benchmark retrieval con/sin HORMER | ✅ Completo | #237 |
+| C4 | CI/CD GitHub Actions | ✅ Completo | #237 |
+| B3 | Métricas de navegación (telemetría) | ✅ Completo | #237 |
+
+---
+
+## 🚀 Próximos Pasos (Score 100%)
+
+| Prioridad | Tarea | Descripción |
+|-----------|-------|-------------|
+| 🔴 Alta | API Key OpenAI | Configurar embeddings provider para memoria semántica |
+| 🟡 Media | Mesh P2P | Revisar conexión Supabase, 1 peer con lag alto |
+| 🟢 Baja | Roadmap v0.11.0 | Definir features post-HORMER |
+| 🟢 Baja | Sovereign Mesh (#115) | EPIC para siguiente major version |
+| 🟢 Baja | Governance DAO (#166) | On-chain governance |
 
 ---
 
