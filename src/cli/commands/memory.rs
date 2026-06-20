@@ -13,6 +13,8 @@ pub async fn handle_memory_command(cmd: crate::cli::commands::enums::memory::Mem
                 stop_consolidation().await
             } else if status {
                 show_consolidation_status().await
+            } else if nightly {
+                run_nightly_consolidation().await
             } else {
                 // Default to one-off consolidation
                 run_consolidation(nightly).await
@@ -82,6 +84,28 @@ async fn show_consolidation_status() -> Result<()> {
         }
     } else {
         println!("❌ Failed to fetch status: {}", resp.text().await?);
+    }
+    Ok(())
+}
+
+async fn run_nightly_consolidation() -> Result<()> {
+    let base_url = resolve_base_url();
+    let token = require_xavier_token()?;
+    let client = CLI_HTTP_CLIENT.clone();
+
+    println!("🌙 Triggering nightly consolidation (TGD + memory)...");
+    let resp = client
+        .post(format!("{}/memory/consolidate", base_url))
+        .header("X-Xavier-Token", &token)
+        .json(&serde_json::json!({"nightly": true}))
+        .send()
+        .await?;
+
+    if resp.status().is_success() {
+        let body: serde_json::Value = resp.json().await?;
+        println!("✅ Nightly consolidation complete: {}", serde_json::to_string_pretty(&body)?);
+    } else {
+        println!("❌ Nightly consolidation failed: {}", resp.text().await?);
     }
     Ok(())
 }

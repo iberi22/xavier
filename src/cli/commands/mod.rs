@@ -130,8 +130,19 @@ impl Cli {
                     )
                     .await
                 }
-                NavCommand::Visualize { format } => {
-                    navigation::handle_visualize(format.clone()).await
+                NavCommand::Visualize {
+                    format,
+                    hotspots,
+                    tree,
+                    output,
+                } => {
+                    navigation::handle_visualize(
+                        format.clone(),
+                        *hotspots,
+                        *tree,
+                        output.clone(),
+                    )
+                    .await
                 }
                 NavCommand::Telemetry { kind } => {
                     navigation::handle_telemetry(kind.clone()).await
