@@ -360,9 +360,8 @@ impl QmdMemory {
 
     pub async fn ls(&self, path_prefix: &str) -> Result<Vec<NavEntry>> {
         // [B1] Predictive cache warming based on navigation patterns
-        if let (Some(warmup), Some(graph_ref)) = (&self.cache_warmup, &self.belief_graph) {
-            let graph = graph_ref.read().await;
-            let _ = warmup.warmup_neighbors(self, &graph, path_prefix).await;
+        if let Some(warmup) = &self.cache_warmup {
+            let _ = warmup.predictive_warm(path_prefix, &Default::default()).await;
         }
 
         let docs = self.all_documents().await;
