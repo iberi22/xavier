@@ -44,6 +44,7 @@ pub struct QmdMemory {
     pub(crate) cache_counters: Arc<CacheCounters>,
     pub(crate) store: Arc<AsyncRwLock<Option<Arc<dyn MemoryStore>>>>,
     pub(crate) cache_warmup: Option<Arc<PredictiveCacheWarmup>>,
+    pub(crate) belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
 }
 
 impl fmt::Debug for QmdMemory {
@@ -112,6 +113,7 @@ impl QmdMemory {
             cache_counters: Arc::new(CacheCounters::default()),
             store: Arc::new(AsyncRwLock::new(None)),
             cache_warmup: Some(Arc::new(PredictiveCacheWarmup::new())),
+            belief_graph: None,
         }
     }
 
@@ -121,6 +123,10 @@ impl QmdMemory {
 
     pub async fn set_store(&self, store: Arc<dyn MemoryStore>) {
         *self.store.write().await = Some(store);
+    }
+
+    pub fn set_belief_graph(&mut self, graph: crate::memory::belief_graph::SharedBeliefGraph) {
+        self.belief_graph = Some(graph);
     }
 
     pub(crate) async fn store(&self) -> Option<Arc<dyn MemoryStore>> {
@@ -353,6 +359,12 @@ impl QmdMemory {
     }
 
     pub async fn ls(&self, path_prefix: &str) -> Result<Vec<NavEntry>> {
+        // [B1] Predictive cache warming based on navigation patterns
+        if let (Some(warmup), Some(graph_ref)) = (&self.cache_warmup, &self.belief_graph) {
+            let graph = graph_ref.read().await;
+            let _ = warmup.warmup_neighbors(self, &graph, path_prefix).await;
+        }
+
         let docs = self.all_documents().await;
         let prefix = if path_prefix.is_empty() || path_prefix == "/" {
             "".to_string()
