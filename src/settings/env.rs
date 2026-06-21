@@ -247,6 +247,10 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
         "XAVIER_EMBEDDING_CACHE_DB_PATH",
         non_empty(&settings.embedding.cache_db_path),
     );
+    set_if_absent(
+        "XAVIER_EMBEDDING_TIMEOUT_SECS",
+        &settings.embedding.timeout_secs.to_string(),
+    );
 
     // Security settings
     set_optional_if_absent(

@@ -143,6 +143,7 @@ pub fn score_single_episodic(
             source: "episodic".to_string(),
             path: format!("sessions/{}", session.session_id),
             updated_at: updated_at_ms,
+            zone: Some("episodic".to_string()),
         })
     } else {
         None
@@ -195,6 +196,7 @@ pub fn score_single_semantic(
             source: "semantic".to_string(),
             path: format!("entities/{}", entity.id),
             updated_at: updated_at_ms,
+            zone: Some("semantic".to_string()),
         })
     } else {
         None

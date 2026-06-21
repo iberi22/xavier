@@ -42,6 +42,16 @@ impl MemoryStore for VecSqliteMemoryStore {
 
     async fn put(&self, record: MemoryRecord) -> Result<()> {
         let mut record = record;
+
+        // Auto-generate missing embeddings if a provider is configured
+        if record.embedding.is_empty() && crate::memory::embedder::EmbeddingClient::is_configured_from_env() {
+            if let Ok(client) = crate::memory::embedder::EmbeddingClient::from_env_async().await {
+                if let Ok(vector) = client.embed(&record.content).await {
+                    record.embedding = vector;
+                }
+            }
+        }
+
         let security = crate::security::get_security_service();
         if security.get_config().encryption_at_rest_enabled {
             let mgr = security.get_key_manager()?;

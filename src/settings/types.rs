@@ -349,6 +349,12 @@ pub struct EmbeddingSettings {
     pub cache_ttl_hours: u64,
     #[serde(default = "default_cache_db_path")]
     pub cache_db_path: String,
+    #[serde(default = "default_timeout_secs")]
+    pub timeout_secs: u64,
+}
+
+fn default_timeout_secs() -> u64 {
+    30
 }
 
 fn default_cache_enabled() -> bool {
@@ -373,6 +379,7 @@ impl fmt::Debug for EmbeddingSettings {
             .field("api_flavor", &self.api_flavor)
             .field("api_key", &"[REDACTED]")
             .field("gllm_dimension", &self.gllm_dimension)
+            .field("timeout_secs", &self.timeout_secs)
             .finish()
     }
 }

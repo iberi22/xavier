@@ -35,9 +35,10 @@ impl OpenAICompatibleEmbedder {
         model: String,
         endpoint: String,
         dimension: usize,
+        timeout: Duration,
     ) -> Result<Self, EmbeddingError> {
         let client = Client::builder()
-            .timeout(Duration::from_secs(30))
+            .timeout(timeout)
             .build()
             .map_err(|error| EmbeddingError::Network(error.to_string()))?;
 

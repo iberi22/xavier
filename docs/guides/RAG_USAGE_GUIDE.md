@@ -76,8 +76,15 @@ The default mode. It combines Lexical and Semantic results using **Reciprocal Ra
 
 ### Embedding Providers
 Xavier supports multiple embedding backends:
-- **Local (GLLM)**: High privacy, zero cost.
-- **OpenAI / Anthropic / Voyage**: Managed high-quality embeddings.
+- **Local (GLLM)**: High privacy, zero cost. Optimized for AMD/NVIDIA GPUs via GLLM.
+- **Cloud (OpenRouter / OpenAI)**: High-quality embeddings via cloud APIs.
+  - **OpenRouter**: Supported via `XAVIER_EMBEDDING_URL` and `XAVIER_EMBEDDING_MODEL`.
+  - **Fallback**: Cloud mode automatically falls back to local GLLM if the cloud provider is unavailable.
+
+### Cloud Mode & Fallbacks
+When `XAVIER_EMBEDDING_PROVIDER_MODE=cloud` is set, Xavier prioritizes the configured cloud endpoint.
+- **Configurable Timeout**: Use `XAVIER_EMBEDDING_TIMEOUT_SECS` (default: 30) to adjust API wait times.
+- **Offline Resilience**: If the cloud API fails or the system is offline, Xavier will attempt to generate embeddings using the local GLLM backend as a secondary fallback.
 
 ### Thresholds and Weights
 You can fine-tune retrieval behavior in `config/xavier.config.json`:
