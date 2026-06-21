@@ -303,6 +303,7 @@ pub struct AdaptiveGating {
     config: GatingConfig,
     policy: Option<Arc<RwLock<super::policy::NavigationPolicy>>>,
     memory: Option<Arc<crate::memory::qmd_memory::QmdMemory>>,
+    zone_booster: Option<Arc<AdaptiveZoneBooster>>,
 }
 
 // ---------------------------------------------------------------------------
@@ -315,6 +316,7 @@ impl AdaptiveGating {
             config,
             policy: None,
             memory: None,
+            zone_booster: None,
         }
     }
 
@@ -326,11 +328,17 @@ impl AdaptiveGating {
             config,
             policy: Some(policy),
             memory: None,
+            zone_booster: None,
         }
     }
 
     pub fn with_memory(mut self, memory: Arc<crate::memory::qmd_memory::QmdMemory>) -> Self {
         self.memory = Some(memory);
+        self
+    }
+
+    pub fn with_booster(mut self, booster: Arc<AdaptiveZoneBooster>) -> Self {
+        self.zone_booster = Some(booster);
         self
     }
 
@@ -366,6 +374,7 @@ impl AdaptiveGating {
             config,
             policy: Some(Arc::new(RwLock::new(policy))),
             memory: None,
+            zone_booster: None,
         }
     }
 
@@ -378,7 +387,7 @@ impl AdaptiveGating {
         query: &str,
         belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
     ) -> Vec<ScoredResult> {
-        self.retrieve_with_telemetry(working, episodic, semantic, query, belief_graph, None).await
+        self.retrieve_with_telemetry(working, episodic, semantic, query, belief_graph, None, None).await
     }
 
     /// Retrieve from all memory layers with telemetry recording
@@ -390,12 +399,13 @@ impl AdaptiveGating {
         query: &str,
         belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
         telemetry: Option<Arc<crate::memory::telemetry::NavTelemetry>>,
+        user_id: Option<String>,
     ) -> Vec<ScoredResult> {
         let now = chrono::Utc::now();
         let start_time = std::time::Instant::now();
 
         // 1. Score each layer independently (may use parallel execution internally)
-        let working_results = self.score_working_layer_at(working, query, now).await;
+        let working_results = self.score_working_layer_at(working, query, now, user_id.as_deref()).await;
         let episodic_results = self.score_episodic_layer_at(episodic, query, now).await;
         let mut semantic_results = self.score_semantic_layer_at(semantic, query, now).await;
 
@@ -418,6 +428,11 @@ impl AdaptiveGating {
                 // hit.content for semantic layer is the entity name
                 let expanded = pathfinder.guided_search(&hit.content, query, 2);
                 for scored_edge in expanded {
+                    // Record navigation telemetry if available
+                    if let Some(ref t) = telemetry {
+                        t.record_nav_score(scored_edge.policy_score).await;
+                    }
+
                     let edge = scored_edge.edge;
                     expansions.push(ScoredResult {
                         id: format!("belief/{}", edge.id),
@@ -651,7 +666,7 @@ impl AdaptiveGating {
         working: &[MemoryDocument],
         query: &str,
     ) -> Vec<ScoredResult> {
-        self.score_working_layer_at(working, query, chrono::Utc::now())
+        self.score_working_layer_at(working, query, chrono::Utc::now(), None)
             .await
     }
 
@@ -681,6 +696,7 @@ impl AdaptiveGating {
         working: &[MemoryDocument],
         query: &str,
         now: chrono::DateTime<chrono::Utc>,
+        user_id: Option<&str>,
     ) -> Vec<ScoredResult> {
         let query_lower = query.to_lowercase();
         let query_terms_owned: Vec<String> = query_lower
@@ -688,11 +704,21 @@ impl AdaptiveGating {
             .map(|s| s.to_string())
             .collect();
 
+        let mut zone_boost = self.config.zone_boost_multiplier;
+        let mut zone_penalty = self.config.zone_penalty_multiplier;
+
+        if let (Some(booster), Some(uid)) = (&self.zone_booster, user_id) {
+            if let Some(active) = &self.config.active_zones {
+                if let Some(zone) = active.first() {
+                    zone_boost = booster.get_boost(uid, zone.as_str()).await;
+                    zone_penalty = booster.get_penalty(uid, zone.as_str()).await;
+                }
+            }
+        }
+
         let mut results: Vec<ScoredResult> = if working.len() > 100 {
             let working = working.to_vec();
             let active_zones = self.config.active_zones.clone();
-            let zone_boost = self.config.zone_boost_multiplier;
-            let zone_penalty = self.config.zone_penalty_multiplier;
             let recency_weight = self.config.recency_weight;
             let half_life = self.config.half_life_hours;
 
@@ -730,8 +756,8 @@ impl AdaptiveGating {
                             query_lower: &query_lower,
                             query_terms: &query_terms,
                             active_zones: self.config.active_zones.as_ref(),
-                            zone_boost_multiplier: self.config.zone_boost_multiplier,
-                            zone_penalty_multiplier: self.config.zone_penalty_multiplier,
+                            zone_boost_multiplier: zone_boost,
+                            zone_penalty_multiplier: zone_penalty,
                             now,
                             recency_weight: self.config.recency_weight,
                             half_life_hours: self.config.half_life_hours,
@@ -909,7 +935,7 @@ impl AdaptiveGating {
             .filter(|d| d.level != crate::memory::schema::MemoryLevel::Belief)
             .cloned()
             .collect();
-        let level_0_results = self.score_working_layer_at(&working_docs, query, now).await;
+        let level_0_results = self.score_working_layer_at(&working_docs, query, now, None).await;
 
         // Level 1: Entity Graph
         let level_1_results = self.score_semantic_layer_at(semantic, query, now).await;
@@ -1143,7 +1169,7 @@ mod tests {
         ];
 
         let results = gating
-            .score_working_layer_at(&docs, "BELA", chrono::Utc::now())
+            .score_working_layer_at(&docs, "BELA", chrono::Utc::now(), None)
             .await;
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].id, "doc1");
@@ -1247,7 +1273,7 @@ mod tests {
         ];
 
         let results = gating
-            .score_working_layer_at(&docs, "search term", chrono::Utc::now())
+            .score_working_layer_at(&docs, "search term", chrono::Utc::now(), None)
             .await;
 
         assert_eq!(results.len(), 2);
@@ -1294,7 +1320,7 @@ mod tests {
             },
         ];
 
-        let results = gating.score_working_layer_at(&docs, "BELA", now).await;
+        let results = gating.score_working_layer_at(&docs, "BELA", now, None).await;
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].id, "recent");
         assert!(results[0].score > results[1].score);
@@ -1377,7 +1403,7 @@ mod tests {
             .collect();
 
         let parallel_results = gating
-            .score_working_layer_at(&docs, "bela", chrono::Utc::now())
+            .score_working_layer_at(&docs, "bela", chrono::Utc::now(), None)
             .await;
 
         assert_eq!(sequential_results.len(), parallel_results.len());

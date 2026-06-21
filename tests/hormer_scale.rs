@@ -49,7 +49,7 @@ async fn test_hormer_navigation_at_scale() {
             },
         ];
 
-        hormer.update_from_interaction(weights, &results).await;
+        hormer.update_from_interaction(weights, &results, None).await;
 
         // Verify weights remain valid
         let current_weights = hormer.get_weights().await;
