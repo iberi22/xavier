@@ -3,7 +3,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/version-0.10.0--12--06--2026-blue.svg)](https://github.com/iberi22/xavier)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
-[![CI](https://img.shields.io/badge/CI-passing-brightgreen.svg)](https://github.com/iberi22/xavier/actions)
+[![CI](https://github.com/iberi22/xavier/actions/workflows/ci.yml/badge.svg)](https://github.com/iberi22/xavier/actions/workflows/ci.yml)
 
 Xavier is a **Rust-based context engine and memory runtime for AI agents** with HTTP, CLI, MCP, mesh sync, and data-sharing entry points. It stores, retrieves, curates, and exports vector-backed memory over SQLite/SQLite-Vec, while giving agents a common substrate for context recall, code graph queries, session sharing, and local-first coordination.
 
