@@ -65,6 +65,22 @@ impl SupabaseMemoryStore {
         Ok(resp.json().await?)
     }
 
+    pub async fn health_check(&self) -> Result<()> {
+        let url = format!("{}/rest/v1/", self.url);
+        let resp = self.client.get(&url)
+            .header("apikey", &self.key)
+            .header("Authorization", format!("Bearer {}", self.key))
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await?;
+
+        if !resp.status().is_success() {
+            anyhow::bail!("Supabase health check failed: {}", resp.status());
+        }
+
+        Ok(())
+    }
+
     async fn postgrest_upsert<T: serde::Serialize>(&self, table: &str, payload: &T) -> Result<()> {
         let url = format!("{}/rest/v1/{}", self.url, table);
         let resp = self.client.post(&url)
