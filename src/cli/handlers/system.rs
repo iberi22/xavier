@@ -1,6 +1,6 @@
 //! System handlers for health, version, readiness, and build information.
 
-use crate::cli::config::resolve_base_url;
+use crate::cli::config::{require_xavier_token, resolve_base_url};
 use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
 use axum::{extract::State, http::StatusCode, response::Response};
@@ -18,6 +18,63 @@ pub async fn system_alerts_handler() -> Response {
             "alerts": SYSTEM_ALERTS.get_alerts()
         }),
     )
+}
+
+pub async fn handle_health_command(cloud: bool) -> anyhow::Result<()> {
+    let base_url = resolve_base_url();
+    let token = require_xavier_token()?;
+    let client = crate::cli::commands::enums::CLI_HTTP_CLIENT.clone();
+
+    if cloud {
+        let resp = client
+            .get(format!("{}/health/cloud", base_url))
+            .header("X-Xavier-Token", &token)
+            .send()
+            .await?;
+
+        if resp.status().is_success() {
+            let data: xavier::health::CloudHealthResponse = resp.json().await?;
+            println!("═══════════════════════════════════════════");
+            println!("  Cloud Backend Health");
+            println!("═══════════════════════════════════════════");
+            println!("  Supabase:    {}", format_status(&data.supabase));
+            println!("    Detail:    {}", data.supabase.detail);
+            println!("  Postgres:    {}", format_status(&data.postgres));
+            println!("    Detail:    {}", data.postgres.detail);
+            println!("═══════════════════════════════════════════");
+        } else {
+            println!("❌ Failed to fetch cloud health: {}", resp.status());
+        }
+    } else {
+        let resp = client
+            .get(format!("{}/health", base_url))
+            .header("X-Xavier-Token", &token)
+            .send()
+            .await?;
+
+        if resp.status().is_success() {
+            let data: serde_json::Value = resp.json().await?;
+            println!("═══════════════════════════════════════════");
+            println!("  System Health Status");
+            println!("═══════════════════════════════════════════");
+            println!("  Status:      {}", data["status"].as_str().unwrap_or("unknown"));
+            println!("  Version:     {}", data["version"].as_str().unwrap_or("unknown"));
+            println!("═══════════════════════════════════════════");
+        } else {
+            println!("❌ Failed to fetch health status: {}", resp.status());
+        }
+    }
+
+    Ok(())
+}
+
+fn format_status(status: &xavier::health::BackendStatus) -> String {
+    match status.status.as_str() {
+        "healthy" => "✅ Healthy".to_string(),
+        "unhealthy" => "❌ Unhealthy".to_string(),
+        "not configured" => "⚪ Not Configured".to_string(),
+        _ => "❓ Unknown".to_string(),
+    }
 }
 
 #[allow(dead_code)]
@@ -71,6 +128,13 @@ fn calculate_data_dir_size() -> Option<u64> {
         }
     }
     Some(total_size)
+}
+
+pub async fn cloud_health_handler() -> Response {
+    // Use library settings to avoid type mismatch with health check function
+    let settings = xavier::settings::XavierSettings::current();
+    let health = xavier::health::check_cloud_health(&settings).await;
+    json_response(StatusCode::OK, serde_json::to_value(health).unwrap_or_default())
 }
 
 pub async fn version_handler() -> Response {

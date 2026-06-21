@@ -49,6 +49,14 @@ impl PostgresMemoryStore {
         Ok(store)
     }
 
+    pub async fn health_check(&self) -> Result<()> {
+        tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            sqlx::query("SELECT 1").execute(&self.pool)
+        ).await.map_err(|_| anyhow::anyhow!("Postgres health check timed out after 10s"))??;
+        Ok(())
+    }
+
     async fn init_schema(&self) -> Result<()> {
         sqlx::query("CREATE EXTENSION IF NOT EXISTS vector").execute(&self.pool).await.ok();
 
