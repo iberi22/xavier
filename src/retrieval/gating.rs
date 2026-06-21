@@ -1425,6 +1425,7 @@ mod tests {
                 content: "content".to_string(),
                 score: 1.0,
                 source: "working".to_string(),
+                zone: None,
                 ..Default::default()
             },
             ScoredResult {
@@ -1433,6 +1434,7 @@ mod tests {
                 content: "content".to_string(),
                 score: 0.9,
                 source: "working".to_string(),
+                zone: None,
                 ..Default::default()
             },
         ];
@@ -1460,6 +1462,7 @@ mod tests {
                 content: "content".to_string(),
                 score: 1.0,
                 source: "working".to_string(),
+                zone: None,
                 ..Default::default()
             },
         ];
@@ -1493,6 +1496,7 @@ mod tests {
                 content: "Rust".to_string(),
                 score: 1.0,
                 source: "semantic".to_string(),
+                zone: None,
                 ..Default::default()
             },
         ];
