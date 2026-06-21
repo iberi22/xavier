@@ -245,7 +245,11 @@ impl HybridSearcher {
                     source: source.to_string(),
                     path: document.path,
                     updated_at,
-                    zone: None,
+                    zone: document
+                        .metadata
+                        .get("zone")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.to_string()),
                 }
             })
             .collect()

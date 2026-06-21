@@ -93,7 +93,7 @@ pub(crate) enum EmbedderBackendConfig {
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum EmbedderConfig {
+pub enum EmbedderConfig {
     Fallback(Vec<EmbedderBackendConfig>),
     Noop,
 }
@@ -225,13 +225,23 @@ impl EmbedderConfig {
         // Primary: cloud endpoint, Fallback: local endpoint if available
         let mut backends = vec![EmbedderBackendConfig::OpenAICompatible(cloud_config())];
 
+        // Always add GLLM as a fallback if in cloud mode to ensure offline/GPU availability
+        if api_flavor == ApiFlavor::OpenAICompatible {
+            backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
+        }
+
         if local_embedding_signal_present() {
             match api_flavor {
                 ApiFlavor::OpenAICompatible => {
                     backends.push(EmbedderBackendConfig::OpenAICompatible(local_config()));
                 }
                 ApiFlavor::AnthropicCompatible => {
-                    backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
+                    if !backends
+                        .iter()
+                        .any(|b| matches!(b, EmbedderBackendConfig::Gllm(_)))
+                    {
+                        backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
+                    }
                 }
             }
         }
@@ -350,11 +360,15 @@ fn build_backend(config: EmbedderBackendConfig) -> Result<Arc<dyn Embedder>, Emb
             config.dimension,
         )?)),
         EmbedderBackendConfig::OpenAICompatible(config) => {
+            let timeout_secs = crate::settings::XavierSettings::current()
+                .embedding
+                .timeout_secs;
             Ok(Arc::new(openai::OpenAICompatibleEmbedder::new(
                 config.api_key,
                 config.model,
                 config.endpoint,
                 config.dimension,
+                std::time::Duration::from_secs(timeout_secs),
             )?))
         }
     }
@@ -450,7 +464,7 @@ fn embedding_dimension_for_model(model: &str) -> usize {
         "embeddinggemma" => 768,
         "nomic-embed-text" | "nomic-embed-text-v1.5" => 768,
         "all-minilm" => 384,
-        "qwen3-embedding" => 1024,
+        "qwen3-embedding" | "qwen3-embedding-0.6b" => 1024,
         "text-embedding-3-large" => 3072,
         "text-embedding-3-small" | "text-embedding-ada-002" => 1536,
         _ => 768,

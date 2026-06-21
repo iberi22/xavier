@@ -258,6 +258,56 @@ pub enum Command {
         #[command(subcommand)]
         cmd: xavier::maturity::cli::MaturityCommand,
     },
+
+    /// Manage Xavier cloud backends and synchronization
+    Cloud {
+        #[command(subcommand)]
+        cmd: CloudCommand,
+    },
+    /// Show system health status
+    Health {
+        /// Show cloud backends status
+        #[arg(long)]
+        cloud: bool,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum CloudCommand {
+    /// Show cloud backend status, connection, and sync stats
+    Status {
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+    /// Change cloud backend in runtime (persists in config)
+    SetBackend {
+        /// Backend to use: sqlite, vec, supabase, postgres, auto
+        backend: String,
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+    /// Trigger manual synchronization (local -> cloud)
+    Sync {
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+    /// Run a full cloud connection health check
+    Verify {
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+    /// Show system health status
+    Health {
+        /// Show cloud backends status
+        #[arg(long)]
+        cloud: bool,
+    },
 }
 
 /// Navigation and impact analysis subcommands
