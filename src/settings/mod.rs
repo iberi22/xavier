@@ -49,12 +49,12 @@ impl XavierSettings {
 }
 
 #[cfg(test)]
-mod tests {
+pub mod tests {
     use super::validation::non_empty;
     use super::*;
     use std::sync::{LazyLock, Mutex};
 
-    static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+    pub static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     #[test]
     fn test_default_settings() {
