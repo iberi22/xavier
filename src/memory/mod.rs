@@ -19,6 +19,8 @@ pub mod languages;
 pub mod layers_config;
 pub mod manager;
 pub mod pack;
+pub mod postgres_store;
+pub mod supabase_store;
 pub mod qmd;
 pub mod qmd_memory;
 pub mod schema;

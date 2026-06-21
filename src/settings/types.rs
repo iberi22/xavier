@@ -180,6 +180,9 @@ pub struct MemorySettings {
     pub file_path: String,
     pub sqlite_path: String,
     pub vec_path: String,
+    pub supabase_url: Option<String>,
+    pub supabase_key: Option<String>,
+    pub postgres_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

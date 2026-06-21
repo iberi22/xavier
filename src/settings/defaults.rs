@@ -54,6 +54,9 @@ impl Default for MemorySettings {
                 .join("vec-store.sqlite3")
                 .to_string_lossy()
                 .to_string(),
+            supabase_url: None,
+            supabase_key: None,
+            postgres_url: None,
         }
     }
 }
