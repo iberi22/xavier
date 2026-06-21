@@ -135,7 +135,9 @@ pub fn current() -> XavierSettings {
         settings.models.embedding_url = embedding_url;
     }
     if settings.embedding.api_key.is_none() {
-        settings.embedding.api_key = std::env::var("XAVIER_EMBEDDING_API_KEY").ok();
+        settings.embedding.api_key = std::env::var("XAVIER_EMBEDDING_API_KEY")
+            .ok()
+            .or_else(|| std::env::var("XAVIER_OPENROUTER_API_KEY").ok());
     }
     // Retrieval fallbacks
     if settings.retrieval.rrf_k.is_none() {
