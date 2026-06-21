@@ -7,11 +7,16 @@ use anyhow::Result;
 
 pub fn register_sqlite_vec_extension() -> Result<()> {
     unsafe {
+        #[cfg(target_os = "android")]
+        type CharPtr = u8;
+        #[cfg(not(target_os = "android"))]
+        type CharPtr = i8;
+
         let init = std::mem::transmute::<
             *const (),
             unsafe extern "C" fn(
                 *mut rusqlite::ffi::sqlite3,
-                *mut *mut i8,
+                *mut *mut CharPtr,
                 *const rusqlite::ffi::sqlite3_api_routines,
             ) -> i32,
         >(sqlite_vec::sqlite3_vec_init as *const ());
