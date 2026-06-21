@@ -441,6 +441,7 @@ impl AdaptiveGating {
                         source: "semantic_expansion".to_string(),
                         path: format!("beliefs/{}", edge.id),
                         updated_at: Some(edge.updated_at.timestamp_millis()),
+                        zone: None,
                     });
                 }
             }
@@ -1010,6 +1011,7 @@ impl AdaptiveGating {
                             .and_then(|v| v.as_str())
                             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                             .map(|dt| dt.timestamp_millis()),
+                        zone: None,
                     })
                 } else {
                     None
@@ -1423,6 +1425,7 @@ mod tests {
                 content: "content".to_string(),
                 score: 1.0,
                 source: "working".to_string(),
+                zone: None,
                 ..Default::default()
             },
             ScoredResult {
@@ -1431,6 +1434,7 @@ mod tests {
                 content: "content".to_string(),
                 score: 0.9,
                 source: "working".to_string(),
+                zone: None,
                 ..Default::default()
             },
         ];
@@ -1458,6 +1462,7 @@ mod tests {
                 content: "content".to_string(),
                 score: 1.0,
                 source: "working".to_string(),
+                zone: None,
                 ..Default::default()
             },
         ];
@@ -1491,6 +1496,7 @@ mod tests {
                 content: "Rust".to_string(),
                 score: 1.0,
                 source: "semantic".to_string(),
+                zone: None,
                 ..Default::default()
             },
         ];
