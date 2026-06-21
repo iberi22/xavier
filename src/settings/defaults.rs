@@ -149,6 +149,7 @@ impl Default for EmbeddingSettings {
             cache_size: 10_000,
             cache_ttl_hours: 24,
             cache_db_path: "data/embedding_cache.db".to_string(),
+            timeout_secs: 30,
         }
     }
 }

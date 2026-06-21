@@ -264,6 +264,12 @@ pub enum Command {
         #[command(subcommand)]
         cmd: CloudCommand,
     },
+    /// Show system health status
+    Health {
+        /// Show cloud backends status
+        #[arg(long)]
+        cloud: bool,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
@@ -293,6 +299,14 @@ pub enum CloudCommand {
         /// Output in JSON format
         #[arg(long)]
         json: bool,
+    },
+}
+
+    /// Show system health status
+    Health {
+        /// Show cloud backends status
+        #[arg(long)]
+        cloud: bool,
     },
 }
 
