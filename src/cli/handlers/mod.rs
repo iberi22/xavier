@@ -4,6 +4,7 @@
 
 pub mod agent;
 pub mod billing;
+pub mod cloud;
 pub mod sync;
 pub mod system_scan_cli;
 pub mod tasks;

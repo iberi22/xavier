@@ -143,6 +143,7 @@ mod tests {
                     source: "keyword".into(),
                     path: "projects/a".into(),
                     updated_at: Some(1000),
+                    zone: None,
                 },
                 ScoredResult {
                     id: "b".into(),
@@ -151,6 +152,7 @@ mod tests {
                     source: "keyword".into(),
                     path: "projects/b".into(),
                     updated_at: Some(2000),
+                    zone: None,
                 },
                 ScoredResult {
                     id: "c".into(),
@@ -159,6 +161,7 @@ mod tests {
                     source: "keyword".into(),
                     path: "projects/c".into(),
                     updated_at: Some(3000),
+                    zone: None,
                 },
             ],
             vec![
@@ -169,6 +172,7 @@ mod tests {
                     source: "vector".into(),
                     path: "projects/b".into(), // same path as b above — should dedupe, keeping this (more recent)
                     updated_at: Some(2500),
+                    zone: None,
                 },
                 ScoredResult {
                     id: "d".into(),
@@ -177,6 +181,7 @@ mod tests {
                     source: "vector".into(),
                     path: "projects/d".into(),
                     updated_at: Some(4000),
+                    zone: None,
                 },
                 ScoredResult {
                     id: "a2".into(),
@@ -185,6 +190,7 @@ mod tests {
                     source: "vector".into(),
                     path: "projects/a".into(), // same path as a above — should dedupe, keeping this (more recent)
                     updated_at: Some(1500),
+                    zone: None,
                 },
             ],
         ];
@@ -206,6 +212,7 @@ mod tests {
                 source: "keyword".into(),
                 path: "".into(),
                 updated_at: None,
+                zone: None,
             }],
             vec![],
         ];

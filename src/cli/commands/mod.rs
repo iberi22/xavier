@@ -213,6 +213,7 @@ impl Cli {
             Command::Task { cmd } => crate::cli::handlers::tasks::handle_task_command(cmd.clone()).await,
             Command::Sync { cmd: _ } => crate::cli::handlers::sync::handle_sync_command().await,
             Command::Verify { cmd } => verify::handle_verify_command(cmd.clone()).await,
+            Command::Cloud { cmd } => crate::cli::handlers::cloud::handle_cloud_command(cmd.clone()).await,
             Command::Scan { cmd: _ } => {
                 crate::cli::handlers::system_scan_cli::handle_scan_command().await
             }

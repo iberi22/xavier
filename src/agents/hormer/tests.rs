@@ -24,6 +24,7 @@ async fn test_hormer_policy_update_positive() {
             source: "working".to_string(),
             path: "p1".to_string(),
             updated_at: None,
+            zone: None,
         },
         ScoredResult {
             id: "2".to_string(),
@@ -32,6 +33,7 @@ async fn test_hormer_policy_update_positive() {
             source: "episodic".to_string(),
             path: "p2".to_string(),
             updated_at: None,
+            zone: None,
         },
     ];
 
@@ -93,6 +95,7 @@ async fn test_hormer_policy_no_update_on_low_advantage() {
             source: "working".to_string(),
             path: "path1".to_string(),
             updated_at: None,
+            zone: None,
         },
         ScoredResult {
             id: "2".to_string(),
@@ -101,6 +104,7 @@ async fn test_hormer_policy_no_update_on_low_advantage() {
             source: "working".to_string(),
             path: "path2".to_string(),
             updated_at: None,
+            zone: None,
         },
     ];
 

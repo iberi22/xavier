@@ -187,6 +187,7 @@ mod tests {
                 source: "test".into(),
                 path: "path1".into(),
                 updated_at: None,
+                zone: None,
             },
             ScoredResult {
                 id: "2".into(),
@@ -195,6 +196,7 @@ mod tests {
                 source: "test".into(),
                 path: "path2".into(),
                 updated_at: None,
+                zone: None,
             },
         ];
 
