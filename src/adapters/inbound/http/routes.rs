@@ -62,6 +62,7 @@ pub fn create_router() -> Router {
 pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecyclePort>) -> Router {
     let router = Router::new()
         .route("/health", get(health_handler))
+        .route("/health/cloud", get(cloud_health_handler))
         .route("/readiness", get(readiness_handler))
         .route("/build", get(build_handler))
         .route(
@@ -97,6 +98,12 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
         .route("/plugins/sync", post(plugins_sync_handler));
 
     router.with_state(agent_registry)
+}
+
+async fn cloud_health_handler() -> Json<serde_json::Value> {
+    let settings = XavierSettings::current();
+    let health = crate::health::check_cloud_health(&settings).await;
+    Json(serde_json::to_value(health).unwrap_or_default())
 }
 
 async fn health_handler() -> Json<serde_json::Value> {
