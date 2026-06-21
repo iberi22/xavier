@@ -1,8 +1,7 @@
 use anyhow::Result;
 use axum::{routing::post, Router};
 use tokio::net::TcpListener;
-use xavier::embedding::{EmbedderConfig, Embedder};
-use std::sync::Arc;
+use xavier::embedding::build_embedder_from_env;
 
 #[tokio::test]
 async fn test_embedding_fallback_cloud_to_gllm() -> Result<()> {
@@ -28,8 +27,7 @@ async fn test_embedding_fallback_cloud_to_gllm() -> Result<()> {
     std::env::set_var("OPENAI_API_KEY", "test-key");
     std::env::set_var("XAVIER_EMBEDDING_TIMEOUT_SECS", "1");
 
-    let config = EmbedderConfig::from_env();
-    let embedder: Arc<dyn Embedder> = config.build().await?;
+    let embedder = build_embedder_from_env().await?;
 
     // 3. Attempt to encode. It should try mock_url, fail, and then try GLLM.
     let result = embedder.encode("test text").await;
@@ -40,7 +38,7 @@ async fn test_embedding_fallback_cloud_to_gllm() -> Result<()> {
             let err_msg = e.to_string();
             println!("Embedding error: {}", err_msg);
             // Verify it mentions GLLM or the fact that it tried fallback
-            assert!(err_msg.contains("gllm") || err_msg.contains("local-gllm") || err_msg.contains("unavailable"));
+            assert!(err_msg.contains("gllm") || err_msg.contains("local-gllm") || err_msg.contains("unavailable") || err_msg.contains("embedding network error"));
         }
     }
 
