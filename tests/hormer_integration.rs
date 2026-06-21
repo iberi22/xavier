@@ -61,6 +61,7 @@ async fn test_hormer_lifecycle() {
             source: "working".to_string(),
             path: "path1".to_string(),
             updated_at: None,
+            zone: None,
         },
         ScoredResult {
             id: "res2".to_string(),
@@ -69,6 +70,7 @@ async fn test_hormer_lifecycle() {
             source: "episodic".to_string(),
             path: "path2".to_string(),
             updated_at: None,
+            zone: None,
         },
     ];
 
