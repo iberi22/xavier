@@ -501,6 +501,37 @@ pub trait MemoryStore: Send + Sync {
         let all = self.list(workspace_id).await?;
         Ok(MemoryTree::build_ls(all, path))
     }
+
+    // -----------------------------------------------------------------------
+    // Cloud sync methods (default implementations bail with "not supported")
+    // -----------------------------------------------------------------------
+
+    /// Push records newer than last sync to the cloud backend.
+    ///
+    /// Only meaningful when this store IS the local store and has a paired
+    /// cloud store. The default implementation returns Ok with zero counts.
+    async fn push_to_cloud(&self, _workspace_id: &str) -> Result<super::cloud_sync::SyncReport> {
+        anyhow::bail!(
+            "push_to_cloud is not supported by the {} backend",
+            self.backend().as_str()
+        )
+    }
+
+    /// Pull records newer than last sync from the cloud backend.
+    async fn pull_from_cloud(&self, _workspace_id: &str) -> Result<super::cloud_sync::SyncReport> {
+        anyhow::bail!(
+            "pull_from_cloud is not supported by the {} backend",
+            self.backend().as_str()
+        )
+    }
+
+    /// Full bidirectional sync (pull → merge → push).
+    async fn sync_all(&self, _workspace_id: &str) -> Result<super::cloud_sync::SyncReport> {
+        anyhow::bail!(
+            "sync_all is not supported by the {} backend",
+            self.backend().as_str()
+        )
+    }
 }
 
 // ---------------------------------------------------------------------------
