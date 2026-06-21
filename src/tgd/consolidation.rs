@@ -167,6 +167,31 @@ impl TgdConsolidationScheduler {
         }
 
         info!("✅ Scheduled consolidation completed in {}ms", duration.as_millis());
+
+        // Log results to chronicle (via memory document)
+        let date = Utc::now().format("%Y-%m-%d").to_string();
+        let report_content = format!(
+            "# Nightly TGD Consolidation Report\n\n- Date: {}\n- Duration: {}ms\n- Items Processed: {}\n- Memories Refined: {}\n- Avg Improvement: {:.4}\n- Errors: {}\n",
+            date,
+            duration.as_millis(),
+            final_stats.selected,
+            final_stats.memories_refined,
+            final_stats.avg_score_improvement,
+            final_stats.errors
+        );
+
+        let report_path = format!("logs/tgd/report-{}.md", date);
+        self.workspace.workspace.memory.add_document_typed(
+            report_path,
+            report_content,
+            serde_json::json!({
+                "memory_kind": "tgd_report",
+                "date": date,
+                "stats": final_stats
+            }),
+            None
+        ).await?;
+
         Ok(())
     }
 

@@ -22,6 +22,7 @@ pub struct HarvestOutput {
     pub bugs: Vec<MemoryEntry>,
     pub sessions: Vec<SessionInfo>,
     pub code_changes: Vec<CodeChangeInfo>,
+    pub tgd_reports: Vec<MemoryEntry>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -74,6 +75,7 @@ impl Harvester {
         let decisions = self.harvest_memories("decisions/*").await?;
         let bugs = self.harvest_memories("bugs/*").await?;
         let sessions = self.harvest_sessions().await?;
+        let tgd_reports = self.harvest_memories("logs/tgd/*").await?;
 
         let modified_files: HashSet<String> =
             commits.iter().flat_map(|c| c.files.clone()).collect();
@@ -87,6 +89,7 @@ impl Harvester {
             bugs,
             sessions,
             code_changes,
+            tgd_reports,
         };
 
         let chronicle_dir = self.workspace_path.join(".chronicle");
@@ -261,6 +264,7 @@ mod tests {
             bugs: vec![],
             sessions: vec![],
             code_changes: vec![],
+            tgd_reports: vec![],
         };
 
         let json = serde_json::to_string(&output).expect("test assertion");

@@ -34,6 +34,8 @@ pub struct XavierSettings {
     #[serde(default)]
     pub chronicle: ChronicleSettings,
     #[serde(default)]
+    pub tgd: TgdSettings,
+    #[serde(default)]
     pub enterprise: EnterpriseSettings,
     #[serde(default)]
     pub agents: AgentSettings,
@@ -65,6 +67,7 @@ impl fmt::Debug for XavierSettings {
             .field("discord", &self.discord)
             .field("router", &self.router)
             .field("chronicle", &self.chronicle)
+            .field("tgd", &self.tgd)
             .field("enterprise", &self.enterprise)
             .field("agents", &self.agents)
             .field("advanced", &self.advanced)
@@ -106,6 +109,34 @@ impl fmt::Debug for DiscordSettings {
             .field("bot_token", &self.bot_token.as_ref().map(|_| "[REDACTED]"))
             .field("rate_limit_per_min", &self.rate_limit_per_min)
             .finish()
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TgdSettings {
+    pub enabled: bool,
+    pub schedule: String,
+    pub confidence_threshold: f32,
+    pub min_new_history: usize,
+    pub iterations: usize,
+    pub learning_rate: f32,
+    pub refinement_threshold: f32,
+    pub refinement_batch_size: usize,
+}
+
+impl Default for TgdSettings {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            schedule: "0 0 2 * * *".to_string(),
+            confidence_threshold: 0.7,
+            min_new_history: 20,
+            iterations: 3,
+            learning_rate: 0.1,
+            refinement_threshold: 0.6,
+            refinement_batch_size: 5,
+        }
     }
 }
 
