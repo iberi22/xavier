@@ -245,6 +245,7 @@ impl HybridSearcher {
                     source: source.to_string(),
                     path: document.path,
                     updated_at,
+                    zone: None,
                 }
             })
             .collect()

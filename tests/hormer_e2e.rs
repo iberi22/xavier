@@ -62,6 +62,7 @@ async fn test_hormer_full_pipeline_e2e() {
             source: "working".to_string(),
             path: "src/main.rs".to_string(),
             updated_at: None,
+            zone: None,
         }
     ];
 

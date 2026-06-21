@@ -150,6 +150,7 @@ mod tests {
             source: "test".to_string(),
             path: "path".to_string(),
             updated_at: None,
+            zone: None,
         }];
         registry
             .execute_post_query(&query, &mut results)
