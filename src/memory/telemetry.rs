@@ -32,6 +32,7 @@ pub struct TelemetrySummary {
     pub cache_hits: u64,
     pub cache_misses: u64,
     pub avg_retrieval_latency_ms: f64,
+    pub nav_score_histogram: [u64; 10],
 }
 
 /// Core telemetry tracker for navigation operations.
@@ -49,6 +50,7 @@ pub struct NavTelemetry {
     cache_misses: Arc<AtomicU64>,
     total_latency_ms: Arc<AtomicU64>,
     latency_samples: Arc<AtomicU64>,
+    nav_score_histogram: Arc<Mutex<[u64; 10]>>,
 }
 
 impl NavTelemetry {
@@ -63,6 +65,7 @@ impl NavTelemetry {
             cache_misses: Arc::new(AtomicU64::new(0)),
             total_latency_ms: Arc::new(AtomicU64::new(0)),
             latency_samples: Arc::new(AtomicU64::new(0)),
+            nav_score_histogram: Arc::new(Mutex::new([0; 10])),
         }
     }
 
@@ -144,6 +147,7 @@ impl NavTelemetry {
             cache_hits: self.cache_hits.load(Ordering::Relaxed),
             cache_misses: self.cache_misses.load(Ordering::Relaxed),
             avg_retrieval_latency_ms: avg_latency,
+            nav_score_histogram: *self.nav_score_histogram.lock().await,
         }
     }
 
@@ -163,6 +167,14 @@ impl NavTelemetry {
         self.latency_samples.fetch_add(1, Ordering::Relaxed);
     }
 
+    /// Records a navigation score into the histogram.
+    pub async fn record_nav_score(&self, score: f32) {
+        let mut histogram = self.nav_score_histogram.lock().await;
+        let bucket = (score * 10.0).floor() as usize;
+        let bucket = bucket.min(9);
+        histogram[bucket] = histogram[bucket].saturating_add(1);
+    }
+
     /// Resets all telemetry data to zero.
     pub async fn reset(&self) {
         self.visited.lock().await.clear();
@@ -173,6 +185,10 @@ impl NavTelemetry {
         self.cache_misses.store(0, Ordering::Relaxed);
         self.total_latency_ms.store(0, Ordering::Relaxed);
         self.latency_samples.store(0, Ordering::Relaxed);
+        let mut histogram = self.nav_score_histogram.lock().await;
+        for i in 0..10 {
+            histogram[i] = 0;
+        }
     }
 
     /// Returns the total number of unique nodes visited.

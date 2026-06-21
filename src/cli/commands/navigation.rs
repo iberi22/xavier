@@ -175,6 +175,23 @@ pub async fn handle_visualize(
             }
         }
 
+        // Add Telemetry Metrics section to visualize if available
+        if let Some(metrics) = body.get("metrics") {
+            lines.push("\n[Navigation Telemetry]".to_string());
+            lines.push(format!("  Total Visits:     {}", metrics["total_visits"].as_u64().unwrap_or(0)));
+            lines.push(format!("  Unique Nodes:     {}", metrics["unique_nodes"].as_u64().unwrap_or(0)));
+            lines.push(format!("  Avg Path Length:  {:.2}", metrics["avg_path_length"].as_f64().unwrap_or(0.0)));
+            if let Some(hist) = metrics["nav_score_histogram"].as_array() {
+                lines.push("  Nav Score Hist:   ".to_string());
+                let mut hist_str = String::new();
+                for (i, val) in hist.iter().enumerate() {
+                    if i > 0 { hist_str.push_str(", "); }
+                    hist_str.push_str(&format!("{}:{}", i, val.as_u64().unwrap_or(0)));
+                }
+                lines.push(format!("    [{}]", hist_str));
+            }
+        }
+
         output_text = lines.join("\n");
     }
 
