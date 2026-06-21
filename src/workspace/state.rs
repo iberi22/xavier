@@ -59,6 +59,7 @@ pub struct WorkspaceState {
     pub(super) usage_metrics: UsageMetrics,
     pub(super) optimization_metrics: OptimizationMetrics,
     pub hormer: Arc<crate::agents::hormer::Hormer>,
+    pub zone_booster: Arc<crate::retrieval::gating::AdaptiveZoneBooster>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -193,9 +194,10 @@ impl WorkspaceState {
             settings.retrieval.learned_policy.learning_rate,
         )));
 
+        let zone_booster = Arc::new(crate::retrieval::gating::AdaptiveZoneBooster::new());
         let hormer = Arc::new(crate::agents::hormer::Hormer::new(Arc::clone(
             &navigation_policy,
-        )));
+        )).with_booster(Arc::clone(&zone_booster)));
 
         let state = Self {
             runtime: Arc::new(
@@ -223,6 +225,7 @@ impl WorkspaceState {
             usage_metrics: UsageMetrics::new(),
             optimization_metrics: OptimizationMetrics::new(),
             hormer,
+            zone_booster,
         };
 
         crate::scheduler::daemon::MemoryDaemon::new(Arc::clone(&state.memory_manager)).spawn();
@@ -737,7 +740,8 @@ impl WorkspaceState {
         let conversations_db = Arc::new(ConversationsDb::open("minimal").await.expect("failed to open minimal conversations_db"));
 
         let navigation_policy = Arc::new(RwLock::new(crate::retrieval::NavigationPolicy::with_defaults()));
-        let hormer = Arc::new(crate::agents::hormer::Hormer::new(navigation_policy));
+        let zone_booster = Arc::new(crate::retrieval::gating::AdaptiveZoneBooster::new());
+        let hormer = Arc::new(crate::agents::hormer::Hormer::new(navigation_policy).with_booster(Arc::clone(&zone_booster)));
 
         #[cfg(any(test, feature = "test-utils"))]
         let runtime = Arc::new(AgentRuntime::new_test());
@@ -774,6 +778,7 @@ impl WorkspaceState {
             usage_metrics: UsageMetrics::new(),
             optimization_metrics: OptimizationMetrics::new(),
             hormer,
+            zone_booster,
         }
     }
 }

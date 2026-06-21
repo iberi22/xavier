@@ -92,6 +92,7 @@ pub fn score_single_working(
             source: "working".to_string(),
             path: doc.path.clone(),
             updated_at: updated_at_ms,
+            zone: Some(doc_zone.as_str().to_string()),
         })
     } else {
         None
