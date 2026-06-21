@@ -24,7 +24,10 @@
     "workspace_dir": "data/workspaces",
     "file_path": "data/workspaces/default/memory-store.json",
     "sqlite_path": "data/memory-store.sqlite3",
-    "vec_path": "data/vec-store.sqlite3"
+    "vec_path": "data/vec-store.sqlite3",
+    "supabase_url": null,
+    "supabase_key": null,
+    "postgres_url": null
   },
   "memory_layers": {
     "working": {
