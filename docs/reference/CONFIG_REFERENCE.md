@@ -99,6 +99,42 @@ Controls LLM and embedding model configuration.
 
 ---
 
+## Section: `embedding` — EmbeddingSettings
+
+Controls advanced embedding configuration and caching.
+
+| JSON Key | Type | Default | Config File Override | Env Var | Description |
+|----------|------|---------|---------------------|---------|-------------|
+| `endpoint` | `string` | `""` | _default_ | `XAVIER_EMBEDDING_URL` | Embedding API endpoint |
+| `api_key` | `string?` | `null` | _default_ | `XAVIER_EMBEDDING_API_KEY`, `XAVIER_OPENROUTER_API_KEY` | API key for embeddings (OpenRouter compatible) |
+| `cache_enabled` | `bool` | `true` | `true` | `XAVIER_EMBEDDING_CACHE_ENABLED` | Enable persistent embedding cache |
+
+### Configuring OpenRouter for Embeddings
+
+To use OpenRouter for embeddings, configure the following in `config/xavier.config.json`:
+
+```json
+{
+  "models": {
+    "embedding_url": "https://openrouter.ai/api/v1/embeddings",
+    "embedding_model": "text-embedding-3-small"
+  },
+  "embedding": {
+    "api_key": "sk-or-v1-your-key-here"
+  }
+}
+```
+
+Alternatively, use environment variables:
+
+```bash
+export XAVIER_EMBEDDING_URL=https://openrouter.ai/api/v1/embeddings
+export XAVIER_EMBEDDING_MODEL=text-embedding-3-small
+export XAVIER_OPENROUTER_API_KEY=sk-or-v1-your-key-here
+```
+
+---
+
 ## Section: `retrieval` — RetrievalSettings
 
 Controls retrieval behavior.
@@ -192,6 +228,7 @@ This is the full mapping applied by `apply_to_env()`:
 | `models.local_llm_model` | `XAVIER_LOCAL_LLM_MODEL` |
 | `models.embedding_url` | `XAVIER_EMBEDDING_URL` |
 | `models.embedding_model` | `XAVIER_EMBEDDING_MODEL` |
+| `embedding.api_key` | `XAVIER_EMBEDDING_API_KEY`, `XAVIER_OPENROUTER_API_KEY` |
 | `models.router_retrieved_model` | `XAVIER_ROUTER_RETRIEVED_MODEL` |
 | `models.router_complex_model` | `XAVIER_ROUTER_COMPLEX_MODEL` |
 | `retrieval.disable_hyde` | `XAVIER_DISABLE_HYDE` |

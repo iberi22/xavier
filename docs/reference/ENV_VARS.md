@@ -95,7 +95,8 @@
 | `XAVIER_EMBEDDING_URL` | `string` | `models.embedding_url` | `"http://localhost:11434/v1"` | ❌ | Primary embedding endpoint URL |
 | `XAVIER_EMBEDDING_ENDPOINT` | `string` | — | (same as EMBEDDING_URL) | ❌ | Alternative embedding endpoint (takes precedence if set) |
 | `XAVIER_EMBEDDING_MODEL` | `string` | `models.embedding_model` | `"embeddinggemma"` | ❌ | Embedding model name |
-| `XAVIER_EMBEDDING_API_KEY` | `string` | — | (none) | ❌ | API key for embedding provider |
+| `XAVIER_EMBEDDING_API_KEY` | `string` | `embedding.api_key` | (none) | ❌ | API key for embedding provider |
+| `XAVIER_OPENROUTER_API_KEY` | `string` | `embedding.api_key` | (none) | ❌ | OpenRouter-specific API key for embeddings |
 | `XAVIER_EMBEDDING_API_FLAVOR` | `string` | — | `"openai-compatible"` | ❌ | API flavor: `openai-compatible`, `anthropic-compatible` |
 | `XAVIER_EMBEDDER` | `string` | — | — | ❌ | Legacy embedder selection |
 
