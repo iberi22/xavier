@@ -1,10 +1,10 @@
-﻿name: CI
+name: Xavier CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   pull_request:
-    branches: [main, develop]
+    branches: [main]
   workflow_dispatch:
 
 env:
@@ -15,6 +15,7 @@ jobs:
   fmt:
     name: Format (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -33,6 +34,7 @@ jobs:
   panel-check:
     name: Panel Check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node
@@ -54,6 +56,7 @@ jobs:
   check:
     name: Check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -70,6 +73,7 @@ jobs:
   enterprise-check:
     name: Enterprise Check
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
@@ -82,6 +86,7 @@ jobs:
   clippy:
     name: Clippy (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -98,6 +103,7 @@ jobs:
   test:
     name: Test (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -108,7 +114,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-tarpaulin
         if: runner.os == 'Linux'
-        run: cargo install cargo-tarpaulin --locked
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-tarpaulin
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
       - name: Run tests
@@ -128,6 +136,7 @@ jobs:
   build:
     name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -144,6 +153,7 @@ jobs:
   panel-e2e:
     name: Panel E2E
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [panel-check]
     env:
       XAVIER_TOKEN: dev-token
@@ -202,6 +212,7 @@ jobs:
   release-smoke:
     name: Release Smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: [panel-check, fmt, check, clippy, test, build, panel-e2e]
     env:
       XAVIER_TOKEN: dev-token
