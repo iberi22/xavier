@@ -54,12 +54,14 @@ pub async fn memory_retrieve(
             .unwrap_or(crate::retrieval::config::DEFAULT_CACHE_WARMING_THRESHOLD),
     };
 
-    let gating = if payload.layer_weights.is_some() {
+    let mut gating = if payload.layer_weights.is_some() {
         AdaptiveGating::new(gating_config)
     } else {
         AdaptiveGating::with_policy(gating_config, workspace.workspace.hormer.policy().clone())
-    }
-    .with_memory(Arc::clone(&workspace.workspace.memory));
+    };
+    gating = gating
+        .with_memory(Arc::clone(&workspace.workspace.memory))
+        .with_booster(Arc::clone(&workspace.workspace.zone_booster));
     let working_docs = workspace.workspace.memory.all_documents().await;
     let threads = workspace
         .workspace
@@ -79,12 +81,14 @@ pub async fn memory_retrieve(
         .collect::<Vec<_>>();
     let semantic_entities = workspace.workspace.entity_graph.all_entities().await;
     let results = gating
-        .retrieve(
+        .retrieve_with_telemetry(
             &working_docs,
             &episodic_summaries,
             &semantic_entities,
             &payload.query,
             Some(std::sync::Arc::clone(&workspace.workspace.belief_graph)),
+            None,
+            Some(workspace.workspace_id.clone()), // Use workspace_id as user_id for session adaptation
         )
         .await;
 
@@ -94,7 +98,7 @@ pub async fn memory_retrieve(
         workspace
             .workspace
             .hormer
-            .update_from_interaction(weights_used, &results)
+            .update_from_interaction(weights_used, &results, Some(&workspace.workspace_id))
             .await;
     } else {
         workspace.workspace.hormer.record_non_navigated();

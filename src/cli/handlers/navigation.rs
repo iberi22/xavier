@@ -218,6 +218,8 @@ pub async fn visualize_handler(Extension(ctx): Extension<WorkspaceContext>) -> i
             .collect()
     };
 
+    let summary = telemetry.get_summary().await;
+
     Json(json!({
         "status": "ok",
         "workspace_id": ctx.workspace_id,
@@ -231,6 +233,13 @@ pub async fn visualize_handler(Extension(ctx): Extension<WorkspaceContext>) -> i
         "traversal_weights": traversal_weights,
         "hotspots": hotspots,
         "hormer_scores": hormer_scores,
+        "metrics": {
+            "total_visits": summary.total_visits,
+            "unique_nodes": summary.unique_nodes,
+            "avg_path_length": summary.avg_path_length,
+            "total_paths": summary.total_paths,
+            "nav_score_histogram": summary.nav_score_histogram,
+        }
     }))
 }
 
@@ -252,6 +261,7 @@ pub async fn telemetry_handler(
                 "unique_nodes": summary.unique_nodes,
                 "avg_path_length": summary.avg_path_length,
                 "total_paths": summary.total_paths,
+                "nav_score_histogram": summary.nav_score_histogram,
             }
         }))
         .into_response()

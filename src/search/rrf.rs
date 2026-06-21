@@ -16,6 +16,8 @@ pub struct ScoredResult {
     pub path: String,
     #[serde(default)]
     pub updated_at: Option<i64>, // Unix timestamp ms for deduplication
+    #[serde(default)]
+    pub zone: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -26,6 +28,7 @@ struct FusedScore {
     source: String,
     path: String,
     updated_at: Option<i64>,
+    zone: Option<String>,
     total_rrf: f32,
     total_weight: f32,
 }
@@ -40,6 +43,7 @@ impl FusedScore {
             source: result.source.clone(),
             path: result.path.clone(),
             updated_at: result.updated_at,
+            zone: result.zone.clone(),
             total_rrf: contribution,
             total_weight: weight,
         }
@@ -63,6 +67,7 @@ impl FusedScore {
             source: "hybrid".to_string(),
             path: self.path,
             updated_at: self.updated_at,
+            zone: self.zone,
         }
     }
 }
@@ -98,6 +103,7 @@ pub fn reciprocal_rank_fusion_weighted(
                         entry.content = result.content.clone();
                         entry.source = result.source.clone();
                         entry.updated_at = result.updated_at;
+                        entry.zone = result.zone.clone();
                     }
                 })
                 .or_insert_with(|| FusedScore::new(&result, contribution, weight));

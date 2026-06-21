@@ -65,7 +65,7 @@ async fn test_hormer_full_pipeline_e2e() {
         }
     ];
 
-    hormer.update_from_interaction(weights_used, &interaction_results).await;
+    hormer.update_from_interaction(weights_used, &interaction_results, None).await;
 
     // 5. Verify Policy Update
     let updated_weights = gating.effective_weights().await;

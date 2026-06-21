@@ -74,7 +74,7 @@ async fn test_hormer_lifecycle() {
 
     // Use different weights for the interaction to ensure normalization causes a shift
     let used_weights = LayerWeights::new(0.6, 0.2, 0.2);
-    hormer.update_from_interaction(used_weights, &mock_results).await;
+    hormer.update_from_interaction(used_weights, &mock_results, None).await;
 
     let updated_weights = gating.effective_weights().await;
     assert!(policy.read().await.update_count > 0);

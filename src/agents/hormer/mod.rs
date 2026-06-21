@@ -31,6 +31,8 @@ pub struct Hormer {
     score_histogram: Arc<RwLock<[u64; 10]>>,
     /// Navigation telemetry: node hotspots, path counts, avg path length.
     telemetry: Arc<NavTelemetry>,
+    /// Optional booster to record feedback
+    zone_booster: Option<Arc<crate::retrieval::gating::AdaptiveZoneBooster>>,
 }
 
 impl Hormer {
@@ -43,7 +45,14 @@ impl Hormer {
             non_navigated_queries: AtomicU64::new(0),
             score_histogram: Arc::new(RwLock::new([0; 10])),
             telemetry: Arc::new(NavTelemetry::new()),
+            zone_booster: None,
         }
+    }
+
+    /// Set the zone booster for feedback recording
+    pub fn with_booster(mut self, booster: Arc<crate::retrieval::gating::AdaptiveZoneBooster>) -> Self {
+        self.zone_booster = Some(booster);
+        self
     }
 
     /// Returns a reference to the shared navigation policy.
@@ -98,11 +107,22 @@ impl Hormer {
     /// 2. Evaluate the reward using the `RewardModel`.
     /// 3. Calculate "advantage" relative to a baseline (0.5).
     /// 4. If advantage is significant, update policy weights and persist to settings.
-    pub async fn update_from_interaction(&self, weights_used: LayerWeights, results: &[ScoredResult]) {
+    pub async fn update_from_interaction(&self, weights_used: LayerWeights, results: &[ScoredResult], user_id: Option<&str>) {
         self.update_metrics(results).await;
         if results.is_empty() {
             return;
         }
+
+        // Record feedback to the adaptive zone booster if we have a user_id
+        if let (Some(booster), Some(uid)) = (&self.zone_booster, user_id) {
+            if let Some(top_res) = results.first() {
+                // If the top result carries a zone, record feedback for it
+                if let Some(ref zone) = top_res.zone {
+                    booster.record_feedback(uid, zone, top_res.score > 0.6, top_res.score).await;
+                }
+            }
+        }
+
         let reward = self.reward_model.calculate_reward(results);
 
         // Simplified Advantage calculation:

@@ -36,7 +36,7 @@ async fn test_hormer_policy_update_positive() {
     ];
 
     let initial_count = policy.read().await.update_count;
-    hormer.update_from_interaction(initial_weights, &results).await;
+    hormer.update_from_interaction(initial_weights, &results, None).await;
 
     let updated_policy = policy.read().await;
     assert_eq!(updated_policy.update_count, initial_count + 1);
@@ -105,7 +105,7 @@ async fn test_hormer_policy_no_update_on_low_advantage() {
     ];
 
     let initial_count = policy.read().await.update_count;
-    hormer.update_from_interaction(initial_weights, &results).await;
+    hormer.update_from_interaction(initial_weights, &results, None).await;
 
     let updated_policy = policy.read().await;
     assert_eq!(updated_policy.update_count, initial_count);
@@ -122,7 +122,7 @@ async fn test_hormer_no_results_no_update() {
     let hormer = Hormer::new(Arc::clone(&policy));
 
     let results = vec![];
-    hormer.update_from_interaction(initial_weights, &results).await;
+    hormer.update_from_interaction(initial_weights, &results, None).await;
 
     let updated_policy = policy.read().await;
     assert_eq!(updated_policy.update_count, 0);
