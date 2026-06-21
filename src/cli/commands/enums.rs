@@ -302,14 +302,6 @@ pub enum CloudCommand {
     },
 }
 
-    /// Show system health status
-    Health {
-        /// Show cloud backends status
-        #[arg(long)]
-        cloud: bool,
-    },
-}
-
 /// Navigation and impact analysis subcommands
 #[derive(Subcommand, Debug, Clone)]
 pub enum NavCommand {
