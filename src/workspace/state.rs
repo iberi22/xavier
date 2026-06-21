@@ -29,6 +29,8 @@ use crate::memory::{
     semantic::SemanticMemory,
     sqlite_store::SqliteMemoryStore,
     sqlite_vec_store::VecSqliteMemoryStore,
+    postgres_store::PostgresMemoryStore,
+    supabase_store::SupabaseMemoryStore,
     store::{MemoryBackend, MemoryRecord, MemoryStore, SessionTokenRecord},
 };
 use chrono::{DateTime, Duration, Utc};
@@ -118,6 +120,14 @@ impl WorkspaceState {
                 )
                 .await?;
                 (store, migration.migrated, migration.detail)
+            }
+            MemoryBackend::Postgres => {
+                let store: Arc<dyn MemoryStore> = Arc::new(PostgresMemoryStore::from_env().await?);
+                (store, false, "postgres backend".to_string())
+            }
+            MemoryBackend::Supabase => {
+                let store: Arc<dyn MemoryStore> = Arc::new(SupabaseMemoryStore::from_env().await?);
+                (store, false, "supabase backend".to_string())
             }
         };
         let durable_state = store.load_workspace_state(&config.id).await?;
