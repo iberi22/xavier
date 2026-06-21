@@ -441,6 +441,7 @@ impl AdaptiveGating {
                         source: "semantic_expansion".to_string(),
                         path: format!("beliefs/{}", edge.id),
                         updated_at: Some(edge.updated_at.timestamp_millis()),
+                        zone: None,
                     });
                 }
             }
@@ -1010,6 +1011,7 @@ impl AdaptiveGating {
                             .and_then(|v| v.as_str())
                             .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
                             .map(|dt| dt.timestamp_millis()),
+                        zone: None,
                     })
                 } else {
                     None
