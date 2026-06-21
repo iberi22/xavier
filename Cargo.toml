@@ -33,7 +33,7 @@ name = "xavier"
 path = "src/lib.rs"
 
 [workspace]
-members = ["code-graph", "panel-ui/src-tauri", "xavier-core"]
+members = ["clients/flutter_android/rust","code-graph", "panel-ui/src-tauri", "xavier-core"]
 
 [features]
 default = ["cli-interactive"]
