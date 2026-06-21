@@ -289,6 +289,16 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
         non_empty(&settings.chronicle.model),
     );
 
+    // TGD settings
+    set_if_absent("XAVIER_TGD_ENABLED", if settings.tgd.enabled { "true" } else { "false" });
+    set_if_absent("XAVIER_TGD_SCHEDULE", &settings.tgd.schedule);
+    set_if_absent("XAVIER_TGD_CONFIDENCE_THRESHOLD", &settings.tgd.confidence_threshold.to_string());
+    set_if_absent("XAVIER_TGD_MIN_NEW_HISTORY", &settings.tgd.min_new_history.to_string());
+    set_if_absent("XAVIER_TGD_ITERATIONS", &settings.tgd.iterations.to_string());
+    set_if_absent("XAVIER_TGD_LEARNING_RATE", &settings.tgd.learning_rate.to_string());
+    set_if_absent("XAVIER_TGD_REFINEMENT_THRESHOLD", &settings.tgd.refinement_threshold.to_string());
+    set_if_absent("XAVIER_TGD_REFINEMENT_BATCH_SIZE", &settings.tgd.refinement_batch_size.to_string());
+
     // Enterprise settings
     set_if_absent("XAVIER_ENTERPRISE_DB_PATH", &settings.enterprise.db_path);
 

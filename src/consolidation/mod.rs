@@ -49,6 +49,7 @@ pub struct ConsolidationTask {
 
 impl Default for ConsolidationTask {
     fn default() -> Self {
+        let settings = crate::settings::XavierSettings::current();
         Self {
             batch_size: 32,
             similarity_threshold: 0.88,
@@ -57,12 +58,12 @@ impl Default for ConsolidationTask {
             reflection_batch_size: 8,
             reflection_age_days: 30,
             cleanup_similarity_threshold: 0.91,
-            enable_tgd_in_consolidation: true,
-            tgd_min_new_history: 20,
-            tgd_iterations: 3,
-            tgd_learning_rate: 0.1,
-            tgd_refinement_threshold: 0.6,
-            tgd_refinement_batch_size: 5,
+            enable_tgd_in_consolidation: settings.tgd.enabled,
+            tgd_min_new_history: settings.tgd.min_new_history,
+            tgd_iterations: settings.tgd.iterations,
+            tgd_learning_rate: settings.tgd.learning_rate,
+            tgd_refinement_threshold: settings.tgd.refinement_threshold,
+            tgd_refinement_batch_size: settings.tgd.refinement_batch_size,
         }
     }
 }
@@ -256,25 +257,37 @@ impl ConsolidationTask {
             .memory_manager
             .get_all_memories()
             .await?;
-        let recent_count = memories
+        let recent: Vec<_> = memories
             .iter()
             .filter(|m| {
                 let age = merger::age_days(m.last_access, m.created_at);
                 age < 1.0 // less than 1 day old
             })
-            .count();
+            .collect();
 
-        if recent_count < self.tgd_min_new_history {
+        if recent.len() < self.tgd_min_new_history {
             info!(
                 "⏭️ TGD in consolidation: skipped ({} recent memories < {} min)",
-                recent_count, self.tgd_min_new_history
+                recent.len(), self.tgd_min_new_history
+            );
+            return Ok(());
+        }
+
+        // Trigger TGD run in consolidation pipeline when confidence (avg quality) < threshold
+        let avg_quality = recent.iter().map(|m| m.quality.overall).sum::<f32>() / recent.len() as f32;
+        let threshold = engine.config().confidence_threshold;
+
+        if avg_quality >= threshold {
+            info!(
+                "⏭️ TGD in consolidation: skipped (Avg quality {:.2} >= threshold {:.2})",
+                avg_quality, threshold
             );
             return Ok(());
         }
 
         info!(
-            "🧠 TGD in consolidation: starting with {} recent memories",
-            recent_count
+            "🧠 TGD in consolidation: starting with {} recent memories (Avg quality {:.2} < threshold {:.2})",
+            recent.len(), avg_quality, threshold
         );
 
         // Build empty history/context to signal TGD to analyze recent memory deltas
