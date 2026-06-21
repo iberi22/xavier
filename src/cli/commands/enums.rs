@@ -258,6 +258,13 @@ pub enum Command {
         #[command(subcommand)]
         cmd: xavier::maturity::cli::MaturityCommand,
     },
+
+    /// Show system health status
+    Health {
+        /// Show cloud backends status
+        #[arg(long)]
+        cloud: bool,
+    },
 }
 
 /// Navigation and impact analysis subcommands

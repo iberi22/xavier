@@ -260,6 +260,9 @@ impl Cli {
             Command::Maturity { cmd } => {
                 xavier::maturity::cli::handle_maturity_command(cmd.clone()).await
             }
+            Command::Health { cloud } => {
+                crate::cli::handlers::system::handle_health_command(*cloud).await
+            }
         }
     }
 }

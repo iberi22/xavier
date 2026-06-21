@@ -88,6 +88,18 @@ pub enum CheckStatus {
     Fail,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CloudHealthResponse {
+    pub supabase: BackendStatus,
+    pub postgres: BackendStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BackendStatus {
+    pub status: String,
+    pub detail: String,
+}
+
 /// Internal mutable health state
 #[derive(Debug)]
 pub struct HealthState {
@@ -194,6 +206,70 @@ pub async fn collect_health(settings: &XavierSettings, db: Option<&rusqlite::Con
             .await
             .unwrap_or((0.0, 0, 0, 0.0, 0.0));
     collect_health_impl(settings, db, cpu, mem_used, mem_total, disk_used, disk_total).await
+}
+
+pub async fn check_cloud_health(settings: &XavierSettings) -> CloudHealthResponse {
+    let mut supabase_status = BackendStatus {
+        status: "not configured".to_string(),
+        detail: "Supabase URL or Key not set".to_string(),
+    };
+
+    let has_supabase = (std::env::var("XAVIER_SUPABASE_URL").is_ok() || settings.memory.supabase_url.is_some()) &&
+                       (std::env::var("XAVIER_SUPABASE_KEY").is_ok() || settings.memory.supabase_key.is_some());
+
+    if has_supabase {
+        match crate::memory::supabase_store::SupabaseMemoryStore::from_env().await {
+            Ok(store) => {
+                match store.health_check().await {
+                    Ok(_) => {
+                        supabase_status.status = "healthy".to_string();
+                        supabase_status.detail = "Connected to Supabase".to_string();
+                    }
+                    Err(e) => {
+                        supabase_status.status = "unhealthy".to_string();
+                        supabase_status.detail = e.to_string();
+                    }
+                }
+            }
+            Err(e) => {
+                supabase_status.status = "unhealthy".to_string();
+                supabase_status.detail = format!("Failed to initialize Supabase store: {}", e);
+            }
+        }
+    }
+
+    let mut postgres_status = BackendStatus {
+        status: "not configured".to_string(),
+        detail: "Postgres URL not set".to_string(),
+    };
+
+    let has_postgres = std::env::var("XAVIER_POSTGRES_URL").is_ok() || settings.memory.postgres_url.is_some();
+
+    if has_postgres {
+        match crate::memory::postgres_store::PostgresMemoryStore::from_env().await {
+            Ok(store) => {
+                match store.health_check().await {
+                    Ok(_) => {
+                        postgres_status.status = "healthy".to_string();
+                        postgres_status.detail = "Connected to Postgres".to_string();
+                    }
+                    Err(e) => {
+                        postgres_status.status = "unhealthy".to_string();
+                        postgres_status.detail = e.to_string();
+                    }
+                }
+            }
+            Err(e) => {
+                postgres_status.status = "unhealthy".to_string();
+                postgres_status.detail = format!("Failed to initialize Postgres store: {}", e);
+            }
+        }
+    }
+
+    CloudHealthResponse {
+        supabase: supabase_status,
+        postgres: postgres_status,
+    }
 }
 
 /// Run a health check and return a structured response

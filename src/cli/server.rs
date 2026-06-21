@@ -635,6 +635,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
 
     let app = Router::new()
         .route("/health", get(health_handler))
+        .route("/health/cloud", get(cloud_health_handler))
         .route(
             "/system/alerts",
             get(crate::cli::handlers::system::system_alerts_handler),
