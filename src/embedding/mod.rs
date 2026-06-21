@@ -93,7 +93,7 @@ pub(crate) enum EmbedderBackendConfig {
 }
 
 #[derive(Clone, Debug)]
-pub enum EmbedderConfig {
+pub(crate) enum EmbedderConfig {
     Fallback(Vec<EmbedderBackendConfig>),
     Noop,
 }
