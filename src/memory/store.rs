@@ -27,6 +27,7 @@ use crate::utils::crypto::hex_encode;
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum MemoryBackend {
+    Auto,
     File,
     Memory,
     Sqlite,
@@ -38,6 +39,7 @@ pub enum MemoryBackend {
 impl MemoryBackend {
     pub fn from_env(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
+            "auto" => Self::Auto,
             "memory" => Self::Memory,
             "sqlite" => Self::Sqlite,
             "vec" | "sqlite-vec" => Self::Vec,
@@ -50,6 +52,7 @@ impl MemoryBackend {
 
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::Auto => "auto",
             Self::File => "file",
             Self::Memory => "memory",
             Self::Sqlite => "sqlite",

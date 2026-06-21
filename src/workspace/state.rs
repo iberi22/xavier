@@ -12,6 +12,7 @@ use tokio::sync::{broadcast, Mutex, RwLock};
 
 use super::config::WorkspaceConfig;
 use super::ops::*;
+use crate::settings::XavierSettings;
 use super::usage::{
     EmbeddingProviderSnapshot, OptimizationMetrics, OptimizationUsageSnapshot, SyncPolicySnapshot,
     UsageCountersSnapshot, UsageEvent, UsageMetrics, WorkspaceLimitsSnapshot,
@@ -40,6 +41,49 @@ pub struct SessionToken {
     pub token: String,
     pub created_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
+}
+
+async fn detect_cloud_backend() -> MemoryBackend {
+    let settings = XavierSettings::current();
+
+    // 1. Postgres / Neon detection (connection test)
+    let pg_url = std::env::var("XAVIER_POSTGRES_URL")
+        .ok()
+        .or_else(|| settings.memory.postgres_url.clone());
+
+    if let Some(url) = pg_url {
+        tracing::debug!("testing postgres connection for auto-backend...");
+        let options = sqlx::postgres::PgPoolOptions::new()
+            .max_connections(1)
+            .acquire_timeout(std::time::Duration::from_secs(2));
+
+        match options.connect(&url).await {
+            Ok(_) => {
+                tracing::info!("auto-detected postgres backend");
+                return MemoryBackend::Postgres;
+            }
+            Err(e) => {
+                tracing::debug!("postgres auto-detection failed: {}", e);
+            }
+        }
+    }
+
+    // 2. Supabase detection (env vars check)
+    let supabase_url = std::env::var("XAVIER_SUPABASE_URL")
+        .ok()
+        .or_else(|| settings.memory.supabase_url.clone());
+    let supabase_key = std::env::var("XAVIER_SUPABASE_KEY")
+        .ok()
+        .or_else(|| settings.memory.supabase_key.clone());
+
+    if supabase_url.is_some() && supabase_key.is_some() {
+        tracing::info!("auto-detected supabase backend");
+        return MemoryBackend::Supabase;
+    }
+
+    // 3. Fallback to SQLite (vec)
+    tracing::info!("falling back to local sqlite (vec) backend");
+    MemoryBackend::Vec
 }
 
 pub struct WorkspaceState {
@@ -75,7 +119,7 @@ pub struct PersistedUsageState {
 
 impl WorkspaceState {
     pub async fn new(
-        config: WorkspaceConfig,
+        mut config: WorkspaceConfig,
         runtime_config: RuntimeConfig,
         workspace_root: impl Into<PathBuf>,
     ) -> Result<Self> {
@@ -84,11 +128,17 @@ impl WorkspaceState {
         let usage_state_path = workspace_root.join("usage.json");
         let file_store_path = resolve_file_store_path(&workspace_root);
         let migration_marker_path = durable_migration_marker_path(&file_store_path);
+
+        if config.memory_backend == MemoryBackend::Auto {
+            config.memory_backend = detect_cloud_backend().await;
+        }
+
         let (store, store_migrated_from_file, store_migration_detail): (
             Arc<dyn MemoryStore>,
             bool,
             String,
         ) = match config.memory_backend {
+            MemoryBackend::Auto => unreachable!("auto backend should have been resolved"),
             MemoryBackend::File => (
                 Arc::new(FileMemoryStore::new(file_store_path.clone()).await?),
                 false,
@@ -185,7 +235,7 @@ impl WorkspaceState {
         let conversations_db = Arc::new(ConversationsDb::open(&config.id).await?);
         conversations_db.create_schema().await?;
 
-        let settings = crate::settings::XavierSettings::current();
+        let settings = XavierSettings::current();
         let navigation_policy = Arc::new(RwLock::new(crate::retrieval::NavigationPolicy::new(
             LayerWeights::new(
                 settings.retrieval.learned_policy.working_weight,
@@ -794,3 +844,77 @@ impl WorkspaceState {
 }
 
 use crate::memory::store::{FileMemoryStore, InMemoryMemoryStore};
+
+#[cfg(test)]
+mod auto_detect_tests {
+    use super::*;
+    use crate::memory::store::MemoryBackend;
+    use std::sync::Mutex;
+    use std::sync::LazyLock;
+
+    static SERIAL_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+    #[tokio::test]
+    async fn test_detect_cloud_backend_fallback() {
+        let _guard = SERIAL_LOCK.lock().unwrap();
+        let old_pg = std::env::var("XAVIER_POSTGRES_URL").ok();
+        let old_sb_url = std::env::var("XAVIER_SUPABASE_URL").ok();
+        let old_sb_key = std::env::var("XAVIER_SUPABASE_KEY").ok();
+
+        std::env::remove_var("XAVIER_POSTGRES_URL");
+        std::env::remove_var("XAVIER_SUPABASE_URL");
+        std::env::remove_var("XAVIER_SUPABASE_KEY");
+
+        let backend = detect_cloud_backend().await;
+        assert_eq!(backend, MemoryBackend::Vec);
+
+        if let Some(v) = old_pg { std::env::set_var("XAVIER_POSTGRES_URL", v); }
+        if let Some(v) = old_sb_url { std::env::set_var("XAVIER_SUPABASE_URL", v); }
+        if let Some(v) = old_sb_key { std::env::set_var("XAVIER_SUPABASE_KEY", v); }
+    }
+
+    #[tokio::test]
+    async fn test_detect_cloud_backend_supabase() {
+        let _guard = SERIAL_LOCK.lock().unwrap();
+        let old_pg = std::env::var("XAVIER_POSTGRES_URL").ok();
+        let old_sb_url = std::env::var("XAVIER_SUPABASE_URL").ok();
+        let old_sb_key = std::env::var("XAVIER_SUPABASE_KEY").ok();
+
+        std::env::remove_var("XAVIER_POSTGRES_URL");
+        std::env::set_var("XAVIER_SUPABASE_URL", "https://example.supabase.co");
+        std::env::set_var("XAVIER_SUPABASE_KEY", "some-key");
+
+        let backend = detect_cloud_backend().await;
+        assert_eq!(backend, MemoryBackend::Supabase);
+
+        std::env::remove_var("XAVIER_SUPABASE_URL");
+        std::env::remove_var("XAVIER_SUPABASE_KEY");
+
+        if let Some(v) = old_pg { std::env::set_var("XAVIER_POSTGRES_URL", v); }
+        if let Some(v) = old_sb_url { std::env::set_var("XAVIER_SUPABASE_URL", v); }
+        if let Some(v) = old_sb_key { std::env::set_var("XAVIER_SUPABASE_KEY", v); }
+    }
+
+    #[tokio::test]
+    async fn test_detect_cloud_backend_postgres_fail_fallback() {
+        let _guard = SERIAL_LOCK.lock().unwrap();
+        let old_pg = std::env::var("XAVIER_POSTGRES_URL").ok();
+        let old_sb_url = std::env::var("XAVIER_SUPABASE_URL").ok();
+        let old_sb_key = std::env::var("XAVIER_SUPABASE_KEY").ok();
+
+        // Bogus URL that will fail connection test
+        std::env::set_var("XAVIER_POSTGRES_URL", "postgres://nonexistent:5432/db");
+        std::env::remove_var("XAVIER_SUPABASE_URL");
+        std::env::remove_var("XAVIER_SUPABASE_KEY");
+
+        let backend = detect_cloud_backend().await;
+        // Should fallback to Vec since postgres connection fails
+        assert_eq!(backend, MemoryBackend::Vec);
+
+        std::env::remove_var("XAVIER_POSTGRES_URL");
+
+        if let Some(v) = old_pg { std::env::set_var("XAVIER_POSTGRES_URL", v); }
+        if let Some(v) = old_sb_url { std::env::set_var("XAVIER_SUPABASE_URL", v); }
+        if let Some(v) = old_sb_key { std::env::set_var("XAVIER_SUPABASE_KEY", v); }
+    }
+}
