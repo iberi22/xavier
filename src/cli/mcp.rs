@@ -69,6 +69,7 @@ pub async fn build_mcp_state() -> Result<(AppState, xavier::workspace::Workspace
             ),
         ),
         security_service,
+        code_graph_dump_path: None,
     };
 
     let workspace = WorkspaceState::new(

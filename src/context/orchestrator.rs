@@ -38,7 +38,7 @@ pub struct ExecutionPlan {
     pub retrieval_scope: Option<RetrievalScope>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Orchestrator {
     classifier: ContextClassifier,
     search: HybridContextSearch,
@@ -46,6 +46,7 @@ pub struct Orchestrator {
     budgets: ContextBudgetConfig,
     belief_graph: Option<SharedBeliefGraph>,
     memory: Option<Arc<QmdMemory>>,
+    code_query: Option<Arc<::code_graph::query::QueryEngine>>,
 }
 
 impl Default for Orchestrator {
@@ -63,6 +64,7 @@ impl Orchestrator {
             budgets: ContextBudgetConfig::from_env(),
             belief_graph: None,
             memory: None,
+            code_query: None,
         }
     }
 
@@ -74,12 +76,18 @@ impl Orchestrator {
             budgets,
             belief_graph: None,
             memory: None,
+            code_query: None,
         }
     }
 
     pub fn with_memory(mut self, memory: Arc<QmdMemory>, graph: Option<SharedBeliefGraph>) -> Self {
         self.memory = Some(memory);
         self.belief_graph = graph;
+        self
+    }
+
+    pub fn with_code_query(mut self, code_query: Arc<::code_graph::query::QueryEngine>) -> Self {
+        self.code_query = Some(code_query);
         self
     }
 
@@ -137,6 +145,21 @@ impl Orchestrator {
         for zone in &active_zones {
             if selected_document_ids.len() >= config.max_documents {
                 break;
+            }
+
+            // Code Graph Retrieval
+            if *zone == ContextZone::Atomic || *zone == ContextZone::Global {
+                if let Some(cq) = &self.code_query {
+                    if let Ok(results) = cq.search(prompt, 3) {
+                        for res in results.symbols {
+                            let path = res.file_path.clone();
+                            let doc_id = format!("code://{}", path);
+                            if !selected_document_ids.contains(&doc_id) {
+                                selected_document_ids.push(doc_id);
+                            }
+                        }
+                    }
+                }
             }
 
             let queries = expanded_queries
@@ -274,6 +297,33 @@ impl Orchestrator {
         for document_id in &plan.selected_document_ids {
             let document = if let Some(doc) = by_id.get(document_id) {
                 doc.clone()
+            } else if document_id.starts_with("code://") {
+                if let Some(cq) = &self.code_query {
+                    let path = &document_id[7..];
+                    // Symbols returned from search have path, but we need the content.
+                    // Search for symbols in this file to get details.
+                    if let Ok(symbols) = cq.in_file(path) {
+                        if let Some(first) = symbols.first() {
+                            // Symbol doesn't have full file content, but we can't easily read it here without knowing the root.
+                            // For now, we'll use a placeholder or the symbol info.
+                            let content = format!("Symbol: {} in {}", first.name, path);
+                            let mut c_doc = ContextDocument::new(
+                                document_id,
+                                session_id,
+                                "system",
+                                content,
+                            );
+                            c_doc.metadata = serde_json::json!({ "source": "code_graph", "path": path });
+                            c_doc
+                        } else {
+                            continue;
+                        }
+                    } else {
+                        continue;
+                    }
+                } else {
+                    continue;
+                }
             } else if let Some(memory) = &self.memory {
                 // Fetch missing document from memory
                 if let Ok(Some(m_doc)) = memory.get(document_id).await {
@@ -284,6 +334,10 @@ impl Orchestrator {
                         m_doc.content,
                     );
                     c_doc.metadata = m_doc.metadata;
+                    // Mark as external memory
+                    if let Some(obj) = c_doc.metadata.as_object_mut() {
+                        obj.insert("is_external".to_string(), serde_json::json!(true));
+                    }
                     c_doc
                 } else {
                     continue;
