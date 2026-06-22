@@ -8,7 +8,12 @@
 pub mod wallet;
 pub mod rewards;
 pub mod accounting;
+pub mod vesting;
+pub mod economy;
+#[cfg(feature = "dao-evm")]
+pub mod contracts;
+pub mod tests;
 
-pub use wallet::{Wallet, WalletBalance, Transaction, TransactionKind};
+pub use wallet::{Wallet, WalletBalance, Transaction, TransactionKind, InvestmentTier};
 pub use rewards::{RewardEngine, RewardEvent, ContributionType};
 pub use accounting::{ResourceAccounting, PeerAccount};
