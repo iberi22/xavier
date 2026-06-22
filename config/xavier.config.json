@@ -47,7 +47,7 @@
     "api_flavor": "openai-compatible",
     "local_llm_url": "http://localhost:11434/v1",
     "local_llm_model": "qwen3-coder",
-    "embedding_url": "https://openrouter.ai/api/v1/embeddings",
+    "embedding_url": "http://localhost:11434/api/embeddings",
     "embedding_model": "text-embedding-3-small",
     "router_retrieved_model": "",
     "router_complex_model": "",
@@ -71,9 +71,9 @@
     "cache_warming_enabled": false,
     "cache_warming_threshold": null,
     "learned_policy": {
-      "working_weight": 0.31236818,
-      "episodic_weight": 0.29587728,
-      "semantic_weight": 0.39175457,
+      "working_weight": 0.3,
+      "episodic_weight": 0.3,
+      "semantic_weight": 0.4,
       "semantic_similarity_weight": 0.49999994,
       "confidence_weight": 0.09999999,
       "edge_weight": 0.09999999,
@@ -104,7 +104,8 @@
     "cache_enabled": true,
     "cache_size": 10000,
     "cache_ttl_hours": 24,
-    "cache_db_path": "data/embedding_cache.db"
+    "cache_db_path": "data/embedding_cache.db",
+    "timeout_secs": 30
   },
   "security": {
     "allowed_domains": "",

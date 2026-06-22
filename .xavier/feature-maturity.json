@@ -1,499 +1,673 @@
 {
-  "meta": {
-    "format_version": "1.0.0",
-    "generated": "2026-06-19T02:00:00Z",
-    "head": "4e45b85",
-    "project": "Xavier v0.10.0 → v0.11.0",
-    "gitcore_protocol": "v3.6.1"
-  },
   "features": [
     {
       "id": "memory-rag",
-      "name": "Memoria RAG (SQLite + BM25 hibrido + semantic + entity graph)",
-      "category": "core",
-      "maturity_percent": 88,
-      "status": "production_ready",
+      "name": "Memory RAG",
       "subcomponents": [
         {
-          "name": "SQLite vec store",
-          "maturity": 90,
-          "status": "done"
+          "name": "Vector search (filtered)",
+          "weight": 40,
+          "maturity": 11,
+          "static_pass_rate": 25,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 1,
+          "symbols_total": 3,
+          "memory_usage": 52,
+          "issue_health": 30,
+          "evidence_detail": "static: 1/3 (25%), tests: 0/10 (0%) | memory: 52% | issues: 30%"
         },
         {
-          "name": "BM25 search",
-          "maturity": 90,
-          "status": "done"
+          "name": "Memory indexing & embedding",
+          "weight": 35,
+          "maturity": 9,
+          "static_pass_rate": 25,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 1,
+          "symbols_total": 3,
+          "memory_usage": 52,
+          "issue_health": 30,
+          "evidence_detail": "static: 1/3 (25%), tests: 0/10 (0%) | memory: 52% | issues: 30%"
         },
         {
-          "name": "Hybrid search (BM25+embedding+RRF)",
-          "maturity": 90,
-          "status": "done"
-        },
-        {
-          "name": "Semantic cache",
-          "maturity": 75,
-          "status": "done"
-        },
-        {
-          "name": "Entity graph (extraction+inference)",
-          "maturity": 85,
-          "status": "done"
-        },
-        {
-          "name": "Embedding pipeline (GLLM/OpenAI)",
-          "maturity": 85,
-          "status": "done"
+          "name": "QMD scoring",
+          "weight": 25,
+          "maturity": 7,
+          "static_pass_rate": 25,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 1,
+          "symbols_total": 3,
+          "memory_usage": 52,
+          "issue_health": 30,
+          "evidence_detail": "static: 1/3 (25%), tests: 0/10 (0%) | memory: 52% | issues: 30%"
         }
       ],
-      "whats_missing": [
-        "Rollback en entity graph mutations"
-      ]
+      "overall": 9.0,
+      "status": "in_progress"
     },
     {
       "id": "code-graph",
-      "name": "Code Graph (crate separado + dump CLI)",
-      "category": "core",
-      "maturity_percent": 65,
-      "status": "needs_review",
+      "name": "Code Graph",
       "subcomponents": [
         {
-          "name": "code-graph crate (workspace dep)",
-          "maturity": 70,
-          "status": "done"
+          "name": "Portable JSON dump/load",
+          "weight": 40,
+          "maturity": 14,
+          "static_pass_rate": 33,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 7,
+          "symbols_found": 1,
+          "symbols_total": 4,
+          "memory_usage": 72,
+          "issue_health": 70,
+          "evidence_detail": "static: 1/4 (33%), tests: 0/7 (0%) | memory: 72% | issues: 70%"
         },
         {
-          "name": "CLI code_dump.rs",
-          "maturity": 70,
-          "status": "done"
+          "name": "MCP Code-graph tool",
+          "weight": 35,
+          "maturity": 13,
+          "static_pass_rate": 33,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 7,
+          "symbols_found": 1,
+          "symbols_total": 3,
+          "memory_usage": 72,
+          "issue_health": 70,
+          "evidence_detail": "static: 1/3 (33%), tests: 0/7 (0%) | memory: 72% | issues: 70%"
         },
         {
-          "name": "CLI code_graph.rs",
-          "maturity": 70,
-          "status": "done"
-        },
-        {
-          "name": "Portable JSON dump (.xavier/codegraph.json)",
-          "maturity": 35,
-          "status": "needs_work"
-        },
-        {
-          "name": "Integracion con MCP Server (tool)",
-          "maturity": 50,
-          "status": "done (PR #213)"
-        },
-        {
-          "name": "Documentacion formato dump",
-          "maturity": 50,
-          "status": "done (docs/CODE_GRAPH_DUMP_FORMAT.md)"
+          "name": "Symbol query & analysis",
+          "weight": 25,
+          "maturity": 9,
+          "static_pass_rate": 33,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 7,
+          "symbols_found": 1,
+          "symbols_total": 3,
+          "memory_usage": 72,
+          "issue_health": 70,
+          "evidence_detail": "static: 1/3 (33%), tests: 0/7 (0%) | memory: 72% | issues: 70%"
         }
       ],
-      "whats_missing": [
-        "JSON dump port funcional completo",
-        "MCP tool integracion total"
-      ]
+      "overall": 12.0,
+      "status": "in_progress"
     },
     {
       "id": "memory-sync",
-      "name": "Memory Sync P2P",
-      "category": "mesh",
-      "maturity_percent": 78,
-      "status": "production_ready",
+      "name": "Memory Sync",
       "subcomponents": [
         {
-          "name": "Sync module (diff/merge/manifest/push_pull)",
-          "maturity": 90,
-          "status": "done"
+          "name": "HTTP sync endpoints",
+          "weight": 35,
+          "maturity": 12,
+          "static_pass_rate": 40,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 7,
+          "symbols_found": 1,
+          "symbols_total": 3,
+          "memory_usage": 80,
+          "issue_health": 30,
+          "evidence_detail": "static: 1/3 (40%), tests: 0/7 (0%) | memory: 80% | issues: 30%"
         },
         {
-          "name": "HTTP sync endpoints (push, pull, status, resolve)",
-          "maturity": 85,
-          "status": "done"
+          "name": "libp2p transport",
+          "weight": 35,
+          "maturity": 12,
+          "static_pass_rate": 40,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 7,
+          "symbols_found": 1,
+          "symbols_total": 3,
+          "memory_usage": 80,
+          "issue_health": 30,
+          "evidence_detail": "static: 1/3 (40%), tests: 0/7 (0%) | memory: 80% | issues: 30%"
         },
         {
-          "name": "libp2p transport (mDNS, Kademlia, GossipSub)",
-          "maturity": 70,
-          "status": "done"
-        },
-        {
-          "name": "E2E multi-node tests",
-          "maturity": 30,
-          "status": "jules (#212)"
+          "name": "E2E multi-node sync",
+          "weight": 30,
+          "maturity": 11,
+          "static_pass_rate": 40,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 7,
+          "symbols_found": 1,
+          "symbols_total": 2,
+          "memory_usage": 80,
+          "issue_health": 30,
+          "evidence_detail": "static: 1/2 (40%), tests: 0/7 (0%) | memory: 80% | issues: 30%"
         }
       ],
-      "whats_missing": [
-        "E2E multi-node tests reales (PR #212 pendiente)"
-      ]
+      "overall": 12.0,
+      "status": "in_progress"
     },
     {
       "id": "mcp-server",
-      "name": "MCP Server (HTTP+SSE + Stdio + Tools v2)",
-      "category": "api",
-      "maturity_percent": 91,
-      "status": "production_ready",
+      "name": "MCP Server",
       "subcomponents": [
         {
-          "name": "HTTP+SSE transport",
-          "maturity": 90,
-          "status": "done"
-        },
-        {
-          "name": "Stdio transport",
-          "maturity": 85,
-          "status": "done"
-        },
-        {
-          "name": "Memory tools (search, store, retrieve, context)",
-          "maturity": 90,
-          "status": "done"
-        },
-        {
-          "name": "Tools v2: structured output + provenance",
-          "maturity": 100,
-          "status": "done"
-        },
-        {
-          "name": "Tools v2: depth-based tree context (mem_context)",
-          "maturity": 100,
-          "status": "done"
-        },
-        {
-          "name": "Tools v2: search vs context separation",
-          "maturity": 100,
-          "status": "done"
-        },
-        {
-          "name": "Tools v2: health_check structured (MCPHealthResult)",
-          "maturity": 100,
-          "status": "done"
-        },
-        {
-          "name": "Tools v2: get_project_context bounded (max_records/max_chars/depth)",
-          "maturity": 100,
-          "status": "done"
-        },
-        {
-          "name": "Documentacion de integracion para agentes",
-          "maturity": 100,
-          "status": "done"
+          "name": "Tools (memory + core)",
+          "weight": 40,
+          "maturity": 9,
+          "static_pass_rate": 0,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 4,
+          "memory_usage": 43,
+          "issue_health": 70,
+          "evidence_detail": "static: 0/4 (0%), tests: 0/10 (0%) | memory: 43% | issues: 70%"
         },
         {
           "name": "Auth/security",
-          "maturity": 90,
-          "status": "done (PR #221)"
+          "weight": 30,
+          "maturity": 6,
+          "static_pass_rate": 0,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 43,
+          "issue_health": 70,
+          "evidence_detail": "static: 0/3 (0%), tests: 0/10 (0%) | memory: 43% | issues: 70%"
         },
         {
-          "name": "Code-graph tool en MCP",
-          "maturity": 50,
-          "status": "done (PR #213)"
+          "name": "HTTP+SSE & Stdio transports",
+          "weight": 30,
+          "maturity": 6,
+          "static_pass_rate": 0,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 43,
+          "issue_health": 70,
+          "evidence_detail": "static: 0/3 (0%), tests: 0/10 (0%) | memory: 43% | issues: 70%"
         }
       ],
-      "whats_missing": []
+      "overall": 7.0,
+      "status": "in_progress"
     },
     {
       "id": "hormer-navigation",
       "name": "HORMER Navigation",
-      "category": "memory",
-      "maturity_percent": 82,
       "subcomponents": [
         {
-          "name": "HORMER v1 (dynamic hierarchy, policy, GRPO)",
-          "maturity": 90,
-          "status": "done"
+          "name": "Dynamic directory hierarchy",
+          "weight": 25,
+          "maturity": 6,
+          "static_pass_rate": 9,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 2,
+          "memory_usage": 44,
+          "issue_health": 73,
+          "evidence_detail": "static: 0/2 (9%), tests: 0/10 (0%) | memory: 44% | issues: 73%"
         },
         {
-          "name": "Predictive cache warming (sibling docs + hotspots)",
-          "maturity": 75,
-          "status": "done"
+          "name": "Navigation policy (scoring + GRPO)",
+          "weight": 30,
+          "maturity": 7,
+          "static_pass_rate": 9,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 44,
+          "issue_health": 73,
+          "evidence_detail": "static: 0/3 (9%), tests: 0/10 (0%) | memory: 44% | issues: 73%"
         },
         {
-          "name": "CLI navigation visualize (weights + hotspots)",
-          "maturity": 70,
-          "status": "done"
+          "name": "Textual Gradient Descent",
+          "weight": 25,
+          "maturity": 6,
+          "static_pass_rate": 9,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 44,
+          "issue_health": 73,
+          "evidence_detail": "static: 0/3 (9%), tests: 0/10 (0%) | memory: 44% | issues: 73%"
         },
         {
-          "name": "Navigation telemetry metrics",
-          "maturity": 70,
-          "status": "done"
-        },
-        {
-          "name": "Consolidacion nav-aware con TGD",
-          "maturity": 60,
-          "status": "done"
-        },
-        {
-          "name": "Scale test (1000+ nodes)",
-          "maturity": 75,
-          "status": "done"
-        },
-        {
-          "name": "Normalized ID (BeliefGraph)",
-          "maturity": 85,
-          "status": "done"
+          "name": "CLI navigation tools",
+          "weight": 20,
+          "maturity": 5,
+          "static_pass_rate": 9,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 44,
+          "issue_health": 73,
+          "evidence_detail": "static: 0/3 (9%), tests: 0/10 (0%) | memory: 44% | issues: 73%"
         }
       ],
-      "whats_missing": [
-        "Dashboard de navegacion CLI completo"
-      ],
-      "status": "production_ready"
+      "overall": 6.0,
+      "status": "in_progress"
     },
     {
       "id": "tgd-optimization",
-      "name": "TGD (Textual Gradient Descent)",
-      "category": "memory",
-      "maturity_percent": 77,
+      "name": "TGD Optimization",
       "subcomponents": [
         {
-          "name": "TGD algorithm (runner + config)",
-          "maturity": 80,
-          "status": "done"
+          "name": "Consolidation engine",
+          "weight": 35,
+          "maturity": 11,
+          "static_pass_rate": 40,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 2,
+          "symbols_total": 4,
+          "memory_usage": 40,
+          "issue_health": 30,
+          "evidence_detail": "static: 2/4 (40%), tests: 0/10 (0%) | memory: 40% | issues: 30%"
         },
         {
-          "name": "Nightly consolidation scheduler",
-          "maturity": 75,
-          "status": "done"
+          "name": "Per-session impact reporting",
+          "weight": 30,
+          "maturity": 9,
+          "static_pass_rate": 40,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 1,
+          "symbols_total": 3,
+          "memory_usage": 40,
+          "issue_health": 30,
+          "evidence_detail": "static: 1/3 (40%), tests: 0/10 (0%) | memory: 40% | issues: 30%"
         },
         {
-          "name": "Incremental mode (only new chunks)",
-          "maturity": 75,
-          "status": "done"
+          "name": "Rollback mechanism",
+          "weight": 20,
+          "maturity": 6,
+          "static_pass_rate": 40,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 1,
+          "symbols_total": 2,
+          "memory_usage": 40,
+          "issue_health": 30,
+          "evidence_detail": "static: 1/2 (40%), tests: 0/10 (0%) | memory: 40% | issues: 30%"
         },
         {
-          "name": "Test suite (91 lines)",
-          "maturity": 80,
-          "status": "done"
-        },
-        {
-          "name": "Rollback support",
+          "name": "Nightly consolidation",
+          "weight": 15,
           "maturity": 5,
-          "status": "needs_work"
+          "static_pass_rate": 40,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 1,
+          "symbols_total": 2,
+          "memory_usage": 40,
+          "issue_health": 30,
+          "evidence_detail": "static: 1/2 (40%), tests: 0/10 (0%) | memory: 40% | issues: 30%"
         }
       ],
-      "whats_missing": [
-        "Rollback de optimizaciones",
-        "Reporte de impacto por sesion"
-      ],
-      "status": "production_ready"
+      "overall": 9.0,
+      "status": "in_progress"
     },
     {
       "id": "cli-tools",
       "name": "CLI Tools",
-      "category": "devops",
-      "maturity_percent": 82,
       "subcomponents": [
         {
-          "name": "Server management (start/stop/status)",
-          "maturity": 85,
-          "status": "done"
+          "name": "Server commands",
+          "weight": 30,
+          "maturity": 7,
+          "static_pass_rate": 8,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 80,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/3 (8%), tests: 0/10 (0%) | memory: 80% | issues: 30%"
         },
         {
-          "name": "MCP mode",
-          "maturity": 80,
-          "status": "done"
+          "name": "Memory & navigation commands",
+          "weight": 25,
+          "maturity": 6,
+          "static_pass_rate": 8,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 80,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/3 (8%), tests: 0/10 (0%) | memory: 80% | issues: 30%"
         },
         {
-          "name": "Code dump + code graph commands",
-          "maturity": 65,
-          "status": "done"
+          "name": "Mesh & sync commands",
+          "weight": 20,
+          "maturity": 5,
+          "static_pass_rate": 8,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 80,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/3 (8%), tests: 0/10 (0%) | memory: 80% | issues: 30%"
         },
         {
-          "name": "Security commands",
-          "maturity": 80,
-          "status": "done"
+          "name": "System & security commands",
+          "weight": 15,
+          "maturity": 4,
+          "static_pass_rate": 8,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 80,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/3 (8%), tests: 0/10 (0%) | memory: 80% | issues: 30%"
         },
         {
-          "name": "Config management",
-          "maturity": 85,
-          "status": "done"
+          "name": "Maturity scanner CLI",
+          "weight": 10,
+          "maturity": 2,
+          "static_pass_rate": 8,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 80,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/3 (8%), tests: 0/10 (0%) | memory: 80% | issues: 30%"
         }
       ],
-      "whats_missing": [
-        "Comando nav visualize CLI (parcial)"
-      ],
-      "status": "production_ready"
+      "overall": 5.0,
+      "status": "in_progress"
     },
     {
       "id": "self-monitoring",
-      "name": "Self-monitoring & Health",
-      "category": "devops",
-      "maturity_percent": 85,
+      "name": "Self-Monitoring",
       "subcomponents": [
         {
-          "name": "Health check endpoints",
-          "maturity": 92,
-          "status": "done"
+          "name": "Health check system",
+          "weight": 35,
+          "maturity": 6,
+          "static_pass_rate": 0,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 48,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/3 (0%), tests: 0/10 (0%) | memory: 48% | issues: 30%"
         },
         {
-          "name": "Runtime self-monitoring loop",
-          "maturity": 85,
-          "status": "done"
+          "name": "Observability (metrics, tracing)",
+          "weight": 35,
+          "maturity": 6,
+          "static_pass_rate": 0,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 48,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/3 (0%), tests: 0/10 (0%) | memory: 48% | issues: 30%"
         },
         {
-          "name": "Telemetry metrics",
-          "maturity": 75,
-          "status": "done"
-        },
-        {
-          "name": "Integration tests (135/135)",
-          "maturity": 97,
-          "status": "done"
+          "name": "Automated alerts",
+          "weight": 30,
+          "maturity": 5,
+          "static_pass_rate": 0,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 48,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/3 (0%), tests: 0/10 (0%) | memory: 48% | issues: 30%"
         }
       ],
-      "whats_missing": [
-        "Alertas automaticas en health fail"
-      ],
-      "status": "production_ready"
+      "overall": 6.0,
+      "status": "in_progress"
     },
     {
       "id": "mesh-network",
-      "name": "Mesh Network (Sovereign Mesh)",
-      "category": "mesh",
-      "maturity_percent": 53,
+      "name": "Mesh Network",
       "subcomponents": [
         {
-          "name": "Transport HTTP",
-          "maturity": 80,
-          "status": "done"
-        },
-        {
-          "name": "Transport libp2p",
-          "maturity": 70,
-          "status": "done"
-        },
-        {
-          "name": "Wallet & tokenomics",
-          "maturity": 65,
-          "status": "done"
-        },
-        {
-          "name": "Governance DAO (mock)",
-          "maturity": 35,
-          "status": "done"
-        },
-        {
-          "name": "Governance DAO (on-chain)",
-          "maturity": 30,
-          "status": "jules (#166 paso 1 done, waiting pasos 2-5)"
+          "name": "P2P transport (libp2p)",
+          "weight": 20,
+          "maturity": 5,
+          "static_pass_rate": 0,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 2,
+          "memory_usage": 60,
+          "issue_health": 70,
+          "evidence_detail": "static: 0/2 (0%), tests: 0/10 (0%) | memory: 60% | issues: 70%"
         },
         {
           "name": "Data Commons economy",
-          "maturity": 35,
-          "status": "done (PR #213)"
-        },
-        {
-          "name": "ACL & permissions",
-          "maturity": 70,
-          "status": "done"
+          "weight": 20,
+          "maturity": 5,
+          "static_pass_rate": 0,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 60,
+          "issue_health": 70,
+          "evidence_detail": "static: 0/3 (0%), tests: 0/10 (0%) | memory: 60% | issues: 70%"
         },
         {
           "name": "Dual License (MIT + Mesh)",
-          "maturity": 40,
-          "status": "done (PR #213)"
+          "weight": 10,
+          "maturity": 2,
+          "static_pass_rate": 0,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 2,
+          "memory_usage": 60,
+          "issue_health": 70,
+          "evidence_detail": "static: 0/2 (0%), tests: 0/10 (0%) | memory: 60% | issues: 70%"
         },
         {
-          "name": "Android APK / xavier-core",
-          "maturity": 60,
-          "status": "done"
+          "name": "Governance DAO (mock)",
+          "weight": 15,
+          "maturity": 3,
+          "static_pass_rate": 0,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 4,
+          "memory_usage": 60,
+          "issue_health": 70,
+          "evidence_detail": "static: 0/4 (0%), tests: 0/10 (0%) | memory: 60% | issues: 70%"
+        },
+        {
+          "name": "Governance DAO (on-chain)",
+          "weight": 20,
+          "maturity": 5,
+          "static_pass_rate": 0,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 5,
+          "memory_usage": 60,
+          "issue_health": 70,
+          "evidence_detail": "static: 0/5 (0%), tests: 0/10 (0%) | memory: 60% | issues: 70%"
+        },
+        {
+          "name": "Tokenomics & XP wallet",
+          "weight": 15,
+          "maturity": 3,
+          "static_pass_rate": 0,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 2,
+          "memory_usage": 60,
+          "issue_health": 70,
+          "evidence_detail": "static: 0/2 (0%), tests: 0/10 (0%) | memory: 60% | issues: 70%"
         }
       ],
-      "whats_missing": [
-        "Governance on-chain (#166) — 5% actual requiere plan de 5 pasos"
-      ],
+      "overall": 4.0,
       "status": "in_progress"
     },
     {
       "id": "benchmarks",
-      "name": "Benchmarks & Testing",
-      "category": "qa",
-      "maturity_percent": 65,
+      "name": "Benchmarks",
       "subcomponents": [
         {
-          "name": "Embedding benchmark",
-          "maturity": 75,
-          "status": "done"
+          "name": "Memory RAG benchmarks",
+          "weight": 25,
+          "maturity": 10,
+          "static_pass_rate": 38,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 4,
+          "symbols_found": 1,
+          "symbols_total": 2,
+          "memory_usage": 80,
+          "issue_health": 70,
+          "evidence_detail": "static: 1/2 (38%), tests: 0/4 (0%) | memory: 80% | issues: 70%"
         },
         {
-          "name": "Entity graph benchmark",
-          "maturity": 60,
-          "status": "done"
+          "name": "HORMER navigation benchmarks",
+          "weight": 25,
+          "maturity": 10,
+          "static_pass_rate": 38,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 4,
+          "symbols_found": 1,
+          "symbols_total": 2,
+          "memory_usage": 80,
+          "issue_health": 70,
+          "evidence_detail": "static: 1/2 (38%), tests: 0/4 (0%) | memory: 80% | issues: 70%"
         },
         {
-          "name": "Hybrid search benchmark",
-          "maturity": 60,
-          "status": "done"
+          "name": "MinHash similarity benchmarks",
+          "weight": 25,
+          "maturity": 10,
+          "static_pass_rate": 38,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 4,
+          "symbols_found": 1,
+          "symbols_total": 2,
+          "memory_usage": 80,
+          "issue_health": 70,
+          "evidence_detail": "static: 1/2 (38%), tests: 0/4 (0%) | memory: 80% | issues: 70%"
         },
         {
-          "name": "Tri-memory benchmark",
-          "maturity": 80,
-          "status": "done"
-        },
-        {
-          "name": "CI benchmark workflow",
-          "maturity": 70,
-          "status": "done"
-        },
-        {
-          "name": "MinHash benchmark",
-          "maturity": 55,
-          "status": "needs_work"
+          "name": "Memory sync benchmarks",
+          "weight": 25,
+          "maturity": 10,
+          "static_pass_rate": 38,
+          "test_pass_rate": 0,
+          "gate_check": true,
+          "tests_passing": 0,
+          "tests_total": 4,
+          "symbols_found": 1,
+          "symbols_total": 2,
+          "memory_usage": 80,
+          "issue_health": 70,
+          "evidence_detail": "static: 1/2 (38%), tests: 0/4 (0%) | memory: 80% | issues: 70%"
         }
       ],
-      "status": "needs_work"
+      "overall": 10.0,
+      "status": "in_progress"
     }
   ],
   "summary": {
+    "overall_maturity": 8,
     "total_features": 10,
-    "production_ready": 7,
-    "needs_work": 2,
-    "in_progress": 1,
-    "overall_maturity": 77,
-    "target_maturity_v011": 90
+    "production_ready": 0,
+    "needs_work": 0,
+    "in_progress": 10,
+    "scan_errors": 0
   },
-  "sprint": {
-    "id": "SPRINT-FINAL-003",
-    "name": "Governance DAO + Maturity 90%",
-    "start": "2026-06-19",
-    "target_end": "2026-06-22",
-    "maturity_target": 90,
-    "manual_tasks": [
-      {
-        "number": 218,
-        "title": "MCP Tools v2: structured output, depth tree, search/context separation",
-        "pr": "495e3ac+3145e02",
-        "by": "manual+claude-code",
-        "maturity_delta_mcp": "+30%",
-        "status": "done"
-      }
-    ],
-    "repo_cleanup": {
-      "branches_deleted": 7,
-      "issues_remaining": [
-        115,
-        166
-      ],
-      "prs_open": 0,
-      "sanitized_at": "2026-06-18T23:55:00Z"
-    },
-    "next_action": "Launching: Claude Code audits governance, Jules implements DAO on-chain integration",
-    "focus": [
-      "mesh-network",
-      "governance-dao",
-      "code-graph",
-      "mcp-auth"
-    ],
-    "active_issues": [
-      {
-        "number": 166,
-        "title": "Governance DAO on-chain",
-        "target_maturity": 60,
-        "by": "jules+claude-code"
-      },
-      {
-        "number": 219,
-        "title": "Code Graph docs + MCP tool full integration",
-        "target_maturity": 80,
-        "by": "jules"
-      }
-    ],
-    "score_update_at": "2026-06-19T01:00:00Z"
-  }
+  "scanned_at": "2026-06-22T06:13:07.455794600+00:00",
+  "head_commit": "91d812af20a5663e93921de5d04965472bfb8df6",
+  "errors": [],
+  "layers": {
+    "static_ms": 511,
+    "dynamic_ms": 192,
+    "memory_ms": 16641,
+    "conversations_ms": 4509,
+    "total_ms": 21858
+  },
+  "scanner_version": "v2"
 }

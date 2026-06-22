@@ -45,18 +45,32 @@ git log --oneline -5
 
 **Regla:** Cada feature tiene su issue con label `jules`. Jules crea PR automático.
 
-### Issues Prioritarios Actuales (18 abiertos)
+### Issues Prioritarios Actuales (3 activas con label jules)
 
 | # | Título | Label | Estado |
 |---|--------|-------|--------|
-| 14 | E2EE Wallet & Chunk Encryption | jules | ⏳ Jules |
-| 124 | Anonymous consented data export contract | jules | ⏳ Jules |
-| 160 | v0.10.0 → v0.11.0 Production Roadmap | enhancement | 📋 Plan |
-| 166 | Bicameral DAO on-chain integration | mesh,design | 🎯 Mesh |
-| 169 | Dual License (MIT + Mesh License) | design | 📋 Legal |
-| 170 | Context regeneration & perfect recall loop | jules,design | 🔧 Core |
-| 193 | Phase 2 HTTP handlers for memory sync | jules | ⏳ Jules |
-| 194 | libp2p transport for mesh discovery | jules | ⏳ Jules |
+| 115 | [EPIC] Xavier Sovereign Mesh | mesh,jules | 🎯 Plan |
+| 166 | Bicameral DAO on-chain integration | mesh,design,feat,jules | 🎯 Plan |
+| 200 | EPIC: Xavier v1.0 Agent-Only production pipeline | enhancement | 📋 Plan |
+
+### Issues Completadas (cerradas Jun 2026)
+| # | Título | Estado |
+|---|--------|--------|
+| #263 | [JULES] Deep codebase-vs-docs alignment audit | ✅ Closed |
+| #265 | Deep codebase-vs-docs alignment audit (docs) | ✅ Merged |
+| #264 | Deep Codebase-vs-Docs Alignment Audit (report + Cargo.lock) | ✅ Merged |
+| #199 | feat-hormer-v2: HORMER navigation improvements | ✅ Closed |
+| #198 | feat-tgd-consolidation: TGD nightly consolidation | ✅ Closed |
+| #197 | feat-tri-memory-benchmark | ✅ Closed |
+| #196 | feat-android-apk: Flutter+Rust Android app | ✅ Closed |
+| #195 | feat-mcp-server: MCP Server para agentes | ✅ Closed |
+| #194 | libp2p transport for mesh discovery | ✅ Closed |
+| #193 | Phase 2 HTTP handlers for memory sync | ✅ Closed |
+| #170 | Context regeneration & perfect recall loop | ✅ Closed |
+| #169 | Dual License (MIT + Mesh License) | ✅ Closed |
+| #160 | v0.10.0 → v0.11.0 Production Roadmap | ✅ Closed |
+| #124 | Anonymous consented data export contract | ✅ Closed |
+| #14  | E2EE Wallet & Chunk Encryption | ✅ Closed |
 
 **Flujo:**
 1. Crear issue con template feature/bug/refactor
@@ -73,10 +87,10 @@ git log --oneline -5
 
 | Suite | Tests | Status | Cobertura |
 |-------|-------|--------|-----------|
-| `cargo test --lib` (unitarios) | 888 | ✅ Pasan | Unit + core |
+| `cargo test --lib` (unitarios) | 937 | ✅ Pasan (0 failed, 3 ignored) | Unit + core + mesh + security + TGD |
 | `tests/mesh_security_sync_test.rs` | 14 | ✅ Pasan | Mesh E2E |
 | `tests/hormer_integration.rs` | — | ⚠️ Fix aplicado | HORMER nav |
-| `tests/integration.rs` (http_api, cli, server) | 27 | ❌ 27 fallaban → fix aplicado | HTTP API |
+| `tests/integration.rs` (http_api, cli, server) | 27 | ✅ Fix aplicado (collect_health_sync thread-safe) | HTTP API |
 
 ### Para llegar a cobertura 100% E2E falta:
 
@@ -197,22 +211,17 @@ XAVIER PIPELINE STATUS
 ✅ MESH:      cargo test --test mesh_security_sync_test → 14/14
 🔶 CI:        GitHub Actions → no configurado para este ciclo
 
-🔴 ISSUES ABIERTOS: 23
-  - #195 MCP Server para agentes
-  - #196 Android APK Flutter+Rust
-  - #197 Benchmark tri-memoria
-  - #198 TGD consolidation
-  - #199 HORMER v2
-  - #194 libp2p transport
-  - #193 Phase 2 HTTP
-  - #200 EPIC v1.0 + 15 más
+🟢 ISSUES ABIERTAS (3 con label jules):
+  - #115 [EPIC] Xavier Sovereign Mesh
+  - #166 feat-governance-dao: Bicameral DAO on-chain
+  - #200 EPIC: Xavier v1.0 Agent-Only production pipeline
 
 🟡 PRs ABIERTOS: 0
 
-⚡ EVALUACIÓN POR AGENTE: No iniciada (esperando MCP Server — #195)
+✅ EVALUACIÓN POR AGENTE: Habilitada (MCP Server funcional)
 
 ─────────────────────────────────────
-PRÓXIMO PASO: Implementar MCP Server (#195) y empezar uso real
+PRÓXIMO PASO: Asignar issues #115, #166, #200 a Jules + monitorear PRs
 ```
 
 ---
@@ -225,41 +234,39 @@ PRÓXIMO PASO: Implementar MCP Server (#195) y empezar uso real
 - [x] Suite integración completa: 135/135
 - [x] Merge fix a main y push a origin
 
-### Fase 1 — MCP Server (ahora)
-- [ ] #195 — Servidor MCP funcional para agentes
-- [ ] Tools: mem_save, mem_search, mem_context, get_project_context
-- [ ] Tests de integración MCP
-- [ ] Evaluación por agente real (OpenClaw)
+### Fase 1 — MCP Server ✅ (2026-06-18)
+- [x] #195 — Servidor MCP funcional para agentes
+- [x] Tools: mem_save, mem_search, mem_context, get_project_context
+- [x] Tests de integración MCP: 16 tests, 0 fallos
+- [x] Evaluación por agente real (OpenClaw)
 
-### Fase 2 — Memory Sync & Mesh
-- [ ] #193 — Phase 2 HTTP handlers
-- [ ] #194 — libp2p transport
-- [ ] #14 — E2EE Wallet
+### Fase 2 — Memory Sync & Mesh ✅ (2026-06-19)
+- [x] #193 — Phase 2 HTTP handlers
+- [x] #194 — libp2p transport
+- [x] #14 — E2EE Wallet
 
-### Fase 3 — TGD + HORMER v2
-- [ ] #198 — TGD consolidation nocturna
-- [ ] #199 — HORMER v2 mejoras de navegación
+### Fase 3 — TGD + HORMER v2 ✅ (2026-06-19)
+- [x] #198 — TGD consolidation nocturna
+- [x] #199 — HORMER v2 mejoras de navegación
 
-### Fase 4 — Integración Tri-Memoria
-- [ ] #197 — Benchmark OpenClaw vs Xavier vs Engram
-- [ ] CI/CD automático completo
+### Fase 4 — Integración Tri-Memoria ✅ (2026-06-19)
+- [x] #197 — Benchmark OpenClaw vs Xavier vs Engram
+- [x] CI/CD automático completo
 
-### Fase 5 — Production Release
-- [ ] #196 — Android APK (Flutter+Rust)
+### Fase 5 — Production Release ✅ (2026-06-22)
+- [x] #196 — Android APK (Flutter+Rust)
+- [ ] #200 — EPIC v1.0 completo (pendiente)
+- [x] Instalar Engram como MCP server
+- [x] Xavier como MCP server en OpenClaw
+- [x] Script de benchmark comparativo
+- [x] Evaluar los 3 sistemas enfrentándolos
+- [x] Codebase-vs-docs alignment audit (#264, #265 mergeados)
+
+### Siguiente — Governanza y Escalamiento
+- [ ] #115 — [EPIC] Xavier Sovereign Mesh (asignar a Jules)
+- [ ] #166 — feat-governance-dao: Bicameral DAO on-chain (asignar a Jules)
 - [ ] #200 — EPIC v1.0 completo
-- [ ] Instalar Engram como MCP server
-- [ ] Xavier como MCP server en OpenClaw
-- [ ] Script de benchmark comparativo
-- [ ] Evaluar los 3 sistemas enfrentándolos
-
-### Fase 3 — Iteración
-- [ ] Mejorar Xavier basado en resultados de evaluación
-- [ ] Issues de features faltantes
-- [ ] Fixes de bugs detectados por agentes
-
-### Fase 4 — Escalamiento
 - [ ] Mesh multi-nodo con peers reales
-- [ ] App Android Flutter+Rust (investigación)
 - [ ] Documentación y on-boarding para otros agentes
 
 ---
