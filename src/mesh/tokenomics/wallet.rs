@@ -12,6 +12,90 @@ use uuid::Uuid;
 use crate::mesh::node::NodeId;
 
 // ---------------------------------------------------------------------------
+// InvestmentTier — Progressive APY and vesting tiers
+// ---------------------------------------------------------------------------
+
+/// Defines the investment and reward tier for a mesh node.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, PartialOrd, Default)]
+pub enum InvestmentTier {
+    #[default]
+    Base,
+    Bronze,
+    Silver,
+    Gold,
+    Platinum,
+    Diamond,
+    Sovereign,
+}
+
+impl InvestmentTier {
+    /// Returns the APY as a percentage (e.g. 5.0 for 5%).
+    pub fn apy(&self) -> f64 {
+        match self {
+            InvestmentTier::Base => 5.0,
+            InvestmentTier::Bronze => 7.5,
+            InvestmentTier::Silver => 10.0,
+            InvestmentTier::Gold => 12.5,
+            InvestmentTier::Platinum => 17.5,
+            InvestmentTier::Diamond => 25.0,
+            InvestmentTier::Sovereign => 40.0,
+        }
+    }
+
+    /// Returns the minimum investment required in USD.
+    pub fn min_investment_usd(&self) -> u64 {
+        match self {
+            InvestmentTier::Base => 0,
+            InvestmentTier::Bronze => 1_000,
+            InvestmentTier::Silver => 5_000,
+            InvestmentTier::Gold => 10_000,
+            InvestmentTier::Platinum => 25_000,
+            InvestmentTier::Diamond => 50_000,
+            InvestmentTier::Sovereign => 100_000,
+        }
+    }
+
+    /// Returns the lock-up duration (cliff) in months.
+    pub fn cliff_months(&self) -> u32 {
+        match self {
+            InvestmentTier::Base => 0,
+            InvestmentTier::Bronze => 2,
+            InvestmentTier::Silver => 4,
+            InvestmentTier::Gold => 6,
+            InvestmentTier::Platinum => 9,
+            InvestmentTier::Diamond => 12,
+            InvestmentTier::Sovereign => 18,
+        }
+    }
+
+    /// Returns the month when 50% is released.
+    pub fn release_50_month(&self) -> u32 {
+        match self {
+            InvestmentTier::Base => 0,
+            InvestmentTier::Bronze => 2,
+            InvestmentTier::Silver => 2,
+            InvestmentTier::Gold => 3,
+            InvestmentTier::Platinum => 4,
+            InvestmentTier::Diamond => 6,
+            InvestmentTier::Sovereign => 8,
+        }
+    }
+
+    /// Returns the month when 100% is released.
+    pub fn release_100_month(&self) -> u32 {
+        match self {
+            InvestmentTier::Base => 0,
+            InvestmentTier::Bronze => 4,
+            InvestmentTier::Silver => 6,
+            InvestmentTier::Gold => 9,
+            InvestmentTier::Platinum => 12,
+            InvestmentTier::Diamond => 18,
+            InvestmentTier::Sovereign => 24,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // TransactionKind — What type of operation generated this transaction
 // ---------------------------------------------------------------------------
 
@@ -60,6 +144,20 @@ pub struct Transaction {
 }
 
 // ---------------------------------------------------------------------------
+// VestingState — Tracks the status of investment vesting
+// ---------------------------------------------------------------------------
+
+/// Tracks the progressional release of invested capital.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct VestingState {
+    pub tier: InvestmentTier,
+    pub amount_total: u64,
+    pub amount_released: u64,
+    pub start_timestamp: i64,
+    pub last_claim_timestamp: i64,
+}
+
+// ---------------------------------------------------------------------------
 // WalletBalance — The three tracked XP balances
 // ---------------------------------------------------------------------------
 
@@ -72,6 +170,8 @@ pub struct WalletBalance {
     pub staked_xp: u64,
     /// Total XP earned over the entire lifetime of the node
     pub lifetime_earned: u64,
+    /// Current investment tier
+    pub tier: InvestmentTier,
 }
 
 // ---------------------------------------------------------------------------
@@ -85,6 +185,8 @@ pub struct Wallet {
     pub node_id: NodeId,
     /// Current balances
     pub balance: WalletBalance,
+    /// Investment vesting status
+    pub vesting: Option<VestingState>,
     /// Ordered list of all transactions (newest first is convention)
     pub transactions: Vec<Transaction>,
     /// Unix timestamp when the wallet was created
@@ -100,6 +202,7 @@ impl Wallet {
         Wallet {
             node_id,
             balance: WalletBalance::default(),
+            vesting: None,
             transactions: Vec::new(),
             created_at: now,
             last_updated: now,
