@@ -7,8 +7,8 @@ version = "0.11.0-22-06-2026"
 authors = ["BELA <bela@swal.dev>", "Xavier <xavier@swal.dev>"]
 edition = "2021"
 autobins = false
-description = "Xavier - Cognitive Memory Runtime for AI Agents (open source)"
-license = "MIT"
+description = "Xavier - Cognitive Memory Runtime for AI Agents (AGPL v3 + Commercial)"
+license = "AGPL-3.0"
 repository = "https://github.com/iberi22/xavier"
 homepage = "https://github.com/iberi22/xavier"
 keywords = ["memory", "ai-agents", "vector-database", "rag", "embeddings"]
@@ -17,7 +17,9 @@ categories = ["database", "science", "data-structures"]
 [package.metadata.enterprise]
 brand = "Xavier"
 compatibility_alias = "xavier"
-open_source_license = "MIT"
+open_source_license = "AGPL-3.0"
+commercial_license = "Xavier-Commercial-1.0"
+mesh_license = "Xavier-Mesh-1.0"
 
 enterprise_contact = "iberi22"
 support_model = "dual-license-open-core"

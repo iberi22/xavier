@@ -498,13 +498,15 @@ pub struct PgHeartSettings {
 pub struct LicenseSettings {
     pub mesh_accepted: bool,
     pub license_type: String,
+    pub commercial_key: Option<String>,
 }
 
 impl Default for LicenseSettings {
     fn default() -> Self {
         Self {
             mesh_accepted: false,
-            license_type: "MIT".to_string(),
+            license_type: "AGPL-3.0".to_string(),
+            commercial_key: None,
         }
     }
 }
