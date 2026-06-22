@@ -1,7 +1,23 @@
 #[cfg(feature = "dao-evm")]
-use alloy::primitives::Address;
+use alloy::{
+    network::{Ethereum, EthereumWallet},
+    primitives::Address,
+    providers::{Provider, ProviderBuilder},
+    signers::local::PrivateKeySigner,
+    sol,
+};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+#[cfg(feature = "dao-evm")]
+sol!(
+    #[sol(rpc)]
+    interface IXavierDAO {
+        function createProposal(bytes32 clusterId, string calldata title, string calldata description) external;
+        function castVote(bytes32 clusterId, bool approve) external;
+        function getProposalStatus(bytes32 clusterId) external view returns (bool approved, uint64 upvotes, uint64 downvotes);
+    }
+);
 
 /// Configuration for on-chain EVM integration.
 /// Feature-gated behind `cfg(feature = "dao-evm")`.
@@ -67,7 +83,7 @@ impl DaoGovernanceSystem {
 
 
     /// Submits a newly clustered anomaly to the governance board.
-    pub fn submit_proposal(&mut self, cluster_id: &str, title: &str, description: &str) {
+    pub async fn submit_proposal(&mut self, cluster_id: &str, title: &str, description: &str) {
         if !self.active_proposals.contains_key(cluster_id) {
             self.active_proposals.insert(
                 cluster_id.to_string(),
@@ -81,13 +97,39 @@ impl DaoGovernanceSystem {
                     assigned_maintainer: None,
                 },
             );
+
+            #[cfg(feature = "dao-evm")]
+            if let Some(config) = &self.evm_config {
+                let _ = self.submit_proposal_evm(cluster_id, title, description).await;
+            }
         }
     }
 
+    #[cfg(feature = "dao-evm")]
+    async fn submit_proposal_evm(&self, cluster_id: &str, title: &str, description: &str) -> anyhow::Result<()> {
+        let config = self.evm_config.as_ref().ok_or_else(|| anyhow::anyhow!("EVM config missing"))?;
+        let signer: PrivateKeySigner = config.private_key.parse()?;
+        let wallet = EthereumWallet::from(signer);
+        let provider = ProviderBuilder::new()
+            .network::<Ethereum>()
+            .wallet(wallet)
+            .on_http(config.rpc_url.parse()?);
 
+        let contract = IXavierDAO::new(config.contract_address, provider);
+
+        let mut cluster_id_bytes = [0u8; 32];
+        let bytes = cluster_id.as_bytes();
+        let len = bytes.len().min(32);
+        cluster_id_bytes[..len].copy_from_slice(&bytes[..len]);
+
+        let tx = contract.createProposal(cluster_id_bytes.into(), title.to_string(), description.to_string());
+        let _receipt = tx.send().await?.get_receipt().await?;
+
+        Ok(())
+    }
 
     /// Simulates a vote cast via GitHub Reaction (👍 or 👎).
-    pub fn cast_vote(&mut self, cluster_id: &str, approve: bool) -> Result<(), String> {
+    pub async fn cast_vote(&mut self, cluster_id: &str, approve: bool) -> Result<(), String> {
         let proposal = self
             .active_proposals
             .get_mut(cluster_id)
@@ -99,7 +141,35 @@ impl DaoGovernanceSystem {
             proposal.downvotes += 1;
         }
 
+        #[cfg(feature = "dao-evm")]
+        if let Some(config) = &self.evm_config {
+            let _ = self.cast_vote_evm(cluster_id, approve).await;
+        }
+
         self.evaluate_consensus(cluster_id);
+        Ok(())
+    }
+
+    #[cfg(feature = "dao-evm")]
+    async fn cast_vote_evm(&self, cluster_id: &str, approve: bool) -> anyhow::Result<()> {
+        let config = self.evm_config.as_ref().ok_or_else(|| anyhow::anyhow!("EVM config missing"))?;
+        let signer: PrivateKeySigner = config.private_key.parse()?;
+        let wallet = EthereumWallet::from(signer);
+        let provider = ProviderBuilder::new()
+            .network::<Ethereum>()
+            .wallet(wallet)
+            .on_http(config.rpc_url.parse()?);
+
+        let contract = IXavierDAO::new(config.contract_address, provider);
+
+        let mut cluster_id_bytes = [0u8; 32];
+        let bytes = cluster_id.as_bytes();
+        let len = bytes.len().min(32);
+        cluster_id_bytes[..len].copy_from_slice(&bytes[..len]);
+
+        let tx = contract.castVote(cluster_id_bytes.into(), approve);
+        let _receipt = tx.send().await?.get_receipt().await?;
+
         Ok(())
     }
 
@@ -144,20 +214,20 @@ impl Default for DaoGovernanceSystem {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_dao_governance_consensus() {
+    #[tokio::test]
+    async fn test_dao_governance_consensus() {
         let mut dao = DaoGovernanceSystem::new();
-        dao.submit_proposal("CLUSTER_P2P", "Fix Sync Race", "P2P network race condition detected.");
+        dao.submit_proposal("CLUSTER_P2P", "Fix Sync Race", "P2P network race condition detected.").await;
         
         // Cast 4 upvotes (not enough quorum)
         for _ in 0..4 {
-            dao.cast_vote("CLUSTER_P2P", true).unwrap();
+            dao.cast_vote("CLUSTER_P2P", true).await.unwrap();
         }
         let prop = dao.active_proposals.get("CLUSTER_P2P").unwrap();
         assert!(!prop.is_approved_for_pr); // Quorum is 5
 
         // Cast 1 downvote (total 5 votes: 4 up, 1 down = 80%)
-        dao.cast_vote("CLUSTER_P2P", false).unwrap();
+        dao.cast_vote("CLUSTER_P2P", false).await.unwrap();
         
         let prop = dao.active_proposals.get("CLUSTER_P2P").unwrap();
         assert!(prop.is_approved_for_pr); // Reached 80% with 5 votes!
@@ -165,14 +235,14 @@ mod tests {
         println!("Winner: {:?}", prop.assigned_maintainer);
     }
 
-    #[test]
-    fn test_dao_governance_rejection() {
+    #[tokio::test]
+    async fn test_dao_governance_rejection() {
         let mut dao = DaoGovernanceSystem::new();
-        dao.submit_proposal("CLUSTER_UI", "Change Button Color", "Minor UI tweak.");
+        dao.submit_proposal("CLUSTER_UI", "Change Button Color", "Minor UI tweak.").await;
         
         // Cast 3 upvotes and 3 downvotes (50%, below 80% threshold)
-        for _ in 0..3 { dao.cast_vote("CLUSTER_UI", true).unwrap(); }
-        for _ in 0..3 { dao.cast_vote("CLUSTER_UI", false).unwrap(); }
+        for _ in 0..3 { dao.cast_vote("CLUSTER_UI", true).await.unwrap(); }
+        for _ in 0..3 { dao.cast_vote("CLUSTER_UI", false).await.unwrap(); }
         
         let prop = dao.active_proposals.get("CLUSTER_UI").unwrap();
         assert!(!prop.is_approved_for_pr);

@@ -6,6 +6,8 @@
 pub mod reward;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod persistence_test;
 
 use crate::memory::telemetry::NavTelemetry;
 use crate::retrieval::{LayerWeights, NavigationPolicy};
