@@ -179,21 +179,24 @@ class EngramMemory(MemoryHandler):
         self.set_url(ENGRAM_URL)
     
     async def search(self, session: aiohttp.ClientSession, query: str, category: str = "semantic") -> Dict[str, Any]:
-        # Engram uses /mem/search per existing scripts
-        url = f"{self.base_url}/mem/search"
-        payload = {"query": query, "limit": 5}
+        # Engram uses GET /search?q= per its HTTP API
+        # Search across all projects
+        url = f"{self.base_url}/search"
+        params = {"q": query, "limit": 5}
         start = time.perf_counter()
         try:
-            async with session.post(url, json=payload, timeout=5) as resp:
+            async with session.get(url, params=params, timeout=5) as resp:
                 latency = (time.perf_counter() - start) * 1000
                 self.latency_samples.append(latency)
                 self.total_queries += 1
                 if resp.status == 200:
                     data = await resp.json()
-                    results = data.get("matches", data.get("results", data.get("memories", [])))
+                    # Engram returns a list of observations directly
+                    results = data if isinstance(data, list) else data.get("results", data.get("observations", []))
+                    total = len(results)
                     self.success_count += 1
                     return {"ok": True, "latency_ms": latency, "results": results,
-                            "total_memories": len(results), "system": self.system_id}
+                            "total_memories": total, "system": self.system_id}
                 return {"ok": False, "latency_ms": latency, "results": [],
                         "error": f"HTTP {resp.status}", "system": self.system_id}
         except Exception as e:
