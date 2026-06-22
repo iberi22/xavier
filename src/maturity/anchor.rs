@@ -48,6 +48,14 @@ pub struct SubcomponentAnchor {
     /// Tests that validate this subcomponent
     #[serde(default)]
     pub test_anchors: Vec<String>,
+    /// Keywords used to search agent memory / sessions for evidence of usage.
+    /// Falls back to the feature id + name when empty (v2 deep-scan, Layer 3).
+    #[serde(default)]
+    pub memory_keywords: Vec<String>,
+    /// GitHub issue labels (or .gitcore feature tags) associated with this
+    /// subcomponent, used to gauge issue health (v2 deep-scan, Layer 4).
+    #[serde(default)]
+    pub issue_labels: Vec<String>,
 }
 
 fn default_max() -> u8 {

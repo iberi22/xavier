@@ -26,6 +26,9 @@ pub struct MaturityReport {
     pub summary: Summary,
     pub features: Vec<ReportFeature>,
     pub sprint: SprintInfo,
+    /// History of past scans for trend tracking (v2)
+    #[serde(default)]
+    pub history: Vec<HistoryEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,6 +49,12 @@ pub struct ReportFeature {
     pub subcomponents: Vec<ReportSubcomponent>,
     pub loc_estimate: Option<usize>,
     pub whats_missing: Vec<String>,
+    /// Memory evidence score (v2 deep-scan)
+    #[serde(default)]
+    pub memory_usage: u8,
+    /// Issue health score (v2 deep-scan)
+    #[serde(default)]
+    pub issue_health: u8,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +67,15 @@ pub struct ReportSubcomponent {
     pub tests_total: usize,
     pub symbols_found: u8,
     pub symbols_total: u8,
+    /// Memory evidence for this subcomponent (v2 deep-scan)
+    #[serde(default)]
+    pub memory_usage: u8,
+    /// Issue health for this subcomponent (v2 deep-scan)
+    #[serde(default)]
+    pub issue_health: u8,
+    /// Evidence detail string
+    #[serde(default)]
+    pub evidence_detail: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,6 +92,15 @@ pub struct IssueRef {
     pub title: String,
 }
 
+/// One entry in the history array.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HistoryEntry {
+    pub generated: String,
+    pub head: String,
+    pub overall_maturity: u8,
+    pub scanner: String,
+}
+
 impl MaturityReport {
     /// Build a report from scanned and scored features.
     pub fn from_scored(
@@ -84,6 +111,7 @@ impl MaturityReport {
         sprint_id: &str,
         sprint_target: u8,
         active_issues: Vec<IssueRef>,
+        previous_history: Vec<HistoryEntry>,
     ) -> Self {
         let report_features: Vec<ReportFeature> = features
             .into_iter()
@@ -108,6 +136,9 @@ impl MaturityReport {
                             tests_total: s.tests_total,
                             symbols_found: s.symbols_found,
                             symbols_total: s.symbols_total,
+                            memory_usage: s.memory_usage,
+                            issue_health: s.issue_health,
+                            evidence_detail: s.evidence_detail,
                         }
                     })
                     .collect();
@@ -118,18 +149,45 @@ impl MaturityReport {
                     .map(|s| format!("{}: {}% (tests {}/{})", s.name, s.maturity, s.tests_passing, s.tests_total))
                     .collect();
 
+                // Determine memory/issue health as aggregate of subcomponents
+                let avg_memory = if subcomponents.is_empty() {
+                    0u8
+                } else {
+                    (subcomponents.iter().map(|s| s.memory_usage as u32).sum::<u32>() / subcomponents.len() as u32) as u8
+                };
+                let avg_issues = if subcomponents.is_empty() {
+                    0u8
+                } else {
+                    (subcomponents.iter().map(|s| s.issue_health as u32).sum::<u32>() / subcomponents.len() as u32) as u8
+                };
+
                 ReportFeature {
-                    id: String::new(), // filled below
-                    name: String::new(),
-                    priority: String::new(),
-                    maturity_percent: 0,
+                    id: f.id.clone(),
+                    name: f.name.clone(),
+                    priority: "medium".to_string(),
+                    maturity_percent: f.overall as u8,
                     status: f.status.clone(),
                     subcomponents,
                     loc_estimate: None,
                     whats_missing: missing,
+                    memory_usage: avg_memory,
+                    issue_health: avg_issues,
                 }
             })
             .collect();
+
+        // Add current scan to history
+        let mut history = previous_history;
+        history.push(HistoryEntry {
+            generated: scanned_at.clone(),
+            head: head_commit.clone(),
+            overall_maturity: summary.overall_maturity,
+            scanner: "xavier-maturity-scanner-v2".to_string(),
+        });
+        // Keep last 20 entries
+        if history.len() > 20 {
+            history = history.split_off(history.len() - 20);
+        }
 
         Self {
             schema: "xavier.maturity.v2".to_string(),
@@ -147,6 +205,7 @@ impl MaturityReport {
                 target: sprint_target,
                 active_issues,
             },
+            history,
         }
     }
 
@@ -162,7 +221,7 @@ impl MaturityReport {
     /// Generate a human-readable markdown summary.
     pub fn to_markdown(&self) -> String {
         let mut md = format!(
-            "# Maturity Report\n\n**Generated:** `{}`\n**Sprint:** `{}` (target: {}%)\n**Overall:** **{}%** | Production Ready: {}/{} | Needs Work: {} | In Progress: {}\n\n| Feature | % | Status | Tests |\n|---------|---|---|-------|\n",
+            "# Maturity Report\n\n**Generated:** `{}`\n**Sprint:** `{}` (target: {}%)\n**Overall:** **{}%** | Production Ready: {}/{} | Needs Work: {} | In Progress: {}\n\n| Feature | % | Status | Tests | Memory | Issues |\n|---------|---|---|-------|-------|\n",
             self.meta.generated,
             self.sprint.id,
             self.sprint.target,
@@ -180,13 +239,23 @@ impl MaturityReport {
                 _ => "🔧",
             };
             md.push_str(&format!(
-                "| {} {} | {}% | {} | {} |\n",
+                "| {} {} | {}% | {} | {} | {}% | {}% |\n",
                 status_icon, feat.name, feat.maturity_percent, feat.status,
                 feat.subcomponents.iter()
                     .map(|s| format!("{}: {}%", s.name, s.maturity))
                     .collect::<Vec<_>>()
-                    .join(", ")
+                    .join(", "),
+                feat.memory_usage, feat.issue_health
             ));
+        }
+
+        if !self.history.is_empty() {
+            md.push_str("\n## History\n\n");
+            md.push_str("| Date | Overall |\n|---|---|\n");
+            for entry in self.history.iter().rev().take(10) {
+                let date = &entry.generated[..10];
+                md.push_str(&format!("| {} | {}% |\n", date, entry.overall_maturity));
+            }
         }
 
         md
