@@ -83,6 +83,7 @@ async fn test_state() -> (AppState, WorkspaceContext) {
             code_query,
             code_db,
             security_service: Arc::new(crate::app::security_service::SecurityService::new()),
+            code_graph_dump_path: None,
         },
         workspace,
     )
@@ -1108,15 +1109,15 @@ async fn mcp_get_not_found() {
 
 #[tokio::test]
 async fn test_get_code_graph_success() {
-    let (state, workspace) = test_state().await;
-    let router = test_router(state, workspace);
+    let (mut state, workspace) = test_state().await;
 
-    // Create a mock codegraph.json file
-    let xavier_dir = std::path::Path::new(".xavier");
-    if !xavier_dir.exists() {
-        std::fs::create_dir_all(xavier_dir).unwrap();
+    // Create a mock codegraph.json file in a unique location
+    let dump_path = unique_test_path("xavier-mcp-code-graph", "codegraph.json");
+    if let Some(parent) = dump_path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
     }
-    let dump_path = xavier_dir.join("codegraph.json");
+    state.code_graph_dump_path = Some(dump_path.clone());
+    let router = test_router(state, workspace);
     let mock_data = json!({
         "_meta": {
             "repo": "test-repo",

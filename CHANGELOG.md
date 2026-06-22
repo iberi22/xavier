@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## v0.11.0 (2026-06-22)
+
+### Added
+
+- **RAG Backend for AI Agents** - Optimized Xavier for use as a 100% autonomous backend for agents like OpenClaw, Claude, and DeepSeek.
+- **Quick Setup Scripts** - Added `start-xavier-rag.ps1` for one-click startup on Windows, including automatic token generation and embedding verification.
+- **Integrated Health Check** - New endpoint `/v1/health/ready` for automated readiness verification by agents and orchestration tools.
+- **Practical RAG Guide** - New `docs/XAVIER_RAG_GUIDE.md` for connecting agents in under 10 minutes.
+- **Integration Examples** - Added `examples/` for Python RAG clients and MCP configurations.
+- **GLLM Docker Support** - Enhanced `docker-compose.yml` with native support for GLLM local embeddings.
+
+### Fixed
+
+- **MCP Concurrency** - Fixed race conditions and file collisions in MCP integration tests, ensuring 100% stability in parallel CI environments.
+- **E2E Stability** - Implemented and verified full end-to-end RAG flow with new test suite.
+
 ## v0.10.0 (2026-06-15)
 
 ### Added

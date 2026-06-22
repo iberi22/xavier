@@ -1,56 +1,19 @@
-# Xavier Examples
+# Xavier Agent Integration Examples
 
-Ejemplos funcionales para interactuar con **Xavier**, el motor de contexto y memoria con embeddings vectoriales.
+Este directorio contiene ejemplos de cómo integrar Xavier con diferentes agentes de IA.
 
-## Requisitos
+## MCP (Model Context Protocol)
 
-- **CLI:** `xavier` instalado en el PATH (ver [instalación](../README.md))
-- **Server:** El servicio corriendo en `http://localhost:8006`
-- **HTTP:** `curl` y `jq` instalados
-- **MCP:** `xavier mcp` disponible desde la línea de comandos
+### Claude Desktop
+Copia el contenido de `claude_desktop_config.json` en tu archivo de configuración de Claude Desktop (usualmente en `%APPDATA%\Claude\claude_desktop_config.json` en Windows).
 
-## Archivos
+### OpenClaw
+OpenClaw soporta Xavier nativamente. Asegúrate de configurar la variable de entorno `XAVIER_TOKEN`.
 
-| Archivo | Descripción |
-|---------|-------------|
-| `cli.sh` | Uso de la CLI de Xavier: agregar, buscar, recordar y estadísticas |
-| `http.sh` | API REST con curl: health, agregar memoria, búsqueda semántica y stats |
-| `mcp.sh` | Protocolo MCP sobre stdio: inicializar, listar herramientas y llamadas |
+## REST API
 
-## Cómo usar
+### `python_rag_client.py`
+Ejemplo simple de cómo realizar búsquedas semánticas y guardar memorias usando Python.
 
-### 1. Iniciar el servidor
-
-```bash
-xavier http --port 8006
-```
-
-> También puedes usar Docker: `docker compose up xavier`
-
-### 2. Ejecutar ejemplos
-
-```bash
-# CLI
-chmod +x cli.sh
-./cli.sh
-
-# HTTP
-chmod +x http.sh
-TOKEN="tu-token-aqui" ./http.sh
-
-# MCP
-chmod +x mcp.sh
-./mcp.sh
-```
-
-## Notas
-
-- Los ejemplos usan `tu-token-aqui` como placeholder del token. Reemplázalo por tu token real.
-- Los comandos asumen que el binario `xavier` está disponible globalmente.
-- Para entornos Windows, usa los scripts equivalentes en PowerShell que se encuentran en [`scripts/`](../scripts/).
-
-## Siguientes pasos
-
-- Revisa la [documentación de API](../docs/api.md) para ver todos los endpoints disponibles
-- Explora el [panel de control web](../panel-ui/) para gestión visual
-- Lee [`CONTRIBUTING.md`](../CONTRIBUTING.md) si quieres contribuir
+### `nodejs_rag_client.js`
+Ejemplo de integración con Node.js usando `fetch`.
