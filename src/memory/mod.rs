@@ -26,6 +26,7 @@ pub mod qmd_memory;
 pub mod schema;
 pub mod semantic;
 pub mod semantic_cache;
+pub mod cloud_sync;
 pub mod sync;
 pub mod simple_index;
 pub mod sqlite_store;
