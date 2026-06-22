@@ -255,17 +255,19 @@ PRÓXIMO PASO: Asignar issues #115, #166, #200 a Jules + monitorear PRs
 
 ### Fase 5 — Production Release ✅ (2026-06-22)
 - [x] #196 — Android APK (Flutter+Rust)
-- [ ] #200 — EPIC v1.0 completo (pendiente)
+- [x] #200 — EPIC v1.0 completo ✅ (merged #266)
+  - [x] Governance DAO async + EVM on-chain (alloy)
+  - [x] HORMER persistence test
+  - [x] Tri-memory benchmark results
+  - [x] Codebase-vs-docs alignment audit (#264, #265)
 - [x] Instalar Engram como MCP server
 - [x] Xavier como MCP server en OpenClaw
 - [x] Script de benchmark comparativo
 - [x] Evaluar los 3 sistemas enfrentándolos
-- [x] Codebase-vs-docs alignment audit (#264, #265 mergeados)
 
 ### Siguiente — Governanza y Escalamiento
-- [ ] #115 — [EPIC] Xavier Sovereign Mesh (asignar a Jules)
-- [ ] #166 — feat-governance-dao: Bicameral DAO on-chain (asignar a Jules)
-- [ ] #200 — EPIC v1.0 completo
+- [ ] #115 — [EPIC] Xavier Sovereign Mesh (asignado a Jules)
+- [ ] #166 — feat-governance-dao: Bicameral DAO on-chain (asignado a Jules)
 - [ ] Mesh multi-nodo con peers reales
 - [ ] Documentación y on-boarding para otros agentes
 
