@@ -333,7 +333,9 @@ pub async fn handle_core_tool(
             ))?)
         }
         "get_code_graph" => {
-            let dump_path = std::path::PathBuf::from(".xavier/codegraph.json");
+            let dump_path = _state.code_graph_dump_path.clone()
+                .unwrap_or_else(|| std::path::PathBuf::from(".xavier/codegraph.json"));
+
             if !tokio::fs::try_exists(&dump_path).await.unwrap_or(false) {
                 return Err(anyhow::anyhow!(
                     "Code graph dump not found at {}. Run 'xavier code scan' to generate it.",

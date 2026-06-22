@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "xavier": {
+      "command": "xavier",
+      "args": ["mcp"],
+      "env": {
+        "XAVIER_TOKEN": "replace-with-your-token"
+      }
+    }
+  }
+}

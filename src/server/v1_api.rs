@@ -1115,6 +1115,7 @@ mod tests {
                 code_query,
                 code_db,
                 security_service: Arc::new(crate::app::security_service::SecurityService::new()),
+                code_graph_dump_path: None,
             },
             workspace,
         )

@@ -644,6 +644,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/build", get(build_handler))
         .route("/ready", get(readiness_handler))
         .route("/readiness", get(readiness_handler))
+        .route("/v1/health/ready", get(readiness_handler))
         .route("/panel", get(panel_index))
         .route("/panel/assets/{*path}", get(panel_asset))
         .merge(protected_routes)
