@@ -113,20 +113,34 @@ impl RewardEngine {
     }
 
     /// Calculate the XP reward for a given contribution without applying it.
-    pub fn calculate_reward(&self, contribution: &ContributionType) -> u64 {
+    pub fn calculate_reward(
+        &self,
+        contribution: &ContributionType,
+        tier: super::wallet::InvestmentTier,
+    ) -> u64 {
+        let apy_multiplier = tier.apy() / 5.0; // Base is 5.0
+
         let raw = match contribution {
             ContributionType::StorageProvided {
                 bytes,
                 duration_secs,
-            } => (*bytes as f64 * *duration_secs as f64) / 1_000_000.0 * self.reward_rate,
+            } => {
+                (*bytes as f64 * *duration_secs as f64) / 1_000_000.0
+                    * self.reward_rate
+                    * apy_multiplier
+            }
             ContributionType::BandwidthProvided { bytes } => {
-                *bytes as f64 / 1_000_000.0 * self.reward_rate
+                *bytes as f64 / 1_000_000.0 * self.reward_rate * apy_multiplier
             }
             ContributionType::ComputeProvided { cycles } => {
-                *cycles as f64 / 100_000.0 * self.reward_rate
+                *cycles as f64 / 100_000.0 * self.reward_rate * apy_multiplier
             }
-            ContributionType::PeerDiscovery { peers_connected } => *peers_connected as f64 * 10.0,
-            ContributionType::DataValidated { records } => *records as f64 * 5.0,
+            ContributionType::PeerDiscovery { peers_connected } => {
+                *peers_connected as f64 * 10.0 * apy_multiplier
+            }
+            ContributionType::DataValidated { records } => {
+                *records as f64 * 5.0 * apy_multiplier
+            }
         };
         // Floor to u64, minimum 1 XP for non-zero contributions
         if raw > 0.0 {
@@ -160,7 +174,17 @@ impl RewardEngine {
         // Ensure daily cap is fresh
         self.daily_reset();
 
-        let xp = self.calculate_reward(&contribution);
+        let (tier, lifetime_earned) = {
+            let wallet = self.wallet.lock().await;
+            (wallet.balance.tier, wallet.balance.lifetime_earned)
+        };
+
+        // Economy: 2% Annual Inflation (placeholder logic)
+        // Adjust reward based on how long the system has been running or total supply
+        // For now, we simulate a slight inflation adjustment based on lifetime_earned
+        let inflation_adj = 1.0 + (lifetime_earned as f64 / 10_000_000.0).min(0.02);
+
+        let xp = (self.calculate_reward(&contribution, tier) as f64 * inflation_adj) as u64;
         if xp == 0 {
             bail!("Contribution too small to earn XP");
         }
@@ -183,10 +207,21 @@ impl RewardEngine {
             bail!("No XP available under daily cap");
         }
 
-        // Credit the wallet
+        // Credit the wallet, applying the 5% burn rate if applicable
         {
             let mut wallet = self.wallet.lock().await;
-            wallet.credit(xp_awarded, TransactionKind::Reward, description);
+
+            // Economy: Apply 5% protocol burn if it's a high-value reward or based on economy settings
+            // For now, we simulate the burn by reducing the credited amount
+            let burn_amount = (xp_awarded as f64 * 0.05) as u64;
+            let net_xp = xp_awarded.saturating_sub(burn_amount);
+
+            wallet.credit(net_xp, TransactionKind::Reward, description);
+
+            if burn_amount > 0 {
+                tracing::debug!(burn = burn_amount, "🔥 Economy: burned XP from reward");
+                // In a real implementation, we would record this in the EconomyEngine or a global ledger
+            }
         }
 
         // Update atomic counter
@@ -234,7 +269,7 @@ mod tests {
             bytes: 1_000_000,
             duration_secs: 1000,
         };
-        let xp = engine.calculate_reward(&contrib);
+        let xp = engine.calculate_reward(&contrib, super::super::wallet::InvestmentTier::Base);
         assert_eq!(xp, 1000);
     }
 
@@ -243,7 +278,7 @@ mod tests {
         let (engine, _) = setup_engine().await;
         // 10 MB transferred → 10_000_000 / 1_000_000 * 1.0 = 10 XP
         let contrib = ContributionType::BandwidthProvided { bytes: 10_000_000 };
-        let xp = engine.calculate_reward(&contrib);
+        let xp = engine.calculate_reward(&contrib, super::super::wallet::InvestmentTier::Base);
         assert_eq!(xp, 10);
     }
 
@@ -252,7 +287,7 @@ mod tests {
         let (engine, _) = setup_engine().await;
         // 500_000 cycles → 500_000 / 100_000 * 1.0 = 5 XP
         let contrib = ContributionType::ComputeProvided { cycles: 500_000 };
-        let xp = engine.calculate_reward(&contrib);
+        let xp = engine.calculate_reward(&contrib, super::super::wallet::InvestmentTier::Base);
         assert_eq!(xp, 5);
     }
 
@@ -260,7 +295,7 @@ mod tests {
     async fn test_peer_discovery_flat_reward() {
         let (engine, _) = setup_engine().await;
         let contrib = ContributionType::PeerDiscovery { peers_connected: 3 };
-        let xp = engine.calculate_reward(&contrib);
+        let xp = engine.calculate_reward(&contrib, super::super::wallet::InvestmentTier::Base);
         assert_eq!(xp, 30); // 3 * 10
     }
 
@@ -268,7 +303,7 @@ mod tests {
     async fn test_data_validated_flat_reward() {
         let (engine, _) = setup_engine().await;
         let contrib = ContributionType::DataValidated { records: 7 };
-        let xp = engine.calculate_reward(&contrib);
+        let xp = engine.calculate_reward(&contrib, super::super::wallet::InvestmentTier::Base);
         assert_eq!(xp, 35); // 7 * 5
     }
 
@@ -282,10 +317,11 @@ mod tests {
             .await
             .unwrap();
 
+        // 50 XP awarded, but 5% burn applied (50 - 2 = 48)
         assert_eq!(event.xp_awarded, 50);
 
         let w = wallet.lock().await;
-        assert_eq!(w.balance.xp_balance, 50);
+        assert_eq!(w.balance.xp_balance, 48);
     }
 
     #[tokio::test]
@@ -300,7 +336,8 @@ mod tests {
             .process_contribution(contrib, "Should be capped")
             .await;
         assert!(result.is_ok());
-        assert_eq!(result.unwrap().xp_awarded, 5); // capped to daily cap
+        let event = result.unwrap();
+        assert_eq!(event.xp_awarded, 5); // capped to daily cap
 
         // Next attempt should fail
         let contrib2 = ContributionType::DataValidated { records: 1 };
@@ -319,7 +356,7 @@ mod tests {
             bytes: 1,
             duration_secs: 1,
         };
-        let xp = engine.calculate_reward(&contrib);
+        let xp = engine.calculate_reward(&contrib, super::super::wallet::InvestmentTier::Base);
         assert_eq!(xp, 1); // non-zero contributions receive the minimum reward
     }
 
@@ -348,6 +385,6 @@ mod tests {
             bytes: 1_000_000,
             duration_secs: 1000,
         };
-        assert_eq!(engine.calculate_reward(&contrib), 2500);
+        assert_eq!(engine.calculate_reward(&contrib, super::super::wallet::InvestmentTier::Base), 2500);
     }
 }
