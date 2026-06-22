@@ -70,4 +70,5 @@ pub struct AppState {
     pub indexer: FileIndexer,
     pub agent_indexer: crate::memory::agent_indexer::AgentIndexer,
     pub security_service: Arc<SecurityService>,
+    pub code_graph_dump_path: Option<std::path::PathBuf>,
 }

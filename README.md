@@ -7,10 +7,16 @@
 
 Xavier is a **Rust-based context engine and memory runtime for AI agents** with HTTP, CLI, MCP, mesh sync, and data-sharing entry points. It stores, retrieves, curates, and exports vector-backed memory over SQLite/SQLite-Vec, while giving agents a common substrate for context recall, code graph queries, session sharing, and local-first coordination.
 
-Current release: **0.10.0-12-06-2026**.
+Current release: **0.11.0-22-06-2026**.
 
 ## Quick Start
 
+### Windows (RAG Optimized)
+```powershell
+./start-xavier-rag.ps1
+```
+
+### Manual / Linux
 ```bash
 # Install from source
 cargo install --path .
@@ -199,6 +205,7 @@ Runtime configuration is read from environment variables and Xavier config files
 - [API Reference](docs/API.md)
 - [CLI Reference](docs/CLI.md)
 - [RAG Usage Guide](docs/guides/RAG_USAGE_GUIDE.md)
+- [Practical RAG Guide (Xavier v0.11)](docs/XAVIER_RAG_GUIDE.md)
 - [Deployment Guide](docs/DEPLOYMENT.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Feature Status](docs/FEATURE_STATUS.md)
