@@ -74,19 +74,20 @@ La inflación se destina únicamente a recompensas de nodos activos.
 El precio base del token se rige por una **bonding curve exponencial suavizada**:
 
 ```
-P(S) = P_0 * e^(k * S / S_max)
+P(S) = P_0 * e^(k * (S - S_0) / S_max)  para S ≥ S_0
 ```
 
 Donde:
 - **P(S)** = Precio en USD cuando el suministro circulante es S
-- **P_0** = Precio inicial (seed): $0.10
+- **P_0** = Precio inicial (seed): $0.10 — precio cuando S = S_0
 - **k** = Factor de curvatura: 4.0
 - **S** = Suministro circulante actual
+- **S_0** = Suministro inicial: 10,000,000 XAV
 - **S_max** = Suministro máximo: 100,000,000
 
 **Precio máximo teórico** (cuando S = S_max):
 ```
-P_max = 0.10 * e^(4.0) ≈ $5.46
+P_max = 0.10 * e^(4.0 * 90M / 100M) = 0.10 * e^3.6 ≈ $3.66
 ```
 
 ### 2.4 Curva de Recompra (Buyback Curve)
@@ -126,7 +127,7 @@ Porcentaje liberado en tiempo t:
 f(t) = {
     0,                              si t < L_N * 0.25
     0.30,                           si L_N * 0.25 ≤ t < L_N / 2
-    0.30 + 0.70 * (t - L_N/2) / L_N,  si L_N/2 ≤ t ≤ L_N
+    0.30 + 0.70 * (t - L_N/2) / (L_N/2),  si L_N/2 ≤ t ≤ L_N
     1.0,                            si t > L_N
 }
 ```
@@ -135,8 +136,8 @@ f(t) = {
 - Mes 0-1.5: 0% liberado
 - Mes 1.5: 30% liberado (desbloqueo inicial)
 - Mes 3: 50% liberado
-- Mes 4.5: ~73% liberado
-- Mes 6: 100% liberado
+- Mes 4.5: ~65% liberado
+- Mes 6: 100% liberado ✅
 
 ### 3.3 Penalización por Retiro Anticipado
 
@@ -177,6 +178,20 @@ Donde:
 - **R_diaria** = Tokens XAV liberados como recompensa cada día
 - **T_depositado** = Cantidad de tokens en stake
 - Recompensas se distribuyen diariamente y **no tienen lock** (se pueden retirar inmediatamente)
+
+> **⚠️ Nota de Sostenibilidad:** Los APYs altos (Platinum 17.5%, Diamond 25%, Sovereign 40%)
+> **no pueden financiarse solo con la inflación del 2% anual.** Un inversor Diamond con 10,000 XAV
+> genera 2,500 XAV/año en rewards, mientras la inflación total solo produce 200,000 XAV/año.
+> Estos APYs se financian con:
+> 1. Tarifas de red (servicios del mesh: cómputo, almacenamiento, inferencia)
+> 2. Revenue share del treasury
+> 3. Rewards de liquidez (POL farming)
+> 4. El burn rate del 5% reduce la oferta circulante, compensando parcialmente
+>
+> **Modelo de revenue share por nivel:**
+> - Bronze-Silver: 100% de rewards de inflación
+> - Gold-Platinum: 60% inflación + 40% tarifas
+> - Diamond-Sovereign: 20% inflación + 80% tarifas y treasury
 
 ---
 
@@ -362,13 +377,13 @@ P(S) = P_0 * e^(k * (S - S_0) / S_max)  para S ≥ S_0
 ### A.2 Costo de Compra (de S_1 a S_2 tokens)
 ```
 Costo(S_1, S_2) = ∫_{S_1}^{S_2} P(s) ds
-                 = P_0 * (S_max / k) * [e^(k*S_2/S_max) - e^(k*S_1/S_max)]
+                 = P_0 * (S_max / k) * [e^(k*(S_2 - S_0)/S_max) - e^(k*(S_1 - S_0)/S_max)]
 ```
 
 ### A.3 Retorno de Venta (de S_1 a S_2 tokens)
 ```
-Retorno(S_1, S_2) = ∫_{S_1}^{S_2} P_buy(s) ds
-                   = 0.90 * P_0 * (S_max / k) * [e^(k*S_2/S_max) - e^(k*S_1/S_max)]
+Retorno(S_1, S_2) = 0.90 * ∫_{S_1}^{S_2} P(s) ds
+                   = 0.90 * P_0 * (S_max / k) * [e^(k*(S_2 - S_0)/S_max) - e^(k*(S_1 - S_0)/S_max)]
 ```
 
 ### A.4 Valor Presente de Vesting (DCF)
@@ -385,7 +400,7 @@ Donde:
 
 ### A.5 Cálculo del Reserve Ratio Dinámico
 ```
-RR_ajustado = RR_actual * (1 + β * (RR_objetivo - RR_actual) / RR_objetivo)
+RR_ajustado = RR_actual + β * (RR_objetivo - RR_actual)
 ```
 Donde β = 0.5 es el factor de ajuste.
 
@@ -396,21 +411,21 @@ Donde β = 0.5 es el factor de ajuste.
 ### B.1 Escenario Base (12 meses)
 - Precio inicial: $0.10
 - Suministro circulante: 10M → 25M
-- Precio final estimado: $0.10 * e^(4 * 15M / 100M) = $0.10 * e^0.6 ≈ $0.182
+- Precio final: $0.10 * e^(4 * (25M-10M) / 100M) = $0.10 * e^0.6 ≈ $0.182
 - Market cap: ~$4.55M
 
 ### B.2 Escenario Alcista
 - Adopción alta: 50M circulantes en 12 meses
-- Precio: $0.10 * e^(4 * 40M / 100M) = $0.10 * e^1.6 ≈ $0.495
+- Precio: $0.10 * e^(4 * (50M-10M) / 100M) = $0.10 * e^1.6 ≈ $0.495
 - Market cap: ~$24.75M
 
 ### B.3 Retorno para Inversores Gold ($1,000 @ $0.10 = 10,000 XAV)
 - Compra: 10,000 XAV @ $0.10
-- Escenario base (12m): $0.182 → valor $1,820 (+82%)
+- Escenario base (12m): $0.182 → valor $1,822 (+82%)
 - Escenario alcista (12m): $0.495 → valor $4,950 (+395%)
-- APY por staking Gold (12.5%): +1,250 XAV → +$227 base / +$618 alcista
-- **Total retorno base:** $2,047 (+105%)
-- **Total retorno alcista:** $5,568 (+457%)
+- APY por staking Gold (12.5%): +1,250 XAV → +$228 base / +$619 alcista
+- **Total retorno base:** $2,050 (+105%)
+- **Total retorno alcista:** $5,569 (+457%)
 
 ---
 
