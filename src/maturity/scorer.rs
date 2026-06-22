@@ -2,6 +2,18 @@
 //!
 //! Applies the scoring formula to produce a deterministic maturity percentage
 //! for each feature.
+//!
+//! ## Formula (v2 — 5 metrics)
+//!
+//! ```text
+//! sub_score = static_pass_rate × weight × STATIC_WEIGHT (0.35)  // symbols exist
+//!           + test_pass_rate × weight × TEST_WEIGHT (0.35)      // tests pass
+//!           + gate_ok × weight × GATE_WEIGHT (0.10)             // feature gate configured
+//!           + memory_evidence × weight × MEMORY_WEIGHT (0.10)   // evidence from sessions/code
+//!           + issue_health × weight × ISSUE_WEIGHT (0.10)       // evidence from discussions
+//!
+//! feature_score = Σ(sub_score) / Σ(weight) × 100
+//! ```
 
 use serde::{Deserialize, Serialize};
 use crate::maturity::anchor::FeatureAnchor;
@@ -20,6 +32,15 @@ pub struct ScoredSubcomponent {
     pub tests_total: usize,
     pub symbols_found: u8,
     pub symbols_total: u8,
+    /// Evidence from agent memory / session analysis (Layer 3), 0-100%
+    #[serde(default)]
+    pub memory_usage: u8,
+    /// Evidence from conversations / issues analysis (Layer 4), 0-100%
+    #[serde(default)]
+    pub issue_health: u8,
+    /// Human-readable detail about the evidence
+    #[serde(default)]
+    pub evidence_detail: String,
 }
 
 /// Result of scoring one feature.
@@ -32,47 +53,44 @@ pub struct ScoredFeature {
     pub status: String,
 }
 
-/// Scoring weights.
-const STATIC_WEIGHT: f64 = 0.40; // 40% — code symbols exist
-const TEST_WEIGHT: f64 = 0.50;   // 50% — tests pass
-const GATE_WEIGHT: f64 = 0.10;   // 10% — feature gates configured
+/// Scoring weights — v2: 5 metrics with more balanced distribution.
+const STATIC_WEIGHT: f64 = 0.35;   // 35% — code symbols exist
+const TEST_WEIGHT: f64 = 0.35;     // 35% — tests pass
+const GATE_WEIGHT: f64 = 0.10;    // 10% — feature gates configured
+const MEMORY_WEIGHT: f64 = 0.10;  // 10% — evidence from sessions/code
+const ISSUE_WEIGHT: f64 = 0.10;   // 10% — evidence from discussions
 
-/// Score one feature based on code graph scan and test list scan.
+/// Score one feature with data from all 4 scanning layers.
 ///
-/// Formula:
-/// ```text
-/// subcomponent_score = static_pass_rate × weight × 0.4
-///                    + test_pass_rate × weight × 0.5
-///                    + gate_ok × weight × 0.1
-///
-/// feature_score = Σ(subcomponent_score) / Σ(weight) × 100
-/// ```
+/// Takes optional memory and conversation evidence (0.0 when not available).
 pub fn score_feature(
     feature: &FeatureAnchor,
-    code_scan: &CodeGraphScan,
+    static_scan: &CodeGraphScan,
     test_scan: &TestListScan,
+    memory_evidence: Option<f64>,
+    conversation_evidence: Option<f64>,
 ) -> ScoredFeature {
     let mut scored_subs = Vec::new();
 
     for sub in &feature.subcomponents {
-        // Static analysis
+        // --- Static analysis ---
         let symbols: Vec<String> = sub.static_checks.iter().map(|c| c.symbol.clone()).collect();
-        let static_found = symbols.iter().filter(|s| code_scan.found.contains(*s)).count();
+        let static_found = symbols.iter().filter(|s| static_scan.found.contains(*s)).count();
         let static_pass_rate = if symbols.is_empty() {
             1.0
         } else {
             static_found as f64 / symbols.len() as f64
         };
 
-        // Feature gate
+        // --- Feature gate ---
         let gate_ok = if let Some(ref gate) = sub.required_feature {
             test_scan.all_tests.iter().any(|t| t.contains(gate))
-                || code_scan.found.contains(gate)
+                || static_scan.found.contains(gate)
         } else {
             true
         };
 
-        // Tests
+        // --- Tests ---
         let test_count = sub.test_anchors.len();
         let tests_passing = if test_count == 0 {
             0
@@ -83,12 +101,34 @@ pub fn score_feature(
         };
         let test_pass_rate = if test_count == 0 { 1.0 } else { tests_passing as f64 / test_count as f64 };
 
-        // Weighted score calculation
+        // --- Memory evidence ---
+        let mem_ratio = memory_evidence.unwrap_or(0.0);
+
+        // --- Conversation evidence ---
+        let conv_ratio = conversation_evidence.unwrap_or(0.0);
+
+        // --- Weighted score calculation ---
         let static_score = static_pass_rate * sub.weight as f64 * STATIC_WEIGHT;
         let test_score = test_pass_rate * sub.weight as f64 * TEST_WEIGHT;
         let gate_score = if gate_ok { sub.weight as f64 * GATE_WEIGHT } else { 0.0 };
+        let memory_score = mem_ratio * sub.weight as f64 * MEMORY_WEIGHT;
+        let issue_score = conv_ratio * sub.weight as f64 * ISSUE_WEIGHT;
 
-        let sub_score = (static_score + test_score + gate_score).round() as u8;
+        let sub_score = (static_score + test_score + gate_score + memory_score + issue_score).round() as u8;
+
+        // Build evidence detail string
+        let mut detail_parts = Vec::new();
+        detail_parts.push(format!("static: {}/{}", static_found, symbols.len()));
+        detail_parts.push(format!("tests: {}/{}", tests_passing, test_count));
+        if gate_ok && sub.required_feature.is_some() {
+            detail_parts.push(format!("gate: {}", sub.required_feature.as_ref().unwrap()));
+        }
+        if memory_evidence.is_some() {
+            detail_parts.push(format!("memory: {:.0}%", mem_ratio * 100.0));
+        }
+        if conversation_evidence.is_some() {
+            detail_parts.push(format!("issues: {:.0}%", conv_ratio * 100.0));
+        }
 
         scored_subs.push(ScoredSubcomponent {
             name: sub.name.clone(),
@@ -101,6 +141,9 @@ pub fn score_feature(
             tests_total: test_count,
             symbols_found: static_found as u8,
             symbols_total: symbols.len() as u8,
+            memory_usage: (mem_ratio * 100.0).round() as u8,
+            issue_health: (conv_ratio * 100.0).round() as u8,
+            evidence_detail: detail_parts.join(" | "),
         });
     }
 
