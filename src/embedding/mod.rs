@@ -93,7 +93,7 @@ pub(crate) enum EmbedderBackendConfig {
 }
 
 #[derive(Clone, Debug)]
-pub enum EmbedderConfig {
+pub(crate) enum EmbedderConfig {
     Fallback(Vec<EmbedderBackendConfig>),
     Noop,
 }
@@ -439,7 +439,8 @@ fn cloud_config() -> OpenAICompatibleConfig {
             .api_key
             .clone()
             .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-            .or_else(|| std::env::var("XAVIER_OPENROUTER_API_KEY").ok()),
+            .or_else(|| std::env::var("XAVIER_OPENROUTER_API_KEY").ok())
+            .or_else(|| std::env::var("XAVIER_EMBEDDING_API_KEY").ok()),
         endpoint,
         dimension: embedding_dimension_for_model(&model),
         model,
