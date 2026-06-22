@@ -3,7 +3,7 @@ burn-candle = { path = "patches/burn-candle" }
 
 [package]
 name = "xavier"
-version = "0.10.0-12-06-2026"
+version = "0.11.0-22-06-2026"
 authors = ["BELA <bela@swal.dev>", "Xavier <xavier@swal.dev>"]
 edition = "2021"
 autobins = false
