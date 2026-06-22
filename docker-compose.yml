@@ -36,6 +36,9 @@ services:
       - XAVIER_LOCAL_LLM_MODEL=${XAVIER_LOCAL_LLM_MODEL:-qwen:0.5b}
       # Model Provider (local, gemini, openai, minimax, anthropic)
       - XAVIER_MODEL_PROVIDER=${XAVIER_MODEL_PROVIDER:-local}
+      # GLLM (Local Embeddings) support
+      - XAVIER_EMBEDDING_PROVIDER_MODE=${XAVIER_EMBEDDING_PROVIDER_MODE:-local-gllm}
+      - XAVIER_GLLM_MODEL=${XAVIER_GLLM_MODEL:-all-mpnet-base-v2}
       # Model routing (optional overrides)
       - XAVIER_ROUTER_RETRIEVED_MODEL=${XAVIER_ROUTER_RETRIEVED_MODEL:-}
       - XAVIER_ROUTER_COMPLEX_MODEL=${XAVIER_ROUTER_COMPLEX_MODEL:-}
