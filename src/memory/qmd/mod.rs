@@ -225,10 +225,24 @@ impl QmdMemory {
             }
         }
 
-        Ok(self
+        let cache_results = self
             .search_with_cache_filtered(query_text, limit, filters)
-            .await?
-            .documents)
+            .await?;
+        if !cache_results.documents.is_empty() {
+            return Ok(cache_results.documents);
+        }
+
+        // SPRINT 1: BM25 fallback — search self.docs directly with full BM25 scoring
+        // This guarantees data saved via memory_save (which writes to QmdMemory.docs)
+        // is always findable, even if the MemoryStore path returns empty.
+        let bm25_results = self
+            .bm25_search(query_text, limit, filters)
+            .await?;
+        if !bm25_results.is_empty() {
+            return Ok(bm25_results);
+        }
+
+        Ok(Vec::new())
     }
 
     pub async fn search_hybrid_optimized(
