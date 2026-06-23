@@ -370,6 +370,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/xavier/sync/check", post(sync_check_handler))
         .route("/xavier/sync/check", get(sync_check_handler))
         .route("/xavier/verify/save", post(verify_save_handler))
+        .route("/v1/context/regenerate", post(xavier::server::http::context::v1_context_regenerate))
+        .route("/v1/context/deepen", post(xavier::server::http::context::v1_context_deepen))
+        .route("/v1/context/stats", get(xavier::server::http::context::v1_context_stats))
         .route(
             "/panel/api/threads",
             get(panel_list_threads).post(panel_create_thread),
