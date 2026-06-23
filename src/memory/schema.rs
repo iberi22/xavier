@@ -399,6 +399,7 @@ pub fn normalize_metadata(
     metadata["clearance"] = json!(resolved.clearance.as_str());
     metadata["namespace"] = serde_json::to_value(&resolved.namespace)?;
     metadata["provenance"] = serde_json::to_value(&resolved.provenance)?;
+    metadata["updated_at"] = json!(chrono::Utc::now().to_rfc3339());
     Ok(metadata)
 }
 
