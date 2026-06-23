@@ -1,0 +1,2546 @@
+{
+  "metadata": {
+    "timestamp": "20260623_000858",
+    "mode": "mock",
+    "queries": 20,
+    "systems": [
+      "xavier",
+      "openclaw",
+      "engram"
+    ],
+    "weights": {
+      "precision": 0.35,
+      "recall": 0.3,
+      "latency": 0.2,
+      "cost": 0.15
+    }
+  },
+  "summary": {
+    "xavier": {
+      "avg_score": 0.8729708974358974,
+      "avg_precision": 0.8416,
+      "avg_recall": 0.7887000000000001,
+      "avg_latency": 49.495,
+      "avg_cost": 5.250000000000001e-05,
+      "success_rate": 1.0,
+      "wins": 8
+    },
+    "openclaw": {
+      "avg_score": 0.6887800000000001,
+      "avg_precision": 0.5536,
+      "avg_recall": 0.48865,
+      "avg_latency": 2.9349999999999996,
+      "avg_cost": 1.0500000000000001e-05,
+      "success_rate": 1.0,
+      "wins": 5
+    },
+    "engram": {
+      "avg_score": 0.8176732692307691,
+      "avg_precision": 0.7867,
+      "avg_recall": 0.7403000000000001,
+      "avg_latency": 185.0894736842105,
+      "avg_cost": 0.00010475,
+      "success_rate": 0.95,
+      "wins": 7
+    }
+  },
+  "queries": [
+    {
+      "id": "semantic_001",
+      "category": "semantic",
+      "winner": "engram",
+      "winner_score": 0.9448269230769231
+    },
+    {
+      "id": "semantic_002",
+      "category": "semantic",
+      "winner": "xavier",
+      "winner_score": 0.9324250000000001
+    },
+    {
+      "id": "fts_001",
+      "category": "fts",
+      "winner": "openclaw",
+      "winner_score": 0.824675
+    },
+    {
+      "id": "fts_002",
+      "category": "fts",
+      "winner": "openclaw",
+      "winner_score": 0.892425
+    },
+    {
+      "id": "episodic_001",
+      "category": "episodic",
+      "winner": "xavier",
+      "winner_score": 0.9007442307692308
+    },
+    {
+      "id": "decision_001",
+      "category": "decision",
+      "winner": "xavier",
+      "winner_score": 0.928925
+    },
+    {
+      "id": "semantic_003",
+      "category": "semantic",
+      "winner": "engram",
+      "winner_score": 0.973452564102564
+    },
+    {
+      "id": "semantic_004",
+      "category": "semantic",
+      "winner": "engram",
+      "winner_score": 0.8795320512820513
+    },
+    {
+      "id": "fts_003",
+      "category": "fts",
+      "winner": "openclaw",
+      "winner_score": 0.8553250000000001
+    },
+    {
+      "id": "episodic_002",
+      "category": "episodic",
+      "winner": "xavier",
+      "winner_score": 0.8838019230769232
+    },
+    {
+      "id": "decision_002",
+      "category": "decision",
+      "winner": "xavier",
+      "winner_score": 0.9725147435897437
+    },
+    {
+      "id": "semantic_005",
+      "category": "semantic",
+      "winner": "engram",
+      "winner_score": 0.9673038461538461
+    },
+    {
+      "id": "fts_004",
+      "category": "fts",
+      "winner": "openclaw",
+      "winner_score": 0.8867749999999999
+    },
+    {
+      "id": "episodic_003",
+      "category": "episodic",
+      "winner": "engram",
+      "winner_score": 0.8940525641025641
+    },
+    {
+      "id": "decision_003",
+      "category": "decision",
+      "winner": "xavier",
+      "winner_score": 0.916175
+    },
+    {
+      "id": "semantic_006",
+      "category": "semantic",
+      "winner": "engram",
+      "winner_score": 0.9242217948717949
+    },
+    {
+      "id": "fts_005",
+      "category": "fts",
+      "winner": "openclaw",
+      "winner_score": 0.890075
+    },
+    {
+      "id": "episodic_004",
+      "category": "episodic",
+      "winner": "xavier",
+      "winner_score": 0.9473826923076925
+    },
+    {
+      "id": "decision_004",
+      "category": "decision",
+      "winner": "xavier",
+      "winner_score": 0.9342250000000001
+    },
+    {
+      "id": "semantic_007",
+      "category": "semantic",
+      "winner": "engram",
+      "winner_score": 0.9193602564102563
+    }
+  ],
+  "raw_results": [
+    {
+      "id": "semantic_001",
+      "query": "\u00bfQu\u00e9 decisi\u00f3n tomamos sobre la base de datos principal?",
+      "category": "semantic",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 43.7,
+          "precision_at_5": 0.844,
+          "recall": 0.795,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "\u00bfQu\u00e9 decisi\u00f3n tomamos sobre la base de datos principal? result from xavier",
+              "id": "xavier-0",
+              "score": 0.4090398322301442
+            },
+            {
+              "content": "\u00bfQu\u00e9 decisi\u00f3n tomamos sobre la base de datos principal? result from xavier",
+              "id": "xavier-1",
+              "score": 0.7786159276200895
+            },
+            {
+              "content": "\u00bfQu\u00e9 decisi\u00f3n tomamos sobre la base de datos principal? result from xavier",
+              "id": "xavier-2",
+              "score": 0.263540008320156
+            },
+            {
+              "content": "\u00bfQu\u00e9 decisi\u00f3n tomamos sobre la base de datos principal? result from xavier",
+              "id": "xavier-3",
+              "score": 0.7150219444202947
+            },
+            {
+              "content": "\u00bfQu\u00e9 decisi\u00f3n tomamos sobre la base de datos principal? result from xavier",
+              "id": "xavier-4",
+              "score": 0.7368054738096639
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.876025
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 3.0,
+          "precision_at_5": 0.565,
+          "recall": 0.406,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "\u00bfQu\u00e9 decisi\u00f3n tomamos sobre la base de datos principal? result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.7273640035685969
+            },
+            {
+              "content": "\u00bfQu\u00e9 decisi\u00f3n tomamos sobre la base de datos principal? result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.08689219408999194
+            },
+            {
+              "content": "\u00bfQu\u00e9 decisi\u00f3n tomamos sobre la base de datos principal? result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.015686523275858177
+            },
+            {
+              "content": "\u00bfQu\u00e9 decisi\u00f3n tomamos sobre la base de datos principal? result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.09106639683642637
+            },
+            {
+              "content": "\u00bfQu\u00e9 decisi\u00f3n tomamos sobre la base de datos principal? result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.21216267551615264
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.667975
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 144.8,
+          "precision_at_5": 1.0,
+          "recall": 0.901,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "\u00bfQu\u00e9 decisi\u00f3n tomamos sobre la base de datos principal? result from engram",
+              "id": "engram-0",
+              "score": 0.50051929274703
+            },
+            {
+              "content": "\u00bfQu\u00e9 decisi\u00f3n tomamos sobre la base de datos principal? result from engram",
+              "id": "engram-1",
+              "score": 0.22970584665798388
+            },
+            {
+              "content": "\u00bfQu\u00e9 decisi\u00f3n tomamos sobre la base de datos principal? result from engram",
+              "id": "engram-2",
+              "score": 0.8305071681925793
+            },
+            {
+              "content": "\u00bfQu\u00e9 decisi\u00f3n tomamos sobre la base de datos principal? result from engram",
+              "id": "engram-3",
+              "score": 0.1988844660339999
+            },
+            {
+              "content": "\u00bfQu\u00e9 decisi\u00f3n tomamos sobre la base de datos principal? result from engram",
+              "id": "engram-4",
+              "score": 0.4554016060460785
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.9448269230769231
+        }
+      },
+      "winner": "engram",
+      "winner_score": 0.9448269230769231
+    },
+    {
+      "id": "semantic_002",
+      "query": "Who is Leonardo Duque and where does he work?",
+      "category": "semantic",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 39.1,
+          "precision_at_5": 0.91,
+          "recall": 0.906,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "Who is Leonardo Duque and where does he work? result from xavier",
+              "id": "xavier-0",
+              "score": 0.9950339419233889
+            },
+            {
+              "content": "Who is Leonardo Duque and where does he work? result from xavier",
+              "id": "xavier-1",
+              "score": 0.622439662902772
+            },
+            {
+              "content": "Who is Leonardo Duque and where does he work? result from xavier",
+              "id": "xavier-2",
+              "score": 0.30263243458848765
+            },
+            {
+              "content": "Who is Leonardo Duque and where does he work? result from xavier",
+              "id": "xavier-3",
+              "score": 0.1362267047412713
+            },
+            {
+              "content": "Who is Leonardo Duque and where does he work? result from xavier",
+              "id": "xavier-4",
+              "score": 0.27160916506537036
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.9324250000000001
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 3.3,
+          "precision_at_5": 0.482,
+          "recall": 0.481,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "Who is Leonardo Duque and where does he work? result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.9566231679566575
+            },
+            {
+              "content": "Who is Leonardo Duque and where does he work? result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.2188101892202582
+            },
+            {
+              "content": "Who is Leonardo Duque and where does he work? result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.9417092145893038
+            },
+            {
+              "content": "Who is Leonardo Duque and where does he work? result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.5040311473365328
+            },
+            {
+              "content": "Who is Leonardo Duque and where does he work? result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.5939943583824843
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.6614249999999999
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 166.5,
+          "precision_at_5": 0.922,
+          "recall": 0.941,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "Who is Leonardo Duque and where does he work? result from engram",
+              "id": "engram-0",
+              "score": 0.9206834387647785
+            },
+            {
+              "content": "Who is Leonardo Duque and where does he work? result from engram",
+              "id": "engram-1",
+              "score": 0.7171681588473133
+            },
+            {
+              "content": "Who is Leonardo Duque and where does he work? result from engram",
+              "id": "engram-2",
+              "score": 0.7721429023765614
+            },
+            {
+              "content": "Who is Leonardo Duque and where does he work? result from engram",
+              "id": "engram-3",
+              "score": 0.7992960633909894
+            },
+            {
+              "content": "Who is Leonardo Duque and where does he work? result from engram",
+              "id": "engram-4",
+              "score": 0.6009090287287149
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.927301282051282
+        }
+      },
+      "winner": "xavier",
+      "winner_score": 0.9324250000000001
+    },
+    {
+      "id": "fts_001",
+      "query": "Xavier port 8006",
+      "category": "fts",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 59.0,
+          "precision_at_5": 0.769,
+          "recall": 0.677,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "Xavier port 8006 result from xavier",
+              "id": "xavier-0",
+              "score": 0.4735306363233791
+            },
+            {
+              "content": "Xavier port 8006 result from xavier",
+              "id": "xavier-1",
+              "score": 0.08676968643352978
+            },
+            {
+              "content": "Xavier port 8006 result from xavier",
+              "id": "xavier-2",
+              "score": 0.24213774220439144
+            },
+            {
+              "content": "Xavier port 8006 result from xavier",
+              "id": "xavier-3",
+              "score": 0.5719096813308182
+            },
+            {
+              "content": "Xavier port 8006 result from xavier",
+              "id": "xavier-4",
+              "score": 0.035037896137572466
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.813451923076923
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 1.8,
+          "precision_at_5": 0.771,
+          "recall": 0.688,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "Xavier port 8006 result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.11393349148310672
+            },
+            {
+              "content": "Xavier port 8006 result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.046170463014826524
+            },
+            {
+              "content": "Xavier port 8006 result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.906063516634527
+            },
+            {
+              "content": "Xavier port 8006 result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.8627325699208738
+            },
+            {
+              "content": "Xavier port 8006 result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.5111657147739264
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.824675
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 302.6,
+          "precision_at_5": 0.561,
+          "recall": 0.547,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "Xavier port 8006 result from engram",
+              "id": "engram-0",
+              "score": 0.6300496889555354
+            },
+            {
+              "content": "Xavier port 8006 result from engram",
+              "id": "engram-1",
+              "score": 0.06482429310924209
+            },
+            {
+              "content": "Xavier port 8006 result from engram",
+              "id": "engram-2",
+              "score": 0.6465122387966364
+            },
+            {
+              "content": "Xavier port 8006 result from engram",
+              "id": "engram-3",
+              "score": 0.08037146588071065
+            },
+            {
+              "content": "Xavier port 8006 result from engram",
+              "id": "engram-4",
+              "score": 0.9036470018605842
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.6687923076923077
+        }
+      },
+      "winner": "openclaw",
+      "winner_score": 0.824675
+    },
+    {
+      "id": "fts_002",
+      "query": "MiniMax-M2.7",
+      "category": "fts",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 49.0,
+          "precision_at_5": 0.665,
+          "recall": 0.649,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "MiniMax-M2.7 result from xavier",
+              "id": "xavier-0",
+              "score": 0.6364058879715758
+            },
+            {
+              "content": "MiniMax-M2.7 result from xavier",
+              "id": "xavier-1",
+              "score": 0.26980903668745504
+            },
+            {
+              "content": "MiniMax-M2.7 result from xavier",
+              "id": "xavier-2",
+              "score": 0.4497917200519488
+            },
+            {
+              "content": "MiniMax-M2.7 result from xavier",
+              "id": "xavier-3",
+              "score": 0.35876203261468365
+            },
+            {
+              "content": "MiniMax-M2.7 result from xavier",
+              "id": "xavier-4",
+              "score": 0.5951901240862771
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.7695750000000001
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 1.3,
+          "precision_at_5": 0.92,
+          "recall": 0.74,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "MiniMax-M2.7 result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.8933130413484309
+            },
+            {
+              "content": "MiniMax-M2.7 result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.1408754898397253
+            },
+            {
+              "content": "MiniMax-M2.7 result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.6773016045973098
+            },
+            {
+              "content": "MiniMax-M2.7 result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.28353580257750877
+            },
+            {
+              "content": "MiniMax-M2.7 result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.2325101730348218
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.892425
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 228.0,
+          "precision_at_5": 0.608,
+          "recall": 0.499,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "MiniMax-M2.7 result from engram",
+              "id": "engram-0",
+              "score": 0.4142054567174086
+            },
+            {
+              "content": "MiniMax-M2.7 result from engram",
+              "id": "engram-1",
+              "score": 0.4103069520098136
+            },
+            {
+              "content": "MiniMax-M2.7 result from engram",
+              "id": "engram-2",
+              "score": 0.9294804056617056
+            },
+            {
+              "content": "MiniMax-M2.7 result from engram",
+              "id": "engram-3",
+              "score": 0.2138175758273746
+            },
+            {
+              "content": "MiniMax-M2.7 result from engram",
+              "id": "engram-4",
+              "score": 0.8971983281875727
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.6784935897435898
+        }
+      },
+      "winner": "openclaw",
+      "winner_score": 0.892425
+    },
+    {
+      "id": "episodic_001",
+      "query": "What did we discuss in the last debugging session about health endpoint?",
+      "category": "episodic",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 50.3,
+          "precision_at_5": 0.919,
+          "recall": 0.79,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "What did we discuss in the last debugging session about health endpoint? result from xavier",
+              "id": "xavier-0",
+              "score": 0.08227902499451956
+            },
+            {
+              "content": "What did we discuss in the last debugging session about health endpoint? result from xavier",
+              "id": "xavier-1",
+              "score": 0.660592580683573
+            },
+            {
+              "content": "What did we discuss in the last debugging session about health endpoint? result from xavier",
+              "id": "xavier-2",
+              "score": 0.6230453816852614
+            },
+            {
+              "content": "What did we discuss in the last debugging session about health endpoint? result from xavier",
+              "id": "xavier-3",
+              "score": 0.19611439191156133
+            },
+            {
+              "content": "What did we discuss in the last debugging session about health endpoint? result from xavier",
+              "id": "xavier-4",
+              "score": 0.6443608749491385
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.9007442307692308
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 3.7,
+          "precision_at_5": 0.41,
+          "recall": 0.358,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "What did we discuss in the last debugging session about health endpoint? result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.5919732968207213
+            },
+            {
+              "content": "What did we discuss in the last debugging session about health endpoint? result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.6339586540334169
+            },
+            {
+              "content": "What did we discuss in the last debugging session about health endpoint? result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.27285813214523746
+            },
+            {
+              "content": "What did we discuss in the last debugging session about health endpoint? result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.013273623630964182
+            },
+            {
+              "content": "What did we discuss in the last debugging session about health endpoint? result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.8131772137404477
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.599325
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 107.4,
+          "precision_at_5": 0.808,
+          "recall": 0.648,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "What did we discuss in the last debugging session about health endpoint? result from engram",
+              "id": "engram-0",
+              "score": 0.7879654846545296
+            },
+            {
+              "content": "What did we discuss in the last debugging session about health endpoint? result from engram",
+              "id": "engram-1",
+              "score": 0.5826011307097139
+            },
+            {
+              "content": "What did we discuss in the last debugging session about health endpoint? result from engram",
+              "id": "engram-2",
+              "score": 0.49715478322841256
+            },
+            {
+              "content": "What did we discuss in the last debugging session about health endpoint? result from engram",
+              "id": "engram-3",
+              "score": 0.20079234158771841
+            },
+            {
+              "content": "What did we discuss in the last debugging session about health endpoint? result from engram",
+              "id": "engram-4",
+              "score": 0.5317855741692853
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.8055628205128205
+        }
+      },
+      "winner": "xavier",
+      "winner_score": 0.9007442307692308
+    },
+    {
+      "id": "decision_001",
+      "query": "Why does Xavier Docker use multi-stage build?",
+      "category": "decision",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 49.8,
+          "precision_at_5": 0.984,
+          "recall": 0.808,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "Why does Xavier Docker use multi-stage build? result from xavier",
+              "id": "xavier-0",
+              "score": 0.32473022015151143
+            },
+            {
+              "content": "Why does Xavier Docker use multi-stage build? result from xavier",
+              "id": "xavier-1",
+              "score": 0.4666067608161749
+            },
+            {
+              "content": "Why does Xavier Docker use multi-stage build? result from xavier",
+              "id": "xavier-2",
+              "score": 0.6166032737782047
+            },
+            {
+              "content": "Why does Xavier Docker use multi-stage build? result from xavier",
+              "id": "xavier-3",
+              "score": 0.27641931388523433
+            },
+            {
+              "content": "Why does Xavier Docker use multi-stage build? result from xavier",
+              "id": "xavier-4",
+              "score": 0.01601199517957763
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.928925
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 4.1,
+          "precision_at_5": 0.353,
+          "recall": 0.31,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "Why does Xavier Docker use multi-stage build? result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.445586133398705
+            },
+            {
+              "content": "Why does Xavier Docker use multi-stage build? result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.7309551338593067
+            },
+            {
+              "content": "Why does Xavier Docker use multi-stage build? result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.904880960500703
+            },
+            {
+              "content": "Why does Xavier Docker use multi-stage build? result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.44221094343167267
+            },
+            {
+              "content": "Why does Xavier Docker use multi-stage build? result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.44882011839137104
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.564975
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 138.7,
+          "precision_at_5": 0.631,
+          "recall": 0.635,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "Why does Xavier Docker use multi-stage build? result from engram",
+              "id": "engram-0",
+              "score": 0.6653547448404757
+            },
+            {
+              "content": "Why does Xavier Docker use multi-stage build? result from engram",
+              "id": "engram-1",
+              "score": 0.011435325958196296
+            },
+            {
+              "content": "Why does Xavier Docker use multi-stage build? result from engram",
+              "id": "engram-2",
+              "score": 0.020890021833826267
+            },
+            {
+              "content": "Why does Xavier Docker use multi-stage build? result from engram",
+              "id": "engram-3",
+              "score": 0.8127837890695186
+            },
+            {
+              "content": "Why does Xavier Docker use multi-stage build? result from engram",
+              "id": "engram-4",
+              "score": 0.27641175469930157
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.7365025641025641
+        }
+      },
+      "winner": "xavier",
+      "winner_score": 0.928925
+    },
+    {
+      "id": "semantic_003",
+      "query": "How is the Xavier Sovereign Mesh boundary defined?",
+      "category": "semantic",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 44.3,
+          "precision_at_5": 0.796,
+          "recall": 0.865,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "How is the Xavier Sovereign Mesh boundary defined? result from xavier",
+              "id": "xavier-0",
+              "score": 0.2666650960275455
+            },
+            {
+              "content": "How is the Xavier Sovereign Mesh boundary defined? result from xavier",
+              "id": "xavier-1",
+              "score": 0.4783521973980781
+            },
+            {
+              "content": "How is the Xavier Sovereign Mesh boundary defined? result from xavier",
+              "id": "xavier-2",
+              "score": 0.6025435494750868
+            },
+            {
+              "content": "How is the Xavier Sovereign Mesh boundary defined? result from xavier",
+              "id": "xavier-3",
+              "score": 0.44162992520661226
+            },
+            {
+              "content": "How is the Xavier Sovereign Mesh boundary defined? result from xavier",
+              "id": "xavier-4",
+              "score": 0.6056404109123005
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.880225
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 2.9,
+          "precision_at_5": 0.473,
+          "recall": 0.399,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "How is the Xavier Sovereign Mesh boundary defined? result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.8886105866689019
+            },
+            {
+              "content": "How is the Xavier Sovereign Mesh boundary defined? result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.6620008248228579
+            },
+            {
+              "content": "How is the Xavier Sovereign Mesh boundary defined? result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.8691323687667409
+            },
+            {
+              "content": "How is the Xavier Sovereign Mesh boundary defined? result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.011733410542357214
+            },
+            {
+              "content": "How is the Xavier Sovereign Mesh boundary defined? result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.7027057234396797
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.633675
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 134.8,
+          "precision_at_5": 1.0,
+          "recall": 0.993,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "How is the Xavier Sovereign Mesh boundary defined? result from engram",
+              "id": "engram-0",
+              "score": 0.25527096257636983
+            },
+            {
+              "content": "How is the Xavier Sovereign Mesh boundary defined? result from engram",
+              "id": "engram-1",
+              "score": 0.685799321561842
+            },
+            {
+              "content": "How is the Xavier Sovereign Mesh boundary defined? result from engram",
+              "id": "engram-2",
+              "score": 0.1585044542279579
+            },
+            {
+              "content": "How is the Xavier Sovereign Mesh boundary defined? result from engram",
+              "id": "engram-3",
+              "score": 0.7507069826790367
+            },
+            {
+              "content": "How is the Xavier Sovereign Mesh boundary defined? result from engram",
+              "id": "engram-4",
+              "score": 0.6513592272044904
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.973452564102564
+        }
+      },
+      "winner": "engram",
+      "winner_score": 0.973452564102564
+    },
+    {
+      "id": "semantic_004",
+      "query": "What cryptographic algorithms are used in XavierWallet?",
+      "category": "semantic",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 54.1,
+          "precision_at_5": 0.91,
+          "recall": 0.681,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "What cryptographic algorithms are used in XavierWallet? result from xavier",
+              "id": "xavier-0",
+              "score": 0.29327134361049934
+            },
+            {
+              "content": "What cryptographic algorithms are used in XavierWallet? result from xavier",
+              "id": "xavier-1",
+              "score": 0.2835492839287773
+            },
+            {
+              "content": "What cryptographic algorithms are used in XavierWallet? result from xavier",
+              "id": "xavier-2",
+              "score": 0.4961986021365823
+            },
+            {
+              "content": "What cryptographic algorithms are used in XavierWallet? result from xavier",
+              "id": "xavier-3",
+              "score": 0.5382477480557382
+            },
+            {
+              "content": "What cryptographic algorithms are used in XavierWallet? result from xavier",
+              "id": "xavier-4",
+              "score": 0.6485090860295056
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.8645044871794871
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 2.5,
+          "precision_at_5": 0.476,
+          "recall": 0.436,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "What cryptographic algorithms are used in XavierWallet? result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.3524747486884747
+            },
+            {
+              "content": "What cryptographic algorithms are used in XavierWallet? result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.20973428757933021
+            },
+            {
+              "content": "What cryptographic algorithms are used in XavierWallet? result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.46157361445542866
+            },
+            {
+              "content": "What cryptographic algorithms are used in XavierWallet? result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.24644871554734926
+            },
+            {
+              "content": "What cryptographic algorithms are used in XavierWallet? result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.6619566526951303
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.645825
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 138.9,
+          "precision_at_5": 0.924,
+          "recall": 0.77,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "What cryptographic algorithms are used in XavierWallet? result from engram",
+              "id": "engram-0",
+              "score": 0.00015752093191778727
+            },
+            {
+              "content": "What cryptographic algorithms are used in XavierWallet? result from engram",
+              "id": "engram-1",
+              "score": 0.5437694991286763
+            },
+            {
+              "content": "What cryptographic algorithms are used in XavierWallet? result from engram",
+              "id": "engram-2",
+              "score": 0.08928356708949303
+            },
+            {
+              "content": "What cryptographic algorithms are used in XavierWallet? result from engram",
+              "id": "engram-3",
+              "score": 0.17997472704684403
+            },
+            {
+              "content": "What cryptographic algorithms are used in XavierWallet? result from engram",
+              "id": "engram-4",
+              "score": 0.34077048988056813
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.8795320512820513
+        }
+      },
+      "winner": "engram",
+      "winner_score": 0.8795320512820513
+    },
+    {
+      "id": "fts_003",
+      "query": "CapabilityToken validation",
+      "category": "fts",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 57.2,
+          "precision_at_5": 0.639,
+          "recall": 0.717,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "CapabilityToken validation result from xavier",
+              "id": "xavier-0",
+              "score": 0.3057614471410689
+            },
+            {
+              "content": "CapabilityToken validation result from xavier",
+              "id": "xavier-1",
+              "score": 0.037357589451339934
+            },
+            {
+              "content": "CapabilityToken validation result from xavier",
+              "id": "xavier-2",
+              "score": 0.6038443445678803
+            },
+            {
+              "content": "CapabilityToken validation result from xavier",
+              "id": "xavier-3",
+              "score": 0.9276726012237568
+            },
+            {
+              "content": "CapabilityToken validation result from xavier",
+              "id": "xavier-4",
+              "score": 0.6423928870988393
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.7801365384615384
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 2.8,
+          "precision_at_5": 0.874,
+          "recall": 0.67,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "CapabilityToken validation result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.18577656687632826
+            },
+            {
+              "content": "CapabilityToken validation result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.47124329603024273
+            },
+            {
+              "content": "CapabilityToken validation result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.1374077817620688
+            },
+            {
+              "content": "CapabilityToken validation result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.4323809719208421
+            },
+            {
+              "content": "CapabilityToken validation result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.3466195019781432
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.8553250000000001
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 277.4,
+          "precision_at_5": 0.614,
+          "recall": 0.525,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "CapabilityToken validation result from engram",
+              "id": "engram-0",
+              "score": 0.0821678081220425
+            },
+            {
+              "content": "CapabilityToken validation result from engram",
+              "id": "engram-1",
+              "score": 0.6910673309990273
+            },
+            {
+              "content": "CapabilityToken validation result from engram",
+              "id": "engram-2",
+              "score": 0.5227751819991429
+            },
+            {
+              "content": "CapabilityToken validation result from engram",
+              "id": "engram-3",
+              "score": 0.47265580039490174
+            },
+            {
+              "content": "CapabilityToken validation result from engram",
+              "id": "engram-4",
+              "score": 0.6718592194029364
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.683326923076923
+        }
+      },
+      "winner": "openclaw",
+      "winner_score": 0.8553250000000001
+    },
+    {
+      "id": "episodic_002",
+      "query": "What are the latest changes in the HORMER agent?",
+      "category": "episodic",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 55.1,
+          "precision_at_5": 0.83,
+          "recall": 0.839,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "What are the latest changes in the HORMER agent? result from xavier",
+              "id": "xavier-0",
+              "score": 0.6047965311458611
+            },
+            {
+              "content": "What are the latest changes in the HORMER agent? result from xavier",
+              "id": "xavier-1",
+              "score": 0.9961597434219759
+            },
+            {
+              "content": "What are the latest changes in the HORMER agent? result from xavier",
+              "id": "xavier-2",
+              "score": 0.7818390527279793
+            },
+            {
+              "content": "What are the latest changes in the HORMER agent? result from xavier",
+              "id": "xavier-3",
+              "score": 0.9170888828319126
+            },
+            {
+              "content": "What are the latest changes in the HORMER agent? result from xavier",
+              "id": "xavier-4",
+              "score": 0.1013443669179459
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.8838019230769232
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 3.6,
+          "precision_at_5": 0.463,
+          "recall": 0.354,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "What are the latest changes in the HORMER agent? result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.5918432866415717
+            },
+            {
+              "content": "What are the latest changes in the HORMER agent? result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.24027316846348323
+            },
+            {
+              "content": "What are the latest changes in the HORMER agent? result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.07512376417714639
+            },
+            {
+              "content": "What are the latest changes in the HORMER agent? result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.9585463664012188
+            },
+            {
+              "content": "What are the latest changes in the HORMER agent? result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.7111170692597045
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.616675
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 87.1,
+          "precision_at_5": 0.816,
+          "recall": 0.738,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "What are the latest changes in the HORMER agent? result from engram",
+              "id": "engram-0",
+              "score": 0.5727614674128266
+            },
+            {
+              "content": "What are the latest changes in the HORMER agent? result from engram",
+              "id": "engram-1",
+              "score": 0.3531447392120227
+            },
+            {
+              "content": "What are the latest changes in the HORMER agent? result from engram",
+              "id": "engram-2",
+              "score": 0.39926549187281846
+            },
+            {
+              "content": "What are the latest changes in the HORMER agent? result from engram",
+              "id": "engram-3",
+              "score": 0.9795480592528129
+            },
+            {
+              "content": "What are the latest changes in the HORMER agent? result from engram",
+              "id": "engram-4",
+              "score": 0.44623852316721546
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.8374448717948717
+        }
+      },
+      "winner": "xavier",
+      "winner_score": 0.8838019230769232
+    },
+    {
+      "id": "decision_002",
+      "query": "What is the policy for adding regression tests?",
+      "category": "decision",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 57.9,
+          "precision_at_5": 0.954,
+          "recall": 0.991,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "What is the policy for adding regression tests? result from xavier",
+              "id": "xavier-0",
+              "score": 0.8643524856961645
+            },
+            {
+              "content": "What is the policy for adding regression tests? result from xavier",
+              "id": "xavier-1",
+              "score": 0.8925820694383769
+            },
+            {
+              "content": "What is the policy for adding regression tests? result from xavier",
+              "id": "xavier-2",
+              "score": 0.5978560541149821
+            },
+            {
+              "content": "What is the policy for adding regression tests? result from xavier",
+              "id": "xavier-3",
+              "score": 0.7419180897403017
+            },
+            {
+              "content": "What is the policy for adding regression tests? result from xavier",
+              "id": "xavier-4",
+              "score": 0.2159783258328547
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.9725147435897437
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 3.6,
+          "precision_at_5": 0.397,
+          "recall": 0.377,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "What is the policy for adding regression tests? result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.19649819203764451
+            },
+            {
+              "content": "What is the policy for adding regression tests? result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.6961583930294561
+            },
+            {
+              "content": "What is the policy for adding regression tests? result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.6003632835498176
+            },
+            {
+              "content": "What is the policy for adding regression tests? result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.6746564206548942
+            },
+            {
+              "content": "What is the policy for adding regression tests? result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.98389292583322
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.600475
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 177.4,
+          "precision_at_5": 0.749,
+          "recall": 0.713,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "What is the policy for adding regression tests? result from engram",
+              "id": "engram-0",
+              "score": 0.16212315885240502
+            },
+            {
+              "content": "What is the policy for adding regression tests? result from engram",
+              "id": "engram-1",
+              "score": 0.22361945082300871
+            },
+            {
+              "content": "What is the policy for adding regression tests? result from engram",
+              "id": "engram-2",
+              "score": 0.5704930177982661
+            },
+            {
+              "content": "What is the policy for adding regression tests? result from engram",
+              "id": "engram-3",
+              "score": 0.024151360206607686
+            },
+            {
+              "content": "What is the policy for adding regression tests? result from engram",
+              "id": "engram-4",
+              "score": 0.8697874796738553
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.7972333333333332
+        }
+      },
+      "winner": "xavier",
+      "winner_score": 0.9725147435897437
+    },
+    {
+      "id": "semantic_005",
+      "query": "How does the System 3 engine analyze reasoning?",
+      "category": "semantic",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 38.3,
+          "precision_at_5": 0.929,
+          "recall": 0.744,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "How does the System 3 engine analyze reasoning? result from xavier",
+              "id": "xavier-0",
+              "score": 0.14365361738954763
+            },
+            {
+              "content": "How does the System 3 engine analyze reasoning? result from xavier",
+              "id": "xavier-1",
+              "score": 0.8590394328582442
+            },
+            {
+              "content": "How does the System 3 engine analyze reasoning? result from xavier",
+              "id": "xavier-2",
+              "score": 0.45312656798992623
+            },
+            {
+              "content": "How does the System 3 engine analyze reasoning? result from xavier",
+              "id": "xavier-3",
+              "score": 0.006916280754711734
+            },
+            {
+              "content": "How does the System 3 engine analyze reasoning? result from xavier",
+              "id": "xavier-4",
+              "score": 0.142387757329423
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.8904750000000001
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 2.9,
+          "precision_at_5": 0.548,
+          "recall": 0.458,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "How does the System 3 engine analyze reasoning? result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.43790674360564175
+            },
+            {
+              "content": "How does the System 3 engine analyze reasoning? result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.8371880926307803
+            },
+            {
+              "content": "How does the System 3 engine analyze reasoning? result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.9159008166201973
+            },
+            {
+              "content": "How does the System 3 engine analyze reasoning? result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.7082355237818434
+            },
+            {
+              "content": "How does the System 3 engine analyze reasoning? result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.3776993991576726
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.677625
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 153.8,
+          "precision_at_5": 0.988,
+          "recall": 0.993,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "How does the System 3 engine analyze reasoning? result from engram",
+              "id": "engram-0",
+              "score": 0.7364177918570874
+            },
+            {
+              "content": "How does the System 3 engine analyze reasoning? result from engram",
+              "id": "engram-1",
+              "score": 0.8545844251614404
+            },
+            {
+              "content": "How does the System 3 engine analyze reasoning? result from engram",
+              "id": "engram-2",
+              "score": 0.929057919847619
+            },
+            {
+              "content": "How does the System 3 engine analyze reasoning? result from engram",
+              "id": "engram-3",
+              "score": 0.9271710086242756
+            },
+            {
+              "content": "How does the System 3 engine analyze reasoning? result from engram",
+              "id": "engram-4",
+              "score": 0.36363086408512024
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.9673038461538461
+        }
+      },
+      "winner": "engram",
+      "winner_score": 0.9673038461538461
+    },
+    {
+      "id": "fts_004",
+      "query": "Vite port 4174",
+      "category": "fts",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 67.1,
+          "precision_at_5": 0.745,
+          "recall": 0.732,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "Vite port 4174 result from xavier",
+              "id": "xavier-0",
+              "score": 0.8653506287755124
+            },
+            {
+              "content": "Vite port 4174 result from xavier",
+              "id": "xavier-1",
+              "score": 0.6832218801325898
+            },
+            {
+              "content": "Vite port 4174 result from xavier",
+              "id": "xavier-2",
+              "score": 0.8783600815573311
+            },
+            {
+              "content": "Vite port 4174 result from xavier",
+              "id": "xavier-3",
+              "score": 0.5343966274485183
+            },
+            {
+              "content": "Vite port 4174 result from xavier",
+              "id": "xavier-4",
+              "score": 0.6051615005633827
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.8207211538461539
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 1.9,
+          "precision_at_5": 0.825,
+          "recall": 0.832,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "Vite port 4174 result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.759038788266661
+            },
+            {
+              "content": "Vite port 4174 result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.3638061521155854
+            },
+            {
+              "content": "Vite port 4174 result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.08953413119386056
+            },
+            {
+              "content": "Vite port 4174 result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.04015261814661619
+            },
+            {
+              "content": "Vite port 4174 result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.2603076925760113
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.8867749999999999
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 283.5,
+          "precision_at_5": 0.552,
+          "recall": 0.579,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "Vite port 4174 result from engram",
+              "id": "engram-0",
+              "score": 0.8335143168052626
+            },
+            {
+              "content": "Vite port 4174 result from engram",
+              "id": "engram-1",
+              "score": 0.5725430087625292
+            },
+            {
+              "content": "Vite port 4174 result from engram",
+              "id": "engram-2",
+              "score": 0.39355125495352605
+            },
+            {
+              "content": "Vite port 4174 result from engram",
+              "id": "engram-3",
+              "score": 0.5530919991137815
+            },
+            {
+              "content": "Vite port 4174 result from engram",
+              "id": "engram-4",
+              "score": 0.8571054623232053
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.677201282051282
+        }
+      },
+      "winner": "openclaw",
+      "winner_score": 0.8867749999999999
+    },
+    {
+      "id": "episodic_003",
+      "query": "What did we learn from the swal-bench run?",
+      "category": "episodic",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 40.9,
+          "precision_at_5": 0.874,
+          "recall": 0.789,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "What did we learn from the swal-bench run? result from xavier",
+              "id": "xavier-0",
+              "score": 0.11159112502474611
+            },
+            {
+              "content": "What did we learn from the swal-bench run? result from xavier",
+              "id": "xavier-1",
+              "score": 0.5506053326275849
+            },
+            {
+              "content": "What did we learn from the swal-bench run? result from xavier",
+              "id": "xavier-2",
+              "score": 0.7333797995906629
+            },
+            {
+              "content": "What did we learn from the swal-bench run? result from xavier",
+              "id": "xavier-3",
+              "score": 0.5225957197137504
+            },
+            {
+              "content": "What did we learn from the swal-bench run? result from xavier",
+              "id": "xavier-4",
+              "score": 0.4546075778595323
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.884725
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 3.1,
+          "precision_at_5": 0.471,
+          "recall": 0.375,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "What did we learn from the swal-bench run? result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.2573931361550923
+            },
+            {
+              "content": "What did we learn from the swal-bench run? result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.7013043829451867
+            },
+            {
+              "content": "What did we learn from the swal-bench run? result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.6908050651396014
+            },
+            {
+              "content": "What did we learn from the swal-bench run? result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.3088182402899393
+            },
+            {
+              "content": "What did we learn from the swal-bench run? result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.7147743976297815
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.625775
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 119.2,
+          "precision_at_5": 0.886,
+          "recall": 0.856,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "What did we learn from the swal-bench run? result from engram",
+              "id": "engram-0",
+              "score": 0.5615111962545426
+            },
+            {
+              "content": "What did we learn from the swal-bench run? result from engram",
+              "id": "engram-1",
+              "score": 0.3561664518031288
+            },
+            {
+              "content": "What did we learn from the swal-bench run? result from engram",
+              "id": "engram-2",
+              "score": 0.00876215321613738
+            },
+            {
+              "content": "What did we learn from the swal-bench run? result from engram",
+              "id": "engram-3",
+              "score": 0.4424239578392295
+            },
+            {
+              "content": "What did we learn from the swal-bench run? result from engram",
+              "id": "engram-4",
+              "score": 0.7075070157262966
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.8940525641025641
+        }
+      },
+      "winner": "engram",
+      "winner_score": 0.8940525641025641
+    },
+    {
+      "id": "decision_003",
+      "query": "How should we handle backend CI regression for resource-intensive features?",
+      "category": "decision",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 47.0,
+          "precision_at_5": 0.855,
+          "recall": 0.916,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "How should we handle backend CI regression for resource-intensive features? result from xavier",
+              "id": "xavier-0",
+              "score": 0.05954454818125421
+            },
+            {
+              "content": "How should we handle backend CI regression for resource-intensive features? result from xavier",
+              "id": "xavier-1",
+              "score": 0.3303687042294078
+            },
+            {
+              "content": "How should we handle backend CI regression for resource-intensive features? result from xavier",
+              "id": "xavier-2",
+              "score": 0.35093227664736404
+            },
+            {
+              "content": "How should we handle backend CI regression for resource-intensive features? result from xavier",
+              "id": "xavier-3",
+              "score": 0.6908449948990786
+            },
+            {
+              "content": "How should we handle backend CI regression for resource-intensive features? result from xavier",
+              "id": "xavier-4",
+              "score": 0.5224494017464603
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.916175
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 4.6,
+          "precision_at_5": 0.353,
+          "recall": 0.341,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "How should we handle backend CI regression for resource-intensive features? result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.437150327646773
+            },
+            {
+              "content": "How should we handle backend CI regression for resource-intensive features? result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.025927242343331658
+            },
+            {
+              "content": "How should we handle backend CI regression for resource-intensive features? result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.7170234325857314
+            },
+            {
+              "content": "How should we handle backend CI regression for resource-intensive features? result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.33515314615574854
+            },
+            {
+              "content": "How should we handle backend CI regression for resource-intensive features? result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.3495701568190063
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.574275
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 200.6,
+          "precision_at_5": 0.708,
+          "recall": 0.691,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "How should we handle backend CI regression for resource-intensive features? result from engram",
+              "id": "engram-0",
+              "score": 0.04015524620965227
+            },
+            {
+              "content": "How should we handle backend CI regression for resource-intensive features? result from engram",
+              "id": "engram-1",
+              "score": 0.9085628891334413
+            },
+            {
+              "content": "How should we handle backend CI regression for resource-intensive features? result from engram",
+              "id": "engram-2",
+              "score": 0.8411212919418588
+            },
+            {
+              "content": "How should we handle backend CI regression for resource-intensive features? result from engram",
+              "id": "engram-3",
+              "score": 0.03999246226638098
+            },
+            {
+              "content": "How should we handle backend CI regression for resource-intensive features? result from engram",
+              "id": "engram-4",
+              "score": 0.9819296292398383
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.7739038461538461
+        }
+      },
+      "winner": "xavier",
+      "winner_score": 0.916175
+    },
+    {
+      "id": "semantic_006",
+      "query": "What are the four category islands for notifications?",
+      "category": "semantic",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 40.7,
+          "precision_at_5": 0.781,
+          "recall": 0.848,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "What are the four category islands for notifications? result from xavier",
+              "id": "xavier-0",
+              "score": 0.30693905234386687
+            },
+            {
+              "content": "What are the four category islands for notifications? result from xavier",
+              "id": "xavier-1",
+              "score": 0.5213825164920065
+            },
+            {
+              "content": "What are the four category islands for notifications? result from xavier",
+              "id": "xavier-2",
+              "score": 0.30027147256360187
+            },
+            {
+              "content": "What are the four category islands for notifications? result from xavier",
+              "id": "xavier-3",
+              "score": 0.43433393211955806
+            },
+            {
+              "content": "What are the four category islands for notifications? result from xavier",
+              "id": "xavier-4",
+              "score": 0.7722619182204409
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.869875
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 2.9,
+          "precision_at_5": 0.502,
+          "recall": 0.509,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "What are the four category islands for notifications? result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.492042769865494
+            },
+            {
+              "content": "What are the four category islands for notifications? result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.4095206749523327
+            },
+            {
+              "content": "What are the four category islands for notifications? result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.7952949288051956
+            },
+            {
+              "content": "What are the four category islands for notifications? result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.08405592364192538
+            },
+            {
+              "content": "What are the four category islands for notifications? result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.710571383521058
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.676825
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 193.6,
+          "precision_at_5": 1.0,
+          "recall": 0.849,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "What are the four category islands for notifications? result from engram",
+              "id": "engram-0",
+              "score": 0.6097621053994426
+            },
+            {
+              "content": "What are the four category islands for notifications? result from engram",
+              "id": "engram-1",
+              "score": 0.8281461355105616
+            },
+            {
+              "content": "What are the four category islands for notifications? result from engram",
+              "id": "engram-2",
+              "score": 0.7978006812648042
+            },
+            {
+              "content": "What are the four category islands for notifications? result from engram",
+              "id": "engram-3",
+              "score": 0.5821014143647778
+            },
+            {
+              "content": "What are the four category islands for notifications? result from engram",
+              "id": "engram-4",
+              "score": 0.27867616144770047
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.9242217948717949
+        }
+      },
+      "winner": "engram",
+      "winner_score": 0.9242217948717949
+    },
+    {
+      "id": "fts_005",
+      "query": "moka crate capacity",
+      "category": "fts",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 47.3,
+          "precision_at_5": 0.644,
+          "recall": 0.657,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "moka crate capacity result from xavier",
+              "id": "xavier-0",
+              "score": 0.9511812378371272
+            },
+            {
+              "content": "moka crate capacity result from xavier",
+              "id": "xavier-1",
+              "score": 0.6563968619694762
+            },
+            {
+              "content": "moka crate capacity result from xavier",
+              "id": "xavier-2",
+              "score": 0.41189388651025804
+            },
+            {
+              "content": "moka crate capacity result from xavier",
+              "id": "xavier-3",
+              "score": 0.42253240353727906
+            },
+            {
+              "content": "moka crate capacity result from xavier",
+              "id": "xavier-4",
+              "score": 0.9451600439843608
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.7646250000000001
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 2.4,
+          "precision_at_5": 0.855,
+          "recall": 0.808,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "moka crate capacity result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.5274787723454255
+            },
+            {
+              "content": "moka crate capacity result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.7537970554602467
+            },
+            {
+              "content": "moka crate capacity result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.37250961848812436
+            },
+            {
+              "content": "moka crate capacity result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.9711502803948356
+            },
+            {
+              "content": "moka crate capacity result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.7679798324645694
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.890075
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 235.2,
+          "precision_at_5": 0.517,
+          "recall": 0.544,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "moka crate capacity result from engram",
+              "id": "engram-0",
+              "score": 0.11435018826432164
+            },
+            {
+              "content": "moka crate capacity result from engram",
+              "id": "engram-1",
+              "score": 0.06130064206601449
+            },
+            {
+              "content": "moka crate capacity result from engram",
+              "id": "engram-2",
+              "score": 0.26604625032108786
+            },
+            {
+              "content": "moka crate capacity result from engram",
+              "id": "engram-3",
+              "score": 0.5159206391337648
+            },
+            {
+              "content": "moka crate capacity result from engram",
+              "id": "engram-4",
+              "score": 0.8446449799263763
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.6594051282051282
+        }
+      },
+      "winner": "openclaw",
+      "winner_score": 0.890075
+    },
+    {
+      "id": "episodic_004",
+      "query": "What is the status of the Evolve Module?",
+      "category": "episodic",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 50.9,
+          "precision_at_5": 0.971,
+          "recall": 0.885,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "What is the status of the Evolve Module? result from xavier",
+              "id": "xavier-0",
+              "score": 0.5188219594064928
+            },
+            {
+              "content": "What is the status of the Evolve Module? result from xavier",
+              "id": "xavier-1",
+              "score": 0.6663411313710895
+            },
+            {
+              "content": "What is the status of the Evolve Module? result from xavier",
+              "id": "xavier-2",
+              "score": 0.4106591479489301
+            },
+            {
+              "content": "What is the status of the Evolve Module? result from xavier",
+              "id": "xavier-3",
+              "score": 0.6047530371349294
+            },
+            {
+              "content": "What is the status of the Evolve Module? result from xavier",
+              "id": "xavier-4",
+              "score": 0.7213200715675118
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.9473826923076925
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 2.4,
+          "precision_at_5": 0.481,
+          "recall": 0.4,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "What is the status of the Evolve Module? result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.6291680144071333
+            },
+            {
+              "content": "What is the status of the Evolve Module? result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.03704519014861818
+            },
+            {
+              "content": "What is the status of the Evolve Module? result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.6672681904421435
+            },
+            {
+              "content": "What is the status of the Evolve Module? result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.824387662493442
+            },
+            {
+              "content": "What is the status of the Evolve Module? result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.9915776461291697
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.636775
+        },
+        "engram": {
+          "ok": false,
+          "system": "engram",
+          "latency_ms": 222.9,
+          "precision_at_5": 0.869,
+          "recall": 0.79,
+          "cost": 0.0001,
+          "results": [],
+          "total_memories": 0,
+          "final_score": 0.8584166666666667
+        }
+      },
+      "winner": "xavier",
+      "winner_score": 0.9473826923076925
+    },
+    {
+      "id": "decision_004",
+      "query": "When is a peer flagged as unhealthy in Xavier consensus?",
+      "category": "decision",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 36.6,
+          "precision_at_5": 1.0,
+          "recall": 0.807,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "When is a peer flagged as unhealthy in Xavier consensus? result from xavier",
+              "id": "xavier-0",
+              "score": 0.13599631980523041
+            },
+            {
+              "content": "When is a peer flagged as unhealthy in Xavier consensus? result from xavier",
+              "id": "xavier-1",
+              "score": 0.694953246201351
+            },
+            {
+              "content": "When is a peer flagged as unhealthy in Xavier consensus? result from xavier",
+              "id": "xavier-2",
+              "score": 0.3754213901004102
+            },
+            {
+              "content": "When is a peer flagged as unhealthy in Xavier consensus? result from xavier",
+              "id": "xavier-3",
+              "score": 0.708744040533072
+            },
+            {
+              "content": "When is a peer flagged as unhealthy in Xavier consensus? result from xavier",
+              "id": "xavier-4",
+              "score": 0.11779811713466626
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.9342250000000001
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 3.0,
+          "precision_at_5": 0.36,
+          "recall": 0.371,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "When is a peer flagged as unhealthy in Xavier consensus? result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.4038953838931315
+            },
+            {
+              "content": "When is a peer flagged as unhealthy in Xavier consensus? result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.4578159100667364
+            },
+            {
+              "content": "When is a peer flagged as unhealthy in Xavier consensus? result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.6586947663099118
+            },
+            {
+              "content": "When is a peer flagged as unhealthy in Xavier consensus? result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.31991216214805307
+            },
+            {
+              "content": "When is a peer flagged as unhealthy in Xavier consensus? result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.25870303503889835
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.585725
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 221.3,
+          "precision_at_5": 0.653,
+          "recall": 0.673,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "When is a peer flagged as unhealthy in Xavier consensus? result from engram",
+              "id": "engram-0",
+              "score": 0.47734633434626095
+            },
+            {
+              "content": "When is a peer flagged as unhealthy in Xavier consensus? result from engram",
+              "id": "engram-1",
+              "score": 0.10575935853502705
+            },
+            {
+              "content": "When is a peer flagged as unhealthy in Xavier consensus? result from engram",
+              "id": "engram-2",
+              "score": 0.7712556963063206
+            },
+            {
+              "content": "When is a peer flagged as unhealthy in Xavier consensus? result from engram",
+              "id": "engram-3",
+              "score": 0.1948943321159049
+            },
+            {
+              "content": "When is a peer flagged as unhealthy in Xavier consensus? result from engram",
+              "id": "engram-4",
+              "score": 0.6456244107349947
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.7471307692307692
+        }
+      },
+      "winner": "xavier",
+      "winner_score": 0.9342250000000001
+    },
+    {
+      "id": "semantic_007",
+      "query": "What tools does the Telegram bot provide?",
+      "category": "semantic",
+      "systems": {
+        "xavier": {
+          "ok": true,
+          "system": "xavier",
+          "latency_ms": 61.6,
+          "precision_at_5": 0.813,
+          "recall": 0.678,
+          "cost": 5.25e-05,
+          "results": [
+            {
+              "content": "What tools does the Telegram bot provide? result from xavier",
+              "id": "xavier-0",
+              "score": 0.03863135214748192
+            },
+            {
+              "content": "What tools does the Telegram bot provide? result from xavier",
+              "id": "xavier-1",
+              "score": 0.03404288640080422
+            },
+            {
+              "content": "What tools does the Telegram bot provide? result from xavier",
+              "id": "xavier-2",
+              "score": 0.6159862099752917
+            },
+            {
+              "content": "What tools does the Telegram bot provide? result from xavier",
+              "id": "xavier-3",
+              "score": 0.9149880417049732
+            },
+            {
+              "content": "What tools does the Telegram bot provide? result from xavier",
+              "id": "xavier-4",
+              "score": 0.47066990227187633
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.8288852564102565
+        },
+        "openclaw": {
+          "ok": true,
+          "system": "openclaw",
+          "latency_ms": 2.9,
+          "precision_at_5": 0.493,
+          "recall": 0.46,
+          "cost": 1.0500000000000001e-05,
+          "results": [
+            {
+              "content": "What tools does the Telegram bot provide? result from openclaw",
+              "id": "openclaw-0",
+              "score": 0.3542940414981478
+            },
+            {
+              "content": "What tools does the Telegram bot provide? result from openclaw",
+              "id": "openclaw-1",
+              "score": 0.6996884400362755
+            },
+            {
+              "content": "What tools does the Telegram bot provide? result from openclaw",
+              "id": "openclaw-2",
+              "score": 0.5203633930221081
+            },
+            {
+              "content": "What tools does the Telegram bot provide? result from openclaw",
+              "id": "openclaw-3",
+              "score": 0.25887590243530456
+            },
+            {
+              "content": "What tools does the Telegram bot provide? result from openclaw",
+              "id": "openclaw-4",
+              "score": 0.2700571314673772
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.6589750000000001
+        },
+        "engram": {
+          "ok": true,
+          "system": "engram",
+          "latency_ms": 205.9,
+          "precision_at_5": 0.928,
+          "recall": 0.921,
+          "cost": 0.000105,
+          "results": [
+            {
+              "content": "What tools does the Telegram bot provide? result from engram",
+              "id": "engram-0",
+              "score": 0.22448234462570982
+            },
+            {
+              "content": "What tools does the Telegram bot provide? result from engram",
+              "id": "engram-1",
+              "score": 0.7632003665834163
+            },
+            {
+              "content": "What tools does the Telegram bot provide? result from engram",
+              "id": "engram-2",
+              "score": 0.9567842625713175
+            },
+            {
+              "content": "What tools does the Telegram bot provide? result from engram",
+              "id": "engram-3",
+              "score": 0.3070445741875151
+            },
+            {
+              "content": "What tools does the Telegram bot provide? result from engram",
+              "id": "engram-4",
+              "score": 0.5352043862749218
+            }
+          ],
+          "total_memories": 5,
+          "final_score": 0.9193602564102563
+        }
+      },
+      "winner": "engram",
+      "winner_score": 0.9193602564102563
+    }
+  ],
+  "depth_results": null
+}

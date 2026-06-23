@@ -117,6 +117,7 @@ impl Default for RetrievalSettings {
             zone_penalty_multiplier: None,
             cache_warming_enabled: false,
             cache_warming_threshold: None,
+            cache_ttl_secs: None,
             learned_policy: NavigationPolicyConfig::default(),
         }
     }
