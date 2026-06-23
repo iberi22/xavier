@@ -12,6 +12,7 @@ pub mod entities;
 pub mod entity_graph;
 pub mod episodic;
 pub mod file_indexer;
+pub mod fts;
 pub mod graph_store;
 pub mod graph_traversal;
 pub mod hierarchy;
