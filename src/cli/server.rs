@@ -290,6 +290,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/memory/evict", axum::routing::delete(evict_handler))
         .route("/memory/manage", post(manage_handler))
         .route("/memory/timeline/query", post(timeline_query_handler))
+        .route("/v1/memory/save", post(save_handler))
         .route("/v1/memories", post(add_handler).get(stats_handler))
         .route("/v1/memories/search", post(search_handler))
         .route("/agents", get(agent_list_handler))
