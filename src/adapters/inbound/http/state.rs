@@ -10,6 +10,7 @@ use crate::ports::inbound::{
     AgentLifecyclePort, HealthPort, InputSecurityPort, MemoryQueryPort, SecurityScanPort,
     SessionPort, SessionSyncPort, TimeMetricsPort, VerificationPort,
 };
+use crate::coordination::events::XavierEventBus;
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -30,6 +31,7 @@ pub struct AppState {
     pub code_db: Arc<code_graph::db::CodeGraphDB>,
     pub code_indexer: Arc<code_graph::indexer::Indexer>,
     pub code_query: Arc<code_graph::query::QueryEngine>,
+    pub event_bus: XavierEventBus,
 }
 
 /// Check that the `X-Xavier-Token` or `Authorization: Bearer <token>` header matches.

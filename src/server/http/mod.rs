@@ -5,6 +5,7 @@
 //! submodules for health monitoring, memory management, and real-time communication.
 
 pub mod api;
+pub mod context;
 pub mod health;
 pub mod types;
 pub mod v1;

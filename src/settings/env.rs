@@ -181,6 +181,10 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
             .zone_penalty_multiplier
             .map(|v| v.to_string()),
     );
+    set_optional_if_absent(
+        "XAVIER_RETRIEVAL_CACHE_TTL_SECS",
+        settings.retrieval.cache_ttl_secs.map(|v| v.to_string()),
+    );
 
     set_if_absent(
         "XAVIER_SYNC_INTERVAL_MS",

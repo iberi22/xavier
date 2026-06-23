@@ -10,6 +10,7 @@ use serde_json::Value;
 pub fn get_xavier_tools() -> Vec<MCPTool> {
     let mut tools = super::tools_core::get_xavier_core_tools();
     tools.extend(super::tools_memory::get_xavier_memory_tools());
+    tools.extend(super::tools_context::get_xavier_context_tools());
     tools
 }
 
@@ -39,6 +40,20 @@ pub async fn handle_tool_call(
     name: &str,
     arguments: Value,
 ) -> anyhow::Result<Value> {
+    let session_id = arguments
+        .get("namespace")
+        .and_then(|ns| ns.get("session_id"))
+        .and_then(|s| s.as_str())
+        .or_else(|| arguments.get("session_id").and_then(|s| s.as_str()))
+        .unwrap_or("default")
+        .to_string();
+
+    let _ = state.event_bus.publish(crate::coordination::events::XavierEvent::ToolCalled {
+        name: name.to_string(),
+        args: arguments.clone(),
+        session_id: session_id.clone(),
+    });
+
     for (key, value) in arguments.as_object().unwrap_or(&serde_json::Map::new()) {
         if !should_prescan_tool_argument(name, key) {
             continue;
@@ -55,11 +70,32 @@ pub async fn handle_tool_call(
         }
     }
 
-    if super::tools_core::is_core_tool(name) {
-        super::tools_core::handle_core_tool(state, workspace, name, arguments).await
+    let result = if super::tools_core::is_core_tool(name) {
+        super::tools_core::handle_core_tool(state.clone(), workspace, name, arguments).await
+    } else if name.starts_with("xavier_context") || name == "xavier_token_savings" {
+        super::tools_context::handle_context_tool(state, workspace, name, arguments).await
     } else {
-        super::tools_memory::handle_memory_tool(state, workspace, name, arguments).await
+        super::tools_memory::handle_memory_tool(state.clone(), workspace, name, arguments).await
+    };
+
+    match &result {
+        Ok(val) => {
+            let _ = state.event_bus.publish(crate::coordination::events::XavierEvent::ToolSucceeded {
+                name: name.to_string(),
+                result: val.clone(),
+                session_id,
+            });
+        }
+        Err(e) => {
+            let _ = state.event_bus.publish(crate::coordination::events::XavierEvent::ToolFailed {
+                name: name.to_string(),
+                error: e.to_string(),
+                session_id,
+            });
+        }
     }
+
+    result
 }
 
 fn should_prescan_tool_argument(tool_name: &str, argument_name: &str) -> bool {
