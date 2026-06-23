@@ -12,7 +12,8 @@ use anyhow::{Context, Result};
 use rusqlite::params;
 use std::collections::{HashMap, HashSet};
 
-use super::{fts, graph, search, utils, FusionSource, VecSqliteMemoryStore};
+use super::{graph, search, utils, FusionSource, VecSqliteMemoryStore};
+use crate::memory::fts;
 
 impl VecSqliteMemoryStore {
     #[allow(dead_code)]

@@ -123,6 +123,13 @@ impl SqliteMemoryStore {
     }
 
     fn row_key(workspace_id: &str, memory_id: &str) -> String {
+        if memory_id.len() == 64 && memory_id.chars().all(|c| c.is_ascii_hexdigit()) {
+            return memory_id.to_string();
+        }
+        // If it looks like a ULID (26 chars), also use it as-is
+        if memory_id.len() == 26 {
+            return memory_id.to_string();
+        }
         stable_key("sqlite_mem", &[workspace_id, memory_id])
     }
 
@@ -130,14 +137,16 @@ impl SqliteMemoryStore {
         let metadata_str: String = row.get(4)?;
         let embedding_blob: Vec<u8> = row.get(5)?;
 
+        let metadata: serde_json::Value = serde_json::from_str(&metadata_str).unwrap_or_default();
+
         // Note: Decryption is handled in MemoryStore implementation if needed.
         // We store encrypted content directly in MemoryRecord during raw fetch.
-        Ok(MemoryRecord {
+        let mut record = MemoryRecord {
             id: row.get(0)?,
             workspace_id: row.get(1)?,
             path: row.get(2)?,
             content: row.get(3)?,
-            metadata: serde_json::from_str(&metadata_str).unwrap_or_default(),
+            metadata: metadata.clone(),
             embedding: Self::deserialize_embedding(&embedding_blob),
             created_at: DateTime::parse_from_rfc3339(&row.get::<_, String>(6)?)
                 .map(|dt| dt.with_timezone(&Utc))
@@ -161,7 +170,14 @@ impl SqliteMemoryStore {
             encrypted_dek: row.get(15)?,
             content_iv: row.get(16)?,
             metadata_iv: row.get(17)?,
-        })
+        };
+
+        // Try to recover original ID from metadata if possible, as it might have been mangled by row_key
+        if let Some(original_id) = metadata.get("id").and_then(|v| v.as_str()) {
+            record.id = original_id.to_string();
+        }
+
+        Ok(record)
     }
 }
 
@@ -205,6 +221,9 @@ impl SqliteMemoryStore {
                     )
                     .map_err(|e| anyhow::anyhow!("Metadata decryption failed: {}", e))?;
                     record.metadata = serde_json::from_slice(&plaintext)?;
+                    if let Some(original_id) = record.metadata.get("id").and_then(|v| v.as_str()) {
+                        record.id = original_id.to_string();
+                    }
                 }
             }
         }
@@ -294,17 +313,28 @@ impl MemoryStore for SqliteMemoryStore {
         }
 
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+            let key = Self::row_key(&record.workspace_id, &record.id);
+
+            // Store original ID in metadata for reconstruction if it was stable-hashed
+            let mut metadata = record.metadata.clone();
+            if metadata.is_null() {
+                metadata = serde_json::json!({});
+            }
+            if let Some(obj) = metadata.as_object_mut() {
+                obj.insert("id".to_string(), serde_json::json!(record.id));
+            }
+
             conn.execute(
                 &format!(
                     "INSERT OR REPLACE INTO {} (id, workspace_id, path, content, metadata, embedding, encrypted_dek, content_iv, metadata_iv, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)",
                     TABLE_MEMORIES
                 ),
                 params![
-                    record.id,
+                    key,
                     record.workspace_id,
                     record.path,
                     record.content,
-                    serde_json::to_string(&record.metadata).unwrap_or_default(),
+                    serde_json::to_string(&metadata).unwrap_or_default(),
                     Self::serialize_embedding(&record.embedding),
                     record.encrypted_dek,
                     record.content_iv,
@@ -320,6 +350,24 @@ impl MemoryStore for SqliteMemoryStore {
                     serde_json::to_string(&record.revisions).unwrap_or_default(),
                 ],
             )?;
+
+            // Sync to FTS5
+            conn.execute(
+                "DELETE FROM memory_fts WHERE id = ?",
+                params![key],
+            )?;
+            let code_tokens =
+                crate::memory::fts::code_tokens(&format!("{} {}", &record.path, &record.content)).join(" ");
+            conn.execute(
+                "INSERT INTO memory_fts(id, path, content, code_tokens) VALUES (?, ?, ?, ?)",
+                params![
+                    key,
+                    record.path,
+                    record.content,
+                    code_tokens
+                ],
+            )?;
+
             Ok(())
         }).await
     }
@@ -385,19 +433,33 @@ impl MemoryStore for SqliteMemoryStore {
 
             ConnectionManager::global()
                 .with_conn(&self.project_id, move |conn| {
-                    conn.execute(
+                    let tx = conn.unchecked_transaction()?;
+
+                    tx.execute(
                         &format!("DELETE FROM {} WHERE id = ?", TABLE_MEMORIES),
                         [&key],
                     )?;
 
                     // Also delete children
-                    conn.execute(
+                    tx.execute(
                         &format!(
                             "DELETE FROM {} WHERE workspace_id = ? AND parent_id = ?",
                             TABLE_MEMORIES
                         ),
                         params![workspace_id, record_id],
                     )?;
+
+                    // Delete from FTS5
+                    tx.execute("DELETE FROM memory_fts WHERE id = ?", params![record_id])?;
+
+                    tx.execute(
+                        "DELETE FROM memory_fts WHERE id IN (
+                        SELECT id FROM memory_records WHERE workspace_id = ? AND parent_id = ?
+                    )",
+                        params![workspace_id, record_id],
+                    )?;
+
+                    tx.commit()?;
                     Ok(())
                 })
                 .await?;
@@ -450,8 +512,56 @@ impl MemoryStore for SqliteMemoryStore {
         query: &str,
         filters: Option<&MemoryQueryFilters>,
     ) -> Result<Vec<MemoryRecord>> {
-        let records = self.list(workspace_id).await?;
-        filter_records(records, workspace_id, query, filters)
+        let trimmed_query = query.trim();
+        if trimmed_query.is_empty() {
+            let records = self.list(workspace_id).await?;
+            return filter_records(records, workspace_id, query, filters);
+        }
+
+        let workspace_id_c = workspace_id.to_string();
+        let filters_c = filters.cloned();
+        let trimmed_query_c = trimmed_query.to_string();
+
+        let records = ConnectionManager::global().with_conn(&self.project_id, move |conn| {
+            let mut results = Vec::new();
+
+            if let Some(fts_query) = crate::memory::fts::build_fts_query(&trimmed_query_c) {
+                let fts_sql = r#"
+                    SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
+                           m.created_at, m.updated_at, m.revision, m.primary_flag,
+                           m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
+                           m.encrypted_dek, m.content_iv, m.metadata_iv
+                    FROM memory_fts f
+                    JOIN memory_records m ON m.id = f.id AND m.workspace_id = ?
+                    WHERE f.memory_fts MATCH ?
+                    ORDER BY bm25(memory_fts, 1.0, 0.8)
+                    LIMIT 100
+                "#;
+
+                let mut stmt = conn.prepare(fts_sql)?;
+                let mut rows = stmt.query(params![workspace_id_c, fts_query])?;
+                while let Some(row) = rows.next()? {
+                    let record = Self::deserialize_record(row)?;
+                    if crate::memory::schema::matches_filters(&record.path, &record.metadata, &workspace_id_c, filters_c.as_ref()) {
+                        results.push(record);
+                    }
+                }
+            }
+
+            Ok(results)
+        }).await?;
+
+        if records.is_empty() {
+            let all = self.list(workspace_id).await?;
+            return filter_records(all, workspace_id, query, filters);
+        }
+
+        let mut results = Vec::with_capacity(records.len());
+        for mut record in records {
+            Self::decrypt_record(&mut record)?;
+            results.push(record);
+        }
+        Ok(results)
     }
 
     async fn load_workspace_state(&self, workspace_id: &str) -> Result<DurableWorkspaceState> {

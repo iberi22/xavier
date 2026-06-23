@@ -203,4 +203,23 @@ mod tests {
         let result = cache.get("different").await.expect("cache get");
         assert!(result.is_none());
     }
+
+    #[tokio::test]
+    async fn respects_ttl() {
+        let embeddings = HashMap::from([
+            ("hello".to_string(), vec![1.0, 0.0]),
+        ]);
+        let mut cache = SemanticCache::new_with_embedder(0.95, Arc::new(MockEmbedder { embeddings }));
+        cache.ttl_secs = Some(1); // 1 second TTL
+
+        cache.put("hello", "cached").await.expect("cache put");
+
+        let result = cache.get("hello").await.expect("cache get before expire");
+        assert_eq!(result.as_deref(), Some("cached"));
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+
+        let result = cache.get("hello").await.expect("cache get after expire");
+        assert!(result.is_none());
+    }
 }

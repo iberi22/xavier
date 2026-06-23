@@ -183,7 +183,7 @@ impl MemoryStore for VecSqliteMemoryStore {
                     params![record_c.id],
                 )?;
                 let code_tokens =
-                    super::fts::code_tokens(&format!("{} {}", &record_c.path, &record_c.content)).join(" ");
+                    crate::memory::fts::code_tokens(&format!("{} {}", &record_c.path, &record_c.content)).join(" ");
                 conn.execute(
                     "INSERT INTO memory_fts(id, path, content, code_tokens) VALUES (?, ?, ?, ?)",
                     params![
