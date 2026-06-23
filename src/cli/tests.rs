@@ -3,8 +3,6 @@
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
 
-use crate::cli::code_graph::code_find_symbols;
-
 use crate::cli::config::{resolve_base_url, resolve_base_url_for_port, resolve_http_port};
 use crate::cli::security::{secure_cli_input, secure_external_input};
 
