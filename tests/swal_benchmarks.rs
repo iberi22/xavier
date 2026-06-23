@@ -12,7 +12,9 @@ use std::time::{Duration, Instant};
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 fn xavier_binary() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_xavier"))
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_xavier"));
+    cmd.env("XAVIER_MCP_PORT", "0");
+    cmd
 }
 
 /// Run CLI command, measure wall time

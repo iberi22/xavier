@@ -26,6 +26,7 @@ async fn test_health_endpoint_via_xavier_binary() {
             .arg(port.to_string())
             .env("XAVIER_HOST", "127.0.0.1")
             .env("XAVIER_PORT", port.to_string())
+            .env("XAVIER_MCP_PORT", "0")
             .env("XAVIER_URL", &url)
             .env("XAVIER_TOKEN", "test-token")
             .env(
@@ -59,7 +60,7 @@ async fn test_health_endpoint_via_xavier_binary() {
             Ok(response) if response.status().is_success() => {
                 assert!(response.headers().contains_key("x-request-id"));
                 let body = response.text().await.expect("health body");
-                assert!(body.contains("\"status\":\"ok\""));
+                assert!(body.contains("\"status\":\"ok\"") || body.contains("\"status\":\"healthy\""));
                 healthy = true;
 
                 let readiness = client

@@ -27,6 +27,7 @@ async fn test_headless_api_e2e() {
         std::process::Command::new(env!("CARGO_BIN_EXE_xavier"))
             .env("XAVIER_HOST", "127.0.0.1")
             .env("XAVIER_PORT", port.to_string())
+            .env("XAVIER_MCP_PORT", "0")
             .env("XAVIER_TOKEN", "test-token")
             .env("XAVIER_HEADLESS", "true")
             .env(
