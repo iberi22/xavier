@@ -2,7 +2,6 @@
 //!
 //! Aggregates and re-exports the sub-modules within this module,
 //! providing the public API surface for module consumers.
-pub(crate) mod code_graph;
 pub mod commands;
 pub(crate) mod config;
 pub mod handlers;

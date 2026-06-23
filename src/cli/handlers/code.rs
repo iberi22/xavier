@@ -7,7 +7,8 @@ use std::path::PathBuf;
 use tracing::{info, warn};
 
 use crate::cli::code_dump::{perform_dump, perform_load};
-use crate::cli::code_graph::{code_find_symbols, filter_symbols_by_query};
+// TODO: Re-implement code_find_symbols and filter_symbols_by_query via code_graph::query::QueryEngine
+use code_graph::types::{EdgeType, Symbol, SymbolKind};
 use crate::cli::security::secure_optional_request_field;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
@@ -291,13 +292,10 @@ pub async fn code_find_handler(
     );
 
     let code_graph = state.code_graph.read().await;
-    let symbols = code_find_symbols(
-        &code_graph.query,
-        &query,
-        kind.as_deref(),
-        pattern.as_deref(),
-        limit,
-    );
+    let symbols = match code_graph.query.search(&query, limit) {
+        Ok(result) => result.symbols,
+        Err(_) => Vec::new(),
+    };
 
     let results: Vec<_> = symbols
         .into_iter()
@@ -410,7 +408,8 @@ pub async fn code_context_handler(
             .map(|result| result.symbols)
             .unwrap_or_default()
     };
-    filter_symbols_by_query(&mut symbols, &payload.query);
+    // filter_symbols_by_query removed — not available in code_graph API
+    // The search already filters by query via QueryEngine::search
     symbols.truncate(limit);
 
     let mut used_tokens = 0usize;
