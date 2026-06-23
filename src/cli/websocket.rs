@@ -10,7 +10,7 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
 use tracing::info;
-use xavier::memory::schema::MemoryLevel;
+use xavier::memory::schema::{EvidenceKind, MemoryKind, MemoryLevel, MemoryNamespace, TypedMemoryPayload};
 use xavier::memory::store::MemoryRecord;
 use xavier::session::event_mapper::PanelThreadEntry;
 use xavier::session::types::SessionEvent;
@@ -49,28 +49,23 @@ pub async fn session_event_handler(
     );
 
     let record_path = format!("sessions/{}/thread", event.session_id);
-    let record = MemoryRecord {
-        id: String::new(),
-        workspace_id: state.workspace_id.clone(),
-        path: record_path.clone(),
-        content,
-        metadata: serde_json::json!({"kind": "Context", "namespace": "Session"}),
-        embedding: vec![],
-        created_at: chrono::Utc::now(),
-        updated_at: chrono::Utc::now(),
-        revision: 1,
-        primary: true,
-        parent_id: None,
-        cluster_id: None,
-        level: MemoryLevel::Raw,
-        relation: None,
-        clearance: Default::default(),
-        revisions: vec![],
-                encrypted_dek: None,
-                content_iv: None,
-                metadata_iv: None,
+    let typed = TypedMemoryPayload {
+        kind: Some(MemoryKind::Episodic),
+        evidence_kind: Some(EvidenceKind::SourceTurn),
+        namespace: Some(MemoryNamespace {
+            session_id: Some(event.session_id.clone()),
+            ..Default::default()
+        }),
+        level: Some(MemoryLevel::Raw),
+        ..Default::default()
     };
-    match state.memory.add(record).await {
+
+    match state.qmd_memory.add_document_typed(
+        record_path.clone(),
+        content,
+        event.metadata.unwrap_or(serde_json::json!({})),
+        Some(typed)
+    ).await {
         Ok(id) => {
             info!("Session event indexed: {} -> {}", event.session_id, id);
             axum::Json(serde_json::json!({

@@ -52,6 +52,7 @@ pub async fn build_mcp_state() -> Result<(AppState, xavier::workspace::Workspace
     let code_db = Arc::new(code_graph::db::CodeGraphDB::in_memory()?);
     let code_indexer = Arc::new(code_graph::indexer::Indexer::new(Arc::clone(&code_db)));
     let code_query = Arc::new(code_graph::query::QueryEngine::new(Arc::clone(&code_db)));
+    let event_bus = xavier::coordination::events::XavierEventBus::new(100);
 
     let state = AppState {
         workspace_registry: Arc::clone(&workspace_registry),
@@ -70,6 +71,7 @@ pub async fn build_mcp_state() -> Result<(AppState, xavier::workspace::Workspace
         ),
         security_service,
         code_graph_dump_path: None,
+        event_bus,
     };
 
     let workspace = WorkspaceState::new(

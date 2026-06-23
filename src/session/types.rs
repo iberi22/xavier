@@ -15,6 +15,9 @@ pub enum SessionEventType {
     ToolCall,
     ToolResult,
     Error,
+    Decision,
+    QueryResult,
+    UserFeedback,
 }
 
 /// Raw session event payload from OpenClaw

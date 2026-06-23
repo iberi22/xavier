@@ -5,6 +5,7 @@
 use crate::tasks::models::Task;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tokio::sync::broadcast;
 use tracing::{error, info};
 
@@ -12,6 +13,10 @@ use tracing::{error, info};
 pub enum XavierEvent {
     TaskCompleted { task: Task },
     TaskFailed { task: Task, reason: String },
+    ToolCalled { name: String, args: Value, session_id: String },
+    ToolSucceeded { name: String, result: Value, session_id: String },
+    ToolFailed { name: String, error: String, session_id: String },
+    ErrorOccurred { message: String, details: Value },
 }
 
 #[derive(Clone)]
