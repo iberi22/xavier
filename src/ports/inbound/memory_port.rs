@@ -12,6 +12,12 @@ pub trait MemoryQueryPort: Send + Sync {
         query: &str,
         filters: Option<MemoryQueryFilters>,
     ) -> anyhow::Result<Vec<MemoryRecord>>;
+    async fn expand_depth(
+        &self,
+        results: &[MemoryRecord],
+        depth: usize,
+        filters: Option<MemoryQueryFilters>,
+    ) -> anyhow::Result<Vec<MemoryRecord>>;
     async fn add(&self, record: MemoryRecord) -> anyhow::Result<String>;
     async fn update(&self, id: &str, record: MemoryRecord) -> anyhow::Result<MemoryRecord>;
     async fn delete(&self, id: &str) -> anyhow::Result<Option<MemoryRecord>>;

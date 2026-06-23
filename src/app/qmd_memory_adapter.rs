@@ -93,4 +93,22 @@ impl MemoryQueryPort for QmdMemoryAdapter {
     async fn ls(&self, path: &str) -> anyhow::Result<Vec<crate::memory::qmd::types::NavEntry>> {
         self.inner.ls(path).await
     }
+
+    async fn expand_depth(
+        &self,
+        results: &[MemoryRecord],
+        depth: usize,
+        filters: Option<MemoryQueryFilters>,
+    ) -> anyhow::Result<Vec<MemoryRecord>> {
+        let docs: Vec<_> = results.iter().map(|r| r.to_document()).collect();
+        let expanded = self
+            .inner
+            .expand_depth(&docs, depth, filters.as_ref())
+            .await?;
+        let workspace_id = self.inner.workspace_id();
+        Ok(expanded
+            .into_iter()
+            .map(|doc| MemoryRecord::from_document(workspace_id, &doc, true, None))
+            .collect())
+    }
 }

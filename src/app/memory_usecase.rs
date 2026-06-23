@@ -131,6 +131,15 @@ impl MemoryQueryPort for MemoryUseCase {
     async fn ls(&self, path: &str) -> anyhow::Result<Vec<crate::memory::qmd::types::NavEntry>> {
         self.inner.ls(path).await
     }
+
+    async fn expand_depth(
+        &self,
+        results: &[MemoryRecord],
+        depth: usize,
+        filters: Option<MemoryQueryFilters>,
+    ) -> anyhow::Result<Vec<MemoryRecord>> {
+        self.inner.expand_depth(results, depth, filters).await
+    }
 }
 
 #[cfg(test)]
@@ -174,6 +183,14 @@ mod tests {
         }
         async fn ls(&self, _path: &str) -> anyhow::Result<Vec<crate::memory::qmd::types::NavEntry>> {
             Ok(vec![])
+        }
+        async fn expand_depth(
+            &self,
+            results: &[MemoryRecord],
+            _depth: usize,
+            _filters: Option<MemoryQueryFilters>,
+        ) -> anyhow::Result<Vec<MemoryRecord>> {
+            Ok(results.to_vec())
         }
     }
 
