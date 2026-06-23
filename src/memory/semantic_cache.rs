@@ -19,6 +19,7 @@ pub struct CachedResponse {
     pub response: String,
     pub confidence: f32, // Used to track how good this cached answer was
     pub timestamp: chrono::DateTime<chrono::Utc>,
+    pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
 }
 
 pub trait QueryEmbedder: Send + Sync {
@@ -52,10 +53,14 @@ pub struct SemanticCache {
     entries: Arc<RwLock<Vec<CachedResponse>>>,
     similarity_threshold: f32,
     embedder: Arc<dyn QueryEmbedder>,
+    ttl_secs: Option<u64>,
 }
 
 impl SemanticCache {
     pub fn new(similarity_threshold: f32) -> Result<Self> {
+        let settings = crate::settings::XavierSettings::current();
+        let ttl_secs = settings.retrieval.cache_ttl_secs;
+
         let embedder: Arc<dyn QueryEmbedder> = match EmbeddingClient::from_env() {
             Ok(client) => Arc::new(client),
             Err(error) => {
@@ -71,6 +76,7 @@ impl SemanticCache {
             entries: Arc::new(RwLock::new(Vec::new())),
             similarity_threshold,
             embedder,
+            ttl_secs,
         })
     }
 
@@ -80,6 +86,7 @@ impl SemanticCache {
             entries: Arc::new(RwLock::new(Vec::new())),
             similarity_threshold,
             embedder,
+            ttl_secs: None,
         }
     }
 
@@ -89,21 +96,26 @@ impl SemanticCache {
             return Ok(None);
         }
 
-        let entries = self.entries.read().await;
+        let mut entries = self.entries.write().await;
+        let now = chrono::Utc::now();
 
-        let mut best_match = None;
+        // Expire old entries
+        entries.retain(|e| e.expires_at.is_none() || e.expires_at.unwrap() > now);
+
+        let mut best_match_idx = None;
         let mut max_similarity = 0.0;
 
-        for entry in entries.iter() {
+        for (idx, entry) in entries.iter().enumerate() {
             let similarity = cosine_similarity(&query_embedding, &entry.query_embedding);
             if similarity > max_similarity {
                 max_similarity = similarity;
-                best_match = Some(entry);
+                best_match_idx = Some(idx);
             }
         }
 
         if max_similarity >= self.similarity_threshold {
-            if let Some(match_entry) = best_match {
+            if let Some(idx) = best_match_idx {
+                let match_entry = &entries[idx];
                 tracing::info!(
                     "🎯 Semantic Cache HIT! Similarity: {:.2}. Query: '{}' matched '{}'",
                     max_similarity,
@@ -124,13 +136,17 @@ impl SemanticCache {
             return Ok(());
         }
 
+        let now = chrono::Utc::now();
+        let expires_at = self.ttl_secs.map(|s| now + chrono::Duration::seconds(s as i64));
+
         let mut entries = self.entries.write().await;
         entries.push(CachedResponse {
             query: query.to_string(),
             query_embedding,
             response: response.to_string(),
             confidence: 1.0,
-            timestamp: chrono::Utc::now(),
+            timestamp: now,
+            expires_at,
         });
 
         tracing::info!("💾 Stored answer in Semantic Cache for query: '{}'", query);

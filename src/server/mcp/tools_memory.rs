@@ -195,6 +195,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                 "properties": {
                     "query": { "type": "string", "description": "Search query" },
                     "limit": { "type": "number", "description": "Maximum results", "default": 10 },
+                    "depth": { "type": "number", "description": "Relationship depth to explore (0=flat, 1=direct, 2=two-hop)", "default": 0 },
                     "namespace": {
                         "description": "Optional namespace filter: a project string or an object {project, agent_id, scope, session_id}",
                         "oneOf": [
@@ -631,6 +632,11 @@ pub async fn handle_memory_tool(
                 .and_then(|v| v.as_u64())
                 .unwrap_or(10)
                 .clamp(1, MEMORYFRAGMENT_MAX_LIMIT as u64) as usize;
+            let depth = arguments
+                .get("depth")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0)
+                .clamp(0, 2) as usize;
             let namespace = parse_namespace_arg(&arguments)?;
 
             let mut filters = MemoryQueryFilters::default();
@@ -647,6 +653,17 @@ pub async fn handle_memory_tool(
                 .memory
                 .search_filtered(query, limit, Some(&filters))
                 .await?;
+
+            let results = if depth > 0 {
+                workspace
+                    .workspace
+                    .memory
+                    .expand_depth(&results, depth, Some(&filters))
+                    .await?
+            } else {
+                results
+            };
+
             let content = results
                 .into_iter()
                 .map(|doc| MCPContent::Text(MCPTextContent {
@@ -707,119 +724,46 @@ pub async fn handle_memory_tool(
                     is_error: Some(false),
                 })?)
             } else {
-                let mut all_docs: Vec<(String, usize)> = Vec::new(); // (doc_id, depth_level)
-                let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+                let mut expanded = if depth > 0 {
+                    workspace
+                        .workspace
+                        .memory
+                        .expand_depth(&results, depth, None)
+                        .await?
+                } else {
+                    results.to_vec()
+                };
+
+                // We need to preserve the "depth" information for the context formatter
+                // Let's use a simpler approach since expand_depth doesn't return depth info
+                // For memory_context we might want to keep the manual loop if we need depth labels,
+                // or we can just list them.
+
                 let mut sources: Vec<MCPSearchResult> = Vec::new();
-
-                // Phase 1: collect initial search results
-                for doc in &results {
-                    let doc_id = doc.id.clone().unwrap_or_default();
-                    if !doc_id.is_empty() && seen_ids.insert(doc_id.clone()) {
-                        all_docs.push((doc_id.clone(), 0));
-                        sources.push(MCPSearchResult {
-                            id: doc_id.clone(),
-                            path: doc.path.clone(),
-                            score: 0.0,
-                            snippet: doc.content.chars().take(200).collect(),
-                            provenance: MCPProvenance {
-                                source: "search_filtered".to_string(),
-                                retrieved_at: chrono::Utc::now().to_rfc3339(),
-                                retrieval_method: "context_depth_search".to_string(),
-                                embedding_model: None,
-                                version: None,
-                            },
-                            metadata: doc.metadata.clone(),
-                        });
-                    }
+                for doc in &expanded {
+                    sources.push(MCPSearchResult {
+                        id: doc.id.clone().unwrap_or_default(),
+                        path: doc.path.clone(),
+                        score: 0.0,
+                        snippet: doc.content.chars().take(200).collect(),
+                        provenance: MCPProvenance {
+                            source: "search_filtered".to_string(),
+                            retrieved_at: chrono::Utc::now().to_rfc3339(),
+                            retrieval_method: "context_depth_search".to_string(),
+                            embedding_model: None,
+                            version: None,
+                        },
+                        metadata: doc.metadata.clone(),
+                    });
                 }
 
-                // Phase 2: expand by depth
-                if depth > 0 {
-                    let mut current_idxs: Vec<String> = all_docs.iter().map(|(id, _)| id.clone()).collect();
-                    for current_depth in 1..=depth {
-                        let mut next_ids: Vec<String> = Vec::new();
-                        for doc_id in &current_idxs {
-                            if let Ok(Some(record)) = workspace.workspace.get_memory_record(doc_id).await {
-                                // Fetch parent
-                                if let Some(ref parent_id) = record.parent_id {
-                                    if seen_ids.insert(parent_id.clone()) {
-                                        if let Ok(Some(parent)) = workspace.workspace.get_memory_record(parent_id).await {
-                                            next_ids.push(parent_id.clone());
-                                            all_docs.push((parent_id.clone(), current_depth));
-                                            sources.push(MCPSearchResult {
-                                                id: parent_id.clone(),
-                                                path: parent.path.clone(),
-                                                score: 0.0,
-                                                snippet: parent.content.chars().take(200).collect(),
-                                                provenance: MCPProvenance {
-                                                    source: "parent_relation".to_string(),
-                                                    retrieved_at: chrono::Utc::now().to_rfc3339(),
-                                                    retrieval_method: "context_depth_expansion".to_string(),
-                                                    embedding_model: None,
-                                                    version: None,
-                                                },
-                                                metadata: parent.metadata.clone(),
-                                            });
-                                        }
-                                    }
-                                }
-
-                                // Fetch children (documents whose parent_id matches this id)
-                                // We search filtered with cluster_ids to find children in same cluster
-                                if let Some(ref cluster) = record.cluster_id {
-                                    let mut child_filters = crate::memory::schema::MemoryQueryFilters::default();
-                                    child_filters.cluster_ids = Some(vec![cluster.clone()]);
-                                    if let Ok(children) = workspace
-                                        .workspace
-                                        .memory
-                                        .search_filtered("", 50, Some(&child_filters))
-                                        .await
-                                    {
-                                        for child in children {
-                                            if let Some(ref cid) = child.id {
-                                                if cid != doc_id && seen_ids.insert(cid.clone()) {
-                                                    next_ids.push(cid.clone());
-                                                    all_docs.push((cid.clone(), current_depth));
-                                                    sources.push(MCPSearchResult {
-                                                        id: cid.clone(),
-                                                        path: child.path.clone(),
-                                                        score: 0.0,
-                                                        snippet: child.content.chars().take(200).collect(),
-                                                        provenance: MCPProvenance {
-                                                            source: "child_relation".to_string(),
-                                                            retrieved_at: chrono::Utc::now().to_rfc3339(),
-                                                            retrieval_method: "context_depth_expansion".to_string(),
-                                                            embedding_model: None,
-                                                            version: None,
-                                                        },
-                                                        metadata: child.metadata.clone(),
-                                                    });
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        current_idxs = next_ids;
-                    }
-                }
-
-                // Phase 3: fetch full records for all collected ids and build context string
+                // Phase 3: build context string
                 let mut context = String::from("# Relevant Memory Context\n\n");
-                for (doc_id, depth_level) in &all_docs {
-                    if let Ok(Some(record)) = workspace.workspace.get_memory_record(doc_id).await {
-                        let indent = "  ".repeat(*depth_level);
-                        let depth_label = if *depth_level == 0 {
-                            String::from("[ROOT]")
-                        } else {
-                            format!("[DEPTH-{}]", depth_level)
-                        };
-                        context.push_str(&format!(
-                            "{}### {} {} (id: {})\n{}{}\n\n",
-                            indent, depth_label, record.path, record.id, indent, record.content
-                        ));
-                    }
+                for record in &expanded {
+                    context.push_str(&format!(
+                        "### {} (id: {})\n{}\n\n",
+                        record.path, record.id.as_deref().unwrap_or("none"), record.content
+                    ));
                 }
 
                 // Phase 4: enforce max_chars truncation
@@ -844,7 +788,7 @@ pub async fn handle_memory_tool(
                 let final_total_chars = context.chars().count();
                 let payload = MCPContextResult {
                     total_chars: final_total_chars,
-                    total_records: all_docs.len(),
+                    total_records: expanded.len(),
                     truncated,
                     truncated_reason,
                     content: context,

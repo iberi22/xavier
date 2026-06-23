@@ -459,7 +459,8 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         )
         .route(
             "/v1/memory/search",
-            post(crate::cli::handlers::headless_api::headless_memory_search),
+            get(crate::cli::handlers::memory::search_get_handler)
+            .post(crate::cli::handlers::memory::search_handler),
         )
         .route(
             "/v1/memory/add",
