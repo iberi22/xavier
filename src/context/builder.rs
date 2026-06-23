@@ -12,6 +12,7 @@ pub struct ContextBuilderConfig {
     pub goals: Vec<String>,
     pub constraints: Vec<String>,
     pub recent_messages_limit: usize,
+    pub enable_compression: bool,
 }
 
 impl Default for ContextBuilderConfig {
@@ -22,6 +23,7 @@ impl Default for ContextBuilderConfig {
             goals: vec![],
             constraints: vec![],
             recent_messages_limit: 5,
+            enable_compression: true,
         }
     }
 }
@@ -91,7 +93,25 @@ impl ContextBuilder {
             }
         }
 
+        if self.config.enable_compression {
+            self.compress_and_cross_reference(&mut context);
+        }
+
         context
+    }
+
+    fn compress_and_cross_reference(&self, context: &mut String) {
+        // Simple "compression" by removing excessive whitespace and adding cross-refs
+        // In a real scenario, this would use a more sophisticated chunking/summarization logic
+        let mut compressed = context.replace("  ", " ").replace("\n\n\n", "\n\n");
+
+        // Add chunk headers for auto-containment
+        if compressed.len() > 1000 {
+            compressed.insert_str(0, "## CONTEXT_CHUNK_START:v1:auto-contained\n");
+            compressed.push_str("\n## CONTEXT_CHUNK_END\n");
+        }
+
+        *context = compressed;
     }
 
     fn append_recent_messages(&self, context: &mut String, messages: &[ContextDocument]) {
@@ -103,8 +123,9 @@ impl ContextBuilder {
         let limit = self.config.recent_messages_limit.min(messages.len());
         let start = messages.len() - limit;
 
-        for msg in &messages[start..] {
-            context.push_str(&format!("{}: {}\n", msg.role, msg.content));
+        for (i, msg) in messages[start..].iter().enumerate() {
+            // Add cross-reference ID
+            context.push_str(&format!("[REF:msg_{}] {}: {}\n", i, msg.role, msg.content));
         }
         context.push('\n');
     }

@@ -15,6 +15,7 @@ use crate::cli::handlers::json_response;
 use crate::cli::security::secure_cli_input;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
+use ulid::Ulid;
 use xavier::memory::qmd_memory::MemoryDocument;
 
 use xavier::memory::schema::MemoryLevel;
@@ -308,6 +309,141 @@ pub async fn add_handler(
         }
         Err(e) => {
             info!("Add memory error: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                axum::Json(serde_json::json!({
+                    "status": "error",
+                    "message": e.to_string(),
+                })),
+            )
+                .into_response()
+        }
+    }
+}
+
+pub async fn save_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<MemorySaveRequest>,
+) -> impl axum::response::IntoResponse {
+    let sec_result = state
+        .security
+        .process_input(&payload.text)
+        .await
+        .unwrap_or_else(|_| SecureInputResult {
+            allowed: false,
+            sanitized_input: None,
+            original_input: payload.text.clone(),
+            detection_confidence: 1.0,
+            is_injection: true,
+            attack_type: "unknown".to_string(),
+        });
+
+    if !sec_result.allowed {
+        info!(
+            "Save blocked by security: injection detected (confidence={})",
+            sec_result.detection_confidence
+        );
+        return axum::Json(serde_json::json!({
+            "status": "blocked",
+            "reason": "security_policy_violation",
+            "detection": {
+                "is_injection": sec_result.is_injection,
+                "confidence": sec_result.detection_confidence,
+                "attack_type": sec_result.attack_type,
+            }
+        }))
+        .into_response();
+    }
+
+    let effective_content = sec_result
+        .sanitized_input
+        .as_deref()
+        .unwrap_or(&sec_result.original_input);
+
+    let mut metadata = payload.metadata.unwrap_or(serde_json::json!({}));
+
+    // Parse namespace
+    let namespace: Option<xavier::memory::schema::MemoryNamespace> = match payload.namespace {
+        Some(serde_json::Value::String(s)) => Some(xavier::memory::schema::MemoryNamespace {
+            project: Some(s),
+            ..Default::default()
+        }),
+        Some(obj @ serde_json::Value::Object(_)) => serde_json::from_value(obj).ok(),
+        _ => None,
+    };
+
+    let unique_id = Ulid::new().to_string();
+    let path = match &namespace {
+        Some(ns) if ns.project.is_some() => {
+            format!("api/v1/save/{}/{}", ns.project.as_ref().unwrap(), unique_id)
+        }
+        Some(ns) if ns.agent_id.is_some() => {
+            format!(
+                "api/v1/save/agent/{}/{}",
+                ns.agent_id.as_ref().unwrap(),
+                unique_id
+            )
+        }
+        _ => format!("api/v1/save/{}", unique_id),
+    };
+
+    info!(
+        "Save memory request: id={}, path={}, content_len={}",
+        unique_id,
+        path,
+        effective_content.len()
+    );
+
+    // Merge namespace into metadata for record storage compatibility
+    if let Some(ns) = &namespace {
+        if let Some(obj) = metadata.as_object_mut() {
+            obj.insert(
+                "namespace".to_string(),
+                serde_json::to_value(ns).unwrap_or(serde_json::Value::Null),
+            );
+        }
+    }
+
+    let record = MemoryRecord {
+        id: unique_id.clone(),
+        workspace_id: state.workspace_id.clone(),
+        path: path.clone(),
+        content: effective_content.to_string(),
+        metadata,
+        embedding: vec![],
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+        revision: 1,
+        primary: true,
+        parent_id: None,
+        cluster_id: None,
+        level: MemoryLevel::Raw,
+        relation: None,
+        clearance: Default::default(),
+        revisions: vec![],
+        encrypted_dek: None,
+        content_iv: None,
+        metadata_iv: None,
+    };
+
+    match state.memory.add(record).await {
+        Ok(id) => {
+            info!("Memory saved successfully: {}", path);
+            axum::Json(serde_json::json!({
+                "status": "ok",
+                "message": "Memory saved",
+                "path": path,
+                "id": id,
+                "security": {
+                    "scanned": true,
+                    "sanitized": sec_result.sanitized_input.is_some(),
+                    "attack_type": sec_result.attack_type,
+                }
+            }))
+            .into_response()
+        }
+        Err(e) => {
+            info!("Save memory error: {}", e);
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
                 axum::Json(serde_json::json!({

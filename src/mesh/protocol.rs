@@ -4,7 +4,8 @@
 //! All types are designed for JSON serialization over HTTP.
 
 use crate::mesh::node::NodeId;
-use crate::session::sharing::SessionBundle;
+use crate::observability::token_accounting::TokenStats;
+use crate::session::sharing::{SessionBundle, ContextBundle};
 use serde::{Deserialize, Serialize};
 
 /// Initial handshake sent by a node to a peer.
@@ -68,6 +69,8 @@ pub struct MeshSyncResult {
 pub struct MeshSessionShare {
     pub sender_node_id: NodeId,
     pub bundle: SessionBundle,
+    pub context_bundle: Option<ContextBundle>,
+    pub token_stats: Option<TokenStats>,
 }
 
 #[cfg(test)]

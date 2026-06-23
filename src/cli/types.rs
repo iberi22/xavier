@@ -100,6 +100,15 @@ pub(crate) struct SecurityScanPayload {
 }
 
 #[derive(Debug, Deserialize)]
+pub(crate) struct MemorySaveRequest {
+    pub text: String,
+    #[serde(default)]
+    pub metadata: Option<serde_json::Value>,
+    #[serde(default)]
+    pub namespace: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
 pub(crate) struct MemoryQueryPayload {
     pub query: String,
     pub limit: Option<usize>,

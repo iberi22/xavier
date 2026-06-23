@@ -14,6 +14,8 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tower::util::ServiceExt;
 
+use serial_test::serial;
+
 use super::session::mcp_post_handler;
 use crate::coordination::events::XavierEventBus;
 use crate::workspace::WorkspaceContext;
@@ -1088,8 +1090,10 @@ async fn health_check_method_and_tool() {
     }
 }
 
+#[serial]
 #[tokio::test]
 async fn mcp_get_not_found() {
+    std::env::set_var("XAVIER_TOKEN", "test-secret");
     let (state, workspace) = test_state().await;
     let app = test_router(state, workspace);
 
@@ -1162,6 +1166,7 @@ async fn test_get_code_graph_success() {
     }
 }
 
+#[serial]
 #[tokio::test]
 async fn auth_success_with_valid_token() {
     std::env::set_var("XAVIER_TOKEN", "test-secret");
@@ -1179,6 +1184,7 @@ async fn auth_success_with_valid_token() {
     assert_eq!(response.status(), StatusCode::OK);
 }
 
+#[serial]
 #[tokio::test]
 async fn auth_failure_with_invalid_token() {
     std::env::set_var("XAVIER_TOKEN", "test-secret");
@@ -1196,8 +1202,10 @@ async fn auth_failure_with_invalid_token() {
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
 
+#[serial]
 #[tokio::test]
 async fn origin_validation_enforced() {
+    std::env::set_var("XAVIER_TOKEN", "test-secret");
     let (state, workspace) = test_state().await;
     let app = test_router(state, workspace);
 

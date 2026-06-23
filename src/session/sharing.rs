@@ -18,6 +18,15 @@ pub struct SessionBundle {
     pub exported_at: i64,
 }
 
+/// A portable bundle containing the optimized context state for a session
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ContextBundle {
+    pub session_id: String,
+    pub optimized_context: String,
+    pub depth: String,
+    pub created_at: i64,
+}
+
 /// Export a session into a portable bundle
 pub async fn export_session(memory: &QmdMemory, session_id: &str) -> Result<SessionBundle> {
     let filters = MemoryQueryFilters {

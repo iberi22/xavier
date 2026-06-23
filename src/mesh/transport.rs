@@ -199,6 +199,8 @@ impl MeshTransport {
         let request = MeshSessionShare {
             sender_node_id: self.local_identity.node_id.clone(),
             bundle,
+            context_bundle: None,
+            token_stats: None,
         };
 
         let resp = self
