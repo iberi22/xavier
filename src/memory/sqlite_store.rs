@@ -306,6 +306,9 @@ impl MemoryStore for SqliteMemoryStore {
                     record.content,
                     serde_json::to_string(&record.metadata).unwrap_or_default(),
                     Self::serialize_embedding(&record.embedding),
+                    record.encrypted_dek,
+                    record.content_iv,
+                    record.metadata_iv,
                     record.created_at.to_rfc3339(),
                     record.updated_at.to_rfc3339(),
                     record.revision,
@@ -315,9 +318,6 @@ impl MemoryStore for SqliteMemoryStore {
                     record.level.as_str(),
                     serde_json::to_string(&record.relation).unwrap_or_default(),
                     serde_json::to_string(&record.revisions).unwrap_or_default(),
-                    record.encrypted_dek,
-                    record.content_iv,
-                    record.metadata_iv,
                 ],
             )?;
             Ok(())
