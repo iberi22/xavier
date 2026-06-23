@@ -202,27 +202,106 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     );
 
     let secrets_engine_for_bus = secrets_engine.clone();
+    let memory_for_bus = Arc::clone(&memory);
     let mut receiver = event_bus.subscribe();
     tokio::spawn(async move {
-        info!("Secrets engine listening for task events...");
+        info!("Xavier Event Bus listener started (Secrets + Auto-capture)...");
         while let Ok(event) = receiver.recv().await {
-            if let xavier::coordination::events::XavierEvent::TaskCompleted { task } = event {
-                let _ = xavier::notifications::NOTIFICATIONS.notify(
-                    xavier::notifications::IslandId::Agents,
-                    "Agent Task Complete",
-                    &format!("Task {} completed by agent {}.", task.id, task.assignee.as_deref().unwrap_or("unknown")),
-                    "success"
-                ).await;
+            match event {
+                xavier::coordination::events::XavierEvent::TaskCompleted { task } => {
+                    let _ = xavier::notifications::NOTIFICATIONS.notify(
+                        xavier::notifications::IslandId::Agents,
+                        "Agent Task Complete",
+                        &format!("Task {} completed by agent {}.", task.id, task.assignee.as_deref().unwrap_or("unknown")),
+                        "success"
+                    ).await;
 
-                if let Some(agent_id) = &task.assignee {
-                    info!(
-                        "Task {} completed by agent {}. Revoking ephemeral keys...",
-                        task.id, agent_id
-                    );
-                    secrets_engine_for_bus
-                        .revoke_for_agent(agent_id, "Task Completed")
-                        .await;
+                    if let Some(agent_id) = &task.assignee {
+                        info!(
+                            "Task {} completed by agent {}. Revoking ephemeral keys...",
+                            task.id, agent_id
+                        );
+                        secrets_engine_for_bus
+                            .revoke_for_agent(agent_id, "Task Completed")
+                            .await;
+                    }
                 }
+                xavier::coordination::events::XavierEvent::ToolCalled { name, args, session_id } => {
+                    let path = format!("events/tool_call/{}/{}", name, ulid::Ulid::new());
+                    let content = format!("Agent called tool: {} with args: {}", name, args);
+                    let typed = xavier::memory::schema::TypedMemoryPayload {
+                        kind: Some(xavier::memory::schema::MemoryKind::Episodic),
+                        evidence_kind: Some(xavier::memory::schema::EvidenceKind::ExecutionTrace),
+                        namespace: Some(xavier::memory::schema::MemoryNamespace {
+                            session_id: Some(session_id),
+                            ..Default::default()
+                        }),
+                        provenance: Some(xavier::memory::schema::MemoryProvenance {
+                            source_app: Some("xavier".to_string()),
+                            source_type: Some("tool_call".to_string()),
+                            tool_name: Some(name),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    };
+                    let _ = memory_for_bus.add_document_typed(path, content, args, Some(typed)).await;
+                }
+                xavier::coordination::events::XavierEvent::ToolSucceeded { name, result, session_id } => {
+                    let path = format!("events/tool_result/{}/{}", name, ulid::Ulid::new());
+                    let content = format!("Tool {} succeeded with result: {}", name, result);
+                    let typed = xavier::memory::schema::TypedMemoryPayload {
+                        kind: Some(xavier::memory::schema::MemoryKind::Episodic),
+                        evidence_kind: Some(xavier::memory::schema::EvidenceKind::ExecutionTrace),
+                        namespace: Some(xavier::memory::schema::MemoryNamespace {
+                            session_id: Some(session_id),
+                            ..Default::default()
+                        }),
+                        provenance: Some(xavier::memory::schema::MemoryProvenance {
+                            source_app: Some("xavier".to_string()),
+                            source_type: Some("tool_result".to_string()),
+                            tool_name: Some(name),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    };
+                    let _ = memory_for_bus.add_document_typed(path, content, result, Some(typed)).await;
+                }
+                xavier::coordination::events::XavierEvent::ToolFailed { name, error, session_id } => {
+                    let path = format!("events/tool_error/{}/{}", name, ulid::Ulid::new());
+                    let content = format!("Tool {} failed with error: {}", name, error);
+                    let typed = xavier::memory::schema::TypedMemoryPayload {
+                        kind: Some(xavier::memory::schema::MemoryKind::Episodic),
+                        evidence_kind: Some(xavier::memory::schema::EvidenceKind::ExecutionTrace),
+                        namespace: Some(xavier::memory::schema::MemoryNamespace {
+                            session_id: Some(session_id),
+                            ..Default::default()
+                        }),
+                        provenance: Some(xavier::memory::schema::MemoryProvenance {
+                            source_app: Some("xavier".to_string()),
+                            source_type: Some("tool_error".to_string()),
+                            tool_name: Some(name),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    };
+                    let _ = memory_for_bus.add_document_typed(path, content, serde_json::json!({ "error": error }), Some(typed)).await;
+                }
+                xavier::coordination::events::XavierEvent::ErrorOccurred { message, details } => {
+                    let path = format!("events/system_error/{}", ulid::Ulid::new());
+                    let content = format!("System error occurred: {} (Details: {})", message, details);
+                    let typed = xavier::memory::schema::TypedMemoryPayload {
+                        kind: Some(xavier::memory::schema::MemoryKind::Event),
+                        evidence_kind: Some(xavier::memory::schema::EvidenceKind::ExecutionTrace),
+                        provenance: Some(xavier::memory::schema::MemoryProvenance {
+                            source_app: Some("xavier".to_string()),
+                            source_type: Some("system_error".to_string()),
+                            ..Default::default()
+                        }),
+                        ..Default::default()
+                    };
+                    let _ = memory_for_bus.add_document_typed(path, content, details, Some(typed)).await;
+                }
+                _ => {}
             }
         }
     });

@@ -15,6 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tower::util::ServiceExt;
 
 use super::session::mcp_post_handler;
+use crate::coordination::events::XavierEventBus;
 use crate::workspace::WorkspaceContext;
 use crate::{
     agents::RuntimeConfig,
@@ -84,6 +85,7 @@ async fn test_state() -> (AppState, WorkspaceContext) {
             code_db,
             security_service: Arc::new(crate::app::security_service::SecurityService::new()),
             code_graph_dump_path: None,
+            event_bus: XavierEventBus::new(10),
         },
         workspace,
     )

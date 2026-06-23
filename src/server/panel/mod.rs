@@ -24,6 +24,7 @@ mod tests {
     use super::*;
     use crate::{
         agents::RuntimeConfig,
+        coordination::events::XavierEventBus,
         memory::file_indexer::{FileIndexer, FileIndexerConfig},
         workspace::{
             EmbeddingProviderMode, PlanTier, SyncPolicy, WorkspaceConfig, WorkspaceContext,
@@ -142,6 +143,7 @@ mod tests {
                 code_db,
                 security_service: Arc::new(crate::app::security_service::SecurityService::new()),
                 code_graph_dump_path: None,
+                event_bus: XavierEventBus::new(10),
             },
             workspace,
         )

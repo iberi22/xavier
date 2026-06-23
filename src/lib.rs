@@ -55,6 +55,7 @@ pub mod time;
 
 use std::sync::Arc;
 
+use coordination::events::XavierEventBus;
 use memory::file_indexer::FileIndexer;
 use workspace::WorkspaceRegistry;
 
@@ -71,4 +72,5 @@ pub struct AppState {
     pub agent_indexer: crate::memory::agent_indexer::AgentIndexer,
     pub security_service: Arc<SecurityService>,
     pub code_graph_dump_path: Option<std::path::PathBuf>,
+    pub event_bus: XavierEventBus,
 }

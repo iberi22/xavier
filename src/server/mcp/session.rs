@@ -37,6 +37,10 @@ pub async fn mcp_post_handler(
 
     // Spec 2026-07-28: Request Metadata Validation
     if let Err(mismatch) = validate_request_headers(&headers, &payload) {
+        let _ = state.event_bus.publish(crate::coordination::events::XavierEvent::ErrorOccurred {
+            message: format!("MCP Header Mismatch: {mismatch}"),
+            details: serde_json::json!({ "headers": format!("{:?}", headers), "payload": payload }),
+        });
         return (
             StatusCode::BAD_REQUEST,
             Json(error_response(None, ERROR_HEADER_MISMATCH, mismatch)),
@@ -219,6 +223,10 @@ async fn handle_mcp_request(
     let request_id = request.id.clone();
     let is_notification = request_id.is_none();
     if request.jsonrpc != "2.0" {
+        let _ = state.event_bus.publish(crate::coordination::events::XavierEvent::ErrorOccurred {
+            message: "Invalid JSON-RPC request".to_string(),
+            details: serde_json::to_value(&request).unwrap_or_default(),
+        });
         return Ok(error_response(
             request_id,
             -32600,
@@ -326,11 +334,17 @@ async fn handle_mcp_request(
             }
         }
         _ if is_notification => None,
-        _ => error_response(
-            request.id,
-            -32601,
-            format!("Method not found: {}", request.method),
-        ),
+        _ => {
+            let _ = state.event_bus.publish(crate::coordination::events::XavierEvent::ErrorOccurred {
+                message: format!("MCP Method not found: {}", request.method),
+                details: serde_json::to_value(&request).unwrap_or_default(),
+            });
+            error_response(
+                request.id,
+                -32601,
+                format!("Method not found: {}", request.method),
+            )
+        }
     };
     if is_notification {
         Ok(None)
