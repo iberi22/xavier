@@ -9,7 +9,10 @@ use std::time::Duration;
 // ─── Helpers ───────────────────────────────────────────────────────────────
 
 fn xavier_binary() -> Command {
-    Command::new(env!("CARGO_BIN_EXE_xavier"))
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_xavier"));
+    cmd.env("XAVIER_PORT", "0");
+    cmd.env("XAVIER_MCP_PORT", "0");
+    cmd
 }
 
 fn run(args: &[&str]) -> Output {
@@ -25,7 +28,6 @@ fn run_with_timeout(args: &[&str], timeout_secs: u64) -> Output {
         .args(args)
         .env_remove("XAVIER_TOKEN")
         .env_remove("XAVIER_URL")
-        .env_remove("XAVIER_PORT")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
