@@ -7,7 +7,13 @@ use super::types::*;
 use crate::workspace::WorkspaceContext;
 use crate::AppState;
 use crate::observability::token_accounting::TRACKER;
+use crate::context::{
+    ContextLevel, ContextBuilder, ContextBuilderConfig, Orchestrator,
+    ContextDocument, ContextBudgetConfig
+};
+use crate::memory::schema::MemoryQueryFilters;
 use serde_json::{json, Value};
+use std::sync::Arc;
 
 pub fn get_xavier_context_tools() -> Vec<MCPTool> {
     vec![
@@ -83,19 +89,123 @@ pub async fn handle_context_tool(
             let session_id = arguments.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
             let depth = arguments.get("depth").and_then(|v| v.as_str()).unwrap_or("medium");
 
-            // In a real implementation, we would call the regeneration logic here.
-            // For the MCP tool, we'll return a message indicating where to find it
-            // or perform a simplified version if possible.
-            // Since we're in the same process, we can potentially reuse the handler logic.
+            let (level, token_budget) = match depth {
+                "shallow" => (ContextLevel::Minimal, 50),
+                "deep" => (ContextLevel::Maximum, 1000),
+                _ => (ContextLevel::Medium, 200),
+            };
 
-            super::server::mcp_text_result(format!("Restoring optimized {} context for session {}...", depth, session_id), false)
+            // Fetch session history
+            let messages = workspace.workspace.conversations_db.get_thread_messages(session_id).await?;
+
+            let original_token_count: usize = messages.iter().map(|m| m.tokens.unwrap_or(0) as usize).sum();
+
+            let context_docs: Vec<ContextDocument> = messages.into_iter().map(|m| {
+                ContextDocument::new(m.id, session_id, m.role, m.content)
+                    .with_token_count(m.tokens.unwrap_or(0) as usize)
+                    .with_created_at(m.created_at)
+            }).collect();
+
+            // Use Orchestrator
+            let mut budget_config = ContextBudgetConfig::default();
+            match level {
+                ContextLevel::Minimal => {
+                    budget_config.session_start_min_tokens = token_budget;
+                    budget_config.session_start_min_docs = 2;
+                },
+                ContextLevel::Medium => {
+                    budget_config.session_start_med_tokens = token_budget;
+                    budget_config.session_start_med_docs = 5;
+                },
+                ContextLevel::Maximum => {
+                    budget_config.session_start_max_tokens = token_budget;
+                    budget_config.session_start_max_docs = 10;
+                },
+            }
+
+            let orchestrator = Orchestrator::with_budgets(budget_config)
+                .with_memory(Arc::clone(&workspace.workspace.memory), Some(Arc::clone(&workspace.workspace.belief_graph)));
+
+            let plan = orchestrator.session_start(session_id, "restore context", &context_docs).await;
+            let selected_docs = orchestrator.execute(&plan, &context_docs, session_id).await;
+
+            // Build optimized context
+            let builder_config = ContextBuilderConfig::default();
+            let builder = ContextBuilder::new(builder_config);
+            let context_string = builder.build(level, &selected_docs, &[], &[]);
+            let optimized_token_count = context_string.split_whitespace().count();
+
+            let savings_percentage = if original_token_count > 0 {
+                (original_token_count as f32 - optimized_token_count as f32) / original_token_count as f32 * 100.0
+            } else {
+                0.0
+            };
+
+            TRACKER.track(session_id.to_string(), original_token_count, optimized_token_count, 0.01).await;
+
+            let result = json!({
+                "status": "ok",
+                "session_id": session_id,
+                "depth": depth,
+                "context": context_string,
+                "token_usage": {
+                    "original": original_token_count,
+                    "optimized": optimized_token_count,
+                    "savings_percentage": format!("{:.1}%", savings_percentage)
+                }
+            });
+
+            super::server::mcp_text_result(serde_json::to_string_pretty(&result)?, false)
         }
         "xavier_context_search" => {
             let query = arguments.get("query").and_then(|v| v.as_str()).unwrap_or("");
-            let _session_id = arguments.get("session_id").and_then(|v| v.as_str());
+            let session_id = arguments.get("session_id").and_then(|v| v.as_str());
 
-            // Search in memory with a filter for session_id if provided
-            super::server::mcp_text_result(format!("Searching context for: {}", query), false)
+            let filters = session_id.map(|sid| MemoryQueryFilters {
+                session_id: Some(sid.to_string()),
+                ..Default::default()
+            });
+
+            let results = workspace
+                .workspace
+                .memory
+                .search_filtered(query, 10, filters.as_ref())
+                .await?;
+
+            if results.is_empty() {
+                return super::server::mcp_text_result(
+                    format!("No context found for query: {}", query),
+                    false
+                );
+            }
+
+            let mut output = String::new();
+            for (i, doc) in results.iter().enumerate() {
+                let snippet = if doc.content.len() > 200 {
+                    format!("{}...", &doc.content[..200])
+                } else {
+                    doc.content.clone()
+                };
+                let meta_preview = match &doc.metadata {
+                    serde_json::Value::Object(m) => {
+                        let entries: Vec<String> = m.iter()
+                            .take(4)
+                            .map(|(k, v)| format!("{}: {}", k, v))
+                            .collect();
+                        entries.join(", ")
+                    },
+                    _ => String::new(),
+                };
+                output.push_str(&format!(
+                    "--- Result {} ---\nPath: {}\nMetadata: {}\nSnippet: {}\n\n",
+                    i + 1,
+                    doc.path,
+                    meta_preview,
+                    snippet
+                ));
+            }
+
+            super::server::mcp_text_result(output, false)
         }
         "xavier_token_savings" => {
             let stats = TRACKER.get_stats().await;
