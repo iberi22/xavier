@@ -5,6 +5,7 @@
 pub mod auth;
 pub mod server;
 pub mod session;
+pub mod tools_context;
 pub mod tools_core;
 pub mod tools_memory;
 pub mod transport;
