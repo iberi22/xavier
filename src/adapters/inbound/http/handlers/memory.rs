@@ -6,7 +6,7 @@ use crate::adapters::inbound::http::state::check_auth;
 use crate::adapters::inbound::http::AppState;
 use crate::domain::memory::{MemoryQueryFilters, MemoryRecord as DomainMemoryRecord};
 use axum::{
-    extract::State,
+    extract::{Query, State},
     http::{HeaderMap, StatusCode},
     Json,
 };
@@ -40,6 +40,16 @@ pub struct SearchPayload {
     pub limit: usize,
     #[serde(default)]
     pub filters: Option<MemoryQueryFilters>,
+    #[serde(default)]
+    pub depth: usize,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SearchQuery {
+    pub q: String,
+    pub limit: Option<usize>,
+    pub project: Option<String>,
+    pub depth: Option<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -48,6 +58,7 @@ pub struct AddPayload {
     pub path: String,
     #[serde(default)]
     pub metadata: serde_json::Value,
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,6 +68,7 @@ pub struct UpdatePayload {
     pub path: String,
     #[serde(default)]
     pub metadata: serde_json::Value,
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -73,6 +85,26 @@ pub struct MemoryQueryPayload {
 
 fn default_limit() -> usize {
     10
+}
+
+pub async fn search_get_handler(
+    headers: HeaderMap,
+    State(state): State<AppState>,
+    Query(query): Query<SearchQuery>,
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    let mut filters = MemoryQueryFilters::default();
+    if let Some(project) = query.project {
+        filters.project = Some(project);
+    }
+
+    let payload = SearchPayload {
+        query: query.q,
+        limit: query.limit.unwrap_or(10),
+        filters: Some(filters),
+        depth: query.depth.unwrap_or(0),
+    };
+
+    search_handler(headers, State(state), Json(payload)).await
 }
 
 pub async fn search_handler(
@@ -122,8 +154,13 @@ pub async fn search_handler(
     let limit = payload.limit.clamp(1, 100);
     info!("Search request: query={}, limit={}", effective_query, limit);
 
-    match state.memory.search(effective_query, payload.filters).await {
-        Ok(results) => {
+    match state.memory.search(effective_query, payload.filters.clone()).await {
+        Ok(mut results) => {
+            // Apply depth expansion if requested
+            if payload.depth > 0 {
+                results = state.memory.expand_depth(&results, payload.depth, payload.filters).await.unwrap_or(results);
+            }
+
             let documents: Vec<_> = results
                 .into_iter()
                 .map(|doc| {
@@ -166,12 +203,20 @@ pub async fn add_handler(
     // FIX A001: Sanitize unicode to prevent JSON serialization errors
     let sanitized_content = sanitize_unicode(&payload.content);
     let sanitized_path = sanitize_unicode(&payload.path);
+
+    let mut metadata = payload.metadata.clone();
+    if let Some(project) = payload.project {
+        if let Some(obj) = metadata.as_object_mut() {
+            obj.insert("project".to_string(), serde_json::json!(project));
+        }
+    }
+
     let record = DomainMemoryRecord {
         id: String::new(),
         workspace_id: state.workspace_id.clone(),
         path: sanitized_path.clone(),
         content: sanitized_content,
-        metadata: payload.metadata,
+        metadata,
         embedding: Vec::new(),
         created_at: now,
         updated_at: now,
@@ -186,6 +231,10 @@ pub async fn add_handler(
         ..Default::default()
     };
     // Note: domain metadata translation would go here if needed
+
+    // Currently MemoryQueryPort::add doesn't take TypedMemoryPayload directly.
+    // QmdMemoryAdapter::add calls record.to_document() which loses TypedMemoryPayload if not in record.metadata.
+    // However, record.metadata is used by normalize_metadata in QmdMemory::add_document.
 
     match state.memory.add(record).await {
         Ok(id) => Ok(Json(serde_json::json!({
@@ -212,12 +261,19 @@ pub async fn update_handler(
     let sanitized_content = sanitize_unicode(&payload.content);
     let sanitized_path = sanitize_unicode(&payload.path);
 
+    let mut metadata = payload.metadata.clone();
+    if let Some(project) = payload.project {
+        if let Some(obj) = metadata.as_object_mut() {
+            obj.insert("project".to_string(), serde_json::json!(project));
+        }
+    }
+
     let record = DomainMemoryRecord {
         id: payload.id.clone(),
         workspace_id: state.workspace_id.clone(),
         path: sanitized_path.clone(),
         content: sanitized_content,
-        metadata: payload.metadata,
+        metadata,
         embedding: Vec::new(),
         created_at: now,
         updated_at: now,

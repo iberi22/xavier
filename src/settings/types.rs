@@ -273,6 +273,7 @@ pub struct RetrievalSettings {
     pub zone_penalty_multiplier: Option<f32>,
     pub cache_warming_enabled: bool,
     pub cache_warming_threshold: Option<f32>,
+    pub cache_ttl_secs: Option<u64>,
     #[serde(default)]
     pub learned_policy: NavigationPolicyConfig,
 }
