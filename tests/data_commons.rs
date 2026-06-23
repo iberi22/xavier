@@ -3,8 +3,8 @@ use xavier::mesh::crypto_gating::{AccessRequest, CryptoGatingService};
 use xavier::mesh::telemetry::TelemetryPayload;
 use xavier::mesh::governance::DaoGovernanceSystem;
 
-#[test]
-fn test_data_commons_phase_2_e2e_flow() {
+#[tokio::test]
+async fn test_data_commons_phase_2_e2e_flow() {
     // 1. Emitting Node
     // Generates a mock crash log with PII
     let raw_crash = "Panic! Thread 'main' panicked at src/main.rs:42: Error processing user email belal@example.com from IP 192.168.1.50 in path C:\\Users\\belal\\project\\";
@@ -76,11 +76,11 @@ fn test_data_commons_phase_2_e2e_flow() {
     assert!(!dao.active_proposals.get("CLUSTER_CORE_RUST").unwrap().is_approved_for_pr);
     
     // Community votes (4 upvotes, 0 downvotes => Not enough quorum)
-    for _ in 0..4 { dao.cast_vote("CLUSTER_CORE_RUST", true).unwrap(); }
+    for _ in 0..4 { dao.cast_vote("CLUSTER_CORE_RUST", true).await.unwrap(); }
     assert!(!dao.active_proposals.get("CLUSTER_CORE_RUST").unwrap().is_approved_for_pr);
     
     // 5th vote comes in! (100% approval, minimum quorum met)
-    dao.cast_vote("CLUSTER_CORE_RUST", true).unwrap();
+    dao.cast_vote("CLUSTER_CORE_RUST", true).await.unwrap();
     
     // The PR is unlocked!
     let final_proposal = dao.active_proposals.get("CLUSTER_CORE_RUST").unwrap();
