@@ -472,6 +472,84 @@ impl QmdMemory {
     ) -> Result<Vec<MemoryDocument>> {
         self.vsearch(query_vector, limit).await
     }
+
+    /// Expand search results by depth using parent/child relationships.
+    pub async fn expand_depth(
+        &self,
+        results: &[MemoryDocument],
+        depth: usize,
+        filters: Option<&MemoryQueryFilters>,
+    ) -> Result<Vec<MemoryDocument>> {
+        if depth == 0 {
+            return Ok(results.to_vec());
+        }
+
+        let mut all_docs = results.to_vec();
+        let mut seen_ids: std::collections::HashSet<String> = results
+            .iter()
+            .filter_map(|d| d.id.clone().or_else(|| Some(d.path.clone())))
+            .collect();
+
+        let mut current_idxs: Vec<String> = results
+            .iter()
+            .filter_map(|d| d.id.clone().or_else(|| Some(d.path.clone())))
+            .collect();
+
+        for _ in 1..=depth {
+            let mut next_ids: Vec<String> = Vec::new();
+            for doc_id in &current_idxs {
+                if let Ok(Some(doc)) = self.get(doc_id).await {
+                    // Fetch parent
+                    if let Some(ref parent_id) = doc.parent_id {
+                        if !seen_ids.contains(parent_id) {
+                            if let Ok(Some(parent)) = self.get(parent_id).await {
+                                if matches_filters(
+                                    &parent.path,
+                                    &parent.metadata,
+                                    &self.workspace_id,
+                                    filters,
+                                ) {
+                                    seen_ids.insert(parent_id.clone());
+                                    next_ids.push(parent_id.clone());
+                                    all_docs.push(parent);
+                                }
+                            }
+                        }
+                    }
+
+                    // Fetch children (documents whose parent_id matches this id)
+                    if let Some(ref cluster) = doc.cluster_id {
+                        let mut child_filters = MemoryQueryFilters::default();
+                        child_filters.cluster_ids = Some(vec![cluster.clone()]);
+                        if let Ok(children) = self.search_filtered("", 50, Some(&child_filters)).await {
+                            for child in children {
+                                if let Some(ref cid) = child.id {
+                                    if cid != doc_id && !seen_ids.contains(cid) {
+                                        if matches_filters(
+                                            &child.path,
+                                            &child.metadata,
+                                            &self.workspace_id,
+                                            filters,
+                                        ) {
+                                            seen_ids.insert(cid.clone());
+                                            next_ids.push(cid.clone());
+                                            all_docs.push(child);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if next_ids.is_empty() {
+                break;
+            }
+            current_idxs = next_ids;
+        }
+
+        Ok(all_docs)
+    }
 }
 
 // ── Free functions ──────────────────────────────────────────────────
