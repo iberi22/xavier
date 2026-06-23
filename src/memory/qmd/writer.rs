@@ -11,6 +11,7 @@ use crate::memory::qmd_memory::utils::*;
 use crate::memory::qmd_memory::QmdMemory;
 use crate::memory::schema::TypedMemoryPayload;
 use crate::memory::store::MemoryRecord;
+use crate::session::types::{SessionEvent, SessionEventType};
 use anyhow::Result;
 
 // ── CRUD write operations ────────────────────────────────────────────
@@ -44,7 +45,38 @@ pub(crate) fn memory_record_from_document(
     MemoryRecord::from_document(workspace_id, document, primary, parent_id)
 }
 
+async fn emit_operation_event(memory: &QmdMemory, operation: &str, path: &str, metadata: &Value) {
+    let session_id = metadata
+        .get("session_id")
+        .and_then(|v| v.as_str())
+        .or_else(|| {
+            metadata
+                .get("namespace")
+                .and_then(|v| v.get("session_id"))
+                .and_then(|v| v.as_str())
+        })
+        .unwrap_or("system")
+        .to_string();
+
+    let event = SessionEvent {
+        session_id,
+        event_type: SessionEventType::ToolResult,
+        timestamp: chrono::Utc::now(),
+        content: Some(format!("Memory {} operation on path: {}", operation, path)),
+        metadata: Some(serde_json::json!({
+            "operation": operation,
+            "path": path,
+            "workspace_id": memory.workspace_id,
+        })),
+    };
+
+    // Note: In a full implementation, we would send this to a dispatcher or port.
+    // For now, we'll log it as a hook.
+    tracing::info!("Auto-captured memory event: {:?}", event);
+}
+
 pub async fn add(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
+    emit_operation_event(memory, "add", &doc.path, &doc.metadata).await;
     memory.docs.write().await.push(doc.clone());
     memory.invalidate_cache().await;
     if let Some(store) = memory.store().await {
@@ -56,6 +88,7 @@ pub async fn add(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
 }
 
 pub async fn update(memory: &QmdMemory, doc: MemoryDocument) -> Result<()> {
+    emit_operation_event(memory, "update", &doc.path, &doc.metadata).await;
     let persisted = doc.clone();
     let mut docs = memory.docs.write().await;
     if let Some(existing) = docs
@@ -87,7 +120,8 @@ pub async fn delete(memory: &QmdMemory, path_or_id: &str) -> Result<Option<Memor
         .map(|index| docs.remove(index));
     drop(docs);
 
-    if removed.is_some() {
+    if let Some(ref doc) = removed {
+        emit_operation_event(memory, "delete", &doc.path, &doc.metadata).await;
         memory.invalidate_cache().await;
         if let Some(store) = memory.store().await {
             let _ = store.delete(&memory.workspace_id, path_or_id).await?;
