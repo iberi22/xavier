@@ -4,6 +4,7 @@
 //! responsibilities within the Xavier cognitive memory system.
 use axum::{
     extract::Json,
+    http::StatusCode,
     routing::{get, post},
     Router,
 };
@@ -106,13 +107,34 @@ async fn cloud_health_handler() -> Json<serde_json::Value> {
     Json(serde_json::to_value(health).unwrap_or_default())
 }
 
-async fn health_handler() -> Json<serde_json::Value> {
+async fn health_handler() -> (StatusCode, Json<serde_json::Value>) {
     let health = crate::health::collect_health_sync();
-    Json(serde_json::json!({
+    
+    // Determine HTTP status based on component readiness
+    let http_status = if health.status == "healthy" {
+        StatusCode::OK
+    } else if health.status == "warn" {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+    
+    // Extract key readiness indicators for quick consumption
+    let embedding_loaded = health.embedding.provider != "none" && health.embedding.provider != "";
+    let db_open = health.database.size_mb > 0.0 || health.database.page_count > 0;
+    let memory_ready = health.checks.iter().any(|c| c.name == "memory" && matches!(c.status, crate::health::CheckStatus::Pass));
+    
+    (http_status, Json(serde_json::json!({
         "status": health.status,
         "service": "xavier",
         "version": health.version,
         "uptime_secs": health.uptime_secs,
+        "ready": health.status == "healthy",
+        "components": {
+            "embedding_loaded": embedding_loaded,
+            "db_open": db_open,
+            "memory_index_ready": memory_ready,
+        },
         "system": {
             "cpu_usage_pct": health.system.cpu_usage_pct,
             "memory_used_mb": health.system.memory_used_mb,
@@ -129,7 +151,7 @@ async fn health_handler() -> Json<serde_json::Value> {
             "status": format!("{:?}", c.status),
             "detail": c.detail,
         })).collect::<Vec<_>>()
-    }))
+    })))
 }
 
 async fn readiness_handler() -> Json<serde_json::Value> {
@@ -599,7 +621,11 @@ mod route_tests {
             .await
             .expect("request should complete");
 
-        assert_eq!(response.status(), StatusCode::OK);
+        // Can return 200 (healthy/warn) or 503 (degraded) in test environments
+        let status_ok = response.status() == StatusCode::OK 
+            || response.status() == StatusCode::SERVICE_UNAVAILABLE;
+        assert!(status_ok, "expected 200 or 503, got: {}", response.status());
+        
         let body = response
             .into_body()
             .collect()
@@ -618,6 +644,8 @@ mod route_tests {
         );
         assert_eq!(parsed["service"], "xavier");
         assert!(parsed.get("version").is_some());
+        assert!(parsed.get("ready").is_some());
+        assert!(parsed.get("components").is_some());
     }
 
     #[tokio::test]

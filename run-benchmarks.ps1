@@ -4,6 +4,7 @@
 .DESCRIPTION
     Builds Xavier with CUDA support and runs all 3 GLLM embedding benchmarks.
     Supports benchmark-config.toml for configurable targets.
+    Includes health check + auto-start for Xavier HTTP server on :8006.
     
     Usage (PowerShell as admin or normal):
       .\run-benchmarks.ps1
@@ -94,6 +95,121 @@ if (Test-Path $ConfigFile) {
     Write-Step "No benchmark-config.toml found — using defaults" "⚠️"
     Write-Step "Create benchmark-config.toml to customize targets" "💡"
 }
+
+# ════════════════════════════════════════════════════════════════
+# 0a. BENCHMARK MODE — disable auth for benchmark queries
+# ════════════════════════════════════════════════════════════════
+$env:XAVIER_BENCHMARK_MODE = "true"
+Write-Step "Benchmark mode enabled — auth bypassed" "🔓"
+
+# ════════════════════════════════════════════════════════════════
+# 0b. HEALTH CHECK & AUTO-START
+# ════════════════════════════════════════════════════════════════
+Write-Header "🏥 HEALTH CHECK — Xavier HTTP (:8006)"
+
+$XavierUrl = $Config.xavier.url
+$HealthTimeoutSec = $Config.xavier.health_timeout_sec
+$HealthIntervalSec = $Config.xavier.health_interval_sec
+
+function Test-XavierHealth {
+    param([string]$Url = $XavierUrl)
+    try {
+        $resp = Invoke-WebRequest -Uri "$Url/health" -Method GET -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
+        if ($resp.StatusCode -eq 200) {
+            try {
+                $data = $resp.Content | ConvertFrom-Json
+                $status = $data.status
+                Write-Step "Xavier health status: $status" $(if ($status -eq "healthy") { "✅" } else { "⚠️" })
+                return $true
+            } catch {
+                Write-Step "Xavier responds but body is not JSON — treating as ok" "✅"
+                return $true
+            }
+        }
+        return $false
+    } catch {
+        return $false
+    }
+}
+
+function Start-XavierServer {
+    Write-Step "Intentando iniciar Xavier HTTP server..." "🚀"
+    
+    $startScript = Join-Path $XavierRoot "start-xavier.bat"
+    $startScriptPs1 = Join-Path $XavierRoot "start-xavier-rag.ps1"
+    
+    if (Test-Path $startScript) {
+        Write-Step "Encontrado: $startScript" "📄"
+        try {
+            $proc = Start-Process -FilePath $startScript -WindowStyle Hidden -PassThru
+            Write-Step "Proceso iniciado (PID: $($proc.Id))" "✅"
+            return $proc
+        } catch {
+            Write-Step "Falló al iniciar $startScript : $_" "❌"
+        }
+    } elseif (Test-Path $startScriptPs1) {
+        Write-Step "Encontrado: $startScriptPs1" "📄"
+        try {
+            $proc = Start-Process powershell -ArgumentList "-ExecutionPolicy Bypass -File `"$startScriptPs1`"" -WindowStyle Hidden -PassThru
+            Write-Step "Proceso iniciado (PID: $($proc.Id))" "✅"
+            return $proc
+        } catch {
+            Write-Step "Falló al iniciar $startScriptPs1 : $_" "❌"
+        }
+    } else {
+        Write-Step "No se encontró script de inicio en $XavierRoot" "⚠️"
+        Write-Step "Intentando iniciar Xavier desde el binario compilado..." "🔍"
+        
+        $xavierBin = Join-Path $XavierRoot "target\release\xavier.exe"
+        if (Test-Path $xavierBin) {
+            try {
+                $proc = Start-Process -FilePath $xavierBin -ArgumentList "serve" -WindowStyle Hidden -PassThru
+                Write-Step "xavier serve iniciado (PID: $($proc.Id))" "✅"
+                return $proc
+            } catch {
+                Write-Step "Falló al iniciar binario: $_" "❌"
+            }
+        } else {
+            Write-Step "No se encontró binario en $xavierBin" "❌"
+        }
+    }
+    return $null
+}
+
+# --- Health check loop ---
+$healthOk = Test-XavierHealth
+$elapsed = 0
+
+if (-not $healthOk) {
+    Write-Step "Xavier no responde en :8006. Intentando iniciar..." "⚠️"
+    $proc = Start-XavierServer
+    
+    while ($elapsed -lt $HealthTimeoutSec) {
+        Start-Sleep -Seconds $HealthIntervalSec
+        $elapsed += $HealthIntervalSec
+        Write-Step "Esperando... ${elapsed}s / ${HealthTimeoutSec}s" "⏳"
+        
+        $healthOk = Test-XavierHealth
+        if ($healthOk) {
+            Write-Step "Xavier responde después de ${elapsed}s" "✅"
+            break
+        }
+    }
+}
+
+if (-not $healthOk) {
+    Write-Host "`n❌ Xavier no pudo iniciarse en $HealthTimeoutSec segundos." -ForegroundColor Red
+    Write-Host "   Verifica:"
+    Write-Host "   • ¿Xavier está instalado?"
+    Write-Host "   • ¿Los puertos (8006) están disponibles?"
+    Write-Host "   • Revisa los logs en $LogFile"
+    Write-Host ""
+    Write-Host "   Para iniciar manualmente: .\start-xavier.bat"
+    Stop-Transcript
+    exit 1
+}
+
+Write-Step "Health check completado — servicios listos" "✅"
 
 # ════════════════════════════════════════════════════════════════
 # 0. DETECT GPU
@@ -278,6 +394,8 @@ if ($decision -eq "Qwen3-Embedding-0.6B" -and $HasCuda) {
 # ════════════════════════════════════════════════════════════════
 $SummaryFile = Join-Path $OutDir "embedding-bench-report-$Timestamp.md"
 
+$logHealthStatus = if ($healthOk) { "✅ Respondió en $($Config.xavier.url) después de ${elapsed}s" } else { "❌ No disponible" }
+
 @"
 # 🏆 Xavier Embedding Benchmark Report
 
@@ -289,6 +407,11 @@ $SummaryFile = Join-Path $OutDir "embedding-bench-report-$Timestamp.md"
 
 - **Config file:** benchmark-config.toml
 - **Xavier URL:** $($Config.xavier.url)
+
+## Pre-Bench Health Check
+
+- **Xavier :8006:** $logHealthStatus
+- **Auto-start intentado:** $(if ($elapsed -gt 0) { "Sí (${elapsed}s)" } else { "No (ya estaba arriba)" })
 
 ## Results
 

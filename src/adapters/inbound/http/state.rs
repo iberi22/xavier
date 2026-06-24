@@ -35,7 +35,13 @@ pub struct AppState {
 }
 
 /// Check that the `X-Xavier-Token` or `Authorization: Bearer <token>` header matches.
+/// Supports XAVIER_BENCHMARK_MODE=true to skip auth (for benchmarking).
 pub fn check_auth(headers: &HeaderMap, state: &AppState) -> Result<(), (StatusCode, Json<Value>)> {
+    // Benchmark mode: skip auth entirely when env var is set
+    if std::env::var("XAVIER_BENCHMARK_MODE").as_deref() == Ok("true") {
+        return Ok(());
+    }
+
     // Try X-Xavier-Token first (xavier compatible)
     if let Some(token) = headers.get("X-Xavier-Token").and_then(|v| v.to_str().ok()) {
         if token == state.auth_token {

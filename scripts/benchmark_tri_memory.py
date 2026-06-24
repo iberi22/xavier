@@ -40,26 +40,48 @@ OPENCLAW_MEMORY_URL = "http://localhost:3008"  # memory-core plugin port
 # ─── Golden Dataset (baseline correct answers) ──────────────────────────────
 
 GOLDEN_ANSWERS = {
-    "semantic_001": {"SQLite", "FTS5", "persistence", "SQLite con FTS5", "primary"},
-    "semantic_002": {"Leonardo Duque", "partner", "Rodacenter Chile"},
-    "fts_001": {"port 8006", "xavier", "HTTP"},
-    "fts_002": {"MiniMax", "M2.7", "default model", "MiniMax-M2.7"},
-    "episodic_001": {"health endpoint", "multi-threaded runtime", "block_in_place"},
-    "decision_001": {"minimal image", "multi-stage build"},
-    "semantic_003": {"ADR 006", "internal replication network", "external network", "governance"},
-    "semantic_004": {"ML-KEM-1024", "ML-DSA-87", "AES-256-GCM"},
-    "fts_003": {"src/mesh/acl.rs", "validate_capability"},
-    "episodic_002": {"GRPO", "retrieval layer weights", "RewardModel"},
-    "decision_002": {"focused PR", "current tests do not cover"},
-    "semantic_005": {"meta-cognitive analysis", "observe", "confidence drift"},
-    "fts_004": {"panel-ui", "Playwright", "4174"},
-    "episodic_003": {"low recall", "infrastructure unavailable"},
-    "decision_003": {"--no-default-features", "--features ci-safe"},
-    "semantic_006": {"System", "Memory", "Agents", "Errors"},
-    "fts_005": {"1000 capacity", "1h TTL", "HybridSearcher", "moka"},
-    "episodic_004": {"AutoImprovementEngine", "mutate", "evaluate"},
-    "decision_004": {"agreement ratio below 50%"},
-    "semantic_007": {"MemoryQueryPort", "AgentLifecyclePort", "SecurityScanPort"},
+    # single_hop_qa (5 queries)
+    "single_hop_001": {"8006"},
+    "single_hop_002": {"AES-256-GCM", "ML-KEM-1024"},
+    "single_hop_003": {"3008"},
+    "single_hop_004": {"all-mpnet-base-v2"},
+    "single_hop_005": {"4174"},
+    # multi_hop_qa (5 queries)
+    "multi_hop_001": {"multi-stage build", "minimal image"},
+    "multi_hop_002": {"ADR 006", "internal replication network", "external network"},
+    "multi_hop_003": {"flagged as unhealthy", "agreement ratio below 50%"},
+    "multi_hop_004": {"System", "Memory", "Agents", "Errors"},
+    "multi_hop_005": {"--no-default-features", "--features ci-safe"},
+    # temporal_qa (5 queries)
+    "temporal_001": {"low recall", "infrastructure unavailable"},
+    "temporal_002": {"GRPO", "retrieval layer weights", "RewardModel"},
+    "temporal_003": {"health endpoint", "multi-threaded runtime"},
+    "temporal_004": {"AutoImprovementEngine", "mutate", "evaluate"},
+    "temporal_005": {"SQLite", "FTS5", "persistence"},
+    # open_domain_qa (5 queries)
+    "open_domain_001": {"Leonardo Duque", "Rodacenter Chile"},
+    "open_domain_002": {"MemoryQueryPort", "AgentLifecyclePort", "SecurityScanPort"},
+    "open_domain_003": {"1000 capacity", "1h TTL", "HybridSearcher"},
+    "open_domain_004": {"src/mesh/acl.rs", "validate_capability"},
+    "open_domain_005": {"MiniMax", "M2.7", "default model"},
+    # adversarial_qa (5 queries)
+    "adversarial_001": {"SQLite", "FTS5"},
+    "adversarial_002": {"refuse", "cannot share"},
+    "adversarial_003": {"8006", "port 8006"},
+    "adversarial_004": {"meta-cognitive analysis", "System 3"},
+    "adversarial_005": {"limitations", "not designed for"},
+    # event_summarization (5 queries)
+    "event_summarization_001": {"SQLite", "FTS5"},
+    "event_summarization_002": {"MiniLM-L6-v2", "mpnet-base-v2", "Qwen3-Embedding"},
+    "event_summarization_003": {"GRPO", "retrieval layer", "evaluate"},
+    "event_summarization_004": {"ML-KEM-1024", "ML-DSA-87", "AES-256-GCM"},
+    "event_summarization_005": {"internal replication", "external network"},
+    # multi_modal_dialogue (5 queries)
+    "multi_modal_dialogue_001": {"install", "configure", "start server"},
+    "multi_modal_dialogue_002": {"MemoryQueryPort", "AgentLifecyclePort", "SecurityScanPort"},
+    "multi_modal_dialogue_003": {"QmdMemory", "VecSqliteMemoryStore", "memory index"},
+    "multi_modal_dialogue_004": {"--no-default-features", "--features ci-safe"},
+    "multi_modal_dialogue_005": {"gllm.rs", "DEFAULT_GLLM_MODEL", "DEFAULT_GLLM_DIMENSION"},
 }
 
 # ─── Handlers ────────────────────────────────────────────────────────────────
@@ -368,10 +390,13 @@ class MockHandler:
         
         # Adjust metrics by category
         cat_factors = {
-            "semantic": {"xavier": 1.1, "openclaw": 0.8, "engram": 1.2},
-            "fts": {"xavier": 0.9, "openclaw": 1.3, "engram": 0.7},
-            "episodic": {"xavier": 1.15, "openclaw": 0.7, "engram": 1.0},
-            "decision": {"xavier": 1.2, "openclaw": 0.6, "engram": 0.85},
+            "single_hop_qa": {"xavier": 1.1, "openclaw": 0.9, "engram": 1.1},
+            "multi_hop_qa": {"xavier": 1.2, "openclaw": 0.6, "engram": 0.9},
+            "temporal_qa": {"xavier": 1.15, "openclaw": 0.7, "engram": 1.0},
+            "open_domain_qa": {"xavier": 1.0, "openclaw": 0.8, "engram": 1.3},
+            "adversarial_qa": {"xavier": 1.05, "openclaw": 0.75, "engram": 1.1},
+            "event_summarization": {"xavier": 1.2, "openclaw": 0.7, "engram": 1.0},
+            "multi_modal_dialogue": {"xavier": 1.15, "openclaw": 0.8, "engram": 0.85},
         }
         factor = cat_factors.get(category, {}).get(system_id, 1.0)
         
@@ -415,7 +440,7 @@ def generate_report(
 
 **Date:** {now}
 **Systems:** Xavier (AGPL v3), OpenClaw memory-core, Engram (Cortex)
-**Queries:** 20 (4 categories: semantic, fts, episodic, decision)
+**Queries:** 35 (7 categories: single_hop_qa, multi_hop_qa, temporal_qa, open_domain_qa, adversarial_qa, event_summarization, multi_modal_dialogue)
 **Scoring weights:** Precision@5=0.35, Recall=0.30, Latency=0.20, Cost=0.15
 
 ---
@@ -439,10 +464,20 @@ def generate_report(
     report += "| Category | Xavier | OpenClaw | Engram |\n"
     report += "|----------|--------|----------|--------|\n"
     
-    categories = ["semantic", "fts", "episodic", "decision"]
+    categories = ["single_hop_qa", "multi_hop_qa", "temporal_qa", "open_domain_qa", "adversarial_qa", "event_summarization", "multi_modal_dialogue"]
+    cat_labels = {
+        "single_hop_qa": "Single-Hop QA",
+        "multi_hop_qa": "Multi-Hop QA",
+        "temporal_qa": "Temporal QA",
+        "open_domain_qa": "Open-Domain QA",
+        "adversarial_qa": "Adversarial QA",
+        "event_summarization": "Event Summarization",
+        "multi_modal_dialogue": "Multi-Modal Dialogue",
+    }
     for cat in categories:
         cat_results = [r for r in run_results if r.get("category") == cat]
-        report += f"| {cat.title()} | "
+        label = cat_labels.get(cat, cat.title())
+        report += f"| {label} | "
         for system_id in ["xavier", "openclaw", "engram"]:
             scores = [r["systems"].get(system_id, {}).get("final_score", 0) for r in cat_results]
             avg = sum(scores) / len(scores) if scores else 0
@@ -478,6 +513,253 @@ def generate_report(
     report += "| **Engram** | Proprietary (Cortex) | ❌ Remote backend | ✅ Yes |\n"
     
     return report
+
+
+def generate_html_report(
+    run_results: List[Dict[str, Any]],
+    summary: Dict[str, Dict[str, float]],
+    meta_scores: Dict[str, float],
+    timestamp: str,
+) -> str:
+    """Generate an interactive HTML report with Chart.js visualizations."""
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    sorted_systems = sorted(summary.items(), key=lambda x: x[1]["avg_score"], reverse=True)
+
+    # Build per-category data for radar chart
+    categories = ["single_hop_qa", "multi_hop_qa", "temporal_qa", "open_domain_qa",
+                  "adversarial_qa", "event_summarization", "multi_modal_dialogue"]
+    cat_labels = {
+        "single_hop_qa": "Single-Hop QA",
+        "multi_hop_qa": "Multi-Hop QA",
+        "temporal_qa": "Temporal QA",
+        "open_domain_qa": "Open-Domain QA",
+        "adversarial_qa": "Adversarial QA",
+        "event_summarization": "Event Summarization",
+        "multi_modal_dialogue": "Multi-Modal Dialogue",
+    }
+
+    # Build category scores JSON for Chart.js
+    radar_labels = []
+    radar_xavier = []
+    radar_openclaw = []
+    radar_engram = []
+    for cat in categories:
+        cat_results = [r for r in run_results if r.get("category") == cat]
+        radar_labels.append(cat_labels.get(cat, cat))
+        xavier_scores = [r["systems"].get("xavier", {}).get("final_score", 0) for r in cat_results]
+        openclaw_scores = [r["systems"].get("openclaw", {}).get("final_score", 0) for r in cat_results]
+        engram_scores = [r["systems"].get("engram", {}).get("final_score", 0) for r in cat_results]
+        radar_xavier.append(round(sum(xavier_scores) / len(xavier_scores), 3) if xavier_scores else 0)
+        radar_openclaw.append(round(sum(openclaw_scores) / len(openclaw_scores), 3) if openclaw_scores else 0)
+        radar_engram.append(round(sum(engram_scores) / len(engram_scores), 3) if engram_scores else 0)
+
+    # Build per-query detail table rows
+    detail_rows = []
+    for r in run_results:
+        x = r["systems"].get("xavier", {})
+        o = r["systems"].get("openclaw", {})
+        e = r["systems"].get("engram", {})
+        detail_rows.append(f"""
+                <tr>
+                    <td>{r['id']}</td>
+                    <td>{r['category']}</td>
+                    <td>{r['query'][:50]}...</td>
+                    <td class="{'win' if r['winner']=='xavier' else ''}">{x.get('final_score', 0):.3f}</td>
+                    <td class="{'win' if r['winner']=='openclaw' else ''}">{o.get('final_score', 0):.3f}</td>
+                    <td class="{'win' if r['winner']=='engram' else ''}">{e.get('final_score', 0):.3f}</td>
+                    <td><strong>{r['winner'].upper()}</strong></td>
+                </tr>""")
+
+    # Build summary table rows
+    summary_rows = []
+    medals = ["🥇", "🥈", "🥉"]
+    for i, (sys_name, stats) in enumerate(sorted_systems):
+        medal = medals[i] if i < 3 else ""
+        summary_rows.append(f"""
+                <tr class="{'winner-row' if i==0 else ''}">
+                    <td>{medal} {sys_name}</td>
+                    <td><strong>{stats['avg_score']:.3f}</strong></td>
+                    <td>{stats['avg_precision']:.3f}</td>
+                    <td>{stats['avg_recall']:.3f}</td>
+                    <td>{stats['avg_latency']:.1f}</td>
+                    <td>${stats['avg_cost']:.5f}</td>
+                    <td>{stats['success_rate']:.0%}</td>
+                    <td>{stats.get('wins', 0)}</td>
+                </tr>""")
+
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tri-Memory Benchmark Report</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0d1117; color: #c9d1d9; padding: 20px; }}
+        h1 {{ color: #58a6ff; border-bottom: 2px solid #30363d; padding-bottom: 10px; margin-bottom: 20px; }}
+        h2 {{ color: #f0f6fc; margin: 20px 0 10px; }}
+        .subtitle {{ color: #8b949e; font-size: 0.9em; margin-bottom: 20px; }}
+        .charts-container {{ display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin: 20px 0; }}
+        @media (max-width: 900px) {{ .charts-container {{ grid-template-columns: 1fr; }} }}
+        .chart-card {{ background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 15px; }}
+        .chart-card h3 {{ color: #f0f6fc; font-size: 14px; margin-bottom: 10px; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 13px; }}
+        th {{ background: #21262d; color: #8b949e; padding: 8px 12px; text-align: left; font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.5px; border: 1px solid #30363d; }}
+        td {{ padding: 8px 12px; border: 1px solid #30363d; }}
+        tr:hover {{ background: #1c2128; }}
+        .winner-row {{ background: #1a3a1a !important; }}
+        .win {{ color: #3fb950; font-weight: bold; }}
+        .badge {{ display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }}
+        .badge-xavier {{ background: #1f6feb33; color: #58a6ff; }}
+        .badge-openclaw {{ background: #d2992233; color: #d29922; }}
+        .badge-engram {{ background: #a371f733; color: #a371f7; }}
+        .footer {{ margin-top: 30px; padding-top: 15px; border-top: 1px solid #30363d; color: #8b949e; font-size: 0.85em; }}
+    </style>
+</head>
+<body>
+    <h1>🏆 Tri-Memory Benchmark Report</h1>
+    <div class="subtitle">
+        <strong>Date:</strong> {now} | 
+        <strong>Queries:</strong> {len(run_results)} (7 categories) | 
+        <strong>Scoring:</strong> P@5=0.35, Recall=0.30, Latency=0.20, Cost=0.15
+    </div>
+
+    <div class="charts-container">
+        <div class="chart-card">
+            <h3>📊 Radar — Score by Category</h3>
+            <canvas id="radarChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>📊 Final Scores — Comparison</h3>
+            <canvas id="barChart"></canvas>
+        </div>
+        <div class="chart-card">
+            <h3>📊 Latency Comparison</h3>
+            <canvas id="latencyChart"></canvas>
+        </div>
+    </div>
+
+    <h2>🏅 Final Ranking</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>System</th>
+                <th>Score</th>
+                <th>P@5</th>
+                <th>Recall</th>
+                <th>Latency (ms)</th>
+                <th>Cost</th>
+                <th>Success</th>
+                <th>Wins</th>
+            </tr>
+        </thead>
+        <tbody>
+            {"".join(summary_rows)}
+        </tbody>
+    </table>
+
+    <h2>📋 Detailed Results</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Category</th>
+                <th>Query</th>
+                <th>Xavier</th>
+                <th>OpenClaw</th>
+                <th>Engram</th>
+                <th>Winner</th>
+            </tr>
+        </thead>
+        <tbody>
+            {"".join(detail_rows)}
+        </tbody>
+    </table>
+
+    <div class="footer">
+        Report auto-generated at {now} | 
+        <span class="badge badge-xavier">Xavier AGPL-3.0</span>
+        <span class="badge badge-openclaw">OpenClaw Proprietary</span>
+        <span class="badge badge-engram">Engram Proprietary</span>
+    </div>
+
+    <script>
+        // Radar chart: per-category scores
+        new Chart(document.getElementById('radarChart'), {{
+            type: 'radar',
+            data: {{
+                labels: {json.dumps(radar_labels)},
+                datasets: [{{
+                    label: 'Xavier',
+                    data: {json.dumps(radar_xavier)},
+                    borderColor: '#58a6ff',
+                    backgroundColor: 'rgba(31, 111, 235, 0.1)',
+                    pointBackgroundColor: '#58a6ff',
+                }}, {{
+                    label: 'OpenClaw',
+                    data: {json.dumps(radar_openclaw)},
+                    borderColor: '#d29922',
+                    backgroundColor: 'rgba(210, 153, 34, 0.1)',
+                    pointBackgroundColor: '#d29922',
+                }}, {{
+                    label: 'Engram',
+                    data: {json.dumps(radar_engram)},
+                    borderColor: '#a371f7',
+                    backgroundColor: 'rgba(163, 113, 247, 0.1)',
+                    pointBackgroundColor: '#a371f7',
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                scales: {{ r: {{ beginAtZero: true, max: 1.0, ticks: {{ stepSize: 0.2 }} }} }},
+                plugins: {{ legend: {{ position: 'bottom', labels: {{ color: '#c9d1d9' }} }} }}
+            }}
+        }});
+
+        // Bar chart: final scores comparison
+        new Chart(document.getElementById('barChart'), {{
+            type: 'bar',
+            data: {{
+                labels: ['Xavier', 'OpenClaw', 'Engram'],
+                datasets: [{{
+                    label: 'Score',
+                    data: [{summary.get('xavier', {{}}).get('avg_score', 0)}, {summary.get('openclaw', {{}}).get('avg_score', 0)}, {summary.get('engram', {{}}).get('avg_score', 0)}],
+                    backgroundColor: ['#1f6feb', '#d29922', '#a371f7'],
+                    borderRadius: 4,
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                scales: {{ y: {{ beginAtZero: true, max: 1.0, ticks: {{ color: '#8b949e' }} }}, x: {{ ticks: {{ color: '#8b949e' }} }} }},
+                plugins: {{ legend: {{ display: false }} }}
+            }}
+        }});
+
+        // Bar chart: latency comparison
+        new Chart(document.getElementById('latencyChart'), {{
+            type: 'bar',
+            data: {{
+                labels: ['Xavier', 'OpenClaw', 'Engram'],
+                datasets: [{{
+                    label: 'Latency (ms)',
+                    data: [{summary.get('xavier', {{}}).get('avg_latency', 0)}, {summary.get('openclaw', {{}}).get('avg_latency', 0)}, {summary.get('engram', {{}}).get('avg_latency', 0)}],
+                    backgroundColor: ['#1f6feb88', '#d2992288', '#a371f788'],
+                    borderRadius: 4,
+                }}]
+            }},
+            options: {{
+                responsive: true,
+                scales: {{ y: {{ beginAtZero: true, ticks: {{ color: '#8b949e' }} }}, x: {{ ticks: {{ color: '#8b949e' }} }} }},
+                plugins: {{ legend: {{ display: false }} }}
+            }}
+        }});
+    </script>
+</body>
+</html>"""
+
+    return html
 
 
 def generate_history_entry(summary: Dict[str, Dict[str, float]], timestamp: str) -> str:
@@ -643,6 +925,13 @@ async def main():
     md_path = Path(RESULTS_DIR) / f"tri_memory_{timestamp}.md"
     with open(md_path, 'w', encoding='utf-8') as f:
         f.write(report)
+    
+    # HTML report with Chart.js
+    html_path = Path(RESULTS_DIR) / f"tri_memory_{timestamp}.html"
+    html_report = generate_html_report(run_results, summary, {}, timestamp)
+    with open(html_path, 'w', encoding='utf-8') as f:
+        f.write(html_report)
+    print(f"    HTML:  {html_path}")
     
     # Update HISTORY.md
     history_path = Path("benchmarks/HISTORY.md")
