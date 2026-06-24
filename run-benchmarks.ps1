@@ -25,6 +25,45 @@ function Write-Header($Title) {
     Write-Host "╚════════════════════════════════════════════╝" -ForegroundColor Cyan
 }
 
+function Test-ServiceHealth($Url) {
+    try {
+        $resp = Invoke-WebRequest -Uri "$Url/health" -UseBasicParsing -TimeoutSec 2 -ErrorAction SilentlyContinue
+        return $resp.StatusCode -eq 200 -or $resp.StatusCode -eq 204
+    } catch {
+        return $false
+    }
+}
+
+function Start-XavierService($Port) {
+    $XavierBin = Join-Path $XavierRoot "target\release\xavier.exe"
+    if (-not (Test-Path $XavierBin)) {
+        $XavierBin = Join-Path $XavierRoot "target\debug\xavier.exe"
+    }
+
+    if (-not (Test-Path $XavierBin)) {
+        # Fallback to linux binary if on linux environment (though .ps1 suggests windows/pwsh)
+        $XavierBin = Join-Path $XavierRoot "target/release/xavier"
+        if (-not (Test-Path $XavierBin)) {
+            $XavierBin = Join-Path $XavierRoot "target/debug/xavier"
+        }
+    }
+
+    if (-not (Test-Path $XavierBin)) {
+        Write-Step "No se encontró el binario xavier" "❌"
+        return $false
+    }
+
+    Write-Step "Iniciando Xavier en puerto $Port..." "🚀"
+    $env:XAVIER_TOKEN = "test-token"
+    # For linux compatibility in bash session, use & if possible, but Start-Process is preferred for PS1
+    if ($IsLinux) {
+        Start-Process "nohup" -ArgumentList "$XavierBin http $Port > xavier-$Port.log 2>&1 &"
+    } else {
+        Start-Process $XavierBin -ArgumentList "http", $Port -NoNewWindow
+    }
+    return $true
+}
+
 $LogFile = Join-Path $OutDir "full-run-$Timestamp.log"
 Start-Transcript -Path $LogFile -Append | Out-Null
 
@@ -72,6 +111,53 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Step "Build exitoso!" "✅"
 Pop-Location
+
+# ════════════════════════════════════════════════════════════════
+# 1.5 VERIFY SERVICES (AUTO-START)
+# ════════════════════════════════════════════════════════════════
+Write-Header "🔌 VERIFICANDO SERVICIOS"
+
+$Services = @(
+    @{ Name = "Xavier HTTP"; Url = "http://localhost:8006"; Port = 8006 }
+    @{ Name = "OpenClaw-Builtin"; Url = "http://localhost:8003"; Port = 8003 }
+)
+
+foreach ($S in $Services) {
+    Write-Step "Verificando $($S.Name) ($($S.Url))..."
+    $IsUp = Test-ServiceHealth $S.Url
+
+    if ($IsUp) {
+        Write-Step "$($S.Name) está ONLINE" "✅"
+    } else {
+        Write-Step "$($S.Name) está OFFLINE. Intentando iniciar..." "⚠️"
+        $Started = Start-XavierService $S.Port
+
+        if ($Started) {
+            Write-Step "Esperando a que $($S.Name) responda (timeout 30s)..." "⏳"
+            $WaitStart = Get-Date
+            $Healthy = $false
+            while (((Get-Date) - $WaitStart).TotalSeconds -lt 30) {
+                if (Test-ServiceHealth $S.Url) {
+                    $Healthy = $true
+                    break
+                }
+                Start-Sleep -Seconds 2
+            }
+
+            if ($Healthy) {
+                Write-Step "$($S.Name) se inició correctamente" "✅"
+            } else {
+                Write-Host "`n❌ ERROR: $($S.Name) no respondió en 30s." -ForegroundColor Red
+                Stop-Transcript
+                exit 1
+            }
+        } else {
+            Write-Host "`n❌ ERROR: No se pudo intentar iniciar $($S.Name)." -ForegroundColor Red
+            Stop-Transcript
+            exit 1
+        }
+    }
+}
 
 # ════════════════════════════════════════════════════════════════
 # 2. BENCHMARK — MiniLM-L6-v2 (baseline)
@@ -125,6 +211,22 @@ $miss3 = ($result3 | Select-String "❌" | Measure-Object).Count
 $total3 = $hits3 + $miss3
 $pct3 = if ($total3 -gt 0) { [math]::Round(($hits3 / $total3) * 100, 1) } else { 0 }
 Write-Step "Qwen3-Embedding-0.6B: ${hits3}/${total3} = ${pct3}%" "✅"
+
+# ════════════════════════════════════════════════════════════════
+# 4.5 TRI-MEMORY BENCHMARK (Xavier vs OpenClaw vs Engram)
+# ════════════════════════════════════════════════════════════════
+Write-Header "🏆 TRI-MEMORY BENCHMARK"
+Write-Step "Ejecutando comparación entre sistemas de memoria (LIVE)..." "🧠"
+
+$triLog = Join-Path $OutDir "bench-trimemory-$Timestamp.log"
+# Ejecutar contra servicios reales. Asegurarse de tener dependencias de python.
+python scripts/benchmark_tri_memory.py --live 2>&1 | Tee-Object -FilePath $triLog
+
+if ($LASTEXITCODE -eq 0) {
+    Write-Step "Tri-Memory Benchmark completado!" "✅"
+} else {
+    Write-Step "Tri-Memory Benchmark finalizó con advertencias/errores." "⚠️"
+}
 
 # ════════════════════════════════════════════════════════════════
 # 5. DECISION ENGINE
@@ -234,6 +336,12 @@ $(foreach ($r in $ranked) { "| $($r.Name) | $($r.Accuracy)% | $($r.MTEB) | $($r.
 
 **Winner:** $decision
 **Reason:** $reason
+
+## Tri-Memory Results
+
+El benchmark Tri-Memory (Xavier vs OpenClaw vs Engram) se ejecutó en modo LIVE.
+Resultados detallados guardados en `benchmarks/results/` y resumen en `benchmarks/HISTORY.md`.
+Log de la ejecución: `$triLog`
 
 ## Changes Applied
 

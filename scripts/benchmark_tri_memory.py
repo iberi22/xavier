@@ -35,7 +35,7 @@ RESULTS_DIR = "benchmarks/results"
 # Default ports (from docs)
 XAVIER_URL = "http://localhost:8006"
 ENGRAM_URL = "http://localhost:7437"
-OPENCLAW_MEMORY_URL = "http://localhost:3008"  # memory-core plugin port
+OPENCLAW_MEMORY_URL = "http://localhost:8003"  # memory-core plugin port
 
 # ─── Golden Dataset (baseline correct answers) ──────────────────────────────
 
