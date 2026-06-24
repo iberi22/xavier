@@ -266,6 +266,9 @@ impl Cli {
             Command::Health { cloud } => {
                 crate::cli::handlers::system::handle_health_command(*cloud).await
             }
+            Command::AutoImprove { cmd } => {
+                crate::cli::handlers::auto_improvement::handle_auto_improve_command(cmd.clone()).await
+            }
         }
     }
 }

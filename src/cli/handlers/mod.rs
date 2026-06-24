@@ -27,6 +27,7 @@ pub mod system_scan;
 pub mod tokens;
 pub mod usage;
 pub mod workspace;
+pub mod auto_improvement;
 
 pub use agent::*;
 pub use code::*;

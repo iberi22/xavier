@@ -276,6 +276,24 @@ pub enum Command {
         #[arg(long)]
         cloud: bool,
     },
+
+    /// Auto-improvement commands
+    AutoImprove {
+        #[command(subcommand)]
+        cmd: AutoImproveCommand,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum AutoImproveCommand {
+    /// Show last cycle result summary
+    Status,
+    /// Run one full auto-improvement cycle
+    Run,
+    /// Show current auto-improvement cron schedule
+    Schedule,
+    /// Show last report
+    Report,
 }
 
 #[derive(Subcommand, Debug, Clone)]
