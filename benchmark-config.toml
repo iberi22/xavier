@@ -1,0 +1,14 @@
+# Xavier Benchmark Configuration
+
+[xavier]
+url = "http://localhost:8006"
+api_key = "test-bench-token"
+enabled = true
+
+[openclaw_builtin]
+url = "http://localhost:3008"
+enabled = true
+
+[engram]
+url = "http://localhost:7437"
+enabled = true

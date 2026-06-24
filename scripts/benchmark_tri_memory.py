@@ -31,11 +31,34 @@ import aiohttp
 
 QUERIES_FILE = "benchmarks/tri_memory_queries.json"
 RESULTS_DIR = "benchmarks/results"
+CONFIG_FILE = "benchmark-config.toml"
 
-# Default ports (from docs)
-XAVIER_URL = "http://localhost:8006"
-ENGRAM_URL = "http://localhost:7437"
-OPENCLAW_MEMORY_URL = "http://localhost:3008"  # memory-core plugin port
+# Default values
+DEFAULTS = {
+    "xavier": {"url": "http://localhost:8006", "api_key": "test-bench-token", "enabled": True},
+    "openclaw_builtin": {"url": "http://localhost:3008", "enabled": True},
+    "engram": {"url": "http://localhost:7437", "enabled": True},
+}
+
+def load_config():
+    config = DEFAULTS.copy()
+    config_path = Path(CONFIG_FILE)
+    if config_path.exists():
+        try:
+            import tomllib
+            with open(config_path, "rb") as f:
+                loaded = tomllib.load(f)
+                for section, def_vals in DEFAULTS.items():
+                    if section in loaded:
+                        # Ensure we have a dict to update
+                        if not isinstance(config[section], dict):
+                            config[section] = def_vals.copy()
+                        config[section].update(loaded[section])
+        except Exception as e:
+            print(f"⚠️  Error loading {CONFIG_FILE}: {e}. Using defaults.")
+    return config
+
+CONFIG = load_config()
 
 # ─── Golden Dataset (baseline correct answers) ──────────────────────────────
 
@@ -86,7 +109,8 @@ class XavierMemory(MemoryHandler):
     
     def __init__(self):
         super().__init__("Xavier", "xavier")
-        self.set_url(XAVIER_URL)
+        self.set_url(CONFIG["xavier"]["url"])
+        self.api_key = CONFIG["xavier"].get("api_key")
     
     async def search(self, session: aiohttp.ClientSession, query: str, category: str = "semantic") -> Dict[str, Any]:
         # Try MCP-style memory_context with depth
@@ -97,9 +121,13 @@ class XavierMemory(MemoryHandler):
             "limit": 5,
             "kind": "memory"
         }
+        headers = {}
+        if self.api_key:
+            headers["X-Xavier-Token"] = self.api_key
+
         start = time.perf_counter()
         try:
-            async with session.get(url, params=params, timeout=5) as resp:
+            async with session.get(url, params=params, headers=headers, timeout=5) as resp:
                 latency = (time.perf_counter() - start) * 1000
                 self.latency_samples.append(latency)
                 self.total_queries += 1
@@ -122,9 +150,13 @@ class XavierMemory(MemoryHandler):
         """Search with context depth expansion."""
         url = f"{self.base_url}/v1/search"
         params = {"q": query, "limit": 5 * (depth + 1), "kind": "memory", "depth": depth}
+        headers = {}
+        if self.api_key:
+            headers["X-Xavier-Token"] = self.api_key
+
         start = time.perf_counter()
         try:
-            async with session.get(url, params=params, timeout=5) as resp:
+            async with session.get(url, params=params, headers=headers, timeout=5) as resp:
                 latency = (time.perf_counter() - start) * 1000
                 if resp.status == 200:
                     data = await resp.json()
@@ -141,7 +173,7 @@ class OpenClawMemory(MemoryHandler):
     
     def __init__(self):
         super().__init__("OpenClaw (context-mode)", "openclaw")
-        self.set_url(OPENCLAW_MEMORY_URL)
+        self.set_url(CONFIG["openclaw_builtin"]["url"])
     
     async def search(self, session: aiohttp.ClientSession, query: str, category: str = "semantic") -> Dict[str, Any]:
         # context-mode's ctx_search endpoint
@@ -176,7 +208,7 @@ class EngramMemory(MemoryHandler):
     
     def __init__(self):
         super().__init__("Engram (Cortex)", "engram")
-        self.set_url(ENGRAM_URL)
+        self.set_url(CONFIG["engram"]["url"])
     
     async def search(self, session: aiohttp.ClientSession, query: str, category: str = "semantic") -> Dict[str, Any]:
         # Engram uses GET /search?q= per its HTTP API
@@ -436,14 +468,16 @@ def generate_report(
         report += f"{medal} **{sys_name}** — Score: {stats['avg_score']:.3f}\n"
     
     report += "\n## 📊 By Category\n\n"
-    report += "| Category | Xavier | OpenClaw | Engram |\n"
-    report += "|----------|--------|----------|--------|\n"
+    active_systems = [s for s in ["xavier", "openclaw", "engram"] if s in summary]
+    system_cols = " | ".join(s.title() for s in active_systems)
+    report += f"| Category | {system_cols} |\n"
+    report += f"|----------|{'|'.join(['---' for _ in active_systems])}|\n"
     
     categories = ["semantic", "fts", "episodic", "decision"]
     for cat in categories:
         cat_results = [r for r in run_results if r.get("category") == cat]
         report += f"| {cat.title()} | "
-        for system_id in ["xavier", "openclaw", "engram"]:
+        for system_id in active_systems:
             scores = [r["systems"].get(system_id, {}).get("final_score", 0) for r in cat_results]
             avg = sum(scores) / len(scores) if scores else 0
             report += f"{avg:.3f} | "
@@ -513,11 +547,17 @@ async def main():
     print(f"Loaded {len(queries)} queries from {args.queries}")
     
     # Initialize systems
-    systems = {
-        "xavier": XavierMemory(),
-        "openclaw": OpenClawMemory(),
-        "engram": EngramMemory(),
-    }
+    systems = {}
+    if CONFIG["xavier"].get("enabled", True):
+        systems["xavier"] = XavierMemory()
+    if CONFIG["openclaw_builtin"].get("enabled", True):
+        systems["openclaw"] = OpenClawMemory()
+    if CONFIG["engram"].get("enabled", True):
+        systems["engram"] = EngramMemory()
+
+    if not systems:
+        print("❌ No memory systems enabled in config. Exiting.")
+        return
     
     evaluator = Evaluator(use_mock=use_mock)
     scorer = Scorer()
@@ -541,7 +581,7 @@ async def main():
         
         if use_mock:
             # Mock mode: use statistical baselines
-            for system_id in ["xavier", "openclaw", "engram"]:
+            for system_id in systems.keys():
                 res = MockHandler.search(system_id, qtext, qcat, evaluator)
                 # Calculate precision, recall from simulated data
                 res["precision_at_5"] = res.get("precision_at_5", evaluator.precision_at_k(qtext, res["results"]))
@@ -590,7 +630,7 @@ async def main():
     
     # Calculate summary statistics
     summary = {}
-    for system_id in ["xavier", "openclaw", "engram"]:
+    for system_id in systems.keys():
         sys_results = [r["systems"][system_id] for r in run_results]
         ok = [r for r in sys_results if r.get("ok", True)]
         
@@ -606,7 +646,7 @@ async def main():
     
     # Context depth test (Xavier only)
     depth_results = None
-    if args.depth:
+    if args.depth and "xavier" in systems:
         depth_results = {}
         depth_results["0"] = [r["systems"]["xavier"].get("final_score", 0.5) * 0.95 for r in run_results]
         depth_results["1"] = [r["systems"]["xavier"].get("final_score", 0.5) * 1.05 for r in run_results]
