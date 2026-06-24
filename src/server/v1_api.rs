@@ -1052,6 +1052,7 @@ mod tests {
 
     use crate::{
         agents::RuntimeConfig,
+        coordination::events::XavierEventBus,
         memory::file_indexer::{FileIndexer, FileIndexerConfig},
         workspace::{WorkspaceConfig, WorkspaceContext, WorkspaceRegistry, WorkspaceState},
         AppState,
