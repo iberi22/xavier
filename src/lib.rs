@@ -24,6 +24,7 @@ pub mod memory;
 pub mod middleware;
 pub mod mesh;
 pub mod messaging;
+pub mod plugin_manager;
 pub mod notifications;
 pub mod observability;
 pub mod retrieval;

@@ -47,8 +47,37 @@ pub struct XavierSettings {
     pub data_commons: DataCommonsSettings,
     #[serde(default)]
     pub license: LicenseSettings,
+    #[serde(default)]
+    pub plugins: PluginSettings,
     #[serde(skip)]
     pub auth_token: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PluginSettings {
+    #[serde(default)]
+    pub installed: Vec<PluginConfig>,
+    #[serde(default)]
+    pub mcp_servers: std::collections::HashMap<String, McpServerConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginConfig {
+    pub name: String,
+    pub version: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct McpServerConfig {
+    pub command: String,
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: std::collections::HashMap<String, String>,
+    #[serde(default)]
+    pub disabled: bool,
+    #[serde(default)]
+    pub auto_approve: Vec<String>,
 }
 
 impl fmt::Debug for XavierSettings {
@@ -73,6 +102,7 @@ impl fmt::Debug for XavierSettings {
             .field("advanced", &self.advanced)
             .field("pgheart", &self.pgheart)
             .field("data_commons", &self.data_commons)
+            .field("plugins", &self.plugins)
             .field("auth_token", &"[REDACTED]")
             .finish()
     }

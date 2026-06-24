@@ -167,6 +167,12 @@ pub enum Command {
     /// Run interactive system detection and setup
     Setup,
 
+    /// Manage external plugins
+    Plugin {
+        #[command(subcommand)]
+        cmd: PluginCommand,
+    },
+
     /// Manage Xavier Data Commons and fine-tuning readiness
     DataCommons {
         #[command(subcommand)]
@@ -269,6 +275,27 @@ pub enum Command {
         /// Show cloud backends status
         #[arg(long)]
         cloud: bool,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum PluginCommand {
+    /// Install a new plugin
+    Install {
+        /// Name of the plugin to install
+        name: String,
+    },
+    /// Remove an installed plugin
+    Remove {
+        /// Name of the plugin to remove
+        name: String,
+    },
+    /// List all installed plugins
+    List,
+    /// Check the health of a plugin
+    Health {
+        /// Name of the plugin to check
+        name: String,
     },
 }
 
