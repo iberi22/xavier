@@ -47,8 +47,6 @@ pub struct XavierSettings {
     pub data_commons: DataCommonsSettings,
     #[serde(default)]
     pub license: LicenseSettings,
-    #[serde(default)]
-    pub mcp_plugins: Vec<McpPluginConfig>,
     #[serde(skip)]
     pub auth_token: Option<String>,
 }
@@ -555,19 +553,6 @@ pub struct NotificationSettings {
     pub provider_limit_warning: bool,
     pub new_model_detected: bool,
     pub better_provider_available: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct McpPluginConfig {
-    pub name: String,
-    pub command: String,
-    pub args: Vec<String>,
-    #[serde(default = "default_true")]
-    pub enabled: bool,
-}
-
-fn default_true() -> bool {
-    true
 }
 
 impl XavierSettings {

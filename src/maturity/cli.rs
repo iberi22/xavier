@@ -3,7 +3,7 @@
 use clap::Subcommand;
 use std::path::PathBuf;
 
-use crate::maturity::{MaturityResult, MaturityEngine, ProgressCallback};
+use crate::maturity::{MaturityResult, MaturityScanner, ProgressCallback};
 use anyhow::Result;
 use chrono::Utc;
 
@@ -98,12 +98,12 @@ pub async fn handle_maturity_command(cmd: MaturityCommand) -> Result<()> {
                                 }
                             }
                         }),
-                    ).await?
+                    )?
                 } else {
-                    run_deep_maturity_scan(&root, &anchor_path).await?
+                    run_deep_maturity_scan(&root, &anchor_path)?
                 }
             } else {
-                run_maturity_scan(&root, &anchor_path).await?
+                run_maturity_scan(&root, &anchor_path)?
             };
 
             if json {
@@ -159,27 +159,27 @@ pub async fn handle_maturity_command(cmd: MaturityCommand) -> Result<()> {
 }
 
 /// Run the maturity scan (v1) and return the result.
-pub async fn run_maturity_scan(codebase_root: &str, anchors_path: &PathBuf) -> Result<MaturityResult> {
-    let scanner = MaturityEngine::new(anchors_path, codebase_root)?;
-    Ok(scanner.scan().await)
+pub fn run_maturity_scan(codebase_root: &str, anchors_path: &PathBuf) -> Result<MaturityResult> {
+    let scanner = MaturityScanner::new(anchors_path, codebase_root)?;
+    Ok(scanner.scan())
 }
 
 /// Run the deep maturity scan (v2) and return the result.
-pub async fn run_deep_maturity_scan(codebase_root: &str, anchors_path: &PathBuf) -> Result<MaturityResult> {
-    let scanner = MaturityEngine::new(anchors_path, codebase_root)?.with_deep_scan();
-    Ok(scanner.scan().await)
+pub fn run_deep_maturity_scan(codebase_root: &str, anchors_path: &PathBuf) -> Result<MaturityResult> {
+    let scanner = MaturityScanner::new(anchors_path, codebase_root)?.with_deep_scan();
+    Ok(scanner.scan())
 }
 
 /// Run the deep maturity scan (v2) with a progress callback after each layer.
-pub async fn run_deep_maturity_scan_with_callback(
+pub fn run_deep_maturity_scan_with_callback(
     codebase_root: &str,
     anchors_path: &PathBuf,
     callback: ProgressCallback,
 ) -> Result<MaturityResult> {
-    let scanner = MaturityEngine::new(anchors_path, codebase_root)?
+    let scanner = MaturityScanner::new(anchors_path, codebase_root)?
         .with_deep_scan()
         .with_progress(callback);
-    Ok(scanner.scan().await)
+    Ok(scanner.scan())
 }
 
 /// Print a summary table of the current maturity.
