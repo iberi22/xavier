@@ -3,6 +3,7 @@
     One-Command Embedding Benchmark Runner for Xavier
 .DESCRIPTION
     Builds Xavier with CUDA support and runs all 3 GLLM embedding benchmarks.
+    Supports benchmark-config.toml for configurable targets.
     
     Usage (PowerShell as admin or normal):
       .\run-benchmarks.ps1
@@ -27,6 +28,72 @@ function Write-Header($Title) {
 
 $LogFile = Join-Path $OutDir "full-run-$Timestamp.log"
 Start-Transcript -Path $LogFile -Append | Out-Null
+
+# ════════════════════════════════════════════════════════════════
+# 0. LOAD BENCHMARK CONFIG
+# ════════════════════════════════════════════════════════════════
+Write-Header "⚙️  LOADING BENCHMARK CONFIG"
+
+$ConfigFile = Join-Path $XavierRoot "benchmark-config.toml"
+
+# Default configuration values
+$Config = @{
+    xavier = @{
+        url = "http://localhost:8006"
+        enabled = $true
+        health_timeout_sec = 30
+        health_interval_sec = 3
+    }
+    openclaw_builtin = @{
+        url = "http://localhost:8003"
+        enabled = $false
+    }
+    engram = @{
+        url = "http://localhost:7437"
+        enabled = $false
+    }
+}
+
+# Try to load config from TOML file if it exists
+if (Test-Path $ConfigFile) {
+    Write-Step "Config file found: benchmark-config.toml" "📄"
+    try {
+        $rawConfig = Get-Content $ConfigFile -Raw
+        
+        # Parse [xavier] section
+        if ($rawConfig -match '\[xavier\](.*?)(?=\[|$)') {
+            $section = $Matches[1]
+            if ($section -match 'url\s*=\s*"([^"]+)"') { $Config.xavier.url = $Matches[1] }
+            if ($section -match 'enabled\s*=\s*(true|false)') { $Config.xavier.enabled = ($Matches[1] -eq 'true') }
+            if ($section -match 'health_timeout_sec\s*=\s*(\d+)') { $Config.xavier.health_timeout_sec = [int]$Matches[1] }
+            if ($section -match 'health_interval_sec\s*=\s*(\d+)') { $Config.xavier.health_interval_sec = [int]$Matches[1] }
+            Write-Step "  Xavier: $($Config.xavier.url) (enabled=$($Config.xavier.enabled))" "ℹ️"
+        }
+        
+        # Parse [openclaw_builtin] section
+        if ($rawConfig -match '\[openclaw_builtin\](.*?)(?=\[|$)') {
+            $section = $Matches[1]
+            if ($section -match 'url\s*=\s*"([^"]+)"') { $Config.openclaw_builtin.url = $Matches[1] }
+            if ($section -match 'enabled\s*=\s*(true|false)') { $Config.openclaw_builtin.enabled = ($Matches[1] -eq 'true') }
+            Write-Step "  OpenClaw Builtin: $($Config.openclaw_builtin.url) (enabled=$($Config.openclaw_builtin.enabled))" "ℹ️"
+        }
+        
+        # Parse [engram] section
+        if ($rawConfig -match '\[engram\](.*?)(?=\[|$)') {
+            $section = $Matches[1]
+            if ($section -match 'url\s*=\s*"([^"]+)"') { $Config.engram.url = $Matches[1] }
+            if ($section -match 'enabled\s*=\s*(true|false)') { $Config.engram.enabled = ($Matches[1] -eq 'true') }
+            Write-Step "  Engram: $($Config.engram.url) (enabled=$($Config.engram.enabled))" "ℹ️"
+        }
+        
+        Write-Step "Config loaded successfully" "✅"
+    } catch {
+        Write-Step "Error parsing config: $_ — using defaults" "⚠️"
+    }
+} else {
+    Write-Step "No benchmark-config.toml found — using defaults" "⚠️"
+    Write-Step "Create benchmark-config.toml to customize targets" "💡"
+}
 
 # ════════════════════════════════════════════════════════════════
 # 0. DETECT GPU
@@ -85,7 +152,6 @@ $result1 | Out-File -FilePath $log1 -Encoding utf8
 Pop-Location
 
 # Extraer accuracy
-$acc1 = ($result1 | Select-String "accuracy_pct|accuracy" | Select-Object -Last 1).ToString()
 $hits1 = ($result1 | Select-String "✅" | Measure-Object).Count
 $miss1 = ($result1 | Select-String "❌" | Measure-Object).Count
 $total1 = $hits1 + $miss1
@@ -141,7 +207,6 @@ $ranked = @(
 
 $winner = $ranked[0]
 
-# Decisión lógica
 Write-Host ""
 Write-Host "  Resultados:" -ForegroundColor Yellow
 foreach ($r in $ranked) {
@@ -149,7 +214,6 @@ foreach ($r in $ranked) {
     Write-Host "  $icon $($r.Name): $($r.Accuracy)% accuracy"
 }
 
-# Determinar ganador
 $decision = ""
 $reason = ""
 if ($pct3 -ge $pct2 -and $pct3 -ge $pct1 -and $HasCuda) {
@@ -181,14 +245,12 @@ Write-Header "⚙️  ACTUALIZANDO DEFAULTS"
 $gllmRs = Join-Path $XavierRoot "src\embedding\gllm.rs"
 $content = Get-Content $gllmRs -Raw
 
-# Encontrar el default actual
 $currentModel = if ($content -match 'DEFAULT_GLLM_MODEL.*?"([^"]+)"') { $Matches[1] } else { "unknown" }
 
 Write-Step "Default actual: $currentModel"
 Write-Step "Nuevo default: $decision"
 
 if ($decision -ne $currentModel) {
-    # Update GLLM_MODEL constant
     $modelName = if ($decision -eq "Qwen3-Embedding-0.6B") { "Qwen/Qwen3-Embedding-0.6B" } else { $decision }
     $dimensions = @{"all-MiniLM-L6-v2"=384; "all-mpnet-base-v2"=768; "Qwen3-Embedding-0.6B"=1024}[$decision]
     
@@ -201,7 +263,6 @@ if ($decision -ne $currentModel) {
     Write-Step "Ya está en el modelo correcto" "✅"
 }
 
-# Also update default feature in Cargo.toml if CUDA selected
 if ($decision -eq "Qwen3-Embedding-0.6B" -and $HasCuda) {
     $cargoToml = Join-Path $XavierRoot "Cargo.toml"
     $toml = Get-Content $cargoToml -Raw
@@ -223,6 +284,11 @@ $SummaryFile = Join-Path $OutDir "embedding-bench-report-$Timestamp.md"
 **Date:** $(Get-Date -Format "yyyy-MM-dd HH:mm")
 **Feature:** $Feature
 **GPU:** $(if ($HasCuda) { (nvidia-smi --query-gpu=name --format=csv,noheader 2>$null)[0] } else { "No NVIDIA" })
+
+## Config
+
+- **Config file:** benchmark-config.toml
+- **Xavier URL:** $($Config.xavier.url)
 
 ## Results
 

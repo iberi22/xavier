@@ -1,0 +1,23 @@
+# Benchmark Configuration for Xavier Tri-Memory Benchmark
+#
+# This file defines benchmark targets (systems under test).
+# Each system can be individually enabled/disabled.
+# Default values are provided — override as needed.
+
+[xavier]
+# Xavier Cognitive Memory Runtime (primary target)
+url = "http://localhost:8006"
+enabled = true
+# Health check settings
+health_timeout_sec = 30
+health_interval_sec = 3
+
+[openclaw_builtin]
+# OpenClaw built-in memory-core (context-mode)
+url = "http://localhost:8003"
+enabled = false
+
+[engram]
+# Engram (Cortex memory) fallback
+url = "http://localhost:7437"
+enabled = false
