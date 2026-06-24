@@ -30,7 +30,13 @@ $LogFile = Join-Path $OutDir "full-run-$Timestamp.log"
 Start-Transcript -Path $LogFile -Append | Out-Null
 
 # ════════════════════════════════════════════════════════════════
-# 0. HEALTH CHECK & AUTO-START
+# 0a. BENCHMARK MODE — disable auth for benchmark queries
+# ════════════════════════════════════════════════════════════════
+$env:XAVIER_BENCHMARK_MODE = "true"
+Write-Step "Benchmark mode enabled — auth bypassed" "🔓"
+
+# ════════════════════════════════════════════════════════════════
+# 0b. HEALTH CHECK & AUTO-START
 # ════════════════════════════════════════════════════════════════
 Write-Header "🏥 HEALTH CHECK — Xavier HTTP (:8006)"
 
@@ -275,7 +281,7 @@ if ($pct3 -ge $pct2 -and $pct3 -ge $pct1 -and $HasCuda) {
     $reason = "Mejor que MiniLM, sin necesidad de GPU."
 } else {
     $decision = "all-mpnet-base-v2"
-    $reason = "Default por balance calidad/velocidad."
+    $reason = "Default por calidad/velocidad."
 }
 
 Write-Host ""

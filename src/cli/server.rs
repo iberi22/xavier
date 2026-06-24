@@ -76,6 +76,12 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let bind_host = resolve_http_bind_host();
     let bind_addr = format!("{}:{}", bind_host, port);
     info!("Starting Xavier HTTP server on {}", bind_addr);
+
+    // Check benchmark mode at startup
+    if std::env::var("XAVIER_BENCHMARK_MODE").as_deref() == Ok("true") {
+        info!("✅ XAVIER_BENCHMARK_MODE=true — auth disabled for benchmark queries");
+    }
+
     let token = resolve_http_token()?;
     std::env::set_var("XAVIER_TOKEN", &token);
 
