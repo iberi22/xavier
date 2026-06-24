@@ -578,11 +578,30 @@ pub struct HeadlessConfig {
     pub auth_token: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NotificationSettings {
     pub provider_limit_warning: bool,
     pub new_model_detected: bool,
     pub better_provider_available: bool,
+    pub enabled_islands: Vec<String>,
+    pub sound_enabled: bool,
+}
+
+impl Default for NotificationSettings {
+    fn default() -> Self {
+        Self {
+            provider_limit_warning: true,
+            new_model_detected: true,
+            better_provider_available: true,
+            enabled_islands: vec![
+                "system".to_string(),
+                "memory".to_string(),
+                "agents".to_string(),
+                "errors".to_string(),
+            ],
+            sound_enabled: true,
+        }
+    }
 }
 
 impl XavierSettings {

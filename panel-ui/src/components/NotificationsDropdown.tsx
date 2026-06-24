@@ -8,6 +8,7 @@ import {
   CheckCheck,
   Clock,
   RefreshCw,
+  Trash2,
   X,
   Zap,
 } from "lucide-react";
@@ -92,9 +93,11 @@ function formatRelativeTime(dateInput: Date | string): string {
 function NotificationItem({
   notif,
   onRead,
+  onClick,
 }: {
   notif: Notification;
   onRead: (id: string) => void;
+  onClick: (notif: Notification) => void;
 }) {
   const severityDot = {
     success: "bg-green-400",
@@ -109,7 +112,8 @@ function NotificationItem({
       initial={{ opacity: 0, y: -4 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, x: 20, height: 0 }}
-      className={`flex gap-2.5 p-2.5 rounded-lg transition-colors cursor-default group ${
+      onClick={() => onClick(notif)}
+      className={`flex gap-2.5 p-2.5 rounded-lg transition-colors cursor-pointer group ${
         notif.read ? "bg-transparent" : "bg-white/[0.025]"
       } hover:bg-white/[0.04]`}
     >
@@ -181,8 +185,26 @@ export default function NotificationsDropdown({
     // 2. Listen for real-time notifications via Tauri
     const unlistenPromise = listen<Notification>(
       "new-notification",
-      (event) => {
+      async (event) => {
         setNotifications((prev) => [event.payload, ...prev]);
+
+        // Play sound if enabled and severity is error
+        try {
+          const token = await getAuthToken();
+          const settingsRes = await fetch(getApiUrl("/v1/settings/notifications"), {
+            headers: { "X-Xavier-Token": token },
+          });
+          if (settingsRes.ok) {
+            const settings = await settingsRes.ok ? await settingsRes.json() : { sound_enabled: true };
+            if (settings.sound_enabled && (event.payload.severity === "error" || event.payload.severity === "warning")) {
+              const audio = new Audio("https://cdn.pixabay.com/audio/2022/03/15/audio_7325603f56.mp3"); // Simple beep
+              audio.volume = 0.4;
+              audio.play().catch(e => console.warn("Failed to play notification sound:", e));
+            }
+          }
+        } catch (err) {
+          console.error("Failed to check settings for sound:", err);
+        }
       },
     );
 
@@ -221,6 +243,35 @@ export default function NotificationsDropdown({
     } catch (err) {
       console.error("Failed to mark all notifications as read:", err);
     }
+  };
+
+  const deleteAll = async () => {
+    if (!confirm("Are you sure you want to delete all notifications?")) return;
+    setNotifications([]);
+
+    try {
+      const token = await getAuthToken();
+      await fetch(getApiUrl("/notifications/all"), {
+        method: "DELETE",
+        headers: { "X-Xavier-Token": token },
+      });
+    } catch (err) {
+      console.error("Failed to delete all notifications:", err);
+    }
+  };
+
+  const handleNotificationClick = (notif: Notification) => {
+    if (!notif.read) markRead(notif.id);
+
+    const islandId = notif.island_id || notif.islandId;
+    if (islandId === "memory") {
+      window.dispatchEvent(new CustomEvent("navigate-to-memory"));
+    } else if (islandId === "agents") {
+      window.dispatchEvent(new CustomEvent("navigate-to-agents"));
+    } else if (islandId === "system") {
+      window.dispatchEvent(new CustomEvent("navigate-to-config"));
+    }
+    // onClose(); // Keep open if we want to see more, but usually better to close
   };
 
   const filtered =
@@ -275,6 +326,13 @@ export default function NotificationsDropdown({
                 All read
               </button>
             )}
+            <button
+              onClick={deleteAll}
+              className="p-1 text-white/20 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all"
+              title="Clear all notifications"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
             <button
               onClick={onClose}
               className="p-1 text-white/20 hover:text-white/50 hover:bg-white/5 rounded-lg transition-all"
@@ -334,7 +392,12 @@ export default function NotificationsDropdown({
               </motion.div>
             ) : (
               filtered.map((n) => (
-                <NotificationItem key={n.id} notif={n} onRead={markRead} />
+                <NotificationItem
+                  key={n.id}
+                  notif={n}
+                  onRead={markRead}
+                  onClick={handleNotificationClick}
+                />
               ))
             )}
           </AnimatePresence>

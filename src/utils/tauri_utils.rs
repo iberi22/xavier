@@ -14,5 +14,9 @@ pub fn set_tauri_app_handle(handle: AppHandle) {
 
 #[cfg(feature = "tauri")]
 pub fn get_tauri_app_handle() -> Option<&'static AppHandle> {
-    TAURI_APP_HANDLE.get()
+    let handle = TAURI_APP_HANDLE.get();
+    if handle.is_none() {
+        tracing::debug!("Tauri app handle is not yet initialized");
+    }
+    handle
 }

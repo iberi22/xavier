@@ -668,6 +668,11 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             "/notifications/all",
             axum::routing::delete(crate::cli::handlers::notifications::delete_all_notifications_handler),
         )
+        .route(
+            "/v1/settings/notifications",
+            get(crate::cli::handlers::notifications::get_notification_settings_handler)
+                .patch(crate::cli::handlers::notifications::update_notification_settings_handler),
+        )
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(
             state.clone(),

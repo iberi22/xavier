@@ -152,28 +152,36 @@ impl Notifier {
         };
 
         notif.log();
-        self.send_background(notif.clone());
-        self.emit_tauri(&notif);
+        self.send_background(notif.clone(), Some(level.clone()));
         notif
     }
 
-    #[cfg(feature = "tauri")]
-    fn emit_tauri(&self, notif: &Notification) {
-        if let Some(handle) = get_tauri_app_handle() {
-            let _ = handle.emit("notification", notif);
-        }
-    }
-
-    #[cfg(not(feature = "tauri"))]
-    fn emit_tauri(&self, _notif: &Notification) {
-        // No-op when tauri feature is disabled
-    }
-
-    fn send_background(&self, notif: Notification) {
+    fn send_background(&self, notif: Notification, level: Option<NotificationLevel>) {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
             tracing::debug!("Skipping async notification delivery: no Tokio runtime is active");
             return;
         };
+
+        // Forward to the unified notification system
+        let notif_for_unified = notif.clone();
+        let level_for_unified = level.clone();
+        handle.spawn(async move {
+            use crate::notifications::{NOTIFICATIONS, IslandId};
+            let (island, severity) = match level_for_unified {
+                Some(NotificationLevel::Critical) => (IslandId::Errors, "error"),
+                Some(NotificationLevel::Error) => (IslandId::Errors, "error"),
+                Some(NotificationLevel::Warning) => (IslandId::Errors, "warning"),
+                Some(NotificationLevel::Success) => (IslandId::System, "success"),
+                _ => (IslandId::System, "info"),
+            };
+
+            let _ = NOTIFICATIONS.notify(
+                island,
+                &notif_for_unified.title,
+                &notif_for_unified.message,
+                severity
+            ).await;
+        });
 
         let notif_clone = notif.clone();
         if let Some(client) = self.discord.clone() {
@@ -238,8 +246,7 @@ impl Notifier {
         };
 
         notif.log();
-        self.send_background(notif.clone());
-        self.emit_tauri(&notif);
+        self.send_background(notif.clone(), Some(level.clone()));
         notif
     }
 
@@ -256,8 +263,7 @@ impl Notifier {
         };
 
         notif.log();
-        self.send_background(notif.clone());
-        self.emit_tauri(&notif);
+        self.send_background(notif.clone(), Some(NotificationLevel::Info));
         notif
     }
 
@@ -281,8 +287,7 @@ impl Notifier {
         };
 
         notif.log();
-        self.send_background(notif.clone());
-        self.emit_tauri(&notif);
+        self.send_background(notif.clone(), Some(level.clone()));
         notif
     }
 }

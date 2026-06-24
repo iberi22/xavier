@@ -55,6 +55,7 @@ export default function TopStatusBar({
     useState<MessagingPlatform>("telegram");
   const [showNotifications, setShowNotifications] = useState(false);
   const bellRef = useRef<HTMLButtonElement>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [modules, setModules] = useState({
     time: true,
     channels: true,
@@ -98,9 +99,43 @@ export default function TopStatusBar({
     const metricsInterval = setInterval(fetchMetrics, 3000);
     const timeInterval = setInterval(() => setTime(new Date()), 1000);
 
+    // Initial unread count fetch
+    const fetchUnreadCount = async () => {
+      try {
+        const token = await invoke("get_xavier_token");
+        const res = await fetch("http://127.0.0.1:8006/notifications", {
+          headers: { "X-Xavier-Token": token as string },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setUnreadCount(data.filter((n: any) => !n.read).length);
+        }
+      } catch (err) {
+        console.error("Error fetching unread count:", err);
+      }
+    };
+    fetchUnreadCount();
+
     return () => {
       clearInterval(metricsInterval);
       clearInterval(timeInterval);
+    };
+  }, []);
+
+  // Listen for real-time notification events to update the badge
+  useEffect(() => {
+    // We need @tauri-apps/api/event which might not be imported yet in this file
+    // Let's assume it's available via a dynamic import or add it to imports if needed
+    let unlisten: (() => void) | undefined;
+
+    import("@tauri-apps/api/event").then(({ listen }) => {
+      listen("new-notification", () => {
+        setUnreadCount(prev => prev + 1);
+      }).then(u => { unlisten = u; });
+    });
+
+    return () => {
+      if (unlisten) unlisten();
     };
   }, []);
 
@@ -111,9 +146,6 @@ export default function TopStatusBar({
     setMessagingTab(platform);
     setShowMessaging(true);
   };
-
-  // Unread notification count (mock — 3 unread from dropdown mock data)
-  const MOCK_UNREAD = 3;
 
   return (
     <>
@@ -393,13 +425,13 @@ export default function TopStatusBar({
                 transition={spring}
                 onClick={() => setShowNotifications((prev) => !prev)}
                 className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2 hover:bg-white/5 hover:border-white/20 transition-all flex items-center justify-center h-7 w-7 shrink-0"
-                title={`${memoryCount} Memories | ${MOCK_UNREAD} Unread`}
+                title={`${memoryCount} Memories | ${unreadCount} Unread`}
               >
                 <div className="relative flex items-center justify-center">
                   <Bell className="w-3.5 h-3.5 text-white/60" />
-                  {MOCK_UNREAD > 0 && (
+                  {unreadCount > 0 && (
                     <div className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[7px] font-bold px-1 rounded-full border border-[#0a0a0a] min-w-[13px] text-center shadow-[0_0_5px_rgba(239,68,68,0.4)]">
-                      {MOCK_UNREAD > 9 ? "9+" : MOCK_UNREAD}
+                      {unreadCount > 9 ? "9+" : unreadCount}
                     </div>
                   )}
                 </div>

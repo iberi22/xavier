@@ -75,6 +75,12 @@ impl NotificationManager {
     }
 
     pub async fn notify(&self, island_id: IslandId, title: &str, body: &str, severity: &str) -> Result<Notification> {
+        // Check user settings before notifying
+        let settings = crate::settings::XavierSettings::current();
+        if !settings.server.notifications.enabled_islands.contains(&island_id.as_str().to_string()) {
+            return Err(anyhow::anyhow!("Notification disabled for island: {}", island_id.as_str()));
+        }
+
         let notification = Notification {
             id: uuid::Uuid::new_v4().to_string(),
             island_id,

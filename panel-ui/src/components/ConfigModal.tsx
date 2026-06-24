@@ -23,6 +23,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiClient } from "../api/client";
 import ProvidersPage from "../pages/Settings/Providers";
 import SecurityConfigPanel from "../pages/Settings/Security";
+import NotificationsSettings from "../pages/Settings/Notifications";
 import type { Agent, BookmarkArtifact, GraphData } from "../types";
 import AgentsView from "./AgentsView";
 import BookmarksView from "./BookmarksView";
@@ -52,6 +53,7 @@ type MainTab =
   | "bookmarks"
   | "providers"
   | "messaging"
+  | "notifications"
   | "security"
   | "mesh"
   | "memory"
@@ -67,6 +69,22 @@ export default function ConfigModal({
   token,
 }: ConfigModalProps) {
   const [mainTab, setMainTab] = useState<MainTab>("config");
+
+  useEffect(() => {
+    const toMemory = () => setMainTab("memory");
+    const toAgents = () => setMainTab("agents");
+    const toConfig = () => setMainTab("config");
+
+    window.addEventListener("navigate-to-memory", toMemory);
+    window.addEventListener("navigate-to-agents", toAgents);
+    window.addEventListener("navigate-to-config", toConfig);
+
+    return () => {
+      window.removeEventListener("navigate-to-memory", toMemory);
+      window.removeEventListener("navigate-to-agents", toAgents);
+      window.removeEventListener("navigate-to-config", toConfig);
+    };
+  }, []);
 
   // Time and Milestone Filters
   const [startDate, setStartDate] = useState<string>("");
@@ -119,6 +137,12 @@ export default function ConfigModal({
             onClick={() => setMainTab("messaging")}
             icon={<MessageSquare className="w-4 h-4" />}
             label="Messaging"
+          />
+          <TabButton
+            active={mainTab === "notifications"}
+            onClick={() => setMainTab("notifications")}
+            icon={<Bell className="w-4 h-4" />}
+            label="Notifications"
           />
           <TabButton
             active={mainTab === "security"}
@@ -275,6 +299,17 @@ export default function ConfigModal({
                   <MessagingEmbedded />
                 </div>
               </div>
+            </motion.div>
+          )}
+          {mainTab === "notifications" && (
+            <motion.div
+              key="notifications"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full h-full overflow-y-auto"
+            >
+              <NotificationsSettings token={token || ""} />
             </motion.div>
           )}
           {mainTab === "security" && (
