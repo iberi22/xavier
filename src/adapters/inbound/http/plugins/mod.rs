@@ -6,6 +6,7 @@
 use async_trait::async_trait;
 
 pub mod pgheart;
+pub mod codegraph;
 use std::future::Future;
 use std::pin::Pin;
 

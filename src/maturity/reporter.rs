@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 use crate::maturity::scorer::ScoredFeature;
+use crate::maturity::MaturityResult;
 
 /// Summary of the full maturity scan.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -102,6 +103,27 @@ pub struct HistoryEntry {
 }
 
 impl MaturityReport {
+    /// Build a report from a MaturityResult.
+    pub fn from_result(
+        result: MaturityResult,
+        sprint_id: &str,
+        sprint_target: u8,
+        active_issues: Vec<IssueRef>,
+        previous_history: Vec<HistoryEntry>,
+    ) -> Self {
+        Self::from_scored(
+            result.features,
+            result.summary,
+            result.scanned_at,
+            result.head_commit,
+            sprint_id,
+            sprint_target,
+            active_issues,
+            previous_history,
+            result.mcp_enabled,
+        )
+    }
+
     /// Build a report from scanned and scored features.
     pub fn from_scored(
         features: Vec<ScoredFeature>,
@@ -112,6 +134,7 @@ impl MaturityReport {
         sprint_target: u8,
         active_issues: Vec<IssueRef>,
         previous_history: Vec<HistoryEntry>,
+        mcp_enabled: bool,
     ) -> Self {
         let report_features: Vec<ReportFeature> = features
             .into_iter()
@@ -189,13 +212,19 @@ impl MaturityReport {
             history = history.split_off(history.len() - 20);
         }
 
+        let scanner_name = if mcp_enabled {
+            "xavier-maturity-engine-v2 (MCP-First)"
+        } else {
+            "xavier-maturity-engine-v2 (Fallback-Grep)"
+        };
+
         Self {
             schema: "xavier.maturity.v2".to_string(),
             meta: ReportMeta {
                 format_version: "2.0.0".to_string(),
                 generated: scanned_at,
                 head: head_commit,
-                scanner: "xavier-maturity-scanner-v2".to_string(),
+                scanner: scanner_name.to_string(),
             },
             summary,
             features: report_features,

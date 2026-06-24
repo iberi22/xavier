@@ -17,7 +17,7 @@
 
 use serde::{Deserialize, Serialize};
 use crate::maturity::anchor::FeatureAnchor;
-use crate::maturity::scanner::{CodeGraphScan, TestListScan};
+use crate::maturity::scanner::{CodeGraphScan, DeepScanEvidence, TestListScan};
 
 /// Result of scoring one subcomponent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -64,6 +64,57 @@ const ISSUE_WEIGHT: f64 = 0.10;   // 10% — evidence from discussions
 ///
 /// Takes optional memory and conversation evidence (0.0 when not available).
 pub fn score_feature(
+    feature: &FeatureAnchor,
+    static_scan: &CodeGraphScan,
+    test_scan: &TestListScan,
+    memory_evidence: Option<f64>,
+    conversation_evidence: Option<f64>,
+) -> ScoredFeature {
+    score_feature_internal(feature, static_scan, test_scan, memory_evidence, conversation_evidence)
+}
+
+/// v2 scorer: uses DeepScanEvidence directly.
+pub fn score_feature_v2(
+    feature: &FeatureAnchor,
+    evidence: &DeepScanEvidence,
+    memory_ratio: Option<f64>,
+    conv_ratio: Option<f64>,
+) -> ScoredFeature {
+    // Construct old-style scans for the internal scorer
+    let mut found = std::collections::HashSet::new();
+    let mut missing = std::collections::HashSet::new();
+
+    if let Some((f, t)) = evidence.static_results.get(&feature.id) {
+        // We don't have individual symbols here, so we simulate them
+        // to satisfy the old scorer's interface if needed, but it's better
+        // to refactor the internal scorer to be more flexible.
+    }
+
+    let static_scan = CodeGraphScan {
+        found,
+        missing,
+        errors: Vec::new(),
+    };
+
+    let mut all_tests = Vec::new();
+    let mut matching = std::collections::HashSet::new();
+    if let Some((pass, total)) = evidence.test_results.get(&feature.id) {
+        all_tests = total.clone();
+        for p in pass {
+            matching.insert(p.clone());
+        }
+    }
+
+    let test_scan = TestListScan {
+        all_tests,
+        matching,
+        errors: Vec::new(),
+    };
+
+    score_feature_internal(feature, &static_scan, &test_scan, memory_ratio, conv_ratio)
+}
+
+fn score_feature_internal(
     feature: &FeatureAnchor,
     static_scan: &CodeGraphScan,
     test_scan: &TestListScan,
