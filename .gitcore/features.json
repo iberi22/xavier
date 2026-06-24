@@ -354,7 +354,7 @@
                          "name":  "Auto-Improvement Loop",
                          "category":  "enterprise",
                          "status":  "beta",
-                         "progress_pct":  70,
+                         "progress_pct":  80,
                          "description":  "Closed-loop auto-improvement: benchmark → gap analysis → generate experiment → validate → merge → re-measure",
                          "steps":  [
                                        "Benchmark runner",
@@ -366,7 +366,7 @@
                                    ],
                          "passes":  true,
                          "verified_by":  "design",
-                         "github_issue":  null,
+                         "github_issue":  307,
                          "last_tested":  "2026-06-24",
                          "notes":  "Skeleton with cycle. Ready for autoresearch hooks.",
                          "implemented_in":  null,
