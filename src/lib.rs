@@ -9,6 +9,7 @@ pub mod api;
 pub mod checkpoint;
 pub mod chronicle;
 pub mod codebase;
+pub mod maturity { pub use crate::codebase::maturity::*; }
 pub mod consistency;
 pub mod consolidation;
 pub mod context;
@@ -19,7 +20,6 @@ pub mod auto_improvement;
 pub mod embedding;
 pub mod enterprise;
 pub mod health;
-pub mod maturity;
 pub mod memory;
 pub mod middleware;
 pub mod mesh;

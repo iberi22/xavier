@@ -1038,6 +1038,7 @@ pub async fn v1_mesh_data_commons_opt_in(Json(payload): Json<DataCommonsOptInReq
 
 #[cfg(test)]
 mod tests {
+    use crate::coordination::events::XavierEventBus;
     use super::*;
     use axum::{
         body::{to_bytes, Body},
