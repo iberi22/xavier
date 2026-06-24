@@ -103,17 +103,17 @@ impl Notifier {
         };
 
         #[cfg(feature = "telegram")]
-        let (telegram_bot, notification_chat_id) =
-            if settings.telegram.enabled && settings.telegram.bot_token.is_some() {
+        let (telegram_bot, notification_chat_id) = {
+            let config = crate::telegram::TelegramConfig::default();
+            if config.enabled && !config.bot_token.is_empty() {
                 (
-                    Some(teloxide::prelude::Bot::new(
-                        settings.telegram.bot_token.unwrap(),
-                    )),
-                    settings.telegram.notification_chat_id,
+                    Some(teloxide::prelude::Bot::new(config.bot_token)),
+                    config.notification_chat_id,
                 )
             } else {
                 (None, None)
-            };
+            }
+        };
 
         Self {
             discord,

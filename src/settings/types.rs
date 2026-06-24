@@ -445,6 +445,8 @@ impl fmt::Debug for SecuritySettings {
 pub struct TelegramSettings {
     pub enabled: bool,
     #[serde(default)]
+    pub mode: String, // "polling" or "webhook"
+    #[serde(default)]
     pub bot_token: Option<String>,
     #[serde(default)]
     pub webhook_url: Option<String>,

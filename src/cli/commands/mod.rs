@@ -30,6 +30,7 @@ pub mod secrets;
 pub mod session;
 pub mod spawn;
 pub mod tasks;
+pub mod telegram;
 pub mod token;
 pub mod usage;
 pub mod verify;
@@ -266,6 +267,7 @@ impl Cli {
             Command::Health { cloud } => {
                 crate::cli::handlers::system::handle_health_command(*cloud).await
             }
+            Command::Telegram { cmd } => telegram::handle_telegram_command(cmd.clone()).await,
         }
     }
 }

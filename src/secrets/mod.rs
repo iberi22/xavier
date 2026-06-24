@@ -73,6 +73,7 @@ pub mod lending;
 pub mod local;
 pub mod openbao;
 pub mod store;
+pub mod telegram;
 #[cfg(test)]
 mod tests;
 pub mod vault;

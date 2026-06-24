@@ -173,6 +173,12 @@ pub enum Command {
         cmd: PluginCommand,
     },
 
+    /// Manage Telegram bot configuration
+    Telegram {
+        #[command(subcommand)]
+        cmd: TelegramCommand,
+    },
+
     /// Manage Xavier Data Commons and fine-tuning readiness
     DataCommons {
         #[command(subcommand)]
@@ -620,6 +626,14 @@ pub enum SessionCommand {
         #[arg(short, long)]
         peer: String,
     },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum TelegramCommand {
+    /// Set the Telegram bot token (encrypted)
+    SetToken,
+    /// Show Telegram bot status
+    Status,
 }
 
 #[derive(Subcommand, Debug, Clone)]
