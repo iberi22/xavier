@@ -8,7 +8,7 @@ use anyhow::Result;
 pub async fn handle_license_command(cmd: LicenseCommand) -> Result<()> {
     match cmd {
         LicenseCommand::Status => handle_license_status().await,
-        LicenseCommand::Accept => handle_license_accept().await,
+        LicenseCommand::Accept { commercial } => handle_license_accept(commercial).await,
         LicenseCommand::Show => handle_license_show().await,
     }
 }
@@ -58,8 +58,25 @@ async fn handle_license_status() -> Result<()> {
     Ok(())
 }
 
-async fn handle_license_accept() -> Result<()> {
+async fn handle_license_accept(commercial_key: Option<String>) -> Result<()> {
     let mut settings = xavier::settings::XavierSettings::current();
+
+    if let Some(key) = commercial_key {
+        use xavier::security::license::accept_commercial_license;
+        if accept_commercial_license(&mut settings, &key) {
+            // Persist
+            if let Err(e) = xavier::settings::serialization::save(&settings).await {
+                tracing::warn!(error = %e, "failed to persist commercial license acceptance");
+                println!("⚠️  Commercial License accepted but could not persist: {}", e);
+            } else {
+                println!("✅ Commercial License accepted and saved!");
+            }
+        } else {
+            println!("❌ Invalid commercial license key.");
+        }
+        return Ok(());
+    }
+
     if settings.license.mesh_accepted {
         println!("✅ Mesh License already accepted.");
         return Ok(());

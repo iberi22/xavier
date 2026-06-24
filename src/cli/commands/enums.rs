@@ -763,7 +763,11 @@ pub enum LicenseCommand {
     /// Show current license status
     Status,
     /// Accept the Xavier Mesh License (enables mesh features)
-    Accept,
+    Accept {
+        /// Optional commercial license key
+        #[arg(long)]
+        commercial: Option<String>,
+    },
     /// Show license terms
     Show,
 }
