@@ -7,11 +7,11 @@
                      "last_verified":  "2026-06-24",
                      "total_features":  18,
                      "features_complete":  10,
-                     "features_beta":  7,
-                     "features_draft":  3,
+                     "features_beta":  8,
+                     "features_draft":  2,
                      "features_planned":  0,
                      "features_stable":  8,
-                     "overall_progress_pct":  81
+                     "overall_progress_pct":  84
                  },
     "features":  [
                      {
@@ -236,7 +236,7 @@
                          "name":  "Telegram Bot Integration",
                          "category":  "integration",
                          "status":  "beta",
-                         "progress_pct":  35,
+                         "progress_pct":  45,
                          "description":  "Telegram bot for receiving commands and sending notifications from Xavier",
                          "steps":  [
                                        "Implement telegram module with teloxide",
@@ -247,8 +247,8 @@
                                    ],
                          "passes":  true,
                          "verified_by":  "automated",
-                         "github_issue":  84,
-                         "last_tested":  "2026-06-16",
+                         "github_issue":  324,
+                         "last_tested":  "2026-06-24",
                          "notes":  "src/telegram/mod.rs exists (172 lines). Feature-gated behind \u0027telegram\u0027 flag. Missing: full command handling, bot token storage, webhook mode.",
                          "implemented_in":  "src/telegram/, src/observability/notifier.rs"
                      },
@@ -256,8 +256,8 @@
                          "id":  "feat-notification-system",
                          "name":  "Notification Persistence and Delivery",
                          "category":  "core",
-                         "status":  "draft",
-                         "progress_pct":  80,
+                         "status":  "beta",
+                         "progress_pct":  85,
                          "description":  "Persistent notification system with event bus, SQLite storage, REST API, and Tauri real-time updates",
                          "steps":  [
                                        "Create notification struct and event types",
@@ -268,8 +268,8 @@
                                    ],
                          "passes":  false,
                          "verified_by":  "code-audit",
-                         "github_issue":  4,
-                         "last_tested":  "2026-06-16",
+                         "github_issue":  325,
+                         "last_tested":  "2026-06-24",
                          "notes":  "Backend persistence and REST API implemented (merged PR #89). Missing Tauri emit_all integration.",
                          "implemented_in":  "src/observability/notifier.rs"
                      },
@@ -300,7 +300,7 @@
                          "name":  "Bicameral Governance DAO",
                          "category":  "enterprise",
                          "status":  "draft",
-                         "progress_pct":  30,
+                         "progress_pct":  40,
                          "description":  "Bicameral governance system — 50% node operators + 50% Xavier Core Council — with weighted voting, veto, and on-chain integration",
                          "steps":  [
                                        "Bicameral DAO design (users + council)",
@@ -314,8 +314,8 @@
                                    ],
                          "passes":  false,
                          "verified_by":  "design",
-                         "github_issue":  null,
-                         "last_tested":  "2026-06-16",
+                         "github_issue":  322,
+                         "last_tested":  "2026-06-24",
                          "notes":  "Bicameral governance designed in src/data_commons/governance.rs. Mock DAO in src/mesh/governance.rs. Missing: on-chain integration, XIP lifecycle, weighted voting by reputation, UI.",
                          "implemented_in":  "src/data_commons/governance.rs, src/mesh/governance.rs"
                      },
@@ -366,7 +366,7 @@
                                    ],
                          "passes":  true,
                          "verified_by":  "design",
-                         "github_issue":  307,
+                         "github_issue":  328,
                          "last_tested":  "2026-06-24",
                          "notes":  "Skeleton with cycle. Ready for autoresearch hooks.",
                          "implemented_in":  null,
@@ -381,7 +381,7 @@
                          "name":  "Dual License (MIT + Mesh License)",
                          "category":  "governance",
                          "status":  "beta",
-                         "progress_pct":  70,
+                         "progress_pct":  75,
                          "description":  "MIT for standalone use; Mesh License activates governance opt-in, data commons, and network participation rights",
                          "steps":  [
                                        "Create src/security/license.rs with LicenseKind enum",
@@ -392,8 +392,8 @@
                                    ],
                          "passes":  true,
                          "verified_by":  "build",
-                         "github_issue":  null,
-                         "last_tested":  "2026-06-16",
+                         "github_issue":  327,
+                         "last_tested":  "2026-06-24",
                          "notes":  "Fully implemented: 5 unit tests, CLI handler, runtime gate. Build verified at ad0632e.",
                          "implemented_in":  null,
                          "tests":  [
@@ -408,7 +408,7 @@
                          "name":  "Context Regeneration \u0026 Perfect Recall",
                          "category":  "core",
                          "status":  "draft",
-                         "progress_pct":  35,
+                         "progress_pct":  45,
                          "description":  "Continuous context regeneration using real usage data to drive recall@k toward 100% on production benchmarks",
                          "steps":  [
                                        "Build benchmark suite from real query logs",
@@ -421,7 +421,7 @@
                                    ],
                          "passes":  false,
                          "verified_by":  "design",
-                         "github_issue":  null,
+                         "github_issue":  326,
                          "last_tested":  "2026-06-24",
                          "notes":  "NOT BUILD YET. Vision: self-tuning memory system that continuously optimizes for production query patterns. Requires feat-runtime-health and feat-auto-improvement first.",
                          "implemented_in":  null
