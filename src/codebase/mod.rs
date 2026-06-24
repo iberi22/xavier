@@ -10,6 +10,7 @@ use std::sync::LazyLock;
 pub mod connection_manager;
 pub mod conversations_db;
 pub mod db;
+pub mod maturity;
 
 /// Validation regex for project_id: only alphanumeric, hyphens, and underscores.
 static PROJECT_ID_RE: LazyLock<Regex> =
