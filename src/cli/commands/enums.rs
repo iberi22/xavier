@@ -421,6 +421,18 @@ pub enum VerifyCommand {
         #[arg(short, long)]
         detailed: bool,
     },
+    /// Analyze codebase maturity features
+    Maturity {
+        /// Path to features JSON file
+        #[arg(short, long)]
+        features: Option<String>,
+        /// Output format: table, json, or markdown
+        #[arg(short, long, default_value = "table")]
+        format: String,
+        /// Run with MCP codegraph (if installed)
+        #[arg(short, long)]
+        mcp: bool,
+    },
     /// Run full system health check
     Health {
         /// Output format: table, json, or markdown

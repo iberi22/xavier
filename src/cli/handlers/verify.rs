@@ -14,6 +14,10 @@ pub async fn handle_verify_command(cmd: VerifyCommand) -> Result<()> {
         }
         VerifyCommand::Health { format } => verify_health(format).await,
         VerifyCommand::Save { content } => verify_save(content).await,
+        VerifyCommand::Maturity { .. } => {
+            // handled by command dispatcher
+            Ok(())
+        }
     }
 }
 
@@ -158,3 +162,4 @@ async fn verify_save(content: String) -> Result<()> {
 
     Ok(())
 }
+
