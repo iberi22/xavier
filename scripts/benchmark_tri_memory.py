@@ -40,26 +40,41 @@ OPENCLAW_MEMORY_URL = "http://localhost:3008"  # memory-core plugin port
 # ─── Golden Dataset (baseline correct answers) ──────────────────────────────
 
 GOLDEN_ANSWERS = {
-    "semantic_001": {"SQLite", "FTS5", "persistence", "SQLite con FTS5", "primary"},
-    "semantic_002": {"Leonardo Duque", "partner", "Rodacenter Chile"},
-    "fts_001": {"port 8006", "xavier", "HTTP"},
-    "fts_002": {"MiniMax", "M2.7", "default model", "MiniMax-M2.7"},
-    "episodic_001": {"health endpoint", "multi-threaded runtime", "block_in_place"},
-    "decision_001": {"minimal image", "multi-stage build"},
-    "semantic_003": {"ADR 006", "internal replication network", "external network", "governance"},
-    "semantic_004": {"ML-KEM-1024", "ML-DSA-87", "AES-256-GCM"},
-    "fts_003": {"src/mesh/acl.rs", "validate_capability"},
-    "episodic_002": {"GRPO", "retrieval layer weights", "RewardModel"},
-    "decision_002": {"focused PR", "current tests do not cover"},
-    "semantic_005": {"meta-cognitive analysis", "observe", "confidence drift"},
-    "fts_004": {"panel-ui", "Playwright", "4174"},
-    "episodic_003": {"low recall", "infrastructure unavailable"},
-    "decision_003": {"--no-default-features", "--features ci-safe"},
-    "semantic_006": {"System", "Memory", "Agents", "Errors"},
-    "fts_005": {"1000 capacity", "1h TTL", "HybridSearcher", "moka"},
-    "episodic_004": {"AutoImprovementEngine", "mutate", "evaluate"},
-    "decision_004": {"agreement ratio below 50%"},
-    "semantic_007": {"MemoryQueryPort", "AgentLifecyclePort", "SecurityScanPort"},
+    "sh_001": {"America/Bogota", "BELA"},
+    "sh_002": {"$499/mo", "Starter", "ManteniApp"},
+    "sh_003": {"Rodacenter Chile", "Leonardo Duque"},
+    "sh_004": {"v0.4.1", "Xavier"},
+    "sh_005": {"tripro.cl/manteniapp", "demo"},
+    "mh_001": {"ManteniApp", "$2,499/mo", "Leonardo"},
+    "mh_002": {"Rodacenter", "tripro.cl", "maintenance monitoring"},
+    "mh_003": {"Southwest AI Labs", "Xavier", "ManteniApp", "gestalt-rust"},
+    "mh_004": {"ManteniApp", "$499", "$999", "$2,499"},
+    "mh_005": {"gestalt-rust", "active project"},
+    "tr_001": {"Xavier project", "yesterday"},
+    "tr_002": {"8 AM daily", "2026-03-31", "security audit"},
+    "tr_003": {"wrote code", "ran tests", "deployed", "sequence"},
+    "tr_004": {"updated docs", "after the meeting"},
+    "tr_005": {"Healthy", "fixed", "docker restart", "2026-04-05"},
+    "od_001": {"Xavier", "ManteniApp", "Software Factory", "gestalt-rust"},
+    "od_002": {"Active projects", "healthy embeddings", "SurrealDB issues"},
+    "od_003": {"SurrealDB protocol mismatch", "memory hygiene"},
+    "od_004": {"Salesperson", "partner", "Rodacenter"},
+    "od_005": {"Project Synthesizer", "Security Audit", "GitHub Monitor"},
+    "ad_001": {"SQLite", "FileMemoryStore", "NOT SurrealDB"},
+    "ad_002": {"Bel", "technical development"},
+    "ad_003": {"file backend", "old xavier"},
+    "ad_004": {"Rodacenter", "Leonardo Duque"},
+    "ad_005": {"Disabled", "XAVIER_DISABLE_HYDE=1"},
+    "su_001": {"Call", "Deployed", "Found bug", "Filed report", "Fix"},
+    "su_002": {"Leonardo partner", "Antofagasta", "ManteniApp interest"},
+    "su_003": {"FileMemoryStore", "healthy embeddings", "HyDE disabled"},
+    "su_004": {"Daily 8AM", "healthy", "2026-03-31"},
+    "su_005": {"Starter $499", "Pro $999", "Enterprise $2,499"},
+    "mm_001": {"Astro", "landing page", "blip_caption"},
+    "mm_002": {"Maintenance monitoring", "AI"},
+    "mm_003": {"Tripro logo", "manteniapp UI"},
+    "mm_004": {"Memory store", "bridge", "SQLite"},
+    "mm_005": {"Alice", "Bob", "deploying", "2023"},
 }
 
 # ─── Handlers ────────────────────────────────────────────────────────────────
@@ -368,10 +383,13 @@ class MockHandler:
         
         # Adjust metrics by category
         cat_factors = {
-            "semantic": {"xavier": 1.1, "openclaw": 0.8, "engram": 1.2},
-            "fts": {"xavier": 0.9, "openclaw": 1.3, "engram": 0.7},
-            "episodic": {"xavier": 1.15, "openclaw": 0.7, "engram": 1.0},
-            "decision": {"xavier": 1.2, "openclaw": 0.6, "engram": 0.85},
+            "single-hop": {"xavier": 1.1, "openclaw": 1.2, "engram": 1.0},
+            "multi-hop": {"xavier": 1.3, "openclaw": 0.6, "engram": 0.8},
+            "temporal": {"xavier": 1.2, "openclaw": 0.7, "engram": 0.9},
+            "open-domain": {"xavier": 1.1, "openclaw": 0.5, "engram": 1.2},
+            "adversarial": {"xavier": 1.4, "openclaw": 0.4, "engram": 0.7},
+            "summarization": {"xavier": 1.25, "openclaw": 0.3, "engram": 1.1},
+            "multi-modal": {"xavier": 1.2, "openclaw": 0.1, "engram": 0.8},
         }
         factor = cat_factors.get(category, {}).get(system_id, 1.0)
         
@@ -415,7 +433,7 @@ def generate_report(
 
 **Date:** {now}
 **Systems:** Xavier (AGPL v3), OpenClaw memory-core, Engram (Cortex)
-**Queries:** 20 (4 categories: semantic, fts, episodic, decision)
+**Queries:** {len(run_results)} ({len(set(r.get('category') for r in run_results))} categories: {', '.join(sorted(list(set(r.get('category') for r in run_results))))})
 **Scoring weights:** Precision@5=0.35, Recall=0.30, Latency=0.20, Cost=0.15
 
 ---
@@ -439,7 +457,7 @@ def generate_report(
     report += "| Category | Xavier | OpenClaw | Engram |\n"
     report += "|----------|--------|----------|--------|\n"
     
-    categories = ["semantic", "fts", "episodic", "decision"]
+    categories = sorted(list(set(r.get("category") for r in run_results)))
     for cat in categories:
         cat_results = [r for r in run_results if r.get("category") == cat]
         report += f"| {cat.title()} | "

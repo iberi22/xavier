@@ -1,142 +1,247 @@
 [
   {
-    "id": "semantic_001",
-    "query": "¿Qué decisión tomamos sobre la base de datos principal?",
-    "category": "semantic",
-    "expected_facts": ["SQLite", "FTS5", "persistence"],
-    "context": "database architecture"
+    "id": "sh_001",
+    "query": "What is BELA's timezone?",
+    "category": "single-hop",
+    "expected_facts": ["America/Bogota", "BELA"],
+    "context": "user info"
   },
   {
-    "id": "semantic_002",
-    "query": "Who is Leonardo Duque and where does he work?",
-    "category": "semantic",
-    "expected_facts": ["Leonardo Duque", "partner", "Rodacenter Chile"],
+    "id": "sh_002",
+    "query": "What is ManteniApp's pricing for the Starter plan?",
+    "category": "single-hop",
+    "expected_facts": ["$499/mo", "Starter", "ManteniApp"],
+    "context": "pricing"
+  },
+  {
+    "id": "sh_003",
+    "query": "Who is Leonardo Duque working with?",
+    "category": "single-hop",
+    "expected_facts": ["Rodacenter Chile", "Leonardo Duque"],
     "context": "client info"
   },
   {
-    "id": "fts_001",
-    "query": "Xavier port 8006",
-    "category": "fts",
-    "expected_facts": ["port 8006", "xavier"],
-    "context": "ports configuration"
+    "id": "sh_004",
+    "query": "What is Xavier's current version mentioned in reports?",
+    "category": "single-hop",
+    "expected_facts": ["v0.4.1", "Xavier"],
+    "context": "technical status"
   },
   {
-    "id": "fts_002",
-    "query": "MiniMax-M2.7",
-    "category": "fts",
-    "expected_facts": ["MiniMax", "M2.7", "default model"],
-    "context": "model preference"
+    "id": "sh_005",
+    "query": "What is the Tripro demo URL?",
+    "category": "single-hop",
+    "expected_facts": ["tripro.cl/manteniapp", "demo"],
+    "context": "sales"
   },
   {
-    "id": "episodic_001",
-    "query": "What did we discuss in the last debugging session about health endpoint?",
-    "category": "episodic",
-    "expected_facts": ["health endpoint", "multi-threaded runtime", "block_in_place"],
-    "context": "debugging session"
+    "id": "mh_001",
+    "query": "What product does Leonardo sell and what is its Enterprise price?",
+    "category": "multi-hop",
+    "expected_facts": ["ManteniApp", "$2,499/mo", "Leonardo"],
+    "context": "sales reasoning"
   },
   {
-    "id": "decision_001",
-    "query": "Why does Xavier Docker use multi-stage build?",
-    "category": "decision",
-    "expected_facts": ["minimal image", "multi-stage build"],
-    "context": "docker architecture"
+    "id": "mh_002",
+    "query": "Find the client interested in maintenance monitoring and their company website.",
+    "category": "multi-hop",
+    "expected_facts": ["Rodacenter", "tripro.cl", "maintenance monitoring"],
+    "context": "lead analysis"
   },
   {
-    "id": "semantic_003",
-    "query": "How is the Xavier Sovereign Mesh boundary defined?",
-    "category": "semantic",
-    "expected_facts": ["ADR 006", "internal replication network", "external network", "governance"],
-    "context": "mesh architecture"
+    "id": "mh_003",
+    "query": "Where does Bel work and what are the main projects there?",
+    "category": "multi-hop",
+    "expected_facts": ["Southwest AI Labs", "Xavier", "ManteniApp", "gestalt-rust"],
+    "context": "organizational overview"
   },
   {
-    "id": "semantic_004",
-    "query": "What cryptographic algorithms are used in XavierWallet?",
-    "category": "semantic",
-    "expected_facts": ["ML-KEM-1024", "ML-DSA-87", "AES-256-GCM"],
-    "context": "security"
+    "id": "mh_004",
+    "query": "What is the pricing of the product that BELA's company builds for maintenance tracking?",
+    "category": "multi-hop",
+    "expected_facts": ["ManteniApp", "$499", "$999", "$2,499"],
+    "context": "product reasoning"
   },
   {
-    "id": "fts_003",
-    "query": "CapabilityToken validation",
-    "category": "fts",
-    "expected_facts": ["src/mesh/acl.rs", "validate_capability"],
-    "context": "access control"
+    "id": "mh_005",
+    "query": "Which active project in SWAL uses Rust and what is its specific focus?",
+    "category": "multi-hop",
+    "expected_facts": ["gestalt-rust", "active project"],
+    "context": "tech stack"
   },
   {
-    "id": "episodic_002",
-    "query": "What are the latest changes in the HORMER agent?",
-    "category": "episodic",
-    "expected_facts": ["GRPO", "retrieval layer weights", "RewardModel"],
-    "context": "hormer updates"
+    "id": "tr_001",
+    "query": "What did I work on yesterday before testing Xavier today?",
+    "category": "temporal",
+    "expected_facts": ["Xavier project", "yesterday"],
+    "context": "activity sequence"
   },
   {
-    "id": "decision_002",
-    "query": "What is the policy for adding regression tests?",
-    "category": "decision",
-    "expected_facts": ["focused PR", "current tests do not cover"],
-    "context": "testing policy"
+    "id": "tr_002",
+    "query": "When was the last security audit performed?",
+    "category": "temporal",
+    "expected_facts": ["8 AM daily", "2026-03-31", "security audit"],
+    "context": "event timing"
   },
   {
-    "id": "semantic_005",
-    "query": "How does the System 3 engine analyze reasoning?",
-    "category": "semantic",
-    "expected_facts": ["meta-cognitive analysis", "observe", "confidence drift"],
-    "context": "system 3"
+    "id": "tr_003",
+    "query": "What was the sequence of actions for the Xavier deployment?",
+    "category": "temporal",
+    "expected_facts": ["wrote code", "ran tests", "deployed", "sequence"],
+    "context": "process history"
   },
   {
-    "id": "fts_004",
-    "query": "Vite port 4174",
-    "category": "fts",
-    "expected_facts": ["panel-ui", "Playwright"],
-    "context": "frontend ports"
+    "id": "tr_004",
+    "query": "What happened after the meeting where slides were prepared?",
+    "category": "temporal",
+    "expected_facts": ["updated docs", "after the meeting"],
+    "context": "meeting follow-up"
   },
   {
-    "id": "episodic_003",
-    "query": "What did we learn from the swal-bench run?",
-    "category": "episodic",
-    "expected_facts": ["low recall", "infrastructure unavailable"],
-    "context": "benchmarking"
+    "id": "tr_005",
+    "query": "What was the status of pplx-embed on 2026-04-05?",
+    "category": "temporal",
+    "expected_facts": ["Healthy", "fixed", "docker restart", "2026-04-05"],
+    "context": "bug resolution history"
   },
   {
-    "id": "decision_003",
-    "query": "How should we handle backend CI regression for resource-intensive features?",
-    "category": "decision",
-    "expected_facts": ["--no-default-features", "--features ci-safe"],
-    "context": "CI configuration"
+    "id": "od_001",
+    "query": "Summarize the current SWAL product portfolio.",
+    "category": "open-domain",
+    "expected_facts": ["Xavier", "ManteniApp", "Software Factory", "gestalt-rust"],
+    "context": "general knowledge"
   },
   {
-    "id": "semantic_006",
-    "query": "What are the four category islands for notifications?",
-    "category": "semantic",
-    "expected_facts": ["System", "Memory", "Agents", "Errors"],
-    "context": "notification system"
+    "id": "od_002",
+    "query": "Analyze the overall status of SWAL operations based on recent reports.",
+    "category": "open-domain",
+    "expected_facts": ["Active projects", "healthy embeddings", "SurrealDB issues"],
+    "context": "operational analysis"
   },
   {
-    "id": "fts_005",
-    "query": "moka crate capacity",
-    "category": "fts",
-    "expected_facts": ["1000 capacity", "1h TTL", "HybridSearcher"],
-    "context": "caching"
+    "id": "od_003",
+    "query": "What are the main technical challenges currently faced by Xavier?",
+    "category": "open-domain",
+    "expected_facts": ["SurrealDB protocol mismatch", "memory hygiene"],
+    "context": "technical hurdles"
   },
   {
-    "id": "episodic_004",
-    "query": "What is the status of the Evolve Module?",
-    "category": "episodic",
-    "expected_facts": ["AutoImprovementEngine", "mutate", "evaluate"],
-    "context": "agent evolution"
+    "id": "od_004",
+    "query": "Describe the role of Leonardo Duque in the SWAL ecosystem.",
+    "category": "open-domain",
+    "expected_facts": ["Salesperson", "partner", "Rodacenter"],
+    "context": "person role"
   },
   {
-    "id": "decision_004",
-    "query": "When is a peer flagged as unhealthy in Xavier consensus?",
-    "category": "decision",
-    "expected_facts": ["agreement ratio below 50%"],
-    "context": "consensus health"
+    "id": "od_005",
+    "query": "What are the automated tasks running in the SWAL environment?",
+    "category": "open-domain",
+    "expected_facts": ["Project Synthesizer", "Security Audit", "GitHub Monitor"],
+    "context": "automation"
   },
   {
-    "id": "semantic_007",
-    "query": "What tools does the Telegram bot provide?",
-    "category": "semantic",
-    "expected_facts": ["MemoryQueryPort", "AgentLifecyclePort", "SecurityScanPort"],
-    "context": "telegram integration"
+    "id": "ad_001",
+    "query": "Is the system using SQLite or SurrealDB for the main database?",
+    "category": "adversarial",
+    "expected_facts": ["SQLite", "FileMemoryStore", "NOT SurrealDB"],
+    "context": "database disambiguation"
+  },
+  {
+    "id": "ad_002",
+    "query": "Who handles technical development, Sebastian or Bel?",
+    "category": "adversarial",
+    "expected_facts": ["Bel", "technical development"],
+    "context": "role disambiguation"
+  },
+  {
+    "id": "ad_003",
+    "query": "Was the old xavier version using a vector backend or a file backend?",
+    "category": "adversarial",
+    "expected_facts": ["file backend", "old xavier"],
+    "context": "historical disambiguation"
+  },
+  {
+    "id": "ad_004",
+    "query": "Does Leonardo Duque work for Tripro or Rodacenter?",
+    "category": "adversarial",
+    "expected_facts": ["Rodacenter", "Leonardo Duque"],
+    "context": "company disambiguation"
+  },
+  {
+    "id": "ad_005",
+    "query": "Is HyDE currently enabled in the Xavier configuration?",
+    "category": "adversarial",
+    "expected_facts": ["Disabled", "XAVIER_DISABLE_HYDE=1"],
+    "context": "config disambiguation"
+  },
+  {
+    "id": "su_001",
+    "query": "Summarize the events of the week regarding Xavier migration.",
+    "category": "summarization",
+    "expected_facts": ["Call", "Deployed", "Found bug", "Filed report", "Fix"],
+    "context": "weekly summary"
+  },
+  {
+    "id": "su_002",
+    "query": "Provide a summary of the Rodacenter sales lead.",
+    "category": "summarization",
+    "expected_facts": ["Leonardo partner", "Antofagasta", "ManteniApp interest"],
+    "context": "lead summary"
+  },
+  {
+    "id": "su_003",
+    "query": "Summarize the technical status of Xavier v0.4.1.",
+    "category": "summarization",
+    "expected_facts": ["FileMemoryStore", "healthy embeddings", "HyDE disabled"],
+    "context": "tech summary"
+  },
+  {
+    "id": "su_004",
+    "query": "What is the summary of the latest security audit?",
+    "category": "summarization",
+    "expected_facts": ["Daily 8AM", "healthy", "2026-03-31"],
+    "context": "audit summary"
+  },
+  {
+    "id": "su_005",
+    "query": "Summarize the pricing structure for ManteniApp.",
+    "category": "summarization",
+    "expected_facts": ["Starter $499", "Pro $999", "Enterprise $2,499"],
+    "context": "pricing summary"
+  },
+  {
+    "id": "mm_001",
+    "query": "Describe the content of the image at the Tripro landing page.",
+    "category": "multi-modal",
+    "expected_facts": ["Astro", "landing page", "blip_caption"],
+    "context": "visual analysis"
+  },
+  {
+    "id": "mm_002",
+    "query": "What does the BLIP caption say about the ManteniApp demo screenshot?",
+    "category": "multi-modal",
+    "expected_facts": ["Maintenance monitoring", "AI"],
+    "context": "screenshot description"
+  },
+  {
+    "id": "mm_003",
+    "query": "Identify the visual elements mentioned in the Rodacenter presentation.",
+    "category": "multi-modal",
+    "expected_facts": ["Tripro logo", "manteniapp UI"],
+    "context": "presentation analysis"
+  },
+  {
+    "id": "mm_004",
+    "query": "What is the caption for the Xavier architecture diagram?",
+    "category": "multi-modal",
+    "expected_facts": ["Memory store", "bridge", "SQLite"],
+    "context": "diagram description"
+  },
+  {
+    "id": "mm_005",
+    "query": "Based on the blip_caption of the session screenshot, what was Alice doing?",
+    "category": "multi-modal",
+    "expected_facts": ["Alice", "Bob", "deploying", "2023"],
+    "context": "activity visual analysis"
   }
 ]
