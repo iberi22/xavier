@@ -4,3 +4,5 @@
 //! providing the public API surface for module consumers.
 pub mod inbound;
 pub mod outbound;
+pub mod code_graph_fallback;
+
