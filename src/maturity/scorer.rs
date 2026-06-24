@@ -18,7 +18,6 @@
 use serde::{Deserialize, Serialize};
 use crate::maturity::anchor::FeatureAnchor;
 use crate::maturity::scanner::{CodeGraphScan, TestListScan};
-use crate::codebase::maturity::scorer::{self as codebase_scorer, FeatureScores, ScoringWeights};
 
 /// Result of scoring one subcomponent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -53,6 +52,13 @@ pub struct ScoredFeature {
     pub overall: f64,
     pub status: String,
 }
+
+/// Scoring weights — v2: 5 metrics with more balanced distribution.
+const STATIC_WEIGHT: f64 = 0.35;   // 35% — code symbols exist
+const TEST_WEIGHT: f64 = 0.35;     // 35% — tests pass
+const GATE_WEIGHT: f64 = 0.10;    // 10% — feature gates configured
+const MEMORY_WEIGHT: f64 = 0.10;  // 10% — evidence from sessions/code
+const ISSUE_WEIGHT: f64 = 0.10;   // 10% — evidence from discussions
 
 /// Score one feature with data from all 4 scanning layers.
 ///
@@ -101,17 +107,14 @@ pub fn score_feature(
         // --- Conversation evidence ---
         let conv_ratio = conversation_evidence.unwrap_or(0.0);
 
-        // --- Weighted score calculation using unified codebase scorer ---
-        let scores = FeatureScores {
-            static_code_pct: static_pass_rate * 100.0,
-            tests_pct: test_pass_rate * 100.0,
-            gates_pct: if gate_ok { 100.0 } else { 0.0 },
-            memory_pct: mem_ratio * 100.0,
-            issues_pct: conv_ratio * 100.0,
-        };
-        let weights = ScoringWeights::default();
+        // --- Weighted score calculation ---
+        let static_score = static_pass_rate * sub.weight as f64 * STATIC_WEIGHT;
+        let test_score = test_pass_rate * sub.weight as f64 * TEST_WEIGHT;
+        let gate_score = if gate_ok { sub.weight as f64 * GATE_WEIGHT } else { 0.0 };
+        let memory_score = mem_ratio * sub.weight as f64 * MEMORY_WEIGHT;
+        let issue_score = conv_ratio * sub.weight as f64 * ISSUE_WEIGHT;
 
-        let sub_score = codebase_scorer::compute_feature_score(&scores, &weights) as u8;
+        let sub_score = (static_score + test_score + gate_score + memory_score + issue_score).round() as u8;
 
         // Build evidence detail string
         let mut detail_parts = Vec::new();
@@ -144,10 +147,14 @@ pub fn score_feature(
         });
     }
 
-    // Weighted average for overall using unified codebase scorer logic
-    let feature_scores: Vec<f64> = scored_subs.iter().map(|s| s.maturity as f64).collect();
-    let weights: Vec<u32> = scored_subs.iter().map(|s| s.weight).collect();
-    let overall = codebase_scorer::compute_overall(&feature_scores, &weights);
+    // Weighted average for overall
+    let total_weight: u32 = scored_subs.iter().map(|s| s.weight).sum();
+    let weighted_sum: f64 = scored_subs.iter().map(|s| s.maturity as f64 * s.weight as f64).sum();
+    let overall = if total_weight == 0 {
+        0.0
+    } else {
+        (weighted_sum / total_weight as f64).round()
+    };
 
     let status = if overall >= 90.0 {
         "production_ready"

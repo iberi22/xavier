@@ -112,7 +112,6 @@ async fn test_sprint2_http_rest_search() {
         ),
         security_service: Arc::new(xavier::app::security_service::SecurityService::new()),
         code_graph_dump_path: None,
-        event_bus: xavier::coordination::XavierEventBus::new(1),
     };
 
     let workspace_ctx = WorkspaceContext {
