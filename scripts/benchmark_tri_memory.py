@@ -21,6 +21,7 @@ import os
 import time
 import argparse
 import sys
+import webbrowser
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
@@ -31,6 +32,7 @@ import aiohttp
 
 QUERIES_FILE = "benchmarks/tri_memory_queries.json"
 RESULTS_DIR = "benchmarks/results"
+REPORTS_DIR = "benchmarks/reports"
 
 # Default ports (from docs)
 XAVIER_URL = "http://localhost:8006"
@@ -490,6 +492,222 @@ def generate_history_entry(summary: Dict[str, Dict[str, float]], timestamp: str)
     return entry
 
 
+def generate_html_report(
+    run_results: List[Dict[str, Any]],
+    summary: Dict[str, Dict[str, float]],
+    timestamp: str,
+    xavier_version: str = "0.11.0"
+) -> str:
+    """Generate a full HTML report with Chart.js."""
+
+    categories = ["semantic", "fts", "episodic", "decision"]
+    systems = ["xavier", "openclaw", "engram"]
+
+    # Prepare data for Radar Chart (Category Scores)
+    cat_scores = {sys: [] for sys in systems}
+    for cat in categories:
+        cat_results = [r for r in run_results if r.get("category") == cat]
+        for sys in systems:
+            scores = [r["systems"].get(sys, {}).get("final_score", 0) for r in cat_results]
+            avg = sum(scores) / len(scores) if scores else 0
+            cat_scores[sys].append(round(avg, 3))
+
+    # Prepare data for Bar Chart (Overall Scores)
+    overall_scores = [round(summary[sys]["avg_score"], 3) for sys in systems]
+
+    # Prepare data for Latency Comparison
+    latencies = [round(summary[sys]["avg_latency"], 1) for sys in systems]
+
+    # Detailed Table rows
+    table_rows = ""
+    for r in run_results:
+        winner = r["winner"].upper()
+        row = f"<tr><td>{r['id']}</td><td>{r['category']}</td><td>{r['query']}</td>"
+        for sys in systems:
+            score = r["systems"].get(sys, {}).get("final_score", 0)
+            is_winner = "font-weight:bold;color:green;" if r["winner"] == sys else ""
+            row += f"<td style='{is_winner}'>{score:.3f}</td>"
+        row += f"<td>{winner}</td></tr>"
+        table_rows += row
+
+    html_template = f"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Xavier Benchmark Report - {timestamp}</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; line-height: 1.6; color: #333; max-width: 1200px; margin: 0 auto; padding: 20px; background-color: #f4f7f6; }}
+        .container {{ background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
+        h1, h2 {{ color: #2c3e50; border-bottom: 2px solid #eee; padding-bottom: 10px; }}
+        .header-info {{ display: flex; justify-content: space-between; margin-bottom: 30px; font-size: 0.9em; color: #666; }}
+        .charts-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 40px; }}
+        .chart-container {{ background: #fff; padding: 15px; border: 1px solid #eee; border-radius: 4px; }}
+        .full-width-chart {{ grid-column: span 2; }}
+        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9em; }}
+        th, td {{ padding: 12px; border: 1px solid #eee; text-align: left; }}
+        th {{ background-color: #f8f9fa; font-weight: 600; }}
+        tr:nth-child(even) {{ background-color: #fcfcfc; }}
+        tr:hover {{ background-color: #f1f4f9; }}
+        .badge {{ padding: 4px 8px; border-radius: 12px; font-size: 0.8em; font-weight: bold; }}
+        .badge-xavier {{ background: #e3f2fd; color: #1976d2; }}
+        .badge-openclaw {{ background: #f1f8e9; color: #388e3c; }}
+        .badge-engram {{ background: #fff3e0; color: #f57c00; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏆 Tri-Memory Benchmark Report</h1>
+        <div class="header-info">
+            <div><strong>Timestamp:</strong> {timestamp}</div>
+            <div><strong>Xavier Version:</strong> {xavier_version}</div>
+            <div><strong>Status:</strong> <span style="color: green;">Complete</span></div>
+        </div>
+
+        <div class="charts-grid">
+            <div class="chart-container">
+                <h2>Category Performance (Radar)</h2>
+                <canvas id="radarChart"></canvas>
+            </div>
+            <div class="chart-container">
+                <h2>Overall Score Comparison</h2>
+                <canvas id="barChart"></canvas>
+            </div>
+            <div class="chart-container full-width-chart">
+                <h2>Latency Comparison (ms) - Lower is better</h2>
+                <canvas id="latencyChart"></canvas>
+            </div>
+        </div>
+
+        <h2>Detailed Results</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Category</th>
+                    <th>Query</th>
+                    <th>Xavier</th>
+                    <th>OpenClaw</th>
+                    <th>Engram</th>
+                    <th>Winner</th>
+                </tr>
+            </thead>
+            <tbody>
+                {table_rows}
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        const ctxRadar = document.getElementById('radarChart').getContext('2d');
+        new Chart(ctxRadar, {{
+            type: 'radar',
+            data: {{
+                labels: {json.dumps([c.title() for c in categories])},
+                datasets: [
+                    {{
+                        label: 'Xavier',
+                        data: {json.dumps(cat_scores['xavier'])},
+                        backgroundColor: 'rgba(25, 118, 210, 0.2)',
+                        borderColor: 'rgba(25, 118, 210, 1)',
+                        pointBackgroundColor: 'rgba(25, 118, 210, 1)'
+                    }},
+                    {{
+                        label: 'OpenClaw',
+                        data: {json.dumps(cat_scores['openclaw'])},
+                        backgroundColor: 'rgba(56, 142, 60, 0.2)',
+                        borderColor: 'rgba(56, 142, 60, 1)',
+                        pointBackgroundColor: 'rgba(56, 142, 60, 1)'
+                    }},
+                    {{
+                        label: 'Engram',
+                        data: {json.dumps(cat_scores['engram'])},
+                        backgroundColor: 'rgba(245, 124, 0, 0.2)',
+                        borderColor: 'rgba(245, 124, 0, 1)',
+                        pointBackgroundColor: 'rgba(245, 124, 0, 1)'
+                    }}
+                ]
+            }},
+            options: {{
+                scales: {{
+                    r: {{
+                        beginAtZero: true,
+                        max: 1.0
+                    }}
+                }}
+            }}
+        }});
+
+        const ctxBar = document.getElementById('barChart').getContext('2d');
+        new Chart(ctxBar, {{
+            type: 'bar',
+            data: {{
+                labels: ['Xavier', 'OpenClaw', 'Engram'],
+                datasets: [{{
+                    label: 'Overall Score',
+                    data: {json.dumps(overall_scores)},
+                    backgroundColor: [
+                        'rgba(25, 118, 210, 0.7)',
+                        'rgba(56, 142, 60, 0.7)',
+                        'rgba(245, 124, 0, 0.7)'
+                    ],
+                    borderColor: [
+                        'rgba(25, 118, 210, 1)',
+                        'rgba(56, 142, 60, 1)',
+                        'rgba(245, 124, 0, 1)'
+                    ],
+                    borderWidth: 1
+                }}]
+            }},
+            options: {{
+                scales: {{
+                    y: {{
+                        beginAtZero: true,
+                        max: 1.0
+                    }}
+                }}
+            }}
+        }});
+
+        const ctxLat = document.getElementById('latencyChart').getContext('2d');
+        new Chart(ctxLat, {{
+            type: 'bar',
+            data: {{
+                labels: ['Xavier', 'OpenClaw', 'Engram'],
+                datasets: [{{
+                    label: 'Avg Latency (ms)',
+                    data: {json.dumps(latencies)},
+                    backgroundColor: [
+                        'rgba(25, 118, 210, 0.5)',
+                        'rgba(56, 142, 60, 0.5)',
+                        'rgba(245, 124, 0, 0.5)'
+                    ],
+                    borderColor: [
+                        'rgba(25, 118, 210, 1)',
+                        'rgba(56, 142, 60, 1)',
+                        'rgba(245, 124, 0, 1)'
+                    ],
+                    borderWidth: 1
+                }}]
+            }},
+            options: {{
+                indexAxis: 'y',
+                scales: {{
+                    x: {{
+                        beginAtZero: true
+                    }}
+                }}
+            }}
+        }});
+    </script>
+</body>
+</html>
+    """
+    return html_template
+
+
 # ─── Main ────────────────────────────────────────────────────────────────────
 
 async def main():
@@ -643,6 +861,13 @@ async def main():
     md_path = Path(RESULTS_DIR) / f"tri_memory_{timestamp}.md"
     with open(md_path, 'w', encoding='utf-8') as f:
         f.write(report)
+
+    # HTML report
+    html_report = generate_html_report(run_results, summary, timestamp)
+    Path(REPORTS_DIR).mkdir(parents=True, exist_ok=True)
+    html_path = Path(REPORTS_DIR) / f"benchmark_{timestamp}.html"
+    with open(html_path, 'w', encoding='utf-8') as f:
+        f.write(html_report)
     
     # Update HISTORY.md
     history_path = Path("benchmarks/HISTORY.md")
@@ -660,7 +885,14 @@ async def main():
     print(f"  Results saved to:")
     print(f"    JSON: {json_path}")
     print(f"    MD:   {md_path}")
+    print(f"    HTML: {html_path}")
     print(f"    History: {history_path}")
+
+    # Open HTML report
+    try:
+        webbrowser.open(f"file://{html_path.absolute()}")
+    except Exception as e:
+        print(f"  ⚠️ Could not open browser: {e}")
     print(f"\n  🏆 Final Ranking:")
     for i, (sys_name, stats) in enumerate(
         sorted(summary.items(), key=lambda x: x[1]["avg_score"], reverse=True)
