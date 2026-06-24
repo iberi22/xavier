@@ -73,7 +73,7 @@ pub async fn handle_tool_call(
     let result = if super::tools_core::is_core_tool(name) {
         super::tools_core::handle_core_tool(state.clone(), workspace, name, arguments).await
     } else if name.starts_with("xavier_context") || name == "xavier_token_savings" {
-        super::tools_context::handle_context_tool(state, workspace, name, arguments).await
+        super::tools_context::handle_context_tool(state.clone(), workspace, name, arguments).await
     } else {
         super::tools_memory::handle_memory_tool(state.clone(), workspace, name, arguments).await
     };
