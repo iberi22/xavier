@@ -18,6 +18,7 @@ pub mod billing;
 pub mod code;
 pub mod data_commons;
 pub mod wallet;
+pub mod plugin_cmd;
 pub mod enums;
 pub mod http;
 pub mod license;
@@ -197,6 +198,7 @@ impl Cli {
             Command::Token { cmd } => token::handle_token_command(cmd.clone()).await,
             Command::Provider { cmd } => provider::handle_provider_command(cmd.clone()).await,
             Command::Setup => crate::cli::handlers::setup::handle_setup().await,
+            Command::Plugin { cmd } => plugin_cmd::handle_plugin_command(cmd.clone()).await,
             Command::DataCommons { cmd } => {
                 data_commons::handle_data_commons_command(cmd.clone()).await
             }

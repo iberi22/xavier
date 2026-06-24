@@ -110,6 +110,17 @@ pub async fn handle_setup() -> Result<()> {
 
     save_config(&config)?;
 
+    // 6. Optional Plugins
+    if Confirm::new()
+        .with_prompt("Instalar CodeGraph?")
+        .default(true)
+        .interact()?
+    {
+        if let Err(e) = xavier::plugin_manager::PluginManager::install("codegraph").await {
+            println!("⚠️ Failed to install codegraph: {}", e);
+        }
+    }
+
     println!("\n✅ Xavier setup complete! Configuration saved to ~/.xavier/provider-config.yaml");
 
     Ok(())
