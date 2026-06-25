@@ -1,4 +1,4 @@
-﻿target/
+target/
 *.rlib
 *.rmeta
 *.db
@@ -106,3 +106,6 @@ audit-*.ps1
 index-*.ps1
 issue-body.txt
 mem-work.txt
+
+# Backup files with credentials
+.env.backup
