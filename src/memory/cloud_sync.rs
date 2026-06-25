@@ -140,42 +140,40 @@ impl SyncReport {
 /// Uses LWW (Last Writer Wins) conflict resolution. Persists sync state
 /// to `last_sync.json` so incremental syncs only transfer deltas.
 pub struct CloudMemorySync {
-    /// The local store (e.g. SQLite).
-    local: Arc<dyn MemoryStore>,
     /// The cloud store (e.g. Supabase or Postgres).
-    cloud: Arc<dyn MemoryStore>,
+    store: Arc<dyn MemoryStore>,
+    /// Persisted sync state.
+    last_sync: tokio::sync::RwLock<LastSyncState>,
     /// This node's identifier (used for LWW tie-breaking).
     pub node_id: String,
-    /// Directory where `last_sync.json` is stored.
-    data_dir: PathBuf,
-    batch_size: usize,
+    /// Configuration for sync.
+    config: CloudSyncConfig,
 }
 
 impl CloudMemorySync {
     /// Create a new `CloudMemorySync`.
-    pub fn new(
-        local: Arc<dyn MemoryStore>,
-        cloud: Arc<dyn MemoryStore>,
-        node_id: String,
-        data_dir: PathBuf,
-    ) -> Self {
-        Self {
-            local,
-            cloud,
+    pub async fn new(
+        store: Arc<dyn MemoryStore>,
+        config: CloudSyncConfig,
+    ) -> Result<Self> {
+        let node_id = config.node_id.clone().unwrap_or_else(|| {
+            sysinfo::System::host_name().unwrap_or_else(|| "unknown".to_string())
+        });
+
+        let data_dir = PathBuf::from(&config.data_dir);
+        let last_sync = LastSyncState::load(&data_dir.join(LAST_SYNC_FILE)).await?;
+
+        Ok(Self {
+            store,
+            last_sync: tokio::sync::RwLock::new(last_sync),
             node_id,
-            data_dir,
-            batch_size: SYNC_BATCH_SIZE,
-        }
+            config,
+        })
     }
 
     /// Path to the last-sync state file.
     fn last_sync_path(&self) -> PathBuf {
-        self.data_dir.join(LAST_SYNC_FILE)
-    }
-
-    /// Load the persisted last-sync state.
-    async fn load_state(&self) -> Result<LastSyncState> {
-        LastSyncState::load(&self.last_sync_path()).await
+        PathBuf::from(&self.config.data_dir).join(LAST_SYNC_FILE)
     }
 
     /// Save the last-sync state.
@@ -192,16 +190,20 @@ impl CloudMemorySync {
     /// Only pushes records whose `updated_at` is strictly greater than
     /// the last sync timestamp for that workspace. Records are sent in
     /// batches of up to `SYNC_BATCH_SIZE`.
-    pub async fn push_to_cloud(&self, workspace_id: &str) -> Result<SyncReport> {
+    pub async fn push_to_cloud(&self, local: &dyn MemoryStore, workspace_id: &str) -> Result<SyncReport> {
         let start = std::time::Instant::now();
         let mut report = SyncReport::new(workspace_id);
 
+        if self.config.supabase_only {
+            report.duration_ms = start.elapsed().as_millis() as u64;
+            return Ok(report);
+        }
+
         // Determine the "since" timestamp from last sync state
-        let state = self.load_state().await?;
-        let since = state.last_sync_at(workspace_id);
+        let since = self.last_sync.read().await.last_sync_at(workspace_id);
 
         // Collect records from local store that are newer than `since`
-        let local_records = self.local.list(workspace_id).await?;
+        let local_records = local.list(workspace_id).await?;
         let to_push: Vec<&MemoryRecord> = local_records
             .iter()
             .filter(|r| since.is_none_or(|s| r.updated_at > s))
@@ -214,13 +216,12 @@ impl CloudMemorySync {
         }
 
         // Push in batches
-        let _total = to_push.len();
         let mut conflicts = 0usize;
 
-        for chunk in to_push.chunks(self.batch_size) {
+        for chunk in to_push.chunks(self.config.batch_size) {
             for record in chunk {
                 // LWW check: if cloud already has a newer version, skip
-                let existing = self.cloud.get(workspace_id, &record.id).await?;
+                let existing = self.store.get(workspace_id, &record.id).await?;
                 let had_existing = existing.is_some();
                 if let Some(ref cloud_record) = existing {
                     if cloud_record.updated_at > record.updated_at {
@@ -240,7 +241,7 @@ impl CloudMemorySync {
                 if had_existing {
                     conflicts += 1;
                 }
-                self.cloud.put((*record).clone()).await?;
+                self.store.put((*record).clone()).await?;
                 report.pushed += 1;
             }
         }
@@ -249,9 +250,11 @@ impl CloudMemorySync {
         report.duration_ms = start.elapsed().as_millis() as u64;
 
         // Update last-sync state
-        let mut new_state = self.load_state().await?;
-        new_state.update_sync_at(workspace_id, local_records.len());
-        self.save_state(&new_state).await?;
+        {
+            let mut state = self.last_sync.write().await;
+            state.update_sync_at(workspace_id, local_records.len());
+            self.save_state(&state).await?;
+        }
 
         Ok(report)
     }
@@ -260,16 +263,20 @@ impl CloudMemorySync {
     ///
     /// Fetches records in batches of up to `SYNC_BATCH_SIZE` with offset-based
     /// pagination. Each batch is merged locally using LWW resolution.
-    pub async fn pull_from_cloud(&self, workspace_id: &str) -> Result<SyncReport> {
+    pub async fn pull_from_cloud(&self, local: &dyn MemoryStore, workspace_id: &str) -> Result<SyncReport> {
         let start = std::time::Instant::now();
         let mut report = SyncReport::new(workspace_id);
 
+        if self.config.supabase_only {
+            report.duration_ms = start.elapsed().as_millis() as u64;
+            return Ok(report);
+        }
+
         // Determine the "since" timestamp from last sync state
-        let state = self.load_state().await?;
-        let since = state.last_sync_at(workspace_id);
+        let since = self.last_sync.read().await.last_sync_at(workspace_id);
 
         // Collect all cloud records
-        let cloud_records = self.cloud.list(workspace_id).await?;
+        let cloud_records = self.store.list(workspace_id).await?;
         let to_pull: Vec<&MemoryRecord> = cloud_records
             .iter()
             .filter(|r| since.is_none_or(|s| r.updated_at > s))
@@ -282,27 +289,27 @@ impl CloudMemorySync {
 
         // Apply LWW merge for each record in batches
         let mut conflicts = 0usize;
-        for chunk in to_pull.chunks(self.batch_size) {
+        for chunk in to_pull.chunks(self.config.batch_size) {
             for record in chunk {
-                let existing = self.local.get(workspace_id, &record.id).await?;
+                let existing = local.get(workspace_id, &record.id).await?;
                 match existing {
                     None => {
                         // New record from cloud — accept
-                        self.local.put((*record).clone()).await?;
+                        local.put((*record).clone()).await?;
                         report.pulled += 1;
                     }
                     Some(local_record) => {
                         // LWW: keep the newer one
                         if record.updated_at > local_record.updated_at {
                             conflicts += 1;
-                            self.local.put((*record).clone()).await?;
+                            local.put((*record).clone()).await?;
                             report.pulled += 1;
                         } else if record.updated_at == local_record.updated_at {
                             let local_node = self.lww_node_id(&local_record);
                             let cloud_node = self.lww_node_id(record);
                             if cloud_node > local_node {
                                 conflicts += 1;
-                                self.local.put((*record).clone()).await?;
+                                local.put((*record).clone()).await?;
                                 report.pulled += 1;
                             }
                         }
@@ -316,10 +323,12 @@ impl CloudMemorySync {
         report.duration_ms = start.elapsed().as_millis() as u64;
 
         // Update last-sync state
-        let local_records = self.local.list(workspace_id).await?;
-        let mut new_state = self.load_state().await?;
-        new_state.update_sync_at(workspace_id, local_records.len());
-        self.save_state(&new_state).await?;
+        let local_records = local.list(workspace_id).await?;
+        {
+            let mut state = self.last_sync.write().await;
+            state.update_sync_at(workspace_id, local_records.len());
+            self.save_state(&state).await?;
+        }
 
         Ok(report)
     }
@@ -333,41 +342,45 @@ impl CloudMemorySync {
     /// timestamp and neither misses records created mid-sync.
     ///
     /// Returns a combined report.
-    pub async fn sync_all(&self, workspace_id: &str) -> Result<SyncReport> {
+    pub async fn sync_all(&self, local: &dyn MemoryStore, workspace_id: &str) -> Result<SyncReport> {
         let start = std::time::Instant::now();
         let mut report = SyncReport::new(workspace_id);
 
+        if self.config.supabase_only {
+            report.duration_ms = start.elapsed().as_millis() as u64;
+            return Ok(report);
+        }
+
         // Capture the "since" timestamp ONCE before any mutations
-        let state_before = self.load_state().await?;
-        let since = state_before.last_sync_at(workspace_id);
+        let since = self.last_sync.read().await.last_sync_at(workspace_id);
 
         // Step 1: Pull cloud records → local (LWW)
         {
-            let cloud_records = self.cloud.list(workspace_id).await?;
+            let cloud_records = self.store.list(workspace_id).await?;
             let to_pull: Vec<&MemoryRecord> = cloud_records
                 .iter()
                 .filter(|r| since.is_none_or(|s| r.updated_at > s))
                 .collect();
 
-            for chunk in to_pull.chunks(self.batch_size) {
+            for chunk in to_pull.chunks(self.config.batch_size) {
                 for record in chunk {
-                    let existing = self.local.get(workspace_id, &record.id).await?;
+                    let existing = local.get(workspace_id, &record.id).await?;
                     if let Some(local_record) = existing {
                         if record.updated_at > local_record.updated_at {
                             report.conflicts += 1;
-                            self.local.put((*record).clone()).await?;
+                            local.put((*record).clone()).await?;
                             report.pulled += 1;
                         } else if record.updated_at == local_record.updated_at {
                             let cloud_node = self.lww_node_id(record);
                             let local_node = self.lww_node_id(&local_record);
                             if cloud_node > local_node {
                                 report.conflicts += 1;
-                                self.local.put((*record).clone()).await?;
+                                local.put((*record).clone()).await?;
                                 report.pulled += 1;
                             }
                         }
                     } else {
-                        self.local.put((*record).clone()).await?;
+                        local.put((*record).clone()).await?;
                         report.pulled += 1;
                     }
                 }
@@ -376,15 +389,15 @@ impl CloudMemorySync {
 
         // Step 2: Push local records → cloud (LWW)
         {
-            let local_records = self.local.list(workspace_id).await?;
+            let local_records = local.list(workspace_id).await?;
             let to_push: Vec<&MemoryRecord> = local_records
                 .iter()
                 .filter(|r| since.is_none_or(|s| r.updated_at > s))
                 .collect();
 
-            for chunk in to_push.chunks(self.batch_size) {
+            for chunk in to_push.chunks(self.config.batch_size) {
                 for record in chunk {
-                    let existing = self.cloud.get(workspace_id, &record.id).await?;
+                    let existing = self.store.get(workspace_id, &record.id).await?;
                     let had_existing = existing.is_some();
                     if let Some(ref cloud_record) = existing {
                         if cloud_record.updated_at > record.updated_at {
@@ -400,17 +413,19 @@ impl CloudMemorySync {
                     if had_existing {
                         report.conflicts += 1;
                     }
-                    self.cloud.put((*record).clone()).await?;
+                    self.store.put((*record).clone()).await?;
                     report.pushed += 1;
                 }
             }
         }
 
         // Step 3: Save state once with the final record counts
-        let local_count = self.local.list(workspace_id).await?.len();
-        let mut new_state = self.load_state().await?;
-        new_state.update_sync_at(workspace_id, local_count);
-        self.save_state(&new_state).await?;
+        let local_count = local.list(workspace_id).await?.len();
+        {
+            let mut state = self.last_sync.write().await;
+            state.update_sync_at(workspace_id, local_count);
+            self.save_state(&state).await?;
+        }
 
         report.duration_ms = start.elapsed().as_millis() as u64;
 
@@ -421,10 +436,14 @@ impl CloudMemorySync {
     ///
     /// Collects the set of workspace IDs from both stores, deduplicates,
     /// and runs `sync_all` on each.
-    pub async fn sync_all_workspaces(&self) -> Result<Vec<SyncReport>> {
+    pub async fn sync_all_workspaces(&self, local: &dyn MemoryStore) -> Result<Vec<SyncReport>> {
+        if self.config.supabase_only {
+            return Ok(Vec::new());
+        }
+
         // Collect workspace IDs from both sides
-        let local_records = self.local.list("").await?;
-        let cloud_records = self.cloud.list("").await?;
+        let local_records = local.list("").await?;
+        let cloud_records = self.store.list("").await?;
 
         let mut workspace_ids: HashSet<String> = HashSet::new();
         for r in &local_records {
@@ -436,7 +455,7 @@ impl CloudMemorySync {
 
         let mut reports = Vec::new();
         for ws_id in workspace_ids {
-            match self.sync_all(&ws_id).await {
+            match self.sync_all(local, &ws_id).await {
                 Ok(report) => reports.push(report),
                 Err(e) => {
                     reports.push(SyncReport {
@@ -488,6 +507,12 @@ pub struct CloudSyncConfig {
     pub auto_sync_interval_secs: u64,
     /// Directory for storing `last_sync.json`.
     pub data_dir: String,
+    /// If true, does not use local storage as intermediary (sync direct to cloud).
+    #[serde(default)]
+    pub supabase_only: bool,
+    /// Optional node ID override. If not set, system hostname is used.
+    #[serde(default)]
+    pub node_id: Option<String>,
 }
 
 fn default_batch_size() -> usize {
@@ -501,6 +526,8 @@ impl Default for CloudSyncConfig {
             auto_sync_on_startup: false,
             auto_sync_interval_secs: 0,
             data_dir: "data".to_string(),
+            supabase_only: false,
+            node_id: None,
         }
     }
 }
@@ -550,14 +577,17 @@ mod tests {
         }
     }
 
-    fn create_cloud_sync(local: TestStore, cloud: TestStore) -> (CloudMemorySync, TempDir) {
+    async fn create_cloud_sync(cloud: TestStore) -> (CloudMemorySync, TempDir) {
         let tmp = TempDir::new().unwrap();
+        let config = CloudSyncConfig {
+            data_dir: tmp.path().to_string_lossy().to_string(),
+            node_id: Some("node_test".to_string()),
+            ..Default::default()
+        };
         let sync = CloudMemorySync::new(
-            Arc::new(local),
             Arc::new(cloud),
-            "node_test".to_string(),
-            tmp.path().to_path_buf(),
-        );
+            config,
+        ).await.unwrap();
         (sync, tmp)
     }
 
@@ -570,43 +600,39 @@ mod tests {
 
     #[tokio::test]
     async fn test_push_local_to_cloud() {
-        let (sync, _tmp) = create_cloud_sync(new_test_store(), new_test_store());
-        let local = sync.local.clone();
-        let cloud = sync.cloud.clone();
+        let local = new_test_store();
+        let cloud = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(cloud).await;
 
         local.put(make_record("r1", "episodic", "local content", Utc::now(), 1, "node_test")).await.unwrap();
 
-        let report = sync.push_to_cloud("episodic").await.unwrap();
+        let report = sync.push_to_cloud(&local, "episodic").await.unwrap();
         assert_eq!(report.pushed, 1, "should push 1 record");
         assert_eq!(report.conflicts, 0, "no conflicts on first push");
 
-        let cloud_recs = cloud.list("episodic").await.unwrap();
+        let cloud_recs = sync.store.list("episodic").await.unwrap();
         assert_eq!(cloud_recs.len(), 1);
         assert_eq!(cloud_recs[0].content, "local content");
     }
 
     #[tokio::test]
     async fn test_push_empty_no_new_records() {
-        let (sync, _tmp) = create_cloud_sync(new_test_store(), new_test_store());
-        let report = sync.push_to_cloud("episodic").await.unwrap();
+        let local = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
+        let report = sync.push_to_cloud(&local, "episodic").await.unwrap();
         assert_eq!(report.pushed, 0, "nothing to push");
     }
 
     #[tokio::test]
     async fn test_pull_cloud_to_local() {
-        let local = Arc::new(new_test_store());
-        let cloud = Arc::new(new_test_store());
-        let (sync, _tmp) = (CloudMemorySync::new(
-            local.clone(),
-            cloud.clone(),
-            "node_test".to_string(),
-            TempDir::new().unwrap().path().to_path_buf(),
-        ), TempDir::new().unwrap());
+        let local = new_test_store();
+        let cloud = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(cloud).await;
 
         // Add a record to cloud
-        cloud.put(make_record("r1", "episodic", "cloud content", Utc::now(), 1, "node_cloud")).await.unwrap();
+        sync.store.put(make_record("r1", "episodic", "cloud content", Utc::now(), 1, "node_cloud")).await.unwrap();
 
-        let report = sync.pull_from_cloud("episodic").await.unwrap();
+        let report = sync.pull_from_cloud(&local, "episodic").await.unwrap();
         assert_eq!(report.pulled, 1, "should pull 1 record");
         assert_eq!(report.conflicts, 0, "no conflicts on first pull");
 
@@ -617,31 +643,29 @@ mod tests {
 
     #[tokio::test]
     async fn test_bidirectional_sync() {
-        let (sync, _tmp) = create_cloud_sync(new_test_store(), new_test_store());
-        let local = sync.local.clone();
-        let cloud = sync.cloud.clone();
+        let local = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
 
         local.put(make_record("a", "episodic", "from local", Utc::now(), 1, "node_test")).await.unwrap();
-        cloud.put(make_record("b", "episodic", "from cloud", Utc::now() + TimeDelta::seconds(1), 1, "node_cloud")).await.unwrap();
+        sync.store.put(make_record("b", "episodic", "from cloud", Utc::now() + TimeDelta::seconds(1), 1, "node_cloud")).await.unwrap();
 
-        let report = sync.sync_all("episodic").await.unwrap();
+        let report = sync.sync_all(&local, "episodic").await.unwrap();
         assert!(report.pushed >= 1 || report.pulled >= 1, "should sync something");
 
         assert_eq!(local.list("episodic").await.unwrap().len(), 2, "local should have both records");
-        assert_eq!(cloud.list("episodic").await.unwrap().len(), 2, "cloud should have both records");
+        assert_eq!(sync.store.list("episodic").await.unwrap().len(), 2, "cloud should have both records");
     }
 
     #[tokio::test]
     async fn test_lww_cloud_newer_wins_on_pull() {
-        let (sync, _tmp) = create_cloud_sync(new_test_store(), new_test_store());
-        let local = sync.local.clone();
-        let cloud = sync.cloud.clone();
+        let local = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
 
         let now = Utc::now();
         local.put(make_record("r1", "episodic", "old local", now, 1, "node_local")).await.unwrap();
-        cloud.put(make_record("r1", "episodic", "newer cloud", now + TimeDelta::seconds(10), 2, "node_cloud")).await.unwrap();
+        sync.store.put(make_record("r1", "episodic", "newer cloud", now + TimeDelta::seconds(10), 2, "node_cloud")).await.unwrap();
 
-        let report = sync.pull_from_cloud("episodic").await.unwrap();
+        let report = sync.pull_from_cloud(&local, "episodic").await.unwrap();
         assert_eq!(report.pulled, 1, "should pull the cloud version");
         assert_eq!(report.conflicts, 1, "should detect conflict");
 
@@ -651,15 +675,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_lww_same_timestamp_node_id_tiebreak() {
-        let (sync, _tmp) = create_cloud_sync(new_test_store(), new_test_store());
-        let local = sync.local.clone();
-        let cloud = sync.cloud.clone();
+        let local = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
 
         let now = Utc::now();
         local.put(make_record("r1", "episodic", "from A", now, 1, "A")).await.unwrap();
-        cloud.put(make_record("r1", "episodic", "from B", now, 1, "B")).await.unwrap();
+        sync.store.put(make_record("r1", "episodic", "from B", now, 1, "B")).await.unwrap();
 
-        let report = sync.pull_from_cloud("episodic").await.unwrap();
+        let report = sync.pull_from_cloud(&local, "episodic").await.unwrap();
         assert_eq!(report.conflicts, 1, "should detect conflict");
 
         let fetched = local.get("episodic", "r1").await.unwrap().unwrap();
@@ -668,17 +691,20 @@ mod tests {
 
     #[tokio::test]
     async fn test_persist_last_sync_state() {
-        let local = Arc::new(new_test_store());
+        let local = new_test_store();
         let tmp = TempDir::new().unwrap();
+        let config = CloudSyncConfig {
+            data_dir: tmp.path().to_string_lossy().to_string(),
+            node_id: Some("node_test".to_string()),
+            ..Default::default()
+        };
         let sync = CloudMemorySync::new(
-            local.clone(),
             Arc::new(new_test_store()),
-            "node_test".to_string(),
-            tmp.path().to_path_buf(),
-        );
+            config,
+        ).await.unwrap();
 
         local.put(make_record("r1", "episodic", "content", Utc::now(), 1, "node_test")).await.unwrap();
-        sync.push_to_cloud("episodic").await.unwrap();
+        sync.push_to_cloud(&local, "episodic").await.unwrap();
 
         let state_path = tmp.path().join("last_sync.json");
         assert!(state_path.exists(), "last_sync.json should exist");
@@ -689,9 +715,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_batch_100_records() {
-        let (sync, _tmp) = create_cloud_sync(new_test_store(), new_test_store());
-        let local = sync.local.clone();
-        let cloud = sync.cloud.clone();
+        let local = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
 
         for i in 0..150u64 {
             local.put(make_record(
@@ -704,22 +729,21 @@ mod tests {
             )).await.unwrap();
         }
 
-        let report = sync.push_to_cloud("episodic").await.unwrap();
+        let report = sync.push_to_cloud(&local, "episodic").await.unwrap();
         assert_eq!(report.pushed, 150, "should push all 150 records");
 
-        assert_eq!(cloud.list("episodic").await.unwrap().len(), 150, "cloud should have all 150 records");
+        assert_eq!(sync.store.list("episodic").await.unwrap().len(), 150, "cloud should have all 150 records");
     }
 
     #[tokio::test]
     async fn test_sync_all_workspaces() {
-        let (sync, _tmp) = create_cloud_sync(new_test_store(), new_test_store());
-        let local = sync.local.clone();
-        let cloud = sync.cloud.clone();
+        let local = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
 
         local.put(make_record("r1", "workspace_a", "from local a", Utc::now(), 1, "node_test")).await.unwrap();
-        cloud.put(make_record("r2", "workspace_b", "from cloud b", Utc::now() + TimeDelta::seconds(1), 1, "node_cloud")).await.unwrap();
+        sync.store.put(make_record("r2", "workspace_b", "from cloud b", Utc::now() + TimeDelta::seconds(1), 1, "node_cloud")).await.unwrap();
 
-        let reports = sync.sync_all_workspaces().await.unwrap();
+        let reports = sync.sync_all_workspaces(&local).await.unwrap();
         assert_eq!(reports.len(), 2, "should sync 2 workspaces");
 
         for r in &reports {
@@ -729,20 +753,41 @@ mod tests {
 
     #[tokio::test]
     async fn test_incremental_sync_after_full_sync() {
-        let (sync, _tmp) = create_cloud_sync(new_test_store(), new_test_store());
-        let local = sync.local.clone();
-        let cloud = sync.cloud.clone();
+        let local = new_test_store();
+        let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
 
         let rec1 = make_record("r1", "episodic", "first", Utc::now(), 1, "node_test");
         local.put(rec1).await.unwrap();
-        let report1 = sync.push_to_cloud("episodic").await.unwrap();
+        let report1 = sync.push_to_cloud(&local, "episodic").await.unwrap();
         assert_eq!(report1.pushed, 1);
 
         let rec2 = make_record("r2", "episodic", "second", Utc::now() + TimeDelta::seconds(5), 1, "node_test");
         local.put(rec2).await.unwrap();
-        let report2 = sync.push_to_cloud("episodic").await.unwrap();
+        let report2 = sync.push_to_cloud(&local, "episodic").await.unwrap();
         assert_eq!(report2.pushed, 1, "should only push the new record incrementally");
 
-        assert_eq!(cloud.list("episodic").await.unwrap().len(), 2, "cloud should have both records");
+        assert_eq!(sync.store.list("episodic").await.unwrap().len(), 2, "cloud should have both records");
+    }
+
+    #[tokio::test]
+    async fn test_supabase_only_flag() {
+        let local = new_test_store();
+        let tmp = TempDir::new().unwrap();
+        let config = CloudSyncConfig {
+            data_dir: tmp.path().to_string_lossy().to_string(),
+            supabase_only: true,
+            ..Default::default()
+        };
+        let sync = CloudMemorySync::new(
+            Arc::new(new_test_store()),
+            config,
+        ).await.unwrap();
+
+        local.put(make_record("r1", "episodic", "content", Utc::now(), 1, "node_test")).await.unwrap();
+        let report = sync.sync_all(&local, "episodic").await.unwrap();
+
+        assert_eq!(report.pushed, 0);
+        assert_eq!(report.pulled, 0);
+        assert!(report.success);
     }
 }
