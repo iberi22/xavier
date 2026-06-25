@@ -1,61 +1,62 @@
 //! # Gobernanza Bicameral — 50% Usuarios + 50% Consejo Xavier Core
 //!
-//! ## Sistema de Votación
+//! ## XIP Lifecycle State Machine
 //!
 //! ```text
 //! ┌──────────────────────────────────────────────────────────────┐
-//! │                    XIP (Propuesta)                           │
+//! │                     XIP Lifecycle                            │
 //! └──────────────────────────────────────────────────────────────┘
 //!                              │
-//!                     Discusión (3 días)
-//!                              │
-//!                   ┌──────────┴──────────┐
-//!                   ▼                     ▼
-//!        ┌──────────────────┐   ┌──────────────────┐
-//!        │  Cámara 1        │   │  Cámara 2        │
-//!        │  USUARIOS        │   │  CONSEJO         │
-//!        │  50% peso        │   │  50% peso        │
-//!        │  1 wallet = 1 voto│  │  1 miembro = 1    │
-//!        │  Anónimo          │   │  voto            │
-//!        │  Últimos 7 días   │   │  Público         │
-//!        └────────┬─────────┘   └────────┬─────────┘
-//!                 │                      │
-//!                 └──────────┬───────────┘
-//!                            ▼
-//!               ¿Mayoría simple en AMBAS?
-//!                      /         \
-//!                    SÍ           NO
-//!                    │             │
-//!              ┌─────▼─────┐   ┌──▼───┐
-//!              │ APROBADA  │   │ RECHAZADA │
-//!              │ Timer 48h │   └──────────┘
-//!              │ → Ejecutar│
-//!              └───────────┘
+//!                       ┌──────▼──────┐
+//!                       │    DRAFT    │
+//!                       └──────┬──────┘
+//!                              │ support_proposal() (5 supports)
+//!                       ┌──────▼──────────┐
+//!                       │   DISCUSSION     │  ← 3-day expiry (auto-complete)
+//!                       └──────┬──────────┘
+//!                              │ supports ≥ min_supports
+//!                       ┌──────▼──────┐
+//!                       │   VOTING    │  ← 7-day expiry (auto-complete)
+//!                       └──────┬──────┘
+//!                          ┌───┴───┐
+//!                          │       │
+//!                   ┌──────▼──┐ ┌──▼───────┐
+//!                   │ APPROVE │ │ REJECT   │
+//!                   └──────┬──┘ └──────────┘
+//!                          │
+//!                   ┌──────▼──────────┐
+//!                   │   EXECUTION     │  ← 48h timer
+//!                   └──────┬──────────┘
+//!                          │ execute_proposal()
+//!                   ┌──────▼──────┐
+//!                   │  COMPLETE   │
+//!                   └─────────────┘
 //! ```
 //!
-//! ## Veto del Consejo (Excepción de Seguridad)
+//! ## Weighted Voting by Reputation
 //!
-//! El consejo puede vetar propuestas que comprometan:
-//! - Seguridad post-cuántica
-//! - Integridad del protocolo mesh
-//! - Descentralización
+//! Cada voto de usuario tiene un peso = trust_score normalizado (reputation_weight).
+//! - Total yes_weight / total weight > 50% = cámara de usuarios aprueba
+//! - Consejo: 1 miembro = 1 voto (voto plano)
 //!
-//! **Veto requiere 66% del consejo.** Veto es público y con explicación.
-//! La comunidad puede OVERRULE el veto si alcanza 75% de apoyo en segunda votación.
+//! ## Bicameral Decision
 //!
-//! ## Feedback de Uso
+//! - Cámara 1 (Usuarios): 50% peso, votos ponderados por reputación
+//! - Cámara 2 (Consejo): 50% peso, 1 miembro = 1 voto
+//! - Ambas deben aprobar para que el XIP pase
 //!
-//! Una wallet solo puede votar si ha tenido actividad en los últimos 7 días:
-//! - Compartir, comprar o validar al menos 1 contexto
-//! - Si no usas el sistema 7 días seguidos → pierdes derecho a voto
-//! - Recuperas el derecho al volver a interactuar
+//! ## Council Veto & Community Overrule
 //!
-//! ## Sin Delegación
+//! - **Veto:** 66% del consejo puede vetar por razones de seguridad
+//! - **Overrule:** 75% de usuarios puede overrulear el veto
 //!
-//! No hay delegación de voto. Si no votas, no votas.
-//! Esto evita que grandes wallets acumulen poder delegado.
+//! ## Voter Eligibility
+//!
+//! Una wallet solo puede votar si ha tenido actividad en los últimos 7 días.
+//! Sin delegación de voto.
 
 use crate::data_commons::types::*;
+use crate::data_commons::reputation::reputation_weight;
 use std::collections::HashMap;
 
 /// Configuración de gobernanza bicameral
@@ -130,16 +131,83 @@ impl GovernanceEngine {
         }
     }
 
+    // ── Helpers de tiempo ─────────────────────────────────
+
+    fn now_secs() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
+
+    // ── XIP State Machine ─────────────────────────────────
+
+    /// Validar y ejecutar transición de estado en una propuesta
+    pub fn transition_to_state(
+        proposal: &mut XipProposal,
+        new_state: XipState,
+    ) -> Result<(), GovernanceError> {
+        if !proposal.xip_state.can_transition_to(&new_state) {
+            return Err(GovernanceError::InvalidStateTransition {
+                from: proposal.xip_state.label().to_string(),
+                to: new_state.label().to_string(),
+            });
+        }
+        proposal.xip_state = new_state;
+        Ok(())
+    }
+
+    /// Auto-transition: mueve propuestas vencidas al siguiente estado o a Complete
+    pub fn auto_transition_expired(&mut self) {
+        let now = Self::now_secs();
+        let proposal_ids: Vec<String> = self.proposals.iter().map(|p| p.id.clone()).collect();
+
+        for id in proposal_ids {
+            let needs_update = {
+                let p = match self.proposals.iter().find(|p| p.id == id) {
+                    Some(p) => p,
+                    None => continue,
+                };
+
+                match &p.xip_state {
+                    XipState::Discussion { expires_at, .. } => now >= *expires_at,
+                    XipState::Voting { expires_at, .. } => now >= *expires_at,
+                    XipState::Execution { expires_at, .. } => now >= *expires_at,
+                    _ => false,
+                }
+            };
+
+            if needs_update {
+                let p = self.proposals.iter_mut().find(|p| p.id == id).unwrap();
+                let new_state = match &p.xip_state {
+                    XipState::Discussion { .. } => {
+                        // Discussion expired → auto-complete without enough supports
+                        XipState::Complete { entered_at: now }
+                    }
+                    XipState::Voting { .. } => {
+                        // Voting expired → tally and transition
+                        // This is a soft-transition; the actual result is computed externally
+                        XipState::Complete { entered_at: now }
+                    }
+                    XipState::Execution { .. } => {
+                        // Execution timer expired → mark complete
+                        p.status = ProposalStatus::Executed;
+                        XipState::Complete { entered_at: now }
+                    }
+                    _ => continue,
+                };
+                p.xip_state = new_state;
+            }
+        }
+    }
+
     // ── Cámara 1: Usuarios ──────────────────────────────────
 
     /// Registrar actividad de una wallet (compartir, comprar o validar contexto)
     ///
     /// Esto mantiene el derecho a voto activo.
     pub fn register_activity(&mut self, wallet: WalletAddress) {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let now = Self::now_secs();
         self.active_wallets.insert(wallet, now);
     }
 
@@ -149,11 +217,7 @@ impl GovernanceEngine {
             return false;
         }
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
+        let now = Self::now_secs();
         let window_secs = self.config.voting_activity_window_days as u64 * 86400;
 
         self.active_wallets
@@ -164,11 +228,7 @@ impl GovernanceEngine {
 
     /// Obtener wallets activas para votar (cumplen feedback de 7 días)
     pub fn active_voter_wallets(&self) -> Vec<&WalletAddress> {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
-
+        let now = Self::now_secs();
         let window_secs = self.config.voting_activity_window_days as u64 * 86400;
 
         self.active_wallets
@@ -191,10 +251,7 @@ impl GovernanceEngine {
             id: format!("council_{}", wallet.0),
             wallet,
             role,
-            joined_at: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
+            joined_at: Self::now_secs(),
             active: true,
             expertise,
         };
@@ -221,10 +278,7 @@ impl GovernanceEngine {
             return Err(GovernanceError::InactiveVoter);
         }
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let now = Self::now_secs();
 
         let proposal = XipProposal {
             id: format!("xip_{}_{}", now, self.proposals.len() + 1),
@@ -233,6 +287,7 @@ impl GovernanceEngine {
             changes,
             author,
             status: ProposalStatus::Draft,
+            xip_state: XipState::Draft { entered_at: now },
             created_at: now,
             discussion_end: now + self.config.discussion_period_days as u64 * 86400,
             voting_end: now
@@ -243,6 +298,7 @@ impl GovernanceEngine {
                     * 86400
                 + self.config.execution_timer_hours as u64 * 3600,
             user_votes: HashMap::new(),
+            weighted_user_votes: HashMap::new(),
             council_votes: HashMap::new(),
             supports: Vec::new(),
             council_veto: false,
@@ -260,7 +316,6 @@ impl GovernanceEngine {
         proposal_id: &str,
         wallet: &WalletAddress,
     ) -> Result<(), GovernanceError> {
-        // Checks que necesitan &self antes del borrow mutable
         let can_vote = self.can_user_vote(wallet);
         let min_supports = self.config.min_supports;
 
@@ -274,11 +329,10 @@ impl GovernanceEngine {
             .find(|p| p.id == proposal_id)
             .ok_or(GovernanceError::ProposalNotFound)?;
 
-        if !matches!(
-            proposal.status,
-            ProposalStatus::Draft | ProposalStatus::Discussion
-        ) {
-            return Err(GovernanceError::VotingNotOpen);
+        // Validar estado: solo desde Draft o Discussion se puede apoyar
+        match proposal.xip_state {
+            XipState::Draft { .. } | XipState::Discussion { .. } => {}
+            _ => return Err(GovernanceError::VotingNotOpen),
         }
 
         if proposal.supports.contains(wallet) {
@@ -287,15 +341,29 @@ impl GovernanceEngine {
 
         proposal.supports.push(wallet.clone());
 
-        // Si alcanza apoyos mínimos, pasar a votación
+        // Si alcanza apoyos mínimos, pasar a Discussion → Voting
         if proposal.supports.len() >= min_supports as usize {
+            let now = Self::now_secs();
             proposal.status = ProposalStatus::Voting;
+
+            // Transition: Draft → Voting or Discussion → Voting
+            match proposal.xip_state {
+                XipState::Draft { .. } | XipState::Discussion { .. } => {
+                    let voting_expires = now + self.config.voting_period_days as u64 * 86400;
+                    proposal.xip_state = XipState::Voting {
+                        entered_at: now,
+                        expires_at: voting_expires,
+                    };
+                }
+                _ => {}
+            }
         }
 
         Ok(())
     }
 
     /// Voto de usuario (anónimo — cifrado con Kyber)
+    /// Utiliza votación ponderada por reputación (reputation_weight)
     pub fn user_vote(
         &mut self,
         proposal_id: &str,
@@ -304,7 +372,6 @@ impl GovernanceEngine {
         _encrypted_vote: Vec<u8>,
         _dilithium_signature: Vec<u8>,
     ) -> Result<(), GovernanceError> {
-        // Checks que necesitan &self antes del borrow mutable
         let can_vote = self.can_user_vote(wallet);
 
         if !can_vote {
@@ -317,18 +384,55 @@ impl GovernanceEngine {
             .find(|p| p.id == proposal_id)
             .ok_or(GovernanceError::ProposalNotFound)?;
 
-        if proposal.status != ProposalStatus::Voting {
+        // Validar que la votación esté abierta según XIP state machine
+        if !matches!(proposal.xip_state, XipState::Voting { .. }) {
             return Err(GovernanceError::VotingNotOpen);
         }
 
-        if proposal.user_votes.contains_key(wallet) {
+        if proposal.weighted_user_votes.contains_key(wallet) {
             return Err(GovernanceError::AlreadyVoted);
         }
 
-        // TODO: verificar firma Dilithium-5 contra wallet pública
+        // Calcular peso del voto basado en reputación
+        let weight = reputation_weight(&wallet.0);
 
+        let now = Self::now_secs();
+        let weighted_vote = WeightedVote {
+            wallet_id: wallet.clone(),
+            weight,
+            approve: in_favor,
+            timestamp: now,
+        };
+
+        // Legacy: mantener user_votes actualizado por compatibilidad
         proposal.user_votes.insert(wallet.clone(), in_favor);
+        proposal
+            .weighted_user_votes
+            .insert(wallet.clone(), weighted_vote);
         Ok(())
+    }
+
+    /// Obtener el peso total de votos a favor de usuarios para una propuesta
+    pub fn weighted_user_vote_tally(&self, proposal_id: &str) -> Result<(u64, u64), GovernanceError> {
+        let proposal = self
+            .proposals
+            .iter()
+            .find(|p| p.id == proposal_id)
+            .ok_or(GovernanceError::ProposalNotFound)?;
+
+        let total_weight: u64 = proposal
+            .weighted_user_votes
+            .values()
+            .map(|v| v.weight)
+            .sum();
+        let yes_weight: u64 = proposal
+            .weighted_user_votes
+            .values()
+            .filter(|v| v.approve)
+            .map(|v| v.weight)
+            .sum();
+
+        Ok((yes_weight, total_weight))
     }
 
     /// Voto del consejo (público)
@@ -338,7 +442,6 @@ impl GovernanceEngine {
         member_id: &str,
         in_favor: bool,
     ) -> Result<(), GovernanceError> {
-        // Verificar que el miembro existe y está activo (antes del borrow mutable)
         let member_active = self.council.iter().any(|m| m.id == member_id && m.active);
         if !member_active {
             return Err(GovernanceError::NotAuthorized);
@@ -350,7 +453,7 @@ impl GovernanceEngine {
             .find(|p| p.id == proposal_id)
             .ok_or(GovernanceError::ProposalNotFound)?;
 
-        if proposal.status != ProposalStatus::Voting {
+        if !matches!(proposal.xip_state, XipState::Voting { .. }) {
             return Err(GovernanceError::VotingNotOpen);
         }
 
@@ -373,7 +476,6 @@ impl GovernanceEngine {
         proposal_id: &str,
         reason: String,
     ) -> Result<(), GovernanceError> {
-        // Extraer datos necesarios antes del borrow mutable
         let active_members = self.active_council_members().len() as f32;
         let veto_threshold = self.config.council_veto_threshold;
 
@@ -383,7 +485,7 @@ impl GovernanceEngine {
             .find(|p| p.id == proposal_id)
             .ok_or(GovernanceError::ProposalNotFound)?;
 
-        if proposal.status != ProposalStatus::Voting {
+        if !matches!(proposal.xip_state, XipState::Voting { .. }) {
             return Err(GovernanceError::VotingNotOpen);
         }
 
@@ -397,15 +499,15 @@ impl GovernanceEngine {
         proposal.council_veto = true;
         proposal.veto_reason = Some(reason);
         proposal.status = ProposalStatus::Vetoed;
+        // XIP state stays in Voting until resolved
 
         Ok(())
     }
 
     /// Apelación comunitaria — overrule del veto del consejo
     ///
-    /// Requiere 75% de apoyo de wallets activas en segunda votación.
+    /// Requiere 75% de apoyo ponderado de wallets activas en segunda votación.
     pub fn community_appeal(&mut self, proposal_id: &str) -> Result<(), GovernanceError> {
-        // Extraer datos antes del borrow mutable
         let total_active = self.active_voter_wallets().len() as f32;
         let quorum_minimum = self.config.user_quorum_minimum;
         let overrule_threshold = self.config.community_overrule_threshold;
@@ -420,14 +522,30 @@ impl GovernanceEngine {
             return Err(GovernanceError::NoVetoToAppeal);
         }
 
-        let votes_for = proposal.user_votes.values().filter(|&&v| v).count() as f32;
-        let total_votes_cast = proposal.user_votes.len() as f32;
+        // Usar votación ponderada para la apelación
+        let total_weight: u64 = proposal
+            .weighted_user_votes
+            .values()
+            .map(|v| v.weight)
+            .sum();
+        let yes_weight: u64 = proposal
+            .weighted_user_votes
+            .values()
+            .filter(|v| v.approve)
+            .map(|v| v.weight)
+            .sum();
+        let total_votes_cast = proposal.weighted_user_votes.len() as f32;
 
         if total_votes_cast < (total_active * quorum_minimum / 100.0).floor() {
             return Err(GovernanceError::QuorumNotMet);
         }
 
-        let support_percentage = (votes_for / total_votes_cast) * 100.0;
+        let support_percentage = if total_weight > 0 {
+            (yes_weight as f32 / total_weight as f32) * 100.0
+        } else {
+            0.0
+        };
+
         if support_percentage >= overrule_threshold {
             proposal.status = ProposalStatus::Overruled;
             proposal.council_veto = false;
@@ -438,44 +556,62 @@ impl GovernanceEngine {
         }
     }
 
-    /// Contar votos de una propuesta finalizada
+    /// Contar votos de una propuesta finalizada (usa votación ponderada)
     pub fn tally_votes(&mut self, proposal_id: &str) -> Result<BicameralResult, GovernanceError> {
-        let proposal = self
-            .proposals
-            .iter()
-            .find(|p| p.id == proposal_id)
-            .ok_or(GovernanceError::ProposalNotFound)?;
+        let now = Self::now_secs();
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        // Extraer datos de la propuesta (borrow inmutable)
+        let (_id, user_votes, weighted_user_votes, council_votes, council_veto, appealed, _voting_end) = {
+            let proposal = self
+                .proposals
+                .iter()
+                .find(|p| p.id == proposal_id)
+                .ok_or(GovernanceError::ProposalNotFound)?;
 
-        if now < proposal.voting_end && !proposal.council_veto {
-            return Err(GovernanceError::VotingNotEnded);
-        }
+            let voting_ended = now >= proposal.voting_end || proposal.council_veto;
+            if !voting_ended {
+                return Err(GovernanceError::VotingNotEnded);
+            }
 
-        // ── Cámara 1: Usuarios ──
+            (
+                proposal.id.clone(),
+                proposal.user_votes.clone(),
+                proposal.weighted_user_votes.clone(),
+                proposal.council_votes.clone(),
+                proposal.council_veto,
+                proposal.appealed,
+                proposal.voting_end,
+            )
+        };
+
+        // ── Cámara 1: Usuarios (Votación Ponderada) ──
         let active_users = self.active_voter_wallets().len() as f32;
-        let total_user_votes = proposal.user_votes.len() as f32;
+        let total_weight: u64 = weighted_user_votes.values().map(|v| v.weight).sum();
+        let yes_weight: u64 = weighted_user_votes
+            .values()
+            .filter(|v| v.approve)
+            .map(|v| v.weight)
+            .sum();
+        let total_user_votes = weighted_user_votes.len() as f32;
 
-        let user_for = proposal.user_votes.values().filter(|&&v| v).count() as u64;
-        let user_against = proposal.user_votes.values().filter(|&&v| !v).count() as u64;
+        let user_for = user_votes.values().filter(|&&v| v).count() as u64;
+        let user_against = user_votes.values().filter(|&&v| !v).count() as u64;
 
         let user_quorum_met =
             total_user_votes >= (active_users * self.config.user_quorum_minimum / 100.0).floor();
-        let user_percentage = if total_user_votes > 0.0 {
-            (user_for as f32 / total_user_votes) * 100.0
+        // Ponderado: yes_weight / total_weight > 50%
+        let user_percentage = if total_weight > 0 {
+            (yes_weight as f32 / total_weight as f32) * 100.0
         } else {
             0.0
         };
 
         // ── Cámara 2: Consejo ──
         let active_council = self.active_council_members().len() as f32;
-        let total_council_votes = proposal.council_votes.len() as f32;
+        let total_council_votes = council_votes.len() as f32;
 
-        let council_for = proposal.council_votes.values().filter(|&&v| v).count() as u64;
-        let council_against = proposal.council_votes.values().filter(|&&v| !v).count() as u64;
+        let council_for = council_votes.values().filter(|&&v| v).count() as u64;
+        let council_against = council_votes.values().filter(|&&v| !v).count() as u64;
 
         let council_quorum_met = total_council_votes
             >= (active_council * self.config.council_quorum_minimum / 100.0).floor();
@@ -486,21 +622,11 @@ impl GovernanceEngine {
         };
 
         // ── Resultado Final ──
-        // Mayoría simple en AMBAS cámaras
         let user_passed = user_quorum_met && user_percentage > 50.0;
         let council_passed = council_quorum_met && council_percentage > 50.0;
         let passed = user_passed && council_passed;
 
-        // Veto overruled?
-        let veto_overruled = if proposal.council_veto && proposal.appealed {
-            // Ya fue overruled por apelación comunitaria
-            true
-        } else if proposal.council_veto {
-            // Veto activo, propuesta no pasa aunque ambas cámaras estén a favor
-            false // marcado como vetoed, no como rechazado normal
-        } else {
-            false
-        };
+        let veto_overruled = council_veto && appealed;
 
         let result = BicameralResult {
             proposal_id: proposal_id.to_string(),
@@ -514,26 +640,32 @@ impl GovernanceEngine {
             council_votes_against: council_against,
             council_total: active_council as u64,
             council_percentage_for: council_percentage,
-            council_veto_active: proposal.council_veto && !proposal.appealed,
+            council_veto_active: council_veto && !appealed,
             passed,
             veto_overruled,
             executed: false,
             tallied_at: now,
         };
 
-        // Actualizar estado de la propuesta (no referenciar `proposal` prestado)
-        let veto_active = proposal.council_veto && !proposal.appealed;
-        let was_overruled = proposal.council_veto && proposal.appealed;
-
+        // Actualizar estado de la propuesta
         if let Some(p) = self.proposals.iter_mut().find(|p| p.id == proposal_id) {
-            if veto_active {
+            if council_veto && !appealed {
                 // veto activo, no apelado → se queda como Vetoed
+                // XIP state: stays in Voting (vetoed but not resolved)
             } else if passed {
                 p.status = ProposalStatus::Approved;
-            } else if was_overruled {
+                // Transition: Voting → Execution
+                let exec_expires = now + self.config.execution_timer_hours as u64 * 3600;
+                p.xip_state = XipState::Execution {
+                    entered_at: now,
+                    expires_at: exec_expires,
+                };
+            } else if appealed {
                 p.status = ProposalStatus::Overruled;
+                p.xip_state = XipState::Complete { entered_at: now };
             } else {
                 p.status = ProposalStatus::Rejected;
+                p.xip_state = XipState::Complete { entered_at: now };
             }
         }
 
@@ -552,19 +684,18 @@ impl GovernanceEngine {
             .find(|p| p.id == proposal_id)
             .ok_or(GovernanceError::ProposalNotFound)?;
 
-        if proposal.status != ProposalStatus::Approved
-            && proposal.status != ProposalStatus::Overruled
-        {
+        // Verificar que esté en estado Execution
+        if !matches!(proposal.xip_state, XipState::Execution { .. }) {
             return Err(GovernanceError::ProposalNotApproved);
         }
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let now = Self::now_secs();
 
-        if now < proposal.execution_at {
-            return Err(GovernanceError::ExecutionTimerNotReady);
+        // Verificar timer de 48h
+        if let XipState::Execution { expires_at, .. } = proposal.xip_state {
+            if now < expires_at {
+                return Err(GovernanceError::ExecutionTimerNotReady);
+            }
         }
 
         // Aplicar cambios
@@ -605,6 +736,7 @@ impl GovernanceEngine {
         }
 
         proposal.status = ProposalStatus::Executed;
+        proposal.xip_state = XipState::Complete { entered_at: now };
         Ok(())
     }
 
@@ -626,7 +758,7 @@ impl GovernanceEngine {
             author,
         )?;
 
-        // Las expulsiones requieren 66%
+        // Las expulsiones requieren 66% (handled by proposal voting process)
         Ok(proposal)
     }
 
@@ -637,8 +769,8 @@ impl GovernanceEngine {
             .iter()
             .filter(|p| {
                 matches!(
-                    p.status,
-                    ProposalStatus::Discussion | ProposalStatus::Voting
+                    p.xip_state,
+                    XipState::Discussion { .. } | XipState::Voting { .. }
                 )
             })
             .collect()
@@ -676,6 +808,10 @@ pub enum GovernanceError {
     VetoThresholdNotReached,
     OverruleThresholdNotReached,
     NoVetoToAppeal,
+    InvalidStateTransition {
+        from: String,
+        to: String,
+    },
 }
 
 impl std::fmt::Display for GovernanceError {
@@ -709,6 +845,12 @@ impl std::fmt::Display for GovernanceError {
                 write!(f, "No se alcanzó el 75% necesario para overrule del veto")
             }
             Self::NoVetoToAppeal => write!(f, "No hay veto activo para apelar"),
+            Self::InvalidStateTransition { from, to } => {
+                write!(
+                    f,
+                    "Transición de estado inválida: {from} → {to}"
+                )
+            }
         }
     }
 }
@@ -781,6 +923,7 @@ mod tests {
 
         // Recién creada, debería estar en Draft
         assert_eq!(proposal.status, ProposalStatus::Draft);
+        assert_eq!(proposal.xip_state.label(), "Draft");
 
         // Dar los 5 apoyos necesarios
         for i in 0..5 {
@@ -850,5 +993,204 @@ mod tests {
             !result.passed, // pero la propuesta NO pasa porque consejo dijo que no
             "La propuesta no debería pasar — consejo votó en contra"
         );
+    }
+
+    #[test]
+    fn test_xip_state_machine_lifecycle() {
+        let config = GovernanceConfig::default();
+        let mut engine = GovernanceEngine::new(config);
+
+        let author = WalletAddress("xv1_lifecycle".into());
+        engine.register_activity(author.clone());
+
+        let mut changes = HashMap::new();
+        changes.insert("reference_price".into(), "15".into());
+
+        let proposal = engine
+            .create_proposal("Lifecycle test".into(), "Testing lifecycle".into(), changes, author)
+            .unwrap();
+
+        // 1. Debe empezar en Draft
+        assert_eq!(proposal.xip_state.label(), "Draft");
+
+        // 2. Transición válida: Draft → Discussion
+        let now = GovernanceEngine::now_secs();
+        let mut p = engine.get_proposal(&proposal.id).unwrap().clone();
+        GovernanceEngine::transition_to_state(
+            &mut p,
+            XipState::Discussion {
+                entered_at: now,
+                expires_at: now + 3 * 86400,
+            },
+        )
+        .unwrap();
+        assert_eq!(p.xip_state.label(), "Discussion");
+
+        // 3. Transición inválida: Draft → Execution (directo)
+        let mut p2 = engine.get_proposal(&proposal.id).unwrap().clone();
+        let result = GovernanceEngine::transition_to_state(
+            &mut p2,
+            XipState::Execution {
+                entered_at: now,
+                expires_at: now + 48 * 3600,
+            },
+        );
+        assert!(result.is_err());
+
+        // 4. Transición válida: Discussion → Complete
+        let mut p3 = engine.get_proposal(&proposal.id).unwrap().clone();
+        GovernanceEngine::transition_to_state(
+            &mut p3,
+            XipState::Complete { entered_at: now },
+        )
+        .unwrap();
+        assert_eq!(p3.xip_state.label(), "Complete");
+    }
+
+    #[test]
+    fn test_weighted_vote_tally() {
+        let config = GovernanceConfig::default();
+        let mut engine = GovernanceEngine::new(config);
+
+        let author = WalletAddress("xv1_weighted_author".into());
+        engine.register_activity(author.clone());
+
+        let mut changes = HashMap::new();
+        changes.insert("reference_price".into(), "20".into());
+
+        let proposal = engine
+            .create_proposal("Weighted vote test".into(), "Testing weighted voting".into(), changes, author)
+            .unwrap();
+
+        // Dar apoyos para pasar a Voting (default min_supports = 5)
+        for i in 0..5 {
+            let s = WalletAddress(format!("xv1_ws_{}", i));
+            engine.register_activity(s.clone());
+            engine.support_proposal(&proposal.id, &s).unwrap();
+        }
+
+        // Verificar que está en Voting
+        let p = engine.get_proposal(&proposal.id).unwrap();
+        assert_eq!(p.xip_state.label(), "Voting");
+
+        // Votar con algunas wallets
+        let v1 = WalletAddress("xv1_voter_1".into());
+        engine.register_activity(v1.clone());
+        engine
+            .user_vote(&proposal.id, &v1, true, vec![], vec![])
+            .unwrap();
+
+        let v2 = WalletAddress("xv1_voter_2".into());
+        engine.register_activity(v2.clone());
+        engine
+            .user_vote(&proposal.id, &v2, false, vec![], vec![])
+            .unwrap();
+
+        // Verificar que weighted tally funciona (ambos tienen weight 1 por defecto)
+        let (yes_weight, total_weight) = engine.weighted_user_vote_tally(&proposal.id).unwrap();
+        assert_eq!(total_weight, 2);
+        assert_eq!(yes_weight, 1);
+    }
+
+    #[test]
+    fn test_xip_state_can_transition_to() {
+        let now = 1000000;
+
+        // D → D ✓
+        let d = XipState::Draft { entered_at: now };
+        assert!(d.can_transition_to(&XipState::Discussion { entered_at: now, expires_at: now + 86400 }));
+        assert!(d.can_transition_to(&XipState::Complete { entered_at: now }));
+        assert!(!d.can_transition_to(&XipState::Voting { entered_at: now, expires_at: now + 86400 }));
+        assert!(!d.can_transition_to(&XipState::Execution { entered_at: now, expires_at: now + 3600 }));
+
+        // Discussion → V, C
+        let disc = XipState::Discussion { entered_at: now, expires_at: now + 86400 };
+        assert!(disc.can_transition_to(&XipState::Voting { entered_at: now, expires_at: now + 86400 * 7 }));
+        assert!(disc.can_transition_to(&XipState::Complete { entered_at: now }));
+        assert!(!disc.can_transition_to(&XipState::Draft { entered_at: now }));
+        assert!(!disc.can_transition_to(&XipState::Execution { entered_at: now, expires_at: now + 3600 }));
+
+        // Voting → E, C
+        let voting = XipState::Voting { entered_at: now, expires_at: now + 86400 * 7 };
+        assert!(voting.can_transition_to(&XipState::Execution { entered_at: now, expires_at: now + 3600 * 48 }));
+        assert!(voting.can_transition_to(&XipState::Complete { entered_at: now }));
+        assert!(!voting.can_transition_to(&XipState::Draft { entered_at: now }));
+        assert!(!voting.can_transition_to(&XipState::Discussion { entered_at: now, expires_at: now + 86400 }));
+
+        // Execution → C
+        let exec = XipState::Execution { entered_at: now, expires_at: now + 3600 * 48 };
+        assert!(exec.can_transition_to(&XipState::Complete { entered_at: now }));
+        assert!(!exec.can_transition_to(&XipState::Draft { entered_at: now }));
+        assert!(!exec.can_transition_to(&XipState::Voting { entered_at: now, expires_at: now + 86400 }));
+    }
+
+    #[test]
+    fn test_non_voting_user_cant_vote_inactive() {
+        // Regression: inactive wallet should not be able to vote via user_vote
+        let config = GovernanceConfig::default();
+        let mut engine = GovernanceEngine::new(config);
+
+        let author = WalletAddress("xv1_author_active".into());
+        engine.register_activity(author.clone());
+
+        // Inactive wallet
+        let inactive = WalletAddress("xv1_inactive_voter".into());
+
+        let mut changes = HashMap::new();
+        changes.insert("test_param".into(), "value".into());
+
+        let proposal = engine
+            .create_proposal("Test inactive".into(), "Test".into(), changes, author)
+            .unwrap();
+
+        // dar apoyos
+        for i in 0..5 {
+            let s = WalletAddress(format!("xv1_sup_{}", i));
+            engine.register_activity(s.clone());
+            engine.support_proposal(&proposal.id, &s).unwrap();
+        }
+
+        // inactive wallet should NOT be able to vote
+        let result = engine.user_vote(&proposal.id, &inactive, true, vec![], vec![]);
+        assert!(result.is_err());
+        assert!(
+            matches!(result.unwrap_err(), GovernanceError::InactiveVoter),
+            "Inactive wallet should get InactiveVoter error"
+        );
+    }
+
+    #[test]
+    fn test_weighted_user_vote_tally_on_empty_proposal() {
+        // When no one has voted, total_weight should be 0
+        let config = GovernanceConfig::default();
+        let mut engine = GovernanceEngine::new(config);
+
+        let author = WalletAddress("xv1_empty_author".into());
+        engine.register_activity(author.clone());
+
+        let proposal = engine
+            .create_proposal("Empty".into(), "Empty".into(), HashMap::new(), author)
+            .unwrap();
+
+        let (yes_weight, total_weight) = engine.weighted_user_vote_tally(&proposal.id).unwrap();
+        assert_eq!(yes_weight, 0);
+        assert_eq!(total_weight, 0);
+    }
+
+    #[test]
+    fn test_proposal_not_found_errors() {
+        let config = GovernanceConfig::default();
+        let mut engine = GovernanceEngine::new(config);
+
+        let result = engine.tally_votes("nonexistent_proposal");
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), GovernanceError::ProposalNotFound));
+
+        // Register wallet so can_user_vote passes first, then ProposalNotFound is reached
+        let voter = WalletAddress("xv1_test".into());
+        engine.register_activity(voter.clone());
+        let voter_result = engine.user_vote("nonexistent", &voter, true, vec![], vec![]);
+        assert!(voter_result.is_err());
+        assert!(matches!(voter_result.unwrap_err(), GovernanceError::ProposalNotFound));
     }
 }

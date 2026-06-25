@@ -300,6 +300,20 @@ impl ContributionCalculator {
     }
 }
 
+/// Obtener el peso de reputación de una wallet para votación ponderada
+///
+/// Returns a u64 weight based on the trust score (EigenTrust + contribution).
+/// If no score is available, returns 1 (base weight = 1 vote).
+/// Scale: 1-1000 where higher = more influence in voting.
+pub fn reputation_weight(_wallet_id: &str) -> u64 {
+    // Base weight is always 1 for active wallets
+    // In production this would query EigenTrust scores and compute:
+    // weight = 1 + (trust_score_normalized * 999)
+    // For now, return 1 so every active wallet has at least 1 unit of voting power.
+    // This is intentionally simple for the initial implementation.
+    1
+}
+
 /// Historial de contribución de una wallet
 #[derive(Debug, Clone, Default)]
 pub struct ContributionHistory {
