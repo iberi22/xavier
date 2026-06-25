@@ -1,5 +1,5 @@
 {
-    "_comment": "Feature tracking file for Xavier Cognitive Memory System — actualizado 2026-06-25 con nuevo features OpenClawScanner y CLI Agent Commands",
+    "_comment": "Feature tracking file for Xavier Cognitive Memory System — actualizado 2026-06-25: governance lifecycle implementado, OpenClawScanner y CLI Agent Commands completados",
     "metadata": {
         "project": "Xavier",
         "version": "0.7.0-beta",
@@ -7,11 +7,11 @@
         "last_verified": "2026-06-25",
         "total_features": 20,
         "features_complete": 11,
-        "features_beta": 4,
-        "features_draft": 3,
+        "features_beta": 5,
+        "features_draft": 2,
         "features_planned": 2,
         "features_stable": 11,
-        "overall_progress_pct": 73
+        "overall_progress_pct": 75
     },
     "features": [
         {
@@ -299,25 +299,25 @@
             "id": "feat-governance-dao",
             "name": "Bicameral Governance DAO",
             "category": "enterprise",
-            "status": "draft",
-            "progress_pct": 30,
-            "description": "Bicameral governance system — 50% node operators + 50% Xavier Core Council — with weighted voting, veto, and on-chain integration",
+            "status": "beta",
+            "progress_pct": 70,
+            "description": "Bicameral governance system — 50% node operators + 50% Xavier Core Council — with weighted voting, veto, XIP lifecycle, and on-chain integration",
             "steps": [
                 "Bicameral DAO design (users + council)",
                 "Weighted voting by reputation + activity",
-                "On-chain integration (Solana/Ethereum)",
-                "Quorum detection and dynamic thresholds",
+                "XIP lifecycle (proposal → discussion → vote → execution)",
                 "Veto mechanism (66% council for security)",
                 "Community overrule (75% override veto)",
-                "XIP lifecycle (proposal → discussion → vote → execution)",
+                "On-chain integration (Solana/Ethereum)",
+                "Quorum detection and dynamic thresholds",
                 "UI for proposal browsing and voting"
             ],
-            "passes": false,
-            "verified_by": "design",
-            "github_issue": null,
-            "last_tested": "2026-06-16",
-            "notes": "Bicameral governance designed in src/data_commons/governance.rs. Mock DAO in src/mesh/governance.rs. Missing: on-chain integration, XIP lifecycle, weighted voting by reputation, UI.",
-            "implemented_in": "src/data_commons/governance.rs, src/mesh/governance.rs"
+            "passes": true,
+            "verified_by": "build",
+            "github_issue": 322,
+            "last_tested": "2026-06-25",
+            "notes": "XIP lifecycle state machine (Draft→Discussion→Voting→Execution→Complete) con auto-transiciones implementado. Weighted voting por reputation (trust score) implementado. Bicameral decision integration: 50% user + 50% council. Council veto (66%) y community overrule (75%). PR #347 mergeado. 11 governance tests pasan. Missing: on-chain integration, UI, quorum detection.",
+            "implemented_in": "src/data_commons/governance.rs, src/data_commons/reputation.rs, src/data_commons/types.rs, src/mesh/governance.rs"
         },
         {
             "id": "feat-runtime-health",
