@@ -235,6 +235,60 @@ pub struct ReputationAttestation {
 // Gobernanza
 // ---------------------------------------------------------------------------
 
+/// Estados del ciclo de vida de un XIP (Draft → Discussion → Voting → Execution → Complete)
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum XipState {
+    /// Borrador inicial
+    Draft {
+        entered_at: u64,
+    },
+    /// Discusión abierta (3 días)
+    Discussion {
+        entered_at: u64,
+        expires_at: u64,
+    },
+    /// Votación activa (7 días)
+    Voting {
+        entered_at: u64,
+        expires_at: u64,
+    },
+    /// Propuesta aprobada, en espera de ejecución (48h)
+    Execution {
+        entered_at: u64,
+        expires_at: u64,
+    },
+    /// Completado (ejecutado o finalizado)
+    Complete {
+        entered_at: u64,
+    },
+}
+
+impl XipState {
+    /// Validar si una transición de estado es legal
+    pub fn can_transition_to(&self, new_state: &XipState) -> bool {
+        match (self, new_state) {
+            (XipState::Draft { .. }, XipState::Discussion { .. })
+            | (XipState::Draft { .. }, XipState::Complete { .. }) => true,
+            (XipState::Discussion { .. }, XipState::Voting { .. })
+            | (XipState::Discussion { .. }, XipState::Complete { .. }) => true,
+            (XipState::Voting { .. }, XipState::Execution { .. })
+            | (XipState::Voting { .. }, XipState::Complete { .. }) => true,
+            (XipState::Execution { .. }, XipState::Complete { .. }) => true,
+            _ => false,
+        }
+    }
+
+    pub fn label(&self) -> &str {
+        match self {
+            XipState::Draft { .. } => "Draft",
+            XipState::Discussion { .. } => "Discussion",
+            XipState::Voting { .. } => "Voting",
+            XipState::Execution { .. } => "Execution",
+            XipState::Complete { .. } => "Complete",
+        }
+    }
+}
+
 /// Propuesta de mejora (XIP)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct XipProposal {
@@ -248,8 +302,10 @@ pub struct XipProposal {
     pub changes: HashMap<String, String>,
     /// Wallet creadora
     pub author: WalletAddress,
-    /// Estado de la propuesta
+    /// Estado de la propuesta (legacy — kept for backward compat)
     pub status: ProposalStatus,
+    /// Nuevo ciclo de vida XIP (en paralelo con status legacy)
+    pub xip_state: XipState,
     /// Timestamps
     pub created_at: u64,
     pub discussion_end: u64,
@@ -257,6 +313,8 @@ pub struct XipProposal {
     pub execution_at: u64,
     /// Votos de usuarios: wallet → vote (true = a favor)
     pub user_votes: HashMap<WalletAddress, bool>,
+    /// Votos ponderados por reputación: wallet → WeightedVote
+    pub weighted_user_votes: HashMap<WalletAddress, WeightedVote>,
     /// Votos del consejo: member_id → vote
     pub council_votes: HashMap<String, bool>,
     /// Apoyos (wallets que apoyan la propuesta para pasar a votación)
@@ -267,6 +325,18 @@ pub struct XipProposal {
     pub veto_reason: Option<String>,
     /// La propuesta fue apelada por la comunidad?
     pub appealed: bool,
+}
+
+/// Voto ponderado por reputación
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WeightedVote {
+    pub wallet_id: WalletAddress,
+    /// Peso del voto (trust score normalizado)
+    pub weight: u64,
+    /// A favor (true) o en contra (false)
+    pub approve: bool,
+    /// Timestamp del voto
+    pub timestamp: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
