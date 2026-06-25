@@ -24,6 +24,10 @@ impl AgentIndexer {
         }
     }
 
+    pub fn scanner(&self) -> &AgentScanner {
+        &self.scanner
+    }
+
     /// Escanea, formatea a Markdown e indexa en la base de datos de memoria
     pub async fn index_agents(&self) -> Result<Vec<IndexedFile>> {
         info!("🤖 Starting Agentic IDE Conversation Indexing...");
