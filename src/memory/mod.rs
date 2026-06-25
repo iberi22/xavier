@@ -18,6 +18,8 @@ pub mod hierarchy;
 pub mod languages;
 pub mod layers_config;
 pub mod manager;
+pub mod openclaw_indexer;
+pub mod openclaw_scanner;
 pub mod pack;
 pub mod postgres_store;
 pub mod supabase_store;
