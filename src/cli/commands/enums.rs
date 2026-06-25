@@ -264,11 +264,56 @@ pub enum Command {
         #[command(subcommand)]
         cmd: CloudCommand,
     },
+    /// Manage agents (OpenClaw)
+    Agent {
+        #[command(subcommand)]
+        cmd: AgentCommand,
+    },
     /// Show system health status
     Health {
         /// Show cloud backends status
         #[arg(long)]
         cloud: bool,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum AgentCommand {
+    /// Scan for OpenClaw agents
+    Scan {
+        /// Optional agent ID to scan
+        #[arg(long)]
+        agent: Option<String>,
+    },
+    /// Index agent sessions into local memory
+    Index {
+        /// Optional agent ID to index
+        #[arg(long)]
+        agent: Option<String>,
+    },
+    /// Push agent memory to cloud (Supabase)
+    Push {
+        /// Optional agent ID to push
+        #[arg(long)]
+        agent: Option<String>,
+    },
+    /// Pull agent memory from cloud (Supabase)
+    Pull {
+        /// Optional agent ID to pull
+        #[arg(long)]
+        agent: Option<String>,
+    },
+    /// Show sync status for agents
+    Status {
+        /// Optional agent ID to show status for
+        #[arg(long)]
+        agent: Option<String>,
+    },
+    /// Scan, index, and push agent memory
+    Sync {
+        /// Optional agent ID to sync
+        #[arg(long)]
+        agent: Option<String>,
     },
 }
 

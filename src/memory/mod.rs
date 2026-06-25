@@ -4,6 +4,8 @@
 //! providing the public API surface for module consumers.
 pub mod agent_indexer;
 pub mod agent_scanner;
+pub mod openclaw_indexer;
+pub mod openclaw_scanner;
 pub mod belief_graph;
 pub mod bridge;
 pub mod checkpoint_summary;

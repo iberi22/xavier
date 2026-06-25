@@ -472,6 +472,7 @@ pub struct EnterpriseSettings {
 #[serde(default)]
 pub struct AgentSettings {
     pub weekly_budget: Option<u64>,
+    pub agents_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
