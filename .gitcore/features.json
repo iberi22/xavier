@@ -1,17 +1,17 @@
 {
-    "_comment": "Feature tracking file for Xavier Cognitive Memory System — actualizado 2026-06-16 con visión expandida: mesh, runtime health, governance, dual license",
+    "_comment": "Feature tracking file for Xavier Cognitive Memory System — actualizado 2026-06-25 con nuevo features OpenClawScanner y CLI Agent Commands",
     "metadata": {
         "project": "Xavier",
-        "version": "0.6.1-beta",
+        "version": "0.7.0-beta",
         "created": "2026-03-05",
-        "last_verified": "2026-06-16",
-        "total_features": 18,
-        "features_complete": 10,
+        "last_verified": "2026-06-25",
+        "total_features": 20,
+        "features_complete": 11,
         "features_beta": 4,
-        "features_draft": 2,
+        "features_draft": 3,
         "features_planned": 2,
-        "features_stable": 10,
-        "overall_progress_pct": 72
+        "features_stable": 11,
+        "overall_progress_pct": 73
     },
     "features": [
         {
@@ -425,6 +425,50 @@
             "last_tested": null,
             "notes": "NOT BUILD YET. Vision: self-tuning memory system that continuously optimizes for production query patterns. Requires feat-runtime-health and feat-auto-improvement first.",
             "implemented_in": null
+        },
+        {
+            "id": "feat-openclaw-scanner",
+            "name": "OpenClaw Agent Scanner",
+            "category": "integration",
+            "status": "stable",
+            "progress_pct": 100,
+            "description": "Scans clawd/agents/ directories for OpenClaw agent memory files (MEMORY.md, SOUL.md, USER.md, daily logs)",
+            "steps": [
+                "Implement OpenClawAgentScanner struct",
+                "scan_all_agents() — recursive directory scan",
+                "scan_agent(name) — single agent scan",
+                "Detect MEMORY.md, TOOLS.md, SOUL.md, USER.md, daily logs",
+                "Integration with OpenClawAgentIndexer for embedding",
+                "Wire into CloudMemorySync for Supabase push"
+            ],
+            "passes": true,
+            "verified_by": "automated",
+            "github_issue": 336,
+            "last_tested": "2026-06-25",
+            "notes": "Implemented and merged via PR #342 (commit c6923009). Uses tokio::fs async I/O. AgentMemory struct with all required fields. Issue #336 closed.",
+            "implemented_in": "src/memory/openclaw_scanner.rs, src/memory/openclaw_indexer.rs"
+        },
+        {
+            "id": "feat-agent-cli-commands",
+            "name": "Xavier Agent CLI Commands",
+            "category": "integration",
+            "status": "stable",
+            "progress_pct": 100,
+            "description": "CLI commands: xavier agent scan/index/push/pull/status/sync for managing OpenClaw agent memory",
+            "steps": [
+                "Add AgentCommand enum with Scan, Index, Push, Pull subcommands",
+                "Add Status and Sync subcommands",
+                "Handler in src/cli/handlers/agent_cli.rs",
+                "HTTP route /xavier/agents/status",
+                "Full sync mode: scan+index+push in sequence",
+                "JSON output mode for scripting"
+            ],
+            "passes": true,
+            "verified_by": "build",
+            "github_issue": 339,
+            "last_tested": "2026-06-25",
+            "notes": "Implemented via PRs #342, #345, #346. Status and Sync subcommands added 2026-06-25. Issue #339 closed. cargo check passes, tests: 943 pass, 10 pre-existing failures.",
+            "implemented_in": "src/cli/commands/enums.rs, src/cli/handlers/agent_cli.rs, src/cli/server.rs, src/cli/handlers/agent.rs"
         }
     ],
     "verification_commands": {
