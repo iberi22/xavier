@@ -264,11 +264,56 @@ pub enum Command {
         #[command(subcommand)]
         cmd: CloudCommand,
     },
+    /// Manage agent memory and IDE sessions
+    Agent {
+        #[command(subcommand)]
+        cmd: AgentCommand,
+    },
     /// Show system health status
     Health {
         /// Show cloud backends status
         #[arg(long)]
         cloud: bool,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum AgentCommand {
+    /// Scan for IDE agent sessions (Cursor, Windsurf, etc.)
+    Scan {
+        /// Filter by agent/IDE name
+        #[arg(short, long)]
+        agent: Option<String>,
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+    /// Index scanned agent sessions into Xavier memory
+    Index {
+        /// Filter by agent/IDE name
+        #[arg(short, long)]
+        agent: Option<String>,
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+    /// Push agent memories to cloud backend
+    Push {
+        /// Filter by agent/IDE name
+        #[arg(short, long)]
+        agent: Option<String>,
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
+    },
+    /// Pull agent memories from cloud backend
+    Pull {
+        /// Filter by agent/IDE name
+        #[arg(short, long)]
+        agent: Option<String>,
+        /// Output in JSON format
+        #[arg(long)]
+        json: bool,
     },
 }
 

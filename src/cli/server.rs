@@ -358,6 +358,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/xavier/time/metric", post(time_metric_handler))
         .route("/xavier/agents/register", post(agent_register_handler))
         .route("/xavier/agents/active", get(agent_active_handler))
+        .route("/xavier/agents/scan", get(agent_scan_handler))
+        .route("/xavier/agents/index", post(agent_index_handler))
+        .route("/xavier/agents/sync", post(agent_sync_handler))
         .route(
             "/xavier/agents/{id}/heartbeat",
             post(agent_heartbeat_handler),

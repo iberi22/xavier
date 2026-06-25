@@ -164,3 +164,87 @@ pub async fn agent_list_handler(
         "count": agents.len()
     }))
 }
+
+pub async fn agent_scan_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    match state.agent_indexer.scanner().scan_all().await {
+        Ok(sessions) => axum::Json(serde_json::json!({
+            "status": "ok",
+            "count": sessions.len(),
+            "sessions": sessions,
+        })),
+        Err(e) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": format!("Failed to scan agents: {}", e),
+        })),
+    }
+}
+
+pub async fn agent_index_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    match state.agent_indexer.index_agents().await {
+        Ok(indexed_files) => {
+            let mut count = 0;
+            for file in indexed_files {
+                let record = MemoryRecord {
+                    id: uuid::Uuid::new_v4().to_string(),
+                    workspace_id: state.workspace_id.clone(),
+                    path: file.path,
+                    content: file.content,
+                    metadata: serde_json::json!({
+                        "source": "agent_scanner",
+                        "last_modified": file.last_modified,
+                        "size": file.size,
+                    }),
+                    embedding: vec![],
+                    created_at: chrono::Utc::now(),
+                    updated_at: chrono::Utc::now(),
+                    revision: 1,
+                    primary: true,
+                    parent_id: None,
+                    cluster_id: None,
+                    level: MemoryLevel::Raw,
+                    relation: None,
+                    clearance: Default::default(),
+                    revisions: vec![],
+                    encrypted_dek: None,
+                    content_iv: None,
+                    metadata_iv: None,
+                };
+                if state.memory.add(record).await.is_ok() {
+                    count += 1;
+                }
+            }
+            axum::Json(serde_json::json!({
+                "status": "ok",
+                "indexed_count": count,
+            }))
+        }
+        Err(e) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": format!("Failed to index agents: {}", e),
+        })),
+    }
+}
+
+pub async fn agent_sync_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    // Reuse tasks sync logic for now or implement direct cloud sync trigger
+    let mode = payload["mode"].as_str().unwrap_or("bidirectional");
+
+    match state.store.sync_all(&state.workspace_id).await {
+        Ok(stats) => axum::Json(serde_json::json!({
+            "status": "ok",
+            "message": "Agent memory synchronization completed",
+            "stats": stats,
+        })),
+        Err(e) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": format!("Synchronization failed: {}", e),
+        })),
+    }
+}

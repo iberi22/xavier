@@ -3,6 +3,7 @@
 //! This module re-exports handlers from sub-modules for cleaner organization.
 
 pub mod agent;
+pub mod agent_cli;
 pub mod billing;
 pub mod cloud;
 pub mod sync;
@@ -29,6 +30,7 @@ pub mod usage;
 pub mod workspace;
 
 pub use agent::*;
+pub use agent_cli::*;
 pub use code::*;
 pub use memory::*;
 pub use mesh::*;
