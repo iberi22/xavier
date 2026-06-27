@@ -111,3 +111,4 @@ jobs:
             echo "- 🔒 Event-based triggers only" >> $GITHUB_STEP_SUMMARY
             echo "- 🔒 Minimal resource usage" >> $GITHUB_STEP_SUMMARY
           fi
+

@@ -34,3 +34,4 @@ jobs:
         with:
           name: tri-memory-benchmark-results
           path: benchmarks/results/
+

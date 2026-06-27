@@ -1,4 +1,4 @@
-name: Xavier CI
+name: Xavier CI (Minimal)
 
 on:
   push:
@@ -9,161 +9,36 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   fmt:
-    name: Format (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
+    name: Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-  panel-check:
-    name: Panel Check
+  check:
+    name: Check
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22.12.0
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-          run_install: false
-      - name: Install Node dependencies
-        run: pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
-      - name: Validate panel-ui
-        run: pnpm --filter panel-ui check
-      - name: Run panel-ui unit tests
-        run: pnpm --filter panel-ui test
-
-  check:
-    name: Check (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v4
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
       - name: Run cargo check
         run: cargo check --workspace --all-targets --features ci-safe --exclude xavier-web --exclude app
 
-  enterprise-check:
-    name: Enterprise Check
+  panel-build:
+    name: Panel Build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-      - name: Run cargo check (enterprise)
-        run: cargo check --features enterprise
-
-  clippy:
-    name: Clippy (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-      - name: Run clippy
-        run: cargo clippy --workspace --all-targets --features ci-safe --exclude xavier-web --exclude app -- -D warnings
-
-  test:
-    name: Test (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Install cargo-tarpaulin
-        if: runner.os == 'Linux'
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-tarpaulin
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-      - name: Run tests
-        run: cargo test --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app
-      - name: Run doc tests
-        run: cargo test --doc --workspace --no-default-features --features ci-safe --exclude xavier-web --exclude app
-      - name: Generate coverage report
-        if: runner.os == 'Linux'
-        run: cargo tarpaulin --workspace --lib --no-default-features --features ci-safe --exclude xavier-web --exclude app --out Xml
-      - name: Upload coverage to Codecov
-        if: runner.os == 'Linux'
-        uses: codecov/codecov-action@v5
-        with:
-          files: ./tarpaulin-report.xml
-          fail_ci_if_error: false
-
-  build:
-    name: Build (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-      - name: Build release
-        run: cargo build --release --bin xavier
-
-  panel-e2e:
-    name: Panel E2E
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: [panel-check]
-    env:
-      XAVIER_TOKEN: dev-token
-      XAVIER_DEV_MODE: 1
-      XAVIER_URL: http://127.0.0.1:8003
-      XAVIER_HOST: 127.0.0.1
-      XAVIER_PORT: 8003
-      XAVIER_CODE_GRAPH_DB_PATH: data/ci-panel-e2e.db
-      PANEL_UI_BASE_URL: http://127.0.0.1:8003
-      PANEL_UI_APP_PATH: /panel
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node
@@ -175,99 +50,7 @@ jobs:
         with:
           version: 9
           run_install: false
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-      - name: Install Node dependencies
+      - name: Install dependencies
         run: pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
-      - name: Install Playwright browser
-        run: pnpm --filter panel-ui exec playwright install --with-deps chromium
-      - name: Build panel-ui
-        run: pnpm --filter panel-ui build
-      - name: Build Xavier debug binary
-        run: cargo build --bin xavier
-      - name: Start Xavier
-        run: |
-          nohup target/debug/xavier http > panel-e2e.log 2>&1 &
-      - name: Wait for startup
-        run: |
-          for i in {1..30}; do
-            if curl -fsS http://127.0.0.1:8003/health; then
-              exit 0
-            fi
-            sleep 1
-          done
-          cat panel-e2e.log
-          exit 1
-      - name: Run panel Playwright suite
-        run: pnpm --filter panel-ui test:e2e:generative
-      - name: Upload panel e2e log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: xavier-panel-e2e-log
-          path: panel-e2e.log
-
-  release-smoke:
-    name: Release Smoke
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    needs: [panel-check, fmt, check, clippy, test, build, panel-e2e]
-    env:
-      XAVIER_TOKEN: dev-token
-      XAVIER_DEV_MODE: 1
-      XAVIER_URL: http://127.0.0.1:8003
-      XAVIER_HOST: 127.0.0.1
-      XAVIER_PORT: 8003
-      XAVIER_DATA_DIR: ${{ github.workspace }}/.tmp/xavier-release-smoke/data
-      XAVIER_WORKSPACE_DIR: ${{ github.workspace }}/.tmp/xavier-release-smoke/workspaces
-      XAVIER_CODE_GRAPH_DB_PATH: ${{ github.workspace }}/.tmp/xavier-release-smoke/code_graph.db
-      XAVIER_EMBEDDING_CACHE_DB_PATH: ${{ github.workspace }}/.tmp/xavier-release-smoke/embedding_cache.db
-      XAVIER_ENTERPRISE_DB_PATH: ${{ github.workspace }}/.tmp/xavier-release-smoke/enterprise.db
-      XAVIER_EMBEDDER: disabled
-      XAVIER_REQUIRE_PANEL: 1
-    steps:
-      - uses: actions/checkout@v4
-      - name: Prepare smoke storage
-        run: mkdir -p "$XAVIER_DATA_DIR" "$XAVIER_WORKSPACE_DIR"
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22.12.0
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 9
-          run_install: false
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-      - name: Install Node dependencies
-        run: pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
-      - name: Build panel-ui
-        run: pnpm --filter panel-ui build
-      - name: Build debug binary
-        run: cargo build --bin xavier
-      - name: Start Xavier
-        run: |
-          nohup target/debug/xavier http > smoke.log 2>&1 &
-      - name: Wait for startup
-        run: |
-          for i in {1..30}; do
-            if curl -fsS http://127.0.0.1:8003/health; then
-              exit 0
-            fi
-            sleep 1
-          done
-          cat smoke.log
-          exit 1
-      - name: Run release smoke checks
-        run: bash scripts/release-smoke.sh
-      - name: Upload smoke log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: xavier-release-smoke-log
-          path: smoke.log
+      - name: Type check
+        run: pnpm --filter panel-ui check

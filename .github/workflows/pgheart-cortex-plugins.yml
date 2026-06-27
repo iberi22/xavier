@@ -71,3 +71,4 @@ jobs:
             exit 0
           fi
           cargo run --package xavier --bin xavier -- plugin sync pgheart ${{ inputs.direction || 'both' }} 2>&1
+

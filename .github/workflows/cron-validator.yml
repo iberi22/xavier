@@ -28,3 +28,4 @@ jobs:
 
       - name: Run Cron Validator
         run: node scripts/validate-cron.js
+
