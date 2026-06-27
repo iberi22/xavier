@@ -1,4 +1,4 @@
-﻿name: Jules Agent Tests
+name: Jules Agent Tests
 
 on:
   push:
@@ -160,3 +160,4 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- Primary suite: ${{ needs.jules-tests.result }}" >> $GITHUB_STEP_SUMMARY
           echo "- Parallel suite: ${{ needs.parallel-tests.result }}" >> $GITHUB_STEP_SUMMARY
+
