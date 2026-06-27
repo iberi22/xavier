@@ -5,6 +5,9 @@
 
 pub mod anticipator;
 pub mod auth;
+pub mod encryption_keys;
+pub mod initializer;
+pub mod rsa_keys;
 pub mod license;
 pub mod detections;
 pub mod layers;
