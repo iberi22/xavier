@@ -90,3 +90,4 @@ jobs:
           prerelease: false
           projectPath: panel-ui
           args: ${{ matrix.args }}
+
