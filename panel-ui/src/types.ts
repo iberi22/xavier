@@ -123,6 +123,29 @@ export interface MemoryEntry {
   created_at: string;
 }
 
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: "admin" | "user" | "readonly";
+  api_key?: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface AuthState {
+  user: User | null;
+  token: string | null;
+  refreshToken: string | null;
+  isAuthenticated: boolean;
+  requires2FA: boolean;
+
+  login: (email: string, password: string, totpCode?: string) => Promise<void>;
+  logout: () => Promise<void>;
+  register: (email: string, name: string, password: string) => Promise<void>;
+  refreshSession: () => Promise<void>;
+}
+
 export interface Agent {
   id: string;
   name: string;
