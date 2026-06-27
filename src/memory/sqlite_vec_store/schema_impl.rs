@@ -40,6 +40,7 @@ impl VecSqliteMemoryStore {
                 manager.add_migration(crate::storage::migrations::MigrationV3UnifiedExtensions);
                 manager.add_migration(crate::storage::migrations::MigrationV4UnifiedIsolation);
                 manager.add_migration(crate::storage::migrations::MigrationV5SessionTokensId);
+                manager.add_migration(crate::storage::migrations::MigrationV6RecoverySystem);
                 manager.run_migrations(conn)?;
 
                 // Run automatic vector migration

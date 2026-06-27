@@ -58,6 +58,7 @@ use xavier::time::TimeMetricsStore;
 pub use crate::cli::handlers::*;
 pub use crate::cli::http_setup::*;
 pub use crate::cli::types::*;
+pub use xavier::auth2::auth_routes;
 pub use crate::cli::websocket::*;
 
 pub static START_TIME: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
@@ -407,6 +408,11 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/security/tokens", get(list_tokens_handler).post(create_token_handler))
         .route("/security/tokens/{id}", delete(revoke_token_handler))
         .route("/security/tokens/{id}/rotate", post(rotate_token_handler))
+        .route("/auth/recovery/seed/show", post(seed_show_handler))
+        .route("/auth/recovery/seed/verify", post(seed_verify_handler))
+        .route("/auth/recovery/backup-codes", post(backup_codes_generate_handler))
+        .route("/auth/recovery/reset", post(password_reset_handler))
+        .route("/auth/recovery/master-key", post(master_key_handler))
         .route("/v1/usage/status/{provider}", get(usage_status_handler))
         .route("/v1/usage/update", post(usage_update_handler))
         .route("/v1/usage/cooldown", post(usage_cooldown_handler))
@@ -640,6 +646,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     };
 
     let app = Router::new()
+        .nest("/auth", auth_routes::<CliState>())
         .route("/health", get(health_handler))
         .route("/health/cloud", get(cloud_health_handler))
         .route(
