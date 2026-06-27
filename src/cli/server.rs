@@ -23,6 +23,7 @@ use crate::cli::config::{
     code_graph_db_path, resolve_base_url_for_port, resolve_http_bind_host, resolve_http_token,
     state_panel_root,
 };
+use crate::security::auth_store::AuthStore;
 use crate::cli::state::CliState;
 
 use crate::settings::XavierSettings;
@@ -101,6 +102,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let audit_logger = Arc::new(xavier::secrets::audit::QmdAuditLogger::new());
     let rate_manager = Arc::new(RateLimitManager::new());
     let threat_store = Arc::new(SecurityThreatStore::new());
+
+    let auth_db_path = format!("{}/.xavier/auth.db", std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    let auth_store = Arc::new(AuthStore::open(auth_db_path, [0u8; 32])?); // Use actual key in prod
 
     time_store.init_schema_async().await?;
     audit_logger.init_schema_async().await?;
@@ -271,6 +275,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                 Some(code_indexer.clone()),
             ),
         )),
+        auth_store: Some(auth_store),
     };
 
     info!(
@@ -316,6 +321,17 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/v1/account/usage", get(account_usage_handler))
         .route("/v1/embeddings", post(embed_handler))
         .route("/v1/auth/session", post(session_create_handler))
+        .nest("/v1/auth", Router::new()
+            .route("/register", post(register_handler))
+            .route("/login", post(login_handler))
+            .route("/totp/verify", post(totp_verify_handler))
+            .route("/refresh", post(refresh_handler))
+            .route("/recover", post(recover_handler))
+            .layer(middleware::from_fn_with_state(
+                state.clone(),
+                rate_limit_middleware,
+            ))
+        )
         .route("/security/scan", post(security_scan_handler))
         .route("/memory/query", post(memory_query_handler))
         .route("/session/compact", post(session_compact_handler))

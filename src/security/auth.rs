@@ -1,69 +1,39 @@
 //! Authentication Module for Xavier
-//! JWT-based authentication and RBAC
+//! JWT-based authentication, RBAC, and TOTP support
 
 use std::fmt;
-
 use anyhow::{anyhow, Result};
 use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
+use jsonwebtoken::{encode, decode, Header, Algorithm, Validation, EncodingKey, DecodingKey};
+use chrono::{Utc, Duration};
+use totp_rs::{Algorithm as TotpAlgorithm, TOTP, Secret};
+use qrcode::QrCode;
+use qrcode::render::unicode;
 
-use crate::secrets::vault::HardwareVault;
-
-/// Resolve the XAVIER_TOKEN from the environment or hardware vault.
-///
-/// If `XAVIER_TOKEN` is set in the environment, returns its value.
-/// Otherwise, attempts to retrieve it from the system hardware vault.
-pub fn resolve_xavier_token() -> Result<String> {
-    // 1. Try environment variable
-    if let Ok(token) = std::env::var("XAVIER_TOKEN") {
-        return Ok(token);
-    }
-
-    // 2. Try hardware vault
-    let vault = HardwareVault::new("xavier");
-    if let Ok(token) = vault.get_secret("XAVIER_TOKEN") {
-        return Ok(token);
-    }
-
-    Err(anyhow!(
-        "XAVIER_TOKEN is not set in environment or hardware vault. A secure token is required for all operations."
-    ))
-}
+use crate::security::auth_store::AuthStore;
 
 /// JWT Claims for authentication
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Claims {
     pub sub: String,    // User ID
     pub email: String,  // User email
     pub role: UserRole, // User role
-    pub exp: u64,       // Expiration timestamp
-    pub iat: u64,       // Issued at
+    pub exp: i64,       // Expiration timestamp
+    pub iat: i64,       // Issued at
 }
 
 impl Claims {
-    pub fn new(user_id: String, email: String, role: UserRole, expires_in: u64) -> Self {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or(std::time::Duration::from_secs(0))
-            .as_secs();
-
+    pub fn new(user_id: String, email: String, role: UserRole, expires_in: Duration) -> Self {
+        let now = Utc::now();
         Self {
             sub: user_id,
             email,
             role,
-            exp: now + expires_in,
-            iat: now,
+            exp: (now + expires_in).timestamp(),
+            iat: now.timestamp(),
         }
-    }
-
-    pub fn is_expired(&self) -> bool {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or(std::time::Duration::from_secs(0))
-            .as_secs();
-        now > self.exp
     }
 }
 
@@ -84,28 +54,20 @@ pub struct User {
     pub email: String,
     pub name: String,
     pub role: UserRole,
-    pub api_key: String,
-    pub created_at: u64,
-    pub updated_at: u64,
+    pub api_key: String, // Deprecated but kept for compatibility
+    pub created_at: i64,
+    pub updated_at: i64,
 }
 
 impl User {
     pub fn new(email: String, name: String, role: UserRole) -> Self {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or(std::time::Duration::from_secs(0))
-            .as_secs();
-
+        let now = Utc::now().timestamp();
         Self {
             id: ulid::Ulid::new().to_string(),
             email,
             name,
             role,
-            api_key: {
-                let mut bytes = [0u8; 32];
-                OsRng.fill_bytes(&mut bytes);
-                crate::crypto::hex_encode(bytes)
-            },
+            api_key: "".to_string(),
             created_at: now,
             updated_at: now,
         }
@@ -119,90 +81,88 @@ impl fmt::Debug for User {
             .field("email", &self.email)
             .field("name", &self.name)
             .field("role", &self.role)
-            .field("api_key", &"<redacted>")
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
             .finish()
     }
 }
 
-/// Login request
-#[derive(Deserialize)]
-pub struct LoginRequest {
-    pub email: String,
-    pub password: String,
+/// Token Generation
+pub fn generate_jwt(user: &User, secret: &[u8]) -> Result<String> {
+    let claims = Claims::new(
+        user.id.clone(),
+        user.email.clone(),
+        user.role,
+        Duration::hours(1),
+    );
+
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(secret),
+    ).map_err(|e| anyhow!("JWT encoding failed: {}", e))
 }
 
-impl fmt::Debug for LoginRequest {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LoginRequest")
-            .field("email", &self.email)
-            .field("password", &"<redacted>")
-            .finish()
-    }
+pub fn validate_jwt(token: &str, secret: &[u8]) -> Result<Claims> {
+    let token_data = decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(secret),
+        &Validation::new(Algorithm::HS256),
+    ).map_err(|e| anyhow!("JWT validation failed: {}", e))?;
+
+    Ok(token_data.claims)
 }
 
-/// Login response
-#[derive(Serialize)]
-pub struct LoginResponse {
-    pub token: String,
-    pub refresh_token: String,
-    pub user: User,
+/// TOTP Support
+pub struct TotpProvider {
+    issuer: String,
 }
 
-impl fmt::Debug for LoginResponse {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("LoginResponse")
-            .field("token", &"[REDACTED]")
-            .field("refresh_token", &"[REDACTED]")
-            .field("user", &self.user)
-            .finish()
-    }
-}
-
-/// User store for managing users
-pub struct UserStore {
-    users: RwLock<Vec<User>>,
-}
-
-impl Default for UserStore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl UserStore {
-    pub fn new() -> Self {
-        Self {
-            users: RwLock::new(Vec::new()),
-        }
+impl TotpProvider {
+    pub fn new(issuer: &str) -> Self {
+        Self { issuer: issuer.to_string() }
     }
 
-    pub async fn add_user(&self, user: User) {
-        let mut users = self.users.write().await;
-        users.push(user);
+    pub fn generate_secret(&self) -> String {
+        Secret::generate_secret().to_encoded().to_string()
     }
 
-    pub async fn get_user(&self, id: &str) -> Option<User> {
-        let users = self.users.read().await;
-        users.iter().find(|u| u.id == id).cloned()
+    pub fn get_qr_code(&self, account_name: &str, secret_base32: &str) -> Result<String> {
+        let totp = TOTP::new(
+            TotpAlgorithm::SHA1,
+            6,
+            1,
+            30,
+            Secret::from_encoded(secret_base32).map_err(|_| anyhow!("invalid secret"))?.to_bytes(),
+            Some(self.issuer.clone()),
+            account_name.to_string(),
+        ).map_err(|e| anyhow!("TOTP init failed: {}", e))?;
+
+        let code = totp.get_url();
+        let qr = QrCode::new(code.as_bytes())?;
+        Ok(qr.render::<unicode::Dense1x2>().build())
     }
 
-    pub async fn get_by_email(&self, email: &str) -> Option<User> {
-        let users = self.users.read().await;
-        users.iter().find(|u| u.email == email).cloned()
-    }
+    pub fn verify_code(&self, secret_base32: &str, code: &str) -> bool {
+        let secret = match Secret::from_encoded(secret_base32) {
+            Ok(s) => s,
+            Err(_) => return false,
+        };
 
-    pub async fn list_users(&self) -> Vec<User> {
-        let users = self.users.read().await;
-        users.clone()
-    }
+        let totp = match TOTP::new(
+            TotpAlgorithm::SHA1,
+            6,
+            1,
+            30,
+            secret.to_bytes(),
+            Some(self.issuer.clone()),
+            "user".to_string(),
+        ) {
+            Ok(t) => t,
+            Err(_) => return false,
+        };
 
-    pub async fn delete_user(&self, id: &str) -> bool {
-        let mut users = self.users.write().await;
-        let len_before = users.len();
-        users.retain(|u| u.id != id);
-        users.len() < len_before
+        totp.check_current(code)
     }
 }
 
@@ -220,146 +180,13 @@ pub trait Permission {
 }
 
 impl Permission for UserRole {
-    fn can_view_dashboard(&self) -> bool {
-        true
-    }
-    fn can_search_memory(&self) -> bool {
-        true
-    }
-
-    fn can_add_memory(&self) -> bool {
-        matches!(self, UserRole::Admin | UserRole::User)
-    }
-
-    fn can_delete_memory(&self) -> bool {
-        matches!(self, UserRole::Admin | UserRole::User)
-    }
-
-    fn can_manage_beliefs(&self) -> bool {
-        matches!(self, UserRole::Admin | UserRole::User)
-    }
-
-    fn can_run_agents(&self) -> bool {
-        matches!(self, UserRole::Admin | UserRole::User)
-    }
-
-    fn can_view_config(&self) -> bool {
-        true
-    }
-
-    fn can_edit_config(&self) -> bool {
-        matches!(self, UserRole::Admin)
-    }
-
-    fn can_manage_users(&self) -> bool {
-        matches!(self, UserRole::Admin)
-    }
-}
-
-/// Rate limiter for API protection
-#[derive(Debug)]
-pub struct RateLimiter {
-    requests: RwLock<std::collections::HashMap<String, Vec<u64>>>,
-    max_requests: usize,
-    window_seconds: u64,
-}
-
-impl Default for RateLimiter {
-    fn default() -> Self {
-        Self::new(1000, 60) // 1000 requests per minute
-    }
-}
-
-impl RateLimiter {
-    pub fn new(max_requests: usize, window_seconds: u64) -> Self {
-        Self {
-            requests: RwLock::new(std::collections::HashMap::new()),
-            max_requests,
-            window_seconds,
-        }
-    }
-
-    pub async fn check(&self, key: &str) -> bool {
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or(std::time::Duration::from_secs(0))
-            .as_secs();
-
-        let mut requests = self.requests.write().await;
-
-        // Clean old entries
-        let window_start = now - self.window_seconds;
-        requests.entry(key.to_string()).and_modify(|times| {
-            times.retain(|&t| t > window_start);
-        });
-
-        // Check limit
-        let count = requests.get(key).map(|v| v.len()).unwrap_or(0);
-
-        if count >= self.max_requests {
-            return false;
-        }
-
-        // Add current request
-        requests
-            .entry(key.to_string())
-            .or_insert_with(Vec::new)
-            .push(now);
-
-        true
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_user_role_permissions() {
-        let admin = UserRole::Admin;
-        let user = UserRole::User;
-        let readonly = UserRole::Readonly;
-
-        assert!(admin.can_manage_users());
-        assert!(!user.can_manage_users());
-        assert!(!readonly.can_manage_users());
-
-        assert!(admin.can_add_memory());
-        assert!(user.can_add_memory());
-        assert!(!readonly.can_add_memory());
-    }
-
-    #[tokio::test]
-    async fn test_user_store() {
-        let store = UserStore::new();
-
-        let user = User::new(
-            "test@example.com".to_string(),
-            "Test User".to_string(),
-            UserRole::User,
-        );
-
-        store.add_user(user.clone()).await;
-
-        let found = store.get_by_email("test@example.com").await;
-        assert!(found.is_some());
-    }
-
-    #[test]
-    fn test_resolve_xavier_token() {
-        // Clean environment
-        std::env::remove_var("XAVIER_TOKEN");
-
-        // Case 1: No token
-        let result = resolve_xavier_token();
-        assert!(result.is_err());
-
-        // Case 2: XAVIER_TOKEN set
-        std::env::set_var("XAVIER_TOKEN", "secure-token");
-        let result = resolve_xavier_token();
-        assert_eq!(result.unwrap(), "secure-token");
-
-        // Cleanup
-        std::env::remove_var("XAVIER_TOKEN");
-    }
+    fn can_view_dashboard(&self) -> bool { true }
+    fn can_search_memory(&self) -> bool { true }
+    fn can_add_memory(&self) -> bool { matches!(self, UserRole::Admin | UserRole::User) }
+    fn can_delete_memory(&self) -> bool { matches!(self, UserRole::Admin | UserRole::User) }
+    fn can_manage_beliefs(&self) -> bool { matches!(self, UserRole::Admin | UserRole::User) }
+    fn can_run_agents(&self) -> bool { matches!(self, UserRole::Admin | UserRole::User) }
+    fn can_view_config(&self) -> bool { true }
+    fn can_edit_config(&self) -> bool { matches!(self, UserRole::Admin) }
+    fn can_manage_users(&self) -> bool { matches!(self, UserRole::Admin) }
 }

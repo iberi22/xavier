@@ -153,6 +153,10 @@ unicode-normalization = "0.1"
 # Embedding cache (LRU + TTL)
 moka = { version = "0.12", features = ["future"] }
 
+totp-rs = { version = "5.5", features = ["gen_secret", "otpauth"] }
+jsonwebtoken = "9.3"
+qrcode = "0.14"
+
 # E2E Encryption for cloud tier
 aes-gcm = "0.10"
 argon2 = "0.5"

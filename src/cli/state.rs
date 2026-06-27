@@ -17,6 +17,7 @@ use xavier::ports::inbound::{
     AgentLifecyclePort, InputSecurityPort, MemoryQueryPort, SecurityScanPort,
 };
 use xavier::security::sessions::SessionManager;
+use crate::security::auth_store::AuthStore;
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
 
@@ -68,9 +69,14 @@ pub struct CliState {
     #[allow(dead_code)]
     pub embedder: Arc<dyn Embedder>,
     pub agent_indexer: Arc<crate::memory::agent_indexer::AgentIndexer>,
+    pub auth_store: Option<Arc<AuthStore>>,
 }
 
 impl CliState {
+    pub fn auth_store(&self) -> Option<Arc<AuthStore>> {
+        self.auth_store.clone()
+    }
+
     pub async fn tgd_engine(&self) -> Option<xavier::tgd::TgdEngine> {
         let router = self.provider_router.read().await;
         let p_kind = router.active_mode();
