@@ -71,6 +71,7 @@ impl SecretsManager {
 pub mod audit;
 pub mod lending;
 pub mod local;
+pub mod local_vault;
 pub mod openbao;
 pub mod store;
 #[cfg(test)]
