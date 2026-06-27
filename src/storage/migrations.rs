@@ -247,6 +247,42 @@ impl Migration for MigrationV1InitialSchema {
     }
 }
 
+pub struct MigrationV6RecoverySystem;
+
+impl Migration for MigrationV6RecoverySystem {
+    fn version(&self) -> u32 {
+        6
+    }
+
+    fn description(&self) -> &str {
+        "Add users and backup_codes tables for local auth recovery"
+    }
+
+    fn run(&self, conn: &Connection) -> Result<()> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS users (
+                id TEXT PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                recovery_seed_hash TEXT NOT NULL,
+                two_factor_enabled INTEGER NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS backup_codes (
+                id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL,
+                code_hash TEXT NOT NULL,
+                used INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_backup_codes_user ON backup_codes(user_id);",
+        )?;
+        Ok(())
+    }
+}
+
 pub struct MigrationV5SessionTokensId;
 
 impl Migration for MigrationV5SessionTokensId {

@@ -5,6 +5,8 @@
 
 pub mod anticipator;
 pub mod auth;
+pub mod recovery;
+pub mod user_store;
 pub mod license;
 pub mod detections;
 pub mod layers;
@@ -34,7 +36,6 @@ use anyhow::{anyhow, Result};
 use std::sync::Arc;
 
 use crate::crypto::hmac::hmac_sha256;
-use crate::crypto::password;
 use crate::utils::crypto::{hex_decode, hex_encode};
 
 /// Servicio de seguridad principal que integra todas las funcionalidades
@@ -122,11 +123,11 @@ impl SecurityManager {
     }
 
     pub fn hash_password(&self, password: &str) -> Result<String> {
-        password::hash(password, password::DEFAULT_COST)
+        crate::crypto::password::hash(password, crate::crypto::password::DEFAULT_COST)
     }
 
     pub fn verify_password(&self, password: &str, hash: &str) -> Result<bool> {
-        password::verify(password, hash)
+        crate::crypto::password::verify(password, hash)
     }
 
     pub fn generate_token(&self, user_id: &str) -> Result<String> {
