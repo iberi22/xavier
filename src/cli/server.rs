@@ -58,6 +58,7 @@ use xavier::time::TimeMetricsStore;
 pub use crate::cli::handlers::*;
 pub use crate::cli::http_setup::*;
 pub use crate::cli::types::*;
+pub use xavier::auth2::auth_routes;
 pub use crate::cli::websocket::*;
 
 pub static START_TIME: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
@@ -640,6 +641,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     };
 
     let app = Router::new()
+        .nest("/auth", auth_routes::<CliState>())
         .route("/health", get(health_handler))
         .route("/health/cloud", get(cloud_health_handler))
         .route(

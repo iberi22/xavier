@@ -16,6 +16,7 @@ pub mod coordination;
 pub mod crypto;
 pub mod data_commons;
 pub mod auto_improvement;
+pub mod auth2;
 pub mod embedding;
 pub mod enterprise;
 pub mod health;

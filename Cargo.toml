@@ -115,7 +115,12 @@ cron = "0.15"
 # State management
 rayon = "1.10"
 parking_lot = "0.12"
-rusqlite = { version = "0.32.0", features = ["bundled", "load_extension", "chrono", "functions"] }
+rusqlite = { version = "0.32.0", features = ["bundled-sqlcipher", "load_extension", "chrono", "functions"] }
+jsonwebtoken = "9.3"
+totp-rs = { version = "5.5", features = ["gen_secret", "otpauth"] }
+qrcode = "0.14"
+rsa = "0.9"
+base32 = "0.5"
 libsql = { version = "0.9", default-features = false, features = ["core"] }
 sqlx = { version = "0.8", features = ["postgres", "runtime-tokio-rustls", "chrono", "json", "uuid"] }
 zerocopy = "0.8"
