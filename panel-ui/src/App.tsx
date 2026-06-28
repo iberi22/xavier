@@ -1,6 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useAuthStore } from "./auth/AuthProvider";
+import { BackupCodesPage } from "./auth/BackupCodesPage";
+import { LoginPage } from "./auth/LoginPage";
+import { MasterKeyPage } from "./auth/MasterKeyPage";
+import { RecoveryPage } from "./auth/RecoveryPage";
+import { RegisterPage } from "./auth/RegisterPage";
+import { TwoFactorSetup } from "./auth/TwoFactorSetup";
 import ChatHistory from "./components/ChatHistory";
 import ConfigModal from "./components/ConfigModal";
 import DraggableWidget from "./components/DraggableWidget";
@@ -30,9 +37,8 @@ const getApiUrl = (path: string) => {
 };
 
 export default function App() {
-  const [token, setToken] = useState("");
-  const [draftToken, setDraftToken] = useState("");
-  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const { token, isAuthenticated } = useAuthStore();
+  const [hash, setHash] = useState(window.location.hash);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<PanelMessage[]>([]);
   const [health, setHealth] = useState("checking");
@@ -100,7 +106,7 @@ export default function App() {
 
   const _activeThread = useMemo(
     () => threads.find((item) => item.id === selectedThreadId) ?? null,
-    [selectedThreadId, threads],
+    [selectedThreadId],
   );
 
   useEffect(() => {
@@ -111,21 +117,23 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const checkNativeToken = async () => {
+    const checkNativeConfig = async () => {
       if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
         try {
-          const nativeToken = await invoke<string>("get_xavier_token");
-          if (nativeToken) {
-            setToken(nativeToken);
-          }
           const configState: any = await invoke("get_current_config_state");
           setHasConfig(configState.has_openai || configState.has_gemini);
         } catch (e) {
-          console.warn("Could not retrieve Xavier token from local config", e);
+          console.warn("Could not retrieve Xavier config", e);
         }
       }
     };
-    void checkNativeToken();
+    void checkNativeConfig();
+  }, []);
+
+  useEffect(() => {
+    const handleHashChange = () => setHash(window.location.hash);
+    window.addEventListener("hashchange", handleHashChange);
+    return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
   const openThread = useCallback(
@@ -212,7 +220,7 @@ export default function App() {
         ...prev,
         newUserMsg,
         {
-          id: tempId + "_sys",
+          id: `${tempId}_sys`,
           role: "assistant",
           plain_text:
             "⚠️ Sistema no configurado: No se detectaron proveedores de IA. Por favor, abre los ajustes y configura tu API Key de OpenAI o Gemini.",
@@ -277,7 +285,7 @@ export default function App() {
     setMessages((prev) => [
       ...prev,
       {
-        id: Date.now().toString() + "_sys",
+        id: `${Date.now().toString()}_sys`,
         role: "assistant",
         plain_text: text,
         created_at: new Date().toISOString(),
@@ -333,36 +341,16 @@ export default function App() {
     );
   }
 
-  if (!token) {
-    return (
-      <div className="w-full h-screen bg-[#050505] flex items-center justify-center text-white font-mono relative overflow-hidden">
-        <ParticleBackground />
-        <div className="z-10 bg-black/60 backdrop-blur-md p-8 rounded-2xl border border-white/10 max-w-md w-full">
-          <h1 className="text-xl mb-2 font-bold tracking-widest text-[#39ff14]">
-            XAVIER AUTH
-          </h1>
-          <p className="text-xs opacity-60 mb-8 leading-relaxed">
-            Enter your master terminal token to connect to the local code graph
-            vector system.
-          </p>
-          <input
-            className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:border-[#39ff14] focus:outline-none mb-4 transition-colors font-mono"
-            value={draftToken}
-            onChange={(e) => setDraftToken(e.target.value)}
-            placeholder="XAVIER_TOKEN"
-            type="password"
-          />
-          <button
-            type="button"
-            className="w-full bg-[#39ff14] text-black font-bold text-sm tracking-widest py-3 rounded-lg hover:shadow-[0_0_15px_rgba(57,255,20,0.5)] transition-all"
-            onClick={() => setToken(draftToken.trim())}
-          >
-            INITIALIZE SESSION
-          </button>
-        </div>
-      </div>
-    );
+  if (!isAuthenticated) {
+    if (hash === "#/register") return <RegisterPage />;
+    if (hash === "#/recovery") return <RecoveryPage />;
+    return <LoginPage />;
   }
+
+  // Auth-only routes
+  if (hash === "#/2fa/setup") return <TwoFactorSetup />;
+  if (hash === "#/2fa/backup") return <BackupCodesPage />;
+  if (hash === "#/master-key") return <MasterKeyPage />;
 
   if (showOnboarding) {
     return <OnboardingFlow onComplete={() => setShowOnboarding(false)} />;
