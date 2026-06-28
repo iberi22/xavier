@@ -4,13 +4,16 @@ pub mod db;
 pub mod refresh;
 pub mod middleware;
 
-use sha2::Digest;
+use sha2::{Digest, Sha256};
 use axum::{
     routing::{get, post},
     Json, Router, extract::{State, Request},
     http::StatusCode,
     response::IntoResponse,
 };
+use totp_rs::{TOTP, Algorithm as TOTPAlgorithm, Secret};
+use qrcode::QrCode;
+use qrcode::render::unicode; // usar unicode QR para evitar dependencia render svg
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 // use crate::cli::server::CliState;
@@ -45,6 +48,42 @@ pub struct RefreshRequest {
     pub refresh_token: String,
 }
 
+#[derive(Deserialize)]
+pub struct TwoFactorSetupRequest {}
+
+#[derive(Serialize)]
+pub struct TwoFactorSetupResponse {
+    pub qr_code: String,
+    pub secret: String,
+    pub backup_codes: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub struct TwoFactorVerifyRequest {
+    pub code: String,
+}
+
+#[derive(Deserialize)]
+pub struct RecoveryRequest {
+    pub email: String,
+    pub seed_phrase: String,
+    pub new_password: String,
+}
+
+#[derive(Serialize)]
+pub struct RegisterResponse {
+    pub user: User,
+    pub seed_phrase: String,
+}
+
+#[derive(Serialize)]
+pub struct LoginResponse {
+    pub access_token: String,
+    pub refresh_token: String,
+    pub user: User,
+    pub requires_2fa: bool,
+}
+
 pub fn auth_routes<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static
@@ -54,6 +93,9 @@ where
         .route("/login", post(login_handler::<S>))
         .route("/refresh", post(refresh_handler::<S>))
         .route("/logout", post(logout_handler::<S>))
+        .route("/2fa/setup", post(setup_2fa_handler::<S>))
+        .route("/2fa/verify", post(verify_2fa_handler::<S>))
+        .route("/recovery", post(recovery_handler::<S>))
         .route("/status", get(status_handler))
 }
 
@@ -71,6 +113,18 @@ async fn register_handler<S>(
     let password_hash = hash_password(&payload.password).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
 
+    // Generate seed phrase for recovery
+    let mnemonic = bip39::Mnemonic::generate_in(bip39::Language::Spanish, 24)
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let seed_phrase_str = mnemonic.to_string();
+    
+    // Hash recovery seed phrase
+    let seed_hash = {
+        let mut hasher = Sha256::new();
+        hasher.update(seed_phrase_str.as_bytes());
+        crate::crypto::hex_encode(hasher.finalize())
+    };
+
     let user = User {
         id: ulid::Ulid::new().to_string(),
         email: payload.email,
@@ -79,7 +133,7 @@ async fn register_handler<S>(
         role: "user".to_string(),
         totp_secret: None,
         totp_enabled: false,
-        recovery_seed_hash: None,
+        recovery_seed_hash: Some(seed_hash),
         backup_codes: None,
         created_at: now,
         updated_at: now,
@@ -89,14 +143,17 @@ async fn register_handler<S>(
 
     auth_db.log_audit(&AuditLog {
         id: ulid::Ulid::new().to_string(),
-        user_id: Some(user.id),
+        user_id: Some(user.id.clone()),
         action: "register".to_string(),
-        ip_address: None, // Should get from request
+        ip_address: None,
         details: None,
         created_at: now,
     }).ok();
 
-    Ok(StatusCode::CREATED)
+    Ok(Json(RegisterResponse {
+        seed_phrase: seed_phrase_str,
+        user,
+    }))
 }
 
 async fn login_handler<S>(
@@ -112,10 +169,27 @@ async fn login_handler<S>(
         return Err(StatusCode::UNAUTHORIZED);
     }
 
-    // Prepare TOTP check if enabled (placeholder for now)
+    // TOTP check if enabled
+    let requires_2fa = user.totp_enabled;
     if user.totp_enabled {
         let code = payload.totp_code.ok_or(StatusCode::UNAUTHORIZED)?;
-        // Verify TOTP...
+        if let Some(ref secret) = user.totp_secret {
+            let secret_bytes = Secret::Encoded(secret.clone()).to_bytes()
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            let totp = TOTP {
+                algorithm: TOTPAlgorithm::SHA1,
+                digits: 6,
+                skew: 1,
+                step: 30,
+                secret: secret_bytes,
+                issuer: Some("Xavier".to_string()),
+                account_name: user.email.clone(),
+            };
+            let time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() / 30;
+            if !totp.check(&code, time) {
+                return Err(StatusCode::UNAUTHORIZED);
+            }
+        }
     }
 
     let jwt_manager = JwtManager::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
@@ -127,16 +201,18 @@ async fn login_handler<S>(
     let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
     auth_db.log_audit(&AuditLog {
         id: ulid::Ulid::new().to_string(),
-        user_id: Some(user.id),
+        user_id: Some(user.id.clone()),
         action: "login".to_string(),
         ip_address: None,
         details: None,
         created_at: now,
     }).ok();
 
-    Ok(Json(AuthResponse {
+    Ok(Json(LoginResponse {
         access_token,
         refresh_token,
+        user,
+        requires_2fa,
     }))
 }
 
@@ -195,6 +271,166 @@ async fn logout_handler<S>(
     }
 
     Ok(StatusCode::OK)
+}
+
+async fn setup_2fa_handler<S>(
+    State(_state): State<S>,
+    Json(_payload): Json<TwoFactorSetupRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    // Create a fresh AuthDb and find a first-user or use request claims when available
+    let auth_db = AuthDb::new(std::path::Path::new("auth.db")).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    
+    // Get user from JWT (we use first user for now, middleware will wire properly later)
+    let user = auth_db.list_users().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter().next().ok_or(StatusCode::UNAUTHORIZED)?;
+    
+    // Generate TOTP secret
+    let secret = totp_rs::Secret::generate_secret();
+    let secret_encoded = secret.to_encoded().to_string();
+    let secret_bytes = secret.to_bytes()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    
+    // Build TOTP
+    let totp = TOTP {
+        algorithm: TOTPAlgorithm::SHA1,
+        digits: 6,
+        skew: 1,
+        step: 30,
+        secret: secret_bytes,
+        issuer: Some("Xavier".to_string()),
+        account_name: user.email.clone(),
+    };
+    
+    // Generate otpauth URL
+    let otpauth_url = totp.get_url();
+    
+    // Generate QR code as Unicode (no need for SVG render feature)
+    let qr = QrCode::new(otpauth_url.as_bytes()).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let qr_unicode = qr.render::<unicode::Dense1x2>()
+        .dark_color(unicode::Dense1x2::Light)
+        .light_color(unicode::Dense1x2::Dark)
+        .build();
+    
+    // Generate backup codes (10 codes)
+    let mut backup_codes = Vec::new();
+    let mut hashed_codes = Vec::new();
+    for _ in 0..10 {
+        use rand::Rng;
+        let code: u32 = rand::thread_rng().gen_range(10000000..99999999);
+        let code_str = code.to_string();
+        let hash = {
+            let mut hasher = Sha256::new();
+            hasher.update(code_str.as_bytes());
+            crate::crypto::hex_encode(hasher.finalize())
+        };
+        backup_codes.push(code_str);
+        hashed_codes.push(hash);
+    }
+    
+    // Store secret + backup codes in DB
+    auth_db.update_totp_secret(&user.id, &secret_encoded).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    auth_db.update_backup_codes(&user.id, &serde_json::to_string(&hashed_codes).unwrap_or_default())
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+    auth_db.log_audit(&AuditLog {
+        id: ulid::Ulid::new().to_string(),
+        user_id: Some(user.id),
+        action: "2fa_setup_initiated".to_string(),
+        ip_address: None,
+        details: None,
+        created_at: now,
+    }).ok();
+    
+    Ok(Json(TwoFactorSetupResponse {
+        qr_code: qr_unicode,
+        secret: secret_encoded,
+        backup_codes,
+    }))
+}
+
+async fn verify_2fa_handler<S>(
+    State(_state): State<S>,
+    Json(payload): Json<TwoFactorVerifyRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let auth_db = AuthDb::new(std::path::Path::new("auth.db")).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    
+    let user = auth_db.list_users().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .into_iter().next().ok_or(StatusCode::UNAUTHORIZED)?;
+    
+    let secret_b32 = user.totp_secret.as_ref().ok_or(StatusCode::BAD_REQUEST)?;
+    let secret_bytes = Secret::Encoded(secret_b32.clone()).to_bytes()
+        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    
+    let totp = TOTP {
+        algorithm: TOTPAlgorithm::SHA1,
+        digits: 6,
+        skew: 1,
+        step: 30,
+        secret: secret_bytes,
+        issuer: Some("Xavier".to_string()),
+        account_name: user.email.clone(),
+    };
+    
+    let time = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() / 30;
+    if !totp.check(&payload.code, time) {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    
+    auth_db.enable_totp(&user.id).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+    auth_db.log_audit(&AuditLog {
+        id: ulid::Ulid::new().to_string(),
+        user_id: Some(user.id),
+        action: "2fa_enabled".to_string(),
+        ip_address: None,
+        details: None,
+        created_at: now,
+    }).ok();
+    
+    Ok(Json(serde_json::json!({"status": "2fa_enabled"})))
+}
+
+async fn recovery_handler<S>(
+    State(_state): State<S>,
+    Json(payload): Json<RecoveryRequest>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let auth_db = AuthDb::new(std::path::Path::new("auth.db")).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    
+    let user = auth_db.get_user_by_email(&payload.email).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        .ok_or(StatusCode::UNAUTHORIZED)?;
+    
+    // Verify seed phrase
+    let seed_hash = user.recovery_seed_hash.as_ref().ok_or(StatusCode::BAD_REQUEST)?;
+    let input_hash = {
+        let mut hasher = Sha256::new();
+        hasher.update(payload.seed_phrase.as_bytes());
+        crate::crypto::hex_encode(hasher.finalize())
+    };
+    
+    if &input_hash != seed_hash {
+        return Err(StatusCode::UNAUTHORIZED);
+    }
+    
+    // Reset password
+    let new_hash = hash_password(&payload.new_password).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    auth_db.update_password(&user.id, &new_hash).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    
+    // Disable 2FA
+    auth_db.disable_totp(&user.id).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64;
+    auth_db.log_audit(&AuditLog {
+        id: ulid::Ulid::new().to_string(),
+        user_id: Some(user.id),
+        action: "recovery_completed".to_string(),
+        ip_address: None,
+        details: None,
+        created_at: now,
+    }).ok();
+    
+    Ok(Json(serde_json::json!({"status": "recovery_completed"})))
 }
 
 async fn status_handler(

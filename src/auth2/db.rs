@@ -5,6 +5,11 @@ use crate::secrets::vault::HardwareVault;
 use crate::crypto::encryption::{encrypt_data, decrypt_data, NonceBytes};
 use crate::crypto::NONCE_SIZE;
 use serde::{Deserialize, Serialize};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn now() -> i64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as i64
+}
 
 pub struct AuthDb {
     conn: Connection,
@@ -197,6 +202,74 @@ impl AuthDb {
             params![user_id],
         ).map_err(|e| anyhow!("Failed to revoke all user tokens: {}", e))?;
         Ok(())
+    }
+
+    // TOTP Operations
+    pub fn update_totp_secret(&self, user_id: &str, secret: &str) -> AnyhowResult<()> {
+        self.conn.execute(
+            "UPDATE users SET totp_secret = ?1, updated_at = ?2 WHERE id = ?3",
+            params![secret, now(), user_id],
+        ).map_err(|e| anyhow!("Failed to update TOTP secret: {}", e))?;
+        Ok(())
+    }
+
+    pub fn update_backup_codes(&self, user_id: &str, codes_json: &str) -> AnyhowResult<()> {
+        self.conn.execute(
+            "UPDATE users SET backup_codes = ?1, updated_at = ?2 WHERE id = ?3",
+            params![codes_json, now(), user_id],
+        ).map_err(|e| anyhow!("Failed to update backup codes: {}", e))?;
+        Ok(())
+    }
+
+    pub fn enable_totp(&self, user_id: &str) -> AnyhowResult<()> {
+        self.conn.execute(
+            "UPDATE users SET totp_enabled = 1, updated_at = ?2 WHERE id = ?1",
+            params![user_id, now()],
+        ).map_err(|e| anyhow!("Failed to enable TOTP: {}", e))?;
+        Ok(())
+    }
+
+    pub fn disable_totp(&self, user_id: &str) -> AnyhowResult<()> {
+        self.conn.execute(
+            "UPDATE users SET totp_enabled = 0, totp_secret = NULL, updated_at = ?2 WHERE id = ?1",
+            params![user_id, now()],
+        ).map_err(|e| anyhow!("Failed to disable TOTP: {}", e))?;
+        Ok(())
+    }
+
+    pub fn update_password(&self, user_id: &str, password_hash: &str) -> AnyhowResult<()> {
+        self.conn.execute(
+            "UPDATE users SET password_hash = ?1, updated_at = ?3 WHERE id = ?2",
+            params![password_hash, user_id, now()],
+        ).map_err(|e| anyhow!("Failed to update password: {}", e))?;
+        Ok(())
+    }
+
+    pub fn list_users(&self) -> AnyhowResult<Vec<User>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, email, password_hash, name, role, totp_secret, totp_enabled, recovery_seed_hash, backup_codes, created_at, updated_at FROM users"
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(User {
+                id: row.get(0)?,
+                email: row.get(1)?,
+                password_hash: row.get(2)?,
+                name: row.get(3)?,
+                role: row.get(4)?,
+                totp_secret: row.get(5)?,
+                totp_enabled: row.get::<_, i32>(6)? != 0,
+                recovery_seed_hash: row.get(7)?,
+                backup_codes: row.get(8)?,
+                created_at: row.get(9)?,
+                updated_at: row.get(10)?,
+            })
+        }).map_err(|e| anyhow!("Failed to list users: {}", e))?;
+
+        let mut users = Vec::new();
+        for row in rows {
+            users.push(row.map_err(|e| anyhow!("Failed to read user row: {}", e))?);
+        }
+        Ok(users)
     }
 
     // Audit Log Operations
