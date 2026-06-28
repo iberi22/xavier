@@ -179,6 +179,7 @@ x25519-dalek = { version = "2.0.1", features = ["static_secrets", "reusable_secr
 sqlite-vec = "0.1.0"
 libp2p = { version = "0.56", optional = true, default-features = false, features = ["noise", "kad", "gossipsub", "mdns", "tcp", "tokio", "serde", "identify", "yamux"] }
 alloy = { version = "2.1", optional = true, default-features = true, features = ["providers", "consensus", "signers", "signer-local", "contract", "rpc-types-eth", "reqwest", "network"] }
+hkdf = "0.12.4"
 
 [dev-dependencies]
 image = "0.25"
@@ -203,4 +204,3 @@ required-features = ["cli-interactive"]
 [profile.release]
 opt-level = 3
 lto = false
-

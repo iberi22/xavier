@@ -15439,6 +15439,7 @@ dependencies = [
  "futures-util",
  "git2",
  "gllm",
+ "hkdf",
  "http-body-util",
  "image",
  "js-sys",
