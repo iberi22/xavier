@@ -89,6 +89,7 @@ sysinfo = "0.36"
 
 # Constant-time comparison for security tokens
 subtle = "2.6"
+hkdf = "0.12"
 
 # HTTP Server
 axum = { version = "0.8", features = ["ws"] }
@@ -115,7 +116,7 @@ cron = "0.15"
 # State management
 rayon = "1.10"
 parking_lot = "0.12"
-rusqlite = { version = "0.32.0", features = ["bundled-sqlcipher", "load_extension", "chrono", "functions"] }
+rusqlite = { version = "0.32.0", features = ["bundled", "load_extension", "chrono", "functions"] }
 jsonwebtoken = "9.3"
 totp-rs = { version = "5.5", features = ["gen_secret", "otpauth"] }
 qrcode = "0.14"
