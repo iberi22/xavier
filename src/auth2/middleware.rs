@@ -1,6 +1,5 @@
 use axum::{
-    body::Body,
-    extract::{Request, State},
+    extract::Request,
     http::{StatusCode, header},
     middleware::Next,
     response::Response,
@@ -44,8 +43,7 @@ impl RateLimiter {
     }
 }
 
-pub async fn auth_middleware<S>(
-    State(_state): State<S>,
+pub async fn auth_middleware(
     mut req: Request,
     next: Next,
 ) -> Result<Response, StatusCode> {

@@ -15,6 +15,8 @@ export const RegisterPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [seedPhrase, setSeedPhrase] = useState<string | null>(null);
 
+  const { register } = useAuth();
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (password !== confirmPassword) {
@@ -30,7 +32,7 @@ export const RegisterPage: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await authClient.register(email, name, password);
+      const response = await register(email, name, password);
       setSeedPhrase(response.seed_phrase);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
