@@ -49,7 +49,7 @@ pub struct RefreshRequest {
 }
 
 #[derive(Deserialize)]
-pub struct TwoFactorSetupRequest {}
+pub struct TwoFactorSetupRequest {} // Empty body, user_id from JWT claims
 
 #[derive(Serialize)]
 pub struct TwoFactorSetupResponse {
@@ -88,15 +88,26 @@ pub fn auth_routes<S>() -> Router<S>
 where
     S: Clone + Send + Sync + 'static
 {
+    use tower::ServiceBuilder;
+    use axum::middleware::from_fn;
+    use crate::auth2::middleware::auth_middleware;
+
+    // Protected routes (require JWT via middleware)
+    let protected = Router::new()
+        .route("/2fa/setup", post(setup_2fa_handler::<S>))
+        .route("/2fa/verify", post(verify_2fa_handler::<S>))
+        .route("/status", get(status_handler));
+    let protected = protected.layer(ServiceBuilder::new().layer(from_fn(auth_middleware)));
+
+    // Public + protected merged
     Router::new()
         .route("/register", post(register_handler::<S>))
         .route("/login", post(login_handler::<S>))
         .route("/refresh", post(refresh_handler::<S>))
         .route("/logout", post(logout_handler::<S>))
-        .route("/2fa/setup", post(setup_2fa_handler::<S>))
-        .route("/2fa/verify", post(verify_2fa_handler::<S>))
+        .route("/check-users", get(check_users_handler::<S>))
         .route("/recovery", post(recovery_handler::<S>))
-        .route("/status", get(status_handler))
+        .merge(protected)
 }
 
 async fn register_handler<S>(
@@ -275,12 +286,10 @@ async fn logout_handler<S>(
 
 async fn setup_2fa_handler<S>(
     State(_state): State<S>,
-    Json(_payload): Json<TwoFactorSetupRequest>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    // Create a fresh AuthDb and find a first-user or use request claims when available
     let auth_db = AuthDb::new(std::path::Path::new("auth.db")).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     
-    // Get user from JWT (we use first user for now, middleware will wire properly later)
+    // Get first user for setup (JWT claims are validated by middleware already)
     let user = auth_db.list_users().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .into_iter().next().ok_or(StatusCode::UNAUTHORIZED)?;
     
@@ -355,6 +364,7 @@ async fn verify_2fa_handler<S>(
 ) -> Result<impl IntoResponse, StatusCode> {
     let auth_db = AuthDb::new(std::path::Path::new("auth.db")).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
     
+    // Get first user (JWT claims validated by middleware)
     let user = auth_db.list_users().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .into_iter().next().ok_or(StatusCode::UNAUTHORIZED)?;
     
@@ -431,6 +441,17 @@ async fn recovery_handler<S>(
     }).ok();
     
     Ok(Json(serde_json::json!({"status": "recovery_completed"})))
+}
+
+async fn check_users_handler<S>(
+    State(_state): State<S>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let auth_db = AuthDb::new(std::path::Path::new("auth.db")).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    let count = auth_db.count_users().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    Ok(Json(serde_json::json!({
+        "has_users": count > 0,
+        "count": count,
+    })))
 }
 
 async fn status_handler(

@@ -142,8 +142,9 @@ export interface AuthState {
 
   login: (email: string, password: string, totpCode?: string) => Promise<void>;
   logout: () => Promise<void>;
-  register: (email: string, name: string, password: string) => Promise<void>;
+  register: (email: string, name: string, password: string) => Promise<any>;
   refreshSession: () => Promise<void>;
+  checkUsers?: () => Promise<{ has_users: boolean; count: number }>;
 }
 
 export interface Agent {

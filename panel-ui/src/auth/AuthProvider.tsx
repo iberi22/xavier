@@ -3,7 +3,7 @@ import { create } from "zustand";
 import { authClient } from "../api/authClient";
 import type { AuthState, User } from "../types";
 
-const useAuthStore = create<AuthState>((set) => ({
+const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   token: null,
   refreshToken: null,
@@ -15,13 +15,15 @@ const useAuthStore = create<AuthState>((set) => ({
       const response = await authClient.login(email, password, totpCode);
       set({
         user: response.user,
-        token: response.token,
+        token: response.access_token,
         refreshToken: response.refresh_token,
         isAuthenticated: true,
         requires2FA: false,
       });
+      localStorage.setItem('xavier_token', response.access_token);
+      localStorage.setItem('xavier_refresh', response.refresh_token);
     } catch (error) {
-        if (error instanceof Error && error.message.includes("2FA")) {
+        if (error instanceof Error && error.message.includes("401")) {
             set({ requires2FA: true });
         }
         throw error;
@@ -29,7 +31,11 @@ const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
-    await authClient.logout();
+    try {
+      await authClient.logout();
+    } catch { /* ignore */ }
+    localStorage.removeItem('xavier_token');
+    localStorage.removeItem('xavier_refresh');
     set({
       user: null,
       token: null,
@@ -41,27 +47,45 @@ const useAuthStore = create<AuthState>((set) => ({
 
   register: async (email, name, password) => {
     const response = await authClient.register(email, name, password);
-    // After registration, we might want to automatically log in or wait for the user to see the seed phrase
-    // The requirement says: "Tras registro exitoso -> mostrar Seed Phrase UNA VEZ"
-    // So we don't necessarily set isAuthenticated here.
+    // After successful registration, automatically log in
+    const loginResp = await authClient.login(email, password);
+    set({
+      user: loginResp.user,
+      token: loginResp.access_token,
+      refreshToken: loginResp.refresh_token,
+      isAuthenticated: true,
+      requires2FA: false,
+    });
+    localStorage.setItem('xavier_token', loginResp.access_token);
+    localStorage.setItem('xavier_refresh', loginResp.refresh_token);
+    return response; // returns RegisterResponse with seed_phrase
   },
 
   refreshSession: async () => {
     try {
       const response = await authClient.refresh();
       set({
-        user: response.user,
-        token: response.token,
+        token: response.access_token,
         refreshToken: response.refresh_token,
         isAuthenticated: true,
       });
+      localStorage.setItem('xavier_token', response.access_token);
+      localStorage.setItem('xavier_refresh', response.refresh_token);
     } catch (error) {
-      set({
-        user: null,
-        token: null,
-        refreshToken: null,
-        isAuthenticated: false,
-      });
+      // Try restoring from localStorage
+      const savedToken = localStorage.getItem('xavier_token');
+      if (savedToken) {
+        set({ token: savedToken, isAuthenticated: true });
+      }
+    }
+  },
+
+  checkUsers: async () => {
+    try {
+      const resp = await authClient.checkUsers();
+      return resp;
+    } catch {
+      return { has_users: false, count: 0 };
     }
   },
 }));
