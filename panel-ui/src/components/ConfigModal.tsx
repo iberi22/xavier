@@ -296,7 +296,7 @@ export default function ConfigModal({
                   </p>
                 </div>
               </div>
-              <SecurityConfigPanel embedded />
+              <SecurityConfigPanel embedded token={token || ""} />
             </motion.div>
           )}
           {mainTab === "mesh" && (
