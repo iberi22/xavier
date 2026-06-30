@@ -8,5 +8,8 @@
       "Bash(ls *.md)",
       "Bash(cargo build *)"
     ]
-  }
+  },
+  "enabledMcpjsonServers": [
+    "xavier-memory"
+  ]
 }
