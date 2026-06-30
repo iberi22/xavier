@@ -38,7 +38,22 @@ pub(crate) async fn generate_openai_compatible(
         .as_ref()
         .filter(|value| !value.trim().is_empty())
     {
-        request = request.bearer_auth(api_key);
+        use crate::domain::proxy::SecretInjectionStrategy;
+        match config
+            .secret_injection_strategy
+            .as_ref()
+            .unwrap_or(&SecretInjectionStrategy::BearerToken)
+        {
+            SecretInjectionStrategy::BearerToken => {
+                request = request.bearer_auth(api_key);
+            }
+            SecretInjectionStrategy::XApiKey => {
+                request = request.header("X-API-Key", api_key);
+            }
+            SecretInjectionStrategy::GitHubToken => {
+                request = request.header("Authorization", format!("token {}", api_key));
+            }
+        }
     }
 
     let mut messages = vec![
@@ -55,13 +70,21 @@ pub(crate) async fn generate_openai_compatible(
         }
     }
 
+    let mut body = json!({
+        "model": config.model,
+        "messages": messages,
+        "temperature": 0.2,
+        "max_tokens": 500
+    });
+
+    if let Some(token) = &config.lease_token {
+        if let Some(obj) = body.as_object_mut() {
+            obj.insert("lease_token".to_string(), json!(token));
+        }
+    }
+
     let response = request
-        .json(&json!({
-            "model": config.model,
-            "messages": messages,
-            "temperature": 0.2,
-            "max_tokens": 500
-        }))
+        .json(&body)
         .send()
         .await
         .context("failed to call OpenAI-compatible API")?;
