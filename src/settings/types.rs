@@ -264,14 +264,9 @@ impl fmt::Debug for ModelSettings {
             .field("local_llm_api_key", &"[REDACTED]")
             .field("local_anthropic_url", &self.local_anthropic_url)
             .field("compaction_model", &self.compaction_model)
-<<<<<<< HEAD
-            .field("zai", &self.zai)
-            .field("opencode", &self.opencode)
-=======
             .field("zai_api_key", &"[REDACTED]")
             .field("zai_model", &self.zai_model)
             .field("opencode_model", &self.opencode_model)
->>>>>>> 9d6a2b9 (feat: add support for z.ai (GLM) and OpenCode CLI providers)
             .finish()
     }
 }

@@ -171,7 +171,6 @@ impl ModelProviderClient {
         <Self as LlmProvider>::generate_text(self, system_prompt, user_prompt, false).await
     }
 
-<<<<<<< HEAD
     /// Returns a client wrapped in a KeyLeaseManager for automatic key leasing.
     pub fn with_lease(self, secrets_engine: Arc<crate::coordination::KeyLendingEngine>) -> KeyLeaseManager {
         KeyLeaseManager::new(self, secrets_engine)
