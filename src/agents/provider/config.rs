@@ -58,6 +58,8 @@ impl ModelProviderConfig {
             "minimax" => Self::minimax_cloud_from_env(),
             "gemini" => Self::gemini_cloud_from_env(),
             "groq" => Self::groq_cloud_from_env(),
+            "zai" | "z.ai" => Self::zai_cloud_from_env(),
+            "opencode" => Self::opencode_from_env(),
             _ => Self::local_from_env(),
         }
     }
@@ -259,6 +261,82 @@ impl ModelProviderConfig {
         }
     }
 
+    /// z.ai (GLM) provider configuration.
+    /// Endpoint: https://api.z.ai/api/coding/paas/v4 (OpenAI-compatible)
+    /// Models: glm-5.2, glm-4.7, glm-5-turbo
+    pub(crate) fn zai_cloud_from_env() -> Self {
+        let settings = crate::settings::XavierSettings::current();
+        let zai_settings = &settings.models.zai;
+        Self {
+            provider_mode: ProviderMode::Cloud,
+            api_flavor: ApiFlavor::OpenAICompatible,
+            provider_label: "zai".to_string(),
+            model: zai_settings.model.clone().unwrap_or_else(|| {
+                std::env::var("ZAI_MODEL")
+                    .or_else(|_| std::env::var("XAVIER_LLM_MODEL"))
+                    .ok()
+                    .or_else(|| settings.models.llm_model.clone())
+                    .unwrap_or_else(|| "glm-5.2".to_string())
+            }),
+            api_key: zai_settings.api_key.clone().or_else(|| {
+                std::env::var("ZAI_API_KEY")
+                    .ok()
+                    .or_else(|| HardwareVault::new("xavier").get_secret("ZAI_API_KEY").ok())
+                    .or_else(|| settings.models.llm_api_key.clone())
+            }),
+            base_url: Some(
+                zai_settings.base_url.clone().or_else(|| {
+                    std::env::var("ZAI_BASE_URL")
+                        .ok()
+                        .unwrap_or_else(||
+                            "https://api.z.ai/api/coding/paas/v4".to_string())
+                }),
+            ),
+            target: ProviderTarget::GenericOpenAICompatible,
+        }
+    }
+
+    /// OpenCode CLI provider configuration.
+    /// Uses z.ai as backend for opencode/deepseek-v4-flash,
+    /// or a standalone provider with its own config.
+    pub(crate) fn opencode_from_env() -> Self {
+        let settings = crate::settings::XavierSettings::current();
+        let opencode_settings = &settings.models.opencode;
+        Self {
+            provider_mode: ProviderMode::Cloud,
+            api_flavor: ApiFlavor::OpenAICompatible,
+            provider_label: "opencode".to_string(),
+            model: opencode_settings.model.clone().unwrap_or_else(|| {
+                std::env::var("OPENCODE_MODEL")
+                    .ok()
+                    .unwrap_or_else(|| "opencode/deepseek-v4-flash".to_string())
+            }),
+            api_key: opencode_settings.api_key.clone().or_else(|| {
+                std::env::var("OPENCODE_API_KEY")
+                    .ok()
+                    .or_else(|| HardwareVault::new("xavier").get_secret("OPENCODE_API_KEY").ok())
+                    .or_else(|| zai_settings_fallback())
+            }),
+            base_url: Some(
+                opencode_settings.base_url.clone().or_else(|| {
+                    std::env::var("OPENCODE_BASE_URL")
+                        .ok()
+                        .unwrap_or_else(||
+                            "https://api.z.ai/api/coding/paas/v4".to_string())
+                }),
+            ),
+            target: ProviderTarget::GenericOpenAICompatible,
+        }
+    }
+
+    /// Fallback to zai API key if opencode doesn't have its own.
+    fn zai_settings_fallback() -> Option<String> {
+        let settings = crate::settings::XavierSettings::current();
+        settings.models.zai.api_key.clone()
+            .or_else(|| std::env::var("ZAI_API_KEY").ok())
+            .or_else(|| HardwareVault::new("xavier").get_secret("ZAI_API_KEY").ok())
+    }
+
     pub(crate) fn anthropic_cloud_from_env() -> Self {
         let settings = crate::settings::XavierSettings::current();
         Self {
@@ -385,6 +463,8 @@ impl ModelProviderConfig {
             Self::minimax_cloud_from_env(),
             Self::gemini_cloud_from_env(),
             Self::groq_cloud_from_env(),
+            Self::zai_cloud_from_env(),
+            Self::opencode_from_env(),
         ] {
             if config.is_configured() {
                 configured.push(config);

@@ -258,8 +258,28 @@ impl fmt::Debug for ModelSettings {
             .field("local_llm_api_key", &"[REDACTED]")
             .field("local_anthropic_url", &self.local_anthropic_url)
             .field("compaction_model", &self.compaction_model)
+            .field("zai", &self.zai)
+            .field("opencode", &self.opencode)
             .finish()
     }
+}
+
+/// Settings for the z.ai (GLM) provider.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ZaiModelSettings {
+    pub model: Option<String>,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
+}
+
+/// Settings for the OpenCode CLI provider.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct OpenCodeModelSettings {
+    pub model: Option<String>,
+    pub api_key: Option<String>,
+    pub base_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
