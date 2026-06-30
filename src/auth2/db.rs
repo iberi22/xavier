@@ -1,9 +1,8 @@
-use rusqlite::{params, Connection, Result};
+use rusqlite::{params, Connection};
 use std::path::Path;
 use anyhow::{anyhow, Result as AnyhowResult};
 use crate::secrets::vault::HardwareVault;
-use crate::crypto::encryption::{encrypt_data, decrypt_data, NonceBytes};
-use crate::crypto::NONCE_SIZE;
+
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 

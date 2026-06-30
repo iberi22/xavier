@@ -1,11 +1,11 @@
 use jsonwebtoken::{encode, decode, Header, Algorithm, Validation, EncodingKey, DecodingKey};
-use rsa::{RsaPrivateKey, RsaPublicKey, pkcs8::{EncodePrivateKey, EncodePublicKey, DecodePrivateKey, DecodePublicKey}};
+use rsa::{RsaPrivateKey, RsaPublicKey, pkcs8::{EncodePrivateKey, EncodePublicKey}};
 use serde::{Deserialize, Serialize};
 use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{anyhow, Result};
 use crate::secrets::vault::HardwareVault;
 use crate::crypto::encryption::{encrypt_data, decrypt_data, NonceBytes, EncryptedBlob};
-use crate::crypto::NONCE_SIZE;
+
 use rand::rngs::OsRng;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
