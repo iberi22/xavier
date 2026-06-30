@@ -54,6 +54,7 @@ pub(crate) enum ProviderTarget {
     AnthropicMessages,
     GeminiLegacy,
     MiniMaxLegacy,
+    OpenCodeCLI,
 }
 
 /// Response from an LLM provider.
