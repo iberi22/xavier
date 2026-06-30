@@ -5,6 +5,8 @@ import type {
   MeshRole,
   MeshStatus,
   PairingCodeResponse,
+  SecretAuditLog,
+  SecretLease,
 } from "../types";
 
 export const getApiUrl = (path: string) => {
@@ -165,6 +167,22 @@ export class ApiClient {
     return this.fetch<{ status: string }>(`/v1/mesh/peers/${nodeId}`, {
       method: "DELETE",
     });
+  }
+
+  // Secrets & Leases
+  async getLeases() {
+    return this.fetch<SecretLease[]>("/secrets/leases");
+  }
+
+  async revokeLease(token: string) {
+    return this.fetch<{ status: string }>("/secrets/revoke", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  async getLeaseHistory() {
+    return this.fetch<SecretAuditLog[]>("/secrets/history");
   }
 }
 
