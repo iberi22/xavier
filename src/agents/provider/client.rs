@@ -242,7 +242,10 @@ impl LlmProvider for KeyLeaseManager {
     async fn evaluate_context(&self, query: &str, context: &[RetrievedDocument]) -> Result<f32> {
         let client = self.get_leased_client().await?;
         client.evaluate_context(query, context).await
-=======
+    }
+}
+
+impl ModelProviderClient {
     async fn generate_opencode_cli(
         &self,
         system_prompt: &str,
@@ -276,7 +279,6 @@ impl LlmProvider for KeyLeaseManager {
         let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
 
         Ok(LlmResponse { text, quota: None })
->>>>>>> 9d6a2b9 (feat: add support for z.ai (GLM) and OpenCode CLI providers)
     }
 }
 
