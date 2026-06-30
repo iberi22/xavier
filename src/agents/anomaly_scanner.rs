@@ -16,19 +16,43 @@ pub struct AnomalyReport {
 pub struct AnomalyScannerAgent {
     // In production, this holds the LLM Client
     pub name: String,
+    pub leak_detector: Option<std::sync::Arc<crate::coordination::secrets::LeakDetector>>,
 }
 
 impl AnomalyScannerAgent {
     pub fn new() -> Self {
         Self {
             name: "Xavier-Auto-Healer".to_string(),
+            leak_detector: None,
         }
     }
 
+    pub fn with_leak_detector(
+        mut self,
+        leak_detector: std::sync::Arc<crate::coordination::secrets::LeakDetector>,
+    ) -> Self {
+        self.leak_detector = Some(leak_detector);
+        self
+    }
+
     /// Evaluates a raw telemetry message and returns an AnomalyReport.
-    pub fn scan_telemetry(&self, telemetry_json: &str) -> AnomalyReport {
+    pub async fn scan_telemetry(&self, telemetry_json: &str) -> AnomalyReport {
         // MOCK: In production, we call LLM (Gemini/Claude) with the telemetry_json
-        
+
+        // 1. Leak Detection
+        if let Some(ref detector) = self.leak_detector {
+            if let Some((agent_id, _hash)) = detector.check_leak(telemetry_json).await {
+                return AnomalyReport {
+                    anomaly_type: "API Key Leak Detected".to_string(),
+                    confidence_score: 1.0,
+                    proposed_fix: Some(format!("Revoke all leases for agent {}", agent_id)),
+                    requires_human: true,
+                    is_false_positive: false,
+                    cluster_id: Some("CLUSTER_SECURITY_LEAK".to_string()),
+                };
+            }
+        }
+
         let is_rust_panic = telemetry_json.contains("panic") || telemetry_json.contains("Crash");
         let is_p2p_race = telemetry_json.contains("PeerJS") || telemetry_json.contains("YJS_UPDATE");
 
@@ -121,10 +145,10 @@ impl Default for AnomalyScannerAgent {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_anomaly_scanner_human_escalation() {
+    #[tokio::test]
+    async fn test_anomaly_scanner_human_escalation() {
         let agent = AnomalyScannerAgent::new();
-        let report = agent.scan_telemetry("{\"event_kind\": \"panic\", \"sanitized_message\": \"Crash in [REDACTED]\"}");
+        let report = agent.scan_telemetry("{\"event_kind\": \"panic\", \"sanitized_message\": \"Crash in [REDACTED]\"}").await;
         
         assert_eq!(report.anomaly_type, "Rust Core Panic");
         assert!(report.requires_human);
@@ -133,10 +157,10 @@ mod tests {
         assert!(action.contains("DAO Governance Vote"));
     }
 
-    #[test]
-    fn test_anomaly_scanner_auto_fix() {
+    #[tokio::test]
+    async fn test_anomaly_scanner_auto_fix() {
         let agent = AnomalyScannerAgent::new();
-        let report = agent.scan_telemetry("{\"event_kind\": \"sync_error\", \"sanitized_message\": \"PeerJS connection failed, YJS_UPDATE race\"}");
+        let report = agent.scan_telemetry("{\"event_kind\": \"sync_error\", \"sanitized_message\": \"PeerJS connection failed, YJS_UPDATE race\"}").await;
         
         assert_eq!(report.anomaly_type, "P2P Sync Race Condition");
         assert!(!report.requires_human);
@@ -144,5 +168,22 @@ mod tests {
         let action = agent.execute_remediation(&report);
         assert!(action.contains("Auto-Fixing"));
         assert!(action.contains("exponential backoff"));
+    }
+
+    #[tokio::test]
+    async fn test_anomaly_scanner_leak_detection() {
+        let detector = std::sync::Arc::new(crate::coordination::secrets::LeakDetector::new());
+        let secret = "leaked-secret-key";
+        let agent_id = "agent-123";
+        detector.register_key(secret, agent_id).await;
+
+        let agent = AnomalyScannerAgent::new().with_leak_detector(detector);
+        let telemetry = format!("{{\"log\": \"Error sending request with key {}\"}}", secret);
+
+        let report = agent.scan_telemetry(&telemetry).await;
+
+        assert_eq!(report.anomaly_type, "API Key Leak Detected");
+        assert!(report.requires_human);
+        assert!(report.proposed_fix.unwrap().contains(agent_id));
     }
 }

@@ -26,6 +26,7 @@ pub struct ProxyUseCase {
     pub prompt_cache: Arc<Mutex<HashMap<String, Vec<String>>>>,
     pub router: Router,
     pub threat_detector: Option<Arc<dyn ThreatDetectionPort>>,
+    pub event_bus: Option<Arc<crate::coordination::XavierEventBus>>,
 }
 
 impl ProxyUseCase {
@@ -38,11 +39,17 @@ impl ProxyUseCase {
             prompt_cache,
             router: Router::new(),
             threat_detector: None,
+            event_bus: None,
         }
     }
 
     pub fn with_threat_detector(mut self, threat_detector: Arc<dyn ThreatDetectionPort>) -> Self {
         self.threat_detector = Some(threat_detector);
+        self
+    }
+
+    pub fn with_event_bus(mut self, event_bus: Arc<crate::coordination::XavierEventBus>) -> Self {
+        self.event_bus = Some(event_bus);
         self
     }
 
@@ -67,6 +74,31 @@ impl ProxyUseCase {
         };
 
         let mut request_builder = client.request(method, &req.url);
+
+        // 1. Leak Detection: Scan request for any known API keys
+        let mut combined_content = req.url.clone();
+        for (k, v) in &req.headers {
+            combined_content.push_str(k);
+            combined_content.push_str(v);
+        }
+        if let Some(ref body) = req.body {
+            combined_content.push_str(&body.to_string());
+        }
+
+        if let Some((agent_id, hash)) = secrets_engine.leak_detector.check_leak(&combined_content).await {
+            warn!("Potential API key leak detected for agent {}. Hash: {}", agent_id, hash);
+
+            if let Some(ref bus) = self.event_bus {
+                let _ = bus.publish(crate::coordination::XavierEvent::KeyLeakDetected {
+                    agent_id: agent_id.clone(),
+                    hash,
+                });
+            }
+
+            secrets_engine.revoke_for_agent(&agent_id, "API Key Leak Detected in Proxy").await;
+
+            return Err(ProxyError::InvalidRequest("Security violation: API key leak detected".to_string()));
+        }
 
         // Set headers
         for (k, v) in &req.headers {
@@ -447,4 +479,60 @@ impl ProxyUseCase {
         }
     }
 
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::coordination::KeyLendingEngine;
+    use crate::domain::proxy::{GenericProxyRequest, ProxyError};
+    use crate::secrets::lending::AuditLogger;
+    use std::sync::Arc;
+    use parking_lot::Mutex;
+
+    struct MockAuditLogger;
+    impl AuditLogger for MockAuditLogger {
+        fn log_lend(&self, _agent_id: &str, _secret_name: &str, _lease_token: &str, _ttl_secs: u64) {}
+        fn log_revoke(&self, _agent_id: &str, _lease_token: &str, _reason: &str) {}
+    }
+
+    #[tokio::test]
+    async fn test_proxy_leak_detection() {
+        let rate_manager = Arc::new(RateLimitManager::new());
+        let prompt_cache = Arc::new(Mutex::new(HashMap::new()));
+        let proxy = ProxyUseCase::new(rate_manager, prompt_cache);
+
+        let secrets_engine = Arc::new(KeyLendingEngine::new(Box::new(MockAuditLogger)));
+        let secret = "sk-leaked-key-123";
+        let agent_id = "malicious-agent";
+
+        // Register key via lend
+        secrets_engine.lend("provider-key", Some(secret), agent_id, 3600).await.unwrap();
+
+        // Prepare request with leaked key in body
+        let req = GenericProxyRequest {
+            url: "https://api.openai.com/v1/chat/completions".to_string(),
+            method: "POST".to_string(),
+            headers: HashMap::new(),
+            body: Some(serde_json::json!({
+                "model": "gpt-4",
+                "messages": [{"role": "user", "content": format!("Here is my key: {}", secret)}]
+            })),
+            lease_token: None,
+            secret_injection_strategy: None,
+        };
+
+        let result = proxy.execute_generic(req, secrets_engine.clone()).await;
+
+        // Should be blocked
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ProxyError::InvalidRequest(msg) => assert!(msg.contains("API key leak detected")),
+            _ => panic!("Expected InvalidRequest error"),
+        }
+
+        // Leases for agent should be revoked
+        let leases = secrets_engine.list_leases().await;
+        assert!(leases.iter().all(|l| l.agent_id != agent_id));
+    }
 }

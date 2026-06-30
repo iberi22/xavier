@@ -5,11 +5,72 @@
 use anyhow::{anyhow, Result};
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
+
+pub struct LeakDetector {
+    /// Map of SHA-256 hashes of secrets to the agent_id they were lent to
+    hashes: Arc<RwLock<HashMap<String, String>>>,
+}
+
+impl LeakDetector {
+    pub fn new() -> Self {
+        Self {
+            hashes: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    pub async fn register_key(&self, secret_value: &str, agent_id: &str) {
+        let mut hasher = Sha256::new();
+        hasher.update(secret_value.as_bytes());
+        let hash = crate::crypto::hex_encode(hasher.finalize());
+        let mut hashes = self.hashes.write().await;
+        hashes.insert(hash, agent_id.to_string());
+    }
+
+    /// Checks if any registered secret hash is present in the content.
+    /// This hashes tokens in the content to see if they match.
+    pub async fn check_leak(&self, content: &str) -> Option<(String, String)> {
+        let hashes = self.hashes.read().await;
+        if hashes.is_empty() {
+            return None;
+        }
+
+        // Simple tokenization: split by common delimiters
+        // In a real scenario, we might want to use a more sophisticated approach
+        for token in content.split(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == ',' || c == ':') {
+            if token.is_empty() {
+                continue;
+            }
+
+            // Handle common prefixes if present in the token
+            let clean_token = token
+                .trim_start_matches("Bearer ")
+                .trim_start_matches("Bearer")
+                .trim_start_matches("token ")
+                .trim_start_matches("token");
+
+            let mut hasher = Sha256::new();
+            hasher.update(clean_token.as_bytes());
+            let hash = crate::crypto::hex_encode(hasher.finalize());
+
+            if let Some(agent_id) = hashes.get(&hash) {
+                return Some((agent_id.clone(), hash));
+            }
+        }
+        None
+    }
+}
+
+impl Default for LeakDetector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SecretLease {
@@ -46,6 +107,7 @@ use crate::secrets::lending::AuditLogger;
 pub struct KeyLendingEngine {
     leases: Arc<RwLock<HashMap<String, SecretLease>>>,
     audit_logger: Box<dyn AuditLogger + Send + Sync>,
+    pub leak_detector: Arc<LeakDetector>,
 }
 
 impl KeyLendingEngine {
@@ -53,6 +115,7 @@ impl KeyLendingEngine {
         Self {
             leases: Arc::new(RwLock::new(HashMap::new())),
             audit_logger,
+            leak_detector: Arc::new(LeakDetector::new()),
         }
     }
 
@@ -79,6 +142,10 @@ impl KeyLendingEngine {
 
         let mut leases = self.leases.write().await;
         leases.insert(token.clone(), lease.clone());
+
+        if let Some(val) = value {
+            self.leak_detector.register_key(val, agent_id).await;
+        }
 
         self.audit_logger.log_lend(agent_id, name, &token, ttl_secs);
         tracing::info!(
@@ -206,5 +273,55 @@ impl KeyLendingEngine {
             }
         }
         count
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::secrets::lending::AuditLogger;
+
+    struct MockAuditLogger;
+    impl AuditLogger for MockAuditLogger {
+        fn log_lend(&self, _agent_id: &str, _secret_name: &str, _lease_token: &str, _ttl_secs: u64) {}
+        fn log_revoke(&self, _agent_id: &str, _lease_token: &str, _reason: &str) {}
+    }
+
+    #[tokio::test]
+    async fn test_leak_detector() {
+        let detector = LeakDetector::new();
+        let secret = "sk-ant-api03-abcdef1234567890";
+        let agent_id = "agent-42";
+
+        detector.register_key(secret, agent_id).await;
+
+        // Test exact match
+        let content = format!("Sending request with key: {}", secret);
+        let leak = detector.check_leak(&content).await;
+        assert!(leak.is_some());
+        assert_eq!(leak.unwrap().0, agent_id);
+
+        // Test with Bearer prefix
+        let content_bearer = format!("Authorization: Bearer {}", secret);
+        let leak_bearer = detector.check_leak(&content_bearer).await;
+        assert!(leak_bearer.is_some());
+
+        // Test no leak
+        let safe_content = "This is a safe message without any keys.";
+        let no_leak = detector.check_leak(safe_content).await;
+        assert!(no_leak.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_key_lending_engine_leak_registration() {
+        let engine = KeyLendingEngine::new(Box::new(MockAuditLogger));
+        let secret = "secret-value";
+        let agent_id = "agent-1";
+
+        engine.lend("test-secret", Some(secret), agent_id, 3600).await.unwrap();
+
+        let leak = engine.leak_detector.check_leak(secret).await;
+        assert!(leak.is_some());
+        assert_eq!(leak.unwrap().0, agent_id);
     }
 }
