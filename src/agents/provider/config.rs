@@ -77,11 +77,7 @@ impl ModelProviderConfig {
             "minimax" => Self::minimax_cloud_from_env(),
             "gemini" => Self::gemini_cloud_from_env(),
             "groq" => Self::groq_cloud_from_env(),
-<<<<<<< HEAD
-            "zai" | "z.ai" => Self::zai_cloud_from_env(),
-=======
             "z.ai" | "zai" => Self::zai_cloud_from_env(),
->>>>>>> 9d6a2b9 (feat: add support for z.ai (GLM) and OpenCode CLI providers)
             "opencode" => Self::opencode_from_env(),
             _ => Self::local_from_env(),
         }
