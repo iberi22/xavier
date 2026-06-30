@@ -198,6 +198,13 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         xavier::secrets::audit::QmdAuditLogger::new(),
     )));
     let event_bus = XavierEventBus::new(100);
+
+    // Initialize Coordination Core for automatic lease management
+    let coordination_core = xavier::coordination::core::CoordinationCore::new(
+        event_bus.clone(),
+        secrets_engine.clone(),
+    );
+    coordination_core.start();
     let tasks = Arc::new(
         TaskService::new(Arc::new(InMemoryTaskStore::new())).with_event_bus(event_bus.clone()),
     );
