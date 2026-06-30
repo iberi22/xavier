@@ -3,7 +3,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use xavier::agents::rate_limit::RateLimitManager;
 use xavier::app::proxy_use_case::ProxyUseCase;
+use xavier::coordination::{KeyLendingEngine, XavierEventBus};
 use xavier::domain::proxy::{ProxyChatCommand, ProxyError};
+use xavier::secrets::audit::QmdAuditLogger;
 
 #[tokio::test]
 async fn test_proxy_use_case_rate_limited() {
@@ -28,13 +30,18 @@ async fn test_proxy_use_case_rate_limited() {
     }
 
     let use_case = ProxyUseCase::new(rate_manager, prompt_cache);
+    let audit_logger = Box::new(QmdAuditLogger::new());
+    let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger));
+    let event_bus = XavierEventBus::new(10);
+
     let cmd = ProxyChatCommand {
         model: "test-model".into(),
         messages: vec![serde_json::json!({"role": "user", "content": "hello"})],
         temperature: None,
         max_tokens: None,
+        lease_token: None,
     };
 
-    let result = use_case.execute_secured(cmd, false).await;
+    let result = use_case.execute_secured(cmd, false, secrets_engine, event_bus).await;
     assert!(matches!(result, Err(ProxyError::RateLimited)));
 }

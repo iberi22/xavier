@@ -9,3 +9,6 @@ pub mod qmd_memory_adapter;
 pub mod security_service;
 // pub mod session_service; // removed — types not available in current domain layout
 pub mod verification_service;
+
+#[cfg(test)]
+mod proxy_use_case_tests;

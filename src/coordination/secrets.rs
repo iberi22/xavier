@@ -155,6 +155,33 @@ impl KeyLendingEngine {
         leases.get(token).cloned()
     }
 
+    /// Renew a lease for a specific TTL
+    pub async fn renew(&self, token: &str, ttl_secs: u64) -> Result<()> {
+        let mut leases = self.leases.write().await;
+        if let Some(lease) = leases.get_mut(token) {
+            let now = Utc::now();
+            lease.expires_at = now + Duration::seconds(ttl_secs as i64);
+            tracing::info!("Renewed secret lease: {} (New TTL: {}s)", token, ttl_secs);
+            Ok(())
+        } else {
+            Err(anyhow!("Lease token not found"))
+        }
+    }
+
+    /// Add backoff time to a lease
+    pub async fn backoff(&self, token: &str, seconds: u64) -> Result<()> {
+        let mut leases = self.leases.write().await;
+        if let Some(lease) = leases.get_mut(token) {
+            let now = Utc::now();
+            let base = if lease.is_expired() { now } else { lease.expires_at };
+            lease.expires_at = base + Duration::seconds(seconds as i64);
+            tracing::info!("Applied backoff to secret lease: {} (+{}s)", token, seconds);
+            Ok(())
+        } else {
+            Err(anyhow!("Lease token not found"))
+        }
+    }
+
     /// List all active leases
     pub async fn list_leases(&self) -> Vec<SecretLease> {
         let leases = self.leases.read().await;

@@ -20,6 +20,7 @@ pub struct ProxyChatRequest {
     pub messages: Vec<serde_json::Value>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<usize>,
+    pub lease_token: Option<String>,
 }
 
 impl From<ProxyChatRequest> for ProxyChatCommand {
@@ -29,6 +30,7 @@ impl From<ProxyChatRequest> for ProxyChatCommand {
             messages: req.messages,
             temperature: req.temperature,
             max_tokens: req.max_tokens,
+            lease_token: req.lease_token,
         }
     }
 }
@@ -40,7 +42,12 @@ pub async fn chat_proxy(
 ) -> Response {
     match state
         .proxy_use_case
-        .execute_secured(req.into(), session.is_ephemeral)
+        .execute_secured(
+            req.into(),
+            session.is_ephemeral,
+            state.secrets_engine.clone(),
+            state.event_bus.clone(),
+        )
         .await
     {
         Ok(resp) => Json(resp).into_response(),
@@ -58,9 +65,11 @@ pub async fn chat_batch_proxy(
 
     for (idx, req) in requests.into_iter().enumerate() {
         let use_case = state.proxy_use_case.clone();
+        let secrets = state.secrets_engine.clone();
+        let events = state.event_bus.clone();
         join_set.spawn(async move {
             let res = use_case
-                .execute_secured(req.into(), session.is_ephemeral)
+                .execute_secured(req.into(), session.is_ephemeral, secrets, events)
                 .await;
             (idx, res)
         });
@@ -87,6 +96,20 @@ pub async fn chat_batch_proxy(
     }
 
     (StatusCode::OK, Json(results)).into_response()
+}
+
+pub async fn revoke_lease_by_path(
+    State(state): State<CliState>,
+    axum::extract::Path(token): axum::extract::Path<String>,
+) -> Response {
+    match state
+        .secrets_engine
+        .revoke(&token, "Proxy Auto-Revoke API")
+        .await
+    {
+        Ok(_) => (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "revoked" }))).into_response(),
+        Err(e) => (axum::http::StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": e.to_string() }))).into_response(),
+    }
 }
 
 pub async fn generic_proxy(

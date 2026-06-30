@@ -11,6 +11,8 @@ pub struct ProxyChatCommand {
     pub messages: Vec<serde_json::Value>,
     pub temperature: Option<f32>,
     pub max_tokens: Option<usize>,
+    /// Optional lease token for secret injection
+    pub lease_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
