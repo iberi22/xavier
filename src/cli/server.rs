@@ -395,6 +395,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/secrets/leases", get(leases_handler))
         .route("/secrets/revoke", post(revoke_handler))
         .route("/secrets/history", get(history_handler))
+        .route("/secrets/revoke/{token}", post(crate::cli::proxy::revoke_lease_by_path))
         .route("/secrets/status/{token}", get(status_handler))
         .route(
             "/v1/proxy/chat/completions",

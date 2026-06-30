@@ -12,6 +12,8 @@ use tracing::{error, info};
 pub enum XavierEvent {
     TaskCompleted { task: Task },
     TaskFailed { task: Task, reason: String },
+    LeaseRenewed { token: String },
+    LeaseBackoff { token: String, seconds: u64 },
 }
 
 #[derive(Clone)]
