@@ -59,6 +59,45 @@ pub async fn lend_handler(
     }
 }
 
+pub async fn history_handler() -> Response {
+    use xavier::codebase::connection_manager::ConnectionManager;
+    let result = ConnectionManager::global()
+        .with_conn("metrics", |conn: &rusqlite::Connection| {
+            let mut stmt = conn.prepare(
+                "SELECT id, timestamp, event_type, agent_id, session_token, secret_id, reason
+                 FROM secret_audit_logs
+                 ORDER BY timestamp DESC
+                 LIMIT 100",
+            )?;
+            let rows = stmt.query_map([], |row: &rusqlite::Row| {
+                Ok(serde_json::json!({
+                    "id": row.get::<_, i64>(0)?,
+                    "timestamp": row.get::<_, String>(1)?,
+                    "event_type": row.get::<_, String>(2)?,
+                    "agent_id": row.get::<_, String>(3)?,
+                    "session_token": row.get::<_, String>(4)?,
+                    "secret_id": row.get::<_, Option<String>>(5)?,
+                    "reason": row.get::<_, Option<String>>(6)?,
+                }))
+            })?;
+
+            let mut logs = Vec::new();
+            for row in rows {
+                logs.push(row?);
+            }
+            Ok::<Vec<serde_json::Value>, anyhow::Error>(logs)
+        })
+        .await;
+
+    match result {
+        Ok(logs) => json_response(StatusCode::OK, serde_json::to_value(logs).unwrap_or_default()),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": e.to_string() }),
+        ),
+    }
+}
+
 pub async fn leases_handler(State(state): State<CliState>) -> Response {
     let leases = state.secrets_engine.list_leases().await;
     json_response(
