@@ -14,6 +14,7 @@ pub enum XavierEvent {
     TaskFailed { task: Task, reason: String },
     LeaseRenewed { token: String },
     LeaseBackoff { token: String, seconds: u64 },
+    KeyLeakDetected { agent_id: String, hash: String },
 }
 
 #[derive(Clone)]

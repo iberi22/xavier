@@ -56,7 +56,7 @@ async fn test_data_commons_phase_2_e2e_flow() {
     
     // 6. Autonomous Remediation (Maintainer runs AnomalyScanner)
     let scanner = AnomalyScannerAgent::new();
-    let report = scanner.scan_telemetry(&decrypted_json);
+    let report = scanner.scan_telemetry(&decrypted_json).await;
     
     // The payload was a Rust Panic
     assert_eq!(report.anomaly_type, "Rust Core Panic");
