@@ -724,7 +724,7 @@ pub async fn handle_memory_tool(
                     is_error: Some(false),
                 })?)
             } else {
-                let mut expanded = if depth > 0 {
+                let expanded = if depth > 0 {
                     workspace
                         .workspace
                         .memory
