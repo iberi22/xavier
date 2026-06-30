@@ -5,6 +5,7 @@
 
 use anyhow::{anyhow, Result};
 use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding};
+
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -37,6 +38,7 @@ impl RsaKeypairManager {
     pub fn ensure_keypair(&self) -> Result<()> {
         let priv_path = self.storage_dir.join("rsa_keypair.enc");
         let pub_path = self.storage_dir.join("rsa_keypair.pub");
+
 
         if priv_path.exists() && pub_path.exists() {
             return Ok(());

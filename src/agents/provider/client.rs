@@ -3,7 +3,7 @@
 //! Provides a shared reqwest client with configurable timeouts,
 //! retry logic, and connection management for all provider backends.
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use reqwest::Client;
 use std::sync::Arc;
@@ -128,6 +128,9 @@ impl ModelProviderClient {
                     )
                     .await
                 }
+                ProviderTarget::OpenCodeCLI => {
+                    self.generate_opencode_cli(system_prompt, user_prompt).await
+                }
             }
         };
 
@@ -168,6 +171,7 @@ impl ModelProviderClient {
         <Self as LlmProvider>::generate_text(self, system_prompt, user_prompt, false).await
     }
 
+<<<<<<< HEAD
     /// Returns a client wrapped in a KeyLeaseManager for automatic key leasing.
     pub fn with_lease(self, secrets_engine: Arc<crate::coordination::KeyLendingEngine>) -> KeyLeaseManager {
         KeyLeaseManager::new(self, secrets_engine)
@@ -238,6 +242,41 @@ impl LlmProvider for KeyLeaseManager {
     async fn evaluate_context(&self, query: &str, context: &[RetrievedDocument]) -> Result<f32> {
         let client = self.get_leased_client().await?;
         client.evaluate_context(query, context).await
+=======
+    async fn generate_opencode_cli(
+        &self,
+        system_prompt: &str,
+        user_prompt: &str,
+    ) -> Result<LlmResponse> {
+        use tokio::process::Command;
+
+        let prompt = format!("{}\n\n{}", system_prompt, user_prompt);
+
+        let mut cmd = Command::new("opencode");
+        cmd.arg("run")
+            .arg("--model")
+            .arg(&self.config.model)
+            .arg(prompt);
+
+        if let Some(api_key) = &self.config.api_key {
+            cmd.env("OPENCODE_API_KEY", api_key);
+            cmd.env("ZAI_API_KEY", api_key);
+        }
+
+        let output = cmd
+            .output()
+            .await
+            .context("failed to execute opencode CLI")?;
+
+        if !output.status.success() {
+            let err = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow!("opencode CLI error: {}", err));
+        }
+
+        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+        Ok(LlmResponse { text, quota: None })
+>>>>>>> 9d6a2b9 (feat: add support for z.ai (GLM) and OpenCode CLI providers)
     }
 }
 

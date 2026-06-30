@@ -7,6 +7,8 @@ pub enum ProviderKind {
     Anthropic,
     Gemini,
     Groq,
+    Zai,
+    OpenCode,
     Generic,
 }
 
@@ -18,6 +20,8 @@ impl ProviderKind {
             "anthropic" => Self::Anthropic,
             "gemini" | "google" => Self::Gemini,
             "groq" => Self::Groq,
+            "z.ai" | "zai" => Self::Zai,
+            "opencode" => Self::OpenCode,
             _ => Self::Generic,
         }
     }
@@ -28,6 +32,8 @@ impl ProviderKind {
             Self::Anthropic => "anthropic",
             Self::Gemini => "gemini",
             Self::Groq => "groq",
+            Self::Zai => "z.ai",
+            Self::OpenCode => "opencode",
             Self::Generic => "generic",
         }
     }

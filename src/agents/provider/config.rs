@@ -16,6 +16,7 @@ pub(crate) const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com/v
 pub(crate) const DEFAULT_DEEPSEEK_BASE_URL: &str = "https://api.deepseek.com/v1";
 pub(crate) const DEFAULT_MINIMAX_BASE_URL: &str = "https://api.minimax.chat/v1";
 pub(crate) const DEFAULT_GROQ_BASE_URL: &str = "https://api.groq.com/openai/v1";
+pub(crate) const DEFAULT_ZAI_BASE_URL: &str = "https://api.z.ai/v1";
 
 /// Configuration for model provider key leasing.
 #[derive(Debug, Clone)]
@@ -76,7 +77,11 @@ impl ModelProviderConfig {
             "minimax" => Self::minimax_cloud_from_env(),
             "gemini" => Self::gemini_cloud_from_env(),
             "groq" => Self::groq_cloud_from_env(),
+<<<<<<< HEAD
             "zai" | "z.ai" => Self::zai_cloud_from_env(),
+=======
+            "z.ai" | "zai" => Self::zai_cloud_from_env(),
+>>>>>>> 9d6a2b9 (feat: add support for z.ai (GLM) and OpenCode CLI providers)
             "opencode" => Self::opencode_from_env(),
             _ => Self::local_from_env(),
         }
@@ -465,6 +470,54 @@ impl ModelProviderConfig {
         }
     }
 
+    pub(crate) fn zai_cloud_from_env() -> Self {
+        let settings = crate::settings::XavierSettings::current();
+        Self {
+            provider_mode: ProviderMode::Cloud,
+            api_flavor: ApiFlavor::OpenAICompatible,
+            provider_label: "z.ai".to_string(),
+            model: std::env::var("XAVIER_ZAI_MODEL")
+                .or_else(|_| std::env::var("ZAI_MODEL"))
+                .ok()
+                .or_else(|| settings.models.zai_model.clone())
+                .unwrap_or_else(|| "glm-5.1".to_string()),
+            api_key: std::env::var("ZAI_API_KEY")
+                .ok()
+                .or_else(|| HardwareVault::new("xavier").get_secret("ZAI_API_KEY").ok())
+                .or_else(|| settings.models.zai_api_key.clone()),
+            base_url: Some(DEFAULT_ZAI_BASE_URL.to_string()),
+            target: ProviderTarget::GenericOpenAICompatible,
+        }
+    }
+
+    pub(crate) fn opencode_from_env() -> Self {
+        let settings = crate::settings::XavierSettings::current();
+        Self {
+            provider_mode: ProviderMode::Local,
+            api_flavor: ApiFlavor::OpenAICompatible,
+            provider_label: "opencode".to_string(),
+            model: std::env::var("XAVIER_OPENCODE_MODEL")
+                .or_else(|_| std::env::var("OPENCODE_MODEL"))
+                .ok()
+                .or_else(|| settings.models.opencode_model.clone())
+                .unwrap_or_else(|| "opencode/deepseek-v4-flash".to_string()),
+            api_key: std::env::var("OPENCODE_API_KEY")
+                .ok()
+                .or_else(|| {
+                    HardwareVault::new("xavier")
+                        .get_secret("OPENCODE_API_KEY")
+                        .ok()
+                })
+                .or_else(|| {
+                    HardwareVault::new("xavier")
+                        .get_secret("ZAI_API_KEY")
+                        .ok()
+                }),
+            base_url: None,
+            target: ProviderTarget::OpenCodeCLI,
+        }
+    }
+
     pub(crate) fn disabled() -> Self {
         Self {
             provider_mode: ProviderMode::Disabled,
@@ -484,10 +537,14 @@ impl ModelProviderConfig {
     pub fn is_configured(&self) -> bool {
         match self.provider_mode {
             ProviderMode::Disabled => false,
-            ProviderMode::Local => self
-                .base_url
-                .as_ref()
-                .is_some_and(|value| !value.trim().is_empty()),
+            ProviderMode::Local => {
+                if self.target == ProviderTarget::OpenCodeCLI {
+                    return true;
+                }
+                self.base_url
+                    .as_ref()
+                    .is_some_and(|value| !value.trim().is_empty())
+            }
             ProviderMode::Cloud => {
                 let has_url = self
                     .base_url

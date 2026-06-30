@@ -102,6 +102,9 @@ impl Default for ModelSettings {
             local_llm_api_key: None,
             local_anthropic_url: None,
             compaction_model: None,
+            zai_api_key: None,
+            zai_model: Some("glm-5.1".to_string()),
+            opencode_model: Some("opencode/deepseek-v4-flash".to_string()),
         }
     }
 }
