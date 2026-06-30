@@ -5,6 +5,7 @@
 //! routing requests to the correct LLM backend.
 
 use crate::agents::provider::types::{ApiFlavor, ProviderMode, ProviderTarget};
+use crate::domain::proxy::SecretInjectionStrategy;
 use crate::secrets::vault::HardwareVault;
 
 pub(crate) const DEFAULT_LOCAL_BASE_URL: &str = "http://localhost:11434/v1";
@@ -15,6 +16,17 @@ pub(crate) const DEFAULT_ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com/v
 pub(crate) const DEFAULT_DEEPSEEK_BASE_URL: &str = "https://api.deepseek.com/v1";
 pub(crate) const DEFAULT_MINIMAX_BASE_URL: &str = "https://api.minimax.chat/v1";
 pub(crate) const DEFAULT_GROQ_BASE_URL: &str = "https://api.groq.com/openai/v1";
+
+/// Configuration for model provider key leasing.
+#[derive(Debug, Clone)]
+pub struct KeyLeaseConfig {
+    /// The name of the secret in the vault.
+    pub secret_name: String,
+    /// The agent requesting the lease.
+    pub agent_id: String,
+    /// Time-to-live for the lease in seconds.
+    pub ttl_secs: u64,
+}
 
 /// Configuration for a model provider.
 #[derive(Debug, Clone)]
@@ -32,6 +44,12 @@ pub struct ModelProviderConfig {
     /// Optional base URL for the API.
     pub base_url: Option<String>,
     pub(crate) target: ProviderTarget,
+    /// Optional configuration for key leasing.
+    pub lease_config: Option<KeyLeaseConfig>,
+    /// Strategy for injecting the secret into the request.
+    pub secret_injection_strategy: Option<SecretInjectionStrategy>,
+    /// Optional lease token to include in requests.
+    pub lease_token: Option<String>,
 }
 
 impl ModelProviderConfig {
@@ -112,6 +130,9 @@ impl ModelProviderConfig {
                         .unwrap_or_else(|| DEFAULT_LOCAL_BASE_URL.to_string()),
                 ),
                 target: ProviderTarget::GenericOpenAICompatible,
+                lease_config: None,
+                secret_injection_strategy: None,
+                lease_token: None,
             },
             ApiFlavor::AnthropicCompatible => Self {
                 provider_mode: ProviderMode::Local,
@@ -136,6 +157,9 @@ impl ModelProviderConfig {
                         .unwrap_or_else(|| DEFAULT_LOCAL_ANTHROPIC_BASE_URL.to_string()),
                 ),
                 target: ProviderTarget::AnthropicMessages,
+                lease_config: None,
+                secret_injection_strategy: None,
+                lease_token: None,
             },
         }
     }
@@ -173,6 +197,9 @@ impl ModelProviderConfig {
                         .unwrap_or_else(|| DEFAULT_OPENAI_BASE_URL.to_string()),
                 ),
                 target: ProviderTarget::GenericOpenAICompatible,
+                lease_config: None,
+                secret_injection_strategy: None,
+                lease_token: None,
             },
             ApiFlavor::AnthropicCompatible => Self::anthropic_cloud_from_env(),
         }
@@ -204,6 +231,9 @@ impl ModelProviderConfig {
                     .unwrap_or_else(|| DEFAULT_OPENAI_BASE_URL.to_string()),
             ),
             target: ProviderTarget::GenericOpenAICompatible,
+            lease_config: None,
+            secret_injection_strategy: None,
+            lease_token: None,
         }
     }
 
@@ -228,6 +258,9 @@ impl ModelProviderConfig {
                     .unwrap_or_else(|| DEFAULT_GROQ_BASE_URL.to_string()),
             ),
             target: ProviderTarget::GenericOpenAICompatible,
+            lease_config: None,
+            secret_injection_strategy: None,
+            lease_token: None,
         }
     }
 
@@ -256,6 +289,9 @@ impl ModelProviderConfig {
                     .unwrap_or_else(|| DEFAULT_DEEPSEEK_BASE_URL.to_string()),
             ),
             target: ProviderTarget::GenericOpenAICompatible,
+            lease_config: None,
+            secret_injection_strategy: None,
+            lease_token: None,
         }
     }
 
@@ -287,6 +323,9 @@ impl ModelProviderConfig {
                     .unwrap_or_else(|| DEFAULT_ANTHROPIC_BASE_URL.to_string()),
             ),
             target: ProviderTarget::AnthropicMessages,
+            lease_config: None,
+            secret_injection_strategy: None,
+            lease_token: None,
         }
     }
 
@@ -315,6 +354,9 @@ impl ModelProviderConfig {
                     .unwrap_or_else(|| DEFAULT_MINIMAX_BASE_URL.to_string()),
             ),
             target: ProviderTarget::MiniMaxLegacy,
+            lease_config: None,
+            secret_injection_strategy: None,
+            lease_token: None,
         }
     }
 
@@ -339,6 +381,9 @@ impl ModelProviderConfig {
                 .or_else(|| settings.models.llm_api_key.clone()),
             base_url: None,
             target: ProviderTarget::GeminiLegacy,
+            lease_config: None,
+            secret_injection_strategy: None,
+            lease_token: None,
         }
     }
 
@@ -351,6 +396,9 @@ impl ModelProviderConfig {
             api_key: None,
             base_url: None,
             target: ProviderTarget::GenericOpenAICompatible,
+            lease_config: None,
+            secret_injection_strategy: None,
+            lease_token: None,
         }
     }
 
@@ -363,13 +411,17 @@ impl ModelProviderConfig {
                 .as_ref()
                 .is_some_and(|value| !value.trim().is_empty()),
             ProviderMode::Cloud => {
-                self.base_url
+                let has_url = self
+                    .base_url
                     .as_ref()
-                    .is_some_and(|value| !value.trim().is_empty())
-                    && self
-                        .api_key
-                        .as_ref()
-                        .is_some_and(|value| !value.trim().is_empty())
+                    .is_some_and(|value| !value.trim().is_empty());
+                let has_key = self
+                    .api_key
+                    .as_ref()
+                    .is_some_and(|value| !value.trim().is_empty());
+                let has_lease = self.lease_config.is_some();
+
+                has_url && (has_key || has_lease)
             }
         }
     }
@@ -417,6 +469,28 @@ impl ModelProviderConfig {
         if let Some(url) = base_url.filter(|v| !v.trim().is_empty()) {
             self.base_url = Some(url);
         }
+        self
+    }
+
+    /// Sets key lease configuration.
+    pub fn with_key_lease(mut self, secret_name: &str, agent_id: &str, ttl_secs: u64) -> Self {
+        self.lease_config = Some(KeyLeaseConfig {
+            secret_name: secret_name.to_string(),
+            agent_id: agent_id.to_string(),
+            ttl_secs,
+        });
+        self
+    }
+
+    /// Sets secret injection strategy.
+    pub fn with_secret_injection_strategy(mut self, strategy: SecretInjectionStrategy) -> Self {
+        self.secret_injection_strategy = Some(strategy);
+        self
+    }
+
+    /// Internal method to set the lease token.
+    pub(crate) fn with_lease_token(mut self, token: Option<String>) -> Self {
+        self.lease_token = token;
         self
     }
 }
