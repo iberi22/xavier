@@ -4,12 +4,16 @@
 //! protected by the existing auth + rate-limit middleware.
 
 use axum::{
-    extract::Json,
+    extract::{Json, State},
     http::StatusCode,
-    response::{IntoResponse, Json as AxumJson},
+    response::{IntoResponse, Json as AxumJson, Response},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
+use crate::cli::http_setup::SessionInfo;
+use crate::cli::state::CliState;
+use xavier::domain::proxy::{ProxyChatCommand, ProxyError};
 
 // ═════════════════════════════════════════════════════════════════════════════
 // System
@@ -65,6 +69,7 @@ pub struct ChatRequest {
     pub max_tokens: Option<u32>,
     pub stream: Option<bool>,
     pub provider: Option<String>,
+    pub lease_token: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -91,24 +96,46 @@ pub struct Usage {
     pub total_tokens: usize,
 }
 
-pub async fn headless_chat(Json(req): Json<ChatRequest>) -> impl IntoResponse {
-    // TODO: wire to ProxyUseCase once it's accessible from CLI state
-    AxumJson(ChatResponse {
-        id: format!("chatcmpl-{}", ulid::Ulid::new()),
-        object: "chat.completion".to_string(),
-        created: chrono::Utc::now().timestamp(),
-        model: req.model.unwrap_or_else(|| "auto".to_string()),
-        choices: vec![Choice {
-            index: 0,
-            message: json!({"role": "assistant", "content": "Headless API chat placeholder — wire ProxyUseCase here."}),
-            finish_reason: "stop".to_string(),
-        }],
-        usage: Usage {
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            total_tokens: 0,
-        },
-    })
+pub async fn headless_chat(
+    State(state): State<CliState>,
+    axum::Extension(session): axum::Extension<SessionInfo>,
+    Json(req): Json<ChatRequest>,
+) -> Response {
+    let lease_token = req.lease_token.or_else(|| {
+        session.lease.as_ref().map(|l| l.token.clone())
+    });
+
+    let cmd = ProxyChatCommand {
+        model: req.model.unwrap_or_else(|| "glm-5.2".to_string()),
+        messages: req.messages,
+        temperature: req.temperature,
+        max_tokens: req.max_tokens.map(|t| t as usize),
+        lease_token,
+    };
+
+    let result = state
+        .proxy_use_case
+        .execute_secured(
+            cmd,
+            session.is_ephemeral,
+            state.secrets_engine.clone(),
+            state.event_bus.clone(),
+        )
+        .await;
+
+    match result {
+        Ok(completion) => (StatusCode::OK, AxumJson(completion)).into_response(),
+        Err(e) => {
+            let status = match e {
+                ProxyError::RateLimited => StatusCode::TOO_MANY_REQUESTS,
+                ProxyError::ProviderError(_) => StatusCode::BAD_GATEWAY,
+                ProxyError::SecretError(_) => StatusCode::UNAUTHORIZED,
+                ProxyError::InvalidRequest(_) => StatusCode::BAD_REQUEST,
+                ProxyError::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            };
+            (status, AxumJson(json!({ "error": e.to_string() }))).into_response()
+        }
+    }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
