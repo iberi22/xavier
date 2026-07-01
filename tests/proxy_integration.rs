@@ -31,8 +31,8 @@ async fn test_proxy_use_case_rate_limited() {
 
     let use_case = ProxyUseCase::new(rate_manager, prompt_cache);
     let audit_logger = Box::new(QmdAuditLogger::new());
-    let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger));
     let event_bus = XavierEventBus::new(10);
+    let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger, Some(event_bus.clone())));
 
     let cmd = ProxyChatCommand {
         model: "test-model".into(),

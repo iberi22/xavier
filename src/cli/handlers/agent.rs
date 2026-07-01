@@ -144,6 +144,13 @@ pub async fn agent_unregister_handler(
 ) -> impl axum::response::IntoResponse {
     let success = state.agent_registry.unregister(&agent_id).await;
 
+    if success {
+        state
+            .secrets_engine
+            .revoke_for_agent(&agent_id, "Agent Unregistered")
+            .await;
+    }
+
     axum::Json(serde_json::json!({
         "status": if success { "ok" } else { "error" },
         "agent_id": agent_id,

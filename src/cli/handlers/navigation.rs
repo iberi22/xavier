@@ -346,7 +346,7 @@ mod tests {
                     .await
                     .unwrap(),
             ),
-            secrets_engine: Arc::new(KeyLendingEngine::new(Box::new(QmdAuditLogger::new()))),
+            secrets_engine: Arc::new(KeyLendingEngine::new(Box::new(QmdAuditLogger::new()), None)),
             event_bus: XavierEventBus::new(10),
             tasks: Arc::new(TaskService::new(Arc::new(InMemoryTaskStore::new()))),
             rate_manager: Arc::new(RateLimitManager::new()),
