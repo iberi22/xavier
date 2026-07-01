@@ -67,3 +67,5 @@ pub fn json_response(status: StatusCode, body: serde_json::Value) -> Response {
                 .into_response()
         })
 }
+#[cfg(test)]
+pub mod proxy_auth_tests;
