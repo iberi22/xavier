@@ -19,6 +19,22 @@ pub async fn session_event_handler(
     State(state): State<CliState>,
     axum::Json(event): axum::Json<SessionEvent>,
 ) -> impl axum::response::IntoResponse {
+    if matches!(event.event_type, xavier::session::types::SessionEventType::SessionEnd) {
+        info!("Session {} ended. Revoking associated agent leases...", event.session_id);
+
+        // Find agent associated with this session
+        let active_agents = state.agent_registry.get_active_agents().await;
+        if let Some(agent) = active_agents.iter().find(|a| a.session_id == event.session_id) {
+            state.secrets_engine.revoke_for_agent(&agent.agent_id, "Session Ended").await;
+        }
+
+        return axum::Json(serde_json::json!({
+            "status": "ok",
+            "message": "session_end_processed",
+            "session_id": event.session_id,
+        }));
+    }
+
     let entry = match PanelThreadEntry::from_session_event(&event) {
         Some(e) => e,
         None => {
