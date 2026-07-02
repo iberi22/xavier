@@ -194,10 +194,11 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         ProxyUseCase::new(rate_manager.clone(), prompt_cache.clone())
             .with_threat_detector(security_service.clone()),
     );
-    let secrets_engine = Arc::new(KeyLendingEngine::new(Box::new(
-        xavier::secrets::audit::QmdAuditLogger::new(),
-    )));
     let event_bus = XavierEventBus::new(100);
+    let secrets_engine = Arc::new(KeyLendingEngine::new(
+        Box::new(xavier::secrets::audit::QmdAuditLogger::new()),
+        Some(event_bus.clone()),
+    ));
     let tasks = Arc::new(
         TaskService::new(Arc::new(InMemoryTaskStore::new())).with_event_bus(event_bus.clone()),
     );
@@ -207,23 +208,44 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     tokio::spawn(async move {
         info!("Secrets engine listening for task events...");
         while let Ok(event) = receiver.recv().await {
-            if let xavier::coordination::events::XavierEvent::TaskCompleted { task } = event {
-                let _ = xavier::notifications::NOTIFICATIONS.notify(
-                    xavier::notifications::IslandId::Agents,
-                    "Agent Task Complete",
-                    &format!("Task {} completed by agent {}.", task.id, task.assignee.as_deref().unwrap_or("unknown")),
-                    "success"
-                ).await;
+            match event {
+                xavier::coordination::events::XavierEvent::TaskCompleted { task } => {
+                    let _ = xavier::notifications::NOTIFICATIONS.notify(
+                        xavier::notifications::IslandId::Agents,
+                        "Agent Task Complete",
+                        &format!("Task {} completed by agent {}.", task.id, task.assignee.as_deref().unwrap_or("unknown")),
+                        "success"
+                    ).await;
 
-                if let Some(agent_id) = &task.assignee {
-                    info!(
-                        "Task {} completed by agent {}. Revoking ephemeral keys...",
-                        task.id, agent_id
-                    );
-                    secrets_engine_for_bus
-                        .revoke_for_agent(agent_id, "Task Completed")
-                        .await;
+                    if let Some(agent_id) = &task.assignee {
+                        info!(
+                            "Task {} completed by agent {}. Revoking ephemeral keys...",
+                            task.id, agent_id
+                        );
+                        secrets_engine_for_bus
+                            .revoke_for_agent(agent_id, "Task Completed")
+                            .await;
+                    }
                 }
+                xavier::coordination::events::XavierEvent::TaskFailed { task, reason } => {
+                    let _ = xavier::notifications::NOTIFICATIONS.notify(
+                        xavier::notifications::IslandId::Errors,
+                        "Agent Task Failed",
+                        &format!("Task {} failed: {}.", task.id, reason),
+                        "error"
+                    ).await;
+
+                    if let Some(agent_id) = &task.assignee {
+                        info!(
+                            "Task {} failed for agent {}. Revoking ephemeral keys...",
+                            task.id, agent_id
+                        );
+                        secrets_engine_for_bus
+                            .revoke_for_agent(agent_id, "Task Failed")
+                            .await;
+                    }
+                }
+                _ => {}
             }
         }
     });

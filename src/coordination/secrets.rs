@@ -108,14 +108,19 @@ pub struct KeyLendingEngine {
     leases: Arc<RwLock<HashMap<String, SecretLease>>>,
     audit_logger: Box<dyn AuditLogger + Send + Sync>,
     pub leak_detector: Arc<LeakDetector>,
+    event_bus: Option<crate::coordination::events::XavierEventBus>,
 }
 
 impl KeyLendingEngine {
-    pub fn new(audit_logger: Box<dyn AuditLogger + Send + Sync>) -> Self {
+    pub fn new(
+        audit_logger: Box<dyn AuditLogger + Send + Sync>,
+        event_bus: Option<crate::coordination::events::XavierEventBus>,
+    ) -> Self {
         Self {
             leases: Arc::new(RwLock::new(HashMap::new())),
             audit_logger,
             leak_detector: Arc::new(LeakDetector::new()),
+            event_bus,
         }
     }
 
@@ -183,6 +188,14 @@ impl KeyLendingEngine {
         if let Some(lease) = leases.remove(token) {
             self.audit_logger.log_revoke(&lease.agent_id, token, reason);
             tracing::info!("Revoked secret lease: {} (Reason: {})", token, reason);
+
+            if let Some(bus) = &self.event_bus {
+                let _ = bus.publish(crate::coordination::events::XavierEvent::LeaseRevoked {
+                    agent_id: lease.agent_id.clone(),
+                    token: token.to_string(),
+                });
+            }
+
             Ok(())
         } else {
             Err(anyhow!("Lease token not found"))
@@ -203,6 +216,13 @@ impl KeyLendingEngine {
         for token in tokens_to_remove {
             leases.remove(&token);
             self.audit_logger.log_revoke(agent_id, &token, reason);
+
+            if let Some(bus) = &self.event_bus {
+                let _ = bus.publish(crate::coordination::events::XavierEvent::LeaseRevoked {
+                    agent_id: agent_id.to_string(),
+                    token: token.clone(),
+                });
+            }
         }
 
         if count > 0 {
@@ -314,7 +334,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_key_lending_engine_leak_registration() {
-        let engine = KeyLendingEngine::new(Box::new(MockAuditLogger));
+        let engine = KeyLendingEngine::new(Box::new(MockAuditLogger), None);
         let secret = "secret-value";
         let agent_id = "agent-1";
 

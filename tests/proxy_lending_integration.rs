@@ -22,7 +22,7 @@ async fn test_proxy_lending_zero_trust_flow() -> Result<()> {
     let logger = QmdAuditLogger::new();
     logger.init_schema_async().await?;
 
-    let secrets_engine = Arc::new(KeyLendingEngine::new(Box::new(QmdAuditLogger::new())));
+    let secrets_engine = Arc::new(KeyLendingEngine::new(Box::new(QmdAuditLogger::new()), None));
     let proxy_use_case = Arc::new(ProxyUseCase::new(
         Arc::new(xavier::agents::rate_limit::RateLimitManager::new()),
         Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new())),

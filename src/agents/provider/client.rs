@@ -387,7 +387,7 @@ mod tests {
         use crate::secrets::lending::DefaultAuditLogger;
 
         // 1. Setup KeyLendingEngine
-        let engine = Arc::new(KeyLendingEngine::new(Box::new(DefaultAuditLogger)));
+        let engine = Arc::new(KeyLendingEngine::new(Box::new(DefaultAuditLogger), None));
 
         // 2. Setup a client with lease config
         let config = ModelProviderConfig::for_provider("openai")

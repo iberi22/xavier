@@ -13,8 +13,8 @@ mod tests {
         let _use_case = ProxyUseCase::new(rate_manager, prompt_cache);
 
         let audit_logger = Box::new(QmdAuditLogger::new());
-        let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger));
-        let _event_bus = XavierEventBus::new(10);
+        let event_bus = XavierEventBus::new(10);
+        let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger, Some(event_bus.clone())));
 
         // Create a lease
         let lease = secrets_engine.lend("test-secret", Some("test-value"), "agent-1", 60).await.unwrap();

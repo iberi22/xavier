@@ -20,10 +20,10 @@ async fn test_clavis_persistence_and_revocation() -> Result<()> {
 
     // 2. Setup Clavis Engine with Persistent Logger
     let audit_logger = Box::new(QmdAuditLogger::new());
-    let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger));
+    let event_bus = XavierEventBus::new(10);
+    let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger, Some(event_bus.clone())));
 
     // 3. Setup Event Bus and Runtime Hook
-    let event_bus = XavierEventBus::new(10);
     let mut receiver = event_bus.subscribe();
     let secrets_engine_clone = secrets_engine.clone();
 

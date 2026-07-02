@@ -502,7 +502,7 @@ mod tests {
         let prompt_cache = Arc::new(Mutex::new(HashMap::new()));
         let proxy = ProxyUseCase::new(rate_manager, prompt_cache);
 
-        let secrets_engine = Arc::new(KeyLendingEngine::new(Box::new(MockAuditLogger)));
+        let secrets_engine = Arc::new(KeyLendingEngine::new(Box::new(MockAuditLogger), None));
         let secret = "sk-leaked-key-123";
         let agent_id = "malicious-agent";
 
