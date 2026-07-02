@@ -59,7 +59,11 @@ fn load_anchored_tests(codebase_root: &str) -> HashMap<String, Vec<String>> {
 
 /// Check if test anchor names exist as substrings in .rs source files.
 ///
-/// Constrained to depth=4 relative to root, max 50 files, 30s hard timeout.
+/// Constrained to depth=4, 30s hard timeout. The file cap was previously 50, which
+/// starved the walker: src/ has 559 .rs files and WalkDir iterates alphabetically,
+/// so the first 50 (a2a/, adapters/, agents/) never reached context/bm25.rs or
+/// embedding/cache.rs where most anchors live. The 30s deadline already bounds
+/// runtime, so the cap is unnecessary.
 fn check_test_anchors_in_sources(
     root: &str,
     unique_anchors: &[String],
@@ -67,7 +71,7 @@ fn check_test_anchors_in_sources(
     let deadline = Instant::now() + Duration::from_secs(30);
     let mut found: HashSet<String> = HashSet::new();
 
-    // Walk .rs files with depth=4, limit 50 files
+    // Walk .rs files with depth=4. No file cap — the 30s deadline bounds runtime.
     let walker: Vec<_> = walkdir::WalkDir::new(root)
         .max_depth(4)
         .into_iter()
@@ -76,7 +80,6 @@ fn check_test_anchors_in_sources(
             e.path().extension().map_or(false, |ext| ext == "rs")
                 && !e.path().to_string_lossy().contains("target")
         })
-        .take(50)
         .collect();
 
     for entry in &walker {

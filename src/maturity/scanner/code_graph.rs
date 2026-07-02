@@ -86,6 +86,20 @@ fn try_code_graph_db(root: &str, feature_symbols: &HashMap<String, Vec<String>>)
         })
         .ok()?;
 
+    // Guard: if the codegraph dump has no real symbols (e.g. a stale test fixture or
+    // an empty dump from a server whose code-graph DB was never indexed), substring
+    // matching against it reports every symbol as missing and tanks the static score.
+    // Fall through to None so the grep fallback (which reads source directly) runs.
+    let parsed = serde_json::from_str::<serde_json::Value>(&content).ok();
+    let real_symbols = parsed
+        .as_ref()
+        .and_then(|v| v.get("symbols"))
+        .and_then(|s| s.as_array())
+        .map_or(0, |s| s.len());
+    if real_symbols == 0 {
+        return None;
+    }
+
     let mut feature_scans: HashMap<String, SymbolScan> = HashMap::new();
 
     for (feat_id, symbols) in feature_symbols {
