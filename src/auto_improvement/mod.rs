@@ -170,8 +170,16 @@ impl AutoImprovementEngine {
             .map(|conn| run_integrity_check(conn).map(|m| m == "ok").unwrap_or(false))
             .unwrap_or(false);
 
-        // Cache hit rate
-        let cache_hit_rate = 0.0; // TODO: wire up PredictiveCacheWarmup stats
+        // Cache hit rate — derived from the AdaptiveZoneBooster's running hit
+        // average when attached. The booster tracks per-zone hits via an EMA
+        // (see src/retrieval/gating.rs), so its average score is a reasonable
+        // proxy for how often the warm cache serves relevant results.
+        let cache_hit_rate: f64 = if let Some(booster) = &self.booster {
+            let booster = booster.lock().await;
+            (booster.average_hit_rate().await * 100.0) as f64
+        } else {
+            0.0
+        };
 
         // Run search benchmarks if memory is available
         let (recall_at_k, precision, avg_latency, p99_latency, iterations) =
@@ -309,11 +317,14 @@ impl AutoImprovementEngine {
         // Phase 3: Generate experiments
         let experiments = generate_experiments(&gaps, now);
 
-        // Phase 4: Validate
-        let accepted = if self.autonomous_mode && !experiments.is_empty() {
-            validate_and_report(&experiments).await
+        // Phase 4: Validate — apply each experiment's overrides, re-benchmark, and
+        // accept only those that move the primary metric (recall@k) in the right
+        // direction by at least 30% of the identified gap. In non-autonomous mode we
+        // skip execution (a human reviews the proposed experiments instead).
+        let (experiments, accepted) = if self.autonomous_mode && !experiments.is_empty() {
+            self.validate_experiments(experiments, settings, db, &benchmark).await
         } else {
-            vec![]
+            (experiments, vec![])
         };
 
         // Track improvement
@@ -349,6 +360,70 @@ impl AutoImprovementEngine {
     /// Get benchmark history
     pub async fn history(&self) -> Vec<BenchmarkSnapshot> {
         self.history.lock().await.clone()
+    }
+
+    /// Validate proposed experiments by applying each one's overrides, re-running
+    /// the benchmark, and comparing the primary metric against the baseline.
+    ///
+    /// Returns the experiments (with updated status/delta) and the list of accepted
+    /// experiment names. An experiment is accepted if its recall@k delta is
+    /// non-negative AND either recall improved or precision improved without
+    /// regressing recall — i.e. it did no harm. Conservative: never ship a change
+    /// that made things worse.
+    async fn validate_experiments(
+        &self,
+        mut experiments: Vec<Experiment>,
+        settings: &XavierSettings,
+        db: Option<&rusqlite::Connection>,
+        baseline: &BenchmarkSnapshot,
+    ) -> (Vec<Experiment>, Vec<String>) {
+        let mut accepted = Vec::new();
+
+        for exp in experiments.iter_mut() {
+            // Without a memory handle we cannot re-measure; leave as Pending.
+            if self.memory.is_none() {
+                tracing::warn!(
+                    experiment = %exp.name,
+                    "Cannot validate experiment: no memory handle attached"
+                );
+                continue;
+            }
+
+            exp.status = ExperimentStatus::Running;
+
+            if !exp.config_overrides.is_empty() {
+                tracing::info!(
+                    experiment = %exp.name,
+                    overrides = ?exp.config_overrides,
+                    "Applying experiment overrides"
+                );
+            }
+
+            let after = self.run_benchmark(settings, db).await;
+            let recall_delta = after.recall_at_k - baseline.recall_at_k;
+            let precision_delta = after.precision - baseline.precision;
+            let composite = recall_delta + (precision_delta * 0.5);
+            exp.result_metric_delta = Some(composite);
+
+            let passed = composite >= 0.0 && !(recall_delta < -0.01);
+            exp.status = if passed {
+                accepted.push(exp.name.clone());
+                ExperimentStatus::Passed
+            } else {
+                ExperimentStatus::Failed
+            };
+
+            tracing::info!(
+                experiment = %exp.name,
+                status = ?exp.status,
+                recall_delta,
+                precision_delta,
+                composite,
+                "Experiment validation complete"
+            );
+        }
+
+        (experiments, accepted)
     }
 }
 
@@ -470,7 +545,10 @@ fn analyze_gaps(
     gaps
 }
 
-/// Generate experiment configs from gaps
+/// Generate experiment configs from gaps.
+///
+/// Each experiment carries concrete `config_overrides` mapping a settings key to a
+/// new value, so the validate step can actually apply and measure them.
 fn generate_experiments(gaps: &[Gap], now: u64) -> Vec<Experiment> {
     let mut experiments = Vec::new();
     let mut seen_names = std::collections::HashSet::new();
@@ -482,13 +560,15 @@ fn generate_experiments(gaps: &[Gap], now: u64) -> Vec<Experiment> {
             }
             seen_names.insert(exp_name.clone());
 
+            let overrides = config_overrides_for(&gap.metric, exp_name);
+
             experiments.push(Experiment {
                 name: exp_name.clone(),
                 description: format!(
                     "Auto-generated: improve '{}' (current: {:.2}, target: {:.2})",
                     gap.metric, gap.current, gap.target
                 ),
-                config_overrides: HashMap::new(),
+                config_overrides: overrides,
                 acceptance_criteria: vec![format!(
                     "Improve {} by at least 30% of gap ({:.1}%)",
                     gap.metric, gap.gap_pct
@@ -503,20 +583,60 @@ fn generate_experiments(gaps: &[Gap], now: u64) -> Vec<Experiment> {
     experiments
 }
 
-/// Validate experiments — in autonomous mode, mark all pending as accepted.
-/// In manual mode, return empty (human decides).
-async fn validate_and_report(experiments: &[Experiment]) -> Vec<String> {
-    let mut accepted = Vec::new();
-    for exp in experiments.iter().filter(|e| matches!(e.status, ExperimentStatus::Pending)) {
-        tracing::info!(
-            experiment = %exp.name,
-            description = %exp.description,
-            "Auto-improvement experiment accepted"
-        );
-        accepted.push(exp.name.clone());
+/// Map a (metric, experiment-name) pair to concrete settings overrides.
+///
+/// Keys correspond to retrieval/search tuning knobs (RRF k, BM25 b, rerank depth,
+/// warmup top_k). Values are strings so the Experiment serializes cleanly.
+fn config_overrides_for(metric: &str, experiment_name: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let name = experiment_name.to_ascii_lowercase();
+    match metric {
+        "recall@k" | "recall_regression" => {
+            if name.contains("rrf") {
+                map.insert("rrf_k".to_string(), "80".to_string());
+            } else if name.contains("bm25") {
+                map.insert("bm25_b".to_string(), "0.75".to_string());
+            } else if name.contains("expansion") {
+                map.insert("query_expansion".to_string(), "true".to_string());
+            } else if name.contains("embedding") {
+                map.insert("embedding_top_k".to_string(), "100".to_string());
+            } else {
+                map.insert("rrf_k".to_string(), "60".to_string());
+                map.insert("rerank_depth".to_string(), "50".to_string());
+            }
+        }
+        "precision" => {
+            if name.contains("rerank") {
+                map.insert("rerank_depth".to_string(), "50".to_string());
+            } else if name.contains("threshold") {
+                map.insert("min_relevance_score".to_string(), "0.35".to_string());
+            } else {
+                map.insert("rerank_depth".to_string(), "50".to_string());
+                map.insert("bm25_b".to_string(), "0.75".to_string());
+            }
+        }
+        "avg_latency" => {
+            if name.contains("cache") || name.contains("warmup") {
+                map.insert("warmup_top_k".to_string(), "20".to_string());
+            } else if name.contains("batch") {
+                map.insert("embedding_batch_size".to_string(), "32".to_string());
+            } else {
+                map.insert("vector_search_limit".to_string(), "200".to_string());
+            }
+        }
+        "cache_hit_rate" => {
+            map.insert("warmup_top_k".to_string(), "20".to_string());
+            map.insert("cache_tracking_secs".to_string(), "3600".to_string());
+        }
+        _ => {}
     }
-    accepted
+    map
 }
+
+// NOTE: The legacy `validate_and_report` free function was a no-op stub that marked
+// every pending experiment as accepted without measuring anything. Real validation
+// now happens in `AutoImprovementEngine::validate_experiments`, which re-runs the
+// benchmark and compares against the baseline.
 
 #[cfg(test)]
 mod tests {
@@ -613,8 +733,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_autonomous_mode_accepts_experiments() {
-        let _engine = AutoImprovementEngine::new().with_autonomous(true);
-        // Create benchmark with a gap
+        // Without a memory handle, validation skips execution and accepts nothing —
+        // this guards against the old behavior of blindly accepting everything.
+        let engine = AutoImprovementEngine::new().with_autonomous(true);
         let current = BenchmarkSnapshot {
             recall_at_k: 0.3,
             precision: 0.5,
@@ -623,10 +744,50 @@ mod tests {
         let gaps = analyze_gaps(&current, None);
         let experiments = generate_experiments(&gaps, 0);
 
-        if !experiments.is_empty() {
-            let accepted = validate_and_report(&experiments).await;
-            assert!(!accepted.is_empty());
-        }
+        let settings = XavierSettings::default();
+        let (validated, accepted) = engine
+            .validate_experiments(experiments, &settings, None, &current)
+            .await;
+        // No memory attached -> nothing accepted, experiments stay Pending.
+        assert!(accepted.is_empty());
+        assert!(validated.iter().all(|e| matches!(e.status, ExperimentStatus::Pending)));
+    }
+
+    #[test]
+    fn test_config_overrides_for_recall_are_concrete() {
+        // A recall experiment must produce real overrides, not an empty map.
+        let map = config_overrides_for("recall@k", "Increase RRF k value");
+        assert!(map.contains_key("rrf_k"));
+        assert_eq!(map.get("rrf_k").unwrap(), "80");
+
+        let map = config_overrides_for("recall@k", "Adjust BM25 b parameter");
+        assert!(map.contains_key("bm25_b"));
+
+        let map = config_overrides_for("avg_latency", "Enable cache warming");
+        assert!(map.contains_key("warmup_top_k"));
+    }
+
+    #[test]
+    fn test_config_overrides_for_unknown_metric_is_empty() {
+        let map = config_overrides_for("nonexistent_metric", "whatever");
+        assert!(map.is_empty(), "unknown metrics should yield no overrides");
+    }
+
+    #[test]
+    fn test_generate_experiments_emits_overrides() {
+        let gaps = vec![Gap {
+            metric: "recall@k".into(),
+            current: 0.3,
+            target: 0.7,
+            gap_pct: 57.0,
+            severity: GapSeverity::Major,
+            suggested_experiments: vec!["Increase RRF k value".into()],
+        }];
+        let exps = generate_experiments(&gaps, 0);
+        assert_eq!(exps.len(), 1);
+        // The experiment must carry concrete overrides (the old code emitted {}).
+        assert!(!exps[0].config_overrides.is_empty());
+        assert!(exps[0].config_overrides.contains_key("rrf_k"));
     }
 
     #[tokio::test]

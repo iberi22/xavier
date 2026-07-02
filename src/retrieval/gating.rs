@@ -283,6 +283,28 @@ impl AdaptiveZoneBooster {
         0.0
     }
 
+    /// Returns the mean hit rate across ALL tracked user/zone combinations (0.0–1.0).
+    ///
+    /// Used by the auto-improvement loop as a cache-effectiveness proxy: when the
+    /// booster has accumulated feedback, this reflects how often the adaptive
+    /// weighting served relevant results. Returns 0.0 when no data is recorded.
+    pub async fn average_hit_rate(&self) -> f32 {
+        let user_zones = self.user_zone_scores.lock().await;
+        let mut total_hits = 0u64;
+        let mut total_queries = 0u64;
+        for zones in user_zones.values() {
+            for perf in zones.values() {
+                total_hits += perf.hits;
+                total_queries += perf.total;
+            }
+        }
+        if total_queries == 0 {
+            0.0
+        } else {
+            total_hits as f32 / total_queries as f32
+        }
+    }
+
     /// Resets data for all users.
     pub async fn reset_all(&self) {
         self.user_zone_scores.lock().await.clear();
