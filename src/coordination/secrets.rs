@@ -275,6 +275,11 @@ impl KeyLendingEngine {
         leases.values().cloned().collect()
     }
 
+    /// Log proxy use for a lease token
+    pub fn log_proxy_use(&self, agent_id: &str, lease_token: &str, endpoint: &str) {
+        self.audit_logger.log_proxy_use(agent_id, lease_token, endpoint);
+    }
+
     /// Cleanup expired leases
     pub async fn cleanup_expired(&self) -> usize {
         let mut leases = self.leases.write().await;
@@ -305,6 +310,7 @@ mod tests {
     impl AuditLogger for MockAuditLogger {
         fn log_lend(&self, _agent_id: &str, _secret_name: &str, _lease_token: &str, _ttl_secs: u64) {}
         fn log_revoke(&self, _agent_id: &str, _lease_token: &str, _reason: &str) {}
+        fn log_proxy_use(&self, _agent_id: &str, _lease_token: &str, _endpoint: &str) {}
     }
 
     #[tokio::test]

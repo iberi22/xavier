@@ -138,6 +138,17 @@ impl ProxyUseCase {
                         request_builder.header("Authorization", format!("token {}", secret));
                 }
             }
+
+            // Rate-limiting by lease_token: máx 100 requests/min por lease
+            if !self.rate_manager.check_lease_rate_limit(token, 100).await.unwrap_or(true) {
+                return Err(ProxyError::RateLimited);
+            }
+
+            // Log de cada request proxy (audit trail)
+            secrets_engine.log_proxy_use(&lease.agent_id, token, &req.url);
+
+            // Track usage for this lease
+            let _ = self.rate_manager.track_request(&format!("lease:{}", token), 0, 200, 0.0, false).await;
         }
 
         // Set body
@@ -308,6 +319,17 @@ impl ProxyUseCase {
             if lease.is_expired() {
                 return Err(ProxyError::SecretError("Lease token expired".to_string()));
             }
+
+            // Rate-limiting by lease_token: máx 100 requests/min por lease
+            if !self.rate_manager.check_lease_rate_limit(token, 100).await.unwrap_or(true) {
+                return Err(ProxyError::RateLimited);
+            }
+
+            // Log de cada request proxy (audit trail)
+            secrets_engine.log_proxy_use(&lease.agent_id, token, "/v1/chat/completions");
+
+            // Track usage for this lease
+            let _ = self.rate_manager.track_request(&format!("lease:{}", token), 0, 200, 0.0, false).await;
 
             if let Some(secret) = lease.secret_value {
                 config = config.with_api_key(Some(secret));
@@ -494,6 +516,7 @@ mod tests {
     impl AuditLogger for MockAuditLogger {
         fn log_lend(&self, _agent_id: &str, _secret_name: &str, _lease_token: &str, _ttl_secs: u64) {}
         fn log_revoke(&self, _agent_id: &str, _lease_token: &str, _reason: &str) {}
+        fn log_proxy_use(&self, _agent_id: &str, _lease_token: &str, _endpoint: &str) {}
     }
 
     #[tokio::test]
