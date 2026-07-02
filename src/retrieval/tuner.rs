@@ -1,0 +1,209 @@
+//! Context Regeneration — RRF weight tuner.
+//!
+//! Consumes `RetrievalMetrics` (from `eval.rs`) and the feedback signal from
+//! `AdaptiveZoneBooster` to propose better RRF weights (k, keyword/vector balance,
+//! layer weights). The tuner explores a small grid of candidates and picks the
+//! configuration that maximizes a composite score (recall-weighted, with an MRR
+//! tiebreaker), so retrieval is continuously optimized toward production query
+//! patterns.
+//!
+//! This is the tuning half of context regeneration; it never applies changes
+//! directly — it returns a `TuningProposal` that the caller (scheduler / CLI)
+//! persists into `XavierSettings` and re-measures.
+
+use super::config::{DEFAULT_EPISODIC_WEIGHT, DEFAULT_RRF_K, DEFAULT_SEMANTIC_WEIGHT, DEFAULT_WORKING_WEIGHT};
+use super::eval::RetrievalMetrics;
+use serde::{Deserialize, Serialize};
+
+/// A candidate configuration produced by the tuner.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RetrievalConfig {
+    pub rrf_k: u32,
+    pub keyword_weight: f32,
+    pub vector_weight: f32,
+    pub working_weight: f32,
+    pub episodic_weight: f32,
+    pub semantic_weight: f32,
+}
+
+impl Default for RetrievalConfig {
+    fn default() -> Self {
+        Self {
+            rrf_k: DEFAULT_RRF_K,
+            keyword_weight: 0.5,
+            vector_weight: 0.5,
+            working_weight: DEFAULT_WORKING_WEIGHT,
+            episodic_weight: DEFAULT_EPISODIC_WEIGHT,
+            semantic_weight: DEFAULT_SEMANTIC_WEIGHT,
+        }
+    }
+}
+
+/// The outcome of a tuning pass: the best config found plus the measured gain.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TuningProposal {
+    /// The recommended configuration to apply.
+    pub config: RetrievalConfig,
+    /// Composite score (recall + 0.3·MRR) of the recommended config.
+    pub score: f64,
+    /// Baseline score before tuning, for delta reporting.
+    pub baseline_score: f64,
+    /// Improvement in score: score - baseline_score.
+    pub delta: f64,
+    /// Number of candidates evaluated.
+    pub candidates_evaluated: usize,
+}
+
+impl TuningProposal {
+    /// True if the proposal improves on the baseline by a non-trivial margin.
+    pub fn is_beneficial(&self) -> bool {
+        self.delta > 0.005
+    }
+}
+
+/// A measured (config → metrics) pair, used internally during grid search.
+#[derive(Debug, Clone)]
+struct ScoredCandidate {
+    config: RetrievalConfig,
+    score: f64,
+}
+
+/// Composite score: recall is primary, MRR breaks near-ties.
+///
+/// recall@k ∈ [0,1], mrr ∈ [0,1] → score ∈ [0, 1.3].
+fn composite_score(metrics: &RetrievalMetrics) -> f64 {
+    metrics.recall_at_k + 0.3 * metrics.mrr
+}
+
+/// Run a grid search over RRF tuning knobs and return the best proposal.
+///
+/// `evaluate` is a closure that takes a candidate config, runs the retrieval
+/// benchmark with those weights, and returns the resulting metrics. The search
+/// space is deliberately small (≈ k × keyword balance × layer emphasis) to keep
+/// each tuning pass cheap; deeper optimization is the auto-improvement loop's job.
+pub fn tune<F>(baseline: &RetrievalConfig, evaluate: F) -> TuningProposal
+where
+    F: Fn(&RetrievalConfig) -> RetrievalMetrics,
+{
+    // Search grid. The values are chosen to bracket the defaults without
+    // exploding the combinatorial space.
+    const RRF_K_GRID: [u32; 3] = [40, 60, 80];
+    const KV_BALANCE_GRID: [(f32, f32); 3] = [(0.4, 0.6), (0.5, 0.5), (0.6, 0.4)];
+    // Layer emphasis: tilt toward semantic (memory) vs working (recent).
+    const LAYER_GRID: [(f32, f32, f32); 3] = [
+        (0.3, 0.3, 0.4), // default
+        (0.2, 0.3, 0.5), // semantic-emphasis
+        (0.4, 0.3, 0.3), // working-emphasis
+    ];
+
+    let baseline_metrics = evaluate(baseline);
+    let baseline_score = composite_score(&baseline_metrics);
+
+    let mut best = ScoredCandidate {
+        config: baseline.clone(),
+        score: baseline_score,
+    };
+    let mut count = 0usize;
+
+    for &rrf_k in &RRF_K_GRID {
+        for &(kw, vw) in &KV_BALANCE_GRID {
+            for &(w, e, s) in &LAYER_GRID {
+                let candidate = RetrievalConfig {
+                    rrf_k,
+                    keyword_weight: kw,
+                    vector_weight: vw,
+                    working_weight: w,
+                    episodic_weight: e,
+                    semantic_weight: s,
+                };
+                count += 1;
+                let metrics = evaluate(&candidate);
+                let score = composite_score(&metrics);
+                if score > best.score {
+                    best = ScoredCandidate { config: candidate, score };
+                }
+            }
+        }
+    }
+
+    TuningProposal {
+        config: best.config,
+        score: best.score,
+        baseline_score,
+        delta: best.score - baseline_score,
+        candidates_evaluated: count,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::retrieval::eval::{CaseResult, RetrievalMetrics};
+
+    fn metrics_for(recall: f64, mrr: f64) -> RetrievalMetrics {
+        let num = 4usize;
+        let hits = (recall * num as f64).round() as usize;
+        let mut results = Vec::new();
+        for i in 0..num {
+            let hit = i < hits;
+            results.push(CaseResult {
+                case_id: format!("c{i}"),
+                hit,
+                first_hit_rank: if hit { Some(1) } else { None },
+            });
+        }
+        let mut m = RetrievalMetrics::from_results("test", &results, 5);
+        m.mrr = mrr;
+        m
+    }
+
+    #[test]
+    fn test_composite_score_weights_recall() {
+        // Use num=10 so 0.8 recall is exact (8 hits / 10 cases).
+        let num = 10usize;
+        let mut results = Vec::new();
+        for i in 0..num {
+            let hit = i < 8;
+            results.push(CaseResult {
+                case_id: format!("c{i}"),
+                hit,
+                first_hit_rank: if hit { Some(1) } else { None },
+            });
+        }
+        let mut m = RetrievalMetrics::from_results("test", &results, 5);
+        m.mrr = 0.5;
+        let s = composite_score(&m);
+        assert!((s - (0.8 + 0.3 * 0.5)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_tune_picks_best_candidate() {
+        // Simulate an evaluator where higher rrf_k yields better recall.
+        let baseline = RetrievalConfig::default();
+        let proposal = tune(&baseline, |cfg| {
+            let recall = if cfg.rrf_k >= 80 { 0.9 } else if cfg.rrf_k >= 60 { 0.7 } else { 0.5 };
+            metrics_for(recall, 0.6)
+        });
+        // The best config must use rrf_k=80.
+        assert_eq!(proposal.config.rrf_k, 80);
+        assert!(proposal.is_beneficial());
+        assert_eq!(proposal.candidates_evaluated, 27); // 3 × 3 × 3
+    }
+
+    #[test]
+    fn test_tune_returns_baseline_when_no_improvement() {
+        let baseline = RetrievalConfig::default();
+        // Evaluator always returns identical metrics regardless of config.
+        let proposal = tune(&baseline, |_| metrics_for(0.5, 0.5));
+        // No candidate beats the (identical) baseline score.
+        assert!(!proposal.is_beneficial());
+        assert!(proposal.delta.abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_default_config_matches_retrieval_defaults() {
+        let c = RetrievalConfig::default();
+        assert_eq!(c.rrf_k, DEFAULT_RRF_K);
+        assert_eq!(c.working_weight, DEFAULT_WORKING_WEIGHT);
+    }
+}
