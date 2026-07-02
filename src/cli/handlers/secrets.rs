@@ -16,7 +16,7 @@ pub async fn lend_handler(
     axum::Extension(session): axum::Extension<crate::cli::http_setup::SessionInfo>,
     Json(payload): Json<LendSecretPayload>,
 ) -> Response {
-    let result = if payload.secret_value.is_empty() {
+    let result = if payload.secret_value.as_deref().unwrap_or("").is_empty() {
         state
             .secrets_engine
             .lend_from_vault(
@@ -31,7 +31,7 @@ pub async fn lend_handler(
             .secrets_engine
             .lend(
                 &payload.secret_name,
-                Some(&payload.secret_value),
+                payload.secret_value.as_deref(),
                 &payload.agent_id,
                 payload.ttl_seconds,
             )
