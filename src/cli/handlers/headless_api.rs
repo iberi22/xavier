@@ -4,12 +4,16 @@
 //! protected by the existing auth + rate-limit middleware.
 
 use axum::{
-    extract::Json,
+    extract::{Json, State},
     http::StatusCode,
-    response::{IntoResponse, Json as AxumJson},
+    response::{IntoResponse, Json as AxumJson, Response},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
+use crate::cli::http_setup::SessionInfo;
+use crate::cli::state::CliState;
+use xavier::domain::proxy::{ProxyChatCommand, ProxyError};
 
 // ═════════════════════════════════════════════════════════════════════════════
 // System
@@ -93,6 +97,7 @@ pub struct Usage {
 }
 
 pub async fn headless_chat(
+
     axum::extract::State(state): axum::extract::State<crate::cli::state::CliState>,
     axum::Extension(session): axum::Extension<crate::cli::http_setup::SessionInfo>,
     Json(req): Json<ChatRequest>,
@@ -109,6 +114,7 @@ pub async fn headless_chat(
     };
 
     match state
+
         .proxy_use_case
         .execute_secured(
             cmd,
@@ -116,10 +122,12 @@ pub async fn headless_chat(
             state.secrets_engine.clone(),
             state.event_bus.clone(),
         )
+
         .await
     {
         Ok(resp) => (StatusCode::OK, AxumJson(resp)).into_response(),
         Err(e) => ProxyErrorWrapper(e).into_response(),
+
     }
 }
 
@@ -331,3 +339,4 @@ pub async fn headless_memory_export() -> impl IntoResponse {
         },
     }))
 }
+

@@ -48,10 +48,15 @@ pub async fn lend_handler(
     };
 
     match result {
-        Ok(lease) => json_response(
-            StatusCode::OK,
-            serde_json::to_value(lease).unwrap_or_default(),
-        ),
+        Ok(mut lease) => {
+            // F2 - secrets lend CLI no debe devolver secret_value
+            // Always redact secret_value for security. The proxy will inject it server-side.
+            lease.secret_value = None;
+            json_response(
+                StatusCode::OK,
+                serde_json::to_value(lease).unwrap_or_default(),
+            )
+        }
         Err(e) => json_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             serde_json::json!({ "error": e.to_string() }),

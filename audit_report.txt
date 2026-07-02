@@ -1,0 +1,286 @@
+## Xavier Security Audit - Complete Report
+
+I've performed a deep security audit of all 37+ Rust source files across `auth2`, `crypto`, `secrets`, `security`, and `middleware` modules. Here is the full findings report, organized by severity.
+
+---
+
+### 🔴 CRITICAL Findings (3)
+
+---
+
+**CRITICAL-01: 2FA Setup Handler Uses Wrong User — Authentication Bypass**
+- **File:** `auth2/mod.rs`, lines 293-294 and 368-369
+- **Code:**
+  ```rust
+  let user = auth_db.list_users()...into_iter().next().ok_or(StatusCode::UNAUTHORIZED)?;
+  ```
+- **Issue:** Both `setup_2fa_handler` and `verify_2fa_handler` fetch the **first user from the database** instead of extracting the authenticated user's ID from the JWT claims in `req.extensions()`. This means **any authenticated user can set up or verify 2FA for the first user in the DB**. This is an authentication bypass that allows privilege escalation if the first user is an admin.
+- **Fix:** Extract `user_id` from JWT claims (like `status_handler` does on line 461), then query `auth_db.get_user_by_id(&claims.sub)`.
+
+---
+
+**CRITICAL-02: `crypto/password.rs` — Weak Custom Password Hashing (SHA-256 Iterated)**
+- **File:** `crypto/password.rs`, lines 43-56
+- **Issue:** This module implements a **custom iterated SHA-256 password hash** with cost factor up to 16 (max 65,536 iterations). This is cryptographically weak compared to Argon2id. It's used by `SecurityManager::hash_password` (`security/mod.rs:129`) and the `TokenStore` (`security/tokens.rs:82`). SHA-256 is not memory-hard and is highly susceptible to GPU/ASIC attacks.
+- **Note:** The `auth2/password.rs` module correctly uses Argon2id — so there are **two competing password hash implementations** with different security levels.
+- **Fix:** Remove `crypto/password.rs` entirely and migrate all callers to use `auth2/password.rs` (Argon2id).
+
+---
+
+**CRITICAL-03: Recovery Seed Phrase Hash Comparison Not Constant-Time**
+- **File:** `auth2/mod.rs`, lines 422-423
+- **Code:**
+  ```rust
+  if &input_hash != seed_hash {
+      return Err(StatusCode::UNAUTHORIZED);
+  }
+  ```
+- **Issue:** The recovery seed hash is compared using standard `!=` operator, which is **timing-attack vulnerable**. An attacker can perform byte-by-byte discovery of the SHA-256 hash of the recovery seed phrase. Combined with the fact that seed phrases are only 12-24 words from a known BIP39 dictionary, this significantly reduces the brute-force space.
+- **Fix:** Use `subtle::ConstantTimeEq` (already a dependency used in `crypto/hmac.rs:54`).
+
+---
+
+### 🟠 HIGH Findings (8)
+
+---
+
+**HIGH-01: HMAC Token Validation Not Constant-Time**
+- **File:** `security/mod.rs`, line 190
+- **Code:**
+  ```rust
+  if actual != expected.as_slice() {
+      return Err(anyhow!("invalid signature"));
+  }
+  ```
+- **Issue:** HMAC signature comparison uses standard `!=`, enabling timing attacks against `SecurityManager::validate_token()`. Ironically, `crypto/hmac.rs:54` correctly uses `ct_eq` for its own verify function, but it's not used here.
+- **Fix:** Use `subtle::ConstantTimeEq::ct_eq()`.
+
+---
+
+**HIGH-02: User Struct With `password_hash` and `totp_secret` Serialized in API Response**
+- **File:** `auth2/db.rs`, lines 384-397 and `auth2/mod.rs`, lines 164-167, 222-227
+- **Issue:** The `User` struct derives `Serialize` and contains `password_hash`, `totp_secret`, and `recovery_seed_hash`. This struct is returned directly in `RegisterResponse` and `LoginResponse` JSON responses. This **leaks the password hash, TOTP secret, and recovery hash to the client**.
+- **Fix:** Create a `PublicUser` struct without sensitive fields, or use `#[serde(skip_serializing)]` on `password_hash`, `totp_secret`, `recovery_seed_hash`, and `backup_codes`.
+
+---
+
+**HIGH-03: Fallback Master Key Derivation is Weak and Predictable**
+- **File:** `security/encryption_keys.rs`, lines 77-93
+- **Code:**
+  ```rust
+  fn get_fallback_encryption_key() -> [u8; 32] {
+      let host_name = System::host_name().unwrap_or_else(|| "unknown-host".to_string());
+      hasher.update(host_name.as_bytes());
+      hasher.update(b"xavier-fallback-salt-v1");
+      ...
+  }
+  ```
+- **Issue:** When the OS keyring is unavailable, the master key is encrypted using a key derived solely from `SHA256(hostname || "xavier-fallback-salt-v1")`. The hostname is publicly discoverable. Anyone who knows the hostname can derive the fallback encryption key and decrypt `~/.xavier/master.key`. This defeats the entire key hierarchy.
+- **Fix:** Incorporate additional machine-specific entropy (e.g., machine-id, disk serial, user SID on Windows) or use OS-specific credential protection APIs directly.
+
+---
+
+**HIGH-04: No Brute-Force Protection on Login and Recovery Endpoints**
+- **File:** `auth2/mod.rs`, lines 170-228 (login), 405-443 (recovery)
+- **Issue:** The `login_handler` and `recovery_handler` endpoints have **no account lockout or per-account rate limiting**. The auth middleware rate limiter (100 req/min per IP) only applies to protected routes, not public routes like `/login` and `/recovery`. An attacker can brute-force passwords and seed phrases without restriction.
+- **Fix:** Add per-account rate limiting (e.g., 5 failed attempts → 15 min lockout). Add the rate limiter to public auth routes.
+
+---
+
+**HIGH-05: Rate Limiter Trusts X-Forwarded-For Header (IP Spoofing)**
+- **File:** `auth2/middleware.rs`, lines 51-56
+- **Code:**
+  ```rust
+  let client_ip = req.headers().get("x-forwarded-for")
+      .and_then(|h| h.to_str().ok())
+      .unwrap_or("unknown")
+      .to_string();
+  ```
+- **Issue:** The rate limiter reads the client IP from `X-Forwarded-For`, which is **trivially spoofable** by any client. An attacker can bypass rate limiting entirely by sending different `X-Forwarded-For` values. Also, `X-Forwarded-For` can contain multiple IPs (comma-separated); only the rightmost trusted proxy should be used.
+- **Fix:** Use the actual connection IP from the socket address. If behind a reverse proxy, use a trusted proxy configuration to properly extract the real IP.
+
+---
+
+**HIGH-06: Rate Limiter Unbounded Memory Growth (DoS)**
+- **File:** `auth2/middleware.rs`, lines 13-43
+- **Issue:** The `RateLimiter` stores entries in a `HashMap<String, Vec<Instant>>` with no eviction of stale entries. While entries within the window are cleaned on check, entries from IPs that never come back remain forever. An attacker can cause OOM by sending requests with millions of unique spoofed `X-Forwarded-For` values.
+- **Fix:** Add periodic cleanup of stale entries or use a bounded LRU cache.
+
+---
+
+**HIGH-07: Deterministic Nonce Derived from DEK for KEK Encryption**
+- **File:** `crypto/encryption.rs`, lines 36-41 and `crypto/keys.rs`, line 184
+- **Code:**
+  ```rust
+  pub fn from_dek(dek: &[u8; 32]) -> Self {
+      nonce.copy_from_slice(&dek[..NONCE_SIZE]); // First 12 bytes of DEK as nonce
+  }
+  ```
+- **Issue:** When encrypting a DEK with a KEK, the nonce is derived from the first 12 bytes of the DEK itself. The comment says "safe because each DEK is unique." However, this creates a **direct relationship between plaintext (DEK) and nonce**. If the same DEK is ever encrypted twice with the same KEK (e.g., key re-wrapping, backup), AES-GCM nonce reuse occurs, which is catastrophic (full plaintext recovery).
+- **Fix:** Always use `NonceBytes::generate()` for random nonces, and store the nonce alongside the encrypted DEK.
+
+---
+
+**HIGH-08: `check-users` Endpoint Unauthenticated — User Enumeration**
+- **File:** `auth2/mod.rs`, line 108
+- **Code:**
+  ```rust
+  .route("/check-users", get(check_users_handler::<S>))
+  ```
+- **Issue:** The `/check-users` endpoint is **public** (not behind the protected middleware) and reveals whether users exist and their count. This aids reconnaissance.
+- **Fix:** Remove this endpoint or put it behind authentication. For initial setup flow, use a one-time setup token pattern instead.
+
+---
+
+### 🟡 MEDIUM Findings (10)
+
+---
+
+**MED-01: Argon2id KEK Derivation Uses Weak Parameters (4 MiB)**
+- **File:** `crypto/keys.rs`, line 90
+- **Code:** `argon2::Params::new(4096, 3, 4, Some(32usize))`
+- **Issue:** Uses only 4 MiB memory cost for KEK derivation. Comment on line 83 says "64MB" but the actual parameter is `4096` (4 KiB blocks × 1024 = 4 MiB). This is far below the OWASP recommended 47 MiB minimum. Meanwhile, `auth2/password.rs` uses 19 MiB (also below OWASP but better).
+- **Fix:** Increase `m_cost` to at least `47104` (46 MiB) per OWASP 2024 guidelines.
+
+---
+
+**MED-02: SHA-256 for Recovery Seed Hash — Not Memory-Hard**
+- **File:** `auth2/mod.rs`, lines 133-137 and `security/recovery.rs`, lines 23-27
+- **Issue:** Recovery seed phrases are hashed with plain SHA-256. While the BIP39 entropy space is large (2048^12 or 2048^24), SHA-256 can be computed at billions/sec on GPUs. For 12-word phrases, dictionary attacks against the BIP39 wordlist are feasible.
+- **Fix:** Use Argon2id for seed phrase hashing, same as passwords.
+
+---
+
+**MED-03: TOTP Uses SHA-1 Algorithm**
+- **File:** `auth2/mod.rs`, lines 191, 303
+- **Code:** `algorithm: TOTPAlgorithm::SHA1`
+- **Issue:** TOTP is configured with SHA-1. While this is the most compatible choice (most authenticator apps default to SHA-1), SHA-256 or SHA-512 would be more secure. This is a minor issue since TOTP codes are short-lived (30s window) and SHA-1's collision weaknesses don't significantly impact HMAC-based TOTP.
+- **Fix:** Consider upgrading to `TOTPAlgorithm::SHA256` if authenticator app compatibility allows.
+
+---
+
+**MED-04: `LocalSecretStore` Uses Plaintext In-Memory Storage**
+- **File:** `secrets/local.rs`, entire file
+- **Issue:** Secrets stored in `LocalSecretStore` are held as plaintext `String` in a `HashMap`. No encryption at rest, no zeroization on drop. Suitable only for testing, but there's no warning or compile-time gate preventing production use.
+- **Fix:** Add `#[cfg(test)]` guard or document clearly as test-only. Use `zeroize::Zeroizing<String>` for values.
+
+---
+
+**MED-05: JWT RSA Key Size is 2048-bit**
+- **File:** `auth2/jwt.rs`, line 61
+- **Code:** `let bits = 2048;`
+- **Issue:** JWT signing uses RSA-2048, while `security/rsa_keys.rs` uses RSA-4096. NIST recommends RSA-2048 as minimum through 2030, but for a new system, 4096 provides better future-proofing. The inconsistency also suggests the JWT module doesn't use the centralized RSA key management.
+- **Fix:** Use the centralized `RsaKeypairManager` (4096-bit) for JWT signing, or upgrade to 4096.
+
+---
+
+**MED-06: No JWT Token Revocation/Blacklist Mechanism**
+- **File:** `auth2/jwt.rs` and `auth2/middleware.rs`
+- **Issue:** JWTs are validated purely by signature and expiration. There is no revocation list or blacklist. If a token is compromised, it remains valid until expiration (15 minutes). Logout only revokes the refresh token.
+- **Fix:** Implement a short-lived token blacklist (stored in Redis or in-memory) checked during validation, or use shorter expiration + refresh.
+
+---
+
+**MED-07: `DefaultAuditLogger` Prints Secrets to Stdout**
+- **File:** `secrets/lending.rs`, lines 38-49
+- **Code:**
+  ```rust
+  println!("[AUDIT] LENT secret '{}' to agent '{}' (Session: {}, TTL: {}s)", 
+           secret_id, agent_id, session_token, ttl_secs);
+  ```
+- **Issue:** The default audit logger prints secret IDs and session tokens to stdout in plaintext. In production with log aggregation, these would be captured.
+- **Fix:** Use `tracing` with appropriate log levels and redact sensitive fields.
+
+---
+
+**MED-08: `thread_rng()` Used for Security-Critical Token Generation**
+- **File:** `auth2/refresh.rs`, line 18
+- **Code:** `thread_rng().fill_bytes(&mut token_bytes);`
+- **Issue:** While `thread_rng()` in Rust is based on `ChaCha` seeded from OS entropy, using `OsRng` directly is the best practice for cryptographic token generation to avoid any potential thread-local PRNG state issues.
+- **Fix:** Replace with `OsRng.fill_bytes()` (already used in other modules like `auth2/jwt.rs`, `security/auth.rs`).
+
+---
+
+**MED-09: Commercial License Accepts Any Non-Empty Key**
+- **File:** `security/license.rs`, lines 122-134
+- **Code:**
+  ```rust
+  // TODO: Implement key verification against SWAL's licensing server
+  // For now, accept any non-empty key as valid (development mode)
+  if license_key.is_empty() { ... return false; }
+  ```
+- **Issue:** Any non-empty string unlocks commercial/enterprise features. This is explicitly marked as TODO but is a live vulnerability if deployed.
+- **Fix:** Implement proper license key verification before release.
+
+---
+
+**MED-10: HKDF Master Key Derivation Uses No Salt**
+- **File:** `security/encryption_keys.rs`, line 133
+- **Code:** `let hkdf = Hkdf::<Sha256>::new(None, &self.master_key);`
+- **Issue:** HKDF expansion is called with `salt = None`. While HKDF without a salt uses a zero-filled salt internally (per RFC 5869), providing a random salt improves security by domain-separating different key derivations.
+- **Fix:** Generate and persist a random salt alongside the master key.
+
+---
+
+### 🟢 LOW Findings (7)
+
+---
+
+**LOW-01: No Email Format Validation on Registration**
+- **File:** `auth2/mod.rs`, line 120
+- **Issue:** The `email` field is used directly without validating it's a proper email format. Could store arbitrary strings as emails.
+
+**LOW-02: No Password Complexity Requirements**
+- **File:** `auth2/mod.rs`, line 124
+- **Issue:** No minimum length, complexity, or entropy requirements for passwords.
+
+**LOW-03: Database Path Hardcoded to Relative `auth.db`**
+- **File:** `auth2/mod.rs`, lines 117, 174, 234, 262, 290, 365, 409, 449
+- **Issue:** Every handler creates a new `AuthDb::new(Path::new("auth.db"))` connection. The relative path means the DB location depends on the process working directory. This should be configurable.
+
+**LOW-04: SSRF Validator Allows Loopback Without Config Check**
+- **File:** `security/url_validator.rs`, lines 41-43
+- **Issue:** Loopback addresses (127.0.0.1) are allowed with a comment "might want to toggle this via env," but no toggle exists. For cloud deployments, loopback should be restricted.
+
+**LOW-05: `Zeroize` Not Implemented for Key Structs**
+- **Files:** `crypto/keys.rs` (KEK, DEK), `security/encryption_keys.rs` (MasterKeyManager)
+- **Issue:** Key material in memory is never zeroized on drop, leaving secrets in freed memory potentially readable via memory dumps or side-channel attacks.
+
+**LOW-06: Test Uses Zeroed Key**
+- **File:** `secrets/local_vault.rs`, line 102
+- **Code:** `let vault_key = [0u8; 32];`
+- **Issue:** Test uses all-zero key. While not a production issue, it sets a bad example and could be copy-pasted.
+
+**LOW-07: `unchecked_transaction()` Used Without Error Handling**
+- **File:** `security/user_store.rs`, line 115
+- **Issue:** Uses `unchecked_transaction()` which doesn't check if a transaction is already active, potentially causing subtle bugs in concurrent scenarios.
+
+---
+
+### Summary Table
+
+| Severity | Count | Categories |
+|----------|-------|------------|
+| 🔴 CRITICAL | 3 | Auth bypass (2FA), weak crypto, timing attack |
+| 🟠 HIGH | 8 | Timing attacks, data exposure, weak key derivation, rate limit bypass, DoS, nonce reuse risk |
+| 🟡 MEDIUM | 10 | Weak params, SHA-1 TOTP, plaintext secrets, JWT key size, no revocation, license bypass |
+| 🟢 LOW | 7 | Input validation, hardcoded paths, missing zeroization |
+
+### ✅ Good Practices Noted
+
+1. **AES-256-GCM** used for all symmetric encryption (good AEAD choice)
+2. **Argon2id** used for password hashing in `auth2` (correct algorithm)
+3. **Constant-time comparison** in `crypto/hmac.rs` and `crypto/password.rs::verify` (using `subtle::ConstantTimeEq`)
+4. **Hardware-backed vault** (OS keyring) for master key storage
+5. **Refresh token rotation** with theft detection (revoke all on reuse of revoked token)
+6. **Comprehensive audit logging** throughout auth flows
+7. **SSRF protection** with cloud metadata blocking
+8. **Prompt injection detection** with multi-layer security scanner
+9. **RSA-4096** for system-level keys (in `rsa_keys.rs`)
+10. **Encrypted private key storage** (AES-256-GCM protected)
+11. **Parameterized SQL queries** — no SQL injection vulnerabilities found
+12. **Debug trait redaction** on sensitive structs (Secret, User, LoginRequest)
+
+---
+
+The report covers all 37 source files across the 5 directories. The 3 CRITICAL findings should be addressed immediately, especially **CRITICAL-01** (the 2FA authentication bypass) which is exploitable in its current form.
