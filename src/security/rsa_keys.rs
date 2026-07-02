@@ -108,7 +108,6 @@ mod tests {
     use super::*;
     use rsa::traits::PublicKeyParts;
     use tempfile::tempdir;
-    use rsa::traits::PublicKeyParts;
 
     #[test]
     fn test_rsa_keypair_roundtrip() {
