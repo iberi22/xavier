@@ -275,6 +275,30 @@ pub enum Command {
         #[arg(long)]
         cloud: bool,
     },
+
+    /// Run the auto-improvement loop (benchmark → gaps → experiments → validate)
+    Improve {
+        #[command(subcommand)]
+        cmd: ImproveCommand,
+    },
+}
+
+/// Subcommands for the auto-improvement loop.
+#[derive(Subcommand, Debug, Clone)]
+pub enum ImproveCommand {
+    /// Run a full improvement cycle and print the result
+    Run {
+        /// Allow the engine to validate experiments autonomously (re-benchmark +
+        /// accept beneficial changes). Without this flag, experiments are proposed
+        /// but not executed.
+        #[arg(long)]
+        autonomous: bool,
+        /// Emit the cycle result as JSON (for scripting / scheduler capture)
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show the last improvement cycle and benchmark history
+    Status,
 }
 
 #[derive(Subcommand, Debug, Clone)]
