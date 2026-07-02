@@ -1,17 +1,18 @@
 {
-    "_comment": "Feature tracking file for Xavier Cognitive Memory System — actualizado 2026-06-25: governance lifecycle implementado, OpenClawScanner y CLI Agent Commands completados",
+    "_comment": "Feature tracking file for Xavier Cognitive Memory System — actualizado 2026-07-02: reconciliación tri-source (features.json + code audit 125K LOC/559 files/1044 tests + deep-scan). Overall reconciliado a 72%.",
     "metadata": {
         "project": "Xavier",
-        "version": "0.7.0-beta",
+        "version": "0.11.0-22-06-2026",
         "created": "2026-03-05",
-        "last_verified": "2026-06-25",
+        "last_verified": "2026-07-02",
         "total_features": 20,
         "features_complete": 11,
         "features_beta": 5,
         "features_draft": 2,
         "features_planned": 2,
         "features_stable": 11,
-        "overall_progress_pct": 75
+        "overall_progress_pct": 72,
+        "reconciliation_notes": "Scanner v2 reporta 6% (bug: test_scanner reporta 0/0 pese a 1044 tests verificados via cargo test --lib --no-run exit 0). Tracker manual 75%. Auditoría de código confirma 72% como valor honesto. Codebase: 125,734 LOC Rust, 559 archivos, 1044 test fns en 206 archivos."
     },
     "features": [
         {

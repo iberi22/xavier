@@ -35,8 +35,12 @@ Xavier es un motor de memoria cognitiva para agentes IA, construido en Rust. El 
 | F2 | MCP Integration | HTTP + MCP server para LLMs | ✅ Completado |
 | F3 | Multi-tenant | Workspace isolation + quotas | ✅ Completado |
 | F4 | Code Indexing | AST-backed symbol search | ✅ Completado |
-| F5 | Production Ready | Deployment + Monitoring + Security | 🔄 En progreso |
-| F6 | SQLite Optimization | SQLite + rtree extension para graph queries | ⏳ Pendiente |
+| F5 | Production Ready | Deployment + Monitoring + Security | 🔄 En progreso (88%) |
+| F6 | SQLite Optimization | SQLite + rtree extension para graph queries | ⏳ Pendiente (20%) |
+| F7 | Cierre de brechas | Auto-Improvement, Context Regen, Mesh Ph2-4, Telegram | ⏳ Sprint actual (72→86%) |
+
+> **Overall maturity reconciled: 72%** (2026-07-02, tri-source). Ver
+> [architecture.md](../../architecture.md) para el desglose por feature y el sprint plan para alcanzar 86%.
 
 ## Criterios de Éxito
 
