@@ -320,6 +320,7 @@ pub async fn v1_mesh_handshake(
                         last_seen_at: Some(chrono::Utc::now().timestamp()),
                         sync_enabled: true,
                         is_cloud: false,
+                        iroh_addr: None,
                     });
             info!("Auto-registered peer {} in PeerRegistry", payload.node_id);
                 }

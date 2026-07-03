@@ -21,6 +21,15 @@ pub struct PeerInfo {
     pub sync_enabled: bool,
     #[serde(default)]
     pub is_cloud: bool,
+    /// Iroh endpoint address for QUIC-based P2P sync (Phase 2 mesh).
+    ///
+    /// Holds the remote endpoint's `EndpointId` string (an Ed25519 `PublicKey`
+    /// encoding) used by [`crate::mesh::iroh_transport::IrohTransport`] to dial
+    /// the peer. `None`/absent for peers that only speak HTTP mesh — existing
+    /// `mesh_peers.json` files deserialize unchanged thanks to
+    /// `#[serde(default)]`.
+    #[serde(default)]
+    pub iroh_addr: Option<String>,
 }
 
 /// A persistent, file-backed registry of trusted peers.
@@ -126,6 +135,7 @@ mod tests {
             last_seen_at: None,
             sync_enabled: true,
             is_cloud: false,
+            iroh_addr: None,
         };
 
         registry.add_peer(peer).unwrap();

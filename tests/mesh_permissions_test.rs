@@ -149,6 +149,7 @@ async fn test_mesh_permissions_and_pairing() {
         last_seen_at: None,
         sync_enabled: true,
         is_cloud: false,
+        iroh_addr: None,
     };
 
     let manifest_a = transport_a.fetch_manifest(&peer_b, &token_b).await.unwrap();
