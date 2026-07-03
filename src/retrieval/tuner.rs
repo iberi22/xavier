@@ -61,6 +61,61 @@ impl TuningProposal {
     }
 }
 
+/// Recall threshold below which a drift alert is raised. A drop below this signals
+/// that retrieval quality has regressed enough to warrant operator attention.
+pub const RECALL_DRIFT_THRESHOLD: f64 = 0.65;
+
+/// Detect recall drift between a baseline and a fresh measurement, raising a
+/// system alert when recall has regressed past the threshold.
+///
+/// Returns `Some(regression_pct)` when a drift alert was raised (caller may log or
+/// persist it), or `None` when recall is healthy or improved.
+///
+/// Drift is also flagged on an absolute drop even within threshold when the
+/// regression exceeds 10 points (0.10) — a sudden step-down is always notable.
+pub fn detect_recall_drift(baseline: &RetrievalMetrics, current: &RetrievalMetrics) -> Option<f64> {
+    let prev = baseline.recall_at_k;
+    let now = current.recall_at_k;
+
+    // No baseline to compare against — nothing to do.
+    if prev <= 0.0 {
+        return None;
+    }
+
+    let regression = prev - now;
+
+    // Trigger conditions: crossed the absolute floor, or a large relative drop.
+    let crossed_floor = now < RECALL_DRIFT_THRESHOLD && prev >= RECALL_DRIFT_THRESHOLD;
+    let large_drop = regression > 0.10;
+
+    if !crossed_floor && !large_drop {
+        return None;
+    }
+
+    let regression_pct = (regression / prev) * 100.0;
+    let level = if now < 0.5 { "ERROR" } else { "WARN" };
+    let message = format!(
+        "Retrieval recall drifted: {:.0}% → {:.0}% ({:+.1} pts). Consider re-running the RRF tuner.",
+        prev * 100.0,
+        now * 100.0,
+        -regression * 100.0
+    );
+
+    // Fire the alert through the shared system alert store. This is a best-effort
+    // signal: the store is process-global, so it surfaces in /health and the
+    // notification system when the server is running. In CLI-only contexts the
+    // call is a harmless no-op on an unused store.
+    crate::server::alerts::SYSTEM_ALERTS.push_alert(level, &message, "retrieval");
+    // Always log so drift is visible even without the alert store wired.
+    if level == "ERROR" {
+        tracing::error!(component = "retrieval", "{message}");
+    } else {
+        tracing::warn!(component = "retrieval", "{message}");
+    }
+
+    Some(regression_pct)
+}
+
 /// A measured (config → metrics) pair, used internally during grid search.
 #[derive(Debug, Clone)]
 struct ScoredCandidate {
@@ -205,5 +260,86 @@ mod tests {
         let c = RetrievalConfig::default();
         assert_eq!(c.rrf_k, DEFAULT_RRF_K);
         assert_eq!(c.working_weight, DEFAULT_WORKING_WEIGHT);
+    }
+
+    #[test]
+    fn test_detect_recall_drift_floor_crossing() {
+        // Recall drops from above to below the threshold -> drift flagged.
+        let baseline = RetrievalMetrics {
+            dataset: "t".into(),
+            num_cases: 10,
+            recall_at_k: 0.70,
+            mrr: 0.5,
+            hit_rate: 0.70,
+            k: 5,
+        };
+        let current = RetrievalMetrics {
+            recall_at_k: 0.60,
+            ..baseline.clone()
+        };
+        let drift = detect_recall_drift(&baseline, &current);
+        assert!(drift.is_some(), "floor crossing must flag drift");
+    }
+
+    #[test]
+    fn test_detect_recall_drift_large_drop() {
+        // A >10pt drop flags even when staying above the floor.
+        let baseline = RetrievalMetrics {
+            dataset: "t".into(),
+            num_cases: 10,
+            recall_at_k: 0.90,
+            mrr: 0.5,
+            hit_rate: 0.90,
+            k: 5,
+        };
+        let current = RetrievalMetrics {
+            recall_at_k: 0.78,
+            ..baseline.clone()
+        };
+        let drift = detect_recall_drift(&baseline, &current);
+        assert!(drift.is_some(), "large drop must flag drift");
+    }
+
+    #[test]
+    fn test_detect_recall_drift_healthy_no_alert() {
+        // Improvement or stable recall -> no drift.
+        let baseline = RetrievalMetrics {
+            dataset: "t".into(),
+            num_cases: 10,
+            recall_at_k: 0.80,
+            mrr: 0.5,
+            hit_rate: 0.80,
+            k: 5,
+        };
+        let improved = RetrievalMetrics {
+            recall_at_k: 0.85,
+            ..baseline.clone()
+        };
+        assert!(detect_recall_drift(&baseline, &improved).is_none());
+
+        // Small fluctuation within tolerance -> no drift.
+        let small_drop = RetrievalMetrics {
+            recall_at_k: 0.77,
+            ..baseline.clone()
+        };
+        assert!(detect_recall_drift(&baseline, &small_drop).is_none());
+    }
+
+    #[test]
+    fn test_detect_recall_drift_no_baseline() {
+        // Zero baseline -> nothing to compare, returns None.
+        let baseline = RetrievalMetrics {
+            dataset: "t".into(),
+            num_cases: 0,
+            recall_at_k: 0.0,
+            mrr: 0.0,
+            hit_rate: 0.0,
+            k: 5,
+        };
+        let current = RetrievalMetrics {
+            recall_at_k: 0.5,
+            ..baseline.clone()
+        };
+        assert!(detect_recall_drift(&baseline, &current).is_none());
     }
 }

@@ -18,6 +18,7 @@ pub mod billing;
 pub mod code;
 pub mod data_commons;
 pub mod improve;
+pub mod regen;
 pub mod wallet;
 pub mod enums;
 pub mod http;
@@ -267,6 +268,7 @@ impl Cli {
                 crate::cli::handlers::system::handle_health_command(*cloud).await
             }
             Command::Improve { cmd } => improve::handle_improve_command(cmd.clone()).await,
+            Command::Regen { cmd } => regen::handle_regen_command(cmd.clone()).await,
         }
     }
 }
