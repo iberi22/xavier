@@ -5,6 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 use super::gating::LayerWeights;
+use super::tuner::RetrievalConfig;
 
 /// Weights for graph traversal signals
 ///
@@ -118,6 +119,105 @@ mod tests {
         let score_unknown = policy.score_for_prefetch("unknown", 0.8);
         assert_eq!(score_unknown, 0.0);
     }
+
+    #[test]
+    fn test_apply_retrieval_config_changes_layer_weights() {
+        // A semantic-emphasis config must shift layer weights toward semantic.
+        let mut policy = NavigationPolicy::default();
+        let before = (
+            policy.layer_weights.working,
+            policy.layer_weights.episodic,
+            policy.layer_weights.semantic,
+        );
+        let config = super::RetrievalConfig {
+            rrf_k: 60,
+            keyword_weight: 0.5,
+            vector_weight: 0.5,
+            working_weight: 0.2,
+            episodic_weight: 0.2,
+            semantic_weight: 0.6,
+        };
+        policy.apply_retrieval_config(&config);
+        let after = (
+            policy.layer_weights.working,
+            policy.layer_weights.episodic,
+            policy.layer_weights.semantic,
+        );
+        assert_ne!(before, after, "layer weights must change after apply");
+        // Semantic should now be the dominant layer.
+        assert!(
+            after.2 > after.0 && after.2 > after.1,
+            "semantic must dominate after applying semantic-emphasis config"
+        );
+        // Weights must remain a valid distribution.
+        let sum = after.0 + after.1 + after.2;
+        assert!((sum - 1.0).abs() < 1e-4, "layer weights must sum to 1.0, got {sum}");
+        // update_count must bump to record the tuner-derived change.
+        assert!(policy.update_count >= 1);
+    }
+
+    #[test]
+    fn test_apply_retrieval_config_vector_emphasis_amplifies_semantic_traversal() {
+        // A vector-heavy config should not reduce semantic_similarity below default.
+        let mut policy = NavigationPolicy::default();
+        let semantic_before = policy.traversal_weights.semantic_similarity;
+        let config = super::RetrievalConfig {
+            rrf_k: 80,
+            keyword_weight: 0.2,
+            vector_weight: 0.8,
+            ..super::RetrievalConfig::default()
+        };
+        policy.apply_retrieval_config(&config);
+        // Vector share = 0.8/1.0 = 0.8 -> multiplier = 1.6, so semantic grows.
+        assert!(
+            policy.traversal_weights.semantic_similarity > semantic_before,
+            "vector-emphasis should amplify semantic_similarity traversal weight"
+        );
+        // Traversal weights remain normalized.
+        let tw = policy.traversal_weights;
+        let sum = tw.semantic_similarity + tw.confidence + tw.edge_weight + tw.recency
+            + tw.cross_layer + tw.cross_dir + tw.peripheral_hub;
+        assert!((sum - 1.0).abs() < 1e-4, "traversal weights must sum to 1.0, got {sum}");
+    }
+
+    #[test]
+    fn test_apply_retrieval_config_keyword_emphasis_damps_semantic_traversal() {
+        // A keyword-heavy config should damp semantic_similarity traversal signal.
+        let mut policy = NavigationPolicy::default();
+        let semantic_before = policy.traversal_weights.semantic_similarity;
+        let config = super::RetrievalConfig {
+            rrf_k: 40,
+            keyword_weight: 0.8,
+            vector_weight: 0.2,
+            ..super::RetrievalConfig::default()
+        };
+        policy.apply_retrieval_config(&config);
+        assert!(
+            policy.traversal_weights.semantic_similarity < semantic_before,
+            "keyword-emphasis should damp semantic_similarity traversal weight"
+        );
+    }
+
+    #[test]
+    fn test_apply_retrieval_config_degenerate_falls_back_to_default() {
+        // All-zero layer weights must not leave the policy in a degenerate state.
+        let mut policy = NavigationPolicy::default();
+        let config = super::RetrievalConfig {
+            working_weight: 0.0,
+            episodic_weight: 0.0,
+            semantic_weight: 0.0,
+            ..super::RetrievalConfig::default()
+        };
+        policy.apply_retrieval_config(&config);
+        // normalize_layers restores the LayerWeights::default() distribution on a
+        // zero sum, so the policy stays usable.
+        let lw = policy.layer_weights;
+        let sum = lw.working + lw.episodic + lw.semantic;
+        assert!(
+            sum > 0.0 && (sum - 1.0).abs() < 1e-4,
+            "degenerate config must normalize back to a valid distribution, sum={sum}"
+        );
+    }
 }
 
 impl NavigationPolicy {
@@ -171,6 +271,52 @@ impl NavigationPolicy {
             _ => 0.0,
         };
         base_relevance * weight
+    }
+
+    /// Apply a tuned `RetrievalConfig` to the navigation policy.
+    ///
+    /// This is the bridge from the RRF tuner (`retrieval::tuner`) into HORMER's
+    /// navigation policy: it copies the recommended layer weights (working /
+    /// episodic / semantic) directly into `layer_weights`, normalizing them so
+    /// they remain a valid distribution, and nudges the traversal weights so that
+    /// the semantic-similarity signal tracks the tuner's vector/keyword balance.
+    ///
+    /// Concretely:
+    /// - `layer_weights` are overwritten from the config (then renormalized),
+    ///   so retrieval gating and graph traversal both reflect the tuned emphasis
+    ///   (e.g. semantic-emphasis from the tuner tilts navigation toward memory).
+    /// - `traversal_weights.semantic_similarity` is scaled toward the config's
+    ///   `vector_weight`: a more vector-heavy config amplifies semantic match,
+    ///   a more keyword-heavy config damps it. The traversal weights are then
+    ///   renormalized.
+    /// - `update_count` is bumped so callers can observe that a tuner-derived
+    ///   change has been applied (distinct from the online RL `update` path).
+    ///
+    /// Weights that fall to zero (or a degenerate all-zero config) are clamped to
+    /// the defaults rather than left empty, mirroring the behavior of
+    /// `normalize_layers` / `normalize_traversal`.
+    pub fn apply_retrieval_config(&mut self, config: &RetrievalConfig) {
+        // 1. Layer weights come straight from the tuner's recommended config.
+        self.layer_weights.working = config.working_weight.max(0.0);
+        self.layer_weights.episodic = config.episodic_weight.max(0.0);
+        self.layer_weights.semantic = config.semantic_weight.max(0.0);
+        self.normalize_layers();
+
+        // 2. Tilt traversal semantic similarity toward the vector/keyword balance.
+        //    vector_weight ∈ [0,1]; rescale the existing semantic weight by the
+        //    ratio of vector to keyword emphasis, guarding against division by zero.
+        let total = config.keyword_weight + config.vector_weight;
+        if total > 0.0 {
+            let vector_share = config.vector_weight / total; // 0.5 at the default 50/50
+            // At the default 50/50 split, vector_share == 1.0 so the weight is unchanged.
+            // A purely vector config doubles semantic similarity; a purely keyword
+            // config zeroes it (then normalization restores the rest of the signals).
+            self.traversal_weights.semantic_similarity =
+                (self.traversal_weights.semantic_similarity * vector_share * 2.0).max(0.0);
+            self.normalize_traversal();
+        }
+
+        self.update_count += 1;
     }
 
     /// Normalize layer weights so they sum to 1.0

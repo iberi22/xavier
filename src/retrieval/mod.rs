@@ -6,6 +6,7 @@
 pub mod config;
 pub mod eval;
 pub mod gating;
+pub mod history;
 pub mod policy;
 pub mod tuner;
 
