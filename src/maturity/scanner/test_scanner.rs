@@ -154,15 +154,21 @@ pub fn list_tests(codebase_root: &str) -> TestListScanResult {
     let (found_anchors, scan_errors) = check_test_anchors_in_sources(codebase_root, &unique_anchors);
     errors.extend(scan_errors);
 
-    // Build per-feature results
+    // Build per-feature results: (passing_anchors, ALL_anchors).
+    //
+    // NOTE: the second tuple element is the FULL anchor set (total), not the
+    // missing set. The consumer (scan_feature_v2 in mod.rs) interprets
+    // (passing, total) — partitioning into (passing, missing) here caused the
+    // long-standing bug where tests_total was 0 whenever all anchors were found.
     let mut feature_results: HashMap<String, (Vec<String>, Vec<String>)> = HashMap::new();
     for (feat_id, anchor_names) in &feature_tests_map {
-        let (passing, missing): (Vec<_>, Vec<_>) = anchor_names
+        let passing: Vec<String> = anchor_names
             .iter()
             .cloned()
-            .partition(|anchor| found_anchors.contains(anchor));
+            .filter(|anchor| found_anchors.contains(anchor))
+            .collect();
 
-        feature_results.insert(feat_id.clone(), (passing, missing));
+        feature_results.insert(feat_id.clone(), (passing, anchor_names.clone()));
     }
 
     let all_tests: Vec<String> = found_anchors.into_iter().collect();
