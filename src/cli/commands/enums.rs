@@ -281,6 +281,12 @@ pub enum Command {
         #[command(subcommand)]
         cmd: ImproveCommand,
     },
+
+    /// Context regeneration: measure recall@k and tune RRF weights
+    Regen {
+        #[command(subcommand)]
+        cmd: RegenCommand,
+    },
 }
 
 /// Subcommands for the auto-improvement loop.
@@ -299,6 +305,29 @@ pub enum ImproveCommand {
     },
     /// Show the last improvement cycle and benchmark history
     Status,
+}
+
+/// Subcommands for context regeneration (recall measurement + RRF tuning).
+#[derive(Subcommand, Debug, Clone)]
+pub enum RegenCommand {
+    /// Measure recall@k against a benchmark dataset and print the metrics
+    Benchmark {
+        /// Path to the benchmark dataset JSON. Defaults to the bundled dataset.
+        #[arg(long)]
+        dataset: Option<PathBuf>,
+        /// Emit metrics as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Run the RRF tuner over the benchmark dataset and print the proposal
+    Tune {
+        /// Path to the benchmark dataset JSON. Defaults to the bundled dataset.
+        #[arg(long)]
+        dataset: Option<PathBuf>,
+        /// Emit the tuning proposal as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]
