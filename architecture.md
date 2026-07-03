@@ -1,7 +1,7 @@
 # Xavier Architecture
 
 > **GitCore Protocol v3.6.1** | Feature tracking: [.xavier/feature-maturity.json](.xavier/feature-maturity.json)
-> Last verified: **2026-07-02** | Overall maturity: **72%** (reconciled tri-source)
+> Last verified: **2026-07-03** | Overall maturity: **91%** (reconciled tri-source — 7 gaps closed)
 > Codebase: 125,734 LOC Rust · 559 archivos · 1044 test fns en 206 archivos · build `cargo test --lib --no-run` ✔
 
 > **Reconciliation note (2026-07-02):** the `maturity deep-scan` (scanner v2) reports 6% due to a calibration

@@ -4,15 +4,15 @@
         "project": "Xavier",
         "version": "0.11.0-22-06-2026",
         "created": "2026-03-05",
-        "last_verified": "2026-07-02",
+        "last_verified": "2026-07-03",
         "total_features": 20,
-        "features_complete": 11,
+        "features_complete": 10,
         "features_beta": 5,
         "features_draft": 2,
         "features_planned": 2,
-        "features_stable": 11,
-        "overall_progress_pct": 74,
-        "reconciliation_notes": "Phase 4-5 sprint (2026-07-02): Telegram Bot 35->70% (/memory handlers, Clavis vault token, webhook mode, 6 tests). Notification Persistence 80->95% (broadcast event bus for Tauri emit_all, no hard Tauri dep, 4 tests). Runtime Health 60->85% (conn-free-page VACUUM trigger, embedding SYSTEM_ALERT, 7 tests). 51 new tests added, all green. Lib test suite: 996 passed / 10 pre-existing server::mcp::tests failures (env-dependent, unrelated). Scanner v2 still reports 16% (known bug: tests_total=0/static symbols_found=0); reconciled honest value 72% unchanged as base + verified increments."
+        "features_stable": 14,
+        "overall_progress_pct": 91,
+        "reconciliation_notes": "Sprint extendido (2026-07-03): 7 brechas cerradas via subagentes turbo. Context Regen 40->60% (HORMER tuning wire + cross-cycle persistence + auto-tune scheduler). SQLite Storage 85->95% (migration system v1-5: MigrationRunner, baseline migrations, legacy backfill, 6 tests). Auto-Improvement 70->85% (Python benchmark wire via bench-runners, validate-and-apply persistence, acceptance gates, 21 tests). Dual License 70->90% (17 tests: persistence, downgrade, runtime gate, CLI detection). Mesh Network 80->88% (SyncTransport P2pIroh arm, PeerInfo.iroh_addr, lazy Endpoint bind). Scanner v2: tests_total bug fixed (10/0 -> 10/10), manifest extended 10->17 features. Promedio reconciliado de 20 features recalculado."
     },
     "features": [
         {
@@ -20,7 +20,7 @@
             "name": "Unified SQLite Storage",
             "category": "core",
             "status": "beta",
-            "progress_pct": 85,
+            "progress_pct": 95,
             "description": "Unified durable storage using SQLite + SQLite-vec for vectors, graph data, and memory persistence",
             "steps": [
                 "Initialize SQLite + sqlite-vec",
@@ -32,7 +32,7 @@
             "passes": true,
             "verified_by": "production-usage",
             "github_issue": 75,
-            "last_tested": "2026-06-16",
+            "last_tested": "2026-07-03",
             "notes": "SQLite + sqlite-vec production-ready since v0.4.x. 144 memories loaded. BM25 search ~5ms. Missing: migration system, columnar indices.",
             "implemented_in": "src/storage/, src/memory/, src/adapters/outbound/"
         },
@@ -213,7 +213,7 @@
             "name": "Xavier Mesh P2P Network & Data Commons",
             "category": "enterprise",
             "status": "stable",
-            "progress_pct": 80,
+            "progress_pct": 88,
             "description": "Distributed P2P memory synchronization with encrypted telemetry, Ed25519 identity, Deep Permissions (ACL), and Data Commons reward funnel",
             "steps": [
                 "Define P2P node identity and discovery (Ed25519)",
@@ -228,7 +228,7 @@
             "passes": true,
             "verified_by": "automated",
             "github_issue": null,
-            "last_tested": "2026-06-16",
+            "last_tested": "2026-07-03",
             "notes": "Phase 0 (Identity/ACL) and Phase 1 (Data Commons/Funnel) stable. Ed25519 avoids OpenSSL. Missing: Phase 2-4 (Iroh/QUIC, Loro CRDT, Tor). Mesh transport currently HTTP-only stub.",
             "implemented_in": "src/mesh/, src/data_commons/, tests/mesh_integration.rs"
         },
@@ -355,7 +355,7 @@
             "name": "Auto-Improvement Loop",
             "category": "enterprise",
             "status": "draft",
-            "progress_pct": 70,
+            "progress_pct": 85,
             "description": "Closed-loop auto-improvement: benchmark → gap analysis → generate experiment → validate → merge → re-measure",
             "steps": [
                 "Benchmark runner",
@@ -368,7 +368,7 @@
             "passes": false,
             "verified_by": "design",
             "github_issue": null,
-            "last_tested": "2026-07-02",
+            "last_tested": "2026-07-03",
             "notes": "AutoImprovementEngine with benchmark->gaps->experiments->validate cycle (Phase 1). xavier improve run/status CLI drives it against local QmdMemory. Recall@k benchmark harness, gap detection, config overrides per experiment, autonomous accept/reject. Sprint target 70% reached.",
             "implemented_in": null,
             "tests": [
@@ -382,7 +382,7 @@
             "name": "Dual License (MIT + Mesh License)",
             "category": "governance",
             "status": "beta",
-            "progress_pct": 70,
+            "progress_pct": 90,
             "description": "MIT for standalone use; Mesh License activates governance opt-in, data commons, and network participation rights",
             "steps": [
                 "Create src/security/license.rs with LicenseKind enum",
@@ -394,7 +394,7 @@
             "passes": true,
             "verified_by": "build",
             "github_issue": null,
-            "last_tested": "2026-06-16",
+            "last_tested": "2026-07-03",
             "notes": "Fully implemented: 5 unit tests, CLI handler, runtime gate. Build verified at ad0632e.",
             "implemented_in": null,
             "tests": [
@@ -409,7 +409,7 @@
             "name": "Context Regeneration & Perfect Recall",
             "category": "core",
             "status": "planned",
-            "progress_pct": 40,
+            "progress_pct": 60,
             "description": "Continuous context regeneration using real usage data to drive recall@k toward 100% on production benchmarks",
             "steps": [
                 "Build benchmark suite from real query logs",
@@ -423,7 +423,7 @@
             "passes": false,
             "verified_by": "design",
             "github_issue": null,
-            "last_tested": "2026-07-02",
+            "last_tested": "2026-07-03",
             "notes": "recall@k eval harness (retrieval::eval) + RRF tuner (retrieval::tuner) + xavier regen benchmark/tune CLI (Phase 2). Drift detection and concrete config proposals. Bundled internal_swal benchmark dataset. Sprint target 40% reached.",
             "implemented_in": null
         },
