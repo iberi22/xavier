@@ -348,10 +348,16 @@ impl MaturityScanner {
             };
 
             let (tests_passing, tests_total, test_pass_rate) = if let Some((passing, total)) = test_evidence {
-                let total_count = total.len();
+                // Per-subcomponent denominator: the rate must reflect THIS
+                // subcomponent's anchors, not the feature-wide aggregate.
+                // (previously used total.len() which is the feature total and
+                //  produced nonsensical rates when some subs had anchors and others
+                //  didn't). `total` here is the full anchor set for the feature.
+                let _ = total; // feature-wide set available for diagnostics
+                let sub_total = sub.test_anchors.len();
                 let passing_count = passing.iter().filter(|p| sub.test_anchors.contains(*p)).count();
-                let rate = if total_count == 0 { 1.0 } else { passing_count as f64 / total_count as f64 };
-                (passing_count, total_count, rate)
+                let rate = if sub_total == 0 { 1.0 } else { passing_count as f64 / sub_total as f64 };
+                (passing_count, sub_total, rate)
             } else {
                 let results = self.scan_tests(&sub.test_anchors);
                 let p = results.iter().filter(|t| **t).count();
