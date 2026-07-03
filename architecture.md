@@ -33,7 +33,7 @@ src/
 xavier-core/       — Extracted core crate for Android/FFI (PR #207)
 ```
 
-## Feature Maturity (reconciled 2026-07-02 — overall 72%)
+## Feature Maturity (reconciled 2026-07-02 — overall 74%)
 
 | Feature | % | Status | Verificado | Sprint Target |
 |---------|---|--------|-----------|---------------|
@@ -51,7 +51,7 @@ xavier-core/       — Extracted core crate for Android/FFI (PR #207)
 | Clavis Vault + Secrets | **85** | 🟢 Stable | live 2026-07-02 | — |
 | Native SDKs (Py/TS) | **80** | 🟡 Beta | repo | 90 |
 | Mesh P2P Network | **80** | 🟡 Beta | automated | 95 (Ph 2-4) |
-| Notification Persistence | **80** | 🟠 Draft | code-audit | 95 |
+| Notification Persistence | **95** | 🟡 Beta | automated 2026-07-02 | 95 ✅ |
 | HORMER Navigation | **90** | 🟡 Beta | automated | 95 |
 | Billing/Usage/Provider | **80** | 🟡 Beta | CLI | 90 |
 | Auth2 / Token HMAC | **80** | 🟡 Beta | live 2026-07-02 | 90 |
@@ -61,15 +61,17 @@ xavier-core/       — Extracted core crate for Android/FFI (PR #207)
 | Governance DAO | **70** | 🟡 Beta | build | 85 |
 | Dual License (MIT+Mesh) | **70** | 🟡 Beta | build | 80 |
 | Panel UI (Tauri) | **70** | 🟡 Beta | build | 85 |
-| Runtime Health | **60** | 🟡 Beta | live 2026-07-02 | 85 |
-| Telegram Bot | **35** | 🟡 Beta | feature-gated | 70 |
-| Auto-Improvement Loop | **30** | 🟠 Draft | design | 70 |
-| Context Regeneration | **0** | ⚪ Planned | — | 40 |
-| **Overall (reconciled)** | **72** | | | **86** |
+| Runtime Health | **85** | 🟡 Beta | live 2026-07-02 | 85 ✅ |
+| Telegram Bot | **70** | 🟡 Beta | build 2026-07-02 | 70 ✅ |
+| Auto-Improvement Loop | **70** | 🟡 Beta | benchmark 2026-07-02 | 70 ✅ |
+| Context Regeneration | **40** | 🟡 Beta | recall@k harness 2026-07-02 | 40 ✅ |
+| **Overall (reconciled)** | **74** | | | **86** |
 
 > MCP Server is now 100%: 25 tools verified live on 2026-07-02 (was 48% under the old subcomponent model).
-> The 4 largest gaps driving overall below 80%: Context Regeneration (0%), Auto-Improvement Loop (30%),
-> Telegram Bot (35%), Mesh Phases 2-4 (stub). These define the current sprint.
+> Sprint closed (2026-07-02): Telegram Bot 35→70%, Notification Persistence 80→95%, Runtime Health 60→85%,
+> Auto-Improvement Loop 30→70%, Context Regeneration 0→40% all reached their sprint targets.
+> Reconciled overall nudged 72→74% (5 features advanced; scanner v2 still floors at 16% due to a
+> known tests_total=0/symbols_found=0 bug — see `.gitcore/features.json`). Largest remaining gap: Mesh Phases 2-4.
 
 ## Sprint JULES-002 — Todos los issues asignados a Jules
 
