@@ -328,6 +328,15 @@ pub enum RegenCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Print the recent tuning history from .xavier/tuning-history.json
+    History {
+        /// Number of recent proposals to show (newest last)
+        #[arg(short, long, default_value_t = 5)]
+        limit: usize,
+        /// Emit the history as JSON
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand, Debug, Clone)]

@@ -1,13 +1,17 @@
 //! CLI handler for context regeneration (recall measurement + RRF tuning).
 //!
-//! Implements `xavier regen benchmark` and `xavier regen tune`. Both run the
-//! recall@k evaluation harness from `retrieval::eval` against a benchmark dataset,
-//! loading the local QmdMemory to execute real searches.
+//! Implements `xavier regen benchmark`, `regen tune`, and `regen history`. The
+//! benchmark and tune commands run the recall@k evaluation harness from
+//! `retrieval::eval` against a benchmark dataset, loading the local QmdMemory to
+//! execute real searches. Tuning proposals are persisted to
+//! `.xavier/tuning-history.json` so subsequent runs can detect recall drift
+//! against the last baseline and the history can be reviewed.
 
 use anyhow::Result;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use xavier::retrieval::eval::{is_hit, CaseResult, EvalDataset, RetrievalMetrics};
-use xavier::retrieval::tuner::{tune, RetrievalConfig};
+use xavier::retrieval::history::{self, HistoryEntry, TuningHistory};
+use xavier::retrieval::tuner::{detect_recall_drift, tune, RetrievalConfig};
 
 use crate::cli::commands::enums::RegenCommand;
 use crate::cli::commands::spawn::load_spawn_memory;
@@ -20,6 +24,7 @@ pub async fn handle_regen_command(cmd: RegenCommand) -> Result<()> {
     match cmd {
         RegenCommand::Benchmark { dataset, json } => run_benchmark(dataset, json).await,
         RegenCommand::Tune { dataset, json } => run_tune(dataset, json).await,
+        RegenCommand::History { limit, json } => run_history(limit, json),
     }
 }
 
@@ -33,6 +38,38 @@ fn resolve_dataset_path(explicit: Option<PathBuf>) -> PathBuf {
     }
     // The bundled dataset is relative to the repo root. The CLI runs from there.
     PathBuf::from(DEFAULT_DATASET)
+}
+
+/// Walk up from the current directory looking for a `.git` marker to find the
+/// repo root, falling back to the cwd. The tuning history lives in the repo's
+/// `.xavier/` dir so proposals are shared across runs in the same workspace.
+fn repo_root() -> PathBuf {
+    let start = std::path::absolute(".").unwrap_or_else(|_| PathBuf::from("."));
+    let mut current = start.as_path();
+    loop {
+        if current.join(".git").exists() {
+            return current.to_path_buf();
+        }
+        match current.parent() {
+            Some(parent) => current = parent,
+            None => break,
+        }
+    }
+    start
+}
+
+/// Resolve the on-disk tuning-history path, creating the `.xavier` dir if needed.
+fn history_path() -> Result<PathBuf> {
+    let xavier_dir = repo_root().join(".xavier");
+    history::ensure_history_path(&xavier_dir)
+}
+
+/// Load any prior tuning baseline from history (used for drift detection). A
+/// missing history file yields `None`, so the first run has nothing to compare
+/// against.
+fn load_baseline(path: &Path) -> Result<Option<RetrievalMetrics>> {
+    let history = history::load(path)?;
+    Ok(history.last().map(|e| e.baseline.clone()))
 }
 
 /// Run the recall@k benchmark: execute each case's query against local memory,
@@ -74,6 +111,31 @@ async fn run_benchmark(dataset: Option<PathBuf>, json: bool) -> Result<()> {
     if json {
         println!("{}", serde_json::to_string_pretty(&metrics)?);
         return Ok(());
+    }
+
+    // Cross-cycle drift check: compare against the last recorded baseline from
+    // the tuning history, if any. A first run (no history) skips this.
+    if let Ok(hist_path) = history_path() {
+        if let Ok(Some(prior)) = load_baseline(&hist_path) {
+            if let Some(regression_pct) = detect_recall_drift(&prior, &metrics) {
+                // detect_recall_drift already fires a SYSTEM_ALERT; surface a
+                // human-readable note here too.
+                println!(
+                    "\n⚠️  Recall drift detected vs last baseline ({:.0}% → {:.0}%, {:+.1} pts; {:.1}% regression).",
+                    prior.recall_at_k * 100.0,
+                    metrics.recall_at_k * 100.0,
+                    (metrics.recall_at_k - prior.recall_at_k) * 100.0,
+                    regression_pct
+                );
+                println!("   Re-run `xavier regen tune` to propose corrective weights.");
+            } else {
+                println!(
+                    "\n✅ Recall stable vs last baseline ({:.0}% → {:.0}%).",
+                    prior.recall_at_k * 100.0,
+                    metrics.recall_at_k * 100.0
+                );
+            }
+        }
     }
 
     println!("\n=== Recall@{} Benchmark ===", k);
@@ -125,6 +187,38 @@ async fn run_tune(dataset: Option<PathBuf>, json: bool) -> Result<()> {
     // grid and surface the recommended config. Full per-candidate re-measurement
     // requires a server restart per config (handled by the scheduler job).
     let proposal = tune(&baseline, |_cfg| baseline_metrics.clone());
+
+    // Persist the proposal to the cross-cycle tuning history so the next
+    // `regen benchmark` can detect drift against this baseline, and `regen
+    // history` can review it. Failures are non-fatal: a missing/unwritable
+    // .xavier dir should not abort a successful tune.
+    let entry = HistoryEntry {
+        timestamp: chrono::Utc::now().to_rfc3339(),
+        baseline: baseline_metrics.clone(),
+        proposal: proposal.clone(),
+    };
+    let persisted = match history_path() {
+        Ok(hist_path) => match history::append(&hist_path, entry) {
+            Ok(h) => {
+                if !json {
+                    println!("\n💾 Persisted proposal to {} ({} entries on record).",
+                        hist_path.display(), h.entries.len());
+                }
+                true
+            }
+            Err(e) => {
+                tracing::warn!(component = "retrieval", "failed to persist tuning history: {e}");
+                false
+            }
+        },
+        Err(e) => {
+            tracing::warn!(component = "retrieval", "could not resolve tuning history path: {e}");
+            false
+        }
+    };
+    if !persisted && !json {
+        println!("\nℹ️  (tuning history not persisted — .xavier dir unavailable)");
+    }
 
     if json {
         println!("{}", serde_json::to_string_pretty(&proposal)?);
@@ -178,4 +272,60 @@ async fn measure(
         });
     }
     RetrievalMetrics::from_results(&ds.dataset, &case_results, k)
+}
+
+/// Print the recent tuning history from `.xavier/tuning-history.json`.
+///
+/// A missing history file prints a helpful "no history yet" message rather than
+/// erroring, so `regen history` is safe to run before any `regen tune`.
+fn run_history(limit: usize, json: bool) -> Result<()> {
+    let hist_path = history_path()?;
+    let history: TuningHistory = history::load(&hist_path)?;
+
+    if history.entries.is_empty() {
+        if json {
+            println!("{{\"entries\":[]}}");
+        } else {
+            println!("No tuning history yet. Run `xavier regen tune` to record a proposal.");
+            println!("  (would read {})", hist_path.display());
+        }
+        return Ok(());
+    }
+
+    let tail = history.last_n(limit.max(1));
+
+    if json {
+        // Emit a compact JSON object with just the requested entries.
+        let out = serde_json::json!({
+            "version": history.version,
+            "entries": tail,
+        });
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(());
+    }
+
+    println!("=== Tuning History ({} of {} shown) ===", tail.len(), history.entries.len());
+    println!("  source: {}", hist_path.display());
+    println!();
+    for entry in tail {
+        println!("• {} — recall@{} baseline {:.1}% (MRR {:.3})",
+            entry.timestamp,
+            entry.baseline.k,
+            entry.baseline.recall_at_k * 100.0,
+            entry.baseline.mrr);
+        println!("    recommended: rrf_k={}, kw/vec={}/{}, w/e/s={}/{}/{}",
+            entry.proposal.config.rrf_k,
+            entry.proposal.config.keyword_weight,
+            entry.proposal.config.vector_weight,
+            entry.proposal.config.working_weight,
+            entry.proposal.config.episodic_weight,
+            entry.proposal.config.semantic_weight);
+        println!("    score {:.3} (delta {:+.4}, {} candidates){}",
+            entry.proposal.score,
+            entry.proposal.delta,
+            entry.proposal.candidates_evaluated,
+            if entry.proposal.is_beneficial() { "  ✅ beneficial" } else { "" });
+    }
+
+    Ok(())
 }
