@@ -7,7 +7,7 @@
         {
           "name": "Vector search (filtered)",
           "weight": 40,
-          "maturity": 25,
+          "maturity": 23,
           "static_pass_rate": 25,
           "test_pass_rate": 100,
           "gate_check": true,
@@ -15,14 +15,14 @@
           "tests_total": 10,
           "symbols_found": 1,
           "symbols_total": 3,
-          "memory_usage": 52,
+          "memory_usage": 0,
           "issue_health": 30,
-          "evidence_detail": "static: 1/3 (25%), tests: 10/10 (100%) | memory: 52% | issues: 30%"
+          "evidence_detail": "static: 1/3 (25%), tests: 10/10 (100%) | issues: 30%"
         },
         {
           "name": "Memory indexing & embedding",
           "weight": 35,
-          "maturity": 22,
+          "maturity": 20,
           "static_pass_rate": 25,
           "test_pass_rate": 100,
           "gate_check": true,
@@ -30,14 +30,14 @@
           "tests_total": 10,
           "symbols_found": 1,
           "symbols_total": 3,
-          "memory_usage": 52,
+          "memory_usage": 0,
           "issue_health": 30,
-          "evidence_detail": "static: 1/3 (25%), tests: 10/10 (100%) | memory: 52% | issues: 30%"
+          "evidence_detail": "static: 1/3 (25%), tests: 10/10 (100%) | issues: 30%"
         },
         {
           "name": "QMD scoring",
           "weight": 25,
-          "maturity": 15,
+          "maturity": 14,
           "static_pass_rate": 25,
           "test_pass_rate": 100,
           "gate_check": true,
@@ -45,12 +45,12 @@
           "tests_total": 10,
           "symbols_found": 1,
           "symbols_total": 3,
-          "memory_usage": 52,
+          "memory_usage": 0,
           "issue_health": 30,
-          "evidence_detail": "static: 1/3 (25%), tests: 10/10 (100%) | memory: 52% | issues: 30%"
+          "evidence_detail": "static: 1/3 (25%), tests: 10/10 (100%) | issues: 30%"
         }
       ],
-      "overall": 21.0,
+      "overall": 20.0,
       "status": "in_progress"
     },
     {
@@ -60,7 +60,7 @@
         {
           "name": "Portable JSON dump/load",
           "weight": 40,
-          "maturity": 14,
+          "maturity": 11,
           "static_pass_rate": 33,
           "test_pass_rate": 0,
           "gate_check": true,
@@ -68,14 +68,14 @@
           "tests_total": 3,
           "symbols_found": 1,
           "symbols_total": 4,
-          "memory_usage": 72,
+          "memory_usage": 0,
           "issue_health": 70,
-          "evidence_detail": "static: 1/4 (33%), tests: 0/3 (0%) | memory: 72% | issues: 70%"
+          "evidence_detail": "static: 1/4 (33%), tests: 0/3 (0%) | issues: 70%"
         },
         {
           "name": "MCP Code-graph tool",
           "weight": 35,
-          "maturity": 13,
+          "maturity": 10,
           "static_pass_rate": 33,
           "test_pass_rate": 0,
           "gate_check": true,
@@ -83,14 +83,14 @@
           "tests_total": 2,
           "symbols_found": 1,
           "symbols_total": 3,
-          "memory_usage": 72,
+          "memory_usage": 0,
           "issue_health": 70,
-          "evidence_detail": "static: 1/3 (33%), tests: 0/2 (0%) | memory: 72% | issues: 70%"
+          "evidence_detail": "static: 1/3 (33%), tests: 0/2 (0%) | issues: 70%"
         },
         {
           "name": "Symbol query & analysis",
           "weight": 25,
-          "maturity": 9,
+          "maturity": 7,
           "static_pass_rate": 33,
           "test_pass_rate": 0,
           "gate_check": true,
@@ -98,12 +98,12 @@
           "tests_total": 2,
           "symbols_found": 1,
           "symbols_total": 3,
-          "memory_usage": 72,
+          "memory_usage": 0,
           "issue_health": 70,
-          "evidence_detail": "static: 1/3 (33%), tests: 0/2 (0%) | memory: 72% | issues: 70%"
+          "evidence_detail": "static: 1/3 (33%), tests: 0/2 (0%) | issues: 70%"
         }
       ],
-      "overall": 12.0,
+      "overall": 10.0,
       "status": "in_progress"
     },
     {
@@ -113,7 +113,7 @@
         {
           "name": "HTTP sync endpoints",
           "weight": 35,
-          "maturity": 12,
+          "maturity": 9,
           "static_pass_rate": 40,
           "test_pass_rate": 0,
           "gate_check": true,
@@ -121,14 +121,14 @@
           "tests_total": 3,
           "symbols_found": 1,
           "symbols_total": 3,
-          "memory_usage": 80,
+          "memory_usage": 0,
           "issue_health": 30,
-          "evidence_detail": "static: 1/3 (40%), tests: 0/3 (0%) | memory: 80% | issues: 30%"
+          "evidence_detail": "static: 1/3 (40%), tests: 0/3 (0%) | issues: 30%"
         },
         {
           "name": "libp2p transport",
           "weight": 35,
-          "maturity": 12,
+          "maturity": 9,
           "static_pass_rate": 40,
           "test_pass_rate": 0,
           "gate_check": true,
@@ -136,14 +136,14 @@
           "tests_total": 2,
           "symbols_found": 1,
           "symbols_total": 3,
-          "memory_usage": 80,
+          "memory_usage": 0,
           "issue_health": 30,
-          "evidence_detail": "static: 1/3 (40%), tests: 0/2 (0%) | memory: 80% | issues: 30%"
+          "evidence_detail": "static: 1/3 (40%), tests: 0/2 (0%) | issues: 30%"
         },
         {
           "name": "E2E multi-node sync",
           "weight": 30,
-          "maturity": 11,
+          "maturity": 8,
           "static_pass_rate": 40,
           "test_pass_rate": 0,
           "gate_check": true,
@@ -151,12 +151,12 @@
           "tests_total": 2,
           "symbols_found": 1,
           "symbols_total": 2,
-          "memory_usage": 80,
+          "memory_usage": 0,
           "issue_health": 30,
-          "evidence_detail": "static: 1/2 (40%), tests: 0/2 (0%) | memory: 80% | issues: 30%"
+          "evidence_detail": "static: 1/2 (40%), tests: 0/2 (0%) | issues: 30%"
         }
       ],
-      "overall": 12.0,
+      "overall": 9.0,
       "status": "in_progress"
     },
     {
@@ -166,7 +166,7 @@
         {
           "name": "Tools (memory + core)",
           "weight": 40,
-          "maturity": 23,
+          "maturity": 21,
           "static_pass_rate": 0,
           "test_pass_rate": 100,
           "gate_check": true,
@@ -174,299 +174,12 @@
           "tests_total": 10,
           "symbols_found": 0,
           "symbols_total": 4,
-          "memory_usage": 43,
+          "memory_usage": 0,
           "issue_health": 70,
-          "evidence_detail": "static: 0/4 (0%), tests: 10/10 (100%) | memory: 43% | issues: 70%"
+          "evidence_detail": "static: 0/4 (0%), tests: 10/10 (100%) | issues: 70%"
         },
         {
           "name": "Auth/security",
-          "weight": 30,
-          "maturity": 17,
-          "static_pass_rate": 0,
-          "test_pass_rate": 100,
-          "gate_check": true,
-          "tests_passing": 10,
-          "tests_total": 10,
-          "symbols_found": 0,
-          "symbols_total": 3,
-          "memory_usage": 43,
-          "issue_health": 70,
-          "evidence_detail": "static: 0/3 (0%), tests: 10/10 (100%) | memory: 43% | issues: 70%"
-        },
-        {
-          "name": "HTTP+SSE & Stdio transports",
-          "weight": 30,
-          "maturity": 17,
-          "static_pass_rate": 0,
-          "test_pass_rate": 100,
-          "gate_check": true,
-          "tests_passing": 10,
-          "tests_total": 10,
-          "symbols_found": 0,
-          "symbols_total": 3,
-          "memory_usage": 43,
-          "issue_health": 70,
-          "evidence_detail": "static: 0/3 (0%), tests: 10/10 (100%) | memory: 43% | issues: 70%"
-        }
-      ],
-      "overall": 19.0,
-      "status": "in_progress"
-    },
-    {
-      "id": "hormer-navigation",
-      "name": "HORMER Navigation",
-      "subcomponents": [
-        {
-          "name": "Dynamic directory hierarchy",
-          "weight": 25,
-          "maturity": 15,
-          "static_pass_rate": 9,
-          "test_pass_rate": 100,
-          "gate_check": true,
-          "tests_passing": 10,
-          "tests_total": 10,
-          "symbols_found": 0,
-          "symbols_total": 2,
-          "memory_usage": 44,
-          "issue_health": 73,
-          "evidence_detail": "static: 0/2 (9%), tests: 10/10 (100%) | memory: 44% | issues: 73%"
-        },
-        {
-          "name": "Navigation policy (scoring + GRPO)",
-          "weight": 30,
-          "maturity": 18,
-          "static_pass_rate": 9,
-          "test_pass_rate": 100,
-          "gate_check": true,
-          "tests_passing": 10,
-          "tests_total": 10,
-          "symbols_found": 0,
-          "symbols_total": 3,
-          "memory_usage": 44,
-          "issue_health": 73,
-          "evidence_detail": "static: 0/3 (9%), tests: 10/10 (100%) | memory: 44% | issues: 73%"
-        },
-        {
-          "name": "Textual Gradient Descent",
-          "weight": 25,
-          "maturity": 15,
-          "static_pass_rate": 9,
-          "test_pass_rate": 100,
-          "gate_check": true,
-          "tests_passing": 10,
-          "tests_total": 10,
-          "symbols_found": 0,
-          "symbols_total": 3,
-          "memory_usage": 44,
-          "issue_health": 73,
-          "evidence_detail": "static: 0/3 (9%), tests: 10/10 (100%) | memory: 44% | issues: 73%"
-        },
-        {
-          "name": "CLI navigation tools",
-          "weight": 20,
-          "maturity": 12,
-          "static_pass_rate": 9,
-          "test_pass_rate": 100,
-          "gate_check": true,
-          "tests_passing": 10,
-          "tests_total": 10,
-          "symbols_found": 0,
-          "symbols_total": 3,
-          "memory_usage": 44,
-          "issue_health": 73,
-          "evidence_detail": "static: 0/3 (9%), tests: 10/10 (100%) | memory: 44% | issues: 73%"
-        }
-      ],
-      "overall": 15.0,
-      "status": "in_progress"
-    },
-    {
-      "id": "tgd-optimization",
-      "name": "TGD Optimization",
-      "subcomponents": [
-        {
-          "name": "Consolidation engine",
-          "weight": 35,
-          "maturity": 23,
-          "static_pass_rate": 40,
-          "test_pass_rate": 100,
-          "gate_check": true,
-          "tests_passing": 10,
-          "tests_total": 10,
-          "symbols_found": 2,
-          "symbols_total": 4,
-          "memory_usage": 40,
-          "issue_health": 30,
-          "evidence_detail": "static: 2/4 (40%), tests: 10/10 (100%) | memory: 40% | issues: 30%"
-        },
-        {
-          "name": "Per-session impact reporting",
-          "weight": 30,
-          "maturity": 20,
-          "static_pass_rate": 40,
-          "test_pass_rate": 100,
-          "gate_check": true,
-          "tests_passing": 10,
-          "tests_total": 10,
-          "symbols_found": 1,
-          "symbols_total": 3,
-          "memory_usage": 40,
-          "issue_health": 30,
-          "evidence_detail": "static: 1/3 (40%), tests: 10/10 (100%) | memory: 40% | issues: 30%"
-        },
-        {
-          "name": "Rollback mechanism",
-          "weight": 20,
-          "maturity": 13,
-          "static_pass_rate": 40,
-          "test_pass_rate": 100,
-          "gate_check": true,
-          "tests_passing": 10,
-          "tests_total": 10,
-          "symbols_found": 1,
-          "symbols_total": 2,
-          "memory_usage": 40,
-          "issue_health": 30,
-          "evidence_detail": "static: 1/2 (40%), tests: 10/10 (100%) | memory: 40% | issues: 30%"
-        },
-        {
-          "name": "Nightly consolidation",
-          "weight": 15,
-          "maturity": 10,
-          "static_pass_rate": 40,
-          "test_pass_rate": 100,
-          "gate_check": true,
-          "tests_passing": 10,
-          "tests_total": 10,
-          "symbols_found": 1,
-          "symbols_total": 2,
-          "memory_usage": 40,
-          "issue_health": 30,
-          "evidence_detail": "static: 1/2 (40%), tests: 10/10 (100%) | memory: 40% | issues: 30%"
-        }
-      ],
-      "overall": 18.0,
-      "status": "in_progress"
-    },
-    {
-      "id": "cli-tools",
-      "name": "CLI Tools",
-      "subcomponents": [
-        {
-          "name": "Server commands",
-          "weight": 30,
-          "maturity": 18,
-          "static_pass_rate": 8,
-          "test_pass_rate": 100,
-          "gate_check": true,
-          "tests_passing": 10,
-          "tests_total": 10,
-          "symbols_found": 0,
-          "symbols_total": 3,
-          "memory_usage": 80,
-          "issue_health": 30,
-          "evidence_detail": "static: 0/3 (8%), tests: 10/10 (100%) | memory: 80% | issues: 30%"
-        },
-        {
-          "name": "Memory & navigation commands",
-          "weight": 25,
-          "maturity": 15,
-          "static_pass_rate": 8,
-          "test_pass_rate": 100,
-          "gate_check": true,
-          "tests_passing": 10,
-          "tests_total": 10,
-          "symbols_found": 0,
-          "symbols_total": 3,
-          "memory_usage": 80,
-          "issue_health": 30,
-          "evidence_detail": "static: 0/3 (8%), tests: 10/10 (100%) | memory: 80% | issues: 30%"
-        },
-        {
-          "name": "Mesh & sync commands",
-          "weight": 20,
-          "maturity": 12,
-          "static_pass_rate": 8,
-          "test_pass_rate": 100,
-          "gate_check": true,
-          "tests_passing": 10,
-          "tests_total": 10,
-          "symbols_found": 0,
-          "symbols_total": 3,
-          "memory_usage": 80,
-          "issue_health": 30,
-          "evidence_detail": "static: 0/3 (8%), tests: 10/10 (100%) | memory: 80% | issues: 30%"
-        },
-        {
-          "name": "System & security commands",
-          "weight": 15,
-          "maturity": 9,
-          "static_pass_rate": 8,
-          "test_pass_rate": 100,
-          "gate_check": true,
-          "tests_passing": 10,
-          "tests_total": 10,
-          "symbols_found": 0,
-          "symbols_total": 3,
-          "memory_usage": 80,
-          "issue_health": 30,
-          "evidence_detail": "static: 0/3 (8%), tests: 10/10 (100%) | memory: 80% | issues: 30%"
-        },
-        {
-          "name": "Maturity scanner CLI",
-          "weight": 10,
-          "maturity": 6,
-          "static_pass_rate": 8,
-          "test_pass_rate": 100,
-          "gate_check": true,
-          "tests_passing": 10,
-          "tests_total": 10,
-          "symbols_found": 0,
-          "symbols_total": 3,
-          "memory_usage": 80,
-          "issue_health": 30,
-          "evidence_detail": "static: 0/3 (8%), tests: 10/10 (100%) | memory: 80% | issues: 30%"
-        }
-      ],
-      "overall": 14.0,
-      "status": "in_progress"
-    },
-    {
-      "id": "self-monitoring",
-      "name": "Self-Monitoring",
-      "subcomponents": [
-        {
-          "name": "Health check system",
-          "weight": 35,
-          "maturity": 18,
-          "static_pass_rate": 0,
-          "test_pass_rate": 100,
-          "gate_check": true,
-          "tests_passing": 10,
-          "tests_total": 10,
-          "symbols_found": 0,
-          "symbols_total": 3,
-          "memory_usage": 48,
-          "issue_health": 30,
-          "evidence_detail": "static: 0/3 (0%), tests: 10/10 (100%) | memory: 48% | issues: 30%"
-        },
-        {
-          "name": "Observability (metrics, tracing)",
-          "weight": 35,
-          "maturity": 18,
-          "static_pass_rate": 0,
-          "test_pass_rate": 100,
-          "gate_check": true,
-          "tests_passing": 10,
-          "tests_total": 10,
-          "symbols_found": 0,
-          "symbols_total": 3,
-          "memory_usage": 48,
-          "issue_health": 30,
-          "evidence_detail": "static: 0/3 (0%), tests: 10/10 (100%) | memory: 48% | issues: 30%"
-        },
-        {
-          "name": "Automated alerts",
           "weight": 30,
           "maturity": 16,
           "static_pass_rate": 0,
@@ -476,12 +189,299 @@
           "tests_total": 10,
           "symbols_found": 0,
           "symbols_total": 3,
-          "memory_usage": 48,
+          "memory_usage": 0,
+          "issue_health": 70,
+          "evidence_detail": "static: 0/3 (0%), tests: 10/10 (100%) | issues: 70%"
+        },
+        {
+          "name": "HTTP+SSE & Stdio transports",
+          "weight": 30,
+          "maturity": 16,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 10,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 0,
+          "issue_health": 70,
+          "evidence_detail": "static: 0/3 (0%), tests: 10/10 (100%) | issues: 70%"
+        }
+      ],
+      "overall": 18.0,
+      "status": "in_progress"
+    },
+    {
+      "id": "hormer-navigation",
+      "name": "HORMER Navigation",
+      "subcomponents": [
+        {
+          "name": "Dynamic directory hierarchy",
+          "weight": 25,
+          "maturity": 14,
+          "static_pass_rate": 9,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 10,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 2,
+          "memory_usage": 0,
+          "issue_health": 73,
+          "evidence_detail": "static: 0/2 (9%), tests: 10/10 (100%) | issues: 73%"
+        },
+        {
+          "name": "Navigation policy (scoring + GRPO)",
+          "weight": 30,
+          "maturity": 17,
+          "static_pass_rate": 9,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 10,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 0,
+          "issue_health": 73,
+          "evidence_detail": "static: 0/3 (9%), tests: 10/10 (100%) | issues: 73%"
+        },
+        {
+          "name": "Textual Gradient Descent",
+          "weight": 25,
+          "maturity": 14,
+          "static_pass_rate": 9,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 10,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 0,
+          "issue_health": 73,
+          "evidence_detail": "static: 0/3 (9%), tests: 10/10 (100%) | issues: 73%"
+        },
+        {
+          "name": "CLI navigation tools",
+          "weight": 20,
+          "maturity": 11,
+          "static_pass_rate": 9,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 10,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 0,
+          "issue_health": 73,
+          "evidence_detail": "static: 0/3 (9%), tests: 10/10 (100%) | issues: 73%"
+        }
+      ],
+      "overall": 14.0,
+      "status": "in_progress"
+    },
+    {
+      "id": "tgd-optimization",
+      "name": "TGD Optimization",
+      "subcomponents": [
+        {
+          "name": "Consolidation engine",
+          "weight": 35,
+          "maturity": 22,
+          "static_pass_rate": 40,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 10,
+          "tests_total": 10,
+          "symbols_found": 2,
+          "symbols_total": 4,
+          "memory_usage": 0,
           "issue_health": 30,
-          "evidence_detail": "static: 0/3 (0%), tests: 10/10 (100%) | memory: 48% | issues: 30%"
+          "evidence_detail": "static: 2/4 (40%), tests: 10/10 (100%) | issues: 30%"
+        },
+        {
+          "name": "Per-session impact reporting",
+          "weight": 30,
+          "maturity": 19,
+          "static_pass_rate": 40,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 10,
+          "tests_total": 10,
+          "symbols_found": 1,
+          "symbols_total": 3,
+          "memory_usage": 0,
+          "issue_health": 30,
+          "evidence_detail": "static: 1/3 (40%), tests: 10/10 (100%) | issues: 30%"
+        },
+        {
+          "name": "Rollback mechanism",
+          "weight": 20,
+          "maturity": 12,
+          "static_pass_rate": 40,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 10,
+          "tests_total": 10,
+          "symbols_found": 1,
+          "symbols_total": 2,
+          "memory_usage": 0,
+          "issue_health": 30,
+          "evidence_detail": "static: 1/2 (40%), tests: 10/10 (100%) | issues: 30%"
+        },
+        {
+          "name": "Nightly consolidation",
+          "weight": 15,
+          "maturity": 9,
+          "static_pass_rate": 40,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 10,
+          "tests_total": 10,
+          "symbols_found": 1,
+          "symbols_total": 2,
+          "memory_usage": 0,
+          "issue_health": 30,
+          "evidence_detail": "static: 1/2 (40%), tests: 10/10 (100%) | issues: 30%"
         }
       ],
       "overall": 17.0,
+      "status": "in_progress"
+    },
+    {
+      "id": "cli-tools",
+      "name": "CLI Tools",
+      "subcomponents": [
+        {
+          "name": "Server commands",
+          "weight": 30,
+          "maturity": 15,
+          "static_pass_rate": 8,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 10,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 0,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/3 (8%), tests: 10/10 (100%) | issues: 30%"
+        },
+        {
+          "name": "Memory & navigation commands",
+          "weight": 25,
+          "maturity": 13,
+          "static_pass_rate": 8,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 10,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 0,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/3 (8%), tests: 10/10 (100%) | issues: 30%"
+        },
+        {
+          "name": "Mesh & sync commands",
+          "weight": 20,
+          "maturity": 10,
+          "static_pass_rate": 8,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 10,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 0,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/3 (8%), tests: 10/10 (100%) | issues: 30%"
+        },
+        {
+          "name": "System & security commands",
+          "weight": 15,
+          "maturity": 8,
+          "static_pass_rate": 8,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 10,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 0,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/3 (8%), tests: 10/10 (100%) | issues: 30%"
+        },
+        {
+          "name": "Maturity scanner CLI",
+          "weight": 10,
+          "maturity": 5,
+          "static_pass_rate": 8,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 10,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 0,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/3 (8%), tests: 10/10 (100%) | issues: 30%"
+        }
+      ],
+      "overall": 11.0,
+      "status": "in_progress"
+    },
+    {
+      "id": "self-monitoring",
+      "name": "Self-Monitoring",
+      "subcomponents": [
+        {
+          "name": "Health check system",
+          "weight": 35,
+          "maturity": 17,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 10,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 0,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/3 (0%), tests: 10/10 (100%) | issues: 30%"
+        },
+        {
+          "name": "Observability (metrics, tracing)",
+          "weight": 35,
+          "maturity": 17,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 10,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 0,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/3 (0%), tests: 10/10 (100%) | issues: 30%"
+        },
+        {
+          "name": "Automated alerts",
+          "weight": 30,
+          "maturity": 14,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 10,
+          "tests_total": 10,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 0,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/3 (0%), tests: 10/10 (100%) | issues: 30%"
+        }
+      ],
+      "overall": 16.0,
       "status": "in_progress"
     },
     {
@@ -491,7 +491,7 @@
         {
           "name": "P2P transport (libp2p)",
           "weight": 20,
-          "maturity": 12,
+          "maturity": 10,
           "static_pass_rate": 0,
           "test_pass_rate": 100,
           "gate_check": true,
@@ -499,14 +499,14 @@
           "tests_total": 10,
           "symbols_found": 0,
           "symbols_total": 2,
-          "memory_usage": 60,
+          "memory_usage": 0,
           "issue_health": 70,
-          "evidence_detail": "static: 0/2 (0%), tests: 10/10 (100%) | memory: 60% | issues: 70%"
+          "evidence_detail": "static: 0/2 (0%), tests: 10/10 (100%) | issues: 70%"
         },
         {
           "name": "Data Commons economy",
           "weight": 20,
-          "maturity": 12,
+          "maturity": 10,
           "static_pass_rate": 0,
           "test_pass_rate": 100,
           "gate_check": true,
@@ -514,14 +514,14 @@
           "tests_total": 10,
           "symbols_found": 0,
           "symbols_total": 3,
-          "memory_usage": 60,
+          "memory_usage": 0,
           "issue_health": 70,
-          "evidence_detail": "static: 0/3 (0%), tests: 10/10 (100%) | memory: 60% | issues: 70%"
+          "evidence_detail": "static: 0/3 (0%), tests: 10/10 (100%) | issues: 70%"
         },
         {
           "name": "Dual License (MIT + Mesh)",
           "weight": 10,
-          "maturity": 6,
+          "maturity": 5,
           "static_pass_rate": 0,
           "test_pass_rate": 100,
           "gate_check": true,
@@ -529,14 +529,14 @@
           "tests_total": 10,
           "symbols_found": 0,
           "symbols_total": 2,
-          "memory_usage": 60,
+          "memory_usage": 0,
           "issue_health": 70,
-          "evidence_detail": "static: 0/2 (0%), tests: 10/10 (100%) | memory: 60% | issues: 70%"
+          "evidence_detail": "static: 0/2 (0%), tests: 10/10 (100%) | issues: 70%"
         },
         {
           "name": "Governance DAO (mock)",
           "weight": 15,
-          "maturity": 9,
+          "maturity": 8,
           "static_pass_rate": 0,
           "test_pass_rate": 100,
           "gate_check": true,
@@ -544,14 +544,14 @@
           "tests_total": 10,
           "symbols_found": 0,
           "symbols_total": 4,
-          "memory_usage": 60,
+          "memory_usage": 0,
           "issue_health": 70,
-          "evidence_detail": "static: 0/4 (0%), tests: 10/10 (100%) | memory: 60% | issues: 70%"
+          "evidence_detail": "static: 0/4 (0%), tests: 10/10 (100%) | issues: 70%"
         },
         {
           "name": "Governance DAO (on-chain)",
           "weight": 20,
-          "maturity": 12,
+          "maturity": 10,
           "static_pass_rate": 0,
           "test_pass_rate": 100,
           "gate_check": true,
@@ -559,14 +559,14 @@
           "tests_total": 10,
           "symbols_found": 0,
           "symbols_total": 5,
-          "memory_usage": 60,
+          "memory_usage": 0,
           "issue_health": 70,
-          "evidence_detail": "static: 0/5 (0%), tests: 10/10 (100%) | memory: 60% | issues: 70%"
+          "evidence_detail": "static: 0/5 (0%), tests: 10/10 (100%) | issues: 70%"
         },
         {
           "name": "Tokenomics & XP wallet",
           "weight": 15,
-          "maturity": 9,
+          "maturity": 8,
           "static_pass_rate": 0,
           "test_pass_rate": 100,
           "gate_check": true,
@@ -574,12 +574,12 @@
           "tests_total": 10,
           "symbols_found": 0,
           "symbols_total": 2,
-          "memory_usage": 60,
+          "memory_usage": 0,
           "issue_health": 70,
-          "evidence_detail": "static: 0/2 (0%), tests: 10/10 (100%) | memory: 60% | issues: 70%"
+          "evidence_detail": "static: 0/2 (0%), tests: 10/10 (100%) | issues: 70%"
         }
       ],
-      "overall": 11.0,
+      "overall": 9.0,
       "status": "in_progress"
     },
     {
@@ -589,7 +589,7 @@
         {
           "name": "Memory RAG benchmarks",
           "weight": 25,
-          "maturity": 18,
+          "maturity": 16,
           "static_pass_rate": 38,
           "test_pass_rate": 100,
           "gate_check": true,
@@ -597,14 +597,14 @@
           "tests_total": 4,
           "symbols_found": 1,
           "symbols_total": 2,
-          "memory_usage": 80,
+          "memory_usage": 0,
           "issue_health": 70,
-          "evidence_detail": "static: 1/2 (38%), tests: 4/4 (100%) | memory: 80% | issues: 70%"
+          "evidence_detail": "static: 1/2 (38%), tests: 4/4 (100%) | issues: 70%"
         },
         {
           "name": "HORMER navigation benchmarks",
           "weight": 25,
-          "maturity": 18,
+          "maturity": 16,
           "static_pass_rate": 38,
           "test_pass_rate": 100,
           "gate_check": true,
@@ -612,14 +612,14 @@
           "tests_total": 4,
           "symbols_found": 1,
           "symbols_total": 2,
-          "memory_usage": 80,
+          "memory_usage": 0,
           "issue_health": 70,
-          "evidence_detail": "static: 1/2 (38%), tests: 4/4 (100%) | memory: 80% | issues: 70%"
+          "evidence_detail": "static: 1/2 (38%), tests: 4/4 (100%) | issues: 70%"
         },
         {
           "name": "MinHash similarity benchmarks",
           "weight": 25,
-          "maturity": 18,
+          "maturity": 16,
           "static_pass_rate": 38,
           "test_pass_rate": 100,
           "gate_check": true,
@@ -627,14 +627,14 @@
           "tests_total": 4,
           "symbols_found": 1,
           "symbols_total": 2,
-          "memory_usage": 80,
+          "memory_usage": 0,
           "issue_health": 70,
-          "evidence_detail": "static: 1/2 (38%), tests: 4/4 (100%) | memory: 80% | issues: 70%"
+          "evidence_detail": "static: 1/2 (38%), tests: 4/4 (100%) | issues: 70%"
         },
         {
           "name": "Memory sync benchmarks",
           "weight": 25,
-          "maturity": 18,
+          "maturity": 16,
           "static_pass_rate": 38,
           "test_pass_rate": 100,
           "gate_check": true,
@@ -642,32 +642,421 @@
           "tests_total": 4,
           "symbols_found": 1,
           "symbols_total": 2,
-          "memory_usage": 80,
+          "memory_usage": 0,
           "issue_health": 70,
-          "evidence_detail": "static: 1/2 (38%), tests: 4/4 (100%) | memory: 80% | issues: 70%"
+          "evidence_detail": "static: 1/2 (38%), tests: 4/4 (100%) | issues: 70%"
+        }
+      ],
+      "overall": 16.0,
+      "status": "in_progress"
+    },
+    {
+      "id": "telegram-bot",
+      "name": "Telegram Bot",
+      "subcomponents": [
+        {
+          "name": "Command Handling",
+          "weight": 40,
+          "maturity": 21,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 2,
+          "tests_total": 2,
+          "symbols_found": 0,
+          "symbols_total": 3,
+          "memory_usage": 0,
+          "issue_health": 70,
+          "evidence_detail": "static: 0/3 (0%), tests: 2/2 (100%) | issues: 70%"
+        },
+        {
+          "name": "Token Storage",
+          "weight": 30,
+          "maturity": 16,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 1,
+          "tests_total": 1,
+          "symbols_found": 0,
+          "symbols_total": 2,
+          "memory_usage": 0,
+          "issue_health": 70,
+          "evidence_detail": "static: 0/2 (0%), tests: 1/1 (100%) | issues: 70%"
+        },
+        {
+          "name": "Webhook Mode",
+          "weight": 30,
+          "maturity": 16,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 1,
+          "tests_total": 1,
+          "symbols_found": 0,
+          "symbols_total": 2,
+          "memory_usage": 0,
+          "issue_health": 70,
+          "evidence_detail": "static: 0/2 (0%), tests: 1/1 (100%) | issues: 70%"
         }
       ],
       "overall": 18.0,
+      "status": "in_progress"
+    },
+    {
+      "id": "notification-system",
+      "name": "Notification System",
+      "subcomponents": [
+        {
+          "name": "Persistence",
+          "weight": 40,
+          "maturity": 30,
+          "static_pass_rate": 67,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 2,
+          "tests_total": 2,
+          "symbols_found": 2,
+          "symbols_total": 3,
+          "memory_usage": 0,
+          "issue_health": 70,
+          "evidence_detail": "static: 2/3 (67%), tests: 2/2 (100%) | issues: 70%"
+        },
+        {
+          "name": "Event Bus",
+          "weight": 35,
+          "maturity": 26,
+          "static_pass_rate": 67,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 2,
+          "tests_total": 2,
+          "symbols_found": 2,
+          "symbols_total": 3,
+          "memory_usage": 0,
+          "issue_health": 70,
+          "evidence_detail": "static: 2/3 (67%), tests: 2/2 (100%) | issues: 70%"
+        },
+        {
+          "name": "Delivery",
+          "weight": 25,
+          "maturity": 19,
+          "static_pass_rate": 67,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 1,
+          "tests_total": 1,
+          "symbols_found": 1,
+          "symbols_total": 2,
+          "memory_usage": 0,
+          "issue_health": 70,
+          "evidence_detail": "static: 1/2 (67%), tests: 1/1 (100%) | issues: 70%"
+        }
+      ],
+      "overall": 26.0,
+      "status": "in_progress"
+    },
+    {
+      "id": "runtime-health",
+      "name": "Runtime Health",
+      "subcomponents": [
+        {
+          "name": "Health Checks",
+          "weight": 35,
+          "maturity": 18,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 2,
+          "tests_total": 2,
+          "symbols_found": 0,
+          "symbols_total": 1,
+          "memory_usage": 0,
+          "issue_health": 73,
+          "evidence_detail": "static: 0/1 (0%), tests: 2/2 (100%) | issues: 73%"
+        },
+        {
+          "name": "DB Integrity",
+          "weight": 35,
+          "maturity": 18,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 3,
+          "tests_total": 3,
+          "symbols_found": 0,
+          "symbols_total": 2,
+          "memory_usage": 0,
+          "issue_health": 73,
+          "evidence_detail": "static: 0/2 (0%), tests: 3/3 (100%) | issues: 73%"
+        },
+        {
+          "name": "Alerts",
+          "weight": 30,
+          "maturity": 16,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 2,
+          "tests_total": 2,
+          "symbols_found": 0,
+          "symbols_total": 2,
+          "memory_usage": 0,
+          "issue_health": 73,
+          "evidence_detail": "static: 0/2 (0%), tests: 2/2 (100%) | issues: 73%"
+        }
+      ],
+      "overall": 17.0,
+      "status": "in_progress"
+    },
+    {
+      "id": "auto-improvement",
+      "name": "Auto Improvement",
+      "subcomponents": [
+        {
+          "name": "Benchmark",
+          "weight": 25,
+          "maturity": 13,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 1,
+          "tests_total": 1,
+          "symbols_found": 0,
+          "symbols_total": 2,
+          "memory_usage": 0,
+          "issue_health": 76,
+          "evidence_detail": "static: 0/2 (0%), tests: 1/1 (100%) | issues: 76%"
+        },
+        {
+          "name": "Gap Analysis",
+          "weight": 25,
+          "maturity": 13,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 1,
+          "tests_total": 1,
+          "symbols_found": 0,
+          "symbols_total": 1,
+          "memory_usage": 0,
+          "issue_health": 76,
+          "evidence_detail": "static: 0/1 (0%), tests: 1/1 (100%) | issues: 76%"
+        },
+        {
+          "name": "Experiments",
+          "weight": 25,
+          "maturity": 13,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 2,
+          "tests_total": 2,
+          "symbols_found": 0,
+          "symbols_total": 2,
+          "memory_usage": 0,
+          "issue_health": 76,
+          "evidence_detail": "static: 0/2 (0%), tests: 2/2 (100%) | issues: 76%"
+        },
+        {
+          "name": "Validation",
+          "weight": 25,
+          "maturity": 13,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 1,
+          "tests_total": 1,
+          "symbols_found": 0,
+          "symbols_total": 2,
+          "memory_usage": 0,
+          "issue_health": 76,
+          "evidence_detail": "static: 0/2 (0%), tests: 1/1 (100%) | issues: 76%"
+        }
+      ],
+      "overall": 13.0,
+      "status": "in_progress"
+    },
+    {
+      "id": "context-regeneration",
+      "name": "Context Regeneration",
+      "subcomponents": [
+        {
+          "name": "Eval Harness",
+          "weight": 30,
+          "maturity": 18,
+          "static_pass_rate": 25,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 2,
+          "tests_total": 2,
+          "symbols_found": 0,
+          "symbols_total": 1,
+          "memory_usage": 0,
+          "issue_health": 70,
+          "evidence_detail": "static: 0/1 (25%), tests: 2/2 (100%) | issues: 70%"
+        },
+        {
+          "name": "RRF Tuner",
+          "weight": 30,
+          "maturity": 18,
+          "static_pass_rate": 25,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 1,
+          "tests_total": 1,
+          "symbols_found": 1,
+          "symbols_total": 2,
+          "memory_usage": 0,
+          "issue_health": 70,
+          "evidence_detail": "static: 1/2 (25%), tests: 1/1 (100%) | issues: 70%"
+        },
+        {
+          "name": "Drift Detection",
+          "weight": 20,
+          "maturity": 12,
+          "static_pass_rate": 25,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 1,
+          "tests_total": 1,
+          "symbols_found": 0,
+          "symbols_total": 1,
+          "memory_usage": 0,
+          "issue_health": 70,
+          "evidence_detail": "static: 0/1 (25%), tests: 1/1 (100%) | issues: 70%"
+        },
+        {
+          "name": "Persistence",
+          "weight": 20,
+          "maturity": 12,
+          "static_pass_rate": 25,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 1,
+          "tests_total": 1,
+          "symbols_found": 0,
+          "symbols_total": 1,
+          "memory_usage": 0,
+          "issue_health": 70,
+          "evidence_detail": "static: 0/1 (25%), tests: 1/1 (100%) | issues: 70%"
+        }
+      ],
+      "overall": 16.0,
+      "status": "in_progress"
+    },
+    {
+      "id": "mesh-iroh-transport",
+      "name": "Mesh Iroh Transport",
+      "subcomponents": [
+        {
+          "name": "Transport",
+          "weight": 50,
+          "maturity": 24,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 1,
+          "tests_total": 1,
+          "symbols_found": 0,
+          "symbols_total": 1,
+          "memory_usage": 0,
+          "issue_health": 39,
+          "evidence_detail": "static: 0/1 (0%), tests: 1/1 (100%) | issues: 39%"
+        },
+        {
+          "name": "Protocol",
+          "weight": 50,
+          "maturity": 24,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 1,
+          "tests_total": 1,
+          "symbols_found": 0,
+          "symbols_total": 2,
+          "memory_usage": 0,
+          "issue_health": 39,
+          "evidence_detail": "static: 0/2 (0%), tests: 1/1 (100%) | issues: 39%"
+        }
+      ],
+      "overall": 24.0,
+      "status": "in_progress"
+    },
+    {
+      "id": "storage-migrations",
+      "name": "Storage Migrations",
+      "subcomponents": [
+        {
+          "name": "Migration Runner",
+          "weight": 40,
+          "maturity": 19,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 3,
+          "tests_total": 3,
+          "symbols_found": 0,
+          "symbols_total": 1,
+          "memory_usage": 0,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/1 (0%), tests: 3/3 (100%) | issues: 30%"
+        },
+        {
+          "name": "Baseline Migrations",
+          "weight": 40,
+          "maturity": 19,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 2,
+          "tests_total": 2,
+          "symbols_found": 0,
+          "symbols_total": 2,
+          "memory_usage": 0,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/2 (0%), tests: 2/2 (100%) | issues: 30%"
+        },
+        {
+          "name": "Legacy Backfill",
+          "weight": 20,
+          "maturity": 10,
+          "static_pass_rate": 0,
+          "test_pass_rate": 100,
+          "gate_check": true,
+          "tests_passing": 1,
+          "tests_total": 1,
+          "symbols_found": 0,
+          "symbols_total": 1,
+          "memory_usage": 0,
+          "issue_health": 30,
+          "evidence_detail": "static: 0/1 (0%), tests: 1/1 (100%) | issues: 30%"
+        }
+      ],
+      "overall": 17.0,
       "status": "in_progress"
     }
   ],
   "summary": {
     "overall_maturity": 16,
-    "total_features": 10,
+    "total_features": 17,
     "production_ready": 0,
     "needs_work": 0,
-    "in_progress": 10,
+    "in_progress": 17,
     "scan_errors": 0
   },
-  "scanned_at": "2026-07-03T05:09:13.141994500+00:00",
-  "head_commit": "e77c9d4d280f0be6d07eead634e1efbd3fb55033",
-  "errors": [],
+  "scanned_at": "2026-07-03T21:55:54.789937800+00:00",
+  "head_commit": "c1c8df5bdc831967ce678d67dc5f7b8fba47cb12",
+  "errors": [
+    "Layer 'memory' timed out after 30s",
+    "Layer 'memory' timed out after 30s"
+  ],
   "layers": {
-    "static_ms": 5541,
-    "dynamic_ms": 2728,
-    "memory_ms": 16230,
-    "conversations_ms": 5682,
-    "total_ms": 30196
+    "static_ms": 1540,
+    "dynamic_ms": 1845,
+    "memory_ms": 0,
+    "conversations_ms": 22707,
+    "total_ms": 56126
   },
   "scanner_version": "v2"
 }
