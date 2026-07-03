@@ -99,6 +99,7 @@ fn make_test_peer(identity: &NodeIdentity, url: &str) -> PeerInfo {
         last_seen_at: None,
         sync_enabled: true,
         is_cloud: false,
+        iroh_addr: None,
     }
 }
 

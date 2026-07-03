@@ -39,6 +39,7 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 last_seen_at: None,
                 sync_enabled: true,
                 is_cloud: cloud,
+                iroh_addr: None,
             };
 
             registry.add_peer(peer)?;
@@ -282,6 +283,7 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 last_seen_at: None,
                 sync_enabled: true,
                 is_cloud: false,
+                iroh_addr: None,
             };
 
             registry.add_peer(peer)?;

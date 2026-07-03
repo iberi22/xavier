@@ -222,6 +222,7 @@ pub async fn pair_peer_handler(Json(payload): Json<PairRequest>) -> impl IntoRes
         last_seen_at: None,
         sync_enabled: true,
         is_cloud: false,
+        iroh_addr: None,
     };
 
     if let Err(e) = registry.add_peer(peer) {

@@ -125,6 +125,7 @@ async fn test_mesh_handshake_and_sync() {
         last_seen_at: None,
         sync_enabled: true,
         is_cloud: false,
+        iroh_addr: None,
     };
 
     // Since we now enforce NodeID in manifest request, we must make sure Node A is in Node B's ACL
