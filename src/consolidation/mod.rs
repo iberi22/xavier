@@ -15,12 +15,12 @@ use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 use crate::{
-    tgd::{TgdEngine, consolidation::ProgressReport},
     memory::{
         manager::ManagedMemory,
         qmd_memory::MemoryDocument,
         schema::{EvidenceKind, MemoryKind, TypedMemoryPayload},
     },
+    tgd::{consolidation::ProgressReport, TgdEngine},
     workspace::WorkspaceContext,
 };
 
@@ -212,9 +212,14 @@ impl ConsolidationTask {
                 let mut updated = managed.doc.clone();
                 if let Some(meta) = updated.metadata.as_object_mut() {
                     meta.insert("memory_importance".to_string(), serde_json::json!(decayed));
-                    meta.insert("memory_decay_rate".to_string(), serde_json::json!(self.decay_rate));
-                    meta.insert("memory_last_consolidated_at".to_string(),
-                        serde_json::json!(Utc::now().to_rfc3339()));
+                    meta.insert(
+                        "memory_decay_rate".to_string(),
+                        serde_json::json!(self.decay_rate),
+                    );
+                    meta.insert(
+                        "memory_last_consolidated_at".to_string(),
+                        serde_json::json!(Utc::now().to_rfc3339()),
+                    );
                 }
                 if memory.update(updated).await.is_ok() {
                     decay_updates += 1;
@@ -268,13 +273,15 @@ impl ConsolidationTask {
         if recent.len() < self.tgd_min_new_history {
             info!(
                 "⏭️ TGD in consolidation: skipped ({} recent memories < {} min)",
-                recent.len(), self.tgd_min_new_history
+                recent.len(),
+                self.tgd_min_new_history
             );
             return Ok(());
         }
 
         // Trigger TGD run in consolidation pipeline when confidence (avg quality) < threshold
-        let avg_quality = recent.iter().map(|m| m.quality.overall).sum::<f32>() / recent.len() as f32;
+        let avg_quality =
+            recent.iter().map(|m| m.quality.overall).sum::<f32>() / recent.len() as f32;
         let threshold = engine.config().confidence_threshold;
 
         if avg_quality >= threshold {
@@ -332,36 +339,62 @@ impl ConsolidationTask {
         let mut candidates: Vec<ManagedMemory> = memories
             .into_iter()
             .filter(|m| {
-                m.quality.overall < self.tgd_refinement_threshold && m.quality.overall > 0.1 // Not too low (trash) but needs improvement
+                m.quality.overall < self.tgd_refinement_threshold && m.quality.overall > 0.1
+                // Not too low (trash) but needs improvement
             })
             .collect();
 
         candidates.sort_by(|a, b| {
-            b.access_count.cmp(&a.access_count)
-                .then_with(|| a.quality.overall.partial_cmp(&b.quality.overall).unwrap_or(std::cmp::Ordering::Equal))
+            b.access_count.cmp(&a.access_count).then_with(|| {
+                a.quality
+                    .overall
+                    .partial_cmp(&b.quality.overall)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
         });
 
         // Limit to small batch per night to avoid high LLM costs
-        let batch = candidates.into_iter().take(self.tgd_refinement_batch_size).collect::<Vec<_>>();
+        let batch = candidates
+            .into_iter()
+            .take(self.tgd_refinement_batch_size)
+            .collect::<Vec<_>>();
         stats.selected = batch.len();
 
         let mut total_improvement = 0.0;
         for managed in batch {
-            let (refined_content, avg_score) = engine.refine_memory_content(&managed.doc.content, Some(self.tgd_iterations)).await?;
+            let (refined_content, avg_score) = engine
+                .refine_memory_content(&managed.doc.content, Some(self.tgd_iterations))
+                .await?;
 
             if avg_score > managed.quality.overall {
                 let mut updated = managed.doc.clone();
                 updated.content = refined_content;
                 if let Some(meta) = updated.metadata.as_object_mut() {
                     meta.insert("tgd_refined".to_string(), serde_json::json!(true));
-                    meta.insert("tgd_refinement_score".to_string(), serde_json::json!(avg_score));
-                    meta.insert("tgd_refined_at".to_string(), serde_json::json!(Utc::now().to_rfc3339()));
+                    meta.insert(
+                        "tgd_refinement_score".to_string(),
+                        serde_json::json!(avg_score),
+                    );
+                    meta.insert(
+                        "tgd_refined_at".to_string(),
+                        serde_json::json!(Utc::now().to_rfc3339()),
+                    );
                 }
 
-                if workspace.workspace.memory_manager.memory().update(updated).await.is_ok() {
+                if workspace
+                    .workspace
+                    .memory_manager
+                    .memory()
+                    .update(updated)
+                    .await
+                    .is_ok()
+                {
                     stats.memories_refined += 1;
                     total_improvement += avg_score - managed.quality.overall;
-                    info!("🧠 TGD: Refined memory {}", managed.doc.id.as_deref().unwrap_or("unknown"));
+                    info!(
+                        "🧠 TGD: Refined memory {}",
+                        managed.doc.id.as_deref().unwrap_or("unknown")
+                    );
                 }
             }
         }

@@ -199,7 +199,11 @@ pub async fn handle_core_tool(
                         retrieved_at: chrono::Utc::now().to_rfc3339(),
                         retrieval_method: "exact".to_string(),
                         embedding_model: None,
-                        version: Some(option_env!("XAVIER_VERSION").unwrap_or("development").to_string()),
+                        version: Some(
+                            option_env!("XAVIER_VERSION")
+                                .unwrap_or("development")
+                                .to_string(),
+                        ),
                     },
                     metadata: record.metadata.clone(),
                 });
@@ -321,8 +325,7 @@ pub async fn handle_core_tool(
                 status: health.status.clone(),
                 tools_count,
                 handshake_ok: true,
-                memory_store_ok: health.database.size_mb > 0.0
-                    || health.database.size_mb == 0.0, // store exists
+                memory_store_ok: health.database.size_mb > 0.0 || health.database.size_mb == 0.0, // store exists
                 embedding_ok: health.embedding.connected,
                 mcp_protocol: "2026-07-28".to_string(),
             };
@@ -333,7 +336,9 @@ pub async fn handle_core_tool(
             ))?)
         }
         "get_code_graph" => {
-            let dump_path = _state.code_graph_dump_path.clone()
+            let dump_path = _state
+                .code_graph_dump_path
+                .clone()
                 .unwrap_or_else(|| std::path::PathBuf::from(".xavier/codegraph.json"));
 
             if !tokio::fs::try_exists(&dump_path).await.unwrap_or(false) {

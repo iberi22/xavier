@@ -87,7 +87,11 @@ async fn test_headless_chat_completions() {
         .unwrap();
 
     // We mostly care that it's NOT a 404 or 401.
-    assert!(resp.status() == StatusCode::TOO_MANY_REQUESTS || resp.status() == StatusCode::INTERNAL_SERVER_ERROR || resp.status() == StatusCode::OK);
+    assert!(
+        resp.status() == StatusCode::TOO_MANY_REQUESTS
+            || resp.status() == StatusCode::INTERNAL_SERVER_ERROR
+            || resp.status() == StatusCode::OK
+    );
 
     // 3. POST /v1/chat/completions (Valid Token, Invalid Lease) -> 403 (FORBIDDEN)
     let resp = client

@@ -159,7 +159,10 @@ pub async fn reindex_memories() -> Result<()> {
             println!("\nRe-index Complete:");
             println!("  Total: {}", body["total"].as_u64().unwrap_or(0));
             println!("  Re-indexed: {}", body["reindexed"].as_u64().unwrap_or(0));
-            println!("  Skipped (already embedded): {}", body["skipped"].as_u64().unwrap_or(0));
+            println!(
+                "  Skipped (already embedded): {}",
+                body["skipped"].as_u64().unwrap_or(0)
+            );
             let errors = body["errors"].as_array().map(|a| a.len()).unwrap_or(0);
             if errors > 0 {
                 println!("  Errors: {}", errors);
@@ -170,7 +173,11 @@ pub async fn reindex_memories() -> Result<()> {
             println!("  Status: {}", body["status"].as_str().unwrap_or("unknown"));
         }
         Ok(resp) => {
-            println!("❌ Server error: {} {}", resp.status(), resp.text().await.unwrap_or_default());
+            println!(
+                "❌ Server error: {} {}",
+                resp.status(),
+                resp.text().await.unwrap_or_default()
+            );
         }
         Err(e) => {
             println!("❌ Failed to reach Xavier server: {}", e);

@@ -163,10 +163,18 @@ mod tests {
             .iter()
             .any(|s| s.name == "main" && s.kind == SymbolKind::Function));
         assert!(symbols.iter().any(|s| s.kind == SymbolKind::Import));
-        assert!(symbols.iter().any(|s| s.name == "Color" && s.kind == SymbolKind::Enum));
-        assert!(symbols.iter().any(|s| s.name == "a" && s.kind == SymbolKind::Constant));
-        assert!(symbols.iter().any(|s| s.name == "b" && s.kind == SymbolKind::Constant));
-        assert!(symbols.iter().any(|s| s.name == "count" && s.kind == SymbolKind::Variable));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "Color" && s.kind == SymbolKind::Enum));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "a" && s.kind == SymbolKind::Constant));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "b" && s.kind == SymbolKind::Constant));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "count" && s.kind == SymbolKind::Variable));
     }
 
     #[test]
@@ -184,9 +192,15 @@ mod tests {
             .iter()
             .any(|s| s.name == "run" && s.kind == SymbolKind::Method));
         assert!(symbols.iter().any(|s| s.kind == SymbolKind::Import));
-        assert!(symbols.iter().any(|s| s.name == "VERSION" && s.kind == SymbolKind::Variable && s.parent.as_deref() == Some("Service")));
-        assert!(symbols.iter().any(|s| s.name == "x" && s.kind == SymbolKind::Variable));
-        assert!(symbols.iter().any(|s| s.name == "y" && s.kind == SymbolKind::Variable));
+        assert!(symbols.iter().any(|s| s.name == "VERSION"
+            && s.kind == SymbolKind::Variable
+            && s.parent.as_deref() == Some("Service")));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "x" && s.kind == SymbolKind::Variable));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "y" && s.kind == SymbolKind::Variable));
     }
 
     #[test]
@@ -204,9 +218,15 @@ mod tests {
             .iter()
             .any(|s| s.name == "main" && s.kind == SymbolKind::Function));
         assert!(symbols.iter().any(|s| s.kind == SymbolKind::Import));
-        assert!(symbols.iter().any(|s| s.name == "GetName" && s.kind == SymbolKind::Method && s.parent.as_deref() == Some("User")));
-        assert!(symbols.iter().any(|s| s.name == "Max" && s.kind == SymbolKind::Constant));
-        assert!(symbols.iter().any(|s| s.name == "count" && s.kind == SymbolKind::Variable));
+        assert!(symbols.iter().any(|s| s.name == "GetName"
+            && s.kind == SymbolKind::Method
+            && s.parent.as_deref() == Some("User")));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "Max" && s.kind == SymbolKind::Constant));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "count" && s.kind == SymbolKind::Variable));
     }
 
     #[test]
@@ -234,10 +254,18 @@ mod tests {
             "main.c",
         )
         .expect("parse");
-        assert!(symbols.iter().any(|s| s.name == "main" && s.kind == SymbolKind::Function));
-        assert!(symbols.iter().any(|s| s.name == "Point" && s.kind == SymbolKind::Struct));
-        assert!(symbols.iter().any(|s| s.name == "MAX" && s.kind == SymbolKind::Constant));
-        assert!(symbols.iter().any(|s| s.name == "stdio.h" && s.kind == SymbolKind::Import));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "main" && s.kind == SymbolKind::Function));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "Point" && s.kind == SymbolKind::Struct));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "MAX" && s.kind == SymbolKind::Constant));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "stdio.h" && s.kind == SymbolKind::Import));
     }
 
     #[test]
@@ -248,10 +276,20 @@ mod tests {
             "main.cpp",
         )
         .expect("parse");
-        assert!(symbols.iter().any(|s| s.name == "main" && s.kind == SymbolKind::Function));
-        assert!(symbols.iter().any(|s| s.name == "Scanner" && s.kind == SymbolKind::Class));
-        assert!(symbols.iter().any(|s| s.name == "run" && s.kind == SymbolKind::Method && s.parent.as_deref() == Some("Scanner")));
-        assert!(symbols.iter().any(|s| s.name == "xav" && s.kind == SymbolKind::Module));
-        assert!(symbols.iter().any(|s| s.name == "iostream" && s.kind == SymbolKind::Import));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "main" && s.kind == SymbolKind::Function));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "Scanner" && s.kind == SymbolKind::Class));
+        assert!(symbols.iter().any(|s| s.name == "run"
+            && s.kind == SymbolKind::Method
+            && s.parent.as_deref() == Some("Scanner")));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "xav" && s.kind == SymbolKind::Module));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "iostream" && s.kind == SymbolKind::Import));
     }
 }

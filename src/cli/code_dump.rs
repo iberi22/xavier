@@ -107,8 +107,7 @@ pub async fn perform_load(repo_path: &str) -> Result<CodeGraphState> {
 }
 
 fn find_repo_root(start_path: &str) -> PathBuf {
-    let mut current = std::path::absolute(start_path)
-        .unwrap_or_else(|_| PathBuf::from(start_path));
+    let mut current = std::path::absolute(start_path).unwrap_or_else(|_| PathBuf::from(start_path));
 
     loop {
         if current.join(".git").exists() {

@@ -3,13 +3,10 @@ use tracing::info;
 
 pub fn init_xavier() -> Result<()> {
     // Setup logging
-    let log_filter = std::env::var("RUST_LOG")
-        .unwrap_or_else(|_| "info".to_string());
+    let log_filter = std::env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string());
 
     // In Android we might want to log to logcat, but for now tracing-subscriber with default layer is fine
-    tracing_subscriber::fmt()
-        .with_env_filter(log_filter)
-        .init();
+    tracing_subscriber::fmt().with_env_filter(log_filter).init();
 
     info!("Xavier initialized via Rust Bridge");
     Ok(())

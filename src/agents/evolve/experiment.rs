@@ -75,11 +75,7 @@ impl Hypothesis {
     }
 
     /// Create a hyperparameter tuning hypothesis
-    pub fn hyperparameter(
-        description: String,
-        files: Vec<String>,
-        patch: String,
-    ) -> Self {
+    pub fn hyperparameter(description: String, files: Vec<String>, patch: String) -> Self {
         Self {
             id: uuid::Uuid::new_v4().to_string()[..8].to_string(),
             description,

@@ -5,7 +5,6 @@
 
 use anyhow::Result;
 
-
 use crate::memory::store::MemoryStore;
 
 use super::{Manifest, ManifestEntry};
@@ -79,7 +78,10 @@ pub(crate) mod tests {
         ) -> std::result::Result<(), anyhow::Error> {
             let mut records = self.records.lock().unwrap();
             // Replace existing record with same id, or append
-            if let Some(pos) = records.iter().position(|r| r.id == record.id || r.path == record.path) {
+            if let Some(pos) = records
+                .iter()
+                .position(|r| r.id == record.id || r.path == record.path)
+            {
                 records[pos] = record;
             } else {
                 records.push(record);
@@ -93,7 +95,10 @@ pub(crate) mod tests {
         ) -> std::result::Result<Option<crate::memory::store::MemoryRecord>, anyhow::Error>
         {
             let records = self.records.lock().unwrap();
-            Ok(records.iter().find(|r| r.path == id_or_path || r.id == id_or_path).cloned())
+            Ok(records
+                .iter()
+                .find(|r| r.path == id_or_path || r.id == id_or_path)
+                .cloned())
         }
         async fn update(
             &self,
@@ -108,7 +113,9 @@ pub(crate) mod tests {
         ) -> std::result::Result<Option<crate::memory::store::MemoryRecord>, anyhow::Error>
         {
             let mut records = self.records.lock().unwrap();
-            let pos = records.iter().position(|r| r.path == id_or_path || r.id == id_or_path);
+            let pos = records
+                .iter()
+                .position(|r| r.path == id_or_path || r.id == id_or_path);
             match pos {
                 Some(i) => Ok(Some(records.remove(i))),
                 None => Ok(None),
@@ -132,10 +139,8 @@ pub(crate) mod tests {
         async fn load_workspace_state(
             &self,
             _workspace_id: &str,
-        ) -> std::result::Result<
-            crate::memory::store::DurableWorkspaceState,
-            anyhow::Error,
-        > {
+        ) -> std::result::Result<crate::memory::store::DurableWorkspaceState, anyhow::Error>
+        {
             anyhow::bail!("not implemented")
         }
         async fn save_beliefs(

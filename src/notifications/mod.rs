@@ -1,10 +1,10 @@
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
-use tokio::sync::broadcast;
 use crate::codebase::connection_manager::ConnectionManager;
 use crate::memory::sqlite_store::TABLE_NOTIFICATIONS;
-use rusqlite::params;
 use anyhow::Result;
+use chrono::{DateTime, Utc};
+use rusqlite::params;
+use serde::{Deserialize, Serialize};
+use tokio::sync::broadcast;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -74,7 +74,13 @@ impl NotificationManager {
         });
     }
 
-    pub async fn notify(&self, island_id: IslandId, title: &str, body: &str, severity: &str) -> Result<Notification> {
+    pub async fn notify(
+        &self,
+        island_id: IslandId,
+        title: &str,
+        body: &str,
+        severity: &str,
+    ) -> Result<Notification> {
         let notification = Notification {
             id: uuid::Uuid::new_v4().to_string(),
             island_id,
@@ -135,33 +141,33 @@ impl NotificationManager {
 
     pub async fn mark_as_read(&self, id: &str) -> Result<()> {
         let id = id.to_string();
-        ConnectionManager::global().with_conn("memory", move |conn| {
-            conn.execute(
-                &format!("UPDATE {} SET read = 1 WHERE id = ?", TABLE_NOTIFICATIONS),
-                params![id],
-            )?;
-            Ok(())
-        }).await
+        ConnectionManager::global()
+            .with_conn("memory", move |conn| {
+                conn.execute(
+                    &format!("UPDATE {} SET read = 1 WHERE id = ?", TABLE_NOTIFICATIONS),
+                    params![id],
+                )?;
+                Ok(())
+            })
+            .await
     }
 
     pub async fn mark_all_as_read(&self) -> Result<()> {
-        ConnectionManager::global().with_conn("memory", move |conn| {
-            conn.execute(
-                &format!("UPDATE {} SET read = 1", TABLE_NOTIFICATIONS),
-                [],
-            )?;
-            Ok(())
-        }).await
+        ConnectionManager::global()
+            .with_conn("memory", move |conn| {
+                conn.execute(&format!("UPDATE {} SET read = 1", TABLE_NOTIFICATIONS), [])?;
+                Ok(())
+            })
+            .await
     }
 
     pub async fn delete_all(&self) -> Result<()> {
-        ConnectionManager::global().with_conn("memory", move |conn| {
-            conn.execute(
-                &format!("DELETE FROM {}", TABLE_NOTIFICATIONS),
-                [],
-            )?;
-            Ok(())
-        }).await
+        ConnectionManager::global()
+            .with_conn("memory", move |conn| {
+                conn.execute(&format!("DELETE FROM {}", TABLE_NOTIFICATIONS), [])?;
+                Ok(())
+            })
+            .await
     }
 }
 

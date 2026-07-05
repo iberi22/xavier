@@ -172,11 +172,7 @@ impl TelemetryCollector {
         let avg = sum / count as f64;
 
         // Population standard deviation
-        let variance = samples
-            .iter()
-            .map(|s| (s.value - avg).powi(2))
-            .sum::<f64>()
-            / count as f64;
+        let variance = samples.iter().map(|s| (s.value - avg).powi(2)).sum::<f64>() / count as f64;
         let stddev = variance.sqrt();
 
         Some(TelemetryAggregate {

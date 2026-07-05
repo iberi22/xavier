@@ -1,8 +1,8 @@
 //! Discord messaging integration for Xavier
 
-use anyhow::{Context, Result};
 use crate::middleware::token_bucket::RateLimiter;
 use crate::secrets::vault::HardwareVault;
+use anyhow::{Context, Result};
 use serde::Serialize;
 use std::sync::Arc;
 use tracing::{debug, error, info};
@@ -48,7 +48,12 @@ impl DiscordClient {
     }
 
     /// Send a message to Discord via webhook in embed format
-    pub async fn send_embed(&self, title: Option<String>, description: String, color: Option<u32>) -> Result<()> {
+    pub async fn send_embed(
+        &self,
+        title: Option<String>,
+        description: String,
+        color: Option<u32>,
+    ) -> Result<()> {
         // Check rate limit
         if !self.limiter.try_consume(1.0).await {
             let wait = self.limiter.retry_after(1.0).await;
@@ -94,7 +99,8 @@ impl DiscordClient {
             Some("🔌 Connection Test".to_string()),
             "Xavier Discord integration is active and connected.".to_string(),
             Some(0x39ff14), // Xavier Green
-        ).await?;
+        )
+        .await?;
         Ok(())
     }
 }

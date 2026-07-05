@@ -55,9 +55,9 @@
 //! Una wallet solo puede votar si ha tenido actividad en los últimos 7 días.
 //! Sin delegación de voto.
 
-use crate::data_commons::types::*;
 use crate::data_commons::reputation::reputation_weight;
 use crate::data_commons::reputation::EigenTrustEngine;
+use crate::data_commons::types::*;
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
@@ -520,7 +520,10 @@ impl GovernanceEngine {
     }
 
     /// Obtener el peso total de votos a favor de usuarios para una propuesta
-    pub fn weighted_user_vote_tally(&self, proposal_id: &str) -> Result<(u64, u64), GovernanceError> {
+    pub fn weighted_user_vote_tally(
+        &self,
+        proposal_id: &str,
+    ) -> Result<(u64, u64), GovernanceError> {
         let proposal = self
             .proposals
             .iter()
@@ -668,7 +671,15 @@ impl GovernanceEngine {
         let now = Self::now_secs();
 
         // Extraer datos de la propuesta (borrow inmutable)
-        let (_id, user_votes, weighted_user_votes, council_votes, council_veto, appealed, _voting_end) = {
+        let (
+            _id,
+            user_votes,
+            weighted_user_votes,
+            council_votes,
+            council_veto,
+            appealed,
+            _voting_end,
+        ) = {
             let proposal = self
                 .proposals
                 .iter()
@@ -743,8 +754,8 @@ impl GovernanceEngine {
             self.config.council_quorum_minimum
         };
 
-        let council_quorum_met = total_council_votes
-            >= (active_council * effective_council_quorum_pct / 100.0).floor();
+        let council_quorum_met =
+            total_council_votes >= (active_council * effective_council_quorum_pct / 100.0).floor();
         let council_percentage = if total_council_votes > 0.0 {
             (council_for as f32 / total_council_votes) * 100.0
         } else {
@@ -938,10 +949,7 @@ pub enum GovernanceError {
     VetoThresholdNotReached,
     OverruleThresholdNotReached,
     NoVetoToAppeal,
-    InvalidStateTransition {
-        from: String,
-        to: String,
-    },
+    InvalidStateTransition { from: String, to: String },
 }
 
 impl std::fmt::Display for GovernanceError {
@@ -976,10 +984,7 @@ impl std::fmt::Display for GovernanceError {
             }
             Self::NoVetoToAppeal => write!(f, "No hay veto activo para apelar"),
             Self::InvalidStateTransition { from, to } => {
-                write!(
-                    f,
-                    "Transición de estado inválida: {from} → {to}"
-                )
+                write!(f, "Transición de estado inválida: {from} → {to}")
             }
         }
     }
@@ -1137,7 +1142,12 @@ mod tests {
         changes.insert("reference_price".into(), "15".into());
 
         let proposal = engine
-            .create_proposal("Lifecycle test".into(), "Testing lifecycle".into(), changes, author)
+            .create_proposal(
+                "Lifecycle test".into(),
+                "Testing lifecycle".into(),
+                changes,
+                author,
+            )
             .unwrap();
 
         // 1. Debe empezar en Draft
@@ -1169,11 +1179,8 @@ mod tests {
 
         // 4. Transición válida: Discussion → Complete
         let mut p3 = engine.get_proposal(&proposal.id).unwrap().clone();
-        GovernanceEngine::transition_to_state(
-            &mut p3,
-            XipState::Complete { entered_at: now },
-        )
-        .unwrap();
+        GovernanceEngine::transition_to_state(&mut p3, XipState::Complete { entered_at: now })
+            .unwrap();
         assert_eq!(p3.xip_state.label(), "Complete");
     }
 
@@ -1189,7 +1196,12 @@ mod tests {
         changes.insert("reference_price".into(), "20".into());
 
         let proposal = engine
-            .create_proposal("Weighted vote test".into(), "Testing weighted voting".into(), changes, author)
+            .create_proposal(
+                "Weighted vote test".into(),
+                "Testing weighted voting".into(),
+                changes,
+                author,
+            )
             .unwrap();
 
         // Dar apoyos para pasar a Voting (default min_supports = 5)
@@ -1228,30 +1240,63 @@ mod tests {
 
         // D → D ✓
         let d = XipState::Draft { entered_at: now };
-        assert!(d.can_transition_to(&XipState::Discussion { entered_at: now, expires_at: now + 86400 }));
+        assert!(d.can_transition_to(&XipState::Discussion {
+            entered_at: now,
+            expires_at: now + 86400
+        }));
         assert!(d.can_transition_to(&XipState::Complete { entered_at: now }));
-        assert!(!d.can_transition_to(&XipState::Voting { entered_at: now, expires_at: now + 86400 }));
-        assert!(!d.can_transition_to(&XipState::Execution { entered_at: now, expires_at: now + 3600 }));
+        assert!(!d.can_transition_to(&XipState::Voting {
+            entered_at: now,
+            expires_at: now + 86400
+        }));
+        assert!(!d.can_transition_to(&XipState::Execution {
+            entered_at: now,
+            expires_at: now + 3600
+        }));
 
         // Discussion → V, C
-        let disc = XipState::Discussion { entered_at: now, expires_at: now + 86400 };
-        assert!(disc.can_transition_to(&XipState::Voting { entered_at: now, expires_at: now + 86400 * 7 }));
+        let disc = XipState::Discussion {
+            entered_at: now,
+            expires_at: now + 86400,
+        };
+        assert!(disc.can_transition_to(&XipState::Voting {
+            entered_at: now,
+            expires_at: now + 86400 * 7
+        }));
         assert!(disc.can_transition_to(&XipState::Complete { entered_at: now }));
         assert!(!disc.can_transition_to(&XipState::Draft { entered_at: now }));
-        assert!(!disc.can_transition_to(&XipState::Execution { entered_at: now, expires_at: now + 3600 }));
+        assert!(!disc.can_transition_to(&XipState::Execution {
+            entered_at: now,
+            expires_at: now + 3600
+        }));
 
         // Voting → E, C
-        let voting = XipState::Voting { entered_at: now, expires_at: now + 86400 * 7 };
-        assert!(voting.can_transition_to(&XipState::Execution { entered_at: now, expires_at: now + 3600 * 48 }));
+        let voting = XipState::Voting {
+            entered_at: now,
+            expires_at: now + 86400 * 7,
+        };
+        assert!(voting.can_transition_to(&XipState::Execution {
+            entered_at: now,
+            expires_at: now + 3600 * 48
+        }));
         assert!(voting.can_transition_to(&XipState::Complete { entered_at: now }));
         assert!(!voting.can_transition_to(&XipState::Draft { entered_at: now }));
-        assert!(!voting.can_transition_to(&XipState::Discussion { entered_at: now, expires_at: now + 86400 }));
+        assert!(!voting.can_transition_to(&XipState::Discussion {
+            entered_at: now,
+            expires_at: now + 86400
+        }));
 
         // Execution → C
-        let exec = XipState::Execution { entered_at: now, expires_at: now + 3600 * 48 };
+        let exec = XipState::Execution {
+            entered_at: now,
+            expires_at: now + 3600 * 48,
+        };
         assert!(exec.can_transition_to(&XipState::Complete { entered_at: now }));
         assert!(!exec.can_transition_to(&XipState::Draft { entered_at: now }));
-        assert!(!exec.can_transition_to(&XipState::Voting { entered_at: now, expires_at: now + 86400 }));
+        assert!(!exec.can_transition_to(&XipState::Voting {
+            entered_at: now,
+            expires_at: now + 86400
+        }));
     }
 
     #[test]
@@ -1314,14 +1359,20 @@ mod tests {
 
         let result = engine.tally_votes("nonexistent_proposal");
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), GovernanceError::ProposalNotFound));
+        assert!(matches!(
+            result.unwrap_err(),
+            GovernanceError::ProposalNotFound
+        ));
 
         // Register wallet so can_user_vote passes first, then ProposalNotFound is reached
         let voter = WalletAddress("xv1_test".into());
         engine.register_activity(voter.clone());
         let voter_result = engine.user_vote("nonexistent", &voter, true, vec![], vec![]);
         assert!(voter_result.is_err());
-        assert!(matches!(voter_result.unwrap_err(), GovernanceError::ProposalNotFound));
+        assert!(matches!(
+            voter_result.unwrap_err(),
+            GovernanceError::ProposalNotFound
+        ));
     }
 
     // ── Reputation-weighted voting tests ──────────────────────
@@ -1340,21 +1391,37 @@ mod tests {
 
         // Create a trust chain: w2 trusts w1, w3 trusts w1 (w1 is highly trusted)
         rep_engine.add_attestation(ReputationAttestation {
-            from: w2.clone(), to: w1.clone(), score: 1,
-            context_hash: None, timestamp: 0, signature: vec![],
+            from: w2.clone(),
+            to: w1.clone(),
+            score: 1,
+            context_hash: None,
+            timestamp: 0,
+            signature: vec![],
         });
         rep_engine.add_attestation(ReputationAttestation {
-            from: w3.clone(), to: w1.clone(), score: 1,
-            context_hash: None, timestamp: 0, signature: vec![],
+            from: w3.clone(),
+            to: w1.clone(),
+            score: 1,
+            context_hash: None,
+            timestamp: 0,
+            signature: vec![],
         });
         // Some reciprocal trust to make the graph connected
         rep_engine.add_attestation(ReputationAttestation {
-            from: w1.clone(), to: w2.clone(), score: 1,
-            context_hash: None, timestamp: 0, signature: vec![],
+            from: w1.clone(),
+            to: w2.clone(),
+            score: 1,
+            context_hash: None,
+            timestamp: 0,
+            signature: vec![],
         });
         rep_engine.add_attestation(ReputationAttestation {
-            from: w1.clone(), to: w3.clone(), score: 1,
-            context_hash: None, timestamp: 0, signature: vec![],
+            from: w1.clone(),
+            to: w3.clone(),
+            score: 1,
+            context_hash: None,
+            timestamp: 0,
+            signature: vec![],
         });
 
         rep_engine.compute().unwrap();
@@ -1367,7 +1434,12 @@ mod tests {
         let author = WalletAddress("xv1_rep_author".into());
         engine.register_activity(author.clone());
         let proposal = engine
-            .create_proposal("Rep test".into(), "Test".into(), HashMap::new(), author.clone())
+            .create_proposal(
+                "Rep test".into(),
+                "Test".into(),
+                HashMap::new(),
+                author.clone(),
+            )
             .unwrap();
 
         // Give supports (including author)
@@ -1380,11 +1452,17 @@ mod tests {
 
         // Vote with the trusted wallet
         engine.register_activity(w1.clone());
-        engine.user_vote(&proposal.id, &w1, true, vec![], vec![]).unwrap();
+        engine
+            .user_vote(&proposal.id, &w1, true, vec![], vec![])
+            .unwrap();
 
         let (yes_weight, total_weight) = engine.weighted_user_vote_tally(&proposal.id).unwrap();
         // The trusted wallet should have weight > 1 since it has high EigenTrust score
-        assert!(total_weight > 1, "Trusted wallet should have weight > 1, got {}", total_weight);
+        assert!(
+            total_weight > 1,
+            "Trusted wallet should have weight > 1, got {}",
+            total_weight
+        );
         assert_eq!(yes_weight, total_weight);
     }
 
@@ -1397,7 +1475,12 @@ mod tests {
         let author = WalletAddress("xv1_norep_author".into());
         engine.register_activity(author.clone());
         let proposal = engine
-            .create_proposal("NoRep".into(), "Test".into(), HashMap::new(), author.clone())
+            .create_proposal(
+                "NoRep".into(),
+                "Test".into(),
+                HashMap::new(),
+                author.clone(),
+            )
             .unwrap();
 
         for i in 0..4 {
@@ -1409,7 +1492,9 @@ mod tests {
 
         let voter = WalletAddress("xv1_norep_voter".into());
         engine.register_activity(voter.clone());
-        engine.user_vote(&proposal.id, &voter, true, vec![], vec![]).unwrap();
+        engine
+            .user_vote(&proposal.id, &voter, true, vec![], vec![])
+            .unwrap();
 
         let (yes_weight, total_weight) = engine.weighted_user_vote_tally(&proposal.id).unwrap();
         assert_eq!(total_weight, 1, "Without engine, weight should be 1");
@@ -1430,26 +1515,46 @@ mod tests {
 
         // rater trusts wallet_high strongly
         rep_engine.add_attestation(ReputationAttestation {
-            from: wallet_rater.clone(), to: wallet_high.clone(), score: 1,
-            context_hash: None, timestamp: 0, signature: vec![],
+            from: wallet_rater.clone(),
+            to: wallet_high.clone(),
+            score: 1,
+            context_hash: None,
+            timestamp: 0,
+            signature: vec![],
         });
         // rater distrusts wallet_low (negative score → no trust contribution)
         rep_engine.add_attestation(ReputationAttestation {
-            from: wallet_rater.clone(), to: wallet_low.clone(), score: -1,
-            context_hash: None, timestamp: 0, signature: vec![],
+            from: wallet_rater.clone(),
+            to: wallet_low.clone(),
+            score: -1,
+            context_hash: None,
+            timestamp: 0,
+            signature: vec![],
         });
         // Some reciprocal trust for graph connectivity
         rep_engine.add_attestation(ReputationAttestation {
-            from: wallet_high.clone(), to: wallet_rater.clone(), score: 1,
-            context_hash: None, timestamp: 0, signature: vec![],
+            from: wallet_high.clone(),
+            to: wallet_rater.clone(),
+            score: 1,
+            context_hash: None,
+            timestamp: 0,
+            signature: vec![],
         });
         rep_engine.add_attestation(ReputationAttestation {
-            from: wallet_low.clone(), to: wallet_rater.clone(), score: 1,
-            context_hash: None, timestamp: 0, signature: vec![],
+            from: wallet_low.clone(),
+            to: wallet_rater.clone(),
+            score: 1,
+            context_hash: None,
+            timestamp: 0,
+            signature: vec![],
         });
         rep_engine.add_attestation(ReputationAttestation {
-            from: wallet_high.clone(), to: wallet_low.clone(), score: 1,
-            context_hash: None, timestamp: 0, signature: vec![],
+            from: wallet_high.clone(),
+            to: wallet_low.clone(),
+            score: 1,
+            context_hash: None,
+            timestamp: 0,
+            signature: vec![],
         });
 
         rep_engine.compute().unwrap();
@@ -1513,7 +1618,10 @@ mod tests {
     fn test_dynamic_quorum_missing_uses_defaults() {
         // When no dynamic quorum is configured, tally_votes should use static config values
         let config = GovernanceConfig::default();
-        assert!(config.dynamic_quorum.is_none(), "Default config should have no dynamic quorum");
+        assert!(
+            config.dynamic_quorum.is_none(),
+            "Default config should have no dynamic quorum"
+        );
 
         // The static values should be 10.0 for user and 51.0 for council
         assert_eq!(config.user_quorum_minimum, 10.0);

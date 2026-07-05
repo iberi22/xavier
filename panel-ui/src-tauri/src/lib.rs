@@ -256,7 +256,11 @@ async fn create_api_token(
     expires_at: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let store = xavier::security::tokens::TokenStore::new();
-    let expiry = expires_at.and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok().map(|dt| dt.with_timezone(&chrono::Utc)));
+    let expiry = expires_at.and_then(|s| {
+        chrono::DateTime::parse_from_rfc3339(&s)
+            .ok()
+            .map(|dt| dt.with_timezone(&chrono::Utc))
+    });
 
     match store.create_token(name, scopes, expiry).await {
         Ok((plaintext, metadata)) => Ok(serde_json::json!({

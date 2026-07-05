@@ -9,18 +9,12 @@
 
 use crate::mesh::node::NodeIdentity;
 use crate::mesh::peer::PeerInfo;
-use crate::mesh::protocol::{
-    MeshHandshake, MeshHandshakeResponse, MeshManifest, MeshSyncRequest,
-};
+use crate::mesh::protocol::{MeshHandshake, MeshHandshakeResponse, MeshManifest, MeshSyncRequest};
 use crate::session::sharing::SessionBundle;
 use anyhow::{Context, Result};
 use libp2p::{
-    identity::Keypair,
-    mdns, noise, kad, gossipsub, yamux,
-    Multiaddr, PeerId, Swarm, SwarmBuilder,
-    core::upgrade,
-    swarm::SwarmEvent,
-    StreamProtocol,
+    core::upgrade, gossipsub, identity::Keypair, kad, mdns, noise, swarm::SwarmEvent, yamux,
+    Multiaddr, PeerId, StreamProtocol, Swarm, SwarmBuilder,
 };
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -41,10 +35,7 @@ pub enum TransportEvent {
         request: MeshSyncRequest,
     },
     /// An outgoing sync completed.
-    SyncComplete {
-        peer: PeerId,
-        success: bool,
-    },
+    SyncComplete { peer: PeerId, success: bool },
 }
 
 /// libp2p-based transport for Xavier mesh communication.
@@ -73,10 +64,7 @@ impl Libp2pTransport {
         let local_peer_id = PeerId::from(local_key.public());
 
         // mDNS for LAN discovery
-        let mdns = mdns::tokio::Behaviour::new(
-            mdns::Config::default(),
-            local_peer_id,
-        )?;
+        let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), local_peer_id)?;
 
         // Kademlia DHT for WAN
         let mut kademlia_cfg = kad::Config::default();
@@ -100,12 +88,10 @@ impl Libp2pTransport {
         )?;
 
         // Identify protocol
-        let identify = libp2p::identify::Behaviour::new(
-            libp2p::identify::Config::new(
-                format!("xavier/{}", env!("CARGO_PKG_VERSION")),
-                local_key.public(),
-            ),
-        );
+        let identify = libp2p::identify::Behaviour::new(libp2p::identify::Config::new(
+            format!("xavier/{}", env!("CARGO_PKG_VERSION")),
+            local_key.public(),
+        ));
 
         let behaviour = XavierBehaviour {
             mdns,

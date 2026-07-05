@@ -322,9 +322,7 @@ mod tests {
         };
         let store = Arc::new(VecSqliteMemoryStore::new(config).await.unwrap());
 
-        let cg_db = Arc::new(
-            code_graph::db::CodeGraphDB::new(&PathBuf::from(":memory:")).unwrap(),
-        );
+        let cg_db = Arc::new(code_graph::db::CodeGraphDB::new(&PathBuf::from(":memory:")).unwrap());
         let cg_state = Arc::new(tokio::sync::RwLock::new(CodeGraphState {
             db: cg_db.clone(),
             indexer: Arc::new(code_graph::indexer::Indexer::new(cg_db.clone())),

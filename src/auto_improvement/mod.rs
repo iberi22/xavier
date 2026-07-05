@@ -220,7 +220,11 @@ impl AutoImprovementEngine {
 
         // DB integrity
         let db_integrity = db
-            .map(|conn| run_integrity_check(conn).map(|m| m == "ok").unwrap_or(false))
+            .map(|conn| {
+                run_integrity_check(conn)
+                    .map(|m| m == "ok")
+                    .unwrap_or(false)
+            })
             .unwrap_or(false);
 
         // Cache hit rate — derived from the AdaptiveZoneBooster's running hit
@@ -237,24 +241,32 @@ impl AutoImprovementEngine {
         // Run search benchmarks. Prefer the real Python benchmark runner when
         // available (feature-gated + graceful fallback to the in-process synthetic
         // benchmark), so production metrics — not synthetic ones — drive the loop.
-        let (recall_at_k, precision, avg_latency, p99_latency, iterations) =
-            match self.run_external_benchmark().await {
-                Ok(ext) => (ext.recall, ext.precision, ext.avg_latency_ms, ext.p99_latency_ms, 1),
-                Err(reason) => {
-                    let reason = format!("{reason}");
-                    if !reason.is_empty() {
-                        tracing::warn!(
-                            reason = %reason,
-                            "External benchmark unavailable; falling back to synthetic search benchmark"
-                        );
-                    }
-                    if let Some(memory) = &self.memory {
-                        self.run_search_benchmark(memory, 50).await
-                    } else {
-                        (0.0, 0.0, 0.0, 0.0, 0)
-                    }
+        let (recall_at_k, precision, avg_latency, p99_latency, iterations) = match self
+            .run_external_benchmark()
+            .await
+        {
+            Ok(ext) => (
+                ext.recall,
+                ext.precision,
+                ext.avg_latency_ms,
+                ext.p99_latency_ms,
+                1,
+            ),
+            Err(reason) => {
+                let reason = format!("{reason}");
+                if !reason.is_empty() {
+                    tracing::warn!(
+                        reason = %reason,
+                        "External benchmark unavailable; falling back to synthetic search benchmark"
+                    );
                 }
-            };
+                if let Some(memory) = &self.memory {
+                    self.run_search_benchmark(memory, 50).await
+                } else {
+                    (0.0, 0.0, 0.0, 0.0, 0)
+                }
+            }
+        };
 
         // Document count
         let total_docs = if let Some(memory) = &self.memory {
@@ -344,12 +356,16 @@ impl AutoImprovementEngine {
                         latencies.push(elapsed);
 
                         // Simple recall metric: how many results returned out of max
-                        let r_at_k = if results.len() >= 5 { 1.0 } else {
+                        let r_at_k = if results.len() >= 5 {
+                            1.0
+                        } else {
                             results.len() as f64 / 5.0
                         };
 
                         // Precision: docs with significant content are 'relevant'
-                        let p = if results.is_empty() { 0.0 } else {
+                        let p = if results.is_empty() {
+                            0.0
+                        } else {
                             let relevant = results.iter().filter(|r| r.content.len() > 50).count();
                             relevant as f64 / results.len() as f64
                         };
@@ -421,7 +437,8 @@ impl AutoImprovementEngine {
         // direction by at least 30% of the identified gap. In non-autonomous mode we
         // skip execution (a human reviews the proposed experiments instead).
         let (experiments, accepted) = if self.autonomous_mode && !experiments.is_empty() {
-            self.validate_experiments(experiments, settings, db, &benchmark).await
+            self.validate_experiments(experiments, settings, db, &benchmark)
+                .await
         } else {
             (experiments, vec![])
         };
@@ -458,7 +475,9 @@ impl AutoImprovementEngine {
                 .collect();
             let merged_config = merge_overrides_into_config(
                 RetrievalConfig::default(),
-                accepted_experiments.iter().flat_map(|e| e.config_overrides.iter()),
+                accepted_experiments
+                    .iter()
+                    .flat_map(|e| e.config_overrides.iter()),
             );
             let entry = HistoryEntry {
                 cycle_id: cycle_id.clone(),
@@ -594,10 +613,7 @@ impl Default for AutoImprovementEngine {
 }
 
 /// Analyze gaps between current benchmarks and targets
-fn analyze_gaps(
-    current: &BenchmarkSnapshot,
-    previous: Option<&BenchmarkSnapshot>,
-) -> Vec<Gap> {
+fn analyze_gaps(current: &BenchmarkSnapshot, previous: Option<&BenchmarkSnapshot>) -> Vec<Gap> {
     let mut gaps = Vec::new();
 
     // Recall target: 70% (realistic benchmark baseline)
@@ -609,7 +625,13 @@ fn analyze_gaps(
             current: current.recall_at_k,
             target: recall_target,
             gap_pct: (gap / recall_target) * 100.0,
-            severity: if gap > 0.3 { GapSeverity::Critical } else if gap > 0.15 { GapSeverity::Major } else { GapSeverity::Minor },
+            severity: if gap > 0.3 {
+                GapSeverity::Critical
+            } else if gap > 0.15 {
+                GapSeverity::Major
+            } else {
+                GapSeverity::Minor
+            },
             suggested_experiments: vec![
                 "Increase RRF k value".to_string(),
                 "Adjust BM25 b parameter".to_string(),
@@ -628,7 +650,11 @@ fn analyze_gaps(
             current: current.precision,
             target: precision_target,
             gap_pct: (gap / precision_target) * 100.0,
-            severity: if gap > 0.25 { GapSeverity::Major } else { GapSeverity::Minor },
+            severity: if gap > 0.25 {
+                GapSeverity::Major
+            } else {
+                GapSeverity::Minor
+            },
             suggested_experiments: vec![
                 "Adjust relevance threshold".to_string(),
                 "Enable entity extraction filter".to_string(),
@@ -646,7 +672,13 @@ fn analyze_gaps(
             current: current.avg_latency_ms,
             target: latency_target,
             gap_pct: (gap / latency_target) * 100.0,
-            severity: if gap > 500.0 { GapSeverity::Critical } else if gap > 100.0 { GapSeverity::Major } else { GapSeverity::Minor },
+            severity: if gap > 500.0 {
+                GapSeverity::Critical
+            } else if gap > 100.0 {
+                GapSeverity::Major
+            } else {
+                GapSeverity::Minor
+            },
             suggested_experiments: vec![
                 "Enable cache warming".to_string(),
                 "Reduce embedding batch size".to_string(),
@@ -679,16 +711,14 @@ fn analyze_gaps(
             target: 1.0,
             gap_pct: 100.0,
             severity: GapSeverity::Critical,
-            suggested_experiments: vec![
-                "Run VACUUM".to_string(),
-                "Rebuild indexes".to_string(),
-            ],
+            suggested_experiments: vec!["Run VACUUM".to_string(), "Rebuild indexes".to_string()],
         });
     }
 
     // Regression detection
     if let Some(prev) = previous {
-        if current.recall_at_k > 0.0 && prev.recall_at_k > 0.0
+        if current.recall_at_k > 0.0
+            && prev.recall_at_k > 0.0
             && current.recall_at_k < prev.recall_at_k - 0.05
         {
             gaps.push(Gap {
@@ -895,7 +925,10 @@ fn append_history_entry(path: &Path, entry: &HistoryEntry) -> Result<()> {
     }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).with_context(|| {
-            format!("failed to create improvement history dir {}", parent.display())
+            format!(
+                "failed to create improvement history dir {}",
+                parent.display()
+            )
         })?;
     }
     let payload = serde_json::to_string_pretty(&entries)
@@ -966,10 +999,12 @@ mod tests {
     #[test]
     fn test_analyze_gaps_detects_regression() {
         let current = BenchmarkSnapshot {
-            recall_at_k: 0.5, ..Default::default()
+            recall_at_k: 0.5,
+            ..Default::default()
         };
         let previous = BenchmarkSnapshot {
-            recall_at_k: 0.9, ..Default::default()
+            recall_at_k: 0.9,
+            ..Default::default()
         };
         let gaps = analyze_gaps(&current, Some(&previous));
         assert!(gaps.iter().any(|g| g.metric == "recall_regression"));
@@ -980,13 +1015,17 @@ mod tests {
         let gaps = vec![
             Gap {
                 metric: "recall@k".into(),
-                current: 0.0, target: 1.0, gap_pct: 100.0,
+                current: 0.0,
+                target: 1.0,
+                gap_pct: 100.0,
                 severity: GapSeverity::Critical,
                 suggested_experiments: vec!["exp1".into(), "exp2".into()],
             },
             Gap {
                 metric: "precision".into(),
-                current: 0.0, target: 1.0, gap_pct: 50.0,
+                current: 0.0,
+                target: 1.0,
+                gap_pct: 50.0,
                 severity: GapSeverity::Major,
                 suggested_experiments: vec!["exp1".into()], // duplicate
             },
@@ -1037,7 +1076,9 @@ mod tests {
             .await;
         // No memory attached -> nothing accepted, experiments stay Pending.
         assert!(accepted.is_empty());
-        assert!(validated.iter().all(|e| matches!(e.status, ExperimentStatus::Pending)));
+        assert!(validated
+            .iter()
+            .all(|e| matches!(e.status, ExperimentStatus::Pending)));
     }
 
     #[test]
@@ -1083,10 +1124,8 @@ mod tests {
         let settings = XavierSettings::default();
 
         // This should complete without panicking even without memory
-        let result = tokio::time::timeout(
-            Duration::from_secs(10),
-            engine.run_cycle(&settings, None),
-        ).await;
+        let result =
+            tokio::time::timeout(Duration::from_secs(10), engine.run_cycle(&settings, None)).await;
 
         assert!(result.is_ok(), "Cycle timed out or panicked");
     }
@@ -1265,7 +1304,9 @@ mod tests {
             .validate_experiments(experiments, &settings, None, &baseline)
             .await;
         assert!(accepted.is_empty());
-        assert!(validated.iter().all(|e| matches!(e.status, ExperimentStatus::Pending)));
+        assert!(validated
+            .iter()
+            .all(|e| matches!(e.status, ExperimentStatus::Pending)));
 
         // Confirm the gate math directly: a composite just barely above threshold
         // but below threshold+min_improvement must be rejected as noise.
@@ -1273,8 +1314,7 @@ mod tests {
         let min_improvement = 0.05f64;
         let composite = 0.02f64; // positive but < min_improvement
         let clears_threshold = composite >= threshold;
-        let meaningful = (composite - threshold).abs() >= min_improvement
-            && composite > threshold;
+        let meaningful = (composite - threshold).abs() >= min_improvement && composite > threshold;
         let no_recall_regression = true;
         let passed = clears_threshold && meaningful && no_recall_regression;
         assert!(!passed, "sub-epsilon improvement must be rejected as noise");
@@ -1292,7 +1332,10 @@ mod tests {
         let meaningful = (composite - threshold).abs() >= min_improvement && composite > threshold;
         let no_recall_regression = !(recall_delta < -0.01);
         let passed = clears_threshold && meaningful && no_recall_regression;
-        assert!(passed, "meaningful improvement with no regression must pass");
+        assert!(
+            passed,
+            "meaningful improvement with no regression must pass"
+        );
     }
 
     #[tokio::test]
@@ -1302,7 +1345,10 @@ mod tests {
         let min_improvement = 0.005f64;
         let composite = 0.1f64;
         let clears_threshold = composite >= threshold;
-        assert!(!clears_threshold, "composite below threshold must be rejected");
+        assert!(
+            !clears_threshold,
+            "composite below threshold must be rejected"
+        );
         let meaningful = (composite - threshold).abs() >= min_improvement && composite > threshold;
         let _ = meaningful; // not reached
     }

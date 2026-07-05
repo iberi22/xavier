@@ -154,11 +154,19 @@ pub async fn search_handler(
     let limit = payload.limit.clamp(1, 100);
     info!("Search request: query={}, limit={}", effective_query, limit);
 
-    match state.memory.search(effective_query, payload.filters.clone()).await {
+    match state
+        .memory
+        .search(effective_query, payload.filters.clone())
+        .await
+    {
         Ok(mut results) => {
             // Apply depth expansion if requested
             if payload.depth > 0 {
-                results = state.memory.expand_depth(&results, payload.depth, payload.filters).await.unwrap_or(results);
+                results = state
+                    .memory
+                    .expand_depth(&results, payload.depth, payload.filters)
+                    .await
+                    .unwrap_or(results);
             }
 
             let documents: Vec<_> = results

@@ -45,7 +45,9 @@ impl MasterKeyManager {
         let fallback_res = Self::save_to_fallback(&key);
 
         if keyring_res.is_err() && fallback_res.is_err() {
-            return Err(anyhow!("Failed to persist master key to both keyring and fallback storage"));
+            return Err(anyhow!(
+                "Failed to persist master key to both keyring and fallback storage"
+            ));
         }
 
         Ok(Self { master_key: key })

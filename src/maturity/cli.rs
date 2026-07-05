@@ -64,12 +64,27 @@ pub enum MaturityCommand {
 /// Entry point called by the CLI dispatcher.
 pub async fn handle_maturity_command(cmd: MaturityCommand) -> Result<()> {
     match cmd {
-        MaturityCommand::Scan { ref codebase, json, markdown, ref anchors, write } |
-        MaturityCommand::DeepScan { ref codebase, json, markdown, ref anchors, write } => {
-            let root = codebase.as_ref()
+        MaturityCommand::Scan {
+            ref codebase,
+            json,
+            markdown,
+            ref anchors,
+            write,
+        }
+        | MaturityCommand::DeepScan {
+            ref codebase,
+            json,
+            markdown,
+            ref anchors,
+            write,
+        } => {
+            let root = codebase
+                .as_ref()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| ".".to_string());
-            let anchor_path = anchors.clone().unwrap_or_else(|| PathBuf::from(".xavier/maturity-anchors.json"));
+            let anchor_path = anchors
+                .clone()
+                .unwrap_or_else(|| PathBuf::from(".xavier/maturity-anchors.json"));
 
             // DeepScan uses with_deep_scan()
             let is_deep = matches!(&cmd, MaturityCommand::DeepScan { .. });
@@ -84,16 +99,26 @@ pub async fn handle_maturity_command(cmd: MaturityCommand) -> Result<()> {
                         Box::new(move |json_str: &str| {
                             // Write partial JSON so even if mid-scan crash, we have progress
                             if let Ok(val) = serde_json::from_str::<serde_json::Value>(json_str) {
-                                if val.get("event").and_then(|v| v.as_str()) == Some("layer_complete") {
-                                    if let Ok(partial_json) = serde_json::to_string_pretty(&serde_json::json!({
-                                        "progress_event": json_str,
-                                        "note": "Partial scan — run 'maturity deep-scan' again to complete",
-                                        "timestamp": Utc::now().to_rfc3339(),
-                                    })) {
+                                if val.get("event").and_then(|v| v.as_str())
+                                    == Some("layer_complete")
+                                {
+                                    if let Ok(partial_json) = serde_json::to_string_pretty(
+                                        &serde_json::json!({
+                                            "progress_event": json_str,
+                                            "note": "Partial scan — run 'maturity deep-scan' again to complete",
+                                            "timestamp": Utc::now().to_rfc3339(),
+                                        }),
+                                    ) {
                                         let _ = std::fs::write(&report_path, &partial_json);
-                                        eprintln!("  ✓ Layer '{}' complete ({}ms)",
-                                            val.get("layer").and_then(|v| v.as_str()).unwrap_or("?"),
-                                            val.get("timing_ms").and_then(|v| v.as_u64()).unwrap_or(0));
+                                        eprintln!(
+                                            "  ✓ Layer '{}' complete ({}ms)",
+                                            val.get("layer")
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("?"),
+                                            val.get("timing_ms")
+                                                .and_then(|v| v.as_u64())
+                                                .unwrap_or(0)
+                                        );
                                     }
                                 }
                             }
@@ -165,7 +190,10 @@ pub fn run_maturity_scan(codebase_root: &str, anchors_path: &PathBuf) -> Result<
 }
 
 /// Run the deep maturity scan (v2) and return the result.
-pub fn run_deep_maturity_scan(codebase_root: &str, anchors_path: &PathBuf) -> Result<MaturityResult> {
+pub fn run_deep_maturity_scan(
+    codebase_root: &str,
+    anchors_path: &PathBuf,
+) -> Result<MaturityResult> {
     let scanner = MaturityScanner::new(anchors_path, codebase_root)?.with_deep_scan();
     Ok(scanner.scan())
 }
@@ -196,12 +224,17 @@ pub fn print_status(result: &MaturityResult, detailed: bool) {
         result.summary.in_progress,
         result.summary.scan_errors,
     );
-    println!("Scanner: {} | Scanned at: {}", result.scanner_version, result.scanned_at);
+    println!(
+        "Scanner: {} | Scanned at: {}",
+        result.scanner_version, result.scanned_at
+    );
     println!("HEAD: {}", result.head_commit);
     if result.layers.total_ms > 0 {
         let t = &result.layers;
-        println!("Timing: static={}ms dynamic={}ms memory={}ms conversations={}ms total={}ms",
-            t.static_ms, t.dynamic_ms, t.memory_ms, t.conversations_ms, t.total_ms);
+        println!(
+            "Timing: static={}ms dynamic={}ms memory={}ms conversations={}ms total={}ms",
+            t.static_ms, t.dynamic_ms, t.memory_ms, t.conversations_ms, t.total_ms
+        );
     }
     println!();
 
@@ -211,14 +244,21 @@ pub fn print_status(result: &MaturityResult, detailed: bool) {
             "needs_work" => "\u{26A0}\u{FE0F}",
             _ => "\u{1F527}",
         };
-        println!("  {} {} -- {}% ({})", icon, feat.id, feat.overall, feat.status);
+        println!(
+            "  {} {} -- {}% ({})",
+            icon, feat.id, feat.overall, feat.status
+        );
 
         if detailed {
             for sub in &feat.subcomponents {
                 println!(
                     "    * {}: {}% (tests: {}/{}, symbols: {}/{})",
-                    sub.name, sub.maturity, sub.tests_passing, sub.tests_total,
-                    sub.symbols_found, sub.symbols_total
+                    sub.name,
+                    sub.maturity,
+                    sub.tests_passing,
+                    sub.tests_total,
+                    sub.symbols_found,
+                    sub.symbols_total
                 );
                 if sub.memory_usage > 0 || sub.issue_health > 0 {
                     println!(

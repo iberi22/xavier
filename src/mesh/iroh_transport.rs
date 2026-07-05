@@ -58,11 +58,24 @@ pub const XMESH_ALPN: &[u8] = b"/xavier/mesh-sync/1";
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub enum MeshRequest {
-    Handshake { body: MeshHandshake },
-    FetchManifest { node_id: String, timestamp: String, nonce: String, signature: String },
-    FetchChunks { request: MeshSyncRequest },
-    PushChunks { request: MeshSyncRequest },
-    ShareSession { share: MeshSessionShare },
+    Handshake {
+        body: MeshHandshake,
+    },
+    FetchManifest {
+        node_id: String,
+        timestamp: String,
+        nonce: String,
+        signature: String,
+    },
+    FetchChunks {
+        request: MeshSyncRequest,
+    },
+    PushChunks {
+        request: MeshSyncRequest,
+    },
+    ShareSession {
+        share: MeshSessionShare,
+    },
 }
 
 /// Iroh-backed P2P transport. Holds the local node identity used to sign
@@ -155,17 +168,14 @@ impl IrohTransport {
 
     /// Open a framed request/response stream to a connection and exchange one
     /// message. The caller obtains the `Connection` via [`Self::connect`].
-    async fn round_trip(
-        &self,
-        conn: &Connection,
-        req: &MeshRequest,
-    ) -> Result<serde_json::Value> {
+    async fn round_trip(&self, conn: &Connection, req: &MeshRequest) -> Result<serde_json::Value> {
         use tokio::io::AsyncReadExt;
 
         let (mut send, mut recv) = conn.open_bi().await.context("open_bi failed")?;
 
         let payload = serde_json::to_vec(req).context("serialize request")?;
-        send.write_all(&(payload.len() as u32).to_be_bytes()).await?;
+        send.write_all(&(payload.len() as u32).to_be_bytes())
+            .await?;
         send.write_all(&payload).await?;
         send.finish().context("finish send stream")?;
 
@@ -175,8 +185,7 @@ impl IrohTransport {
         let mut buf = vec![0u8; len];
         recv.read_exact(&mut buf).await?;
 
-        let value: serde_json::Value =
-            serde_json::from_slice(&buf).context("parse response")?;
+        let value: serde_json::Value = serde_json::from_slice(&buf).context("parse response")?;
         Ok(value)
     }
 
@@ -185,8 +194,7 @@ impl IrohTransport {
         let nonce = uuid::Uuid::new_v4().to_string();
         let timestamp = chrono::Utc::now().timestamp();
         let message = format!("{}:{}", timestamp, nonce);
-        let signature =
-            crate::crypto::hex_encode(self.local_identity.sign(message.as_bytes()));
+        let signature = crate::crypto::hex_encode(self.local_identity.sign(message.as_bytes()));
         MeshSyncRequest {
             requesting_node_id: self.local_identity.node_id.clone(),
             wanted_hashes,
@@ -221,24 +229,21 @@ impl IrohTransport {
             signature_hex: crate::crypto::hex_encode(signature),
             pairing_secret,
         };
-        let resp = self.round_trip(&conn, &MeshRequest::Handshake { body }).await?;
+        let resp = self
+            .round_trip(&conn, &MeshRequest::Handshake { body })
+            .await?;
         serde_json::from_value(resp).context("parse handshake response")
     }
 
     /// Fetch the sync manifest from a peer over Iroh. Reads the address out of
     /// `peer.iroh_addr`.
-    pub async fn fetch_manifest(
-        &self,
-        peer: &PeerInfo,
-        _token: &str,
-    ) -> Result<MeshManifest> {
+    pub async fn fetch_manifest(&self, peer: &PeerInfo, _token: &str) -> Result<MeshManifest> {
         let addr = Self::addr_from_peer(peer)?;
         let conn = self.connect(&addr).await?;
         let timestamp = chrono::Utc::now().timestamp().to_string();
         let nonce = uuid::Uuid::new_v4().to_string();
         let message = format!("{}:{}", timestamp, nonce);
-        let signature =
-            crate::crypto::hex_encode(self.local_identity.sign(message.as_bytes()));
+        let signature = crate::crypto::hex_encode(self.local_identity.sign(message.as_bytes()));
         let resp = self
             .round_trip(
                 &conn,
@@ -263,7 +268,9 @@ impl IrohTransport {
         let addr = Self::addr_from_peer(peer)?;
         let conn = self.connect(&addr).await?;
         let request = self.signed_sync_request(hashes.to_vec());
-        let resp = self.round_trip(&conn, &MeshRequest::FetchChunks { request }).await?;
+        let resp = self
+            .round_trip(&conn, &MeshRequest::FetchChunks { request })
+            .await?;
         Ok(serde_json::from_value(resp).context("parse chunks")?)
     }
 
@@ -280,7 +287,9 @@ impl IrohTransport {
         let conn = self.connect(&addr).await?;
         let hashes: Vec<String> = chunks.iter().map(|(h, _)| h.clone()).collect();
         let request = self.signed_sync_request(hashes);
-        let resp = self.round_trip(&conn, &MeshRequest::PushChunks { request }).await?;
+        let resp = self
+            .round_trip(&conn, &MeshRequest::PushChunks { request })
+            .await?;
         Ok(serde_json::from_value(resp).context("parse push ack")?)
     }
 
@@ -299,7 +308,9 @@ impl IrohTransport {
             context_bundle: None,
             token_stats: None,
         };
-        let _resp = self.round_trip(&conn, &MeshRequest::ShareSession { share }).await?;
+        let _resp = self
+            .round_trip(&conn, &MeshRequest::ShareSession { share })
+            .await?;
         Ok(())
     }
 }
@@ -334,7 +345,10 @@ mod tests {
             },
         };
         let json = serde_json::to_string(&req).unwrap();
-        assert!(json.contains("\"op\":\"fetch_chunks\""), "serialized: {json}");
+        assert!(
+            json.contains("\"op\":\"fetch_chunks\""),
+            "serialized: {json}"
+        );
     }
 
     #[test]

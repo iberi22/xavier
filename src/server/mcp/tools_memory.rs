@@ -254,13 +254,15 @@ pub async fn handle_memory_tool(
                 .await?;
             let content = results
                 .into_iter()
-                .map(|doc| MCPContent::Text(MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: format!(
-                        "Path: {}\nContent: {}\nMetadata: {:?}",
-                        doc.path, doc.content, doc.metadata
-                    ),
-                            }))
+                .map(|doc| {
+                    MCPContent::Text(MCPTextContent {
+                        content_type: "text".to_string(),
+                        text: format!(
+                            "Path: {}\nContent: {}\nMetadata: {:?}",
+                            doc.path, doc.content, doc.metadata
+                        ),
+                    })
+                })
                 .collect();
 
             Ok(serde_json::to_value(MCPToolResult {
@@ -466,17 +468,19 @@ pub async fn handle_memory_tool(
 
             let content = filtered
                 .into_iter()
-                .map(|doc| MCPContent::Text(MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: format!(
-                        "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
-                        doc.id.as_deref().unwrap_or("none"),
-                        doc.path,
-                        doc.content,
-                        doc.metadata.get("gestalt_context"),
-                        doc.metadata.get("tags")
-                    ),
-                }))
+                .map(|doc| {
+                    MCPContent::Text(MCPTextContent {
+                        content_type: "text".to_string(),
+                        text: format!(
+                            "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
+                            doc.id.as_deref().unwrap_or("none"),
+                            doc.path,
+                            doc.content,
+                            doc.metadata.get("gestalt_context"),
+                            doc.metadata.get("tags")
+                        ),
+                    })
+                })
                 .collect();
 
             Ok(serde_json::to_value(MCPToolResult {
@@ -502,17 +506,19 @@ pub async fn handle_memory_tool(
                 .await?;
             let content = records
                 .into_iter()
-                .map(|record| MCPContent::Text(MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: format!(
-                        "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
-                        record.id,
-                        record.path,
-                        record.content,
-                        record.metadata.get("gestalt_context"),
-                        record.metadata.get("tags")
-                    ),
-                }))
+                .map(|record| {
+                    MCPContent::Text(MCPTextContent {
+                        content_type: "text".to_string(),
+                        text: format!(
+                            "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
+                            record.id,
+                            record.path,
+                            record.content,
+                            record.metadata.get("gestalt_context"),
+                            record.metadata.get("tags")
+                        ),
+                    })
+                })
                 .collect();
 
             Ok(serde_json::to_value(MCPToolResult {
@@ -617,10 +623,7 @@ pub async fn handle_memory_tool(
                 .workspace
                 .ingest_typed(path, text.to_string(), metadata, typed, None, false)
                 .await?;
-            super::server::mcp_text_result(
-                format!("Memory saved. id={doc_id}"),
-                false,
-            )
+            super::server::mcp_text_result(format!("Memory saved. id={doc_id}"), false)
         }
         "memory_search" => {
             let query = arguments
@@ -666,13 +669,15 @@ pub async fn handle_memory_tool(
 
             let content = results
                 .into_iter()
-                .map(|doc| MCPContent::Text(MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: format!(
-                        "Path: {}\nContent: {}\nMetadata: {:?}",
-                        doc.path, doc.content, doc.metadata
-                    ),
-                }))
+                .map(|doc| {
+                    MCPContent::Text(MCPTextContent {
+                        content_type: "text".to_string(),
+                        text: format!(
+                            "Path: {}\nContent: {}\nMetadata: {:?}",
+                            doc.path, doc.content, doc.metadata
+                        ),
+                    })
+                })
                 .collect();
 
             Ok(serde_json::to_value(MCPToolResult {
@@ -762,7 +767,9 @@ pub async fn handle_memory_tool(
                 for record in &expanded {
                     context.push_str(&format!(
                         "### {} (id: {})\n{}\n\n",
-                        record.path, record.id.as_deref().unwrap_or("none"), record.content
+                        record.path,
+                        record.id.as_deref().unwrap_or("none"),
+                        record.content
                     ));
                 }
 

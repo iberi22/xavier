@@ -561,12 +561,9 @@ pub async fn delete_handler(
 ///
 /// Iterates over all stored memories, checks for empty embedding vectors,
 /// recalculates embeddings via the embedder, and updates each record.
-pub async fn reindex_handler(
-    State(state): State<CliState>,
-    headers: HeaderMap,
-) -> Response {
-    use tokio::time::timeout;
+pub async fn reindex_handler(State(state): State<CliState>, headers: HeaderMap) -> Response {
     use std::time::Duration;
+    use tokio::time::timeout;
 
     if let Err(r) = check_cli_token(&headers) {
         return r;
@@ -595,7 +592,12 @@ pub async fn reindex_handler(
         }
 
         // Try embedding within a 60-second timeout per doc
-        match timeout(Duration::from_secs(60), state.embedder.encode(&record.content)).await {
+        match timeout(
+            Duration::from_secs(60),
+            state.embedder.encode(&record.content),
+        )
+        .await
+        {
             Ok(Ok(embedding)) => {
                 let mut updated = record.clone();
                 updated.embedding = embedding;
@@ -968,7 +970,10 @@ pub async fn consolidate_handler(
     if let Err(r) = check_cli_token(&headers) {
         return r;
     }
-    let nightly = payload.get("nightly").and_then(|v| v.as_bool()).unwrap_or(false);
+    let nightly = payload
+        .get("nightly")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     let manager =
         xavier::memory::manager::core::MemoryManager::new(Arc::clone(&state.qmd_memory), None);
     let result = if nightly {

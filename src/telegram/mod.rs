@@ -7,8 +7,8 @@
 //! `TELEGRAM_BOT_TOKEN` environment variable.
 
 use serde::{Deserialize, Serialize};
-use std::fmt;
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use teloxide::prelude::*;
@@ -124,7 +124,9 @@ pub enum Command {
     Scan(String),
     #[command(description = "list active agents.")]
     Agents,
-    #[command(description = "memory operations: /memory stats | /memory search <query> | /memory list | /memory delete <id>.")]
+    #[command(
+        description = "memory operations: /memory stats | /memory search <query> | /memory list | /memory delete <id>."
+    )]
     Memory(String),
 }
 
@@ -235,8 +237,8 @@ use uuid::Uuid;
 /// error describing the gap so the caller can surface it.
 pub fn load_bot_token() -> anyhow::Result<String> {
     // 1. Try the Clavis hardware vault first.
-    if let Ok(token) = crate::secrets::vault::HardwareVault::new("xavier")
-        .get_secret(TELEGRAM_TOKEN_VAULT_KEY)
+    if let Ok(token) =
+        crate::secrets::vault::HardwareVault::new("xavier").get_secret(TELEGRAM_TOKEN_VAULT_KEY)
     {
         if !token.trim().is_empty() {
             return Ok(token);
@@ -845,7 +847,7 @@ pub async fn start_webhook(
             bot.memory.clone(),
             bot.agents.clone(),
             bot.security.clone(),
-            bot.rate_limiter.clone(),
+            bot.rate_limiter.clone()
         ])
         .build()
         .dispatch_with_listener(
@@ -868,7 +870,10 @@ mod tests {
     fn test_memory_command_parse_stats() {
         assert_eq!(MemoryCommand::parse("stats"), Some(MemoryCommand::Stats));
         // Leading/trailing whitespace tolerated.
-        assert_eq!(MemoryCommand::parse("  stats  "), Some(MemoryCommand::Stats));
+        assert_eq!(
+            MemoryCommand::parse("  stats  "),
+            Some(MemoryCommand::Stats)
+        );
     }
 
     #[test]
@@ -990,7 +995,10 @@ mod tests {
         assert!(limiter.check("user2").is_ok());
         let result = limiter.check("user2");
         assert!(result.is_err(), "should be rate limited after 2 commands");
-        assert!(result.unwrap_err() <= 61, "remaining seconds should be <= 61");
+        assert!(
+            result.unwrap_err() <= 61,
+            "remaining seconds should be <= 61"
+        );
     }
 
     #[test]
@@ -1002,7 +1010,10 @@ mod tests {
         assert!(limiter.check("user3").is_err());
         // Wait for window to expire
         std::thread::sleep(std::time::Duration::from_millis(1100));
-        assert!(limiter.check("user3").is_ok(), "should allow after window expires");
+        assert!(
+            limiter.check("user3").is_ok(),
+            "should allow after window expires"
+        );
     }
 
     // ── with_retry tests ─────────────────────────────────

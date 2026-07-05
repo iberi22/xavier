@@ -33,10 +33,13 @@ impl CryptoGatingService {
     pub fn encrypt_payload(&self, raw_json: &str) -> EncryptedPayload {
         // MOCK: In production use AES-GCM.
         let hex_encoded = crate::crypto::hex_encode(raw_json);
-        
+
         // Generate a mock IPFS Content ID (CID) PIN based on the payload hash
-        let mock_cid = format!("Qm{}", crate::crypto::hex_encode(&hex_encoded[0..std::cmp::min(10, hex_encoded.len())]));
-        
+        let mock_cid = format!(
+            "Qm{}",
+            crate::crypto::hex_encode(&hex_encoded[0..std::cmp::min(10, hex_encoded.len())])
+        );
+
         EncryptedPayload {
             cipher_text: hex_encoded,
             nonce: "mock-nonce".to_string(),
@@ -46,7 +49,11 @@ impl CryptoGatingService {
     }
 
     /// Decrypts a payload if the provided symmetric key matches.
-    pub fn decrypt_payload(&self, payload: &EncryptedPayload, provided_key: &str) -> Result<String, String> {
+    pub fn decrypt_payload(
+        &self,
+        payload: &EncryptedPayload,
+        provided_key: &str,
+    ) -> Result<String, String> {
         if provided_key != self.mock_symmetric_key {
             return Err("Invalid symmetric key".to_string());
         }
@@ -54,19 +61,20 @@ impl CryptoGatingService {
         // MOCK: In production use AES-GCM.
         let decoded = crate::crypto::hex_decode(&payload.cipher_text)
             .map_err(|e| format!("Hex decode error: {}", e))?;
-        
-        String::from_utf8(decoded)
-            .map_err(|e| format!("UTF8 error: {}", e))
+
+        String::from_utf8(decoded).map_err(|e| format!("UTF8 error: {}", e))
     }
 
     /// Validates if a Wallet Address has paid the XAV token toll, or is a whitelisted maintainer.
     pub fn validate_access(&self, request: &AccessRequest) -> Result<String, String> {
-        // MOCK: In production, verify Ed25519 signature of the request, 
+        // MOCK: In production, verify Ed25519 signature of the request,
         // then call Solana RPC or Supabase cached state to verify token balances.
-        
+
         // For tests, we accept wallets starting with "MAINTAINER_" and valid signatures.
         if !request.wallet_address.starts_with("MAINTAINER_") {
-            return Err("Access denied: Wallet does not hold XAV tokens or maintainer pass".to_string());
+            return Err(
+                "Access denied: Wallet does not hold XAV tokens or maintainer pass".to_string(),
+            );
         }
         if request.signature != "valid_signature" {
             return Err("Access denied: Invalid signature".to_string());
@@ -91,8 +99,10 @@ mod tests {
     fn test_encryption_decryption() {
         let service = CryptoGatingService::new();
         let payload = service.encrypt_payload("{\"test\": 1}");
-        
-        let decrypted = service.decrypt_payload(&payload, "0xXAVIER_SECRET_SYMMETRIC_KEY").unwrap();
+
+        let decrypted = service
+            .decrypt_payload(&payload, "0xXAVIER_SECRET_SYMMETRIC_KEY")
+            .unwrap();
         assert_eq!(decrypted, "{\"test\": 1}");
 
         let fail = service.decrypt_payload(&payload, "wrong_key");
@@ -102,7 +112,7 @@ mod tests {
     #[test]
     fn test_access_validation() {
         let service = CryptoGatingService::new();
-        
+
         // Valid maintainer
         let req1 = AccessRequest {
             wallet_address: "MAINTAINER_123".to_string(),

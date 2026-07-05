@@ -1,6 +1,6 @@
-use crate::mesh::node::NodeId;
 use crate::enterprise::rbac::Role;
 use crate::memory::schema::ClearanceLevel;
+use crate::mesh::node::NodeId;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -46,7 +46,8 @@ impl MeshAcl {
         }
 
         let raw = std::fs::read_to_string(&storage_path).context("Failed to read mesh ACL file")?;
-        let entries: HashMap<String, NodeAclEntry> = serde_json::from_str(&raw).context("Failed to parse mesh ACL JSON")?;
+        let entries: HashMap<String, NodeAclEntry> =
+            serde_json::from_str(&raw).context("Failed to parse mesh ACL JSON")?;
 
         let entries_map = entries.into_iter().map(|(k, v)| (NodeId(k), v)).collect();
 
@@ -57,7 +58,8 @@ impl MeshAcl {
     }
 
     pub fn save(&self) -> Result<()> {
-        let entries_map: HashMap<String, &NodeAclEntry> = self.entries.iter().map(|(k, v)| (k.0.clone(), v)).collect();
+        let entries_map: HashMap<String, &NodeAclEntry> =
+            self.entries.iter().map(|(k, v)| (k.0.clone(), v)).collect();
         let json = serde_json::to_string_pretty(&entries_map)?;
         std::fs::write(&self.storage_path, json).context("Failed to write mesh ACL file")?;
         Ok(())

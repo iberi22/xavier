@@ -117,7 +117,10 @@ impl GoParser {
 
     fn find_type_identifier(&self, node: Node, source: &str) -> Option<String> {
         if node.kind() == "type_identifier" {
-            return node.utf8_text(source.as_bytes()).ok().map(|s| s.to_string());
+            return node
+                .utf8_text(source.as_bytes())
+                .ok()
+                .map(|s| s.to_string());
         }
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {

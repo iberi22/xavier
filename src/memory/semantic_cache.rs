@@ -137,7 +137,9 @@ impl SemanticCache {
         }
 
         let now = chrono::Utc::now();
-        let expires_at = self.ttl_secs.map(|s| now + chrono::Duration::seconds(s as i64));
+        let expires_at = self
+            .ttl_secs
+            .map(|s| now + chrono::Duration::seconds(s as i64));
 
         let mut entries = self.entries.write().await;
         entries.push(CachedResponse {

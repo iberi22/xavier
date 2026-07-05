@@ -30,15 +30,11 @@ async fn test_health_endpoint_via_xavier_binary() {
             .env("XAVIER_TOKEN", "test-token")
             .env(
                 "XAVIER_CODE_GRAPH_DB_PATH",
-                data_dir
-                    .path()
-                    .join(format!("e2e-code-graph-{port}.db")),
+                data_dir.path().join(format!("e2e-code-graph-{port}.db")),
             )
             .env(
                 "XAVIER_MEMORY_VEC_PATH",
-                data_dir
-                    .path()
-                    .join(format!("e2e-memory-vec-{port}.db")),
+                data_dir.path().join(format!("e2e-memory-vec-{port}.db")),
             )
             .stdout(Stdio::inherit())
             .stderr(Stdio::inherit())

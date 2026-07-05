@@ -5,7 +5,7 @@
 
 use crate::mesh::node::NodeId;
 use crate::observability::token_accounting::TokenStats;
-use crate::session::sharing::{SessionBundle, ContextBundle};
+use crate::session::sharing::{ContextBundle, SessionBundle};
 use serde::{Deserialize, Serialize};
 
 /// Initial handshake sent by a node to a peer.

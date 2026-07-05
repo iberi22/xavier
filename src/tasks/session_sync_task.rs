@@ -7,8 +7,8 @@
 //! - Alerts if lag > 30s or save_ok_rate < 95%
 //!
 //! Also provides on-demand sync check via POST /xavier/sync/check
-use std::sync::LazyLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::LazyLock;
 use std::sync::{Arc, RwLock as StdRwLock};
 use std::time::{Duration, Instant};
 

@@ -18,9 +18,10 @@ fn xavier_binary() -> Command {
 /// Run CLI command, measure wall time
 fn bench_cli(args: &[&str], label: &str) -> Duration {
     let start = Instant::now();
-    let output = xavier_binary().args(args).output().unwrap_or_else(|_| {
-        panic!("failed to run xavier {} {}", label, args.join(" "))
-    });
+    let output = xavier_binary()
+        .args(args)
+        .output()
+        .unwrap_or_else(|_| panic!("failed to run xavier {} {}", label, args.join(" ")));
     let elapsed = start.elapsed();
 
     let stdout = String::from_utf8_lossy(&output.stdout);

@@ -113,7 +113,10 @@ impl PredictiveCacheWarmup {
         let docs = memory.docs.read().await;
         for doc_id in &hot_docs {
             // Look up by id or path — iteration ensures cache stays hot
-            if docs.iter().any(|d| d.id.as_deref() == Some(doc_id) || &d.path == doc_id) {
+            if docs
+                .iter()
+                .any(|d| d.id.as_deref() == Some(doc_id) || &d.path == doc_id)
+            {
                 warmed += 1;
             }
         }
@@ -160,11 +163,7 @@ impl PredictiveCacheWarmup {
     ///
     /// Only paths whose normalized prefix matches `path` will be considered
     /// (i.e., files living in or adjacent to the current directory).
-    pub async fn predictive_warm(
-        &self,
-        path: &str,
-        hormer_scores: &HormerScoreMap,
-    ) -> usize {
+    pub async fn predictive_warm(&self, path: &str, hormer_scores: &HormerScoreMap) -> usize {
         if !*self.enabled.lock().await {
             return 0;
         }
@@ -188,11 +187,7 @@ impl PredictiveCacheWarmup {
         let mut warmed = 0usize;
         for (path, score) in &candidates[..top_k] {
             self.track_access(path).await;
-            tracing::trace!(
-                "🧠 predictive_cache_warm: {} (score={:.4})",
-                path,
-                score
-            );
+            tracing::trace!("🧠 predictive_cache_warm: {} (score={:.4})", path, score);
             warmed += 1;
         }
 

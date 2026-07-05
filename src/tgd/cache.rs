@@ -1,10 +1,10 @@
-use std::path::Path;
-use serde::{Serialize, Deserialize};
-use chrono::{DateTime, Utc};
-use sha2::{Sha256, Digest};
-use anyhow::Result;
 use crate::agents::runtime::ConversationMessage;
 use crate::agents::system1::RetrievedDocument;
+use anyhow::Result;
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::path::Path;
 
 /// Cache for TGD executions to avoid redundant analysis
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,7 +42,10 @@ impl TgdCache {
     }
 
     /// Calculates a stable hash for history and context
-    pub fn calculate_hash(history: &[ConversationMessage], context: &[RetrievedDocument]) -> String {
+    pub fn calculate_hash(
+        history: &[ConversationMessage],
+        context: &[RetrievedDocument],
+    ) -> String {
         let mut hasher = Sha256::new();
 
         hasher.update(b"history:");

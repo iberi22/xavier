@@ -1,6 +1,6 @@
-use sha2::{Sha256, Digest};
-use rand::{thread_rng, RngCore};
 use anyhow::Result;
+use rand::{thread_rng, RngCore};
+use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
 /// Default cost for hashing (number of iterations).
@@ -17,7 +17,12 @@ pub fn hash(password: &str, cost: u32) -> Result<String> {
     let effective_cost = cost.min(MAX_COST);
     let hash = compute_hash(password, &salt, effective_cost);
 
-    Ok(format!("{}:{}:{}", effective_cost, crate::crypto::hex_encode(salt), crate::crypto::hex_encode(hash)))
+    Ok(format!(
+        "{}:{}:{}",
+        effective_cost,
+        crate::crypto::hex_encode(salt),
+        crate::crypto::hex_encode(hash)
+    ))
 }
 
 /// Verifies a password against a previously generated hash string.

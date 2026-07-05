@@ -182,7 +182,10 @@ impl PythonParser {
                         },
                     );
                 }
-            } else if child.kind() == "pattern_list" || child.kind() == "tuple" || child.kind() == "list_pattern" {
+            } else if child.kind() == "pattern_list"
+                || child.kind() == "tuple"
+                || child.kind() == "list_pattern"
+            {
                 self.extract_identifiers_from_pattern(child, source, file_path, symbols, parent);
             }
         }

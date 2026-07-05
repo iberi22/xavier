@@ -107,8 +107,16 @@ pub async fn revoke_lease_by_path(
         .revoke(&token, "Proxy Auto-Revoke API")
         .await
     {
-        Ok(_) => (axum::http::StatusCode::OK, Json(serde_json::json!({ "status": "revoked" }))).into_response(),
-        Err(e) => (axum::http::StatusCode::NOT_FOUND, Json(serde_json::json!({ "error": e.to_string() }))).into_response(),
+        Ok(_) => (
+            axum::http::StatusCode::OK,
+            Json(serde_json::json!({ "status": "revoked" })),
+        )
+            .into_response(),
+        Err(e) => (
+            axum::http::StatusCode::NOT_FOUND,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response(),
     }
 }
 

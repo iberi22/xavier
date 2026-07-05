@@ -31,18 +31,36 @@ pub async fn handle_scan_command() -> Result<()> {
                 .as_array()
                 .map(|a| a.len())
                 .unwrap_or(0);
-            let agents = data["cli_agents"]
-                .as_array()
-                .map(|a| a.len())
-                .unwrap_or(0);
+            let agents = data["cli_agents"].as_array().map(|a| a.len()).unwrap_or(0);
 
             println!("═══════════════════════════════════════════");
             println!("  System Scan Results");
             println!("═══════════════════════════════════════════");
-            println!("  Ollama:      {}", if ollama_ok { "✅ Running" } else { "❌ Not running" });
+            println!(
+                "  Ollama:      {}",
+                if ollama_ok {
+                    "✅ Running"
+                } else {
+                    "❌ Not running"
+                }
+            );
             println!("  Models:      {}", models);
-            println!("  GPU:         {}", if gpu_detected { "✅ Detected" } else { "❌ Not detected" });
-            println!("  Docker:      {}", if docker_ok { "✅ Running" } else { "❌ Not running" });
+            println!(
+                "  GPU:         {}",
+                if gpu_detected {
+                    "✅ Detected"
+                } else {
+                    "❌ Not detected"
+                }
+            );
+            println!(
+                "  Docker:      {}",
+                if docker_ok {
+                    "✅ Running"
+                } else {
+                    "❌ Not running"
+                }
+            );
             println!("  CLI Agents:  {}", agents);
             println!("═══════════════════════════════════════════");
         }

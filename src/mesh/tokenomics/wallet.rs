@@ -225,12 +225,7 @@ impl Wallet {
     }
 
     /// Deduct XP from the wallet balance. Fails if insufficient funds.
-    pub fn debit(
-        &mut self,
-        amount: u64,
-        kind: TransactionKind,
-        description: &str,
-    ) -> Result<()> {
+    pub fn debit(&mut self, amount: u64, kind: TransactionKind, description: &str) -> Result<()> {
         if self.balance.xp_balance < amount {
             bail!(
                 "Insufficient XP balance: have {}, need {}",
@@ -328,11 +323,7 @@ impl Wallet {
 
     /// Return the most recent `limit` transactions.
     pub fn list_transactions(&self, limit: usize) -> Vec<&Transaction> {
-        self.transactions
-            .iter()
-            .rev()
-            .take(limit)
-            .collect()
+        self.transactions.iter().rev().take(limit).collect()
     }
 
     /// Serialize the wallet to a JSON string.

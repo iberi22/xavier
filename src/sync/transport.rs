@@ -9,13 +9,13 @@
 //!   present under the `mesh` cargo feature.
 //! - [`SyncTransport::P2P`] — `MeshTransport` (HTTP), the default fallback.
 
+use crate::mesh::cloud_node::CloudPeer;
+#[cfg(feature = "mesh")]
+use crate::mesh::iroh_transport::IrohTransport;
 use crate::mesh::node::NodeIdentity;
 use crate::mesh::peer::PeerInfo;
 use crate::mesh::protocol::{MeshHandshakeResponse, MeshManifest};
-#[cfg(feature = "mesh")]
-use crate::mesh::iroh_transport::IrohTransport;
 use crate::mesh::transport::MeshTransport;
-use crate::mesh::cloud_node::CloudPeer;
 use crate::session::sharing::SessionBundle;
 use anyhow::Result;
 use std::collections::HashMap;

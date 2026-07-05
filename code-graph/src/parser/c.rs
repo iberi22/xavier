@@ -104,10 +104,11 @@ impl CParser {
                 self.push_import(node, source, file_path, symbols);
             }
             "preproc_def" => {
-                if let Some(name_node) = node.child(1) { // Usually #define NAME value
+                if let Some(name_node) = node.child(1) {
+                    // Usually #define NAME value
                     if name_node.kind() == "identifier" {
                         if let Ok(name) = name_node.utf8_text(source.as_bytes()) {
-                             self.push_symbol(
+                            self.push_symbol(
                                 symbols,
                                 PushSymbolArgs {
                                     node,
@@ -140,7 +141,10 @@ impl CParser {
 
     fn find_identifier(&self, node: Node, source: &str) -> Option<String> {
         if node.kind() == "identifier" {
-            return node.utf8_text(source.as_bytes()).ok().map(|s| s.to_string());
+            return node
+                .utf8_text(source.as_bytes())
+                .ok()
+                .map(|s| s.to_string());
         }
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {

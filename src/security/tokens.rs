@@ -50,9 +50,10 @@ impl TokenStore {
 
     /// Initializes the database schema for API tokens.
     pub async fn init_schema_async(&self) -> Result<()> {
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            conn.execute_batch(
-                r#"
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                conn.execute_batch(
+                    r#"
                 CREATE TABLE IF NOT EXISTS api_tokens (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -65,9 +66,10 @@ impl TokenStore {
                 );
                 CREATE INDEX IF NOT EXISTS idx_api_tokens_partial_hash ON api_tokens(partial_hash);
                 "#,
-            )?;
-            Ok(())
-        }).await
+                )?;
+                Ok(())
+            })
+            .await
     }
 
     /// Creates a new API token.
@@ -153,10 +155,12 @@ impl TokenStore {
     /// Revokes (deletes) a token.
     pub async fn revoke_token(&self, id: &str) -> Result<()> {
         let id = id.to_string();
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            conn.execute("DELETE FROM api_tokens WHERE id = ?", params![id])?;
-            Ok(())
-        }).await
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                conn.execute("DELETE FROM api_tokens WHERE id = ?", params![id])?;
+                Ok(())
+            })
+            .await
     }
 
     /// Validates a plaintext token.
@@ -227,10 +231,15 @@ impl TokenStore {
     async fn update_last_used(&self, id: &str) -> Result<()> {
         let id = id.to_string();
         let now = Utc::now().to_rfc3339();
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            conn.execute("UPDATE api_tokens SET last_used_at = ? WHERE id = ?", params![now, id])?;
-            Ok(())
-        }).await
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                conn.execute(
+                    "UPDATE api_tokens SET last_used_at = ? WHERE id = ?",
+                    params![now, id],
+                )?;
+                Ok(())
+            })
+            .await
     }
 }
 

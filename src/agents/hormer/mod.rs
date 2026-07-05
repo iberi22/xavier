@@ -3,11 +3,11 @@
 //! Implementación simplificada de Group Relative Policy Optimization (GRPO)
 //! para ajustar dinámicamente los pesos de las capas de memoria (Working, Episodic, Semantic).
 
+#[cfg(test)]
+mod persistence_test;
 pub mod reward;
 #[cfg(test)]
 mod tests;
-#[cfg(test)]
-mod persistence_test;
 
 use crate::memory::telemetry::NavTelemetry;
 use crate::retrieval::{LayerWeights, NavigationPolicy};
@@ -52,7 +52,10 @@ impl Hormer {
     }
 
     /// Set the zone booster for feedback recording
-    pub fn with_booster(mut self, booster: Arc<crate::retrieval::gating::AdaptiveZoneBooster>) -> Self {
+    pub fn with_booster(
+        mut self,
+        booster: Arc<crate::retrieval::gating::AdaptiveZoneBooster>,
+    ) -> Self {
         self.zone_booster = Some(booster);
         self
     }
@@ -85,9 +88,9 @@ impl Hormer {
         // record cache hit/miss if available in metadata
         for res in results {
             if res.id.starts_with("cache:") {
-                 self.telemetry.record_cache_hit();
+                self.telemetry.record_cache_hit();
             } else {
-                 self.telemetry.record_cache_miss();
+                self.telemetry.record_cache_miss();
             }
         }
 
@@ -109,7 +112,12 @@ impl Hormer {
     /// 2. Evaluate the reward using the `RewardModel`.
     /// 3. Calculate "advantage" relative to a baseline (0.5).
     /// 4. If advantage is significant, update policy weights and persist to settings.
-    pub async fn update_from_interaction(&self, weights_used: LayerWeights, results: &[ScoredResult], user_id: Option<&str>) {
+    pub async fn update_from_interaction(
+        &self,
+        weights_used: LayerWeights,
+        results: &[ScoredResult],
+        user_id: Option<&str>,
+    ) {
         self.update_metrics(results).await;
         if results.is_empty() {
             return;
@@ -120,7 +128,9 @@ impl Hormer {
             if let Some(top_res) = results.first() {
                 // If the top result carries a zone, record feedback for it
                 if let Some(ref zone) = top_res.zone {
-                    booster.record_feedback(uid, zone, top_res.score > 0.6, top_res.score).await;
+                    booster
+                        .record_feedback(uid, zone, top_res.score > 0.6, top_res.score)
+                        .await;
                 }
             }
         }
@@ -174,13 +184,17 @@ impl Hormer {
             settings.retrieval.learned_policy.episodic_weight = policy.layer_weights.episodic;
             settings.retrieval.learned_policy.semantic_weight = policy.layer_weights.semantic;
 
-            settings.retrieval.learned_policy.semantic_similarity_weight = policy.traversal_weights.semantic_similarity;
-            settings.retrieval.learned_policy.confidence_weight = policy.traversal_weights.confidence;
+            settings.retrieval.learned_policy.semantic_similarity_weight =
+                policy.traversal_weights.semantic_similarity;
+            settings.retrieval.learned_policy.confidence_weight =
+                policy.traversal_weights.confidence;
             settings.retrieval.learned_policy.edge_weight = policy.traversal_weights.edge_weight;
             settings.retrieval.learned_policy.recency_weight = policy.traversal_weights.recency;
-            settings.retrieval.learned_policy.cross_layer_weight = policy.traversal_weights.cross_layer;
+            settings.retrieval.learned_policy.cross_layer_weight =
+                policy.traversal_weights.cross_layer;
             settings.retrieval.learned_policy.cross_dir_weight = policy.traversal_weights.cross_dir;
-            settings.retrieval.learned_policy.peripheral_hub_weight = policy.traversal_weights.peripheral_hub;
+            settings.retrieval.learned_policy.peripheral_hub_weight =
+                policy.traversal_weights.peripheral_hub;
             settings.retrieval.learned_policy.update_count = policy.update_count;
 
             if let Err(e) = settings.save().await {

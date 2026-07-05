@@ -11,8 +11,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-pub static INSTANCE: std::sync::OnceLock<ConnectionManager> =
-    std::sync::OnceLock::new();
+pub static INSTANCE: std::sync::OnceLock<ConnectionManager> = std::sync::OnceLock::new();
 
 const MAX_POOLS: usize = 128;
 const WAL_INIT_ATTEMPTS: usize = 10;

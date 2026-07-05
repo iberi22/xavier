@@ -50,7 +50,8 @@ const HEX_CHARS: &[u8] = b"0123456789abcdef";
 /// Encode bytes as lowercase hex string.
 pub fn hex_encode(bytes: impl AsRef<[u8]>) -> String {
     let bytes = bytes.as_ref();
-    let hex_str = bytes.iter()
+    let hex_str = bytes
+        .iter()
         .flat_map(|b| [HEX_CHARS[(b >> 4) as usize], HEX_CHARS[(b & 0x0f) as usize]])
         .collect::<Vec<_>>();
     String::from_utf8(hex_str).unwrap_or_default()
@@ -64,8 +65,10 @@ pub fn hex_decode(hex_str: &str) -> anyhow::Result<Vec<u8>> {
     let bytes = hex_str.as_bytes();
     let mut out = Vec::with_capacity(bytes.len() / 2);
     for chunk in bytes.chunks_exact(2) {
-        let hi = hex_val(chunk[0]).ok_or_else(|| anyhow::anyhow!("invalid hex char '{}'", chunk[0] as char))?;
-        let lo = hex_val(chunk[1]).ok_or_else(|| anyhow::anyhow!("invalid hex char '{}'", chunk[1] as char))?;
+        let hi = hex_val(chunk[0])
+            .ok_or_else(|| anyhow::anyhow!("invalid hex char '{}'", chunk[0] as char))?;
+        let lo = hex_val(chunk[1])
+            .ok_or_else(|| anyhow::anyhow!("invalid hex char '{}'", chunk[1] as char))?;
         out.push((hi << 4) | lo);
     }
     Ok(out)
@@ -100,8 +103,16 @@ pub fn base64_encode(data: impl AsRef<[u8]>) -> String {
         let b2 = chunk.get(2).copied().unwrap_or(0);
         result.push(B64_CHARS[((b0 >> 2) & 0x3f) as usize] as char);
         result.push(B64_CHARS[(((b0 << 4) | (b1 >> 4)) & 0x3f) as usize] as char);
-        result.push(if chunk.len() > 1 { B64_CHARS[(((b1 << 2) | (b2 >> 6)) & 0x3f) as usize] as char } else { B64_PAD as char });
-        result.push(if chunk.len() > 2 { B64_CHARS[(b2 & 0x3f) as usize] as char } else { B64_PAD as char });
+        result.push(if chunk.len() > 1 {
+            B64_CHARS[(((b1 << 2) | (b2 >> 6)) & 0x3f) as usize] as char
+        } else {
+            B64_PAD as char
+        });
+        result.push(if chunk.len() > 2 {
+            B64_CHARS[(b2 & 0x3f) as usize] as char
+        } else {
+            B64_PAD as char
+        });
     }
     result
 }
@@ -130,7 +141,10 @@ pub fn base64_decode(input: &str) -> Option<Vec<u8>> {
             };
         }
         if chunk.len() == 4 {
-            let triple = ((buf[0] as u32) << 18) | ((buf[1] as u32) << 12) | ((buf[2] as u32) << 6) | buf[3] as u32;
+            let triple = ((buf[0] as u32) << 18)
+                | ((buf[1] as u32) << 12)
+                | ((buf[2] as u32) << 6)
+                | buf[3] as u32;
             result.push((triple >> 16) as u8);
             result.push((triple >> 8) as u8);
             result.push(triple as u8);

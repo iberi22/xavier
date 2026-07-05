@@ -54,7 +54,8 @@ impl AnomalyScannerAgent {
         }
 
         let is_rust_panic = telemetry_json.contains("panic") || telemetry_json.contains("Crash");
-        let is_p2p_race = telemetry_json.contains("PeerJS") || telemetry_json.contains("YJS_UPDATE");
+        let is_p2p_race =
+            telemetry_json.contains("PeerJS") || telemetry_json.contains("YJS_UPDATE");
 
         let is_false_positive = self.evaluate_false_positive(telemetry_json);
         if is_false_positive {
@@ -85,7 +86,9 @@ impl AnomalyScannerAgent {
             AnomalyReport {
                 anomaly_type: "P2P Sync Race Condition".to_string(),
                 confidence_score: 0.88,
-                proposed_fix: Some("Implement exponential backoff in p2p.ts and debounce Yjs updates".to_string()),
+                proposed_fix: Some(
+                    "Implement exponential backoff in p2p.ts and debounce Yjs updates".to_string(),
+                ),
                 requires_human: false, // Xavier can Auto-Fix this
                 is_false_positive: false,
                 cluster_id: Some(cluster_id),
@@ -106,7 +109,8 @@ impl AnomalyScannerAgent {
     /// Triage logic: Filters out deterministic noise using CodeGraph heuristics.
     fn evaluate_false_positive(&self, telemetry_json: &str) -> bool {
         // MOCK: If the error is a known harmless warning, drop it automatically.
-        telemetry_json.contains("User aborted") || telemetry_json.contains("Connection reset by peer")
+        telemetry_json.contains("User aborted")
+            || telemetry_json.contains("Connection reset by peer")
     }
 
     /// Clustering logic: Groups similar issues using local vector embeddings.
@@ -126,9 +130,15 @@ impl AnomalyScannerAgent {
         if report.is_false_positive {
             "Closing anomaly: Detected as False Positive by Triage".to_string()
         } else if report.requires_human {
-            format!("Grouping anomaly into Epics (Cluster: {:?}). Waiting for DAO Governance Vote.", report.cluster_id)
+            format!(
+                "Grouping anomaly into Epics (Cluster: {:?}). Waiting for DAO Governance Vote.",
+                report.cluster_id
+            )
         } else if let Some(fix) = &report.proposed_fix {
-            format!("Auto-Fixing: Generating PR for Cluster {:?} to apply fix: {}", report.cluster_id, fix)
+            format!(
+                "Auto-Fixing: Generating PR for Cluster {:?} to apply fix: {}",
+                report.cluster_id, fix
+            )
         } else {
             "No action taken".to_string()
         }
@@ -148,11 +158,15 @@ mod tests {
     #[tokio::test]
     async fn test_anomaly_scanner_human_escalation() {
         let agent = AnomalyScannerAgent::new();
-        let report = agent.scan_telemetry("{\"event_kind\": \"panic\", \"sanitized_message\": \"Crash in [REDACTED]\"}").await;
-        
+        let report = agent
+            .scan_telemetry(
+                "{\"event_kind\": \"panic\", \"sanitized_message\": \"Crash in [REDACTED]\"}",
+            )
+            .await;
+
         assert_eq!(report.anomaly_type, "Rust Core Panic");
         assert!(report.requires_human);
-        
+
         let action = agent.execute_remediation(&report);
         assert!(action.contains("DAO Governance Vote"));
     }
@@ -161,10 +175,10 @@ mod tests {
     async fn test_anomaly_scanner_auto_fix() {
         let agent = AnomalyScannerAgent::new();
         let report = agent.scan_telemetry("{\"event_kind\": \"sync_error\", \"sanitized_message\": \"PeerJS connection failed, YJS_UPDATE race\"}").await;
-        
+
         assert_eq!(report.anomaly_type, "P2P Sync Race Condition");
         assert!(!report.requires_human);
-        
+
         let action = agent.execute_remediation(&report);
         assert!(action.contains("Auto-Fixing"));
         assert!(action.contains("exponential backoff"));

@@ -54,9 +54,12 @@ fn load_anchored_symbols(codebase_root: &str) -> HashMap<String, Vec<String>> {
                     let mut symbols = Vec::new();
                     if let Some(subs) = feat.get("subcomponents").and_then(|s| s.as_array()) {
                         for sub in subs {
-                            if let Some(checks) = sub.get("static_checks").and_then(|c| c.as_array()) {
+                            if let Some(checks) =
+                                sub.get("static_checks").and_then(|c| c.as_array())
+                            {
                                 for check in checks {
-                                    if let Some(sym) = check.get("symbol").and_then(|v| v.as_str()) {
+                                    if let Some(sym) = check.get("symbol").and_then(|v| v.as_str())
+                                    {
                                         symbols.push(sym.to_string());
                                     }
                                 }
@@ -75,14 +78,20 @@ fn load_anchored_symbols(codebase_root: &str) -> HashMap<String, Vec<String>> {
 }
 
 /// Try to load code graph DB and scan for symbols.
-fn try_code_graph_db(root: &str, feature_symbols: &HashMap<String, Vec<String>>) -> Option<CodeGraphScanResult> {
+fn try_code_graph_db(
+    root: &str,
+    feature_symbols: &HashMap<String, Vec<String>>,
+) -> Option<CodeGraphScanResult> {
     let start = Instant::now();
     let json_path = Path::new(root).join(".xavier/codegraph.json");
 
     let content = std::fs::read_to_string(&json_path)
         .or_else(|_| -> std::result::Result<String, std::io::Error> {
             // Code dump would recurse — skip
-            Err(std::io::Error::new(std::io::ErrorKind::NotFound, "no code graph"))
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no code graph",
+            ))
         })
         .ok()?;
 
@@ -131,7 +140,10 @@ fn try_code_graph_db(root: &str, feature_symbols: &HashMap<String, Vec<String>>)
 }
 
 /// Fallback grep-based scanner — reads .rs files looking for symbols.
-fn grep_fallback(root: &str, feature_symbols: &HashMap<String, Vec<String>>) -> CodeGraphScanResult {
+fn grep_fallback(
+    root: &str,
+    feature_symbols: &HashMap<String, Vec<String>>,
+) -> CodeGraphScanResult {
     let start = Instant::now();
     let mut errors = Vec::new();
 

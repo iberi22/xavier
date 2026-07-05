@@ -68,14 +68,26 @@ async fn start_test_server() -> (String, String, Arc<WorkspaceState>) {
     };
 
     let app = Router::new()
-        .route("/v1/mesh/identity", get(xavier::server::v1_api::v1_mesh_identity))
-        .route("/v1/mesh/handshake", post(xavier::server::v1_api::v1_mesh_handshake))
-        .route("/v1/mesh/manifest", get(xavier::server::v1_api::v1_mesh_manifest))
+        .route(
+            "/v1/mesh/identity",
+            get(xavier::server::v1_api::v1_mesh_identity),
+        )
+        .route(
+            "/v1/mesh/handshake",
+            post(xavier::server::v1_api::v1_mesh_handshake),
+        )
+        .route(
+            "/v1/mesh/manifest",
+            get(xavier::server::v1_api::v1_mesh_manifest),
+        )
         .route(
             "/v1/mesh/chunks/request",
             post(xavier::server::v1_api::v1_mesh_chunks_request),
         )
-        .route("/v1/mesh/chunks/push", post(xavier::server::v1_api::v1_mesh_chunks_push))
+        .route(
+            "/v1/mesh/chunks/push",
+            post(xavier::server::v1_api::v1_mesh_chunks_push),
+        )
         .layer(Extension(workspace_ctx));
 
     let addr = format!("127.0.0.1:{}", port);
@@ -167,8 +179,7 @@ async fn test_chunk_payload_encryption_roundtrip() {
     for entry in &chunk_files {
         let raw_data = std::fs::read(entry.path()).unwrap();
 
-        let encrypted =
-            xavier::crypto::encryption::encrypt_with_session_key(&raw_data).unwrap();
+        let encrypted = xavier::crypto::encryption::encrypt_with_session_key(&raw_data).unwrap();
 
         let serialized = encrypted.to_bytes();
         assert!(
@@ -178,8 +189,7 @@ async fn test_chunk_payload_encryption_roundtrip() {
         assert_eq!(serialized.len(), 12 + raw_data.len() + 16);
 
         let blob = xavier::crypto::encryption::EncryptedBlob::from_bytes(&serialized).unwrap();
-        let decrypted =
-            xavier::crypto::encryption::decrypt_with_session_key(&blob).unwrap();
+        let decrypted = xavier::crypto::encryption::decrypt_with_session_key(&blob).unwrap();
 
         assert_eq!(decrypted, raw_data, "Decrypted data must match original");
     }
@@ -374,7 +384,11 @@ async fn test_replay_attack_protection() {
     // Sequential handshakes with unique nonces — all should succeed
     for i in 0..3 {
         let resp = transport_a.handshake(&url_b, &token_a).await;
-        assert!(resp.is_ok(), "Handshake #{} should succeed with fresh nonce", i + 1);
+        assert!(
+            resp.is_ok(),
+            "Handshake #{} should succeed with fresh nonce",
+            i + 1
+        );
     }
 
     eprintln!("✅ test_replay_attack_protection: 3 sequential handshakes with different nonces OK");
@@ -446,7 +460,10 @@ async fn test_acl_clearance_enforcement() {
 
     for (_hash, data) in &chunks {
         let content_str = String::from_utf8_lossy(data);
-        assert!(!content_str.contains("SECRET:"), "Unclassified should NOT see SECRET content");
+        assert!(
+            !content_str.contains("SECRET:"),
+            "Unclassified should NOT see SECRET content"
+        );
     }
 
     // Upgrade to TopSecret
@@ -531,11 +548,17 @@ async fn test_acl_namespace_isolation() {
     let peer_b = make_test_peer(&identity_b, &url_b);
     let manifest = transport_a.fetch_manifest(&peer_b, &token_b).await.unwrap();
     let hashes: Vec<String> = manifest.chunks.iter().map(|c| c.hash.clone()).collect();
-    let chunks = transport_a.fetch_chunks(&peer_b, &token_b, &hashes).await.unwrap();
+    let chunks = transport_a
+        .fetch_chunks(&peer_b, &token_b, &hashes)
+        .await
+        .unwrap();
 
     for (_hash, data) in &chunks {
         let s = String::from_utf8_lossy(data);
-        assert!(!s.contains("Closed namespace"), "Should NOT see closed namespace");
+        assert!(
+            !s.contains("Closed namespace"),
+            "Should NOT see closed namespace"
+        );
     }
 
     // Restrict to "closed" namespace
@@ -554,14 +577,24 @@ async fn test_acl_namespace_isolation() {
 
     let manifest_c = transport_a.fetch_manifest(&peer_b, &token_b).await.unwrap();
     let hashes_c: Vec<String> = manifest_c.chunks.iter().map(|c| c.hash.clone()).collect();
-    let chunks_c = transport_a.fetch_chunks(&peer_b, &token_b, &hashes_c).await.unwrap();
+    let chunks_c = transport_a
+        .fetch_chunks(&peer_b, &token_b, &hashes_c)
+        .await
+        .unwrap();
 
     for (_hash, data) in &chunks_c {
         let s = String::from_utf8_lossy(data);
-        assert!(!s.contains("Open namespace"), "Should NOT see open namespace");
+        assert!(
+            !s.contains("Open namespace"),
+            "Should NOT see open namespace"
+        );
     }
 
-    eprintln!("✅ test_acl_namespace_isolation: open->{} closed->{}", manifest.chunks.len(), manifest_c.chunks.len());
+    eprintln!(
+        "✅ test_acl_namespace_isolation: open->{} closed->{}",
+        manifest.chunks.len(),
+        manifest_c.chunks.len()
+    );
 }
 
 #[tokio::test]
@@ -599,8 +632,19 @@ async fn test_acl_role_enforcement() {
     let manifest = transport_a.fetch_manifest(&peer_b, &token_b).await;
     assert!(manifest.is_ok(), "Viewer should fetch manifest");
 
-    let hashes: Vec<String> = manifest.unwrap().chunks.iter().map(|c| c.hash.clone()).collect();
-    assert!(transport_a.fetch_chunks(&peer_b, &token_b, &hashes).await.is_ok(), "Viewer should fetch chunks");
+    let hashes: Vec<String> = manifest
+        .unwrap()
+        .chunks
+        .iter()
+        .map(|c| c.hash.clone())
+        .collect();
+    assert!(
+        transport_a
+            .fetch_chunks(&peer_b, &token_b, &hashes)
+            .await
+            .is_ok(),
+        "Viewer should fetch chunks"
+    );
 
     eprintln!("✅ test_acl_role_enforcement: Viewer read access OK");
 }
@@ -731,9 +775,15 @@ async fn test_lww_merge_integrity() {
     }
 
     let mut conflicts = 0u64;
-    apply_changes_received(&*store_b, &push_diffs, &mut conflicts).await.unwrap();
+    apply_changes_received(&*store_b, &push_diffs, &mut conflicts)
+        .await
+        .unwrap();
 
-    let merged = store_b.get("episodic", "merge/shared-1").await.unwrap().unwrap();
+    let merged = store_b
+        .get("episodic", "merge/shared-1")
+        .await
+        .unwrap()
+        .unwrap();
     assert!(!merged.content.is_empty(), "Content must survive merge");
     assert!(merged.revision > 0, "Revision preserved");
 
@@ -840,9 +890,16 @@ async fn test_full_e2e_encrypted_mesh_sync_with_acl() {
     assert!(!manifest.chunks.is_empty());
 
     let hashes: Vec<String> = manifest.chunks.iter().map(|c| c.hash.clone()).collect();
-    let chunks_map = transport_a.fetch_chunks(&peer_b, &token_b, &hashes).await.unwrap();
-    assert_eq!(chunks_map.len(), hashes.len(),
-        "Should get exactly {} chunks back", hashes.len());
+    let chunks_map = transport_a
+        .fetch_chunks(&peer_b, &token_b, &hashes)
+        .await
+        .unwrap();
+    assert_eq!(
+        chunks_map.len(),
+        hashes.len(),
+        "Should get exactly {} chunks back",
+        hashes.len()
+    );
     for (_hash, data) in &chunks_map {
         assert!(!data.is_empty(), "Chunk content must not be empty");
     }
@@ -864,16 +921,25 @@ async fn test_full_e2e_encrypted_mesh_sync_with_acl() {
             .expect("Push encrypted chunk should succeed");
         // The server will accept and write the data (may or may not parse as valid chunk)
         // The important thing is the HTTP call succeeded
-        assert!(push_result.len() <= re_encrypted_push.len(),
+        assert!(
+            push_result.len() <= re_encrypted_push.len(),
             "Push response should be valid: got {} of {}",
-            push_result.len(), re_encrypted_push.len());
+            push_result.len(),
+            re_encrypted_push.len()
+        );
     }
 
     // Verify ACL persistence
     let acl_b_after = MeshAcl::load().unwrap();
-    let entry_a = acl_b_after.get_entry(&identity_a.node_id).expect("A in ACL");
+    let entry_a = acl_b_after
+        .get_entry(&identity_a.node_id)
+        .expect("A in ACL");
     assert_eq!(entry_a.role, Role::Admin, "Role must persist");
-    assert_eq!(entry_a.clearance, ClearanceLevel::TopSecret, "Clearance must persist");
+    assert_eq!(
+        entry_a.clearance,
+        ClearanceLevel::TopSecret,
+        "Clearance must persist"
+    );
 
     eprintln!("✅ test_full_e2e_encrypted_mesh_sync_with_acl: full E2E OK");
 }
@@ -895,25 +961,32 @@ async fn test_empty_workspace_sync() {
     let transport_a = MeshTransport::new(identity_a.clone());
 
     let mut acl_b = MeshAcl::load().unwrap();
-    acl_b.set_entry(
-        identity_a.node_id.clone(),
-        NodeAclEntry {
-            role: Role::Viewer,
-            clearance: ClearanceLevel::Unclassified,
-            namespaces: None,
-            public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
-        },
-    )
-    .unwrap();
+    acl_b
+        .set_entry(
+            identity_a.node_id.clone(),
+            NodeAclEntry {
+                role: Role::Viewer,
+                clearance: ClearanceLevel::Unclassified,
+                namespaces: None,
+                public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
+            },
+        )
+        .unwrap();
 
     let resp = transport_a.handshake(&url_b, &token_b).await.unwrap();
     assert!(resp.accepted);
 
     let peer_b = make_test_peer(&identity_b, &url_b);
     let manifest = transport_a.fetch_manifest(&peer_b, &token_b).await.unwrap();
-    assert!(manifest.chunks.is_empty(), "Empty workspace = empty manifest");
+    assert!(
+        manifest.chunks.is_empty(),
+        "Empty workspace = empty manifest"
+    );
 
-    let chunks = transport_a.fetch_chunks(&peer_b, &token_b, &[]).await.unwrap();
+    let chunks = transport_a
+        .fetch_chunks(&peer_b, &token_b, &[])
+        .await
+        .unwrap();
     assert!(chunks.is_empty());
 
     eprintln!("✅ test_empty_workspace_sync: empty manifest + empty fetch OK");

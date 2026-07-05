@@ -8,7 +8,10 @@ use xavier::server::alerts::SYSTEM_ALERTS;
 
 pub async fn health_handler() -> Response {
     let status = xavier::observability::health::HEALTH.get_status().await;
-    json_response(StatusCode::OK, serde_json::to_value(status).unwrap_or_default())
+    json_response(
+        StatusCode::OK,
+        serde_json::to_value(status).unwrap_or_default(),
+    )
 }
 
 pub async fn system_alerts_handler() -> Response {
@@ -57,8 +60,14 @@ pub async fn handle_health_command(cloud: bool) -> anyhow::Result<()> {
             println!("═══════════════════════════════════════════");
             println!("  System Health Status");
             println!("═══════════════════════════════════════════");
-            println!("  Status:      {}", data["status"].as_str().unwrap_or("unknown"));
-            println!("  Version:     {}", data["version"].as_str().unwrap_or("unknown"));
+            println!(
+                "  Status:      {}",
+                data["status"].as_str().unwrap_or("unknown")
+            );
+            println!(
+                "  Version:     {}",
+                data["version"].as_str().unwrap_or("unknown")
+            );
             println!("═══════════════════════════════════════════");
         } else {
             println!("❌ Failed to fetch health status: {}", resp.status());
@@ -134,7 +143,10 @@ pub async fn cloud_health_handler() -> Response {
     // Use library settings to avoid type mismatch with health check function
     let settings = xavier::settings::XavierSettings::current();
     let health = xavier::health::check_cloud_health(&settings).await;
-    json_response(StatusCode::OK, serde_json::to_value(health).unwrap_or_default())
+    json_response(
+        StatusCode::OK,
+        serde_json::to_value(health).unwrap_or_default(),
+    )
 }
 
 pub async fn version_handler() -> Response {

@@ -29,8 +29,17 @@ async fn handle_license_status() -> Result<()> {
         println!("║  Mesh License:  ✅ Accepted               ║");
         println!("║  Mesh features: ✅ Enabled                ║");
         println!("║  Governance:    ✅ Available               ║");
-        println!("║  Data Commons:  {:<36} ║",
-            if xavier::settings::XavierSettings::current().data_commons.enabled { "✅ Enabled" } else { "⬜ Disabled" });
+        println!(
+            "║  Data Commons:  {:<36} ║",
+            if xavier::settings::XavierSettings::current()
+                .data_commons
+                .enabled
+            {
+                "✅ Enabled"
+            } else {
+                "⬜ Disabled"
+            }
+        );
     } else {
         println!("║  Mesh License:  ❌ Not Accepted           ║");
         println!("║  Mesh features: ❌ Disabled                ║");
@@ -93,7 +102,10 @@ async fn handle_license_accept() -> Result<()> {
     // Persist
     if let Err(e) = xavier::settings::serialization::save(&settings).await {
         tracing::warn!(error = %e, "failed to persist license acceptance");
-        println!("⚠️  License accepted for this session but could not persist: {}", e);
+        println!(
+            "⚠️  License accepted for this session but could not persist: {}",
+            e
+        );
     } else {
         println!("✅ Mesh License accepted and saved!");
     }

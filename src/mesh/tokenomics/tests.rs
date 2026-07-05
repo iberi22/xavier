@@ -1,13 +1,13 @@
 #[cfg(test)]
 mod tests {
-    use crate::mesh::tokenomics::wallet::{InvestmentTier, Wallet, VestingState};
-    use crate::mesh::tokenomics::rewards::{RewardEngine, ContributionType};
-    use crate::mesh::tokenomics::vesting::VestingEngine;
-    use crate::mesh::tokenomics::economy::{EconomyEngine, CircuitBreakerLevel};
     use crate::mesh::node::NodeId;
+    use crate::mesh::tokenomics::economy::{CircuitBreakerLevel, EconomyEngine};
+    use crate::mesh::tokenomics::rewards::{ContributionType, RewardEngine};
+    use crate::mesh::tokenomics::vesting::VestingEngine;
+    use crate::mesh::tokenomics::wallet::{InvestmentTier, VestingState, Wallet};
+    use chrono::{Duration, Utc};
     use std::sync::Arc;
     use tokio::sync::Mutex;
-    use chrono::{Utc, Duration};
 
     #[tokio::test]
     async fn test_progressive_apy_rewards() {
@@ -62,9 +62,21 @@ mod tests {
     #[test]
     fn test_circuit_breakers() {
         let economy = EconomyEngine::new();
-        assert_eq!(economy.check_circuit_breakers(0.10), CircuitBreakerLevel::None);
-        assert_eq!(economy.check_circuit_breakers(0.16), CircuitBreakerLevel::Level1);
-        assert_eq!(economy.check_circuit_breakers(0.30), CircuitBreakerLevel::Level2);
-        assert_eq!(economy.check_circuit_breakers(0.45), CircuitBreakerLevel::Level3);
+        assert_eq!(
+            economy.check_circuit_breakers(0.10),
+            CircuitBreakerLevel::None
+        );
+        assert_eq!(
+            economy.check_circuit_breakers(0.16),
+            CircuitBreakerLevel::Level1
+        );
+        assert_eq!(
+            economy.check_circuit_breakers(0.30),
+            CircuitBreakerLevel::Level2
+        );
+        assert_eq!(
+            economy.check_circuit_breakers(0.45),
+            CircuitBreakerLevel::Level3
+        );
     }
 }

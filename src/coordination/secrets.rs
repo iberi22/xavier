@@ -42,7 +42,9 @@ impl LeakDetector {
 
         // Simple tokenization: split by common delimiters
         // In a real scenario, we might want to use a more sophisticated approach
-        for token in content.split(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == ',' || c == ':') {
+        for token in content
+            .split(|c: char| c.is_whitespace() || c == '"' || c == '\'' || c == ',' || c == ':')
+        {
             if token.is_empty() {
                 continue;
             }
@@ -260,7 +262,11 @@ impl KeyLendingEngine {
         let mut leases = self.leases.write().await;
         if let Some(lease) = leases.get_mut(token) {
             let now = Utc::now();
-            let base = if lease.is_expired() { now } else { lease.expires_at };
+            let base = if lease.is_expired() {
+                now
+            } else {
+                lease.expires_at
+            };
             lease.expires_at = base + Duration::seconds(seconds as i64);
             tracing::info!("Applied backoff to secret lease: {} (+{}s)", token, seconds);
             Ok(())
@@ -277,7 +283,8 @@ impl KeyLendingEngine {
 
     /// Log proxy use for a lease token
     pub fn log_proxy_use(&self, agent_id: &str, lease_token: &str, endpoint: &str) {
-        self.audit_logger.log_proxy_use(agent_id, lease_token, endpoint);
+        self.audit_logger
+            .log_proxy_use(agent_id, lease_token, endpoint);
     }
 
     /// Cleanup expired leases
@@ -308,7 +315,14 @@ mod tests {
 
     struct MockAuditLogger;
     impl AuditLogger for MockAuditLogger {
-        fn log_lend(&self, _agent_id: &str, _secret_name: &str, _lease_token: &str, _ttl_secs: u64) {}
+        fn log_lend(
+            &self,
+            _agent_id: &str,
+            _secret_name: &str,
+            _lease_token: &str,
+            _ttl_secs: u64,
+        ) {
+        }
         fn log_revoke(&self, _agent_id: &str, _lease_token: &str, _reason: &str) {}
         fn log_proxy_use(&self, _agent_id: &str, _lease_token: &str, _endpoint: &str) {}
     }
@@ -344,7 +358,10 @@ mod tests {
         let secret = "secret-value";
         let agent_id = "agent-1";
 
-        engine.lend("test-secret", Some(secret), agent_id, 3600).await.unwrap();
+        engine
+            .lend("test-secret", Some(secret), agent_id, 3600)
+            .await
+            .unwrap();
 
         let leak = engine.leak_detector.check_leak(secret).await;
         assert!(leak.is_some());

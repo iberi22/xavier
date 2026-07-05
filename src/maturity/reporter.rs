@@ -146,19 +146,32 @@ impl MaturityReport {
                 let missing: Vec<String> = subcomponents
                     .iter()
                     .filter(|s| s.maturity < 90)
-                    .map(|s| format!("{}: {}% (tests {}/{})", s.name, s.maturity, s.tests_passing, s.tests_total))
+                    .map(|s| {
+                        format!(
+                            "{}: {}% (tests {}/{})",
+                            s.name, s.maturity, s.tests_passing, s.tests_total
+                        )
+                    })
                     .collect();
 
                 // Determine memory/issue health as aggregate of subcomponents
                 let avg_memory = if subcomponents.is_empty() {
                     0u8
                 } else {
-                    (subcomponents.iter().map(|s| s.memory_usage as u32).sum::<u32>() / subcomponents.len() as u32) as u8
+                    (subcomponents
+                        .iter()
+                        .map(|s| s.memory_usage as u32)
+                        .sum::<u32>()
+                        / subcomponents.len() as u32) as u8
                 };
                 let avg_issues = if subcomponents.is_empty() {
                     0u8
                 } else {
-                    (subcomponents.iter().map(|s| s.issue_health as u32).sum::<u32>() / subcomponents.len() as u32) as u8
+                    (subcomponents
+                        .iter()
+                        .map(|s| s.issue_health as u32)
+                        .sum::<u32>()
+                        / subcomponents.len() as u32) as u8
                 };
 
                 ReportFeature {
@@ -213,8 +226,7 @@ impl MaturityReport {
     pub fn write_json(&self, path: &Path) -> Result<(), String> {
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| format!("Serialization error: {}", e))?;
-        std::fs::write(path, &json)
-            .map_err(|e| format!("Write error: {}", e))?;
+        std::fs::write(path, &json).map_err(|e| format!("Write error: {}", e))?;
         Ok(())
     }
 
@@ -240,12 +252,17 @@ impl MaturityReport {
             };
             md.push_str(&format!(
                 "| {} {} | {}% | {} | {} | {}% | {}% |\n",
-                status_icon, feat.name, feat.maturity_percent, feat.status,
-                feat.subcomponents.iter()
+                status_icon,
+                feat.name,
+                feat.maturity_percent,
+                feat.status,
+                feat.subcomponents
+                    .iter()
                     .map(|s| format!("{}: {}%", s.name, s.maturity))
                     .collect::<Vec<_>>()
                     .join(", "),
-                feat.memory_usage, feat.issue_health
+                feat.memory_usage,
+                feat.issue_health
             ));
         }
 

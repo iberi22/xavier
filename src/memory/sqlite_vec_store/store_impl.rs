@@ -44,7 +44,9 @@ impl MemoryStore for VecSqliteMemoryStore {
         let mut record = record;
 
         // Auto-generate missing embeddings if a provider is configured
-        if record.embedding.is_empty() && crate::memory::embedder::EmbeddingClient::is_configured_from_env() {
+        if record.embedding.is_empty()
+            && crate::memory::embedder::EmbeddingClient::is_configured_from_env()
+        {
             if let Ok(client) = crate::memory::embedder::EmbeddingClient::from_env_async().await {
                 if let Ok(vector) = client.embed(&record.content).await {
                     record.embedding = vector;
@@ -557,7 +559,8 @@ impl MemoryStore for VecSqliteMemoryStore {
         token: SessionTokenRecord,
     ) -> Result<()> {
         let workspace_id = workspace_id.to_string();
-        let token_key = crate::memory::store::stable_key("session_token_row", &[&workspace_id, &token.token]);
+        let token_key =
+            crate::memory::store::stable_key("session_token_row", &[&workspace_id, &token.token]);
         let token_val = token.token;
         let created_at = token.created_at.to_rfc3339();
         let expires_at = token.expires_at.to_rfc3339();
@@ -581,18 +584,21 @@ impl MemoryStore for VecSqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         let token = token.to_string();
 
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let token_key = crate::memory::store::stable_key("session_token_row", &[&workspace_id, &token]);
-            let now = chrono::Utc::now().to_rfc3339();
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                let token_key =
+                    crate::memory::store::stable_key("session_token_row", &[&workspace_id, &token]);
+                let now = chrono::Utc::now().to_rfc3339();
 
-            let count: i32 = conn.query_row(
-                "SELECT COUNT(*) FROM session_tokens WHERE id = ? AND expires_at > ?",
-                params![token_key, now],
-                |row| row.get(0),
-            )?;
+                let count: i32 = conn.query_row(
+                    "SELECT COUNT(*) FROM session_tokens WHERE id = ? AND expires_at > ?",
+                    params![token_key, now],
+                    |row| row.get(0),
+                )?;
 
-            Ok(count > 0)
-        }).await
+                Ok(count > 0)
+            })
+            .await
     }
 
     async fn save_checkpoint(&self, workspace_id: &str, checkpoint: Checkpoint) -> Result<()> {

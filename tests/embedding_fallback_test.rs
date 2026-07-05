@@ -9,7 +9,10 @@ async fn test_embedding_fallback_cloud_to_gllm() -> Result<()> {
     let mock_cloud_service = Router::new().route(
         "/v1/embeddings",
         post(|| async {
-            (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Cloud provider failed")
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Cloud provider failed",
+            )
         }),
     );
 
@@ -38,7 +41,12 @@ async fn test_embedding_fallback_cloud_to_gllm() -> Result<()> {
             let err_msg = e.to_string();
             println!("Embedding error: {}", err_msg);
             // Verify it mentions GLLM or the fact that it tried fallback
-            assert!(err_msg.contains("gllm") || err_msg.contains("local-gllm") || err_msg.contains("unavailable") || err_msg.contains("embedding network error"));
+            assert!(
+                err_msg.contains("gllm")
+                    || err_msg.contains("local-gllm")
+                    || err_msg.contains("unavailable")
+                    || err_msg.contains("embedding network error")
+            );
         }
     }
 

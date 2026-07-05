@@ -77,7 +77,9 @@ Output format (JSON):
             gap_report.critical_modules
         );
 
-        let response = runtime.run(&prompt, None, Some("evolve".to_string())).await?;
+        let response = runtime
+            .run(&prompt, None, Some("evolve".to_string()))
+            .await?;
 
         // Extract JSON from response (robustly)
         let json_str = self.extract_json(&response.response)?;
@@ -91,12 +93,20 @@ Output format (JSON):
         };
 
         let mut h = Hypothesis::new(
-            parsed["description"].as_str().unwrap_or("Dynamic improvement").to_string(),
+            parsed["description"]
+                .as_str()
+                .unwrap_or("Dynamic improvement")
+                .to_string(),
             h_type,
         );
 
-        h.files = parsed["files"].as_array()
-            .map(|arr| arr.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect())
+        h.files = parsed["files"]
+            .as_array()
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect()
+            })
             .unwrap_or_default();
 
         h.patch = parsed["patch"].as_str().unwrap_or_default().to_string();
@@ -106,13 +116,19 @@ Output format (JSON):
     }
 
     fn extract_json(&self, text: &str) -> Result<String> {
-        let json_start = text.find('{').ok_or_else(|| anyhow!("No JSON start found in LLM response"))?;
-        let json_end = text.rfind('}').ok_or_else(|| anyhow!("No JSON end found in LLM response"))? + 1;
+        let json_start = text
+            .find('{')
+            .ok_or_else(|| anyhow!("No JSON start found in LLM response"))?;
+        let json_end = text
+            .rfind('}')
+            .ok_or_else(|| anyhow!("No JSON end found in LLM response"))?
+            + 1;
         Ok(text[json_start..json_end].to_string())
     }
 
     async fn generate_fallback_hypothesis(&self) -> Result<Hypothesis> {
-        let hypotheses = [Hypothesis::optimization(
+        let hypotheses = [
+            Hypothesis::optimization(
                 "add retrieval cache layer".to_string(),
                 vec!["src/memory/mod.rs".to_string()],
                 r#"
@@ -153,9 +169,11 @@ pub fn hash_embedding(embedding: &[f32]) -> u64 {
 "#
                 .to_string(),
                 3,
-            )];
+            ),
+        ];
 
-        let idx = (chrono::Utc::now().timestamp() % hypotheses.len() as i64).unsigned_abs() as usize;
+        let idx =
+            (chrono::Utc::now().timestamp() % hypotheses.len() as i64).unsigned_abs() as usize;
         let hypothesis = hypotheses[idx].clone();
 
         info!(

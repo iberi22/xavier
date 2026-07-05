@@ -1,7 +1,7 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use xavier::memory::qmd::{compute_minhash, jaccard_similarity, MemoryDocument};
-use xavier::consolidation::merger::similarity;
 use rand::Rng;
+use xavier::consolidation::merger::similarity;
+use xavier::memory::qmd::{compute_minhash, jaccard_similarity, MemoryDocument};
 
 fn generate_random_text(size: usize) -> String {
     let mut rng = rand::thread_rng();
@@ -67,7 +67,7 @@ fn bulk_comparison_bench(c: &mut Criterion) {
                 for j in i + 1..num_docs {
                     let sim = jaccard_similarity(
                         docs[i].minhash.as_ref().unwrap(),
-                        docs[j].minhash.as_ref().unwrap()
+                        docs[j].minhash.as_ref().unwrap(),
                     );
                     black_box(sim);
                 }
@@ -83,7 +83,7 @@ fn bulk_comparison_bench(c: &mut Criterion) {
                     // because the merger's similarity now includes MinHash.
                     let sim = xavier::memory::qmd_memory::cosine_similarity(
                         docs[i].content_vector.as_ref().unwrap(),
-                        docs[j].content_vector.as_ref().unwrap()
+                        docs[j].content_vector.as_ref().unwrap(),
                     );
                     black_box(sim);
                 }
@@ -92,5 +92,10 @@ fn bulk_comparison_bench(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, minhash_bench, cosine_similarity_bench, bulk_comparison_bench);
+criterion_group!(
+    benches,
+    minhash_bench,
+    cosine_similarity_bench,
+    bulk_comparison_bench
+);
 criterion_main!(benches);

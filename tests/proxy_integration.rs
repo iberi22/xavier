@@ -42,6 +42,8 @@ async fn test_proxy_use_case_rate_limited() {
         lease_token: None,
     };
 
-    let result = use_case.execute_secured(cmd, false, secrets_engine, event_bus).await;
+    let result = use_case
+        .execute_secured(cmd, false, secrets_engine, event_bus)
+        .await;
     assert!(matches!(result, Err(ProxyError::RateLimited)));
 }

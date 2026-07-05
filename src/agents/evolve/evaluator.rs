@@ -85,9 +85,7 @@ impl Evaluator {
         let summary = load_summary(&output_dir)?;
         let score = summary["metrics"]["overall"]["token_f1"]
             .as_f64()
-            .or_else(|| {
-                summary["modes"]["assisted"]["metrics"]["overall"]["token_f1"].as_f64()
-            })
+            .or_else(|| summary["modes"]["assisted"]["metrics"]["overall"]["token_f1"].as_f64())
             .ok_or_else(|| anyhow!("LoCoMo summary missing token_f1"))? as f32;
 
         info!(score = score, "LoCoMo benchmark complete");

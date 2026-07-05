@@ -17,7 +17,7 @@ pub struct SimpleMemoryDoc {
     pub id: String,
     pub path: String,
     pub content: String,
-    pub keywords: Vec<String>,  // Pre-extracted keywords for search
+    pub keywords: Vec<String>, // Pre-extracted keywords for search
     pub metadata: serde_json::Value,
     pub created_at: u64,
 }
@@ -42,9 +42,8 @@ impl SimpleMemoryDoc {
 /// Extract keywords for indexing
 pub fn extract_keywords(content: &str) -> Vec<String> {
     let stop_words = [
-        "the", "is", "at", "which", "on", "a", "an", "and", "or", "but",
-        "in", "to", "for", "of", "with", "by", "from", "as", "it", "be",
-        "this",
+        "the", "is", "at", "which", "on", "a", "an", "and", "or", "but", "in", "to", "for", "of",
+        "with", "by", "from", "as", "it", "be", "this",
     ];
 
     let mut keywords = Vec::new();
@@ -86,10 +85,7 @@ impl SimpleMemoryIndex {
 
         // Index all keywords
         for kw in &doc.keywords {
-            self.keyword_index
-                .entry(kw.clone())
-                .or_default()
-                .push(idx);
+            self.keyword_index.entry(kw.clone()).or_default().push(idx);
         }
 
         self.docs.push(doc);
@@ -128,7 +124,11 @@ impl SimpleMemoryIndex {
             })
             .collect();
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.truncate(limit);
         results
     }

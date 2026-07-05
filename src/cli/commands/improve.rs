@@ -23,9 +23,9 @@ pub async fn handle_improve_command(cmd: ImproveCommand) -> Result<()> {
 /// Run a full auto-improvement cycle against the local memory store.
 async fn run_cycle(autonomous: bool, json: bool) -> Result<()> {
     let settings = XavierSettings::default();
-    let memory = load_spawn_memory().await.map_err(|e| {
-        anyhow::anyhow!("Failed to load local memory for benchmarking: {e}")
-    })?;
+    let memory = load_spawn_memory()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load local memory for benchmarking: {e}"))?;
 
     let engine = AutoImprovementEngine::new()
         .with_memory(memory)
@@ -50,8 +50,14 @@ async fn run_cycle(autonomous: bool, json: bool) -> Result<()> {
     println!("\nBenchmark:");
     println!("  recall@k:        {:.3}", cycle.benchmark.recall_at_k);
     println!("  precision:       {:.3}", cycle.benchmark.precision);
-    println!("  avg latency:     {:.1} ms", cycle.benchmark.avg_latency_ms);
-    println!("  p99 latency:     {:.1} ms", cycle.benchmark.p99_latency_ms);
+    println!(
+        "  avg latency:     {:.1} ms",
+        cycle.benchmark.avg_latency_ms
+    );
+    println!(
+        "  p99 latency:     {:.1} ms",
+        cycle.benchmark.p99_latency_ms
+    );
     println!("  cache hit rate:  {:.1}%", cycle.benchmark.cache_hit_rate);
     println!("  documents:       {}", cycle.benchmark.total_documents);
     println!("  health:          {}", cycle.benchmark.health_status);
@@ -107,9 +113,9 @@ async fn run_cycle(autonomous: bool, json: bool) -> Result<()> {
 /// the engine history is in-memory and not persisted across CLI invocations).
 async fn show_status() -> Result<()> {
     let settings = XavierSettings::default();
-    let memory = load_spawn_memory().await.map_err(|e| {
-        anyhow::anyhow!("Failed to load local memory: {e}")
-    })?;
+    let memory = load_spawn_memory()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load local memory: {e}"))?;
 
     let engine = AutoImprovementEngine::new().with_memory(memory);
     let snapshot = engine.run_benchmark(&settings, None).await;

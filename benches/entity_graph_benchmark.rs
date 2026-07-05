@@ -21,7 +21,12 @@ fn bench_entity_graph(c: &mut Criterion) {
         b.iter(|| {
             rt.block_on(async {
                 let _ = graph
-                    .relations_for_entity("Alice", 2, None, xavier::memory::entity_graph::GraphDirection::Both)
+                    .relations_for_entity(
+                        "Alice",
+                        2,
+                        None,
+                        xavier::memory::entity_graph::GraphDirection::Both,
+                    )
                     .await
                     .unwrap();
             });

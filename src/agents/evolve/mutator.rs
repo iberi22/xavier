@@ -1,7 +1,7 @@
 //! Mutator Agent - Generates mutations for experiments
 
-use crate::agents::evolve::reflector::Insights;
 use crate::agents::evolve::experiment::Hypothesis;
+use crate::agents::evolve::reflector::Insights;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use tracing::info;
@@ -22,10 +22,7 @@ pub enum Mutation {
         new_value: bool,
     },
     /// Structural change (e.g., add/remove pipeline steps)
-    Structural {
-        operation: String,
-        target: String,
-    },
+    Structural { operation: String, target: String },
 }
 
 /// Mutator - Generates new hypotheses by mutating existing configurations or code
@@ -90,28 +87,30 @@ impl Mutator {
     /// Transform a mutation into a testable Hypothesis
     pub fn mutation_to_hypothesis(&self, mutation: &Mutation) -> Hypothesis {
         match mutation {
-            Mutation::Numeric { name, old_value, new_value } => {
-                Hypothesis::hyperparameter(
-                    format!("Update {} from {} to {}", name, old_value, new_value),
-                    vec!["src/config.rs".to_string()],
-                    format!("{}={}", name, new_value),
-                )
-            },
-            Mutation::Toggle { name, old_value, new_value } => {
-                Hypothesis::hyperparameter(
-                    format!("Flip {} from {} to {}", name, old_value, new_value),
-                    vec!["src/config.rs".to_string()],
-                    format!("{}={}", name, new_value),
-                )
-            },
-            Mutation::Structural { operation, target } => {
-                Hypothesis::architecture(
-                    format!("{} pipeline step: {}", operation, target),
-                    vec!["src/agents/pipeline.rs".to_string()],
-                    format!("{} {}", operation, target),
-                    10,
-                )
-            }
+            Mutation::Numeric {
+                name,
+                old_value,
+                new_value,
+            } => Hypothesis::hyperparameter(
+                format!("Update {} from {} to {}", name, old_value, new_value),
+                vec!["src/config.rs".to_string()],
+                format!("{}={}", name, new_value),
+            ),
+            Mutation::Toggle {
+                name,
+                old_value,
+                new_value,
+            } => Hypothesis::hyperparameter(
+                format!("Flip {} from {} to {}", name, old_value, new_value),
+                vec!["src/config.rs".to_string()],
+                format!("{}={}", name, new_value),
+            ),
+            Mutation::Structural { operation, target } => Hypothesis::architecture(
+                format!("{} pipeline step: {}", operation, target),
+                vec!["src/agents/pipeline.rs".to_string()],
+                format!("{} {}", operation, target),
+                10,
+            ),
         }
     }
 }

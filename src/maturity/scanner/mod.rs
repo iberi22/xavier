@@ -12,20 +12,20 @@
 //! - `memory_scanner`: Layer 3 — evidence from sessions & usages
 //! - `conversations_scanner`: Layer 4 — project intelligence
 
-pub mod old_types;
 pub mod code_graph;
-pub mod test_scanner;
-pub mod memory_scanner;
 pub mod conversations_scanner;
+pub mod memory_scanner;
+pub mod old_types;
+pub mod test_scanner;
 
 // Re-export backward-compatible types
 pub use old_types::{CodeGraphScan, TestListScan};
 
-use std::time::{Duration, Instant};
 use std::collections::HashMap;
-use std::sync::mpsc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 /// Timing info for each layer.
 #[derive(Debug, Clone)]
@@ -117,20 +117,28 @@ pub fn scan_all_with_progress(
             Ok(val) => (val, None),
             Err(e) => {
                 let err_clone = e.clone();
-                (code_graph::CodeGraphScanResult {
-                    feature_scans: HashMap::new(),
-                    total_symbols: 0,
-                    total_found: 0,
-                    errors: vec![e],
-                    timing_ms: 0,
-                }, Some(err_clone))
+                (
+                    code_graph::CodeGraphScanResult {
+                        feature_scans: HashMap::new(),
+                        total_symbols: 0,
+                        total_found: 0,
+                        errors: vec![e],
+                        timing_ms: 0,
+                    },
+                    Some(err_clone),
+                )
             }
         }
     };
     if let Some(e) = static_err {
         errors.push(e);
     }
-    emit_progress(on_progress, "static", &static_res.timing_ms, &static_res.errors);
+    emit_progress(
+        on_progress,
+        "static",
+        &static_res.timing_ms,
+        &static_res.errors,
+    );
 
     // Layer 2: Test scanner
     let (test_res, test_err) = {
@@ -141,12 +149,15 @@ pub fn scan_all_with_progress(
             Ok(val) => (val, None),
             Err(e) => {
                 let err_clone = e.clone();
-                (test_scanner::TestListScanResult {
-                    all_tests: Vec::new(),
-                    feature_tests: HashMap::new(),
-                    errors: vec![e],
-                    timing_ms: 0,
-                }, Some(err_clone))
+                (
+                    test_scanner::TestListScanResult {
+                        all_tests: Vec::new(),
+                        feature_tests: HashMap::new(),
+                        errors: vec![e],
+                        timing_ms: 0,
+                    },
+                    Some(err_clone),
+                )
             }
         }
     };
@@ -164,11 +175,14 @@ pub fn scan_all_with_progress(
             Ok(val) => (val, None),
             Err(e) => {
                 let err_clone = e.clone();
-                (memory_scanner::MemoryScanResult {
-                    feature_evidence: HashMap::new(),
-                    errors: vec![e],
-                    timing_ms: 0,
-                }, Some(err_clone))
+                (
+                    memory_scanner::MemoryScanResult {
+                        feature_evidence: HashMap::new(),
+                        errors: vec![e],
+                        timing_ms: 0,
+                    },
+                    Some(err_clone),
+                )
             }
         }
     };
@@ -185,18 +199,26 @@ pub fn scan_all_with_progress(
             Ok(val) => (val, None),
             Err(e) => {
                 let err_clone = e.clone();
-                (conversations_scanner::ConversationScanResult {
-                    feature_evidence: HashMap::new(),
-                    errors: vec![e],
-                    timing_ms: 0,
-                }, Some(err_clone))
+                (
+                    conversations_scanner::ConversationScanResult {
+                        feature_evidence: HashMap::new(),
+                        errors: vec![e],
+                        timing_ms: 0,
+                    },
+                    Some(err_clone),
+                )
             }
         }
     };
     if let Some(e) = conv_err {
         errors.push(e);
     }
-    emit_progress(on_progress, "conversations", &conv_res.timing_ms, &conv_res.errors);
+    emit_progress(
+        on_progress,
+        "conversations",
+        &conv_res.timing_ms,
+        &conv_res.errors,
+    );
 
     let elapsed = start.elapsed();
 
@@ -241,12 +263,17 @@ fn emit_progress(cb: Option<&dyn Fn(&str)>, layer: &str, timing_ms: &u64, layer_
 fn build_static_results(res: &code_graph::CodeGraphScanResult) -> HashMap<String, (usize, usize)> {
     let mut map = HashMap::new();
     for (feat_id, scan) in &res.feature_scans {
-        map.insert(feat_id.clone(), (scan.found.len(), scan.missing.len() + scan.found.len()));
+        map.insert(
+            feat_id.clone(),
+            (scan.found.len(), scan.missing.len() + scan.found.len()),
+        );
     }
     map
 }
 
-fn build_test_results(res: &test_scanner::TestListScanResult) -> HashMap<String, (Vec<String>, Vec<String>)> {
+fn build_test_results(
+    res: &test_scanner::TestListScanResult,
+) -> HashMap<String, (Vec<String>, Vec<String>)> {
     let mut map = HashMap::new();
     for (feat_id, (passing, total)) in &res.feature_tests {
         map.insert(feat_id.clone(), (passing.clone(), total.clone()));
@@ -254,7 +281,9 @@ fn build_test_results(res: &test_scanner::TestListScanResult) -> HashMap<String,
     map
 }
 
-fn build_memory_evidence(res: &memory_scanner::MemoryScanResult) -> HashMap<String, memory_scanner::MemoryEvidence> {
+fn build_memory_evidence(
+    res: &memory_scanner::MemoryScanResult,
+) -> HashMap<String, memory_scanner::MemoryEvidence> {
     let mut map = HashMap::new();
     for (feat_id, evidence) in &res.feature_evidence {
         map.insert(feat_id.clone(), evidence.clone());
@@ -262,7 +291,9 @@ fn build_memory_evidence(res: &memory_scanner::MemoryScanResult) -> HashMap<Stri
     map
 }
 
-fn build_conversation_evidence(res: &conversations_scanner::ConversationScanResult) -> HashMap<String, conversations_scanner::ConversationEvidence> {
+fn build_conversation_evidence(
+    res: &conversations_scanner::ConversationScanResult,
+) -> HashMap<String, conversations_scanner::ConversationEvidence> {
     let mut map = HashMap::new();
     for (feat_id, evidence) in &res.feature_evidence {
         map.insert(feat_id.clone(), evidence.clone());

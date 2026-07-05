@@ -37,10 +37,10 @@ pub mod analyzer;
 pub mod detector;
 pub mod fixer;
 pub mod health;
-pub mod token_accounting;
 pub mod middleware;
 pub mod notifier;
 pub mod service_log;
+pub mod token_accounting;
 
 pub use analyzer::ErrorAnalyzer;
 pub use detector::LogDetector;

@@ -198,7 +198,10 @@ impl RustParser {
         // impl Trait for Struct { ... } -> Struct
         // impl Struct { ... } -> Struct
         if let Some(type_node) = node.child_by_field_name("type") {
-            return type_node.utf8_text(source.as_bytes()).ok().map(|s| s.to_string());
+            return type_node
+                .utf8_text(source.as_bytes())
+                .ok()
+                .map(|s| s.to_string());
         }
         None
     }
@@ -217,15 +220,7 @@ impl RustParser {
         match node.kind() {
             "identifier" => {
                 if node.utf8_text(source.as_bytes()).is_ok() {
-                    self.push_symbol(
-                        symbols,
-                        symbol_node,
-                        node,
-                        source,
-                        file_path,
-                        kind,
-                        parent,
-                    );
+                    self.push_symbol(symbols, symbol_node, node, source, file_path, kind, parent);
                 }
             }
             "tuple_pattern" | "struct_pattern" | "slice_pattern" => {
@@ -274,8 +269,8 @@ impl RustParser {
     ) {
         let start = node.start_position();
         let end = node.end_position();
-        let complexity =
-            (kind == SymbolKind::Function || kind == SymbolKind::Method).then(|| cyclomatic_complexity(node, source));
+        let complexity = (kind == SymbolKind::Function || kind == SymbolKind::Method)
+            .then(|| cyclomatic_complexity(node, source));
 
         symbols.push(Symbol {
             id: None,

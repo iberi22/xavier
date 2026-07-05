@@ -269,10 +269,7 @@ pub fn score_context_usefulness(input: &ContextUsefulnessInput, params: &Scoring
 
 /// Compute a composite score from multiple evidence sources.
 /// Pure function.
-pub fn score_composite(
-    evidence: &EvidenceBundle,
-    params: &ScoringParams,
-) -> (f64, Vec<String>) {
+pub fn score_composite(evidence: &EvidenceBundle, params: &ScoringParams) -> (f64, Vec<String>) {
     let mut scores = Vec::new();
     let mut explanations = Vec::new();
 
@@ -319,11 +316,7 @@ pub enum PenaltyReason {
 
 /// Apply penalty modifiers to a raw score.
 /// Pure function.
-pub fn apply_penalties(
-    raw_score: f64,
-    reasons: &[PenaltyReason],
-    params: &ScoringParams,
-) -> f64 {
+pub fn apply_penalties(raw_score: f64, reasons: &[PenaltyReason], params: &ScoringParams) -> f64 {
     let _ = params; // Reserved for future parameterized penalties
     let penalty: f64 = reasons.iter().fold(0.0, |acc, r| {
         acc + match r {
@@ -417,7 +410,11 @@ mod tests {
         };
         let p = ScoringParams::default();
         let score = score_contribution(&input, &p);
-        assert!(score > 0.5, "high quality should score > 0.5, got {:.3}", score);
+        assert!(
+            score > 0.5,
+            "high quality should score > 0.5, got {:.3}",
+            score
+        );
         assert!(score <= 1.0, "score should be capped at 1.0");
     }
 
@@ -456,7 +453,11 @@ mod tests {
         };
         let p = ScoringParams::default();
         let score = score_context_usefulness(&input, &p);
-        assert!(score > 0.8, "perfect context should score > 0.8, got {:.3}", score);
+        assert!(
+            score > 0.8,
+            "perfect context should score > 0.8, got {:.3}",
+            score
+        );
     }
 
     /// REGRESSION FIXTURE: composite score
@@ -500,7 +501,11 @@ mod tests {
         let penalties = vec![PenaltyReason::Spam];
         let p = ScoringParams::default();
         let final_score = apply_penalties(score, &penalties, &p);
-        assert!((final_score - 0.3).abs() < f64::EPSILON, "expected 0.3, got {:.3}", final_score);
+        assert!(
+            (final_score - 0.3).abs() < f64::EPSILON,
+            "expected 0.3, got {:.3}",
+            final_score
+        );
     }
 
     /// REGRESSION FIXTURE: multiple penalties don't go below 0
@@ -566,14 +571,7 @@ mod tests {
             },
         };
 
-        let reasons = detect_spam_patterns(
-            &input,
-            &[
-                input.clone(),
-                input.clone(),
-                input.clone(),
-            ],
-        );
+        let reasons = detect_spam_patterns(&input, &[input.clone(), input.clone(), input.clone()]);
         // Should find both LowValue and possibly Spam
         assert!(!reasons.is_empty());
     }

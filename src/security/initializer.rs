@@ -3,11 +3,11 @@
 //! Orchestrates the first boot security setup, including Master Key generation,
 //! RSA keypair creation, and encrypted database initialization.
 
-use anyhow::Result;
+use crate::codebase::connection_manager::ConnectionManager;
+use crate::secrets::local_vault::LocalSecretsVault;
 use crate::security::encryption_keys::MasterKeyManager;
 use crate::security::rsa_keys::RsaKeypairManager;
-use crate::secrets::local_vault::LocalSecretsVault;
-use crate::codebase::connection_manager::ConnectionManager;
+use anyhow::Result;
 
 /// Handles the initial security setup of the system.
 pub struct SecurityInitializer;
@@ -37,7 +37,8 @@ impl SecurityInitializer {
         cm.with_conn("auth", |conn| {
             conn.execute_batch("PRAGMA integrity_check;")?;
             Ok(())
-        }).await?;
+        })
+        .await?;
         println!("✅ Encrypted Auth Database initialized");
 
         println!("Xavier security system initialization complete.");

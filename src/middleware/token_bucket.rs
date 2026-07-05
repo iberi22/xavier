@@ -1,5 +1,5 @@
-use std::time::{Duration, Instant};
 use parking_lot::Mutex;
+use std::time::{Duration, Instant};
 
 /// A simple Token Bucket rate limiter.
 pub struct TokenBucket {

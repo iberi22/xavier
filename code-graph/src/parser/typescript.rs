@@ -228,7 +228,12 @@ impl TypeScriptParser {
             "object_pattern" | "array_pattern" => {
                 let mut cursor = node.walk();
                 for child in node.children(&mut cursor) {
-                    if child.kind() == "{" || child.kind() == "}" || child.kind() == "[" || child.kind() == "]" || child.kind() == "," {
+                    if child.kind() == "{"
+                        || child.kind() == "}"
+                        || child.kind() == "["
+                        || child.kind() == "]"
+                        || child.kind() == ","
+                    {
                         continue;
                     }
                     // In patterns, we might have shorthand_property_identifier, or [identifier, identifier]

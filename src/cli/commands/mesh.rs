@@ -5,7 +5,10 @@ use crate::cli::config::resolve_http_token;
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use std::sync::Arc;
-use xavier::mesh::{NodeId, NodeIdentity, PeerInfo, PeerRegistry, MeshTransport, pairing_registry::PairingSecretRegistry};
+use xavier::mesh::{
+    pairing_registry::PairingSecretRegistry, MeshTransport, NodeId, NodeIdentity, PeerInfo,
+    PeerRegistry,
+};
 use xavier::sync::SyncTransport;
 
 pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
@@ -18,7 +21,10 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
             let identity = NodeIdentity::load_or_create()?;
             println!("Xavier Mesh Identity:");
             println!("  NodeID:     {}", identity.node_id);
-            println!("  Public Key: {}", xavier::crypto::hex_encode(&identity.public_key));
+            println!(
+                "  Public Key: {}",
+                xavier::crypto::hex_encode(&identity.public_key)
+            );
             println!("  Version:    {}", env!("CARGO_PKG_VERSION"));
         }
         MeshCommand::AddPeer {
@@ -116,7 +122,6 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
 
             let identity = Arc::new(NodeIdentity::load_or_create()?);
             let transport = SyncTransport::for_peer(peer, identity.clone())?;
-
 
             let token = resolve_http_token().unwrap_or_default();
 
@@ -233,11 +238,15 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                     // Publish manifest if in cloud mode
                     let mesh_manifest = xavier::mesh::protocol::MeshManifest {
                         node_id: identity.node_id.clone(),
-                        chunks: manifest.chunks.values().map(|c| xavier::mesh::protocol::ChunkRef {
-                            hash: c.hash.clone(),
-                            document_count: c.document_ids.len(),
-                            created_at: c.created_at,
-                        }).collect(),
+                        chunks: manifest
+                            .chunks
+                            .values()
+                            .map(|c| xavier::mesh::protocol::ChunkRef {
+                                hash: c.hash.clone(),
+                                document_count: c.document_ids.len(),
+                                created_at: c.created_at,
+                            })
+                            .collect(),
                         generated_at: chrono::Utc::now().timestamp(),
                     };
                     transport.publish_manifest(&mesh_manifest).await?;
@@ -271,7 +280,10 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
         }
         MeshCommand::Join { code } => {
             let data = xavier::mesh::pairing::decode_pairing_code(&code)?;
-            println!("🔗 Joining Xavier Mesh node: {} at {}", data.node_id, data.endpoint);
+            println!(
+                "🔗 Joining Xavier Mesh node: {} at {}",
+                data.node_id, data.endpoint
+            );
 
             let mut registry = PeerRegistry::load()?;
             let peer = PeerInfo {
@@ -295,7 +307,10 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
             let token = resolve_http_token().unwrap_or_default();
 
             println!("Verifying connection with pairing secret...");
-            match transport.handshake_with_secret(&data.endpoint, &token, Some(data.secret)).await {
+            match transport
+                .handshake_with_secret(&data.endpoint, &token, Some(data.secret))
+                .await
+            {
                 Ok(_) => println!("✅ Connection verified and node registered!"),
                 Err(e) => println!("⚠️ Could not verify connection immediately: {}", e),
             }

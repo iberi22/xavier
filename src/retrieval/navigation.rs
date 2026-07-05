@@ -4,10 +4,10 @@
 //! cosine similarity, edge confidence, node importance, context relevance,
 //! cross-layer/dir bonuses, and peripheral-hub boosts.
 
-use crate::domain::memory::belief::BeliefEdge;
 use super::policy::{NavigationPolicy, NavigationScore};
-use crate::memory::qmd::NormalizedId;
+use crate::domain::memory::belief::BeliefEdge;
 use crate::memory::qmd::cache_warming::PredictiveCacheWarmup;
+use crate::memory::qmd::NormalizedId;
 use std::collections::HashMap;
 
 impl NavigationPolicy {
@@ -20,15 +20,16 @@ impl NavigationPolicy {
         source_degree: usize,
         target_degree: usize,
     ) -> f32 {
-        let score_components = self.calculate_score_components(query, edge, now, source_degree, target_degree);
+        let score_components =
+            self.calculate_score_components(query, edge, now, source_degree, target_degree);
 
-        (score_components.semantic_similarity * self.traversal_weights.semantic_similarity) +
-        (score_components.confidence * self.traversal_weights.confidence) +
-        (score_components.edge_weight * self.traversal_weights.edge_weight) +
-        (score_components.recency * self.traversal_weights.recency) +
-        (score_components.cross_layer * self.traversal_weights.cross_layer) +
-        (score_components.cross_dir * self.traversal_weights.cross_dir) +
-        (score_components.peripheral_hub * self.traversal_weights.peripheral_hub)
+        (score_components.semantic_similarity * self.traversal_weights.semantic_similarity)
+            + (score_components.confidence * self.traversal_weights.confidence)
+            + (score_components.edge_weight * self.traversal_weights.edge_weight)
+            + (score_components.recency * self.traversal_weights.recency)
+            + (score_components.cross_layer * self.traversal_weights.cross_layer)
+            + (score_components.cross_dir * self.traversal_weights.cross_dir)
+            + (score_components.peripheral_hub * self.traversal_weights.peripheral_hub)
     }
 
     /// Decomposes the transition into its constituent score signals.
@@ -42,7 +43,8 @@ impl NavigationPolicy {
     ) -> NavigationScore {
         // [G3] File-type aware edge filtering: edges INFERRED that cross language families receive score 0
         if edge.is_inferred {
-            if let (Some(src_lang), Some(tgt_lang)) = (&edge.source_language, &edge.target_language) {
+            if let (Some(src_lang), Some(tgt_lang)) = (&edge.source_language, &edge.target_language)
+            {
                 if src_lang != tgt_lang {
                     return NavigationScore {
                         semantic_similarity: 0.0,
@@ -57,8 +59,13 @@ impl NavigationPolicy {
             }
         }
 
-        let query_norm: NormalizedId = query.parse().unwrap_or_else(|_| NormalizedId::from_str_unchecked(query));
-        let target_norm: NormalizedId = edge.target.parse().unwrap_or_else(|_| NormalizedId::from_str_unchecked(&edge.target));
+        let query_norm: NormalizedId = query
+            .parse()
+            .unwrap_or_else(|_| NormalizedId::from_str_unchecked(query));
+        let target_norm: NormalizedId = edge
+            .target
+            .parse()
+            .unwrap_or_else(|_| NormalizedId::from_str_unchecked(&edge.target));
 
         let query_lower = query_norm.as_str();
         let target_lower = target_norm.as_str();
@@ -93,24 +100,33 @@ impl NavigationPolicy {
         // We want 1.0 at age=0 and decay slowly.
         // x = (age - center) / scale
         // For 1 week (168h) center, scale=40
-        let recency = 1.0 / (1.0 + ( (age_hours - 72.0) / 48.0 ).exp());
+        let recency = 1.0 / (1.0 + ((age_hours - 72.0) / 48.0).exp());
 
         // 5. Cross-layer bonus (working <-> episodic <-> semantic)
         // Heuristic: check provenance_id or naming patterns
         let mut cross_layer = 0.0;
-        let is_semantic = edge.source.starts_with("concept:") || edge.target.starts_with("concept:") || edge.provenance_id == "semantic";
-        let is_episodic = edge.provenance_id.starts_with("session") || edge.source.contains("session") || edge.target.contains("session");
+        let is_semantic = edge.source.starts_with("concept:")
+            || edge.target.starts_with("concept:")
+            || edge.provenance_id == "semantic";
+        let is_episodic = edge.provenance_id.starts_with("session")
+            || edge.source.contains("session")
+            || edge.target.contains("session");
 
         if is_semantic && is_episodic {
             cross_layer = 1.0;
-        } else if (is_semantic || is_episodic) && !edge.provenance_id.contains("session") && !edge.provenance_id.contains("semantic") {
+        } else if (is_semantic || is_episodic)
+            && !edge.provenance_id.contains("session")
+            && !edge.provenance_id.contains("semantic")
+        {
             // Likely working -> semantic or working -> episodic
             cross_layer = 0.8;
         }
 
         // 6. Cross-directory bonus
         let mut cross_dir = 0.0;
-        if let (Some(s_dir), Some(t_dir)) = (get_parent_dir(&edge.source), get_parent_dir(&edge.target)) {
+        if let (Some(s_dir), Some(t_dir)) =
+            (get_parent_dir(&edge.source), get_parent_dir(&edge.target))
+        {
             if s_dir == t_dir && !s_dir.is_empty() {
                 cross_dir = 1.0;
             } else if s_dir.starts_with(&t_dir) || t_dir.starts_with(&s_dir) {
@@ -143,7 +159,7 @@ fn get_parent_dir(path: &str) -> Option<String> {
         let normalized = path.replace('\\', "/");
         let parts: Vec<&str> = normalized.split('/').collect();
         if parts.len() > 1 {
-            return Some(parts[..parts.len()-1].join("/"));
+            return Some(parts[..parts.len() - 1].join("/"));
         }
     }
     None
@@ -164,18 +180,15 @@ pub async fn warm_cache_on_navigate(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::domain::memory::belief::BeliefEdge;
     use super::super::gating::LayerWeights;
     use super::super::policy::TraversalWeights;
+    use super::*;
+    use crate::domain::memory::belief::BeliefEdge;
 
     #[test]
     fn test_score_transition_basic() {
-        let policy = NavigationPolicy::new(
-            LayerWeights::default(),
-            TraversalWeights::default(),
-            0.01
-        );
+        let policy =
+            NavigationPolicy::new(LayerWeights::default(), TraversalWeights::default(), 0.01);
         let edge = BeliefEdge::new(
             "Xavier".to_string(),
             "Rust".to_string(),
@@ -189,11 +202,8 @@ mod tests {
 
     #[test]
     fn test_sigmoid_recency() {
-        let policy = NavigationPolicy::new(
-            LayerWeights::default(),
-            TraversalWeights::default(),
-            0.01
-        );
+        let policy =
+            NavigationPolicy::new(LayerWeights::default(), TraversalWeights::default(), 0.01);
         let mut edge = BeliefEdge::new(
             "A".to_string(),
             "B".to_string(),
@@ -219,11 +229,8 @@ mod tests {
 
     #[test]
     fn test_cross_dir_bonus() {
-        let policy = NavigationPolicy::new(
-            LayerWeights::default(),
-            TraversalWeights::default(),
-            0.01
-        );
+        let policy =
+            NavigationPolicy::new(LayerWeights::default(), TraversalWeights::default(), 0.01);
         let edge_same = BeliefEdge::new(
             "src/main.rs".to_string(),
             "src/lib.rs".to_string(),
@@ -262,7 +269,10 @@ mod tests {
         edge.target_language = Some("rust".to_string());
 
         let score = policy.score_transition("Rust", &edge, chrono::Utc::now(), 1, 1);
-        assert_eq!(score, 0.0, "Inferred cross-language edge should have score 0.0");
+        assert_eq!(
+            score, 0.0,
+            "Inferred cross-language edge should have score 0.0"
+        );
 
         // Same language family - should have normal score
         edge.source_language = Some("rust".to_string());
@@ -288,8 +298,13 @@ mod tests {
             let score = policy.score_transition(query, &edge, chrono::Utc::now(), 1, 1);
             assert!(score > 0.0, "Score should be positive for query: {}", query);
 
-            let components = policy.calculate_score_components(query, &edge, chrono::Utc::now(), 1, 1);
-            assert_eq!(components.semantic_similarity, 1.0, "Semantic similarity should be 1.0 for query: {}", query);
+            let components =
+                policy.calculate_score_components(query, &edge, chrono::Utc::now(), 1, 1);
+            assert_eq!(
+                components.semantic_similarity, 1.0,
+                "Semantic similarity should be 1.0 for query: {}",
+                query
+            );
         }
     }
 
@@ -304,11 +319,7 @@ mod tests {
         traversal_weights.cross_dir = 0.0;
         traversal_weights.peripheral_hub = 0.0;
 
-        let policy = NavigationPolicy::new(
-            LayerWeights::default(),
-            traversal_weights,
-            0.01
-        );
+        let policy = NavigationPolicy::new(LayerWeights::default(), traversal_weights, 0.01);
 
         let edge = BeliefEdge::new(
             "src/main.rs".to_string(),
@@ -333,13 +344,15 @@ mod tests {
         traversal_weights.semantic_similarity = 0.0;
         traversal_weights.peripheral_hub = 1.0;
 
-        let policy = NavigationPolicy::new(
-            LayerWeights::default(),
-            traversal_weights,
-            0.01
-        );
+        let policy = NavigationPolicy::new(LayerWeights::default(), traversal_weights, 0.01);
 
-        let edge = BeliefEdge::new("A".to_string(), "B".to_string(), "rel".to_string(), 1.0, "prov".to_string());
+        let edge = BeliefEdge::new(
+            "A".to_string(),
+            "B".to_string(),
+            "rel".to_string(),
+            1.0,
+            "prov".to_string(),
+        );
 
         // source_degree <= 3, target_degree >= 10 -> peripheral_hub 1.2
         let components = policy.calculate_score_components("q", &edge, chrono::Utc::now(), 3, 10);
@@ -357,12 +370,18 @@ mod tests {
     #[test]
     fn test_get_parent_dir_edge_cases() {
         assert_eq!(get_parent_dir("src/main.rs"), Some("src".to_string()));
-        assert_eq!(get_parent_dir("src/retrieval/navigation.rs"), Some("src/retrieval".to_string()));
+        assert_eq!(
+            get_parent_dir("src/retrieval/navigation.rs"),
+            Some("src/retrieval".to_string())
+        );
         assert_eq!(get_parent_dir("main.rs"), None);
         assert_eq!(get_parent_dir(""), None);
         // get_parent_dir("/") returns Some("") because it contains '/' and parts.len() > 1 (["", ""])
         assert_eq!(get_parent_dir("/"), Some("".to_string()));
-        assert_eq!(get_parent_dir("C:\\Users\\Main.rs"), Some("C:/Users".to_string()));
+        assert_eq!(
+            get_parent_dir("C:\\Users\\Main.rs"),
+            Some("C:/Users".to_string())
+        );
     }
 
     #[test]

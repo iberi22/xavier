@@ -188,10 +188,8 @@ pub fn load(path: &Path) -> Result<TuningHistory> {
 
 /// Persist the full history to disk (pretty-printed for readability / git diffs).
 pub fn save(path: &Path, history: &TuningHistory) -> Result<()> {
-    let json = serde_json::to_string_pretty(history)
-        .context("serialize tuning history")?;
-    std::fs::write(path, json)
-        .with_context(|| format!("write {}", path.display()))?;
+    let json = serde_json::to_string_pretty(history).context("serialize tuning history")?;
+    std::fs::write(path, json).with_context(|| format!("write {}", path.display()))?;
     Ok(())
 }
 
@@ -213,8 +211,16 @@ mod tests {
 
     fn sample_metrics(recall: f64) -> RetrievalMetrics {
         let results = vec![
-            CaseResult { case_id: "a".into(), hit: recall > 0.0, first_hit_rank: Some(1) },
-            CaseResult { case_id: "b".into(), hit: recall > 0.5, first_hit_rank: Some(2) },
+            CaseResult {
+                case_id: "a".into(),
+                hit: recall > 0.0,
+                first_hit_rank: Some(1),
+            },
+            CaseResult {
+                case_id: "b".into(),
+                hit: recall > 0.5,
+                first_hit_rank: Some(2),
+            },
         ];
         let mut m = RetrievalMetrics::from_results("test", &results, 5);
         m.recall_at_k = recall;

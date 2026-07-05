@@ -4,8 +4,8 @@ use anyhow::Result;
 use colored::*;
 use serde_json::json;
 
-use crate::cli::config::{require_xavier_token, resolve_base_url};
 use crate::cli::commands::enums::{CloudCommand, CLI_HTTP_CLIENT};
+use crate::cli::config::{require_xavier_token, resolve_base_url};
 use crate::settings::XavierSettings;
 
 /// Handle cloud commands.
@@ -84,11 +84,18 @@ pub async fn handle_cloud_status(as_json: bool) -> Result<()> {
             println!("  {:<15} {}", "Instance ID:", instance);
             println!("  {:<15} {}", "Connection:", "✅ Connected".green());
         } else {
-            println!("  {:<15} {}", "Connection:", "⚠️ Disconnected / Not Configured".yellow());
+            println!(
+                "  {:<15} {}",
+                "Connection:",
+                "⚠️ Disconnected / Not Configured".yellow()
+            );
         }
 
         if let Some(s) = &stats {
-            let docs = s["document_count"].as_u64().or(s["total_documents"].as_u64()).unwrap_or(0);
+            let docs = s["document_count"]
+                .as_u64()
+                .or(s["total_documents"].as_u64())
+                .unwrap_or(0);
             println!("  {:<15} {}", "Documents:", docs);
         }
 
@@ -122,7 +129,9 @@ async fn handle_cloud_set_backend(backend: String, as_json: bool) -> Result<()> 
                     "✅".green(),
                     normalized.cyan().bold()
                 );
-                println!("Note: You may need to restart the Xavier server for changes to take effect.");
+                println!(
+                    "Note: You may need to restart the Xavier server for changes to take effect."
+                );
             }
         }
         _ => {
@@ -169,10 +178,7 @@ async fn handle_cloud_sync(as_json: bool) -> Result<()> {
             println!("{}", serde_json::to_string_pretty(&body)?);
         } else {
             let sync_info = &body["sync"];
-            println!(
-                "{} Sync triggered successfully!",
-                "✅".green()
-            );
+            println!("{} Sync triggered successfully!", "✅".green());
             if let Some(msg) = sync_info["message"].as_str() {
                 println!("  Message: {}", msg);
             }
@@ -207,7 +213,10 @@ async fn handle_cloud_verify(as_json: bool) -> Result<()> {
     let client = CLI_HTTP_CLIENT.clone();
 
     if !as_json {
-        println!("{} Running full cloud connection health check...", "🔍".cyan());
+        println!(
+            "{} Running full cloud connection health check...",
+            "🔍".cyan()
+        );
     }
 
     let resp = client

@@ -179,12 +179,14 @@ async fn measure(memory: &Arc<QmdMemory>, ds: &EvalDataset, k: usize) -> Retriev
     let mut case_results = Vec::with_capacity(ds.cases.len());
     for case in &ds.cases {
         let results = memory.search(&case.query, k).await.unwrap_or_default();
-        let hit = results
-            .iter()
-            .any(|r| is_hit(&r.content, &case.expected_path) || is_hit(&r.path, &case.expected_path));
+        let hit = results.iter().any(|r| {
+            is_hit(&r.content, &case.expected_path) || is_hit(&r.path, &case.expected_path)
+        });
         let first_hit_rank = results
             .iter()
-            .position(|r| is_hit(&r.content, &case.expected_path) || is_hit(&r.path, &case.expected_path))
+            .position(|r| {
+                is_hit(&r.content, &case.expected_path) || is_hit(&r.path, &case.expected_path)
+            })
             .map(|i| i + 1);
         case_results.push(CaseResult {
             case_id: case.id.clone(),
@@ -232,8 +234,8 @@ mod tests {
     async fn test_run_auto_tune_skips_when_dataset_missing() {
         // Build an in-memory QmdMemory (no docs) — the availability gate should
         // short-circuit before the dataset is even consulted.
-        use crate::memory::qmd::QmdMemory;
         use crate::memory::qmd::types::MemoryDocument;
+        use crate::memory::qmd::QmdMemory;
         let store: Arc<tokio::sync::RwLock<Vec<MemoryDocument>>> =
             Arc::new(tokio::sync::RwLock::new(Vec::new()));
         let memory = Arc::new(QmdMemory::new(store));
@@ -241,6 +243,9 @@ mod tests {
         // An empty memory store has no documents, so the probe search returns
         // nothing and the pass exits early with Ok(()).
         let res = run_auto_tune(&memory).await;
-        assert!(res.is_ok(), "auto-tune on empty memory must succeed (no-op)");
+        assert!(
+            res.is_ok(),
+            "auto-tune on empty memory must succeed (no-op)"
+        );
     }
 }

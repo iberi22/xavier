@@ -47,7 +47,11 @@ impl CppParser {
             "function_definition" => {
                 let name = self.extract_function_name(node, source);
                 if let Some(name) = name {
-                    let kind = if parent.is_some() { SymbolKind::Method } else { SymbolKind::Function };
+                    let kind = if parent.is_some() {
+                        SymbolKind::Method
+                    } else {
+                        SymbolKind::Function
+                    };
                     self.push_symbol(
                         symbols,
                         PushSymbolArgs {
@@ -64,7 +68,11 @@ impl CppParser {
                 }
             }
             "class_specifier" | "struct_specifier" => {
-                let kind = if node.kind() == "class_specifier" { SymbolKind::Class } else { SymbolKind::Struct };
+                let kind = if node.kind() == "class_specifier" {
+                    SymbolKind::Class
+                } else {
+                    SymbolKind::Struct
+                };
                 if let Some(name_node) = node.child_by_field_name("name") {
                     if let Ok(name) = name_node.utf8_text(source.as_bytes()) {
                         let name_str = name.to_string();
@@ -157,10 +165,16 @@ impl CppParser {
     fn find_identifier(&self, node: Node, source: &str) -> Option<String> {
         match node.kind() {
             "identifier" | "field_identifier" => {
-                return node.utf8_text(source.as_bytes()).ok().map(|s| s.to_string());
+                return node
+                    .utf8_text(source.as_bytes())
+                    .ok()
+                    .map(|s| s.to_string());
             }
             "qualified_identifier" | "destructor_name" => {
-                return node.utf8_text(source.as_bytes()).ok().map(|s| s.to_string());
+                return node
+                    .utf8_text(source.as_bytes())
+                    .ok()
+                    .map(|s| s.to_string());
             }
             _ => {}
         }

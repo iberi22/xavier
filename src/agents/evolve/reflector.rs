@@ -22,7 +22,11 @@ impl Reflector {
         let best = results
             .iter()
             .filter(|r| r.status == "keep")
-            .max_by(|a, b| a.metric.partial_cmp(&b.metric).unwrap_or(std::cmp::Ordering::Equal));
+            .max_by(|a, b| {
+                a.metric
+                    .partial_cmp(&b.metric)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
 
         // Count improvement rate
         let total = results.len() as f32;
@@ -63,11 +67,16 @@ impl Reflector {
             .iter()
             .any(|r| r.description.contains("cache") && r.status == "keep")
         {
-            suggestions.push("Cache-related changes show promise - try more cache optimizations".to_string());
+            suggestions.push(
+                "Cache-related changes show promise - try more cache optimizations".to_string(),
+            );
         }
 
         // Always suggest simplification if we haven't tried it
-        suggestions.push("Consider simplification: removing code that provides equal results is a win".to_string());
+        suggestions.push(
+            "Consider simplification: removing code that provides equal results is a win"
+                .to_string(),
+        );
 
         suggestions
     }

@@ -68,10 +68,7 @@ pub fn diff_manifests(
 
 /// Convert a list of manifest entries into a list of `ChunkDiff::Delete`
 /// actions (for removing chunks that exist on one side but not the other).
-pub fn deletions_from_diff(
-    local: &Manifest,
-    remote: &Manifest,
-) -> Result<Vec<ChunkDiff>> {
+pub fn deletions_from_diff(local: &Manifest, remote: &Manifest) -> Result<Vec<ChunkDiff>> {
     let remote_hashes: std::collections::HashSet<&str> =
         remote.iter().map(|e| e.chunk_hash.as_str()).collect();
 

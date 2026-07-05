@@ -6,10 +6,10 @@
 
 use std::sync::Arc;
 use xavier::memory::store::{InMemoryMemoryStore, MemoryRecord, MemoryStore};
-use xavier::memory::sync::manifest::build_manifest;
 use xavier::memory::sync::diff::diff_manifests;
-use xavier::memory::sync::push_pull::entries_as_push_diffs;
+use xavier::memory::sync::manifest::build_manifest;
 use xavier::memory::sync::merge::apply_changes_received;
+use xavier::memory::sync::push_pull::entries_as_push_diffs;
 
 /// build_manifest probes ["episodic", "semantic", "working", ""]
 /// Use these workspace IDs so manifests find the data.
@@ -52,8 +52,7 @@ async fn test_two_node_sync_cycle() {
     assert_eq!(manifest_b.len(), 3, "manifest B should have 3 entries");
 
     // Diff: A -> B (push) and B -> A (pull)
-    let (to_push, to_pull) =
-        diff_manifests(&manifest_a, &manifest_b).expect("diff manifests");
+    let (to_push, to_pull) = diff_manifests(&manifest_a, &manifest_b).expect("diff manifests");
 
     assert!(!to_push.is_empty(), "A should have entries to push to B");
     assert!(!to_pull.is_empty(), "B should have entries to pull from A");
@@ -63,7 +62,11 @@ async fn test_two_node_sync_cycle() {
         .await
         .expect("entries as push diffs");
 
-    assert_eq!(push_diffs.len(), to_push.len(), "all push entries should resolve");
+    assert_eq!(
+        push_diffs.len(),
+        to_push.len(),
+        "all push entries should resolve"
+    );
 
     let mut conflicts = 0u64;
     apply_changes_received(&*store_b, &push_diffs, &mut conflicts)
@@ -151,9 +154,7 @@ async fn test_lww_conflict_newer_wins() {
     // newer revision (100 over 1) regardless of direction.
 
     let (to_push_a, _) = diff_manifests(&manifest_a, &manifest_b).unwrap();
-    let push_diffs = entries_as_push_diffs(&*store_a, &to_push_a)
-        .await
-        .unwrap();
+    let push_diffs = entries_as_push_diffs(&*store_a, &to_push_a).await.unwrap();
 
     // Only push if there's something A has that B doesn't
     if !push_diffs.is_empty() {
@@ -169,17 +170,12 @@ async fn test_lww_conflict_newer_wins() {
         .await
         .unwrap()
         .expect("conflict-doc should exist in B");
-    assert_eq!(
-        b_record.revision, 100,
-        "B's revision should remain 100"
-    );
+    assert_eq!(b_record.revision, 100, "B's revision should remain 100");
 
     // Now sync B -> A (this is where the newer version should propagate)
     let manifest_a2 = build_manifest(&*store_a).await.unwrap();
     let (_, to_pull_a) = diff_manifests(&manifest_a2, &manifest_b).unwrap();
-    let pull_diffs = entries_as_push_diffs(&*store_b, &to_pull_a)
-        .await
-        .unwrap();
+    let pull_diffs = entries_as_push_diffs(&*store_b, &to_pull_a).await.unwrap();
 
     let mut conflicts = 0u64;
     apply_changes_received(&*store_a, &pull_diffs, &mut conflicts)

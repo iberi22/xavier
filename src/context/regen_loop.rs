@@ -45,11 +45,11 @@ pub struct RegenerationConfig {
 impl Default for RegenerationConfig {
     fn default() -> Self {
         Self {
-            stale_after_secs: 600,          // 10 minutes
-            growth_ratio_threshold: 0.25,    // 25% growth triggers rebuild
-            min_growth_tokens: 100,          // Ignore <100 token additions
-            cooldown_secs: 120,              // Don't rebuild more than every 2 min
-            max_rebuilds_per_window: 10,     // Max 10 rebuilds per session
+            stale_after_secs: 600,        // 10 minutes
+            growth_ratio_threshold: 0.25, // 25% growth triggers rebuild
+            min_growth_tokens: 100,       // Ignore <100 token additions
+            cooldown_secs: 120,           // Don't rebuild more than every 2 min
+            max_rebuilds_per_window: 10,  // Max 10 rebuilds per session
         }
     }
 }
@@ -88,18 +88,14 @@ pub enum RegenDecision {
     /// No rebuild needed
     Skip,
     /// Rebuild triggered by staleness (time elapsed)
-    Stale {
-        seconds_since_rebuild: u64,
-    },
+    Stale { seconds_since_rebuild: u64 },
     /// Rebuild triggered by session growth
     Growth {
         growth_ratio: f64,
         tokens_added: usize,
     },
     /// Blocked by rate limit (too many rebuilds)
-    RateLimited {
-        reason: String,
-    },
+    RateLimited { reason: String },
 }
 
 /// The context regeneration loop — monitors sessions and auto-triggers rebuilds
@@ -145,13 +141,10 @@ impl RegenerationLoop {
     ///
     /// Returns `Ok(RegenDecision::Skip)` if no rebuild needed,
     /// or the reason for triggering a rebuild.
-    pub async fn check(
-        &self,
-        session_id: &str,
-        new_tokens_added: usize,
-    ) -> RegenDecision {
+    pub async fn check(&self, session_id: &str, new_tokens_added: usize) -> RegenDecision {
         let mut sessions = self.sessions.lock().await;
-        let stats = sessions.entry(session_id.to_string())
+        let stats = sessions
+            .entry(session_id.to_string())
             .or_insert_with(SessionRegenStats::default);
 
         // Update token count
@@ -165,9 +158,7 @@ impl RegenerationLoop {
             return RegenDecision::RateLimited {
                 reason: format!(
                     "Session '{}' has already been rebuilt {} times (max {})",
-                    session_id,
-                    stats.rebuild_count,
-                    self.config.max_rebuilds_per_window,
+                    session_id, stats.rebuild_count, self.config.max_rebuilds_per_window,
                 ),
             };
         }
@@ -178,9 +169,7 @@ impl RegenerationLoop {
         }
 
         // 1. Staleness trigger
-        if elapsed > Duration::from_secs(self.config.stale_after_secs)
-            && stats.rebuild_count > 0
-        {
+        if elapsed > Duration::from_secs(self.config.stale_after_secs) && stats.rebuild_count > 0 {
             let secs = elapsed.as_secs();
             debug!(
                 session_id = %session_id,
@@ -194,7 +183,9 @@ impl RegenerationLoop {
 
         // 2. Growth trigger (only if we have a baseline to compare against)
         if stats.tokens_at_last_rebuild > 0 {
-            let tokens_added = stats.total_tokens_seen.saturating_sub(stats.tokens_at_last_rebuild);
+            let tokens_added = stats
+                .total_tokens_seen
+                .saturating_sub(stats.tokens_at_last_rebuild);
             if tokens_added >= self.config.min_growth_tokens {
                 let growth_ratio = tokens_added as f64 / stats.tokens_at_last_rebuild as f64;
                 if growth_ratio >= self.config.growth_ratio_threshold {
@@ -223,7 +214,9 @@ impl RegenerationLoop {
         session_id: &str,
         current_context: &[ContextDocument],
     ) -> Result<usize, String> {
-        let orchestrator = self.orchestrator.as_ref()
+        let orchestrator = self
+            .orchestrator
+            .as_ref()
             .ok_or_else(|| "RegenerationLoop: orchestrator not configured".to_string())?;
 
         // Use precompact hook — it has the largest budget
@@ -337,7 +330,8 @@ mod tests {
         // First, need a baseline by manually setting tokens_at_last_rebuild
         {
             let mut sessions = loop_.sessions.lock().await;
-            let stats = sessions.entry("test-session".to_string())
+            let stats = sessions
+                .entry("test-session".to_string())
                 .or_insert_with(SessionRegenStats::default);
             stats.tokens_at_last_rebuild = 1000;
             stats.total_tokens_seen = 1050; // +50 tokens, threshold is 100
@@ -360,7 +354,8 @@ mod tests {
         // Set baseline: 1000 tokens, then add 300 (30% growth > 20% threshold)
         {
             let mut sessions = loop_.sessions.lock().await;
-            let stats = sessions.entry("test-session".to_string())
+            let stats = sessions
+                .entry("test-session".to_string())
                 .or_insert_with(SessionRegenStats::default);
             stats.tokens_at_last_rebuild = 1000;
             stats.total_tokens_seen = 1300;
@@ -385,7 +380,8 @@ mod tests {
         // Set session with max rebuilds already hit
         {
             let mut sessions = loop_.sessions.lock().await;
-            let stats = sessions.entry("test-session".to_string())
+            let stats = sessions
+                .entry("test-session".to_string())
                 .or_insert_with(SessionRegenStats::default);
             stats.rebuild_count = 10; // max_rebuilds_per_window is 10
         }

@@ -17,7 +17,10 @@ mod tests {
         let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger, Some(event_bus.clone())));
 
         // Create a lease
-        let lease = secrets_engine.lend("test-secret", Some("test-value"), "agent-1", 60).await.unwrap();
+        let lease = secrets_engine
+            .lend("test-secret", Some("test-value"), "agent-1", 60)
+            .await
+            .unwrap();
         let token = lease.token.clone();
 
         let _cmd = ProxyChatCommand {

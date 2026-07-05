@@ -42,7 +42,9 @@ pub async fn update_cloud_node(Json(payload): Json<CloudNodeConfig>) -> impl Int
         if !token.contains("********") {
             let vault = HardwareVault::new("xavier-cloud");
             if let Err(e) = vault.store_secret("token", &token) {
-                return Json(serde_json::json!({ "status": "error", "message": format!("Vault error: {}", e) }));
+                return Json(
+                    serde_json::json!({ "status": "error", "message": format!("Vault error: {}", e) }),
+                );
             }
             settings.pgheart.token = Some(token);
         }

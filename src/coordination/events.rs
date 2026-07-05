@@ -71,12 +71,18 @@ impl WebhookDispatcher {
                             });
                             let res = client.post(endpoint).json(&payload).send().await;
                             if let Err(e) = res {
-                                error!("Failed to send TaskCompleted webhook to {}: {}", endpoint, e);
+                                error!(
+                                    "Failed to send TaskCompleted webhook to {}: {}",
+                                    endpoint, e
+                                );
                             }
                         }
                     }
                     XavierEvent::LeaseRevoked { agent_id, token } => {
-                        info!("Lease {} revoked for agent {}! Dispatching webhooks...", token, agent_id);
+                        info!(
+                            "Lease {} revoked for agent {}! Dispatching webhooks...",
+                            token, agent_id
+                        );
                         for endpoint in &endpoints {
                             let payload = serde_json::json!({
                                 "event_type": "LeaseRevoked",
@@ -85,7 +91,10 @@ impl WebhookDispatcher {
                             });
                             let res = client.post(endpoint).json(&payload).send().await;
                             if let Err(e) = res {
-                                error!("Failed to send LeaseRevoked webhook to {}: {}", endpoint, e);
+                                error!(
+                                    "Failed to send LeaseRevoked webhook to {}: {}",
+                                    endpoint, e
+                                );
                             }
                         }
                     }

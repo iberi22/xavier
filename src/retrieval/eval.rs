@@ -198,7 +198,9 @@ pub fn is_hit(result_text: &str, expected: &str) -> bool {
     if expected.is_empty() {
         return false;
     }
-    result_text.to_ascii_lowercase().contains(&expected.to_ascii_lowercase())
+    result_text
+        .to_ascii_lowercase()
+        .contains(&expected.to_ascii_lowercase())
 }
 
 #[cfg(test)]
@@ -225,8 +227,16 @@ mod tests {
     #[test]
     fn test_metrics_perfect_recall() {
         let results = vec![
-            CaseResult { case_id: "a".into(), hit: true, first_hit_rank: Some(1) },
-            CaseResult { case_id: "b".into(), hit: true, first_hit_rank: Some(2) },
+            CaseResult {
+                case_id: "a".into(),
+                hit: true,
+                first_hit_rank: Some(1),
+            },
+            CaseResult {
+                case_id: "b".into(),
+                hit: true,
+                first_hit_rank: Some(2),
+            },
         ];
         let m = RetrievalMetrics::from_results("t", &results, 5);
         assert!((m.recall_at_k - 1.0).abs() < 1e-9);
@@ -236,8 +246,16 @@ mod tests {
     #[test]
     fn test_metrics_zero_recall() {
         let results = vec![
-            CaseResult { case_id: "a".into(), hit: false, first_hit_rank: None },
-            CaseResult { case_id: "b".into(), hit: false, first_hit_rank: None },
+            CaseResult {
+                case_id: "a".into(),
+                hit: false,
+                first_hit_rank: None,
+            },
+            CaseResult {
+                case_id: "b".into(),
+                hit: false,
+                first_hit_rank: None,
+            },
         ];
         let m = RetrievalMetrics::from_results("t", &results, 5);
         assert!(m.recall_at_k.abs() < 1e-9);
@@ -247,9 +265,21 @@ mod tests {
     #[test]
     fn test_metrics_partial_recall() {
         let results = vec![
-            CaseResult { case_id: "a".into(), hit: true, first_hit_rank: Some(1) },
-            CaseResult { case_id: "b".into(), hit: false, first_hit_rank: None },
-            CaseResult { case_id: "c".into(), hit: true, first_hit_rank: Some(3) },
+            CaseResult {
+                case_id: "a".into(),
+                hit: true,
+                first_hit_rank: Some(1),
+            },
+            CaseResult {
+                case_id: "b".into(),
+                hit: false,
+                first_hit_rank: None,
+            },
+            CaseResult {
+                case_id: "c".into(),
+                hit: true,
+                first_hit_rank: Some(3),
+            },
         ];
         let m = RetrievalMetrics::from_results("t", &results, 5);
         assert!((m.recall_at_k - (2.0 / 3.0)).abs() < 1e-9);
@@ -268,8 +298,16 @@ mod tests {
     fn test_precision_all_hits_is_one_over_k() {
         // When all cases hit, precision = num_cases / (num_cases * k) = 1/k.
         let results = vec![
-            CaseResult { case_id: "a".into(), hit: true, first_hit_rank: Some(1) },
-            CaseResult { case_id: "b".into(), hit: true, first_hit_rank: Some(2) },
+            CaseResult {
+                case_id: "a".into(),
+                hit: true,
+                first_hit_rank: Some(1),
+            },
+            CaseResult {
+                case_id: "b".into(),
+                hit: true,
+                first_hit_rank: Some(2),
+            },
         ];
         let m = RetrievalMetrics::from_results("t", &results, 5);
         // precision = 2 / (2 * 5) = 0.2 = 1/k
@@ -283,9 +321,21 @@ mod tests {
     fn test_precision_partial_recall_less_than_one() {
         // Partial hits: precision < 1/k.
         let results = vec![
-            CaseResult { case_id: "a".into(), hit: true, first_hit_rank: Some(1) },
-            CaseResult { case_id: "b".into(), hit: false, first_hit_rank: None },
-            CaseResult { case_id: "c".into(), hit: true, first_hit_rank: Some(3) },
+            CaseResult {
+                case_id: "a".into(),
+                hit: true,
+                first_hit_rank: Some(1),
+            },
+            CaseResult {
+                case_id: "b".into(),
+                hit: false,
+                first_hit_rank: None,
+            },
+            CaseResult {
+                case_id: "c".into(),
+                hit: true,
+                first_hit_rank: Some(3),
+            },
         ];
         let m = RetrievalMetrics::from_results("t", &results, 5);
         // precision = 2 / (3 * 5) = 2/15 ≈ 0.1333

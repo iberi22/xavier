@@ -3,9 +3,9 @@
 //! Provides the data structures and logic for maintaining and updating
 //! the weights used for multi-layer memory retrieval and graph traversal.
 
-use serde::{Deserialize, Serialize};
 use super::gating::LayerWeights;
 use super::tuner::RetrievalConfig;
+use serde::{Deserialize, Serialize};
 
 /// Weights for graph traversal signals
 ///
@@ -151,7 +151,10 @@ mod tests {
         );
         // Weights must remain a valid distribution.
         let sum = after.0 + after.1 + after.2;
-        assert!((sum - 1.0).abs() < 1e-4, "layer weights must sum to 1.0, got {sum}");
+        assert!(
+            (sum - 1.0).abs() < 1e-4,
+            "layer weights must sum to 1.0, got {sum}"
+        );
         // update_count must bump to record the tuner-derived change.
         assert!(policy.update_count >= 1);
     }
@@ -175,9 +178,17 @@ mod tests {
         );
         // Traversal weights remain normalized.
         let tw = policy.traversal_weights;
-        let sum = tw.semantic_similarity + tw.confidence + tw.edge_weight + tw.recency
-            + tw.cross_layer + tw.cross_dir + tw.peripheral_hub;
-        assert!((sum - 1.0).abs() < 1e-4, "traversal weights must sum to 1.0, got {sum}");
+        let sum = tw.semantic_similarity
+            + tw.confidence
+            + tw.edge_weight
+            + tw.recency
+            + tw.cross_layer
+            + tw.cross_dir
+            + tw.peripheral_hub;
+        assert!(
+            (sum - 1.0).abs() < 1e-4,
+            "traversal weights must sum to 1.0, got {sum}"
+        );
     }
 
     #[test]
@@ -227,7 +238,11 @@ impl NavigationPolicy {
     }
 
     /// Creates a new policy with explicit weights and learning rate.
-    pub fn new(layer_weights: LayerWeights, traversal_weights: TraversalWeights, learning_rate: f32) -> Self {
+    pub fn new(
+        layer_weights: LayerWeights,
+        traversal_weights: TraversalWeights,
+        learning_rate: f32,
+    ) -> Self {
         Self {
             layer_weights,
             traversal_weights,
@@ -244,19 +259,36 @@ impl NavigationPolicy {
     /// Weights are then normalized to ensure they sum to 1.0.
     pub fn update(&mut self, layer_deltas: LayerWeights, traversal_deltas: TraversalWeights) {
         // Update layer weights
-        self.layer_weights.working = (self.layer_weights.working + self.learning_rate * layer_deltas.working).max(0.0);
-        self.layer_weights.episodic = (self.layer_weights.episodic + self.learning_rate * layer_deltas.episodic).max(0.0);
-        self.layer_weights.semantic = (self.layer_weights.semantic + self.learning_rate * layer_deltas.semantic).max(0.0);
+        self.layer_weights.working =
+            (self.layer_weights.working + self.learning_rate * layer_deltas.working).max(0.0);
+        self.layer_weights.episodic =
+            (self.layer_weights.episodic + self.learning_rate * layer_deltas.episodic).max(0.0);
+        self.layer_weights.semantic =
+            (self.layer_weights.semantic + self.learning_rate * layer_deltas.semantic).max(0.0);
         self.normalize_layers();
 
         // Update traversal weights
-        self.traversal_weights.semantic_similarity = (self.traversal_weights.semantic_similarity + self.learning_rate * traversal_deltas.semantic_similarity).max(0.0);
-        self.traversal_weights.confidence = (self.traversal_weights.confidence + self.learning_rate * traversal_deltas.confidence).max(0.0);
-        self.traversal_weights.edge_weight = (self.traversal_weights.edge_weight + self.learning_rate * traversal_deltas.edge_weight).max(0.0);
-        self.traversal_weights.recency = (self.traversal_weights.recency + self.learning_rate * traversal_deltas.recency).max(0.0);
-        self.traversal_weights.cross_layer = (self.traversal_weights.cross_layer + self.learning_rate * traversal_deltas.cross_layer).max(0.0);
-        self.traversal_weights.cross_dir = (self.traversal_weights.cross_dir + self.learning_rate * traversal_deltas.cross_dir).max(0.0);
-        self.traversal_weights.peripheral_hub = (self.traversal_weights.peripheral_hub + self.learning_rate * traversal_deltas.peripheral_hub).max(0.0);
+        self.traversal_weights.semantic_similarity = (self.traversal_weights.semantic_similarity
+            + self.learning_rate * traversal_deltas.semantic_similarity)
+            .max(0.0);
+        self.traversal_weights.confidence = (self.traversal_weights.confidence
+            + self.learning_rate * traversal_deltas.confidence)
+            .max(0.0);
+        self.traversal_weights.edge_weight = (self.traversal_weights.edge_weight
+            + self.learning_rate * traversal_deltas.edge_weight)
+            .max(0.0);
+        self.traversal_weights.recency = (self.traversal_weights.recency
+            + self.learning_rate * traversal_deltas.recency)
+            .max(0.0);
+        self.traversal_weights.cross_layer = (self.traversal_weights.cross_layer
+            + self.learning_rate * traversal_deltas.cross_layer)
+            .max(0.0);
+        self.traversal_weights.cross_dir = (self.traversal_weights.cross_dir
+            + self.learning_rate * traversal_deltas.cross_dir)
+            .max(0.0);
+        self.traversal_weights.peripheral_hub = (self.traversal_weights.peripheral_hub
+            + self.learning_rate * traversal_deltas.peripheral_hub)
+            .max(0.0);
         self.normalize_traversal();
 
         self.update_count += 1;
@@ -308,9 +340,9 @@ impl NavigationPolicy {
         let total = config.keyword_weight + config.vector_weight;
         if total > 0.0 {
             let vector_share = config.vector_weight / total; // 0.5 at the default 50/50
-            // At the default 50/50 split, vector_share == 1.0 so the weight is unchanged.
-            // A purely vector config doubles semantic similarity; a purely keyword
-            // config zeroes it (then normalization restores the rest of the signals).
+                                                             // At the default 50/50 split, vector_share == 1.0 so the weight is unchanged.
+                                                             // A purely vector config doubles semantic similarity; a purely keyword
+                                                             // config zeroes it (then normalization restores the rest of the signals).
             self.traversal_weights.semantic_similarity =
                 (self.traversal_weights.semantic_similarity * vector_share * 2.0).max(0.0);
             self.normalize_traversal();
@@ -321,7 +353,8 @@ impl NavigationPolicy {
 
     /// Normalize layer weights so they sum to 1.0
     fn normalize_layers(&mut self) {
-        let sum = self.layer_weights.working + self.layer_weights.episodic + self.layer_weights.semantic;
+        let sum =
+            self.layer_weights.working + self.layer_weights.episodic + self.layer_weights.semantic;
         if sum > 0.0 {
             self.layer_weights.working /= sum;
             self.layer_weights.episodic /= sum;
@@ -333,13 +366,13 @@ impl NavigationPolicy {
 
     /// Normalize traversal weights so they sum to 1.0
     fn normalize_traversal(&mut self) {
-        let sum = self.traversal_weights.semantic_similarity +
-                  self.traversal_weights.confidence +
-                  self.traversal_weights.edge_weight +
-                  self.traversal_weights.recency +
-                  self.traversal_weights.cross_layer +
-                  self.traversal_weights.cross_dir +
-                  self.traversal_weights.peripheral_hub;
+        let sum = self.traversal_weights.semantic_similarity
+            + self.traversal_weights.confidence
+            + self.traversal_weights.edge_weight
+            + self.traversal_weights.recency
+            + self.traversal_weights.cross_layer
+            + self.traversal_weights.cross_dir
+            + self.traversal_weights.peripheral_hub;
 
         if sum > 0.0 {
             self.traversal_weights.semantic_similarity /= sum;

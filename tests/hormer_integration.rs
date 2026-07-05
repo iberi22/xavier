@@ -1,14 +1,14 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use xavier::agents::hormer::Hormer;
-use xavier::retrieval::{AdaptiveGating, GatingConfig, LayerWeights, NavigationPolicy};
-use xavier::memory::qmd_memory::MemoryDocument;
-use xavier::consolidation::merger::similarity;
-use xavier::search::rrf::ScoredResult;
-use xavier::tgd::{TgdEngine, TgdConfig};
 use xavier::agents::provider::ModelProviderClient;
 use xavier::agents::runtime::{ConversationMessage, MessageRole};
 use xavier::agents::system1::RetrievedDocument;
+use xavier::consolidation::merger::similarity;
+use xavier::memory::qmd_memory::MemoryDocument;
+use xavier::retrieval::{AdaptiveGating, GatingConfig, LayerWeights, NavigationPolicy};
+use xavier::search::rrf::ScoredResult;
+use xavier::tgd::{TgdConfig, TgdEngine};
 
 #[tokio::test]
 async fn test_hormer_lifecycle() {
@@ -36,7 +36,12 @@ async fn test_hormer_lifecycle() {
     let sim_ab = similarity(&doc_a, &doc_b); // Same dir: src/retrieval
     let sim_ac = similarity(&doc_a, &doc_c); // Different dir
 
-    assert!(sim_ab > sim_ac, "Documents in same directory should have higher similarity. ab: {}, ac: {}", sim_ab, sim_ac);
+    assert!(
+        sim_ab > sim_ac,
+        "Documents in same directory should have higher similarity. ab: {}, ac: {}",
+        sim_ab,
+        sim_ac
+    );
 
     // 3. Shared policy configuration
     let initial_weights = LayerWeights::new(0.3, 0.3, 0.4);
@@ -76,7 +81,9 @@ async fn test_hormer_lifecycle() {
 
     // Use different weights for the interaction to ensure normalization causes a shift
     let used_weights = LayerWeights::new(0.6, 0.2, 0.2);
-    hormer.update_from_interaction(used_weights, &mock_results, None).await;
+    hormer
+        .update_from_interaction(used_weights, &mock_results, None)
+        .await;
 
     let updated_weights = gating.effective_weights().await;
     assert!(policy.read().await.update_count > 0);
@@ -91,7 +98,9 @@ async fn test_hormer_lifecycle() {
 
     let docs = vec![doc_a, doc_b, doc_c];
     // Use a query that matches the content of doc_a
-    let results = gating_with_low_threshold.retrieve(&docs, &[], &[], "Adaptive", None).await;
+    let results = gating_with_low_threshold
+        .retrieve(&docs, &[], &[], "Adaptive", None)
+        .await;
 
     // The fact that retrieve() finishes and uses weights from policy (checked by internal tracing/logic)
     // is enough for integration validation given we've confirmed policy is updated.
@@ -123,22 +132,26 @@ async fn test_tgd_generation() {
         },
     ];
 
-    let context = vec![
-        RetrievedDocument {
-            id: "doc1".to_string(),
-            path: "docs/config.md".to_string(),
-            content: "Retriever configuration involves setting working, episodic and semantic weights.".to_string(),
-            relevance_score: 0.9,
-            token_count: 20,
-            metadata: serde_json::json!({}),
-        }
-    ];
+    let context = vec![RetrievedDocument {
+        id: "doc1".to_string(),
+        path: "docs/config.md".to_string(),
+        content: "Retriever configuration involves setting working, episodic and semantic weights."
+            .to_string(),
+        relevance_score: 0.9,
+        token_count: 20,
+        metadata: serde_json::json!({}),
+    }];
 
-    let rules = tgd.generate_rules(&history, &context).await.expect("TGD generation failed");
+    let rules = tgd
+        .generate_rules(&history, &context)
+        .await
+        .expect("TGD generation failed");
     assert!(!rules.is_empty());
 
     // 6. Verify persistence
-    let persisted = tokio::fs::read_to_string(".xavier/test_improvements.md").await.expect("Failed to read persisted rules");
+    let persisted = tokio::fs::read_to_string(".xavier/test_improvements.md")
+        .await
+        .expect("Failed to read persisted rules");
     assert!(persisted.contains(&rules));
 
     // Cleanup

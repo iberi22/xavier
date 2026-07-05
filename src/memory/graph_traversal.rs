@@ -230,7 +230,13 @@ impl<'a> Pathfinder<'a> {
                         visited_relations.insert(relation.id.clone());
                         let target_degree = *self.degrees.get(&relation.target).unwrap_or(&0);
 
-                        let transition_score = policy.score_transition(query, relation, now, source_degree, target_degree);
+                        let transition_score = policy.score_transition(
+                            query,
+                            relation,
+                            now,
+                            source_degree,
+                            target_degree,
+                        );
                         let combined_score = current_score * transition_score;
 
                         // Threshold to prune low-relevance paths

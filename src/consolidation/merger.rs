@@ -85,7 +85,9 @@ pub fn merge_documents(memories: &[ManagedMemory]) -> Result<MergeOutcome> {
 
     let canonical_source = ordered[0].clone();
     let canonical_id = canonical_source.doc.id.clone().unwrap_or_default();
-    let canonical_id_norm: NormalizedId = canonical_id.parse().unwrap_or_else(|_| NormalizedId::from_str_unchecked(&canonical_id));
+    let canonical_id_norm: NormalizedId = canonical_id
+        .parse()
+        .unwrap_or_else(|_| NormalizedId::from_str_unchecked(&canonical_id));
 
     let mut combined_sentences = extract_sentences(&canonical_source.doc.content);
     let mut redundant_ids = Vec::new();
@@ -96,7 +98,9 @@ pub fn merge_documents(memories: &[ManagedMemory]) -> Result<MergeOutcome> {
         best_similarity = best_similarity.min(similarity);
 
         let mem_id = memory.doc.id.clone().unwrap_or_default();
-        let mem_id_norm: NormalizedId = mem_id.parse().unwrap_or_else(|_| NormalizedId::from_str_unchecked(&mem_id));
+        let mem_id_norm: NormalizedId = mem_id
+            .parse()
+            .unwrap_or_else(|_| NormalizedId::from_str_unchecked(&mem_id));
 
         if mem_id_norm != canonical_id_norm {
             redundant_ids.push(mem_id);
@@ -150,7 +154,8 @@ pub fn similarity(left: &MemoryDocument, right: &MemoryDocument) -> f32 {
             // Check for explicit evidence
             let same_entity = left.metadata.get("entity_id") == right.metadata.get("entity_id")
                 && left.metadata.get("entity_id").is_some();
-            let same_canonical = left.metadata.get("canonical_id") == right.metadata.get("canonical_id")
+            let same_canonical = left.metadata.get("canonical_id")
+                == right.metadata.get("canonical_id")
                 && left.metadata.get("canonical_id").is_some();
 
             if !same_entity && !same_canonical {
@@ -177,7 +182,9 @@ pub fn similarity(left: &MemoryDocument, right: &MemoryDocument) -> f32 {
     // but only if it's below a safe margin of the target threshold.
     // In test environment, MinHash might be missing or different,
     // so we only apply this if we have vectors to compare.
-    if minhash_sim < minhash_threshold * 0.5 && (left.content_vector.is_some() || right.content_vector.is_some()) {
+    if minhash_sim < minhash_threshold * 0.5
+        && (left.content_vector.is_some() || right.content_vector.is_some())
+    {
         return 0.0;
     }
 
@@ -187,8 +194,14 @@ pub fn similarity(left: &MemoryDocument, right: &MemoryDocument) -> f32 {
     };
     let lexical = lexical_similarity(&left.content, &right.content);
 
-    let left_path_norm: NormalizedId = left.path.parse().unwrap_or_else(|_| NormalizedId::from_str_unchecked(&left.path));
-    let right_path_norm: NormalizedId = right.path.parse().unwrap_or_else(|_| NormalizedId::from_str_unchecked(&right.path));
+    let left_path_norm: NormalizedId = left
+        .path
+        .parse()
+        .unwrap_or_else(|_| NormalizedId::from_str_unchecked(&left.path));
+    let right_path_norm: NormalizedId = right
+        .path
+        .parse()
+        .unwrap_or_else(|_| NormalizedId::from_str_unchecked(&right.path));
 
     let path_boost = if left.path == right.path {
         1.0
@@ -485,7 +498,12 @@ mod tests {
         let sim_ac = similarity(&doc_a, &doc_c);
 
         // AB share same parent 'src/memory', AC do not.
-        assert!(sim_ab > sim_ac, "Similarity in same directory ({}) should be higher than different directory ({})", sim_ab, sim_ac);
+        assert!(
+            sim_ab > sim_ac,
+            "Similarity in same directory ({}) should be higher than different directory ({})",
+            sim_ab,
+            sim_ac
+        );
     }
 
     #[test]

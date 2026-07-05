@@ -1,15 +1,10 @@
-use axum::{
-    extract::Path as AxumPath,
-    http::StatusCode,
-    response::IntoResponse,
-    Extension, Json,
-};
-use serde_json::json;
+use super::types::CreateThreadRequest;
 use crate::{
     codebase::conversations_db::{ThreadDetail, ThreadSummary},
     workspace::WorkspaceContext,
 };
-use super::types::CreateThreadRequest;
+use axum::{extract::Path as AxumPath, http::StatusCode, response::IntoResponse, Extension, Json};
+use serde_json::json;
 
 pub async fn list_threads(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     match workspace.workspace.conversations_db.list_threads(50).await {

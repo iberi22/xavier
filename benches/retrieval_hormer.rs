@@ -1,13 +1,13 @@
+use chrono::Utc;
 use criterion::{criterion_group, criterion_main, Criterion};
 use std::sync::Arc;
 use tokio::runtime::Runtime;
 use tokio::sync::RwLock;
-use xavier::retrieval::{AdaptiveGating, GatingConfig, NavigationPolicy};
 use xavier::agents::hormer::Hormer;
-use xavier::memory::qmd_memory::MemoryDocument;
 use xavier::memory::entity_graph::EntityRecord;
 use xavier::memory::entity_graph::EntityType;
-use chrono::Utc;
+use xavier::memory::qmd_memory::MemoryDocument;
+use xavier::retrieval::{AdaptiveGating, GatingConfig, NavigationPolicy};
 
 fn bench_retrieval_hormer(c: &mut Criterion) {
     let rt = Runtime::new().expect("tokio runtime");
@@ -18,7 +18,8 @@ fn bench_retrieval_hormer(c: &mut Criterion) {
             id: Some("doc1".to_string()),
             content: "Xavier is a cognitive memory system.".to_string(),
             ..MemoryDocument::default()
-        }; 50
+        };
+        50
     ];
     let episodic = vec![];
     let semantic = vec![
@@ -36,7 +37,8 @@ fn bench_retrieval_hormer(c: &mut Criterion) {
             merged_from: vec![],
             trust_score: 0.5,
             trust_rank: 0,
-        }; 50
+        };
+        50
     ];
 
     // Case 1: Standard Gating (without HORMER active policy)
@@ -50,7 +52,9 @@ fn bench_retrieval_hormer(c: &mut Criterion) {
     c.bench_function("retrieval_standard", |b| {
         b.iter(|| {
             rt.block_on(async {
-                let _ = gating_std.retrieve(&working, &episodic, &semantic, "Xavier", None).await;
+                let _ = gating_std
+                    .retrieve(&working, &episodic, &semantic, "Xavier", None)
+                    .await;
             });
         });
     });
@@ -58,7 +62,9 @@ fn bench_retrieval_hormer(c: &mut Criterion) {
     c.bench_function("retrieval_hormer", |b| {
         b.iter(|| {
             rt.block_on(async {
-                let _ = gating_hormer.retrieve(&working, &episodic, &semantic, "Xavier", None).await;
+                let _ = gating_hormer
+                    .retrieve(&working, &episodic, &semantic, "Xavier", None)
+                    .await;
             });
         });
     });

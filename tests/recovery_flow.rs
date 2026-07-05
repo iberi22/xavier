@@ -2,13 +2,13 @@ use axum::{
     body::Body,
     http::{self, Request, StatusCode},
 };
+use chrono::Utc;
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tower::ServiceExt;
 use uuid::Uuid;
-use chrono::Utc;
 
 use xavier::security::recovery::RecoveryManager;
 use xavier::security::user_store::{User, UserStore};
@@ -50,7 +50,9 @@ async fn test_full_recovery_flow() {
             manager.add_migration(xavier::storage::migrations::MigrationV6RecoverySystem);
             manager.run_migrations(conn).unwrap();
             Ok(())
-        }).await.unwrap();
+        })
+        .await
+        .unwrap();
 
     // 2. Create a user
     let email = "test@example.com";
@@ -83,11 +85,16 @@ async fn test_full_recovery_flow() {
     let new_seed = RecoveryManager::generate_seed_phrase().unwrap();
     let new_seed_hash = RecoveryManager::hash_seed_phrase(&new_seed);
 
-    user_store.update_password_and_recovery(&user.id, &new_password_hash, &new_seed_hash).await.unwrap();
+    user_store
+        .update_password_and_recovery(&user.id, &new_password_hash, &new_seed_hash)
+        .await
+        .unwrap();
 
     // 5. Check updated user
     let updated_user = user_store.get_user_by_email(email).await.unwrap().unwrap();
-    assert!(security_mgr.verify_password(new_password, &updated_user.password_hash).unwrap());
+    assert!(security_mgr
+        .verify_password(new_password, &updated_user.password_hash)
+        .unwrap());
     assert_eq!(updated_user.recovery_seed_hash, new_seed_hash);
     assert!(!updated_user.two_factor_enabled); // 2FA should be disabled
 
@@ -104,17 +111,35 @@ async fn test_full_recovery_flow() {
     }
     user_store.save_backup_codes(backup_codes).await.unwrap();
 
-    assert_eq!(user_store.count_remaining_backup_codes(&user.id).await.unwrap(), 10);
+    assert_eq!(
+        user_store
+            .count_remaining_backup_codes(&user.id)
+            .await
+            .unwrap(),
+        10
+    );
 
     // Use a backup code
     let first_code = &codes[0];
     let first_code_hash = RecoveryManager::hash_backup_code(first_code);
-    let success = user_store.verify_and_consume_backup_code(&user.id, &first_code_hash).await.unwrap();
+    let success = user_store
+        .verify_and_consume_backup_code(&user.id, &first_code_hash)
+        .await
+        .unwrap();
     assert!(success);
 
-    assert_eq!(user_store.count_remaining_backup_codes(&user.id).await.unwrap(), 9);
+    assert_eq!(
+        user_store
+            .count_remaining_backup_codes(&user.id)
+            .await
+            .unwrap(),
+        9
+    );
 
     // Try to use same code again
-    let success_again = user_store.verify_and_consume_backup_code(&user.id, &first_code_hash).await.unwrap();
+    let success_again = user_store
+        .verify_and_consume_backup_code(&user.id, &first_code_hash)
+        .await
+        .unwrap();
     assert!(!success_again);
 }
