@@ -293,12 +293,6 @@ pub enum Command {
         #[command(subcommand)]
         cmd: RegenCommand,
     },
-
-    /// Governance DAO — proposals, voting, council management
-    Governance {
-        #[command(subcommand)]
-        command: GovernanceSubcommand,
-    },
 }
 
 /// Subcommands for the auto-improvement loop.
@@ -722,9 +716,28 @@ pub enum SecretsCommand {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum GovernanceCommand {
-    /// List all active and past governance proposals (XIPs)
+    /// List active proposals
     List,
-    /// Show current council members and their status
+    /// Create a new proposal
+    Create {
+        /// Proposal title
+        title: String,
+        /// Proposal description
+        description: String,
+    },
+    /// Show status of a proposal
+    Status {
+        /// Proposal ID
+        proposal_id: String,
+    },
+    /// Cast a vote on a proposal
+    Vote {
+        /// Proposal ID
+        proposal_id: String,
+        /// Vote in favor
+        approve: bool,
+    },
+    /// Show council members
     Council,
 }
 
@@ -892,30 +905,3 @@ pub enum WalletCommand {
     },
 }
 
-/// Governance DAO subcommands
-#[derive(Subcommand, Debug, Clone)]
-pub enum GovernanceSubcommand {
-    /// List active proposals
-    List,
-    /// Create a new proposal
-    Create {
-        /// Proposal title
-        title: String,
-        /// Proposal description
-        description: String,
-    },
-    /// Show status of a proposal
-    Status {
-        /// Proposal ID
-        proposal_id: String,
-    },
-    /// Cast a vote on a proposal
-    Vote {
-        /// Proposal ID
-        proposal_id: String,
-        /// Vote in favor
-        approve: bool,
-    },
-    /// Show council members
-    Council,
-}
