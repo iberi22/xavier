@@ -100,6 +100,7 @@ pub async fn chat_batch_proxy(
 
 pub async fn revoke_lease_by_path(
     State(state): State<CliState>,
+    axum::Extension(_session): axum::Extension<SessionInfo>,
     axum::extract::Path(token): axum::extract::Path<String>,
 ) -> Response {
     match state
@@ -114,6 +115,7 @@ pub async fn revoke_lease_by_path(
 
 pub async fn generic_proxy(
     State(state): State<CliState>,
+    axum::Extension(session): axum::Extension<SessionInfo>,
     Json(req): Json<GenericProxyRequest>,
 ) -> Response {
     match state
