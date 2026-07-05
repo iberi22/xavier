@@ -173,11 +173,6 @@ pub enum Command {
         cmd: DataCommonsCommand,
     },
 
-    /// Manage Xavier Governance (DAO, Voting, Council)
-    Governance {
-        #[command(subcommand)]
-        command: GovernanceCommand,
-    },
     /// Manage XP wallet and tokenomics [SKELETON — decisions pending]
     Wallet {
         #[command(subcommand)]
@@ -720,13 +715,6 @@ pub enum SecretsCommand {
     Status { token: String },
 }
 
-#[derive(Subcommand, Debug, Clone)]
-pub enum GovernanceCommand {
-    /// List all active and past governance proposals (XIPs)
-    List,
-    /// Show current council members and their status
-    Council,
-}
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum DataCommonsCommand {
@@ -876,6 +864,8 @@ pub mod memory {
             #[arg(long)]
             nightly: bool,
         },
+        /// Index Xavier's own foundational documents
+        IndexSelf,
     }
 }
 
