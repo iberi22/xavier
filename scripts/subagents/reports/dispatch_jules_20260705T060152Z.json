@@ -1,0 +1,19 @@
+{
+  "type": "jules",
+  "agent_id": "jules",
+  "project": "xavier",
+  "task": "El endpoint proxy (/v1/proxy/request en src/cli/server.rs y handler en src/cli/handlers/) actualmente no tiene autenticacion ni rate-limiting. Cualquiera con acceso de red puede usarlo. Tareas: (1) Requirir el header X-Xavier-Token en el endpoint proxy (igual que /memory/*). (2) Anadir rate-limiting por agent_id o IP usando el RateLimitManager que ya existe en CliState (src/cli/state.rs). (3) Limitar a N requests/minuto configurable via XAVIER_PROXY_RATE_LIMIT (default 60). (4) Test: request sin token -> 401; request con token excediendo limite -> 429. Contexto: EPIC padre #380.",
+  "title": "F3: Add auth + rate-limit to /v1/proxy endpoint",
+  "repo": "iberi22/xavier",
+  "issue_url": "https://github.com/iberi22/xavier/issues/394",
+  "issue_number": "394",
+  "labels": [
+    "jules",
+    "feat",
+    "security"
+  ],
+  "persisted_path": "dispatch/xavier/jules/394",
+  "persisted_id": "01KWRDWVPCXHE2S5Y615NB3JN4",
+  "ts": "2026-07-05T06:01:47Z",
+  "note": "Jules es async. Monitorea el PR con: python dispatch.py jules-status"
+}

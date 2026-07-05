@@ -1,0 +1,19 @@
+{
+  "type": "jules",
+  "agent_id": "jules",
+  "project": "xavier",
+  "task": "El endpoint 'secrets lend' (src/coordination/ y src/app/) devuelve el secret_value original al agente en su respuesta, lo que rompe la promesa del Proxy Vault Seguro (la key nunca sale de Xavier). Tareas: (1) Encontrar la respuesta del handler de /secrets/lend (buscar 'secret_value' en los handlers de secrets y en KeyLendingEngine::lend). (2) Redactar/mascarar el secret_value en la respuesta JSON (devolver null, '<redacted>', o un mask parcial tipo 'sk-...XXXX'). (3) El agente solo debe recibir el lease_token, no la key. (4) Anadir test que verifique que la respuesta de lend NO contiene el secret_value real. Contexto: el issue padre EPIC es #380, y F1 (wirear ProxyUseCase en headless_chat) ya esta implementado en main.",
+  "title": "F2: Redact secret_value from /secrets/lend response (key never leaves Xavier)",
+  "repo": "iberi22/xavier",
+  "issue_url": "https://github.com/iberi22/xavier/issues/392",
+  "issue_number": "392",
+  "labels": [
+    "jules",
+    "feat",
+    "security"
+  ],
+  "persisted_path": "dispatch/xavier/jules/392",
+  "persisted_id": "01KWRDSJ6HJ625R48BW8SABS02",
+  "ts": "2026-07-05T05:59:59Z",
+  "note": "Jules es async. Monitorea el PR con: python dispatch.py jules-status"
+}

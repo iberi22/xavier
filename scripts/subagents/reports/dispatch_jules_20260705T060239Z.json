@@ -1,0 +1,19 @@
+{
+  "type": "jules",
+  "agent_id": "jules",
+  "project": "xavier",
+  "task": "Los leases de secrets (KeyLendingEngine en src/coordination/) se crean cuando un agente pide una key pero nunca se revocan automaticamente cuando la tarea del agente termina. Tareas: (1) Implementar un hook on_task_complete que llame a KeyLendingEngine::revoke(lease_id) cuando una tarea del agent lifecycle termina (ver src/agents/ y AgentLifecyclePort en src/cli/state.rs). (2) Anadir un task completion event que dispare la revocacion. (3) Log y metrica de leases auto-revoked. (4) Test: crear lease -> completar task -> verificar lease revoked. Contexto: issue relacionado #368 (Agent Lifecycle Hooks), EPIC padre #380.",
+  "title": "F5: Auto-revoke leases when agent tasks complete",
+  "repo": "iberi22/xavier",
+  "issue_url": "https://github.com/iberi22/xavier/issues/395",
+  "issue_number": "395",
+  "labels": [
+    "jules",
+    "feat",
+    "security"
+  ],
+  "persisted_path": "dispatch/xavier/jules/395",
+  "persisted_id": "01KWRDY8VF7R57FT4WEN9XHMP7",
+  "ts": "2026-07-05T06:02:34Z",
+  "note": "Jules es async. Monitorea el PR con: python dispatch.py jules-status"
+}
