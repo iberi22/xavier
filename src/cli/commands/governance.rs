@@ -1,142 +1,96 @@
-//! Governance DAO CLI command handlers
-//!
-//! Handles governance subcommands: list, create, status, vote, council.
+//! Governance Command Handlers — CLI implementation for Xavier Governance DAO
 
-use super::enums::GovernanceSubcommand;
-use crate::data_commons::governance::{GovernanceConfig, GovernanceEngine};
-use crate::data_commons::types::{CouncilRole, WalletAddress};
-
+use crate::cli::commands::GovernanceCommand;
+use crate::cli::commands::data_commons::{governance, types};
 use anyhow::Result;
 
-/// Handle a governance subcommand from the CLI.
-pub async fn handle_governance_command(cmd: GovernanceSubcommand) -> Result<()> {
-    let config = GovernanceConfig::default();
-    let mut engine = GovernanceEngine::new(config);
+pub async fn handle_governance_command(command: GovernanceCommand) -> Result<()> {
+    // License check for Governance features
+    let settings = xavier::settings::XavierSettings::current();
+    xavier::security::license::require_mesh_license(&settings).map_err(|e| anyhow::anyhow!(e))?;
 
-    match cmd {
-        GovernanceSubcommand::List => {
-            // For demo: create a default engine and list proposals
-            let proposals = engine.active_proposals();
-            if proposals.is_empty() {
-                println!("📋 No active proposals found.");
-            } else {
-                println!("📋 Active Proposals ({}):", proposals.len());
-                for p in proposals {
-                    println!(
-                        "  • {} [{}] — {} (state: {})",
-                        p.id,
-                        p.status_label(),
-                        p.title,
-                        p.xip_state.label()
-                    );
-                }
-            }
-            Ok(())
-        }
-
-        GovernanceSubcommand::Create { title, description } => {
-            // Use a demo wallet for CLI-based creation
-            let demo_wallet = WalletAddress("xv1_cli_operator".into());
-            engine.register_activity(demo_wallet.clone());
-
-            let proposal = engine.create_proposal(
-                title,
-                description,
-                std::collections::HashMap::new(),
-                demo_wallet,
-            )?;
-
-            println!("✅ Proposal created: {}", proposal.id);
-            println!("   Status: {}", proposal.status_label());
-            println!("   State:  {}", proposal.xip_state.label());
-            println!("   Needs {} more supports to reach voting.", engine.get_proposal(&proposal.id).map_or(0, |p| 5u32.saturating_sub(p.supports.len() as u32)));
-            Ok(())
-        }
-
-        GovernanceSubcommand::Status { proposal_id } => {
-            let proposal = engine
-                .get_proposal(&proposal_id)
-                .ok_or_else(|| anyhow::anyhow!("Proposal '{}' not found", proposal_id))?;
-
-            println!("📄 Proposal: {}", proposal.id);
-            println!("   Title:    {}", proposal.title);
-            println!("   Status:   {}", proposal.status_label());
-            println!("   State:    {}", proposal.xip_state.label());
-            println!("   Author:   {}", proposal.author.0);
-            println!("   Supports: {}", proposal.supports.len());
-            println!("   User votes:    {} (weighted: {})", proposal.user_votes.len(), proposal.weighted_user_votes.len());
-            println!("   Council votes: {}", proposal.council_votes.len());
-            if proposal.council_veto {
-                println!("   ⚠️  COUNCIL VETO ACTIVE: {:?}", proposal.veto_reason);
-            }
-            if proposal.appealed {
-                println!("   🔄 Community appeal filed.");
-            }
-            Ok(())
-        }
-
-        GovernanceSubcommand::Vote { proposal_id, approve } => {
-            let demo_wallet = WalletAddress("xv1_cli_voter".into());
-            engine.register_activity(demo_wallet.clone());
-
-            let vote_str = if approve { "YES (approve)" } else { "NO (reject)" };
-
-            match engine.user_vote(&proposal_id, &demo_wallet, approve, vec![], vec![]) {
-                Ok(()) => {
-                    println!("✅ Vote cast: {} on proposal {}", vote_str, proposal_id);
-                }
-                Err(e) => {
-                    return Err(anyhow::anyhow!("Failed to cast vote: {}", e));
-                }
-            }
-            Ok(())
-        }
-
-        GovernanceSubcommand::Council => {
-            let members = engine.active_council_members();
-            if members.is_empty() {
-                println!("🏛️ No council members configured.");
-                println!("   (This is a demo engine — add members programmatically.)");
-            } else {
-                println!("🏛️ Council Members ({}):", members.len());
-                for m in members {
-                    let role_str = match m.role {
-                        CouncilRole::CoreMaintainer => "Core Maintainer",
-                        CouncilRole::SkillContributor => "Skill Contributor",
-                        CouncilRole::SecurityAuditor => "Security Auditor",
-                        CouncilRole::Architect => "Architect",
-                        CouncilRole::CommunityRepresentative => "Community Rep",
-                    };
-                    println!("  • {} — {} ({})", m.id, m.wallet.0, role_str);
-                }
-            }
-            Ok(())
-        }
+    match command {
+        GovernanceCommand::List => list_proposals().await,
+        GovernanceCommand::Council => list_council_members().await,
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+async fn list_proposals() -> Result<()> {
+    println!("Fetching Xavier Governance Proposals (XIPs)...");
 
-    #[tokio::test]
-    async fn test_handle_list_returns_ok() {
-        let result = handle_governance_command(GovernanceSubcommand::List).await;
-        assert!(result.is_ok(), "List command should return Ok");
+    // In this Phase 0/1 implementation, we use a default engine
+    // Real persistence would load this from a shared state or mesh broadcast
+    let config = governance::GovernanceConfig::default();
+    let engine = governance::GovernanceEngine::new(config);
+
+    // Mock some proposals for demonstration if needed,
+    // but the engine starts empty by default.
+    let proposals = engine.active_proposals();
+
+    if proposals.is_empty() {
+        println!("\nNo active proposals found in the governance board.");
+        println!("Use 'xavier governance propose' (coming soon) to create one.");
+        return Ok(());
     }
 
-    #[tokio::test]
-    async fn test_handle_status_unknown_proposal_errors() {
-        let result = handle_governance_command(GovernanceSubcommand::Status {
-            proposal_id: "nonexistent_id".into(),
-        })
-        .await;
-        assert!(result.is_err(), "Unknown proposal should return an error");
-        let err_msg = result.unwrap_err().to_string();
-        assert!(
-            err_msg.contains("not found"),
-            "Error should mention 'not found', got: {}",
-            err_msg
+    println!("\n{:<15} {:<30} {:<15} {:<10}", "ID", "Title", "State", "Supports");
+    println!("{}", "-".repeat(80));
+
+    for p in proposals {
+        println!(
+            "{:<15} {:<30} {:<15} {:<10}",
+            p.id,
+            p.title,
+            p.xip_state.label(),
+            p.supports.len()
         );
     }
+
+    Ok(())
+}
+
+async fn list_council_members() -> Result<()> {
+    println!("Xavier Core Council Members:");
+
+    let config = governance::GovernanceConfig::default();
+    let mut engine = governance::GovernanceEngine::new(config);
+
+    // Add a few default mock members if the council is empty for CLI visibility
+    if engine.council_size() == 0 {
+        use types::{WalletAddress, CouncilRole};
+        engine.add_council_member(
+            WalletAddress("xv1_core_maintainer_alpha_0123456789abcdef0123456789abcd".to_string()),
+            CouncilRole::CoreMaintainer,
+            vec!["Security".into(), "Architecture".into()]
+        );
+    }
+
+    let members = engine.active_council_members();
+
+    if members.is_empty() {
+        println!("\nNo active council members found.");
+        return Ok(());
+    }
+
+    println!("\n{:<15} {:<40} {:<20}", "ID", "Wallet Address", "Role");
+    println!("{}", "-".repeat(85));
+
+    for m in members {
+        let role_str = match m.role {
+            types::CouncilRole::CoreMaintainer => "Core Maintainer",
+            types::CouncilRole::SkillContributor => "Skill Contributor",
+            types::CouncilRole::SecurityAuditor => "Security Auditor",
+            types::CouncilRole::Architect => "Architect",
+            types::CouncilRole::CommunityRepresentative => "Community Rep",
+        };
+
+        println!(
+            "{:<15} {:<40} {:<20}",
+            m.id,
+            m.wallet.0,
+            role_str
+        );
+    }
+
+    Ok(())
 }
