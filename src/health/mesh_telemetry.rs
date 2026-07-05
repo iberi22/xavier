@@ -128,6 +128,26 @@ impl MeshTelemetryCollector {
         }
     }
 
+    /// Number of known peers.
+    pub fn peer_count(&self) -> u32 {
+        let metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
+        metrics.len() as u32
+    }
+
+    /// Number of peers considered healthy (agreement ratio >= 0.5).
+    pub fn connected_peer_count(&self) -> u32 {
+        let metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
+        metrics.values().filter(|m| m.agreement_ratio() >= 0.5).count() as u32
+    }
+
+    /// Average latency across all peers in milliseconds. Returns 0.0 if no data.
+    pub fn average_latency_ms(&self) -> f64 {
+        let metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
+        let total: u64 = metrics.values().filter_map(|m| m.latencies_ms.iter().last().copied()).sum();
+        let count = metrics.values().filter(|m| !m.latencies_ms.is_empty()).count();
+        if count == 0 { 0.0 } else { total as f64 / count as f64 }
+    }
+
     /// Update uptime for all known peers.
     pub fn update_uptimes(&self) {
         let mut metrics = self.peer_metrics.lock().expect("metrics lock poisoned");

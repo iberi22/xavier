@@ -340,6 +340,27 @@ impl Default for Notifier {
     }
 }
 
+/// Helper: optionally emit a Telegram notification after a successful fixer
+/// action.
+///
+/// Logs a trace-level message when called. In a future iteration this will
+/// actually push a [`FixerAction::TelegramNotified`] notification through the
+/// [`Notifier::send_background`] path when the `telegram` feature is enabled.
+///
+/// Intended to be called at the fixer call site after `result.success` is true.
+#[cfg(feature = "telegram")]
+pub fn maybe_notify_telegram_fix(action: &super::fixer::FixerAction) {
+    tracing::trace!("maybe_notify_telegram_fix called with action: {action:?}");
+    // TODO: once the Notifier can produce a FixerAction::TelegramNotified
+    //       result from here, wire it through send_background.
+}
+
+/// Fallback: no-op when the telegram feature is disabled.
+#[cfg(not(feature = "telegram"))]
+pub fn maybe_notify_telegram_fix(action: &super::fixer::FixerAction) {
+    tracing::trace!("maybe_notify_telegram_fix (telegram disabled): {action:?}");
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -578,5 +599,12 @@ mod tests {
             }
         }
         assert!(saw, "notify_startup should publish its notification to the bus");
+    }
+
+    #[test]
+    fn test_maybe_notify_telegram_fix_helper_exists_and_callable() {
+        // Verify the helper function can be called without panicking.
+        maybe_notify_telegram_fix(&FixerAction::TelegramNotified);
+        maybe_notify_telegram_fix(&FixerAction::IssueCreated);
     }
 }

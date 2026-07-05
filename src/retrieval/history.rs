@@ -21,6 +21,86 @@ use std::path::{Path, PathBuf};
 use super::eval::RetrievalMetrics;
 use super::tuner::TuningProposal;
 
+/// Direction of a recall drift trend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TrendDirection {
+    Improving,
+    Declining,
+    Stable,
+}
+
+/// A linear-regression analysis of recall drift over recent cycles.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DriftTrend {
+    /// Overall direction of the trend.
+    pub direction: TrendDirection,
+    /// Slope: change in recall per cycle (positive = improving).
+    pub slope: f64,
+    /// Number of history entries used in the analysis.
+    pub cycles_analyzed: usize,
+    /// Recall value of the most recent entry.
+    pub current_recall: f64,
+}
+
+/// Analyze the drift trend of the last N entries via linear regression.
+///
+/// Uses all entries if fewer than 10, otherwise the last 10. A single entry
+/// always yields `Stable` (insufficient data for slope).
+pub fn analyze_drift_trend(entries: &[HistoryEntry]) -> Option<DriftTrend> {
+    if entries.is_empty() {
+        return None;
+    }
+    if entries.len() == 1 {
+        return Some(DriftTrend {
+            direction: TrendDirection::Stable,
+            slope: 0.0,
+            cycles_analyzed: 1,
+            current_recall: entries[0].baseline.recall_at_k,
+        });
+    }
+
+    // Use last 10 entries or all if fewer.
+    let window = if entries.len() < 10 {
+        entries.len()
+    } else {
+        10
+    };
+    let slice = &entries[entries.len() - window..];
+
+    // Linear regression: y = slope * x + intercept
+    let n = slice.len() as f64;
+    let sum_x: f64 = (0..slice.len()).map(|i| i as f64).sum();
+    let sum_y: f64 = slice.iter().map(|e| e.baseline.recall_at_k).sum();
+    let sum_xy: f64 = slice
+        .iter()
+        .enumerate()
+        .map(|(i, e)| i as f64 * e.baseline.recall_at_k)
+        .sum();
+    let sum_x2: f64 = (0..slice.len()).map(|i| (i as f64) * (i as f64)).sum();
+
+    let denom = n * sum_x2 - sum_x * sum_x;
+    let slope = if denom.abs() < 1e-12 {
+        0.0
+    } else {
+        (n * sum_xy - sum_x * sum_y) / denom
+    };
+
+    let direction = if slope > 0.01 {
+        TrendDirection::Improving
+    } else if slope < -0.01 {
+        TrendDirection::Declining
+    } else {
+        TrendDirection::Stable
+    };
+
+    Some(DriftTrend {
+        direction,
+        slope,
+        cycles_analyzed: slice.len(),
+        current_recall: slice.last().unwrap().baseline.recall_at_k,
+    })
+}
+
 /// Default file name for the tuning history, relative to the repo's `.xavier` dir.
 pub const HISTORY_FILENAME: &str = "tuning-history.json";
 
@@ -214,5 +294,45 @@ mod tests {
         assert_eq!(tail[1].timestamp, "2026-07-04T00:00:00Z");
         // Asking for more than exists returns everything in order.
         assert_eq!(history.last_n(100).len(), 5);
+    }
+
+    #[test]
+    fn test_drift_trend_improving() {
+        // Recall goes from 0.50 up to 0.90 over 5 entries -> slope should be positive.
+        let entries: Vec<HistoryEntry> = (0..5)
+            .map(|i| {
+                let recall = 0.50 + (i as f64) * 0.10;
+                entry(&format!("2026-07-0{i}T00:00:00Z"), recall, 0.0)
+            })
+            .collect();
+        let trend = analyze_drift_trend(&entries).expect("trend from 5 entries");
+        assert_eq!(trend.direction, TrendDirection::Improving);
+        assert!(trend.slope > 0.0);
+        assert_eq!(trend.cycles_analyzed, 5);
+        assert!((trend.current_recall - 0.90).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_drift_trend_declining() {
+        // Recall goes from 0.90 down to 0.50 over 5 entries -> slope should be negative.
+        let entries: Vec<HistoryEntry> = (0..5)
+            .map(|i| {
+                let recall = 0.90 - (i as f64) * 0.10;
+                entry(&format!("2026-07-0{i}T00:00:00Z"), recall, 0.0)
+            })
+            .collect();
+        let trend = analyze_drift_trend(&entries).expect("trend from 5 entries");
+        assert_eq!(trend.direction, TrendDirection::Declining);
+        assert!(trend.slope < 0.0);
+    }
+
+    #[test]
+    fn test_drift_trend_single_entry_stable() {
+        let entries = vec![entry("2026-07-01T00:00:00Z", 0.7, 0.0)];
+        let trend = analyze_drift_trend(&entries).expect("trend from 1 entry");
+        assert_eq!(trend.direction, TrendDirection::Stable);
+        assert!((trend.slope - 0.0).abs() < 1e-9);
+        assert_eq!(trend.cycles_analyzed, 1);
+        assert!((trend.current_recall - 0.7).abs() < 1e-9);
     }
 }

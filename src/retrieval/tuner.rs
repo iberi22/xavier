@@ -12,8 +12,9 @@
 //! persists into `XavierSettings` and re-measures.
 
 use super::config::{DEFAULT_EPISODIC_WEIGHT, DEFAULT_RRF_K, DEFAULT_SEMANTIC_WEIGHT, DEFAULT_WORKING_WEIGHT};
-use super::eval::RetrievalMetrics;
+use super::eval::{EvalDataset, RetrievalMetrics};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// A candidate configuration produced by the tuner.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -190,6 +191,58 @@ where
     }
 }
 
+/// Tune RRF weights independently per category in the dataset.
+///
+/// Cases are grouped by their `category` field. Groups with fewer than 3 cases
+/// are skipped. For each qualifying group, `tune()` is run with an evaluate
+/// closure scoped to that group. Returns a map from category name to the best
+/// `TuningProposal` found for that group.
+pub fn tune_by_category<F>(
+    baseline: &RetrievalConfig,
+    dataset: &EvalDataset,
+    evaluate: F,
+) -> HashMap<String, TuningProposal>
+where
+    F: Fn(&RetrievalConfig, &str, &[usize]) -> RetrievalMetrics,
+{
+    let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
+    for (i, case) in dataset.cases.iter().enumerate() {
+        groups
+            .entry(case.category.clone())
+            .or_default()
+            .push(i);
+    }
+
+    let mut proposals = HashMap::new();
+    for (category, indices) in groups {
+        if indices.len() < 3 {
+            continue;
+        }
+        let indices_slice: Vec<usize> = indices;
+        let proposal = tune(baseline, |cfg| evaluate(cfg, &category, &indices_slice));
+        proposals.insert(category, proposal);
+    }
+    proposals
+}
+
+/// Pick the proposal with the highest delta from a per-category map.
+///
+/// Returns a copy of the best proposal, or a fallback proposal with zero delta
+/// if the map is empty.
+pub fn best_overall(proposals: &HashMap<String, TuningProposal>) -> TuningProposal {
+    proposals
+        .values()
+        .max_by(|a, b| a.delta.partial_cmp(&b.delta).unwrap_or(std::cmp::Ordering::Equal))
+        .cloned()
+        .unwrap_or(TuningProposal {
+            config: RetrievalConfig::default(),
+            score: 0.0,
+            baseline_score: 0.0,
+            delta: 0.0,
+            candidates_evaluated: 0,
+        })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -272,6 +325,8 @@ mod tests {
             mrr: 0.5,
             hit_rate: 0.70,
             k: 5,
+            precision_at_k: 0.14,
+            category: None,
         };
         let current = RetrievalMetrics {
             recall_at_k: 0.60,
@@ -291,6 +346,8 @@ mod tests {
             mrr: 0.5,
             hit_rate: 0.90,
             k: 5,
+            precision_at_k: 0.18,
+            category: None,
         };
         let current = RetrievalMetrics {
             recall_at_k: 0.78,
@@ -310,6 +367,8 @@ mod tests {
             mrr: 0.5,
             hit_rate: 0.80,
             k: 5,
+            precision_at_k: 0.16,
+            category: None,
         };
         let improved = RetrievalMetrics {
             recall_at_k: 0.85,
@@ -335,11 +394,87 @@ mod tests {
             mrr: 0.0,
             hit_rate: 0.0,
             k: 5,
+            precision_at_k: 0.0,
+            category: None,
         };
         let current = RetrievalMetrics {
             recall_at_k: 0.5,
             ..baseline.clone()
         };
         assert!(detect_recall_drift(&baseline, &current).is_none());
+    }
+
+    #[test]
+    fn test_tune_by_category_single_category_falls_through() {
+        // All cases in "general" -> tune() is called once for that group.
+        let ds = EvalDataset::from_pairs("test", &[
+            ("q1", "e1"), ("q2", "e2"), ("q3", "e3"),
+        ]);
+        let baseline = RetrievalConfig::default();
+        let proposals = tune_by_category(&baseline, &ds, |_cfg, _cat, _indices| {
+            metrics_for(0.7, 0.5)
+        });
+        assert_eq!(proposals.len(), 1);
+        assert!(proposals.contains_key("general"));
+    }
+
+    #[test]
+    fn test_tune_by_category_multi_category() {
+        // Cases split across categories with >= 3 each.
+        let mut ds = EvalDataset::from_pairs("test", &[]);
+        for i in 0..3 {
+            ds.cases.push(crate::retrieval::eval::EvalCase {
+                id: format!("a-{i}"),
+                query: format!("q{i}"),
+                expected_path: format!("e{i}"),
+                category: "alpha".to_string(),
+            });
+        }
+        for i in 0..4 {
+            ds.cases.push(crate::retrieval::eval::EvalCase {
+                id: format!("b-{i}"),
+                query: format!("q{i}"),
+                expected_path: format!("e{i}"),
+                category: "beta".to_string(),
+            });
+        }
+        let baseline = RetrievalConfig::default();
+        let proposals = tune_by_category(&baseline, &ds, |_cfg, _cat, _indices| {
+            metrics_for(0.8, 0.6)
+        });
+        assert_eq!(proposals.len(), 2);
+        assert!(proposals.contains_key("alpha"));
+        assert!(proposals.contains_key("beta"));
+    }
+
+    #[test]
+    fn test_tune_by_category_empty_dataset() {
+        let ds = EvalDataset::from_pairs("empty", &[]);
+        let baseline = RetrievalConfig::default();
+        let proposals = tune_by_category(&baseline, &ds, |_cfg, _cat, _indices| {
+            metrics_for(0.5, 0.5)
+        });
+        assert!(proposals.is_empty());
+    }
+
+    #[test]
+    fn test_best_overall_picks_highest_delta() {
+        let mut proposals = HashMap::new();
+        proposals.insert("low".to_string(), TuningProposal {
+            config: RetrievalConfig::default(),
+            score: 0.6,
+            baseline_score: 0.55,
+            delta: 0.05,
+            candidates_evaluated: 27,
+        });
+        proposals.insert("high".to_string(), TuningProposal {
+            config: RetrievalConfig::default(),
+            score: 0.9,
+            baseline_score: 0.7,
+            delta: 0.2,
+            candidates_evaluated: 27,
+        });
+        let best = best_overall(&proposals);
+        assert!((best.delta - 0.2).abs() < 1e-9);
     }
 }

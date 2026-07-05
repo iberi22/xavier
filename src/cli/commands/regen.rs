@@ -10,7 +10,7 @@
 use anyhow::Result;
 use std::path::{Path, PathBuf};
 use xavier::retrieval::eval::{is_hit, CaseResult, EvalDataset, RetrievalMetrics};
-use xavier::retrieval::history::{self, HistoryEntry, TuningHistory};
+use xavier::retrieval::history::{self, analyze_drift_trend, HistoryEntry, TuningHistory};
 use xavier::retrieval::tuner::{detect_recall_drift, tune, RetrievalConfig};
 
 use crate::cli::commands::enums::RegenCommand;
@@ -325,6 +325,25 @@ fn run_history(limit: usize, json: bool) -> Result<()> {
             entry.proposal.delta,
             entry.proposal.candidates_evaluated,
             if entry.proposal.is_beneficial() { "  ✅ beneficial" } else { "" });
+    }
+
+    // Print drift trend analysis.
+    if let Some(trend) = analyze_drift_trend(&history.entries) {
+        use xavier::retrieval::history::TrendDirection;
+        let pct_per_cycle = trend.slope * 100.0;
+        match trend.direction {
+            TrendDirection::Improving => {
+                println!("\n📈 Trend: Improving (+{:.2}% per cycle)", pct_per_cycle.abs());
+            }
+            TrendDirection::Declining => {
+                println!("\n📉 Trend: Declining (-{:.2}% per cycle)", pct_per_cycle.abs());
+            }
+            TrendDirection::Stable => {
+                println!("\n➡️ Trend: Stable");
+            }
+        }
+        println!("   (analyzed {} cycles, current recall {:.1}%)",
+            trend.cycles_analyzed, trend.current_recall * 100.0);
     }
 
     Ok(())
