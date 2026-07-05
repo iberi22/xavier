@@ -42,7 +42,7 @@ mod tests {
 
     #[tokio::test]
     async fn unregister_existing_agent_returns_success_payload() {
-        let registry = SimpleAgentRegistry::new();
+        let registry = SimpleAgentRegistry::new(None);
         registry
             .register(
                 "agent-delete-1".to_string(),
@@ -71,7 +71,7 @@ mod tests {
     #[tokio::test]
     async fn unregister_missing_agent_returns_error_payload() {
         let Json(payload) = unregister_agent_handler(
-            State(SimpleAgentRegistry::new() as Arc<dyn AgentLifecyclePort>),
+            State(SimpleAgentRegistry::new(None) as Arc<dyn AgentLifecyclePort>),
             Path("missing-agent".to_string()),
         )
         .await;

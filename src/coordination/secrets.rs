@@ -350,4 +350,42 @@ mod tests {
         assert!(leak.is_some());
         assert_eq!(leak.unwrap().0, agent_id);
     }
+
+    #[tokio::test]
+    async fn test_auto_revocation_on_task_complete() {
+        use crate::coordination::events::{XavierEvent, XavierEventBus};
+        use crate::coordination::agent_registry::SimpleAgentRegistry;
+        use crate::ports::inbound::AgentLifecyclePort;
+
+        let event_bus = XavierEventBus::new(10);
+        let engine = Arc::new(KeyLendingEngine::new(Box::new(MockAuditLogger), Some(event_bus.clone())));
+        let registry = SimpleAgentRegistry::new(Some(event_bus.clone()));
+        let agent_id = "test-agent-lifecycle";
+
+        // Lend a secret
+        let lease = engine.lend("test-secret", Some("val"), agent_id, 3600).await.unwrap();
+        assert!(engine.get_lease(&lease.token).await.is_some());
+
+        // Setup the listener (mimicking server.rs)
+        let engine_clone = engine.clone();
+        let mut receiver = event_bus.subscribe();
+        let handle = tokio::spawn(async move {
+            if let Ok(event) = receiver.recv().await {
+                if let XavierEvent::AgentTaskCompleted { agent_id: id } = event {
+                    if id == agent_id {
+                        engine_clone.revoke_for_agent(&id, "Task Completed").await;
+                    }
+                }
+            }
+        });
+
+        // Trigger task completion
+        registry.on_task_complete(agent_id).await;
+
+        // Wait for listener to process
+        let _ = handle.await;
+
+        // Verify revocation
+        assert!(engine.get_lease(&lease.token).await.is_none());
+    }
 }

@@ -56,7 +56,7 @@ pub fn init_health_port(port: Arc<HttpHealthAdapter>) {
 // ─── Router ─────────────────────────────────────────────────────────────────
 
 pub fn create_router() -> Router {
-    create_router_with_agent_registry(SimpleAgentRegistry::new())
+    create_router_with_agent_registry(SimpleAgentRegistry::new(None))
 }
 
 pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecyclePort>) -> Router {
@@ -531,7 +531,7 @@ mod route_tests {
 
     #[tokio::test]
     async fn unregister_route_removes_existing_agent() {
-        let registry = SimpleAgentRegistry::new();
+        let registry = SimpleAgentRegistry::new(None);
         registry
             .register(
                 "agent-delete-1".to_string(),
@@ -563,7 +563,7 @@ mod route_tests {
 
     #[tokio::test]
     async fn unregister_route_returns_error_for_missing_agent() {
-        let response = create_router_with_agent_registry(SimpleAgentRegistry::new())
+        let response = create_router_with_agent_registry(SimpleAgentRegistry::new(None))
             .oneshot(post_request("/xavier/agents/missing-agent/unregister"))
             .await
             .expect("request should complete");

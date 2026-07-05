@@ -141,6 +141,14 @@ impl Agent {
         &mut self,
         memory: std::sync::Arc<crate::memory::qmd_memory::QmdMemory>,
     ) -> anyhow::Result<crate::agents::runtime::AgentResponse> {
+        self.run_with_lifecycle(memory, None).await
+    }
+
+    pub async fn run_with_lifecycle(
+        &mut self,
+        memory: std::sync::Arc<crate::memory::qmd_memory::QmdMemory>,
+        lifecycle: Option<std::sync::Arc<dyn crate::ports::inbound::AgentLifecyclePort>>,
+    ) -> anyhow::Result<crate::agents::runtime::AgentResponse> {
         self.start();
         let task = self
             .task
@@ -168,10 +176,24 @@ impl Agent {
             runtime = runtime.with_provider_config(p_config);
         }
 
-        let response = runtime.run(&task, None, None).await?;
+        let result = runtime.run(&task, None, None).await;
 
-        self.stop();
-        Ok(response)
+        match result {
+            Ok(response) => {
+                self.stop();
+                if let Some(l) = lifecycle {
+                    let _ = l.on_task_complete(&self.name).await;
+                }
+                Ok(response)
+            }
+            Err(e) => {
+                self.stop();
+                if let Some(l) = lifecycle {
+                    let _ = l.on_task_failed(&self.name, &e.to_string()).await;
+                }
+                Err(e)
+            }
+        }
     }
 }
 
