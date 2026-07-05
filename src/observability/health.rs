@@ -157,13 +157,12 @@ impl HealthMonitor {
         let tgd_consolidation = self.check_tgd_progress().await;
 
         let mut status = HealthLevel::Healthy;
-        if system.status == HealthLevel::Unhealthy
-            || database.status == HealthLevel::Unhealthy
-            || embedding.status == HealthLevel::Unhealthy
-        {
+        // Critical failures: system or database. Embedding failures only degrade the system.
+        if system.status == HealthLevel::Unhealthy || database.status == HealthLevel::Unhealthy {
             status = HealthLevel::Unhealthy;
         } else if system.status == HealthLevel::Degraded
             || database.status == HealthLevel::Degraded
+            || embedding.status == HealthLevel::Unhealthy
             || embedding.status == HealthLevel::Degraded
             || mesh.status == HealthLevel::Degraded
         {
