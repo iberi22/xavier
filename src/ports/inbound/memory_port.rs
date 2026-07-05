@@ -10,6 +10,7 @@ pub trait MemoryQueryPort: Send + Sync {
     async fn search(
         &self,
         query: &str,
+        limit: usize,
         filters: Option<MemoryQueryFilters>,
     ) -> anyhow::Result<Vec<MemoryRecord>>;
     async fn expand_depth(

@@ -105,6 +105,8 @@ pub struct MemoryRecord {
     pub content_iv: Option<Vec<u8>>,
     #[serde(default)]
     pub metadata_iv: Option<Vec<u8>>,
+    #[serde(default)]
+    pub score: f32,
 }
 
 impl Default for MemoryRecord {
@@ -129,6 +131,7 @@ impl Default for MemoryRecord {
             encrypted_dek: None,
             content_iv: None,
             metadata_iv: None,
+            score: 0.0,
         }
     }
 }
@@ -247,12 +250,19 @@ impl MemoryRecord {
             .clone()
             .unwrap_or_else(|| stable_key("memory", &[workspace_id, &document.path]));
 
+        let mut metadata = document.metadata.clone();
+        if document.score > 0.0 {
+            if let Some(obj) = metadata.as_object_mut() {
+                obj.insert("score".to_string(), serde_json::json!(document.score));
+            }
+        }
+
         Self {
             id,
             workspace_id: workspace_id.to_string(),
             path: document.path.clone(),
             content: document.content.clone(),
-            metadata: document.metadata.clone(),
+            metadata,
             embedding: document
                 .content_vector
                 .clone()
@@ -278,6 +288,7 @@ impl MemoryRecord {
                 v.as_str()
                     .and_then(|s| crate::utils::crypto::hex_decode(s).ok())
             }),
+            score: document.score,
             revisions: vec![MemoryRevision {
                 revision,
                 recorded_at: updated_at,
@@ -300,6 +311,9 @@ impl MemoryRecord {
                 "updated_at".to_string(),
                 serde_json::json!(self.updated_at.to_rfc3339()),
             );
+            if self.score > 0.0 {
+                object.insert("score".to_string(), serde_json::json!(self.score));
+            }
             object.insert("primary".to_string(), serde_json::json!(self.primary));
             if let Some(parent_id) = &self.parent_id {
                 object.insert("parent_id".to_string(), serde_json::json!(parent_id));

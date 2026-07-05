@@ -27,7 +27,7 @@ async fn handle_agent_scan(agent_filter: Option<String>, as_json: bool) -> Resul
     }
 
     let resp = client
-        .get(format!("{}/xavier/agents/scan", base_url))
+        .get(format!("{}/xavier/openclaw/scan", base_url))
         .header("X-Xavier-Token", &token)
         .send()
         .await?;
@@ -37,11 +37,11 @@ async fn handle_agent_scan(agent_filter: Option<String>, as_json: bool) -> Resul
 
         // Filter by agent name if provided
         if let Some(filter) = agent_filter {
-            if let Some(sessions) = data["sessions"].as_array_mut() {
-                sessions.retain(|s| {
-                    s["ide"].as_str().map(|name| name.to_lowercase().contains(&filter.to_lowercase())).unwrap_or(false)
+            if let Some(agents) = data["agents"].as_array_mut() {
+                agents.retain(|s| {
+                    s["agent_id"].as_str().map(|name| name.to_lowercase().contains(&filter.to_lowercase())).unwrap_or(false)
                 });
-                data["count"] = json!(sessions.len());
+                data["count"] = json!(agents.len());
             }
         }
 
@@ -49,12 +49,13 @@ async fn handle_agent_scan(agent_filter: Option<String>, as_json: bool) -> Resul
             println!("{}", serde_json::to_string_pretty(&data)?);
         } else {
             let count = data["count"].as_u64().unwrap_or(0);
-            println!("{} Found {} agent sessions", "✅".green(), count);
-            if let Some(sessions) = data["sessions"].as_array() {
-                for s in sessions {
-                    println!("  • {} (Source: {})",
-                        s["ide"].as_str().unwrap_or("Unknown").bold(),
-                        s["source_file"].as_str().unwrap_or("?")
+            println!("{} Found {} OpenClaw agents", "✅".green(), count);
+            if let Some(agents) = data["agents"].as_array() {
+                for s in agents {
+                    let memory_md = s["memory_md"].as_str().is_some();
+                    println!("  • {} (MEMORY.md: {})",
+                        s["agent_id"].as_str().unwrap_or("Unknown").bold(),
+                        if memory_md { "YES".green() } else { "NO".red() }
                     );
                 }
             }
@@ -81,7 +82,7 @@ async fn handle_agent_index(agent_filter: Option<String>, as_json: bool) -> Resu
     }
 
     let resp = client
-        .post(format!("{}/xavier/agents/index", base_url))
+        .post(format!("{}/xavier/openclaw/index", base_url))
         .header("X-Xavier-Token", &token)
         .send()
         .await?;
