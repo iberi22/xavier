@@ -183,7 +183,10 @@ mod tests {
         async fn export(&self, _public_only: bool) -> anyhow::Result<Vec<MemoryRecord>> {
             Ok(vec![])
         }
-        async fn ls(&self, _path: &str) -> anyhow::Result<Vec<crate::memory::qmd::types::NavEntry>> {
+        async fn ls(
+            &self,
+            _path: &str,
+        ) -> anyhow::Result<Vec<crate::memory::qmd::types::NavEntry>> {
             Ok(vec![])
         }
         async fn expand_depth(

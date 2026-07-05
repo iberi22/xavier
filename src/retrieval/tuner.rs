@@ -11,7 +11,9 @@
 //! directly — it returns a `TuningProposal` that the caller (scheduler / CLI)
 //! persists into `XavierSettings` and re-measures.
 
-use super::config::{DEFAULT_EPISODIC_WEIGHT, DEFAULT_RRF_K, DEFAULT_SEMANTIC_WEIGHT, DEFAULT_WORKING_WEIGHT};
+use super::config::{
+    DEFAULT_EPISODIC_WEIGHT, DEFAULT_RRF_K, DEFAULT_SEMANTIC_WEIGHT, DEFAULT_WORKING_WEIGHT,
+};
 use super::eval::{EvalDataset, RetrievalMetrics};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -176,7 +178,10 @@ where
                 let metrics = evaluate(&candidate);
                 let score = composite_score(&metrics);
                 if score > best.score {
-                    best = ScoredCandidate { config: candidate, score };
+                    best = ScoredCandidate {
+                        config: candidate,
+                        score,
+                    };
                 }
             }
         }
@@ -207,10 +212,7 @@ where
 {
     let mut groups: HashMap<String, Vec<usize>> = HashMap::new();
     for (i, case) in dataset.cases.iter().enumerate() {
-        groups
-            .entry(case.category.clone())
-            .or_default()
-            .push(i);
+        groups.entry(case.category.clone()).or_default().push(i);
     }
 
     let mut proposals = HashMap::new();
@@ -232,7 +234,11 @@ where
 pub fn best_overall(proposals: &HashMap<String, TuningProposal>) -> TuningProposal {
     proposals
         .values()
-        .max_by(|a, b| a.delta.partial_cmp(&b.delta).unwrap_or(std::cmp::Ordering::Equal))
+        .max_by(|a, b| {
+            a.delta
+                .partial_cmp(&b.delta)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
         .cloned()
         .unwrap_or(TuningProposal {
             config: RetrievalConfig::default(),
@@ -289,7 +295,13 @@ mod tests {
         // Simulate an evaluator where higher rrf_k yields better recall.
         let baseline = RetrievalConfig::default();
         let proposal = tune(&baseline, |cfg| {
-            let recall = if cfg.rrf_k >= 80 { 0.9 } else if cfg.rrf_k >= 60 { 0.7 } else { 0.5 };
+            let recall = if cfg.rrf_k >= 80 {
+                0.9
+            } else if cfg.rrf_k >= 60 {
+                0.7
+            } else {
+                0.5
+            };
             metrics_for(recall, 0.6)
         });
         // The best config must use rrf_k=80.
@@ -407,13 +419,10 @@ mod tests {
     #[test]
     fn test_tune_by_category_single_category_falls_through() {
         // All cases in "general" -> tune() is called once for that group.
-        let ds = EvalDataset::from_pairs("test", &[
-            ("q1", "e1"), ("q2", "e2"), ("q3", "e3"),
-        ]);
+        let ds = EvalDataset::from_pairs("test", &[("q1", "e1"), ("q2", "e2"), ("q3", "e3")]);
         let baseline = RetrievalConfig::default();
-        let proposals = tune_by_category(&baseline, &ds, |_cfg, _cat, _indices| {
-            metrics_for(0.7, 0.5)
-        });
+        let proposals =
+            tune_by_category(&baseline, &ds, |_cfg, _cat, _indices| metrics_for(0.7, 0.5));
         assert_eq!(proposals.len(), 1);
         assert!(proposals.contains_key("general"));
     }
@@ -439,9 +448,8 @@ mod tests {
             });
         }
         let baseline = RetrievalConfig::default();
-        let proposals = tune_by_category(&baseline, &ds, |_cfg, _cat, _indices| {
-            metrics_for(0.8, 0.6)
-        });
+        let proposals =
+            tune_by_category(&baseline, &ds, |_cfg, _cat, _indices| metrics_for(0.8, 0.6));
         assert_eq!(proposals.len(), 2);
         assert!(proposals.contains_key("alpha"));
         assert!(proposals.contains_key("beta"));
@@ -451,29 +459,34 @@ mod tests {
     fn test_tune_by_category_empty_dataset() {
         let ds = EvalDataset::from_pairs("empty", &[]);
         let baseline = RetrievalConfig::default();
-        let proposals = tune_by_category(&baseline, &ds, |_cfg, _cat, _indices| {
-            metrics_for(0.5, 0.5)
-        });
+        let proposals =
+            tune_by_category(&baseline, &ds, |_cfg, _cat, _indices| metrics_for(0.5, 0.5));
         assert!(proposals.is_empty());
     }
 
     #[test]
     fn test_best_overall_picks_highest_delta() {
         let mut proposals = HashMap::new();
-        proposals.insert("low".to_string(), TuningProposal {
-            config: RetrievalConfig::default(),
-            score: 0.6,
-            baseline_score: 0.55,
-            delta: 0.05,
-            candidates_evaluated: 27,
-        });
-        proposals.insert("high".to_string(), TuningProposal {
-            config: RetrievalConfig::default(),
-            score: 0.9,
-            baseline_score: 0.7,
-            delta: 0.2,
-            candidates_evaluated: 27,
-        });
+        proposals.insert(
+            "low".to_string(),
+            TuningProposal {
+                config: RetrievalConfig::default(),
+                score: 0.6,
+                baseline_score: 0.55,
+                delta: 0.05,
+                candidates_evaluated: 27,
+            },
+        );
+        proposals.insert(
+            "high".to_string(),
+            TuningProposal {
+                config: RetrievalConfig::default(),
+                score: 0.9,
+                baseline_score: 0.7,
+                delta: 0.2,
+                candidates_evaluated: 27,
+            },
+        );
         let best = best_overall(&proposals);
         assert!((best.delta - 0.2).abs() < 1e-9);
     }

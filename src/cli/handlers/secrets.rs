@@ -95,7 +95,10 @@ pub async fn history_handler() -> Response {
         .await;
 
     match result {
-        Ok(logs) => json_response(StatusCode::OK, serde_json::to_value(logs).unwrap_or_default()),
+        Ok(logs) => json_response(
+            StatusCode::OK,
+            serde_json::to_value(logs).unwrap_or_default(),
+        ),
         Err(e) => json_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             serde_json::json!({ "error": e.to_string() }),

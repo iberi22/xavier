@@ -80,24 +80,31 @@ async fn run_benchmark(dataset: Option<PathBuf>, json: bool) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to load benchmark dataset {}: {e}", path.display()))?;
 
     if !json {
-        println!("Loaded dataset '{}' ({} cases) from {}", ds.dataset, ds.cases.len(), path.display());
+        println!(
+            "Loaded dataset '{}' ({} cases) from {}",
+            ds.dataset,
+            ds.cases.len(),
+            path.display()
+        );
     }
 
-    let memory = load_spawn_memory().await.map_err(|e| {
-        anyhow::anyhow!("Failed to load local memory for benchmarking: {e}")
-    })?;
+    let memory = load_spawn_memory()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load local memory for benchmarking: {e}"))?;
 
     let k = 5;
     let mut case_results = Vec::with_capacity(ds.cases.len());
 
     for case in &ds.cases {
         let results = memory.search(&case.query, k).await.unwrap_or_default();
-        let hit = results
-            .iter()
-            .any(|r| is_hit(&r.content, &case.expected_path) || is_hit(&r.path, &case.expected_path));
+        let hit = results.iter().any(|r| {
+            is_hit(&r.content, &case.expected_path) || is_hit(&r.path, &case.expected_path)
+        });
         let first_hit_rank = results
             .iter()
-            .position(|r| is_hit(&r.content, &case.expected_path) || is_hit(&r.path, &case.expected_path))
+            .position(|r| {
+                is_hit(&r.content, &case.expected_path) || is_hit(&r.path, &case.expected_path)
+            })
             .map(|i| i + 1);
         case_results.push(CaseResult {
             case_id: case.id.clone(),
@@ -139,7 +146,10 @@ async fn run_benchmark(dataset: Option<PathBuf>, json: bool) -> Result<()> {
     }
 
     println!("\n=== Recall@{} Benchmark ===", k);
-    println!("  Dataset:     {} ({} cases)", metrics.dataset, metrics.num_cases);
+    println!(
+        "  Dataset:     {} ({} cases)",
+        metrics.dataset, metrics.num_cases
+    );
     println!("  recall@k:    {:.1}%", metrics.recall_at_k * 100.0);
     println!("  MRR:         {:.3}", metrics.mrr);
     println!("  hit_rate:    {:.1}%", metrics.hit_rate * 100.0);
@@ -170,13 +180,17 @@ async fn run_tune(dataset: Option<PathBuf>, json: bool) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Failed to load benchmark dataset: {e}"))?;
 
     if !json {
-        println!("Tuning RRF weights against '{}' ({} cases)...", ds.dataset, ds.cases.len());
+        println!(
+            "Tuning RRF weights against '{}' ({} cases)...",
+            ds.dataset,
+            ds.cases.len()
+        );
     }
 
     // Measure baseline recall with the current config.
-    let memory = load_spawn_memory().await.map_err(|e| {
-        anyhow::anyhow!("Failed to load local memory: {e}")
-    })?;
+    let memory = load_spawn_memory()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to load local memory: {e}"))?;
     let k = 5;
     let baseline_metrics = measure(&memory, &ds, k).await;
     let baseline = RetrievalConfig::default();
@@ -201,18 +215,27 @@ async fn run_tune(dataset: Option<PathBuf>, json: bool) -> Result<()> {
         Ok(hist_path) => match history::append(&hist_path, entry) {
             Ok(h) => {
                 if !json {
-                    println!("\n💾 Persisted proposal to {} ({} entries on record).",
-                        hist_path.display(), h.entries.len());
+                    println!(
+                        "\n💾 Persisted proposal to {} ({} entries on record).",
+                        hist_path.display(),
+                        h.entries.len()
+                    );
                 }
                 true
             }
             Err(e) => {
-                tracing::warn!(component = "retrieval", "failed to persist tuning history: {e}");
+                tracing::warn!(
+                    component = "retrieval",
+                    "failed to persist tuning history: {e}"
+                );
                 false
             }
         },
         Err(e) => {
-            tracing::warn!(component = "retrieval", "could not resolve tuning history path: {e}");
+            tracing::warn!(
+                component = "retrieval",
+                "could not resolve tuning history path: {e}"
+            );
             false
         }
     };
@@ -226,14 +249,26 @@ async fn run_tune(dataset: Option<PathBuf>, json: bool) -> Result<()> {
     }
 
     println!("\n=== RRF Tuning Proposal ===");
-    println!("Baseline recall@{}: {:.1}% (score {:.3})", k, baseline_metrics.recall_at_k * 100.0, proposal.baseline_score);
+    println!(
+        "Baseline recall@{}: {:.1}% (score {:.3})",
+        k,
+        baseline_metrics.recall_at_k * 100.0,
+        proposal.baseline_score
+    );
     println!("Recommended config:");
     println!("  rrf_k:           {}", proposal.config.rrf_k);
     println!("  keyword_weight:  {}", proposal.config.keyword_weight);
     println!("  vector_weight:   {}", proposal.config.vector_weight);
-    println!("  working/episodic/semantic: {}/{}/{}",
-        proposal.config.working_weight, proposal.config.episodic_weight, proposal.config.semantic_weight);
-    println!("Best score:       {:.3} (delta {:+.4})", proposal.score, proposal.delta);
+    println!(
+        "  working/episodic/semantic: {}/{}/{}",
+        proposal.config.working_weight,
+        proposal.config.episodic_weight,
+        proposal.config.semantic_weight
+    );
+    println!(
+        "Best score:       {:.3} (delta {:+.4})",
+        proposal.score, proposal.delta
+    );
     println!("Candidates tried: {}", proposal.candidates_evaluated);
 
     if proposal.is_beneficial() {
@@ -258,12 +293,14 @@ async fn measure(
     let mut case_results = Vec::with_capacity(ds.cases.len());
     for case in &ds.cases {
         let results = memory.search(&case.query, k).await.unwrap_or_default();
-        let hit = results
-            .iter()
-            .any(|r| is_hit(&r.content, &case.expected_path) || is_hit(&r.path, &case.expected_path));
+        let hit = results.iter().any(|r| {
+            is_hit(&r.content, &case.expected_path) || is_hit(&r.path, &case.expected_path)
+        });
         let first_hit_rank = results
             .iter()
-            .position(|r| is_hit(&r.content, &case.expected_path) || is_hit(&r.path, &case.expected_path))
+            .position(|r| {
+                is_hit(&r.content, &case.expected_path) || is_hit(&r.path, &case.expected_path)
+            })
             .map(|i| i + 1);
         case_results.push(CaseResult {
             case_id: case.id.clone(),
@@ -304,27 +341,41 @@ fn run_history(limit: usize, json: bool) -> Result<()> {
         return Ok(());
     }
 
-    println!("=== Tuning History ({} of {} shown) ===", tail.len(), history.entries.len());
+    println!(
+        "=== Tuning History ({} of {} shown) ===",
+        tail.len(),
+        history.entries.len()
+    );
     println!("  source: {}", hist_path.display());
     println!();
     for entry in tail {
-        println!("• {} — recall@{} baseline {:.1}% (MRR {:.3})",
+        println!(
+            "• {} — recall@{} baseline {:.1}% (MRR {:.3})",
             entry.timestamp,
             entry.baseline.k,
             entry.baseline.recall_at_k * 100.0,
-            entry.baseline.mrr);
-        println!("    recommended: rrf_k={}, kw/vec={}/{}, w/e/s={}/{}/{}",
+            entry.baseline.mrr
+        );
+        println!(
+            "    recommended: rrf_k={}, kw/vec={}/{}, w/e/s={}/{}/{}",
             entry.proposal.config.rrf_k,
             entry.proposal.config.keyword_weight,
             entry.proposal.config.vector_weight,
             entry.proposal.config.working_weight,
             entry.proposal.config.episodic_weight,
-            entry.proposal.config.semantic_weight);
-        println!("    score {:.3} (delta {:+.4}, {} candidates){}",
+            entry.proposal.config.semantic_weight
+        );
+        println!(
+            "    score {:.3} (delta {:+.4}, {} candidates){}",
             entry.proposal.score,
             entry.proposal.delta,
             entry.proposal.candidates_evaluated,
-            if entry.proposal.is_beneficial() { "  ✅ beneficial" } else { "" });
+            if entry.proposal.is_beneficial() {
+                "  ✅ beneficial"
+            } else {
+                ""
+            }
+        );
     }
 
     // Print drift trend analysis.
@@ -333,17 +384,26 @@ fn run_history(limit: usize, json: bool) -> Result<()> {
         let pct_per_cycle = trend.slope * 100.0;
         match trend.direction {
             TrendDirection::Improving => {
-                println!("\n📈 Trend: Improving (+{:.2}% per cycle)", pct_per_cycle.abs());
+                println!(
+                    "\n📈 Trend: Improving (+{:.2}% per cycle)",
+                    pct_per_cycle.abs()
+                );
             }
             TrendDirection::Declining => {
-                println!("\n📉 Trend: Declining (-{:.2}% per cycle)", pct_per_cycle.abs());
+                println!(
+                    "\n📉 Trend: Declining (-{:.2}% per cycle)",
+                    pct_per_cycle.abs()
+                );
             }
             TrendDirection::Stable => {
                 println!("\n➡️ Trend: Stable");
             }
         }
-        println!("   (analyzed {} cycles, current recall {:.1}%)",
-            trend.cycles_analyzed, trend.current_recall * 100.0);
+        println!(
+            "   (analyzed {} cycles, current recall {:.1}%)",
+            trend.cycles_analyzed,
+            trend.current_recall * 100.0
+        );
     }
 
     Ok(())

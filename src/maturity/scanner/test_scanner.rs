@@ -38,7 +38,9 @@ fn load_anchored_tests(codebase_root: &str) -> HashMap<String, Vec<String>> {
                     let mut seen = HashSet::new();
                     if let Some(subs) = feat.get("subcomponents").and_then(|s| s.as_array()) {
                         for sub in subs {
-                            if let Some(anchors) = sub.get("test_anchors").and_then(|a| a.as_array()) {
+                            if let Some(anchors) =
+                                sub.get("test_anchors").and_then(|a| a.as_array())
+                            {
                                 for anchor in anchors {
                                     if let Some(name) = anchor.as_str() {
                                         if seen.insert(name.to_string()) {
@@ -151,7 +153,8 @@ pub fn list_tests(codebase_root: &str) -> TestListScanResult {
     };
 
     // Check which anchors exist in the codebase (depth=4, 50 files, 30s timeout)
-    let (found_anchors, scan_errors) = check_test_anchors_in_sources(codebase_root, &unique_anchors);
+    let (found_anchors, scan_errors) =
+        check_test_anchors_in_sources(codebase_root, &unique_anchors);
     errors.extend(scan_errors);
 
     // Build per-feature results: (passing_anchors, ALL_anchors).

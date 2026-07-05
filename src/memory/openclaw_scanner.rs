@@ -7,8 +7,8 @@
 //! 1. `XAVIER_AGENTS_DIR` environment variable
 //! 2. Default: `C:\Users\<user>\clawd\agents` (Windows) or `~/clawd/agents` (Unix)
 
-use serde::{Deserialize, Serialize};
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::{debug, info, warn};
@@ -49,7 +49,10 @@ impl OpenClawAgentScanner {
     /// 3. `~/clawd/agents` como fallback universal
     pub fn new() -> Self {
         let agents_dir = Self::resolve_agents_dir();
-        info!("🔍 OpenClawAgentScanner initialized with agents_dir: {:?}", agents_dir);
+        info!(
+            "🔍 OpenClawAgentScanner initialized with agents_dir: {:?}",
+            agents_dir
+        );
         Self { agents_dir }
     }
 
@@ -84,11 +87,17 @@ impl OpenClawAgentScanner {
     /// Escanea todos los agentes en `agents_dir` de forma recursiva.
     /// Un directorio es reconocido como agente si contiene un archivo `MEMORY.md`.
     pub async fn scan_all_agents(&self) -> Result<Vec<AgentMemory>> {
-        info!("🔍 Starting recursive OpenClaw Agent scan in {:?}", self.agents_dir);
+        info!(
+            "🔍 Starting recursive OpenClaw Agent scan in {:?}",
+            self.agents_dir
+        );
         let mut agents = Vec::new();
 
         if !fs::try_exists(&self.agents_dir).await.unwrap_or(false) {
-            debug!("Agents directory {:?} does not exist, skipping scan", self.agents_dir);
+            debug!(
+                "Agents directory {:?} does not exist, skipping scan",
+                self.agents_dir
+            );
             return Ok(agents);
         }
 
@@ -144,7 +153,10 @@ impl OpenClawAgentScanner {
         if !metadata.is_dir() {
             return Ok(None);
         }
-        if !fs::try_exists(&agent_path.join("MEMORY.md")).await.unwrap_or(false) {
+        if !fs::try_exists(&agent_path.join("MEMORY.md"))
+            .await
+            .unwrap_or(false)
+        {
             return Ok(None);
         }
         Ok(Some(self.scan_agent_dir(&agent_path).await?))

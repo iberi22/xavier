@@ -904,4 +904,3 @@ pub enum WalletCommand {
         limit: usize,
     },
 }
-

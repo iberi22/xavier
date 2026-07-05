@@ -177,9 +177,9 @@ impl MigrationRunner {
             // Each migration runs in its own transaction. On failure the
             // transaction is rolled back (Transaction::Drop is a no-op once an
             // error has surfaced via ?, but we commit explicitly on success).
-            let tx = conn
-                .unchecked_transaction()
-                .with_context(|| format!("Failed to begin transaction for v{}", migration.version))?;
+            let tx = conn.unchecked_transaction().with_context(|| {
+                format!("Failed to begin transaction for v{}", migration.version)
+            })?;
 
             tx.execute_batch(migration.up).with_context(|| {
                 format!(
@@ -245,9 +245,7 @@ pub struct MigrationManager {
 
 impl MigrationManager {
     pub fn new() -> Self {
-        Self {
-            legacy: Vec::new(),
-        }
+        Self { legacy: Vec::new() }
     }
 
     pub fn add_migration<M: LegacyMigration + 'static>(&mut self, migration: M) {
@@ -284,7 +282,9 @@ impl MigrationManager {
                 m.version(),
                 m.description()
             );
-            let tx = conn.unchecked_transaction().context("Failed to begin transaction")?;
+            let tx = conn
+                .unchecked_transaction()
+                .context("Failed to begin transaction")?;
             m.run(&tx).with_context(|| {
                 format!(
                     "Failed to run migration v{}: {}",

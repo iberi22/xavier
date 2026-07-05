@@ -52,11 +52,11 @@ pub struct ScoredFeature {
 }
 
 /// Scoring weights — v2: 5 metrics with more balanced distribution.
-pub const STATIC_WEIGHT: f64 = 0.35;   // 35% — code symbols exist
-pub const TEST_WEIGHT: f64 = 0.35;     // 35% — tests pass
-pub const GATE_WEIGHT: f64 = 0.10;    // 10% — feature gates configured
-pub const MEMORY_WEIGHT: f64 = 0.10;  // 10% — evidence from sessions/code
-pub const ISSUE_WEIGHT: f64 = 0.10;   // 10% — evidence from discussions
+pub const STATIC_WEIGHT: f64 = 0.35; // 35% — code symbols exist
+pub const TEST_WEIGHT: f64 = 0.35; // 35% — tests pass
+pub const GATE_WEIGHT: f64 = 0.10; // 10% — feature gates configured
+pub const MEMORY_WEIGHT: f64 = 0.10; // 10% — evidence from sessions/code
+pub const ISSUE_WEIGHT: f64 = 0.10; // 10% — evidence from discussions
 
 /// Determine the maturity status bucket from an overall score.
 pub fn status_for_score(overall: f64) -> &'static str {

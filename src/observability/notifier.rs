@@ -598,7 +598,10 @@ mod tests {
                 break;
             }
         }
-        assert!(saw, "notify_startup should publish its notification to the bus");
+        assert!(
+            saw,
+            "notify_startup should publish its notification to the bus"
+        );
     }
 
     #[test]

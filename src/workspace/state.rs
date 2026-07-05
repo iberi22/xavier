@@ -12,28 +12,28 @@ use tokio::sync::{broadcast, Mutex, RwLock};
 
 use super::config::WorkspaceConfig;
 use super::ops::*;
-use crate::settings::XavierSettings;
 use super::usage::{
     EmbeddingProviderSnapshot, OptimizationMetrics, OptimizationUsageSnapshot, SyncPolicySnapshot,
     UsageCountersSnapshot, UsageEvent, UsageMetrics, WorkspaceLimitsSnapshot,
     WorkspaceUsageSnapshot,
 };
 use crate::agents::{router::RouteCategory, AgentRuntime, RuntimeConfig};
-use crate::retrieval::LayerWeights;
 use crate::checkpoint::CheckpointManager;
 use crate::codebase::conversations_db::ConversationsDb;
 use crate::memory::{
     belief_graph::{BeliefGraph, SharedBeliefGraph},
     entity_graph::{EntityGraph, SharedEntityGraph},
+    postgres_store::PostgresMemoryStore,
     qmd_memory::{estimate_document_bytes, MemoryUsage, QmdMemory},
     schema::MemoryQueryFilters,
     semantic::SemanticMemory,
     sqlite_store::SqliteMemoryStore,
     sqlite_vec_store::VecSqliteMemoryStore,
-    postgres_store::PostgresMemoryStore,
-    supabase_store::SupabaseMemoryStore,
     store::{MemoryBackend, MemoryRecord, MemoryStore, SessionTokenRecord},
+    supabase_store::SupabaseMemoryStore,
 };
+use crate::retrieval::LayerWeights;
+use crate::settings::XavierSettings;
 use chrono::{DateTime, Duration, Utc};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -217,7 +217,10 @@ impl WorkspaceState {
                         tracing::warn!(%error, memory_id = %memory_id, "failed to index entity graph from existing memory");
                     }
                 }
-                tracing::info!("entity graph indexing complete for {} documents", docs.len());
+                tracing::info!(
+                    "entity graph indexing complete for {} documents",
+                    docs.len()
+                );
             });
         }
         let semantic_memory = Arc::new(SemanticMemory::new());
@@ -255,9 +258,10 @@ impl WorkspaceState {
         )));
 
         let zone_booster = Arc::new(crate::retrieval::gating::AdaptiveZoneBooster::new());
-        let hormer = Arc::new(crate::agents::hormer::Hormer::new(Arc::clone(
-            &navigation_policy,
-        )).with_booster(Arc::clone(&zone_booster)));
+        let hormer = Arc::new(
+            crate::agents::hormer::Hormer::new(Arc::clone(&navigation_policy))
+                .with_booster(Arc::clone(&zone_booster)),
+        );
 
         let state = Self {
             runtime: Arc::new(
@@ -569,25 +573,30 @@ impl WorkspaceState {
         content: &str,
         metadata: &serde_json::Value,
     ) -> Result<()> {
-        let result = self.entity_graph
+        let result = self
+            .entity_graph
             .upsert_memory(memory_id, content, Some(metadata))
             .await
             .map(|_| ());
 
         if result.is_ok() {
-             let _ = crate::notifications::NOTIFICATIONS.notify(
-                crate::notifications::IslandId::Memory,
-                "Memory Indexed",
-                &format!("New memory indexed: {}", memory_id),
-                "success"
-            ).await;
+            let _ = crate::notifications::NOTIFICATIONS
+                .notify(
+                    crate::notifications::IslandId::Memory,
+                    "Memory Indexed",
+                    &format!("New memory indexed: {}", memory_id),
+                    "success",
+                )
+                .await;
         } else if let Err(ref e) = result {
-            let _ = crate::notifications::NOTIFICATIONS.notify(
-                crate::notifications::IslandId::Errors,
-                "Entity Indexing Failed",
-                &format!("Failed to index entities for {}: {}", memory_id, e),
-                "error"
-            ).await;
+            let _ = crate::notifications::NOTIFICATIONS
+                .notify(
+                    crate::notifications::IslandId::Errors,
+                    "Entity Indexing Failed",
+                    &format!("Failed to index entities for {}: {}", memory_id, e),
+                    "error",
+                )
+                .await;
         }
 
         result
@@ -775,11 +784,13 @@ impl WorkspaceState {
         memory: Arc<QmdMemory>,
         store: Arc<dyn MemoryStore>,
     ) -> Self {
-        use crate::workspace::config::{WorkspaceConfig, PlanTier, SyncPolicy, EmbeddingProviderMode};
         use crate::checkpoint::CheckpointManager;
         use crate::memory::belief_graph::BeliefGraph;
         use crate::memory::entity_graph::EntityGraph;
         use crate::memory::semantic::SemanticMemory;
+        use crate::workspace::config::{
+            EmbeddingProviderMode, PlanTier, SyncPolicy, WorkspaceConfig,
+        };
 
         let belief_graph = Arc::new(RwLock::new(BeliefGraph::new()));
         let entity_graph = Arc::new(EntityGraph::new());
@@ -797,16 +808,28 @@ impl WorkspaceState {
         #[cfg(any(test, feature = "test-utils"))]
         let conversations_db = Arc::new(ConversationsDb::new_test());
         #[cfg(not(any(test, feature = "test-utils")))]
-        let conversations_db = Arc::new(ConversationsDb::open("minimal").await.expect("failed to open minimal conversations_db"));
+        let conversations_db = Arc::new(
+            ConversationsDb::open("minimal")
+                .await
+                .expect("failed to open minimal conversations_db"),
+        );
 
-        let navigation_policy = Arc::new(RwLock::new(crate::retrieval::NavigationPolicy::with_defaults()));
+        let navigation_policy = Arc::new(RwLock::new(
+            crate::retrieval::NavigationPolicy::with_defaults(),
+        ));
         let zone_booster = Arc::new(crate::retrieval::gating::AdaptiveZoneBooster::new());
-        let hormer = Arc::new(crate::agents::hormer::Hormer::new(navigation_policy).with_booster(Arc::clone(&zone_booster)));
+        let hormer = Arc::new(
+            crate::agents::hormer::Hormer::new(navigation_policy)
+                .with_booster(Arc::clone(&zone_booster)),
+        );
 
         #[cfg(any(test, feature = "test-utils"))]
         let runtime = Arc::new(AgentRuntime::new_test());
         #[cfg(not(any(test, feature = "test-utils")))]
-        let runtime = Arc::new(AgentRuntime::new(memory.clone(), None, RuntimeConfig::default()).expect("failed to create minimal runtime"));
+        let runtime = Arc::new(
+            AgentRuntime::new(memory.clone(), None, RuntimeConfig::default())
+                .expect("failed to create minimal runtime"),
+        );
 
         Self {
             config: WorkspaceConfig {
@@ -849,8 +872,8 @@ use crate::memory::store::{FileMemoryStore, InMemoryMemoryStore};
 mod auto_detect_tests {
     use super::*;
     use crate::memory::store::MemoryBackend;
-    use std::sync::Mutex;
     use std::sync::LazyLock;
+    use std::sync::Mutex;
 
     static SERIAL_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
@@ -868,9 +891,15 @@ mod auto_detect_tests {
         let backend = detect_cloud_backend().await;
         assert_eq!(backend, MemoryBackend::Vec);
 
-        if let Some(v) = old_pg { std::env::set_var("XAVIER_POSTGRES_URL", v); }
-        if let Some(v) = old_sb_url { std::env::set_var("XAVIER_SUPABASE_URL", v); }
-        if let Some(v) = old_sb_key { std::env::set_var("XAVIER_SUPABASE_KEY", v); }
+        if let Some(v) = old_pg {
+            std::env::set_var("XAVIER_POSTGRES_URL", v);
+        }
+        if let Some(v) = old_sb_url {
+            std::env::set_var("XAVIER_SUPABASE_URL", v);
+        }
+        if let Some(v) = old_sb_key {
+            std::env::set_var("XAVIER_SUPABASE_KEY", v);
+        }
     }
 
     #[tokio::test]
@@ -890,9 +919,15 @@ mod auto_detect_tests {
         std::env::remove_var("XAVIER_SUPABASE_URL");
         std::env::remove_var("XAVIER_SUPABASE_KEY");
 
-        if let Some(v) = old_pg { std::env::set_var("XAVIER_POSTGRES_URL", v); }
-        if let Some(v) = old_sb_url { std::env::set_var("XAVIER_SUPABASE_URL", v); }
-        if let Some(v) = old_sb_key { std::env::set_var("XAVIER_SUPABASE_KEY", v); }
+        if let Some(v) = old_pg {
+            std::env::set_var("XAVIER_POSTGRES_URL", v);
+        }
+        if let Some(v) = old_sb_url {
+            std::env::set_var("XAVIER_SUPABASE_URL", v);
+        }
+        if let Some(v) = old_sb_key {
+            std::env::set_var("XAVIER_SUPABASE_KEY", v);
+        }
     }
 
     #[tokio::test]
@@ -913,8 +948,14 @@ mod auto_detect_tests {
 
         std::env::remove_var("XAVIER_POSTGRES_URL");
 
-        if let Some(v) = old_pg { std::env::set_var("XAVIER_POSTGRES_URL", v); }
-        if let Some(v) = old_sb_url { std::env::set_var("XAVIER_SUPABASE_URL", v); }
-        if let Some(v) = old_sb_key { std::env::set_var("XAVIER_SUPABASE_KEY", v); }
+        if let Some(v) = old_pg {
+            std::env::set_var("XAVIER_POSTGRES_URL", v);
+        }
+        if let Some(v) = old_sb_url {
+            std::env::set_var("XAVIER_SUPABASE_URL", v);
+        }
+        if let Some(v) = old_sb_key {
+            std::env::set_var("XAVIER_SUPABASE_KEY", v);
+        }
     }
 }

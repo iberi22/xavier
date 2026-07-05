@@ -85,8 +85,15 @@ impl ProxyUseCase {
             combined_content.push_str(&body.to_string());
         }
 
-        if let Some((agent_id, hash)) = secrets_engine.leak_detector.check_leak(&combined_content).await {
-            warn!("Potential API key leak detected for agent {}. Hash: {}", agent_id, hash);
+        if let Some((agent_id, hash)) = secrets_engine
+            .leak_detector
+            .check_leak(&combined_content)
+            .await
+        {
+            warn!(
+                "Potential API key leak detected for agent {}. Hash: {}",
+                agent_id, hash
+            );
 
             if let Some(ref bus) = self.event_bus {
                 let _ = bus.publish(crate::coordination::XavierEvent::KeyLeakDetected {
@@ -95,9 +102,13 @@ impl ProxyUseCase {
                 });
             }
 
-            secrets_engine.revoke_for_agent(&agent_id, "API Key Leak Detected in Proxy").await;
+            secrets_engine
+                .revoke_for_agent(&agent_id, "API Key Leak Detected in Proxy")
+                .await;
 
-            return Err(ProxyError::InvalidRequest("Security violation: API key leak detected".to_string()));
+            return Err(ProxyError::InvalidRequest(
+                "Security violation: API key leak detected".to_string(),
+            ));
         }
 
         // Set headers
@@ -140,7 +151,12 @@ impl ProxyUseCase {
             }
 
             // Rate-limiting by lease_token: máx 100 requests/min por lease
-            if !self.rate_manager.check_lease_rate_limit(token, 100).await.unwrap_or(true) {
+            if !self
+                .rate_manager
+                .check_lease_rate_limit(token, 100)
+                .await
+                .unwrap_or(true)
+            {
                 return Err(ProxyError::RateLimited);
             }
 
@@ -148,7 +164,10 @@ impl ProxyUseCase {
             secrets_engine.log_proxy_use(&lease.agent_id, token, &req.url);
 
             // Track usage for this lease
-            let _ = self.rate_manager.track_request(&format!("lease:{}", token), 0, 200, 0.0, false).await;
+            let _ = self
+                .rate_manager
+                .track_request(&format!("lease:{}", token), 0, 200, 0.0, false)
+                .await;
         }
 
         // Set body
@@ -321,7 +340,12 @@ impl ProxyUseCase {
             }
 
             // Rate-limiting by lease_token: máx 100 requests/min por lease
-            if !self.rate_manager.check_lease_rate_limit(token, 100).await.unwrap_or(true) {
+            if !self
+                .rate_manager
+                .check_lease_rate_limit(token, 100)
+                .await
+                .unwrap_or(true)
+            {
                 return Err(ProxyError::RateLimited);
             }
 
@@ -329,7 +353,10 @@ impl ProxyUseCase {
             secrets_engine.log_proxy_use(&lease.agent_id, token, "/v1/chat/completions");
 
             // Track usage for this lease
-            let _ = self.rate_manager.track_request(&format!("lease:{}", token), 0, 200, 0.0, false).await;
+            let _ = self
+                .rate_manager
+                .track_request(&format!("lease:{}", token), 0, 200, 0.0, false)
+                .await;
 
             if let Some(secret) = lease.secret_value {
                 config = config.with_api_key(Some(secret));
@@ -500,7 +527,6 @@ impl ProxyUseCase {
             }
         }
     }
-
 }
 
 #[cfg(test)]
@@ -509,12 +535,19 @@ mod tests {
     use crate::coordination::KeyLendingEngine;
     use crate::domain::proxy::{GenericProxyRequest, ProxyError};
     use crate::secrets::lending::AuditLogger;
-    use std::sync::Arc;
     use parking_lot::Mutex;
+    use std::sync::Arc;
 
     struct MockAuditLogger;
     impl AuditLogger for MockAuditLogger {
-        fn log_lend(&self, _agent_id: &str, _secret_name: &str, _lease_token: &str, _ttl_secs: u64) {}
+        fn log_lend(
+            &self,
+            _agent_id: &str,
+            _secret_name: &str,
+            _lease_token: &str,
+            _ttl_secs: u64,
+        ) {
+        }
         fn log_revoke(&self, _agent_id: &str, _lease_token: &str, _reason: &str) {}
         fn log_proxy_use(&self, _agent_id: &str, _lease_token: &str, _endpoint: &str) {}
     }
@@ -530,7 +563,10 @@ mod tests {
         let agent_id = "malicious-agent";
 
         // Register key via lend
-        secrets_engine.lend("provider-key", Some(secret), agent_id, 3600).await.unwrap();
+        secrets_engine
+            .lend("provider-key", Some(secret), agent_id, 3600)
+            .await
+            .unwrap();
 
         // Prepare request with leaked key in body
         let req = GenericProxyRequest {

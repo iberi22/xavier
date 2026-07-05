@@ -172,7 +172,10 @@ impl ModelProviderClient {
     }
 
     /// Returns a client wrapped in a KeyLeaseManager for automatic key leasing.
-    pub fn with_lease(self, secrets_engine: Arc<crate::coordination::KeyLendingEngine>) -> KeyLeaseManager {
+    pub fn with_lease(
+        self,
+        secrets_engine: Arc<crate::coordination::KeyLendingEngine>,
+    ) -> KeyLeaseManager {
         KeyLeaseManager::new(self, secrets_engine)
     }
 }
@@ -185,18 +188,27 @@ pub struct KeyLeaseManager {
 }
 
 impl KeyLeaseManager {
-    pub fn new(inner: ModelProviderClient, secrets_engine: Arc<crate::coordination::KeyLendingEngine>) -> Self {
-        Self { inner, secrets_engine }
+    pub fn new(
+        inner: ModelProviderClient,
+        secrets_engine: Arc<crate::coordination::KeyLendingEngine>,
+    ) -> Self {
+        Self {
+            inner,
+            secrets_engine,
+        }
     }
 
     async fn get_leased_client(&self) -> Result<ModelProviderClient> {
         if let Some(lease_config) = &self.inner.config.lease_config {
-            let lease = self.secrets_engine.lend_from_vault(
-                &lease_config.secret_name,
-                &lease_config.agent_id,
-                lease_config.ttl_secs,
-                false, // Do not redact, we need the value
-            ).await?;
+            let lease = self
+                .secrets_engine
+                .lend_from_vault(
+                    &lease_config.secret_name,
+                    &lease_config.agent_id,
+                    lease_config.ttl_secs,
+                    false, // Do not redact, we need the value
+                )
+                .await?;
 
             let mut config = self.inner.config.clone();
             config.api_key = lease.secret_value;
@@ -221,7 +233,9 @@ impl LlmProvider for KeyLeaseManager {
         use_cache: bool,
     ) -> Result<LlmResponse> {
         let client = self.get_leased_client().await?;
-        client.generate_text_with_cache(system_prompt, user_prompt, use_cache).await
+        client
+            .generate_text_with_cache(system_prompt, user_prompt, use_cache)
+            .await
     }
 
     async fn generate_response(
@@ -410,7 +424,16 @@ mod tests {
         // but it's private to the module.
 
         assert!(managed_client.inner.config.lease_config.is_some());
-        assert_eq!(managed_client.inner.config.lease_config.as_ref().unwrap().secret_name, "TEST_KEY");
+        assert_eq!(
+            managed_client
+                .inner
+                .config
+                .lease_config
+                .as_ref()
+                .unwrap()
+                .secret_name,
+            "TEST_KEY"
+        );
     }
 
     #[tokio::test]

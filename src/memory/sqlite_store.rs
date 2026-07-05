@@ -182,17 +182,16 @@ impl SqliteMemoryStore {
                     .as_slice()
                     .try_into()
                     .map_err(|_| anyhow::anyhow!("Invalid content IV"))?;
-                let plaintext = crate::crypto::encryption::decrypt_data(
-                    &ciphertext,
-                    dek.as_bytes(),
-                    &nonce,
-                )
-                .map_err(|e| anyhow::anyhow!("Content decryption failed: {}", e))?;
+                let plaintext =
+                    crate::crypto::encryption::decrypt_data(&ciphertext, dek.as_bytes(), &nonce)
+                        .map_err(|e| anyhow::anyhow!("Content decryption failed: {}", e))?;
                 record.content = String::from_utf8(plaintext)?;
             }
 
             if let Some(metadata_iv) = &record.metadata_iv {
-                if let Some(encrypted_metadata_hex) = record.metadata.get("encrypted").and_then(|v| v.as_str()) {
+                if let Some(encrypted_metadata_hex) =
+                    record.metadata.get("encrypted").and_then(|v| v.as_str())
+                {
                     let ciphertext = crate::utils::crypto::hex_decode(encrypted_metadata_hex)?;
                     let nonce: [u8; 12] = metadata_iv
                         .as_slice()
@@ -265,7 +264,9 @@ impl MemoryStore for SqliteMemoryStore {
 
             // Generate DEK
             let dek = mgr.generate_dek();
-            let encrypted_dek = mgr.encrypt_dek(&dek, &kek).map_err(|e| anyhow::anyhow!("DEK encryption failed: {}", e))?;
+            let encrypted_dek = mgr
+                .encrypt_dek(&dek, &kek)
+                .map_err(|e| anyhow::anyhow!("DEK encryption failed: {}", e))?;
 
             // Encrypt content
             let content_nonce = crate::crypto::encryption::NonceBytes::generate();
@@ -273,7 +274,8 @@ impl MemoryStore for SqliteMemoryStore {
                 record.content.as_bytes(),
                 dek.as_bytes(),
                 &content_nonce,
-            ).map_err(|e| anyhow::anyhow!("Content encryption failed: {}", e))?;
+            )
+            .map_err(|e| anyhow::anyhow!("Content encryption failed: {}", e))?;
 
             // Encrypt metadata
             let metadata_nonce = crate::crypto::encryption::NonceBytes::generate();
@@ -282,7 +284,8 @@ impl MemoryStore for SqliteMemoryStore {
                 metadata_json.as_bytes(),
                 dek.as_bytes(),
                 &metadata_nonce,
-            ).map_err(|e| anyhow::anyhow!("Metadata encryption failed: {}", e))?;
+            )
+            .map_err(|e| anyhow::anyhow!("Metadata encryption failed: {}", e))?;
 
             record.content = crate::utils::crypto::hex_encode(&encrypted_content.ciphertext);
             record.metadata = serde_json::json!({
@@ -718,5 +721,4 @@ impl MemoryStore for SqliteMemoryStore {
             })
             .await
     }
-
 }

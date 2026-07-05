@@ -111,7 +111,8 @@ impl HardwareVault {
     fn try_keyring_store(&self, key: &str, value: &str) -> SecretResult<()> {
         let entry = Entry::new(&self.service_name, key)
             .map_err(|e| SecretError::ProviderError(format!("Keyring error: {}", e)))?;
-        entry.set_password(value)
+        entry
+            .set_password(value)
             .map_err(|e| SecretError::ProviderError(format!("Failed to store secret: {}", e)))?;
         Ok(())
     }
@@ -139,11 +140,13 @@ impl HardwareVault {
 
     fn backend(&self) -> SecretResult<&'static VaultBackend> {
         init_backend(&self.service_name);
-        BACKEND.get().ok_or_else(|| {
-            SecretError::ProviderError("Vault backend not initialized".to_string())
-        })?.as_ref().ok_or_else(|| {
-            SecretError::ProviderError("Fallback vault unavailable (no master key)".to_string())
-        })
+        BACKEND
+            .get()
+            .ok_or_else(|| SecretError::ProviderError("Vault backend not initialized".to_string()))?
+            .as_ref()
+            .ok_or_else(|| {
+                SecretError::ProviderError("Fallback vault unavailable (no master key)".to_string())
+            })
     }
 
     fn try_fallback_store(&self, key: &str, value: &str) -> SecretResult<()> {
@@ -163,8 +166,8 @@ impl HardwareVault {
         if !path.exists() {
             return Err(SecretError::NotFound(key.to_string()));
         }
-        let encrypted_data = std::fs::read(&path)
-            .map_err(|_| SecretError::NotFound(key.to_string()))?;
+        let encrypted_data =
+            std::fs::read(&path).map_err(|_| SecretError::NotFound(key.to_string()))?;
         let decrypted = aes_decrypt(&encrypted_data, &backend.vault_key)
             .map_err(|e| SecretError::ProviderError(format!("Decryption failed: {e}")))?;
         String::from_utf8(decrypted)

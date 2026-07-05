@@ -11,11 +11,11 @@ use tempfile::tempdir;
 use tokio::net::TcpListener;
 use ulid::Ulid;
 use xavier::agents::RuntimeConfig;
+use xavier::enterprise::rbac::Role;
 use xavier::memory::qmd_memory::MemoryDocument;
+use xavier::memory::schema::ClearanceLevel;
 use xavier::memory::store::MemoryBackend;
 use xavier::mesh::{MeshTransport, NodeIdentity, PeerInfo};
-use xavier::memory::schema::ClearanceLevel;
-use xavier::enterprise::rbac::Role;
 use xavier::workspace::{WorkspaceConfig, WorkspaceContext, WorkspaceState};
 
 async fn start_test_server() -> (String, String, Arc<WorkspaceState>) {
@@ -133,12 +133,17 @@ async fn test_mesh_handshake_and_sync() {
     // so we might need to manually set it up if it doesn't auto-register (it only auto-registers with pairing secret).
     // Let's manually add it to the ACL file.
     let mut acl_b = xavier::mesh::MeshAcl::load().unwrap();
-    acl_b.set_entry(identity_a.node_id.clone(), xavier::mesh::NodeAclEntry {
-        role: Role::Viewer,
-        clearance: ClearanceLevel::TopSecret,
-        namespaces: None,
-        public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
-    }).unwrap();
+    acl_b
+        .set_entry(
+            identity_a.node_id.clone(),
+            xavier::mesh::NodeAclEntry {
+                role: Role::Viewer,
+                clearance: ClearanceLevel::TopSecret,
+                namespaces: None,
+                public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
+            },
+        )
+        .unwrap();
 
     // Export B's data to chunks so it appears in manifest
     let mut manifest_b =

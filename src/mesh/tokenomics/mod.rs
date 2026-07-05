@@ -5,15 +5,15 @@
 //! to the mesh network. XP can be redeemed for premium features, priority
 //! sync slots, or future token conversions.
 
-pub mod wallet;
-pub mod rewards;
 pub mod accounting;
-pub mod vesting;
-pub mod economy;
 #[cfg(feature = "dao-evm")]
 pub mod contracts;
+pub mod economy;
+pub mod rewards;
 pub mod tests;
+pub mod vesting;
+pub mod wallet;
 
-pub use wallet::{Wallet, WalletBalance, Transaction, TransactionKind, InvestmentTier};
-pub use rewards::{RewardEngine, RewardEvent, ContributionType};
-pub use accounting::{ResourceAccounting, PeerAccount};
+pub use accounting::{PeerAccount, ResourceAccounting};
+pub use rewards::{ContributionType, RewardEngine, RewardEvent};
+pub use wallet::{InvestmentTier, Transaction, TransactionKind, Wallet, WalletBalance};

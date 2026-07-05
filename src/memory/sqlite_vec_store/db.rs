@@ -11,7 +11,8 @@ use tokio::fs;
 
 #[allow(dead_code)]
 pub(crate) async fn open_pool(path: &Path) -> Result<()> {
-    let digest = crate::crypto::hex_encode(&sha2::Sha256::digest(path.to_string_lossy().as_bytes()));
+    let digest =
+        crate::crypto::hex_encode(&sha2::Sha256::digest(path.to_string_lossy().as_bytes()));
     let project_id = format!("vec_store_{}", &digest[..12]);
     ConnectionManager::global().connect_with_path(&project_id, path.to_path_buf())?;
     Ok(())

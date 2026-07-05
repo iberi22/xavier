@@ -210,10 +210,7 @@ impl EigenTrustEngine {
             .collect();
 
         // Populate computed_scores for quick lookup by wallet string
-        self.computed_scores = scores
-            .iter()
-            .map(|(w, s)| (w.0.clone(), *s))
-            .collect();
+        self.computed_scores = scores.iter().map(|(w, s)| (w.0.clone(), *s)).collect();
 
         let result = EigenTrustResult {
             scores,

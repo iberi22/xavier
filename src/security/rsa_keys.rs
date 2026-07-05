@@ -4,7 +4,9 @@
 //! using AES-256-GCM.
 
 use anyhow::{anyhow, Result};
-use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding};
+use rsa::pkcs8::{
+    DecodePrivateKey, DecodePublicKey, EncodePrivateKey, EncodePublicKey, LineEnding,
+};
 
 use rsa::{RsaPrivateKey, RsaPublicKey};
 use std::fs;
@@ -39,7 +41,6 @@ impl RsaKeypairManager {
         let priv_path = self.storage_dir.join("rsa_keypair.enc");
         let pub_path = self.storage_dir.join("rsa_keypair.pub");
 
-
         if priv_path.exists() && pub_path.exists() {
             return Ok(());
         }
@@ -51,12 +52,14 @@ impl RsaKeypairManager {
         let pub_key = RsaPublicKey::from(&priv_key);
 
         // Encode and save public key (plain text PEM)
-        let pub_pem = pub_key.to_public_key_pem(LineEnding::LF)
+        let pub_pem = pub_key
+            .to_public_key_pem(LineEnding::LF)
             .map_err(|e| anyhow!("Failed to encode public key: {}", e))?;
         fs::write(pub_path, pub_pem)?;
 
         // Encode, encrypt and save private key
-        let priv_pem = priv_key.to_pkcs8_pem(LineEnding::LF)
+        let priv_pem = priv_key
+            .to_pkcs8_pem(LineEnding::LF)
             .map_err(|e| anyhow!("Failed to encode private key: {}", e))?;
 
         let nonce = NonceBytes::generate();

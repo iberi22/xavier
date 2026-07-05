@@ -434,11 +434,7 @@ impl ModelProviderConfig {
                         .get_secret("OPENCODE_API_KEY")
                         .ok()
                 })
-                .or_else(|| {
-                    HardwareVault::new("xavier")
-                        .get_secret("ZAI_API_KEY")
-                        .ok()
-                }),
+                .or_else(|| HardwareVault::new("xavier").get_secret("ZAI_API_KEY").ok()),
             base_url: None,
             target: ProviderTarget::OpenCodeCLI,
             lease_config: None,

@@ -1,7 +1,7 @@
 //! Governance Command Handlers — CLI implementation for Xavier Governance DAO
 
-use crate::cli::commands::GovernanceSubcommand;
 use crate::cli::commands::data_commons::{governance, types};
+use crate::cli::commands::GovernanceSubcommand;
 use anyhow::Result;
 
 pub async fn handle_governance_command(command: GovernanceSubcommand) -> Result<()> {
@@ -34,7 +34,10 @@ async fn list_proposals() -> Result<()> {
         return Ok(());
     }
 
-    println!("\n{:<15} {:<30} {:<15} {:<10}", "ID", "Title", "State", "Supports");
+    println!(
+        "\n{:<15} {:<30} {:<15} {:<10}",
+        "ID", "Title", "State", "Supports"
+    );
     println!("{}", "-".repeat(80));
 
     for p in proposals {
@@ -58,11 +61,11 @@ async fn list_council_members() -> Result<()> {
 
     // Add a few default mock members if the council is empty for CLI visibility
     if engine.council_size() == 0 {
-        use types::{WalletAddress, CouncilRole};
+        use types::{CouncilRole, WalletAddress};
         engine.add_council_member(
             WalletAddress("xv1_core_maintainer_alpha_0123456789abcdef0123456789abcd".to_string()),
             CouncilRole::CoreMaintainer,
-            vec!["Security".into(), "Architecture".into()]
+            vec!["Security".into(), "Architecture".into()],
         );
     }
 
@@ -85,12 +88,7 @@ async fn list_council_members() -> Result<()> {
             types::CouncilRole::CommunityRepresentative => "Community Rep",
         };
 
-        println!(
-            "{:<15} {:<40} {:<20}",
-            m.id,
-            m.wallet.0,
-            role_str
-        );
+        println!("{:<15} {:<40} {:<20}", m.id, m.wallet.0, role_str);
     }
 
     Ok(())

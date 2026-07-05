@@ -24,7 +24,7 @@
 use anyhow::Result;
 use rusqlite::Connection;
 
-use crate::storage::{LegacyMigration, Migration, MigrationRunner, table_has_column};
+use crate::storage::{table_has_column, LegacyMigration, Migration, MigrationRunner};
 
 // ---------------------------------------------------------------------------
 // Struct-based baseline migrations (v1–v5).
@@ -342,7 +342,10 @@ impl LegacyMigration for MigrationV1InitialSchema {
         ];
         for (col, def) in memory_columns {
             if !table_has_column(conn, "memory_records", col)? {
-                conn.execute(&format!("ALTER TABLE memory_records ADD COLUMN {} {}", col, def), [])?;
+                conn.execute(
+                    &format!("ALTER TABLE memory_records ADD COLUMN {} {}", col, def),
+                    [],
+                )?;
             }
         }
 
@@ -366,12 +369,21 @@ impl LegacyMigration for MigrationV1InitialSchema {
             ("source_language", "TEXT"),
             ("target_language", "TEXT"),
             ("workspace_id", "TEXT"),
-            ("created_at", "DATETIME DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))"),
-            ("updated_at", "DATETIME DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))"),
+            (
+                "created_at",
+                "DATETIME DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))",
+            ),
+            (
+                "updated_at",
+                "DATETIME DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))",
+            ),
         ];
         for (col, def) in relation_columns {
             if !table_has_column(conn, "relations", col)? {
-                conn.execute(&format!("ALTER TABLE relations ADD COLUMN {} {}", col, def), [])?;
+                conn.execute(
+                    &format!("ALTER TABLE relations ADD COLUMN {} {}", col, def),
+                    [],
+                )?;
             }
         }
         if !table_has_column(conn, "relations", "source_id")? {
@@ -391,7 +403,10 @@ impl LegacyMigration for MigrationV1InitialSchema {
         ];
         for (col, def) in timeline_columns {
             if !table_has_column(conn, "timeline_events", col)? {
-                conn.execute(&format!("ALTER TABLE timeline_events ADD COLUMN {} {}", col, def), [])?;
+                conn.execute(
+                    &format!("ALTER TABLE timeline_events ADD COLUMN {} {}", col, def),
+                    [],
+                )?;
             }
         }
 
@@ -471,7 +486,10 @@ impl LegacyMigration for MigrationV4UnifiedIsolation {
             "CREATE INDEX IF NOT EXISTS idx_relations_target ON relations (target_id)",
             [],
         )?;
-        conn.execute("CREATE INDEX IF NOT EXISTS idx_entities_name ON entities (name)", [])?;
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_entities_name ON entities (name)",
+            [],
+        )?;
         Ok(())
     }
 }
@@ -548,9 +566,11 @@ mod tests {
         assert_version(&conn, 5);
         // The latest migration should have created the recovery tables.
         let users: i64 = conn
-            .query_row("SELECT count(*) FROM sqlite_master WHERE name='users'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name='users'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(users, 1, "users table should exist after v5");
     }
@@ -569,7 +589,10 @@ mod tests {
         let recorded: i64 = conn
             .query_row("SELECT count(*) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(recorded, 5, "exactly 5 migration rows after idempotent re-run");
+        assert_eq!(
+            recorded, 5,
+            "exactly 5 migration rows after idempotent re-run"
+        );
     }
 
     #[test]
@@ -631,7 +654,10 @@ mod tests {
         let recorded: i64 = conn
             .query_row("SELECT count(*) FROM schema_migrations", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(recorded, 5, "no duplicate rows after re-run on backfilled db");
+        assert_eq!(
+            recorded, 5,
+            "no duplicate rows after re-run on backfilled db"
+        );
     }
 
     #[test]
@@ -661,9 +687,11 @@ mod tests {
         assert_eq!(recorded, 1, "only v1 should be recorded after rollback");
         // t_good created by committed v1 should still exist.
         let good: i64 = conn
-            .query_row("SELECT count(*) FROM sqlite_master WHERE name='t_good'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name='t_good'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(good, 1, "committed v1 table persists");
     }

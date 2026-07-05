@@ -1,8 +1,8 @@
+use crate::utils::crypto::hex_encode;
 use anyhow::Result;
 use bip39::{Language, Mnemonic};
 use rand::Rng;
 use sha2::{Digest, Sha256};
-use crate::utils::crypto::hex_encode;
 
 /// Recovery manager for handling seed phrases and backup codes.
 pub struct RecoveryManager;
@@ -76,12 +76,15 @@ mod tests {
 
     #[test]
     fn test_verify_invalid_seed_phrase() {
-        assert!(!RecoveryManager::verify_seed_phrase("this is not a valid seed phrase at all"));
+        assert!(!RecoveryManager::verify_seed_phrase(
+            "this is not a valid seed phrase at all"
+        ));
     }
 
     #[test]
     fn test_hash_seed_phrase() {
-        let phrase = "abaco abeja abismo abrir absorber abuelo acento aceptar acero acierto acosar activo";
+        let phrase =
+            "abaco abeja abismo abrir absorber abuelo acento aceptar acero acierto acosar activo";
         let hash = RecoveryManager::hash_seed_phrase(phrase);
         assert!(!hash.is_empty());
         // Verify idempotency

@@ -75,7 +75,8 @@ impl CliState {
     pub async fn tgd_engine(&self) -> Option<xavier::tgd::TgdEngine> {
         let router = self.provider_router.read().await;
         let p_kind = router.active_mode();
-        let config = xavier::agents::provider::ModelProviderConfig::from_label(&format!("{:?}", p_kind));
+        let config =
+            xavier::agents::provider::ModelProviderConfig::from_label(&format!("{:?}", p_kind));
         let provider = xavier::agents::provider::ModelProviderClient::new(config);
         Some(xavier::tgd::TgdEngine::new(provider))
     }

@@ -8,8 +8,8 @@
 
 use crate::health::{auto_vacuum_if_needed, gather_db_health, run_integrity_check};
 use crate::settings::XavierSettings;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 use tracing::{error, info, warn};
@@ -170,7 +170,10 @@ impl HealthAutoRepair {
                     }
                     Ok(msg) => {
                         warn!("Database integrity check failed: {}", msg);
-                        repairs.push((RepairAction::IntegrityCheck, RepairOutcome::Failed(msg.clone())));
+                        repairs.push((
+                            RepairAction::IntegrityCheck,
+                            RepairOutcome::Failed(msg.clone()),
+                        ));
                     }
                     Err(e) => {
                         error!("Database integrity check error: {}", e);
@@ -184,29 +187,42 @@ impl HealthAutoRepair {
                     match auto_vacuum_if_needed(conn, settings).await {
                         Ok(()) => {
                             let db_health = gather_db_health(settings);
-                            if db_health.fragmentation_pct > self.config.vacuum_fragmentation_threshold {
-                                repairs.push((RepairAction::Vacuum, RepairOutcome::Skipped(
-                                    "Fragmentation persists — may need manual VACUUM".into(),
-                                )));
+                            if db_health.fragmentation_pct
+                                > self.config.vacuum_fragmentation_threshold
+                            {
+                                repairs.push((
+                                    RepairAction::Vacuum,
+                                    RepairOutcome::Skipped(
+                                        "Fragmentation persists — may need manual VACUUM".into(),
+                                    ),
+                                ));
                                 // Force VACUUM
                                 match conn.execute_batch("VACUUM;") {
                                     Ok(()) => {
-                                        repairs.push((RepairAction::Vacuum, RepairOutcome::Success));
+                                        repairs
+                                            .push((RepairAction::Vacuum, RepairOutcome::Success));
                                         // Verify integrity
                                         if let Ok(ref msg) = run_integrity_check(conn) {
                                             if msg == "ok" {
-                                                repairs.push((RepairAction::IntegrityCheck, RepairOutcome::Success));
+                                                repairs.push((
+                                                    RepairAction::IntegrityCheck,
+                                                    RepairOutcome::Success,
+                                                ));
                                             }
                                         }
                                     }
                                     Err(e) => {
-                                        repairs.push((RepairAction::Vacuum, RepairOutcome::Failed(e.to_string())));
+                                        repairs.push((
+                                            RepairAction::Vacuum,
+                                            RepairOutcome::Failed(e.to_string()),
+                                        ));
                                     }
                                 }
                             } else {
-                                repairs.push((RepairAction::Vacuum, RepairOutcome::Skipped(
-                                    "Fragmentation within threshold".into(),
-                                )));
+                                repairs.push((
+                                    RepairAction::Vacuum,
+                                    RepairOutcome::Skipped("Fragmentation within threshold".into()),
+                                ));
                             }
                         }
                         Err(e) => {
@@ -224,18 +240,25 @@ impl HealthAutoRepair {
                             repairs.push((RepairAction::Reindex, RepairOutcome::Success));
                             if let Ok(ref msg) = run_integrity_check(conn) {
                                 if msg == "ok" {
-                                    repairs.push((RepairAction::IntegrityCheck, RepairOutcome::Success));
+                                    repairs.push((
+                                        RepairAction::IntegrityCheck,
+                                        RepairOutcome::Success,
+                                    ));
                                 }
                             }
                         }
                         Err(e) => {
-                            repairs.push((RepairAction::Reindex, RepairOutcome::Failed(e.to_string())));
+                            repairs.push((
+                                RepairAction::Reindex,
+                                RepairOutcome::Failed(e.to_string()),
+                            ));
                         }
                     }
                 } else {
-                    repairs.push((RepairAction::Reindex, RepairOutcome::Skipped(
-                        "Fragmentation below REINDEX threshold".into(),
-                    )));
+                    repairs.push((
+                        RepairAction::Reindex,
+                        RepairOutcome::Skipped("Fragmentation below REINDEX threshold".into()),
+                    ));
                 }
             });
         }
@@ -254,9 +277,18 @@ impl HealthAutoRepair {
         let elapsed = start.elapsed().as_millis() as u64;
         LAST_REPAIR_DURATION_MS.store(elapsed, Ordering::SeqCst);
 
-        let succeeded = repairs.iter().filter(|(_, o)| matches!(o, RepairOutcome::Success)).count() as u32;
-        let failed = repairs.iter().filter(|(_, o)| matches!(o, RepairOutcome::Failed(_))).count() as u32;
-        let skipped = repairs.iter().filter(|(_, o)| matches!(o, RepairOutcome::Skipped(_))).count() as u32;
+        let succeeded = repairs
+            .iter()
+            .filter(|(_, o)| matches!(o, RepairOutcome::Success))
+            .count() as u32;
+        let failed = repairs
+            .iter()
+            .filter(|(_, o)| matches!(o, RepairOutcome::Failed(_)))
+            .count() as u32;
+        let skipped = repairs
+            .iter()
+            .filter(|(_, o)| matches!(o, RepairOutcome::Skipped(_)))
+            .count() as u32;
 
         let report = RepairReport {
             timestamp_secs: now_secs,
@@ -282,11 +314,9 @@ impl HealthAutoRepair {
     }
 
     /// Simplified version for background monitoring — no DB repair
-    pub async fn check_and_repair_background(
-        &self,
-        settings: &XavierSettings,
-    ) -> RepairReport {
-        self.check_and_repair(settings, None::<fn(&mut dyn FnMut(&rusqlite::Connection))>).await
+    pub async fn check_and_repair_background(&self, settings: &XavierSettings) -> RepairReport {
+        self.check_and_repair(settings, None::<fn(&mut dyn FnMut(&rusqlite::Connection))>)
+            .await
     }
 
     async fn reconnect_embedding(
@@ -296,25 +326,37 @@ impl HealthAutoRepair {
     ) {
         let failures = self.embedding_failure_count();
         if failures < self.config.embedding_failure_threshold {
-            repairs.push((RepairAction::ReconnectEmbedding, RepairOutcome::Skipped(
-                format!("Only {} failures (threshold: {})", failures, self.config.embedding_failure_threshold),
-            )));
+            repairs.push((
+                RepairAction::ReconnectEmbedding,
+                RepairOutcome::Skipped(format!(
+                    "Only {} failures (threshold: {})",
+                    failures, self.config.embedding_failure_threshold
+                )),
+            ));
             return;
         }
 
         let provider_url = &settings.embedding.embedder;
         if provider_url.is_empty() {
-            repairs.push((RepairAction::ReconnectEmbedding, RepairOutcome::Skipped("No URL".into())));
+            repairs.push((
+                RepairAction::ReconnectEmbedding,
+                RepairOutcome::Skipped("No URL".into()),
+            ));
             return;
         }
 
         let client = match reqwest::Client::builder()
-            .timeout(Duration::from_secs(self.config.reconnect_timeout_secs as u64))
+            .timeout(Duration::from_secs(
+                self.config.reconnect_timeout_secs as u64,
+            ))
             .build()
         {
             Ok(c) => c,
             Err(e) => {
-                repairs.push((RepairAction::ReconnectEmbedding, RepairOutcome::Failed(e.to_string())));
+                repairs.push((
+                    RepairAction::ReconnectEmbedding,
+                    RepairOutcome::Failed(e.to_string()),
+                ));
                 return;
             }
         };
@@ -325,12 +367,16 @@ impl HealthAutoRepair {
                 repairs.push((RepairAction::ReconnectEmbedding, RepairOutcome::Success));
             }
             Ok(resp) => {
-                repairs.push((RepairAction::ReconnectEmbedding, RepairOutcome::Failed(
-                    format!("Provider returned {}", resp.status()),
-                )));
+                repairs.push((
+                    RepairAction::ReconnectEmbedding,
+                    RepairOutcome::Failed(format!("Provider returned {}", resp.status())),
+                ));
             }
             Err(e) => {
-                repairs.push((RepairAction::ReconnectEmbedding, RepairOutcome::Failed(e.to_string())));
+                repairs.push((
+                    RepairAction::ReconnectEmbedding,
+                    RepairOutcome::Failed(e.to_string()),
+                ));
             }
         }
     }
@@ -350,17 +396,21 @@ impl HealthAutoRepair {
 
         let db_path = std::path::Path::new(&db_path_str);
         if !db_path.exists() {
-            repairs.push((RepairAction::CleanOrphanWals, RepairOutcome::Skipped("DB not found".into())));
+            repairs.push((
+                RepairAction::CleanOrphanWals,
+                RepairOutcome::Skipped("DB not found".into()),
+            ));
             return;
         }
 
         let dir = db_path.parent().unwrap_or(std::path::Path::new("."));
-        let db_name = db_path.file_name().unwrap_or_default().to_str().unwrap_or("memory.db");
+        let db_name = db_path
+            .file_name()
+            .unwrap_or_default()
+            .to_str()
+            .unwrap_or("memory.db");
 
-        let wal_patterns = vec![
-            format!("{}-wal", db_name),
-            format!("{}-shm", db_name),
-        ];
+        let wal_patterns = vec![format!("{}-wal", db_name), format!("{}-shm", db_name)];
 
         let mut cleaned = 0u32;
         let mut errors = 0u32;
@@ -391,9 +441,15 @@ impl HealthAutoRepair {
         if cleaned > 0 {
             repairs.push((RepairAction::CleanOrphanWals, RepairOutcome::Success));
         } else if errors > 0 {
-            repairs.push((RepairAction::CleanOrphanWals, RepairOutcome::Failed(format!("{} errors", errors))));
+            repairs.push((
+                RepairAction::CleanOrphanWals,
+                RepairOutcome::Failed(format!("{} errors", errors)),
+            ));
         } else {
-            repairs.push((RepairAction::CleanOrphanWals, RepairOutcome::Skipped("No orphan WALs found".into())));
+            repairs.push((
+                RepairAction::CleanOrphanWals,
+                RepairOutcome::Skipped("No orphan WALs found".into()),
+            ));
         }
     }
 
@@ -413,7 +469,10 @@ impl HealthAutoRepair {
         let interval = Duration::from_secs(self.config.check_interval_secs);
 
         std::thread::spawn(move || {
-            info!("Auto-repair monitoring loop started (interval: {}s)", interval.as_secs());
+            info!(
+                "Auto-repair monitoring loop started (interval: {}s)",
+                interval.as_secs()
+            );
 
             let rt = tokio::runtime::Runtime::new()
                 .expect("Failed to create tokio runtime for auto-repair");
@@ -439,7 +498,8 @@ impl HealthAutoRepair {
                 }
 
                 // Use background version that doesn't take DB reference
-                let report = rt.block_on(async { engine.check_and_repair_background(&settings).await });
+                let report =
+                    rt.block_on(async { engine.check_and_repair_background(&settings).await });
                 if report.failed > 0 {
                     warn!("Auto-repair cycle had {} failures", report.failed);
                 }
@@ -502,8 +562,9 @@ mod tests {
         conn.execute_batch(
             "CREATE TABLE t (x INTEGER PRIMARY KEY, y TEXT);
              INSERT INTO t VALUES (1, 'hello');
-             INSERT INTO t VALUES (2, 'world');"
-        ).unwrap();
+             INSERT INTO t VALUES (2, 'world');",
+        )
+        .unwrap();
 
         // In test environment we're already in a tokio runtime, so the
         // block_on inside the callback will panic. Use background version instead.
@@ -560,7 +621,10 @@ mod tests {
     fn test_repair_action_display() {
         assert_eq!(format!("{}", RepairAction::Vacuum), "VACUUM");
         assert_eq!(format!("{}", RepairAction::Reindex), "REINDEX");
-        assert_eq!(format!("{}", RepairAction::CleanOrphanWals), "CleanOrphanWALs");
+        assert_eq!(
+            format!("{}", RepairAction::CleanOrphanWals),
+            "CleanOrphanWALs"
+        );
     }
 
     #[tokio::test]

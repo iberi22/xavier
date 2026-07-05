@@ -4,9 +4,9 @@
 //! and calculates reputation scores to incentivize contributions and penalize
 //! freeloading.
 
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
 use crate::mesh::node::NodeId;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Individual peer's resource accounting and reputation state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -57,7 +57,11 @@ impl PeerAccount {
     /// Returns 0.625 for neutral state so that base_score is 500.
     fn resource_ratio_score(contributed: u64, consumed: u64) -> f64 {
         if consumed == 0 {
-            if contributed > 0 { 1.0 } else { 0.625 }
+            if contributed > 0 {
+                1.0
+            } else {
+                0.625
+            }
         } else {
             let ratio = contributed as f64 / consumed as f64;
             ratio.min(1.0)
@@ -72,7 +76,8 @@ impl PeerAccount {
     /// - Minus manual penalties
     pub fn update_reputation(&mut self) {
         let s_score = Self::resource_ratio_score(self.storage_contributed, self.storage_consumed);
-        let b_score = Self::resource_ratio_score(self.bandwidth_contributed, self.bandwidth_consumed);
+        let b_score =
+            Self::resource_ratio_score(self.bandwidth_contributed, self.bandwidth_consumed);
         let c_score = Self::resource_ratio_score(self.compute_contributed, self.compute_consumed);
 
         // Quality bonus: 5 points per quality contribution, capped at 200
@@ -113,11 +118,19 @@ impl ResourceAccounting {
 
     /// Get or create a peer's account.
     pub fn get_account_mut(&mut self, node_id: &NodeId) -> &mut PeerAccount {
-        self.accounts.entry(node_id.clone()).or_insert_with(PeerAccount::new)
+        self.accounts
+            .entry(node_id.clone())
+            .or_insert_with(PeerAccount::new)
     }
 
     /// Record a resource contribution and update reputation.
-    pub fn record_contribution(&mut self, node_id: &NodeId, storage: u64, bandwidth: u64, compute: u64) {
+    pub fn record_contribution(
+        &mut self,
+        node_id: &NodeId,
+        storage: u64,
+        bandwidth: u64,
+        compute: u64,
+    ) {
         let acc = self.get_account_mut(node_id);
         acc.storage_contributed += storage;
         acc.bandwidth_contributed += bandwidth;
@@ -126,7 +139,13 @@ impl ResourceAccounting {
     }
 
     /// Record a resource consumption and update reputation.
-    pub fn record_consumption(&mut self, node_id: &NodeId, storage: u64, bandwidth: u64, compute: u64) {
+    pub fn record_consumption(
+        &mut self,
+        node_id: &NodeId,
+        storage: u64,
+        bandwidth: u64,
+        compute: u64,
+    ) {
         let acc = self.get_account_mut(node_id);
         acc.storage_consumed += storage;
         acc.bandwidth_consumed += bandwidth;

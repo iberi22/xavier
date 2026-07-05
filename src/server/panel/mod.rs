@@ -3,11 +3,11 @@
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
 
-pub mod types;
 pub mod assets;
-pub mod threads;
 pub mod chat;
 pub mod storage;
+pub mod threads;
+pub mod types;
 
 pub use assets::{panel_asset, panel_index};
 pub use chat::process_chat;
@@ -22,6 +22,11 @@ pub use types::{
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::codebase::connection_manager::ConnectionManager;
+    use crate::codebase::conversations_db::{ThreadDetail, ThreadSummary};
+    use crate::memory::sqlite_store::{
+        TABLE_PANEL_BOOKMARKS, TABLE_PANEL_GRAPHS, TABLE_PANEL_WIDGETS,
+    };
     use crate::{
         agents::RuntimeConfig,
         memory::file_indexer::{FileIndexer, FileIndexerConfig},
@@ -35,16 +40,12 @@ mod tests {
         body::{to_bytes, Body},
         http::{Request, StatusCode},
         routing::{get, post},
-        Router,
-        Extension,
+        Extension, Router,
     };
+    use chrono::Utc;
     use std::sync::Arc;
     use tower::util::ServiceExt;
     use ulid::Ulid;
-    use chrono::Utc;
-    use crate::codebase::conversations_db::{ThreadDetail, ThreadSummary};
-    use crate::codebase::connection_manager::ConnectionManager;
-    use crate::memory::sqlite_store::{TABLE_PANEL_BOOKMARKS, TABLE_PANEL_GRAPHS, TABLE_PANEL_WIDGETS};
 
     async fn test_state() -> (AppState, WorkspaceContext) {
         let workspace_id = format!("panel-test-{}", Ulid::new());

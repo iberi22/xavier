@@ -93,8 +93,7 @@ pub fn require_commercial_license(settings: &XavierSettings) -> Result<(), Strin
             // If the binary was compiled with enterprise features, the user needs a commercial license.
             if cfg!(feature = "enterprise") {
                 Err(
-                    "Enterprise features require a Xavier Commercial License. "
-                        .to_owned()
+                    "Enterprise features require a Xavier Commercial License. ".to_owned()
                         + "See COMMERCIAL_LICENSE.md for pricing. Contact iberi22 for inquiries.",
                 )
             } else {
@@ -149,10 +148,7 @@ mod tests {
         let mut settings = XavierSettings::default();
         assert_eq!(detect_license(&settings), LicenseKind::Agpl);
         assert!(accept_mesh_license(&mut settings));
-        assert_eq!(
-            settings.license.license_type,
-            "Xavier-Mesh-1.0".to_string()
-        );
+        assert_eq!(settings.license.license_type, "Xavier-Mesh-1.0".to_string());
         // Still AGPL for detection purposes (mesh adds network terms, not commercial)
         assert_eq!(detect_license(&settings), LicenseKind::Agpl);
     }
@@ -160,7 +156,10 @@ mod tests {
     #[test]
     fn test_accept_commercial_upgrades_license() {
         let mut settings = XavierSettings::default();
-        assert!(accept_commercial_license(&mut settings, "swal-com-2026-abc123"));
+        assert!(accept_commercial_license(
+            &mut settings,
+            "swal-com-2026-abc123"
+        ));
         assert_eq!(detect_license(&settings), LicenseKind::Commercial);
     }
 
@@ -209,10 +208,7 @@ mod tests {
 
     #[test]
     fn test_mesh_status_display() {
-        assert_eq!(
-            MeshStatus::NotAccepted.to_string(),
-            "❌ Not Accepted"
-        );
+        assert_eq!(MeshStatus::NotAccepted.to_string(), "❌ Not Accepted");
         assert_eq!(MeshStatus::Active.to_string(), "✅ Accepted");
     }
 
@@ -231,8 +227,7 @@ mod tests {
 
         // Serialize → deserialize simulates a write to disk + reload.
         let json = serde_json::to_string(&settings).expect("settings serialize");
-        let reloaded: XavierSettings =
-            serde_json::from_str(&json).expect("settings deserialize");
+        let reloaded: XavierSettings = serde_json::from_str(&json).expect("settings deserialize");
 
         // Acceptance is still present after reload.
         assert!(reloaded.license.mesh_accepted);

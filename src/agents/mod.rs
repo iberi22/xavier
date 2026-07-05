@@ -2,8 +2,10 @@
 //!
 //! Aggregates and re-exports the sub-modules within this module,
 //! providing the public API surface for module consumers.
+pub mod anomaly_scanner;
 pub mod belief_evaluator;
 pub mod curation;
+pub mod cve_learner;
 pub mod evolve;
 pub mod extraction;
 pub mod hormer;
@@ -14,8 +16,6 @@ pub mod runtime;
 pub mod self_harness_coordinator;
 pub mod supervisor;
 pub mod system1;
-pub mod anomaly_scanner;
-pub mod cve_learner;
 pub mod system2;
 pub mod system3;
 pub mod ui_render;

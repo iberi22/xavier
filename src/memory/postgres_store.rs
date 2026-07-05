@@ -1,18 +1,18 @@
 //! PostgreSQL backend for Xavier memory store (supports Neon/pgvector).
 
-use std::any::Any;
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
+use chrono::Utc;
 use sqlx::postgres::PgPoolOptions;
 use sqlx::{Pool, Postgres, Row};
-use chrono::Utc;
+use std::any::Any;
 
 use crate::checkpoint::Checkpoint;
 use crate::domain::memory::belief::BeliefEdge;
 use crate::memory::schema::{MemoryLevel, MemoryQueryFilters};
 use crate::memory::store::{
-    filter_records, stable_key, DurableWorkspaceState, MemoryBackend,
-    MemoryRecord, MemoryStore, SessionTokenRecord,
+    filter_records, stable_key, DurableWorkspaceState, MemoryBackend, MemoryRecord, MemoryStore,
+    SessionTokenRecord,
 };
 use crate::settings::XavierSettings;
 
@@ -34,10 +34,7 @@ impl PostgresMemoryStore {
     }
 
     pub async fn new(url: &str) -> Result<Self> {
-        let pool = PgPoolOptions::new()
-            .max_connections(5)
-            .connect(url)
-            .await?;
+        let pool = PgPoolOptions::new().max_connections(5).connect(url).await?;
 
         let store = Self {
             pool,
@@ -52,15 +49,21 @@ impl PostgresMemoryStore {
     pub async fn health_check(&self) -> Result<()> {
         tokio::time::timeout(
             std::time::Duration::from_secs(10),
-            sqlx::query("SELECT 1").execute(&self.pool)
-        ).await.map_err(|_| anyhow::anyhow!("Postgres health check timed out after 10s"))??;
+            sqlx::query("SELECT 1").execute(&self.pool),
+        )
+        .await
+        .map_err(|_| anyhow::anyhow!("Postgres health check timed out after 10s"))??;
         Ok(())
     }
 
     async fn init_schema(&self) -> Result<()> {
-        sqlx::query("CREATE EXTENSION IF NOT EXISTS vector").execute(&self.pool).await.ok();
+        sqlx::query("CREATE EXTENSION IF NOT EXISTS vector")
+            .execute(&self.pool)
+            .await
+            .ok();
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS memory_records (
                 id TEXT PRIMARY KEY,
                 workspace_id TEXT NOT NULL,
@@ -81,18 +84,26 @@ impl PostgresMemoryStore {
                 content_iv BYTEA,
                 metadata_iv BYTEA
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS belief_states (
                 id TEXT PRIMARY KEY,
                 workspace_id TEXT NOT NULL,
                 beliefs JSONB NOT NULL,
                 updated_at TIMESTAMPTZ NOT NULL
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS session_tokens (
                 id TEXT PRIMARY KEY,
                 workspace_id TEXT NOT NULL,
@@ -100,9 +111,13 @@ impl PostgresMemoryStore {
                 created_at TIMESTAMPTZ NOT NULL,
                 expires_at TIMESTAMPTZ NOT NULL
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             CREATE TABLE IF NOT EXISTS checkpoint_records (
                 id TEXT PRIMARY KEY,
                 workspace_id TEXT NOT NULL,
@@ -110,7 +125,10 @@ impl PostgresMemoryStore {
                 name TEXT NOT NULL,
                 data JSONB NOT NULL
             )
-        "#).execute(&self.pool).await?;
+        "#,
+        )
+        .execute(&self.pool)
+        .await?;
 
         Ok(())
     }
@@ -167,7 +185,8 @@ impl MemoryStore for PostgresMemoryStore {
         let relation = serde_json::to_value(&record.relation)?;
         let revisions = serde_json::to_value(&record.revisions)?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             INSERT INTO memory_records (
                 id, workspace_id, path, content, metadata, created_at, updated_at,
                 revision, primary_flag, parent_id, cluster_id, level, relation,
@@ -189,7 +208,8 @@ impl MemoryStore for PostgresMemoryStore {
                 encrypted_dek = EXCLUDED.encrypted_dek,
                 content_iv = EXCLUDED.content_iv,
                 metadata_iv = EXCLUDED.metadata_iv
-        "#)
+        "#,
+        )
         .bind(&record.id)
         .bind(&record.workspace_id)
         .bind(&record.path)
@@ -216,9 +236,11 @@ impl MemoryStore for PostgresMemoryStore {
     async fn get(&self, workspace_id: &str, id_or_path: &str) -> Result<Option<MemoryRecord>> {
         let key = stable_key("sqlite_mem", &[workspace_id, id_or_path]);
 
-        let row = sqlx::query(r#"
+        let row = sqlx::query(
+            r#"
             SELECT * FROM memory_records WHERE id = $1 OR (workspace_id = $2 AND path = $1)
-        "#)
+        "#,
+        )
         .bind(&key)
         .bind(workspace_id)
         .fetch_optional(&self.pool)
@@ -290,11 +312,12 @@ impl MemoryStore for PostgresMemoryStore {
         };
 
         let now = Utc::now();
-        let tokens_rows = sqlx::query("SELECT * FROM session_tokens WHERE workspace_id = $1 AND expires_at > $2")
-            .bind(workspace_id)
-            .bind(now)
-            .fetch_all(&self.pool)
-            .await?;
+        let tokens_rows =
+            sqlx::query("SELECT * FROM session_tokens WHERE workspace_id = $1 AND expires_at > $2")
+                .bind(workspace_id)
+                .bind(now)
+                .fetch_all(&self.pool)
+                .await?;
 
         let mut session_tokens = Vec::new();
         for row in tokens_rows {
@@ -305,10 +328,11 @@ impl MemoryStore for PostgresMemoryStore {
             });
         }
 
-        let checkpoints_rows = sqlx::query("SELECT * FROM checkpoint_records WHERE workspace_id = $1")
-            .bind(workspace_id)
-            .fetch_all(&self.pool)
-            .await?;
+        let checkpoints_rows =
+            sqlx::query("SELECT * FROM checkpoint_records WHERE workspace_id = $1")
+                .bind(workspace_id)
+                .fetch_all(&self.pool)
+                .await?;
 
         let mut checkpoints = Vec::new();
         for row in checkpoints_rows {
@@ -331,13 +355,15 @@ impl MemoryStore for PostgresMemoryStore {
         let belief_key = stable_key("belief_row", &[workspace_id]);
         let beliefs_json = serde_json::to_value(&beliefs)?;
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             INSERT INTO belief_states (id, workspace_id, beliefs, updated_at)
             VALUES ($1, $2, $3, $4)
             ON CONFLICT (id) DO UPDATE SET
                 beliefs = EXCLUDED.beliefs,
                 updated_at = EXCLUDED.updated_at
-        "#)
+        "#,
+        )
         .bind(&belief_key)
         .bind(workspace_id)
         .bind(beliefs_json)
@@ -348,16 +374,22 @@ impl MemoryStore for PostgresMemoryStore {
         Ok(())
     }
 
-    async fn save_session_token(&self, workspace_id: &str, token: SessionTokenRecord) -> Result<()> {
+    async fn save_session_token(
+        &self,
+        workspace_id: &str,
+        token: SessionTokenRecord,
+    ) -> Result<()> {
         let token_key = stable_key("session_token_row", &[workspace_id, &token.token]);
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             INSERT INTO session_tokens (id, workspace_id, token, created_at, expires_at)
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (id) DO UPDATE SET
                 token = EXCLUDED.token,
                 expires_at = EXCLUDED.expires_at
-        "#)
+        "#,
+        )
         .bind(&token_key)
         .bind(workspace_id)
         .bind(&token.token)
@@ -383,14 +415,19 @@ impl MemoryStore for PostgresMemoryStore {
     }
 
     async fn save_checkpoint(&self, workspace_id: &str, checkpoint: Checkpoint) -> Result<()> {
-        let checkpoint_key = stable_key("checkpoint_row", &[workspace_id, &checkpoint.task_id, &checkpoint.name]);
+        let checkpoint_key = stable_key(
+            "checkpoint_row",
+            &[workspace_id, &checkpoint.task_id, &checkpoint.name],
+        );
 
-        sqlx::query(r#"
+        sqlx::query(
+            r#"
             INSERT INTO checkpoint_records (id, workspace_id, task_id, name, data)
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (id) DO UPDATE SET
                 data = EXCLUDED.data
-        "#)
+        "#,
+        )
         .bind(&checkpoint_key)
         .bind(workspace_id)
         .bind(&checkpoint.task_id)
@@ -402,7 +439,12 @@ impl MemoryStore for PostgresMemoryStore {
         Ok(())
     }
 
-    async fn load_checkpoint(&self, workspace_id: &str, task_id: &str, name: &str) -> Result<Option<Checkpoint>> {
+    async fn load_checkpoint(
+        &self,
+        workspace_id: &str,
+        task_id: &str,
+        name: &str,
+    ) -> Result<Option<Checkpoint>> {
         let row = sqlx::query("SELECT * FROM checkpoint_records WHERE workspace_id = $1 AND task_id = $2 AND name = $3")
             .bind(workspace_id)
             .bind(task_id)
@@ -421,11 +463,13 @@ impl MemoryStore for PostgresMemoryStore {
     }
 
     async fn list_checkpoints(&self, workspace_id: &str, task_id: &str) -> Result<Vec<Checkpoint>> {
-        let rows = sqlx::query("SELECT * FROM checkpoint_records WHERE workspace_id = $1 AND task_id = $2")
-            .bind(workspace_id)
-            .bind(task_id)
-            .fetch_all(&self.pool)
-            .await?;
+        let rows = sqlx::query(
+            "SELECT * FROM checkpoint_records WHERE workspace_id = $1 AND task_id = $2",
+        )
+        .bind(workspace_id)
+        .bind(task_id)
+        .fetch_all(&self.pool)
+        .await?;
 
         let mut checkpoints = Vec::with_capacity(rows.len());
         for row in rows {
@@ -439,12 +483,14 @@ impl MemoryStore for PostgresMemoryStore {
     }
 
     async fn delete_checkpoint(&self, workspace_id: &str, task_id: &str, name: &str) -> Result<()> {
-        sqlx::query("DELETE FROM checkpoint_records WHERE workspace_id = $1 AND task_id = $2 AND name = $3")
-            .bind(workspace_id)
-            .bind(task_id)
-            .bind(name)
-            .execute(&self.pool)
-            .await?;
+        sqlx::query(
+            "DELETE FROM checkpoint_records WHERE workspace_id = $1 AND task_id = $2 AND name = $3",
+        )
+        .bind(workspace_id)
+        .bind(task_id)
+        .bind(name)
+        .execute(&self.pool)
+        .await?;
         Ok(())
     }
 }

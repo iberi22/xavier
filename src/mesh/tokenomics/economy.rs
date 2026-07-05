@@ -1,10 +1,10 @@
 //! Economy — Stable economy mechanics, bonding curve, and circuit breakers.
 
 pub struct EconomyEngine {
-    pub reserve_ratio: f64, // Target: 0.25 (25%)
+    pub reserve_ratio: f64,                  // Target: 0.25 (25%)
     pub protocol_owned_liquidity_ratio: f64, // 0.20 (20%)
-    pub burn_rate: f64, // 0.05 (5%)
-    pub annual_inflation: f64, // 0.02 (2% decreasing)
+    pub burn_rate: f64,                      // 0.05 (5%)
+    pub annual_inflation: f64,               // 0.02 (2% decreasing)
 }
 
 impl EconomyEngine {

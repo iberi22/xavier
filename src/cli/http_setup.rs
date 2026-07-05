@@ -7,7 +7,6 @@
 use crate::cli::config::resolve_http_token;
 use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
-use xavier::coordination::secrets::SecretLease;
 use axum::{
     body::Body,
     extract::State,
@@ -16,6 +15,7 @@ use axum::{
     response::Response,
 };
 use tracing::warn;
+use xavier::coordination::secrets::SecretLease;
 
 pub async fn auth_middleware(
     State(state): State<CliState>,
@@ -98,10 +98,12 @@ pub async fn auth_middleware(
             // Scope validation
             let has_scope = match path {
                 p if p.starts_with("/memory/search") || p.starts_with("/v1/memories/search") => {
-                    token_meta.scopes.contains(&"read".to_string()) || token_meta.scopes.contains(&"all".to_string())
+                    token_meta.scopes.contains(&"read".to_string())
+                        || token_meta.scopes.contains(&"all".to_string())
                 }
                 p if p.starts_with("/memory/add") || p.starts_with("/v1/memories") => {
-                    token_meta.scopes.contains(&"write".to_string()) || token_meta.scopes.contains(&"all".to_string())
+                    token_meta.scopes.contains(&"write".to_string())
+                        || token_meta.scopes.contains(&"all".to_string())
                 }
                 _ => true, // Default allow for other endpoints for now, or refine as needed
             };

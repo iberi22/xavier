@@ -25,8 +25,7 @@ static MESH_TELEMETRY: std::sync::OnceLock<Arc<MeshTelemetryCollector>> =
     std::sync::OnceLock::new();
 
 /// Global health registry
-static HEALTH_REGISTRY: std::sync::OnceLock<Arc<RwLock<HealthState>>> =
-    std::sync::OnceLock::new();
+static HEALTH_REGISTRY: std::sync::OnceLock<Arc<RwLock<HealthState>>> = std::sync::OnceLock::new();
 
 /// Unified health response
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -217,12 +216,18 @@ pub fn collect_health_sync() -> HealthResponse {
 }
 
 /// Async version — called from async contexts like `collect_health_sync` internals.
-pub async fn collect_health(settings: &XavierSettings, db: Option<&rusqlite::Connection>) -> HealthResponse {
+pub async fn collect_health(
+    settings: &XavierSettings,
+    db: Option<&rusqlite::Connection>,
+) -> HealthResponse {
     let (cpu, mem_used, mem_total, disk_used, disk_total) =
         tokio::task::spawn_blocking(gather_system_metrics)
             .await
             .unwrap_or((0.0, 0, 0, 0.0, 0.0));
-    collect_health_impl(settings, db, cpu, mem_used, mem_total, disk_used, disk_total).await
+    collect_health_impl(
+        settings, db, cpu, mem_used, mem_total, disk_used, disk_total,
+    )
+    .await
 }
 
 pub async fn check_cloud_health(settings: &XavierSettings) -> CloudHealthResponse {
@@ -231,23 +236,22 @@ pub async fn check_cloud_health(settings: &XavierSettings) -> CloudHealthRespons
         detail: "Supabase URL or Key not set".to_string(),
     };
 
-    let has_supabase = (std::env::var("XAVIER_SUPABASE_URL").is_ok() || settings.memory.supabase_url.is_some()) &&
-                       (std::env::var("XAVIER_SUPABASE_KEY").is_ok() || settings.memory.supabase_key.is_some());
+    let has_supabase = (std::env::var("XAVIER_SUPABASE_URL").is_ok()
+        || settings.memory.supabase_url.is_some())
+        && (std::env::var("XAVIER_SUPABASE_KEY").is_ok() || settings.memory.supabase_key.is_some());
 
     if has_supabase {
         match crate::memory::supabase_store::SupabaseMemoryStore::from_env().await {
-            Ok(store) => {
-                match store.health_check().await {
-                    Ok(_) => {
-                        supabase_status.status = "healthy".to_string();
-                        supabase_status.detail = "Connected to Supabase".to_string();
-                    }
-                    Err(e) => {
-                        supabase_status.status = "unhealthy".to_string();
-                        supabase_status.detail = e.to_string();
-                    }
+            Ok(store) => match store.health_check().await {
+                Ok(_) => {
+                    supabase_status.status = "healthy".to_string();
+                    supabase_status.detail = "Connected to Supabase".to_string();
                 }
-            }
+                Err(e) => {
+                    supabase_status.status = "unhealthy".to_string();
+                    supabase_status.detail = e.to_string();
+                }
+            },
             Err(e) => {
                 supabase_status.status = "unhealthy".to_string();
                 supabase_status.detail = format!("Failed to initialize Supabase store: {}", e);
@@ -260,22 +264,21 @@ pub async fn check_cloud_health(settings: &XavierSettings) -> CloudHealthRespons
         detail: "Postgres URL not set".to_string(),
     };
 
-    let has_postgres = std::env::var("XAVIER_POSTGRES_URL").is_ok() || settings.memory.postgres_url.is_some();
+    let has_postgres =
+        std::env::var("XAVIER_POSTGRES_URL").is_ok() || settings.memory.postgres_url.is_some();
 
     if has_postgres {
         match crate::memory::postgres_store::PostgresMemoryStore::from_env().await {
-            Ok(store) => {
-                match store.health_check().await {
-                    Ok(_) => {
-                        postgres_status.status = "healthy".to_string();
-                        postgres_status.detail = "Connected to Postgres".to_string();
-                    }
-                    Err(e) => {
-                        postgres_status.status = "unhealthy".to_string();
-                        postgres_status.detail = e.to_string();
-                    }
+            Ok(store) => match store.health_check().await {
+                Ok(_) => {
+                    postgres_status.status = "healthy".to_string();
+                    postgres_status.detail = "Connected to Postgres".to_string();
                 }
-            }
+                Err(e) => {
+                    postgres_status.status = "unhealthy".to_string();
+                    postgres_status.detail = e.to_string();
+                }
+            },
             Err(e) => {
                 postgres_status.status = "unhealthy".to_string();
                 postgres_status.detail = format!("Failed to initialize Postgres store: {}", e);
@@ -330,7 +333,7 @@ async fn collect_health_impl(
     // Build a basic EmbeddingHealth from settings (full async probe removed during refactor).
     let embedding = EmbeddingHealth {
         provider: settings.embedding.embedder.clone(),
-        connected: true,  // Assume OK; liveness is validated on actual API calls
+        connected: true, // Assume OK; liveness is validated on actual API calls
         latency_ms: 0.0,
         error_rate_pct: 0.0,
         last_success: Some(now_secs),
@@ -361,7 +364,11 @@ async fn collect_health_impl(
             connected_peers: 0,
             sync_lag_ms: 0.0,
             connectivity: if settings.license.mesh_accepted {
-                if cfg!(feature = "mesh") { "online" } else { "disabled (mesh feature not compiled)" }
+                if cfg!(feature = "mesh") {
+                    "online"
+                } else {
+                    "disabled (mesh feature not compiled)"
+                }
             } else {
                 "disabled (mesh license not accepted)"
             }
@@ -384,7 +391,10 @@ async fn collect_health_impl(
         checks.push(HealthCheck {
             name: "disk_space".into(),
             status: CheckStatus::Warn,
-            detail: format!("Disk usage at {:.1}% — above 75% warning threshold", disk_pct),
+            detail: format!(
+                "Disk usage at {:.1}% — above 75% warning threshold",
+                disk_pct
+            ),
             timestamp_secs: now_secs,
         });
     } else {
@@ -690,26 +700,49 @@ fn gather_db_health(settings: &XavierSettings) -> DatabaseHealth {
     };
     let db_path = std::path::Path::new(&db_path_str);
     let (size_mb, wal_size_mb, page_count, fragmentation) = if db_path.exists() {
-        let size = db_path.metadata().map(|m| m.len() as f64 / (1024.0 * 1024.0)).unwrap_or(0.0);
+        let size = db_path
+            .metadata()
+            .map(|m| m.len() as f64 / (1024.0 * 1024.0))
+            .unwrap_or(0.0);
         // SQLite WAL file: <name>-wal and <name>-shm
         let wal_path = {
             let mut w = db_path.to_path_buf();
-            let name = db_path.file_name().unwrap_or_default().to_str().unwrap_or("memory.db");
+            let name = db_path
+                .file_name()
+                .unwrap_or_default()
+                .to_str()
+                .unwrap_or("memory.db");
             w.set_file_name(format!("{}-wal", name));
             if !w.exists() {
                 // Try with original extension: memory.db-wal
                 let mut w2 = db_path.to_path_buf();
-                w2.set_file_name(format!("{}.db-wal", db_path.file_stem().unwrap_or_default().to_str().unwrap_or("memory")));
+                w2.set_file_name(format!(
+                    "{}.db-wal",
+                    db_path
+                        .file_stem()
+                        .unwrap_or_default()
+                        .to_str()
+                        .unwrap_or("memory")
+                ));
                 w2
-            } else { w }
+            } else {
+                w
+            }
         };
         let wal = if wal_path.exists() {
-            wal_path.metadata().map(|m| m.len() as f64 / (1024.0 * 1024.0)).unwrap_or(0.0)
+            wal_path
+                .metadata()
+                .map(|m| m.len() as f64 / (1024.0 * 1024.0))
+                .unwrap_or(0.0)
         } else {
             0.0
         };
         // Estimate fragmentation from WAL ratio
-        let frag = if size > 0.0 { (wal / size) * 100.0 } else { 0.0 };
+        let frag = if size > 0.0 {
+            (wal / size) * 100.0
+        } else {
+            0.0
+        };
         (size, wal, 0, frag)
     } else {
         (0.0, 0.0, 0, 0.0)
@@ -760,7 +793,9 @@ mod tests {
         let settings = XavierSettings::default();
         let health = collect_health(&settings, None).await;
         assert!(!health.version.is_empty());
-        assert!(health.status == "healthy" || health.status == "warn" || health.status == "degraded");
+        assert!(
+            health.status == "healthy" || health.status == "warn" || health.status == "degraded"
+        );
         // uptime can be 0 in test environments where no real clock has elapsed
         assert!(true);
     }
@@ -840,7 +875,10 @@ mod tests {
         // Fragmentation may or may not be high depending on auto-vacuum state,
         // but the function must not panic and must return a sane value.
         let frag = conn_fragmentation_pct(&conn);
-        assert!(frag >= 0.0 && frag <= 100.0, "fragmentation out of range: {frag}");
+        assert!(
+            frag >= 0.0 && frag <= 100.0,
+            "fragmentation out of range: {frag}"
+        );
     }
 
     #[test]
@@ -867,7 +905,10 @@ mod tests {
             conn.execute("DELETE FROM t WHERE id > 1;", []).unwrap();
 
             let result = auto_vacuum_if_needed(&conn, &settings).await;
-            assert!(result.is_ok(), "auto_vacuum should succeed on a fragmented db");
+            assert!(
+                result.is_ok(),
+                "auto_vacuum should succeed on a fragmented db"
+            );
             // After VACUUM the freelist should be empty (0% fragmentation).
             assert_eq!(
                 conn_fragmentation_pct(&conn),
@@ -991,7 +1032,11 @@ mod tests {
         });
         let status = if critical_failure {
             "unhealthy"
-        } else if health.checks.iter().any(|c| matches!(c.status, CheckStatus::Fail)) {
+        } else if health
+            .checks
+            .iter()
+            .any(|c| matches!(c.status, CheckStatus::Fail))
+        {
             "degraded"
         } else {
             "healthy"
@@ -1014,7 +1059,11 @@ mod tests {
         });
         let status = if critical_failure {
             "unhealthy"
-        } else if health.checks.iter().any(|c| matches!(c.status, CheckStatus::Fail)) {
+        } else if health
+            .checks
+            .iter()
+            .any(|c| matches!(c.status, CheckStatus::Fail))
+        {
             "degraded"
         } else {
             "healthy"

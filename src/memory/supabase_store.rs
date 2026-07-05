@@ -1,18 +1,18 @@
 //! Supabase backend for Xavier memory store (REST API).
 
-use std::any::Any;
-use anyhow::{Result, Context};
+use anyhow::{Context, Result};
 use async_trait::async_trait;
-use reqwest::Client;
 use chrono::Utc;
+use reqwest::Client;
 use serde_json::json;
+use std::any::Any;
 
 use crate::checkpoint::Checkpoint;
 use crate::domain::memory::belief::BeliefEdge;
 use crate::memory::schema::MemoryQueryFilters;
 use crate::memory::store::{
-    filter_records, stable_key, DurableWorkspaceState, MemoryBackend,
-    MemoryRecord, MemoryStore, SessionTokenRecord,
+    filter_records, stable_key, DurableWorkspaceState, MemoryBackend, MemoryRecord, MemoryStore,
+    SessionTokenRecord,
 };
 use crate::settings::XavierSettings;
 
@@ -50,9 +50,15 @@ impl SupabaseMemoryStore {
         })
     }
 
-    async fn postgrest_get<T: serde::de::DeserializeOwned>(&self, table: &str, query: &str) -> Result<Vec<T>> {
+    async fn postgrest_get<T: serde::de::DeserializeOwned>(
+        &self,
+        table: &str,
+        query: &str,
+    ) -> Result<Vec<T>> {
         let url = format!("{}/rest/v1/{}?{}", self.url, table, query);
-        let resp = self.client.get(&url)
+        let resp = self
+            .client
+            .get(&url)
             .header("apikey", &self.key)
             .header("Authorization", format!("Bearer {}", self.key))
             .send()
@@ -67,7 +73,9 @@ impl SupabaseMemoryStore {
 
     pub async fn health_check(&self) -> Result<()> {
         let url = format!("{}/rest/v1/", self.url);
-        let resp = self.client.get(&url)
+        let resp = self
+            .client
+            .get(&url)
             .header("apikey", &self.key)
             .header("Authorization", format!("Bearer {}", self.key))
             .timeout(std::time::Duration::from_secs(10))
@@ -83,7 +91,9 @@ impl SupabaseMemoryStore {
 
     async fn postgrest_upsert<T: serde::Serialize>(&self, table: &str, payload: &T) -> Result<()> {
         let url = format!("{}/rest/v1/{}", self.url, table);
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .header("apikey", &self.key)
             .header("Authorization", format!("Bearer {}", self.key))
             .header("Content-Type", "application/json")
@@ -101,7 +111,9 @@ impl SupabaseMemoryStore {
 
     async fn postgrest_delete(&self, table: &str, query: &str) -> Result<()> {
         let url = format!("{}/rest/v1/{}?{}", self.url, table, query);
-        let resp = self.client.delete(&url)
+        let resp = self
+            .client
+            .delete(&url)
             .header("apikey", &self.key)
             .header("Authorization", format!("Bearer {}", self.key))
             .send()
@@ -127,7 +139,10 @@ impl MemoryStore for SupabaseMemoryStore {
 
     async fn health(&self) -> Result<String> {
         // Just try to fetch an empty query to check connectivity
-        let _: Vec<serde_json::Value> = self.postgrest_get("memory_records", "limit=1").await.unwrap_or_default();
+        let _: Vec<serde_json::Value> = self
+            .postgrest_get("memory_records", "limit=1")
+            .await
+            .unwrap_or_default();
         Ok(format!("supabase connected to {}", self.url))
     }
 
@@ -139,13 +154,20 @@ impl MemoryStore for SupabaseMemoryStore {
         let key = stable_key("sqlite_mem", &[workspace_id, id_or_path]);
 
         // Try by ID
-        let records: Vec<MemoryRecord> = self.postgrest_get("memory_records", &format!("id=eq.{}", key)).await?;
+        let records: Vec<MemoryRecord> = self
+            .postgrest_get("memory_records", &format!("id=eq.{}", key))
+            .await?;
         if let Some(record) = records.into_iter().next() {
             return Ok(Some(record));
         }
 
         // Try by path
-        let records: Vec<MemoryRecord> = self.postgrest_get("memory_records", &format!("workspace_id=eq.{}&path=eq.{}", workspace_id, id_or_path)).await?;
+        let records: Vec<MemoryRecord> = self
+            .postgrest_get(
+                "memory_records",
+                &format!("workspace_id=eq.{}&path=eq.{}", workspace_id, id_or_path),
+            )
+            .await?;
         Ok(records.into_iter().next())
     }
 
@@ -156,14 +178,26 @@ impl MemoryStore for SupabaseMemoryStore {
     async fn delete(&self, workspace_id: &str, id_or_path: &str) -> Result<Option<MemoryRecord>> {
         let existing = self.get(workspace_id, id_or_path).await?;
         if let Some(ref record) = existing {
-            self.postgrest_delete("memory_records", &format!("id=eq.{}", record.id)).await?;
-            self.postgrest_delete("memory_records", &format!("workspace_id=eq.{}&parent_id=eq.{}", workspace_id, record.id)).await?;
+            self.postgrest_delete("memory_records", &format!("id=eq.{}", record.id))
+                .await?;
+            self.postgrest_delete(
+                "memory_records",
+                &format!(
+                    "workspace_id=eq.{}&parent_id=eq.{}",
+                    workspace_id, record.id
+                ),
+            )
+            .await?;
         }
         Ok(existing)
     }
 
     async fn list(&self, workspace_id: &str) -> Result<Vec<MemoryRecord>> {
-        self.postgrest_get("memory_records", &format!("workspace_id=eq.{}", workspace_id)).await
+        self.postgrest_get(
+            "memory_records",
+            &format!("workspace_id=eq.{}", workspace_id),
+        )
+        .await
     }
 
     async fn search(
@@ -180,16 +214,30 @@ impl MemoryStore for SupabaseMemoryStore {
         let memories = self.list(workspace_id).await?;
 
         let belief_key = stable_key("belief_row", &[workspace_id]);
-        let beliefs_rows: Vec<serde_json::Value> = self.postgrest_get("belief_states", &format!("id=eq.{}", belief_key)).await?;
-        let beliefs = beliefs_rows.into_iter().next()
+        let beliefs_rows: Vec<serde_json::Value> = self
+            .postgrest_get("belief_states", &format!("id=eq.{}", belief_key))
+            .await?;
+        let beliefs = beliefs_rows
+            .into_iter()
+            .next()
             .and_then(|r| r.get("beliefs").cloned())
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_default();
 
         let now = Utc::now().to_rfc3339();
-        let session_tokens = self.postgrest_get("session_tokens", &format!("workspace_id=eq.{}&expires_at=gt.{}", workspace_id, now)).await?;
+        let session_tokens = self
+            .postgrest_get(
+                "session_tokens",
+                &format!("workspace_id=eq.{}&expires_at=gt.{}", workspace_id, now),
+            )
+            .await?;
 
-        let checkpoints = self.postgrest_get("checkpoint_records", &format!("workspace_id=eq.{}", workspace_id)).await?;
+        let checkpoints = self
+            .postgrest_get(
+                "checkpoint_records",
+                &format!("workspace_id=eq.{}", workspace_id),
+            )
+            .await?;
 
         Ok(DurableWorkspaceState {
             memories,
@@ -210,7 +258,11 @@ impl MemoryStore for SupabaseMemoryStore {
         self.postgrest_upsert("belief_states", &payload).await
     }
 
-    async fn save_session_token(&self, workspace_id: &str, token: SessionTokenRecord) -> Result<()> {
+    async fn save_session_token(
+        &self,
+        workspace_id: &str,
+        token: SessionTokenRecord,
+    ) -> Result<()> {
         let token_key = stable_key("session_token_row", &[workspace_id, &token.token]);
         let payload = json!({
             "id": token_key,
@@ -225,12 +277,20 @@ impl MemoryStore for SupabaseMemoryStore {
     async fn is_session_token_valid(&self, workspace_id: &str, token: &str) -> Result<bool> {
         let token_key = stable_key("session_token_row", &[workspace_id, token]);
         let now = Utc::now().to_rfc3339();
-        let rows: Vec<serde_json::Value> = self.postgrest_get("session_tokens", &format!("id=eq.{}&expires_at=gt.{}", token_key, now)).await?;
+        let rows: Vec<serde_json::Value> = self
+            .postgrest_get(
+                "session_tokens",
+                &format!("id=eq.{}&expires_at=gt.{}", token_key, now),
+            )
+            .await?;
         Ok(!rows.is_empty())
     }
 
     async fn save_checkpoint(&self, workspace_id: &str, checkpoint: Checkpoint) -> Result<()> {
-        let checkpoint_key = stable_key("checkpoint_row", &[workspace_id, &checkpoint.task_id, &checkpoint.name]);
+        let checkpoint_key = stable_key(
+            "checkpoint_row",
+            &[workspace_id, &checkpoint.task_id, &checkpoint.name],
+        );
         let payload = json!({
             "id": checkpoint_key,
             "workspace_id": workspace_id,
@@ -241,16 +301,40 @@ impl MemoryStore for SupabaseMemoryStore {
         self.postgrest_upsert("checkpoint_records", &payload).await
     }
 
-    async fn load_checkpoint(&self, workspace_id: &str, task_id: &str, name: &str) -> Result<Option<Checkpoint>> {
-        let checkpoints: Vec<Checkpoint> = self.postgrest_get("checkpoint_records", &format!("workspace_id=eq.{}&task_id=eq.{}&name=eq.{}", workspace_id, task_id, name)).await?;
+    async fn load_checkpoint(
+        &self,
+        workspace_id: &str,
+        task_id: &str,
+        name: &str,
+    ) -> Result<Option<Checkpoint>> {
+        let checkpoints: Vec<Checkpoint> = self
+            .postgrest_get(
+                "checkpoint_records",
+                &format!(
+                    "workspace_id=eq.{}&task_id=eq.{}&name=eq.{}",
+                    workspace_id, task_id, name
+                ),
+            )
+            .await?;
         Ok(checkpoints.into_iter().next())
     }
 
     async fn list_checkpoints(&self, workspace_id: &str, task_id: &str) -> Result<Vec<Checkpoint>> {
-        self.postgrest_get("checkpoint_records", &format!("workspace_id=eq.{}&task_id=eq.{}", workspace_id, task_id)).await
+        self.postgrest_get(
+            "checkpoint_records",
+            &format!("workspace_id=eq.{}&task_id=eq.{}", workspace_id, task_id),
+        )
+        .await
     }
 
     async fn delete_checkpoint(&self, workspace_id: &str, task_id: &str, name: &str) -> Result<()> {
-        self.postgrest_delete("checkpoint_records", &format!("workspace_id=eq.{}&task_id=eq.{}&name=eq.{}", workspace_id, task_id, name)).await
+        self.postgrest_delete(
+            "checkpoint_records",
+            &format!(
+                "workspace_id=eq.{}&task_id=eq.{}&name=eq.{}",
+                workspace_id, task_id, name
+            ),
+        )
+        .await
     }
 }

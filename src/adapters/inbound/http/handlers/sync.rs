@@ -17,16 +17,11 @@
 use std::sync::{Arc, LazyLock, RwLock};
 use std::time::{Duration, SystemTime};
 
-use axum::{
-    extract::Path,
-    Json,
-};
+use axum::{extract::Path, Json};
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::memory::sync::{
-    merge::deserialise_chunk, ChunkDiff, PeerMemorySync, SyncSession,
-};
+use crate::memory::sync::{merge::deserialise_chunk, ChunkDiff, PeerMemorySync, SyncSession};
 
 /// Default workspace used when a request omits `workspace_id`.
 const DEFAULT_WORKSPACE: &str = "default";
@@ -43,7 +38,8 @@ static MEMORY_SYNC: LazyLock<RwLock<Option<Arc<PeerMemorySync>>>> =
 static LAST_SESSION: LazyLock<RwLock<Option<SyncSession>>> = LazyLock::new(|| RwLock::new(None));
 
 /// Conflict IDs that have been explicitly resolved via the resolve endpoint.
-static RESOLVED_CONFLICTS: LazyLock<RwLock<Vec<String>>> = LazyLock::new(|| RwLock::new(Vec::new()));
+static RESOLVED_CONFLICTS: LazyLock<RwLock<Vec<String>>> =
+    LazyLock::new(|| RwLock::new(Vec::new()));
 
 /// Wire the active `PeerMemorySync` into the module singleton.
 ///
@@ -110,10 +106,7 @@ pub async fn sync_status_handler() -> Json<serde_json::Value> {
         .map(|s| (s.node_id.clone(), s.sync_interval.as_secs()))
         .unwrap_or_else(|| (String::new(), 0));
 
-    let last_session = LAST_SESSION
-        .read()
-        .ok()
-        .and_then(|guard| guard.clone());
+    let last_session = LAST_SESSION.read().ok().and_then(|guard| guard.clone());
 
     let resolved_conflicts = RESOLVED_CONFLICTS
         .read()
@@ -290,7 +283,10 @@ mod tests {
     #[test]
     fn parse_since_empty_is_epoch() {
         assert_eq!(parse_since(&Some(String::new())), SystemTime::UNIX_EPOCH);
-        assert_eq!(parse_since(&Some("   ".to_string())), SystemTime::UNIX_EPOCH);
+        assert_eq!(
+            parse_since(&Some("   ".to_string())),
+            SystemTime::UNIX_EPOCH
+        );
     }
 
     #[test]

@@ -12,12 +12,17 @@ pub struct PairingCodeData {
     pub expires_at: u64,
 }
 
-pub fn generate_pairing_code(node_id: NodeId, endpoint: String, public_key_hex: String) -> (String, String) {
+pub fn generate_pairing_code(
+    node_id: NodeId,
+    endpoint: String,
+    public_key_hex: String,
+) -> (String, String) {
     let secret = uuid::Uuid::new_v4().to_string();
     let expires_at = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
-        .as_secs() + 3600; // 1 hour
+        .as_secs()
+        + 3600; // 1 hour
 
     let data = PairingCodeData {
         node_id,
@@ -34,8 +39,8 @@ pub fn generate_pairing_code(node_id: NodeId, endpoint: String, public_key_hex: 
 pub fn decode_pairing_code(code: &str) -> Result<PairingCodeData> {
     let decoded = crate::crypto::base64_decode(code)
         .ok_or_else(|| anyhow::anyhow!("Failed to decode base64 pairing code"))?;
-    let data: PairingCodeData = serde_json::from_slice(&decoded)
-        .context("Failed to parse pairing code JSON")?;
+    let data: PairingCodeData =
+        serde_json::from_slice(&decoded).context("Failed to parse pairing code JSON")?;
 
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
