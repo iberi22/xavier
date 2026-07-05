@@ -287,12 +287,15 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                 xavier::agents::provider::router::ProviderKind::OpenAI,
             ),
         )),
-        embedder,
+        embedder: embedder.clone(),
         agent_indexer: Arc::new(crate::memory::agent_indexer::AgentIndexer::new(
             crate::memory::file_indexer::FileIndexer::new(
                 crate::memory::file_indexer::FileIndexerConfig::default(),
                 Some(code_indexer.clone()),
             ),
+        )),
+        openclaw_indexer: Arc::new(crate::memory::openclaw_indexer::OpenClawAgentIndexer::new(
+            embedder.clone(),
         )),
     };
 
@@ -383,6 +386,8 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/xavier/agents/active", get(agent_active_handler))
         .route("/xavier/agents/scan", get(agent_scan_handler))
         .route("/xavier/agents/index", post(agent_index_handler))
+        .route("/xavier/openclaw/scan", get(openclaw_scan_handler))
+        .route("/xavier/openclaw/index", post(openclaw_index_handler))
         .route("/xavier/agents/sync", post(agent_sync_handler))
         .route(
             "/xavier/agents/{id}/heartbeat",
