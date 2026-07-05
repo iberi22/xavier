@@ -19,15 +19,38 @@ pub use crate::domain::agent::{AgentEntry, AgentMetadata};
 const HEARTBEAT_TIMEOUT_SECS: i64 = 300; // 5 minutes
 
 /// Agent registry for tracking active agents
-#[derive(Default)]
 pub struct SimpleAgentRegistry {
     agents: RwLock<HashMap<String, AgentEntry>>,
+    secrets_engine: Option<Arc<crate::coordination::KeyLendingEngine>>,
+    event_bus: Option<crate::coordination::events::XavierEventBus>,
+}
+
+impl Default for SimpleAgentRegistry {
+    fn default() -> Self {
+        Self {
+            agents: RwLock::new(HashMap::new()),
+            secrets_engine: None,
+            event_bus: None,
+        }
+    }
 }
 
 impl SimpleAgentRegistry {
     /// Create a new registry
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
+    }
+
+    /// Create a new registry with engines
+    pub fn new_with_engines(
+        secrets_engine: Option<Arc<crate::coordination::KeyLendingEngine>>,
+        event_bus: Option<crate::coordination::events::XavierEventBus>,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            agents: RwLock::new(HashMap::new()),
+            secrets_engine,
+            event_bus,
+        })
     }
 
     /// Register a new agent
@@ -121,6 +144,32 @@ impl AgentLifecyclePort for SimpleAgentRegistry {
 
     async fn get(&self, agent_id: &str) -> Option<AgentEntry> {
         SimpleAgentRegistry::get(self, agent_id).await
+    }
+
+    async fn on_task_start(&self, agent_id: &str, task_id: &str) {
+        tracing::info!("Task {} started for agent {}", task_id, agent_id);
+
+        // Renew leases for the agent if they exist
+        if let Some(engine) = &self.secrets_engine {
+            engine.renew_for_agent(agent_id, 3600).await;
+        }
+    }
+
+    async fn on_task_complete(
+        &self,
+        agent_id: &str,
+        task_id: &str,
+        result: &Result<crate::agents::runtime::AgentResponse, String>,
+    ) {
+        match result {
+            Ok(_) => tracing::info!("Task {} completed for agent {}", task_id, agent_id),
+            Err(e) => tracing::error!("Task {} failed for agent {}: {}", task_id, agent_id, e),
+        }
+
+        // Revoke leases for the agent
+        if let Some(engine) = &self.secrets_engine {
+            engine.revoke_for_agent(agent_id, "Task Ended").await;
+        }
     }
 }
 

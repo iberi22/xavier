@@ -26,6 +26,9 @@ use std::collections::HashMap;
 pub use runtime::{AgentRuntime, RuntimeConfig};
 pub use unregister_agent_handler::unregister_agent_handler;
 
+use crate::ports::inbound::AgentLifecyclePort;
+use std::sync::Arc;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentStatus {
     Idle,
@@ -140,12 +143,19 @@ impl Agent {
     pub async fn run(
         &mut self,
         memory: std::sync::Arc<crate::memory::qmd_memory::QmdMemory>,
+        lifecycle: Option<Arc<dyn AgentLifecyclePort>>,
     ) -> anyhow::Result<crate::agents::runtime::AgentResponse> {
         self.start();
         let task = self
             .task
             .clone()
             .unwrap_or_else(|| "What is my current status?".to_string());
+
+        let task_id = ulid::Ulid::new().to_string();
+
+        if let Some(ref lc) = lifecycle {
+            lc.on_task_start(&self.name, &task_id).await;
+        }
 
         let mut runtime_config = crate::agents::runtime::RuntimeConfig::default();
         if let Some(ref p) = self.provider {
@@ -168,10 +178,18 @@ impl Agent {
             runtime = runtime.with_provider_config(p_config);
         }
 
-        let response = runtime.run(&task, None, None).await?;
+        let result = runtime.run(&task, None, None).await;
+
+        if let Some(ref lc) = lifecycle {
+            let res = match &result {
+                Ok(resp) => Ok(resp.clone()),
+                Err(e) => Err(e.to_string()),
+            };
+            lc.on_task_complete(&self.name, &task_id, &res).await;
+        }
 
         self.stop();
-        Ok(response)
+        result
     }
 }
 

@@ -113,7 +113,7 @@ pub async fn spawn_agents(
             let memory = Arc::clone(&memory);
             futures.push(tokio::spawn(async move {
                 let name = agent.name.clone();
-                match agent.run(memory).await {
+                match agent.run(memory, None).await {
                     Ok(resp) => println!("  {} completed: {}", name, resp.response),
                     Err(error) => println!("  {} failed: {}", name, error),
                 }
@@ -225,7 +225,7 @@ pub async fn run_swarm(config_path: PathBuf, parallel: usize) -> Result<()> {
 
             let mut agent = Agent::new(config);
             println!("  starting {}", agent.name);
-            match agent.run(memory).await {
+            match agent.run(memory, None).await {
                 Ok(resp) => println!("  {} finished: {}", agent.name, resp.response),
                 Err(error) => println!("  {} failed: {}", agent.name, error),
             }
