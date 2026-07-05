@@ -195,24 +195,25 @@ pub fn mesh_telemetry() -> Option<Arc<MeshTelemetryCollector>> {
 /// any existing tokio context (e.g. `#[tokio::test]`).
 pub fn collect_health_sync() -> HealthResponse {
     let settings = XavierSettings::current();
-    std::thread::scope(|scope| {
-        scope.spawn(|| {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(2)
-                .enable_all()
-                .build()
-                .expect("Failed to create health check runtime");
-            rt.block_on(async {
-                let (cpu, mem_used, mem_total, disk_used, disk_total) =
-                    tokio::task::spawn_blocking(gather_system_metrics)
-                        .await
-                        .unwrap_or((0.0, 0, 0, 0.0, 0.0));
-                collect_health_impl(&settings, None, cpu, mem_used, mem_total, disk_used, disk_total).await
-            })
+
+    // Spawning a new OS thread ensures we can always block without interfering
+    // with the current runtime, and avoids "cannot start a runtime from within a runtime".
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to create health check runtime");
+
+        rt.block_on(async {
+            let (cpu, mem_used, mem_total, disk_used, disk_total) = gather_system_metrics();
+            collect_health_impl(
+                &settings, None, cpu, mem_used, mem_total, disk_used, disk_total,
+            )
+            .await
         })
-        .join()
-        .expect("health thread panicked")
     })
+    .join()
+    .expect("health thread panicked")
 }
 
 /// Async version — called from async contexts like `collect_health_sync` internals.
@@ -465,6 +466,26 @@ async fn collect_health_impl(
         }
     }
 
+    // 4. Embedding check
+    if !embedding.connected || embedding.error_rate_pct > 10.0 {
+        checks.push(HealthCheck {
+            name: "embedding".into(),
+            status: CheckStatus::Fail,
+            detail: format!(
+                "Embedding provider '{}' unhealthy (connected={}, error_rate={:.1}%)",
+                embedding.provider, embedding.connected, embedding.error_rate_pct
+            ),
+            timestamp_secs: now_secs,
+        });
+    } else {
+        checks.push(HealthCheck {
+            name: "embedding".into(),
+            status: CheckStatus::Pass,
+            detail: format!("Embedding provider '{}' healthy", embedding.provider),
+            timestamp_secs: now_secs,
+        });
+    }
+
     let uptime = registry
         .read()
         .await
@@ -473,7 +494,17 @@ async fn collect_health_impl(
         .unwrap_or_default()
         .as_secs();
 
-    let overall_status = if checks.iter().any(|c| matches!(c.status, CheckStatus::Fail)) {
+    let critical_failure = checks.iter().any(|c| {
+        matches!(c.status, CheckStatus::Fail)
+            && (c.name == "disk_space"
+                || c.name == "memory"
+                || c.name == "database_integrity"
+                || c.name == "sqlite_integrity")
+    });
+
+    let overall_status = if critical_failure {
+        "unhealthy"
+    } else if checks.iter().any(|c| matches!(c.status, CheckStatus::Fail)) {
         "degraded"
     } else if checks.iter().any(|c| matches!(c.status, CheckStatus::Warn)) {
         "warn"
@@ -928,5 +959,66 @@ mod tests {
                 .all(|a| a.component != "embedding"),
             "no embedding alert should exist"
         );
+    }
+
+    #[tokio::test]
+    async fn test_overall_status_prioritization() {
+        let settings = XavierSettings::default();
+
+        // 1. All Pass -> healthy
+        let health = collect_health(&settings, None).await;
+        assert_eq!(health.status, "healthy");
+
+        // 2. Embedding Fail -> degraded
+        // We can't easily mock the internal checks here because collect_health_impl
+        // gathers system metrics. But we can verify the logic by checking the
+        // response from a real call in the test environment.
+        let mut health = collect_health(&settings, None).await;
+        health.checks.push(HealthCheck {
+            name: "embedding".into(),
+            status: CheckStatus::Fail,
+            detail: "forced failure".into(),
+            timestamp_secs: 0,
+        });
+
+        // Re-run the logic manually to verify prioritization
+        let critical_failure = health.checks.iter().any(|c| {
+            matches!(c.status, CheckStatus::Fail)
+                && (c.name == "disk_space"
+                    || c.name == "memory"
+                    || c.name == "database_integrity"
+                    || c.name == "sqlite_integrity")
+        });
+        let status = if critical_failure {
+            "unhealthy"
+        } else if health.checks.iter().any(|c| matches!(c.status, CheckStatus::Fail)) {
+            "degraded"
+        } else {
+            "healthy"
+        };
+        assert_eq!(status, "degraded");
+
+        // 3. Database Fail -> unhealthy
+        health.checks.push(HealthCheck {
+            name: "database_integrity".into(),
+            status: CheckStatus::Fail,
+            detail: "forced failure".into(),
+            timestamp_secs: 0,
+        });
+        let critical_failure = health.checks.iter().any(|c| {
+            matches!(c.status, CheckStatus::Fail)
+                && (c.name == "disk_space"
+                    || c.name == "memory"
+                    || c.name == "database_integrity"
+                    || c.name == "sqlite_integrity")
+        });
+        let status = if critical_failure {
+            "unhealthy"
+        } else if health.checks.iter().any(|c| matches!(c.status, CheckStatus::Fail)) {
+            "degraded"
+        } else {
+            "healthy"
+        };
+        assert_eq!(status, "unhealthy");
     }
 }

@@ -236,6 +236,37 @@ pub async fn agent_index_handler(
     }
 }
 
+pub async fn openclaw_scan_handler() -> impl axum::response::IntoResponse {
+    let scanner = crate::memory::openclaw_scanner::OpenClawAgentScanner::new();
+    match scanner.scan_all_agents().await {
+        Ok(agents) => axum::Json(serde_json::json!({
+            "status": "ok",
+            "count": agents.len(),
+            "agents": agents,
+        })),
+        Err(e) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": format!("Failed to scan OpenClaw agents: {}", e),
+        })),
+    }
+}
+
+pub async fn openclaw_index_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    let scanner = crate::memory::openclaw_scanner::OpenClawAgentScanner::new();
+    match state.openclaw_indexer.index_all_agents(&scanner, state.store.as_ref()).await {
+        Ok(records) => axum::Json(serde_json::json!({
+            "status": "ok",
+            "indexed_count": records.len(),
+        })),
+        Err(e) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": format!("Failed to index OpenClaw agents: {}", e),
+        })),
+    }
+}
+
 pub async fn agent_sync_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<serde_json::Value>,

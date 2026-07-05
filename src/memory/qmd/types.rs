@@ -35,6 +35,8 @@ pub struct MemoryDocument {
     pub clearance: crate::memory::schema::ClearanceLevel,
     #[serde(default)]
     pub minhash: Option<Vec<u64>>,
+    #[serde(default)]
+    pub score: f32,
 }
 
 impl Default for MemoryDocument {
@@ -52,6 +54,7 @@ impl Default for MemoryDocument {
             relation: None,
             clearance: crate::memory::schema::ClearanceLevel::TopSecret,
             minhash: None,
+            score: 0.0,
         }
     }
 }
@@ -80,6 +83,7 @@ impl MemoryDocument {
                 .as_ref()
                 .map(|m| m.len() * std::mem::size_of::<u64>())
                 .unwrap_or(0) as u64
+            + 4 // score f32
     }
 }
 

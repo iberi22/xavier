@@ -173,6 +173,11 @@ pub enum Command {
         cmd: DataCommonsCommand,
     },
 
+    /// Manage Xavier Governance (DAO, Voting, Council)
+    Governance {
+        #[command(subcommand)]
+        command: GovernanceCommand,
+    },
     /// Manage XP wallet and tokenomics [SKELETON — decisions pending]
     Wallet {
         #[command(subcommand)]
@@ -287,12 +292,6 @@ pub enum Command {
     Regen {
         #[command(subcommand)]
         cmd: RegenCommand,
-    },
-
-    /// Governance DAO — proposals, voting, council management
-    Governance {
-        #[command(subcommand)]
-        command: GovernanceSubcommand,
     },
 }
 
@@ -715,6 +714,32 @@ pub enum SecretsCommand {
     Status { token: String },
 }
 
+#[derive(Subcommand, Debug, Clone)]
+pub enum GovernanceCommand {
+    /// List active proposals
+    List,
+    /// Create a new proposal
+    Create {
+        /// Proposal title
+        title: String,
+        /// Proposal description
+        description: String,
+    },
+    /// Show status of a proposal
+    Status {
+        /// Proposal ID
+        proposal_id: String,
+    },
+    /// Cast a vote on a proposal
+    Vote {
+        /// Proposal ID
+        proposal_id: String,
+        /// Vote in favor
+        approve: bool,
+    },
+    /// Show council members
+    Council,
+}
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum DataCommonsCommand {
@@ -864,8 +889,6 @@ pub mod memory {
             #[arg(long)]
             nightly: bool,
         },
-        /// Index Xavier's own foundational documents
-        IndexSelf,
     }
 }
 
@@ -882,30 +905,3 @@ pub enum WalletCommand {
     },
 }
 
-/// Governance DAO subcommands
-#[derive(Subcommand, Debug, Clone)]
-pub enum GovernanceSubcommand {
-    /// List active proposals
-    List,
-    /// Create a new proposal
-    Create {
-        /// Proposal title
-        title: String,
-        /// Proposal description
-        description: String,
-    },
-    /// Show status of a proposal
-    Status {
-        /// Proposal ID
-        proposal_id: String,
-    },
-    /// Cast a vote on a proposal
-    Vote {
-        /// Proposal ID
-        proposal_id: String,
-        /// Vote in favor
-        approve: bool,
-    },
-    /// Show council members
-    Council,
-}

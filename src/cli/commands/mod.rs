@@ -203,6 +203,9 @@ impl Cli {
             Command::DataCommons { cmd } => {
                 data_commons::handle_data_commons_command(cmd.clone()).await
             }
+            Command::Governance { command } => {
+                governance::handle_governance_command(command.clone()).await
+            }
             Command::Wallet { cmd } => {
                 wallet::handle_wallet_command(cmd.clone()).await
             }
@@ -270,9 +273,6 @@ impl Cli {
             }
             Command::Improve { cmd } => improve::handle_improve_command(cmd.clone()).await,
             Command::Regen { cmd } => regen::handle_regen_command(cmd.clone()).await,
-            Command::Governance { command } => {
-                governance::handle_governance_command(command.clone()).await
-            }
         }
     }
 }
