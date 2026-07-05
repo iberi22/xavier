@@ -25,4 +25,15 @@ pub trait AgentLifecyclePort: Send + Sync {
 
     /// Get a specific agent entry.
     async fn get(&self, agent_id: &str) -> Option<AgentEntry>;
+
+    /// Hook called when a task starts.
+    async fn on_task_start(&self, agent_id: &str, task_id: &str);
+
+    /// Hook called when a task completes.
+    async fn on_task_complete(
+        &self,
+        agent_id: &str,
+        task_id: &str,
+        result: &Result<crate::agents::runtime::AgentResponse, String>,
+    );
 }
