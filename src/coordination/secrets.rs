@@ -350,4 +350,28 @@ mod tests {
         assert!(leak.is_some());
         assert_eq!(leak.unwrap().0, agent_id);
     }
+
+    #[test]
+    fn test_secret_lease_serialization_redaction() {
+        let now = Utc::now();
+        let lease = SecretLease {
+            token: "test-token".to_string(),
+            secret_name: "test-secret".to_string(),
+            secret_value: None,
+            agent_id: "test-agent".to_string(),
+            expires_at: now,
+            created_at: now,
+        };
+
+        let json = serde_json::to_string(&lease).unwrap();
+        assert!(!json.contains("secret_value"));
+    }
+
+    #[tokio::test]
+    async fn test_lend_returns_value_by_default() {
+        let engine = KeyLendingEngine::new(Box::new(MockAuditLogger), None);
+        let secret = "secret-value";
+        let lease = engine.lend("test-secret", Some(secret), "agent-1", 3600).await.unwrap();
+        assert_eq!(lease.secret_value, Some(secret.to_string()));
+    }
 }
