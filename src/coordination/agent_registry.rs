@@ -22,6 +22,7 @@ const HEARTBEAT_TIMEOUT_SECS: i64 = 300; // 5 minutes
 #[derive(Default)]
 pub struct SimpleAgentRegistry {
     agents: RwLock<HashMap<String, AgentEntry>>,
+    secrets_engine: Option<Arc<crate::coordination::secrets::KeyLendingEngine>>,
 }
 
 impl SimpleAgentRegistry {
@@ -29,6 +30,15 @@ impl SimpleAgentRegistry {
     pub fn new() -> Arc<Self> {
         Arc::new(Self::default())
     }
+
+    /// Create a new registry with a secrets engine for lifecycle management
+    pub fn with_secrets(
+        &mut self,
+        secrets_engine: Arc<crate::coordination::secrets::KeyLendingEngine>,
+    ) {
+        self.secrets_engine = Some(secrets_engine);
+    }
+
 
     /// Register a new agent
     pub async fn register(
@@ -122,6 +132,33 @@ impl AgentLifecyclePort for SimpleAgentRegistry {
     async fn get(&self, agent_id: &str) -> Option<AgentEntry> {
         SimpleAgentRegistry::get(self, agent_id).await
     }
+
+    async fn on_task_start(&self, agent_id: &str, task_id: &str) {
+        tracing::info!("Agent '{}' started task '{}'", agent_id, task_id);
+    }
+
+    async fn on_task_complete(&self, agent_id: &str, task_id: &str, success: bool) {
+        tracing::info!(
+            "Agent '{}' completed task '{}' (success: {})",
+            agent_id,
+            task_id,
+            success
+        );
+
+        // F5 - Auto-revoke leases when agent tasks complete
+        if let Some(engine) = &self.secrets_engine {
+            let revoked_count = engine
+                .revoke_for_agent(agent_id, "Automatic revocation on task completion")
+                .await;
+            if revoked_count > 0 {
+                tracing::info!(
+                    "Automatically revoked {} secret leases for agent '{}' after task completion",
+                    revoked_count,
+                    agent_id
+                );
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -161,6 +198,35 @@ mod tests {
 
         let active = registry.get_active_agents().await;
         assert!(active.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_lifecycle_auto_revoke() {
+        use crate::coordination::secrets::KeyLendingEngine;
+        use crate::secrets::lending::AuditLogger;
+
+        struct MockAudit;
+        impl AuditLogger for MockAudit {
+            fn log_lend(&self, _: &str, _: &str, _: &str, _: u64) {}
+            fn log_revoke(&self, _: &str, _: &str, _: &str) {}
+            fn log_proxy_use(&self, _: &str, _: &str, _: &str) {}
+        }
+
+        let engine = Arc::new(KeyLendingEngine::new(Box::new(MockAudit), None));
+        let mut registry_arc = SimpleAgentRegistry::new();
+        Arc::get_mut(&mut registry_arc).unwrap().with_secrets(engine.clone());
+        let registry = registry_arc;
+
+        let agent_id = "agent-test";
+        engine.lend("test-secret", Some("val"), agent_id, 3600).await.unwrap();
+
+        let leases = engine.list_leases().await;
+        assert_eq!(leases.len(), 1);
+
+        registry.on_task_complete(agent_id, "task-1", true).await;
+
+        let leases_after = engine.list_leases().await;
+        assert!(leases_after.is_empty(), "Leases should be automatically revoked");
     }
 
     #[tokio::test]

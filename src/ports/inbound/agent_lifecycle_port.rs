@@ -25,4 +25,10 @@ pub trait AgentLifecyclePort: Send + Sync {
 
     /// Get a specific agent entry.
     async fn get(&self, agent_id: &str) -> Option<AgentEntry>;
+
+    /// Hook called when an agent starts a task.
+    async fn on_task_start(&self, agent_id: &str, task_id: &str);
+
+    /// Hook called when an agent completes a task.
+    async fn on_task_complete(&self, agent_id: &str, task_id: &str, success: bool);
 }

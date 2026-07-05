@@ -161,6 +161,13 @@ impl<S: TaskStore> TaskService<S> {
     pub async fn create_task(&self, title: &str, project: &str, created_by: &str) -> Result<Task> {
         let task = Task::new(title, project, created_by);
         self.store.create_task(&task).await?;
+
+        if let Some(bus) = &self.event_bus {
+            let _ = bus.publish(crate::coordination::events::XavierEvent::TaskStarted {
+                task: task.clone(),
+            });
+        }
+
         Ok(task)
     }
 

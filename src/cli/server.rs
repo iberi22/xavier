@@ -203,12 +203,21 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         TaskService::new(Arc::new(InMemoryTaskStore::new())).with_event_bus(event_bus.clone()),
     );
 
-    let secrets_engine_for_bus = secrets_engine.clone();
+    let mut agent_registry_raw = SimpleAgentRegistry::default();
+    agent_registry_raw.with_secrets(secrets_engine.clone());
+    let agent_registry = Arc::new(agent_registry_raw);
+
+    let agent_registry_for_bus = agent_registry.clone();
     let mut receiver = event_bus.subscribe();
     tokio::spawn(async move {
         info!("Secrets engine listening for task events...");
         while let Ok(event) = receiver.recv().await {
             match event {
+                xavier::coordination::events::XavierEvent::TaskStarted { task } => {
+                    if let Some(agent_id) = &task.assignee {
+                        agent_registry_for_bus.on_task_start(agent_id, &task.id).await;
+                    }
+                }
                 xavier::coordination::events::XavierEvent::TaskCompleted { task } => {
                     let _ = xavier::notifications::NOTIFICATIONS.notify(
                         xavier::notifications::IslandId::Agents,
@@ -222,9 +231,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                             "Task {} completed by agent {}. Revoking ephemeral keys...",
                             task.id, agent_id
                         );
-                        secrets_engine_for_bus
-                            .revoke_for_agent(agent_id, "Task Completed")
-                            .await;
+                        agent_registry_for_bus.on_task_complete(agent_id, &task.id, true).await;
                     }
                 }
                 xavier::coordination::events::XavierEvent::TaskFailed { task, reason } => {
@@ -240,9 +247,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                             "Task {} failed for agent {}. Revoking ephemeral keys...",
                             task.id, agent_id
                         );
-                        secrets_engine_for_bus
-                            .revoke_for_agent(agent_id, "Task Failed")
-                            .await;
+                        agent_registry_for_bus.on_task_complete(agent_id, &task.id, false).await;
                     }
                 }
                 _ => {}
@@ -273,7 +278,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         security: security_service.clone() as Arc<dyn InputSecurityPort>,
         security_scan: security_service.clone() as Arc<dyn SecurityScanPort>,
         _time_store: Some(time_store),
-        agent_registry: SimpleAgentRegistry::new() as Arc<dyn AgentLifecyclePort>,
+        agent_registry: agent_registry.clone() as Arc<dyn AgentLifecyclePort>,
         panel_store,
         secrets_engine,
         event_bus,

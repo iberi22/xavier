@@ -269,11 +269,30 @@ pub enum Command {
         #[command(subcommand)]
         cmd: AgentCommand,
     },
+    /// Manage Xavier governance and XIPs
+    Governance {
+        #[command(subcommand)]
+        cmd: GovernanceCommand,
+    },
     /// Show system health status
     Health {
         /// Show cloud backends status
         #[arg(long)]
         cloud: bool,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum GovernanceCommand {
+    /// List all active proposals (XIPs)
+    List,
+    /// Vote on a proposal
+    Vote {
+        /// Proposal ID (e.g. xip_123)
+        proposal_id: String,
+        /// Approve (true) or Reject (false)
+        #[arg(long)]
+        approve: bool,
     },
 }
 

@@ -114,11 +114,13 @@ pub async fn revoke_lease_by_path(
 
 pub async fn generic_proxy(
     State(state): State<CliState>,
+    axum::Extension(session): axum::Extension<SessionInfo>,
     Json(req): Json<GenericProxyRequest>,
 ) -> Response {
+    let agent_id = session.lease.as_ref().map(|l| l.agent_id.clone());
     match state
         .proxy_use_case
-        .execute_generic(req, state.secrets_engine.clone())
+        .execute_generic(req, state.secrets_engine.clone(), agent_id)
         .await
     {
         Ok(resp) => Json(resp).into_response(),

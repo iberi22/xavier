@@ -57,6 +57,7 @@ impl ProxyUseCase {
         &self,
         req: GenericProxyRequest,
         secrets_engine: Arc<crate::coordination::KeyLendingEngine>,
+        agent_id: Option<String>,
     ) -> Result<GenericProxyResponse, ProxyError> {
         let client = reqwest::Client::new();
         let method = match req.method.to_uppercase().as_str() {
@@ -148,7 +149,25 @@ impl ProxyUseCase {
             secrets_engine.log_proxy_use(&lease.agent_id, token, &req.url);
 
             // Track usage for this lease
-            let _ = self.rate_manager.track_request(&format!("lease:{}", token), 0, 200, 0.0, false).await;
+            let _ = self
+                .rate_manager
+                .track_request(&format!("lease:{}", token), 0, 200, 0.0, false)
+                .await;
+        } else if let Some(aid) = agent_id {
+            // F3 - Apply rate-limiting to generic proxy based on agent_id if lease_token is missing but authenticated
+            let provider = format!("agent:{}", aid);
+            if let Ok(status) = self.rate_manager.get_status(&provider).await {
+                if let Some(until) = status.rate_limited_until {
+                    if until > chrono::Utc::now() {
+                        return Err(ProxyError::RateLimited);
+                    }
+                }
+            }
+
+            let _ = self
+                .rate_manager
+                .track_request(&provider, 0, 200, 0.0, false)
+                .await;
         }
 
         // Set body
@@ -545,7 +564,9 @@ mod tests {
             secret_injection_strategy: None,
         };
 
-        let result = proxy.execute_generic(req, secrets_engine.clone()).await;
+        let result = proxy
+            .execute_generic(req, secrets_engine.clone(), Some(agent_id.to_string()))
+            .await;
 
         // Should be blocked
         assert!(result.is_err());

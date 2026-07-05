@@ -10,6 +10,7 @@ use tracing::{error, info};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum XavierEvent {
+    TaskStarted { task: Task },
     TaskCompleted { task: Task },
     TaskFailed { task: Task, reason: String },
     LeaseRenewed { token: String },
