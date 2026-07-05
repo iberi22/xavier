@@ -1,0 +1,34 @@
+{
+  "cli": "opencode",
+  "ts": "20260705T005817Z",
+  "results": [
+    {
+      "cli": "opencode",
+      "run": 0,
+      "group": "WITH_XAVIER",
+      "fact_key": "config-magma-9",
+      "fact_value": "La configuracion del modulo magma usa prioridad 9 y modo estricto",
+      "session_a": {
+        "rc": -2,
+        "duration_s": 1.5,
+        "output_tail": "CLI_NOT_FOUND: opencode",
+        "persisted_in_xavier": {
+          "persisted": false,
+          "n_results": 0,
+          "sample": []
+        }
+      },
+      "session_b": {
+        "rc": -2,
+        "duration_s": 1.2,
+        "output_tail": "CLI_NOT_FOUND: opencode"
+      },
+      "metrics": {
+        "recall_correct": false,
+        "said_dont_know": false,
+        "tool_used_evidence": false,
+        "alucination": true
+      }
+    }
+  ]
+}

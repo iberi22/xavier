@@ -20,6 +20,13 @@ pub struct EvalCase {
     pub query: String,
     /// Ground-truth identifier (path, title, or content substring) that defines a hit.
     pub expected_path: String,
+    /// Optional category for per-category tuning (defaults to "general").
+    #[serde(default = "default_category")]
+    pub category: String,
+}
+
+fn default_category() -> String {
+    "general".to_string()
 }
 
 /// A loaded benchmark dataset.
@@ -69,6 +76,7 @@ impl EvalDataset {
                 id: format!("case-{i}"),
                 query: q.to_string(),
                 expected_path: e.to_string(),
+                category: "general".to_string(),
             })
             .collect();
         Self {
@@ -88,6 +96,11 @@ fn parse_cases(arr: &[serde_json::Value]) -> Vec<EvalCase> {
                     .get("expected_path")
                     .and_then(|v| v.as_str())
                     .unwrap_or("")
+                    .to_string(),
+                category: c
+                    .get("category")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("general")
                     .to_string(),
             })
         })
@@ -116,6 +129,10 @@ pub struct RetrievalMetrics {
     pub hit_rate: f64,
     /// The k used for this measurement.
     pub k: usize,
+    /// Precision@k: hits / (num_cases * k) — how many of the retrieved slots were correct.
+    pub precision_at_k: f64,
+    /// If this metrics was computed for a specific category group, the category name.
+    pub category: Option<String>,
 }
 
 impl RetrievalMetrics {
@@ -130,10 +147,13 @@ impl RetrievalMetrics {
                 mrr: 0.0,
                 hit_rate: 0.0,
                 k,
+                precision_at_k: 0.0,
+                category: None,
             };
         }
         let hits = results.iter().filter(|r| r.hit).count();
         let recall = hits as f64 / num as f64;
+        let precision = hits as f64 / (num as f64 * k as f64);
         let mrr = results
             .iter()
             .filter_map(|r| r.first_hit_rank.map(|rank| 1.0 / rank as f64))
@@ -146,6 +166,8 @@ impl RetrievalMetrics {
             mrr,
             hit_rate: recall, // with a single expected_path per case, hit_rate == recall
             k,
+            precision_at_k: precision,
+            category: None,
         }
     }
 }
@@ -240,5 +262,34 @@ mod tests {
         let m = RetrievalMetrics::from_results("t", &[], 5);
         assert_eq!(m.num_cases, 0);
         assert!(m.recall_at_k.abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_precision_all_hits_is_one_over_k() {
+        // When all cases hit, precision = num_cases / (num_cases * k) = 1/k.
+        let results = vec![
+            CaseResult { case_id: "a".into(), hit: true, first_hit_rank: Some(1) },
+            CaseResult { case_id: "b".into(), hit: true, first_hit_rank: Some(2) },
+        ];
+        let m = RetrievalMetrics::from_results("t", &results, 5);
+        // precision = 2 / (2 * 5) = 0.2 = 1/k
+        assert!((m.precision_at_k - 0.2).abs() < 1e-9);
+        // With k=1, precision == recall when all hit
+        let m1 = RetrievalMetrics::from_results("t", &results, 1);
+        assert!((m1.precision_at_k - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn test_precision_partial_recall_less_than_one() {
+        // Partial hits: precision < 1/k.
+        let results = vec![
+            CaseResult { case_id: "a".into(), hit: true, first_hit_rank: Some(1) },
+            CaseResult { case_id: "b".into(), hit: false, first_hit_rank: None },
+            CaseResult { case_id: "c".into(), hit: true, first_hit_rank: Some(3) },
+        ];
+        let m = RetrievalMetrics::from_results("t", &results, 5);
+        // precision = 2 / (3 * 5) = 2/15 ≈ 0.1333
+        assert!(m.precision_at_k < 1.0);
+        assert!((m.precision_at_k - (2.0 / 15.0)).abs() < 1e-9);
     }
 }

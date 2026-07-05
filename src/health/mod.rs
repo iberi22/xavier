@@ -15,8 +15,14 @@ use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::sync::RwLock;
 
+use mesh_telemetry::MeshTelemetryCollector;
+
 /// Singleton health state
 static HEALTH_INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+/// Global mesh telemetry singleton (optional)
+static MESH_TELEMETRY: std::sync::OnceLock<Arc<MeshTelemetryCollector>> =
+    std::sync::OnceLock::new();
 
 /// Global health registry
 static HEALTH_REGISTRY: std::sync::OnceLock<Arc<RwLock<HealthState>>> =
@@ -172,6 +178,16 @@ pub fn health_registry() -> Option<Arc<RwLock<HealthState>>> {
     HEALTH_REGISTRY.get().cloned()
 }
 
+/// Set the mesh telemetry singleton. Returns the stored instance.
+pub fn set_mesh_telemetry(collector: Arc<MeshTelemetryCollector>) -> Arc<MeshTelemetryCollector> {
+    MESH_TELEMETRY.get_or_init(|| collector).clone()
+}
+
+/// Get a reference to the mesh telemetry collector, if initialized.
+pub fn mesh_telemetry() -> Option<Arc<MeshTelemetryCollector>> {
+    MESH_TELEMETRY.get().cloned()
+}
+
 /// Synchronous version — called from axum handlers.
 ///
 /// Spawns a dedicated OS thread with its own multi-threaded tokio runtime
@@ -310,9 +326,10 @@ async fn collect_health_impl(
     let db_health = gather_db_health(settings);
 
     // --- Embedding health ---
+    // Build a basic EmbeddingHealth from settings (full async probe removed during refactor).
     let embedding = EmbeddingHealth {
         provider: settings.embedding.embedder.clone(),
-        connected: true,
+        connected: true,  // Assume OK; liveness is validated on actual API calls
         latency_ms: 0.0,
         error_rate_pct: 0.0,
         last_success: Some(now_secs),
@@ -323,16 +340,32 @@ async fn collect_health_impl(
     push_embedding_alert_if_unhealthy(&embedding);
 
     // --- Mesh health ---
-    let mesh = MeshHealth {
-        peers_count: 0,
-        connected_peers: 0,
-        sync_lag_ms: 0.0,
-        connectivity: if settings.license.mesh_accepted {
-            if cfg!(feature = "mesh") { "online" } else { "disabled (mesh feature not compiled)" }
-        } else {
-            "disabled (mesh license not accepted)"
+    let mesh = if let Some(telemetry) = mesh_telemetry() {
+        let peers_count = telemetry.peer_count();
+        let connected_peers = telemetry.connected_peer_count();
+        let sync_lag_ms = telemetry.average_latency_ms();
+        MeshHealth {
+            peers_count,
+            connected_peers,
+            sync_lag_ms,
+            connectivity: if peers_count > 0 {
+                "online".to_string()
+            } else {
+                "no peers".to_string()
+            },
         }
-        .to_string(),
+    } else {
+        MeshHealth {
+            peers_count: 0,
+            connected_peers: 0,
+            sync_lag_ms: 0.0,
+            connectivity: if settings.license.mesh_accepted {
+                if cfg!(feature = "mesh") { "online" } else { "disabled (mesh feature not compiled)" }
+            } else {
+                "disabled (mesh license not accepted)"
+            }
+            .to_string(),
+        }
     };
 
     // --- Checks ---
@@ -586,9 +619,20 @@ pub fn push_embedding_alert_if_unhealthy(embedding: &EmbeddingHealth) -> bool {
 
 fn gather_system_metrics() -> (f64, u64, u64, f64, f64) {
     let mut sys = sysinfo::System::new();
+    sys.refresh_cpu_usage(); // Must refresh first; first call returns 0.0
     sys.refresh_memory();
     let mem_used = sys.used_memory() / (1024 * 1024); // MB
     let mem_total = sys.total_memory() / (1024 * 1024);
+
+    // CPU: average across all cores, clamped to [0, 100]
+    let cpus = sys.cpus();
+    let cpu_usage = if !cpus.is_empty() {
+        let sum: f32 = cpus.iter().map(|c| c.cpu_usage()).sum();
+        (sum / cpus.len() as f32) as f64
+    } else {
+        sys.global_cpu_usage() as f64
+    };
+    let cpu_usage_pct = cpu_usage.clamp(0.0, 100.0);
 
     // Disk
     let disks = sysinfo::Disks::new_with_refreshed_list();
@@ -601,7 +645,7 @@ fn gather_system_metrics() -> (f64, u64, u64, f64, f64) {
     };
     let disk_total = total_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
 
-    (0.0, mem_used, mem_total, disk_used, disk_total)
+    (cpu_usage_pct, mem_used, mem_total, disk_used, disk_total)
 }
 
 fn gather_db_health(settings: &XavierSettings) -> DatabaseHealth {
@@ -651,6 +695,7 @@ fn gather_db_health(settings: &XavierSettings) -> DatabaseHealth {
     }
 }
 
+pub mod mesh_telemetry;
 pub mod repair;
 
 // ═══════════════════════════════════════════════

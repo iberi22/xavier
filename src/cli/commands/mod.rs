@@ -269,6 +269,10 @@ impl Cli {
             }
             Command::Improve { cmd } => improve::handle_improve_command(cmd.clone()).await,
             Command::Regen { cmd } => regen::handle_regen_command(cmd.clone()).await,
+            Command::Governance { .. } => {
+                println!("ℹ️  Governance CLI is not yet wired (module has unresolved imports). Use the HTTP API instead.");
+                Ok(())
+            }
         }
     }
 }

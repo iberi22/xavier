@@ -47,7 +47,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                 "properties": {
                     "query": { "type": "string", "description": "Search query" },
                     "limit": { "type": "number", "description": "Maximum results (default: 10, max: 100)", "default": 10 },
-                    "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "Search mode (default: hybrid)", "default": "hybrid" },
+                    "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "RESERVED — currently ignored; search always runs the hybrid BM25+vector+RRF pipeline. Kept for forward-compatibility.", "default": "hybrid" },
                     "filters": { "type": "object", "description": "Optional filters" }
                 },
                 "required": ["query"]
@@ -217,7 +217,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                     "limit": { "type": "number", "description": "Maximum memories to include", "default": 5 },
                     "max_chars": { "type": "number", "description": "Maximum characters to include in context output", "default": 4000 },
                     "depth": { "type": "number", "description": "Relationship depth to explore (0=flat, 1=direct, 2=two-hop)", "default": 0 },
-                    "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "Search mode", "default": "hybrid" }
+                    "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "RESERVED — currently ignored; search always runs the hybrid pipeline.", "default": "hybrid" }
                 },
                 "required": ["query"]
             }),

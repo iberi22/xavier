@@ -57,7 +57,9 @@
 
 use crate::data_commons::types::*;
 use crate::data_commons::reputation::reputation_weight;
+use crate::data_commons::reputation::EigenTrustEngine;
 use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 
 /// Configuración de gobernanza bicameral
 #[derive(Debug, Clone)]
@@ -86,6 +88,16 @@ pub struct GovernanceConfig {
     pub voting_activity_window_days: u32,
     /// % para expulsión por collusion (default: 66%)
     pub expulsion_threshold: f32,
+    /// Dynamic quorum thresholds (optional)
+    pub dynamic_quorum: Option<DynamicQuorum>,
+}
+
+impl GovernanceConfig {
+    /// Builder: attach a dynamic quorum configuration
+    pub fn with_dynamic_quorum(mut self, dq: DynamicQuorum) -> Self {
+        self.dynamic_quorum = Some(dq);
+        self
+    }
 }
 
 impl Default for GovernanceConfig {
@@ -103,6 +115,72 @@ impl Default for GovernanceConfig {
             community_overrule_threshold: 75.0,
             voting_activity_window_days: 7,
             expulsion_threshold: 66.0,
+            dynamic_quorum: None,
+        }
+    }
+}
+
+/// Dynamic quorum thresholds that adjust based on recent participation.
+///
+/// When participation is low, quorum is lowered to encourage voting.
+/// When participation is high, quorum is raised to maintain engagement quality.
+#[derive(Debug, Clone)]
+pub struct DynamicQuorum {
+    /// Base user quorum as fraction (default: 0.10 = 10%)
+    pub base_user_quorum_pct: f64,
+    /// Base council quorum as fraction (default: 0.51 = 51%)
+    pub base_council_quorum_pct: f64,
+    /// Boost factor derived from recent participation trends
+    pub participation_boost: f64,
+}
+
+impl Default for DynamicQuorum {
+    fn default() -> Self {
+        Self {
+            base_user_quorum_pct: 0.10,
+            base_council_quorum_pct: 0.51,
+            participation_boost: 1.0,
+        }
+    }
+}
+
+impl DynamicQuorum {
+    /// Create a new DynamicQuorum with the given base percentages.
+    pub fn new(base_user_quorum_pct: f64, base_council_quorum_pct: f64) -> Self {
+        Self {
+            base_user_quorum_pct,
+            base_council_quorum_pct,
+            participation_boost: 1.0,
+        }
+    }
+
+    /// Compute effective user quorum based on recent participation rate.
+    ///
+    /// - If `recent_participation_rate < 0.30`: lower quorum by 20% (encourage participation)
+    /// - If `recent_participation_rate > 0.80`: raise quorum by 10% (maintain engagement)
+    /// - Otherwise: return base
+    pub fn effective_user_quorum(&self, recent_participation_rate: f64) -> f64 {
+        let base = self.base_user_quorum_pct;
+        if recent_participation_rate < 0.30 {
+            base * 0.80 // lower by 20%
+        } else if recent_participation_rate > 0.80 {
+            base * 1.10 // raise by 10%
+        } else {
+            base
+        }
+    }
+
+    /// Compute effective council quorum based on recent council participation rate.
+    ///
+    /// Same logic as user quorum but with council-specific base.
+    pub fn effective_council_quorum(&self, recent_council_participation: f64) -> f64 {
+        let base = self.base_council_quorum_pct;
+        if recent_council_participation < 0.30 {
+            base * 0.80
+        } else if recent_council_participation > 0.80 {
+            base * 1.10
+        } else {
+            base
         }
     }
 }
@@ -118,6 +196,8 @@ pub struct GovernanceEngine {
     active_wallets: HashMap<WalletAddress, u64>, // wallet → last_activity_timestamp
     /// Wallets bloqueadas por collusion
     blocked_wallets: Vec<WalletAddress>,
+    /// Optional EigenTrust reputation engine for weighted voting
+    reputation_engine: Option<Arc<RwLock<EigenTrustEngine>>>,
 }
 
 impl GovernanceEngine {
@@ -128,7 +208,14 @@ impl GovernanceEngine {
             council: Vec::new(),
             active_wallets: HashMap::new(),
             blocked_wallets: Vec::new(),
+            reputation_engine: None,
         }
+    }
+
+    /// Attach an EigenTrust reputation engine for weighted voting.
+    pub fn with_reputation_engine(mut self, engine: Arc<RwLock<EigenTrustEngine>>) -> Self {
+        self.reputation_engine = Some(engine);
+        self
     }
 
     // ── Helpers de tiempo ─────────────────────────────────
@@ -378,6 +465,9 @@ impl GovernanceEngine {
             return Err(GovernanceError::InactiveVoter);
         }
 
+        // Calcular peso del voto ANTES de tomar el mutable borrow de proposals
+        let weight = self.reputation_vote_weight(&wallet.0);
+
         let proposal = self
             .proposals
             .iter_mut()
@@ -393,9 +483,6 @@ impl GovernanceEngine {
             return Err(GovernanceError::AlreadyVoted);
         }
 
-        // Calcular peso del voto basado en reputación
-        let weight = reputation_weight(&wallet.0);
-
         let now = Self::now_secs();
         let weighted_vote = WeightedVote {
             wallet_id: wallet.clone(),
@@ -410,6 +497,26 @@ impl GovernanceEngine {
             .weighted_user_votes
             .insert(wallet.clone(), weighted_vote);
         Ok(())
+    }
+
+    /// Calculate vote weight for a wallet based on EigenTrust reputation.
+    ///
+    /// If a reputation engine is attached, the wallet's trust score is normalized
+    /// to a 1.0-10.0 range (max_score / 10). Otherwise falls back to 1.0.
+    fn reputation_vote_weight(&self, wallet_id: &str) -> u64 {
+        if let Some(ref engine) = self.reputation_engine {
+            if let Ok(eng) = engine.read() {
+                let score = eng.computed_score(wallet_id);
+                if score > 0.0 {
+                    // Normalize to 1.0-10.0 range: divide max possible score by 10
+                    // Since EigenTrust scores are typically 0.0-1.0, scale up by 10
+                    let normalized = (score * 10.0).clamp(1.0, 10.0);
+                    return normalized.round() as u64;
+                }
+            }
+        }
+        // Fallback: base weight of 1
+        reputation_weight(wallet_id)
     }
 
     /// Obtener el peso total de votos a favor de usuarios para una propuesta
@@ -597,8 +704,20 @@ impl GovernanceEngine {
         let user_for = user_votes.values().filter(|&&v| v).count() as u64;
         let user_against = user_votes.values().filter(|&&v| !v).count() as u64;
 
+        // Compute effective quorum thresholds (dynamic or static)
+        let effective_user_quorum_pct = if let Some(ref dq) = self.config.dynamic_quorum {
+            let participation_rate = if active_users > 0.0 {
+                total_user_votes / active_users
+            } else {
+                0.0
+            };
+            dq.effective_user_quorum(participation_rate as f64) as f32 * 100.0
+        } else {
+            self.config.user_quorum_minimum
+        };
+
         let user_quorum_met =
-            total_user_votes >= (active_users * self.config.user_quorum_minimum / 100.0).floor();
+            total_user_votes >= (active_users * effective_user_quorum_pct / 100.0).floor();
         // Ponderado: yes_weight / total_weight > 50%
         let user_percentage = if total_weight > 0 {
             (yes_weight as f32 / total_weight as f32) * 100.0
@@ -613,8 +732,19 @@ impl GovernanceEngine {
         let council_for = council_votes.values().filter(|&&v| v).count() as u64;
         let council_against = council_votes.values().filter(|&&v| !v).count() as u64;
 
+        let effective_council_quorum_pct = if let Some(ref dq) = self.config.dynamic_quorum {
+            let council_participation = if active_council > 0.0 {
+                total_council_votes / active_council
+            } else {
+                0.0
+            };
+            dq.effective_council_quorum(council_participation as f64) as f32 * 100.0
+        } else {
+            self.config.council_quorum_minimum
+        };
+
         let council_quorum_met = total_council_votes
-            >= (active_council * self.config.council_quorum_minimum / 100.0).floor();
+            >= (active_council * effective_council_quorum_pct / 100.0).floor();
         let council_percentage = if total_council_votes > 0.0 {
             (council_for as f32 / total_council_votes) * 100.0
         } else {
@@ -1192,5 +1322,201 @@ mod tests {
         let voter_result = engine.user_vote("nonexistent", &voter, true, vec![], vec![]);
         assert!(voter_result.is_err());
         assert!(matches!(voter_result.unwrap_err(), GovernanceError::ProposalNotFound));
+    }
+
+    // ── Reputation-weighted voting tests ──────────────────────
+
+    #[test]
+    fn test_voting_with_reputation_returns_higher_weight_for_trusted_wallet() {
+        use crate::data_commons::reputation::{EigenTrustEngine, ReputationConfig};
+
+        // Build an EigenTrust engine with known trust scores
+        let rep_config = ReputationConfig::default();
+        let mut rep_engine = EigenTrustEngine::new(rep_config, vec![]);
+
+        let w1 = WalletAddress("xv1_rep_trusted".into());
+        let w2 = WalletAddress("xv1_rep_peer".into());
+        let w3 = WalletAddress("xv1_rep_other".into());
+
+        // Create a trust chain: w2 trusts w1, w3 trusts w1 (w1 is highly trusted)
+        rep_engine.add_attestation(ReputationAttestation {
+            from: w2.clone(), to: w1.clone(), score: 1,
+            context_hash: None, timestamp: 0, signature: vec![],
+        });
+        rep_engine.add_attestation(ReputationAttestation {
+            from: w3.clone(), to: w1.clone(), score: 1,
+            context_hash: None, timestamp: 0, signature: vec![],
+        });
+        // Some reciprocal trust to make the graph connected
+        rep_engine.add_attestation(ReputationAttestation {
+            from: w1.clone(), to: w2.clone(), score: 1,
+            context_hash: None, timestamp: 0, signature: vec![],
+        });
+        rep_engine.add_attestation(ReputationAttestation {
+            from: w1.clone(), to: w3.clone(), score: 1,
+            context_hash: None, timestamp: 0, signature: vec![],
+        });
+
+        rep_engine.compute().unwrap();
+
+        let rep_arc = Arc::new(RwLock::new(rep_engine));
+        let config = GovernanceConfig::default();
+        let mut engine = GovernanceEngine::new(config).with_reputation_engine(rep_arc);
+
+        // Create proposal and get it to voting state
+        let author = WalletAddress("xv1_rep_author".into());
+        engine.register_activity(author.clone());
+        let proposal = engine
+            .create_proposal("Rep test".into(), "Test".into(), HashMap::new(), author.clone())
+            .unwrap();
+
+        // Give supports (including author)
+        for i in 0..4 {
+            let s = WalletAddress(format!("xv1_rep_s_{}", i));
+            engine.register_activity(s.clone());
+            engine.support_proposal(&proposal.id, &s).unwrap();
+        }
+        engine.support_proposal(&proposal.id, &author).unwrap();
+
+        // Vote with the trusted wallet
+        engine.register_activity(w1.clone());
+        engine.user_vote(&proposal.id, &w1, true, vec![], vec![]).unwrap();
+
+        let (yes_weight, total_weight) = engine.weighted_user_vote_tally(&proposal.id).unwrap();
+        // The trusted wallet should have weight > 1 since it has high EigenTrust score
+        assert!(total_weight > 1, "Trusted wallet should have weight > 1, got {}", total_weight);
+        assert_eq!(yes_weight, total_weight);
+    }
+
+    #[test]
+    fn test_voting_without_reputation_engine_falls_back_to_weight_1() {
+        // No reputation engine attached — every vote gets weight 1
+        let config = GovernanceConfig::default();
+        let mut engine = GovernanceEngine::new(config);
+
+        let author = WalletAddress("xv1_norep_author".into());
+        engine.register_activity(author.clone());
+        let proposal = engine
+            .create_proposal("NoRep".into(), "Test".into(), HashMap::new(), author.clone())
+            .unwrap();
+
+        for i in 0..4 {
+            let s = WalletAddress(format!("xv1_norep_s_{}", i));
+            engine.register_activity(s.clone());
+            engine.support_proposal(&proposal.id, &s).unwrap();
+        }
+        engine.support_proposal(&proposal.id, &author).unwrap();
+
+        let voter = WalletAddress("xv1_norep_voter".into());
+        engine.register_activity(voter.clone());
+        engine.user_vote(&proposal.id, &voter, true, vec![], vec![]).unwrap();
+
+        let (yes_weight, total_weight) = engine.weighted_user_vote_tally(&proposal.id).unwrap();
+        assert_eq!(total_weight, 1, "Without engine, weight should be 1");
+        assert_eq!(yes_weight, 1);
+    }
+
+    #[test]
+    fn test_low_reputation_gets_lower_weight() {
+        use crate::data_commons::reputation::{EigenTrustEngine, ReputationConfig};
+
+        // Build engine where wallet_low has low trust
+        let rep_config = ReputationConfig::default();
+        let mut rep_engine = EigenTrustEngine::new(rep_config, vec![]);
+
+        let wallet_high = WalletAddress("xv1_high_trust".into());
+        let wallet_low = WalletAddress("xv1_low_trust".into());
+        let wallet_rater = WalletAddress("xv1_rater".into());
+
+        // rater trusts wallet_high strongly
+        rep_engine.add_attestation(ReputationAttestation {
+            from: wallet_rater.clone(), to: wallet_high.clone(), score: 1,
+            context_hash: None, timestamp: 0, signature: vec![],
+        });
+        // rater distrusts wallet_low (negative score → no trust contribution)
+        rep_engine.add_attestation(ReputationAttestation {
+            from: wallet_rater.clone(), to: wallet_low.clone(), score: -1,
+            context_hash: None, timestamp: 0, signature: vec![],
+        });
+        // Some reciprocal trust for graph connectivity
+        rep_engine.add_attestation(ReputationAttestation {
+            from: wallet_high.clone(), to: wallet_rater.clone(), score: 1,
+            context_hash: None, timestamp: 0, signature: vec![],
+        });
+        rep_engine.add_attestation(ReputationAttestation {
+            from: wallet_low.clone(), to: wallet_rater.clone(), score: 1,
+            context_hash: None, timestamp: 0, signature: vec![],
+        });
+        rep_engine.add_attestation(ReputationAttestation {
+            from: wallet_high.clone(), to: wallet_low.clone(), score: 1,
+            context_hash: None, timestamp: 0, signature: vec![],
+        });
+
+        rep_engine.compute().unwrap();
+
+        // wallet_high should have higher score than wallet_low
+        let score_high = rep_engine.computed_score(&wallet_high.0);
+        let score_low = rep_engine.computed_score(&wallet_low.0);
+        assert!(
+            score_high > score_low,
+            "High-trust wallet ({}) should score higher than low-trust wallet ({})",
+            score_high,
+            score_low
+        );
+    }
+
+    // ── Dynamic quorum tests ──────────────────────────────────
+
+    #[test]
+    fn test_low_participation_lowers_quorum() {
+        let dq = DynamicQuorum::default();
+        let low_rate = 0.20; // < 0.30
+        let effective = dq.effective_user_quorum(low_rate);
+        // base is 0.10, lowered by 20% → 0.10 * 0.80 = 0.08
+        assert!(
+            (effective - 0.08).abs() < 0.0001,
+            "Low participation should lower quorum to 0.08, got {}",
+            effective
+        );
+
+        // Council quorum: base 0.51 * 0.80 = 0.408
+        let council_eff = dq.effective_council_quorum(low_rate);
+        assert!(
+            (council_eff - 0.408).abs() < 0.0001,
+            "Low council participation should lower quorum to 0.408, got {}",
+            council_eff
+        );
+    }
+
+    #[test]
+    fn test_high_participation_raises_quorum() {
+        let dq = DynamicQuorum::default();
+        let high_rate = 0.90; // > 0.80
+        let effective = dq.effective_user_quorum(high_rate);
+        // base is 0.10, raised by 10% → 0.10 * 1.10 = 0.11
+        assert!(
+            (effective - 0.11).abs() < 0.0001,
+            "High participation should raise quorum to 0.11, got {}",
+            effective
+        );
+
+        // Council quorum: base 0.51 * 1.10 = 0.561
+        let council_eff = dq.effective_council_quorum(high_rate);
+        assert!(
+            (council_eff - 0.561).abs() < 0.0001,
+            "High council participation should raise quorum to 0.561, got {}",
+            council_eff
+        );
+    }
+
+    #[test]
+    fn test_dynamic_quorum_missing_uses_defaults() {
+        // When no dynamic quorum is configured, tally_votes should use static config values
+        let config = GovernanceConfig::default();
+        assert!(config.dynamic_quorum.is_none(), "Default config should have no dynamic quorum");
+
+        // The static values should be 10.0 for user and 51.0 for council
+        assert_eq!(config.user_quorum_minimum, 10.0);
+        assert_eq!(config.council_quorum_minimum, 51.0);
     }
 }

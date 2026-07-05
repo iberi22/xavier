@@ -263,6 +263,57 @@ pub async fn add_handler(
         }
     }
 
+    // H-1 fix: extract typed memory fields (kind/evidence_kind/namespace/provenance) from
+    // the payload metadata and normalize, so that /memory/search filters by project/agent_id/
+    // session_id actually isolate memories (multi-tenancy for subagents). Previously this was
+    // hardcoded to {"kind":"Context","namespace":"Global"}, which broke all namespace filters.
+    let typed = xavier::memory::schema::TypedMemoryPayload {
+        kind: metadata
+            .get("kind")
+            .cloned()
+            .map(serde_json::from_value::<xavier::memory::schema::MemoryKind>)
+            .transpose()
+            .ok()
+            .flatten(),
+        evidence_kind: metadata
+            .get("evidence_kind")
+            .cloned()
+            .map(serde_json::from_value::<xavier::memory::schema::EvidenceKind>)
+            .transpose()
+            .ok()
+            .flatten(),
+        namespace: metadata
+            .get("namespace")
+            .cloned()
+            .map(serde_json::from_value::<xavier::memory::schema::MemoryNamespace>)
+            .transpose()
+            .ok()
+            .flatten(),
+        provenance: metadata
+            .get("provenance")
+            .cloned()
+            .map(serde_json::from_value::<xavier::memory::schema::MemoryProvenance>)
+            .transpose()
+            .ok()
+            .flatten(),
+        ..Default::default()
+    };
+    let normalized_metadata = xavier::memory::schema::normalize_metadata(
+        &path,
+        metadata,
+        &state.workspace_id,
+        if typed.kind.is_some()
+            || typed.namespace.is_some()
+            || typed.provenance.is_some()
+            || typed.evidence_kind.is_some()
+        {
+            Some(&typed)
+        } else {
+            None
+        },
+    )
+    .unwrap_or_else(|_| serde_json::json!({"kind": "Context", "namespace": "Global"}));
+
     info!(
         "Add memory request: path={}, content_len={}",
         path,
@@ -274,7 +325,7 @@ pub async fn add_handler(
         workspace_id: state.workspace_id.clone(),
         path: path.clone(),
         content: effective_content.to_string(),
-        metadata: serde_json::json!({"kind": "Context", "namespace": "Global"}),
+        metadata: normalized_metadata,
         embedding: vec![],
         created_at: chrono::Utc::now(),
         updated_at: chrono::Utc::now(),

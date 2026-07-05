@@ -1,0 +1,328 @@
+{
+  "dataset": "locomo_xavier_subagent_v1",
+  "_comment": "Dataset de evaluacion estilo LoCoMo/LongMemEval adaptado a Xavier como cerebro de subagents. 3 namespaces (xavier, content-ops, swal-infra), 3 sesiones temporales (session-alpha temprana, session-beta media, session-gamma reciente). Casos categorizados: single_hop, multi_hop, temporal, multilingual, tenancy.",
+  "namespace_seed": {
+    "_comment": "Estos son los agent_id/project que aislamos para sembrar. El harness usa paths unicos con prefijo 'locomo-eval/' para no colisionar con memorias reales.",
+    "path_prefix": "locomo-eval/v1/"
+  },
+  "documents": [
+    {
+      "path": "locomo-eval/v1/xavier/decision-system3",
+      "content": "Decision arquitectonica: System3 (el modulo de razonamiento simbolico) se mantiene OPCIONAL. Preguntas factuales o temporales se responden directamente desde la evidencia tipada almacenada en el MemoryStore sin invocar System3.",
+      "kind": "decision",
+      "evidence_kind": "observation",
+      "provenance": {
+        "source_app": "engram",
+        "source_type": "observation",
+        "topic_key": "architecture/system3-optional",
+        "recorded_at": "2026-06-10T09:00:00Z"
+      },
+      "namespace": { "project": "xavier", "agent_id": "brain-eval-xavier", "session_id": "session-alpha" }
+    },
+    {
+      "path": "locomo-eval/v1/xavier/schema-location",
+      "content": "El esquema de memoria tipada (TypedMemoryPayload, MemoryKind, EvidenceKind) vive en src/memory/schema.rs. El puente de importacion (bridge import path) esta en src/memory/bridge.rs.",
+      "kind": "repo",
+      "evidence_kind": "fact_atom",
+      "provenance": {
+        "source_app": "openclaw",
+        "source_type": "repo_memory",
+        "repo_url": "https://github.com/iberi22/xavier",
+        "file_path": "src/memory/schema.rs",
+        "recorded_at": "2026-06-10T09:15:00Z"
+      },
+      "namespace": { "project": "xavier", "agent_id": "brain-eval-xavier", "session_id": "session-alpha" }
+    },
+    {
+      "path": "locomo-eval/v1/xavier/rrf-config",
+      "content": "La fusion de rankings BM25+vectorial usa RRF con constante K=60. Los pesos por defecto son KEYWORD_WEIGHT=0.7 y SEMANTIC_WEIGHT=0.3. Estos valores estan en src/memory/qmd/config.rs.",
+      "kind": "repo",
+      "evidence_kind": "fact_atom",
+      "provenance": {
+        "source_app": "openclaw",
+        "source_type": "repo_memory",
+        "repo_url": "https://github.com/iberi22/xavier",
+        "file_path": "src/memory/qmd/config.rs",
+        "recorded_at": "2026-06-12T14:00:00Z"
+      },
+      "namespace": { "project": "xavier", "agent_id": "brain-eval-xavier", "session_id": "session-beta" }
+    },
+    {
+      "path": "locomo-eval/v1/xavier/iroh-mesh",
+      "content": "Decision: el transporte mesh P2P usa Iroh 1.0.1 (QUIC) en lugar de libp2p. La clase IrohTransport implementa los 5 metodos de MeshTransport sobre streams QUIC. NAT traversal via la red N0.",
+      "kind": "decision",
+      "evidence_kind": "observation",
+      "provenance": {
+        "source_app": "engram",
+        "source_type": "observation",
+        "topic_key": "mesh/iroh-transport",
+        "recorded_at": "2026-06-15T11:00:00Z"
+      },
+      "namespace": { "project": "xavier", "agent_id": "brain-eval-xavier", "session_id": "session-beta" }
+    },
+    {
+      "path": "locomo-eval/v1/xavier/tgd-refinement",
+      "content": "Observacion: el refinamiento TGD (Textual Gradient Descent) itera sobre memorias de baja calidad usando un LLM y reescribe el contenido con score. Las memorias refinadas se marcan con metadata tgd_refined=true.",
+      "kind": "fact",
+      "evidence_kind": "observation",
+      "provenance": {
+        "source_app": "engram",
+        "source_type": "observation",
+        "topic_key": "consolidation/tgd",
+        "recorded_at": "2026-06-18T16:30:00Z"
+      },
+      "namespace": { "project": "xavier", "agent_id": "brain-eval-xavier", "session_id": "session-gamma" }
+    },
+    {
+      "path": "locomo-eval/v1/xavier/embedding-cloud",
+      "content": "Configuracion de embedding: el modo cloud usa OpenRouter con el modelo text-embedding-3-small. Si XAVIER_EMBEDDING_PROVIDER_MODE no es 'cloud', el servidor intenta gllm/Qwen local y falla en builds headless.",
+      "kind": "fact",
+      "evidence_kind": "observation",
+      "provenance": {
+        "source_app": "engram",
+        "source_type": "observation",
+        "topic_key": "embedding/cloud-mode",
+        "recorded_at": "2026-06-18T17:00:00Z"
+      },
+      "namespace": { "project": "xavier", "agent_id": "brain-eval-xavier", "session_id": "session-gamma" }
+    },
+    {
+      "path": "locomo-eval/v1/xavier/maturity-91",
+      "content": "Metrica de madurez: el proyecto xavier esta reconciliado al 91% (tri-source: scanner v2 + features.json + code audit). Las 7 brechas cerradas en el sprint 2026-07-03 incluyeron Auto-Improvement 30->85% y Context Regen 0->60%.",
+      "kind": "fact",
+      "evidence_kind": "summary_fact",
+      "provenance": {
+        "source_app": "engram",
+        "source_type": "summary_fact",
+        "recorded_at": "2026-07-03T20:00:00Z"
+      },
+      "namespace": { "project": "xavier", "agent_id": "brain-eval-xavier", "session_id": "session-gamma" }
+    },
+
+    {
+      "path": "locomo-eval/v1/content-ops/youtube-backlog",
+      "content": "Session handoff: el agente openclaw-content importo el backlog de publicacion de YouTube (47 videos pendientes) y guardo el resultado en Xavier para el equipo de ops.",
+      "kind": "session",
+      "evidence_kind": "session_summary",
+      "provenance": {
+        "source_app": "openclaw",
+        "source_type": "session_summary",
+        "recorded_at": "2026-06-11T10:00:00Z"
+      },
+      "namespace": { "project": "content-ops", "agent_id": "openclaw-content", "session_id": "session-alpha-co" }
+    },
+    {
+      "path": "locomo-eval/v1/content-ops/editorial-policy",
+      "content": "Politica editorial: los videos de mas de 20 minutos deben tener capitulos (timestamps) en la descripcion. Los cortos (<60s) se publican solo en Shorts, no en el canal principal.",
+      "kind": "decision",
+      "evidence_kind": "observation",
+      "provenance": {
+        "source_app": "openclaw",
+        "source_type": "observation",
+        "topic_key": "editorial/chapters-shorts",
+        "recorded_at": "2026-06-14T12:00:00Z"
+      },
+      "namespace": { "project": "content-ops", "agent_id": "openclaw-content", "session_id": "session-beta-co" }
+    },
+    {
+      "path": "locomo-eval/v1/content-ops/thumbnail-abort",
+      "content": "Bug reportado: el generador automatico de thumbnails con DALL-E fallaba con error 429 (rate limit). Workaround temporal: cola con backoff exponencial y cache de 24h.",
+      "kind": "task",
+      "evidence_kind": "observation",
+      "provenance": {
+        "source_app": "openclaw",
+        "source_type": "observation",
+        "recorded_at": "2026-06-17T08:00:00Z"
+      },
+      "namespace": { "project": "content-ops", "agent_id": "openclaw-content", "session_id": "session-gamma-co" }
+    },
+    {
+      "path": "locomo-eval/v1/content-ops/publish-q3",
+      "content": "Plan Q3: lanzar 12 videos largos + 30 shorts. Prioridad: serie de arquitectura de agentes (4 episodios). Fecha objetivo de publicacion del primer episodio: 2026-07-15.",
+      "kind": "task",
+      "evidence_kind": "fact_atom",
+      "provenance": {
+        "source_app": "openclaw",
+        "source_type": "observation",
+        "recorded_at": "2026-07-01T09:00:00Z"
+      },
+      "namespace": { "project": "content-ops", "agent_id": "openclaw-content", "session_id": "session-gamma-co" }
+    },
+
+    {
+      "path": "locomo-eval/v1/swal-infra/telegram-bot-token",
+      "content": "Configuracion: el bot de Telegram usa un token almacenado en el vault Clavis (no en .env). El secret lease tiene expiracion de 24h y se renueva via el endpoint /secrets/lend.",
+      "kind": "fact",
+      "evidence_kind": "observation",
+      "provenance": {
+        "source_app": "engram",
+        "source_type": "observation",
+        "topic_key": "infra/telegram-clavis",
+        "recorded_at": "2026-06-13T15:00:00Z"
+      },
+      "namespace": { "project": "swal-infra", "agent_id": "brain-eval-infra", "session_id": "session-beta-infra" }
+    },
+    {
+      "path": "locomo-eval/v1/swal-infra/db-migration-runner",
+      "content": "Decision: las migraciones SQLite se aplican via MigrationRunner (src/storage/migrations.rs). Version actual del schema: v5. Las migraciones son idempotentes y se aplican en orden de version dentro de una transaccion.",
+      "kind": "decision",
+      "evidence_kind": "observation",
+      "provenance": {
+        "source_app": "engram",
+        "source_type": "observation",
+        "topic_key": "infra/migration-runner",
+        "recorded_at": "2026-06-16T10:00:00Z"
+      },
+      "namespace": { "project": "swal-infra", "agent_id": "brain-eval-infra", "session_id": "session-beta-infra" }
+    },
+    {
+      "path": "locomo-eval/v1/swal-infra/backup-strategy",
+      "content": "Estrategia de backup: snapshot diario de data/xavier_memory.db a las 03:00 UTC, retencion 30 dias. Los vectores (vec-store.sqlite3) se respaldan por separado cada 6h por ser mas volatiles.",
+      "kind": "task",
+      "evidence_kind": "fact_atom",
+      "provenance": {
+        "source_app": "engram",
+        "source_type": "observation",
+        "recorded_at": "2026-06-19T03:00:00Z"
+      },
+      "namespace": { "project": "swal-infra", "agent_id": "brain-eval-infra", "session_id": "session-gamma-infra" }
+    },
+    {
+      "path": "locomo-eval/v1/swal-infra/port-conflict",
+      "content": "Incidente: el servidor HTTP de xavier colisiono con otro proceso en el puerto 8006. Fix: configurar XAVIER_PORT explicitamente o liberar el puerto. El MCP HTTP vive en puerto separado (default 8100).",
+      "kind": "task",
+      "evidence_kind": "observation",
+      "provenance": {
+        "source_app": "engram",
+        "source_type": "observation",
+        "recorded_at": "2026-07-02T22:00:00Z"
+      },
+      "namespace": { "project": "swal-infra", "agent_id": "brain-eval-infra", "session_id": "session-gamma-infra" }
+    },
+    {
+      "path": "locomo-eval/v1/swal-infra/multilingual-note",
+      "content": "Tarea: revisar el roadmap de memoria universal y conectar OpenClaw con Engram sin depender de heuristicas fragiles en ingles. Soporte ES/EN/FR verificado en el tokenizer BM25.",
+      "kind": "task",
+      "evidence_kind": "fact_atom",
+      "provenance": {
+        "source_app": "engram",
+        "source_type": "observation",
+        "recorded_at": "2026-06-20T11:00:00Z"
+      },
+      "namespace": { "project": "swal-infra", "agent_id": "brain-eval-infra", "session_id": "session-gamma-infra" }
+    }
+  ],
+  "cases": [
+    {
+      "id": "single-hop-system3",
+      "category": "single_hop",
+      "endpoint": "search",
+      "query": "Cual fue la decision sobre System3?",
+      "filters": { "project": "xavier" },
+      "expected_path": "locomo-eval/v1/xavier/decision-system3",
+      "expected_substring": "OPCIONAL"
+    },
+    {
+      "id": "single-hop-schema",
+      "category": "single_hop",
+      "endpoint": "search",
+      "query": "Donde vive el esquema de memoria tipada?",
+      "filters": { "project": "xavier" },
+      "expected_path": "locomo-eval/v1/xavier/schema-location",
+      "expected_substring": "schema.rs"
+    },
+    {
+      "id": "single-hop-rrf",
+      "category": "single_hop",
+      "endpoint": "search",
+      "query": "Que valor tiene la constante RRF K?",
+      "filters": { "project": "xavier" },
+      "expected_path": "locomo-eval/v1/xavier/rrf-config",
+      "expected_substring": "K=60"
+    },
+    {
+      "id": "single-hop-iroh",
+      "category": "single_hop",
+      "endpoint": "search",
+      "query": "Que tecnologia P2P usa el mesh?",
+      "filters": { "project": "xavier" },
+      "expected_path": "locomo-eval/v1/xavier/iroh-mesh",
+      "expected_substring": "Iroh"
+    },
+    {
+      "id": "multi-hop-rrf-and-schema",
+      "category": "multi_hop",
+      "endpoint": "search",
+      "query": "Que archivo configura la fusion RRF y donde esta el esquema de memoria?",
+      "filters": { "project": "xavier" },
+      "expected_paths": [
+        "locomo-eval/v1/xavier/rrf-config",
+        "locomo-eval/v1/xavier/schema-location"
+      ],
+      "_note": "multi-hop: el top-5 debe contener AMBOS documentos"
+    },
+    {
+      "id": "temporal-most-recent-xavier",
+      "category": "temporal",
+      "endpoint": "search",
+      "query": "Cual es la metrica de madurez mas reciente del proyecto?",
+      "filters": { "project": "xavier" },
+      "expected_path": "locomo-eval/v1/xavier/maturity-91",
+      "expected_substring": "91"
+    },
+    {
+      "id": "temporal-content-ops-latest",
+      "category": "temporal",
+      "endpoint": "search",
+      "query": "Cual es el plan de publicacion mas reciente de content-ops?",
+      "filters": { "project": "content-ops" },
+      "expected_path": "locomo-eval/v1/content-ops/publish-q3",
+      "expected_substring": "Q3"
+    },
+    {
+      "id": "multilingual-es",
+      "category": "multilingual",
+      "endpoint": "search",
+      "query": "Que tarea menciona OpenClaw, Engram y heuristicas en ingles?",
+      "filters": { "project": "swal-infra" },
+      "expected_path": "locomo-eval/v1/swal-infra/multilingual-note",
+      "expected_substring": "OpenClaw"
+    },
+    {
+      "id": "tenancy-isolate-xavier",
+      "category": "tenancy",
+      "endpoint": "search",
+      "query": "backlog de YouTube",
+      "filters": { "project": "xavier" },
+      "expected_paths_none": ["locomo-eval/v1/content-ops/youtube-backlog"],
+      "_note": "tenancy negativo: buscar 'youtube backlog' en project=xavier NO debe devolver el doc de content-ops. Se mide que expected_paths_none NO aparezca en top-k."
+    },
+    {
+      "id": "tenancy-isolate-content-ops",
+      "category": "tenancy",
+      "endpoint": "search",
+      "query": "migraciones SQLite",
+      "filters": { "project": "content-ops" },
+      "expected_paths_none": ["locomo-eval/v1/swal-infra/db-migration-runner"],
+      "_note": "tenancy negativo: buscar 'migraciones' en project=content-ops NO debe devolver el doc de swal-infra."
+    },
+    {
+      "id": "agent-filter-content",
+      "category": "tenancy",
+      "endpoint": "search",
+      "query": "thumbnails error rate limit",
+      "filters": { "project": "content-ops", "agent_id": "openclaw-content" },
+      "expected_path": "locomo-eval/v1/content-ops/thumbnail-abort",
+      "expected_substring": "429"
+    },
+    {
+      "id": "infra-migration",
+      "category": "single_hop",
+      "endpoint": "search",
+      "query": "Como se aplican las migraciones de base de datos?",
+      "filters": { "project": "swal-infra" },
+      "expected_path": "locomo-eval/v1/swal-infra/db-migration-runner",
+      "expected_substring": "MigrationRunner"
+    }
+  ]
+}

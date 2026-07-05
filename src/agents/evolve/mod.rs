@@ -320,6 +320,8 @@ impl EvolveModule {
         };
 
         let result = fixer.process_diagnosis(&diagnosis).await;
+        // TODO: wire TelegramNotified after successful fix.
+        //       e.g. if result.success { crate::observability::notifier::maybe_notify_telegram_fix(&result.action); }
         if result.success {
             info!("Improvement PR created: {:?}", result.url);
         } else {

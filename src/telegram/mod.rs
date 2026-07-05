@@ -8,10 +8,96 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use teloxide::prelude::*;
 use teloxide::types::ParseMode;
 use teloxide::utils::command::BotCommands;
 use tracing::{error, info, warn};
+
+// ── Rate-limiting constants ──────────────────────────────
+/// Maximum number of commands a single user may send within the rate-limit window.
+pub const RATE_LIMIT_COMMANDS: usize = 10;
+/// Duration of the sliding window in seconds.
+pub const RATE_LIMIT_WINDOW_SECS: u64 = 60;
+
+/// Simple per-user rate limiter: N commands per window.
+struct RateLimiter {
+    max_per_window: usize,
+    window: Duration,
+    entries: Mutex<HashMap<String, Vec<Instant>>>,
+}
+
+impl RateLimiter {
+    fn new(max: usize, window_secs: u64) -> Self {
+        Self {
+            max_per_window: max,
+            window: Duration::from_secs(window_secs),
+            entries: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Returns `Ok(())` if the user is under the limit, `Err(remaining_secs)` if
+    /// rate limited.
+    fn check(&self, user_id: &str) -> Result<(), u64> {
+        self.prune();
+        let mut map = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+        let timestamps = map.entry(user_id.to_string()).or_default();
+        // Remove expired entries for this user
+        timestamps.retain(|&t| now.duration_since(t) < self.window);
+        if timestamps.len() < self.max_per_window {
+            timestamps.push(now);
+            Ok(())
+        } else {
+            // Compute how many seconds until the oldest entry expires
+            let oldest = timestamps.iter().copied().min().unwrap_or(now);
+            let remaining = self.window.saturating_sub(now.duration_since(oldest));
+            Err(remaining.as_secs() + 1)
+        }
+    }
+
+    /// Prune stale entries across all users (called on every check).
+    fn prune(&self) {
+        let mut map = self.entries.lock().unwrap_or_else(|e| e.into_inner());
+        let now = Instant::now();
+        for timestamps in map.values_mut() {
+            timestamps.retain(|&t| now.duration_since(t) < self.window);
+        }
+        // Remove users with no entries
+        map.retain(|_, v| !v.is_empty());
+    }
+}
+
+/// Retry helper with exponential back-off.
+///
+/// Calls `f()` up to `max_retries` times. On failure, waits `2^attempt` seconds
+/// (capped at 16 s) before retrying. Returns the first successful value or the
+/// last error.
+async fn with_retry<F, Fut, T>(label: &str, max_retries: usize, f: F) -> Result<T>
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    let mut attempt = 0;
+    loop {
+        match f().await {
+            Ok(val) => return Ok(val),
+            Err(e) => {
+                attempt += 1;
+                if attempt >= max_retries {
+                    return Err(e);
+                }
+                let backoff = 2u64.pow(attempt.min(4) as u32);
+                tracing::warn!(
+                    "{label}: attempt {attempt}/{max_retries} failed: {e}, retrying in {backoff}s"
+                );
+                tokio::time::sleep(Duration::from_secs(backoff)).await;
+            }
+        }
+    }
+}
 
 /// Vault key under which the Telegram bot token is stored in Clavis.
 pub const TELEGRAM_TOKEN_VAULT_KEY: &str = "telegram_bot_token";
@@ -38,7 +124,7 @@ pub enum Command {
     Scan(String),
     #[command(description = "list active agents.")]
     Agents,
-    #[command(description = "memory operations: /memory stats | /memory search <query>.")]
+    #[command(description = "memory operations: /memory stats | /memory search <query> | /memory list | /memory delete <id>.")]
     Memory(String),
 }
 
@@ -49,6 +135,10 @@ pub enum MemoryCommand {
     Stats,
     /// `/memory search <query>` — top-k hybrid search.
     Search(String),
+    /// `/memory list` — list top-10 memories.
+    List,
+    /// `/memory delete <id>` — delete a memory by ID.
+    Delete(String),
 }
 
 impl MemoryCommand {
@@ -72,6 +162,14 @@ impl MemoryCommand {
                     None
                 } else {
                     Some(Self::Search(rest.to_string()))
+                }
+            }
+            "list" => Some(Self::List),
+            "delete" => {
+                if rest.is_empty() {
+                    None
+                } else {
+                    Some(Self::Delete(rest.to_string()))
                 }
             }
             _ => None,
@@ -205,6 +303,7 @@ pub struct XavierBot {
     memory: Arc<dyn MemoryQueryPort>,
     agents: Arc<dyn AgentLifecyclePort>,
     security: Arc<dyn SecurityScanPort>,
+    rate_limiter: Arc<RateLimiter>,
 }
 
 impl XavierBot {
@@ -221,6 +320,10 @@ impl XavierBot {
             memory,
             agents,
             security,
+            rate_limiter: Arc::new(RateLimiter::new(
+                RATE_LIMIT_COMMANDS,
+                RATE_LIMIT_WINDOW_SECS,
+            )),
         }
     }
 
@@ -235,7 +338,18 @@ impl XavierBot {
     }
 
     async fn start_polling(&self) {
-        let me = self.bot.get_me().await.expect("Failed to get bot info");
+        let me = match with_retry("get_me (polling)", 3, || {
+            let bot = self.bot.clone();
+            async move { Ok(bot.get_me().await) }
+        })
+        .await
+        {
+            Ok(m) => m,
+            Err(e) => {
+                error!("Failed to get bot info after retries: {e}");
+                return;
+            }
+        };
         info!("Bot username: @{}", me.username());
 
         let handler = Update::filter_message()
@@ -247,7 +361,8 @@ impl XavierBot {
                 Arc::new(self.config.clone()),
                 self.memory.clone(),
                 self.agents.clone(),
-                self.security.clone()
+                self.security.clone(),
+                self.rate_limiter.clone(),
             ])
             .build()
             .dispatch()
@@ -255,29 +370,53 @@ impl XavierBot {
     }
 
     async fn start_webhook(&self, url: &str) {
-        let me = self.bot.get_me().await.expect("Failed to get bot info");
+        let me = match with_retry("get_me (webhook)", 3, || {
+            let bot = self.bot.clone();
+            async move { Ok(bot.get_me().await) }
+        })
+        .await
+        {
+            Ok(m) => m,
+            Err(e) => {
+                error!("Failed to get bot info after retries: {e}");
+                return;
+            }
+        };
         info!("Bot username: @{}", me.username());
 
         let addr = ([0, 0, 0, 0], self.config.webhook_port).into();
-        let url = url.parse().expect("Invalid webhook URL");
+        let url = match url.parse() {
+            Ok(u) => u,
+            Err(e) => {
+                error!("Invalid webhook URL: {e}");
+                return;
+            }
+        };
 
         let handler = Update::filter_message()
             .filter_command::<Command>()
             .endpoint(Self::handle_command);
 
-        let listener = teloxide::update_listeners::webhooks::axum(
+        let listener = match teloxide::update_listeners::webhooks::axum(
             self.bot.clone(),
             teloxide::update_listeners::webhooks::Options::new(addr, url),
         )
         .await
-        .expect("Failed to setup webhook listener");
+        {
+            Ok(l) => l,
+            Err(e) => {
+                error!("Failed to setup webhook listener: {e}");
+                return;
+            }
+        };
 
         Dispatcher::builder(self.bot.clone(), handler)
             .dependencies(dptree::deps![
                 Arc::new(self.config.clone()),
                 self.memory.clone(),
                 self.agents.clone(),
-                self.security.clone()
+                self.security.clone(),
+                self.rate_limiter.clone(),
             ])
             .build()
             .dispatch_with_listener(
@@ -295,7 +434,22 @@ impl XavierBot {
         memory: Arc<dyn MemoryQueryPort>,
         agents: Arc<dyn AgentLifecyclePort>,
         security: Arc<dyn SecurityScanPort>,
+        rate_limiter: Arc<RateLimiter>,
     ) -> ResponseResult<()> {
+        // ── Rate limiting ──────────────────────────────────────
+        let user_id = msg
+            .from()
+            .map(|u| u.id.0.to_string())
+            .unwrap_or_else(|| "unknown".to_string());
+        if let Err(secs) = rate_limiter.check(&user_id) {
+            bot.send_message(
+                msg.chat.id,
+                format!("⏳ Rate limited. Try again in {secs}s."),
+            )
+            .await?;
+            return Ok(());
+        }
+
         // Simple admin check
         if !config.admin_ids.is_empty() {
             let user_id = msg.from().map(|u| u.id.0).unwrap_or(0);
@@ -542,8 +696,62 @@ pub async fn handle_memory_command(args: &str) -> String {
                 format!("❌ Could not load memory store: {}", escape_markdown_v2(&e.to_string()))
             }
         },
+        Some(MemoryCommand::List) => match load_local_memory().await {
+            Ok(memory) => match memory.search("", 10).await {
+                Ok(results) if results.is_empty() => {
+                    "📋 No memories stored yet\\.".to_string()
+                }
+                Ok(results) => {
+                    let mut response = String::from("📋 *Memory List \\(top 10\\):*\n\n");
+                    for (i, doc) in results.iter().take(10).enumerate() {
+                        let title = doc
+                            .metadata
+                            .get("title")
+                            .and_then(|t| t.as_str())
+                            .or(doc.path.split('/').last())
+                            .unwrap_or("Untitled");
+                        response.push_str(&format!(
+                            "{}\\. \\*{}\\* \\(id: `{}`\\)\n\n",
+                            i + 1,
+                            escape_markdown_v2(title),
+                            escape_markdown_v2(&doc.id)
+                        ));
+                    }
+                    response
+                }
+                Err(e) => format!(
+                    "❌ List failed: {}",
+                    escape_markdown_v2(&e.to_string())
+                ),
+            },
+            Err(e) => {
+                warn!("Telegram /memory list failed to load store: {e}");
+                format!("❌ Could not load memory store: {}", escape_markdown_v2(&e.to_string()))
+            }
+        },
+        Some(MemoryCommand::Delete(id)) => match load_local_memory().await {
+            Ok(memory) => match memory.delete(&id).await {
+                Ok(Some(deleted)) => {
+                    format!(
+                        "🗑 Memory deleted successfully\\. \\(id: `{}`\\)",
+                        escape_markdown_v2(&deleted.id)
+                    )
+                }
+                Ok(None) => {
+                    format!("❌ Memory not found: `{}`", escape_markdown_v2(&id))
+                }
+                Err(e) => format!(
+                    "❌ Delete failed: {}",
+                    escape_markdown_v2(&e.to_string())
+                ),
+            },
+            Err(e) => {
+                warn!("Telegram /memory delete failed to load store: {e}");
+                format!("❌ Could not load memory store: {}", escape_markdown_v2(&e.to_string()))
+            }
+        },
         None => {
-            "ℹ️ Usage: `/memory stats` or `/memory search <query>`".to_string()
+            "ℹ️ Usage: `/memory stats`, `/memory search <query>`, `/memory list`, or `/memory delete <id>`".to_string()
         }
     }
 }
@@ -636,7 +844,8 @@ pub async fn start_webhook(
             Arc::new(bot.config.clone()),
             bot.memory.clone(),
             bot.agents.clone(),
-            bot.security.clone()
+            bot.security.clone(),
+            bot.rate_limiter.clone(),
         ])
         .build()
         .dispatch_with_listener(
@@ -677,12 +886,14 @@ mod tests {
 
     #[test]
     fn test_memory_command_parse_invalid() {
-        // Empty, unknown subcommand, and bare `search` (no query) all fail.
+        // Empty, unknown subcommand, and bare subcommands with missing args all fail.
         assert_eq!(MemoryCommand::parse(""), None);
         assert_eq!(MemoryCommand::parse("   "), None);
-        assert_eq!(MemoryCommand::parse("delete foo"), None);
+        assert_eq!(MemoryCommand::parse("frobnicate"), None);
         assert_eq!(MemoryCommand::parse("search"), None);
         assert_eq!(MemoryCommand::parse("search   "), None);
+        assert_eq!(MemoryCommand::parse("delete"), None);
+        assert_eq!(MemoryCommand::parse("delete   "), None);
     }
 
     #[test]
@@ -737,5 +948,105 @@ mod tests {
         // Unknown subcommand yields a usage hint rather than a panic.
         let reply = handle_memory_command("frobnicate").await;
         assert!(reply.contains("Usage") || reply.contains("/memory"));
+    }
+
+    // ── Memory list / delete parse tests ─────────────────
+
+    #[test]
+    fn test_memory_command_parse_list() {
+        assert_eq!(MemoryCommand::parse("list"), Some(MemoryCommand::List));
+        // Case-insensitive
+        assert_eq!(MemoryCommand::parse("LIST"), Some(MemoryCommand::List));
+        assert_eq!(MemoryCommand::parse("  LiSt  "), Some(MemoryCommand::List));
+    }
+
+    #[test]
+    fn test_memory_command_parse_delete() {
+        assert_eq!(
+            MemoryCommand::parse("delete abc123"),
+            Some(MemoryCommand::Delete("abc123".to_string()))
+        );
+        // Case-insensitive head
+        assert_eq!(
+            MemoryCommand::parse("DELETE some-uuid-here"),
+            Some(MemoryCommand::Delete("some-uuid-here".to_string()))
+        );
+    }
+
+    // ── Rate limiter tests ───────────────────────────────
+
+    #[test]
+    fn test_rate_limiter_allows_under_limit() {
+        let limiter = RateLimiter::new(3, 60);
+        assert!(limiter.check("user1").is_ok());
+        assert!(limiter.check("user1").is_ok());
+        assert!(limiter.check("user1").is_ok());
+    }
+
+    #[test]
+    fn test_rate_limiter_blocks_over_limit() {
+        let limiter = RateLimiter::new(2, 60);
+        assert!(limiter.check("user2").is_ok());
+        assert!(limiter.check("user2").is_ok());
+        let result = limiter.check("user2");
+        assert!(result.is_err(), "should be rate limited after 2 commands");
+        assert!(result.unwrap_err() <= 61, "remaining seconds should be <= 61");
+    }
+
+    #[test]
+    fn test_rate_limiter_allows_after_window_expires() {
+        // Use a very short 1-second window for the test.
+        let limiter = RateLimiter::new(1, 1);
+        assert!(limiter.check("user3").is_ok());
+        // Immediately blocked
+        assert!(limiter.check("user3").is_err());
+        // Wait for window to expire
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        assert!(limiter.check("user3").is_ok(), "should allow after window expires");
+    }
+
+    // ── with_retry tests ─────────────────────────────────
+
+    #[tokio::test]
+    async fn test_with_retry_succeeds_on_first_try() {
+        let mut calls = 0;
+        let result = with_retry("test-ok", 3, || {
+            calls += 1;
+            let val = 42;
+            async move { Ok::<i32, String>(val) }
+        })
+        .await;
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(calls, 1);
+    }
+
+    #[tokio::test]
+    async fn test_with_retry_retries_on_failure_then_succeeds() {
+        let mut calls = 0;
+        let result: Result<i32, &str> = with_retry("test-retry", 5, || {
+            calls += 1;
+            async move {
+                if calls < 3 {
+                    Err("not yet")
+                } else {
+                    Ok(99)
+                }
+            }
+        })
+        .await;
+        assert_eq!(result.unwrap(), 99);
+        assert_eq!(calls, 3, "should have retried twice then succeeded");
+    }
+
+    #[tokio::test]
+    async fn test_with_retry_exhausts_retries() {
+        let mut calls = 0;
+        let result: Result<i32, &str> = with_retry("test-exhaust", 3, || {
+            calls += 1;
+            async move { Err("always fails") }
+        })
+        .await;
+        assert!(result.is_err());
+        assert_eq!(calls, 3, "should have tried exactly max_retries times");
     }
 }
