@@ -22,7 +22,13 @@ pub async fn vsearch(
         .iter()
         .filter_map(|doc| {
             let score = cosine_similarity(&query_vector, &doc.embedding);
-            (score > 0.0).then(|| (score, doc.clone()))
+            if score > 0.0 {
+                let mut d = doc.clone();
+                d.score = score;
+                Some((score, d))
+            } else {
+                None
+            }
         })
         .collect();
 
@@ -44,7 +50,10 @@ pub async fn vsearch(
 
     Ok(similarities
         .into_iter()
-        .map(|(_, doc)| doc)
+        .map(|(score, mut doc)| {
+            doc.score = score;
+            doc
+        })
         .take(limit)
         .collect())
 }

@@ -287,12 +287,15 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                 xavier::agents::provider::router::ProviderKind::OpenAI,
             ),
         )),
-        embedder,
+        embedder: embedder.clone(),
         agent_indexer: Arc::new(crate::memory::agent_indexer::AgentIndexer::new(
             crate::memory::file_indexer::FileIndexer::new(
                 crate::memory::file_indexer::FileIndexerConfig::default(),
                 Some(code_indexer.clone()),
             ),
+        )),
+        openclaw_indexer: Arc::new(crate::memory::openclaw_indexer::OpenClawAgentIndexer::new(
+            embedder.clone(),
         )),
     };
 
@@ -310,6 +313,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/memory/export", get(export_handler))
         .route("/memory/decay", post(decay_handler))
         .route("/memory/consolidate", post(consolidate_handler))
+        .route("/memory/index-self", post(memory_index_self_handler))
         .route("/memory/evict", axum::routing::delete(evict_handler))
         .route("/memory/manage", post(manage_handler))
         .route("/memory/timeline/query", post(timeline_query_handler))

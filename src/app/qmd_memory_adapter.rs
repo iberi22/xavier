@@ -24,9 +24,9 @@ impl MemoryQueryPort for QmdMemoryAdapter {
     async fn search(
         &self,
         query: &str,
+        limit: usize,
         filters: Option<MemoryQueryFilters>,
     ) -> anyhow::Result<Vec<MemoryRecord>> {
-        let limit = 100; // Default limit for search
         let results = self
             .inner
             .search_filtered(query, limit, filters.as_ref())

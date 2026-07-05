@@ -1063,6 +1063,144 @@ pub async fn manage_handler(State(state): State<CliState>, headers: HeaderMap) -
     )
 }
 
+pub async fn memory_index_self_handler(
+    State(state): State<CliState>,
+    headers: HeaderMap,
+) -> Response {
+    if let Err(r) = check_cli_token(&headers) {
+        return r;
+    }
+
+    let files_to_index = vec![
+        ("SOUL.md", "identity"),
+        ("CHANGELOG.md", "log"),
+        ("PLAN_TRES_MEMORIAS.md", "decision"),
+        ("USER.md", "identity"),
+        ("AGENTS.md", "identity"),
+        ("architecture.md", "architecture"),
+        ("PIPELINE.md", "architecture"),
+        ("PLAN.md", "architecture"),
+    ];
+
+    let mut indexed_count = 0;
+    let mut errors = Vec::new();
+
+    for (filename, doc_type) in files_to_index {
+        match index_file_by_sections(&state, filename, doc_type).await {
+            Ok(count) => indexed_count += count,
+            Err(e) => {
+                if tokio::fs::metadata(filename).await.is_ok() {
+                    errors.push(format!("{}: {}", filename, e));
+                }
+            }
+        }
+    }
+
+    // Index all markdown files in memory/ directory
+    if let Ok(mut entries) = tokio::fs::read_dir("memory").await {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("md") {
+                let filename = path.to_string_lossy().to_string();
+                match index_file_by_sections(&state, &filename, "log").await {
+                    Ok(count) => indexed_count += count,
+                    Err(e) => errors.push(format!("{}: {}", filename, e)),
+                }
+            }
+        }
+    }
+
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "status": if errors.is_empty() { "ok" } else { "partial" },
+            "indexed_chunks": indexed_count,
+            "errors": if errors.is_empty() { serde_json::Value::Null } else { serde_json::json!(errors) }
+        }),
+    )
+}
+
+async fn index_file_by_sections(
+    state: &CliState,
+    filename: &str,
+    doc_type: &str,
+) -> anyhow::Result<usize> {
+    let content = tokio::fs::read_to_string(filename).await?;
+    let sections = split_markdown_by_sections(&content);
+    let mut count = 0;
+
+    for (title, section_content) in sections {
+        let path = format!("xavier-self/{}", filename);
+
+        // Generate embedding for the section
+        let embedding = match state.embedder.encode(&section_content).await {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::warn!("Failed to generate embedding for {}: {}", path, e);
+                vec![]
+            }
+        };
+
+        let record = MemoryRecord {
+            id: uuid::Uuid::new_v4().to_string(),
+            workspace_id: state.workspace_id.clone(),
+            path: path.clone(),
+            content: section_content,
+            metadata: serde_json::json!({
+                "source": "xavier-self",
+                "type": doc_type,
+                "title": title,
+                "file": filename,
+                "kind": "Document",
+                "namespace": "Global"
+            }),
+            embedding,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            revision: 1,
+            primary: true,
+            level: MemoryLevel::Raw,
+            ..Default::default()
+        };
+
+        if state.memory.add(record).await.is_ok() {
+            count += 1;
+        }
+    }
+
+    Ok(count)
+}
+
+fn split_markdown_by_sections(content: &str) -> Vec<(String, String)> {
+    let mut sections = Vec::new();
+    let mut current_title = "Introduction".to_string();
+    let mut current_content = String::new();
+
+    for line in content.lines() {
+        if line.starts_with('#') {
+            if !current_content.trim().is_empty() {
+                sections.push((current_title.clone(), current_content.clone()));
+            }
+            current_title = line.trim_start_matches('#').trim().to_string();
+            current_content = line.to_string();
+            current_content.push('\n');
+        } else {
+            current_content.push_str(line);
+            current_content.push('\n');
+        }
+    }
+
+    if !current_content.trim().is_empty() {
+        sections.push((current_title, current_content));
+    }
+
+    if sections.is_empty() && !content.trim().is_empty() {
+        sections.push(("General".to_string(), content.to_string()));
+    }
+
+    sections
+}
+
 pub async fn timeline_query_handler(
     State(state): State<CliState>,
     headers: HeaderMap,

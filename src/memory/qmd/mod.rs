@@ -177,12 +177,14 @@ impl QmdMemory {
         );
 
         let mut results = Vec::new();
-        for (_, id) in scored.into_iter().take(limit) {
+        for (score, id) in scored.into_iter().take(limit) {
             if let Some(doc) = filtered_docs
                 .iter()
                 .find(|d| d.id.as_deref() == Some(&id) || d.path == id)
             {
-                results.push(doc.clone());
+                let mut d = doc.clone();
+                d.score = score;
+                results.push(d);
             }
         }
 
