@@ -269,6 +269,16 @@ impl Cli {
             Command::Health { cloud } => {
                 crate::cli::handlers::system::handle_health_command(*cloud).await
             }
+            Command::Improve { cmd } => {
+                // Implementation for ImproveCommand (Phase 1)
+                println!("Improve cycle not yet implemented in CLI dispatch.");
+                Ok(())
+            }
+            Command::Regen { cmd } => {
+                // Implementation for RegenCommand (Phase 2)
+                println!("Regen cycle not yet implemented in CLI dispatch.");
+                Ok(())
+            }
         }
     }
 }

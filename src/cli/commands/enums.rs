@@ -178,6 +178,7 @@ pub enum Command {
         #[command(subcommand)]
         command: GovernanceCommand,
     },
+
     /// Manage XP wallet and tokenomics [SKELETON — decisions pending]
     Wallet {
         #[command(subcommand)]
@@ -294,11 +295,6 @@ pub enum Command {
         cmd: RegenCommand,
     },
 
-    /// Governance DAO — proposals, voting, council management
-    Governance {
-        #[command(subcommand)]
-        command: GovernanceSubcommand,
-    },
 }
 
 /// Subcommands for the auto-improvement loop.
