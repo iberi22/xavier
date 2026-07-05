@@ -10,11 +10,12 @@ use crate::cli::state::CliState;
 use xavier::coordination::secrets::SecretLease;
 use axum::{
     body::Body,
-    extract::State,
+    extract::{ConnectInfo, State},
     http::{Request, StatusCode},
     middleware::Next,
     response::Response,
 };
+use std::net::SocketAddr;
 use tracing::warn;
 
 pub async fn auth_middleware(
@@ -161,11 +162,54 @@ pub async fn rate_limit_middleware(
     req: Request<Body>,
     next: Next,
 ) -> Response {
-    let mut provider = "api_gateway".to_string();
+    let path = req.uri().path();
 
+    // Default provider based on IP if available
+    let mut provider = if let Some(addr) = req.extensions().get::<ConnectInfo<SocketAddr>>() {
+        format!("ip:{}", addr.0.ip())
+    } else {
+        "api_gateway".to_string()
+    };
+
+    // Override with agent_id if lease is present
     if let Some(session) = req.extensions().get::<SessionInfo>() {
         if let Some(lease) = &session.lease {
             provider = format!("agent:{}", lease.agent_id);
+        }
+    }
+
+    // F3: Proxy RPM Rate Limiting
+    if path.starts_with("/v1/proxy/") {
+        let limit = std::env::var("XAVIER_PROXY_RATE_LIMIT")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(60);
+
+        match state.rate_manager.check_rpm_limit(&provider, limit).await {
+            Ok(allowed) => {
+                if !allowed {
+                    warn!("Proxy rate limit exceeded for {}", provider);
+                    return json_response(
+                        StatusCode::TOO_MANY_REQUESTS,
+                        serde_json::json!({
+                            "status": "error",
+                            "message": "Proxy rate limit exceeded. Max 60 requests per minute.",
+                        }),
+                    );
+                }
+            }
+            Err(e) => {
+                warn!("Failed to check proxy rate limit: {}", e);
+            }
+        }
+
+        // Record the request immediately for accurate RPM tracking
+        if let Err(e) = state
+            .rate_manager
+            .track_request(&provider, 1, 200, 0.0, false)
+            .await
+        {
+            warn!("Failed to track proxy request: {}", e);
         }
     }
 
