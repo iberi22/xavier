@@ -132,15 +132,17 @@ impl DaoGovernanceSystem {
 
     /// Simulates a vote cast via GitHub Reaction (👍 or 👎).
     pub async fn cast_vote(&mut self, cluster_id: &str, approve: bool) -> Result<(), String> {
-        let proposal = self
-            .active_proposals
-            .get_mut(cluster_id)
-            .ok_or_else(|| "Proposal not found".to_string())?;
+        {
+            let proposal = self
+                .active_proposals
+                .get_mut(cluster_id)
+                .ok_or_else(|| "Proposal not found".to_string())?;
 
-        if approve {
-            proposal.upvotes += 1;
-        } else {
-            proposal.downvotes += 1;
+            if approve {
+                proposal.upvotes += 1;
+            } else {
+                proposal.downvotes += 1;
+            }
         }
 
         #[cfg(feature = "dao-evm")]

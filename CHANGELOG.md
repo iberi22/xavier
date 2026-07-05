@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## v0.12.0 (2026-07-05)
+
+### Added
+
+- **OpenClaw Agent Scanner** nativo en Rust (`src/memory/openclaw_scanner.rs`) con 4 tests unitarios.
+- **OpenClaw Agent Indexer** con chunking semántico por secciones `MEMORY.md`.
+- **Endpoints HTTP** `/xavier/openclaw/scan` y `/xavier/openclaw/index`.
+- **Script** `scripts/start-xavier.ps1` para inicio estable del servidor.
+- **Auto-detección** de directorio de agentes vía `XAVIER_AGENTS_DIR`.
+
+### Fixed
+
+- **governance.rs**: borrow checker conflict en `cast_vote` resuelto.
+- **health/mod.rs**: eliminada llamada a `probe_embedding_health()` inexistente.
+- **tuner.rs**: extra llave de cierre eliminada.
+
 ## Unreleased (2026-07-02) — Sprint Phase 4+5
 
 ### Added

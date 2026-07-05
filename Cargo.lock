@@ -16536,7 +16536,7 @@ dependencies = [
 
 [[package]]
 name = "xavier"
-version = "0.11.0-22-06-2026"
+version = "0.12.0"
 dependencies = [
  "aes-gcm",
  "aho-corasick",
