@@ -68,6 +68,7 @@ pub struct CliState {
     #[allow(dead_code)]
     pub embedder: Arc<dyn Embedder>,
     pub agent_indexer: Arc<crate::memory::agent_indexer::AgentIndexer>,
+    pub openclaw_indexer: Arc<crate::memory::openclaw_indexer::OpenClawAgentIndexer>,
 }
 
 impl CliState {
