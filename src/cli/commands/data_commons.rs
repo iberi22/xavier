@@ -4,6 +4,9 @@ use std::path::PathBuf;
 use xavier::data_commons::readiness::ReadinessValidator;
 use xavier::data_commons::training::TrainingExporter;
 
+// Re-export governance and types for use by the governance CLI module
+pub use xavier::data_commons::{governance, types};
+
 pub async fn handle_data_commons_command(cmd: DataCommonsCommand) -> Result<()> {
     // License check for Data Commons features
     let settings = xavier::settings::XavierSettings::current();

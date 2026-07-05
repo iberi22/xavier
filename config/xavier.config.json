@@ -59,7 +59,10 @@
     "cloud_llm_url": null,
     "local_llm_api_key": null,
     "local_anthropic_url": null,
-    "compaction_model": null
+    "compaction_model": null,
+    "zai_api_key": null,
+    "zai_model": null,
+    "opencode_model": null
   },
   "retrieval": {
     "disable_hyde": true,
@@ -70,6 +73,7 @@
     "zone_penalty_multiplier": null,
     "cache_warming_enabled": false,
     "cache_warming_threshold": null,
+    "cache_ttl_secs": null,
     "learned_policy": {
       "working_weight": 0.3,
       "episodic_weight": 0.3,
@@ -171,7 +175,8 @@
     "wallet_address": null
   },
   "license": {
-    "mesh_accepted": false,
-    "license_type": "MIT"
+    "mesh_accepted": true,
+    "license_type": "Xavier-Mesh-1.0",
+    "commercial_key": null
   }
 }

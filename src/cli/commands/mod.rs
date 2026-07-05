@@ -17,6 +17,7 @@
 pub mod billing;
 pub mod code;
 pub mod data_commons;
+pub mod governance;
 pub mod wallet;
 pub mod enums;
 pub mod http;
@@ -199,6 +200,9 @@ impl Cli {
             Command::Setup => crate::cli::handlers::setup::handle_setup().await,
             Command::DataCommons { cmd } => {
                 data_commons::handle_data_commons_command(cmd.clone()).await
+            }
+            Command::Governance { command } => {
+                governance::handle_governance_command(command.clone()).await
             }
             Command::Wallet { cmd } => {
                 wallet::handle_wallet_command(cmd.clone()).await
