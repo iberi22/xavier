@@ -172,6 +172,12 @@ pub enum Command {
         #[command(subcommand)]
         cmd: DataCommonsCommand,
     },
+
+    /// Manage Xavier Governance (DAO, Voting, Council)
+    Governance {
+        #[command(subcommand)]
+        command: GovernanceCommand,
+    },
     /// Manage XP wallet and tokenomics [SKELETON — decisions pending]
     Wallet {
         #[command(subcommand)]
@@ -712,6 +718,14 @@ pub enum SecretsCommand {
     Revoke { token: String },
     /// Check the status of a lease
     Status { token: String },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum GovernanceCommand {
+    /// List all active and past governance proposals (XIPs)
+    List,
+    /// Show current council members and their status
+    Council,
 }
 
 #[derive(Subcommand, Debug, Clone)]
