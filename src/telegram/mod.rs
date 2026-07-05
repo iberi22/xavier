@@ -364,7 +364,7 @@ impl XavierBot {
                 self.memory.clone(),
                 self.agents.clone(),
                 self.security.clone(),
-                self.rate_limiter.clone(),
+                self.rate_limiter.clone()
             ])
             .build()
             .dispatch()
@@ -418,7 +418,7 @@ impl XavierBot {
                 self.memory.clone(),
                 self.agents.clone(),
                 self.security.clone(),
-                self.rate_limiter.clone(),
+                self.rate_limiter.clone()
             ])
             .build()
             .dispatch_with_listener(

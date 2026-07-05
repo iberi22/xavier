@@ -161,6 +161,7 @@ impl SqliteMemoryStore {
             encrypted_dek: row.get(15)?,
             content_iv: row.get(16)?,
             metadata_iv: row.get(17)?,
+            score: 0.0,
         })
     }
 }

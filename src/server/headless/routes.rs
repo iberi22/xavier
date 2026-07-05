@@ -28,7 +28,7 @@ pub struct ContextParams {
 pub async fn context(memory: &dyn MemoryQueryPort, params: ContextParams) -> impl IntoResponse {
     let limit = params.limit.unwrap_or(10);
     // Use MemoryQueryPort search
-    match memory.search(&params.query, None).await {
+    match memory.search(&params.query, limit, None).await {
         Ok(results) => {
             let items: Vec<MemoryRecord> = results.into_iter().take(limit).collect();
             AxumJson(json!({
@@ -55,7 +55,7 @@ pub struct SearchRequest {
 pub async fn memory_search(memory: &dyn MemoryQueryPort, req: SearchRequest) -> impl IntoResponse {
     let limit = req.limit.unwrap_or(10);
     // Use MemoryQueryPort search
-    match memory.search(&req.text, None).await {
+    match memory.search(&req.text, limit, None).await {
         Ok(results) => {
             let results: Vec<MemoryRecord> = results.into_iter().take(limit).collect();
             AxumJson(json!({

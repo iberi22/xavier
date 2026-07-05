@@ -156,7 +156,7 @@ pub async fn search_handler(
 
     match state
         .memory
-        .search(effective_query, payload.filters.clone())
+        .search(effective_query, limit, payload.filters.clone())
         .await
     {
         Ok(mut results) => {
@@ -379,7 +379,7 @@ pub async fn memory_query_handler(
         .as_deref()
         .unwrap_or(&sec_result.original_input);
 
-    match state.memory.search(effective_query, None).await {
+    match state.memory.search(effective_query, _limit, None).await {
         Ok(results) => {
             let documents: Vec<_> = results
                 .into_iter()

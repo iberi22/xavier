@@ -113,7 +113,7 @@ mod tests {
             revisions: vec![],
             content_iv: None,
             encrypted_dek: None,
-            metadata_iv: None,
+            metadata_iv: None, score: 0.0,
         }
     }
 

@@ -354,6 +354,7 @@ impl MemoryRecord {
             relation: self.relation.clone(),
             clearance: self.clearance,
             minhash: None,
+            score: 0.0,
         }
     }
 
