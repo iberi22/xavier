@@ -340,7 +340,7 @@ mod tests {
             security: Arc::new(SecurityService::new()),
             security_scan: Arc::new(SecurityService::new()),
             _time_store: None,
-            agent_registry: SimpleAgentRegistry::new(),
+            agent_registry: SimpleAgentRegistry::new(None),
             panel_store: Arc::new(
                 ConversationsDb::open_in_memory("test-project")
                     .await

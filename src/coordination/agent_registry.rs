@@ -22,12 +22,16 @@ const HEARTBEAT_TIMEOUT_SECS: i64 = 300; // 5 minutes
 #[derive(Default)]
 pub struct SimpleAgentRegistry {
     agents: RwLock<HashMap<String, AgentEntry>>,
+    event_bus: Option<crate::coordination::events::XavierEventBus>,
 }
 
 impl SimpleAgentRegistry {
     /// Create a new registry
-    pub fn new() -> Arc<Self> {
-        Arc::new(Self::default())
+    pub fn new(event_bus: Option<crate::coordination::events::XavierEventBus>) -> Arc<Self> {
+        Arc::new(Self {
+            agents: RwLock::new(HashMap::new()),
+            event_bus,
+        })
     }
 
     /// Register a new agent
@@ -122,6 +126,29 @@ impl AgentLifecyclePort for SimpleAgentRegistry {
     async fn get(&self, agent_id: &str) -> Option<AgentEntry> {
         SimpleAgentRegistry::get(self, agent_id).await
     }
+
+    async fn on_task_complete(&self, agent_id: &str) -> bool {
+        if let Some(bus) = &self.event_bus {
+            let _ = bus.publish(crate::coordination::events::XavierEvent::AgentTaskCompleted {
+                agent_id: agent_id.to_string(),
+            });
+            true
+        } else {
+            false
+        }
+    }
+
+    async fn on_task_failed(&self, agent_id: &str, reason: &str) -> bool {
+        if let Some(bus) = &self.event_bus {
+            let _ = bus.publish(crate::coordination::events::XavierEvent::AgentTaskFailed {
+                agent_id: agent_id.to_string(),
+                reason: reason.to_string(),
+            });
+            true
+        } else {
+            false
+        }
+    }
 }
 
 #[cfg(test)]
@@ -130,7 +157,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_register_and_heartbeat() {
-        let registry = SimpleAgentRegistry::new();
+        let registry = SimpleAgentRegistry::new(None);
 
         // Register an agent
         let meta = AgentMetadata {
@@ -165,7 +192,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_active_agents_filters_stale() {
-        let registry = SimpleAgentRegistry::new();
+        let registry = SimpleAgentRegistry::new(None);
 
         let meta = AgentMetadata::default();
         registry
