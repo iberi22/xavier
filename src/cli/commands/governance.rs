@@ -12,6 +12,10 @@ pub async fn handle_governance_command(command: GovernanceCommand) -> Result<()>
     match command {
         GovernanceCommand::List => list_proposals().await,
         GovernanceCommand::Council => list_council_members().await,
+        _ => {
+            println!("This governance feature is coming soon.");
+            Ok(())
+        }
     }
 }
 

@@ -195,24 +195,25 @@ pub fn mesh_telemetry() -> Option<Arc<MeshTelemetryCollector>> {
 /// any existing tokio context (e.g. `#[tokio::test]`).
 pub fn collect_health_sync() -> HealthResponse {
     let settings = XavierSettings::current();
-    std::thread::scope(|scope| {
-        scope.spawn(|| {
-            let rt = tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(2)
-                .enable_all()
-                .build()
-                .expect("Failed to create health check runtime");
-            rt.block_on(async {
-                let (cpu, mem_used, mem_total, disk_used, disk_total) =
-                    tokio::task::spawn_blocking(gather_system_metrics)
-                        .await
-                        .unwrap_or((0.0, 0, 0, 0.0, 0.0));
-                collect_health_impl(&settings, None, cpu, mem_used, mem_total, disk_used, disk_total).await
-            })
+
+    // Spawning a new OS thread ensures we can always block without interfering
+    // with the current runtime, and avoids "cannot start a runtime from within a runtime".
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to create health check runtime");
+
+        rt.block_on(async {
+            let (cpu, mem_used, mem_total, disk_used, disk_total) = gather_system_metrics();
+            collect_health_impl(
+                &settings, None, cpu, mem_used, mem_total, disk_used, disk_total,
+            )
+            .await
         })
-        .join()
-        .expect("health thread panicked")
     })
+    .join()
+    .expect("health thread panicked")
 }
 
 /// Async version — called from async contexts like `collect_health_sync` internals.
