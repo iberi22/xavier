@@ -39,6 +39,7 @@ impl MemoryQueryPort for MemoryUseCase {
     async fn search(
         &self,
         query: &str,
+        limit: usize,
         filters: Option<MemoryQueryFilters>,
     ) -> anyhow::Result<Vec<MemoryRecord>> {
         if let Some(ref guard) = self.rbac_guard {
@@ -56,7 +57,7 @@ impl MemoryQueryPort for MemoryUseCase {
                 ));
             }
         }
-        self.inner.search(query, filters).await
+        self.inner.search(query, limit, filters).await
     }
 
     async fn add(&self, record: MemoryRecord) -> anyhow::Result<String> {
@@ -155,6 +156,7 @@ mod tests {
         async fn search(
             &self,
             _query: &str,
+            _limit: usize,
             _filters: Option<MemoryQueryFilters>,
         ) -> anyhow::Result<Vec<MemoryRecord>> {
             Ok(vec![])
@@ -211,7 +213,7 @@ mod tests {
         let detector = Arc::new(MockThreatDetector { should_clean: true });
         let usecase = MemoryUseCase::new(inner, Some(detector));
 
-        let result = usecase.search("query", None).await;
+        let result = usecase.search("query", 10, None).await;
         assert!(result.is_ok());
     }
 
@@ -223,7 +225,7 @@ mod tests {
         });
         let usecase = MemoryUseCase::new(inner, Some(detector));
 
-        let result = usecase.search("bad query", None).await;
+        let result = usecase.search("bad query", 10, None).await;
         assert!(result.is_err());
         assert_eq!(
             result.unwrap_err().to_string(),

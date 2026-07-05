@@ -92,7 +92,10 @@ pub async fn search_hybrid_optimized(
     Ok(reranked
         .into_iter()
         .take(limit)
-        .map(|(_, doc, _)| doc)
+        .map(|(score, mut doc, _)| {
+            doc.score = score;
+            doc
+        })
         .collect())
 }
 
@@ -160,7 +163,14 @@ pub async fn query_with_hybrid_search(
             .then_with(|| a.1.path.cmp(&b.1.path))
     });
 
-    Ok(fused.into_iter().map(|(_, doc)| doc).take(limit).collect())
+    Ok(fused
+        .into_iter()
+        .map(|(score, mut doc)| {
+            doc.score = score;
+            doc
+        })
+        .take(limit)
+        .collect())
 }
 
 /// Filtered search combining keyword and vector results.
@@ -273,7 +283,14 @@ pub async fn query_filtered(
     let mut fused: Vec<(f32, MemoryDocument)> = scores.into_values().collect();
     fused.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
 
-    Ok(fused.into_iter().map(|(_, d)| d).take(limit).collect())
+    Ok(fused
+        .into_iter()
+        .map(|(score, mut d)| {
+            d.score = score;
+            d
+        })
+        .take(limit)
+        .collect())
 }
 
 /// BM25-style lexical search over all documents.
@@ -289,7 +306,13 @@ pub async fn bm25_search(
         .iter()
         .filter_map(|doc| {
             let score = lexical_score(doc, &normalized);
-            (score > 0.0).then(|| (score, doc.clone()))
+            if score > 0.0 {
+                let mut d = doc.clone();
+                d.score = score;
+                Some((score, d))
+            } else {
+                None
+            }
         })
         .collect();
 
