@@ -120,6 +120,7 @@ impl VecSqliteMemoryStore {
             encrypted_dek: row.get(15).ok(),
             content_iv: row.get(16).ok(),
             metadata_iv: row.get(17).ok(),
+            score: 0.0,
         })
     }
 

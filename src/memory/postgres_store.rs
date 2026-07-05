@@ -162,6 +162,7 @@ impl PostgresMemoryStore {
             encrypted_dek: row.try_get("encrypted_dek")?,
             content_iv: row.try_get("content_iv")?,
             metadata_iv: row.try_get("metadata_iv")?,
+            score: 0.0,
         })
     }
 }

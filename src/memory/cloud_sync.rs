@@ -584,7 +584,7 @@ mod tests {
             revisions: Vec::new(),
             encrypted_dek: None,
             content_iv: None,
-            metadata_iv: None,
+            metadata_iv: None, score: 0.0,
         }
     }
 
