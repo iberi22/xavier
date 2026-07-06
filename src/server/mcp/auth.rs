@@ -47,16 +47,14 @@ pub async fn mcp_auth_middleware(req: Request<Body>, next: Next) -> Response {
     }
 
     // Validate Token
-    let expected_token = match resolve_xavier_token() {
-        Ok(token) => token,
-        Err(_) => {
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Security token not configured",
-            )
-                .into_response();
-        }
-    };
+    let expected_token = resolve_xavier_token();
+    if expected_token.is_empty() {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Security token not configured",
+        )
+            .into_response();
+    }
 
     let provided_token = req
         .headers()
@@ -85,7 +83,7 @@ pub async fn mcp_auth_middleware(req: Request<Body>, next: Next) -> Response {
 
 /// Validates an incoming Stdio connection
 pub fn validate_stdio_connection() -> anyhow::Result<()> {
-    if resolve_xavier_token().is_err() {
+    if resolve_xavier_token().is_empty() {
         return Err(anyhow::anyhow!(
             "Stdio MCP connection rejected: XAVIER_TOKEN not set. Security enforcement enabled."
         ));

@@ -180,6 +180,7 @@ impl AgentLifecyclePort for SimpleAgentRegistry {
                     let _ = bus.publish(
                         crate::coordination::events::XavierEvent::AgentTaskCompleted {
                             agent_id: agent_id.to_string(),
+                            task_id: task_id.to_string(),
                         },
                     );
                 }
@@ -189,6 +190,7 @@ impl AgentLifecyclePort for SimpleAgentRegistry {
                 if let Some(bus) = &self.event_bus {
                     let _ = bus.publish(crate::coordination::events::XavierEvent::AgentTaskFailed {
                         agent_id: agent_id.to_string(),
+                        task_id: task_id.to_string(),
                         reason: e.to_string(),
                     });
                 }

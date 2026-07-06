@@ -11,6 +11,7 @@ pub mod initializer;
 pub mod layers;
 pub mod license;
 pub mod prompt_guard;
+pub mod auth_store;
 pub mod recovery;
 pub mod rsa_keys;
 pub mod scanner;

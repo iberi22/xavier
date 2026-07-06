@@ -133,7 +133,7 @@ impl TotpProvider {
             6,
             1,
             30,
-            Secret::from_encoded(secret_base32).map_err(|_| anyhow!("invalid secret"))?.to_bytes(),
+            Secret::Encoded(secret_base32.to_string()).to_bytes().map_err(|_| anyhow!("invalid secret"))?,
             Some(self.issuer.clone()),
             account_name.to_string(),
         ).map_err(|e| anyhow!("TOTP init failed: {}", e))?;
@@ -144,7 +144,7 @@ impl TotpProvider {
     }
 
     pub fn verify_code(&self, secret_base32: &str, code: &str) -> bool {
-        let secret = match Secret::from_encoded(secret_base32) {
+        let secret = match Secret::Encoded(secret_base32.to_string()).to_raw() {
             Ok(s) => s,
             Err(_) => return false,
         };
@@ -154,7 +154,7 @@ impl TotpProvider {
             6,
             1,
             30,
-            secret.to_bytes(),
+            secret.to_bytes().unwrap_or_default(),
             Some(self.issuer.clone()),
             "user".to_string(),
         ) {
@@ -162,7 +162,7 @@ impl TotpProvider {
             Err(_) => return false,
         };
 
-        totp.check_current(code)
+        totp.check_current(code).unwrap_or(false)
     }
 }
 
@@ -189,4 +189,9 @@ impl Permission for UserRole {
     fn can_view_config(&self) -> bool { true }
     fn can_edit_config(&self) -> bool { matches!(self, UserRole::Admin) }
     fn can_manage_users(&self) -> bool { matches!(self, UserRole::Admin) }
+}
+
+/// Resolves the Xavier token from environment variable
+pub fn resolve_xavier_token() -> String {
+    std::env::var("XAVIER_TOKEN").unwrap_or_default()
 }

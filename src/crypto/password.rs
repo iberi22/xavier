@@ -4,6 +4,9 @@ use argon2::{
 };
 use anyhow::{anyhow, Result};
 
+/// Default Argon2 cost parameter
+pub const DEFAULT_COST: u32 = 3;
+
 /// Hashes a password using Argon2id.
 pub fn hash(password: &str, _cost: u32) -> Result<String> {
     let salt = SaltString::generate(&mut OsRng);
