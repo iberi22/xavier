@@ -322,23 +322,28 @@ impl AgentRuntime {
         filters: Option<MemoryQueryFilters>,
         system3_mode: System3Mode,
     ) -> Result<AgentRunTrace> {
-        let session_id_val = session_id.clone().unwrap_or_else(|| ulid::Ulid::new().to_string());
-        match self.run_inner(query, Some(session_id_val.clone()), category, filters, system3_mode).await {
+        match self
+            .run_inner(query, session_id, category, filters, system3_mode)
+            .await
+        {
             Ok(trace) => Ok(trace),
             Err(e) => {
-                let _ = crate::notifications::NOTIFICATIONS.notify(
-                    crate::notifications::IslandId::Errors,
-                    "Agent Execution Failed",
-                    &format!("Error running agent for query: {}", e),
-                    "error"
-                ).await;
+                let _ = crate::notifications::NOTIFICATIONS
+                    .notify(
+                        crate::notifications::IslandId::Errors,
+                        "Agent Execution Failed",
+                        &format!("Error running agent for query: {}", e),
+                        "error",
+                    )
+                    .await;
 
-                // Emit failure hook
+                // Emit failure hook (from PR #378)
                 if let Some(ref bus) = self.event_bus {
+                    let sid = session_id.clone().unwrap_or_else(|| ulid::Ulid::new().to_string());
                     crate::coordination::agents::publish_task_failure(
                         bus,
                         "default-agent".to_string(),
-                        session_id_val,
+                        sid,
                         e.to_string(),
                     );
                 }
@@ -609,11 +614,13 @@ impl AgentRuntime {
             }
 
             // Reflection / Context Paging Loop
-            let paging_threshold = self.tgd_engine
+            let paging_threshold = self
+                .tgd_engine
                 .as_ref()
                 .map(|tgd| tgd.config().confidence_threshold)
                 .unwrap_or(0.7);
-            if reasoning_result.confidence >= paging_threshold || retries >= self.config.max_retries {
+            if reasoning_result.confidence >= paging_threshold || retries >= self.config.max_retries
+            {
                 break (retrieval_result, reasoning_result);
             }
 
@@ -639,7 +646,9 @@ impl AgentRuntime {
         };
 
         // If confidence is still low after retries, trigger TGD to learn from the gap
-        let tgd_threshold = self.tgd_engine.as_ref()
+        let tgd_threshold = self
+            .tgd_engine
+            .as_ref()
             .map(|tgd| tgd.config().confidence_threshold)
             .unwrap_or(0.7);
         if reasoning_result.confidence < tgd_threshold {
@@ -652,7 +661,10 @@ impl AgentRuntime {
                     content: query.to_string(),
                     timestamp: chrono::Utc::now(),
                 }];
-                if let Err(e) = tgd.generate_rules(&messages, &retrieval_result.documents).await {
+                if let Err(e) = tgd
+                    .generate_rules(&messages, &retrieval_result.documents)
+                    .await
+                {
                     warn!("TGD rule generation failed: {}", e);
                 }
             }

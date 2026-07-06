@@ -41,9 +41,7 @@ async fn send_json(
             .header("content-type", "application/json")
             .body(Body::from(json_body))
             .expect("build request"),
-        None => {
-            builder.body(Body::empty()).expect("build request")
-        }
+        None => builder.body(Body::empty()).expect("build request"),
     };
 
     let response = router
@@ -71,10 +69,7 @@ async fn send_json(
 /// - `GET  /v1/memory/pull-since/…`→ `[]`   (no remote changes)
 async fn spawn_mock_peer() -> String {
     let app = Router::new()
-        .route(
-            "/v1/memory/push",
-            post(|| async { StatusCode::OK }),
-        )
+        .route("/v1/memory/push", post(|| async { StatusCode::OK }))
         .route(
             "/v1/memory/pull-since/{workspace}/{since}",
             // Empty diff list — pull becomes a successful no-op.

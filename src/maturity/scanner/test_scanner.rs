@@ -38,7 +38,9 @@ fn load_anchored_tests(codebase_root: &str) -> HashMap<String, Vec<String>> {
                     let mut seen = HashSet::new();
                     if let Some(subs) = feat.get("subcomponents").and_then(|s| s.as_array()) {
                         for sub in subs {
-                            if let Some(anchors) = sub.get("test_anchors").and_then(|a| a.as_array()) {
+                            if let Some(anchors) =
+                                sub.get("test_anchors").and_then(|a| a.as_array())
+                            {
                                 for anchor in anchors {
                                     if let Some(name) = anchor.as_str() {
                                         if seen.insert(name.to_string()) {
@@ -59,7 +61,11 @@ fn load_anchored_tests(codebase_root: &str) -> HashMap<String, Vec<String>> {
 
 /// Check if test anchor names exist as substrings in .rs source files.
 ///
-/// Constrained to depth=4 relative to root, max 50 files, 30s hard timeout.
+/// Constrained to depth=4, 30s hard timeout. The file cap was previously 50, which
+/// starved the walker: src/ has 559 .rs files and WalkDir iterates alphabetically,
+/// so the first 50 (a2a/, adapters/, agents/) never reached context/bm25.rs or
+/// embedding/cache.rs where most anchors live. The 30s deadline already bounds
+/// runtime, so the cap is unnecessary.
 fn check_test_anchors_in_sources(
     root: &str,
     unique_anchors: &[String],
@@ -67,7 +73,7 @@ fn check_test_anchors_in_sources(
     let deadline = Instant::now() + Duration::from_secs(30);
     let mut found: HashSet<String> = HashSet::new();
 
-    // Walk .rs files with depth=4, limit 50 files
+    // Walk .rs files with depth=4. No file cap — the 30s deadline bounds runtime.
     let walker: Vec<_> = walkdir::WalkDir::new(root)
         .max_depth(4)
         .into_iter()
@@ -76,7 +82,6 @@ fn check_test_anchors_in_sources(
             e.path().extension().map_or(false, |ext| ext == "rs")
                 && !e.path().to_string_lossy().contains("target")
         })
-        .take(50)
         .collect();
 
     for entry in &walker {
@@ -148,18 +153,25 @@ pub fn list_tests(codebase_root: &str) -> TestListScanResult {
     };
 
     // Check which anchors exist in the codebase (depth=4, 50 files, 30s timeout)
-    let (found_anchors, scan_errors) = check_test_anchors_in_sources(codebase_root, &unique_anchors);
+    let (found_anchors, scan_errors) =
+        check_test_anchors_in_sources(codebase_root, &unique_anchors);
     errors.extend(scan_errors);
 
-    // Build per-feature results
+    // Build per-feature results: (passing_anchors, ALL_anchors).
+    //
+    // NOTE: the second tuple element is the FULL anchor set (total), not the
+    // missing set. The consumer (scan_feature_v2 in mod.rs) interprets
+    // (passing, total) — partitioning into (passing, missing) here caused the
+    // long-standing bug where tests_total was 0 whenever all anchors were found.
     let mut feature_results: HashMap<String, (Vec<String>, Vec<String>)> = HashMap::new();
     for (feat_id, anchor_names) in &feature_tests_map {
-        let (passing, missing): (Vec<_>, Vec<_>) = anchor_names
+        let passing: Vec<String> = anchor_names
             .iter()
             .cloned()
-            .partition(|anchor| found_anchors.contains(anchor));
+            .filter(|anchor| found_anchors.contains(anchor))
+            .collect();
 
-        feature_results.insert(feat_id.clone(), (passing, missing));
+        feature_results.insert(feat_id.clone(), (passing, anchor_names.clone()));
     }
 
     let all_tests: Vec<String> = found_anchors.into_iter().collect();

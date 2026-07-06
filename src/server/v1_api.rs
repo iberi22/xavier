@@ -20,8 +20,7 @@ use crate::{
     },
     mesh::{
         protocol::{ChunkRef, MeshHandshake, MeshHandshakeResponse, MeshManifest, MeshSyncRequest},
-        NodeIdentity,
-        PeerRegistry,
+        NodeIdentity, PeerRegistry,
     },
     session::sharing::{export_session, import_session, SessionBundle},
     sync::SyncTransport,
@@ -277,26 +276,24 @@ pub async fn v1_mesh_handshake(
     let mut auto_register = false;
     if let Some(secret) = payload.pairing_secret {
         match crate::mesh::pairing_registry::PairingSecretRegistry::load() {
-            Ok(mut registry) => {
-                match registry.verify_and_remove(&secret) {
-                    Ok(true) => {
-                        info!("Pairing secret verified for node {}", payload.node_id);
-                        auto_register = true;
-                    }
-                    Ok(false) => {
-                        return (
+            Ok(mut registry) => match registry.verify_and_remove(&secret) {
+                Ok(true) => {
+                    info!("Pairing secret verified for node {}", payload.node_id);
+                    auto_register = true;
+                }
+                Ok(false) => {
+                    return (
                             StatusCode::UNAUTHORIZED,
                             Json(serde_json::json!({ "accepted": false, "reason": "Invalid or expired pairing secret" })),
                         ).into_response();
-                    }
-                    Err(e) => {
-                        return (
+                }
+                Err(e) => {
+                    return (
                             StatusCode::INTERNAL_SERVER_ERROR,
                             Json(serde_json::json!({ "accepted": false, "reason": format!("Secret registry error: {}", e) })),
                         ).into_response();
-                    }
                 }
-            }
+            },
             Err(e) => {
                 return (
                     StatusCode::INTERNAL_SERVER_ERROR,
@@ -320,18 +317,22 @@ pub async fn v1_mesh_handshake(
                         last_seen_at: Some(chrono::Utc::now().timestamp()),
                         sync_enabled: true,
                         is_cloud: false,
+                        iroh_addr: None,
                     });
-            info!("Auto-registered peer {} in PeerRegistry", payload.node_id);
+                    info!("Auto-registered peer {} in PeerRegistry", payload.node_id);
                 }
 
                 if let Ok(mut acl) = crate::mesh::MeshAcl::load() {
-                    let _ = acl.set_entry(payload.node_id.clone(), crate::mesh::NodeAclEntry {
-                        role: crate::enterprise::rbac::Role::Viewer,
-                        clearance: crate::memory::schema::ClearanceLevel::Unclassified,
-                        namespaces: None,
-                        public_key_hex: payload.public_key_hex.clone(),
-                    });
-            info!("Auto-registered peer {} in MeshAcl", payload.node_id);
+                    let _ = acl.set_entry(
+                        payload.node_id.clone(),
+                        crate::mesh::NodeAclEntry {
+                            role: crate::enterprise::rbac::Role::Viewer,
+                            clearance: crate::memory::schema::ClearanceLevel::Unclassified,
+                            namespaces: None,
+                            public_key_hex: payload.public_key_hex.clone(),
+                        },
+                    );
+                    info!("Auto-registered peer {} in MeshAcl", payload.node_id);
                 }
             }
 
@@ -372,7 +373,8 @@ pub async fn v1_mesh_manifest(
 
     let acl = crate::mesh::acl::MeshAcl::load().unwrap_or_else(|e| {
         tracing::error!("Failed to load mesh ACL: {}", e);
-        crate::mesh::acl::MeshAcl::load_from(std::path::PathBuf::from("/tmp/mesh_acl.json")).unwrap()
+        crate::mesh::acl::MeshAcl::load_from(std::path::PathBuf::from("/tmp/mesh_acl.json"))
+            .unwrap()
     });
 
     let (clearance, namespaces) = if let Some(id) = node_id_str {
@@ -383,16 +385,27 @@ pub async fn v1_mesh_manifest(
                 let pubkey = crate::crypto::hex_decode(&entry.public_key_hex).unwrap_or_default();
                 let signature = crate::crypto::hex_decode(sig).unwrap_or_default();
                 if !NodeIdentity::verify(&pubkey, message.as_bytes(), &signature) {
-                    return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid signature" }))).into_response();
+                    return (
+                        StatusCode::UNAUTHORIZED,
+                        Json(serde_json::json!({ "error": "Invalid signature" })),
+                    )
+                        .into_response();
                 }
             } else {
-                return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Missing auth headers" }))).into_response();
+                return (
+                    StatusCode::UNAUTHORIZED,
+                    Json(serde_json::json!({ "error": "Missing auth headers" })),
+                )
+                    .into_response();
             }
 
             info!("Manifest request: NodeId={} verified and found in ACL", id);
             (entry.clearance, entry.namespaces.clone())
         } else {
-            info!("Manifest request: NodeId={} NOT found in ACL, denying access", id);
+            info!(
+                "Manifest request: NodeId={} NOT found in ACL, denying access",
+                id
+            );
             (
                 crate::memory::schema::ClearanceLevel::Unclassified,
                 Some(vec![]), // Secure-by-default: deny all namespaces
@@ -422,7 +435,8 @@ pub async fn v1_mesh_manifest(
                     let mut chunks = Vec::new();
                     for c in chunk_manifest.chunks.values() {
                         // Filter chunks: only include if at least one doc is authorized
-                        if let Ok(docs) = crate::sync::chunks::import_from_chunk(&sync_dir, &c.hash) {
+                        if let Ok(docs) = crate::sync::chunks::import_from_chunk(&sync_dir, &c.hash)
+                        {
                             let all_authorized = docs.iter().all(|doc| {
                                 let clearance_ok = doc.clearance <= clearance;
                                 let namespace_ok = if let Some(ref ns_list) = namespaces {
@@ -499,7 +513,8 @@ pub async fn v1_mesh_chunks_request(
 
     let acl = crate::mesh::acl::MeshAcl::load().unwrap_or_else(|e| {
         tracing::error!("Failed to load mesh ACL: {}", e);
-        crate::mesh::acl::MeshAcl::load_from(std::path::PathBuf::from("/tmp/mesh_acl.json")).unwrap()
+        crate::mesh::acl::MeshAcl::load_from(std::path::PathBuf::from("/tmp/mesh_acl.json"))
+            .unwrap()
     });
 
     let (clearance, namespaces) = if let Some(entry) = acl.get_entry(&payload.requesting_node_id) {
@@ -508,12 +523,19 @@ pub async fn v1_mesh_chunks_request(
         let pubkey = crate::crypto::hex_decode(&entry.public_key_hex).unwrap_or_default();
         let signature = crate::crypto::hex_decode(&payload.signature_hex).unwrap_or_default();
         if !NodeIdentity::verify(&pubkey, message.as_bytes(), &signature) {
-            return (StatusCode::UNAUTHORIZED, Json(serde_json::json!({ "error": "Invalid signature" }))).into_response();
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({ "error": "Invalid signature" })),
+            )
+                .into_response();
         }
 
         (entry.clearance, entry.namespaces.clone())
     } else {
-        (crate::memory::schema::ClearanceLevel::Unclassified, Some(vec![]))
+        (
+            crate::memory::schema::ClearanceLevel::Unclassified,
+            Some(vec![]),
+        )
     };
 
     let mut response_chunks = HashMap::new();
@@ -529,7 +551,12 @@ pub async fn v1_mesh_chunks_request(
             let all_authorized = docs.iter().all(|doc| {
                 let clearance_ok = doc.clearance <= clearance;
                 let namespace_ok = if let Some(ref ns_list) = namespaces {
-                    if let Some(ref doc_ns) = doc.metadata.get("namespace").and_then(|v| v.get("project")).and_then(|v| v.as_str()) {
+                    if let Some(ref doc_ns) = doc
+                        .metadata
+                        .get("namespace")
+                        .and_then(|v| v.get("project"))
+                        .and_then(|v| v.as_str())
+                    {
                         ns_list.contains(&doc_ns.to_string())
                     } else {
                         false
@@ -983,11 +1010,15 @@ pub async fn v1_mesh_cloud_update(Json(payload): Json<CloudNodeRequest>) -> impl
     settings.pgheart.url = Some(payload.url);
     settings.pgheart.token = Some(payload.token);
     settings.pgheart.instance_id = Some(payload.instance_id);
-    
+
     if let Err(e) = settings.save().await {
-        return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save settings: {}", e)).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to save settings: {}", e),
+        )
+            .into_response();
     }
-    
+
     Json(serde_json::json!({ "status": "ok" })).into_response()
 }
 
@@ -1012,7 +1043,9 @@ pub async fn v1_mesh_data_commons_get() -> impl IntoResponse {
     Json(settings.data_commons).into_response()
 }
 
-pub async fn v1_mesh_data_commons_opt_in(Json(payload): Json<DataCommonsOptInRequest>) -> impl IntoResponse {
+pub async fn v1_mesh_data_commons_opt_in(
+    Json(payload): Json<DataCommonsOptInRequest>,
+) -> impl IntoResponse {
     // License check
     let mut settings = crate::settings::XavierSettings::current();
     if let Err(e) = crate::security::license::require_mesh_license(&settings) {
@@ -1028,11 +1061,15 @@ pub async fn v1_mesh_data_commons_opt_in(Json(payload): Json<DataCommonsOptInReq
     if payload.wallet_address.is_some() {
         settings.data_commons.wallet_address = payload.wallet_address;
     }
-    
+
     if let Err(e) = settings.save().await {
-        return (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save settings: {}", e)).into_response();
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to save settings: {}", e),
+        )
+            .into_response();
     }
-    
+
     Json(serde_json::json!({ "status": "ok" })).into_response()
 }
 

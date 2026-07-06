@@ -4,14 +4,14 @@
 //! as well as reporting token savings.
 
 use super::types::*;
-use crate::workspace::WorkspaceContext;
-use crate::AppState;
-use crate::observability::token_accounting::TRACKER;
 use crate::context::{
-    ContextLevel, ContextBuilder, ContextBuilderConfig, Orchestrator,
-    ContextDocument, ContextBudgetConfig
+    ContextBudgetConfig, ContextBuilder, ContextBuilderConfig, ContextDocument, ContextLevel,
+    Orchestrator,
 };
 use crate::memory::schema::MemoryQueryFilters;
+use crate::observability::token_accounting::TRACKER;
+use crate::workspace::WorkspaceContext;
+use crate::AppState;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
@@ -31,7 +31,8 @@ pub fn get_xavier_context_tools() -> Vec<MCPTool> {
         },
         MCPTool {
             name: "xavier_context_restore".to_string(),
-            description: "Retrieve an optimized context block for a session (wraps regenerate)".to_string(),
+            description: "Retrieve an optimized context block for a session (wraps regenerate)"
+                .to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
@@ -55,7 +56,8 @@ pub fn get_xavier_context_tools() -> Vec<MCPTool> {
         },
         MCPTool {
             name: "xavier_token_savings".to_string(),
-            description: "Report token savings achieved through Xavier context regeneration".to_string(),
+            description: "Report token savings achieved through Xavier context regeneration"
+                .to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {}
@@ -72,22 +74,41 @@ pub async fn handle_context_tool(
 ) -> anyhow::Result<Value> {
     match name {
         "xavier_context_save" => {
-            let session_id = arguments.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
+            let session_id = arguments
+                .get("session_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let name = arguments.get("name").and_then(|v| v.as_str());
 
-            let checkpoint = workspace.workspace.conversations_db.create_checkpoint(
-                Some(&workspace.workspace_id),
-                Some(session_id),
-                None,
-                name,
-                Some("context_save")
-            ).await?;
+            let checkpoint = workspace
+                .workspace
+                .conversations_db
+                .create_checkpoint(
+                    Some(&workspace.workspace_id),
+                    Some(session_id),
+                    None,
+                    name,
+                    Some("context_save"),
+                )
+                .await?;
 
-            super::server::mcp_text_result(format!("Context saved for session {}. Checkpoint ID: {}", session_id, checkpoint.id), false)
+            super::server::mcp_text_result(
+                format!(
+                    "Context saved for session {}. Checkpoint ID: {}",
+                    session_id, checkpoint.id
+                ),
+                false,
+            )
         }
         "xavier_context_restore" => {
-            let session_id = arguments.get("session_id").and_then(|v| v.as_str()).unwrap_or("");
-            let depth = arguments.get("depth").and_then(|v| v.as_str()).unwrap_or("medium");
+            let session_id = arguments
+                .get("session_id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let depth = arguments
+                .get("depth")
+                .and_then(|v| v.as_str())
+                .unwrap_or("medium");
 
             let (level, token_budget) = match depth {
                 "shallow" => (ContextLevel::Minimal, 50),
@@ -96,15 +117,25 @@ pub async fn handle_context_tool(
             };
 
             // Fetch session history
-            let messages = workspace.workspace.conversations_db.get_thread_messages(session_id).await?;
+            let messages = workspace
+                .workspace
+                .conversations_db
+                .get_thread_messages(session_id)
+                .await?;
 
-            let original_token_count: usize = messages.iter().map(|m| m.tokens.unwrap_or(0) as usize).sum();
+            let original_token_count: usize = messages
+                .iter()
+                .map(|m| m.tokens.unwrap_or(0) as usize)
+                .sum();
 
-            let context_docs: Vec<ContextDocument> = messages.into_iter().map(|m| {
-                ContextDocument::new(m.id, session_id, m.role, m.content)
-                    .with_token_count(m.tokens.unwrap_or(0) as usize)
-                    .with_created_at(m.created_at)
-            }).collect();
+            let context_docs: Vec<ContextDocument> = messages
+                .into_iter()
+                .map(|m| {
+                    ContextDocument::new(m.id, session_id, m.role, m.content)
+                        .with_token_count(m.tokens.unwrap_or(0) as usize)
+                        .with_created_at(m.created_at)
+                })
+                .collect();
 
             // Use Orchestrator
             let mut budget_config = ContextBudgetConfig::default();
@@ -112,21 +143,25 @@ pub async fn handle_context_tool(
                 ContextLevel::Minimal => {
                     budget_config.session_start_min_tokens = token_budget;
                     budget_config.session_start_min_docs = 2;
-                },
+                }
                 ContextLevel::Medium => {
                     budget_config.session_start_med_tokens = token_budget;
                     budget_config.session_start_med_docs = 5;
-                },
+                }
                 ContextLevel::Maximum => {
                     budget_config.session_start_max_tokens = token_budget;
                     budget_config.session_start_max_docs = 10;
-                },
+                }
             }
 
-            let orchestrator = Orchestrator::with_budgets(budget_config)
-                .with_memory(Arc::clone(&workspace.workspace.memory), Some(Arc::clone(&workspace.workspace.belief_graph)));
+            let orchestrator = Orchestrator::with_budgets(budget_config).with_memory(
+                Arc::clone(&workspace.workspace.memory),
+                Some(Arc::clone(&workspace.workspace.belief_graph)),
+            );
 
-            let plan = orchestrator.session_start(session_id, "restore context", &context_docs).await;
+            let plan = orchestrator
+                .session_start(session_id, "restore context", &context_docs)
+                .await;
             let selected_docs = orchestrator.execute(&plan, &context_docs, session_id).await;
 
             // Build optimized context
@@ -136,12 +171,21 @@ pub async fn handle_context_tool(
             let optimized_token_count = context_string.split_whitespace().count();
 
             let savings_percentage = if original_token_count > 0 {
-                (original_token_count as f32 - optimized_token_count as f32) / original_token_count as f32 * 100.0
+                (original_token_count as f32 - optimized_token_count as f32)
+                    / original_token_count as f32
+                    * 100.0
             } else {
                 0.0
             };
 
-            TRACKER.track(session_id.to_string(), original_token_count, optimized_token_count, 0.01).await;
+            TRACKER
+                .track(
+                    session_id.to_string(),
+                    original_token_count,
+                    optimized_token_count,
+                    0.01,
+                )
+                .await;
 
             let result = json!({
                 "status": "ok",
@@ -158,7 +202,10 @@ pub async fn handle_context_tool(
             super::server::mcp_text_result(serde_json::to_string_pretty(&result)?, false)
         }
         "xavier_context_search" => {
-            let query = arguments.get("query").and_then(|v| v.as_str()).unwrap_or("");
+            let query = arguments
+                .get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let session_id = arguments.get("session_id").and_then(|v| v.as_str());
 
             let filters = session_id.map(|sid| MemoryQueryFilters {
@@ -175,7 +222,7 @@ pub async fn handle_context_tool(
             if results.is_empty() {
                 return super::server::mcp_text_result(
                     format!("No context found for query: {}", query),
-                    false
+                    false,
                 );
             }
 
@@ -188,12 +235,13 @@ pub async fn handle_context_tool(
                 };
                 let meta_preview = match &doc.metadata {
                     serde_json::Value::Object(m) => {
-                        let entries: Vec<String> = m.iter()
+                        let entries: Vec<String> = m
+                            .iter()
                             .take(4)
                             .map(|(k, v)| format!("{}: {}", k, v))
                             .collect();
                         entries.join(", ")
-                    },
+                    }
                     _ => String::new(),
                 };
                 output.push_str(&format!(

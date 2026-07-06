@@ -68,9 +68,10 @@ impl BeliefGraph {
     }
 
     pub fn add_node(&self, concept: String, confidence: f32, language_family: Option<String>) {
-        use std::str::FromStr;
         use crate::memory::qmd::NormalizedId;
-        let normalized = NormalizedId::from_str(&concept).unwrap_or_else(|_| NormalizedId::from_str_unchecked(&concept));
+        use std::str::FromStr;
+        let normalized = NormalizedId::from_str(&concept)
+            .unwrap_or_else(|_| NormalizedId::from_str_unchecked(&concept));
         let concept_norm = normalized.to_string();
 
         if self.get_node(&concept_norm).is_some() {
@@ -111,10 +112,14 @@ impl BeliefGraph {
         provenance_id: Option<String>,
         source_type: Option<&str>,
     ) -> Result<()> {
-        use std::str::FromStr;
         use crate::memory::qmd::NormalizedId;
-        let source_norm = NormalizedId::from_str(&source).unwrap_or_else(|_| NormalizedId::from_str_unchecked(&source)).to_string();
-        let target_norm = NormalizedId::from_str(&target).unwrap_or_else(|_| NormalizedId::from_str_unchecked(&target)).to_string();
+        use std::str::FromStr;
+        let source_norm = NormalizedId::from_str(&source)
+            .unwrap_or_else(|_| NormalizedId::from_str_unchecked(&source))
+            .to_string();
+        let target_norm = NormalizedId::from_str(&target)
+            .unwrap_or_else(|_| NormalizedId::from_str_unchecked(&target))
+            .to_string();
 
         let provenance_id = provenance_id.unwrap_or_else(|| "unknown".to_string());
         let confidence_score = self
@@ -186,9 +191,10 @@ impl BeliefGraph {
     }
 
     pub fn get_related(&self, concept: &str) -> Vec<String> {
-        use std::str::FromStr;
         use crate::memory::qmd::NormalizedId;
-        let normalized = NormalizedId::from_str(concept).unwrap_or_else(|_| NormalizedId::from_str_unchecked(concept));
+        use std::str::FromStr;
+        let normalized = NormalizedId::from_str(concept)
+            .unwrap_or_else(|_| NormalizedId::from_str_unchecked(concept));
         let concept_norm = normalized.as_str();
 
         self.adjacency
@@ -200,9 +206,10 @@ impl BeliefGraph {
     }
 
     pub fn get_node(&self, concept: &str) -> Option<BeliefNode> {
-        use std::str::FromStr;
         use crate::memory::qmd::NormalizedId;
-        let normalized = NormalizedId::from_str(concept).unwrap_or_else(|_| NormalizedId::from_str_unchecked(concept));
+        use std::str::FromStr;
+        let normalized = NormalizedId::from_str(concept)
+            .unwrap_or_else(|_| NormalizedId::from_str_unchecked(concept));
         let concept_norm = normalized.as_str();
 
         self.nodes
@@ -238,16 +245,20 @@ impl BeliefGraph {
     }
 
     pub fn replace_relations(&self, edges: Vec<BeliefEdge>) {
-        use std::str::FromStr;
         use crate::memory::qmd::NormalizedId;
+        use std::str::FromStr;
 
         let mut nodes = HashMap::new();
         let mut adjacency = HashMap::<String, HashSet<String>>::new();
         let mut normalized_edges = Vec::new();
 
         for mut edge in edges {
-            let source_norm = NormalizedId::from_str(&edge.source).unwrap_or_else(|_| NormalizedId::from_str_unchecked(&edge.source)).to_string();
-            let target_norm = NormalizedId::from_str(&edge.target).unwrap_or_else(|_| NormalizedId::from_str_unchecked(&edge.target)).to_string();
+            let source_norm = NormalizedId::from_str(&edge.source)
+                .unwrap_or_else(|_| NormalizedId::from_str_unchecked(&edge.source))
+                .to_string();
+            let target_norm = NormalizedId::from_str(&edge.target)
+                .unwrap_or_else(|_| NormalizedId::from_str_unchecked(&edge.target))
+                .to_string();
 
             edge.source = source_norm.clone();
             edge.target = target_norm.clone();
@@ -297,7 +308,11 @@ impl BeliefGraph {
             .and_then(|id| crate::memory::languages::get_language_family(id));
 
         if self.get_node(&belief.subject).is_none() {
-            self.add_node(belief.subject.clone(), confidence_score, lang_family.clone());
+            self.add_node(
+                belief.subject.clone(),
+                confidence_score,
+                lang_family.clone(),
+            );
         }
 
         if self.get_node(&belief.object).is_none() {
@@ -349,9 +364,10 @@ impl BeliefGraph {
     }
 
     pub async fn bfs(&self, start: &str) -> Vec<String> {
-        use std::str::FromStr;
         use crate::memory::qmd::NormalizedId;
-        let normalized = NormalizedId::from_str(start).unwrap_or_else(|_| NormalizedId::from_str_unchecked(start));
+        use std::str::FromStr;
+        let normalized = NormalizedId::from_str(start)
+            .unwrap_or_else(|_| NormalizedId::from_str_unchecked(start));
         let start_norm = normalized.to_string();
 
         let adjacency = self
@@ -386,10 +402,14 @@ impl BeliefGraph {
 
     /// Finds the highest-confidence path between two concepts.
     pub async fn find_highest_confidence_path(&self, start: &str, end: &str) -> Vec<BeliefEdge> {
-        use std::str::FromStr;
         use crate::memory::qmd::NormalizedId;
-        let start_norm = NormalizedId::from_str(start).unwrap_or_else(|_| NormalizedId::from_str_unchecked(start)).to_string();
-        let end_norm = NormalizedId::from_str(end).unwrap_or_else(|_| NormalizedId::from_str_unchecked(end)).to_string();
+        use std::str::FromStr;
+        let start_norm = NormalizedId::from_str(start)
+            .unwrap_or_else(|_| NormalizedId::from_str_unchecked(start))
+            .to_string();
+        let end_norm = NormalizedId::from_str(end)
+            .unwrap_or_else(|_| NormalizedId::from_str_unchecked(end))
+            .to_string();
 
         let edges = self.get_edges();
         let mut distances = HashMap::new();

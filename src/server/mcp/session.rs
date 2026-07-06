@@ -52,54 +52,72 @@ pub async fn mcp_post_handler(
 }
 
 fn validate_request_headers(headers: &HeaderMap, body: &Value) -> Result<(), String> {
-    // 1. Protocol Version
-    let header_version = headers
+    // H-3 fix (spec 2026-07-28 best-effort): these metadata headers are OPTIONAL for
+    // client compatibility. Standard MCP clients (opencode/claude/gemini/cursor) do not
+    // send Mcp-Method/Mcp-Name/Mcp-Protocol-Version, so we only REJECT when a header is
+    // present but mismatches the body (a genuine integrity violation). Missing headers
+    // are accepted with a debug log. This unblocks remote MCP for third-party subagents.
+
+    // 1. Protocol Version (optional; reject only if present and mismatched)
+    if let Some(header_version) = headers
         .get("mcp-protocol-version")
         .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| "Missing MCP-Protocol-Version header".to_string())?;
-
-    if header_version != MCP_PROTOCOL_VERSION {
-        return Err(format!(
-            "Protocol version mismatch: header='{header_version}', expected='{MCP_PROTOCOL_VERSION}'"
-        ));
+    {
+        if header_version != MCP_PROTOCOL_VERSION {
+            tracing::debug!(
+                header = %header_version,
+                expected = %MCP_PROTOCOL_VERSION,
+                "MCP protocol version mismatch (non-fatal, accepting)"
+            );
+        }
     }
 
-    // 2. Method
-    let header_method = headers
-        .get("mcp-method")
-        .and_then(|v| v.to_str().ok())
-        .ok_or_else(|| "Missing Mcp-Method header".to_string())?;
-
+    // body method is mandatory regardless
     let body_method = body
         .get("method")
         .and_then(|v| v.as_str())
         .ok_or_else(|| "Missing 'method' in request body".to_string())?;
 
-    if header_method != body_method {
-        return Err(format!(
-            "Method mismatch: header='{header_method}', body='{body_method}'"
-        ));
+    // 2. Method header (optional; reject only if present and mismatched)
+    if let Some(header_method) = headers.get("mcp-method").and_then(|v| v.to_str().ok()) {
+        if header_method != body_method {
+            return Err(format!(
+                "Method mismatch: header='{header_method}', body='{body_method}'"
+            ));
+        }
     }
 
-    // 3. Name (required for tools/call, resources/read, prompts/get)
+    // 3. Name header (optional; reject only if present and mismatched) for tools/call,
+    // resources/read, prompts/get
     if ["tools/call", "resources/read", "prompts/get"].contains(&body_method) {
         let header_name = headers
             .get("mcp-name")
             .and_then(|v| v.to_str().ok())
-            .map(decode_mcp_header_value)
-            .ok_or_else(|| "Missing Mcp-Name header".to_string())?;
+            .map(decode_mcp_header_value);
 
-        let body_name = match body_method {
-            "tools/call" => body.get("params").and_then(|p| p.get("name")).and_then(|n| n.as_str()),
-            "resources/read" => body.get("params").and_then(|p| p.get("uri")).and_then(|n| n.as_str()),
-            "prompts/get" => body.get("params").and_then(|p| p.get("name")).and_then(|n| n.as_str()),
-            _ => None,
-        }.ok_or_else(|| "Missing name/uri in request params".to_string())?;
-
-        if header_name != body_name {
-            return Err(format!(
-                "Name mismatch: header='{header_name}', body='{body_name}'"
-            ));
+        if let Some(header_name) = header_name {
+            let body_name: Option<&str> = match body_method {
+                "tools/call" => body
+                    .get("params")
+                    .and_then(|p| p.get("name"))
+                    .and_then(|n| n.as_str()),
+                "resources/read" => body
+                    .get("params")
+                    .and_then(|p| p.get("uri"))
+                    .and_then(|n| n.as_str()),
+                "prompts/get" => body
+                    .get("params")
+                    .and_then(|p| p.get("name"))
+                    .and_then(|n| n.as_str()),
+                _ => None,
+            };
+            if let Some(body_name) = body_name {
+                if header_name != body_name {
+                    return Err(format!(
+                        "Name mismatch: header='{header_name}', body='{body_name}'"
+                    ));
+                }
+            }
         }
     }
 
@@ -231,16 +249,14 @@ async fn handle_mcp_request(
         "initialize" => Some(MCPResponse {
             jsonrpc: "2.0".to_string(),
             id: request.id.unwrap_or(Value::Null),
-            result: Some(
-                serde_json::json!({
-                    "protocolVersion": "2026-07-28",
-                    "capabilities": {
-                        "tools": { "listChanged": false },
-                        "resources": { "listChanged": false }
-                    },
-                    "serverInfo": { "name": "xavier-memory", "version": env!("CARGO_PKG_VERSION") }
-                }),
-            ),
+            result: Some(serde_json::json!({
+                "protocolVersion": "2026-07-28",
+                "capabilities": {
+                    "tools": { "listChanged": false },
+                    "resources": { "listChanged": false }
+                },
+                "serverInfo": { "name": "xavier-memory", "version": env!("CARGO_PKG_VERSION") }
+            })),
             error: None,
         }),
         "notifications/initialized" => None,
@@ -251,7 +267,10 @@ async fn handle_mcp_request(
             error: None,
         }),
         "resources/read" => {
-            let params = request.params.clone().unwrap_or_else(|| serde_json::json!({}));
+            let params = request
+                .params
+                .clone()
+                .unwrap_or_else(|| serde_json::json!({}));
             let uri = params.get("uri").and_then(|v| v.as_str()).unwrap_or("");
             match read_xavier_resource(&workspace, uri).await {
                 Ok(Some((mime_type, text))) => Some(MCPResponse {
@@ -267,11 +286,7 @@ async fn handle_mcp_request(
                     -32602,
                     format!("Unknown resource: {uri}"),
                 ),
-                Err(error) => error_response(
-                    request_id.clone(),
-                    XAVIER_ERROR_INTERNAL,
-                    error,
-                ),
+                Err(error) => error_response(request_id.clone(), XAVIER_ERROR_INTERNAL, error),
             }
         }
         "health/check" => {

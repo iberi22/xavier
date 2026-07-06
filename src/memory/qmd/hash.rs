@@ -3,8 +3,8 @@
 //! Provides MinHash signature generation and Jaccard similarity computation
 //! using 128 permutations for fast document comparison.
 
-use xxhash_rust::xxh3::xxh3_64_with_seed;
 use std::collections::HashSet;
+use xxhash_rust::xxh3::xxh3_64_with_seed;
 
 pub const MINHASH_PERMUTATIONS: usize = 128;
 

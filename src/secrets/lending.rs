@@ -30,6 +30,7 @@ impl fmt::Debug for EphemeralLease {
 pub trait AuditLogger {
     fn log_lend(&self, agent_id: &str, secret_id: &str, session_token: &str, ttl_secs: u64);
     fn log_revoke(&self, agent_id: &str, session_token: &str, reason: &str);
+    fn log_proxy_use(&self, agent_id: &str, lease_token: &str, endpoint: &str);
 }
 
 pub struct DefaultAuditLogger;
@@ -45,6 +46,12 @@ impl AuditLogger for DefaultAuditLogger {
         println!(
             "[AUDIT] REVOKED session '{}' for agent '{}' (Reason: {})",
             session_token, agent_id, reason
+        );
+    }
+    fn log_proxy_use(&self, agent_id: &str, lease_token: &str, endpoint: &str) {
+        println!(
+            "[AUDIT] PROXY USE by agent '{}' with lease '{}' on endpoint '{}'",
+            agent_id, lease_token, endpoint
         );
     }
 }

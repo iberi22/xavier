@@ -115,4 +115,3 @@ pub async fn start_mcp_http(port: u16) -> Result<()> {
     tracing::info!("Starting Xavier MCP HTTP+SSE server on {}", bind_addr);
     start_mcp_http_server(state, workspace, bind_addr).await
 }
-

@@ -239,28 +239,15 @@ pub struct ReputationAttestation {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum XipState {
     /// Borrador inicial
-    Draft {
-        entered_at: u64,
-    },
+    Draft { entered_at: u64 },
     /// Discusión abierta (3 días)
-    Discussion {
-        entered_at: u64,
-        expires_at: u64,
-    },
+    Discussion { entered_at: u64, expires_at: u64 },
     /// Votación activa (7 días)
-    Voting {
-        entered_at: u64,
-        expires_at: u64,
-    },
+    Voting { entered_at: u64, expires_at: u64 },
     /// Propuesta aprobada, en espera de ejecución (48h)
-    Execution {
-        entered_at: u64,
-        expires_at: u64,
-    },
+    Execution { entered_at: u64, expires_at: u64 },
     /// Completado (ejecutado o finalizado)
-    Complete {
-        entered_at: u64,
-    },
+    Complete { entered_at: u64 },
 }
 
 impl XipState {

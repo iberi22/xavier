@@ -123,7 +123,9 @@ pub async fn agent_push_context_handler(
         encrypted_dek: None,
         content_iv: None,
         metadata_iv: None,
+        score: 0.0,
     };
+        updated_at: chrono::Utc::now(),
     match state.memory.add(record).await {
         Ok(doc_id) => axum::Json(serde_json::json!({
             "status": "ok",
@@ -138,16 +140,61 @@ pub async fn agent_push_context_handler(
     }
 }
 
+
 pub async fn agent_unregister_handler(
     State(state): State<CliState>,
     AxumPath(agent_id): AxumPath<String>,
 ) -> impl axum::response::IntoResponse {
     let success = state.agent_registry.unregister(&agent_id).await;
 
+    if success {
+        state
+            .secrets_engine
+            .revoke_for_agent(&agent_id, "Agent Unregistered")
+            .await;
+    }
+
     axum::Json(serde_json::json!({
         "status": if success { "ok" } else { "error" },
         "agent_id": agent_id,
         "message": if success { "Agent unregistered" } else { "Agent not found or already unregistered" },
+    }))
+}
+
+pub async fn agent_task_complete_handler(
+    State(state): State<CliState>,
+    AxumPath(agent_id): AxumPath<String>,
+) -> impl axum::response::IntoResponse {
+    state
+        .agent_registry
+        .on_task_complete(&agent_id, "default", &Ok(Default::default()))
+        .await;
+
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "agent_id": agent_id,
+        "message": "Task completion processed",
+    }))
+}
+
+pub async fn agent_task_failed_handler(
+    State(state): State<CliState>,
+    AxumPath(agent_id): AxumPath<String>,
+    axum::Json(payload): axum::Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    let reason = payload["reason"]
+        .as_str()
+        .unwrap_or("Unknown reason")
+        .to_string();
+    state
+        .agent_registry
+        .on_task_complete(&agent_id, "default", &Err(reason))
+        .await;
+
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "agent_id": agent_id,
+        "message": "Task failure processed",
     }))
 }
 
@@ -180,6 +227,7 @@ pub async fn agent_scan_handler(
         })),
     }
 }
+
 
 pub async fn agent_index_handler(
     State(state): State<CliState>,
@@ -225,6 +273,41 @@ pub async fn agent_index_handler(
         Err(e) => axum::Json(serde_json::json!({
             "status": "error",
             "message": format!("Failed to index agents: {}", e),
+        })),
+    }
+}
+
+pub async fn openclaw_scan_handler() -> impl axum::response::IntoResponse {
+    let scanner = crate::memory::openclaw_scanner::OpenClawAgentScanner::new();
+    match scanner.scan_all_agents().await {
+        Ok(agents) => axum::Json(serde_json::json!({
+            "status": "ok",
+            "count": agents.len(),
+            "agents": agents,
+        })),
+        Err(e) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": format!("Failed to scan OpenClaw agents: {}", e),
+        })),
+    }
+}
+
+pub async fn openclaw_index_handler(
+    State(state): State<CliState>,
+) -> impl axum::response::IntoResponse {
+    let scanner = crate::memory::openclaw_scanner::OpenClawAgentScanner::new();
+    match state
+        .openclaw_indexer
+        .index_all_agents(&scanner, state.store.as_ref())
+        .await
+    {
+        Ok(records) => axum::Json(serde_json::json!({
+            "status": "ok",
+            "indexed_count": records.len(),
+        })),
+        Err(e) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": format!("Failed to index OpenClaw agents: {}", e),
         })),
     }
 }

@@ -5,9 +5,9 @@
 //! unstructured memory text for the entity graph.
 
 use super::types::*;
-use std::sync::LazyLock;
 use regex::Regex;
 use std::collections::HashSet;
+use std::sync::LazyLock;
 
 pub(super) static CANDIDATE_ENTITY_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\b(?:[A-Z]{2,}(?:[A-Z0-9_-]*[A-Z0-9])?|[A-Z][a-z0-9]+(?:[A-Z][A-Za-z0-9_-]*)+(?:\s+[A-Z][A-Za-z0-9_-]*)*|[A-Z][a-z0-9]+(?:\s+[A-Z][a-z0-9]+)*|[A-Za-z]+[0-9]+[A-Za-z0-9_-]*)\b")

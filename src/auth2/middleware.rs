@@ -1,13 +1,13 @@
+use crate::auth2::jwt::JwtManager;
 use axum::{
     extract::Request,
-    http::{StatusCode, header},
+    http::{header, StatusCode},
     middleware::Next,
     response::Response,
 };
-use tokio::sync::RwLock;
 use std::collections::HashMap;
-use std::time::{Instant, Duration};
-use crate::auth2::jwt::JwtManager;
+use std::time::{Duration, Instant};
+use tokio::sync::RwLock;
 // use crate::cli::server::CliState;
 
 pub struct RateLimiter {
@@ -42,10 +42,7 @@ impl RateLimiter {
     }
 }
 
-pub async fn auth_middleware(
-    mut req: Request,
-    next: Next,
-) -> Result<Response, StatusCode> {
+pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, StatusCode> {
     // 1. Rate Limiting (100 req/min)
     // In a real app we'd get the real IP, here we'll use a placeholder or header
     let client_ip = req
@@ -59,7 +56,8 @@ pub async fn auth_middleware(
     // Given CliState doesn't have it yet, and I shouldn't modify it too much yet,
     // let's assume we'll add it to CliState or use a global lazy one.
     // For this implementation, I'll use a static one for simplicity in this step.
-    static RATE_LIMITER: std::sync::LazyLock<RateLimiter> = std::sync::LazyLock::new(|| RateLimiter::new(100, 60));
+    static RATE_LIMITER: std::sync::LazyLock<RateLimiter> =
+        std::sync::LazyLock::new(|| RateLimiter::new(100, 60));
 
     if !RATE_LIMITER.check(client_ip).await {
         return Err(StatusCode::TOO_MANY_REQUESTS);
@@ -73,7 +71,9 @@ pub async fn auth_middleware(
         .ok_or(StatusCode::UNAUTHORIZED)?;
 
     let jwt_manager = JwtManager::new().map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    let claims = jwt_manager.validate_token(token).map_err(|_| StatusCode::UNAUTHORIZED)?;
+    let claims = jwt_manager
+        .validate_token(token)
+        .map_err(|_| StatusCode::UNAUTHORIZED)?;
 
     // Add claims to request extensions so handlers can use them
     req.extensions_mut().insert(claims);

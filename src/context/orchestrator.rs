@@ -307,13 +307,10 @@ impl Orchestrator {
                             // Symbol doesn't have full file content, but we can't easily read it here without knowing the root.
                             // For now, we'll use a placeholder or the symbol info.
                             let content = format!("Symbol: {} in {}", first.name, path);
-                            let mut c_doc = ContextDocument::new(
-                                document_id,
-                                session_id,
-                                "system",
-                                content,
-                            );
-                            c_doc.metadata = serde_json::json!({ "source": "code_graph", "path": path });
+                            let mut c_doc =
+                                ContextDocument::new(document_id, session_id, "system", content);
+                            c_doc.metadata =
+                                serde_json::json!({ "source": "code_graph", "path": path });
                             c_doc
                         } else {
                             continue;

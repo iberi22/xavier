@@ -47,7 +47,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                 "properties": {
                     "query": { "type": "string", "description": "Search query" },
                     "limit": { "type": "number", "description": "Maximum results (default: 10, max: 100)", "default": 10 },
-                    "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "Search mode (default: hybrid)", "default": "hybrid" },
+                    "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "RESERVED — currently ignored; search always runs the hybrid BM25+vector+RRF pipeline. Kept for forward-compatibility.", "default": "hybrid" },
                     "filters": { "type": "object", "description": "Optional filters" }
                 },
                 "required": ["query"]
@@ -217,7 +217,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                     "limit": { "type": "number", "description": "Maximum memories to include", "default": 5 },
                     "max_chars": { "type": "number", "description": "Maximum characters to include in context output", "default": 4000 },
                     "depth": { "type": "number", "description": "Relationship depth to explore (0=flat, 1=direct, 2=two-hop)", "default": 0 },
-                    "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "Search mode", "default": "hybrid" }
+                    "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "RESERVED — currently ignored; search always runs the hybrid pipeline.", "default": "hybrid" }
                 },
                 "required": ["query"]
             }),
@@ -254,13 +254,15 @@ pub async fn handle_memory_tool(
                 .await?;
             let content = results
                 .into_iter()
-                .map(|doc| MCPContent::Text(MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: format!(
-                        "Path: {}\nContent: {}\nMetadata: {:?}",
-                        doc.path, doc.content, doc.metadata
-                    ),
-                            }))
+                .map(|doc| {
+                    MCPContent::Text(MCPTextContent {
+                        content_type: "text".to_string(),
+                        text: format!(
+                            "Path: {}\nContent: {}\nMetadata: {:?}",
+                            doc.path, doc.content, doc.metadata
+                        ),
+                    })
+                })
                 .collect();
 
             Ok(serde_json::to_value(MCPToolResult {
@@ -466,17 +468,19 @@ pub async fn handle_memory_tool(
 
             let content = filtered
                 .into_iter()
-                .map(|doc| MCPContent::Text(MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: format!(
-                        "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
-                        doc.id.as_deref().unwrap_or("none"),
-                        doc.path,
-                        doc.content,
-                        doc.metadata.get("gestalt_context"),
-                        doc.metadata.get("tags")
-                    ),
-                }))
+                .map(|doc| {
+                    MCPContent::Text(MCPTextContent {
+                        content_type: "text".to_string(),
+                        text: format!(
+                            "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
+                            doc.id.as_deref().unwrap_or("none"),
+                            doc.path,
+                            doc.content,
+                            doc.metadata.get("gestalt_context"),
+                            doc.metadata.get("tags")
+                        ),
+                    })
+                })
                 .collect();
 
             Ok(serde_json::to_value(MCPToolResult {
@@ -502,17 +506,19 @@ pub async fn handle_memory_tool(
                 .await?;
             let content = records
                 .into_iter()
-                .map(|record| MCPContent::Text(MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: format!(
-                        "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
-                        record.id,
-                        record.path,
-                        record.content,
-                        record.metadata.get("gestalt_context"),
-                        record.metadata.get("tags")
-                    ),
-                }))
+                .map(|record| {
+                    MCPContent::Text(MCPTextContent {
+                        content_type: "text".to_string(),
+                        text: format!(
+                            "Id: {}\nPath: {}\nContent: {}\nContext: {:?}\nTags: {:?}",
+                            record.id,
+                            record.path,
+                            record.content,
+                            record.metadata.get("gestalt_context"),
+                            record.metadata.get("tags")
+                        ),
+                    })
+                })
                 .collect();
 
             Ok(serde_json::to_value(MCPToolResult {
@@ -617,10 +623,7 @@ pub async fn handle_memory_tool(
                 .workspace
                 .ingest_typed(path, text.to_string(), metadata, typed, None, false)
                 .await?;
-            super::server::mcp_text_result(
-                format!("Memory saved. id={doc_id}"),
-                false,
-            )
+            super::server::mcp_text_result(format!("Memory saved. id={doc_id}"), false)
         }
         "memory_search" => {
             let query = arguments
@@ -666,13 +669,15 @@ pub async fn handle_memory_tool(
 
             let content = results
                 .into_iter()
-                .map(|doc| MCPContent::Text(MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: format!(
-                        "Path: {}\nContent: {}\nMetadata: {:?}",
-                        doc.path, doc.content, doc.metadata
-                    ),
-                }))
+                .map(|doc| {
+                    MCPContent::Text(MCPTextContent {
+                        content_type: "text".to_string(),
+                        text: format!(
+                            "Path: {}\nContent: {}\nMetadata: {:?}",
+                            doc.path, doc.content, doc.metadata
+                        ),
+                    })
+                })
                 .collect();
 
             Ok(serde_json::to_value(MCPToolResult {
@@ -762,7 +767,9 @@ pub async fn handle_memory_tool(
                 for record in &expanded {
                     context.push_str(&format!(
                         "### {} (id: {})\n{}\n\n",
-                        record.path, record.id.as_deref().unwrap_or("none"), record.content
+                        record.path,
+                        record.id.as_deref().unwrap_or("none"),
+                        record.content
                     ));
                 }
 

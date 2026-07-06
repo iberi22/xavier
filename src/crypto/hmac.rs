@@ -31,10 +31,7 @@ impl HmacSha256 {
         let mut inner = Sha256::new();
         inner.update(&i_key_pad);
 
-        Self {
-            inner,
-            o_key_pad,
-        }
+        Self { inner, o_key_pad }
     }
 
     pub fn update(&mut self, data: &[u8]) {

@@ -3,19 +3,19 @@
 //! Manages background execution of memory consolidation and TGD rule generation
 //! on a cron-like schedule.
 
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use tokio_util::sync::CancellationToken;
-use tracing::{info, error};
+use tracing::{error, info};
 
 use crate::consolidation::ConsolidationTask;
-use crate::workspace::WorkspaceContext;
 use crate::tgd::TgdEngine;
+use crate::workspace::WorkspaceContext;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProgressReport {
@@ -77,7 +77,10 @@ impl TgdConsolidationScheduler {
     pub async fn spawn(self: Arc<Self>, cron_expr: String) {
         let scheduler = Arc::clone(&self);
         tokio::spawn(async move {
-            info!("🚀 TGD Consolidation Scheduler started with cron: {}", cron_expr);
+            info!(
+                "🚀 TGD Consolidation Scheduler started with cron: {}",
+                cron_expr
+            );
 
             let schedule: cron::Schedule = match cron::Schedule::from_str(&cron_expr) {
                 Ok(s) => s,
@@ -95,7 +98,10 @@ impl TgdConsolidationScheduler {
 
                 let now = Utc::now();
                 if next > now {
-                    let sleep_duration = next.signed_duration_since(now).to_std().unwrap_or(Duration::from_secs(0));
+                    let sleep_duration = next
+                        .signed_duration_since(now)
+                        .to_std()
+                        .unwrap_or(Duration::from_secs(0));
                     info!("📅 Next TGD consolidation scheduled for: {}", next);
 
                     tokio::select! {
@@ -134,15 +140,20 @@ impl TgdConsolidationScheduler {
 
         // 1. Run Memory Consolidation
         info!("🧠 Phase 1: Memory Consolidation...");
-        let stats = task.consolidate(&self.workspace, Some(Arc::clone(&self.progress))).await?;
+        let stats = task
+            .consolidate(&self.workspace, Some(Arc::clone(&self.progress)))
+            .await?;
 
         // 2. Run TGD if enabled
         info!("🧠 Phase 2: TGD Rule Generation...");
-        task.run_tgd_if_enabled(&self.workspace, self.tgd_engine.as_ref()).await?;
+        task.run_tgd_if_enabled(&self.workspace, self.tgd_engine.as_ref())
+            .await?;
 
         // 3. Run TGD Memory Refinement
         info!("🧠 Phase 3: TGD Memory Refinement...");
-        let refinement_stats = task.run_tgd_memory_refinement(&self.workspace, self.tgd_engine.as_ref()).await?;
+        let refinement_stats = task
+            .run_tgd_memory_refinement(&self.workspace, self.tgd_engine.as_ref())
+            .await?;
 
         let mut final_stats = stats;
         final_stats.selected += refinement_stats.selected;
@@ -166,7 +177,10 @@ impl TgdConsolidationScheduler {
             p.errors = final_stats.errors;
         }
 
-        info!("✅ Scheduled consolidation completed in {}ms", duration.as_millis());
+        info!(
+            "✅ Scheduled consolidation completed in {}ms",
+            duration.as_millis()
+        );
 
         // Log results to chronicle (via memory document)
         let date = Utc::now().format("%Y-%m-%d").to_string();
@@ -181,16 +195,20 @@ impl TgdConsolidationScheduler {
         );
 
         let report_path = format!("logs/tgd/report-{}.md", date);
-        self.workspace.workspace.memory.add_document_typed(
-            report_path,
-            report_content,
-            serde_json::json!({
-                "memory_kind": "tgd_report",
-                "date": date,
-                "stats": final_stats
-            }),
-            None
-        ).await?;
+        self.workspace
+            .workspace
+            .memory
+            .add_document_typed(
+                report_path,
+                report_content,
+                serde_json::json!({
+                    "memory_kind": "tgd_report",
+                    "date": date,
+                    "stats": final_stats
+                }),
+                None,
+            )
+            .await?;
 
         Ok(())
     }
@@ -223,8 +241,8 @@ pub async fn run_nightly_tgd() -> anyhow::Result<()> {
     info!("🌙 Running nightly TGD consolidation...");
 
     // Build a minimal workspace context from env / defaults
-    let workspace_id = std::env::var("XAVIER_DEFAULT_WORKSPACE_ID")
-        .unwrap_or_else(|_| "default".to_string());
+    let workspace_id =
+        std::env::var("XAVIER_DEFAULT_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string());
     let root = std::env::var("XAVIER_ROOT")
         .map(PathBuf::from)
         .unwrap_or_else(|_| PathBuf::from("."));
@@ -243,7 +261,8 @@ pub async fn run_nightly_tgd() -> anyhow::Result<()> {
         },
         crate::agents::RuntimeConfig::default(),
         root.join(".xavier"),
-    ).await?;
+    )
+    .await?;
     let workspace = WorkspaceContext {
         workspace_id,
         workspace: std::sync::Arc::new(workspace_state),
@@ -255,15 +274,17 @@ pub async fn run_nightly_tgd() -> anyhow::Result<()> {
     };
 
     // Create a TGD engine from environment config
-    let tgd_engine = crate::tgd::TgdEngine::new(
-        crate::agents::provider::ModelProviderClient::from_env()
-    );
+    let tgd_engine =
+        crate::tgd::TgdEngine::new(crate::agents::provider::ModelProviderClient::from_env());
 
     // Run TGD rule generation
-    task.run_tgd_if_enabled(&workspace, Some(&tgd_engine)).await?;
+    task.run_tgd_if_enabled(&workspace, Some(&tgd_engine))
+        .await?;
 
     // Run TGD memory refinement
-    let stats = task.run_tgd_memory_refinement(&workspace, Some(&tgd_engine)).await?;
+    let stats = task
+        .run_tgd_memory_refinement(&workspace, Some(&tgd_engine))
+        .await?;
 
     // Update .xavier/tgd.md with latest status
     let tgd_status_path = root.join(".xavier/tgd.md");
@@ -279,6 +300,9 @@ pub async fn run_nightly_tgd() -> anyhow::Result<()> {
     );
     tokio::fs::write(&tgd_status_path, report).await?;
 
-    info!("✅ Nightly TGD complete — {} memories refined", stats.memories_refined);
+    info!(
+        "✅ Nightly TGD complete — {} memories refined",
+        stats.memories_refined
+    );
     Ok(())
 }

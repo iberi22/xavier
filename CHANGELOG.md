@@ -2,6 +2,42 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## v0.12.0 (2026-07-05)
+
+### Added
+
+- **OpenClaw Agent Scanner** nativo en Rust (`src/memory/openclaw_scanner.rs`) con 4 tests unitarios.
+- **OpenClaw Agent Indexer** con chunking semántico por secciones `MEMORY.md`.
+- **Endpoints HTTP** `/xavier/openclaw/scan` y `/xavier/openclaw/index`.
+- **Script** `scripts/start-xavier.ps1` para inicio estable del servidor.
+- **Auto-detección** de directorio de agentes vía `XAVIER_AGENTS_DIR`.
+
+### Fixed
+
+- **governance.rs**: borrow checker conflict en `cast_vote` resuelto.
+- **health/mod.rs**: eliminada llamada a `probe_embedding_health()` inexistente.
+- **tuner.rs**: extra llave de cierre eliminada.
+
+## Unreleased (2026-07-02) — Sprint Phase 4+5
+
+### Added
+
+- **Telegram Bot — `/memory` commands** (`feat-telegram-bot`, 35% → 70%): `/memory stats` (workspace document count + storage bytes) and `/memory search <query>` (top-5 hybrid search) handlers backed by the local QmdMemory store. New `load_bot_token()` resolves the bot token from the Clavis hardware vault first (`telegram_bot_token` key) and falls back to `TELEGRAM_BOT_TOKEN`. Standalone `start_webhook(addr, path)` for axum webhook mode. 6 tests.
+- **Notification event bus** (`feat-notification-system`, 80% → 95%): a module-level `tokio::sync::broadcast` channel (`subscribe()` / `publish()`, capacity 256) on the `Notifier`. Every `notify_*` method now fans out to the bus; the Panel UI (Tauri) subscribes and bridges to `emit_all` with no hard Tauri dependency. 4 tests.
+- **Runtime health hardening** (`feat-runtime-health`, 60% → 85%): `auto_vacuum_if_needed` now also triggers on `PRAGMA freelist_count/page_count > 30%` (`conn_fragmentation_pct`) so it fires on real bloat even for in-memory/pooled DBs. `push_embedding_alert_if_unhealthy()` pushes a `WARN` to `SYSTEM_ALERTS` on a disconnected/flaky embedding provider; wired into `collect_health_impl`. 7 tests.
+- **Auto-Improvement Loop** (`feat-auto-improvement`, 30% → 70%): real experiment validation + concrete config overrides (Phase 1), exposed via `xavier improve run|status`.
+- **Context Regeneration** (`feat-context-regeneration`, 0% → 40%): `recall@k` eval harness + RRF tuner + `xavier regen benchmark|tune` CLI (Phase 2).
+
+### Changed
+
+- Reconciled feature maturity to **74%** (was 72%): 5 features advanced to their sprint targets. Scanner v2 still floors at 16% due to a known `tests_total=0`/`symbols_found=0` bug; the reconciled value is the honest one.
+
+### Verified
+
+- `cargo build --lib --no-default-features --features ci-safe` is green.
+- `cargo build --lib --no-default-features --features telegram` is green.
+- Lib test suite: **996 passed**, 3 ignored, 10 pre-existing `server::mcp::tests::*` failures (environment-dependent, unrelated to this sprint). 51 new tests added across telegram/notifier/health.
+
 ## v0.11.0 (2026-06-22)
 
 ### Added

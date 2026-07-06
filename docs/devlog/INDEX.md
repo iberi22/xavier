@@ -2,6 +2,7 @@
 
 | Date | Title | Tags | Source Links |
 |------|-------|------|--------------|
+| 2026-07-02 | [Sprint Completion: Iroh Mesh, recall@k Eval, and the Auto-Improvement Loop](./2026-07-02-sprint-completion.md) | `mesh`, `iroh`, `quic`, `retrieval`, `eval`, `auto-improvement` | `src/mesh/iroh_transport.rs`, `src/retrieval/eval.rs`, `src/auto_improvement/` |
 | 2026-05-29 | [Local-First CLI Resilience and Hexagonal Security Wiring](./2026-05-29-local-first-cli-resilience-and-hexagonal-security.md) | `cli`, `local-first`, `architecture`, `security` | `src/cli/commands.rs`, `src/cli/state.rs` |
 | 2026-05-10 | [Why SQLite-Vec?](./2026-05-10-why-sqlite-vec.md) | `sqlite-vec`, `storage`, `vector` | `Cargo.toml`, `src/memory/sqlite_vec_store.rs` |
 | 2026-05-10 | [Hexagonal Architecture in Rust CLI](./2026-05-10-hexagonal-architecture.md) | `rust`, `architecture`, `hexagonal` | `src/domain/`, `src/adapters/` |

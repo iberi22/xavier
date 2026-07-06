@@ -57,7 +57,8 @@ impl VecSqliteMemoryStore {
         db::ensure_dir(&config.path).await?;
         vector::register_sqlite_vec_extension()?;
 
-        let digest = crate::crypto::hex_encode(&Sha256::digest(config.path.to_string_lossy().as_bytes()));
+        let digest =
+            crate::crypto::hex_encode(&Sha256::digest(config.path.to_string_lossy().as_bytes()));
         let project_id = format!("vec_store_{}", &digest[..12]);
         ConnectionManager::global().connect_with_path(&project_id, config.path.clone())?;
 
@@ -119,6 +120,7 @@ impl VecSqliteMemoryStore {
             encrypted_dek: row.get(15).ok(),
             content_iv: row.get(16).ok(),
             metadata_iv: row.get(17).ok(),
+            score: 0.0,
         })
     }
 

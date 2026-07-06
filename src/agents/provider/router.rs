@@ -17,6 +17,8 @@ pub enum ProviderKind {
     Groq,
     MiniMax,
     Local,
+    Zai,
+    OpenCode,
 }
 
 impl ProviderKind {
@@ -29,6 +31,8 @@ impl ProviderKind {
             Self::Groq => "groq",
             Self::MiniMax => "minimax",
             Self::Local => "local",
+            Self::Zai => "z.ai",
+            Self::OpenCode => "opencode",
         }
     }
 
@@ -42,6 +46,8 @@ impl ProviderKind {
             "groq" => Some(Self::Groq),
             "minimax" => Some(Self::MiniMax),
             "local" => Some(Self::Local),
+            "z.ai" | "zai" => Some(Self::Zai),
+            "opencode" => Some(Self::OpenCode),
             _ => None,
         }
     }
@@ -55,6 +61,8 @@ impl ProviderKind {
             Self::Groq,
             Self::MiniMax,
             Self::Local,
+            Self::Zai,
+            Self::OpenCode,
         ]
     }
 }

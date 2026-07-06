@@ -1,8 +1,8 @@
-use rand::{RngCore, thread_rng};
-use sha2::{Sha256, Digest};
-use anyhow::{anyhow, Result};
-use std::time::{SystemTime, UNIX_EPOCH};
 use crate::auth2::db::{AuthDb, RefreshToken};
+use anyhow::{anyhow, Result};
+use rand::{thread_rng, RngCore};
+use sha2::{Digest, Sha256};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct RefreshTokenManager<'a> {
     db: &'a AuthDb,
@@ -38,16 +38,24 @@ impl<'a> RefreshTokenManager<'a> {
         Ok(token)
     }
 
-    pub fn rotate_token(&self, token: &str, device_info: Option<String>) -> Result<(String, String)> {
+    pub fn rotate_token(
+        &self,
+        token: &str,
+        device_info: Option<String>,
+    ) -> Result<(String, String)> {
         let hash = self.hash_token(token);
 
-        let stored_token = self.db.get_refresh_token_by_hash(&hash)?
+        let stored_token = self
+            .db
+            .get_refresh_token_by_hash(&hash)?
             .ok_or_else(|| anyhow!("Invalid refresh token"))?;
 
         if stored_token.revoked {
             // Theft detection: revoke ALL tokens for this user
             self.db.revoke_all_user_tokens(&stored_token.user_id)?;
-            return Err(anyhow!("Token already revoked. Potential theft detected. All sessions invalidated."));
+            return Err(anyhow!(
+                "Token already revoked. Potential theft detected. All sessions invalidated."
+            ));
         }
 
         let now = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs() as i64;

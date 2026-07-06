@@ -6,11 +6,11 @@
 use std::path::PathBuf;
 use tokio::sync::Mutex;
 
-use anyhow::Result;
-use tracing::{debug, info, warn};
+use crate::agents::provider::ModelProviderClient;
 use crate::agents::runtime::ConversationMessage;
 use crate::agents::system1::RetrievedDocument;
-use crate::agents::provider::ModelProviderClient;
+use anyhow::Result;
+use tracing::{debug, info, warn};
 pub mod cache;
 pub mod consolidation;
 
@@ -105,7 +105,8 @@ impl TgdEngine {
 
         // [G3] Confidence threshold application
         if !context.is_empty() {
-            let avg_relevance: f32 = context.iter().map(|d| d.relevance_score).sum::<f32>() / context.len() as f32;
+            let avg_relevance: f32 =
+                context.iter().map(|d| d.relevance_score).sum::<f32>() / context.len() as f32;
             if avg_relevance >= self.config.confidence_threshold {
                 info!(
                     "⏭️ TGD: Skipping re-execution (Average relevance {:.2} >= threshold {:.2})",
@@ -148,7 +149,11 @@ impl TgdEngine {
             history_text, context_text
         );
 
-        match self.provider.generate_text(system_prompt, &user_prompt, false).await {
+        match self
+            .provider
+            .generate_text(system_prompt, &user_prompt, false)
+            .await
+        {
             Ok(response) => {
                 let rules = response.text.trim().to_string();
                 if !rules.is_empty() {
@@ -176,12 +181,19 @@ impl TgdEngine {
     ///
     /// This process repeatedly asks an LLM to improve the clarity, structure, and
     /// density of the provided content, scoring each iteration to ensure improvement.
-    pub async fn refine_memory_content(&self, content: &str, iterations: Option<usize>) -> Result<(String, f32)> {
+    pub async fn refine_memory_content(
+        &self,
+        content: &str,
+        iterations: Option<usize>,
+    ) -> Result<(String, f32)> {
         let iterations = iterations.unwrap_or(self.config.iterations);
         let mut current_content = content.to_string();
         let mut total_score = 0.0;
 
-        info!("🧠 TGD: Starting memory refinement ({} iterations)...", iterations);
+        info!(
+            "🧠 TGD: Starting memory refinement ({} iterations)...",
+            iterations
+        );
 
         let learning_rate = self.config.learning_rate;
 
@@ -192,9 +204,15 @@ impl TgdEngine {
                 Apply a learning rate of {} to your refinements (where 0.1 is subtle and 1.0 is aggressive). \
                 Return ONLY the refined Markdown content.", learning_rate);
 
-            let user_prompt = format!("### Current Memory Content\n{}\n\nRefine the content:", current_content);
+            let user_prompt = format!(
+                "### Current Memory Content\n{}\n\nRefine the content:",
+                current_content
+            );
 
-            let response = self.provider.generate_text(&system_prompt, &user_prompt, false).await?;
+            let response = self
+                .provider
+                .generate_text(&system_prompt, &user_prompt, false)
+                .await?;
             let refined = response.text.trim().to_string();
 
             // Evaluation step (simplified for now: calculate a 'gradient' improvement score)
@@ -203,7 +221,10 @@ impl TgdEngine {
                 Rate the following memory content on a scale from 0.0 to 1.0 based on clarity, structure, and density of information. \
                 Return ONLY the numeric score.";
 
-            let eval_response = self.provider.generate_text(eval_system, &refined, false).await?;
+            let eval_response = self
+                .provider
+                .generate_text(eval_system, &refined, false)
+                .await?;
             let score: f32 = eval_response.text.trim().parse().unwrap_or(0.5);
 
             debug!("TGD iteration {}: score={:.2}", i + 1, score);
@@ -255,9 +276,9 @@ impl TgdEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::runtime::MessageRole;
-    use crate::agents::provider::LlmProvider;
     use crate::agents::provider::types::LlmResponse;
+    use crate::agents::provider::LlmProvider;
+    use crate::agents::runtime::MessageRole;
     use async_trait::async_trait;
     use std::sync::Arc;
 
@@ -271,7 +292,11 @@ mod tests {
                 quota: None,
             })
         }
-        async fn generate_response(&self, _q: &str, _c: &[RetrievedDocument]) -> Result<LlmResponse> {
+        async fn generate_response(
+            &self,
+            _q: &str,
+            _c: &[RetrievedDocument],
+        ) -> Result<LlmResponse> {
             unimplemented!()
         }
         async fn generate_hypothetical_document(&self, _q: &str) -> Result<LlmResponse> {
@@ -323,13 +348,19 @@ mod tests {
         // 1. High confidence -> Skip
         let context_high = vec![mock_document("world1", 0.9)];
         let rules = tgd.generate_rules(&history, &context_high).await.unwrap();
-        assert!(rules.is_empty(), "Should skip generation when confidence is high");
+        assert!(
+            rules.is_empty(),
+            "Should skip generation when confidence is high"
+        );
 
         // 2. Low confidence -> Execute
         // Use a DIFFERENT document to avoid cache hit from step 1
         let context_low = vec![mock_document("world2", 0.5)];
         let rules = tgd.generate_rules(&history, &context_low).await.unwrap();
-        assert!(!rules.is_empty(), "Should generate rules when confidence is low");
+        assert!(
+            !rules.is_empty(),
+            "Should generate rules when confidence is low"
+        );
         assert!(rules.contains("- Rule 1"));
     }
 

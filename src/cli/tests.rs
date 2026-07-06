@@ -247,12 +247,14 @@ async fn test_chat_batch_proxy_ordering() {
             messages: vec![serde_json::json!({"role": "user", "content": "ping 1"})],
             temperature: None,
             max_tokens: None,
+            lease_token: None,
         },
         ProxyChatRequest {
             model: "model-2".to_string(),
             messages: vec![serde_json::json!({"role": "user", "content": "ping 2"})],
             temperature: None,
             max_tokens: None,
+            lease_token: None,
         },
     ];
 

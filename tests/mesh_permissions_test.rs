@@ -12,10 +12,10 @@ use tempfile::tempdir;
 use tokio::net::TcpListener;
 use ulid::Ulid;
 use xavier::agents::RuntimeConfig;
-use xavier::memory::schema::{ClearanceLevel, TypedMemoryPayload, MemoryNamespace};
-use xavier::memory::store::MemoryBackend;
-use xavier::mesh::{MeshTransport, NodeIdentity, PeerInfo, MeshAcl, NodeAclEntry};
 use xavier::enterprise::rbac::Role;
+use xavier::memory::schema::{ClearanceLevel, MemoryNamespace, TypedMemoryPayload};
+use xavier::memory::store::MemoryBackend;
+use xavier::mesh::{MeshAcl, MeshTransport, NodeAclEntry, NodeIdentity, PeerInfo};
 use xavier::workspace::{WorkspaceConfig, WorkspaceContext, WorkspaceState};
 
 async fn start_test_server() -> (String, String, Arc<WorkspaceState>) {
@@ -97,41 +97,61 @@ async fn test_mesh_permissions_and_pairing() {
         xavier::crypto::hex_encode(&identity_b.public_key),
     );
 
-    let mut secret_registry = xavier::mesh::pairing_registry::PairingSecretRegistry::load().unwrap();
+    let mut secret_registry =
+        xavier::mesh::pairing_registry::PairingSecretRegistry::load().unwrap();
     let decoded = xavier::mesh::pairing::decode_pairing_code(&code).unwrap();
-    secret_registry.register_secret(secret.clone(), decoded.expires_at).unwrap();
+    secret_registry
+        .register_secret(secret.clone(), decoded.expires_at)
+        .unwrap();
 
     // 2. Handshake with pairing secret
-    let resp = transport_a.handshake_with_secret(&url_b, &token_b, Some(secret)).await.expect("Handshake failed");
+    let resp = transport_a
+        .handshake_with_secret(&url_b, &token_b, Some(secret))
+        .await
+        .expect("Handshake failed");
     assert!(resp.accepted);
 
     // Verify Node A was auto-registered on B
     let acl_b = MeshAcl::load().unwrap();
-    let entry_a = acl_b.get_entry(&identity_a.node_id).expect("Node A should be in ACL");
+    let entry_a = acl_b
+        .get_entry(&identity_a.node_id)
+        .expect("Node A should be in ACL");
     assert_eq!(entry_a.clearance, ClearanceLevel::Unclassified);
 
     // 3. Setup data on B with different clearance and namespaces
-    ws_b.memory.add_document_typed(
-        "public".to_string(),
-        "Public knowledge".to_string(),
-        serde_json::json!({"namespace": {"project": "open"}}),
-        Some(TypedMemoryPayload {
-            clearance: Some(ClearanceLevel::Unclassified),
-            namespace: Some(MemoryNamespace { project: Some("open".to_string()), ..Default::default() }),
-            ..Default::default()
-        })
-    ).await.unwrap();
+    ws_b.memory
+        .add_document_typed(
+            "public".to_string(),
+            "Public knowledge".to_string(),
+            serde_json::json!({"namespace": {"project": "open"}}),
+            Some(TypedMemoryPayload {
+                clearance: Some(ClearanceLevel::Unclassified),
+                namespace: Some(MemoryNamespace {
+                    project: Some("open".to_string()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap();
 
-    ws_b.memory.add_document_typed(
-        "secret".to_string(),
-        "Top secret knowledge".to_string(),
-        serde_json::json!({"namespace": {"project": "open"}}),
-        Some(TypedMemoryPayload {
-            clearance: Some(ClearanceLevel::Unclassified),
-            namespace: Some(MemoryNamespace { project: Some("open".to_string()), ..Default::default() }),
-            ..Default::default()
-        })
-    ).await.unwrap();
+    ws_b.memory
+        .add_document_typed(
+            "secret".to_string(),
+            "Top secret knowledge".to_string(),
+            serde_json::json!({"namespace": {"project": "open"}}),
+            Some(TypedMemoryPayload {
+                clearance: Some(ClearanceLevel::Unclassified),
+                namespace: Some(MemoryNamespace {
+                    project: Some("open".to_string()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+        )
+        .await
+        .unwrap();
 
     // Export B's data to chunks
     let sync_dir_b = ws_b.usage_state_path.parent().unwrap().join("sync");
@@ -149,40 +169,63 @@ async fn test_mesh_permissions_and_pairing() {
         last_seen_at: None,
         sync_enabled: true,
         is_cloud: false,
+        iroh_addr: None,
     };
 
     let manifest_a = transport_a.fetch_manifest(&peer_b, &token_b).await.unwrap();
     // Chunks are filtered. Let's verify how many chunks we got and if they contain secrets
     for chunk in manifest_a.chunks {
-        let _chunks_a = transport_a.fetch_chunks(&peer_b, &token_b, &[chunk.hash]).await.unwrap();
+        let _chunks_a = transport_a
+            .fetch_chunks(&peer_b, &token_b, &[chunk.hash])
+            .await
+            .unwrap();
     }
 
     // 5. Test Namespace Restriction
     // Update Node A's entry on B to restrict to "project-x"
     let mut acl_b = MeshAcl::load().unwrap();
-    acl_b.set_entry(identity_a.node_id.clone(), NodeAclEntry {
-        role: Role::Viewer,
-        clearance: ClearanceLevel::TopSecret, // High clearance but...
-        namespaces: Some(vec!["project-x".to_string()]), // ...restricted namespace
-        public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
-    }).unwrap();
+    acl_b
+        .set_entry(
+            identity_a.node_id.clone(),
+            NodeAclEntry {
+                role: Role::Viewer,
+                clearance: ClearanceLevel::TopSecret, // High clearance but...
+                namespaces: Some(vec!["project-x".to_string()]), // ...restricted namespace
+                public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
+            },
+        )
+        .unwrap();
 
     let manifest_a_restricted = transport_a.fetch_manifest(&peer_b, &token_b).await.unwrap();
     // B has "open" and "closed" projects. A is restricted to "project-x".
     // A should see NO chunks.
-    println!("DEBUG: Restricted manifest chunks: {:?}", manifest_a_restricted.chunks);
-    assert!(manifest_a_restricted.chunks.is_empty(), "A should see no chunks due to namespace restriction");
+    println!(
+        "DEBUG: Restricted manifest chunks: {:?}",
+        manifest_a_restricted.chunks
+    );
+    assert!(
+        manifest_a_restricted.chunks.is_empty(),
+        "A should see no chunks due to namespace restriction"
+    );
 
     // 6. Test Success with Namespace
     let mut acl_b = MeshAcl::load().unwrap();
-    acl_b.set_entry(identity_a.node_id.clone(), NodeAclEntry {
-        role: Role::Viewer,
-        clearance: ClearanceLevel::TopSecret,
-        namespaces: Some(vec!["open".to_string()]),
-        public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
-    }).unwrap();
+    acl_b
+        .set_entry(
+            identity_a.node_id.clone(),
+            NodeAclEntry {
+                role: Role::Viewer,
+                clearance: ClearanceLevel::TopSecret,
+                namespaces: Some(vec!["open".to_string()]),
+                public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
+            },
+        )
+        .unwrap();
 
     let manifest_a_open = transport_a.fetch_manifest(&peer_b, &token_b).await.unwrap();
     println!("DEBUG: Open manifest chunks: {:?}", manifest_a_open.chunks);
-    assert!(!manifest_a_open.chunks.is_empty(), "A should see chunks from 'open' namespace");
+    assert!(
+        !manifest_a_open.chunks.is_empty(),
+        "A should see chunks from 'open' namespace"
+    );
 }
