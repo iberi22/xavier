@@ -8,14 +8,9 @@ export interface RegisterResponse {
 
 export interface LoginResponse {
   user: User;
-  access_token: string;
+  token: string;
   refresh_token: string;
   requires_2fa?: boolean;
-}
-
-export interface CheckUsersResponse {
-  has_users: boolean;
-  count: number;
 }
 
 export interface TwoFactorSetupResponse {
@@ -56,16 +51,12 @@ export class AuthClient {
     });
   }
 
-  async checkUsers(): Promise<CheckUsersResponse> {
-    return this.fetch<CheckUsersResponse>("/auth/check-users");
-  }
-
   async logout(): Promise<void> {
     await this.fetch("/auth/logout", { method: "POST" });
   }
 
-  async refresh(): Promise<{ access_token: string; refresh_token: string }> {
-    return this.fetch<{ access_token: string; refresh_token: string }>("/auth/refresh", { method: "POST" });
+  async refresh(): Promise<LoginResponse> {
+    return this.fetch<LoginResponse>("/auth/refresh", { method: "POST" });
   }
 
   async setup2FA(): Promise<TwoFactorSetupResponse> {

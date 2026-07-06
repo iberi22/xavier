@@ -1,13 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAuthStore } from "./auth/AuthProvider";
-import { BackupCodesPage } from "./auth/BackupCodesPage";
-import { LoginPage } from "./auth/LoginPage";
-import { MasterKeyPage } from "./auth/MasterKeyPage";
-import { RecoveryPage } from "./auth/RecoveryPage";
-import { RegisterPage } from "./auth/RegisterPage";
-import { TwoFactorSetup } from "./auth/TwoFactorSetup";
 import ChatHistory from "./components/ChatHistory";
 import ConfigModal from "./components/ConfigModal";
 import DraggableWidget from "./components/DraggableWidget";
@@ -16,6 +9,13 @@ import { OnboardingFlow } from "./components/Onboarding/OnboardingFlow";
 import ParticleBackground from "./components/ParticleBackground";
 import TopStatusBar from "./components/TopStatusBar";
 import { initialBookmarks, initialGraphData } from "./data";
+import { useAuthStore } from "./auth/AuthProvider";
+import { LoginPage } from "./auth/LoginPage";
+import { RegisterPage } from "./auth/RegisterPage";
+import { TwoFactorSetup } from "./auth/TwoFactorSetup";
+import { RecoveryPage } from "./auth/RecoveryPage";
+import { BackupCodesPage } from "./auth/BackupCodesPage";
+import { MasterKeyPage } from "./auth/MasterKeyPage";
 
 import type {
   BackendGraphData,
@@ -37,7 +37,7 @@ const getApiUrl = (path: string) => {
 };
 
 export default function App() {
-  const { token, isAuthenticated } = useAuthStore();
+  const { user, token, isAuthenticated } = useAuthStore();
   const [hash, setHash] = useState(window.location.hash);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [messages, setMessages] = useState<PanelMessage[]>([]);
@@ -106,7 +106,7 @@ export default function App() {
 
   const _activeThread = useMemo(
     () => threads.find((item) => item.id === selectedThreadId) ?? null,
-    [selectedThreadId],
+    [selectedThreadId, threads],
   );
 
   useEffect(() => {
@@ -220,7 +220,7 @@ export default function App() {
         ...prev,
         newUserMsg,
         {
-          id: `${tempId}_sys`,
+          id: tempId + "_sys",
           role: "assistant",
           plain_text:
             "⚠️ Sistema no configurado: No se detectaron proveedores de IA. Por favor, abre los ajustes y configura tu API Key de OpenAI o Gemini.",
@@ -285,7 +285,7 @@ export default function App() {
     setMessages((prev) => [
       ...prev,
       {
-        id: `${Date.now().toString()}_sys`,
+        id: Date.now().toString() + "_sys",
         role: "assistant",
         plain_text: text,
         created_at: new Date().toISOString(),
