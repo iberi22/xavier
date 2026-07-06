@@ -368,7 +368,7 @@ impl ProxyUseCase {
         }
 
         // Ensure we are using secured keys from vault if available
-        let config = if let Ok(_token) = resolve_xavier_token() {
+        let config = if !resolve_xavier_token().is_empty() {
             // This ensures that even if env vars are missing, we try to use the root token
             // or other mechanisms defined in resolve_xavier_token.
             // For actual provider keys, ModelProviderConfig::for_provider already handles env/settings.

@@ -2,25 +2,26 @@
 //! Uses 12-word BIP39 seed phrases in Spanish
 
 use anyhow::{anyhow, Result};
-use bip39::{Mnemonic, Language, MnemonicType};
+use bip39::{Mnemonic, Language};
 
 pub struct RecoverySystem;
 
 impl RecoverySystem {
     /// Generates a new 12-word Spanish seed phrase
     pub fn generate_phrase() -> String {
-        let mnemonic = Mnemonic::new(MnemonicType::Words12, Language::Spanish);
-        mnemonic.phrase().to_string()
+        Mnemonic::generate_in(Language::Spanish, 12)
+            .map(|m| m.to_string())
+            .unwrap_or_default()
     }
 
     /// Validates a seed phrase
     pub fn validate_phrase(phrase: &str) -> bool {
-        Mnemonic::from_phrase(phrase, Language::Spanish).is_ok()
+        Mnemonic::parse_in(Language::Spanish, phrase).is_ok()
     }
 
     /// Derives a stable key from the phrase (for advanced encryption scenarios)
     pub fn derive_key(phrase: &str) -> Result<Vec<u8>> {
-        let mnemonic = Mnemonic::from_phrase(phrase, Language::Spanish)
+        let mnemonic = Mnemonic::parse_in(Language::Spanish, phrase)
             .map_err(|_| anyhow!("invalid seed phrase"))?;
 
         let seed = mnemonic.to_seed("");

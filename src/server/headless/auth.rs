@@ -11,10 +11,10 @@ pub fn validate_token(provided_token: &str) -> bool {
     }
 
     // 2. Resolve the official token
-    let expected_token: String = match resolve_xavier_token() {
-        Ok(token) => token,
-        Err(_) => return false,
-    };
+    let expected_token: String = resolve_xavier_token();
+    if expected_token.is_empty() {
+        return false;
+    }
 
     // 3. Constant-time comparison
     let provided_bytes = provided_token.as_bytes();
