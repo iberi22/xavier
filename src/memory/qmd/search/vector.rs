@@ -16,6 +16,39 @@ pub async fn vsearch(
         return Ok(Vec::new());
     }
 
+    #[cfg(feature = "gpu-search")]
+    if let Some(vram_cache) = &memory.vram_cache {
+        if vram_cache.count().await > 0 {
+            let results = vram_cache.search(&query_vector, limit).await?;
+            if !results.is_empty() {
+                if let Some(store) = memory.store().await {
+                    let ids: Vec<String> = results.iter().map(|(id, _)| id.clone()).collect();
+                    let docs = store.get_batch(&memory.workspace_id, &ids).await?;
+
+                    let mut final_results = Vec::new();
+                    for (id, score) in results {
+                        if let Some(record) = docs.get(&id) {
+                            let mut doc = record.to_document();
+                            doc.score = score;
+                            final_results.push(doc);
+                        }
+                    }
+
+                    // Normalize scores
+                    if let Some(max_sim) = final_results.iter().map(|d| d.score).reduce(f32::max) {
+                        if max_sim > 0.0 {
+                            for doc in final_results.iter_mut() {
+                                doc.score = 0.5 + 0.5 * (doc.score / max_sim);
+                            }
+                        }
+                    }
+
+                    return Ok(final_results);
+                }
+            }
+        }
+    }
+
     let docs = memory.docs.read().await;
 
     let mut similarities: Vec<(f32, MemoryDocument)> = docs

@@ -7,6 +7,7 @@ use async_trait::async_trait;
 use rusqlite::params;
 use sha2::{Digest, Sha256};
 use std::any::Any;
+use std::collections::HashMap;
 
 use crate::checkpoint::Checkpoint;
 use crate::codebase::connection_manager::ConnectionManager;
@@ -230,6 +231,46 @@ impl MemoryStore for VecSqliteMemoryStore {
                 store_clone.append_timeline_event(conn, &record.workspace_id, &record)
             })
             .await
+    }
+
+    async fn get_batch(&self, workspace_id: &str, ids: &[String]) -> Result<HashMap<String, MemoryRecord>> {
+        if ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let workspace_id = workspace_id.to_string();
+        let ids = ids.to_vec();
+        let project_id = self.project_id.clone();
+
+        let records = ConnectionManager::global().with_conn(&project_id, move |conn| {
+            let sql = format!(
+                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM {} WHERE workspace_id = ? AND id IN ({})",
+                TABLE_MEMORIES,
+                vec!["?"; ids.len()].join(",")
+            );
+            let mut stmt = conn.prepare(&sql)?;
+
+            let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+            params.push(Box::new(workspace_id));
+            for id in ids {
+                params.push(Box::new(id));
+            }
+
+            let mut rows = stmt.query(rusqlite::params_from_iter(params))?;
+            let mut results = HashMap::new();
+            while let Some(row) = rows.next()? {
+                let record = VecSqliteMemoryStore::deserialize_record(row)?;
+                results.insert(record.id.clone(), record);
+            }
+            Ok(results)
+        }).await?;
+
+        let mut final_results = HashMap::with_capacity(records.len());
+        for (id, mut record) in records {
+            crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(&mut record)?;
+            final_results.insert(id, record);
+        }
+        Ok(final_results)
     }
 
     async fn get(&self, workspace_id: &str, id_or_path: &str) -> Result<Option<MemoryRecord>> {

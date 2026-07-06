@@ -16,6 +16,8 @@
 //! | tests.rs | Integration tests |
 
 pub mod embedding;
+#[cfg(feature = "gpu-search")]
+pub mod gpu_cache;
 pub mod hybrid;
 pub mod resolution;
 pub mod scoring;

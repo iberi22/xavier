@@ -431,6 +431,15 @@ pub trait MemoryStore: Send + Sync {
     async fn health(&self) -> Result<String>;
     async fn put(&self, record: MemoryRecord) -> Result<()>;
     async fn get(&self, workspace_id: &str, id_or_path: &str) -> Result<Option<MemoryRecord>>;
+    async fn get_batch(&self, workspace_id: &str, ids: &[String]) -> Result<HashMap<String, MemoryRecord>> {
+        let mut results = HashMap::new();
+        for id in ids {
+            if let Ok(Some(record)) = self.get(workspace_id, id).await {
+                results.insert(id.clone(), record);
+            }
+        }
+        Ok(results)
+    }
     async fn update(&self, record: MemoryRecord) -> Result<()>;
     async fn delete(&self, workspace_id: &str, id_or_path: &str) -> Result<Option<MemoryRecord>>;
     async fn list(&self, workspace_id: &str) -> Result<Vec<MemoryRecord>>;

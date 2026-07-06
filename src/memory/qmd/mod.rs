@@ -45,6 +45,8 @@ pub struct QmdMemory {
     pub(crate) store: Arc<AsyncRwLock<Option<Arc<dyn MemoryStore>>>>,
     pub(crate) cache_warmup: Option<Arc<PredictiveCacheWarmup>>,
     pub(crate) belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
+    #[cfg(feature = "gpu-search")]
+    pub(crate) vram_cache: Option<Arc<crate::memory::qmd::search::gpu_cache::ActiveVramCache>>,
 }
 
 impl fmt::Debug for QmdMemory {
@@ -114,6 +116,8 @@ impl QmdMemory {
             store: Arc::new(AsyncRwLock::new(None)),
             cache_warmup: Some(Arc::new(PredictiveCacheWarmup::new())),
             belief_graph: None,
+            #[cfg(feature = "gpu-search")]
+            vram_cache: crate::memory::qmd::search::gpu_cache::ActiveVramCache::new().ok().map(Arc::new),
         }
     }
 

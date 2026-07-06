@@ -213,7 +213,27 @@ pub async fn init(memory: &QmdMemory) -> Result<()> {
             .map(|record| record.to_document())
             .collect();
         let loaded_memories = docs.len();
-        *memory.docs.write().await = docs;
+        *memory.docs.write().await = docs.clone();
+
+        #[cfg(feature = "gpu-search")]
+        if let Some(vram_cache) = &memory.vram_cache {
+            let mut ids = Vec::new();
+            let mut vectors = Vec::new();
+            for doc in &docs {
+                if !doc.embedding.is_empty() {
+                    ids.push(doc.id.clone().unwrap_or_else(|| doc.path.clone()));
+                    vectors.push(doc.embedding.clone());
+                }
+            }
+            if !ids.is_empty() {
+                if let Err(e) = vram_cache.load_embeddings(ids, vectors).await {
+                    tracing::error!("Failed to load embeddings into VRAM cache: {}", e);
+                } else {
+                    tracing::info!("Loaded {} embeddings into VRAM cache", loaded_memories);
+                }
+            }
+        }
+
         tracing::info!(
             workspace_id = %memory.workspace_id,
             loaded_memories = loaded_memories,
