@@ -45,6 +45,7 @@ pub struct QmdMemory {
     pub(crate) store: Arc<AsyncRwLock<Option<Arc<dyn MemoryStore>>>>,
     pub(crate) cache_warmup: Option<Arc<PredictiveCacheWarmup>>,
     pub(crate) belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
+    pub(crate) vram_cache: Arc<AsyncRwLock<Option<ActiveVramCache>>>,
 }
 
 impl fmt::Debug for QmdMemory {
@@ -114,6 +115,7 @@ impl QmdMemory {
             store: Arc::new(AsyncRwLock::new(None)),
             cache_warmup: Some(Arc::new(PredictiveCacheWarmup::new())),
             belief_graph: None,
+            vram_cache: Arc::new(AsyncRwLock::new(None)),
         }
     }
 
@@ -215,6 +217,35 @@ impl QmdMemory {
                 .search_with_cache_filtered(query_text, limit, filters)
                 .await?
                 .documents);
+        }
+
+        // GPU-Accelerated Search Attempt (Phase 2 integration)
+        #[cfg(feature = "gpu-search")]
+        {
+            let vram_guard = self.vram_cache.read().await;
+            if let Some(vram) = vram_guard.as_ref() {
+                if vram.matrix.is_some() {
+                    // We need a query vector for VRAM search
+                    if let Ok(query_vector) = reader::generate_embedding(query_text).await {
+                        if let Ok(top_k) = vram.search(&query_vector, limit).await {
+                            if !top_k.is_empty() {
+                                let mut results = Vec::new();
+                                for (id, score) in top_k {
+                                    if let Ok(Some(mut doc)) = self.get(&id).await {
+                                        if matches_filters(&doc.path, &doc.metadata, &self.workspace_id, filters) {
+                                            doc.score = score;
+                                            results.push(doc);
+                                        }
+                                    }
+                                }
+                                if !results.is_empty() {
+                                    return Ok(results);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         if std::env::var("XAVIER_EMBEDDING_URL").is_ok() {

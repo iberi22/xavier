@@ -44,6 +44,7 @@ post-quantum = ["oqs"]
 cli-interactive = ["ratatui", "crossterm"]
 # All features that are safe to run on host CI (no GUI/Winit issues)
 ci-safe = []
+gpu-search = ["dep:candle-core"]
 test-utils = []
 bench-runners = []
 tauri = ["dep:tauri"]

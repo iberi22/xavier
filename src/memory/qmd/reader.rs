@@ -16,6 +16,7 @@ use crate::memory::qmd_memory::types::{
 };
 use crate::memory::qmd_memory::utils::extract_speakers;
 use crate::memory::qmd_memory::QmdMemory;
+use crate::memory::qmd_memory::ActiveVramCache;
 use crate::memory::schema::matches_filters;
 use crate::memory::schema::MemoryQueryFilters;
 use crate::utils::crypto::hex_encode;
@@ -213,12 +214,37 @@ pub async fn init(memory: &QmdMemory) -> Result<()> {
             .map(|record| record.to_document())
             .collect();
         let loaded_memories = docs.len();
-        *memory.docs.write().await = docs;
+        *memory.docs.write().await = docs.clone();
         tracing::info!(
             workspace_id = %memory.workspace_id,
             loaded_memories = loaded_memories,
             "QmdMemory loaded from persistent store"
         );
+
+        // Warm up VRAM cache if enabled
+        #[cfg(feature = "gpu-search")]
+        {
+            let mut embeddings = Vec::with_capacity(docs.len());
+            for doc in &docs {
+                if !doc.embedding.is_empty() {
+                    let id = doc.id.clone().unwrap_or_else(|| doc.path.clone());
+                    embeddings.push((id, doc.embedding.clone()));
+                }
+            }
+
+            if !embeddings.is_empty() {
+                let mut vram_guard = memory.vram_cache.write().await;
+                if vram_guard.is_none() {
+                    let device = candle_core::Device::Cpu; // Default to CPU, Phase 3 will handle device selection
+                    *vram_guard = Some(ActiveVramCache::new(device));
+                }
+                if let Some(vram) = vram_guard.as_mut() {
+                    if let Err(e) = vram.warmup(embeddings).await {
+                        tracing::warn!("VRAM cache warmup failed: {}", e);
+                    }
+                }
+            }
+        }
     }
     Ok(())
 }

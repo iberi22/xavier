@@ -16,6 +16,7 @@
 //! | tests.rs | Integration tests |
 
 pub mod embedding;
+pub mod gpu_cache;
 pub mod hybrid;
 pub mod resolution;
 pub mod scoring;
@@ -35,4 +36,5 @@ pub use scoring::{
     contextual_boost, lexical_score, locomo_lexical_score, memory_decay_penalty,
     memory_importance_score,
 };
+pub use gpu_cache::ActiveVramCache;
 pub use vector::vsearch;
