@@ -3,6 +3,7 @@
 //! Aggregates and re-exports the sub-modules within this module,
 //! providing the public API surface for module consumers.
 use anyhow::Result;
+use autometrics::autometrics;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock as AsyncRwLock;
@@ -150,6 +151,7 @@ impl QmdMemory {
         }
     }
 
+    #[autometrics]
     pub async fn search(&self, query_text: &str, limit: usize) -> Result<Vec<MemoryDocument>> {
         self.search_filtered(query_text, limit, None).await
     }
@@ -325,6 +327,7 @@ impl QmdMemory {
         writer::update(self, doc).await
     }
 
+    #[autometrics]
     pub async fn add_document(
         &self,
         path: String,
