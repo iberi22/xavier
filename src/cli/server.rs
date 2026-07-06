@@ -64,7 +64,23 @@ pub use xavier::auth2::auth_routes;
 
 pub static START_TIME: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
 
+/// Handler for Prometheus metrics endpoint
+pub async fn metrics_handler() -> axum::response::Response {
+    use axum::response::IntoResponse;
+    match autometrics::encode_global_metrics() {
+        Ok(metrics) => metrics.into_response(),
+        Err(err) => (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to encode metrics: {:?}", err),
+        )
+            .into_response(),
+    }
+}
+
 pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
+    // Initialize Prometheus exporter
+    autometrics::prometheus_exporter::init();
+
     // Initial health check run to populate the static HEALTH instance
     tokio::spawn(async {
         let _ = xavier::observability::health::HEALTH.run_checks().await;
@@ -775,6 +791,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let app = Router::new()
         .nest("/auth", auth_routes::<CliState>())
         .route("/health", get(health_handler))
+        .route("/metrics", get(metrics_handler))
         .route("/health/cloud", get(cloud_health_handler))
         .route(
             "/system/alerts",
