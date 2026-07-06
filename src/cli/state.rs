@@ -17,7 +17,7 @@ use xavier::ports::inbound::{
     AgentLifecyclePort, InputSecurityPort, MemoryQueryPort, SecurityScanPort,
 };
 use xavier::security::sessions::SessionManager;
-use crate::security::auth_store::AuthStore;
+use xavier::security::auth_store::AuthStore;
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
 
