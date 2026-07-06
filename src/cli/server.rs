@@ -265,7 +265,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                             .await;
                     }
                 }
-                xavier::coordination::events::XavierEvent::AgentTaskCompleted { agent_id } => {
+                xavier::coordination::events::XavierEvent::AgentTaskCompleted { agent_id, .. } => {
                     info!(
                         "Agent {} task completed. Revoking ephemeral keys...",
                         agent_id
@@ -274,7 +274,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                         .revoke_for_agent(&agent_id, "Agent Task Completed")
                         .await;
                 }
-                xavier::coordination::events::XavierEvent::AgentTaskFailed { agent_id, reason } => {
+                xavier::coordination::events::XavierEvent::AgentTaskFailed { agent_id, reason, .. } => {
                     info!(
                         "Agent {} task failed ({}). Revoking ephemeral keys...",
                         agent_id, reason
@@ -913,6 +913,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                         updated_at: chrono::Utc::now(),
                         revision: 1,
                         primary: true,
+                        score: 0.0,
                         parent_id: None,
                         cluster_id: None,
                         level: Default::default(),
