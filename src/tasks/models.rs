@@ -26,6 +26,7 @@ pub enum TaskStatus {
     Backlog,
     InProgress,
     Done,
+    Failed,
 }
 
 impl std::str::FromStr for TaskStatus {
@@ -36,6 +37,7 @@ impl std::str::FromStr for TaskStatus {
             "backlog" => Ok(TaskStatus::Backlog),
             "in_progress" | "inprogress" | "progress" | "working" => Ok(TaskStatus::InProgress),
             "done" | "completed" | "complete" => Ok(TaskStatus::Done),
+            "failed" | "error" => Ok(TaskStatus::Failed),
             _ => Ok(TaskStatus::Backlog),
         }
     }
@@ -47,6 +49,7 @@ impl TaskStatus {
             TaskStatus::Backlog => "Backlog",
             TaskStatus::InProgress => "In Progress",
             TaskStatus::Done => "Done",
+            TaskStatus::Failed => "Failed",
         }
     }
 }
@@ -120,9 +123,9 @@ impl Task {
         self.status = status;
         self.updated_at = Utc::now();
 
-        if status == TaskStatus::Done && self.completed_at.is_none() {
+        if (status == TaskStatus::Done || status == TaskStatus::Failed) && self.completed_at.is_none() {
             self.completed_at = Some(Utc::now());
-        } else if status != TaskStatus::Done {
+        } else if status != TaskStatus::Done && status != TaskStatus::Failed {
             self.completed_at = None;
         }
     }
@@ -234,6 +237,7 @@ impl TaskStats {
                 TaskStatus::Backlog => stats.backlog += 1,
                 TaskStatus::InProgress => stats.in_progress += 1,
                 TaskStatus::Done => stats.done += 1,
+                TaskStatus::Failed => stats.total += 0, // Failed counts as total but not in other basic buckets for now
             }
 
             let p = format!("{:?}", task.priority).to_lowercase();

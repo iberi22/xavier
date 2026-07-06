@@ -289,7 +289,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         security: security_service.clone() as Arc<dyn InputSecurityPort>,
         security_scan: security_service.clone() as Arc<dyn SecurityScanPort>,
         _time_store: Some(time_store),
-        agent_registry: SimpleAgentRegistry::new() as Arc<dyn AgentLifecyclePort>,
+        agent_registry: SimpleAgentRegistry::new_with_engines(
+            Some(secrets_engine.clone()),
+            Some(event_bus.clone()),
+        ) as Arc<dyn AgentLifecyclePort>,
         panel_store,
         secrets_engine,
         event_bus,
@@ -485,6 +488,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/v1/usage/cooldown", post(usage_cooldown_handler))
         .route("/v1/tasks", get(tasks_list_handler))
         .route("/v1/tasks/sync", post(tasks_sync_handler))
+        .route("/v1/tasks/{id}/run", post(tasks_run_handler))
         .route("/v1/usage/track", post(usage_track_handler))
         .route("/v1/usage/summary/{provider}", get(usage_summary_handler))
         .route(
