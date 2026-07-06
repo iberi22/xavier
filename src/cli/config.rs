@@ -17,7 +17,7 @@ use std::path::PathBuf;
 use crate::settings::XavierSettings;
 
 pub fn resolve_http_token() -> Result<String> {
-    xavier::security::auth::resolve_xavier_token()
+    Ok(xavier::security::auth::resolve_xavier_token())
 }
 
 pub fn resolve_http_bind_host() -> String {
@@ -93,11 +93,11 @@ pub fn resolve_mcp_port(flag: Option<u16>) -> u16 {
 }
 
 pub fn xavier_token() -> String {
-    xavier::security::auth::resolve_xavier_token().unwrap_or_default()
+    xavier::security::auth::resolve_xavier_token()
 }
 
 pub fn require_xavier_token() -> Result<String> {
-    xavier::security::auth::resolve_xavier_token()
+    Ok(xavier::security::auth::resolve_xavier_token())
 }
 
 pub fn code_graph_db_path() -> PathBuf {

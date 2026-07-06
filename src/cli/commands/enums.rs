@@ -253,6 +253,9 @@ pub enum Command {
         cmd: memory::MemoryCommand,
     },
 
+    /// Index foundational documentation into the memory store
+    IndexSelf,
+
     /// System & security scanning
     Scan {
         #[command(subcommand)]
@@ -874,6 +877,9 @@ pub mod memory {
 
     #[derive(Subcommand, Debug, Clone)]
     pub enum MemoryCommand {
+        /// Index foundational documentation into the memory store
+        IndexSelf,
+
         /// Consolidate memories and run TGD
         Consolidate {
             /// Start background scheduler
