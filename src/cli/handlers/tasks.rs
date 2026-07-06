@@ -7,8 +7,8 @@ use axum::{
     response::Response,
 };
 use serde::Deserialize;
-use tracing::info;
 use serde_json::Value;
+use tracing::info;
 
 use crate::cli::commands::enums::TaskCommand;
 use crate::cli::config::{require_xavier_token, resolve_base_url};
@@ -90,13 +90,10 @@ pub async fn tasks_run_handler(
     };
 
     // Transition task to InProgress
-    let _ = state
-        .tasks
-        .move_task(&id, TaskStatus::InProgress)
-        .await;
+    let _ = state.tasks.move_task(&id, TaskStatus::InProgress).await;
 
-    let mut agent_config = xavier::agents::AgentConfig::new(agent_id.clone())
-        .with_task(task.title.clone());
+    let mut agent_config =
+        xavier::agents::AgentConfig::new(agent_id.clone()).with_task(task.title.clone());
 
     // Try to get provider/model from task metadata or defaults
     // For now, we use defaults or simple mapping
@@ -106,9 +103,8 @@ pub async fn tasks_run_handler(
             agent_config.name = name;
         }
         if let Some(role) = entry.metadata.role {
-            agent_config = agent_config.with_context(
-                vec![("role".to_string(), role)].into_iter().collect(),
-            );
+            agent_config =
+                agent_config.with_context(vec![("role".to_string(), role)].into_iter().collect());
         }
     }
 
@@ -122,11 +118,15 @@ pub async fn tasks_run_handler(
         match agent.run(memory, Some(registry)).await {
             Ok(_) => {
                 info!("Task {} finished successfully", task_id_for_async);
-                let _ = task_service.move_task(&task_id_for_async, TaskStatus::Done).await;
+                let _ = task_service
+                    .move_task(&task_id_for_async, TaskStatus::Done)
+                    .await;
             }
             Err(e) => {
                 info!("Task {} failed: {}", task_id_for_async, e);
-                let _ = task_service.move_task(&task_id_for_async, TaskStatus::Failed).await;
+                let _ = task_service
+                    .move_task(&task_id_for_async, TaskStatus::Failed)
+                    .await;
             }
         }
     });

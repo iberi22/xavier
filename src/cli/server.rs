@@ -262,13 +262,19 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                     }
                 }
                 xavier::coordination::events::XavierEvent::AgentTaskCompleted { agent_id } => {
-                    info!("Agent {} task completed. Revoking ephemeral keys...", agent_id);
+                    info!(
+                        "Agent {} task completed. Revoking ephemeral keys...",
+                        agent_id
+                    );
                     secrets_engine_for_bus
                         .revoke_for_agent(&agent_id, "Agent Task Completed")
                         .await;
                 }
                 xavier::coordination::events::XavierEvent::AgentTaskFailed { agent_id, reason } => {
-                    info!("Agent {} task failed ({}). Revoking ephemeral keys...", agent_id, reason);
+                    info!(
+                        "Agent {} task failed ({}). Revoking ephemeral keys...",
+                        agent_id, reason
+                    );
                     secrets_engine_for_bus
                         .revoke_for_agent(&agent_id, &format!("Agent Task Failed: {}", reason))
                         .await;

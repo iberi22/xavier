@@ -154,10 +154,12 @@ impl AgentLifecyclePort for SimpleAgentRegistry {
 
         // Notify event bus
         if let Some(bus) = &self.event_bus {
-            let _ = bus.publish(crate::coordination::events::XavierEvent::AgentTaskStarted {
-                agent_id: agent_id.to_string(),
-                task_id: task_id.to_string(),
-            }).await;
+            let _ = bus
+                .publish(crate::coordination::events::XavierEvent::AgentTaskStarted {
+                    agent_id: agent_id.to_string(),
+                    task_id: task_id.to_string(),
+                })
+                .await;
         }
 
         // Renew leases for the agent if they exist
@@ -176,18 +178,24 @@ impl AgentLifecyclePort for SimpleAgentRegistry {
             Ok(_) => {
                 tracing::info!("Task {} completed for agent {}", task_id, agent_id);
                 if let Some(bus) = &self.event_bus {
-                    let _ = bus.publish(crate::coordination::events::XavierEvent::AgentTaskCompleted {
-                        agent_id: agent_id.to_string(),
-                    }).await;
+                    let _ = bus
+                        .publish(
+                            crate::coordination::events::XavierEvent::AgentTaskCompleted {
+                                agent_id: agent_id.to_string(),
+                            },
+                        )
+                        .await;
                 }
             }
             Err(e) => {
                 tracing::error!("Task {} failed for agent {}: {}", task_id, agent_id, e);
                 if let Some(bus) = &self.event_bus {
-                    let _ = bus.publish(crate::coordination::events::XavierEvent::AgentTaskFailed {
-                        agent_id: agent_id.to_string(),
-                        reason: e.to_string(),
-                    }).await;
+                    let _ = bus
+                        .publish(crate::coordination::events::XavierEvent::AgentTaskFailed {
+                            agent_id: agent_id.to_string(),
+                            reason: e.to_string(),
+                        })
+                        .await;
                 }
             }
         }

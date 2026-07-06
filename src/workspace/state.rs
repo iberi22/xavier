@@ -676,7 +676,8 @@ impl WorkspaceState {
                 .as_ref()
                 .and_then(|t| t.clearance)
                 .unwrap_or(existing.clearance),
-            minhash: None, score: 0.0,
+            minhash: None,
+            score: 0.0,
         };
         if let Some(object) = document.metadata.as_object_mut() {
             let revision = existing
