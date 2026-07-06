@@ -135,3 +135,22 @@ fn test_model_provider_config_from_env() {
 
     std::env::remove_var("XAVIER_MODEL_PROVIDER");
 }
+
+#[test]
+fn test_zai_provider_config() {
+    let config = ModelProviderConfig::for_provider("z.ai");
+    assert_eq!(config.provider_label, "z.ai");
+    assert_eq!(config.provider_mode, ProviderMode::Cloud);
+    assert_eq!(config.api_flavor, ApiFlavor::OpenAICompatible);
+    assert_eq!(config.base_url, Some("https://api.z.ai/v1".to_string()));
+    assert_eq!(config.model, "glm-5.1");
+}
+
+#[test]
+fn test_opencode_provider_config() {
+    let config = ModelProviderConfig::for_provider("opencode");
+    assert_eq!(config.provider_label, "opencode");
+    assert_eq!(config.provider_mode, ProviderMode::Local);
+    assert_eq!(config.target, ProviderTarget::OpenCodeCLI);
+    assert_eq!(config.model, "opencode/deepseek-v4-flash");
+}

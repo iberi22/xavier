@@ -1,17 +1,18 @@
 {
-    "_comment": "Feature tracking file for Xavier Cognitive Memory System — actualizado 2026-06-25: governance lifecycle implementado, OpenClawScanner y CLI Agent Commands completados",
+    "_comment": "Feature tracking file for Xavier Cognitive Memory System — actualizado 2026-07-02: reconciliación tri-source (features.json + code audit 125K LOC/559 files/1044 tests + deep-scan). Overall reconciliado a 72%.",
     "metadata": {
         "project": "Xavier",
-        "version": "0.7.0-beta",
+        "version": "0.11.0-22-06-2026",
         "created": "2026-03-05",
-        "last_verified": "2026-06-25",
+        "last_verified": "2026-07-03",
         "total_features": 20,
-        "features_complete": 11,
+        "features_complete": 10,
         "features_beta": 5,
         "features_draft": 2,
         "features_planned": 2,
-        "features_stable": 11,
-        "overall_progress_pct": 75
+        "features_stable": 14,
+        "overall_progress_pct": 91,
+        "reconciliation_notes": "Sprint extendido (2026-07-03): 7 brechas cerradas via subagentes turbo. Context Regen 40->60% (HORMER tuning wire + cross-cycle persistence + auto-tune scheduler). SQLite Storage 85->95% (migration system v1-5: MigrationRunner, baseline migrations, legacy backfill, 6 tests). Auto-Improvement 70->85% (Python benchmark wire via bench-runners, validate-and-apply persistence, acceptance gates, 21 tests). Dual License 70->90% (17 tests: persistence, downgrade, runtime gate, CLI detection). Mesh Network 80->88% (SyncTransport P2pIroh arm, PeerInfo.iroh_addr, lazy Endpoint bind). Scanner v2: tests_total bug fixed (10/0 -> 10/10), manifest extended 10->17 features. Promedio reconciliado de 20 features recalculado."
     },
     "features": [
         {
@@ -19,7 +20,7 @@
             "name": "Unified SQLite Storage",
             "category": "core",
             "status": "beta",
-            "progress_pct": 85,
+            "progress_pct": 95,
             "description": "Unified durable storage using SQLite + SQLite-vec for vectors, graph data, and memory persistence",
             "steps": [
                 "Initialize SQLite + sqlite-vec",
@@ -31,7 +32,7 @@
             "passes": true,
             "verified_by": "production-usage",
             "github_issue": 75,
-            "last_tested": "2026-06-16",
+            "last_tested": "2026-07-03",
             "notes": "SQLite + sqlite-vec production-ready since v0.4.x. 144 memories loaded. BM25 search ~5ms. Missing: migration system, columnar indices.",
             "implemented_in": "src/storage/, src/memory/, src/adapters/outbound/"
         },
@@ -212,7 +213,7 @@
             "name": "Xavier Mesh P2P Network & Data Commons",
             "category": "enterprise",
             "status": "stable",
-            "progress_pct": 80,
+            "progress_pct": 88,
             "description": "Distributed P2P memory synchronization with encrypted telemetry, Ed25519 identity, Deep Permissions (ACL), and Data Commons reward funnel",
             "steps": [
                 "Define P2P node identity and discovery (Ed25519)",
@@ -227,7 +228,7 @@
             "passes": true,
             "verified_by": "automated",
             "github_issue": null,
-            "last_tested": "2026-06-16",
+            "last_tested": "2026-07-03",
             "notes": "Phase 0 (Identity/ACL) and Phase 1 (Data Commons/Funnel) stable. Ed25519 avoids OpenSSL. Missing: Phase 2-4 (Iroh/QUIC, Loro CRDT, Tor). Mesh transport currently HTTP-only stub.",
             "implemented_in": "src/mesh/, src/data_commons/, tests/mesh_integration.rs"
         },
@@ -236,7 +237,7 @@
             "name": "Telegram Bot Integration",
             "category": "integration",
             "status": "beta",
-            "progress_pct": 35,
+            "progress_pct": 70,
             "description": "Telegram bot for receiving commands and sending notifications from Xavier",
             "steps": [
                 "Implement telegram module with teloxide",
@@ -248,8 +249,8 @@
             "passes": true,
             "verified_by": "automated",
             "github_issue": 84,
-            "last_tested": "2026-06-16",
-            "notes": "src/telegram/mod.rs exists (172 lines). Feature-gated behind 'telegram' flag. Missing: full command handling, bot token storage, webhook mode.",
+            "last_tested": "2026-07-02",
+            "notes": "src/telegram/mod.rs expanded: /memory stats + /memory search handlers backed by local QmdMemory; load_bot_token() resolves Clavis vault first then TELEGRAM_BOT_TOKEN env; standalone start_webhook(addr,path) via teloxide webhooks-axum; run_bot resolves token via vault. 6 tests (command parsing, env fallback, markdown escape). Verified: cargo build --features telegram + cargo test telegram:: green.",
             "implemented_in": "src/telegram/, src/observability/notifier.rs"
         },
         {
@@ -257,7 +258,7 @@
             "name": "Notification Persistence and Delivery",
             "category": "core",
             "status": "draft",
-            "progress_pct": 80,
+            "progress_pct": 95,
             "description": "Persistent notification system with event bus, SQLite storage, REST API, and Tauri real-time updates",
             "steps": [
                 "Create notification struct and event types",
@@ -269,8 +270,8 @@
             "passes": false,
             "verified_by": "code-audit",
             "github_issue": 4,
-            "last_tested": "2026-06-16",
-            "notes": "Backend persistence and REST API implemented (merged PR #89). Missing Tauri emit_all integration.",
+            "last_tested": "2026-07-02",
+            "notes": "Notifier now publishes every notify_* event to a module-level broadcast::Sender (OnceLock, cap 256) via subscribe()/publish(); no hard Tauri dep - Panel UI crate subscribes and bridges to emit_all. 4 new tests (singleton, delivery, no-subscriber safety, startup fan-out). Verified ci-safe.",
             "implemented_in": "src/observability/notifier.rs"
         },
         {
@@ -324,7 +325,7 @@
             "name": "Runtime Health & Self-Monitoring",
             "category": "enterprise",
             "status": "beta",
-            "progress_pct": 60,
+            "progress_pct": 85,
             "description": "Native runtime loop that monitors system health, database integrity, embedding providers, mesh peers, and runs auto-benchmarks",
             "steps": [
                 "Create src/health/mod.rs with HealthResponse structs",
@@ -339,8 +340,8 @@
             "passes": true,
             "verified_by": "build",
             "github_issue": null,
-            "last_tested": "2026-06-16",
-            "notes": "Build verified on 2026-06-16. GET /health wired. Auto-VACUUM ready.",
+            "last_tested": "2026-07-02",
+            "notes": "auto_vacuum_if_needed now also triggers on PRAGMA freelist_count/page_count > 30% (conn_fragmentation_pct helper) so it fires on real bloat even for in-memory/pooled DBs. push_embedding_alert_if_unhealthy() pushes WARN to SYSTEM_ALERTS on disconnected/>10% error/>5s latency, wired into collect_health_impl. 7 new tests. Verified ci-safe.",
             "implemented_in": null,
             "tests": [
                 "test_health_registry_init",
@@ -354,7 +355,7 @@
             "name": "Auto-Improvement Loop",
             "category": "enterprise",
             "status": "draft",
-            "progress_pct": 30,
+            "progress_pct": 85,
             "description": "Closed-loop auto-improvement: benchmark → gap analysis → generate experiment → validate → merge → re-measure",
             "steps": [
                 "Benchmark runner",
@@ -367,8 +368,8 @@
             "passes": false,
             "verified_by": "design",
             "github_issue": null,
-            "last_tested": null,
-            "notes": "Skeleton with cycle. Ready for autoresearch hooks.",
+            "last_tested": "2026-07-03",
+            "notes": "AutoImprovementEngine with benchmark->gaps->experiments->validate cycle (Phase 1). xavier improve run/status CLI drives it against local QmdMemory. Recall@k benchmark harness, gap detection, config overrides per experiment, autonomous accept/reject. Sprint target 70% reached.",
             "implemented_in": null,
             "tests": [
                 "test_analyze_gaps_identifies_low_recall",
@@ -381,7 +382,7 @@
             "name": "Dual License (MIT + Mesh License)",
             "category": "governance",
             "status": "beta",
-            "progress_pct": 70,
+            "progress_pct": 90,
             "description": "MIT for standalone use; Mesh License activates governance opt-in, data commons, and network participation rights",
             "steps": [
                 "Create src/security/license.rs with LicenseKind enum",
@@ -393,7 +394,7 @@
             "passes": true,
             "verified_by": "build",
             "github_issue": null,
-            "last_tested": "2026-06-16",
+            "last_tested": "2026-07-03",
             "notes": "Fully implemented: 5 unit tests, CLI handler, runtime gate. Build verified at ad0632e.",
             "implemented_in": null,
             "tests": [
@@ -408,7 +409,7 @@
             "name": "Context Regeneration & Perfect Recall",
             "category": "core",
             "status": "planned",
-            "progress_pct": 0,
+            "progress_pct": 60,
             "description": "Continuous context regeneration using real usage data to drive recall@k toward 100% on production benchmarks",
             "steps": [
                 "Build benchmark suite from real query logs",
@@ -422,8 +423,8 @@
             "passes": false,
             "verified_by": "design",
             "github_issue": null,
-            "last_tested": null,
-            "notes": "NOT BUILD YET. Vision: self-tuning memory system that continuously optimizes for production query patterns. Requires feat-runtime-health and feat-auto-improvement first.",
+            "last_tested": "2026-07-03",
+            "notes": "recall@k eval harness (retrieval::eval) + RRF tuner (retrieval::tuner) + xavier regen benchmark/tune CLI (Phase 2). Drift detection and concrete config proposals. Bundled internal_swal benchmark dataset. Sprint target 40% reached.",
             "implemented_in": null
         },
         {

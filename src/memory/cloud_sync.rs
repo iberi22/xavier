@@ -56,8 +56,8 @@ impl LastSyncState {
     pub async fn load(path: &Path) -> Result<Self> {
         if fs::try_exists(path).await.unwrap_or(false) {
             let payload = fs::read_to_string(path).await?;
-            let state: Self = serde_json::from_str(&payload)
-                .context("failed to parse last_sync.json")?;
+            let state: Self =
+                serde_json::from_str(&payload).context("failed to parse last_sync.json")?;
             Ok(state)
         } else {
             Ok(Self::default())
@@ -88,8 +88,7 @@ impl LastSyncState {
     pub fn update_sync_at(&mut self, workspace_id: &str, count: usize) {
         self.workspaces
             .insert(workspace_id.to_string(), Utc::now().to_rfc3339());
-        self.record_counts
-            .insert(workspace_id.to_string(), count);
+        self.record_counts.insert(workspace_id.to_string(), count);
     }
 }
 
@@ -152,10 +151,7 @@ pub struct CloudMemorySync {
 
 impl CloudMemorySync {
     /// Create a new `CloudMemorySync`.
-    pub async fn new(
-        store: Arc<dyn MemoryStore>,
-        config: CloudSyncConfig,
-    ) -> Result<Self> {
+    pub async fn new(store: Arc<dyn MemoryStore>, config: CloudSyncConfig) -> Result<Self> {
         let node_id = config.node_id.clone().unwrap_or_else(|| {
             sysinfo::System::host_name().unwrap_or_else(|| "unknown".to_string())
         });
@@ -190,7 +186,11 @@ impl CloudMemorySync {
     /// Only pushes records whose `updated_at` is strictly greater than
     /// the last sync timestamp for that workspace. Records are sent in
     /// batches of up to `SYNC_BATCH_SIZE`.
-    pub async fn push_to_cloud(&self, local: &dyn MemoryStore, workspace_id: &str) -> Result<SyncReport> {
+    pub async fn push_to_cloud(
+        &self,
+        local: &dyn MemoryStore,
+        workspace_id: &str,
+    ) -> Result<SyncReport> {
         let start = std::time::Instant::now();
         let mut report = SyncReport::new(workspace_id);
 
@@ -263,7 +263,11 @@ impl CloudMemorySync {
     ///
     /// Fetches records in batches of up to `SYNC_BATCH_SIZE` with offset-based
     /// pagination. Each batch is merged locally using LWW resolution.
-    pub async fn pull_from_cloud(&self, local: &dyn MemoryStore, workspace_id: &str) -> Result<SyncReport> {
+    pub async fn pull_from_cloud(
+        &self,
+        local: &dyn MemoryStore,
+        workspace_id: &str,
+    ) -> Result<SyncReport> {
         let start = std::time::Instant::now();
         let mut report = SyncReport::new(workspace_id);
 
@@ -342,7 +346,11 @@ impl CloudMemorySync {
     /// timestamp and neither misses records created mid-sync.
     ///
     /// Returns a combined report.
-    pub async fn sync_all(&self, local: &dyn MemoryStore, workspace_id: &str) -> Result<SyncReport> {
+    pub async fn sync_all(
+        &self,
+        local: &dyn MemoryStore,
+        workspace_id: &str,
+    ) -> Result<SyncReport> {
         let start = std::time::Instant::now();
         let mut report = SyncReport::new(workspace_id);
 
@@ -553,7 +561,10 @@ mod tests {
         node_id: &str,
     ) -> MemoryRecord {
         let mut meta = serde_json::Map::new();
-        meta.insert("node_id".to_string(), serde_json::Value::String(node_id.to_string()));
+        meta.insert(
+            "node_id".to_string(),
+            serde_json::Value::String(node_id.to_string()),
+        );
         MemoryRecord {
             id: id.to_string(),
             workspace_id: workspace_id.to_string(),
@@ -574,6 +585,7 @@ mod tests {
             encrypted_dek: None,
             content_iv: None,
             metadata_iv: None,
+            score: 0.0,
         }
     }
 
@@ -584,10 +596,7 @@ mod tests {
             node_id: Some("node_test".to_string()),
             ..Default::default()
         };
-        let sync = CloudMemorySync::new(
-            Arc::new(cloud),
-            config,
-        ).await.unwrap();
+        let sync = CloudMemorySync::new(Arc::new(cloud), config).await.unwrap();
         (sync, tmp)
     }
 
@@ -604,7 +613,17 @@ mod tests {
         let cloud = new_test_store();
         let (sync, _tmp) = create_cloud_sync(cloud).await;
 
-        local.put(make_record("r1", "episodic", "local content", Utc::now(), 1, "node_test")).await.unwrap();
+        local
+            .put(make_record(
+                "r1",
+                "episodic",
+                "local content",
+                Utc::now(),
+                1,
+                "node_test",
+            ))
+            .await
+            .unwrap();
 
         let report = sync.push_to_cloud(&local, "episodic").await.unwrap();
         assert_eq!(report.pushed, 1, "should push 1 record");
@@ -630,7 +649,17 @@ mod tests {
         let (sync, _tmp) = create_cloud_sync(cloud).await;
 
         // Add a record to cloud
-        sync.store.put(make_record("r1", "episodic", "cloud content", Utc::now(), 1, "node_cloud")).await.unwrap();
+        sync.store
+            .put(make_record(
+                "r1",
+                "episodic",
+                "cloud content",
+                Utc::now(),
+                1,
+                "node_cloud",
+            ))
+            .await
+            .unwrap();
 
         let report = sync.pull_from_cloud(&local, "episodic").await.unwrap();
         assert_eq!(report.pulled, 1, "should pull 1 record");
@@ -646,14 +675,45 @@ mod tests {
         let local = new_test_store();
         let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
 
-        local.put(make_record("a", "episodic", "from local", Utc::now(), 1, "node_test")).await.unwrap();
-        sync.store.put(make_record("b", "episodic", "from cloud", Utc::now() + TimeDelta::seconds(1), 1, "node_cloud")).await.unwrap();
+        local
+            .put(make_record(
+                "a",
+                "episodic",
+                "from local",
+                Utc::now(),
+                1,
+                "node_test",
+            ))
+            .await
+            .unwrap();
+        sync.store
+            .put(make_record(
+                "b",
+                "episodic",
+                "from cloud",
+                Utc::now() + TimeDelta::seconds(1),
+                1,
+                "node_cloud",
+            ))
+            .await
+            .unwrap();
 
         let report = sync.sync_all(&local, "episodic").await.unwrap();
-        assert!(report.pushed >= 1 || report.pulled >= 1, "should sync something");
+        assert!(
+            report.pushed >= 1 || report.pulled >= 1,
+            "should sync something"
+        );
 
-        assert_eq!(local.list("episodic").await.unwrap().len(), 2, "local should have both records");
-        assert_eq!(sync.store.list("episodic").await.unwrap().len(), 2, "cloud should have both records");
+        assert_eq!(
+            local.list("episodic").await.unwrap().len(),
+            2,
+            "local should have both records"
+        );
+        assert_eq!(
+            sync.store.list("episodic").await.unwrap().len(),
+            2,
+            "cloud should have both records"
+        );
     }
 
     #[tokio::test]
@@ -662,8 +722,28 @@ mod tests {
         let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
 
         let now = Utc::now();
-        local.put(make_record("r1", "episodic", "old local", now, 1, "node_local")).await.unwrap();
-        sync.store.put(make_record("r1", "episodic", "newer cloud", now + TimeDelta::seconds(10), 2, "node_cloud")).await.unwrap();
+        local
+            .put(make_record(
+                "r1",
+                "episodic",
+                "old local",
+                now,
+                1,
+                "node_local",
+            ))
+            .await
+            .unwrap();
+        sync.store
+            .put(make_record(
+                "r1",
+                "episodic",
+                "newer cloud",
+                now + TimeDelta::seconds(10),
+                2,
+                "node_cloud",
+            ))
+            .await
+            .unwrap();
 
         let report = sync.pull_from_cloud(&local, "episodic").await.unwrap();
         assert_eq!(report.pulled, 1, "should pull the cloud version");
@@ -679,8 +759,14 @@ mod tests {
         let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
 
         let now = Utc::now();
-        local.put(make_record("r1", "episodic", "from A", now, 1, "A")).await.unwrap();
-        sync.store.put(make_record("r1", "episodic", "from B", now, 1, "B")).await.unwrap();
+        local
+            .put(make_record("r1", "episodic", "from A", now, 1, "A"))
+            .await
+            .unwrap();
+        sync.store
+            .put(make_record("r1", "episodic", "from B", now, 1, "B"))
+            .await
+            .unwrap();
 
         let report = sync.pull_from_cloud(&local, "episodic").await.unwrap();
         assert_eq!(report.conflicts, 1, "should detect conflict");
@@ -698,19 +784,31 @@ mod tests {
             node_id: Some("node_test".to_string()),
             ..Default::default()
         };
-        let sync = CloudMemorySync::new(
-            Arc::new(new_test_store()),
-            config,
-        ).await.unwrap();
+        let sync = CloudMemorySync::new(Arc::new(new_test_store()), config)
+            .await
+            .unwrap();
 
-        local.put(make_record("r1", "episodic", "content", Utc::now(), 1, "node_test")).await.unwrap();
+        local
+            .put(make_record(
+                "r1",
+                "episodic",
+                "content",
+                Utc::now(),
+                1,
+                "node_test",
+            ))
+            .await
+            .unwrap();
         sync.push_to_cloud(&local, "episodic").await.unwrap();
 
         let state_path = tmp.path().join("last_sync.json");
         assert!(state_path.exists(), "last_sync.json should exist");
 
         let state = LastSyncState::load(&state_path).await.unwrap();
-        assert!(state.last_sync_at("episodic").is_some(), "should have timestamp");
+        assert!(
+            state.last_sync_at("episodic").is_some(),
+            "should have timestamp"
+        );
     }
 
     #[tokio::test]
@@ -719,20 +817,27 @@ mod tests {
         let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
 
         for i in 0..150u64 {
-            local.put(make_record(
-                &format!("r{}", i),
-                "episodic",
-                &format!("content {}", i),
-                Utc::now() + TimeDelta::milliseconds(i as i64),
-                i,
-                "node_test",
-            )).await.unwrap();
+            local
+                .put(make_record(
+                    &format!("r{}", i),
+                    "episodic",
+                    &format!("content {}", i),
+                    Utc::now() + TimeDelta::milliseconds(i as i64),
+                    i,
+                    "node_test",
+                ))
+                .await
+                .unwrap();
         }
 
         let report = sync.push_to_cloud(&local, "episodic").await.unwrap();
         assert_eq!(report.pushed, 150, "should push all 150 records");
 
-        assert_eq!(sync.store.list("episodic").await.unwrap().len(), 150, "cloud should have all 150 records");
+        assert_eq!(
+            sync.store.list("episodic").await.unwrap().len(),
+            150,
+            "cloud should have all 150 records"
+        );
     }
 
     #[tokio::test]
@@ -740,14 +845,38 @@ mod tests {
         let local = new_test_store();
         let (sync, _tmp) = create_cloud_sync(new_test_store()).await;
 
-        local.put(make_record("r1", "workspace_a", "from local a", Utc::now(), 1, "node_test")).await.unwrap();
-        sync.store.put(make_record("r2", "workspace_b", "from cloud b", Utc::now() + TimeDelta::seconds(1), 1, "node_cloud")).await.unwrap();
+        local
+            .put(make_record(
+                "r1",
+                "workspace_a",
+                "from local a",
+                Utc::now(),
+                1,
+                "node_test",
+            ))
+            .await
+            .unwrap();
+        sync.store
+            .put(make_record(
+                "r2",
+                "workspace_b",
+                "from cloud b",
+                Utc::now() + TimeDelta::seconds(1),
+                1,
+                "node_cloud",
+            ))
+            .await
+            .unwrap();
 
         let reports = sync.sync_all_workspaces(&local).await.unwrap();
         assert_eq!(reports.len(), 2, "should sync 2 workspaces");
 
         for r in &reports {
-            assert!(r.success, "sync should succeed for workspace {}", r.workspace_id);
+            assert!(
+                r.success,
+                "sync should succeed for workspace {}",
+                r.workspace_id
+            );
         }
     }
 
@@ -761,12 +890,26 @@ mod tests {
         let report1 = sync.push_to_cloud(&local, "episodic").await.unwrap();
         assert_eq!(report1.pushed, 1);
 
-        let rec2 = make_record("r2", "episodic", "second", Utc::now() + TimeDelta::seconds(5), 1, "node_test");
+        let rec2 = make_record(
+            "r2",
+            "episodic",
+            "second",
+            Utc::now() + TimeDelta::seconds(5),
+            1,
+            "node_test",
+        );
         local.put(rec2).await.unwrap();
         let report2 = sync.push_to_cloud(&local, "episodic").await.unwrap();
-        assert_eq!(report2.pushed, 1, "should only push the new record incrementally");
+        assert_eq!(
+            report2.pushed, 1,
+            "should only push the new record incrementally"
+        );
 
-        assert_eq!(sync.store.list("episodic").await.unwrap().len(), 2, "cloud should have both records");
+        assert_eq!(
+            sync.store.list("episodic").await.unwrap().len(),
+            2,
+            "cloud should have both records"
+        );
     }
 
     #[tokio::test]
@@ -778,12 +921,21 @@ mod tests {
             supabase_only: true,
             ..Default::default()
         };
-        let sync = CloudMemorySync::new(
-            Arc::new(new_test_store()),
-            config,
-        ).await.unwrap();
+        let sync = CloudMemorySync::new(Arc::new(new_test_store()), config)
+            .await
+            .unwrap();
 
-        local.put(make_record("r1", "episodic", "content", Utc::now(), 1, "node_test")).await.unwrap();
+        local
+            .put(make_record(
+                "r1",
+                "episodic",
+                "content",
+                Utc::now(),
+                1,
+                "node_test",
+            ))
+            .await
+            .unwrap();
         let report = sync.sync_all(&local, "episodic").await.unwrap();
 
         assert_eq!(report.pushed, 0);

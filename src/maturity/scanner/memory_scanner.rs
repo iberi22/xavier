@@ -49,7 +49,8 @@ fn get_feature_keywords(codebase_root: &str) -> HashMap<String, Vec<String>> {
                     // Collect from memory_keywords field
                     if let Some(subs) = feat.get("subcomponents").and_then(|s| s.as_array()) {
                         for sub in subs {
-                            if let Some(kws) = sub.get("memory_keywords").and_then(|k| k.as_array()) {
+                            if let Some(kws) = sub.get("memory_keywords").and_then(|k| k.as_array())
+                            {
                                 for kw in kws {
                                     if let Some(k) = kw.as_str() {
                                         keywords.insert(k.to_string());
@@ -154,7 +155,14 @@ fn scan_sessions(root: &str, keywords: &[String]) -> usize {
     } else {
         // SQLite binary format — try with strings-like approach
         let output = std::process::Command::new("cmd")
-            .args(["/C", &format!("findstr /M \"{}\" \"{}\" 2>nul", keywords.join(" "), session_db_path)])
+            .args([
+                "/C",
+                &format!(
+                    "findstr /M \"{}\" \"{}\" 2>nul",
+                    keywords.join(" "),
+                    session_db_path
+                ),
+            ])
             .output()
             .ok();
         if let Some(out) = output {
@@ -220,15 +228,19 @@ pub fn scan_memory(codebase_root: &str) -> MemoryScanResult {
         let error_ratio = (1.0 - (error_count as f64 / 10.0).min(1.0)).max(0.0);
 
         // Combined: weight source + usage heavily (40% each), session 10%, error inverted 10%
-        let ratio = source_ratio * 0.4 + usage_ratio * 0.4 + session_ratio * 0.1 + error_ratio * 0.1;
+        let ratio =
+            source_ratio * 0.4 + usage_ratio * 0.4 + session_ratio * 0.1 + error_ratio * 0.1;
 
-        feature_evidence.insert(feat_id.clone(), MemoryEvidence {
-            source_hits,
-            session_mentions,
-            error_count,
-            usage_count,
-            ratio,
-        });
+        feature_evidence.insert(
+            feat_id.clone(),
+            MemoryEvidence {
+                source_hits,
+                session_mentions,
+                error_count,
+                usage_count,
+                ratio,
+            },
+        );
     }
 
     let timing_ms = start.elapsed().as_millis() as u64;

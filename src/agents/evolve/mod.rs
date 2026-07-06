@@ -15,14 +15,14 @@
 //! 5. Integrator: keeps winning changes, discards losers
 
 pub mod config;
-pub mod experiment;
 pub mod evaluator;
+pub mod experiment;
+pub mod gap_analyzer;
 pub mod integrator;
 pub mod mutator;
 pub mod reflector;
 pub mod researcher;
 pub mod results;
-pub mod gap_analyzer;
 
 #[cfg(test)]
 mod tests;
@@ -33,9 +33,9 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
 
+use crate::agents::evolve::experiment::Hypothesis;
 use crate::observability::analyzer::{ErrorDiagnosis, Urgency};
 use crate::observability::service_log::LogLevel;
-use crate::agents::evolve::experiment::Hypothesis;
 
 pub use config::EvolveConfig;
 pub use results::ExperimentResult;
@@ -114,7 +114,10 @@ impl EvolveModule {
             state.running = true;
             info!("🚀 Starting Evolve Module - autonomous loop");
             info!("Tag: {}", state.current_tag);
-            info!("Time budget per experiment: {}s", self.config.time_budget_secs);
+            info!(
+                "Time budget per experiment: {}s",
+                self.config.time_budget_secs
+            );
             info!("Metric: {}", self.config.metric);
         }
 
@@ -183,7 +186,9 @@ impl EvolveModule {
         // For now, we'll use empty insights to get a default mutation.
         let insights = self.reflector.analyze(&[]).await?;
         let mutations = self.mutator.generate_mutations(&insights)?;
-        let mutation = mutations.first().ok_or_else(|| anyhow::anyhow!("No mutations generated"))?;
+        let mutation = mutations
+            .first()
+            .ok_or_else(|| anyhow::anyhow!("No mutations generated"))?;
         let hypothesis = self.mutator.mutation_to_hypothesis(mutation);
 
         // 3. Apply and Evaluate
@@ -202,17 +207,27 @@ impl EvolveModule {
         let post_metric_result = tokio::time::timeout(
             std::time::Duration::from_secs(self.config.time_budget_secs),
             self.evaluator.evaluate(),
-        ).await;
+        )
+        .await;
 
         // 4. Accept or Reject
         match post_metric_result {
             Ok(Ok(post_metric)) => {
                 let is_lower_better = self.config.metric == config::MetricType::ValBpb;
-                let improved = self.evaluator.compare(pre_metric, post_metric, is_lower_better);
-                let regression = self.evaluator.is_regression(post_metric, is_lower_better).await;
+                let improved = self
+                    .evaluator
+                    .compare(pre_metric, post_metric, is_lower_better);
+                let regression = self
+                    .evaluator
+                    .is_regression(post_metric, is_lower_better)
+                    .await;
 
                 if improved && !regression {
-                    info!(pre = pre_metric, post = post_metric, "✅ Improvement detected and accepted");
+                    info!(
+                        pre = pre_metric,
+                        post = post_metric,
+                        "✅ Improvement detected and accepted"
+                    );
                     self.integrator.commit(&hypothesis).await?;
                     Ok(EvolutionResult {
                         experiment: ExperimentResult {
@@ -225,7 +240,12 @@ impl EvolveModule {
                         improved: true,
                     })
                 } else {
-                    info!(pre = pre_metric, post = post_metric, regression = regression, "❌ No improvement or regression detected. Rejecting.");
+                    info!(
+                        pre = pre_metric,
+                        post = post_metric,
+                        regression = regression,
+                        "❌ No improvement or regression detected. Rejecting."
+                    );
                     self.integrator.restore(backup).await?;
                     self.integrator.reset_to_baseline().await?;
                     Ok(EvolutionResult {
@@ -256,7 +276,10 @@ impl EvolveModule {
     pub async fn stop(&self) {
         let mut state = self.state.write().await;
         state.running = false;
-        info!("Stopping Evolve Module after {} experiments", state.experiments_run);
+        info!(
+            "Stopping Evolve Module after {} experiments",
+            state.experiments_run
+        );
     }
 
     /// Run a single experiment (deprecated in favor of run_evolution_cycle)
@@ -320,6 +343,8 @@ impl EvolveModule {
         };
 
         let result = fixer.process_diagnosis(&diagnosis).await;
+        // TODO: wire TelegramNotified after successful fix.
+        //       e.g. if result.success { crate::observability::notifier::maybe_notify_telegram_fix(&result.action); }
         if result.success {
             info!("Improvement PR created: {:?}", result.url);
         } else {
@@ -367,7 +392,11 @@ impl EvolveModule {
 /// Get current date-based tag (e.g., "mar24")
 fn current_date_tag() -> String {
     let now = chrono::Local::now();
-    format!("{}{}", now.format("%b").to_string().to_lowercase(), now.format("%d"))
+    format!(
+        "{}{}",
+        now.format("%b").to_string().to_lowercase(),
+        now.format("%d")
+    )
 }
 
 /// Get current git commit hash (short)

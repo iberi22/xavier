@@ -1,9 +1,9 @@
-use std::path::{Path, PathBuf};
 use axum::{
     extract::Path as AxumPath,
     http::{header, StatusCode},
     response::{Html, IntoResponse, Response},
 };
+use std::path::{Path, PathBuf};
 
 const PANEL_BUILD_DIR: &str = "panel-ui/build";
 

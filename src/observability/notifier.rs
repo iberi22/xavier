@@ -10,6 +10,8 @@
 //! - **(Future)** Webhook, email, Discord
 
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
+use tokio::sync::broadcast;
 
 use super::analyzer::{ErrorDiagnosis, Urgency};
 use super::fixer::FixerResult;
@@ -19,6 +21,48 @@ use crate::settings::XavierSettings;
 use crate::utils::tauri_utils::get_tauri_app_handle;
 #[cfg(feature = "tauri")]
 use tauri::Emitter;
+
+/// Capacity of the notification event bus. Late/lagging subscribers (e.g. the
+/// Tauri frontend) will observe a `RecvError::Lagged(k)` for the `k` missed
+/// events rather than blocking the notifier.
+const EVENT_BUS_CAPACITY: usize = 256;
+
+/// Module-level notification event bus (broadcast channel).
+///
+/// Held in an `OnceLock` so the Panel UI (Tauri) — or any other subscriber,
+/// such as a webhook forwarder — can attach at runtime via [`subscribe`]
+/// without a Tauri hard-dependency. The actual `tauri::Manager::emit_all` call
+/// happens in the Panel UI crate, which subscribes here and bridges to the
+/// frontend. Headless builds simply never subscribe and the bus stays idle.
+static EVENT_BUS: OnceLock<broadcast::Sender<Notification>> = OnceLock::new();
+
+/// Lazily initialize (or return the existing) notification event-bus sender.
+///
+/// Safe to call repeatedly; the first caller wins and subsequent calls return
+/// the same sender. The bus is created with [`EVENT_BUS_CAPACITY`] slots.
+pub fn event_bus() -> &'static broadcast::Sender<Notification> {
+    EVENT_BUS.get_or_init(|| broadcast::channel::<Notification>(EVENT_BUS_CAPACITY).0)
+}
+
+/// Subscribe to the notification event bus.
+///
+/// Returns a fresh `broadcast::Receiver` each call, so multiple subscribers
+/// (e.g. a Tauri emit-all bridge and a debug log tap) can coexist. Receivers
+/// created after notifications are published will not see those past events —
+/// subscribe early at startup.
+pub fn subscribe() -> broadcast::Receiver<Notification> {
+    event_bus().subscribe()
+}
+
+/// Publish a notification to the event bus.
+///
+/// Non-blocking and fallible: if there are no subscribers, or a receiver's
+/// buffer is full, the notification is silently dropped (the legacy
+/// channels — tracing/Discord/Telegram — are unaffected). Returns the number
+/// of receivers that received the event, for telemetry.
+pub fn publish(notif: &Notification) -> usize {
+    event_bus().send(notif.clone()).unwrap_or(0)
+}
 
 /// Notification severity (maps to emoji + level).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -154,6 +198,7 @@ impl Notifier {
         notif.log();
         self.send_background(notif.clone());
         self.emit_tauri(&notif);
+        publish(&notif);
         notif
     }
 
@@ -168,7 +213,6 @@ impl Notifier {
     fn emit_tauri(&self, _notif: &Notification) {
         // No-op when tauri feature is disabled
     }
-
     fn send_background(&self, notif: Notification) {
         let Ok(handle) = tokio::runtime::Handle::try_current() else {
             tracing::debug!("Skipping async notification delivery: no Tokio runtime is active");
@@ -240,6 +284,7 @@ impl Notifier {
         notif.log();
         self.send_background(notif.clone());
         self.emit_tauri(&notif);
+        publish(&notif);
         notif
     }
 
@@ -258,6 +303,7 @@ impl Notifier {
         notif.log();
         self.send_background(notif.clone());
         self.emit_tauri(&notif);
+        publish(&notif);
         notif
     }
 
@@ -283,6 +329,7 @@ impl Notifier {
         notif.log();
         self.send_background(notif.clone());
         self.emit_tauri(&notif);
+        publish(&notif);
         notif
     }
 }
@@ -291,6 +338,27 @@ impl Default for Notifier {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Helper: optionally emit a Telegram notification after a successful fixer
+/// action.
+///
+/// Logs a trace-level message when called. In a future iteration this will
+/// actually push a [`FixerAction::TelegramNotified`] notification through the
+/// [`Notifier::send_background`] path when the `telegram` feature is enabled.
+///
+/// Intended to be called at the fixer call site after `result.success` is true.
+#[cfg(feature = "telegram")]
+pub fn maybe_notify_telegram_fix(action: &super::fixer::FixerAction) {
+    tracing::trace!("maybe_notify_telegram_fix called with action: {action:?}");
+    // TODO: once the Notifier can produce a FixerAction::TelegramNotified
+    //       result from here, wire it through send_background.
+}
+
+/// Fallback: no-op when the telegram feature is disabled.
+#[cfg(not(feature = "telegram"))]
+pub fn maybe_notify_telegram_fix(action: &super::fixer::FixerAction) {
+    tracing::trace!("maybe_notify_telegram_fix (telegram disabled): {action:?}");
 }
 
 #[cfg(test)]
@@ -468,5 +536,78 @@ mod tests {
         };
         assert!(n.metadata.is_some());
         assert_eq!(n.metadata.as_ref().unwrap()["key"], "value");
+    }
+
+    // --- Event bus (broadcast channel) tests ---
+
+    #[test]
+    fn test_event_bus_singleton_is_stable() {
+        // event_bus() is a process-wide singleton; two lookups return the same
+        // sender reference.
+        let a = event_bus();
+        let b = event_bus();
+        assert!(std::ptr::eq(a, b));
+    }
+
+    #[test]
+    fn test_publish_delivers_to_subscriber() {
+        // Subscribe before publishing so the receiver captures the event.
+        let mut rx = subscribe();
+        let n = Notification {
+            level: NotificationLevel::Info,
+            title: "bus-delivery".into(),
+            message: "hello bus".into(),
+            metadata: None,
+        };
+        let delivered = publish(&n);
+        assert!(delivered >= 1, "at least one subscriber should receive it");
+
+        // Drain: the most recent message should match what we published.
+        let received = rx.try_recv().expect("receiver should have a message");
+        assert_eq!(received.title, "bus-delivery");
+        assert_eq!(received.level, NotificationLevel::Info);
+    }
+
+    #[test]
+    fn test_publish_with_no_subscribers_is_safe() {
+        // Publishing with no new subscriber must not panic; returns 0.
+        // (We can't guarantee zero total subscribers across the whole test
+        //  binary, but publish is always fallible, so just assert it returns.)
+        let n = Notification {
+            level: NotificationLevel::Warning,
+            title: "no-sub".into(),
+            message: "dropped".into(),
+            metadata: None,
+        };
+        let _ = publish(&n); // must not panic
+    }
+
+    #[test]
+    fn test_notify_startup_publishes_to_bus() {
+        // The high-level integration path: a notify_* method should fan out to
+        // the event bus in addition to its legacy channels.
+        let mut rx = subscribe();
+        let notifier = Notifier::new();
+        let notif = notifier.notify_startup();
+        // The published payload should match the returned notification.
+        // Drain any lagged/older messages until we see ours (or hit Empty).
+        let mut saw = false;
+        while let Ok(received) = rx.try_recv() {
+            if received.title == notif.title {
+                saw = true;
+                break;
+            }
+        }
+        assert!(
+            saw,
+            "notify_startup should publish its notification to the bus"
+        );
+    }
+
+    #[test]
+    fn test_maybe_notify_telegram_fix_helper_exists_and_callable() {
+        // Verify the helper function can be called without panicking.
+        maybe_notify_telegram_fix(&FixerAction::TelegramNotified);
+        maybe_notify_telegram_fix(&FixerAction::IssueCreated);
     }
 }

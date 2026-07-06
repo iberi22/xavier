@@ -6,11 +6,14 @@ use parking_lot::Mutex;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::{info, warn};
 
 use crate::agents::provider::{ModelProviderClient, ModelProviderConfig, LLM_TIMEOUT};
 use crate::agents::rate_limit::RateLimitManager;
 use crate::agents::router::{load_routing_policy, RouteCategory, Router};
+use crate::coordination::events::XavierEvent;
+use crate::coordination::{KeyLendingEngine, XavierEventBus};
 use crate::domain::proxy::{
     ChatChoice, ChatCompletion, ChatMessage, GenericProxyRequest, GenericProxyResponse,
     ProxyChatCommand, ProxyError, SecretInjectionStrategy, Usage,
@@ -23,6 +26,7 @@ pub struct ProxyUseCase {
     pub prompt_cache: Arc<Mutex<HashMap<String, Vec<String>>>>,
     pub router: Router,
     pub threat_detector: Option<Arc<dyn ThreatDetectionPort>>,
+    pub event_bus: Option<Arc<crate::coordination::XavierEventBus>>,
 }
 
 impl ProxyUseCase {
@@ -35,11 +39,17 @@ impl ProxyUseCase {
             prompt_cache,
             router: Router::new(),
             threat_detector: None,
+            event_bus: None,
         }
     }
 
     pub fn with_threat_detector(mut self, threat_detector: Arc<dyn ThreatDetectionPort>) -> Self {
         self.threat_detector = Some(threat_detector);
+        self
+    }
+
+    pub fn with_event_bus(mut self, event_bus: Arc<crate::coordination::XavierEventBus>) -> Self {
+        self.event_bus = Some(event_bus);
         self
     }
 
@@ -64,6 +74,42 @@ impl ProxyUseCase {
         };
 
         let mut request_builder = client.request(method, &req.url);
+
+        // 1. Leak Detection: Scan request for any known API keys
+        let mut combined_content = req.url.clone();
+        for (k, v) in &req.headers {
+            combined_content.push_str(k);
+            combined_content.push_str(v);
+        }
+        if let Some(ref body) = req.body {
+            combined_content.push_str(&body.to_string());
+        }
+
+        if let Some((agent_id, hash)) = secrets_engine
+            .leak_detector
+            .check_leak(&combined_content)
+            .await
+        {
+            warn!(
+                "Potential API key leak detected for agent {}. Hash: {}",
+                agent_id, hash
+            );
+
+            if let Some(ref bus) = self.event_bus {
+                let _ = bus.publish(crate::coordination::XavierEvent::KeyLeakDetected {
+                    agent_id: agent_id.clone(),
+                    hash,
+                });
+            }
+
+            secrets_engine
+                .revoke_for_agent(&agent_id, "API Key Leak Detected in Proxy")
+                .await;
+
+            return Err(ProxyError::InvalidRequest(
+                "Security violation: API key leak detected".to_string(),
+            ));
+        }
 
         // Set headers
         for (k, v) in &req.headers {
@@ -103,6 +149,25 @@ impl ProxyUseCase {
                         request_builder.header("Authorization", format!("token {}", secret));
                 }
             }
+
+            // Rate-limiting by lease_token: máx 100 requests/min por lease
+            if !self
+                .rate_manager
+                .check_lease_rate_limit(token, 100)
+                .await
+                .unwrap_or(true)
+            {
+                return Err(ProxyError::RateLimited);
+            }
+
+            // Log de cada request proxy (audit trail)
+            secrets_engine.log_proxy_use(&lease.agent_id, token, &req.url);
+
+            // Track usage for this lease
+            let _ = self
+                .rate_manager
+                .track_request(&format!("lease:{}", token), 0, 200, 0.0, false)
+                .await;
         }
 
         // Set body
@@ -139,6 +204,8 @@ impl ProxyUseCase {
         &self,
         cmd: ProxyChatCommand,
         is_ephemeral: bool,
+        secrets_engine: Arc<KeyLendingEngine>,
+        event_bus: XavierEventBus,
     ) -> Result<ChatCompletion, ProxyError> {
         // 0. Security Policy Enforcement
         if !is_ephemeral {
@@ -258,8 +325,47 @@ impl ProxyUseCase {
 
         // 3. Execute Request - API Keys are retrieved from Hardware Vault or Secure Config
         // and injected only here, in-flight.
-        let config = ModelProviderConfig::for_provider(&provider_name)
+        let mut config = ModelProviderConfig::for_provider(&provider_name)
             .with_model_override(Some(requested_model.clone()));
+
+        // Handle Secret Injection via lease token
+        if let Some(token) = &cmd.lease_token {
+            let lease = secrets_engine
+                .get_lease(token)
+                .await
+                .ok_or_else(|| ProxyError::SecretError("Lease token not found".to_string()))?;
+
+            if lease.is_expired() {
+                return Err(ProxyError::SecretError("Lease token expired".to_string()));
+            }
+
+            // Rate-limiting by lease_token: máx 100 requests/min por lease
+            if !self
+                .rate_manager
+                .check_lease_rate_limit(token, 100)
+                .await
+                .unwrap_or(true)
+            {
+                return Err(ProxyError::RateLimited);
+            }
+
+            // Log de cada request proxy (audit trail)
+            secrets_engine.log_proxy_use(&lease.agent_id, token, "/v1/chat/completions");
+
+            // Track usage for this lease
+            let _ = self
+                .rate_manager
+                .track_request(&format!("lease:{}", token), 0, 200, 0.0, false)
+                .await;
+
+            if let Some(secret) = lease.secret_value {
+                config = config.with_api_key(Some(secret));
+            } else if !is_ephemeral {
+                return Err(ProxyError::SecretError(
+                    "Secret value missing from lease (redacted and not ephemeral)".to_string(),
+                ));
+            }
+        }
 
         // Ensure we are using secured keys from vault if available
         let config = if let Ok(_token) = resolve_xavier_token() {
@@ -271,80 +377,140 @@ impl ProxyUseCase {
             config
         };
 
-        let client = ModelProviderClient::new(config);
+        let mut retry_count = 0;
+        let max_retries = 1;
 
-        let result: Result<Result<crate::agents::provider::types::LlmResponse, _>, _> =
-            tokio::time::timeout(
-                LLM_TIMEOUT,
-                client.generate_text_with_cache(system_msg, user_msg, is_cache_hit),
-            )
-            .await;
+        loop {
+            let client = ModelProviderClient::new(config.clone());
 
-        match result {
-            Ok(Ok(resp)) => {
-                let text = resp.text;
-                // 4. Track Usage and Cost
-                let prompt_tokens = user_msg.len() / 4;
-                let completion_tokens = text.len() / 4;
-                let total_tokens = prompt_tokens + completion_tokens;
+            let result: Result<Result<crate::agents::provider::types::LlmResponse, _>, _> =
+                tokio::time::timeout(
+                    LLM_TIMEOUT,
+                    client.generate_text_with_cache(system_msg, user_msg, is_cache_hit),
+                )
+                .await;
 
-                let mut cost_usd = 0.0;
-                if let Some(ref p) = policy {
-                    let matched_policy = if p.models.fast.iter().any(|m| m.name == requested_model)
+            match result {
+                Ok(Ok(resp)) => {
+                    // Success logic
+                    if let Some(token) = &cmd.lease_token {
+                        let _ = secrets_engine.renew(token, 3600).await;
+                        let _ = event_bus.publish(XavierEvent::LeaseRenewed {
+                            token: token.clone(),
+                        });
+                    }
+
+                    let text = resp.text;
+                    // 4. Track Usage and Cost
+                    let prompt_tokens = user_msg.len() / 4;
+                    let completion_tokens = text.len() / 4;
+                    let total_tokens = prompt_tokens + completion_tokens;
+
+                    let mut cost_usd = 0.0;
+                    if let Some(ref p) = policy {
+                        let matched_policy =
+                            if p.models.fast.iter().any(|m| m.name == requested_model) {
+                                p.models.fast.first()
+                            } else if p.models.quality.iter().any(|m| m.name == requested_model) {
+                                p.models.quality.first()
+                            } else {
+                                None
+                            };
+
+                        if let Some(mp) = matched_policy {
+                            let input_rate = mp.cost_per_input_token.unwrap_or(0.0) as f64;
+                            let output_rate = mp.cost_per_output_token.unwrap_or(0.0) as f64;
+                            cost_usd = (prompt_tokens as f64 * input_rate)
+                                + (completion_tokens as f64 * output_rate);
+                        }
+                    }
+
+                    if let Err(e) = self
+                        .rate_manager
+                        .track_request(&provider_name, total_tokens, 200, cost_usd, is_cache_hit)
+                        .await
                     {
-                        p.models.fast.first()
-                    } else if p.models.quality.iter().any(|m| m.name == requested_model) {
-                        p.models.quality.first()
-                    } else {
-                        None
-                    };
-
-                    if let Some(mp) = matched_policy {
-                        let input_rate = mp.cost_per_input_token.unwrap_or(0.0) as f64;
-                        let output_rate = mp.cost_per_output_token.unwrap_or(0.0) as f64;
-                        cost_usd = (prompt_tokens as f64 * input_rate)
-                            + (completion_tokens as f64 * output_rate);
+                        warn!("Failed to track request usage: {}", e);
                     }
-                }
 
-                if let Err(e) = self
-                    .rate_manager
-                    .track_request(&provider_name, total_tokens, 200, cost_usd, is_cache_hit)
-                    .await
-                {
-                    warn!("Failed to track request usage: {}", e);
-                }
-
-                if let Some(quota) = resp.quota {
-                    if let Err(e) = self.rate_manager.update_quota(quota).await {
-                        warn!("Failed to update provider quota: {}", e);
+                    if let Some(quota) = resp.quota {
+                        if let Err(e) = self.rate_manager.update_quota(quota).await {
+                            warn!("Failed to update provider quota: {}", e);
+                        }
                     }
-                }
 
-                Ok(ChatCompletion {
-                    id: format!("chatcmpl-{}", ulid::Ulid::new()),
-                    object: "chat.completion".to_string(),
-                    created: chrono::Utc::now().timestamp(),
-                    model: requested_model,
-                    choices: vec![ChatChoice {
-                        index: 0,
-                        message: ChatMessage {
-                            role: "assistant".to_string(),
-                            content: text,
+                    return Ok(ChatCompletion {
+                        id: format!("chatcmpl-{}", ulid::Ulid::new()),
+                        object: "chat.completion".to_string(),
+                        created: chrono::Utc::now().timestamp(),
+                        model: requested_model,
+                        choices: vec![ChatChoice {
+                            index: 0,
+                            message: ChatMessage {
+                                role: "assistant".to_string(),
+                                content: text,
+                            },
+                            finish_reason: "stop".to_string(),
+                        }],
+                        usage: Usage {
+                            prompt_tokens,
+                            completion_tokens,
+                            total_tokens,
                         },
-                        finish_reason: "stop".to_string(),
-                    }],
-                    usage: Usage {
-                        prompt_tokens,
-                        completion_tokens,
-                        total_tokens,
-                    },
-                })
-            }
-            Ok(Err(e)) => {
-                let err_msg = e.to_string();
-                if err_msg.contains("timed out") {
-                    warn!("Provider {} timed out (internal)", provider_name);
+                    });
+                }
+                Ok(Err(e)) => {
+                    let err_msg = e.to_string();
+
+                    // Check for rate limit
+                    if err_msg.contains("429") || err_msg.to_lowercase().contains("rate limit") {
+                        if let Some(token) = &cmd.lease_token {
+                            let _ = secrets_engine.backoff(token, 30).await;
+                            let _ = event_bus.publish(XavierEvent::LeaseBackoff {
+                                token: token.clone(),
+                                seconds: 30,
+                            });
+                        }
+
+                        if retry_count < max_retries {
+                            retry_count += 1;
+                            warn!(
+                                "Rate limited by {}. Retrying ({}/{})",
+                                provider_name, retry_count, max_retries
+                            );
+                            tokio::time::sleep(Duration::from_secs(1)).await;
+                            continue;
+                        }
+                    }
+
+                    if err_msg.contains("timed out") {
+                        warn!("Provider {} timed out (internal)", provider_name);
+                        if let Err(track_err) = self
+                            .rate_manager
+                            .track_request(&provider_name, 0, 504, 0.0, false)
+                            .await
+                        {
+                            warn!("Failed to track timeout request: {}", track_err);
+                        }
+                        return Err(ProxyError::ProviderError(format!(
+                            "Provider {} timed out after {}s",
+                            provider_name,
+                            LLM_TIMEOUT.as_secs()
+                        )));
+                    } else {
+                        warn!("Provider {} failed: {}", provider_name, e);
+                        if let Err(track_err) = self
+                            .rate_manager
+                            .track_request(&provider_name, 0, 500, 0.0, false)
+                            .await
+                        {
+                            warn!("Failed to track failed request: {}", track_err);
+                        }
+                        return Err(ProxyError::ProviderError(e.to_string()));
+                    }
+                }
+                Err(_) => {
+                    warn!("Provider {} timed out", provider_name);
                     if let Err(track_err) = self
                         .rate_manager
                         .track_request(&provider_name, 0, 504, 0.0, false)
@@ -352,38 +518,80 @@ impl ProxyUseCase {
                     {
                         warn!("Failed to track timeout request: {}", track_err);
                     }
-                    Err(ProxyError::ProviderError(format!(
+                    return Err(ProxyError::ProviderError(format!(
                         "Provider {} timed out after {}s",
                         provider_name,
                         LLM_TIMEOUT.as_secs()
-                    )))
-                } else {
-                    warn!("Provider {} failed: {}", provider_name, e);
-                    if let Err(track_err) = self
-                        .rate_manager
-                        .track_request(&provider_name, 0, 500, 0.0, false)
-                        .await
-                    {
-                        warn!("Failed to track failed request: {}", track_err);
-                    }
-                    Err(ProxyError::ProviderError(e.to_string()))
+                    )));
                 }
-            }
-            Err(_) => {
-                warn!("Provider {} timed out", provider_name);
-                if let Err(track_err) = self
-                    .rate_manager
-                    .track_request(&provider_name, 0, 504, 0.0, false)
-                    .await
-                {
-                    warn!("Failed to track timeout request: {}", track_err);
-                }
-                Err(ProxyError::ProviderError(format!(
-                    "Provider {} timed out after {}s",
-                    provider_name,
-                    LLM_TIMEOUT.as_secs()
-                )))
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::coordination::KeyLendingEngine;
+    use crate::domain::proxy::{GenericProxyRequest, ProxyError};
+    use crate::secrets::lending::AuditLogger;
+    use parking_lot::Mutex;
+    use std::sync::Arc;
+
+    struct MockAuditLogger;
+    impl AuditLogger for MockAuditLogger {
+        fn log_lend(
+            &self,
+            _agent_id: &str,
+            _secret_name: &str,
+            _lease_token: &str,
+            _ttl_secs: u64,
+        ) {
+        }
+        fn log_revoke(&self, _agent_id: &str, _lease_token: &str, _reason: &str) {}
+        fn log_proxy_use(&self, _agent_id: &str, _lease_token: &str, _endpoint: &str) {}
+    }
+
+    #[tokio::test]
+    async fn test_proxy_leak_detection() {
+        let rate_manager = Arc::new(RateLimitManager::new());
+        let prompt_cache = Arc::new(Mutex::new(HashMap::new()));
+        let proxy = ProxyUseCase::new(rate_manager, prompt_cache);
+
+        let secrets_engine = Arc::new(KeyLendingEngine::new(Box::new(MockAuditLogger), None));
+        let secret = "sk-leaked-key-123";
+        let agent_id = "malicious-agent";
+
+        // Register key via lend
+        secrets_engine
+            .lend("provider-key", Some(secret), agent_id, 3600)
+            .await
+            .unwrap();
+
+        // Prepare request with leaked key in body
+        let req = GenericProxyRequest {
+            url: "https://api.openai.com/v1/chat/completions".to_string(),
+            method: "POST".to_string(),
+            headers: HashMap::new(),
+            body: Some(serde_json::json!({
+                "model": "gpt-4",
+                "messages": [{"role": "user", "content": format!("Here is my key: {}", secret)}]
+            })),
+            lease_token: None,
+            secret_injection_strategy: None,
+        };
+
+        let result = proxy.execute_generic(req, secrets_engine.clone()).await;
+
+        // Should be blocked
+        assert!(result.is_err());
+        match result.unwrap_err() {
+            ProxyError::InvalidRequest(msg) => assert!(msg.contains("API key leak detected")),
+            _ => panic!("Expected InvalidRequest error"),
+        }
+
+        // Leases for agent should be revoked
+        let leases = secrets_engine.list_leases().await;
+        assert!(leases.iter().all(|l| l.agent_id != agent_id));
     }
 }

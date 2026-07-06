@@ -59,6 +59,7 @@ pub use crate::cli::handlers::*;
 pub use crate::cli::http_setup::*;
 pub use crate::cli::types::*;
 pub use crate::cli::websocket::*;
+pub use xavier::auth2::auth_routes;
 
 pub static START_TIME: std::sync::LazyLock<Instant> = std::sync::LazyLock::new(Instant::now);
 
@@ -106,7 +107,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     audit_logger.init_schema_async().await?;
     rate_manager.init_schema_async().await?;
     threat_store.init_schema_async().await?;
-    xavier::security::tokens::TokenStore::new().init_schema_async().await?;
+    xavier::security::tokens::TokenStore::new()
+        .init_schema_async()
+        .await?;
 
     tokio::spawn(async move {
         loop {
@@ -158,9 +161,13 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     init_health_port(health_adapter.clone());
 
     // Update the global health monitor with the embedder
-    xavier::observability::health::HEALTH.set_embedder(embedder.clone()).await;
+    xavier::observability::health::HEALTH
+        .set_embedder(embedder.clone())
+        .await;
     if let Ok(peers) = xavier::mesh::PeerRegistry::load() {
-        xavier::observability::health::HEALTH.set_peer_registry(Arc::new(peers)).await;
+        xavier::observability::health::HEALTH
+            .set_peer_registry(Arc::new(peers))
+            .await;
     }
 
     let code_db_path = code_graph_db_path();
@@ -170,11 +177,13 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let code_db = Arc::new(::code_graph::db::CodeGraphDB::new(&code_db_path)?);
     let code_indexer = Arc::new(::code_graph::indexer::Indexer::new(Arc::clone(&code_db)));
     let code_query = Arc::new(::code_graph::query::QueryEngine::new(Arc::clone(&code_db)));
-    let code_graph_state = Arc::new(tokio::sync::RwLock::new(crate::cli::state::CodeGraphState {
-        db: code_db.clone(),
-        indexer: code_indexer.clone(),
-        query: code_query.clone(),
-    }));
+    let code_graph_state = Arc::new(tokio::sync::RwLock::new(
+        crate::cli::state::CodeGraphState {
+            db: code_db.clone(),
+            indexer: code_indexer.clone(),
+            query: code_query.clone(),
+        },
+    ));
 
     let workspace_dir = PathBuf::from(XavierSettings::current().memory.workspace_dir);
     info!(
@@ -193,10 +202,11 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         ProxyUseCase::new(rate_manager.clone(), prompt_cache.clone())
             .with_threat_detector(security_service.clone()),
     );
-    let secrets_engine = Arc::new(KeyLendingEngine::new(Box::new(
-        xavier::secrets::audit::QmdAuditLogger::new(),
-    )));
     let event_bus = XavierEventBus::new(100);
+    let secrets_engine = Arc::new(KeyLendingEngine::new(
+        Box::new(xavier::secrets::audit::QmdAuditLogger::new()),
+        Some(event_bus.clone()),
+    ));
     let tasks = Arc::new(
         TaskService::new(Arc::new(InMemoryTaskStore::new())).with_event_bus(event_bus.clone()),
     );
@@ -206,23 +216,70 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     tokio::spawn(async move {
         info!("Secrets engine listening for task events...");
         while let Ok(event) = receiver.recv().await {
-            if let xavier::coordination::events::XavierEvent::TaskCompleted { task } = event {
-                let _ = xavier::notifications::NOTIFICATIONS.notify(
-                    xavier::notifications::IslandId::Agents,
-                    "Agent Task Complete",
-                    &format!("Task {} completed by agent {}.", task.id, task.assignee.as_deref().unwrap_or("unknown")),
-                    "success"
-                ).await;
+            match event {
+                xavier::coordination::events::XavierEvent::TaskCompleted { task } => {
+                    let _ = xavier::notifications::NOTIFICATIONS
+                        .notify(
+                            xavier::notifications::IslandId::Agents,
+                            "Agent Task Complete",
+                            &format!(
+                                "Task {} completed by agent {}.",
+                                task.id,
+                                task.assignee.as_deref().unwrap_or("unknown")
+                            ),
+                            "success",
+                        )
+                        .await;
 
-                if let Some(agent_id) = &task.assignee {
+                    if let Some(agent_id) = &task.assignee {
+                        info!(
+                            "Task {} completed by agent {}. Revoking ephemeral keys...",
+                            task.id, agent_id
+                        );
+                        secrets_engine_for_bus
+                            .revoke_for_agent(agent_id, "Task Completed")
+                            .await;
+                    }
+                }
+                xavier::coordination::events::XavierEvent::TaskFailed { task, reason } => {
+                    let _ = xavier::notifications::NOTIFICATIONS
+                        .notify(
+                            xavier::notifications::IslandId::Errors,
+                            "Agent Task Failed",
+                            &format!("Task {} failed: {}.", task.id, reason),
+                            "error",
+                        )
+                        .await;
+
+                    if let Some(agent_id) = &task.assignee {
+                        info!(
+                            "Task {} failed for agent {}. Revoking ephemeral keys...",
+                            task.id, agent_id
+                        );
+                        secrets_engine_for_bus
+                            .revoke_for_agent(agent_id, "Task Failed")
+                            .await;
+                    }
+                }
+                xavier::coordination::events::XavierEvent::AgentTaskCompleted { agent_id } => {
                     info!(
-                        "Task {} completed by agent {}. Revoking ephemeral keys...",
-                        task.id, agent_id
+                        "Agent {} task completed. Revoking ephemeral keys...",
+                        agent_id
                     );
                     secrets_engine_for_bus
-                        .revoke_for_agent(agent_id, "Task Completed")
+                        .revoke_for_agent(&agent_id, "Agent Task Completed")
                         .await;
                 }
+                xavier::coordination::events::XavierEvent::AgentTaskFailed { agent_id, reason } => {
+                    info!(
+                        "Agent {} task failed ({}). Revoking ephemeral keys...",
+                        agent_id, reason
+                    );
+                    secrets_engine_for_bus
+                        .revoke_for_agent(&agent_id, &format!("Agent Task Failed: {}", reason))
+                        .await;
+                }
+                _ => {}
             }
         }
     });
@@ -250,7 +307,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         security: security_service.clone() as Arc<dyn InputSecurityPort>,
         security_scan: security_service.clone() as Arc<dyn SecurityScanPort>,
         _time_store: Some(time_store),
-        agent_registry: SimpleAgentRegistry::new() as Arc<dyn AgentLifecyclePort>,
+        agent_registry: SimpleAgentRegistry::new_with_engines(
+            Some(secrets_engine.clone()),
+            Some(event_bus.clone()),
+        ) as Arc<dyn AgentLifecyclePort>,
         panel_store,
         secrets_engine,
         event_bus,
@@ -264,12 +324,15 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                 xavier::agents::provider::router::ProviderKind::OpenAI,
             ),
         )),
-        embedder,
+        embedder: embedder.clone(),
         agent_indexer: Arc::new(crate::memory::agent_indexer::AgentIndexer::new(
             crate::memory::file_indexer::FileIndexer::new(
                 crate::memory::file_indexer::FileIndexerConfig::default(),
                 Some(code_indexer.clone()),
             ),
+        )),
+        openclaw_indexer: Arc::new(crate::memory::openclaw_indexer::OpenClawAgentIndexer::new(
+            embedder.clone(),
         )),
     };
 
@@ -287,6 +350,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/memory/export", get(export_handler))
         .route("/memory/decay", post(decay_handler))
         .route("/memory/consolidate", post(consolidate_handler))
+        .route("/memory/index-self", post(memory_index_self_handler))
         .route("/memory/evict", axum::routing::delete(evict_handler))
         .route("/memory/manage", post(manage_handler))
         .route("/memory/timeline/query", post(timeline_query_handler))
@@ -336,11 +400,13 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/timeline", get(xavier::api::timeline::timeline_summary))
         .route(
             "/api/settings/cloud-node",
-            get(xavier::api::settings::get_cloud_node).post(xavier::api::settings::update_cloud_node),
+            get(xavier::api::settings::get_cloud_node)
+                .post(xavier::api::settings::update_cloud_node),
         )
         .route(
             "/api/settings/discord",
-            get(xavier::api::settings::get_discord_settings).post(xavier::api::settings::update_discord_settings),
+            get(xavier::api::settings::get_discord_settings)
+                .post(xavier::api::settings::update_discord_settings),
         )
         .route(
             "/api/settings/discord/test",
@@ -348,7 +414,8 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         )
         .route(
             "/api/settings/telegram",
-            get(xavier::api::settings::get_telegram_settings).post(xavier::api::settings::update_telegram_settings),
+            get(xavier::api::settings::get_telegram_settings)
+                .post(xavier::api::settings::update_telegram_settings),
         )
         .route(
             "/api/settings/telegram/test",
@@ -360,6 +427,8 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/xavier/agents/active", get(agent_active_handler))
         .route("/xavier/agents/scan", get(agent_scan_handler))
         .route("/xavier/agents/index", post(agent_index_handler))
+        .route("/xavier/openclaw/scan", get(openclaw_scan_handler))
+        .route("/xavier/openclaw/index", post(openclaw_index_handler))
         .route("/xavier/agents/sync", post(agent_sync_handler))
         .route(
             "/xavier/agents/{id}/heartbeat",
@@ -370,12 +439,29 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             "/xavier/agents/{id}/unregister",
             post(agent_unregister_handler),
         )
+        .route(
+            "/xavier/agents/{id}/task/complete",
+            post(agent_task_complete_handler),
+        )
+        .route(
+            "/xavier/agents/{id}/task/failed",
+            post(agent_task_failed_handler),
+        )
         .route("/xavier/sync/check", post(sync_check_handler))
         .route("/xavier/sync/check", get(sync_check_handler))
         .route("/xavier/verify/save", post(verify_save_handler))
-        .route("/v1/context/regenerate", post(xavier::server::http::context::v1_context_regenerate))
-        .route("/v1/context/deepen", post(xavier::server::http::context::v1_context_deepen))
-        .route("/v1/context/stats", get(xavier::server::http::context::v1_context_stats))
+        .route(
+            "/v1/context/regenerate",
+            post(xavier::server::http::context::v1_context_regenerate),
+        )
+        .route(
+            "/v1/context/deepen",
+            post(xavier::server::http::context::v1_context_deepen),
+        )
+        .route(
+            "/v1/context/stats",
+            get(xavier::server::http::context::v1_context_stats),
+        )
         .route(
             "/panel/api/threads",
             get(panel_list_threads).post(panel_create_thread),
@@ -393,6 +479,11 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/secrets/lend", post(lend_handler))
         .route("/secrets/leases", get(leases_handler))
         .route("/secrets/revoke", post(revoke_handler))
+        .route("/secrets/history", get(history_handler))
+        .route(
+            "/secrets/revoke/{token}",
+            post(crate::cli::proxy::revoke_lease_by_path),
+        )
         .route("/secrets/status/{token}", get(status_handler))
         .route(
             "/v1/proxy/chat/completions",
@@ -404,14 +495,26 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         )
         .route("/v1/proxy/request", post(crate::cli::proxy::generic_proxy))
         .route("/v1/security/approve", post(security_approve_handler))
-        .route("/security/tokens", get(list_tokens_handler).post(create_token_handler))
+        .route(
+            "/security/tokens",
+            get(list_tokens_handler).post(create_token_handler),
+        )
         .route("/security/tokens/{id}", delete(revoke_token_handler))
         .route("/security/tokens/{id}/rotate", post(rotate_token_handler))
+        .route("/auth/recovery/seed/show", post(seed_show_handler))
+        .route("/auth/recovery/seed/verify", post(seed_verify_handler))
+        .route(
+            "/auth/recovery/backup-codes",
+            post(backup_codes_generate_handler),
+        )
+        .route("/auth/recovery/reset", post(password_reset_handler))
+        .route("/auth/recovery/master-key", post(master_key_handler))
         .route("/v1/usage/status/{provider}", get(usage_status_handler))
         .route("/v1/usage/update", post(usage_update_handler))
         .route("/v1/usage/cooldown", post(usage_cooldown_handler))
         .route("/v1/tasks", get(tasks_list_handler))
         .route("/v1/tasks/sync", post(tasks_sync_handler))
+        .route("/v1/tasks/{id}/run", post(tasks_run_handler))
         .route("/v1/usage/track", post(usage_track_handler))
         .route("/v1/usage/summary/{provider}", get(usage_summary_handler))
         .route(
@@ -486,11 +589,13 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         )
         .route(
             "/v1/mesh/cloud",
-            get(xavier::server::v1_api::v1_mesh_cloud_get).put(xavier::server::v1_api::v1_mesh_cloud_update),
+            get(xavier::server::v1_api::v1_mesh_cloud_get)
+                .put(xavier::server::v1_api::v1_mesh_cloud_update),
         )
         .route(
             "/v1/mesh/data_commons/opt_in",
-            get(xavier::server::v1_api::v1_mesh_data_commons_get).post(xavier::server::v1_api::v1_mesh_data_commons_opt_in),
+            get(xavier::server::v1_api::v1_mesh_data_commons_get)
+                .post(xavier::server::v1_api::v1_mesh_data_commons_opt_in),
         )
         .route(
             "/v1/mesh/manifest",
@@ -516,30 +621,15 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             "/v1/mesh/session/{session_id}/share",
             post(xavier::server::v1_api::v1_mesh_session_share),
         )
-        .route(
-            "/v1/mesh/peers",
-            get(list_peers_handler),
-        )
-        .route(
-            "/v1/mesh/peers/pair",
-            post(pair_peer_handler),
-        )
-        .route(
-            "/v1/mesh/peers/decode",
-            post(decode_pairing_code_handler),
-        )
+        .route("/v1/mesh/peers", get(list_peers_handler))
+        .route("/v1/mesh/peers/pair", post(pair_peer_handler))
+        .route("/v1/mesh/peers/decode", post(decode_pairing_code_handler))
         .route(
             "/v1/mesh/peers/generate-code",
             post(generate_pairing_code_handler),
         )
-        .route(
-            "/v1/mesh/peers/{node_id}/acl",
-            put(update_peer_acl_handler),
-        )
-        .route(
-            "/v1/mesh/peers/{node_id}",
-            delete(remove_peer_handler),
-        )
+        .route("/v1/mesh/peers/{node_id}/acl", put(update_peer_acl_handler))
+        .route("/v1/mesh/peers/{node_id}", delete(remove_peer_handler))
         // ── Headless E2E API (New Structure) ──────────────────────────────
         .route(
             "/headless/health",
@@ -566,24 +656,51 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             get(crate::cli::handlers::headless_e2e::provider_status),
         )
         // ── Navigation API ────────────────────────────────────────────────
-        .route("/v1/nav/ls", get(crate::cli::handlers::navigation::ls_handler))
-        .route("/v1/nav/cd", post(crate::cli::handlers::navigation::cd_handler))
-        .route("/v1/nav/pwd", get(crate::cli::handlers::navigation::pwd_handler))
-        .route("/v1/nav/affected", get(crate::cli::handlers::navigation::affected_handler))
-        .route("/v1/nav/visualize", get(crate::cli::handlers::navigation::visualize_handler))
-        .route("/v1/nav/telemetry", get(crate::cli::handlers::navigation::telemetry_handler))
-        .route("/notifications", get(crate::cli::handlers::notifications::list_notifications_handler))
+        .route(
+            "/v1/nav/ls",
+            get(crate::cli::handlers::navigation::ls_handler),
+        )
+        .route(
+            "/v1/nav/cd",
+            post(crate::cli::handlers::navigation::cd_handler),
+        )
+        .route(
+            "/v1/nav/pwd",
+            get(crate::cli::handlers::navigation::pwd_handler),
+        )
+        .route(
+            "/v1/nav/affected",
+            get(crate::cli::handlers::navigation::affected_handler),
+        )
+        .route(
+            "/v1/nav/visualize",
+            get(crate::cli::handlers::navigation::visualize_handler),
+        )
+        .route(
+            "/v1/nav/telemetry",
+            get(crate::cli::handlers::navigation::telemetry_handler),
+        )
+        .route(
+            "/notifications",
+            get(crate::cli::handlers::notifications::list_notifications_handler),
+        )
         .route(
             "/notifications/{id}/read",
-            axum::routing::patch(crate::cli::handlers::notifications::mark_notification_read_handler),
+            axum::routing::patch(
+                crate::cli::handlers::notifications::mark_notification_read_handler,
+            ),
         )
         .route(
             "/notifications/read-all",
-            axum::routing::patch(crate::cli::handlers::notifications::mark_all_notifications_read_handler),
+            axum::routing::patch(
+                crate::cli::handlers::notifications::mark_all_notifications_read_handler,
+            ),
         )
         .route(
             "/notifications/all",
-            axum::routing::delete(crate::cli::handlers::notifications::delete_all_notifications_handler),
+            axum::routing::delete(
+                crate::cli::handlers::notifications::delete_all_notifications_handler,
+            ),
         )
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(
@@ -640,6 +757,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     };
 
     let app = Router::new()
+        .nest("/auth", auth_routes::<CliState>())
         .route("/health", get(health_handler))
         .route("/health/cloud", get(cloud_health_handler))
         .route(
@@ -691,23 +809,25 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         info!("Starting MCP HTTP+SSE server on port {}", mcp_port);
         tokio::spawn(async move {
             if let Err(error) = crate::cli::mcp::start_mcp_http(mcp_port).await {
-                tracing::error!(
-                    "MCP HTTP+SSE server on port {} failed: {}",
-                    mcp_port,
-                    error
-                );
+                tracing::error!("MCP HTTP+SSE server on port {} failed: {}", mcp_port, error);
             }
         });
     } else {
         info!("MCP HTTP+SSE server disabled (resolved port 0)");
     }
 
-    let _ = xavier::notifications::NOTIFICATIONS.notify(
-        xavier::notifications::IslandId::System,
-        "Xavier Started",
-        &format!("Xavier backend v{} started on port {}.", env!("CARGO_PKG_VERSION"), port),
-        "info"
-    ).await;
+    let _ = xavier::notifications::NOTIFICATIONS
+        .notify(
+            xavier::notifications::IslandId::System,
+            "Xavier Started",
+            &format!(
+                "Xavier backend v{} started on port {}.",
+                env!("CARGO_PKG_VERSION"),
+                port
+            ),
+            "info",
+        )
+        .await;
 
     #[cfg(feature = "enterprise")]
     {
@@ -727,7 +847,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     // TGD Consolidation Scheduler (Nightly)
     if settings.tgd.enabled {
         let tgd_engine = state.tgd_engine().await;
-        let tgd_state_path = state.workspace_dir.join(".xavier").join("tgd_consolidation_state.json");
+        let tgd_state_path = state
+            .workspace_dir
+            .join(".xavier")
+            .join("tgd_consolidation_state.json");
         let tgd_scheduler = Arc::new(xavier::tgd::TgdConsolidationScheduler::new(
             workspace_ctx.clone(),
             tgd_engine,
@@ -737,7 +860,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         tgd_scheduler.clone().spawn(cron_expr).await;
 
         // Register TGD progress with health monitor
-        xavier::observability::health::HEALTH.set_tgd_progress(tgd_scheduler.progress()).await;
+        xavier::observability::health::HEALTH
+            .set_tgd_progress(tgd_scheduler.progress())
+            .await;
     }
 
     #[cfg(feature = "telegram")]
@@ -799,11 +924,13 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         let _shutdown_handle = handle.clone();
 
         let addr = listener.local_addr()?;
+        use std::net::SocketAddr;
         axum_server::bind_rustls(addr, rustls_config)
-            .serve(app.into_make_service())
+            .serve(app.into_make_service_with_connect_info::<SocketAddr>())
             .await?;
     } else {
-        axum::serve(listener, app)
+        use std::net::SocketAddr;
+        axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
             .with_graceful_shutdown(async move {
                 if let Err(error) = tokio::signal::ctrl_c().await {
                     info!("Failed to listen for Ctrl+C shutdown signal: {}", error);

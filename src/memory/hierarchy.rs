@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::memory::store::MemoryRecord;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,7 +35,9 @@ impl MemoryTree {
                 // Root level
                 if let Some(first_slash) = record_path.find('/') {
                     let dir_name = &record_path[..first_slash];
-                    let entry = dirs.entry(dir_name.to_string()).or_insert((dir_name.to_string(), 0));
+                    let entry = dirs
+                        .entry(dir_name.to_string())
+                        .or_insert((dir_name.to_string(), 0));
                     entry.1 += 1;
                 } else if !record_path.is_empty() {
                     files.push(MemoryHierarchyNode::File(record));
@@ -46,7 +48,9 @@ impl MemoryTree {
                     if let Some(first_slash) = remainder.find('/') {
                         let dir_name = &remainder[..first_slash];
                         let full_dir_path = format!("{}/{}", parent_path, dir_name);
-                        let entry = dirs.entry(dir_name.to_string()).or_insert((full_dir_path, 0));
+                        let entry = dirs
+                            .entry(dir_name.to_string())
+                            .or_insert((full_dir_path, 0));
                         entry.1 += 1;
                     } else if !remainder.is_empty() {
                         files.push(MemoryHierarchyNode::File(record));
@@ -65,13 +69,18 @@ impl MemoryTree {
         }
 
         // Sort for deterministic output: Directories first, then files, both alphabetically
-        result.sort_by(|a, b| {
-            match (a, b) {
-                (MemoryHierarchyNode::Directory { name: na, .. }, MemoryHierarchyNode::Directory { name: nb, .. }) => na.cmp(nb),
-                (MemoryHierarchyNode::Directory { .. }, MemoryHierarchyNode::File(_)) => std::cmp::Ordering::Less,
-                (MemoryHierarchyNode::File(_), MemoryHierarchyNode::Directory { .. }) => std::cmp::Ordering::Greater,
-                (MemoryHierarchyNode::File(ra), MemoryHierarchyNode::File(rb)) => ra.path.cmp(&rb.path),
+        result.sort_by(|a, b| match (a, b) {
+            (
+                MemoryHierarchyNode::Directory { name: na, .. },
+                MemoryHierarchyNode::Directory { name: nb, .. },
+            ) => na.cmp(nb),
+            (MemoryHierarchyNode::Directory { .. }, MemoryHierarchyNode::File(_)) => {
+                std::cmp::Ordering::Less
             }
+            (MemoryHierarchyNode::File(_), MemoryHierarchyNode::Directory { .. }) => {
+                std::cmp::Ordering::Greater
+            }
+            (MemoryHierarchyNode::File(ra), MemoryHierarchyNode::File(rb)) => ra.path.cmp(&rb.path),
         });
 
         result
@@ -105,6 +114,7 @@ mod tests {
             content_iv: None,
             encrypted_dek: None,
             metadata_iv: None,
+            score: 0.0,
         }
     }
 
@@ -120,7 +130,12 @@ mod tests {
         let result = MemoryTree::build_ls(records, "");
         assert_eq!(result.len(), 3); // a.md (File), b (Dir), f (Dir)
 
-        if let MemoryHierarchyNode::Directory { name, path, child_count } = &result[0] {
+        if let MemoryHierarchyNode::Directory {
+            name,
+            path,
+            child_count,
+        } = &result[0]
+        {
             assert_eq!(name, "b");
             assert_eq!(path, "b");
             assert_eq!(*child_count, 2);
@@ -128,7 +143,12 @@ mod tests {
             panic!("Expected directory b");
         }
 
-        if let MemoryHierarchyNode::Directory { name, path, child_count } = &result[1] {
+        if let MemoryHierarchyNode::Directory {
+            name,
+            path,
+            child_count,
+        } = &result[1]
+        {
             assert_eq!(name, "f");
             assert_eq!(path, "f");
             assert_eq!(*child_count, 1);
@@ -155,7 +175,12 @@ mod tests {
         let result = MemoryTree::build_ls(records, "b");
         assert_eq!(result.len(), 3); // d (Dir), c.md (File), f.md (File)
 
-        if let MemoryHierarchyNode::Directory { name, path, child_count } = &result[0] {
+        if let MemoryHierarchyNode::Directory {
+            name,
+            path,
+            child_count,
+        } = &result[0]
+        {
             assert_eq!(name, "d");
             assert_eq!(path, "b/d");
             assert_eq!(*child_count, 1);

@@ -3,21 +3,18 @@
 //! Provides token-based authentication and Origin header validation
 //! for MCP Streamable HTTP transport (spec 2026-07-28).
 
+use crate::security::auth::resolve_xavier_token;
 use axum::{
     body::Body,
     http::{Request, StatusCode},
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use tracing::warn;
-use crate::security::auth::resolve_xavier_token;
 use subtle::ConstantTimeEq;
+use tracing::warn;
 
 /// Authentication middleware for MCP HTTP+SSE transport
-pub async fn mcp_auth_middleware(
-    req: Request<Body>,
-    next: Next,
-) -> Response {
+pub async fn mcp_auth_middleware(req: Request<Body>, next: Next) -> Response {
     let path = req.uri().path();
     if !path.starts_with("/mcp") {
         return next.run(req).await;
@@ -41,8 +38,8 @@ pub async fn mcp_auth_middleware(
         };
 
         if !is_trusted {
-             warn!(origin = %origin_str, "MCP access rejected: invalid Origin");
-             return (StatusCode::FORBIDDEN, "Forbidden: Invalid Origin").into_response();
+            warn!(origin = %origin_str, "MCP access rejected: invalid Origin");
+            return (StatusCode::FORBIDDEN, "Forbidden: Invalid Origin").into_response();
         }
     } else {
         warn!("MCP access rejected: missing Origin header");
@@ -53,7 +50,11 @@ pub async fn mcp_auth_middleware(
     let expected_token = match resolve_xavier_token() {
         Ok(token) => token,
         Err(_) => {
-            return (StatusCode::INTERNAL_SERVER_ERROR, "Security token not configured").into_response();
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Security token not configured",
+            )
+                .into_response();
         }
     };
 
@@ -69,7 +70,10 @@ pub async fn mcp_auth_middleware(
         });
 
     let provided_token_str = provided_token.unwrap_or("");
-    let is_match: bool = provided_token_str.as_bytes().ct_eq(expected_token.as_bytes()).into();
+    let is_match: bool = provided_token_str
+        .as_bytes()
+        .ct_eq(expected_token.as_bytes())
+        .into();
 
     if !is_match {
         warn!("Unauthorized MCP access attempt from {}", req.uri());
@@ -82,7 +86,9 @@ pub async fn mcp_auth_middleware(
 /// Validates an incoming Stdio connection
 pub fn validate_stdio_connection() -> anyhow::Result<()> {
     if resolve_xavier_token().is_err() {
-        return Err(anyhow::anyhow!("Stdio MCP connection rejected: XAVIER_TOKEN not set. Security enforcement enabled."));
+        return Err(anyhow::anyhow!(
+            "Stdio MCP connection rejected: XAVIER_TOKEN not set. Security enforcement enabled."
+        ));
     }
     Ok(())
 }

@@ -1,0 +1,20 @@
+{
+  "type": "jules",
+  "agent_id": "jules",
+  "project": "xavier",
+  "task": "Arreglar el modulo de CLI governance que no compila. El archivo src/cli/commands/governance.rs tiene imports rotos: usa 'crate::data_commons::governance' y 'crate::data_commons::types' pero la ruta correcta es 'crate::cli::commands::data_commons::...'. Ademas el modulo governance no esta declarado en src/cli/commands/mod.rs (actualmente hay un stub wildcard en el match de Command::Governance). Tareas: (1) Corregir los imports en governance.rs para que apunten a crate::cli::commands::data_commons::{governance, types}. (2) Anadir 'pub mod governance;' en src/cli/commands/mod.rs. (3) Cambiar el stub wildcard 'Command::Governance { .. } => ...' por 'Command::Governance { command } => governance::handle_governance_command(command.clone()).await'. (4) Verificar que 'cargo build --release --no-default-features --features ci-safe' compila limpio y que 'xavier governance list|council' funciona.",
+  "title": "Fix governance CLI: broken imports (crate::data_commons) + wire module",
+  "repo": "iberi22/xavier",
+  "issue_url": "https://github.com/iberi22/xavier/issues/391",
+  "issue_number": "391",
+  "labels": [
+    "jules",
+    "feat",
+    "refactor",
+    "dx"
+  ],
+  "persisted_path": "dispatch/xavier/jules/391",
+  "persisted_id": "01KWRDQPDS1JBBD82AM4HQQMNX",
+  "ts": "2026-07-05T05:58:57Z",
+  "note": "Jules es async. Monitorea el PR con: python dispatch.py jules-status"
+}

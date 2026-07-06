@@ -4,6 +4,7 @@ import { HardwareStep } from "./HardwareStep";
 import { IntegrationsStep } from "./IntegrationsStep";
 import { SystemScanStep } from "./SystemScanStep";
 import { WelcomeStep } from "./WelcomeStep";
+import { AuthStep } from "./AuthStep";
 
 export type SystemInfo = {
   total_ram_gb: number;
@@ -74,8 +75,15 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
             onChangeToken={(val) =>
               setConfig((prev) => ({ ...prev, telegram_token: val }))
             }
-            onComplete={handleComplete}
+            onComplete={handleNext}
             isSaving={isSaving}
+          />
+        );
+      case 4:
+        return (
+          <AuthStep
+            onSkip={handleComplete}
+            onComplete={handleComplete}
           />
         );
       default:
@@ -90,7 +98,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
         <div className="h-1 w-full bg-neutral-900">
           <div
             className="h-full bg-emerald-500 transition-all duration-500 ease-in-out"
-            style={{ width: `${((step + 1) / 4) * 100}%` }}
+            style={{ width: `${((step + 1) / 5) * 100}%` }}
           />
         </div>
         <div className="p-8">{renderStep()}</div>

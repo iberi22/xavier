@@ -8,8 +8,8 @@ use tracing::info;
 use xavier::enterprise::rbac::Role;
 use xavier::memory::schema::ClearanceLevel;
 use xavier::mesh::{
-    NodeId, NodeIdentity, PeerInfo, PeerRegistry,
     acl::{MeshAcl, NodeAclEntry},
+    NodeId, NodeIdentity, PeerInfo, PeerRegistry,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -97,8 +97,14 @@ pub async fn list_peers_handler() -> impl IntoResponse {
                 node_id: p.node_id.0.clone(),
                 alias: p.alias.clone(),
                 endpoint_url: p.endpoint_url.clone(),
-                role: entry.as_ref().map(|e| e.role.clone()).unwrap_or(Role::Viewer),
-                clearance: entry.as_ref().map(|e| e.clearance.clone()).unwrap_or(ClearanceLevel::Unclassified),
+                role: entry
+                    .as_ref()
+                    .map(|e| e.role.clone())
+                    .unwrap_or(Role::Viewer),
+                clearance: entry
+                    .as_ref()
+                    .map(|e| e.clearance.clone())
+                    .unwrap_or(ClearanceLevel::Unclassified),
                 last_seen_at: p.last_seen_at,
                 sync_enabled: p.sync_enabled,
             }
@@ -222,6 +228,7 @@ pub async fn pair_peer_handler(Json(payload): Json<PairRequest>) -> impl IntoRes
         last_seen_at: None,
         sync_enabled: true,
         is_cloud: false,
+        iroh_addr: None,
     };
 
     if let Err(e) = registry.add_peer(peer) {

@@ -22,8 +22,24 @@ async fn test_hormer_navigation_at_scale() {
         for i in 0..1000 {
             let next = (i + 1) % 1000;
             let skip = (i + 5) % 1000;
-            g.add_relation(format!("concept_{}", i), format!("concept_{}", next), "leads_to".to_string(), None, None).await.unwrap();
-            g.add_relation(format!("concept_{}", i), format!("concept_{}", skip), "shortcut".to_string(), None, None).await.unwrap();
+            g.add_relation(
+                format!("concept_{}", i),
+                format!("concept_{}", next),
+                "leads_to".to_string(),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+            g.add_relation(
+                format!("concept_{}", i),
+                format!("concept_{}", skip),
+                "shortcut".to_string(),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
         }
     }
 
@@ -49,11 +65,17 @@ async fn test_hormer_navigation_at_scale() {
             },
         ];
 
-        hormer.update_from_interaction(weights, &results, None).await;
+        hormer
+            .update_from_interaction(weights, &results, None)
+            .await;
 
         // Verify weights remain valid
         let current_weights = hormer.get_weights().await;
-        assert!(current_weights.is_valid(), "Weights must sum to ~1.0 after update {}", i);
+        assert!(
+            current_weights.is_valid(),
+            "Weights must sum to ~1.0 after update {}",
+            i
+        );
     }
 
     let metrics = hormer.get_metrics().await;

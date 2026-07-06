@@ -10,15 +10,9 @@ use xavier::session::sharing::SessionBundle;
 /// Handle session management commands
 pub async fn handle_session_command(cmd: SessionCommand) -> Result<()> {
     match cmd {
-        SessionCommand::Export { session_id, output } => {
-            export_session(session_id, output).await
-        }
-        SessionCommand::Import { input } => {
-            import_session(input).await
-        }
-        SessionCommand::Share { session_id, peer } => {
-            share_session(session_id, peer).await
-        }
+        SessionCommand::Export { session_id, output } => export_session(session_id, output).await,
+        SessionCommand::Import { input } => import_session(input).await,
+        SessionCommand::Share { session_id, peer } => share_session(session_id, peer).await,
     }
 }
 
@@ -58,7 +52,8 @@ async fn import_session(input: PathBuf) -> Result<()> {
     let client = crate::cli::commands::enums::CLI_HTTP_CLIENT.clone();
 
     let raw = std::fs::read_to_string(&input).context("Failed to read session bundle file")?;
-    let bundle: SessionBundle = serde_json::from_str(&raw).context("Failed to parse session bundle JSON")?;
+    let bundle: SessionBundle =
+        serde_json::from_str(&raw).context("Failed to parse session bundle JSON")?;
 
     println!("Importing session {}...", bundle.session_id);
     let resp = client
@@ -82,7 +77,10 @@ async fn share_session(session_id: String, peer_node_id: String) -> Result<()> {
     let token = require_xavier_token()?;
     let client = crate::cli::commands::enums::CLI_HTTP_CLIENT.clone();
 
-    println!("Sharing session {} with peer {}...", session_id, peer_node_id);
+    println!(
+        "Sharing session {} with peer {}...",
+        session_id, peer_node_id
+    );
     let payload = serde_json::json!({
         "peer_node_id": peer_node_id
     });

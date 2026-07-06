@@ -119,13 +119,34 @@ pub async fn handle_visualize(
 
         lines.push("\n[Traversal Weights]".to_string());
         let tw = &body["traversal_weights"];
-        lines.push(format!("  Semantic Sim: {:.4}", tw["semantic_similarity"].as_f64().unwrap_or(0.0)));
-        lines.push(format!("  Confidence:   {:.4}", tw["confidence"].as_f64().unwrap_or(0.0)));
-        lines.push(format!("  Edge Weight:  {:.4}", tw["edge_weight"].as_f64().unwrap_or(0.0)));
-        lines.push(format!("  Recency:      {:.4}", tw["recency"].as_f64().unwrap_or(0.0)));
-        lines.push(format!("  Cross-Layer:  {:.4}", tw["cross_layer"].as_f64().unwrap_or(0.0)));
-        lines.push(format!("  Cross-Dir:    {:.4}", tw["cross_dir"].as_f64().unwrap_or(0.0)));
-        lines.push(format!("  Periph-Hub:   {:.4}", tw["peripheral_hub"].as_f64().unwrap_or(0.0)));
+        lines.push(format!(
+            "  Semantic Sim: {:.4}",
+            tw["semantic_similarity"].as_f64().unwrap_or(0.0)
+        ));
+        lines.push(format!(
+            "  Confidence:   {:.4}",
+            tw["confidence"].as_f64().unwrap_or(0.0)
+        ));
+        lines.push(format!(
+            "  Edge Weight:  {:.4}",
+            tw["edge_weight"].as_f64().unwrap_or(0.0)
+        ));
+        lines.push(format!(
+            "  Recency:      {:.4}",
+            tw["recency"].as_f64().unwrap_or(0.0)
+        ));
+        lines.push(format!(
+            "  Cross-Layer:  {:.4}",
+            tw["cross_layer"].as_f64().unwrap_or(0.0)
+        ));
+        lines.push(format!(
+            "  Cross-Dir:    {:.4}",
+            tw["cross_dir"].as_f64().unwrap_or(0.0)
+        ));
+        lines.push(format!(
+            "  Periph-Hub:   {:.4}",
+            tw["peripheral_hub"].as_f64().unwrap_or(0.0)
+        ));
 
         // Build hotspot map from the response
         use std::collections::HashMap;
@@ -178,14 +199,25 @@ pub async fn handle_visualize(
         // Add Telemetry Metrics section to visualize if available
         if let Some(metrics) = body.get("metrics") {
             lines.push("\n[Navigation Telemetry]".to_string());
-            lines.push(format!("  Total Visits:     {}", metrics["total_visits"].as_u64().unwrap_or(0)));
-            lines.push(format!("  Unique Nodes:     {}", metrics["unique_nodes"].as_u64().unwrap_or(0)));
-            lines.push(format!("  Avg Path Length:  {:.2}", metrics["avg_path_length"].as_f64().unwrap_or(0.0)));
+            lines.push(format!(
+                "  Total Visits:     {}",
+                metrics["total_visits"].as_u64().unwrap_or(0)
+            ));
+            lines.push(format!(
+                "  Unique Nodes:     {}",
+                metrics["unique_nodes"].as_u64().unwrap_or(0)
+            ));
+            lines.push(format!(
+                "  Avg Path Length:  {:.2}",
+                metrics["avg_path_length"].as_f64().unwrap_or(0.0)
+            ));
             if let Some(hist) = metrics["nav_score_histogram"].as_array() {
                 lines.push("  Nav Score Hist:   ".to_string());
                 let mut hist_str = String::new();
                 for (i, val) in hist.iter().enumerate() {
-                    if i > 0 { hist_str.push_str(", "); }
+                    if i > 0 {
+                        hist_str.push_str(", ");
+                    }
                     hist_str.push_str(&format!("{}:{}", i, val.as_u64().unwrap_or(0)));
                 }
                 lines.push(format!("    [{}]", hist_str));
@@ -260,7 +292,10 @@ fn render_tree_lines(
         let hormer = hormer_scores.get(&node.full_path).copied().unwrap_or(0.0);
 
         let snippet = if show_hormer && hormer > 0.0 {
-            format!("{}{}{}{} ({} visits, H={:.4})", indent, branch, prefix, name, visits, hormer)
+            format!(
+                "{}{}{}{} ({} visits, H={:.4})",
+                indent, branch, prefix, name, visits, hormer
+            )
         } else if visits > 0 {
             format!("{}{}{}{} ({} visits)", indent, branch, prefix, name, visits)
         } else if show_hormer && hormer_scores.contains_key(&node.full_path) {
@@ -309,7 +344,10 @@ fn render_tree_lines(
     lines
 }
 
-fn render_tree(docs: &[xavier::memory::qmd::MemoryDocument], hotspots: &std::collections::HashMap<String, u64>) {
+fn render_tree(
+    docs: &[xavier::memory::qmd::MemoryDocument],
+    hotspots: &std::collections::HashMap<String, u64>,
+) {
     use std::collections::BTreeMap;
 
     #[derive(Default)]
@@ -334,7 +372,9 @@ fn render_tree(docs: &[xavier::memory::qmd::MemoryDocument], hotspots: &std::col
             curr.full_path = current_full_path.clone();
             if i == parts.len() - 1 {
                 curr.is_doc = true;
-                curr.score = doc.metadata.get("memory_importance")
+                curr.score = doc
+                    .metadata
+                    .get("memory_importance")
                     .or_else(|| doc.metadata.get("quality").and_then(|q| q.get("overall")))
                     .and_then(|v| v.as_f64())
                     .map(|v| v as f32);
@@ -342,7 +382,13 @@ fn render_tree(docs: &[xavier::memory::qmd::MemoryDocument], hotspots: &std::col
         }
     }
 
-    fn print_node(name: &str, node: &Node, indent: &str, is_last: bool, hotspots: &std::collections::HashMap<String, u64>) {
+    fn print_node(
+        name: &str,
+        node: &Node,
+        indent: &str,
+        is_last: bool,
+        hotspots: &std::collections::HashMap<String, u64>,
+    ) {
         let branch = if is_last { "`-- " } else { "|-- " };
         let prefix = if node.is_doc { "DOC " } else { "DIR " };
         let visits = hotspots.get(&node.full_path).copied().unwrap_or(0);
@@ -363,7 +409,13 @@ fn render_tree(docs: &[xavier::memory::qmd::MemoryDocument], hotspots: &std::col
         let new_indent = format!("{}{}", indent, if is_last { "    " } else { "|   " });
         let count = node.children.len();
         for (i, (child_name, child_node)) in node.children.iter().enumerate() {
-            print_node(child_name, child_node, &new_indent, i == count - 1, hotspots);
+            print_node(
+                child_name,
+                child_node,
+                &new_indent,
+                i == count - 1,
+                hotspots,
+            );
         }
     }
 

@@ -322,9 +322,7 @@ mod tests {
         };
         let store = Arc::new(VecSqliteMemoryStore::new(config).await.unwrap());
 
-        let cg_db = Arc::new(
-            code_graph::db::CodeGraphDB::new(&PathBuf::from(":memory:")).unwrap(),
-        );
+        let cg_db = Arc::new(code_graph::db::CodeGraphDB::new(&PathBuf::from(":memory:")).unwrap());
         let cg_state = Arc::new(tokio::sync::RwLock::new(CodeGraphState {
             db: cg_db.clone(),
             indexer: Arc::new(code_graph::indexer::Indexer::new(cg_db.clone())),
@@ -340,13 +338,13 @@ mod tests {
             security: Arc::new(SecurityService::new()),
             security_scan: Arc::new(SecurityService::new()),
             _time_store: None,
-            agent_registry: SimpleAgentRegistry::new(),
+            agent_registry: SimpleAgentRegistry::new(None),
             panel_store: Arc::new(
                 ConversationsDb::open_in_memory("test-project")
                     .await
                     .unwrap(),
             ),
-            secrets_engine: Arc::new(KeyLendingEngine::new(Box::new(QmdAuditLogger::new()))),
+            secrets_engine: Arc::new(KeyLendingEngine::new(Box::new(QmdAuditLogger::new()), None)),
             event_bus: XavierEventBus::new(10),
             tasks: Arc::new(TaskService::new(Arc::new(InMemoryTaskStore::new()))),
             rate_manager: Arc::new(RateLimitManager::new()),

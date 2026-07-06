@@ -1,4 +1,4 @@
-﻿name: SWE-bench Benchmark
+name: SWE-bench Benchmark
 
 on:
   workflow_dispatch:
@@ -55,3 +55,4 @@ jobs:
         with:
           name: swebench-results
           path: benchmark-results/swebench
+

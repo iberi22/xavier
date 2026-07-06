@@ -209,13 +209,7 @@ impl AdaptiveZoneBooster {
     }
 
     /// Records feedback for a user's zone: whether results were relevant and the avg score.
-    pub async fn record_feedback(
-        &self,
-        user_id: &str,
-        zone: &str,
-        was_relevant: bool,
-        score: f32,
-    ) {
+    pub async fn record_feedback(&self, user_id: &str, zone: &str, was_relevant: bool, score: f32) {
         let mut user_zones = self.user_zone_scores.lock().await;
         let entry = user_zones
             .entry(user_id.to_string())
@@ -281,6 +275,28 @@ impl AdaptiveZoneBooster {
             }
         }
         0.0
+    }
+
+    /// Returns the mean hit rate across ALL tracked user/zone combinations (0.0–1.0).
+    ///
+    /// Used by the auto-improvement loop as a cache-effectiveness proxy: when the
+    /// booster has accumulated feedback, this reflects how often the adaptive
+    /// weighting served relevant results. Returns 0.0 when no data is recorded.
+    pub async fn average_hit_rate(&self) -> f32 {
+        let user_zones = self.user_zone_scores.lock().await;
+        let mut total_hits = 0u64;
+        let mut total_queries = 0u64;
+        for zones in user_zones.values() {
+            for perf in zones.values() {
+                total_hits += perf.hits;
+                total_queries += perf.total;
+            }
+        }
+        if total_queries == 0 {
+            0.0
+        } else {
+            total_hits as f32 / total_queries as f32
+        }
     }
 
     /// Resets data for all users.
@@ -387,7 +403,8 @@ impl AdaptiveGating {
         query: &str,
         belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
     ) -> Vec<ScoredResult> {
-        self.retrieve_with_telemetry(working, episodic, semantic, query, belief_graph, None, None).await
+        self.retrieve_with_telemetry(working, episodic, semantic, query, belief_graph, None, None)
+            .await
     }
 
     /// Retrieve from all memory layers with telemetry recording
@@ -405,7 +422,9 @@ impl AdaptiveGating {
         let start_time = std::time::Instant::now();
 
         // 1. Score each layer independently (may use parallel execution internally)
-        let working_results = self.score_working_layer_at(working, query, now, user_id.as_deref()).await;
+        let working_results = self
+            .score_working_layer_at(working, query, now, user_id.as_deref())
+            .await;
         let episodic_results = self.score_episodic_layer_at(episodic, query, now).await;
         let mut semantic_results = self.score_semantic_layer_at(semantic, query, now).await;
 
@@ -420,7 +439,8 @@ impl AdaptiveGating {
 
         if let (Some(graph_lock), Some(policy)) = (belief_graph.as_ref(), expansion_policy) {
             let graph = graph_lock.read().await;
-            let pathfinder = crate::memory::graph_traversal::Pathfinder::with_policy(&graph, policy);
+            let pathfinder =
+                crate::memory::graph_traversal::Pathfinder::with_policy(&graph, policy);
 
             let mut expansions = Vec::new();
             // Expand from top semantic hits
@@ -524,7 +544,8 @@ impl AdaptiveGating {
         }
 
         // 7. Limit results
-        let final_results: Vec<ScoredResult> = results.into_iter().take(self.config.max_results).collect();
+        let final_results: Vec<ScoredResult> =
+            results.into_iter().take(self.config.max_results).collect();
 
         // 8. Record telemetry
         let latency = start_time.elapsed().as_millis() as u64;
@@ -542,7 +563,8 @@ impl AdaptiveGating {
         results: &[ScoredResult],
         belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
     ) -> Vec<String> {
-        self.predict_next_queries_with_telemetry(results, belief_graph, None).await
+        self.predict_next_queries_with_telemetry(results, belief_graph, None)
+            .await
     }
 
     /// Enhanced next query prediction with sibling detection and telemetry hotspots
@@ -936,7 +958,9 @@ impl AdaptiveGating {
             .filter(|d| d.level != crate::memory::schema::MemoryLevel::Belief)
             .cloned()
             .collect();
-        let level_0_results = self.score_working_layer_at(&working_docs, query, now, None).await;
+        let level_0_results = self
+            .score_working_layer_at(&working_docs, query, now, None)
+            .await;
 
         // Level 1: Entity Graph
         let level_1_results = self.score_semantic_layer_at(semantic, query, now).await;
@@ -1322,7 +1346,9 @@ mod tests {
             },
         ];
 
-        let results = gating.score_working_layer_at(&docs, "BELA", now, None).await;
+        let results = gating
+            .score_working_layer_at(&docs, "BELA", now, None)
+            .await;
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].id, "recent");
         assert!(results[0].score > results[1].score);
@@ -1449,23 +1475,35 @@ mod tests {
         let docs_arc = Arc::new(tokio::sync::RwLock::new(Vec::new()));
         let memory = Arc::new(QmdMemory::new(docs_arc));
 
-        memory.add_document("docs/rust/main.rs".to_string(), "main".to_string(), serde_json::json!({})).await.unwrap();
-        memory.add_document("docs/rust/lib.rs".to_string(), "lib".to_string(), serde_json::json!({})).await.unwrap();
+        memory
+            .add_document(
+                "docs/rust/main.rs".to_string(),
+                "main".to_string(),
+                serde_json::json!({}),
+            )
+            .await
+            .unwrap();
+        memory
+            .add_document(
+                "docs/rust/lib.rs".to_string(),
+                "lib".to_string(),
+                serde_json::json!({}),
+            )
+            .await
+            .unwrap();
 
         let mut gating = AdaptiveGating::with_defaults();
         gating = gating.with_memory(memory);
 
-        let results = vec![
-            ScoredResult {
-                id: "1".to_string(),
-                path: "docs/rust/main.rs".to_string(),
-                content: "content".to_string(),
-                score: 1.0,
-                source: "working".to_string(),
-                zone: None,
-                ..Default::default()
-            },
-        ];
+        let results = vec![ScoredResult {
+            id: "1".to_string(),
+            path: "docs/rust/main.rs".to_string(),
+            content: "content".to_string(),
+            score: 1.0,
+            source: "working".to_string(),
+            zone: None,
+            ..Default::default()
+        }];
 
         let predictions = gating.predict_next_queries(&results, None).await;
         // Should contain parent
@@ -1482,24 +1520,32 @@ mod tests {
         };
         let gating = AdaptiveGating::new(config);
 
-        let graph = Arc::new(tokio::sync::RwLock::new(crate::memory::belief_graph::BeliefGraph::new()));
+        let graph = Arc::new(tokio::sync::RwLock::new(
+            crate::memory::belief_graph::BeliefGraph::new(),
+        ));
         {
             let g = graph.write().await;
             g.add_node("Rust".to_string(), 1.0, None);
             g.add_node("Cargo".to_string(), 1.0, None);
-            g.add_relation("Rust".to_string(), "Cargo".to_string(), "uses".to_string(), None, None).await.unwrap();
+            g.add_relation(
+                "Rust".to_string(),
+                "Cargo".to_string(),
+                "uses".to_string(),
+                None,
+                None,
+            )
+            .await
+            .unwrap();
         }
 
-        let results = vec![
-            ScoredResult {
-                id: "rust-id".to_string(),
-                content: "Rust".to_string(),
-                score: 1.0,
-                source: "semantic".to_string(),
-                zone: None,
-                ..Default::default()
-            },
-        ];
+        let results = vec![ScoredResult {
+            id: "rust-id".to_string(),
+            content: "Rust".to_string(),
+            score: 1.0,
+            source: "semantic".to_string(),
+            zone: None,
+            ..Default::default()
+        }];
 
         let predictions = gating.predict_next_queries(&results, Some(graph)).await;
         assert!(predictions.contains(&"cargo".to_string()));
@@ -1523,21 +1569,34 @@ mod tests {
         let booster = AdaptiveZoneBooster::new();
         // Give 10 positive feedbacks for user1/decision
         for _ in 0..10 {
-            booster.record_feedback("user1", "decision", true, 0.9).await;
+            booster
+                .record_feedback("user1", "decision", true, 0.9)
+                .await;
         }
         // Give 5/10 negative feedbacks for user1/code
         for i in 0..10 {
             let relevant = i < 3;
-            booster.record_feedback("user1", "code", relevant, 0.5).await;
+            booster
+                .record_feedback("user1", "code", relevant, 0.5)
+                .await;
         }
 
         let decision_boost = booster.get_boost("user1", "decision").await;
         let code_boost = booster.get_boost("user1", "code").await;
 
         // decision has 100% hit rate → boost should be higher than base
-        assert!(decision_boost > 1.6, "decision boost should be high, got {}", decision_boost);
+        assert!(
+            decision_boost > 1.6,
+            "decision boost should be high, got {}",
+            decision_boost
+        );
         // code has 30% hit rate → boost should be lower than decision
-        assert!(code_boost < decision_boost, "code boost ({}) should be < decision boost ({})", code_boost, decision_boost);
+        assert!(
+            code_boost < decision_boost,
+            "code boost ({}) should be < decision boost ({})",
+            code_boost,
+            decision_boost
+        );
     }
 
     #[tokio::test]

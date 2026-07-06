@@ -14,9 +14,9 @@
 
 pub mod anchor;
 pub mod cli;
+pub mod reporter;
 pub mod scanner;
 pub mod scorer;
-pub mod reporter;
 
 #[cfg(test)]
 mod tests;
@@ -25,10 +25,10 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anchor::{AnchorManifest, FeatureAnchor};
-use serde::{Deserialize, Serialize};
 use anyhow::Result;
 use reporter::Summary;
 use scorer::ScoredFeature;
+use serde::{Deserialize, Serialize};
 
 /// Result of a complete maturity scan.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -74,8 +74,13 @@ pub struct MaturityScanner {
 impl MaturityScanner {
     /// Create a new scanner with the given anchor manifest file and codebase root.
     pub fn new(anchor_path: &Path, codebase_root: &str) -> Result<Self> {
-        let content = std::fs::read_to_string(anchor_path)
-            .map_err(|e| anyhow::anyhow!("Cannot read anchor manifest '{}': {}", anchor_path.display(), e))?;
+        let content = std::fs::read_to_string(anchor_path).map_err(|e| {
+            anyhow::anyhow!(
+                "Cannot read anchor manifest '{}': {}",
+                anchor_path.display(),
+                e
+            )
+        })?;
         let manifest: AnchorManifest = serde_json::from_str(&content)
             .map_err(|e| anyhow::anyhow!("Invalid anchor manifest JSON: {}", e))?;
         Ok(Self {
@@ -114,7 +119,8 @@ impl MaturityScanner {
         let mut scored_features = Vec::new();
 
         // Scan code graph for all unique symbols across features
-        let all_symbols: Vec<String> = features.iter()
+        let all_symbols: Vec<String> = features
+            .iter()
             .flat_map(|f| f.subcomponents.iter())
             .flat_map(|s| s.static_checks.iter().map(|c| c.symbol.clone()))
             .collect();
@@ -137,11 +143,24 @@ impl MaturityScanner {
         }
 
         let total: f64 = scored_features.iter().map(|f| f.overall).sum();
-        let overall = if scored_features.is_empty() { 0.0 } else { (total / scored_features.len() as f64).round() };
+        let overall = if scored_features.is_empty() {
+            0.0
+        } else {
+            (total / scored_features.len() as f64).round()
+        };
 
-        let production_ready = scored_features.iter().filter(|f| f.status == "production_ready").count();
-        let needs_work = scored_features.iter().filter(|f| f.status == "needs_work").count();
-        let in_progress = scored_features.iter().filter(|f| f.status == "in_progress").count();
+        let production_ready = scored_features
+            .iter()
+            .filter(|f| f.status == "production_ready")
+            .count();
+        let needs_work = scored_features
+            .iter()
+            .filter(|f| f.status == "needs_work")
+            .count();
+        let in_progress = scored_features
+            .iter()
+            .filter(|f| f.status == "in_progress")
+            .count();
 
         let summary = Summary {
             overall_maturity: overall as u8,
@@ -202,7 +221,10 @@ impl MaturityScanner {
 
         for feature in &features {
             let memory_ratio = evidence.memory_evidence.get(&feature.id).map(|m| m.ratio);
-            let conv_ratio = evidence.conversation_evidence.get(&feature.id).map(|c| c.ratio);
+            let conv_ratio = evidence
+                .conversation_evidence
+                .get(&feature.id)
+                .map(|c| c.ratio);
 
             match self.scan_feature_v2(feature, &evidence, memory_ratio, conv_ratio) {
                 Ok(scored) => scored_features.push(scored),
@@ -220,11 +242,24 @@ impl MaturityScanner {
         }
 
         let total: f64 = scored_features.iter().map(|f| f.overall).sum();
-        let overall = if scored_features.is_empty() { 0.0 } else { (total / scored_features.len() as f64).round() };
+        let overall = if scored_features.is_empty() {
+            0.0
+        } else {
+            (total / scored_features.len() as f64).round()
+        };
 
-        let production_ready = scored_features.iter().filter(|f| f.status == "production_ready").count();
-        let needs_work = scored_features.iter().filter(|f| f.status == "needs_work").count();
-        let in_progress = scored_features.iter().filter(|f| f.status == "in_progress").count();
+        let production_ready = scored_features
+            .iter()
+            .filter(|f| f.status == "production_ready")
+            .count();
+        let needs_work = scored_features
+            .iter()
+            .filter(|f| f.status == "needs_work")
+            .count();
+        let in_progress = scored_features
+            .iter()
+            .filter(|f| f.status == "in_progress")
+            .count();
 
         let summary = Summary {
             overall_maturity: overall as u8,
@@ -253,13 +288,24 @@ impl MaturityScanner {
     }
 
     /// v1 scan: uses old grep-based symbol + test scanning.
-    fn scan_feature_v1(&self, feature: &FeatureAnchor, static_scan: &scanner::CodeGraphScan) -> Result<ScoredFeature, String> {
+    fn scan_feature_v1(
+        &self,
+        feature: &FeatureAnchor,
+        static_scan: &scanner::CodeGraphScan,
+    ) -> Result<ScoredFeature, String> {
         let mut scored_subs = Vec::new();
 
         for sub in &feature.subcomponents {
             let symbols: Vec<String> = sub.static_checks.iter().map(|c| c.symbol.clone()).collect();
-            let static_found = symbols.iter().filter(|s| static_scan.found.contains(*s)).count();
-            let static_pass_rate = if symbols.is_empty() { 1.0 } else { static_found as f64 / symbols.len() as f64 };
+            let static_found = symbols
+                .iter()
+                .filter(|s| static_scan.found.contains(*s))
+                .count();
+            let static_pass_rate = if symbols.is_empty() {
+                1.0
+            } else {
+                static_found as f64 / symbols.len() as f64
+            };
 
             let gate_ok = if let Some(ref gate) = sub.required_feature {
                 self.check_feature_gate(gate)
@@ -277,7 +323,11 @@ impl MaturityScanner {
 
             let static_score = static_pass_rate * sub.weight as f64 * 0.40;
             let test_score = test_pass_rate * sub.weight as f64 * 0.50;
-            let gate_score = if gate_ok { sub.weight as f64 * 0.10 } else { 0.0 };
+            let gate_score = if gate_ok {
+                sub.weight as f64 * 0.10
+            } else {
+                0.0
+            };
             let sub_score = (static_score + test_score + gate_score).round() as u8;
 
             scored_subs.push(scorer::ScoredSubcomponent {
@@ -298,9 +348,22 @@ impl MaturityScanner {
         }
 
         let total_weight: u32 = scored_subs.iter().map(|s| s.weight).sum();
-        let weighted_sum: f64 = scored_subs.iter().map(|s| s.maturity as f64 * s.weight as f64).sum();
-        let overall = if total_weight == 0 { 0.0 } else { (weighted_sum / total_weight as f64).round() };
-        let status = if overall >= 90.0 { "production_ready" } else if overall >= 50.0 { "needs_work" } else { "in_progress" };
+        let weighted_sum: f64 = scored_subs
+            .iter()
+            .map(|s| s.maturity as f64 * s.weight as f64)
+            .sum();
+        let overall = if total_weight == 0 {
+            0.0
+        } else {
+            (weighted_sum / total_weight as f64).round()
+        };
+        let status = if overall >= 90.0 {
+            "production_ready"
+        } else if overall >= 50.0 {
+            "needs_work"
+        } else {
+            "in_progress"
+        };
 
         Ok(ScoredFeature {
             id: feature.id.clone(),
@@ -337,7 +400,11 @@ impl MaturityScanner {
             } else {
                 // fallback: grep
                 let found = symbols.iter().filter(|s| self.grep_codebase(s)).count();
-                let rate = if symbols_total == 0 { 1.0 } else { found as f64 / symbols_total as f64 };
+                let rate = if symbols_total == 0 {
+                    1.0
+                } else {
+                    found as f64 / symbols_total as f64
+                };
                 (found, rate)
             };
 
@@ -347,18 +414,32 @@ impl MaturityScanner {
                 true
             };
 
-            let (tests_passing, tests_total, test_pass_rate) = if let Some((passing, total)) = test_evidence {
-                let total_count = total.len();
-                let passing_count = passing.iter().filter(|p| sub.test_anchors.contains(*p)).count();
-                let rate = if total_count == 0 { 1.0 } else { passing_count as f64 / total_count as f64 };
-                (passing_count, total_count, rate)
-            } else {
-                let results = self.scan_tests(&sub.test_anchors);
-                let p = results.iter().filter(|t| **t).count();
-                let t2 = sub.test_anchors.len();
-                let rate = if t2 == 0 { 1.0 } else { p as f64 / t2 as f64 };
-                (p, t2, rate)
-            };
+            let (tests_passing, tests_total, test_pass_rate) =
+                if let Some((passing, total)) = test_evidence {
+                    // Per-subcomponent denominator: the rate must reflect THIS
+                    // subcomponent's anchors, not the feature-wide aggregate.
+                    // (previously used total.len() which is the feature total and
+                    //  produced nonsensical rates when some subs had anchors and others
+                    //  didn't). `total` here is the full anchor set for the feature.
+                    let _ = total; // feature-wide set available for diagnostics
+                    let sub_total = sub.test_anchors.len();
+                    let passing_count = passing
+                        .iter()
+                        .filter(|p| sub.test_anchors.contains(*p))
+                        .count();
+                    let rate = if sub_total == 0 {
+                        1.0
+                    } else {
+                        passing_count as f64 / sub_total as f64
+                    };
+                    (passing_count, sub_total, rate)
+                } else {
+                    let results = self.scan_tests(&sub.test_anchors);
+                    let p = results.iter().filter(|t| **t).count();
+                    let t2 = sub.test_anchors.len();
+                    let rate = if t2 == 0 { 1.0 } else { p as f64 / t2 as f64 };
+                    (p, t2, rate)
+                };
 
             // Memory + conversation evidence
             let mem_ratio = memory_ratio.unwrap_or(0.0);
@@ -367,17 +448,28 @@ impl MaturityScanner {
             // Weighted score with 5 metrics (v2 formula)
             let static_score = static_pass_rate * sub.weight as f64 * 0.35;
             let test_score = test_pass_rate * sub.weight as f64 * 0.35;
-            let gate_score = if gate_ok { sub.weight as f64 * 0.10 } else { 0.0 };
+            let gate_score = if gate_ok {
+                sub.weight as f64 * 0.10
+            } else {
+                0.0
+            };
             let memory_score = mem_ratio * sub.weight as f64 * 0.10;
             let conversation_score = issue_ratio * sub.weight as f64 * 0.10;
 
-            let sub_score = (static_score + test_score + gate_score + memory_score + conversation_score).round() as u8;
+            let sub_score = (static_score
+                + test_score
+                + gate_score
+                + memory_score
+                + conversation_score)
+                .round() as u8;
 
             let mut detail = format!(
                 "static: {}/{} ({}%), tests: {}/{} ({}%)",
-                static_found, symbols_total,
+                static_found,
+                symbols_total,
                 (static_pass_rate * 100.0).round(),
-                tests_passing, tests_total,
+                tests_passing,
+                tests_total,
                 (test_pass_rate * 100.0).round()
             );
             if memory_ratio.is_some() {
@@ -405,9 +497,22 @@ impl MaturityScanner {
         }
 
         let total_weight: u32 = scored_subs.iter().map(|s| s.weight).sum();
-        let weighted_sum: f64 = scored_subs.iter().map(|s| s.maturity as f64 * s.weight as f64).sum();
-        let overall = if total_weight == 0 { 0.0 } else { (weighted_sum / total_weight as f64).round() };
-        let status = if overall >= 90.0 { "production_ready" } else if overall >= 50.0 { "needs_work" } else { "in_progress" };
+        let weighted_sum: f64 = scored_subs
+            .iter()
+            .map(|s| s.maturity as f64 * s.weight as f64)
+            .sum();
+        let overall = if total_weight == 0 {
+            0.0
+        } else {
+            (weighted_sum / total_weight as f64).round()
+        };
+        let status = if overall >= 90.0 {
+            "production_ready"
+        } else if overall >= 50.0 {
+            "needs_work"
+        } else {
+            "in_progress"
+        };
 
         Ok(ScoredFeature {
             id: feature.id.clone(),
@@ -435,7 +540,10 @@ impl MaturityScanner {
         if tests.is_empty() {
             return Vec::new();
         }
-        tests.iter().map(|test_name| self.grep_codebase(&format!("fn {}", test_name))).collect()
+        tests
+            .iter()
+            .map(|test_name| self.grep_codebase(&format!("fn {}", test_name)))
+            .collect()
     }
 
     fn grep_codebase(&self, pattern: &str) -> bool {

@@ -41,9 +41,7 @@ pub async fn apply_changes_received(
                 };
 
                 // Check if we already have this record
-                let existing = store
-                    .get(&incoming.workspace_id, &incoming.path)
-                    .await?;
+                let existing = store.get(&incoming.workspace_id, &incoming.path).await?;
 
                 match existing {
                     None => {
@@ -153,6 +151,7 @@ mod tests {
             encrypted_dek: None,
             content_iv: None,
             metadata_iv: None,
+            score: 0.0,
         }
     }
 

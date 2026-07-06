@@ -3,11 +3,11 @@
 //! Tracks peer uptime, message count, latency, and consensus agreement ratio
 //! using an in-memory sliding window.
 
+use crate::mesh::NodeId;
+use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
-use serde::{Deserialize, Serialize};
-use crate::mesh::NodeId;
 
 const WINDOW_SIZE: usize = 100;
 
@@ -82,21 +82,26 @@ impl MeshTelemetryCollector {
 
     pub fn record_latency(&self, node_id: &NodeId, latency_ms: u64) {
         let mut metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
-        metrics.entry(node_id.clone())
+        metrics
+            .entry(node_id.clone())
             .or_insert_with(PeerMetrics::new)
             .record_latency(latency_ms);
     }
 
     pub fn record_agreement(&self, node_id: &NodeId, agreed: bool) {
         let mut metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
-        metrics.entry(node_id.clone())
+        metrics
+            .entry(node_id.clone())
             .or_insert_with(PeerMetrics::new)
             .record_agreement(agreed);
     }
 
     pub fn get_peer_agreement_ratio(&self, node_id: &NodeId) -> f64 {
         let metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
-        metrics.get(node_id).map(|m| m.agreement_ratio()).unwrap_or(1.0)
+        metrics
+            .get(node_id)
+            .map(|m| m.agreement_ratio())
+            .unwrap_or(1.0)
     }
 
     pub fn get_overall_agreement_ratio(&self) -> f64 {
@@ -110,7 +115,8 @@ impl MeshTelemetryCollector {
 
     pub fn get_unhealthy_peers(&self, threshold: f64) -> Vec<NodeId> {
         let metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
-        metrics.iter()
+        metrics
+            .iter()
             .filter(|(_, m)| m.agreement_ratio() < threshold)
             .map(|(id, _)| id.clone())
             .collect()
@@ -125,6 +131,39 @@ impl MeshTelemetryCollector {
             self.record_agreement(&peer, agreed);
             // Simulated latency: 10ms - 210ms
             self.record_latency(&peer, (rand::random::<u64>() % 200) + 10);
+        }
+    }
+
+    /// Number of known peers.
+    pub fn peer_count(&self) -> u32 {
+        let metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
+        metrics.len() as u32
+    }
+
+    /// Number of peers considered healthy (agreement ratio >= 0.5).
+    pub fn connected_peer_count(&self) -> u32 {
+        let metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
+        metrics
+            .values()
+            .filter(|m| m.agreement_ratio() >= 0.5)
+            .count() as u32
+    }
+
+    /// Average latency across all peers in milliseconds. Returns 0.0 if no data.
+    pub fn average_latency_ms(&self) -> f64 {
+        let metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
+        let total: u64 = metrics
+            .values()
+            .filter_map(|m| m.latencies_ms.iter().last().copied())
+            .sum();
+        let count = metrics
+            .values()
+            .filter(|m| !m.latencies_ms.is_empty())
+            .count();
+        if count == 0 {
+            0.0
+        } else {
+            total as f64 / count as f64
         }
     }
 

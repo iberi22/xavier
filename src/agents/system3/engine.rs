@@ -292,9 +292,19 @@ pub fn observe(chain: &[ReasoningStep]) -> MetaObservations {
     let mut certainty_scores = Vec::new();
 
     let contradiction_keywords = ["however", "but", "contradict", "disagree", "alternatively"];
-    let bias_keywords = ["always", "never", "only", "must", "clearly", "obviously", "undoubtedly"];
+    let bias_keywords = [
+        "always",
+        "never",
+        "only",
+        "must",
+        "clearly",
+        "obviously",
+        "undoubtedly",
+    ];
     let high_certainty = ["certain", "sure", "confirmed", "proven", "absolute"];
-    let low_certainty = ["maybe", "perhaps", "likely", "unlikely", "possible", "suggests"];
+    let low_certainty = [
+        "maybe", "perhaps", "likely", "unlikely", "possible", "suggests",
+    ];
 
     for step in chain {
         let text = format!("{} {}", step.thought, step.conclusion).to_lowercase();
@@ -305,11 +315,20 @@ pub fn observe(chain: &[ReasoningStep]) -> MetaObservations {
         }
 
         // Bias
-        bias_indicators += bias_keywords.iter().filter(|&&kw| text.contains(kw)).count();
+        bias_indicators += bias_keywords
+            .iter()
+            .filter(|&&kw| text.contains(kw))
+            .count();
 
         // Confidence estimation per step
-        let high = high_certainty.iter().filter(|&&kw| text.contains(kw)).count();
-        let low = low_certainty.iter().filter(|&&kw| text.contains(kw)).count();
+        let high = high_certainty
+            .iter()
+            .filter(|&&kw| text.contains(kw))
+            .count();
+        let low = low_certainty
+            .iter()
+            .filter(|&&kw| text.contains(kw))
+            .count();
         let score = 0.5 + (high as f64 * 0.1) - (low as f64 * 0.1);
         certainty_scores.push(score.clamp(0.0, 1.0));
     }
