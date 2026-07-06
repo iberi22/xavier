@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
-use xavier::security::recovery::RecoveryManager;
+use xavier::security::recovery::RecoverySystem;
 use xavier::security::user_store::{BackupCode, UserStore};
 
 #[derive(Deserialize)]
@@ -94,7 +94,7 @@ pub async fn seed_verify_handler(
         }
     };
 
-    let seed_hash = RecoveryManager::hash_seed_phrase(&payload.seed_phrase);
+    let seed_hash = RecoverySystem::hash_seed_phrase(&payload.seed_phrase);
     if user.recovery_seed_hash != seed_hash {
         return json_response(
             StatusCode::UNAUTHORIZED,
@@ -120,7 +120,7 @@ pub async fn password_reset_handler(
         }
     };
 
-    let seed_hash = RecoveryManager::hash_seed_phrase(&payload.seed_phrase);
+    let seed_hash = RecoverySystem::hash_seed_phrase(&payload.seed_phrase);
     if user.recovery_seed_hash != seed_hash {
         return json_response(
             StatusCode::UNAUTHORIZED,
@@ -135,8 +135,8 @@ pub async fn password_reset_handler(
     // Generate new seed phrase as well? Requirement says "Generar NUEVOS backup codes"
     // Requirement also says "allows to create new password"
 
-    let new_seed = RecoveryManager::generate_seed_phrase().unwrap();
-    let new_seed_hash = RecoveryManager::hash_seed_phrase(&new_seed);
+    let new_seed = RecoverySystem::generate_seed_phrase().unwrap();
+    let new_seed_hash = RecoverySystem::hash_seed_phrase(&new_seed);
 
     if let Err(e) = user_store
         .update_password_and_recovery(&user.id, &new_password_hash, &new_seed_hash)
@@ -157,13 +157,13 @@ pub async fn password_reset_handler(
         .delete_backup_codes_for_user(&user.id)
         .await
         .unwrap();
-    let codes = RecoveryManager::generate_backup_codes();
+    let codes = RecoverySystem::generate_backup_codes();
     let mut backup_codes = Vec::new();
     for code in &codes {
         backup_codes.push(BackupCode {
             id: Uuid::new_v4().to_string(),
             user_id: user.id.clone(),
-            code_hash: RecoveryManager::hash_backup_code(code),
+            code_hash: RecoverySystem::hash_backup_code(code),
             used: false,
         });
     }
@@ -195,7 +195,7 @@ pub async fn backup_codes_generate_handler(
         }
     };
 
-    let seed_hash = RecoveryManager::hash_seed_phrase(&payload.seed_phrase);
+    let seed_hash = RecoverySystem::hash_seed_phrase(&payload.seed_phrase);
     if user.recovery_seed_hash != seed_hash {
         return json_response(
             StatusCode::UNAUTHORIZED,
@@ -207,13 +207,13 @@ pub async fn backup_codes_generate_handler(
         .delete_backup_codes_for_user(&user.id)
         .await
         .unwrap();
-    let codes = RecoveryManager::generate_backup_codes();
+    let codes = RecoverySystem::generate_backup_codes();
     let mut backup_codes = Vec::new();
     for code in &codes {
         backup_codes.push(BackupCode {
             id: Uuid::new_v4().to_string(),
             user_id: user.id.clone(),
-            code_hash: RecoveryManager::hash_backup_code(code),
+            code_hash: RecoverySystem::hash_backup_code(code),
             used: false,
         });
     }

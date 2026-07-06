@@ -23,7 +23,7 @@ use crate::cli::config::{
     code_graph_db_path, resolve_base_url_for_port, resolve_http_bind_host, resolve_http_token,
     state_panel_root,
 };
-use crate::security::auth_store::AuthStore;
+use xavier::security::auth_store::AuthStore;
 use crate::cli::state::CliState;
 
 use crate::settings::XavierSettings;

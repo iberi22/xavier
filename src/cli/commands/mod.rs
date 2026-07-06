@@ -64,6 +64,10 @@ impl Cli {
                 start_http_server(port, *mcp_port).await
             }
             Command::Mcp => start_mcp_stdio().await,
+            Command::IndexSelf => {
+                println!("IndexSelf is not yet implemented.");
+                Ok(())
+            }
             Command::Search {
                 query,
                 limit,
@@ -197,10 +201,14 @@ impl Cli {
                 data_commons::handle_data_commons_command(cmd.clone()).await
             }
             Command::Governance { command } => {
-                governance::handle_governance_command(command.clone()).await
+                governance::handle_governance(command.clone()).await
             }
             Command::Wallet { cmd } => wallet::handle_wallet_command(cmd.clone()).await,
             Command::Session { cmd } => session::handle_session_command(cmd.clone()).await,
+            Command::IndexSelf => {
+                println!("IndexSelf is not yet implemented.");
+                Ok(())
+            }
             Command::Mesh { cmd } => mesh::handle_mesh_command(cmd.clone()).await,
             Command::Secrets { cmd } => secrets::handle_secrets_command(cmd.clone()).await,
             Command::Vault { cmd } => secrets::handle_vault_command(cmd.clone()).await,
