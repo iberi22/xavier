@@ -204,6 +204,28 @@ impl KeyLendingEngine {
         }
     }
 
+    /// Renew all leases for a specific agent
+    pub async fn renew_for_agent(&self, agent_id: &str, ttl_secs: u64) -> usize {
+        let mut leases = self.leases.write().await;
+        let mut count = 0;
+        for lease in leases.values_mut() {
+            if lease.agent_id == agent_id {
+                let now = Utc::now();
+                lease.expires_at = now + Duration::seconds(ttl_secs as i64);
+                count += 1;
+            }
+        }
+        if count > 0 {
+            tracing::info!(
+                "Renewed {} leases for agent '{}' (New TTL: {}s)",
+                count,
+                agent_id,
+                ttl_secs
+            );
+        }
+        count
+    }
+
     /// Revoke all leases for a specific agent
     pub async fn revoke_for_agent(&self, agent_id: &str, reason: &str) -> usize {
         let mut leases = self.leases.write().await;
