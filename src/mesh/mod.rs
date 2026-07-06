@@ -40,11 +40,13 @@ pub mod cloud_node;
 pub mod crypto_gating;
 pub mod data_consent;
 pub mod data_sanitizer;
-#[cfg(feature = "mesh")]
+#[cfg(feature = "mesh-legacy")]
 pub mod discovery;
 pub mod governance;
 #[cfg(feature = "mesh")]
 pub mod heartbeat;
+#[cfg(feature = "mesh")]
+pub mod iroh_transport;
 pub mod node;
 pub mod pairing;
 pub mod pairing_registry;
@@ -54,7 +56,9 @@ pub mod telemetry;
 pub mod telemetry_collector;
 pub mod tokenomics;
 pub mod transport;
-#[cfg(feature = "mesh")]
+// Legacy libp2p transport — broken against libp2p 0.56 and superseded by Iroh.
+// Gated behind mesh-legacy so it doesn't break the default mesh build.
+#[cfg(feature = "mesh-legacy")]
 pub mod libp2p_transport;
 
 pub use acl::{MeshAcl, NodeAclEntry};
@@ -62,13 +66,18 @@ pub use acl::{MeshAcl, NodeAclEntry};
 pub use auto_update::{AutoUpdateService, UpdateStatus};
 pub use data_consent::{ConsentLevel, DataConsentManager};
 pub use data_sanitizer::{DataSanitizer, SanitizationAction, SanitizationRule};
-#[cfg(feature = "mesh")]
+#[cfg(feature = "mesh-legacy")]
 pub use discovery::DiscoveryService;
 #[cfg(feature = "mesh")]
 pub use heartbeat::{HeartbeatPayload, HeartbeatReceipt, HeartbeatService};
 pub use node::{NodeId, NodeIdentity};
 pub use peer::{PeerInfo, PeerRegistry};
 pub use protocol::{MeshHandshake, MeshManifest, MeshSyncRequest};
-pub use telemetry_collector::{RetentionPolicy, TelemetryAggregate, TelemetryCollector, TelemetrySample};
-pub use tokenomics::{Wallet, WalletBalance, Transaction, TransactionKind, RewardEngine, RewardEvent, ContributionType};
+pub use telemetry_collector::{
+    RetentionPolicy, TelemetryAggregate, TelemetryCollector, TelemetrySample,
+};
+pub use tokenomics::{
+    ContributionType, RewardEngine, RewardEvent, Transaction, TransactionKind, Wallet,
+    WalletBalance,
+};
 pub use transport::MeshTransport;

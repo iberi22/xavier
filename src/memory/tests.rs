@@ -9,11 +9,11 @@
 #[cfg(test)]
 #[allow(clippy::module_inception)]
 mod tests {
-    use crate::memory::simple_index::{extract_keywords, SimpleMemoryDoc, SimpleMemoryIndex};
-    use crate::memory::virtual_memory::{Checkpoint, TokenSavings, VirtualMemoryEntry};
-    use crate::memory::qmd::utils::cosine_similarity;
     use crate::memory::hierarchy::MemoryHierarchyNode;
-    use crate::memory::store::{MemoryRecord, InMemoryMemoryStore, MemoryStore};
+    use crate::memory::qmd::utils::cosine_similarity;
+    use crate::memory::simple_index::{extract_keywords, SimpleMemoryDoc, SimpleMemoryIndex};
+    use crate::memory::store::{InMemoryMemoryStore, MemoryRecord, MemoryStore};
+    use crate::memory::virtual_memory::{Checkpoint, TokenSavings, VirtualMemoryEntry};
     use chrono::Utc;
 
     // ==================== Hierarchy Tests ====================
@@ -39,16 +39,29 @@ mod tests {
             content_iv: None,
             encrypted_dek: None,
             metadata_iv: None,
+            score: 0.0,
         }
     }
 
     #[tokio::test]
     async fn test_store_ls_integration() {
         let store = InMemoryMemoryStore::new();
-        store.put(mock_record("docs/api/v1.md")).await.expect("test assertion");
-        store.put(mock_record("docs/api/v2.md")).await.expect("test assertion");
-        store.put(mock_record("docs/readme.md")).await.expect("test assertion");
-        store.put(mock_record("blog/post1.md")).await.expect("test assertion");
+        store
+            .put(mock_record("docs/api/v1.md"))
+            .await
+            .expect("test assertion");
+        store
+            .put(mock_record("docs/api/v2.md"))
+            .await
+            .expect("test assertion");
+        store
+            .put(mock_record("docs/readme.md"))
+            .await
+            .expect("test assertion");
+        store
+            .put(mock_record("blog/post1.md"))
+            .await
+            .expect("test assertion");
 
         // List root
         let root = store.ls("test", "").await.expect("test assertion");
@@ -99,7 +112,7 @@ mod tests {
         let doc = SimpleMemoryDoc::new(
             "test.rs".to_string(),
             "fn main() { println!(\"Hello\"); }".to_string(),
-            serde_json::json!({"type": "test"})
+            serde_json::json!({"type": "test"}),
         );
         index.add(doc);
 
@@ -116,13 +129,13 @@ mod tests {
         index.add(SimpleMemoryDoc::new(
             "test1.rs".to_string(),
             "fn main() { println!(\"test\"); }".to_string(),
-            serde_json::json!({})
+            serde_json::json!({}),
         ));
 
         index.add(SimpleMemoryDoc::new(
             "test2.rs".to_string(),
             "other content".to_string(),
-            serde_json::json!({})
+            serde_json::json!({}),
         ));
 
         let results = index.search("test", 5);
@@ -219,11 +232,7 @@ mod tests {
     #[test]
     fn test_summary_creation() {
         let content = "a".repeat(1000);
-        let entry = VirtualMemoryEntry::new(
-            "test.txt".to_string(),
-            content,
-            serde_json::json!({}),
-        );
+        let entry = VirtualMemoryEntry::new("test.txt".to_string(), content, serde_json::json!({}));
 
         // Summary should be shorter than original
         assert!(entry.summary.len() < 1000);
@@ -236,52 +245,94 @@ mod tests {
     /// and ensures NavigationPolicy assigns scores correctly
     #[tokio::test]
     async fn test_hormer_navigation_policy_integration() {
-        use crate::retrieval::NavigationPolicy;
-        use crate::retrieval::policy::TraversalWeights;
         use crate::retrieval::gating::LayerWeights;
+        use crate::retrieval::policy::TraversalWeights;
+        use crate::retrieval::NavigationPolicy;
 
         // 1. Create hierarchical documents in memory store
         let store = crate::memory::store::InMemoryMemoryStore::new();
 
         // docs/project/api/v1.md
-        store.put(mock_record("docs/project/api/v1.md")).await.expect("test assertion");
-        store.put(mock_record("docs/project/api/v2.md")).await.expect("test assertion");
+        store
+            .put(mock_record("docs/project/api/v1.md"))
+            .await
+            .expect("test assertion");
+        store
+            .put(mock_record("docs/project/api/v2.md"))
+            .await
+            .expect("test assertion");
         // docs/project/readme.md
-        store.put(mock_record("docs/project/readme.md")).await.expect("test assertion");
+        store
+            .put(mock_record("docs/project/readme.md"))
+            .await
+            .expect("test assertion");
         // docs/config/settings.yaml
-        store.put(mock_record("docs/config/settings.yaml")).await.expect("test assertion");
+        store
+            .put(mock_record("docs/config/settings.yaml"))
+            .await
+            .expect("test assertion");
         // src/lib/core.rs
-        store.put(mock_record("src/lib/core.rs")).await.expect("test assertion");
-        store.put(mock_record("src/lib/utils.rs")).await.expect("test assertion");
+        store
+            .put(mock_record("src/lib/core.rs"))
+            .await
+            .expect("test assertion");
+        store
+            .put(mock_record("src/lib/utils.rs"))
+            .await
+            .expect("test assertion");
         // src/main.rs
-        store.put(mock_record("src/main.rs")).await.expect("test assertion");
+        store
+            .put(mock_record("src/main.rs"))
+            .await
+            .expect("test assertion");
 
         // 2. Verify ls navigation at root
         let root = store.ls("test", "").await.expect("test assertion");
-        assert_eq!(root.len(), 2, "Expected 2 top-level directories (docs, src)");
+        assert_eq!(
+            root.len(),
+            2,
+            "Expected 2 top-level directories (docs, src)"
+        );
         assert!(
-            root.iter().any(|n| matches!(n, MemoryHierarchyNode::Directory { name, .. } if name == "docs")),
+            root.iter().any(
+                |n| matches!(n, MemoryHierarchyNode::Directory { name, .. } if name == "docs")
+            ),
             "Expected docs/ directory"
         );
         assert!(
-            root.iter().any(|n| matches!(n, MemoryHierarchyNode::Directory { name, .. } if name == "src")),
+            root.iter()
+                .any(|n| matches!(n, MemoryHierarchyNode::Directory { name, .. } if name == "src")),
             "Expected src/ directory"
         );
 
         // 3. Verify ls on nested path: docs/project/
-        let project = store.ls("test", "docs/project").await.expect("test assertion");
-        assert_eq!(project.len(), 2, "Expected 2 entries under docs/project/ (api/, readme.md)");
+        let project = store
+            .ls("test", "docs/project")
+            .await
+            .expect("test assertion");
+        assert_eq!(
+            project.len(),
+            2,
+            "Expected 2 entries under docs/project/ (api/, readme.md)"
+        );
         assert!(
-            project.iter().any(|n| matches!(n, MemoryHierarchyNode::Directory { name, .. } if name == "api")),
+            project
+                .iter()
+                .any(|n| matches!(n, MemoryHierarchyNode::Directory { name, .. } if name == "api")),
             "Expected api/ subdirectory"
         );
         assert!(
-            project.iter().any(|n| matches!(n, MemoryHierarchyNode::File(r) if r.path == "docs/project/readme.md")),
+            project.iter().any(
+                |n| matches!(n, MemoryHierarchyNode::File(r) if r.path == "docs/project/readme.md")
+            ),
             "Expected docs/project/readme.md file"
         );
 
         // 4. Verify ls on deeply nested path: docs/project/api/
-        let api = store.ls("test", "docs/project/api").await.expect("test assertion");
+        let api = store
+            .ls("test", "docs/project/api")
+            .await
+            .expect("test assertion");
         assert_eq!(api.len(), 2, "Expected 2 files under docs/project/api/");
 
         // 5. Create a NavigationPolicy and verify score assignment
@@ -293,13 +344,25 @@ mod tests {
 
         // Default weights: working=0.3, episodic=0.3, semantic=0.4
         let score_working = policy.score_for_prefetch("working", 0.8);
-        assert!((score_working - 0.24).abs() < 0.001, "Expected 0.24 for working layer, got {}", score_working);
+        assert!(
+            (score_working - 0.24).abs() < 0.001,
+            "Expected 0.24 for working layer, got {}",
+            score_working
+        );
 
         let score_semantic = policy.score_for_prefetch("semantic", 0.8);
-        assert!((score_semantic - 0.32).abs() < 0.001, "Expected 0.32 for semantic layer, got {}", score_semantic);
+        assert!(
+            (score_semantic - 0.32).abs() < 0.001,
+            "Expected 0.32 for semantic layer, got {}",
+            score_semantic
+        );
 
         let score_episodic = policy.score_for_prefetch("episodic", 0.5);
-        assert!((score_episodic - 0.15).abs() < 0.001, "Expected 0.15 for episodic layer, got {}", score_episodic);
+        assert!(
+            (score_episodic - 0.15).abs() < 0.001,
+            "Expected 0.15 for episodic layer, got {}",
+            score_episodic
+        );
 
         // Unknown layer returns 0
         let score_unknown = policy.score_for_prefetch("unknown", 0.8);
@@ -317,7 +380,11 @@ mod tests {
         // After update, weights should still sum to ~1.0
         let lw = mutable_policy.layer_weights;
         let sum = lw.working + lw.episodic + lw.semantic;
-        assert!((sum - 1.0).abs() < 0.01, "Layer weights should sum to ~1.0 after update, got {}", sum);
+        assert!(
+            (sum - 1.0).abs() < 0.01,
+            "Layer weights should sum to ~1.0 after update, got {}",
+            sum
+        );
 
         // Update count should be incremented
         assert_eq!(mutable_policy.update_count, 1);
@@ -333,7 +400,7 @@ mod tests {
         index.add(SimpleMemoryDoc::new(
             "nextjs.rs".to_string(),
             "Next.js with Supabase authentication".to_string(),
-            serde_json::json!({})
+            serde_json::json!({}),
         ));
 
         // Should find by keywords

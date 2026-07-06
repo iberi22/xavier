@@ -214,7 +214,8 @@ pub fn default_compaction_threshold() -> f64 {
 #[derive(Debug, Deserialize)]
 pub struct LendSecretPayload {
     pub secret_name: String,
-    pub secret_value: String,
+    #[serde(default)]
+    pub secret_value: Option<String>,
     pub agent_id: String,
     pub ttl_seconds: u64,
 }

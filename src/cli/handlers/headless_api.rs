@@ -4,12 +4,16 @@
 //! protected by the existing auth + rate-limit middleware.
 
 use axum::{
-    extract::Json,
+    extract::{Json, State},
     http::StatusCode,
-    response::{IntoResponse, Json as AxumJson},
+    response::{IntoResponse, Json as AxumJson, Response},
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+
+use crate::cli::http_setup::SessionInfo;
+use crate::cli::state::CliState;
+use xavier::domain::proxy::{ProxyChatCommand, ProxyError};
 
 // ═════════════════════════════════════════════════════════════════════════════
 // System
@@ -65,6 +69,7 @@ pub struct ChatRequest {
     pub max_tokens: Option<u32>,
     pub stream: Option<bool>,
     pub provider: Option<String>,
+    pub lease_token: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -91,24 +96,35 @@ pub struct Usage {
     pub total_tokens: usize,
 }
 
-pub async fn headless_chat(Json(req): Json<ChatRequest>) -> impl IntoResponse {
-    // TODO: wire to ProxyUseCase once it's accessible from CLI state
-    AxumJson(ChatResponse {
-        id: format!("chatcmpl-{}", ulid::Ulid::new()),
-        object: "chat.completion".to_string(),
-        created: chrono::Utc::now().timestamp(),
+pub async fn headless_chat(
+    axum::extract::State(state): axum::extract::State<crate::cli::state::CliState>,
+    axum::Extension(session): axum::Extension<crate::cli::http_setup::SessionInfo>,
+    Json(req): Json<ChatRequest>,
+) -> impl IntoResponse {
+    use crate::cli::utils::ProxyErrorWrapper;
+    use xavier::domain::proxy::ProxyChatCommand;
+
+    let cmd = ProxyChatCommand {
         model: req.model.unwrap_or_else(|| "auto".to_string()),
-        choices: vec![Choice {
-            index: 0,
-            message: json!({"role": "assistant", "content": "Headless API chat placeholder — wire ProxyUseCase here."}),
-            finish_reason: "stop".to_string(),
-        }],
-        usage: Usage {
-            prompt_tokens: 0,
-            completion_tokens: 0,
-            total_tokens: 0,
-        },
-    })
+        messages: req.messages,
+        temperature: req.temperature,
+        max_tokens: req.max_tokens.map(|t| t as usize),
+        lease_token: req.lease_token,
+    };
+
+    match state
+        .proxy_use_case
+        .execute_secured(
+            cmd,
+            session.is_ephemeral,
+            state.secrets_engine.clone(),
+            state.event_bus.clone(),
+        )
+        .await
+    {
+        Ok(resp) => (StatusCode::OK, AxumJson(resp)).into_response(),
+        Err(e) => ProxyErrorWrapper(e).into_response(),
+    }
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

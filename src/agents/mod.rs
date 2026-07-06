@@ -2,8 +2,10 @@
 //!
 //! Aggregates and re-exports the sub-modules within this module,
 //! providing the public API surface for module consumers.
+pub mod anomaly_scanner;
 pub mod belief_evaluator;
 pub mod curation;
+pub mod cve_learner;
 pub mod evolve;
 pub mod extraction;
 pub mod hormer;
@@ -14,8 +16,6 @@ pub mod runtime;
 pub mod self_harness_coordinator;
 pub mod supervisor;
 pub mod system1;
-pub mod anomaly_scanner;
-pub mod cve_learner;
 pub mod system2;
 pub mod system3;
 pub mod ui_render;
@@ -25,6 +25,9 @@ use std::collections::HashMap;
 
 pub use runtime::{AgentRuntime, RuntimeConfig};
 pub use unregister_agent_handler::unregister_agent_handler;
+
+use crate::ports::inbound::AgentLifecyclePort;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentStatus {
@@ -140,12 +143,27 @@ impl Agent {
     pub async fn run(
         &mut self,
         memory: std::sync::Arc<crate::memory::qmd_memory::QmdMemory>,
+        lifecycle: Option<Arc<dyn AgentLifecyclePort>>,
+    ) -> anyhow::Result<crate::agents::runtime::AgentResponse> {
+        self.run_with_lifecycle(memory, None).await
+    }
+
+    pub async fn run_with_lifecycle(
+        &mut self,
+        memory: std::sync::Arc<crate::memory::qmd_memory::QmdMemory>,
+        lifecycle: Option<std::sync::Arc<dyn crate::ports::inbound::AgentLifecyclePort>>,
     ) -> anyhow::Result<crate::agents::runtime::AgentResponse> {
         self.start();
         let task = self
             .task
             .clone()
             .unwrap_or_else(|| "What is my current status?".to_string());
+
+        let task_id = ulid::Ulid::new().to_string();
+
+        if let Some(ref lc) = lifecycle {
+            lc.on_task_start(&self.name, &task_id).await;
+        }
 
         let mut runtime_config = crate::agents::runtime::RuntimeConfig::default();
         if let Some(ref p) = self.provider {
@@ -168,10 +186,25 @@ impl Agent {
             runtime = runtime.with_provider_config(p_config);
         }
 
-        let response = runtime.run(&task, None, None).await?;
+        let result = runtime.run(&task, None, None).await;
+        let result = runtime.run(&task, None, None).await;
+
+        // Notify lifecycle hooks for this task completion
+        if let Some(ref lc) = lifecycle {
+            match &result {
+                Ok(resp) => {
+                    lc.on_task_complete(&self.name, &task_id, &Ok(resp.clone()))
+                        .await;
+                }
+                Err(e) => {
+                    lc.on_task_complete(&self.name, &task_id, &Err(e.to_string()))
+                        .await;
+                }
+            }
+        }
 
         self.stop();
-        Ok(response)
+        result
     }
 }
 

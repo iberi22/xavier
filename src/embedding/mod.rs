@@ -537,7 +537,10 @@ mod tests {
             dimension: 1536,
             model: "test".to_string(),
         };
-        assert_eq!(config_with_openai.api_key, Some("sk-openai-test-key".to_string()));
+        assert_eq!(
+            config_with_openai.api_key,
+            Some("sk-openai-test-key".to_string())
+        );
 
         // 3. Test settings.embedding.api_key takes precedence over env vars
         settings.embedding.api_key = Some("sk-settings-test-key".to_string());
@@ -552,7 +555,10 @@ mod tests {
             dimension: 1536,
             model: "test".to_string(),
         };
-        assert_eq!(config_with_settings.api_key, Some("sk-settings-test-key".to_string()));
+        assert_eq!(
+            config_with_settings.api_key,
+            Some("sk-settings-test-key".to_string())
+        );
 
         std::env::remove_var("XAVIER_OPENROUTER_API_KEY");
         std::env::remove_var("OPENAI_API_KEY");

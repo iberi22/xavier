@@ -172,6 +172,12 @@ pub enum Command {
         #[command(subcommand)]
         cmd: DataCommonsCommand,
     },
+
+    /// Manage Xavier Governance (DAO, Voting, Council)
+    Governance {
+        #[command(subcommand)]
+        command: GovernanceCommand,
+    },
     /// Manage XP wallet and tokenomics [SKELETON — decisions pending]
     Wallet {
         #[command(subcommand)]
@@ -274,6 +280,68 @@ pub enum Command {
         /// Show cloud backends status
         #[arg(long)]
         cloud: bool,
+    },
+
+    /// Run the auto-improvement loop (benchmark → gaps → experiments → validate)
+    Improve {
+        #[command(subcommand)]
+        cmd: ImproveCommand,
+    },
+
+    /// Context regeneration: measure recall@k and tune RRF weights
+    Regen {
+        #[command(subcommand)]
+        cmd: RegenCommand,
+    },
+}
+
+/// Subcommands for the auto-improvement loop.
+#[derive(Subcommand, Debug, Clone)]
+pub enum ImproveCommand {
+    /// Run a full improvement cycle and print the result
+    Run {
+        /// Allow the engine to validate experiments autonomously (re-benchmark +
+        /// accept beneficial changes). Without this flag, experiments are proposed
+        /// but not executed.
+        #[arg(long)]
+        autonomous: bool,
+        /// Emit the cycle result as JSON (for scripting / scheduler capture)
+        #[arg(long)]
+        json: bool,
+    },
+    /// Show the last improvement cycle and benchmark history
+    Status,
+}
+
+/// Subcommands for context regeneration (recall measurement + RRF tuning).
+#[derive(Subcommand, Debug, Clone)]
+pub enum RegenCommand {
+    /// Measure recall@k against a benchmark dataset and print the metrics
+    Benchmark {
+        /// Path to the benchmark dataset JSON. Defaults to the bundled dataset.
+        #[arg(long)]
+        dataset: Option<PathBuf>,
+        /// Emit metrics as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Run the RRF tuner over the benchmark dataset and print the proposal
+    Tune {
+        /// Path to the benchmark dataset JSON. Defaults to the bundled dataset.
+        #[arg(long)]
+        dataset: Option<PathBuf>,
+        /// Emit the tuning proposal as JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Print the recent tuning history from .xavier/tuning-history.json
+    History {
+        /// Number of recent proposals to show (newest last)
+        #[arg(short, long, default_value_t = 5)]
+        limit: usize,
+        /// Emit the history as JSON
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -644,6 +712,33 @@ pub enum SecretsCommand {
     Revoke { token: String },
     /// Check the status of a lease
     Status { token: String },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum GovernanceCommand {
+    /// List active proposals
+    List,
+    /// Create a new proposal
+    Create {
+        /// Proposal title
+        title: String,
+        /// Proposal description
+        description: String,
+    },
+    /// Show status of a proposal
+    Status {
+        /// Proposal ID
+        proposal_id: String,
+    },
+    /// Cast a vote on a proposal
+    Vote {
+        /// Proposal ID
+        proposal_id: String,
+        /// Vote in favor
+        approve: bool,
+    },
+    /// Show council members
+    Council,
 }
 
 #[derive(Subcommand, Debug, Clone)]

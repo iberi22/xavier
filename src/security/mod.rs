@@ -5,15 +5,20 @@
 
 pub mod anticipator;
 pub mod auth;
-pub mod license;
 pub mod detections;
+pub mod encryption_keys;
+pub mod initializer;
 pub mod layers;
+pub mod license;
 pub mod prompt_guard;
+pub mod recovery;
+pub mod rsa_keys;
 pub mod scanner;
 pub mod sessions;
 pub mod threat_store;
 pub mod tokens;
 pub mod url_validator;
+pub mod user_store;
 
 pub use anticipator::{Anticipator, AnticipatorConfig};
 pub use detections::{ScanResult as AnticipatorScanResult, Severity, Threat, ThreatCategory};

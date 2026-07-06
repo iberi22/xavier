@@ -3,16 +3,16 @@
 //! Native runtime health loop that monitors system resources, database integrity,
 //! embedding providers, and mesh peers.
 
-use std::sync::Arc;
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
-use tokio::sync::RwLock;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::RwLock;
 
 use crate::codebase::connection_manager::ConnectionManager;
-use crate::mesh::PeerRegistry;
 use crate::embedding::Embedder;
-use crate::notifications::{NOTIFICATIONS, IslandId};
+use crate::mesh::PeerRegistry;
+use crate::notifications::{IslandId, NOTIFICATIONS};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -128,7 +128,10 @@ impl HealthMonitor {
         }
     }
 
-    pub async fn set_tgd_progress(&self, progress: Arc<RwLock<crate::tgd::consolidation::ProgressReport>>) {
+    pub async fn set_tgd_progress(
+        &self,
+        progress: Arc<RwLock<crate::tgd::consolidation::ProgressReport>>,
+    ) {
         let mut prg = self.tgd_progress.write().await;
         *prg = Some(progress);
     }
@@ -157,13 +160,12 @@ impl HealthMonitor {
         let tgd_consolidation = self.check_tgd_progress().await;
 
         let mut status = HealthLevel::Healthy;
-        if system.status == HealthLevel::Unhealthy
-            || database.status == HealthLevel::Unhealthy
-            || embedding.status == HealthLevel::Unhealthy
-        {
+        // Critical failures: system or database. Embedding failures only degrade the system.
+        if system.status == HealthLevel::Unhealthy || database.status == HealthLevel::Unhealthy {
             status = HealthLevel::Unhealthy;
         } else if system.status == HealthLevel::Degraded
             || database.status == HealthLevel::Degraded
+            || embedding.status == HealthLevel::Unhealthy
             || embedding.status == HealthLevel::Degraded
             || mesh.status == HealthLevel::Degraded
         {
@@ -192,26 +194,38 @@ impl HealthMonitor {
                 HealthLevel::Degraded => ("System Health Degraded", "warning"),
                 HealthLevel::Unhealthy => ("System Health Critical", "error"),
             };
-            let _ = NOTIFICATIONS.notify(
-                IslandId::System,
-                title,
-                &format!("System status is now {:?}", new_status.status),
-                severity
-            ).await;
+            let _ = NOTIFICATIONS
+                .notify(
+                    IslandId::System,
+                    title,
+                    &format!("System status is now {:?}", new_status.status),
+                    severity,
+                )
+                .await;
         }
 
         // Auto-repair actions
         if new_status.database.fragmentation_percent > 30.0 {
-            tracing::info!("Auto-repair: High fragmentation ({:.1}%), running VACUUM...", new_status.database.fragmentation_percent);
-            let _ = self.cm.with_conn("vec_store", |conn| {
-                conn.execute("VACUUM", [])?;
-                Ok(())
-            }).await;
+            tracing::info!(
+                "Auto-repair: High fragmentation ({:.1}%), running VACUUM...",
+                new_status.database.fragmentation_percent
+            );
+            let _ = self
+                .cm
+                .with_conn("vec_store", |conn| {
+                    conn.execute("VACUUM", [])?;
+                    Ok(())
+                })
+                .await;
         }
 
         for peer in &new_status.mesh.peers {
             if peer.sync_lag_secs > 60 {
-                tracing::info!("Auto-repair: High lag for peer {} ({}s), attempting reconnection hint...", peer.node_id, peer.sync_lag_secs);
+                tracing::info!(
+                    "Auto-repair: High lag for peer {} ({}s), attempting reconnection hint...",
+                    peer.node_id,
+                    peer.sync_lag_secs
+                );
                 // In Phase 1, we don't have a direct "reconnect" call, but we log the attempt.
                 // Reconnection is handled by the sync loop in future runs.
             }
@@ -268,19 +282,23 @@ impl HealthMonitor {
         let mut fragmentation_percent = 0.0;
         let mut page_count = 0;
 
-        let res = self.cm.with_conn("vec_store", |conn| {
-            let integrity: String = conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
-            let pc: u32 = conn.query_row("PRAGMA page_count", [], |r| r.get(0))?;
-            let fc: u32 = conn.query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
+        let res = self
+            .cm
+            .with_conn("vec_store", |conn| {
+                let integrity: String =
+                    conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
+                let pc: u32 = conn.query_row("PRAGMA page_count", [], |r| r.get(0))?;
+                let fc: u32 = conn.query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
 
-            let frag = if pc > 0 {
-                (fc as f32 / pc as f32) * 100.0
-            } else {
-                0.0
-            };
+                let frag = if pc > 0 {
+                    (fc as f32 / pc as f32) * 100.0
+                } else {
+                    0.0
+                };
 
-            Ok((integrity == "ok", frag, pc))
-        }).await;
+                Ok((integrity == "ok", frag, pc))
+            })
+            .await;
 
         if let Ok((ok, frag, pc)) = res {
             integrity_ok = ok;
@@ -291,8 +309,13 @@ impl HealthMonitor {
         }
 
         let mut wal_size_bytes = 0;
-        let home = std::env::var("USERPROFILE").or_else(|_| std::env::var("HOME")).unwrap_or_else(|_| ".".to_string());
-        let wal_path = std::path::PathBuf::from(home).join(".xavier").join("data").join("vec-store.sqlite3-wal");
+        let home = std::env::var("USERPROFILE")
+            .or_else(|_| std::env::var("HOME"))
+            .unwrap_or_else(|_| ".".to_string());
+        let wal_path = std::path::PathBuf::from(home)
+            .join(".xavier")
+            .join("data")
+            .join("vec-store.sqlite3-wal");
         if let Ok(metadata) = std::fs::metadata(wal_path) {
             wal_size_bytes = metadata.len();
         }
@@ -397,9 +420,8 @@ impl HealthMonitor {
     }
 }
 
-pub static HEALTH: std::sync::LazyLock<Arc<HealthMonitor>> = std::sync::LazyLock::new(|| {
-    Arc::new(HealthMonitor::new(ConnectionManager::global()))
-});
+pub static HEALTH: std::sync::LazyLock<Arc<HealthMonitor>> =
+    std::sync::LazyLock::new(|| Arc::new(HealthMonitor::new(ConnectionManager::global())));
 
 #[cfg(test)]
 mod tests {

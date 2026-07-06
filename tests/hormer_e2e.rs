@@ -1,10 +1,10 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use xavier::agents::hormer::Hormer;
-use xavier::retrieval::{AdaptiveGating, GatingConfig, LayerWeights, NavigationPolicy};
+use xavier::memory::entity_graph::EntityRecord;
 use xavier::memory::qmd_memory::MemoryDocument;
 use xavier::retrieval::gating::SessionSummary;
-use xavier::memory::entity_graph::EntityRecord;
+use xavier::retrieval::{AdaptiveGating, GatingConfig, LayerWeights, NavigationPolicy};
 use xavier::search::rrf::ScoredResult;
 
 #[tokio::test]
@@ -44,7 +44,9 @@ async fn test_hormer_full_pipeline_e2e() {
 
     // 3. First Retrieval
     let query = "Xavier";
-    let results = gating.retrieve(&docs, &sessions, &entities, query, None).await;
+    let results = gating
+        .retrieve(&docs, &sessions, &entities, query, None)
+        .await;
 
     assert!(!results.is_empty(), "Should return results");
     assert_eq!(results[0].id, "doc_1");
@@ -54,27 +56,32 @@ async fn test_hormer_full_pipeline_e2e() {
     // To see a change in weights, we simulate that we used a different weight distribution
     // than the one currently in the policy.
     let weights_used = LayerWeights::new(0.8, 0.1, 0.1);
-    let interaction_results = vec![
-        ScoredResult {
-            id: "doc_1".to_string(),
-            content: "Xavier core logic".to_string(),
-            score: 0.95,
-            source: "working".to_string(),
-            path: "src/main.rs".to_string(),
-            updated_at: None,
-            zone: None,
-        }
-    ];
+    let interaction_results = vec![ScoredResult {
+        id: "doc_1".to_string(),
+        content: "Xavier core logic".to_string(),
+        score: 0.95,
+        source: "working".to_string(),
+        path: "src/main.rs".to_string(),
+        updated_at: None,
+        zone: None,
+    }];
 
-    hormer.update_from_interaction(weights_used, &interaction_results, None).await;
+    hormer
+        .update_from_interaction(weights_used, &interaction_results, None)
+        .await;
 
     // 5. Verify Policy Update
     let updated_weights = gating.effective_weights().await;
-    assert_ne!(updated_weights.working, initial_weights.working, "Working weight should change");
+    assert_ne!(
+        updated_weights.working, initial_weights.working,
+        "Working weight should change"
+    );
     assert!(updated_weights.is_valid());
 
     // 6. Second Retrieval (using updated policy)
-    let results_after = gating.retrieve(&docs, &sessions, &entities, query, None).await;
+    let results_after = gating
+        .retrieve(&docs, &sessions, &entities, query, None)
+        .await;
     assert!(!results_after.is_empty());
     assert_eq!(results_after[0].id, "doc_1");
 }
@@ -88,7 +95,9 @@ async fn test_hormer_edge_empty_corpus() {
     let sessions: Vec<SessionSummary> = vec![];
     let entities: Vec<EntityRecord> = vec![];
 
-    let results = gating.retrieve(&docs, &sessions, &entities, "anything", None).await;
+    let results = gating
+        .retrieve(&docs, &sessions, &entities, "anything", None)
+        .await;
     assert!(results.is_empty());
 }
 
@@ -100,13 +109,11 @@ async fn test_hormer_edge_single_document() {
     config.grounding_enabled = false;
     let gating = AdaptiveGating::with_policy(config, policy);
 
-    let docs = vec![
-        MemoryDocument {
-            id: Some("only_one".to_string()),
-            content: "Unique content".to_string(),
-            ..Default::default()
-        }
-    ];
+    let docs = vec![MemoryDocument {
+        id: Some("only_one".to_string()),
+        content: "Unique content".to_string(),
+        ..Default::default()
+    }];
 
     let results = gating.retrieve(&docs, &[], &[], "Unique", None).await;
     assert_eq!(results.len(), 1);
@@ -132,7 +139,7 @@ async fn test_hormer_edge_duplicate_documents() {
             id: Some("dup".to_string()),
             content: "Duplicate content".to_string(),
             ..Default::default()
-        }
+        },
     ];
 
     let results = gating.retrieve(&docs, &[], &[], "Duplicate", None).await;
@@ -159,7 +166,7 @@ async fn test_hormer_ranking_consistency() {
             id: Some("high".to_string()),
             content: "Xavier is here".to_string(),
             ..Default::default()
-        }
+        },
     ];
 
     let results = gating.retrieve(&docs, &[], &[], "Xavier", None).await;

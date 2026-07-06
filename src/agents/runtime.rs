@@ -199,6 +199,7 @@ pub struct AgentRuntime {
     orchestrator: Option<Orchestrator>,
     rate_manager: Option<Arc<RateLimitManager>>,
     tgd_engine: Option<crate::tgd::TgdEngine>,
+    event_bus: Option<Arc<crate::coordination::events::XavierEventBus>>,
 }
 
 impl AgentRuntime {
@@ -226,6 +227,7 @@ impl AgentRuntime {
             orchestrator: Some(orchestrator),
             rate_manager: None,
             tgd_engine: None,
+            event_bus: None,
         })
     }
 
@@ -251,6 +253,11 @@ impl AgentRuntime {
 
     pub fn with_tgd_engine(mut self, engine: crate::tgd::TgdEngine) -> Self {
         self.tgd_engine = Some(engine);
+        self
+    }
+
+    pub fn with_event_bus(mut self, bus: Arc<crate::coordination::events::XavierEventBus>) -> Self {
+        self.event_bus = Some(bus);
         self
     }
 
@@ -315,15 +322,32 @@ impl AgentRuntime {
         filters: Option<MemoryQueryFilters>,
         system3_mode: System3Mode,
     ) -> Result<AgentRunTrace> {
-        match self.run_inner(query, session_id, category, filters, system3_mode).await {
+        match self
+            .run_inner(query, session_id, category, filters, system3_mode)
+            .await
+        {
             Ok(trace) => Ok(trace),
             Err(e) => {
-                let _ = crate::notifications::NOTIFICATIONS.notify(
-                    crate::notifications::IslandId::Errors,
-                    "Agent Execution Failed",
-                    &format!("Error running agent for query: {}", e),
-                    "error"
-                ).await;
+                let _ = crate::notifications::NOTIFICATIONS
+                    .notify(
+                        crate::notifications::IslandId::Errors,
+                        "Agent Execution Failed",
+                        &format!("Error running agent for query: {}", e),
+                        "error",
+                    )
+                    .await;
+
+                // Emit failure hook (from PR #378)
+                if let Some(ref bus) = self.event_bus {
+                    let sid = session_id.clone().unwrap_or_else(|| ulid::Ulid::new().to_string());
+                    crate::coordination::agents::publish_task_failure(
+                        bus,
+                        "default-agent".to_string(),
+                        sid,
+                        e.to_string(),
+                    );
+                }
+
                 Err(e)
             }
         }
@@ -339,6 +363,16 @@ impl AgentRuntime {
     ) -> Result<AgentRunTrace> {
         let start = std::time::Instant::now();
         let session_id = session_id.unwrap_or_else(|| ulid::Ulid::new().to_string());
+
+        // Emit task start event
+        if let Some(ref bus) = self.event_bus {
+            crate::coordination::agents::publish_task_start(
+                bus,
+                "default-agent".to_string(), // TODO: Get agent ID from context if available
+                session_id.clone(),
+            );
+        }
+
         let query_fingerprint = query_fingerprint(query);
 
         // Fire session_start hook into context orchestrator
@@ -374,7 +408,7 @@ impl AgentRuntime {
         if let Ok(Some(cached_response)) = self.semantic_cache.get(query).await {
             info!("⚡ Semantic Cache Hit! Returning zero-token cost response.");
             let agent = AgentResponse {
-                session_id,
+                session_id: session_id.clone(),
                 query: query.to_string(),
                 response: cached_response.clone(),
                 confidence: 1.0,
@@ -385,7 +419,7 @@ impl AgentRuntime {
                     total_ms: start.elapsed().as_millis() as u64,
                 },
             };
-            return Ok(AgentRunTrace {
+            let trace = AgentRunTrace {
                 agent,
                 // Provide empty/default results for the bypassed systems
                 retrieval: crate::agents::system1::RetrievalResult {
@@ -431,7 +465,18 @@ impl AgentRuntime {
                     model: None,
                     query_fingerprint,
                 },
-            });
+            };
+
+            // Emit task complete event
+            if let Some(ref bus) = self.event_bus {
+                crate::coordination::agents::publish_task_complete(
+                    bus,
+                    "default-agent".to_string(),
+                    session_id,
+                );
+            }
+
+            return Ok(trace);
         }
 
         if route.category == RouteCategory::Direct {
@@ -441,7 +486,7 @@ impl AgentRuntime {
                 .unwrap_or_else(|| System3Actor::simple_response(query, &[], category.as_deref()));
             let total_ms = start.elapsed().as_millis() as u64;
             let agent = AgentResponse {
-                session_id,
+                session_id: session_id.clone(),
                 query: query.to_string(),
                 response: response.clone(),
                 confidence: 1.0,
@@ -452,7 +497,7 @@ impl AgentRuntime {
                     total_ms,
                 },
             };
-            return Ok(AgentRunTrace {
+            let trace = AgentRunTrace {
                 agent,
                 retrieval: crate::agents::system1::RetrievalResult {
                     query: query.to_string(),
@@ -497,7 +542,18 @@ impl AgentRuntime {
                     model: None,
                     query_fingerprint,
                 },
-            });
+            };
+
+            // Emit task complete event
+            if let Some(ref bus) = self.event_bus {
+                crate::coordination::agents::publish_task_complete(
+                    bus,
+                    "default-agent".to_string(),
+                    session_id,
+                );
+            }
+
+            return Ok(trace);
         }
 
         let (retrieval_result, reasoning_result) = loop {
@@ -558,11 +614,13 @@ impl AgentRuntime {
             }
 
             // Reflection / Context Paging Loop
-            let paging_threshold = self.tgd_engine
+            let paging_threshold = self
+                .tgd_engine
                 .as_ref()
                 .map(|tgd| tgd.config().confidence_threshold)
                 .unwrap_or(0.7);
-            if reasoning_result.confidence >= paging_threshold || retries >= self.config.max_retries {
+            if reasoning_result.confidence >= paging_threshold || retries >= self.config.max_retries
+            {
                 break (retrieval_result, reasoning_result);
             }
 
@@ -588,7 +646,9 @@ impl AgentRuntime {
         };
 
         // If confidence is still low after retries, trigger TGD to learn from the gap
-        let tgd_threshold = self.tgd_engine.as_ref()
+        let tgd_threshold = self
+            .tgd_engine
+            .as_ref()
             .map(|tgd| tgd.config().confidence_threshold)
             .unwrap_or(0.7);
         if reasoning_result.confidence < tgd_threshold {
@@ -601,7 +661,10 @@ impl AgentRuntime {
                     content: query.to_string(),
                     timestamp: chrono::Utc::now(),
                 }];
-                if let Err(e) = tgd.generate_rules(&messages, &retrieval_result.documents).await {
+                if let Err(e) = tgd
+                    .generate_rules(&messages, &retrieval_result.documents)
+                    .await
+                {
                     warn!("TGD rule generation failed: {}", e);
                 }
             }
@@ -755,7 +818,7 @@ impl AgentRuntime {
         );
 
         let agent = AgentResponse {
-            session_id,
+            session_id: session_id.clone(),
             query: query.to_string(),
             response: action_result.response.clone(),
             confidence: reasoning_result.confidence,
@@ -774,13 +837,24 @@ impl AgentRuntime {
             query_fingerprint,
         };
 
-        Ok(AgentRunTrace {
+        let trace = AgentRunTrace {
             agent,
             retrieval: retrieval_result,
             reasoning: reasoning_result,
             action: action_result,
             optimization,
-        })
+        };
+
+        // Emit task complete event
+        if let Some(ref bus) = self.event_bus {
+            crate::coordination::agents::publish_task_complete(
+                bus,
+                "default-agent".to_string(),
+                session_id.clone(),
+            );
+        }
+
+        Ok(trace)
     }
 }
 
@@ -893,6 +967,7 @@ pub struct RuntimeBuilder {
     checkpoint_manager: Option<Arc<CheckpointManager>>,
     scheduler: Option<JobScheduler>,
     rate_manager: Option<Arc<RateLimitManager>>,
+    event_bus: Option<Arc<crate::coordination::events::XavierEventBus>>,
 }
 
 impl RuntimeBuilder {
@@ -904,6 +979,7 @@ impl RuntimeBuilder {
             checkpoint_manager: None,
             scheduler: None,
             rate_manager: None,
+            event_bus: None,
         }
     }
 
@@ -937,6 +1013,11 @@ impl RuntimeBuilder {
         self
     }
 
+    pub fn with_event_bus(mut self, bus: Arc<crate::coordination::events::XavierEventBus>) -> Self {
+        self.event_bus = Some(bus);
+        self
+    }
+
     pub fn build(self) -> Result<AgentRuntime> {
         let memory = self
             .memory
@@ -949,6 +1030,11 @@ impl RuntimeBuilder {
         };
         let runtime = if let Some(scheduler) = self.scheduler {
             runtime.with_scheduler(scheduler)
+        } else {
+            runtime
+        };
+        let runtime = if let Some(bus) = self.event_bus {
+            runtime.with_event_bus(bus)
         } else {
             runtime
         };

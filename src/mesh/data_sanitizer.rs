@@ -148,9 +148,7 @@ impl DataSanitizer {
                 }
                 Value::Object(cleaned)
             }
-            Value::Array(arr) => {
-                Value::Array(arr.iter().map(|v| self.sanitize_value(v)).collect())
-            }
+            Value::Array(arr) => Value::Array(arr.iter().map(|v| self.sanitize_value(v)).collect()),
             other => other.clone(),
         }
     }
@@ -312,9 +310,12 @@ mod tests {
     fn test_regex_field_pattern() {
         let mut sanitizer = DataSanitizer::new();
         // Rule matching any field containing "key"
-        sanitizer.add_rule("key", SanitizationAction::Redact {
-            replacement: "[REDACTED]".to_string(),
-        });
+        sanitizer.add_rule(
+            "key",
+            SanitizationAction::Redact {
+                replacement: "[REDACTED]".to_string(),
+            },
+        );
 
         let payload = json!({
             "api_key": "abc123",

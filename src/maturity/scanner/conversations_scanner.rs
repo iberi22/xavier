@@ -56,7 +56,9 @@ fn get_feature_keywords(codebase_root: &str) -> HashMap<String, Vec<String>> {
                         for sub in subs {
                             if let Some(name) = sub.get("name").and_then(|v| v.as_str()) {
                                 for word in name.split_whitespace() {
-                                    let clean = word.trim_matches(|c: char| c.is_ascii_punctuation()).to_lowercase();
+                                    let clean = word
+                                        .trim_matches(|c: char| c.is_ascii_punctuation())
+                                        .to_lowercase();
                                     if clean.len() > 3 && !keywords.contains(&clean) {
                                         keywords.push(clean);
                                     }
@@ -118,7 +120,9 @@ fn count_memory_mentions(root: &str, keywords: &[String]) -> usize {
             .into_iter()
             .filter_map(|e| e.ok())
             .filter(|e| {
-                e.path().extension().map_or(false, |ext| ext == "md" || ext == "json")
+                e.path()
+                    .extension()
+                    .map_or(false, |ext| ext == "md" || ext == "json")
             });
 
         for entry in walker {
@@ -193,13 +197,16 @@ pub fn scan_conversations(codebase_root: &str) -> ConversationScanResult {
         // Combined: mentions 30%, todo health 30%, entry bonus 40%
         let ratio = mention_ratio * 0.3 + todo_ratio * 0.3 + entry_bonus * 0.4;
 
-        feature_evidence.insert(feat_id.clone(), ConversationEvidence {
-            memory_mentions,
-            todo_count: todos,
-            fixme_count: fixmes,
-            has_features_entry,
-            ratio,
-        });
+        feature_evidence.insert(
+            feat_id.clone(),
+            ConversationEvidence {
+                memory_mentions,
+                todo_count: todos,
+                fixme_count: fixmes,
+                has_features_entry,
+                ratio,
+            },
+        );
     }
 
     let timing_ms = start.elapsed().as_millis() as u64;

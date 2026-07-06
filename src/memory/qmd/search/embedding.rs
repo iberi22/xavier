@@ -59,7 +59,9 @@ pub async fn query_with_embedding_filtered(
         return query_filtered(memory, &processed_query, Vec::new(), limit, filters).await;
     }
 
-    let query_vector = generate_embedding(&processed_query).await.unwrap_or_default();
+    let query_vector = generate_embedding(&processed_query)
+        .await
+        .unwrap_or_default();
 
     if query_vector.is_empty() {
         return memory

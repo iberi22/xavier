@@ -92,8 +92,8 @@ impl XavierWallet {
         };
 
         // 1. Generar seed phrase (24 palabras)
-        let mnemonic = Mnemonic::generate_in(language, 24)
-            .map_err(|_| WalletError::SeedGenerationFailed)?;
+        let mnemonic =
+            Mnemonic::generate_in(language, 24).map_err(|_| WalletError::SeedGenerationFailed)?;
         let mnemonic_phrase = mnemonic.to_string();
 
         let wallet = Self::from_mnemonic(&mnemonic_phrase, config)?;
@@ -135,8 +135,9 @@ impl XavierWallet {
 
         // 3. Generar keypairs PQ
         let sig = Sig::new(SigAlg::MlDsa87).map_err(|_| WalletError::KeyGenerationFailed)?;
-        let (dilithium_pk, dilithium_sk) =
-            sig.keypair().map_err(|_| WalletError::KeyGenerationFailed)?;
+        let (dilithium_pk, dilithium_sk) = sig
+            .keypair()
+            .map_err(|_| WalletError::KeyGenerationFailed)?;
 
         let kem = Kem::new(KemAlg::MlKem1024).map_err(|_| WalletError::KeyGenerationFailed)?;
 
@@ -199,7 +200,8 @@ impl XavierWallet {
             .derive_kek(password)
             .map_err(|_| WalletError::EncryptionFailed)?;
 
-        let secrets_json = serde_json::to_vec(secrets).map_err(|_| WalletError::EncryptionFailed)?;
+        let secrets_json =
+            serde_json::to_vec(secrets).map_err(|_| WalletError::EncryptionFailed)?;
         let nonce = NonceBytes::generate();
         let encrypted_blob = encrypt_data(&secrets_json, kek.as_bytes(), &nonce)
             .map_err(|_| WalletError::EncryptionFailed)?;
@@ -256,8 +258,8 @@ impl XavierWallet {
         )
         .map_err(|_| WalletError::WrongPassword)?;
 
-        let secrets: WalletSecrets =
-            serde_json::from_slice(&decrypted_secrets).map_err(|_| WalletError::EncryptionFailed)?;
+        let secrets: WalletSecrets = serde_json::from_slice(&decrypted_secrets)
+            .map_err(|_| WalletError::EncryptionFailed)?;
 
         Ok(Self {
             config,
@@ -278,7 +280,9 @@ impl XavierWallet {
             .secret_key_from_bytes(&secrets.dilithium_sk)
             .ok_or(WalletError::SignatureFailed)?;
 
-        let signature = sig.sign(data, &sk).map_err(|_| WalletError::SignatureFailed)?;
+        let signature = sig
+            .sign(data, &sk)
+            .map_err(|_| WalletError::SignatureFailed)?;
         Ok(signature.as_ref().to_vec())
     }
 
@@ -321,8 +325,8 @@ impl XavierWallet {
         key.copy_from_slice(&ss_bytes[..32]);
 
         let nonce = NonceBytes::generate();
-        let encrypted_content = encrypt_data(data, &key, &nonce)
-            .map_err(|_| WalletError::EncryptionFailed)?;
+        let encrypted_content =
+            encrypt_data(data, &key, &nonce).map_err(|_| WalletError::EncryptionFailed)?;
 
         // Resultado: [Kyber Ciphertext] + [AES Nonce] + [AES Ciphertext]
         let mut result = Vec::new();

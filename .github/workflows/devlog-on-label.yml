@@ -58,3 +58,4 @@ jobs:
         run: |
           gh issue comment ${{ github.event.issue.number }} \
             --body "DevLog post generated. See the automated PR for details."
+

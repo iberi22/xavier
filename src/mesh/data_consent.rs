@@ -14,8 +14,8 @@
 use crate::mesh::NodeId;
 use serde::Serialize;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use sha2::{Sha256, Digest};
 
 // ---------------------------------------------------------------------------
 // ConsentLevel

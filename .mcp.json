@@ -1,9 +1,13 @@
 {
   "mcpServers": {
     "xavier-memory": {
-      "command": "cargo",
-      "args": ["run", "--bin", "xavier", "--", "mcp"],
-      "env": {},
+      "command": "C:\\Users\\belal\\bin\\xavier.exe",
+      "args": ["mcp"],
+      "env": {
+        "XAVIER_TOKEN": "xavier-76a5e627c9689b75f69e25c0d2d9670964b2ab7c005942d1c021198c5172c546eebcba241ba285b44ed57099df951b0b1674c350294e1e2513ddcbc3dc5a720b",
+        "XAVIER_TOKEN_SECRET": "swal-secret-2026",
+        "XAVIER_DATA_DIR": "E:\\scripts-python\\xavier\\data"
+      },
       "disabled": false,
       "autoApprove": []
     }

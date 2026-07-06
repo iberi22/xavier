@@ -80,8 +80,6 @@ impl DaoGovernanceSystem {
         system
     }
 
-
-
     /// Submits a newly clustered anomaly to the governance board.
     pub async fn submit_proposal(&mut self, cluster_id: &str, title: &str, description: &str) {
         if !self.active_proposals.contains_key(cluster_id) {
@@ -100,13 +98,20 @@ impl DaoGovernanceSystem {
 
             #[cfg(feature = "dao-evm")]
             if let Some(config) = &self.evm_config {
-                let _ = self.submit_proposal_evm(cluster_id, title, description).await;
+                let _ = self
+                    .submit_proposal_evm(cluster_id, title, description)
+                    .await;
             }
         }
     }
 
     #[cfg(feature = "dao-evm")]
-    async fn submit_proposal_evm(&self, _cluster_id: &str, _title: &str, _description: &str) -> anyhow::Result<()> {
+    async fn submit_proposal_evm(
+        &self,
+        _cluster_id: &str,
+        _title: &str,
+        _description: &str,
+    ) -> anyhow::Result<()> {
         /* Placeholder for EVM integration until alloy configuration is stable
         let config = self.evm_config.as_ref().ok_or_else(|| anyhow::anyhow!("EVM config missing"))?;
         let signer: PrivateKeySigner = config.private_key.parse()?;
@@ -132,15 +137,17 @@ impl DaoGovernanceSystem {
 
     /// Simulates a vote cast via GitHub Reaction (👍 or 👎).
     pub async fn cast_vote(&mut self, cluster_id: &str, approve: bool) -> Result<(), String> {
-        let proposal = self
-            .active_proposals
-            .get_mut(cluster_id)
-            .ok_or_else(|| "Proposal not found".to_string())?;
+        {
+            let proposal = self
+                .active_proposals
+                .get_mut(cluster_id)
+                .ok_or_else(|| "Proposal not found".to_string())?;
 
-        if approve {
-            proposal.upvotes += 1;
-        } else {
-            proposal.downvotes += 1;
+            if approve {
+                proposal.upvotes += 1;
+            } else {
+                proposal.downvotes += 1;
+            }
         }
 
         #[cfg(feature = "dao-evm")]
@@ -188,12 +195,16 @@ impl DaoGovernanceSystem {
                 let approval_ratio = proposal.upvotes as f64 / total_votes as f64;
                 if approval_ratio >= self.required_approval_threshold {
                     proposal.is_approved_for_pr = true;
-                    
+
                     // Assign randomly using a Weighted Lottery based on Trust Score
                     if !self.maintainer_registry.is_empty() {
-                        let maintainers: Vec<(&String, &u64)> = self.maintainer_registry.iter().collect();
-                        let weights: Vec<u64> = maintainers.iter().map(|(_, &score)| std::cmp::max(1, score)).collect();
-                        
+                        let maintainers: Vec<(&String, &u64)> =
+                            self.maintainer_registry.iter().collect();
+                        let weights: Vec<u64> = maintainers
+                            .iter()
+                            .map(|(_, &score)| std::cmp::max(1, score))
+                            .collect();
+
                         if let Ok(dist) = WeightedIndex::new(&weights) {
                             let mut rng = thread_rng();
                             let winner = maintainers[dist.sample(&mut rng)].0;
@@ -204,8 +215,6 @@ impl DaoGovernanceSystem {
             }
         }
     }
-
-
 }
 
 impl Default for DaoGovernanceSystem {
@@ -221,8 +230,13 @@ mod tests {
     #[tokio::test]
     async fn test_dao_governance_consensus() {
         let mut dao = DaoGovernanceSystem::new();
-        dao.submit_proposal("CLUSTER_P2P", "Fix Sync Race", "P2P network race condition detected.").await;
-        
+        dao.submit_proposal(
+            "CLUSTER_P2P",
+            "Fix Sync Race",
+            "P2P network race condition detected.",
+        )
+        .await;
+
         // Cast 4 upvotes (not enough quorum)
         for _ in 0..4 {
             dao.cast_vote("CLUSTER_P2P", true).await.unwrap();
@@ -232,7 +246,7 @@ mod tests {
 
         // Cast 1 downvote (total 5 votes: 4 up, 1 down = 80%)
         dao.cast_vote("CLUSTER_P2P", false).await.unwrap();
-        
+
         let prop = dao.active_proposals.get("CLUSTER_P2P").unwrap();
         assert!(prop.is_approved_for_pr); // Reached 80% with 5 votes!
         assert!(prop.assigned_maintainer.is_some()); // Ensure a winner was randomly picked
@@ -242,12 +256,17 @@ mod tests {
     #[tokio::test]
     async fn test_dao_governance_rejection() {
         let mut dao = DaoGovernanceSystem::new();
-        dao.submit_proposal("CLUSTER_UI", "Change Button Color", "Minor UI tweak.").await;
-        
+        dao.submit_proposal("CLUSTER_UI", "Change Button Color", "Minor UI tweak.")
+            .await;
+
         // Cast 3 upvotes and 3 downvotes (50%, below 80% threshold)
-        for _ in 0..3 { dao.cast_vote("CLUSTER_UI", true).await.unwrap(); }
-        for _ in 0..3 { dao.cast_vote("CLUSTER_UI", false).await.unwrap(); }
-        
+        for _ in 0..3 {
+            dao.cast_vote("CLUSTER_UI", true).await.unwrap();
+        }
+        for _ in 0..3 {
+            dao.cast_vote("CLUSTER_UI", false).await.unwrap();
+        }
+
         let prop = dao.active_proposals.get("CLUSTER_UI").unwrap();
         assert!(!prop.is_approved_for_pr);
     }

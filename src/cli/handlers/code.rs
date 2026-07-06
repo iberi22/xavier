@@ -8,11 +8,11 @@ use tracing::{info, warn};
 
 use crate::cli::code_dump::{perform_dump, perform_load};
 // TODO: Re-implement code_find_symbols and filter_symbols_by_query via code_graph::query::QueryEngine
-use code_graph::types::{EdgeType, Symbol, SymbolKind};
 use crate::cli::security::secure_optional_request_field;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
 use crate::cli::utils::estimate_tokens;
+use code_graph::types::{EdgeType, Symbol, SymbolKind};
 
 use xavier::ports::inbound::input_security_port::SecureInputResult;
 
@@ -32,7 +32,11 @@ pub async fn code_index_handler(
     info!("Code index request: path={}", base_path);
 
     let code_graph = state.code_graph.read().await;
-    match code_graph.indexer.index(std::path::Path::new(base_path)).await {
+    match code_graph
+        .indexer
+        .index(std::path::Path::new(base_path))
+        .await
+    {
         Ok(stats) => Json(serde_json::json!({
             "status": "ok",
             "indexed_files": stats.total_files,
@@ -59,10 +63,7 @@ pub async fn code_dump_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<serde_json::Value>,
 ) -> impl axum::response::IntoResponse {
-    let path = payload
-        .get("path")
-        .and_then(|v| v.as_str())
-        .unwrap_or(".");
+    let path = payload.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
     let code_graph = state.code_graph.read().await;
     match perform_dump(&code_graph, path).await {
@@ -82,10 +83,7 @@ pub async fn code_load_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<serde_json::Value>,
 ) -> impl axum::response::IntoResponse {
-    let path = payload
-        .get("path")
-        .and_then(|v| v.as_str())
-        .unwrap_or(".");
+    let path = payload.get("path").and_then(|v| v.as_str()).unwrap_or(".");
 
     match perform_load(path).await {
         Ok(new_state) => {

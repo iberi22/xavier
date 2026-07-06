@@ -138,9 +138,7 @@ impl RewardEngine {
             ContributionType::PeerDiscovery { peers_connected } => {
                 *peers_connected as f64 * 10.0 * apy_multiplier
             }
-            ContributionType::DataValidated { records } => {
-                *records as f64 * 5.0 * apy_multiplier
-            }
+            ContributionType::DataValidated { records } => *records as f64 * 5.0 * apy_multiplier,
         };
         // Floor to u64, minimum 1 XP for non-zero contributions
         if raw > 0.0 {
@@ -385,6 +383,9 @@ mod tests {
             bytes: 1_000_000,
             duration_secs: 1000,
         };
-        assert_eq!(engine.calculate_reward(&contrib, super::super::wallet::InvestmentTier::Base), 2500);
+        assert_eq!(
+            engine.calculate_reward(&contrib, super::super::wallet::InvestmentTier::Base),
+            2500
+        );
     }
 }

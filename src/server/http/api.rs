@@ -7,10 +7,10 @@ use crate::consistency::regularization::RetentionRegularizer;
 use crate::consolidation::ConsolidationTask;
 use crate::context::ContextClassifier;
 use crate::retrieval::gating::{AdaptiveGating, LayerWeights, SessionSummary};
-use std::sync::Arc;
 use crate::server::http::types::*;
 use crate::workspace::WorkspaceContext;
 use axum::{extract::Json, response::IntoResponse, Extension};
+use std::sync::Arc;
 
 pub async fn memory_retrieve(
     Extension(workspace): Extension<WorkspaceContext>,

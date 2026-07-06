@@ -44,7 +44,8 @@ impl Manifest {
             self.chunks.push(ChunkMeta {
                 hash: chunk.hash.clone(),
                 path,
-                created_at: chrono::DateTime::from_timestamp(chunk.created_at, 0).unwrap_or_default(),
+                created_at: chrono::DateTime::from_timestamp(chunk.created_at, 0)
+                    .unwrap_or_default(),
                 size_bytes,
             });
             self.updated_at = chrono::Utc::now();
@@ -59,15 +60,18 @@ impl Manifest {
     /// Write manifest to JSON file
     pub async fn write(&self, path: &Path) -> Result<()> {
         let json = serde_json::to_string_pretty(self).context("failed to serialize manifest")?;
-        fs::write(path, json).await.context("failed to write manifest")?;
+        fs::write(path, json)
+            .await
+            .context("failed to write manifest")?;
         Ok(())
     }
 
     /// Read manifest from JSON file
     pub async fn read(path: &Path) -> Result<Self> {
-        let json = fs::read_to_string(path).await.context("failed to read manifest")?;
-        let manifest: Manifest =
-            serde_json::from_str(&json).context("failed to parse manifest")?;
+        let json = fs::read_to_string(path)
+            .await
+            .context("failed to read manifest")?;
+        let manifest: Manifest = serde_json::from_str(&json).context("failed to parse manifest")?;
         Ok(manifest)
     }
 }

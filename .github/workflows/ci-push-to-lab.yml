@@ -1,4 +1,4 @@
-﻿name: CI + Push to Lab
+name: CI + Push to Lab
 
 on:
   push:
@@ -59,3 +59,4 @@ jobs:
           fi
           git remote add lab https://x-access-token:${GH_TOKEN_LAB}@github.com/${{ env.LAB_REPO }}.git
           git push lab main:main --force
+

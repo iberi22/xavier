@@ -66,6 +66,8 @@ pub struct EigenTrustEngine {
     attestations: Vec<ReputationAttestation>,
     /// Resultado del último cómputo
     last_result: Option<EigenTrustResult>,
+    /// Computed global trust scores (wallet string → score), populated after compute()
+    computed_scores: HashMap<String, f64>,
 }
 
 impl EigenTrustEngine {
@@ -76,6 +78,7 @@ impl EigenTrustEngine {
             pre_trusted,
             attestations: Vec::new(),
             last_result: None,
+            computed_scores: HashMap::new(),
         }
     }
 
@@ -206,6 +209,9 @@ impl EigenTrustEngine {
             .map(|(i, w)| (w, t[i]))
             .collect();
 
+        // Populate computed_scores for quick lookup by wallet string
+        self.computed_scores = scores.iter().map(|(w, s)| (w.0.clone(), *s)).collect();
+
         let result = EigenTrustResult {
             scores,
             iterations: final_iterations,
@@ -225,6 +231,12 @@ impl EigenTrustEngine {
         self.last_result
             .as_ref()
             .and_then(|r| r.scores.get(wallet).copied())
+    }
+
+    /// Get computed trust score for a wallet by string address.
+    /// Returns 0.0 if the wallet has no score.
+    pub fn computed_score(&self, wallet: &str) -> f64 {
+        self.computed_scores.get(wallet).copied().unwrap_or(0.0)
     }
 
     /// Calcular reputación híbrida (EigenTrust + Contribution)

@@ -31,10 +31,7 @@ pub struct TestListScan {
 
 /// Integrates with Xavier's `code-graph` crate to find symbols.
 /// Falls back to filesystem grep if code-graph is unavailable.
-pub fn scan_code_graph(
-    root: &str,
-    symbols: &[String],
-) -> CodeGraphScan {
+pub fn scan_code_graph(root: &str, symbols: &[String]) -> CodeGraphScan {
     let mut found = HashSet::new();
     let mut missing = HashSet::new();
     let errors: Vec<String> = Vec::new();
@@ -51,7 +48,11 @@ pub fn scan_code_graph(
                 missing.insert(symbol.clone());
             }
         }
-        return CodeGraphScan { found, missing, errors };
+        return CodeGraphScan {
+            found,
+            missing,
+            errors,
+        };
     }
 
     // Fallback: grep .rs files
@@ -80,7 +81,11 @@ pub fn scan_code_graph(
         }
     }
 
-    CodeGraphScan { found, missing, errors }
+    CodeGraphScan {
+        found,
+        missing,
+        errors,
+    }
 }
 
 /// Run `cargo test --list` and return all discovered test names.
@@ -141,8 +146,7 @@ pub fn list_tests(root: &str, feature_gates: &[&str]) -> TestListScan {
 /// Returns (exists, passes).
 pub fn check_test(root: &str, test_name: &str, features: &[&str]) -> (bool, bool) {
     let mut cmd = Command::new("cargo");
-    cmd.args(["test", test_name, "--"])
-        .current_dir(root);
+    cmd.args(["test", test_name, "--"]).current_dir(root);
 
     for feat in features {
         if !feat.is_empty() {

@@ -7,11 +7,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock as AsyncRwLock;
 
+use regex::Regex;
 use std::fmt;
 use std::str::FromStr;
-use unicode_normalization::UnicodeNormalization;
-use regex::Regex;
 use std::sync::LazyLock;
+use unicode_normalization::UnicodeNormalization;
 pub mod cache_warming;
 pub mod config;
 pub mod hash;
@@ -177,12 +177,14 @@ impl QmdMemory {
         );
 
         let mut results = Vec::new();
-        for (_, id) in scored.into_iter().take(limit) {
+        for (score, id) in scored.into_iter().take(limit) {
             if let Some(doc) = filtered_docs
                 .iter()
                 .find(|d| d.id.as_deref() == Some(&id) || d.path == id)
             {
-                results.push(doc.clone());
+                let mut d = doc.clone();
+                d.score = score;
+                results.push(d);
             }
         }
 
@@ -235,9 +237,7 @@ impl QmdMemory {
         // SPRINT 1: BM25 fallback — search self.docs directly with full BM25 scoring
         // This guarantees data saved via memory_save (which writes to QmdMemory.docs)
         // is always findable, even if the MemoryStore path returns empty.
-        let bm25_results = self
-            .bm25_search(query_text, limit, filters)
-            .await?;
+        let bm25_results = self.bm25_search(query_text, limit, filters).await?;
         if !bm25_results.is_empty() {
             return Ok(bm25_results);
         }
@@ -375,7 +375,9 @@ impl QmdMemory {
     pub async fn ls(&self, path_prefix: &str) -> Result<Vec<NavEntry>> {
         // [B1] Predictive cache warming based on navigation patterns
         if let Some(warmup) = &self.cache_warmup {
-            let _ = warmup.predictive_warm(path_prefix, &Default::default()).await;
+            let _ = warmup
+                .predictive_warm(path_prefix, &Default::default())
+                .await;
         }
 
         let docs = self.all_documents().await;
@@ -470,7 +472,14 @@ impl QmdMemory {
             let docs = self.all_documents().await;
             let records: Vec<crate::memory::store::MemoryRecord> = docs
                 .into_iter()
-                .map(|doc| crate::memory::store::MemoryRecord::from_document(&self.workspace_id, &doc, true, None))
+                .map(|doc| {
+                    crate::memory::store::MemoryRecord::from_document(
+                        &self.workspace_id,
+                        &doc,
+                        true,
+                        None,
+                    )
+                })
                 .collect();
             Ok(crate::memory::hierarchy::MemoryTree::build_ls(
                 records, path,
@@ -535,7 +544,9 @@ impl QmdMemory {
                     if let Some(ref cluster) = doc.cluster_id {
                         let mut child_filters = MemoryQueryFilters::default();
                         child_filters.cluster_ids = Some(vec![cluster.clone()]);
-                        if let Ok(children) = self.search_filtered("", 50, Some(&child_filters)).await {
+                        if let Ok(children) =
+                            self.search_filtered("", 50, Some(&child_filters)).await
+                        {
                             for child in children {
                                 if let Some(ref cid) = child.id {
                                     if cid != doc_id && !seen_ids.contains(cid) {
@@ -974,10 +985,26 @@ mod tests {
         use serde_json::json;
         let memory = QmdMemory::new(Arc::new(AsyncRwLock::new(Vec::new())));
 
-        memory.add_document("docs/api/v1".to_string(), "v1".to_string(), json!({})).await.unwrap();
-        memory.add_document("docs/api/v2".to_string(), "v2".to_string(), json!({})).await.unwrap();
-        memory.add_document("docs/readme.md".to_string(), "readme".to_string(), json!({})).await.unwrap();
-        memory.add_document("blog/post1".to_string(), "post1".to_string(), json!({})).await.unwrap();
+        memory
+            .add_document("docs/api/v1".to_string(), "v1".to_string(), json!({}))
+            .await
+            .unwrap();
+        memory
+            .add_document("docs/api/v2".to_string(), "v2".to_string(), json!({}))
+            .await
+            .unwrap();
+        memory
+            .add_document(
+                "docs/readme.md".to_string(),
+                "readme".to_string(),
+                json!({}),
+            )
+            .await
+            .unwrap();
+        memory
+            .add_document("blog/post1".to_string(), "post1".to_string(), json!({}))
+            .await
+            .unwrap();
 
         // Test root ls
         let root = memory.ls("").await.unwrap();

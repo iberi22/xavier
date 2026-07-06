@@ -32,8 +32,7 @@ fn try_base64(encoded: &str) -> Option<String> {
         return None;
     }
 
-    crate::crypto::base64_decode(cleaned)
-        .and_then(|bytes| String::from_utf8(bytes).ok())
+    crate::crypto::base64_decode(cleaned).and_then(|bytes| String::from_utf8(bytes).ok())
 }
 
 /// Try to decode hex

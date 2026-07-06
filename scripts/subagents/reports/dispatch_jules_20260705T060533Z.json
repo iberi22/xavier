@@ -1,0 +1,18 @@
+{
+  "type": "jules",
+  "agent_id": "jules",
+  "project": "xavier",
+  "task": "META: registrar en Xavier que el orquestador despacho 5 issues a Jules para implementar lo pendiente: #391 governance CLI fix, #393 F2 redactar secret_value, #394 F3 auth+rate-limit proxy, #395 F5 auto-revoke leases, #396 agent lifecycle hooks. Tambien cerro #381 (F1 ya hecho) y #392 (duplicado). Jules procesara async y abrira PRs. El orquestador monitoreara.",
+  "title": "[META] Orquestacion: 5 issues despachados a Jules",
+  "repo": "iberi22/xavier",
+  "issue_url": "https://github.com/iberi22/xavier/issues/397",
+  "issue_number": "397",
+  "labels": [
+    "jules",
+    "documentation"
+  ],
+  "persisted_path": "dispatch/xavier/jules/397",
+  "persisted_id": "01KWRE3K5DSN2KPSJ2G16J922K",
+  "ts": "2026-07-05T06:05:28Z",
+  "note": "Jules es async. Monitorea el PR con: python dispatch.py jules-status"
+}
