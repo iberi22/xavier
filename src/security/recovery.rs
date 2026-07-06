@@ -1,64 +1,30 @@
-use crate::utils::crypto::hex_encode;
-use anyhow::Result;
-use bip39::{Language, Mnemonic};
-use rand::Rng;
-use sha2::{Digest, Sha256};
+//! Password Recovery System for Xavier
+//! Uses 12-word BIP39 seed phrases in Spanish
 
-/// Recovery manager for handling seed phrases and backup codes.
-pub struct RecoveryManager;
+use anyhow::{anyhow, Result};
+use bip39::{Mnemonic, Language, MnemonicType};
 
-impl RecoveryManager {
-    /// Generates a 12-word seed phrase in Spanish.
-    pub fn generate_seed_phrase() -> Result<String> {
-        let mnemonic = Mnemonic::generate_in(Language::Spanish, 12)?;
-        Ok(mnemonic.to_string())
+pub struct RecoverySystem;
+
+impl RecoverySystem {
+    /// Generates a new 12-word Spanish seed phrase
+    pub fn generate_phrase() -> String {
+        let mnemonic = Mnemonic::new(MnemonicType::Words12, Language::Spanish);
+        mnemonic.phrase().to_string()
     }
 
-    /// Verifies if a seed phrase is valid BIP39 in Spanish.
-    pub fn verify_seed_phrase(phrase: &str) -> bool {
-        Mnemonic::parse_in(Language::Spanish, phrase).is_ok()
+    /// Validates a seed phrase
+    pub fn validate_phrase(phrase: &str) -> bool {
+        Mnemonic::from_phrase(phrase, Language::Spanish).is_ok()
     }
 
-    /// Computes the SHA-256 hash of a seed phrase for storage.
-    pub fn hash_seed_phrase(phrase: &str) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(phrase.as_bytes());
-        hex_encode(&hasher.finalize())
-    }
+    /// Derives a stable key from the phrase (for advanced encryption scenarios)
+    pub fn derive_key(phrase: &str) -> Result<Vec<u8>> {
+        let mnemonic = Mnemonic::from_phrase(phrase, Language::Spanish)
+            .map_err(|_| anyhow!("invalid seed phrase"))?;
 
-    /// Generates 10 single-use backup codes.
-    /// Each code is 8 alphanumeric characters in format XXXX-XXXX.
-    pub fn generate_backup_codes() -> Vec<String> {
-        let mut codes = Vec::with_capacity(10);
-        for _ in 0..10 {
-            codes.push(Self::generate_single_backup_code());
-        }
-        codes
-    }
-
-    fn generate_single_backup_code() -> String {
-        const CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-        let mut rng = rand::thread_rng();
-        let mut part1 = String::with_capacity(4);
-        let mut part2 = String::with_capacity(4);
-
-        for _ in 0..4 {
-            let idx = rng.gen_range(0..CHARSET.len());
-            part1.push(CHARSET[idx] as char);
-        }
-        for _ in 0..4 {
-            let idx = rng.gen_range(0..CHARSET.len());
-            part2.push(CHARSET[idx] as char);
-        }
-
-        format!("{}-{}", part1, part2)
-    }
-
-    /// Hashes a backup code for storage.
-    pub fn hash_backup_code(code: &str) -> String {
-        let mut hasher = Sha256::new();
-        hasher.update(code.as_bytes());
-        hex_encode(&hasher.finalize())
+        let seed = mnemonic.to_seed("");
+        Ok(seed.to_vec())
     }
 }
 
@@ -67,45 +33,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_generate_seed_phrase() {
-        let phrase = RecoveryManager::generate_seed_phrase().unwrap();
-        let words: Vec<&str> = phrase.split_whitespace().collect();
-        assert_eq!(words.len(), 12);
-        assert!(RecoveryManager::verify_seed_phrase(&phrase));
-    }
-
-    #[test]
-    fn test_verify_invalid_seed_phrase() {
-        assert!(!RecoveryManager::verify_seed_phrase(
-            "this is not a valid seed phrase at all"
-        ));
-    }
-
-    #[test]
-    fn test_hash_seed_phrase() {
-        let phrase =
-            "abaco abeja abismo abrir absorber abuelo acento aceptar acero acierto acosar activo";
-        let hash = RecoveryManager::hash_seed_phrase(phrase);
-        assert!(!hash.is_empty());
-        // Verify idempotency
-        assert_eq!(hash, RecoveryManager::hash_seed_phrase(phrase));
-    }
-
-    #[test]
-    fn test_generate_backup_codes() {
-        let codes = RecoveryManager::generate_backup_codes();
-        assert_eq!(codes.len(), 10);
-        for code in codes {
-            assert_eq!(code.len(), 9); // XXXX-XXXX
-            assert!(code.contains('-'));
-        }
-    }
-
-    #[test]
-    fn test_hash_backup_code() {
-        let code = "A3B7-K9X2";
-        let hash = RecoveryManager::hash_backup_code(code);
-        assert!(!hash.is_empty());
-        assert_eq!(hash, RecoveryManager::hash_backup_code(code));
+    fn test_phrase_generation_validation() {
+        let phrase = RecoverySystem::generate_phrase();
+        assert_eq!(phrase.split_whitespace().count(), 12);
+        assert!(RecoverySystem::validate_phrase(&phrase));
+        assert!(!RecoverySystem::validate_phrase("un dos tres cuatro cinco seis siete ocho nueve diez once doce"));
     }
 }
