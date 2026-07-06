@@ -6,6 +6,7 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
+use autometrics::autometrics;
 
 use crate::memory::qmd_memory::config::*;
 use crate::memory::qmd_memory::query_builder;
@@ -19,6 +20,7 @@ use super::scoring::{contextual_boost, lexical_score};
 use super::vector::vsearch;
 
 /// Hybrid search with variant expansion, multi-hop context, and RRF re-ranking.
+#[autometrics]
 pub async fn search_hybrid_optimized(
     memory: &QmdMemory,
     query_text: &str,
