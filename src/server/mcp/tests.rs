@@ -101,9 +101,16 @@ async fn post_json(app: Router, body: Value) -> axum::response::Response {
     post_json_with_token(app, body, None).await
 }
 
-async fn post_json_with_token(app: Router, body: Value, token: Option<&str>) -> axum::response::Response {
+async fn post_json_with_token(
+    app: Router,
+    body: Value,
+    token: Option<&str>,
+) -> axum::response::Response {
     // Extract method from JSON body for MCP spec 2026-07-28 headers
-    let method = body.get("method").and_then(|v| v.as_str()).unwrap_or("initialize");
+    let method = body
+        .get("method")
+        .and_then(|v| v.as_str())
+        .unwrap_or("initialize");
 
     let mut req = Request::builder()
         .method(Method::POST)
@@ -115,11 +122,19 @@ async fn post_json_with_token(app: Router, body: Value, token: Option<&str>) -> 
 
     // Add Mcp-Name header for requests that require it (tools/call, resources/read, prompts/get)
     if method == "tools/call" {
-        if let Some(name) = body.get("params").and_then(|p| p.get("name")).and_then(|n| n.as_str()) {
+        if let Some(name) = body
+            .get("params")
+            .and_then(|p| p.get("name"))
+            .and_then(|n| n.as_str())
+        {
             req = req.header("Mcp-Name", name);
         }
     } else if method == "resources/read" {
-        if let Some(uri) = body.get("params").and_then(|p| p.get("uri")).and_then(|n| n.as_str()) {
+        if let Some(uri) = body
+            .get("params")
+            .and_then(|p| p.get("uri"))
+            .and_then(|n| n.as_str())
+        {
             req = req.header("Mcp-Name", uri);
         }
     }
@@ -184,7 +199,9 @@ async fn list_tools_returns_all_tools() {
     .await;
     assert_eq!(response.status(), StatusCode::OK);
     let body = get_json_body(response).await;
-    let tools = body["result"]["tools"].as_array().expect("tools should be an array");
+    let tools = body["result"]["tools"]
+        .as_array()
+        .expect("tools should be an array");
     assert!(tools.len() >= 16);
 }
 
@@ -250,10 +267,15 @@ async fn create_and_get_memory_integration() {
     let content = &body["result"]["content"][0];
     if content["type"] == "structuredContent" {
         let empty: Vec<_> = vec![];
-        let results = content["structuredContent"]["results"].as_array().unwrap_or(&empty);
+        let results = content["structuredContent"]["results"]
+            .as_array()
+            .unwrap_or(&empty);
         assert!(!results.is_empty(), "search should return results");
         let snippet = results[0]["snippet"].as_str().unwrap();
-        assert!(snippet.contains("test content") || results[0]["path"].as_str().unwrap().contains("test"));
+        assert!(
+            snippet.contains("test content")
+                || results[0]["path"].as_str().unwrap().contains("test")
+        );
     } else {
         let search_text = content["text"].as_str().unwrap();
         assert!(search_text.contains("test content") || search_text.contains("Path:"));
@@ -298,7 +320,8 @@ async fn core_tools_integration() {
                 }
             }
         }),
-    ).await;
+    )
+    .await;
 
     // list_projects (with one project)
     let response = post_json(
@@ -315,7 +338,10 @@ async fn core_tools_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert!(body["result"]["content"][0]["text"].as_str().unwrap().contains("project1"));
+    assert!(body["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("project1"));
 
     // get_project_context — now returns structuredContent
     let response = post_json(
@@ -390,7 +416,12 @@ async fn fragment_tools_integration() {
     assert!(search_text.contains("fragment content"));
 
     // Extract ID from search text (Id: <ulid>)
-    let id = search_text.split('\n').next().unwrap().strip_prefix("Id: ").unwrap();
+    let id = search_text
+        .split('\n')
+        .next()
+        .unwrap()
+        .strip_prefix("Id: ")
+        .unwrap();
 
     // get_recent_fragments
     let response = post_json(
@@ -409,7 +440,10 @@ async fn fragment_tools_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert!(body["result"]["content"][0]["text"].as_str().unwrap().contains("fragment content"));
+    assert!(body["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("fragment content"));
 
     // memoryfragment_get
     let response = post_json(
@@ -426,7 +460,10 @@ async fn fragment_tools_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert!(body["result"]["content"][0]["text"].as_str().unwrap().contains("fragment content"));
+    assert!(body["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("fragment content"));
 
     // memoryfragment_delete
     let response = post_json(
@@ -443,7 +480,10 @@ async fn fragment_tools_integration() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert!(body["result"]["content"][0]["text"].as_str().unwrap().contains("Deleted memory fragment"));
+    assert!(body["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("Deleted memory fragment"));
 }
 
 #[tokio::test]
@@ -469,7 +509,10 @@ async fn security_violation_returns_standard_code() {
     .await;
     let body = get_json_body(response).await;
     assert_eq!(body["error"]["code"], super::types::XAVIER_ERROR_SECURITY);
-    assert!(body["error"]["message"].as_str().unwrap().contains("Security policy violation"));
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("Security policy violation"));
 }
 
 #[tokio::test]
@@ -496,7 +539,10 @@ async fn validation_error_returns_standard_code() {
     .await;
     let body = get_json_body(response).await;
     assert_eq!(body["error"]["code"], super::types::XAVIER_ERROR_VALIDATION);
-    assert!(body["error"]["message"].as_str().unwrap().contains("Missing required parameter: content"));
+    assert!(body["error"]["message"]
+        .as_str()
+        .unwrap()
+        .contains("Missing required parameter: content"));
 }
 
 #[tokio::test]
@@ -545,7 +591,10 @@ async fn sync_gitcore_integration_mock() {
     )
     .await;
     let body = get_json_body(response).await;
-    assert!(body["result"]["content"][0]["text"].as_str().unwrap().contains("skipped=3"));
+    assert!(body["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap()
+        .contains("skipped=3"));
 }
 
 // ── MCP Tools v2: health sequence tests ─────────────────────────────────
@@ -596,8 +645,7 @@ async fn all_tools_have_valid_schema() {
         let schema = &tool["input_schema"];
         // Each tool must have a valid JSON Schema object with type "object"
         assert!(
-            schema["type"] == "object"
-                || schema["type"] == json!(null),
+            schema["type"] == "object" || schema["type"] == json!(null),
             "tool {} has invalid input_schema: {:?}",
             name,
             schema
@@ -784,7 +832,10 @@ async fn get_project_context_size_limits() {
         let sc = &content["structuredContent"];
         let total_chars = sc["total_chars"].as_u64().unwrap_or(0);
         let is_truncated = sc["truncated"].as_bool().unwrap_or(false);
-        assert!(total_chars <= 150 || is_truncated, "chars exceeded 100 without truncation");
+        assert!(
+            total_chars <= 150 || is_truncated,
+            "chars exceeded 100 without truncation"
+        );
         if is_truncated {
             assert!(sc["truncated_reason"].is_string());
         }
@@ -806,7 +857,12 @@ async fn list_tools_includes_new_memory_and_health_tools() {
         .iter()
         .map(|t| t["name"].as_str().unwrap())
         .collect();
-    for required in ["memory_save", "memory_search", "memory_context", "health_check"] {
+    for required in [
+        "memory_save",
+        "memory_search",
+        "memory_context",
+        "health_check",
+    ] {
         assert!(
             names.contains(&required),
             "tools/list missing required tool: {required}"
@@ -885,7 +941,8 @@ async fn memory_context_returns_context_block() {
             "got: {ctx_text}"
         );
         assert!(
-            sc["total_chars"].as_u64().unwrap_or(0) > 0 || sc["total_records"].as_u64().unwrap_or(0) == 0
+            sc["total_chars"].as_u64().unwrap_or(0) > 0
+                || sc["total_records"].as_u64().unwrap_or(0) == 0
         );
     } else {
         let text = content["text"].as_str().unwrap();
@@ -927,9 +984,15 @@ async fn memory_context_depth_flat() {
     .await;
     let body = get_json_body(response).await;
     let content = &body["result"]["content"][0];
-    assert_eq!(content["type"], "structuredContent", "depth/0 should return structured");
+    assert_eq!(
+        content["type"], "structuredContent",
+        "depth/0 should return structured"
+    );
     let sc = &content["structuredContent"];
-    assert!(sc["content"].as_str().unwrap().contains("memory safety") || sc["total_records"].as_u64().unwrap_or(0) == 0);
+    assert!(
+        sc["content"].as_str().unwrap().contains("memory safety")
+            || sc["total_records"].as_u64().unwrap_or(0) == 0
+    );
 }
 
 #[tokio::test]
@@ -952,7 +1015,10 @@ async fn memory_context_depth_one() {
     .await;
     let body = get_json_body(response).await;
     let content = &body["result"]["content"][0];
-    assert_eq!(content["type"], "structuredContent", "depth/1 should return structured");
+    assert_eq!(
+        content["type"], "structuredContent",
+        "depth/1 should return structured"
+    );
     let sc = &content["structuredContent"];
     assert!(sc["total_records"].as_u64().is_some());
 }
@@ -987,12 +1053,18 @@ async fn memory_context_max_chars() {
     .await;
     let body = get_json_body(response).await;
     let content = &body["result"]["content"][0];
-    assert_eq!(content["type"], "structuredContent", "max_chars should return structured");
+    assert_eq!(
+        content["type"], "structuredContent",
+        "max_chars should return structured"
+    );
     let sc = &content["structuredContent"];
     let total_chars = sc["total_chars"].as_u64().unwrap_or(0);
     let is_truncated = sc["truncated"].as_bool().unwrap_or(false);
     // The content should be truncated (or total_chars <= ~100 + truncation suffix)
-    assert!(total_chars <= 130 || is_truncated, "expected truncation or small output, got total_chars={total_chars}");
+    assert!(
+        total_chars <= 130 || is_truncated,
+        "expected truncation or small output, got total_chars={total_chars}"
+    );
 }
 
 #[tokio::test]
@@ -1022,7 +1094,10 @@ async fn resources_read_memory_and_health() {
     let body = get_json_body(response).await;
     let text = body["result"]["contents"][0]["text"].as_str().unwrap();
     assert!(text.contains("hello resource reader"));
-    assert_eq!(body["result"]["contents"][0]["mimeType"], "application/json");
+    assert_eq!(
+        body["result"]["contents"][0]["mimeType"],
+        "application/json"
+    );
 
     // xavier://health
     let response = post_json(
@@ -1171,8 +1246,9 @@ async fn auth_success_with_valid_token() {
         json!({
             "jsonrpc": "2.0", "id": 1, "method": "tools/list"
         }),
-        Some("test-token")
-    ).await;
+        Some("test-token"),
+    )
+    .await;
 
     assert_eq!(response.status(), StatusCode::OK);
 }
@@ -1188,8 +1264,9 @@ async fn auth_failure_with_invalid_token() {
         json!({
             "jsonrpc": "2.0", "id": 1, "method": "tools/list"
         }),
-        Some("wrong-secret")
-    ).await;
+        Some("wrong-secret"),
+    )
+    .await;
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
 }
@@ -1200,14 +1277,17 @@ async fn origin_validation_enforced() {
     let app = test_router(state, workspace);
 
     // Missing Origin
-    let response = app.clone()
+    let response = app
+        .clone()
         .oneshot(
             Request::builder()
                 .method(Method::POST)
                 .uri("/mcp")
                 .header("X-Xavier-Token", "test-token")
                 .header("content-type", "application/json")
-                .body(Body::from(json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).to_string()))
+                .body(Body::from(
+                    json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).to_string(),
+                ))
                 .unwrap(),
         )
         .await
@@ -1224,7 +1304,9 @@ async fn origin_validation_enforced() {
                 .header("X-Xavier-Token", "test-token")
                 .header("Origin", "http://malicious.com")
                 .header("content-type", "application/json")
-                .body(Body::from(json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).to_string()))
+                .body(Body::from(
+                    json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).to_string(),
+                ))
                 .unwrap(),
         )
         .await

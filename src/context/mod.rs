@@ -11,10 +11,10 @@ pub mod manager;
 pub mod monitoring;
 pub mod orchestrator;
 pub mod query_processor;
+pub mod regen_loop;
 pub mod skill_dispatcher;
 pub mod skill_registry;
 pub mod skills;
-pub mod regen_loop;
 pub mod timeline;
 
 use chrono::{DateTime, Utc};
@@ -25,10 +25,10 @@ pub use classifier::{ContextClassifier, ContextLevel};
 pub use executor::SkillExecutor;
 pub use indexer::ContextIndexer;
 pub use manager::ContextManager;
-pub use regen_loop::{RegenerationConfig, RegenerationLoop, RegenDecision, SessionRegenStats};
 pub use monitoring::ContextMetrics;
 pub use orchestrator::{ContextBudgetConfig, ExecutionPlan, HookKind, Orchestrator};
 pub use query_processor::QueryProcessor;
+pub use regen_loop::{RegenDecision, RegenerationConfig, RegenerationLoop, SessionRegenStats};
 pub use skill_dispatcher::{
     ContextPack, SkillDispatchRequest, SkillDispatchResult, SkillDispatcher,
 };

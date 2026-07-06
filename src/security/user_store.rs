@@ -95,7 +95,12 @@ impl UserStore {
         }).await
     }
 
-    pub async fn update_password_and_recovery(&self, user_id: &str, password_hash: &str, recovery_seed_hash: &str) -> Result<()> {
+    pub async fn update_password_and_recovery(
+        &self,
+        user_id: &str,
+        password_hash: &str,
+        recovery_seed_hash: &str,
+    ) -> Result<()> {
         let user_id = user_id.to_string();
         let password_hash = password_hash.to_string();
         let recovery_seed_hash = recovery_seed_hash.to_string();
@@ -111,47 +116,60 @@ impl UserStore {
     }
 
     pub async fn save_backup_codes(&self, codes: Vec<BackupCode>) -> Result<()> {
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let tx = conn.unchecked_transaction()?;
-            {
-                let mut stmt = tx.prepare(
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                let tx = conn.unchecked_transaction()?;
+                {
+                    let mut stmt = tx.prepare(
                     "INSERT INTO backup_codes (id, user_id, code_hash, used) VALUES (?, ?, ?, ?)"
                 )?;
-                for code in codes {
-                    stmt.execute(params![
-                        code.id,
-                        code.user_id,
-                        code.code_hash,
-                        if code.used { 1 } else { 0 }
-                    ])?;
+                    for code in codes {
+                        stmt.execute(params![
+                            code.id,
+                            code.user_id,
+                            code.code_hash,
+                            if code.used { 1 } else { 0 }
+                        ])?;
+                    }
                 }
-            }
-            tx.commit()?;
-            Ok(())
-        }).await
+                tx.commit()?;
+                Ok(())
+            })
+            .await
     }
 
     pub async fn delete_backup_codes_for_user(&self, user_id: &str) -> Result<()> {
         let user_id = user_id.to_string();
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            conn.execute("DELETE FROM backup_codes WHERE user_id = ?", params![user_id])?;
-            Ok(())
-        }).await
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                conn.execute(
+                    "DELETE FROM backup_codes WHERE user_id = ?",
+                    params![user_id],
+                )?;
+                Ok(())
+            })
+            .await
     }
 
     pub async fn count_remaining_backup_codes(&self, user_id: &str) -> Result<usize> {
         let user_id = user_id.to_string();
-        ConnectionManager::global().with_conn(&self.project_id, move |conn| {
-            let count: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM backup_codes WHERE user_id = ? AND used = 0",
-                params![user_id],
-                |row| row.get(0),
-            )?;
-            Ok(count as usize)
-        }).await
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                let count: i64 = conn.query_row(
+                    "SELECT COUNT(*) FROM backup_codes WHERE user_id = ? AND used = 0",
+                    params![user_id],
+                    |row| row.get(0),
+                )?;
+                Ok(count as usize)
+            })
+            .await
     }
 
-    pub async fn verify_and_consume_backup_code(&self, user_id: &str, code_hash: &str) -> Result<bool> {
+    pub async fn verify_and_consume_backup_code(
+        &self,
+        user_id: &str,
+        code_hash: &str,
+    ) -> Result<bool> {
         let user_id = user_id.to_string();
         let code_hash = code_hash.to_string();
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {

@@ -1,10 +1,17 @@
-use rusqlite::{params, Connection, Result};
-use std::path::Path;
-use anyhow::{anyhow, Result as AnyhowResult};
 use crate::secrets::vault::HardwareVault;
-use crate::crypto::encryption::{encrypt_data, decrypt_data, NonceBytes};
-use crate::crypto::NONCE_SIZE;
+use anyhow::{anyhow, Result as AnyhowResult};
+use rusqlite::{params, Connection};
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
+use std::time::{SystemTime, UNIX_EPOCH};
+
+fn now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as i64
+}
 
 pub struct AuthDb {
     conn: Connection,
@@ -13,8 +20,7 @@ pub struct AuthDb {
 impl AuthDb {
     pub fn new(path: &Path) -> AnyhowResult<Self> {
         let master_key = Self::get_or_create_master_key()?;
-        let conn = Connection::open(path)
-            .map_err(|e| anyhow!("Failed to open database: {}", e))?;
+        let conn = Connection::open(path).map_err(|e| anyhow!("Failed to open database: {}", e))?;
 
         // Apply SQLCipher encryption
         conn.pragma_update(None, "key", &master_key)
@@ -33,7 +39,8 @@ impl AuthDb {
                 let mut key_bytes = [0u8; 32];
                 rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut key_bytes);
                 let key_hex = crate::crypto::hex_encode(key_bytes);
-                vault.store_secret("DB_MASTER_KEY", &key_hex)
+                vault
+                    .store_secret("DB_MASTER_KEY", &key_hex)
                     .map_err(|e| anyhow!("Failed to store master key: {}", e))?;
                 Ok(key_hex)
             }
@@ -41,8 +48,9 @@ impl AuthDb {
     }
 
     fn create_tables(&self) -> AnyhowResult<()> {
-        self.conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS users (
+        self.conn
+            .execute_batch(
+                "CREATE TABLE IF NOT EXISTS users (
                 id TEXT PRIMARY KEY,
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
@@ -73,8 +81,9 @@ impl AuthDb {
                 ip_address TEXT,
                 details TEXT,
                 created_at INTEGER NOT NULL
-            );"
-        ).map_err(|e| anyhow!("Failed to create tables: {}", e))?;
+            );",
+            )
+            .map_err(|e| anyhow!("Failed to create tables: {}", e))?;
         Ok(())
     }
 
@@ -184,35 +193,126 @@ impl AuthDb {
     }
 
     pub fn revoke_refresh_token(&self, id: &str) -> AnyhowResult<()> {
-        self.conn.execute(
-            "UPDATE refresh_tokens SET revoked = 1 WHERE id = ?1",
-            params![id],
-        ).map_err(|e| anyhow!("Failed to revoke refresh token: {}", e))?;
+        self.conn
+            .execute(
+                "UPDATE refresh_tokens SET revoked = 1 WHERE id = ?1",
+                params![id],
+            )
+            .map_err(|e| anyhow!("Failed to revoke refresh token: {}", e))?;
         Ok(())
     }
 
     pub fn revoke_all_user_tokens(&self, user_id: &str) -> AnyhowResult<()> {
-        self.conn.execute(
-            "UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?1",
-            params![user_id],
-        ).map_err(|e| anyhow!("Failed to revoke all user tokens: {}", e))?;
+        self.conn
+            .execute(
+                "UPDATE refresh_tokens SET revoked = 1 WHERE user_id = ?1",
+                params![user_id],
+            )
+            .map_err(|e| anyhow!("Failed to revoke all user tokens: {}", e))?;
         Ok(())
+    }
+
+    // TOTP Operations
+    pub fn update_totp_secret(&self, user_id: &str, secret: &str) -> AnyhowResult<()> {
+        self.conn
+            .execute(
+                "UPDATE users SET totp_secret = ?1, updated_at = ?2 WHERE id = ?3",
+                params![secret, now(), user_id],
+            )
+            .map_err(|e| anyhow!("Failed to update TOTP secret: {}", e))?;
+        Ok(())
+    }
+
+    pub fn update_backup_codes(&self, user_id: &str, codes_json: &str) -> AnyhowResult<()> {
+        self.conn
+            .execute(
+                "UPDATE users SET backup_codes = ?1, updated_at = ?2 WHERE id = ?3",
+                params![codes_json, now(), user_id],
+            )
+            .map_err(|e| anyhow!("Failed to update backup codes: {}", e))?;
+        Ok(())
+    }
+
+    pub fn enable_totp(&self, user_id: &str) -> AnyhowResult<()> {
+        self.conn
+            .execute(
+                "UPDATE users SET totp_enabled = 1, updated_at = ?2 WHERE id = ?1",
+                params![user_id, now()],
+            )
+            .map_err(|e| anyhow!("Failed to enable TOTP: {}", e))?;
+        Ok(())
+    }
+
+    pub fn disable_totp(&self, user_id: &str) -> AnyhowResult<()> {
+        self.conn.execute(
+            "UPDATE users SET totp_enabled = 0, totp_secret = NULL, updated_at = ?2 WHERE id = ?1",
+            params![user_id, now()],
+        ).map_err(|e| anyhow!("Failed to disable TOTP: {}", e))?;
+        Ok(())
+    }
+
+    pub fn update_password(&self, user_id: &str, password_hash: &str) -> AnyhowResult<()> {
+        self.conn
+            .execute(
+                "UPDATE users SET password_hash = ?1, updated_at = ?3 WHERE id = ?2",
+                params![password_hash, user_id, now()],
+            )
+            .map_err(|e| anyhow!("Failed to update password: {}", e))?;
+        Ok(())
+    }
+
+    pub fn list_users(&self) -> AnyhowResult<Vec<User>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id, email, password_hash, name, role, totp_secret, totp_enabled, recovery_seed_hash, backup_codes, created_at, updated_at FROM users"
+        )?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(User {
+                    id: row.get(0)?,
+                    email: row.get(1)?,
+                    password_hash: row.get(2)?,
+                    name: row.get(3)?,
+                    role: row.get(4)?,
+                    totp_secret: row.get(5)?,
+                    totp_enabled: row.get::<_, i32>(6)? != 0,
+                    recovery_seed_hash: row.get(7)?,
+                    backup_codes: row.get(8)?,
+                    created_at: row.get(9)?,
+                    updated_at: row.get(10)?,
+                })
+            })
+            .map_err(|e| anyhow!("Failed to list users: {}", e))?;
+
+        let mut users = Vec::new();
+        for row in rows {
+            users.push(row.map_err(|e| anyhow!("Failed to read user row: {}", e))?);
+        }
+        Ok(users)
+    }
+
+    pub fn count_users(&self) -> AnyhowResult<i64> {
+        Ok(self
+            .conn
+            .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))
+            .map_err(|e| anyhow!("Failed to count users: {}", e))?)
     }
 
     // Audit Log Operations
     pub fn log_audit(&self, log: &AuditLog) -> AnyhowResult<()> {
-        self.conn.execute(
-            "INSERT INTO audit_log (id, user_id, action, ip_address, details, created_at)
+        self.conn
+            .execute(
+                "INSERT INTO audit_log (id, user_id, action, ip_address, details, created_at)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![
-                log.id,
-                log.user_id,
-                log.action,
-                log.ip_address,
-                log.details,
-                log.created_at,
-            ],
-        ).map_err(|e| anyhow!("Failed to log audit: {}", e))?;
+                params![
+                    log.id,
+                    log.user_id,
+                    log.action,
+                    log.ip_address,
+                    log.details,
+                    log.created_at,
+                ],
+            )
+            .map_err(|e| anyhow!("Failed to log audit: {}", e))?;
         Ok(())
     }
 }
@@ -250,7 +350,9 @@ mod tests {
 
         db.create_user(&user).expect("Should create user");
 
-        let found = db.get_user_by_email("test@example.com").expect("Should get user");
+        let found = db
+            .get_user_by_email("test@example.com")
+            .expect("Should get user");
         assert!(found.is_some());
         assert_eq!(found.unwrap().id, "user_1");
 
@@ -291,12 +393,17 @@ mod tests {
 
         db.store_refresh_token(&token).expect("Should store token");
 
-        let found = db.get_refresh_token_by_hash("hash").expect("Should get token");
+        let found = db
+            .get_refresh_token_by_hash("hash")
+            .expect("Should get token");
         assert!(found.is_some());
         assert_eq!(found.unwrap().id, "token_1");
 
-        db.revoke_refresh_token("token_1").expect("Should revoke token");
-        let found_revoked = db.get_refresh_token_by_hash("hash").expect("Should get token again");
+        db.revoke_refresh_token("token_1")
+            .expect("Should revoke token");
+        let found_revoked = db
+            .get_refresh_token_by_hash("hash")
+            .expect("Should get token again");
         assert!(found_revoked.unwrap().revoked);
     }
 }

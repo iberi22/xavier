@@ -1,7 +1,7 @@
 //! Gap Analyzer - Identifies performance gaps from real usage data
 
-use crate::observability::service_log::{LogLevel, ServiceLogStore};
 use crate::data_commons::telemetry_db::TelemetryDb;
+use crate::observability::service_log::{LogLevel, ServiceLogStore};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -56,11 +56,15 @@ impl GapAnalyzer {
 
         // Real latency analysis from logs
         let recent_logs = self.log_store.search_logs("latency_ms", 1000).await?;
-        let latencies: Vec<u64> = recent_logs.iter().filter_map(|l| {
-            l.metadata.as_ref()
-                .and_then(|m| m.get("latency_ms"))
-                .and_then(|v| v.as_u64())
-        }).collect();
+        let latencies: Vec<u64> = recent_logs
+            .iter()
+            .filter_map(|l| {
+                l.metadata
+                    .as_ref()
+                    .and_then(|m| m.get("latency_ms"))
+                    .and_then(|v| v.as_u64())
+            })
+            .collect();
 
         let (avg_latency_ms, p95_latency_ms) = if !latencies.is_empty() {
             let mut sorted = latencies.clone();
@@ -82,9 +86,19 @@ impl GapAnalyzer {
         if p95_latency_ms > 1000 {
             // Identify which endpoints are slow
             for log in recent_logs {
-                if let Some(latency) = log.metadata.as_ref().and_then(|m| m.get("latency_ms")).and_then(|v| v.as_u64()) {
+                if let Some(latency) = log
+                    .metadata
+                    .as_ref()
+                    .and_then(|m| m.get("latency_ms"))
+                    .and_then(|v| v.as_u64())
+                {
                     if latency > 1000 {
-                        if let Some(path) = log.metadata.as_ref().and_then(|m| m.get("path")).and_then(|v| v.as_str()) {
+                        if let Some(path) = log
+                            .metadata
+                            .as_ref()
+                            .and_then(|m| m.get("path"))
+                            .and_then(|v| v.as_str())
+                        {
                             if !high_latency_endpoints.contains(&path.to_string()) {
                                 high_latency_endpoints.push(path.to_string());
                             }
@@ -98,7 +112,12 @@ impl GapAnalyzer {
         if let Some(ref db) = self.telemetry_db {
             let logs = db.get_recent_logs(100)?;
             // Heuristic: if many logs have small payloads, it might indicate poor retrieval
-            if logs.iter().filter(|(_, payload, _, _, _)| payload.len() < 100).count() > 20 {
+            if logs
+                .iter()
+                .filter(|(_, payload, _, _, _)| payload.len() < 100)
+                .count()
+                > 20
+            {
                 recall_indicators.push("Low payload size in retrieval logs".to_string());
             }
         }

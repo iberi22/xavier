@@ -43,8 +43,24 @@ pub(crate) async fn generate_anthropic_compatible(
 
     let mut builder = client
         .post(endpoint)
-        .header("x-api-key", api_key)
         .header("anthropic-version", "2023-06-01");
+
+    use crate::domain::proxy::SecretInjectionStrategy;
+    match config
+        .secret_injection_strategy
+        .as_ref()
+        .unwrap_or(&SecretInjectionStrategy::XApiKey)
+    {
+        SecretInjectionStrategy::BearerToken => {
+            builder = builder.bearer_auth(api_key);
+        }
+        SecretInjectionStrategy::XApiKey => {
+            builder = builder.header("x-api-key", api_key);
+        }
+        SecretInjectionStrategy::GitHubToken => {
+            builder = builder.header("Authorization", format!("token {}", api_key));
+        }
+    }
 
     if use_cache {
         if let Some(arr) = system_json.as_array_mut() {
@@ -57,16 +73,24 @@ pub(crate) async fn generate_anthropic_compatible(
         builder = builder.header("anthropic-beta", "prompt-caching-2024-07-31");
     }
 
+    let mut body = json!({
+        "model": config.model,
+        "system": system_json,
+        "max_tokens": 500,
+        "temperature": 0.2,
+        "messages": [
+            {"role": "user", "content": user_prompt}
+        ]
+    });
+
+    if let Some(token) = &config.lease_token {
+        if let Some(obj) = body.as_object_mut() {
+            obj.insert("lease_token".to_string(), json!(token));
+        }
+    }
+
     let response = builder
-        .json(&json!({
-            "model": config.model,
-            "system": system_json,
-            "max_tokens": 500,
-            "temperature": 0.2,
-            "messages": [
-                {"role": "user", "content": user_prompt}
-            ]
-        }))
+        .json(&body)
         .send()
         .await
         .context("failed to call Anthropic-compatible API")?;

@@ -8,6 +8,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::Value;
+use tracing::info;
 
 use crate::cli::commands::enums::TaskCommand;
 use crate::cli::config::{require_xavier_token, resolve_base_url};
@@ -55,6 +56,90 @@ pub async fn tasks_list_handler(
             }),
         ),
     }
+}
+
+pub async fn tasks_run_handler(
+    State(state): State<CliState>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> Response {
+    let task_result = state.tasks.store.get_task(&id).await;
+    let task = match task_result {
+        Ok(Some(t)) => t,
+        Ok(None) => {
+            return json_response(
+                StatusCode::NOT_FOUND,
+                serde_json::json!({"status": "error", "message": "Task not found"}),
+            )
+        }
+        Err(e) => {
+            return json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({"status": "error", "message": e.to_string()}),
+            )
+        }
+    };
+
+    let agent_id = match &task.assignee {
+        Some(a) => a.clone(),
+        None => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({"status": "error", "message": "Task has no assignee"}),
+            )
+        }
+    };
+
+    // Transition task to InProgress
+    let _ = state.tasks.move_task(&id, TaskStatus::InProgress).await;
+
+    let mut agent_config =
+        xavier::agents::AgentConfig::new(agent_id.clone()).with_task(task.title.clone());
+
+    // Try to get provider/model from task metadata or defaults
+    // For now, we use defaults or simple mapping
+    let agent_entry = state.agent_registry.get(&agent_id).await;
+    if let Some(entry) = agent_entry {
+        if let Some(name) = entry.metadata.name {
+            agent_config.name = name;
+        }
+        if let Some(role) = entry.metadata.role {
+            agent_config =
+                agent_config.with_context(vec![("role".to_string(), role)].into_iter().collect());
+        }
+    }
+
+    let mut agent = xavier::agents::Agent::new(agent_config);
+    let memory = state.qmd_memory.clone();
+    let registry = state.agent_registry.clone();
+    let task_service = state.tasks.clone();
+
+    let task_id_for_async = id.clone();
+    tokio::spawn(async move {
+        match agent.run(memory, Some(registry)).await {
+            Ok(_) => {
+                info!("Task {} finished successfully", task_id_for_async);
+                let _ = task_service
+                    .move_task(&task_id_for_async, TaskStatus::Done)
+                    .await;
+            }
+            Err(e) => {
+                info!("Task {} failed: {}", task_id_for_async, e);
+                let _ = task_service
+                    .move_task(&task_id_for_async, TaskStatus::Failed)
+                    .await;
+            }
+        }
+    });
+
+    json_response(
+        StatusCode::OK,
+        serde_json::json!({
+            "status": "ok",
+            "message": "Task execution started",
+            "task_id": id,
+            "agent_id": agent_id,
+        }),
+    )
 }
 
 pub async fn tasks_sync_handler(State(state): State<CliState>) -> Response {

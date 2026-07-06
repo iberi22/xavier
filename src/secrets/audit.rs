@@ -107,4 +107,22 @@ impl AuditLogger for QmdAuditLogger {
             }).await;
         });
     }
+
+    fn log_proxy_use(&self, agent_id: &str, lease_token: &str, endpoint: &str) {
+        let project_id = self.project_id.clone();
+        let agent_id = agent_id.to_string();
+        let session_token = lease_token.to_string();
+        let reason = endpoint.to_string();
+        let now = Utc::now().to_rfc3339();
+        tokio::spawn(async move {
+            let _ = ConnectionManager::global().with_conn(&project_id, move |conn| {
+                conn.execute(
+                    "INSERT INTO secret_audit_logs (timestamp, event_type, agent_id, session_token, reason)
+                     VALUES (?, ?, ?, ?, ?)",
+                    params![now, "PROXY_USE", agent_id, session_token, reason],
+                )?;
+                Ok(())
+            }).await;
+        });
+    }
 }

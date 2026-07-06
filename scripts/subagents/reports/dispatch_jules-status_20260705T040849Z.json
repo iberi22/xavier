@@ -1,0 +1,61 @@
+{
+  "open_jules_issues": 9,
+  "jules_bot_prs": 0,
+  "issues": [
+    {
+      "createdAt": "2026-07-01T04:38:21Z",
+      "number": 385,
+      "title": "F5: Auto-revoke leases when agent tasks complete",
+      "url": "https://github.com/iberi22/xavier/issues/385"
+    },
+    {
+      "createdAt": "2026-07-01T04:38:18Z",
+      "number": 383,
+      "title": "F3: Add auth + rate-limit to proxy endpoint",
+      "url": "https://github.com/iberi22/xavier/issues/383"
+    },
+    {
+      "createdAt": "2026-07-01T04:38:17Z",
+      "number": 382,
+      "title": "F2: Redact secret_value from lend response",
+      "url": "https://github.com/iberi22/xavier/issues/382"
+    },
+    {
+      "createdAt": "2026-07-01T04:37:58Z",
+      "number": 381,
+      "title": "F1: Wire ProxyUseCase into headless_chat (replace placeholder)",
+      "url": "https://github.com/iberi22/xavier/issues/381"
+    },
+    {
+      "createdAt": "2026-07-01T04:37:04Z",
+      "number": 380,
+      "title": "[EPIC] Proxy Vault Seguro — key nunca sale de Xavier",
+      "url": "https://github.com/iberi22/xavier/issues/380"
+    },
+    {
+      "createdAt": "2026-06-30T04:30:31Z",
+      "number": 368,
+      "title": "F2: Agent Lifecycle Hooks - on_task_start/complete lease management",
+      "url": "https://github.com/iberi22/xavier/issues/368"
+    },
+    {
+      "createdAt": "2026-06-30T04:29:56Z",
+      "number": 366,
+      "title": "[EPIC] API Key Proxy Vault: Ephemeral Secret Lease System",
+      "url": "https://github.com/iberi22/xavier/issues/366"
+    },
+    {
+      "createdAt": "2026-06-16T20:56:54Z",
+      "number": 166,
+      "title": "feat-governance-dao: Bicameral DAO on-chain integration",
+      "url": "https://github.com/iberi22/xavier/issues/166"
+    },
+    {
+      "createdAt": "2026-06-14T16:41:52Z",
+      "number": 115,
+      "title": "[EPIC] Xavier Sovereign Mesh: internal node access, governance, and Data Commons economy",
+      "url": "https://github.com/iberi22/xavier/issues/115"
+    }
+  ],
+  "prs": []
+}

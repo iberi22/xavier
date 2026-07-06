@@ -163,7 +163,8 @@ impl NavTelemetry {
 
     /// Records the latency of a retrieval operation in milliseconds.
     pub fn record_latency(&self, latency_ms: u64) {
-        self.total_latency_ms.fetch_add(latency_ms, Ordering::Relaxed);
+        self.total_latency_ms
+            .fetch_add(latency_ms, Ordering::Relaxed);
         self.latency_samples.fetch_add(1, Ordering::Relaxed);
     }
 

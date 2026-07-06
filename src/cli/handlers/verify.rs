@@ -50,7 +50,9 @@ async fn verify_health(format: String) -> Result<()> {
             let status = data["status"].as_str().unwrap_or("unknown");
             let uptime = data["uptime_secs"].as_u64().unwrap_or(0);
             let mem = data["memory_mb"].as_u64().unwrap_or(0);
-            let version = data["version"].as_str().unwrap_or(env!("CARGO_PKG_VERSION"));
+            let version = data["version"]
+                .as_str()
+                .unwrap_or(env!("CARGO_PKG_VERSION"));
 
             println!("# System Health");
             println!();
@@ -135,14 +137,22 @@ async fn verify_save(content: String) -> Result<()> {
         let save_ok = result["save_ok"].as_bool().unwrap_or(false);
         let retrieve_ok = result["retrieve_ok"].as_bool().unwrap_or(false);
         let match_score = result["match_score"].as_f64().unwrap_or(0.0);
-        let latency = result["latency_ms"].as_u64().unwrap_or(elapsed.as_millis() as u64);
+        let latency = result["latency_ms"]
+            .as_u64()
+            .unwrap_or(elapsed.as_millis() as u64);
 
         println!();
         println!("{}", "=".repeat(47));
         println!("  Memory Verification Result");
         println!("{}", "=".repeat(47));
-        println!("  Save:      {}", if save_ok { "[OK] OK" } else { "[X] Failed" });
-        println!("  Retrieve:  {}", if retrieve_ok { "[OK] OK" } else { "[X] Failed" });
+        println!(
+            "  Save:      {}",
+            if save_ok { "[OK] OK" } else { "[X] Failed" }
+        );
+        println!(
+            "  Retrieve:  {}",
+            if retrieve_ok { "[OK] OK" } else { "[X] Failed" }
+        );
         println!("  Match:     {:.1}%", match_score * 100.0);
         println!("  Latency:   {} ms", latency);
         println!("{}", "=".repeat(47));
@@ -153,7 +163,10 @@ async fn verify_save(content: String) -> Result<()> {
             println!("[X] Verification failed!");
         }
     } else {
-        println!("[X] Verification request failed: {}", save_resp.text().await?);
+        println!(
+            "[X] Verification request failed: {}",
+            save_resp.text().await?
+        );
     }
 
     Ok(())

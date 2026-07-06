@@ -1,11 +1,11 @@
 #[cfg(test)]
 mod tests {
-    use crate::agents::evolve::mutator::{Mutator, Mutation};
-    use crate::agents::evolve::evaluator::Evaluator;
     use crate::agents::evolve::config::{BenchmarkType, EvolveConfig};
-    use crate::agents::evolve::reflector::{Reflector, Insights};
-    use crate::agents::evolve::EvolveModule;
+    use crate::agents::evolve::evaluator::Evaluator;
     use crate::agents::evolve::experiment::HypothesisType;
+    use crate::agents::evolve::mutator::{Mutation, Mutator};
+    use crate::agents::evolve::reflector::{Insights, Reflector};
+    use crate::agents::evolve::EvolveModule;
 
     #[tokio::test]
     async fn test_mutator_changes_config_value() {
@@ -61,7 +61,9 @@ mod tests {
             ..Default::default()
         };
         let mutations = mutator.generate_mutations(&insights).unwrap();
-        assert!(mutations.iter().any(|m| matches!(m, Mutation::Toggle { .. })));
+        assert!(mutations
+            .iter()
+            .any(|m| matches!(m, Mutation::Toggle { .. })));
     }
 
     #[tokio::test]
@@ -72,7 +74,9 @@ mod tests {
             ..Default::default()
         };
         let mutations = mutator.generate_mutations(&insights).unwrap();
-        assert!(mutations.iter().any(|m| matches!(m, Mutation::Structural { .. })));
+        assert!(mutations
+            .iter()
+            .any(|m| matches!(m, Mutation::Structural { .. })));
     }
 
     #[tokio::test]
@@ -87,7 +91,11 @@ mod tests {
     #[tokio::test]
     async fn test_mutation_to_hypothesis() {
         let mutator = Mutator::new();
-        let mutation = Mutation::Numeric { name: "test".to_string(), old_value: 0.1, new_value: 0.2 };
+        let mutation = Mutation::Numeric {
+            name: "test".to_string(),
+            old_value: 0.1,
+            new_value: 0.2,
+        };
         let hypothesis = mutator.mutation_to_hypothesis(&mutation);
         assert!(hypothesis.description.contains("test"));
         assert_eq!(hypothesis.hypothesis_type, HypothesisType::Hyperparameter);

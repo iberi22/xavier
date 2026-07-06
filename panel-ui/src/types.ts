@@ -123,6 +123,30 @@ export interface MemoryEntry {
   created_at: string;
 }
 
+export interface User {
+  id: string;
+  email: string;
+  name: string;
+  role: "admin" | "user" | "readonly";
+  api_key?: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export interface AuthState {
+  user: User | null;
+  token: string | null;
+  refreshToken: string | null;
+  isAuthenticated: boolean;
+  requires2FA: boolean;
+
+  login: (email: string, password: string, totpCode?: string) => Promise<void>;
+  logout: () => Promise<void>;
+  register: (email: string, name: string, password: string) => Promise<any>;
+  refreshSession: () => Promise<void>;
+  checkUsers?: () => Promise<{ has_users: boolean; count: number }>;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -157,4 +181,23 @@ export interface MeshStatus {
 export interface PairingCodeResponse {
   code: string;
   secret: string;
+}
+
+export interface SecretLease {
+  token: string;
+  secret_name: string;
+  secret_value?: string;
+  agent_id: string;
+  expires_at: string;
+  created_at: string;
+}
+
+export interface SecretAuditLog {
+  id: number;
+  timestamp: string;
+  event_type: string;
+  agent_id: string;
+  session_token: string;
+  secret_id?: string;
+  reason?: string;
 }

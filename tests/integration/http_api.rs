@@ -27,7 +27,7 @@ impl Drop for TestServer {
 }
 
 async fn spawn_test_server() -> TestServer {
-    let registry = SimpleAgentRegistry::new();
+    let registry = SimpleAgentRegistry::new(None);
     let app = create_router_with_agent_registry(registry.clone());
     let listener = TcpListener::bind("127.0.0.1:0")
         .await

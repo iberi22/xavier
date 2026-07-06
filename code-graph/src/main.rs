@@ -175,7 +175,7 @@ async fn scan(
                 languages,
                 duration_ms: stats.duration_ms,
             }))
-        },
+        }
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -190,20 +190,22 @@ async fn find(State(state): State<AppState>, Json(req): Json<FindRequest>) -> Js
 
     match state.query_engine.search(&req.query, limit) {
         Ok(result) => {
-            let symbols = result.symbols.into_iter().map(|s| {
-                SymbolEntry {
+            let symbols = result
+                .symbols
+                .into_iter()
+                .map(|s| SymbolEntry {
                     name: s.name,
                     kind: format!("{:?}", s.kind),
                     file: s.file_path,
                     line: s.start_line as usize,
                     lang: format!("{:?}", s.lang),
-                }
-            }).collect();
+                })
+                .collect();
             Json(FindResponse {
                 count: result.total,
                 symbols,
             })
-        },
+        }
         Err(_) => Json(FindResponse {
             count: 0,
             symbols: vec![],
@@ -211,7 +213,9 @@ async fn find(State(state): State<AppState>, Json(req): Json<FindRequest>) -> Js
     }
 }
 
-async fn stats(State(state): State<AppState>) -> Result<Json<ScanResponse>, (StatusCode, Json<ErrorResponse>)> {
+async fn stats(
+    State(state): State<AppState>,
+) -> Result<Json<ScanResponse>, (StatusCode, Json<ErrorResponse>)> {
     match state.query_engine.stats() {
         Ok(stats) => {
             let mut languages = HashMap::new();
@@ -225,7 +229,7 @@ async fn stats(State(state): State<AppState>) -> Result<Json<ScanResponse>, (Sta
                 languages,
                 duration_ms: stats.duration_ms,
             }))
-        },
+        }
         Err(e) => Err((
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(ErrorResponse {
@@ -292,9 +296,10 @@ enum Commands {
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    let db_path = cli.db_path.or_else(|| {
-        std::env::var("CODE_GRAPH_DB_PATH").ok().map(PathBuf::from)
-    }).unwrap_or_else(|| PathBuf::from("code_graph.db"));
+    let db_path = cli
+        .db_path
+        .or_else(|| std::env::var("CODE_GRAPH_DB_PATH").ok().map(PathBuf::from))
+        .unwrap_or_else(|| PathBuf::from("code_graph.db"));
 
     let db = Arc::new(CodeGraphDB::new(&db_path)?);
     let indexer = Arc::new(Indexer::new(Arc::clone(&db)));
@@ -308,7 +313,9 @@ async fn main() -> anyhow::Result<()> {
         });
 
         if token == "default-token-change-me" {
-            eprintln!("⚠️  WARNING: Using default token. Set CODE_GRAPH_TOKEN env var for security.");
+            eprintln!(
+                "⚠️  WARNING: Using default token. Set CODE_GRAPH_TOKEN env var for security."
+            );
         }
 
         let state = AppState {
@@ -381,7 +388,10 @@ async fn main() -> anyhow::Result<()> {
             let result = query_engine.search(&query, limit)?;
             println!("Found {} results (showing up to {}):", result.total, limit);
             for sym in result.symbols {
-                println!("  - {} ({:?}) in {}:{}", sym.name, sym.kind, sym.file_path, sym.start_line);
+                println!(
+                    "  - {} ({:?}) in {}:{}",
+                    sym.name, sym.kind, sym.file_path, sym.start_line
+                );
             }
         }
 

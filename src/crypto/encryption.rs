@@ -7,8 +7,8 @@ use aes_gcm::{
     aead::{Aead, KeyInit, OsRng},
     Aes256Gcm, Nonce,
 };
-use std::sync::LazyLock;
 use rand::RngCore;
+use std::sync::LazyLock;
 use std::sync::RwLock;
 
 use crate::crypto::NONCE_SIZE;

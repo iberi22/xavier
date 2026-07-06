@@ -144,7 +144,6 @@ impl CloudPeer {
                     let chunks: Vec<serde_json::Value> = resp.json().await?;
                     if let Some(chunk) = chunks.into_iter().next() {
                         if let Some(data_b64) = chunk["data"].as_str() {
-
                             let data = crate::crypto::base64_decode(data_b64)
                                 .context("Failed to decode base64 chunk data")?;
                             return Ok(Some((hash, data)));

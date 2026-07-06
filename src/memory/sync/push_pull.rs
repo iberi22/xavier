@@ -11,8 +11,8 @@ use anyhow::Result;
 
 use crate::memory::store::MemoryStore;
 
-use super::{ChunkDiff, DiffAction};
 use super::merge::{chunk_hash, serialise_chunk};
+use super::{ChunkDiff, DiffAction};
 
 /// Collect all chunks in a workspace that have been modified since `since`.
 ///
@@ -141,6 +141,7 @@ mod tests {
             encrypted_dek: None,
             content_iv: None,
             metadata_iv: None,
+            score: 0.0,
         }
     }
 

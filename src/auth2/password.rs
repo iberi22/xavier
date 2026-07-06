@@ -1,8 +1,8 @@
+use anyhow::{anyhow, Result};
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2, Params,
 };
-use anyhow::{anyhow, Result};
 
 /// Argon2id parameters as per requirements:
 /// m_cost: 19456 (19MB), t_cost: 2, p_cost: 1
@@ -17,13 +17,10 @@ pub fn hash_password(password: &str) -> Result<String> {
     let params = Params::new(ARGON2_M_COST, ARGON2_T_COST, ARGON2_P_COST, None)
         .map_err(|e| anyhow!("Failed to create Argon2 parameters: {}", e))?;
 
-    let argon2 = Argon2::new(
-        argon2::Algorithm::Argon2id,
-        argon2::Version::V0x13,
-        params,
-    );
+    let argon2 = Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params);
 
-    let password_hash = argon2.hash_password(password.as_bytes(), &salt)
+    let password_hash = argon2
+        .hash_password(password.as_bytes(), &salt)
         .map_err(|e| anyhow!("Failed to hash password: {}", e))?
         .to_string();
 
@@ -32,8 +29,8 @@ pub fn hash_password(password: &str) -> Result<String> {
 
 /// Verifies a password against an Argon2id hash.
 pub fn verify_password(password: &str, hash: &str) -> Result<bool> {
-    let parsed_hash = PasswordHash::new(hash)
-        .map_err(|e| anyhow!("Failed to parse password hash: {}", e))?;
+    let parsed_hash =
+        PasswordHash::new(hash).map_err(|e| anyhow!("Failed to parse password hash: {}", e))?;
 
     let argon2 = Argon2::default();
 

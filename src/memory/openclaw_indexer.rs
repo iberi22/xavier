@@ -2,13 +2,13 @@
 //!
 //! Concurrently chunks, embeds, and stores agent memories from OpenClaw into the MemoryStore.
 
-use std::sync::Arc;
+use crate::embedding::Embedder;
+use crate::memory::openclaw_scanner::{AgentMemory, OpenClawAgentScanner};
+use crate::memory::store::{stable_key, MemoryRecord, MemoryStore};
 use anyhow::Result;
 use serde_json::json;
+use std::sync::Arc;
 use tracing::{info, warn};
-use crate::memory::openclaw_scanner::{AgentMemory, OpenClawAgentScanner};
-use crate::memory::store::{MemoryRecord, MemoryStore, stable_key};
-use crate::embedding::Embedder;
 
 pub struct OpenClawAgentIndexer {
     embedder: Arc<dyn Embedder>,
@@ -40,13 +40,28 @@ impl OpenClawAgentIndexer {
 
         // 3. Process optional files
         if let Some(content) = &memory.soul_md {
-            records.push(self.create_single_chunk_record(&memory.agent_id, "SOUL.md", "SOUL", content));
+            records.push(self.create_single_chunk_record(
+                &memory.agent_id,
+                "SOUL.md",
+                "SOUL",
+                content,
+            ));
         }
         if let Some(content) = &memory.user_md {
-            records.push(self.create_single_chunk_record(&memory.agent_id, "USER.md", "USER", content));
+            records.push(self.create_single_chunk_record(
+                &memory.agent_id,
+                "USER.md",
+                "USER",
+                content,
+            ));
         }
         if let Some(content) = &memory.tools_md {
-            records.push(self.create_single_chunk_record(&memory.agent_id, "TOOLS.md", "TOOLS", content));
+            records.push(self.create_single_chunk_record(
+                &memory.agent_id,
+                "TOOLS.md",
+                "TOOLS",
+                content,
+            ));
         }
 
         let mut final_records = Vec::new();
@@ -61,7 +76,10 @@ impl OpenClawAgentIndexer {
                     record.embedding = embedding;
                 }
                 Err(e) => {
-                    warn!("Failed to generate embedding for {}: {}. Continuing...", record.path, e);
+                    warn!(
+                        "Failed to generate embedding for {}: {}. Continuing...",
+                        record.path, e
+                    );
                 }
             }
 
@@ -104,7 +122,10 @@ impl OpenClawAgentIndexer {
         for line in content.lines() {
             if line.starts_with("## ") {
                 if !current_section_content.trim().is_empty() {
-                    sections.push((current_section_title.clone(), current_section_content.clone()));
+                    sections.push((
+                        current_section_title.clone(),
+                        current_section_content.clone(),
+                    ));
                 }
                 current_section_title = line["## ".len()..].trim().to_string();
                 current_section_content = line.to_string();
@@ -123,7 +144,8 @@ impl OpenClawAgentIndexer {
             let mut record = MemoryRecord::default();
             record.workspace_id = format!("agent:{}", agent_id);
 
-            let title_slug = title.to_lowercase()
+            let title_slug = title
+                .to_lowercase()
                 .replace(' ', "-")
                 .chars()
                 .filter(|c| c.is_alphanumeric() || *c == '-')
@@ -144,7 +166,11 @@ impl OpenClawAgentIndexer {
         records
     }
 
-    fn chunk_daily_log(&self, agent_id: &str, log: &crate::memory::openclaw_scanner::DailyLog) -> Vec<MemoryRecord> {
+    fn chunk_daily_log(
+        &self,
+        agent_id: &str,
+        log: &crate::memory::openclaw_scanner::DailyLog,
+    ) -> Vec<MemoryRecord> {
         let mut records = Vec::new();
 
         // 1 chunk per file if < 5KB
@@ -198,7 +224,13 @@ impl OpenClawAgentIndexer {
         records
     }
 
-    fn create_single_chunk_record(&self, agent_id: &str, file_name: &str, file_type: &str, content: &str) -> MemoryRecord {
+    fn create_single_chunk_record(
+        &self,
+        agent_id: &str,
+        file_name: &str,
+        file_type: &str,
+        content: &str,
+    ) -> MemoryRecord {
         let mut record = MemoryRecord::default();
         record.workspace_id = format!("agent:{}", agent_id);
         record.path = format!("{}/{}", agent_id, file_name);
@@ -246,14 +278,15 @@ impl OpenClawAgentIndexer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::embedding::NoopEmbedder;
     use crate::memory::openclaw_scanner::DailyLog;
     use crate::memory::store::InMemoryMemoryStore;
-    use crate::embedding::NoopEmbedder;
 
     #[test]
     fn test_chunk_memory_md() {
         let indexer = OpenClawAgentIndexer::new(Arc::new(NoopEmbedder));
-        let content = "Initial info\n## Section 1\nContent of section 1\n## Section 2\nContent of section 2";
+        let content =
+            "Initial info\n## Section 1\nContent of section 1\n## Section 2\nContent of section 2";
         let records = indexer.chunk_memory_md("test_agent", content);
 
         assert_eq!(records.len(), 3);
@@ -297,7 +330,8 @@ mod tests {
     #[test]
     fn test_extract_tags() {
         let indexer = OpenClawAgentIndexer::new(Arc::new(NoopEmbedder));
-        let content = "Check out https://xavier.swal.dev and #ai. Also, Xavier is great, Xavier is memory.";
+        let content =
+            "Check out https://xavier.swal.dev and #ai. Also, Xavier is great, Xavier is memory.";
         let tags = indexer.extract_tags(content);
 
         assert!(tags.contains(&"https://xavier.swal.dev".to_string()));

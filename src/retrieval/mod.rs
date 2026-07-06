@@ -4,8 +4,11 @@
 //! Working, Episodic, and Semantic memory layers using weighted RRF fusion.
 
 pub mod config;
+pub mod eval;
 pub mod gating;
+pub mod history;
 pub mod policy;
+pub mod tuner;
 
 pub use gating::{
     AdaptiveGating, Event, GatingConfig, LayerSearchResult, LayerStats, LayerWeights,

@@ -26,7 +26,13 @@ impl TokenAccountingTracker {
         }
     }
 
-    pub async fn track(&self, session_id: String, original_tokens: usize, optimized_tokens: usize, model_price_per_1k: f32) {
+    pub async fn track(
+        &self,
+        session_id: String,
+        original_tokens: usize,
+        optimized_tokens: usize,
+        model_price_per_1k: f32,
+    ) {
         let cost_optimized = (optimized_tokens as f32 / 1000.0) * model_price_per_1k;
         let cost_original = (original_tokens as f32 / 1000.0) * model_price_per_1k;
         let savings = cost_original - cost_optimized;
@@ -75,4 +81,5 @@ pub struct TokenStats {
     pub operation_count: usize,
 }
 
-pub static TRACKER: std::sync::LazyLock<TokenAccountingTracker> = std::sync::LazyLock::new(TokenAccountingTracker::new);
+pub static TRACKER: std::sync::LazyLock<TokenAccountingTracker> =
+    std::sync::LazyLock::new(TokenAccountingTracker::new);

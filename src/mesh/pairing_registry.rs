@@ -44,8 +44,10 @@ impl PairingSecretRegistry {
             });
         }
 
-        let raw = std::fs::read_to_string(&storage_path).context("Failed to read pairing secret registry file")?;
-        let secrets: HashMap<String, PairingSecretMetadata> = serde_json::from_str(&raw).context("Failed to parse pairing secret registry JSON")?;
+        let raw = std::fs::read_to_string(&storage_path)
+            .context("Failed to read pairing secret registry file")?;
+        let secrets: HashMap<String, PairingSecretMetadata> =
+            serde_json::from_str(&raw).context("Failed to parse pairing secret registry JSON")?;
 
         Ok(Self {
             secrets,
@@ -55,15 +57,19 @@ impl PairingSecretRegistry {
 
     pub fn save(&self) -> Result<()> {
         let json = serde_json::to_string_pretty(&self.secrets)?;
-        std::fs::write(&self.storage_path, json).context("Failed to write pairing secret registry file")?;
+        std::fs::write(&self.storage_path, json)
+            .context("Failed to write pairing secret registry file")?;
         Ok(())
     }
 
     pub fn register_secret(&mut self, secret: String, expires_at: u64) -> Result<()> {
-        self.secrets.insert(secret, PairingSecretMetadata {
-            expires_at,
-            created_at: chrono::Utc::now().timestamp(),
-        });
+        self.secrets.insert(
+            secret,
+            PairingSecretMetadata {
+                expires_at,
+                created_at: chrono::Utc::now().timestamp(),
+            },
+        );
         self.save()
     }
 

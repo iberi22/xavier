@@ -138,11 +138,8 @@ impl PeerMemorySync {
             crate::memory::sync::diff::diff_manifests(&local_manifest, &remote_manifest)?;
 
         // 4. Push local changes — collect full chunk data from store
-        let push_diffs = crate::memory::sync::push_pull::entries_as_push_diffs(
-            &*self.store,
-            &to_push,
-        )
-        .await?;
+        let push_diffs =
+            crate::memory::sync::push_pull::entries_as_push_diffs(&*self.store, &to_push).await?;
         let chunks_sent = self.push_diffs_raw(peer_url, &push_diffs).await?;
 
         // 5. Pull remote changes
@@ -173,9 +170,12 @@ impl PeerMemorySync {
         since: SystemTime,
     ) -> Result<SyncSession> {
         let start = std::time::Instant::now();
-        let diffs =
-            crate::memory::sync::push_pull::collect_changes_since(&*self.store, workspace_id, since)
-                .await?;
+        let diffs = crate::memory::sync::push_pull::collect_changes_since(
+            &*self.store,
+            workspace_id,
+            since,
+        )
+        .await?;
         let chunks_sent = self.push_diffs_raw(peer_url, &diffs).await?;
         let duration_ms = start.elapsed().as_millis() as u64;
         Ok(SyncSession {
@@ -196,9 +196,7 @@ impl PeerMemorySync {
         since: SystemTime,
     ) -> Result<SyncSession> {
         let start = std::time::Instant::now();
-        let received = self
-            .pull_diffs_since(peer_url, workspace_id, since)
-            .await?;
+        let received = self.pull_diffs_since(peer_url, workspace_id, since).await?;
         let chunks_received = received.len() as u64;
         let mut conflicts = 0u64;
         crate::memory::sync::merge::apply_changes_received(&*self.store, &received, &mut conflicts)
@@ -285,11 +283,7 @@ impl PeerMemorySync {
             .send()
             .await?;
         if !resp.status().is_success() {
-            anyhow::bail!(
-                "pull_manifest: HTTP {} from {}",
-                resp.status(),
-                url
-            );
+            anyhow::bail!("pull_manifest: HTTP {} from {}", resp.status(), url);
         }
         let manifest: Manifest = resp.json().await?;
         Ok(manifest)
@@ -319,10 +313,7 @@ impl PeerMemorySync {
         if want.is_empty() {
             return Ok(Vec::new());
         }
-        let url = format!(
-            "{}/v1/memory/pull",
-            peer_url.trim_end_matches('/')
-        );
+        let url = format!("{}/v1/memory/pull", peer_url.trim_end_matches('/'));
         let resp = self
             .http_client
             .post(&url)
@@ -361,11 +352,7 @@ impl PeerMemorySync {
             .send()
             .await?;
         if !resp.status().is_success() {
-            anyhow::bail!(
-                "pull_diffs_since: HTTP {} from {}",
-                resp.status(),
-                url
-            );
+            anyhow::bail!("pull_diffs_since: HTTP {} from {}", resp.status(), url);
         }
         let diffs: Vec<ChunkDiff> = resp.json().await?;
         Ok(diffs)

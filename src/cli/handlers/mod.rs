@@ -6,10 +6,6 @@ pub mod agent;
 pub mod agent_cli;
 pub mod billing;
 pub mod cloud;
-pub mod sync;
-pub mod system_scan_cli;
-pub mod tasks;
-pub mod verify;
 pub mod code;
 pub mod headless_api;
 pub mod headless_e2e;
@@ -24,10 +20,14 @@ pub mod recovery;
 pub mod secrets;
 pub mod security;
 pub mod setup;
+pub mod sync;
 pub mod system;
 pub mod system_scan;
+pub mod system_scan_cli;
+pub mod tasks;
 pub mod tokens;
 pub mod usage;
+pub mod verify;
 pub mod workspace;
 
 pub use agent::*;
@@ -67,3 +67,5 @@ pub fn json_response(status: StatusCode, body: serde_json::Value) -> Response {
                 .into_response()
         })
 }
+#[cfg(test)]
+pub mod proxy_auth_tests;

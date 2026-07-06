@@ -15,8 +15,8 @@ use serde::{Deserialize, Serialize};
 use std::time::Instant;
 use tracing::{info, warn};
 
-use crate::agents::system1::RetrievalResult;
 use crate::agents::provider::ModelProviderClient;
+use crate::agents::system1::RetrievalResult;
 
 // ---------------------------------------------------------------------------
 // Types
@@ -235,9 +235,12 @@ impl System2Reasoner {
                     conclusion: format!(
                         "{} counter-evidence found, relevance: {:.2}",
                         hypothesis.contra_evidence.len(),
-                        hypothesis.contra_evidence.iter()
+                        hypothesis
+                            .contra_evidence
+                            .iter()
                             .map(|e| e.relevance)
-                            .sum::<f32>() / hypothesis.contra_evidence.len() as f32
+                            .sum::<f32>()
+                            / hypothesis.contra_evidence.len() as f32
                     ),
                     confidence_delta: -0.05f32 * hypothesis.contra_evidence.len() as f32,
                     evidence_indices: vec![],
@@ -252,7 +255,9 @@ impl System2Reasoner {
                     relation: "supported_by".into(),
                     target: hypothesis.statement.clone(),
                     confidence: hypothesis.strength,
-                    based_on: hypothesis.pro_evidence.iter()
+                    based_on: hypothesis
+                        .pro_evidence
+                        .iter()
                         .map(|e| e.source_id.clone())
                         .collect(),
                 });
@@ -266,10 +271,10 @@ impl System2Reasoner {
             0.0
         };
 
-        let has_contradiction = hypotheses.iter()
-            .any(|h| !h.contra_evidence.is_empty());
+        let has_contradiction = hypotheses.iter().any(|h| !h.contra_evidence.is_empty());
 
-        let contradiction_count = hypotheses.iter()
+        let contradiction_count = hypotheses
+            .iter()
             .map(|h| h.contra_evidence.len())
             .sum::<usize>();
 
@@ -369,9 +374,8 @@ impl System2Reasoner {
 
         // Group evidence by relevance (simple heuristic — split into pro/con by threshold)
         let threshold = 0.4;
-        let (pro, contra): (Vec<&Evidence>, Vec<&Evidence>) = evidence
-            .iter()
-            .partition(|e| e.relevance >= threshold);
+        let (pro, contra): (Vec<&Evidence>, Vec<&Evidence>) =
+            evidence.iter().partition(|e| e.relevance >= threshold);
 
         let mut hypotheses = Vec::new();
 
@@ -429,10 +433,7 @@ impl System2Reasoner {
         }
 
         // Count contradictions
-        let contradiction_count: usize = hypotheses
-            .iter()
-            .map(|h| h.contra_evidence.len())
-            .sum();
+        let contradiction_count: usize = hypotheses.iter().map(|h| h.contra_evidence.len()).sum();
 
         let has_contradiction = contradiction_count > 0;
 
@@ -480,7 +481,7 @@ impl System2Reasoner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::system1::{RetrievedDocument, RetrievalResult, SearchType};
+    use crate::agents::system1::{RetrievalResult, RetrievedDocument, SearchType};
     use serde_json::json;
 
     fn make_doc(id: &str, content: &str, relevance: f32) -> RetrievedDocument {
@@ -591,7 +592,11 @@ mod tests {
         // High confidence example with no contradictions
         let no_contra = vec![Hypothesis {
             statement: "test".into(),
-            pro_evidence: vec![Evidence { source_id: "1".into(), content: "a".into(), relevance: 0.9 }],
+            pro_evidence: vec![Evidence {
+                source_id: "1".into(),
+                content: "a".into(),
+                relevance: 0.9,
+            }],
             contra_evidence: vec![],
             strength: 0.9,
         }];
@@ -602,10 +607,16 @@ mod tests {
         // Same confidence but with contradictions
         let with_contra = vec![Hypothesis {
             statement: "test".into(),
-            pro_evidence: vec![Evidence { source_id: "1".into(), content: "a".into(), relevance: 0.9 }],
-            contra_evidence: vec![
-                Evidence { source_id: "2".into(), content: "b".into(), relevance: 0.7 },
-            ],
+            pro_evidence: vec![Evidence {
+                source_id: "1".into(),
+                content: "a".into(),
+                relevance: 0.9,
+            }],
+            contra_evidence: vec![Evidence {
+                source_id: "2".into(),
+                content: "b".into(),
+                relevance: 0.7,
+            }],
             strength: 0.9,
         }];
 
@@ -639,15 +650,16 @@ mod tests {
         let context = make_context(docs);
 
         let result = reasoner.run("water boiling point", &context).await.unwrap();
-        assert!(result.reasoning_chain.len() >= 2, "Should have at least 2 reasoning steps with 4 docs");
+        assert!(
+            result.reasoning_chain.len() >= 2,
+            "Should have at least 2 reasoning steps with 4 docs"
+        );
     }
 
     #[tokio::test]
     async fn test_heuristic_only_still_produces_valid_output() {
         let reasoner = System2Reasoner::heuristic_only(ReasonerConfig::default());
-        let docs = vec![
-            make_doc("a", "test content here", 0.5),
-        ];
+        let docs = vec![make_doc("a", "test content here", 0.5)];
         let context = make_context(docs);
 
         let result = reasoner.run("test", &context).await.unwrap();
@@ -708,7 +720,11 @@ mod tests {
         let json = serde_json::to_string(&result).unwrap();
         let back: ReasoningResult = serde_json::from_str(&json).unwrap();
         assert_eq!(back.query, "test");
-        assert!((back.calibration.calibrated_confidence - 0.70).abs() < 0.02, "expected ~0.70, got {}", back.calibration.calibrated_confidence);
+        assert!(
+            (back.calibration.calibrated_confidence - 0.70).abs() < 0.02,
+            "expected ~0.70, got {}",
+            back.calibration.calibrated_confidence
+        );
         assert_eq!(back.supporting_evidence.len(), 1);
         assert_eq!(back.beliefs_updated.len(), 1);
     }

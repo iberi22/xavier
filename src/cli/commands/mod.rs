@@ -17,14 +17,16 @@
 pub mod billing;
 pub mod code;
 pub mod data_commons;
-pub mod wallet;
 pub mod enums;
+pub mod governance;
 pub mod http;
+pub mod improve;
 pub mod license;
-pub mod mesh;
 pub mod memory;
+pub mod mesh;
 pub mod navigation;
 pub mod provider;
+pub mod regen;
 pub mod secrets;
 pub mod session;
 pub mod spawn;
@@ -32,6 +34,7 @@ pub mod tasks;
 pub mod token;
 pub mod usage;
 pub mod verify;
+pub mod wallet;
 
 // Re-export for backward compatibility
 pub use enums::*;
@@ -136,17 +139,10 @@ impl Cli {
                     tree,
                     output,
                 } => {
-                    navigation::handle_visualize(
-                        format.clone(),
-                        *hotspots,
-                        *tree,
-                        output.clone(),
-                    )
-                    .await
+                    navigation::handle_visualize(format.clone(), *hotspots, *tree, output.clone())
+                        .await
                 }
-                NavCommand::Telemetry { kind } => {
-                    navigation::handle_telemetry(kind.clone()).await
-                }
+                NavCommand::Telemetry { kind } => navigation::handle_telemetry(kind.clone()).await,
             },
             Command::SessionSave {
                 session_id,
@@ -200,9 +196,10 @@ impl Cli {
             Command::DataCommons { cmd } => {
                 data_commons::handle_data_commons_command(cmd.clone()).await
             }
-            Command::Wallet { cmd } => {
-                wallet::handle_wallet_command(cmd.clone()).await
+            Command::Governance { command } => {
+                governance::handle_governance_command(command.clone()).await
             }
+            Command::Wallet { cmd } => wallet::handle_wallet_command(cmd.clone()).await,
             Command::Session { cmd } => session::handle_session_command(cmd.clone()).await,
             Command::Mesh { cmd } => mesh::handle_mesh_command(cmd.clone()).await,
             Command::Secrets { cmd } => secrets::handle_secrets_command(cmd.clone()).await,
@@ -210,15 +207,23 @@ impl Cli {
             Command::Quota => crate::cli::handlers::quota::handle_quota_command().await,
             Command::Tasks { cmd } => tasks::handle_tasks_command(cmd.clone()).await,
             Command::Billing => crate::cli::handlers::billing::handle_billing_command().await,
-            Command::Task { cmd } => crate::cli::handlers::tasks::handle_task_command(cmd.clone()).await,
+            Command::Task { cmd } => {
+                crate::cli::handlers::tasks::handle_task_command(cmd.clone()).await
+            }
             Command::Sync { cmd: _ } => crate::cli::handlers::sync::handle_sync_command().await,
             Command::Verify { cmd } => verify::handle_verify_command(cmd.clone()).await,
-            Command::Cloud { cmd } => crate::cli::handlers::cloud::handle_cloud_command(cmd.clone()).await,
-            Command::Agent { cmd } => crate::cli::handlers::agent_cli::handle_agent_command(cmd.clone()).await,
+            Command::Cloud { cmd } => {
+                crate::cli::handlers::cloud::handle_cloud_command(cmd.clone()).await
+            }
+            Command::Agent { cmd } => {
+                crate::cli::handlers::agent_cli::handle_agent_command(cmd.clone()).await
+            }
             Command::Scan { cmd: _ } => {
                 crate::cli::handlers::system_scan_cli::handle_scan_command().await
             }
-            Command::License { cmd } => crate::cli::commands::license::handle_license_command(cmd.clone()).await,
+            Command::License { cmd } => {
+                crate::cli::commands::license::handle_license_command(cmd.clone()).await
+            }
             Command::Memory { cmd } => memory::handle_memory_command(cmd.clone()).await,
             Command::Export {
                 public,
@@ -265,6 +270,8 @@ impl Cli {
             Command::Health { cloud } => {
                 crate::cli::handlers::system::handle_health_command(*cloud).await
             }
+            Command::Improve { cmd } => improve::handle_improve_command(cmd.clone()).await,
+            Command::Regen { cmd } => regen::handle_regen_command(cmd.clone()).await,
         }
     }
 }

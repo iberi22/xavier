@@ -19,7 +19,7 @@ mod persistence_tests {
         let policy = Arc::new(RwLock::new(NavigationPolicy::new(
             initial_weights,
             crate::retrieval::policy::TraversalWeights::default(),
-            0.1
+            0.1,
         )));
         let hormer = Hormer::new(Arc::clone(&policy));
 
@@ -44,14 +44,27 @@ mod persistence_tests {
             },
         ];
 
-        hormer.update_from_interaction(initial_weights, &results, None).await;
+        hormer
+            .update_from_interaction(initial_weights, &results, None)
+            .await;
 
         // Check if file exists and contains updated weights
-        let settings = XavierSettings::load().unwrap().expect("Settings should be loaded");
-        println!("Working weight: {}", settings.retrieval.learned_policy.working_weight);
-        println!("Update count: {}", settings.retrieval.learned_policy.update_count);
+        let settings = XavierSettings::load()
+            .unwrap()
+            .expect("Settings should be loaded");
+        println!(
+            "Working weight: {}",
+            settings.retrieval.learned_policy.working_weight
+        );
+        println!(
+            "Update count: {}",
+            settings.retrieval.learned_policy.update_count
+        );
 
-        assert!(settings.retrieval.learned_policy.working_weight != 0.3 || settings.retrieval.learned_policy.update_count > 0);
+        assert!(
+            settings.retrieval.learned_policy.working_weight != 0.3
+                || settings.retrieval.learned_policy.update_count > 0
+        );
 
         std::fs::remove_file(config_path).unwrap();
     }

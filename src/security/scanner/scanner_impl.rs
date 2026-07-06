@@ -507,7 +507,6 @@ impl SecurityScanner {
 
 // Base64 decode helper
 fn base64_decode(input: &str) -> Result<String, &'static str> {
-
     let decoded = crate::crypto::base64_decode(input).ok_or("invalid base64")?;
     String::from_utf8(decoded).map_err(|_| "invalid utf8")
 }

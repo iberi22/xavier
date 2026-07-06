@@ -81,7 +81,10 @@ impl HeartbeatService {
             !payload.node_id.as_str().is_empty(),
             "Heartbeat payload is missing node_id"
         );
-        ensure!(payload.timestamp > 0, "Heartbeat payload has invalid timestamp");
+        ensure!(
+            payload.timestamp > 0,
+            "Heartbeat payload has invalid timestamp"
+        );
         ensure!(
             !payload.version.trim().is_empty(),
             "Heartbeat payload is missing Xavier version"
