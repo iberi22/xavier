@@ -18,6 +18,7 @@ pub enum XavierEvent {
     LeaseRevoked { agent_id: String, token: String },
     AgentTaskCompleted { agent_id: String },
     AgentTaskFailed { agent_id: String, reason: String },
+    AgentTaskStarted { agent_id: String, task_id: String },
 }
 
 #[derive(Clone)]
