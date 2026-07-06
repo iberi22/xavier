@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { motion } from "motion/react";
 import { useAuth } from "../hooks/useAuth";
 import { PasswordInput } from "../components/PasswordInput";
@@ -12,18 +12,7 @@ export const LoginPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const { login, requires2FA, checkUsers } = useAuth();
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const resp = await checkUsers!();
-        if (!resp.has_users) {
-          window.location.hash = "#/register";
-        }
-      } catch { /* ignore */ }
-    })();
-  }, [checkUsers]);
+  const { login, requires2FA } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

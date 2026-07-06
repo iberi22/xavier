@@ -12,10 +12,19 @@ export const RegisterPage: React.FC = () => {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+
+  const getPasswordStrength = (pass: string) => {
+    let score = 0;
+    if (pass.length >= 8) score++;
+    if (/[A-Z]/.test(pass)) score++;
+    if (/[0-9]/.test(pass)) score++;
+    if (/[^A-Za-z0-9]/.test(pass)) score++;
+    return score;
+  };
+
+  const strength = getPasswordStrength(password);
   const [isLoading, setIsLoading] = useState(false);
   const [seedPhrase, setSeedPhrase] = useState<string | null>(null);
-
-  const { register } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -32,7 +41,7 @@ export const RegisterPage: React.FC = () => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await register(email, name, password);
+      const response = await authClient.register(email, name, password);
       setSeedPhrase(response.seed_phrase);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
@@ -110,12 +119,32 @@ export const RegisterPage: React.FC = () => {
             />
           </div>
 
-          <PasswordInput
-            label="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-          />
+          <div className="flex flex-col gap-2">
+            <PasswordInput
+              label="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+            />
+            {password && (
+              <div className="flex gap-1 h-1">
+                {[1, 2, 3, 4].map((step) => (
+                  <div
+                    key={step}
+                    className={`flex-1 rounded-full transition-colors ${
+                      strength >= step
+                        ? step <= 2
+                          ? "bg-red-500"
+                          : step === 3
+                          ? "bg-yellow-500"
+                          : "bg-[#39ff14]"
+                        : "bg-white/10"
+                    }`}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
 
           <PasswordInput
             label="Confirm Password"
