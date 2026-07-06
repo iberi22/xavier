@@ -145,6 +145,14 @@ impl Agent {
         memory: std::sync::Arc<crate::memory::qmd_memory::QmdMemory>,
         lifecycle: Option<Arc<dyn AgentLifecyclePort>>,
     ) -> anyhow::Result<crate::agents::runtime::AgentResponse> {
+        self.run_with_lifecycle(memory, None).await
+    }
+
+    pub async fn run_with_lifecycle(
+        &mut self,
+        memory: std::sync::Arc<crate::memory::qmd_memory::QmdMemory>,
+        lifecycle: Option<std::sync::Arc<dyn crate::ports::inbound::AgentLifecyclePort>>,
+    ) -> anyhow::Result<crate::agents::runtime::AgentResponse> {
         self.start();
         let task = self
             .task
@@ -179,13 +187,18 @@ impl Agent {
         }
 
         let result = runtime.run(&task, None, None).await;
+        let result = runtime.run(&task, None, None).await;
 
+        // Notify lifecycle hooks for this task completion
         if let Some(ref lc) = lifecycle {
-            let res = match &result {
-                Ok(resp) => Ok(resp.clone()),
-                Err(e) => Err(e.to_string()),
-            };
-            lc.on_task_complete(&self.name, &task_id, &res).await;
+            match &result {
+                Ok(resp) => {
+                    lc.on_task_complete(&self.name, &task_id, &Ok(resp.clone())).await;
+                }
+                Err(e) => {
+                    lc.on_task_complete(&self.name, &task_id, &Err(e.to_string())).await;
+                }
+            }
         }
 
         self.stop();
