@@ -23,7 +23,7 @@ use crate::cli::config::{
     code_graph_db_path, resolve_base_url_for_port, resolve_http_bind_host, resolve_http_token,
     state_panel_root,
 };
-use crate::security::auth_store::AuthStore;
+use xavier::security::auth_store::AuthStore;
 use crate::cli::state::CliState;
 
 use crate::settings::XavierSettings;
@@ -281,7 +281,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                             .await;
                     }
                 }
-                xavier::coordination::events::XavierEvent::AgentTaskCompleted { agent_id } => {
+                xavier::coordination::events::XavierEvent::AgentTaskCompleted { agent_id, .. } => {
                     info!(
                         "Agent {} task completed. Revoking ephemeral keys...",
                         agent_id
@@ -290,7 +290,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                         .revoke_for_agent(&agent_id, "Agent Task Completed")
                         .await;
                 }
-                xavier::coordination::events::XavierEvent::AgentTaskFailed { agent_id, reason } => {
+                xavier::coordination::events::XavierEvent::AgentTaskFailed { agent_id, reason, .. } => {
                     info!(
                         "Agent {} task failed ({}). Revoking ephemeral keys...",
                         agent_id, reason
@@ -930,6 +930,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                         updated_at: chrono::Utc::now(),
                         revision: 1,
                         primary: true,
+                        score: 0.0,
                         parent_id: None,
                         cluster_id: None,
                         level: Default::default(),

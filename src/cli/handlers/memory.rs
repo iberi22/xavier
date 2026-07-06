@@ -166,7 +166,7 @@ pub async fn search_handler(
         .unwrap_or_else(|| xavier::memory::schema::parse_zones_from_prompt(effective_query));
     filters.zones = Some(zones);
 
-    let results: Vec<MemoryRecord> = match state.memory.search(effective_query, Some(filters)).await
+    let results: Vec<MemoryRecord> = match state.memory.search(effective_query, 10, Some(filters)).await
     {
         Ok(results) => results,
         Err(e) => {
@@ -331,6 +331,7 @@ pub async fn add_handler(
         updated_at: chrono::Utc::now(),
         revision: 1,
         primary: true,
+        score: 0.0,
         parent_id: None,
         cluster_id,
         level,
@@ -450,6 +451,7 @@ pub async fn update_handler(
         updated_at: chrono::Utc::now(),
         revision: 1,
         primary: true,
+        score: 0.0,
         parent_id: None,
         cluster_id: None,
         level: MemoryLevel::Raw,
@@ -684,7 +686,7 @@ pub async fn memory_query_handler(
         payload.query, limit
     );
 
-    match state.memory.search(&payload.query, None).await {
+    match state.memory.search(&payload.query, 10, None).await {
         Ok(results) => {
             let documents: Vec<_> = results
                 .into_iter()
@@ -1164,6 +1166,7 @@ async fn index_file_by_sections(
             updated_at: chrono::Utc::now(),
             revision: 1,
             primary: true,
+            score: 0.0,
             level: MemoryLevel::Raw,
             ..Default::default()
         };

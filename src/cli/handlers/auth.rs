@@ -4,9 +4,9 @@ use axum::{extract::{State, ConnectInfo}, http::{StatusCode, HeaderMap}, respons
 use serde::{Deserialize, Serialize};
 use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
-use crate::security::auth::{User, UserRole, generate_jwt, validate_jwt, TotpProvider};
-use crate::crypto::password;
-use crate::security::recovery::RecoverySystem;
+use xavier::security::auth::{User, UserRole, generate_jwt, validate_jwt, TotpProvider};
+use xavier::crypto::password;
+use xavier::security::recovery::RecoverySystem;
 use chrono::{Utc, Duration};
 
 #[derive(Deserialize)]
@@ -165,22 +165,11 @@ pub async fn refresh_handler(
     // Revoke old token
     let _ = auth_store.revoke_refresh_token(&payload.refresh_token);
 
-    // Get user and issue new tokens
-    let mut stmt = auth_store.conn().prepare("SELECT id, email, name, role FROM users WHERE id = ?").unwrap();
-    let user: User = stmt.query_row([&user_id], |row| {
-        let role_str: String = row.get(3)?;
-        Ok(User {
-            id: row.get(0)?,
-            email: row.get(1)?,
-            name: row.get(2)?,
-            role: serde_json::from_str(&role_str).unwrap(),
-            api_key: "".to_string(),
-            created_at: 0,
-            updated_at: 0,
-        })
-    }).unwrap();
-
-    issue_tokens(&state, &user).await
+    let user = auth_store.get_user_by_id(&user_id).unwrap_or(None);
+    match user {
+        Some(u) => issue_tokens(&state, &u, None, None).await,
+        None => json_response(StatusCode::NOT_FOUND, serde_json::json!({"error": "User not found"}))
+    }
 }
 
 pub async fn recover_handler(
@@ -211,15 +200,8 @@ pub async fn recover_handler(
         return json_response(StatusCode::UNAUTHORIZED, serde_json::json!({"error": "Invalid seed phrase"}));
     }
 
-    let password_hash = match password::hash(&payload.new_password, 0) {
-        Ok(h) => h,
-        Err(e) => return json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({"error": e.to_string()})),
-    };
-
-    auth_store.conn().execute(
-        "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
-        rusqlite::params![password_hash, Utc::now().timestamp(), user.id],
-    ).unwrap();
+    let new_hash = password::hash(&payload.new_password, 0).unwrap();
+    auth_store.update_password(&user.id, &new_hash).unwrap();
 
     let _ = auth_store.log_event(Some(&user.id), "recovery_success", ip.as_deref(), ua.as_deref(), None);
 
@@ -239,7 +221,7 @@ async fn issue_tokens(state: &CliState, user: &User, ip: Option<&str>, ua: Optio
     let auth_store = state.auth_store().unwrap();
     let secret = std::env::var("XAVIER_JWT_SECRET").unwrap_or_else(|_| "default_secret_change_me".to_string());
 
-    let token = match generate_jwt(user, secret.as_bytes()) {
+    let token: String = match generate_jwt(user, secret.as_bytes()) {
         Ok(t) => t,
         Err(e) => return json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({"error": e.to_string()})),
     };

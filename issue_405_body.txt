@@ -1,0 +1,39 @@
+@google-labs-jules This is the retry for Phase 1. Your previous PR was missing the actual gpu_cache.rs file and only added boilerplate.
+
+Please strictly implement the following:
+
+1. In Cargo.toml, add `candle-nn = { version = "=0.9.1", optional = true }` right next to `candle-core`.
+2. Create `src/memory/vram_cache.rs` and add the module to `src/memory/mod.rs` (`pub mod vram_cache;`).
+3. Inside `src/memory/vram_cache.rs`:
+```rust
+use candle_core::{Device, Tensor, Result};
+
+pub struct GpuCosineCache {
+    embeddings: Tensor,
+    device: Device,
+}
+
+impl GpuCosineCache {
+    pub fn new(embeddings: Tensor) -> Self {
+        Self {
+            device: embeddings.device().clone(),
+            embeddings,
+        }
+    }
+
+    pub fn compute_similarities(&self, query: &Tensor) -> Result<Tensor> {
+        // 1. L2 Normalize the query
+        let q_norm = query.sqr()?.sum_all()?.sqrt()?;
+        let query_normalized = query.broadcast_div(&q_norm)?;
+
+        // 2. L2 Normalize the cached embeddings (assuming they aren't pre-normalized)
+        let cache_norm = self.embeddings.sqr()?.sum_keepdim(1)?.sqrt()?;
+        let cache_normalized = self.embeddings.broadcast_div(&cache_norm)?;
+
+        // 3. Matrix multiplication (Cosine Similarity = Q_norm * Cache_norm^T)
+        // Ensure dims match for matmul
+        cache_normalized.matmul(&query_normalized.transpose(0, 1)?)
+    }
+}
+```
+4. Do NOT modify any other files regarding scores or initialization. Leave existing code alone. Only add the new module and its basic struct.
