@@ -34,6 +34,8 @@ impl ResponseGenerator for ModelProviderClient {
 pub struct LlmClient {
     provider: Arc<dyn ResponseGenerator>,
     model_label: Option<String>,
+    lease_token: Option<String>,
+    secrets_engine: Option<Arc<crate::coordination::KeyLendingEngine>>,
 }
 
 impl Default for LlmClient {
@@ -53,7 +55,22 @@ impl LlmClient {
         Self {
             provider: Arc::new(provider),
             model_label: Some(status.model),
+            lease_token: None,
+            secrets_engine: None,
         }
+    }
+
+    pub fn with_lease(
+        mut self,
+        token: String,
+        engine: Arc<crate::coordination::KeyLendingEngine>,
+    ) -> Self {
+        self.lease_token = Some(token);
+        self.secrets_engine = Some(engine);
+        // We also need to update the inner provider if it's a ModelProviderClient
+        // This is tricky because provider is Arc<dyn ResponseGenerator>.
+        // For now, we'll rely on generating a new provider when generate_response is called if we have a lease.
+        self
     }
 
     pub fn with_config(config: crate::agents::provider::ModelProviderConfig) -> Self {
@@ -62,6 +79,8 @@ impl LlmClient {
         Self {
             provider: Arc::new(provider),
             model_label: Some(status.model),
+            lease_token: None,
+            secrets_engine: None,
         }
     }
 
@@ -82,6 +101,8 @@ impl LlmClient {
         Self {
             provider,
             model_label: None,
+            lease_token: None,
+            secrets_engine: None,
         }
     }
 }
