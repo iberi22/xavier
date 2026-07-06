@@ -66,14 +66,15 @@ impl RateLimitManager {
     }
 
     /// Checks if a lease token has exceeded the rate limit (default 100 req/min).
-    pub async fn check_lease_rate_limit(
-        &self,
-        lease_token: &str,
-        limit_per_min: usize,
-    ) -> Result<bool> {
+    pub async fn check_lease_rate_limit(&self, lease_token: &str, limit_per_min: usize) -> Result<bool> {
+        self.check_rpm_limit(&format!("lease:{}", lease_token), limit_per_min).await
+    }
+
+    /// Checks if a generic identifier has exceeded its requests-per-minute (RPM) limit.
+    pub async fn check_rpm_limit(&self, identifier: &str, limit: usize) -> Result<bool> {
         let now = Utc::now();
         let minute_ago = now - Duration::minutes(1);
-        let provider = format!("lease:{}", lease_token);
+        let identifier = identifier.to_string();
 
         ConnectionManager::global()
             .with_conn(&self.project_id, move |conn| {
@@ -81,14 +82,12 @@ impl RateLimitManager {
                     .query_row(
                         "SELECT COUNT(*) FROM rate_limit_usage
                  WHERE provider = ?1 AND timestamp > ?2",
-                        params![provider, minute_ago.format("%Y-%m-%d %H:%M:%f").to_string()],
-                        |row| row.get(0),
-                    )
-                    .unwrap_or(0);
+                params![identifier, minute_ago.format("%Y-%m-%d %H:%M:%f").to_string()],
+                |row| row.get(0)
+            ).unwrap_or(0);
 
-                Ok(count < limit_per_min as i64)
-            })
-            .await
+            Ok(count < limit as i64)
+        }).await
     }
 
     /// Resets the rate limit for a provider (clears cooldown).
