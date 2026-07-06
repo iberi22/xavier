@@ -924,11 +924,13 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         let _shutdown_handle = handle.clone();
 
         let addr = listener.local_addr()?;
+        use std::net::SocketAddr;
         axum_server::bind_rustls(addr, rustls_config)
-            .serve(app.into_make_service())
+            .serve(app.into_make_service_with_connect_info::<SocketAddr>())
             .await?;
     } else {
-        axum::serve(listener, app)
+        use std::net::SocketAddr;
+        axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
             .with_graceful_shutdown(async move {
                 if let Err(error) = tokio::signal::ctrl_c().await {
                     info!("Failed to listen for Ctrl+C shutdown signal: {}", error);
