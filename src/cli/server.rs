@@ -261,6 +261,18 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                             .await;
                     }
                 }
+                xavier::coordination::events::XavierEvent::AgentTaskCompleted { agent_id } => {
+                    info!("Agent {} task completed. Revoking ephemeral keys...", agent_id);
+                    secrets_engine_for_bus
+                        .revoke_for_agent(&agent_id, "Agent Task Completed")
+                        .await;
+                }
+                xavier::coordination::events::XavierEvent::AgentTaskFailed { agent_id, reason } => {
+                    info!("Agent {} task failed ({}). Revoking ephemeral keys...", agent_id, reason);
+                    secrets_engine_for_bus
+                        .revoke_for_agent(&agent_id, &format!("Agent Task Failed: {}", reason))
+                        .await;
+                }
                 _ => {}
             }
         }
@@ -420,6 +432,14 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route(
             "/xavier/agents/{id}/unregister",
             post(agent_unregister_handler),
+        )
+        .route(
+            "/xavier/agents/{id}/task/complete",
+            post(agent_task_complete_handler),
+        )
+        .route(
+            "/xavier/agents/{id}/task/failed",
+            post(agent_task_failed_handler),
         )
         .route("/xavier/sync/check", post(sync_check_handler))
         .route("/xavier/sync/check", get(sync_check_handler))

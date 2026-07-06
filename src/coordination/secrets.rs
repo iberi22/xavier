@@ -413,4 +413,51 @@ mod tests {
         let lease = engine.lend("test-secret", Some(secret), "agent-1", 3600).await.unwrap();
         assert_eq!(lease.secret_value, Some(secret.to_string()));
     }
+
+    #[tokio::test]
+    async fn test_auto_revocation_on_task_complete() {
+        use crate::coordination::events::{XavierEvent, XavierEventBus};
+        use crate::coordination::agent_registry::SimpleAgentRegistry;
+        use crate::ports::inbound::AgentLifecyclePort;
+
+        let event_bus = XavierEventBus::new(10);
+        let engine = Arc::new(KeyLendingEngine::new(Box::new(MockAuditLogger), Some(event_bus.clone())));
+        let registry = SimpleAgentRegistry::new_with_engines(
+            Some(engine.clone()),
+            Some(event_bus.clone()),
+        );
+        let agent_id = "test-agent-lifecycle";
+
+        // Lend a secret
+        let lease = engine.lend("test-secret", Some("val"), agent_id, 3600).await.unwrap();
+        assert!(engine.get_lease(&lease.token).await.is_some());
+
+        // Setup the listener (mimicking server.rs)
+        let engine_clone = engine.clone();
+        let mut receiver = event_bus.subscribe();
+        let handle = tokio::spawn(async move {
+            if let Ok(event) = receiver.recv().await {
+                if let XavierEvent::AgentTaskCompleted { agent_id: id } = event {
+                    if id == agent_id {
+                        engine_clone.revoke_for_agent(&id, "Task Completed").await;
+                    }
+                }
+            }
+        });
+
+        // Trigger task completion with 3-arg API
+        let ok_result: Result<crate::agents::runtime::AgentResponse, String> = Ok(crate::agents::runtime::AgentResponse {
+            content: "ok".to_string(),
+            tool_calls: vec![],
+            metadata: std::collections::HashMap::new(),
+        });
+        registry.on_task_complete(agent_id, "task-1", &ok_result).await;
+
+        // Wait for listener to process
+        let _ = tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        drop(handle);
+
+        // Verify revocation
+        assert!(engine.get_lease(&lease.token).await.is_none());
+    }
 }

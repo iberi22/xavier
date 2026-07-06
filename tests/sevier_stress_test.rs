@@ -398,7 +398,7 @@ async fn test_unknown_route_returns_404() {
 
 #[tokio::test]
 async fn test_unregister_endpoint_removes_existing_agent() {
-    let registry = SimpleAgentRegistry::new();
+    let registry = SimpleAgentRegistry::new(None);
     registry
         .register(
             "agent-delete-1".to_string(),
@@ -432,7 +432,7 @@ async fn test_unregister_endpoint_removes_existing_agent() {
 
 #[tokio::test]
 async fn test_unregister_endpoint_returns_error_for_missing_agent() {
-    let router = create_router_with_agent_registry(SimpleAgentRegistry::new());
+    let router = create_router_with_agent_registry(SimpleAgentRegistry::new(None));
     let response = router
         .oneshot(post_empty("/xavier/agents/missing-agent/unregister"))
         .await

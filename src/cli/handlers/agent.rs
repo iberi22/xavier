@@ -180,6 +180,40 @@ pub async fn agent_unregister_handler(
     }))
 }
 
+pub async fn agent_task_complete_handler(
+    State(state): State<CliState>,
+    AxumPath(agent_id): AxumPath<String>,
+) -> impl axum::response::IntoResponse {
+    let success = state.agent_registry.on_task_complete(&agent_id).await;
+
+    axum::Json(serde_json::json!({
+        "status": if success { "ok" } else { "error" },
+        "agent_id": agent_id,
+        "message": if success { "Task completion processed" } else { "Agent registry hook failed" },
+    }))
+}
+
+pub async fn agent_task_failed_handler(
+    State(state): State<CliState>,
+    AxumPath(agent_id): AxumPath<String>,
+    axum::Json(payload): axum::Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    let reason = payload["reason"]
+        .as_str()
+        .unwrap_or("Unknown reason")
+        .to_string();
+    let success = state
+        .agent_registry
+        .on_task_failed(&agent_id, &reason)
+        .await;
+
+    axum::Json(serde_json::json!({
+        "status": if success { "ok" } else { "error" },
+        "agent_id": agent_id,
+        "message": if success { "Task failure processed" } else { "Agent registry hook failed" },
+    }))
+}
+
 pub async fn agent_list_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
