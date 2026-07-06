@@ -1171,7 +1171,7 @@ async fn mcp_get_not_found() {
             Request::builder()
                 .method(Method::GET)
                 .uri("/mcp")
-                .header("X-Xavier-Token", "test-secret")
+                .header("X-Xavier-Token", "test-token")
                 .header("Origin", "http://localhost:8080")
                 .body(Body::empty())
                 .unwrap(),
@@ -1237,7 +1237,7 @@ async fn test_get_code_graph_success() {
 
 #[tokio::test]
 async fn auth_success_with_valid_token() {
-    std::env::set_var("XAVIER_TOKEN", "test-secret");
+    std::env::set_var("XAVIER_TOKEN", "test-token");
     let (state, workspace) = test_state().await;
     let router = test_router(state, workspace);
 
@@ -1246,7 +1246,7 @@ async fn auth_success_with_valid_token() {
         json!({
             "jsonrpc": "2.0", "id": 1, "method": "tools/list"
         }),
-        Some("test-secret"),
+        Some("test-token"),
     )
     .await;
 
@@ -1255,7 +1255,7 @@ async fn auth_success_with_valid_token() {
 
 #[tokio::test]
 async fn auth_failure_with_invalid_token() {
-    std::env::set_var("XAVIER_TOKEN", "test-secret");
+    std::env::set_var("XAVIER_TOKEN", "test-token");
     let (state, workspace) = test_state().await;
     let router = test_router(state, workspace);
 
@@ -1283,7 +1283,7 @@ async fn origin_validation_enforced() {
             Request::builder()
                 .method(Method::POST)
                 .uri("/mcp")
-                .header("X-Xavier-Token", "test-secret")
+                .header("X-Xavier-Token", "test-token")
                 .header("content-type", "application/json")
                 .body(Body::from(
                     json!({"jsonrpc": "2.0", "id": 1, "method": "tools/list"}).to_string(),
@@ -1301,7 +1301,7 @@ async fn origin_validation_enforced() {
             Request::builder()
                 .method(Method::POST)
                 .uri("/mcp")
-                .header("X-Xavier-Token", "test-secret")
+                .header("X-Xavier-Token", "test-token")
                 .header("Origin", "http://malicious.com")
                 .header("content-type", "application/json")
                 .body(Body::from(
