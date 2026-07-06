@@ -123,7 +123,9 @@ impl Task {
         self.status = status;
         self.updated_at = Utc::now();
 
-        if (status == TaskStatus::Done || status == TaskStatus::Failed) && self.completed_at.is_none() {
+        if (status == TaskStatus::Done || status == TaskStatus::Failed)
+            && self.completed_at.is_none()
+        {
             self.completed_at = Some(Utc::now());
         } else if status != TaskStatus::Done && status != TaskStatus::Failed {
             self.completed_at = None;

@@ -261,7 +261,8 @@ mod tests {
             revisions: vec![],
             content_iv: None,
             encrypted_dek: None,
-            metadata_iv: None, score: 0.0,
+            metadata_iv: None,
+            score: 0.0,
         };
 
         let result = usecase.add(record).await;

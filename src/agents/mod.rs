@@ -193,10 +193,12 @@ impl Agent {
         if let Some(ref lc) = lifecycle {
             match &result {
                 Ok(resp) => {
-                    lc.on_task_complete(&self.name, &task_id, &Ok(resp.clone())).await;
+                    lc.on_task_complete(&self.name, &task_id, &Ok(resp.clone()))
+                        .await;
                 }
                 Err(e) => {
-                    lc.on_task_complete(&self.name, &task_id, &Err(e.to_string())).await;
+                    lc.on_task_complete(&self.name, &task_id, &Err(e.to_string()))
+                        .await;
                 }
             }
         }

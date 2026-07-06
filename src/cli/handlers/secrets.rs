@@ -40,8 +40,7 @@ pub async fn lend_handler(
 
     match result {
         Ok(mut lease) => {
-            // F2 - Redact secret_value from response for security.
-            // The key never leaves Xavier; the proxy will inject it server-side.
+            // F2 - Redact secret_value from response (key never leaves Xavier)
             lease.secret_value = None;
             json_response(
                 StatusCode::OK,
@@ -99,12 +98,10 @@ pub async fn history_handler() -> Response {
 
 pub async fn leases_handler(State(state): State<CliState>) -> Response {
     let mut leases = state.secrets_engine.list_leases().await;
-
-    // F2 - Always redact secret_value for security.
+    // Always redact secret_value for security
     for lease in &mut leases {
         lease.secret_value = None;
     }
-
     json_response(
         StatusCode::OK,
         serde_json::to_value(leases).unwrap_or_default(),
@@ -134,7 +131,7 @@ pub async fn status_handler(
 ) -> Response {
     match state.secrets_engine.get_lease(&token).await {
         Some(mut status) => {
-            // F2 - Redact secret_value from response for security.
+            // F2 - Redact secret_value from response
             status.secret_value = None;
             json_response(
                 StatusCode::OK,
