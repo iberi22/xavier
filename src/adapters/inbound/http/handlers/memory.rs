@@ -154,7 +154,7 @@ pub async fn search_handler(
     let limit = payload.limit.clamp(1, 100);
     info!("Search request: query={}, limit={}", effective_query, limit);
 
-    match state.memory.search(effective_query, payload.filters.clone()).await {
+    match state.memory.search(effective_query, limit, payload.filters.clone()).await {
         Ok(mut results) => {
             // Apply depth expansion if requested
             if payload.depth > 0 {
@@ -365,13 +365,13 @@ pub async fn memory_query_handler(
         }));
     }
 
-    let _limit = payload.limit.unwrap_or(10).clamp(1, 100);
+    let limit = payload.limit.unwrap_or(10).clamp(1, 100);
     let effective_query = sec_result
         .sanitized_input
         .as_deref()
         .unwrap_or(&sec_result.original_input);
 
-    match state.memory.search(effective_query, None).await {
+    match state.memory.search(effective_query, limit, None).await {
         Ok(results) => {
             let documents: Vec<_> = results
                 .into_iter()

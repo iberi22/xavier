@@ -123,6 +123,7 @@ pub async fn agent_push_context_handler(
         encrypted_dek: None,
         content_iv: None,
         metadata_iv: None,
+        score: 0.0,
     };
     match state.memory.add(record).await {
         Ok(doc_id) => axum::Json(serde_json::json!({
@@ -219,6 +220,7 @@ pub async fn agent_index_handler(
                     encrypted_dek: None,
                     content_iv: None,
                     metadata_iv: None,
+                    score: 0.0,
                 };
                 if state.memory.add(record).await.is_ok() {
                     count += 1;

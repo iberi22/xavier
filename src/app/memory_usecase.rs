@@ -241,6 +241,7 @@ mod tests {
 
         let record = MemoryRecord {
             id: "1".to_string(),
+            score: 0.0,
             content: "clean content".to_string(),
             path: "test.txt".to_string(),
             workspace_id: "default".to_string(),

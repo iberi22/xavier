@@ -22,6 +22,7 @@ mod tests {
         MemoryRecord {
             id: path.to_string(),
             workspace_id: "test".to_string(),
+            score: 0.0,
             path: path.to_string(),
             content: "test".to_string(),
             metadata: serde_json::json!({}),

@@ -150,6 +150,7 @@ fn make_session_record(seconds_ago: i64) -> MemoryRecord {
     MemoryRecord {
         id: "session-1".to_string(),
         workspace_id: "default".to_string(),
+        score: 0.0,
         path: "test".to_string(),
         content: serde_json::json!({
             "session_id": "session-1",

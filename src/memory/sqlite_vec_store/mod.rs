@@ -93,6 +93,7 @@ impl VecSqliteMemoryStore {
         Ok(MemoryRecord {
             id: row.get(0)?,
             workspace_id: row.get(1)?,
+            score: 0.0,
             path: row.get(2)?,
             content: row.get(3)?,
             metadata: serde_json::from_str(&metadata_str).unwrap_or_default(),

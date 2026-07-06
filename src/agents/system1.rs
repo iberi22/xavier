@@ -624,6 +624,7 @@ mod budget_tests {
         crate::memory::store::MemoryRecord {
             id: id.to_string(),
             workspace_id: "test".to_string(),
+            score: 0.0,
             path: format!("path/{}", id),
             content: content.to_string(),
             metadata: serde_json::json!({}),

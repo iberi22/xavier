@@ -127,6 +127,7 @@ impl PostgresMemoryStore {
         Ok(MemoryRecord {
             id: row.try_get("id")?,
             workspace_id: row.try_get("workspace_id")?,
+            score: 0.0,
             path: row.try_get("path")?,
             content: row.try_get("content")?,
             metadata,

@@ -85,6 +85,7 @@ pub async fn session_event_handler(
                 encrypted_dek: None,
                 content_iv: None,
                 metadata_iv: None,
+                score: 0.0,
     };
     match state.memory.add(record).await {
         Ok(id) => {
@@ -118,7 +119,7 @@ pub async fn session_compact_handler(
         None => {
             match state
                 .memory
-                .search(&format!("session {} compact", session_id), None)
+                .search(&format!("session {} compact", session_id), 100, None)
                 .await
             {
                 Ok(docs) => {
@@ -155,7 +156,7 @@ pub async fn session_compact_handler(
         Ok(Some(doc)) => vec![doc],
         Ok(None) => state
             .memory
-            .search(&search_path, None)
+            .search(&search_path, 1000, None)
             .await
             .unwrap_or_default(),
         Err(_) => vec![],
@@ -211,6 +212,7 @@ pub async fn session_compact_handler(
         encrypted_dek: None,
         content_iv: None,
         metadata_iv: None,
+        score: 0.0,
     };
     match state.memory.add(record).await {
         Ok(id) => {
