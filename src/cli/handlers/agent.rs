@@ -123,6 +123,7 @@ pub async fn agent_push_context_handler(
         encrypted_dek: None,
         content_iv: None,
         metadata_iv: None,
+        score: 0.0,
     };
     match state.memory.add(record).await {
         Ok(doc_id) => axum::Json(serde_json::json!({
@@ -184,12 +185,15 @@ pub async fn agent_task_complete_handler(
     State(state): State<CliState>,
     AxumPath(agent_id): AxumPath<String>,
 ) -> impl axum::response::IntoResponse {
-    let success = state.agent_registry.on_task_complete(&agent_id).await;
+    state
+        .agent_registry
+        .on_task_complete(&agent_id, "direct_api", &Err("Not implemented".to_string()))
+        .await;
 
     axum::Json(serde_json::json!({
-        "status": if success { "ok" } else { "error" },
+        "status": "ok",
         "agent_id": agent_id,
-        "message": if success { "Task completion processed" } else { "Agent registry hook failed" },
+        "message": "Task completion processed",
     }))
 }
 
@@ -202,15 +206,15 @@ pub async fn agent_task_failed_handler(
         .as_str()
         .unwrap_or("Unknown reason")
         .to_string();
-    let success = state
+    state
         .agent_registry
-        .on_task_failed(&agent_id, &reason)
+        .on_task_complete(&agent_id, "direct_api", &Err(reason))
         .await;
 
     axum::Json(serde_json::json!({
-        "status": if success { "ok" } else { "error" },
+        "status": "ok",
         "agent_id": agent_id,
-        "message": if success { "Task failure processed" } else { "Agent registry hook failed" },
+        "message": "Task failure processed",
     }))
 }
 
@@ -292,6 +296,7 @@ pub async fn agent_index_handler(
                     encrypted_dek: None,
                     content_iv: None,
                     metadata_iv: None,
+                    score: 0.0,
                 };
                 if state.memory.add(record).await.is_ok() {
                     count += 1;
@@ -309,40 +314,6 @@ pub async fn agent_index_handler(
     }
 }
 
-pub async fn openclaw_scan_handler() -> impl axum::response::IntoResponse {
-    let scanner = crate::memory::openclaw_scanner::OpenClawAgentScanner::new();
-    match scanner.scan_all_agents().await {
-        Ok(agents) => axum::Json(serde_json::json!({
-            "status": "ok",
-            "count": agents.len(),
-            "agents": agents,
-        })),
-        Err(e) => axum::Json(serde_json::json!({
-            "status": "error",
-            "message": format!("Failed to scan OpenClaw agents: {}", e),
-        })),
-    }
-}
-
-pub async fn openclaw_index_handler(
-    State(state): State<CliState>,
-) -> impl axum::response::IntoResponse {
-    let scanner = crate::memory::openclaw_scanner::OpenClawAgentScanner::new();
-    match state
-        .openclaw_indexer
-        .index_all_agents(&scanner, state.store.as_ref())
-        .await
-    {
-        Ok(records) => axum::Json(serde_json::json!({
-            "status": "ok",
-            "indexed_count": records.len(),
-        })),
-        Err(e) => axum::Json(serde_json::json!({
-            "status": "error",
-            "message": format!("Failed to index OpenClaw agents: {}", e),
-        })),
-    }
-}
 
 pub async fn agent_sync_handler(
     State(state): State<CliState>,

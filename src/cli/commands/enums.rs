@@ -889,6 +889,8 @@ pub mod memory {
             #[arg(long)]
             nightly: bool,
         },
+        /// Index Xavier's foundational documentation
+        IndexSelf,
     }
 }
 

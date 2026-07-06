@@ -1,17 +1,17 @@
 //! Governance Command Handlers — CLI implementation for Xavier Governance DAO
 
 use crate::cli::commands::data_commons::{governance, types};
-use crate::cli::commands::GovernanceSubcommand;
+use crate::cli::commands::enums::GovernanceCommand;
 use anyhow::Result;
 
-pub async fn handle_governance_command(command: GovernanceSubcommand) -> Result<()> {
+pub async fn handle_governance_command(command: GovernanceCommand) -> Result<()> {
     // License check for Governance features
     let settings = xavier::settings::XavierSettings::current();
     xavier::security::license::require_mesh_license(&settings).map_err(|e| anyhow::anyhow!(e))?;
 
     match command {
-        GovernanceSubcommand::List => list_proposals().await,
-        GovernanceSubcommand::Council => list_council_members().await,
+        GovernanceCommand::List => list_proposals().await,
+        GovernanceCommand::Council => list_council_members().await,
         _ => todo!(),
     }
 }

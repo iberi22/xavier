@@ -166,7 +166,7 @@ pub async fn search_handler(
         .unwrap_or_else(|| xavier::memory::schema::parse_zones_from_prompt(effective_query));
     filters.zones = Some(zones);
 
-    let results: Vec<MemoryRecord> = match state.memory.search(effective_query, Some(filters)).await
+    let results: Vec<MemoryRecord> = match state.memory.search(effective_query, 50, Some(filters)).await
     {
         Ok(results) => results,
         Err(e) => {
@@ -340,6 +340,7 @@ pub async fn add_handler(
         encrypted_dek: None,
         content_iv: None,
         metadata_iv: None,
+        score: 0.0,
     };
     match state.memory.add(record).await {
         Ok(id) => {
@@ -459,6 +460,7 @@ pub async fn update_handler(
         encrypted_dek: None,
         content_iv: None,
         metadata_iv: None,
+        score: 0.0,
     };
 
     match state.memory.update(&payload.id, record).await {
@@ -684,7 +686,7 @@ pub async fn memory_query_handler(
         payload.query, limit
     );
 
-    match state.memory.search(&payload.query, None).await {
+    match state.memory.search(&payload.query, payload.limit.unwrap_or(10), None).await {
         Ok(results) => {
             let documents: Vec<_> = results
                 .into_iter()
