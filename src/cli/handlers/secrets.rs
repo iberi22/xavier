@@ -13,7 +13,7 @@ use crate::cli::types::*;
 
 pub async fn lend_handler(
     State(state): State<CliState>,
-    axum::Extension(session): axum::Extension<crate::cli::http_setup::SessionInfo>,
+    axum::Extension(_session): axum::Extension<crate::cli::http_setup::SessionInfo>,
     Json(payload): Json<LendSecretPayload>,
 ) -> Response {
     let result = if payload.secret_value.as_deref().unwrap_or("").is_empty() {
@@ -23,11 +23,11 @@ pub async fn lend_handler(
                 &payload.secret_name,
                 &payload.agent_id,
                 payload.ttl_seconds,
-                session.is_ephemeral,
+                false, // Internal lend, we redact in the handler
             )
             .await
     } else {
-        match state
+        state
             .secrets_engine
             .lend(
                 &payload.secret_name,
@@ -36,21 +36,12 @@ pub async fn lend_handler(
                 payload.ttl_seconds,
             )
             .await
-        {
-            Ok(mut lease) => {
-                if session.is_ephemeral {
-                    lease.secret_value = None;
-                }
-                Ok(lease)
-            }
-            Err(e) => Err(e),
-        }
     };
 
     match result {
         Ok(mut lease) => {
-            // F2 - secrets lend CLI no debe devolver secret_value
-            // Always redact secret_value for security. The proxy will inject it server-side.
+            // F2 - Redact secret_value from response for security.
+            // The key never leaves Xavier; the proxy will inject it server-side.
             lease.secret_value = None;
             json_response(
                 StatusCode::OK,
@@ -107,7 +98,13 @@ pub async fn history_handler() -> Response {
 }
 
 pub async fn leases_handler(State(state): State<CliState>) -> Response {
-    let leases = state.secrets_engine.list_leases().await;
+    let mut leases = state.secrets_engine.list_leases().await;
+
+    // F2 - Always redact secret_value for security.
+    for lease in &mut leases {
+        lease.secret_value = None;
+    }
+
     json_response(
         StatusCode::OK,
         serde_json::to_value(leases).unwrap_or_default(),
@@ -136,10 +133,14 @@ pub async fn status_handler(
     AxumPath(token): AxumPath<String>,
 ) -> Response {
     match state.secrets_engine.get_lease(&token).await {
-        Some(status) => json_response(
-            StatusCode::OK,
-            serde_json::to_value(status).unwrap_or_default(),
-        ),
+        Some(mut status) => {
+            // F2 - Redact secret_value from response for security.
+            status.secret_value = None;
+            json_response(
+                StatusCode::OK,
+                serde_json::to_value(status).unwrap_or_default(),
+            )
+        }
         None => json_response(
             StatusCode::NOT_FOUND,
             serde_json::json!({ "error": "Lease not found" }),
