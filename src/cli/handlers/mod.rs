@@ -4,6 +4,7 @@
 
 pub mod agent;
 pub mod agent_cli;
+pub mod auth;
 pub mod billing;
 pub mod cloud;
 pub mod code;
@@ -32,6 +33,7 @@ pub mod workspace;
 
 pub use agent::*;
 pub use agent_cli::*;
+pub use auth::*;
 pub use code::*;
 pub use memory::*;
 pub use mesh::*;

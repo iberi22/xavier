@@ -118,14 +118,13 @@ pub async fn agent_push_context_handler(
         cluster_id: None,
         level: MemoryLevel::Raw,
         relation: None,
+        score: 0.0,
         clearance: Default::default(),
         revisions: vec![],
         encrypted_dek: None,
         content_iv: None,
         metadata_iv: None,
-        score: 0.0,
     };
-        updated_at: chrono::Utc::now(),
     match state.memory.add(record).await {
         Ok(doc_id) => axum::Json(serde_json::json!({
             "status": "ok",
@@ -167,7 +166,22 @@ pub async fn agent_task_complete_handler(
 ) -> impl axum::response::IntoResponse {
     state
         .agent_registry
-        .on_task_complete(&agent_id, "default", &Ok(Default::default()))
+        .on_task_complete(
+            &agent_id,
+            "default",
+            &Ok(xavier::agents::runtime::AgentResponse {
+                session_id: "default".to_string(),
+                query: "manual-complete".to_string(),
+                response: "Task completed manually".to_string(),
+                confidence: 1.0,
+                system_timings: xavier::agents::runtime::SystemTimings {
+                    system1_ms: 0,
+                    system2_ms: 0,
+                    system3_ms: 0,
+                    total_ms: 0,
+                },
+            }),
+        )
         .await;
 
     axum::Json(serde_json::json!({
@@ -251,6 +265,7 @@ pub async fn agent_index_handler(
                     updated_at: chrono::Utc::now(),
                     revision: 1,
                     primary: true,
+                    score: 0.0,
                     parent_id: None,
                     cluster_id: None,
                     level: MemoryLevel::Raw,

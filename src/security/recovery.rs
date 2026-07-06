@@ -3,6 +3,8 @@
 
 use anyhow::{anyhow, Result};
 use bip39::{Mnemonic, Language};
+use rand::Rng;
+use crate::utils::crypto::sha256_hex;
 
 pub struct RecoverySystem;
 
@@ -12,6 +14,16 @@ impl RecoverySystem {
         Mnemonic::generate_in(Language::Spanish, 12)
             .map(|m| m.to_string())
             .unwrap_or_default()
+    }
+
+    /// Alias for backwards compatibility
+    pub fn generate_seed_phrase() -> Result<String> {
+        Ok(Self::generate_phrase())
+    }
+
+    /// Hashes the seed phrase
+    pub fn hash_seed_phrase(phrase: &str) -> String {
+        sha256_hex(phrase.as_bytes())
     }
 
     /// Validates a seed phrase
@@ -26,6 +38,36 @@ impl RecoverySystem {
 
         let seed = mnemonic.to_seed("");
         Ok(seed.to_vec())
+    }
+
+    /// Generates 10 single-use backup codes.
+    pub fn generate_backup_codes() -> Vec<String> {
+        let mut codes = Vec::with_capacity(10);
+        for _ in 0..10 {
+            codes.push(Self::generate_single_backup_code());
+        }
+        codes
+    }
+
+    fn generate_single_backup_code() -> String {
+        const CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        let mut rng = rand::thread_rng();
+        let mut part1 = String::with_capacity(4);
+        let mut part2 = String::with_capacity(4);
+        for _ in 0..4 {
+            let idx = rng.gen_range(0..CHARSET.len());
+            part1.push(CHARSET[idx] as char);
+        }
+        for _ in 0..4 {
+            let idx = rng.gen_range(0..CHARSET.len());
+            part2.push(CHARSET[idx] as char);
+        }
+        format!("{}-{}", part1, part2)
+    }
+
+    /// Hashes a backup code for storage.
+    pub fn hash_backup_code(code: &str) -> String {
+        sha256_hex(code.as_bytes())
     }
 }
 
