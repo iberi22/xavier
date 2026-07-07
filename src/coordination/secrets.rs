@@ -444,7 +444,7 @@ mod tests {
         let mut receiver = event_bus.subscribe();
         let handle = tokio::spawn(async move {
             if let Ok(event) = receiver.recv().await {
-                if let XavierEvent::AgentTaskCompleted { agent_id: id } = event {
+                if let XavierEvent::AgentTaskCompleted { agent_id: id, .. } = event {
                     if id == agent_id {
                         engine_clone.revoke_for_agent(&id, "Task Completed").await;
                     }
@@ -455,9 +455,16 @@ mod tests {
         // Trigger task completion with 3-arg API
         let ok_result: Result<crate::agents::runtime::AgentResponse, String> =
             Ok(crate::agents::runtime::AgentResponse {
-                content: "ok".to_string(),
-                tool_calls: vec![],
-                metadata: std::collections::HashMap::new(),
+                session_id: "task-1".to_string(),
+                query: "test".to_string(),
+                response: "ok".to_string(),
+                confidence: 1.0,
+                system_timings: crate::agents::runtime::SystemTimings {
+                    system1_ms: 0,
+                    system2_ms: 0,
+                    system3_ms: 0,
+                    total_ms: 0,
+                },
             });
         registry
             .on_task_complete(agent_id, "task-1", &ok_result)

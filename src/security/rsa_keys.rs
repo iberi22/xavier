@@ -108,7 +108,6 @@ impl RsaKeypairManager {
 
 #[cfg(test)]
 mod tests {
-    use rsa::traits::PublicKeyParts;
     use super::*;
     use rsa::traits::PublicKeyParts;
     use tempfile::tempdir;
