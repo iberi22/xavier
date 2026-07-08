@@ -1,9 +1,9 @@
 ; Inno Setup Script for Xavier
 #define MyAppName "Xavier"
-#define MyAppVersion "0.6.1-beta"
+#define MyAppVersion "0.12.0"
 #define MyAppPublisher "SouthWest AI Labs"
 #define MyAppURL "https://github.com/iberi22/xavier"
-#define MyAppExeName "xavier-gui.exe"
+#define MyAppExeName "xavier-panel.exe"
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application. Do not use the same AppId value in installers for other applications.
@@ -34,17 +34,23 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Name: "envpath"; Description: "Add Xavier to system PATH"; GroupDescription: "Additional tasks:"
 
 [Files]
-Source: "..\target\release\xavier.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Panel UI (Tauri App) - Main GUI application with system tray
+; Note: The Tauri build outputs to target/release/app.exe
+Source: "..\target\release\app.exe"; DestDir: "{app}"; DestName: "xavier-panel.exe"; Flags: ignoreversion
+; Backend server binary (standalone)
+Source: "..\target\release\xavier.exe"; DestDir: "{app}"; DestName: "xavier-server.exe"; Flags: ignoreversion
+; TUI Dashboard binary
 Source: "..\target\release\xavier-tui.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\target\release\xavier-gui.exe"; DestDir: "{app}"; Flags: ignoreversion
+; Configuration file
 Source: "..\config\xavier.config.json"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\panel-ui\build\*"; DestDir: "{app}\panel-ui"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName} GUI"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autoprograms}\{#MyAppName} TUI"; Filename: "{app}\xavier-tui.exe"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "Xavier Memory Runtime (Panel UI)"
+Name: "{autoprograms}\{#MyAppName} TUI Dashboard"; Filename: "{app}\xavier-tui.exe"; Comment: "Xavier Terminal Dashboard"
+Name: "{autoprograms}\{#MyAppName} Server"; Filename: "{app}\xavier-server.exe"; Parameters: "http 8006"; Comment: "Xavier Backend Server (CLI)"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; Comment: "Xavier Memory Runtime"
+Name: "{userstartup}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "Start Xavier on login"
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipfsreqterminate

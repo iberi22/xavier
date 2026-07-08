@@ -8,9 +8,34 @@ use tauri::{
     Emitter, Manager,
 };
 use tauri_plugin_shell::ShellExt;
+use xavier::ui_logger::{log_ui_error, log_ui_info, UILogLevel, log_ui_event};
 
 // ── Constants ──────────────────────────────────────────────────
 const LOCK_FILENAME: &str = "xavier.lock";
+
+// ── UI Logging commands ────────────────────────────────────────
+
+#[tauri::command]
+async fn log_ui_event_cmd(
+    level: String,
+    component: String,
+    message: String,
+    context: Option<serde_json::Value>,
+    stack_trace: Option<String>,
+) -> Result<(), String> {
+    let log_level = match level.as_str() {
+        "debug" => UILogLevel::Debug,
+        "info" => UILogLevel::Info,
+        "warning" => UILogLevel::Warning,
+        "error" => UILogLevel::Error,
+        "critical" => UILogLevel::Critical,
+        _ => UILogLevel::Info,
+    };
+
+    log_ui_event(log_level, &component, &message, context, stack_trace)
+        .await
+        .map_err(|e| e.to_string())
+}
 
 // ── Xavier token ───────────────────────────────────────────────
 
@@ -301,6 +326,14 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_log::Builder::default().build())
         .setup(|app| {
+            // Initialize UI logger
+            log::info!("Initializing Xavier Panel UI");
+            
+            // Log startup
+            tauri::async_runtime::spawn(async {
+                let _ = log_ui_info("TauriApp", "Xavier Panel UI starting up").await;
+            });
+
             // Initialize Xavier's Tauri AppHandle
             xavier::utils::tauri_utils::set_tauri_app_handle(app.handle().clone());
 
@@ -426,12 +459,22 @@ pub fn run() {
             };
 
             let (mut _rx, _child) = sidecar_command
-                .env("XAVIER_TOKEN", token)
+                .env("XAVIER_TOKEN", token.clone())
                 .args(["http", "8006"])
                 .current_dir(&xavier_cwd)
                 .spawn()
                 .map_err(|e| {
+                    let err_msg = format!("{}", e);
+                    let err_debug = format!("{:?}", e);
                     log::error!("Failed to spawn xavier sidecar: {}", e);
+                    tauri::async_runtime::spawn(async move {
+                        let _ = log_ui_error(
+                            "XavierSidecar",
+                            &format!("Failed to spawn: {}", err_msg),
+                            Some(err_debug),
+                        )
+                        .await;
+                    });
                     e
                 })?;
 
@@ -439,6 +482,16 @@ pub fn run() {
                 "Xavier sidecar spawned successfully (CWD: {:?})",
                 xavier_cwd
             );
+            
+            // Log successful sidecar spawn
+            let cwd_str = format!("{:?}", xavier_cwd);
+            tauri::async_runtime::spawn(async move {
+                let _ = log_ui_info(
+                    "XavierSidecar",
+                    &format!("Backend server started successfully at CWD: {}", cwd_str),
+                )
+                .await;
+            });
 
             // Hide window on close (minimize to tray instead of quitting)
             if let Some(window) = app.get_webview_window("main") {
@@ -454,6 +507,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            log_ui_event_cmd,
             get_xavier_token,
             scan_system,
             save_initial_config,
