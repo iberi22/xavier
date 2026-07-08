@@ -78,8 +78,8 @@ pub async fn metrics_handler() -> axum::response::Response {
 }
 
 pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
-    // Initialize Prometheus exporter
-    autometrics::prometheus_exporter::init();
+    // Initialize Prometheus exporter (v0.3.3 auto-initializes or uses global_metrics_exporter)
+
 
     // Initial health check run to populate the static HEALTH instance
     tokio::spawn(async {
