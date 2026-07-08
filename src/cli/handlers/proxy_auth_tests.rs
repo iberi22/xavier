@@ -11,7 +11,7 @@ async fn test_proxy_auth_and_rate_limit() {
     rate_manager.init_schema_async().await.unwrap();
 
     let audit_logger = Box::new(QmdAuditLogger::new());
-    let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger));
+    let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger, None));
 
     let prompt_cache = Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()));
     let proxy = ProxyUseCase::new(rate_manager.clone(), prompt_cache);
