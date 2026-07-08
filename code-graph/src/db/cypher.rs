@@ -41,8 +41,7 @@ impl CodeGraphDB {
                 JOIN path_cte p ON e.{} = p.current_symbol
                 WHERE p.depth < ?
             )
-            SELECT current_symbol, depth, path_str FROM path_cte
-            GROUP BY current_symbol
+            SELECT DISTINCT current_symbol, depth, path_str FROM path_cte
             ORDER BY depth ASC;
             "#,
             target_col, target_col, anchor_col, 
