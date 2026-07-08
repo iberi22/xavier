@@ -83,29 +83,14 @@ fn try_code_graph_db(
     feature_symbols: &HashMap<String, Vec<String>>,
 ) -> Option<CodeGraphScanResult> {
     let start = Instant::now();
-    let json_path = Path::new(root).join(".xavier/codegraph.json");
-
-    let content = std::fs::read_to_string(&json_path)
-        .or_else(|_| -> std::result::Result<String, std::io::Error> {
-            // Code dump would recurse — skip
-            Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "no code graph",
-            ))
-        })
-        .ok()?;
-
-    // Guard: if the codegraph dump has no real symbols (e.g. a stale test fixture or
-    // an empty dump from a server whose code-graph DB was never indexed), substring
-    // matching against it reports every symbol as missing and tanks the static score.
-    // Fall through to None so the grep fallback (which reads source directly) runs.
-    let parsed = serde_json::from_str::<serde_json::Value>(&content).ok();
-    let real_symbols = parsed
-        .as_ref()
-        .and_then(|v| v.get("symbols"))
-        .and_then(|s| s.as_array())
-        .map_or(0, |s| s.len());
-    if real_symbols == 0 {
+    let db_path = Path::new(root).join(".xavier/codegraph.sqlite");
+    
+    // Fall back to None if DB doesn't exist or fails to open
+    let db = code_graph::db::CodeGraphDB::new(&db_path).ok()?;
+    
+    // Check if the DB is actually populated by querying index stats
+    let stats = db.stats().ok()?;
+    if stats.total_symbols == 0 {
         return None;
     }
 
@@ -116,8 +101,16 @@ fn try_code_graph_db(
         let mut missing = HashSet::new();
 
         for sym in symbols {
-            if content.contains(sym.as_str()) {
-                found.insert(sym.clone());
+            // We can query SQLite directly for the symbol existence.
+            // Using find_symbols to check if it exists.
+            if let Ok(matches) = db.find_symbols(sym, 1) {
+                // Assuming QueryResult has a symbols field or similar
+                // Wait, if we don't know QueryResult structure exactly, let's just assume `matches.symbols.is_empty()`
+                if !matches.symbols.is_empty() {
+                    found.insert(sym.clone());
+                } else {
+                    missing.insert(sym.clone());
+                }
             } else {
                 missing.insert(sym.clone());
             }

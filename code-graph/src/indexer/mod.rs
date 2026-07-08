@@ -1,5 +1,7 @@
 //! Indexer - scans and indexes codebases.
 
+pub mod watcher;
+
 use crate::db::CodeGraphDB;
 use crate::error::{GraphError, Result};
 use crate::parser::parse_source;
