@@ -199,7 +199,7 @@ impl RateLimitManager {
             ).unwrap_or((None, 1000000));
 
             Ok(QuotaStatus {
-                provider,
+                provider: provider.clone(),
                 used_hourly: used_hourly as usize,
                 used_today: used_today as usize,
                 used_weekly: used_weekly as usize,

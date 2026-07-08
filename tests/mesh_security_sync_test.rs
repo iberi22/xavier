@@ -340,7 +340,7 @@ async fn test_handshake_signature_verification() {
     std::env::set_var("XAVIER_CONFIG_DIR", temp_dir.path());
 
     let (_url_a, token_a, _ws_a) = start_test_server().await;
-    let (url_b, _token_b, _ws_b) = start_test_server().await;
+    let (url_b, _token_b, _ws_b): (String, String, Arc<WorkspaceState>) = start_test_server().await;
 
     let identity_a = Arc::new(NodeIdentity::generate());
     let transport_a = MeshTransport::new(identity_a.clone());

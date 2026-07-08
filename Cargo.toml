@@ -1,4 +1,4 @@
-﻿[patch.crates-io]
+[patch.crates-io]
 burn-candle = { path = "patches/burn-candle" }
 
 [package]
@@ -126,7 +126,7 @@ autometrics = { version = "0.3", features = ["prometheus-exporter"] }
 chrono = { version = "0.4", features = ["serde"] }
 cron = "0.15"
 # State management
-rayon = "1.10"
+
 parking_lot = "0.12"
 rusqlite = { version = "0.32.0", features = ["bundled", "load_extension", "chrono", "functions"] }
 jsonwebtoken = "9.3"

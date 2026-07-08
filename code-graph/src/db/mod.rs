@@ -2,6 +2,7 @@
 // Build force-recompile 2026-05-27
 
 pub mod benchmarks;
+pub mod cypher;
 
 use crate::error::{GraphError, Result};
 use crate::types::{
@@ -205,6 +206,31 @@ impl CodeGraphDB {
             CREATE INDEX IF NOT EXISTS idx_edges_to ON edges(to_symbol);
             CREATE INDEX IF NOT EXISTS idx_edges_type ON edges(edge_type);
             CREATE INDEX IF NOT EXISTS idx_edges_file ON edges(file_path);
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS search_code USING fts5(
+                name,
+                file_path,
+                signature,
+                content='symbols',
+                content_rowid='id'
+            );
+
+            CREATE TRIGGER IF NOT EXISTS symbols_ai AFTER INSERT ON symbols BEGIN
+                INSERT INTO search_code(rowid, name, file_path, signature)
+                VALUES (new.id, new.name, new.file_path, new.signature);
+            END;
+            
+            CREATE TRIGGER IF NOT EXISTS symbols_ad AFTER DELETE ON symbols BEGIN
+                INSERT INTO search_code(search_code, rowid, name, file_path, signature)
+                VALUES ('delete', old.id, old.name, old.file_path, old.signature);
+            END;
+
+            CREATE TRIGGER IF NOT EXISTS symbols_au AFTER UPDATE ON symbols BEGIN
+                INSERT INTO search_code(search_code, rowid, name, file_path, signature)
+                VALUES ('delete', old.id, old.name, old.file_path, old.signature);
+                INSERT INTO search_code(rowid, name, file_path, signature)
+                VALUES (new.id, new.name, new.file_path, new.signature);
+            END;
 
             CREATE TABLE IF NOT EXISTS metadata (
                 key TEXT PRIMARY KEY,

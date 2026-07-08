@@ -377,7 +377,7 @@ impl MemoryStore for VecSqliteMemoryStore {
                 TABLE_MEMORIES
             ))?;
 
-            let mut rows = stmt.query([workspace_id])?;
+            let mut rows = stmt.query([workspace_id.clone()])?;
             let mut records = Vec::new();
             while let Some(row) = rows.next()? {
                 records.push(VecSqliteMemoryStore::deserialize_record(row)?);
@@ -510,7 +510,7 @@ impl MemoryStore for VecSqliteMemoryStore {
             };
 
             Ok(DurableWorkspaceState {
-                memories,
+                memories: memories.clone(),
                 beliefs,
                 session_tokens,
                 checkpoints,
@@ -528,7 +528,7 @@ impl MemoryStore for VecSqliteMemoryStore {
                     &[(&belief.source, "source"), (&belief.target, "target")],
                 )?;
             }
-            for belief in beliefs {
+            for belief in beliefs.clone() {
                 conn.execute(
                     "INSERT OR REPLACE INTO relations (id, source_id, target_id, relation_type, weight, confidence_score, provenance_id, contradicts_edge_id, is_inferred, source_language, target_language, created_at, updated_at, workspace_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     params![
