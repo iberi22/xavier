@@ -84,7 +84,7 @@ pub enum System3Mode {
     Required,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SystemTimings {
     pub system1_ms: u64,
     pub system2_ms: u64,
