@@ -175,6 +175,7 @@ fn make_session_record(seconds_ago: i64) -> MemoryRecord {
         encrypted_dek: None,
         content_iv: None,
         metadata_iv: None,
+        score: 0.0,
     }
 }
 

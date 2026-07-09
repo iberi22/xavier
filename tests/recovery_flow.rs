@@ -10,7 +10,7 @@ use tokio::net::TcpListener;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use xavier::security::recovery::RecoveryManager;
+use xavier::security::recovery::RecoverySystem as RecoveryManager;
 use xavier::security::user_store::{User, UserStore};
 
 // Helper function to create a test app

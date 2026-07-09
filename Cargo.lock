@@ -16968,6 +16968,7 @@ dependencies = [
  "futures-util",
  "git2",
  "gllm",
+ "hex",
  "hkdf",
  "http-body-util",
  "image",

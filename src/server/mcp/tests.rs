@@ -37,6 +37,7 @@ fn unique_test_path(prefix: &str, suffix: &str) -> PathBuf {
 }
 
 async fn test_state() -> (AppState, WorkspaceContext) {
+    std::env::set_var("XAVIER_TOKEN", "test-token");
     let db_path = unique_test_path("xavier-code-mcp", "code_graph.db");
     let code_db = Arc::new(
         code_graph::db::CodeGraphDB::new(&db_path).expect("CodeGraphDB creation failed for test"),
