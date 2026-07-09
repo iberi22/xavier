@@ -44,7 +44,7 @@ impl ContextBuilder {
         for (file_path, syms) in files {
             output.push_str(&format!("## File: `{}`\n\n", file_path));
             for sym in syms {
-                output.push_str(&format!("### {} `{}`\n", format!("{:?}", sym.kind), sym.name));
+                output.push_str(&format!("### {:?} `{}`\n", sym.kind, sym.name));
                 if let Some(ref sig) = sym.signature {
                     let lang_highlight = match sym.lang {
                         crate::types::Language::Rust => "rust",
@@ -77,7 +77,7 @@ impl ContextBuilder {
                         output.push_str(&format!("- `{}` (depth: {}) in `{}`\n",
                             caller.symbol.name, caller.depth, caller.symbol.file_path));
                     }
-                    output.push_str("\n");
+                    output.push('\n');
                 }
 
                 if !impact.callees.is_empty() {
@@ -86,7 +86,7 @@ impl ContextBuilder {
                         output.push_str(&format!("- `{}` (depth: {}) in `{}`\n",
                             callee.symbol.name, callee.depth, callee.symbol.file_path));
                     }
-                    output.push_str("\n");
+                    output.push('\n');
                 }
             }
         }

@@ -46,10 +46,13 @@ pub async fn parse_source(
                     e
                 })
         }
-<
         ParserDispatch::Native => match lang {
             Language::Rust => {
                 let mut parser = RustParser::new()?;
+                parser.parse(source, file_path)
+            }
+            Language::Python => {
+                let mut parser = PythonParser::new()?;
                 parser.parse(source, file_path)
             }
             Language::Go => {
@@ -171,44 +174,8 @@ mod tests {
     use super::*;
     use crate::types::SymbolKind;
 
-<<<<<<< HEAD
-    #[test]
-    fn parses_python_symbols() {
-=======
-    #[tokio::test]
-    async fn parses_typescript_symbols() {
-        let symbols = parse_source(
-            "import x from 'pkg';\nclass UserService { run() {} }\nfunction main() {}\nconst load = () => main();\nenum Color { Red }\nconst a = 1, b = 2;\nlet count = 0;",
-            &Language::TypeScript,
-            "app.ts",
-            None,
-        )
-        .await
-        .expect("parse");
-        assert!(symbols
-            .iter()
-            .any(|s| s.name == "UserService" && s.kind == SymbolKind::Class));
-        assert!(symbols
-            .iter()
-            .any(|s| s.name == "main" && s.kind == SymbolKind::Function));
-        assert!(symbols.iter().any(|s| s.kind == SymbolKind::Import));
-        assert!(symbols
-            .iter()
-            .any(|s| s.name == "Color" && s.kind == SymbolKind::Enum));
-        assert!(symbols
-            .iter()
-            .any(|s| s.name == "a" && s.kind == SymbolKind::Constant));
-        assert!(symbols
-            .iter()
-            .any(|s| s.name == "b" && s.kind == SymbolKind::Constant));
-        assert!(symbols
-            .iter()
-            .any(|s| s.name == "count" && s.kind == SymbolKind::Variable));
-    }
-
     #[tokio::test]
     async fn parses_python_symbols() {
->>>>>>> origin/main
         let symbols = parse_source(
             "import os\nclass Service:\n    VERSION = 1\n    async def run(self):\n        return os.getcwd()\nx, y = (1, 2)",
             &Language::Python,
