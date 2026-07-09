@@ -100,3 +100,47 @@ El commit se titula "migración a SQLite FTS5", pero la tabla virtual `search_co
 - Los agentes que reciban la regla "usa `codegraph_explore`/`trace_path`" ahora obtendrán datos reales del grafo en vez de mocks.
 - El skill `codegraph` estandariza el comportamiento en todos los hosts ZCode.
 - Quedan 8 hallazgos documentados para follow-up; los 2 de seguridad HIGH (token/CORS) son los prioritarios.
+
+---
+
+## Follow-up (2026-07-08, segunda fase) — cierre de hallazgos
+
+Tras el PR #441 se ejecutó la segunda fase de hardening, cerrando los hallazgos pendientes excepto el #6 (sync incremental completo, que queda como primitiva disponible vía `clear_by_file`).
+
+| # | Hallazgo | Resolución |
+|---|---|---|
+| 2 | Token por defecto débil | ✅ En bind off-loopback sin `CODE_GRAPH_TOKEN` se genera un token efímero aleatorio; el default público solo se permite en loopback con warning. |
+| 3 | CORS `Any/Any/Any` | ✅ CORS configurable vía `CODE_GRAPH_ALLOWED_ORIGINS` (coma-separado); default restrictivo a localhost; `*` opts-in explícito al viejo comportamiento. |
+| — | Auth con timing leak | ✅ Comparación constant-time (`constant_time_eq`) reemplaza el `==` plano. |
+| 4 | FTS5 nunca consultado | ✅ `find_symbols` migrado a `MATCH` + JOIN a `symbols` + `bm25()` con pesos por columna; conserva el ranking exact-match-first de `calculate_score` como capa superior; fallback `LIKE` para DBs legacy y query vacía. |
+| 5 | `contains_call` falsos positivos | ✅ Reescrito con word-boundaries: un callee `init` ya no matchea `initialize(` ni `xinit(`. |
+| 6 | Reindex destructivo / watcher muerto | 🟡 Añadida primitiva `CodeGraphDB::clear_by_file(path)` (params preparados, no string interp) que habilita sync incremental por-archivo. El watcher sigue siendo TODO pero ahora tiene la primitiva DB necesaria. |
+| 7 | Path DB divergente | ✅ El maturity scanner ahora resuelve `code_graph_db_path()` (canónico: `XAVIER_CODE_GRAPH_DB_PATH` → data dir) primero, con fallback legacy `.xavier/codegraph.sqlite`. Ya no lee un DB distinto al del MCP. |
+| 8 | `get_code_graph` legacy | ✅ Marcado `[DEPRECATED]` en su descripción MCP, dirigiendo a las tools estructurales nuevas. |
+| 9 | `by_language` stub | ✅ Implementado: nuevo `CodeGraphDB::find_by_lang` + `QueryEngine::by_language` delega en él. |
+
+### Detalle técnico del FTS5 (#4)
+La tabla `search_code` es external-content (`content='symbols'`, `content_rowid='id'`), así que la query hace JOIN:
+```sql
+SELECT s.*, bm25(search_code, 10.0, 1.0, 2.0) AS rank
+FROM search_code
+JOIN symbols s ON s.id = search_code.rowid
+WHERE search_code MATCH ?1
+ORDER BY rank
+LIMIT ?2
+```
+Pesos `bm25(search_code, name=10, file_path=1, signature=2)` hacen que matches en `name` dominen. La query se envuelve como phrase (`"..."`) para que busquedas multi-palabra matcheen como frase. `calculate_score` se mantiene encima para garantizar exact-match-first (BM25 no da eso gratis).
+
+### Estado final de implementación
+Code Graph Index se mantiene en **100% Stable** en la matrix reconciled (`architecture.md`), ahora con los subcomponentes MCP realmente funcionales (no mock). `.gitcore/features.json` actualizado con `last_tested: 2026-07-08` y los nuevos steps. Los test anchors en `.xavier/maturity-anchors.json` apuntan a los tests reales (`code_graph_explore_returns_real_data_not_mock`, `code_graph_trace_path_returns_real_callers`).
+
+### Tests añadidos en esta fase (code-graph: 28 → 32)
+- `find_symbols_uses_fts5_matching_signature_column` — verifica que FTS5 matchea la columna `signature`.
+- `find_by_lang_returns_only_matching_language`
+- `by_language_engine_backed_by_find_by_lang`
+- `clear_by_file_removes_only_that_file`
+
+### Cobertura de tests final
+- `cargo test -p code-graph` → **32 passed**.
+- `cargo test -p xavier --lib server::mcp` → **29 passed** (incluye los 2 de integración que asertan ausencia de mocks).
+- `cargo test -p xavier --lib maturity` → **1 passed**.
