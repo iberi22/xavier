@@ -8,7 +8,6 @@ use crate::parser::go::GoParser;
 use crate::parser::java::JavaParser;
 use crate::parser::python::PythonParser;
 use crate::parser::rust::RustParser;
-use crate::parser::typescript::TypeScriptParser;
 use crate::types::{Language, Symbol, SymbolKind};
 use tree_sitter::Node;
 
@@ -18,7 +17,6 @@ pub mod go;
 pub mod java;
 pub mod python;
 pub mod rust;
-pub mod typescript;
 
 /// Parse source code using tree-sitter or a plugin
 pub async fn parse_source(
@@ -48,17 +46,10 @@ pub async fn parse_source(
                     e
                 })
         }
+<
         ParserDispatch::Native => match lang {
             Language::Rust => {
                 let mut parser = RustParser::new()?;
-                parser.parse(source, file_path)
-            }
-            Language::TypeScript | Language::JavaScript => {
-                let mut parser = TypeScriptParser::new(lang.clone())?;
-                parser.parse(source, file_path)
-            }
-            Language::Python => {
-                let mut parser = PythonParser::new()?;
                 parser.parse(source, file_path)
             }
             Language::Go => {
@@ -180,6 +171,10 @@ mod tests {
     use super::*;
     use crate::types::SymbolKind;
 
+<<<<<<< HEAD
+    #[test]
+    fn parses_python_symbols() {
+=======
     #[tokio::test]
     async fn parses_typescript_symbols() {
         let symbols = parse_source(
@@ -213,6 +208,7 @@ mod tests {
 
     #[tokio::test]
     async fn parses_python_symbols() {
+>>>>>>> origin/main
         let symbols = parse_source(
             "import os\nclass Service:\n    VERSION = 1\n    async def run(self):\n        return os.getcwd()\nx, y = (1, 2)",
             &Language::Python,

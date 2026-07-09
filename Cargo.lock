@@ -2920,6 +2920,18 @@ dependencies = [
 ]
 
 [[package]]
+<name = "codegraph-parse-typescript"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "codegraph-types",
+ "serde",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-typescript",
+]
+
+[[package]]
 name = "codegraph-types"
 version = "0.1.0"
 dependencies = [
