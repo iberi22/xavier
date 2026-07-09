@@ -122,7 +122,7 @@
             "verified_by": "automated",
             "github_issue": 97,
             "last_tested": "2026-07-08",
-            "notes": "Code-graph sidecar complete. MCP handlers wired to real engine (PR #441 + follow-up): codegraph_explore/trace_path/get_architecture/detect_changes now query the live SQLite+FTS5 index instead of returning mocks. find_symbols uses FTS5 MATCH+bm25. Sidecar hardened (token/CORS/constant-time). Multi-language AST parsing (Rust, Python, Go, C/C++, TS, Java) integrated.",
+            "notes": "Code-graph sidecar complete. MCP handlers wired to real engine (PR #441 + follow-up). 6-strategy call resolution cascade integrated (#469). Multi-language AST parsing (Rust, Python, Go, C/C++, TS, Java). FTS5 MATCH+bm25. Sidecar hardened.",
             "implemented_in": "code-graph/, src/codebase/, src/server/mcp/tools_code_graph.rs"
         },
         {

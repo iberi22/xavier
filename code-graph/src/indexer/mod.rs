@@ -16,6 +16,9 @@ use std::time::Instant;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
+pub mod call_resolution;
+use call_resolution::{extract_call_names, CallResolver};
+
 pub struct Indexer {
     db: Arc<CodeGraphDB>,
     max_concurrent: usize,
@@ -255,10 +258,6 @@ fn build_edges(
     sources: &HashMap<String, String>,
 ) -> Vec<CodeEdge> {
     let mut edges = Vec::new();
-    let callable_symbols: Vec<&Symbol> = all_symbols
-        .iter()
-        .filter(|symbol| matches!(symbol.kind, SymbolKind::Function | SymbolKind::Method))
-        .collect();
 
     for symbol in new_symbols {
         let symbol_id = symbol
@@ -309,6 +308,8 @@ fn build_edges(
         .filter(|symbol| matches!(symbol.kind, SymbolKind::Function | SymbolKind::Method))
         .collect();
 
+    let resolver = CallResolver::new(all_symbols, sources);
+
     for caller in &new_callable_symbols {
         let Some(source) = sources.get(&caller.file_path) else {
             continue;
@@ -318,34 +319,40 @@ fn build_edges(
             .clone()
             .unwrap_or_else(|| caller.deterministic_id("default"));
         let body = symbol_source_slice(source, caller);
-        for callee in &callable_symbols {
-            if caller.stable_id == callee.stable_id || caller.name == callee.name {
-                continue;
-            }
-            if contains_call(&body, &callee.name) {
-                let callee_id = callee
-                    .stable_id
-                    .clone()
-                    .unwrap_or_else(|| callee.deterministic_id("default"));
+        let callee_names = extract_call_names(&body);
+
+        for name in callee_names {
+            let resolved = resolver.resolve(&caller.file_path, &name);
+            for res in resolved {
+                if res.stable_id == caller_id {
+                    continue;
+                }
                 edges.push(CodeEdge {
                     id: None,
                     from_symbol: caller_id.clone(),
-                    to_symbol: callee_id.clone(),
+                    to_symbol: res.stable_id.clone(),
                     edge_type: EdgeType::Calls,
                     file_path: caller.file_path.clone(),
                     line: caller.start_line,
-                    confidence: 0.65,
-                    metadata: Some(serde_json::json!({"callee": callee.name})),
+                    confidence: res.confidence,
+                    metadata: Some(serde_json::json!({
+                        "callee": name,
+                        "strategy": res.strategy
+                    })),
                 });
+
                 edges.push(CodeEdge {
                     id: None,
                     from_symbol: caller_id.clone(),
-                    to_symbol: callee_id,
+                    to_symbol: res.stable_id,
                     edge_type: EdgeType::References,
                     file_path: caller.file_path.clone(),
                     line: caller.start_line,
-                    confidence: 0.55,
-                    metadata: Some(serde_json::json!({"reference": callee.name})),
+                    confidence: res.confidence * 0.8,
+                    metadata: Some(serde_json::json!({
+                        "reference": name,
+                        "strategy": res.strategy
+                    })),
                 });
             }
         }
@@ -377,6 +384,9 @@ fn symbol_source_slice(source: &str, symbol: &Symbol) -> String {
 /// This is a heuristic improvement over the previous `source.contains("name(")`
 /// approach; a fully correct call graph requires tree-sitter call-expression
 /// extraction (see `build_edges` doc).
+///
+/// ⚠️ DEPRECATED: Use `CallResolver` with 6-strategy cascade instead.
+#[deprecated(note = "Use CallResolver with 6-strategy cascade instead")]
 fn contains_call(source: &str, name: &str) -> bool {
     if name.is_empty() || source.is_empty() {
         return false;
@@ -560,5 +570,31 @@ mod tests {
         assert_eq!(db.stats().expect("stats").total_files, 1);
         let symbols = db.get_all_symbols().expect("get symbols");
         assert!(symbols.iter().all(|s| s.file_path == "main.rs"));
+    }
+
+    #[tokio::test]
+    async fn build_edges_uses_resolver_instead_of_contains_call() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(
+            dir.path().join("main.rs"),
+            "mod processor;\nfn main() { processor::process_data(); }",
+        ).unwrap();
+        std::fs::write(
+            dir.path().join("processor.rs"),
+            "pub fn process_data() {}",
+        ).unwrap();
+
+        let db = Arc::new(CodeGraphDB::in_memory().unwrap());
+        let indexer = Indexer::new(db.clone());
+        indexer.index(dir.path(), false).await.unwrap();
+
+        let edges = db.get_all_edges().unwrap();
+        let call_edges: Vec<_> = edges.iter().filter(|e| e.edge_type == EdgeType::Calls).collect();
+
+        assert!(!call_edges.is_empty(), "Should have call edges");
+        // Verify at least one edge has metadata.strategy
+        assert!(call_edges.iter().any(|e| {
+            e.metadata.as_ref().and_then(|m| m.get("strategy")).is_some()
+        }), "Call edges should include strategy metadata");
     }
 }
