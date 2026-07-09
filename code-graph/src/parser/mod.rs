@@ -1,6 +1,7 @@
 //! Parser module - tree-sitter based
 
 use crate::error::Result;
+use crate::plugin_host::{FileToParse, ParserDispatch, PluginHost};
 use crate::parser::c::CParser;
 use crate::parser::cpp::CppParser;
 use crate::parser::go::GoParser;
@@ -17,34 +18,62 @@ pub mod java;
 pub mod python;
 pub mod rust;
 
-/// Parse source code using tree-sitter
-pub fn parse_source(source: &str, lang: &Language, file_path: &str) -> Result<Vec<Symbol>> {
-    match lang {
-        Language::Rust => {
-            let mut parser = RustParser::new()?;
-            parser.parse(source, file_path)
+/// Parse source code using tree-sitter or a plugin
+pub async fn parse_source(
+    source: &str,
+    lang: &Language,
+    file_path: &str,
+    plugin_host: Option<&PluginHost>,
+) -> Result<Vec<Symbol>> {
+    let dispatch = if let Some(host) = plugin_host {
+        host.parser_for(lang)
+    } else {
+        ParserDispatch::Native
+    };
+
+    match dispatch {
+        ParserDispatch::Plugin(config) => {
+            let files = vec![FileToParse {
+                path: file_path.to_string(),
+                source: source.to_string(),
+            }];
+            plugin_host
+                .unwrap()
+                .parse_with_plugin(&config, lang.clone(), files)
+                .await
+                .map_err(|e| {
+                    tracing::warn!("Plugin parser failed for {}: {}", file_path, e);
+                    e
+                })
         }
-        Language::Python => {
-            let mut parser = PythonParser::new()?;
-            parser.parse(source, file_path)
+<
+        ParserDispatch::Native => match lang {
+            Language::Rust => {
+                let mut parser = RustParser::new()?;
+                parser.parse(source, file_path)
+            }
+            Language::Go => {
+                let mut parser = GoParser::new()?;
+                parser.parse(source, file_path)
+            }
+            Language::Java => {
+                let mut parser = JavaParser::new()?;
+                parser.parse(source, file_path)
+            }
+            Language::C => {
+                let mut parser = CParser::new()?;
+                parser.parse(source, file_path)
+            }
+            Language::Cpp => {
+                let mut parser = CppParser::new()?;
+                parser.parse(source, file_path)
+            }
+            _ => Ok(vec![]),
+        },
+        ParserDispatch::NoOp => {
+            tracing::debug!("No parser available for language {:?}", lang);
+            Ok(vec![])
         }
-        Language::Go => {
-            let mut parser = GoParser::new()?;
-            parser.parse(source, file_path)
-        }
-        Language::Java => {
-            let mut parser = JavaParser::new()?;
-            parser.parse(source, file_path)
-        }
-        Language::C => {
-            let mut parser = CParser::new()?;
-            parser.parse(source, file_path)
-        }
-        Language::Cpp => {
-            let mut parser = CppParser::new()?;
-            parser.parse(source, file_path)
-        }
-        _ => Ok(vec![]),
     }
 }
 
@@ -142,13 +171,51 @@ mod tests {
     use super::*;
     use crate::types::SymbolKind;
 
+<<<<<<< HEAD
     #[test]
     fn parses_python_symbols() {
+=======
+    #[tokio::test]
+    async fn parses_typescript_symbols() {
+        let symbols = parse_source(
+            "import x from 'pkg';\nclass UserService { run() {} }\nfunction main() {}\nconst load = () => main();\nenum Color { Red }\nconst a = 1, b = 2;\nlet count = 0;",
+            &Language::TypeScript,
+            "app.ts",
+            None,
+        )
+        .await
+        .expect("parse");
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "UserService" && s.kind == SymbolKind::Class));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "main" && s.kind == SymbolKind::Function));
+        assert!(symbols.iter().any(|s| s.kind == SymbolKind::Import));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "Color" && s.kind == SymbolKind::Enum));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "a" && s.kind == SymbolKind::Constant));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "b" && s.kind == SymbolKind::Constant));
+        assert!(symbols
+            .iter()
+            .any(|s| s.name == "count" && s.kind == SymbolKind::Variable));
+    }
+
+    #[tokio::test]
+    async fn parses_python_symbols() {
+>>>>>>> origin/main
         let symbols = parse_source(
             "import os\nclass Service:\n    VERSION = 1\n    async def run(self):\n        return os.getcwd()\nx, y = (1, 2)",
             &Language::Python,
             "app.py",
+            None,
         )
+        .await
         .expect("parse");
         assert!(symbols
             .iter()
@@ -168,13 +235,15 @@ mod tests {
             .any(|s| s.name == "y" && s.kind == SymbolKind::Variable));
     }
 
-    #[test]
-    fn parses_go_symbols() {
+    #[tokio::test]
+    async fn parses_go_symbols() {
         let symbols = parse_source(
             "package main\nimport \"fmt\"\ntype User struct{}\nfunc (u *User) GetName() string { return \"\" }\nconst Max = 10\nvar count = 0\nfunc main() { fmt.Println(\"x\") }\n",
             &Language::Go,
             "main.go",
+            None,
         )
+        .await
         .expect("parse");
         assert!(symbols
             .iter()
@@ -194,13 +263,15 @@ mod tests {
             .any(|s| s.name == "count" && s.kind == SymbolKind::Variable));
     }
 
-    #[test]
-    fn parses_java_symbols() {
+    #[tokio::test]
+    async fn parses_java_symbols() {
         let symbols = parse_source(
             "import java.util.List; class Service { void run() {} }",
             &Language::Java,
             "Service.java",
+            None,
         )
+        .await
         .expect("parse");
         assert!(symbols
             .iter()
@@ -211,13 +282,15 @@ mod tests {
         assert!(symbols.iter().any(|s| s.kind == SymbolKind::Import));
     }
 
-    #[test]
-    fn parses_c_symbols() {
+    #[tokio::test]
+    async fn parses_c_symbols() {
         let symbols = parse_source(
             "#include <stdio.h>\n#define MAX 100\nstruct Point { int x; };\nvoid main() { printf(\"hello\"); }",
             &Language::C,
             "main.c",
+            None,
         )
+        .await
         .expect("parse");
         assert!(symbols
             .iter()
@@ -233,13 +306,15 @@ mod tests {
             .any(|s| s.name == "stdio.h" && s.kind == SymbolKind::Import));
     }
 
-    #[test]
-    fn parses_cpp_symbols() {
+    #[tokio::test]
+    async fn parses_cpp_symbols() {
         let symbols = parse_source(
             "#include <iostream>\nnamespace xav { class Scanner { public: void run() {} }; }\nint main() { return 0; }",
             &Language::Cpp,
             "main.cpp",
+            None,
         )
+        .await
         .expect("parse");
         assert!(symbols
             .iter()
