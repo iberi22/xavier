@@ -94,7 +94,10 @@ async fn auth_middleware(
         .map(|s| s.trim_start_matches("Bearer "));
 
     match auth_header {
-        Some(token) if token == state.token => Ok(next.run(request).await),
+        // Constant-time comparison to avoid leaking the token via timing.
+        Some(token) if constant_time_eq(token.as_bytes(), state.token.as_bytes()) => {
+            Ok(next.run(request).await)
+        }
         _ => Err((
             StatusCode::UNAUTHORIZED,
             Json(ErrorResponse {
@@ -102,6 +105,94 @@ async fn auth_middleware(
             }),
         )),
     }
+}
+
+/// Constant-time byte-slice comparison. Compares over the length of the
+/// *expected* value and always processes the full length, so a shorter
+/// attacker-supplied value does not short-circuit early. Returns `false` if
+/// the lengths differ.
+fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff: u8 = 0;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+/// Returns true when the bind host is loopback (so the server is not reachable
+/// from the network). Used to relax the token-default policy. Note: `0.0.0.0`
+/// intentionally counts as non-loopback because it binds to all interfaces.
+fn is_loopback_host(host: &str) -> bool {
+    matches!(
+        host.to_ascii_lowercase().as_str(),
+        "localhost" | "127.0.0.1" | "::1" | "[::1]"
+    )
+}
+
+/// Generate a 32-byte random token, hex-encoded (64 chars). Seeded from the
+/// current time and pid (xorshift PRNG). This is an EPHEMERAL fallback for when
+/// no `CODE_GRAPH_TOKEN` is set and the server binds off-loopback; it is not a
+/// substitute for setting an explicit token. The recommended path is always to
+/// set `CODE_GRAPH_TOKEN`.
+fn generate_ephemeral_token() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let mut buf = [0u8; 32];
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    // xorshift128-style fill over the seed.
+    let mut state = nanos ^ (pid as u128).wrapping_mul(0x9E3779B97F4A7C15);
+    for byte in buf.iter_mut() {
+        state = state
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        *byte = (state >> 64) as u8 ^ (state as u8);
+    }
+    buf.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+/// Build the CORS layer from `CODE_GRAPH_ALLOWED_ORIGINS` (comma-separated).
+/// Defaults to allowing only localhost origins. A value of `*` restores the
+/// previous permissive behavior (must be opted into explicitly).
+fn build_cors_layer() -> CorsLayer {
+    let raw = std::env::var("CODE_GRAPH_ALLOWED_ORIGINS").unwrap_or_default();
+    let origins: Vec<String> = raw
+        .split(',')
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if origins.iter().any(|o| o == "*") {
+        // Explicit opt-in to permissive CORS.
+        return CorsLayer::new()
+            .allow_origin(Any)
+            .allow_methods(Any)
+            .allow_headers(Any);
+    }
+
+    let allowed: Vec<_> = if origins.is_empty() {
+        // Default: localhost only.
+        vec![
+            "http://localhost".to_string(),
+            "http://127.0.0.1".to_string(),
+        ]
+    } else {
+        origins
+    };
+
+    let parsed: Vec<_> = allowed
+        .iter()
+        .filter_map(|o| o.parse::<axum::http::HeaderValue>().ok())
+        .collect();
+    CorsLayer::new()
+        .allow_origin(parsed)
+        .allow_methods(Any)
+        .allow_headers(Any)
 }
 
 // ============================================================================
@@ -307,15 +398,36 @@ async fn main() -> anyhow::Result<()> {
 
     // Server mode
     if cli.command.is_none() || matches!(cli.command, Some(Commands::Serve)) {
-        let token = cli.token.unwrap_or_else(|| {
-            std::env::var("CODE_GRAPH_TOKEN")
-                .unwrap_or_else(|_| "default-token-change-me".to_string())
-        });
+        let is_loopback = is_loopback_host(&cli.host);
 
-        if token == "default-token-change-me" {
-            eprintln!(
-                "⚠️  WARNING: Using default token. Set CODE_GRAPH_TOKEN env var for security."
-            );
+        // Token resolution: explicit flag/env wins. Otherwise, when binding to
+        // a non-loopback address we refuse the known-public default and generate
+        // a fresh random token instead. On loopback the default is still allowed
+        // (local-only development) but warns loudly.
+        let default_token = "default-token-change-me".to_string();
+        let mut token = cli
+            .token
+            .clone()
+            .or_else(|| std::env::var("CODE_GRAPH_TOKEN").ok())
+            .unwrap_or(default_token.clone());
+
+        if token == default_token {
+            if is_loopback {
+                eprintln!(
+                    "⚠️  WARNING: Using the known-public default token on loopback. \
+                     Set CODE_GRAPH_TOKEN for anything beyond local development."
+                );
+            } else {
+                // Non-loopback bind with the public default — generate an
+                // ephemeral random token so the server never exposes an
+                // unauthenticated surface to the network.
+                token = generate_ephemeral_token();
+                eprintln!(
+                    "⚠️  No CODE_GRAPH_TOKEN set and binding to a non-loopback address. \
+                     Generated an EPHEMERAL random token for this session (it will NOT \
+                     persist across restarts). Set CODE_GRAPH_TOKEN explicitly."
+                );
+            }
         }
 
         let state = AppState {
@@ -324,10 +436,10 @@ async fn main() -> anyhow::Result<()> {
             query_engine,
         };
 
-        let cors = CorsLayer::new()
-            .allow_origin(Any)
-            .allow_methods(Any)
-            .allow_headers(Any);
+        // CORS: configurable via CODE_GRAPH_ALLOWED_ORIGINS (comma-separated).
+        // Defaults to localhost-only origins; `*` opts back into the old
+        // permissive behavior explicitly.
+        let cors = build_cors_layer();
 
         let protected_routes = Router::new()
             .route("/code/scan", post(scan))
