@@ -31,10 +31,16 @@ impl Indexer {
         let start = Instant::now();
         info!("Starting indexing of {:?}", root);
 
-        let files = self.collect_files(root)?;
+        let root_path = root.to_path_buf();
+        let files = tokio::task::spawn_blocking(move || Self::collect_files(&root_path))
+            .await
+            .map_err(|e| GraphError::Io(std::io::Error::other(e)))??;
         info!("Found {} files to index", files.len());
 
-        self.db.clear()?;
+        let db = Arc::clone(&self.db);
+        tokio::task::spawn_blocking(move || db.clear())
+            .await
+            .map_err(|e| GraphError::Io(std::io::Error::other(e)))??;
 
         let semaphore = Arc::new(Semaphore::new(self.max_concurrent));
         let mut handles = Vec::new();
@@ -67,17 +73,22 @@ impl Indexer {
         assign_stable_ids(&mut symbols);
         let edges = build_edges(&symbols, &sources);
 
-        self.db.insert_symbols(&symbols)?;
-        self.db.insert_edges(&edges)?;
-
-        let mut stats = self.db.stats()?;
+        let db = Arc::clone(&self.db);
+        let edges_len = edges.len();
+        let mut stats = tokio::task::spawn_blocking(move || {
+            db.insert_symbols(&symbols)?;
+            db.insert_edges(&edges)?;
+            db.stats()
+        })
+        .await
+        .map_err(|e| GraphError::Io(std::io::Error::other(e)))??;
         stats.duration_ms = start.elapsed().as_millis() as u64;
 
         info!(
             "Indexed {} files, {} symbols, {} edges in {}ms",
             stats.total_files,
             stats.total_symbols,
-            edges.len(),
+            edges_len,
             stats.duration_ms
         );
 
@@ -85,7 +96,7 @@ impl Indexer {
     }
 
     /// Collect all relevant files in a directory using .gitignore/.ignore aware traversal.
-    fn collect_files(&self, root: &Path) -> Result<Vec<PathBuf>> {
+    fn collect_files(root: &Path) -> Result<Vec<PathBuf>> {
         let excludes = build_excludes(&[
             "**/target/**",
             "**/.git/**",
@@ -343,9 +354,7 @@ mod tests {
         std::fs::create_dir(dir.path().join("target")).expect("target");
         std::fs::write(dir.path().join("target").join("skip.rs"), "fn skip() {}\n").expect("skip");
 
-        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
-        let indexer = Indexer::new(db);
-        let files = indexer.collect_files(dir.path()).expect("collect");
+        let files = Indexer::collect_files(dir.path()).expect("collect");
 
         assert_eq!(files.len(), 1);
         assert!(files[0].ends_with("main.rs"));
