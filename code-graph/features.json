@@ -16,8 +16,10 @@
       {"pr": 464, "title": "Refactor Indexer I/O to spawn_blocking", "state": "DRAFT", "conflicts": true, "branch": "fix-indexer-blocking-io-v2-13303491742489367769"}
     ],
     "open_issues": [
-      {"issue": 446, "title": "[code-graph][P3] Usar spawn_blocking para I/O de archivos en Indexer — 0% actual", "state": "OPEN"},
-      {"issue": 166, "title": "feat-governance-dao: Bicameral DAO on-chain integration", "state": "OPEN"}
+      {"issue": 465, "title": "CI/CD Pipeline: GitHub Actions workflow", "state": "OPEN", "label": "jules"},
+      {"issue": 466, "title": "File Watcher: Replace AutoSyncWatcher with notify-debouncer-mini", "state": "OPEN", "label": "jules"},
+      {"issue": 467, "title": "Async I/O: Batch spawn_blocking for Indexer file operations", "state": "OPEN", "label": "jules"},
+      {"issue": 468, "title": "Call Resolution: 6-strategy cascade replacing contains_call heuristic", "state": "OPEN", "label": "jules"}
     ],
     "audit_findings_unresolved": [
       {"severity": "HIGH (sec)", "finding": "Token por defecto 'default-token-change-me' en sidecar", "location": "code-graph/main.rs:310-313"},

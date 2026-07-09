@@ -12,10 +12,10 @@ De 21 features de code-graph, **17 están al 100%**. Quedan **4 features** con t
 
 | Feature | % | Esfuerzo | Impacto | PR/Issue |
 |---------|---|----------|---------|----------|
-| **cg-ci-cd** | 0% | 🟢 ~30 min | 🔴 Crítico | — |
-| **cg-watcher** | 15% | 🟡 ~2-3h | 🟡 Alto | — |
-| **cg-spawn-blocking** | 0% | 🟢 ~30 min | 🟡 Medio | #464 (DRAFT) + #446 tracking |
-| **cg-documentation** | 40% | 🟢 ~1h | 🟡 Medio | — |
+| **cg-ci-cd** | 0% | 🟢 ~30 min | 🔴 Crítico | #465 (jules) |
+| **cg-watcher** | 15% | 🟡 ~2-3h | 🟡 Alto | #466 (jules) |
+| **cg-spawn-blocking** | 0% | 🟢 ~30 min | 🟡 Medio | #467 (jules) — reemplaza #446/#464 |
+| **cg-edge-detection** | 100%* | 🟡 ~3h | 🟡 Medio | #468 (jules) — mejora a 6-strategy cascade |
 
 ### ⚠️ PRs Abiertos (NO Mergeados)
 
