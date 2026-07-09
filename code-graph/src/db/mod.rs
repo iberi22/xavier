@@ -230,6 +230,50 @@ impl CodeGraphDB {
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_symbols_stable_id ON symbols(stable_id);",
             )
             .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            conn.execute_batch(
+                r#"
+                CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
+                    name, kind, signature, file_path,
+                    content='symbols',
+                    content_rowid='id'
+                );
+
+                CREATE TRIGGER IF NOT EXISTS symbols_ai AFTER INSERT ON symbols BEGIN
+                    INSERT INTO symbols_fts(rowid, name, kind, signature, file_path)
+                    VALUES (new.id, new.name, new.kind, new.signature, new.file_path);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS symbols_ad AFTER DELETE ON symbols BEGIN
+                    INSERT INTO symbols_fts(symbols_fts, rowid, name, kind, signature, file_path)
+                    VALUES ('delete', old.id, old.name, old.kind, old.signature, old.file_path);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS symbols_au AFTER UPDATE ON symbols BEGIN
+                    INSERT INTO symbols_fts(symbols_fts, rowid, name, kind, signature, file_path)
+                    VALUES ('delete', old.id, old.name, old.kind, old.signature, old.file_path);
+                    INSERT INTO symbols_fts(rowid, name, kind, signature, file_path)
+                    VALUES (new.id, new.name, new.kind, new.signature, new.file_path);
+                END;
+                "#,
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            // Populate FTS if empty but symbols has data
+            let symbols_count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))
+                .unwrap_or(0);
+            let fts_count: i64 = conn
+                .query_row("SELECT COUNT(*) FROM symbols_fts", [], |r| r.get(0))
+                .unwrap_or(0);
+
+            if symbols_count > 0 && fts_count == 0 {
+                conn.execute_batch(
+                    "INSERT INTO symbols_fts(rowid, name, kind, signature, file_path)
+                     SELECT id, name, kind, signature, file_path FROM symbols;",
+                )
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+            }
         }
 
         info!("Database schema initialized");
@@ -368,41 +412,6 @@ impl CodeGraphDB {
         Ok(())
     }
 
-    /// Calculate search score for ranking results
-    /// exact = 10, prefix = 5, fuzzy = 1, bonus for public/exports
-    fn calculate_score(symbol_name: &str, query: &str) -> i32 {
-        let name_lower = symbol_name.to_lowercase();
-        let query_lower = query.to_lowercase();
-
-        // Exact match (case insensitive)
-        if name_lower == query_lower {
-            return 10;
-        }
-
-        // Prefix match
-        if name_lower.starts_with(&query_lower) {
-            return 5;
-        }
-
-        // Contains match
-        if name_lower.contains(&query_lower) {
-            return 1;
-        }
-
-        // Fuzzy - check if all chars exist in order
-        let mut query_chars = query_lower.chars().peekable();
-        for c in name_lower.chars() {
-            if query_chars.peek() == Some(&c) {
-                query_chars.next();
-            }
-        }
-        if query_chars.peek().is_none() {
-            return 1;
-        }
-
-        0
-    }
-
     /// Find symbols by name with hybrid ranking
     pub fn find_symbols(&self, query: &str, limit: usize) -> Result<QueryResult> {
         let start = std::time::Instant::now();
@@ -411,56 +420,124 @@ impl CodeGraphDB {
             .lock()
             .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
 
-        let mut stmt = conn
-            .prepare(
-                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
-                   FROM symbols
-                   WHERE name LIKE ?1"#,
-            )
-            .map_err(|e| GraphError::Database(e.to_string()))?;
+        let (symbols, total) = if query.is_empty() {
+            let mut stmt = conn
+                .prepare(
+                    r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
+                       FROM symbols
+                       LIMIT ?1"#,
+                )
+                .map_err(|e| GraphError::Database(e.to_string()))?;
 
-        let pattern = format!("%{}%", query);
-        let mut symbols: Vec<Symbol> = stmt
-            .query_map(params![pattern], |row| {
-                Ok(Symbol {
-                    id: Some(row.get(0)?),
-                    stable_id: Some(row.get(1)?),
-                    name: row.get(2)?,
-                    kind: parse_symbol_kind(&row.get::<_, String>(3)?),
-                    lang: parse_language(&row.get::<_, String>(4)?),
-                    file_path: row.get(5)?,
-                    start_line: row.get(6)?,
-                    end_line: row.get(7)?,
-                    start_col: row.get(8)?,
-                    end_col: row.get(9)?,
-                    signature: row.get(10)?,
-                    parent: row.get(11)?,
-                    complexity: row.get(12)?,
+            let symbols: Vec<Symbol> = stmt
+                .query_map(params![limit as isize], |row| {
+                    Ok(Symbol {
+                        id: Some(row.get(0)?),
+                        stable_id: Some(row.get(1)?),
+                        name: row.get(2)?,
+                        kind: parse_symbol_kind(&row.get::<_, String>(3)?),
+                        lang: parse_language(&row.get::<_, String>(4)?),
+                        file_path: row.get(5)?,
+                        start_line: row.get(6)?,
+                        end_line: row.get(7)?,
+                        start_col: row.get(8)?,
+                        end_col: row.get(9)?,
+                        signature: row.get(10)?,
+                        parent: row.get(11)?,
+                        complexity: row.get(12)?,
+                    })
                 })
-            })
-            .map_err(|e| GraphError::Database(e.to_string()))?
-            .filter_map(|r| r.ok())
-            .collect();
+                .map_err(|e| GraphError::Database(e.to_string()))?
+                .filter_map(|r| r.ok())
+                .collect();
+            let count = symbols.len();
+            (symbols, count)
+        } else {
+            // FTS5 MATCH query.
+            // We escape the query and add a wildcard to each term for better UX.
+            let fts_query = query
+                .split_whitespace()
+                .map(|word| {
+                    let escaped = word.replace('\'', "''").replace('"', "\"\"");
+                    format!("\"{}\"*", escaped)
+                })
+                .collect::<Vec<_>>()
+                .join(" ");
 
-        // Apply scoring and ranking without mutating semantic fields.
-        if !query.is_empty() {
-            symbols.sort_by(|a, b| {
-                let score_for = |symbol: &Symbol| {
-                    let score = Self::calculate_score(&symbol.name, query);
-                    let bonus = match symbol.kind {
-                        SymbolKind::Function | SymbolKind::Struct => 1,
-                        _ => 0,
-                    };
-                    score + bonus
-                };
-                score_for(b).cmp(&score_for(a))
-            });
-        }
+            let mut stmt = conn
+                .prepare(
+                    r#"SELECT s.id, s.stable_id, s.name, s.kind, s.lang, s.file_path, s.start_line, s.end_line, s.start_col, s.end_col, s.signature, s.parent, s.complexity
+                       FROM symbols s
+                       JOIN symbols_fts f ON s.id = f.rowid
+                       WHERE symbols_fts MATCH ?1
+                       ORDER BY rank
+                       LIMIT ?2"#,
+                )
+                .map_err(|e| GraphError::Database(e.to_string()))?;
 
-        // Apply limit
-        symbols.truncate(limit);
+            let symbols: Vec<Symbol> = stmt
+                .query_map(params![fts_query, limit as isize], |row| {
+                    Ok(Symbol {
+                        id: Some(row.get(0)?),
+                        stable_id: Some(row.get(1)?),
+                        name: row.get(2)?,
+                        kind: parse_symbol_kind(&row.get::<_, String>(3)?),
+                        lang: parse_language(&row.get::<_, String>(4)?),
+                        file_path: row.get(5)?,
+                        start_line: row.get(6)?,
+                        end_line: row.get(7)?,
+                        start_col: row.get(8)?,
+                        end_col: row.get(9)?,
+                        signature: row.get(10)?,
+                        parent: row.get(11)?,
+                        complexity: row.get(12)?,
+                    })
+                })
+                .map_err(|e| GraphError::Database(e.to_string()))?
+                .filter_map(|r| r.ok())
+                .collect();
 
-        let total = symbols.len();
+            // Fallback to LIKE if FTS5 yields no results for simple queries
+            if symbols.is_empty() && query.len() > 2 {
+                let mut stmt = conn
+                    .prepare(
+                        r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
+                           FROM symbols
+                           WHERE name LIKE ?1 OR signature LIKE ?1 OR file_path LIKE ?1
+                           LIMIT ?2"#,
+                    )
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+
+                let pattern = format!("%{}%", query);
+                let fallback_symbols: Vec<Symbol> = stmt
+                    .query_map(params![pattern, limit as isize], |row| {
+                        Ok(Symbol {
+                            id: Some(row.get(0)?),
+                            stable_id: Some(row.get(1)?),
+                            name: row.get(2)?,
+                            kind: parse_symbol_kind(&row.get::<_, String>(3)?),
+                            lang: parse_language(&row.get::<_, String>(4)?),
+                            file_path: row.get(5)?,
+                            start_line: row.get(6)?,
+                            end_line: row.get(7)?,
+                            start_col: row.get(8)?,
+                            end_col: row.get(9)?,
+                            signature: row.get(10)?,
+                            parent: row.get(11)?,
+                            complexity: row.get(12)?,
+                        })
+                    })
+                    .map_err(|e| GraphError::Database(e.to_string()))?
+                    .filter_map(|r| r.ok())
+                    .collect();
+                let count = fallback_symbols.len();
+                (fallback_symbols, count)
+            } else {
+                let count = symbols.len();
+                (symbols, count)
+            }
+        };
+
         let query_time_ms = start.elapsed().as_millis() as u64;
 
         Ok(QueryResult {
@@ -947,6 +1024,20 @@ impl CodeGraphDB {
         .map_err(|e| GraphError::Database(e.to_string()))?;
 
         info!("Database cleared");
+        Ok(())
+    }
+
+    /// Optimize the FTS5 index
+    pub fn optimize_index(&self) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        conn.execute("INSERT INTO symbols_fts(symbols_fts) VALUES('optimize');", [])
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        info!("FTS5 index optimized");
         Ok(())
     }
 }

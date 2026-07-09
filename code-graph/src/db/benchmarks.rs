@@ -6,12 +6,12 @@ mod benchmarks_inner {
     use crate::types::{Language, Symbol, SymbolKind};
     use std::time::Instant;
 
-    fn setup_large_db() -> CodeGraphDB {
+    fn setup_large_db(count: usize) -> CodeGraphDB {
         let db = CodeGraphDB::in_memory().expect("benchmark assertion");
 
-        // Insert 1000 symbols for benchmarking
-        for i in 0..1000 {
-            let sym = Symbol {
+        let mut symbols = Vec::with_capacity(count);
+        for i in 0..count {
+            symbols.push(Symbol {
                 id: None,
                 stable_id: None,
                 name: format!("function_{}", i),
@@ -25,16 +25,16 @@ mod benchmarks_inner {
                 signature: Some(format!("fn function_{}() -> Result<()>", i)),
                 parent: None,
                 complexity: None,
-            };
-            db.insert_symbol(&sym).expect("benchmark assertion");
+            });
         }
+        db.insert_symbols(&symbols).expect("benchmark assertion");
 
         db
     }
 
     #[test]
     fn benchmark_search_exact() {
-        let db = setup_large_db();
+        let db = setup_large_db(1000);
 
         let start = Instant::now();
         for _ in 0..100 {
@@ -43,13 +43,13 @@ mod benchmarks_inner {
         }
         let elapsed = start.elapsed();
 
-        println!("Exact search (100 queries): {:?}", elapsed);
+        println!("Exact search (1000 symbols, 100 queries): {:?}", elapsed);
         assert!(elapsed.as_millis() < 1000);
     }
 
     #[test]
     fn benchmark_search_fuzzy() {
-        let db = setup_large_db();
+        let db = setup_large_db(1000);
 
         let start = Instant::now();
         for _ in 0..100 {
@@ -58,8 +58,24 @@ mod benchmarks_inner {
         }
         let elapsed = start.elapsed();
 
-        println!("Fuzzy search (100 queries): {:?}", elapsed);
+        println!("Fuzzy search (1000 symbols, 100 queries): {:?}", elapsed);
         assert!(elapsed.as_millis() < 2000);
+    }
+
+    #[test]
+    fn benchmark_search_large_scale() {
+        // Benchmark with 50,000 symbols to match requirements
+        let db = setup_large_db(50_000);
+
+        let start = Instant::now();
+        for i in 0..100 {
+            let query = format!("function_{}", i * 500);
+            db.find_symbols(&query, 10)
+                .expect("benchmark assertion");
+        }
+        let elapsed = start.elapsed();
+
+        println!("Large scale search (50,000 symbols, 100 queries): {:?}", elapsed);
     }
 
     #[test]
@@ -93,7 +109,7 @@ mod benchmarks_inner {
 
     #[test]
     fn benchmark_find_by_kind() {
-        let db = setup_large_db();
+        let db = setup_large_db(1000);
 
         let start = Instant::now();
         for _ in 0..100 {
