@@ -68,8 +68,7 @@ pub async fn handle_codegraph_explore(
         }
     }
 
-    let stale_files = indexer.get_stale_files(root_path)?;
-    let builder = ContextBuilder::new(max_chars, stale_files);
+    let builder = ContextBuilder::new(max_chars);
     let context = builder.build_surgical_context(resolved_symbols, impact_analyses);
 
     Ok(json!({

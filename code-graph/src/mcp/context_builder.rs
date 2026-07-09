@@ -10,10 +10,10 @@ pub struct ContextBuilder {
 }
 
 impl ContextBuilder {
-    pub fn new(max_chars: usize, stale_files: Vec<String>) -> Self {
+    pub fn new(max_chars: usize) -> Self {
         Self {
             max_chars,
-            stale_files,
+            stale_files: Vec::new(),
         }
     }
 
