@@ -291,9 +291,9 @@ impl ServiceLogStore {
             conn.execute(
                 "INSERT INTO service_logs (id, timestamp, level, source, module, correlation_id, message, metadata, resolved, resolution)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                params,
+                params.clone(),
             )?;
-            Ok(id)
+            Ok(id.clone())
         }).await
     }
 

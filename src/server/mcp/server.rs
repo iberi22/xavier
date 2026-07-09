@@ -11,6 +11,7 @@ pub fn get_xavier_tools() -> Vec<MCPTool> {
     let mut tools = super::tools_core::get_xavier_core_tools();
     tools.extend(super::tools_memory::get_xavier_memory_tools());
     tools.extend(super::tools_context::get_xavier_context_tools());
+    tools.extend(super::tools_code_graph::get_code_graph_tools());
     tools
 }
 
@@ -60,6 +61,8 @@ pub async fn handle_tool_call(
         super::tools_core::handle_core_tool(state, workspace, name, arguments).await
     } else if name.starts_with("xavier_context") || name == "xavier_token_savings" {
         super::tools_context::handle_context_tool(state, workspace, name, arguments).await
+    } else if super::tools_code_graph::is_code_graph_tool(name) {
+        super::tools_code_graph::handle_code_graph_tool(state, workspace, name, arguments).await
     } else {
         super::tools_memory::handle_memory_tool(state, workspace, name, arguments).await
     }

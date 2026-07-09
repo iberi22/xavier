@@ -417,7 +417,7 @@ impl MemoryStore for SqliteMemoryStore {
                 TABLE_MEMORIES
             ))?;
 
-            let mut rows = stmt.query([workspace_id])?;
+            let mut rows = stmt.query([workspace_id.clone()])?;
             let mut records = Vec::new();
             while let Some(row) = rows.next()? {
                 if let Ok(record) = Self::deserialize_record(row) {
@@ -664,13 +664,13 @@ impl MemoryStore for SqliteMemoryStore {
                     TABLE_CHECKPOINTS
                 ))?;
 
-                match stmt.query_row(params![workspace_id, task_id, name], |row| {
+                match stmt.query_row(params![workspace_id.clone(), task_id.clone(), name.clone()], |row| {
                     let data_str: String = row.get(0)?;
                     Ok(serde_json::from_str(&data_str).unwrap_or_default())
                 }) {
                     Ok(data) => Ok(Some(Checkpoint {
-                        task_id,
-                        name,
+                        task_id: task_id.clone(),
+                        name: name.clone(),
                         data,
                     })),
                     Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),

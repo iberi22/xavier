@@ -107,20 +107,23 @@
             "category": "integration",
             "status": "stable",
             "progress_pct": 100,
-            "description": "AST-backed code indexing and symbol search through the `code-graph` sidecar crate",
+            "description": "AST-backed code indexing and symbol search through the `code-graph` sidecar crate, with structural-intelligence MCP tools (codegraph_explore, trace_path, get_architecture, detect_changes) backed by the live SQLite+FTS5 engine.",
             "steps": [
                 "Initialize SQLite index for code symbols",
                 "Implement AST parsing with tree-sitter",
                 "Expose /code/scan, /code/find, and /code/stats endpoints",
                 "Persist index path via XAVIER_CODE_GRAPH_DB_PATH",
-                "Support multiple programming languages"
+                "Support multiple programming languages",
+                "Wire MCP structural tools to the live engine (not mocks)",
+                "FTS5 MATCH + bm25 ranking in find_symbols",
+                "Sidecar hardening: token required off-loopback, configurable CORS, constant-time auth"
             ],
             "passes": true,
             "verified_by": "automated",
             "github_issue": 97,
-            "last_tested": "2026-06-16",
-            "notes": "Code-graph sidecar complete. HTTP handlers and multi-language AST parsing (Rust, Python, Go, C/C++, TS, Java) integrated.",
-            "implemented_in": "code-graph/, src/codebase/"
+            "last_tested": "2026-07-08",
+            "notes": "Code-graph sidecar complete. MCP handlers wired to real engine (PR #441 + follow-up): codegraph_explore/trace_path/get_architecture/detect_changes now query the live SQLite+FTS5 index instead of returning mocks. find_symbols uses FTS5 MATCH+bm25. Sidecar hardened (token/CORS/constant-time). Multi-language AST parsing (Rust, Python, Go, C/C++, TS, Java) integrated.",
+            "implemented_in": "code-graph/, src/codebase/, src/server/mcp/tools_code_graph.rs"
         },
         {
             "id": "feat-session-management",

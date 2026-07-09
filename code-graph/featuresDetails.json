@@ -1,0 +1,370 @@
+{
+  "_comment": "Code-graph feature details — lógica interna, flujo de datos, y arquitectura de cada feature.",
+  "generated": "2026-07-08",
+  "features": {
+    "cg-parser-infra": {
+      "name": "Parser Infrastructure (tree-sitter)",
+      "logic_flow": [
+        "parse_source() recibe source: &str, lang: &Language, file_path: &str",
+        "Match por Language enum: Rust → RustParser, TypeScript/JavaScript → TypeScriptParser, Python → PythonParser, Go → GoParser, Java → JavaParser, C → CParser, Cpp → CppParser",
+        "Cada parser implementa new() → set_language() → parse(source, file_path) → Vec<Symbol>",
+        "parse() interno: parser.parse(source_bytes) → Tree → extract_symbols(tree, source, file_path) recursivo",
+        "Tree-sitter LANGUAGE consts: tree_sitter_rust::LANGUAGE.into(), tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(), etc.",
+        "compact_node_signature(): extrae signature truncando body (reemplaza { ... }), limita a 400 chars en boundary Unicode",
+        "cyclomatic_complexity(): cuenta if/while/for/loop/match/switch/case/catch + operadores booleanos (&&/||/and/or), base 1.0"
+      ],
+      "key_types": ["Language (enum)", "Symbol", "SymbolKind", "RustParser", "TypeScriptParser", "PythonParser", "GoParser", "JavaParser", "CParser", "CppParser"],
+      "error_handling": "GraphError::TreeSitter, GraphError::Parser — cada parser captura errores de set_language y parse",
+      "tests": 7,
+      "coverage": "100% — todos los lenguajes tienen al menos 1 test de integración"
+    },
+    "cg-parser-rust": {
+      "name": "Rust Parser",
+      "logic_flow": [
+        "Parser tree-sitter para Rust con LANGUAGE = tree_sitter_rust::LANGUAGE",
+        "extract_symbols_from_node() recursivo con pattern matching en kind de tree-sitter:",
+        "  function_item | function_declaration → SymbolKind::Function o Method (si parent existe)",
+        "  struct_item → SymbolKind::Struct",
+        "  enum_item → SymbolKind::Enum",
+        "  trait_item → SymbolKind::Trait",
+        "  impl_item → SymbolKind::Impl, nombre extraído de child 'type' (impl Trait for Struct → Struct, impl Struct → Struct)",
+        "  const_item | static_item → SymbolKind::Constant",
+        "  let_declaration → SymbolKind::Variable (soporta tuple_pattern, struct_pattern, slice_pattern)",
+        "  mod_item → SymbolKind::Module",
+        "impl_item navega recursivamente en children declaration_list para extraer métodos con parent = impl_name",
+        "push_symbol(): extrae posición (start/end row+1, column), complexity (solo para Function/Method), signature via compact_node_signature()"
+      ],
+      "key_types": ["RustParser", "Node<'src> (tree-sitter)", "Tree"],
+      "tests": 3,
+      "coverage": "Cubre funciones async/pub, structs, enums, impl blocks con métodos, let con pattern destructuring, compact signatures, Unicode truncation"
+    },
+    "cg-parser-typescript": {
+      "name": "TypeScript/JavaScript Parser",
+      "logic_flow": [
+        "tree-sitter-typescript con LANGUAGE_TYPESCRIPT o LANGUAGE_TSX según extensión",
+        "extract_symbols_from_node() recursivo:",
+        "  lexical_declaration (const/let) → Constant o Variable child según pattern sea identifier o no",
+        "  function_declaration → Function",
+        "  class_declaration → Class",
+        "  import_statement → Import",
+        "  enum_declaration → Enum",
+        "  method_definition → Method (con parent tracking)",
+        "  arrow_function → Function (solo toplevel, detecta si es variable assignment vs declaration)",
+        "Misma firma push_symbol() que RustParser: posición, complexity (Function/Method), compact signature"
+      ],
+      "key_types": ["TypeScriptParser", "Language (enum para TS/JS routeo)"],
+      "tests": 1,
+      "coverage": "Import, Class, Function, Enum, Const, Variable, Arrow function"
+    },
+    "cg-parser-python": {
+      "name": "Python Parser",
+      "logic_flow": [
+        "tree-sitter-python con LANGUAGE_PYTHON",
+        "Extract symbols from AST:",
+        "  import_statement | import_from_statement → Import",
+        "  class_definition → Class, recorre body recursivamente para methods con parent=className",
+        "  function_definition → Function (toplevel) o Method (dentro de class). Async functions detectadas por parent",
+        "  assignment → Variable (incluye tuple destructuring como x, y = (1,2))",
+        "Misma lógica push_symbol(): position, signature compacta, complexity (Function/Method)"
+      ],
+      "key_types": ["PythonParser"],
+      "tests": 1,
+      "coverage": "Import, Class, Method (async def), Variable, tuple destructuring, parent tracking"
+    },
+    "cg-parser-go": {
+      "name": "Go Parser",
+      "logic_flow": [
+        "tree-sitter-go con LANGUAGE_GO",
+        "Extracción de símbolos:",
+        "  import_declaration → iteración de import_spec_list → Import por cada path",
+        "  type_declaration → type_spec con struct_type → Struct",
+        "  method_declaration → Method con receiver type como parent",
+        "  function_declaration → Function",
+        "  const_declaration → const_spec → Constant",
+        "  var_declaration → var_spec → Variable"
+      ],
+      "key_types": ["GoParser"],
+      "tests": 1,
+      "coverage": "Import, Struct, Method (con receiver parent), Function, Constant, Variable"
+    },
+    "cg-parser-java": {
+      "name": "Java Parser",
+      "logic_flow": [
+        "tree-sitter-java con LANGUAGE_JAVA",
+        "Extracción:",
+        "  import_declaration → Import",
+        "  class_declaration → Class (navega class_body para methods)",
+        "  method_declaration → Method (con parent = className si está dentro de class_body)"
+      ],
+      "key_types": ["JavaParser"],
+      "tests": 1,
+      "coverage": "Import, Class, Method, parent tracking"
+    },
+    "cg-parser-c": {
+      "name": "C Parser",
+      "logic_flow": [
+        "tree-sitter-c con LANGUAGE_C",
+        "Extracción:",
+        "  preproc_include → Import (string_literal o system_lib_string como nombre)",
+        "  preproc_def → Constant",
+        "  struct_or_union_specifier (struct) → Struct",
+        "  function_definition → Function"
+      ],
+      "key_types": ["CParser"],
+      "tests": 1,
+      "coverage": "Function, Struct, Constant (#define), Import (#include)"
+    },
+    "cg-parser-cpp": {
+      "name": "C++ Parser",
+      "logic_flow": [
+        "tree-sitter-cpp con LANGUAGE_CPP",
+        "Extracción:",
+        "  preproc_include → Import",
+        "  namespace_definition → Module",
+        "  class_specifier → Class (navega body para methods con parent)",
+        "  function_definition → Function",
+        "  method_declaration → Method (parent=className)"
+      ],
+      "key_types": ["CppParser"],
+      "tests": 1,
+      "coverage": "Function, Class, Method (parent tracking), Module (namespace), Import"
+    },
+    "cg-fts5-search": {
+      "name": "FTS5 Full-Text Search with BM25",
+      "logic_flow": [
+        "Schema: CREATE VIRTUAL TABLE search_code USING fts5(name, file_path, signature, content='symbols', content_rowid='id')",
+        "Triggers: symbols_ai (AFTER INSERT → insert into fts5), symbols_ad (AFTER DELETE → delete), symbols_au (AFTER UPDATE → delete+insert)",
+        "find_symbols(query, limit):",
+        "  Si query vacía → fallback LIKE '%' scan (FTS5 no acepta empty string)",
+        "  Si no → FTS5 MATCH con phrasify (escapa comillas, envuelve en comillas dobles para multi-word)",
+        "  BM25 ranking con pesos: name=10.0, file_path=1.0, signature=2.0",
+        "  FTS5 no garantiza 'exact match first' → re-sort con calculate_score() overlay",
+        "  calculate_score(): exact=10, prefix=5, contains=1, fuzzy=1, 0 si no match",
+        "  Bonus: Function/Struct kind → +1",
+        "  truncate(limit), arma QueryResult { symbols, total, query_time_ms }",
+        "Fallback: si FTS5 table no existe (legacy DB) → LIKE '%query%' scan"
+      ],
+      "key_types": ["fts5 virtual table", "QueryResult", "Symbol"],
+      "db_tables": ["search_code (fts5)", "symbols (base)"],
+      "tests": 7,
+      "coverage": "Exact match, fuzzy, case-insensitive, empty query, no results, limit, FTS5 signature column match"
+    },
+    "cg-edge-detection": {
+      "name": "Edge Detection & Call Graph",
+      "logic_flow": [
+        "build_edges(symbols, sources) → Vec<CodeEdge>",
+        "EdgeTypes: Calls, Defines, Uses, Imports, Exports, Contains, References, Extends, Implements, TypeOf, Returns, Instantiates, Overrides, Decorates",
+        "Por cada symbol:",
+        "  file:symbol_file → {Contains, Defines} → symbol_id (confidence=1.0)",
+        "  Si es Import → file → module:name con Imports (confidence=0.8)",
+        "Call graph heurístico:",
+        "  1. Filtra callable_symbols: Function | Method",
+        "  2. Por cada caller, extrae symbol_source_slice() (líneas del body)",
+        "  3. contains_call(body, callee_name):",
+        "     a. Detecta .methodName( → method call pattern → true",
+        "     b. Detecta name( con word boundary check (prev char no es alphanumeric/underscore)",
+        "     c. Previene falsos: init ≠ initialize(, run ≠ // we run(, excluye method calls del path directo",
+        "  4. Si match → Calls (confianza 0.65) + References (confianza 0.55) con metadata JSON {callee: name}"
+      ],
+      "key_types": ["CodeEdge", "EdgeType (14 variants)", "Symbol", "CodeGraphDB"],
+      "limitations": "Heurístico — no usa tree-sitter para call expressions. Puede tener falsos positivos en strings/comentarios y falsos negativos en calls indirectos.",
+      "tests": 1,
+      "coverage": "Indexing de Rust+Python con edge detection + hub_nodes verificados"
+    },
+    "cg-query-engine": {
+      "name": "Query Engine with Caching",
+      "logic_flow": [
+        "QueryEngine struct: { db: Arc<CodeGraphDB>, cache: Option<Arc<QueryCache>> }",
+        "search(query, limit): cache lookup → db.find_symbols → cache store",
+        "QueryCache: { cache: RwLock<HashMap<String, (Instant, QueryResult)>>, ttl, max_entries }",
+        "  get(): verifica TTL, retorna None si expirado",
+        "  set(): evicta si max_entries alcanzado, primero por TTL, luego oldest",
+        "  clear(), stats(): valid/total count",
+        "Métodos de consulta:",
+        "  functions/structs/classes/enums → find_by_kind()",
+        "  by_language(lang) → find_by_lang()",
+        "  in_file(path) → find_by_file()",
+        "  search_by_pattern(pattern): mapea strings tipo 'function_definition' → SymbolKind → find_by_kind",
+        "  dependencies/reverse_dependencies/call_chain → traverse() BFS con max_depth 8, max_edges 1000",
+        "    traverse(): queue con (node, depth), seen_nodes/seen_edges HashSet, evita file:/module: nodes para expansión",
+        "    resolve_symbol_id(): detecta si es SHA-256 hex (64 chars) o busca por nombre, retorna stable_id",
+        "  hubs(min_degree): SQL COUNT aggregation en edges, incoming+outgoing, LIMIT",
+        "  hotspots(min_complexity): risk = complexity × (incoming + 1), ORDER BY risk DESC, LIMIT"
+      ],
+      "key_types": ["QueryEngine", "QueryCache", "HubNode", "ComplexityHotspot"],
+      "tests": 5,
+      "coverage": "Edge traversal (forward+reverse), find_by_kind, limit, query metadata, by_language"
+    },
+    "cg-path-tracing": {
+      "name": "Cypher-like Path Tracing",
+      "logic_flow": [
+        "trace_path(start_symbol, max_depth, reverse) en CodeGraphDB",
+        "SQL Recursive CTE sobre edges:",
+        "  Anchor: SELECT target_column FROM edges WHERE source_column = ?",
+        "  Recursive: SELECT e.target FROM edges e JOIN path_cte p ON e.source = p.current_symbol WHERE depth < max_depth",
+        "  reverse=false: from_symbol→to_symbol (callees — 'quién llama a quién')",
+        "  reverse=true: to_symbol→from_symbol (callers — 'quién es llamado por')",
+        "Retorna Vec<TraversalPath> con target_symbol, depth, path_str (concatenación ' -> ')"
+      ],
+      "key_types": ["TraversalPath", "CodeGraphDB"],
+      "db_dependency": "edges table",
+      "tests": 0,
+      "coverage": "No hay test directo para trace_path — solo indirecto vía test_graph_queries_follow_edges"
+    },
+    "cg-hubs-hotspots": {
+      "name": "Hub Nodes & Complexity Hotspots",
+      "logic_flow": [
+        "hub_nodes(min_degree, limit):",
+        "  SQL: SELECT s.stable_id, COALESCE(incoming.count, 0), COALESCE(outgoing.count, 0)",
+        "  FROM symbols s LEFT JOIN (SELECT to_symbol, COUNT(*) FROM edges) incoming LEFT JOIN (SELECT from_symbol, COUNT(*) FROM edges) outgoing",
+        "  WHERE incoming+outgoing >= min_degree ORDER BY total DESC LIMIT limit",
+        "  → Vec<HubNode> { symbol, incoming, outgoing, total }",
+        "complexity_hotspots(min_complexity, limit):",
+        "  SQL: risk = s.complexity × (incoming + 1)",
+        "  WHERE complexity >= min_complexity ORDER BY risk DESC, complexity DESC",
+        "  → Vec<ComplexityHotspot> { symbol, incoming, outgoing, risk_score }"
+      ],
+      "key_types": ["HubNode", "ComplexityHotspot"],
+      "tests": 0,
+      "coverage": "No tests directos — solo verificado por code audit"
+    },
+    "cg-incremental-indexing": {
+      "name": "Incremental Indexing Support",
+      "logic_flow": [
+        "clear_by_file(file_path): DELETE FROM edges/refs/imports/symbols WHERE file_path = ?",
+        "Estable_ids determinísticos via deterministic_id():",
+        "  SHA-256(project_id|file_path|name|kind|start_line) → 64-char hex",
+        "  ON CONFLICT(stable_id) DO UPDATE — upsert en insert_symbol",
+        "  normalize_symbol_for_insert(): genera deterministic_id si stable_id es None",
+        "  assign_stable_ids(): bulk assign durante indexación",
+        "Flujo incremental ideal:",
+        "  1. Watcher detecta cambio en archivo",
+        "  2. clear_by_file(file_path) — limpia solo ese archivo",
+        "  3. parse_file() — re-parsea solo ese archivo",
+        "  4. insert_symbols() + insert_edges() con upsert por stable_id",
+        "Actualmente: Indexer::index() hace clear() completo y reindexa TODO — no usa clear_by_file"
+      ],
+      "key_types": ["stable_symbol_id()", "CodeGraphDB"],
+      "tests": 2,
+      "coverage": "clear_by_file_removes_only_that_file, deterministic_symbol_ids_upsert_on_reindex"
+    },
+    "cg-watcher": {
+      "name": "File Watcher (AutoSync)",
+      "logic_flow": [
+        "AutoSyncWatcher: { indexer: Arc<Indexer>, root: PathBuf }",
+        "watch() → mpsc channel + RecommendedWatcher (notify crate)",
+        "Eventos capturados: Modify, Create, Remove",
+        "Por cada path → debug!(\"File changed, queuing incremental sync: {:?}\", path)",
+        "⚠️ NO implementa la re-indexación. Sólo logging.",
+        "Lo que falta: conectar eventos a clear_by_file() + parse_file() + insert_symbols()",
+        "Sugerencia: debounce de 500ms para evitar re-indexar durante writes parciales"
+      ],
+      "key_types": ["AutoSyncWatcher", "notify::RecommendedWatcher"],
+      "tests": 0,
+      "coverage": "0% — funcionalidad placeholder con TODO"
+    },
+    "cg-benchmarks": {
+      "name": "Performance Benchmarks",
+      "logic_flow": [
+        "setup_large_db(): inserta 1000 symbols (function_0 a function_999) en in-memory SQLite",
+        "benchmark_search_exact: 100 queries de 'function_500', assert < 1000ms total",
+        "benchmark_search_fuzzy: 100 queries de 'function_', assert < 2000ms total",
+        "benchmark_insert: 100 inserts individuales, assert < 500ms",
+        "benchmark_find_by_kind: 100 queries de find_by_kind(Function, 100), assert < 1000ms"
+      ],
+      "key_types": ["CodeGraphDB", "Symbol"],
+      "tests": 4,
+      "notes": "Benchmarks usan #[test] no #[bench] — son smoke tests de performance, no benchmarks precisos con criterion"
+    },
+    "cg-http-server": {
+      "name": "HTTP Server (Sidecar)",
+      "logic_flow": [
+        "CLI: clap Parser con flags: --token (CODE_GRAPH_TOKEN), --port (CODE_GRAPH_PORT, default 8080), --host (CODE_GRAPH_HOST, default 0.0.0.0), --db-path (CODE_GRAPH_DB_PATH)",
+        "Subcommands: Serve (default), Scan {path}, Find {query, limit}, Stats",
+        "Server mode:",
+        "  Token resolution: flag > env > default ('default-token-change-me')",
+        "  Si token = default:",
+        "    loopback host (localhost/127.0.0.1/::1) → warning",
+        "    non-loopback → generate_ephemeral_token() (xorshift128 PRNG con nanos+pid seed)",
+        "  CORS: CODE_GRAPH_ALLOWED_ORIGINS env, comma-separated, default localhost:*, * para permissive",
+        "  Router: /health (public GET), /code/scan (auth POST), /code/find (auth POST), /code/stats (auth GET)",
+        "  Auth middleware: constant_time_eq(header_token, server_token), evita timing leak",
+        "Path validation:",
+        "  Rechaza null bytes y control chars",
+        "  canonicalize() + starts_with(base_canonical) → previene path traversal",
+        "  Errores: BAD_REQUEST (validation) o INTERNAL_SERVER_ERROR (index/query fail)"
+      ],
+      "key_types": ["AppState", "ScanRequest/Response", "FindRequest/Response", "HealthResponse", "ErrorResponse"],
+      "tests": 0,
+      "coverage": "Sin tests HTTP — solo verificado por code audit"
+    },
+    "cg-debug-cli": {
+      "name": "Debug CLI (DOT export, verify, list)",
+      "logic_flow": [
+        "DebugCLI::new(db: CodeGraphDB)",
+        "list_files() → stats().languages → formatea 'Language: count'",
+        "list_symbols(kind: Option<String>) → kind filter (function/struct/class/enum/module default=function) → find_by_kind(1000) → 'file:line - name'",
+        "export_dot(output: &Path) → find_by_kind(Function, 10000) → 'digraph code_graph { \"name\" [label=\"name\"]; }' → write file",
+        "verify() → stats() y checa: total_symbols > 0, total_files > 0, retorna OK/error"
+      ],
+      "key_types": ["DebugCLI"],
+      "tests": 0,
+      "coverage": "Sin tests — CLI debug tool"
+    },
+    "cg-ci-cd": {
+      "name": "CI/CD Pipeline",
+      "logic_flow": [
+        "No existe pipeline CI/CD para code-graph como crate independiente",
+        "Xavier root CI: .github/workflows/ corre tests pero no separa code-graph",
+        "Necesario: workflow GitHub Actions que:",
+        "  1. cargo fmt --check (code-graph/)",
+        "  2. cargo clippy --all-targets -- -D warnings (code-graph/)",
+        "  3. cargo test (code-graph/)",
+        "  4. cargo build --release (code-graph/)",
+        "Trigger: push a main, PRs a main",
+        "Opcional: badge README.md con status"
+      ],
+      "key_types": [],
+      "tests": 0,
+      "coverage": "0% — sin implementar"
+    },
+    "cg-documentation": {
+      "name": "Code-graph Documentation",
+      "logic_flow": [
+        "README.md: solo package description y metadata",
+        "No existe: ARCHITECTURE.md, API.md, CONFIG.md, USAGE.md",
+        "rustdoc comments en lib.rs (pub mod, pub use), types.rs (struct docs), db/mod.rs (function docs)",
+        "Documentación faltante:",
+        "  - Cómo configurar CODE_GRAPH_TOKEN, CODE_GRAPH_PORT, CODE_GRAPH_HOST",
+        "  - Cómo usar el sidecar server (curl examples)",
+        "  - Cómo usar CLI mode (scan/find/stats)",
+        "  - Arquitectura del crate (parser → indexer → db → query)",
+        "  - Cómo agregar un nuevo parser",
+        "  - API endpoints con ejemplos request/response"
+      ],
+      "key_types": [],
+      "tests": 0,
+      "coverage": "~40% — rustdoc existe pero falta documentación humana"
+    },
+    "cg-spawn-blocking": {
+      "name": "Async I/O — spawn_blocking para Indexer",
+      "logic_flow": [
+        "Problema actual: Indexer::index() usa tokio::spawn para parse_file()",
+        "Dentro de parse_file():",
+        "  std::fs::read_to_string(file_path) — I/O blocking en thread async",
+        "  parse_source() — CPU-bound parsing en thread async",
+        "Solución: envolver en tokio::task::spawn_blocking():",
+        "  tokio::task::spawn_blocking(move || parse_file(root, &file_path)).await?",
+        "Impacto: libera el thread de Tokio para seguir manejando otras tareas async",
+        "Archivos afectados: solo code-graph/src/indexer/mod.rs",
+        "PR #464 (Jules): +20/-11 lines, DRAFT, tiene conflictos con la branch actual",
+        "Issue #446: tracking issue con criterios de aceptación detallados"
+      ],
+      "key_types": ["Indexer", "tokio::task::spawn_blocking", "JoinHandle"],
+      "tests": 0,
+      "coverage": "0% — sin implementar",
+      "pr": 464,
+      "issue": 446
+    }
+  }
+}

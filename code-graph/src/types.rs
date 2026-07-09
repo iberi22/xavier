@@ -63,6 +63,14 @@ pub enum SymbolKind {
     Export,
     Module,
     File,
+    // Advanced structural types
+    Route,
+    Component,
+    Property,
+    Field,
+    Parameter,
+    TypeAlias,
+    Namespace,
     Symbol, // Fallback
 }
 
@@ -73,8 +81,16 @@ pub enum EdgeType {
     Defines,
     Uses,
     Imports,
+    Exports,
     Contains,
     References,
+    Extends,
+    Implements,
+    TypeOf,
+    Returns,
+    Instantiates,
+    Overrides,
+    Decorates,
 }
 
 impl EdgeType {
@@ -84,8 +100,16 @@ impl EdgeType {
             EdgeType::Defines => "Defines",
             EdgeType::Uses => "Uses",
             EdgeType::Imports => "Imports",
+            EdgeType::Exports => "Exports",
             EdgeType::Contains => "Contains",
             EdgeType::References => "References",
+            EdgeType::Extends => "Extends",
+            EdgeType::Implements => "Implements",
+            EdgeType::TypeOf => "TypeOf",
+            EdgeType::Returns => "Returns",
+            EdgeType::Instantiates => "Instantiates",
+            EdgeType::Overrides => "Overrides",
+            EdgeType::Decorates => "Decorates",
         }
     }
 }

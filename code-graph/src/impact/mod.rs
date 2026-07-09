@@ -46,9 +46,11 @@ impl ImpactAnalyzer {
             }
 
             let edges = if reverse {
-                self.db.find_edges_to(&current_id, Some(EdgeType::Calls), 100)?
+                self.db
+                    .find_edges_to(&current_id, Some(EdgeType::Calls), 100)?
             } else {
-                self.db.find_edges_from(&current_id, Some(EdgeType::Calls), 100)?
+                self.db
+                    .find_edges_from(&current_id, Some(EdgeType::Calls), 100)?
             };
 
             for edge in edges {
