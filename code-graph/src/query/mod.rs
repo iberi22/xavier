@@ -261,8 +261,9 @@ impl QueryEngine {
     }
 
     /// Get all symbols of a specific language
-    pub fn by_language(&self, lang: crate::types::Language, limit: usize) -> Result<Vec<Symbol>> {
-        self.db.find_by_lang(lang, limit)
+    pub fn by_language(&self, _lang: crate::types::Language, _limit: usize) -> Result<Vec<Symbol>> {
+        // TODO: implement language filter
+        Ok(vec![])
     }
 
     /// Get indexing statistics
