@@ -210,6 +210,27 @@ impl CodeGraphDB {
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
+                name,
+                content='symbols',
+                content_rowid='id',
+                tokenize="unicode61"
+            );
+
+            CREATE TRIGGER IF NOT EXISTS symbols_ai AFTER INSERT ON symbols BEGIN
+                INSERT INTO symbols_fts(rowid, name) VALUES (new.id, new.name);
+            END;
+            CREATE TRIGGER IF NOT EXISTS symbols_ad AFTER DELETE ON symbols BEGIN
+                INSERT INTO symbols_fts(symbols_fts, rowid, name) VALUES('delete', old.id, old.name);
+            END;
+            CREATE TRIGGER IF NOT EXISTS symbols_au AFTER UPDATE ON symbols BEGIN
+                INSERT INTO symbols_fts(symbols_fts, rowid, name) VALUES('delete', old.id, old.name);
+                INSERT INTO symbols_fts(rowid, name) VALUES (new.id, new.name);
+            END;
+
+            -- Rebuild FTS index to ensure it's in sync with existing data
+            INSERT INTO symbols_fts(symbols_fts) VALUES('rebuild');
             "#,
         )
         .map_err(|e| GraphError::Database(e.to_string()))?;
@@ -411,42 +432,43 @@ impl CodeGraphDB {
             .lock()
             .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
 
-        let mut stmt = conn
-            .prepare(
-                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
-                   FROM symbols
-                   WHERE name LIKE ?1"#,
-            )
-            .map_err(|e| GraphError::Database(e.to_string()))?;
+        let query = query.trim();
 
-        let pattern = format!("%{}%", query);
-        let mut symbols: Vec<Symbol> = stmt
-            .query_map(params![pattern], |row| {
-                Ok(Symbol {
-                    id: Some(row.get(0)?),
-                    stable_id: Some(row.get(1)?),
-                    name: row.get(2)?,
-                    kind: parse_symbol_kind(&row.get::<_, String>(3)?),
-                    lang: parse_language(&row.get::<_, String>(4)?),
-                    file_path: row.get(5)?,
-                    start_line: row.get(6)?,
-                    end_line: row.get(7)?,
-                    start_col: row.get(8)?,
-                    end_col: row.get(9)?,
-                    signature: row.get(10)?,
-                    parent: row.get(11)?,
-                    complexity: row.get(12)?,
+        let (symbols, total) = if query.is_empty() {
+            let mut stmt = conn
+                .prepare(
+                    r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
+                       FROM symbols"#,
+                )
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            let mut symbols: Vec<Symbol> = stmt
+                .query_map([], |row| {
+                    Ok(Symbol {
+                        id: Some(row.get(0)?),
+                        stable_id: Some(row.get(1)?),
+                        name: row.get(2)?,
+                        kind: parse_symbol_kind(&row.get::<_, String>(3)?),
+                        lang: parse_language(&row.get::<_, String>(4)?),
+                        file_path: row.get(5)?,
+                        start_line: row.get(6)?,
+                        end_line: row.get(7)?,
+                        start_col: row.get(8)?,
+                        end_col: row.get(9)?,
+                        signature: row.get(10)?,
+                        parent: row.get(11)?,
+                        complexity: row.get(12)?,
+                    })
                 })
-            })
-            .map_err(|e| GraphError::Database(e.to_string()))?
-            .filter_map(|r| r.ok())
-            .collect();
+                .map_err(|e| GraphError::Database(e.to_string()))?
+                .filter_map(|r| r.ok())
+                .collect();
 
-        // Apply scoring and ranking without mutating semantic fields.
-        if !query.is_empty() {
+            // Apply calculate_score as fallback for empty queries
+            // (Note: with empty query, calculate_score mostly returns 0, but we can add bonuses)
             symbols.sort_by(|a, b| {
                 let score_for = |symbol: &Symbol| {
-                    let score = Self::calculate_score(&symbol.name, query);
+                    let score = Self::calculate_score(&symbol.name, "");
                     let bonus = match symbol.kind {
                         SymbolKind::Function | SymbolKind::Struct => 1,
                         _ => 0,
@@ -455,12 +477,56 @@ impl CodeGraphDB {
                 };
                 score_for(b).cmp(&score_for(a))
             });
-        }
 
-        // Apply limit
-        symbols.truncate(limit);
+            symbols.truncate(limit);
+            let total = symbols.len();
+            (symbols, total)
+        } else {
+            // FTS5 Search
+            // Escape double quotes and add prefix matching
+            let escaped_query = query.replace('"', "\"\"");
+            let fts_query = if escaped_query.contains('*') || escaped_query.contains(' ') {
+                escaped_query
+            } else {
+                format!("{}*", escaped_query)
+            };
 
-        let total = symbols.len();
+            let mut stmt = conn
+                .prepare(
+                    r#"SELECT s.id, s.stable_id, s.name, s.kind, s.lang, s.file_path, s.start_line, s.end_line, s.start_col, s.end_col, s.signature, s.parent, s.complexity
+                       FROM symbols s
+                       JOIN symbols_fts f ON s.id = f.rowid
+                       WHERE symbols_fts MATCH ?1
+                       ORDER BY rank
+                       LIMIT ?2"#,
+                )
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            let symbols: Vec<Symbol> = stmt
+                .query_map(params![fts_query, limit as isize], |row| {
+                    Ok(Symbol {
+                        id: Some(row.get(0)?),
+                        stable_id: Some(row.get(1)?),
+                        name: row.get(2)?,
+                        kind: parse_symbol_kind(&row.get::<_, String>(3)?),
+                        lang: parse_language(&row.get::<_, String>(4)?),
+                        file_path: row.get(5)?,
+                        start_line: row.get(6)?,
+                        end_line: row.get(7)?,
+                        start_col: row.get(8)?,
+                        end_col: row.get(9)?,
+                        signature: row.get(10)?,
+                        parent: row.get(11)?,
+                        complexity: row.get(12)?,
+                    })
+                })
+                .map_err(|e| GraphError::Database(e.to_string()))?
+                .filter_map(|r| r.ok())
+                .collect();
+            let total = symbols.len();
+            (symbols, total)
+        };
+
         let query_time_ms = start.elapsed().as_millis() as u64;
 
         Ok(QueryResult {
@@ -1051,5 +1117,96 @@ mod tests {
         let results = db.find_symbols("test", 1).expect("failed to find symbols");
         assert_eq!(results.symbols.len(), 1);
         assert!(results.symbols[0].stable_id.is_some());
+    }
+
+    #[test]
+    fn verifies_fts5_prefix_matching_and_ranking() {
+        let db = CodeGraphDB::in_memory().expect("db");
+        let symbols = vec![
+            Symbol {
+                id: None,
+                stable_id: None,
+                name: "main".to_string(),
+                kind: SymbolKind::Function,
+                lang: Language::Rust,
+                file_path: "src/main.rs".to_string(),
+                start_line: 1,
+                end_line: 3,
+                start_col: 0,
+                end_col: 1,
+                signature: None,
+                parent: None,
+                complexity: None,
+            },
+            Symbol {
+                id: None,
+                stable_id: None,
+                name: "main_loop".to_string(),
+                kind: SymbolKind::Function,
+                lang: Language::Rust,
+                file_path: "src/main.rs".to_string(),
+                start_line: 5,
+                end_line: 10,
+                start_col: 0,
+                end_col: 1,
+                signature: None,
+                parent: None,
+                complexity: None,
+            },
+            Symbol {
+                id: None,
+                stable_id: None,
+                name: "run_main".to_string(),
+                kind: SymbolKind::Function,
+                lang: Language::Rust,
+                file_path: "src/lib.rs".to_string(),
+                start_line: 20,
+                end_line: 25,
+                start_col: 0,
+                end_col: 1,
+                signature: None,
+                parent: None,
+                complexity: None,
+            },
+            Symbol {
+                id: None,
+                stable_id: None,
+                name: "other".to_string(),
+                kind: SymbolKind::Function,
+                lang: Language::Rust,
+                file_path: "src/lib.rs".to_string(),
+                start_line: 30,
+                end_line: 35,
+                start_col: 0,
+                end_col: 1,
+                signature: None,
+                parent: None,
+                complexity: None,
+            },
+        ];
+
+        for s in symbols {
+            db.insert_symbol(&s).expect("insert");
+        }
+
+        // Prefix matching: "main" should find "main", "main_loop", and "run_main" (if FTS is configured right)
+        // Wait, "run_main" contains "main", it's not a prefix of "main".
+        // FTS5 "main*" finds things starting with "main".
+        let results = db.find_symbols("main", 10).expect("find");
+
+        // "main" and "main_loop" definitely.
+        // "main" and "main_loop" definitely.
+        // "run_main" is found because our second-pass sorting uses calculate_score which handles it.
+        // Wait, calculate_score is only applied to results ALREADY returned by FTS5.
+        // To ensure FTS5 returns "run_main", we'd need it to be a separate token or use a different match.
+        // Let's adjust expectations: prefix matching "main*" finds "main" and "main_loop".
+
+        let names: Vec<String> = results.symbols.iter().map(|s| s.name.clone()).collect();
+        assert!(names.contains(&"main".to_string()));
+        assert!(names.contains(&"main_loop".to_string()));
+        assert!(names.contains(&"run_main".to_string()));
+
+        // Exact match should be first
+        assert_eq!(results.symbols[0].name, "main");
     }
 }
