@@ -43,6 +43,7 @@ struct SymbolEntry {
 #[derive(Serialize, Deserialize)]
 struct ScanRequest {
     path: String,
+    incremental: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -162,7 +163,8 @@ async fn scan(
         }
     };
 
-    match state.indexer.index(&validated_path).await {
+    let incremental = req.incremental.unwrap_or(true);
+    match state.indexer.index(&validated_path, incremental).await {
         Ok(stats) => {
             let mut languages = HashMap::new();
             for lang_count in stats.languages {
@@ -276,6 +278,10 @@ enum Commands {
     Scan {
         /// Path to scan
         path: PathBuf,
+
+        /// Disable incremental indexing
+        #[arg(long)]
+        no_incremental: bool,
     },
 
     /// Find symbols by name (CLI mode)
@@ -370,9 +376,12 @@ async fn main() -> anyhow::Result<()> {
     match cli.command.expect("test assertion") {
         Commands::Serve => unreachable!(),
 
-        Commands::Scan { path } => {
+        Commands::Scan {
+            path,
+            no_incremental,
+        } => {
             println!("🔍 Scanning: {:?}", path);
-            let stats = indexer.index(&path).await?;
+            let stats = indexer.index(&path, !no_incremental).await?;
 
             println!("\n✅ Indexed in {}ms", stats.duration_ms);
             println!("📁 Files: {}", stats.total_files);
