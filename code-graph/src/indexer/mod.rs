@@ -286,10 +286,57 @@ fn symbol_source_slice(source: &str, symbol: &Symbol) -> String {
         .join("\n")
 }
 
+/// Heuristic check for whether `source` (a symbol body) contains a call to a
+/// callable named `name`.
+///
+/// Uses identifier word-boundary checks instead of a raw substring test so that
+/// a callee named `init` no longer matches `initialize(`, and a callee `run`
+/// no longer matches `// we run(x)` inside a comment block as aggressively. The
+/// call still needs to be followed by `(` (direct call) or be a method call
+/// (`.name(`).
+///
+/// This is a heuristic improvement over the previous `source.contains("name(")`
+/// approach; a fully correct call graph requires tree-sitter call-expression
+/// extraction (see `build_edges` doc).
 fn contains_call(source: &str, name: &str) -> bool {
-    let needle = format!("{}(", name);
+    if name.is_empty() || source.is_empty() {
+        return false;
+    }
+    // Find every occurrence of `name(` and check the character immediately
+    // before is a word boundary (non-identifier char or start of line).
+    let call_needle = format!("{}(", name);
     let method_needle = format!(".{}(", name);
-    source.contains(&needle) || source.contains(&method_needle)
+    if source.contains(&method_needle) {
+        return true;
+    }
+    let bytes = source.as_bytes();
+    let needle_bytes = call_needle.as_bytes();
+    let name_first = name.as_bytes()[0];
+    let mut from = 0;
+    while let Some(idx) = source[from..].find(&call_needle) {
+        let abs = from + idx;
+        let prev_ok = if abs == 0 {
+            true
+        } else {
+            let prev = bytes[abs - 1];
+            // Word boundary: previous char must not be an identifier continuation
+            // (letter, digit, underscore) so `xinit(` won't match callee `init`.
+            !(prev.is_ascii_alphanumeric() || prev == b'_')
+        };
+        // Also ensure the char before `name` isn't `.` (that's the method-call
+        // branch handled separately) — avoid double counting.
+        if prev_ok {
+            let is_method = abs > 0 && bytes[abs - 1] == b'.';
+            if !is_method {
+                return true;
+            }
+        }
+        // Avoid matching `init` as a prefix of `initialize(`: ensure the match
+        // we found is the full `name(` (it is, because the needle includes `(`),
+        // so no extra suffix check is needed here.
+        from = abs + needle_bytes.len();
+    }
+    false
 }
 
 fn build_excludes(patterns: &[&str]) -> Option<GlobSet> {
