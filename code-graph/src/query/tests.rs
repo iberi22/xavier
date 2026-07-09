@@ -25,7 +25,7 @@ mod tests_inner {
             end_col: 0,
             signature: Some("fn main()".to_string()),
             parent: None,
-            complexity: None,
+            complexity: None, metadata: None,
         };
         db.insert_symbol(&sym1).expect("test assertion");
 
@@ -42,7 +42,7 @@ mod tests_inner {
             end_col: 0,
             signature: Some("fn process_data(data: String) -> Result<()>".to_string()),
             parent: None,
-            complexity: None,
+            complexity: None, metadata: None,
         };
         db.insert_symbol(&sym2).expect("test assertion");
 
@@ -59,7 +59,7 @@ mod tests_inner {
             end_col: 0,
             signature: Some("struct User { name: String }".to_string()),
             parent: None,
-            complexity: None,
+            complexity: None, metadata: None,
         };
         db.insert_symbol(&sym3).expect("test assertion");
 
@@ -76,7 +76,7 @@ mod tests_inner {
             end_col: 0,
             signature: Some("function calculateTotal(items: Item[]): number".to_string()),
             parent: None,
-            complexity: None,
+            complexity: None, metadata: None,
         };
         db.insert_symbol(&sym4).expect("test assertion");
 
@@ -187,7 +187,7 @@ mod tests_inner {
             file_path: "/src/main.rs".to_string(),
             line: 2,
             confidence: 0.9,
-            metadata: None,
+
         })
         .expect("edge");
 

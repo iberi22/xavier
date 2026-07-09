@@ -219,6 +219,7 @@ impl CodeGraphDB {
         self.ensure_column("symbols", "signature", "TEXT")?;
         self.ensure_column("symbols", "parent", "TEXT")?;
         self.ensure_column("symbols", "complexity", "REAL")?;
+        self.ensure_column("symbols", "metadata", "TEXT")?;
 
         // Create indexes that might depend on added columns
         {
@@ -270,9 +271,10 @@ impl CodeGraphDB {
         let symbol = normalize_symbol_for_insert(symbol);
         let stable_id = symbol.stable_id.clone().unwrap_or_default();
 
+        let metadata_json = symbol.metadata.as_ref().and_then(|m| serde_json::to_string(m).ok());
         conn.execute(
-            r#"INSERT INTO symbols (stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity)
-               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            r#"INSERT INTO symbols (stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity, metadata)
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
                ON CONFLICT(stable_id) DO UPDATE SET
                  name=excluded.name,
                  kind=excluded.kind,
@@ -284,7 +286,8 @@ impl CodeGraphDB {
                  end_col=excluded.end_col,
                  signature=excluded.signature,
                  parent=excluded.parent,
-                 complexity=excluded.complexity"#,
+                 complexity=excluded.complexity,
+                 metadata=excluded.metadata"#,
             params![
                 &stable_id,
                 symbol.name,
@@ -298,6 +301,7 @@ impl CodeGraphDB {
                 symbol.signature,
                 symbol.parent,
                 symbol.complexity,
+                metadata_json,
             ],
         )
         .map_err(|e| GraphError::Database(e.to_string()))?;
@@ -324,8 +328,8 @@ impl CodeGraphDB {
         {
             let mut stmt = tx
                 .prepare(
-                    r#"INSERT INTO symbols (stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity)
-                       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                    r#"INSERT INTO symbols (stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity, metadata)
+                       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
                        ON CONFLICT(stable_id) DO UPDATE SET
                          name=excluded.name,
                          kind=excluded.kind,
@@ -337,12 +341,14 @@ impl CodeGraphDB {
                          end_col=excluded.end_col,
                          signature=excluded.signature,
                          parent=excluded.parent,
-                         complexity=excluded.complexity"#,
+                         complexity=excluded.complexity,
+                         metadata=excluded.metadata"#,
                 )
                 .map_err(|e| GraphError::Database(e.to_string()))?;
 
             for symbol in symbols {
                 let symbol = normalize_symbol_for_insert(symbol);
+                let metadata_json = symbol.metadata.as_ref().and_then(|m| serde_json::to_string(m).ok());
                 stmt.execute(params![
                     symbol.stable_id,
                     symbol.name,
@@ -356,6 +362,7 @@ impl CodeGraphDB {
                     symbol.signature,
                     symbol.parent,
                     symbol.complexity,
+                    metadata_json,
                 ])
                 .map_err(|e| GraphError::Database(e.to_string()))?;
             }
@@ -413,7 +420,7 @@ impl CodeGraphDB {
 
         let mut stmt = conn
             .prepare(
-                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
+                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity, metadata
                    FROM symbols
                    WHERE name LIKE ?1"#,
             )
@@ -422,6 +429,7 @@ impl CodeGraphDB {
         let pattern = format!("%{}%", query);
         let mut symbols: Vec<Symbol> = stmt
             .query_map(params![pattern], |row| {
+                let metadata_str: Option<String> = row.get(13)?;
                 Ok(Symbol {
                     id: Some(row.get(0)?),
                     stable_id: Some(row.get(1)?),
@@ -436,6 +444,7 @@ impl CodeGraphDB {
                     signature: row.get(10)?,
                     parent: row.get(11)?,
                     complexity: row.get(12)?,
+                    metadata: metadata_str.and_then(|s| serde_json::from_str(&s).ok()),
                 })
             })
             .map_err(|e| GraphError::Database(e.to_string()))?
@@ -479,7 +488,7 @@ impl CodeGraphDB {
 
         let mut stmt = conn
             .prepare(
-                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
+                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity, metadata
                    FROM symbols
                    WHERE file_path = ?1"#,
             )
@@ -487,6 +496,7 @@ impl CodeGraphDB {
 
         let symbols = stmt
             .query_map(params![file_path], |row| {
+                let metadata_str: Option<String> = row.get(13)?;
                 Ok(Symbol {
                     id: Some(row.get(0)?),
                     stable_id: Some(row.get(1)?),
@@ -501,6 +511,7 @@ impl CodeGraphDB {
                     signature: row.get(10)?,
                     parent: row.get(11)?,
                     complexity: row.get(12)?,
+                    metadata: metadata_str.and_then(|s| serde_json::from_str(&s).ok()),
                 })
             })
             .map_err(|e| GraphError::Database(e.to_string()))?
@@ -519,7 +530,7 @@ impl CodeGraphDB {
 
         let mut stmt = conn
             .prepare(
-                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
+                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity, metadata
                    FROM symbols
                    WHERE kind = ?1
                    LIMIT ?2"#,
@@ -529,6 +540,7 @@ impl CodeGraphDB {
         let kind_str = format!("{:?}", kind);
         let symbols = stmt
             .query_map(params![kind_str, limit as isize], |row| {
+                let metadata_str: Option<String> = row.get(13)?;
                 Ok(Symbol {
                     id: Some(row.get(0)?),
                     stable_id: Some(row.get(1)?),
@@ -543,6 +555,7 @@ impl CodeGraphDB {
                     signature: row.get(10)?,
                     parent: row.get(11)?,
                     complexity: row.get(12)?,
+                    metadata: metadata_str.and_then(|s| serde_json::from_str(&s).ok()),
                 })
             })
             .map_err(|e| GraphError::Database(e.to_string()))?
@@ -735,12 +748,13 @@ impl CodeGraphDB {
             .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
         let mut stmt = conn
             .prepare(
-                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
+                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity, metadata
                    FROM symbols WHERE stable_id = ?1"#,
             )
             .map_err(|e| GraphError::Database(e.to_string()))?;
         let mut rows = stmt
             .query_map(params![stable_id], |row| {
+                let metadata_str: Option<String> = row.get(13)?;
                 Ok(Symbol {
                     id: Some(row.get(0)?),
                     stable_id: Some(row.get(1)?),
@@ -755,6 +769,7 @@ impl CodeGraphDB {
                     signature: row.get(10)?,
                     parent: row.get(11)?,
                     complexity: row.get(12)?,
+                    metadata: metadata_str.and_then(|s| serde_json::from_str(&s).ok()),
                 })
             })
             .map_err(|e| GraphError::Database(e.to_string()))?;
@@ -876,13 +891,14 @@ impl CodeGraphDB {
 
         let mut stmt = conn
             .prepare(
-                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
+                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity, metadata
                    FROM symbols"#,
             )
             .map_err(|e| GraphError::Database(e.to_string()))?;
 
         let symbols = stmt
             .query_map([], |row| {
+                let metadata_str: Option<String> = row.get(13)?;
                 Ok(Symbol {
                     id: Some(row.get(0)?),
                     stable_id: Some(row.get(1)?),
@@ -897,6 +913,7 @@ impl CodeGraphDB {
                     signature: row.get(10)?,
                     parent: row.get(11)?,
                     complexity: row.get(12)?,
+                    metadata: metadata_str.and_then(|s| serde_json::from_str(&s).ok()),
                 })
             })
             .map_err(|e| GraphError::Database(e.to_string()))?
@@ -1044,7 +1061,7 @@ mod tests {
             end_col: 0,
             signature: None,
             parent: None,
-            complexity: None,
+            complexity: None, metadata: None,
         };
 
         db.insert_symbol(&symbol).expect("failed to insert symbol");

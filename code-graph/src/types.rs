@@ -104,6 +104,7 @@ pub struct Symbol {
     pub signature: Option<String>,
     pub parent: Option<String>, // parent struct/class
     pub complexity: Option<f32>,
+    pub metadata: Option<serde_json::Value>,
 }
 
 impl Symbol {

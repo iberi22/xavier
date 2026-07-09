@@ -24,7 +24,7 @@ mod benchmarks_inner {
                 end_col: 0,
                 signature: Some(format!("fn function_{}() -> Result<()>", i)),
                 parent: None,
-                complexity: None,
+                complexity: None, metadata: None,
             };
             db.insert_symbol(&sym).expect("benchmark assertion");
         }
@@ -81,7 +81,7 @@ mod benchmarks_inner {
                 end_col: 0,
                 signature: Some("fn bench()".to_string()),
                 parent: None,
-                complexity: None,
+                complexity: None, metadata: None,
             };
             db.insert_symbol(&sym).expect("benchmark assertion");
         }

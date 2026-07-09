@@ -113,7 +113,7 @@ impl PythonParser {
                 file_path,
                 name: name.clone(),
                 depth: 0,
-                parent,
+                parent, metadata: None,
             },
         );
         Some(name)
@@ -143,7 +143,7 @@ impl PythonParser {
                             file_path,
                             name: name.to_string(),
                             depth: 0,
-                            parent: parent.clone(),
+                            parent: parent.clone(), metadata: None,
                         },
                     );
                 }
@@ -178,7 +178,7 @@ impl PythonParser {
                             file_path,
                             name: name.to_string(),
                             depth: 0,
-                            parent: parent.clone(),
+                            parent: parent.clone(), metadata: None,
                         },
                     );
                 }
@@ -211,7 +211,7 @@ impl PythonParser {
                 file_path,
                 name,
                 depth: 0,
-                parent: None,
+                parent: None, metadata: None,
             },
         );
     }
@@ -240,8 +240,8 @@ impl PythonParser {
             start_col: start.column as u32,
             end_col: end.column as u32,
             signature: compact_node_signature(args.node, args.source),
-            parent: args.parent,
-            complexity,
+            parent: args.parent, metadata: None,
+            complexity, metadata: None,
         });
     }
 }

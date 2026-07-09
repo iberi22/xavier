@@ -200,7 +200,7 @@ fn build_edges(symbols: &[Symbol], sources: &HashMap<String, String>) -> Vec<Cod
             file_path: symbol.file_path.clone(),
             line: symbol.start_line,
             confidence: 1.0,
-            metadata: None,
+
         });
 
         edges.push(CodeEdge {
@@ -211,7 +211,7 @@ fn build_edges(symbols: &[Symbol], sources: &HashMap<String, String>) -> Vec<Cod
             file_path: symbol.file_path.clone(),
             line: symbol.start_line,
             confidence: 1.0,
-            metadata: None,
+
         });
 
         if symbol.kind == SymbolKind::Import {
@@ -223,7 +223,7 @@ fn build_edges(symbols: &[Symbol], sources: &HashMap<String, String>) -> Vec<Cod
                 file_path: symbol.file_path.clone(),
                 line: symbol.start_line,
                 confidence: 0.8,
-                metadata: None,
+
             });
         }
     }

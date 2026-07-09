@@ -288,7 +288,7 @@ impl RustParser {
             end_col: end.column as u32,
             signature: compact_node_signature(node, source),
             parent,
-            complexity,
+            complexity, metadata: None,
         });
     }
 }

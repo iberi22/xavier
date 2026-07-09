@@ -92,6 +92,7 @@ pub struct PushSymbolArgs<'src> {
     pub name: String,
     pub depth: usize,
     pub parent: Option<String>,
+    pub metadata: Option<serde_json::Value>,
 }
 
 pub(crate) fn cyclomatic_complexity(node: Node, source: &str) -> f32 {

@@ -1,7 +1,7 @@
 //! TypeScript and JavaScript parser using tree-sitter.
 
 use crate::error::{GraphError, Result};
-use crate::parser::{compact_node_signature, cyclomatic_complexity, PushSymbolArgs};
+use crate::parser::{compact_node_signature, cyclomatic_complexity,  PushSymbolArgs};
 use crate::types::{Language, Symbol, SymbolKind};
 use tree_sitter::{Node, Parser};
 
@@ -317,7 +317,7 @@ impl TypeScriptParser {
                 file_path,
                 name,
                 depth: 0,
-                parent: None,
+                parent: None, metadata: None,
             },
         );
     }
@@ -340,7 +340,7 @@ impl TypeScriptParser {
             end_col: end.column as u32,
             signature: compact_node_signature(args.node, args.source),
             parent: args.parent,
-            complexity,
+            complexity, metadata: None,
         });
     }
 }

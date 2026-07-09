@@ -184,7 +184,7 @@ impl QueryEngine {
     }
 
     pub fn hotspots(&self, min_complexity: f32, limit: usize) -> Result<Vec<ComplexityHotspot>> {
-        self.db.complexity_hotspots(min_complexity, limit)
+        self.db.complexity_hotspots(min_complexity,  limit)
     }
 
     fn traverse(

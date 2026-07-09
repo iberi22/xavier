@@ -1,7 +1,7 @@
 //! Go parser using tree-sitter.
 
 use crate::error::{GraphError, Result};
-use crate::parser::{compact_node_signature, cyclomatic_complexity, PushSymbolArgs};
+use crate::parser::{compact_node_signature, cyclomatic_complexity,  PushSymbolArgs};
 use crate::types::{Language, Symbol, SymbolKind};
 use tree_sitter::{Node, Parser};
 
@@ -158,7 +158,7 @@ impl GoParser {
                                         file_path,
                                         name: name.to_string(),
                                         depth: 0,
-                                        parent: parent.clone(),
+                                        parent: parent.clone(), metadata: None,
                                     },
                                 );
                             }
@@ -202,7 +202,7 @@ impl GoParser {
                             file_path,
                             name: name.to_string(),
                             depth: 0,
-                            parent: None,
+                            parent: None, metadata: None,
                         },
                     );
                 }
@@ -251,7 +251,7 @@ impl GoParser {
                     file_path,
                     name: part.to_string(),
                     depth: 0,
-                    parent: None,
+                    parent: None, metadata: None,
                 },
             );
         }
@@ -275,7 +275,7 @@ impl GoParser {
             end_col: end.column as u32,
             signature: compact_node_signature(args.node, args.source),
             parent: args.parent,
-            complexity,
+            complexity, metadata: None,
         });
     }
 }
