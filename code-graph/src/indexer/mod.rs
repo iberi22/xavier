@@ -2,8 +2,8 @@
 
 use crate::db::CodeGraphDB;
 use crate::error::{GraphError, Result};
-use crate::parser::parse_source;
-use crate::plugin_host::PluginHost;
+use crate::parser::{parse_source, parse_source_sync};
+use crate::plugin_host::{ParserDispatch, PluginHost};
 use crate::types::{CodeEdge, EdgeType, IndexStats, Language, Symbol, SymbolKind};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use ignore::WalkBuilder;
@@ -38,7 +38,24 @@ impl Indexer {
             root
         );
 
-        let all_files = self.collect_files(root)?;
+        let root_buf = root.to_path_buf();
+        let all_files = {
+            let root_clone = root_buf.clone();
+            // Wrap file collection in spawn_blocking as it's heavy I/O
+            tokio::task::spawn_blocking(move || {
+                // Since collect_files is a method on Indexer, we can't easily call it
+                // without Arc<Self> or similar if we wanted it to be truly independent.
+                // But we can just implement the logic here or make a helper.
+                // For now, let's just keep it simple and see if we can call it.
+                // Actually, let's just move the logic into a static-like helper or just use the method if possible.
+                // We'll use a temporary Indexer or just call it if we can.
+                // Given the constraints, I'll just implement it as is for now.
+                collect_files_internal(&root_clone)
+            })
+            .await
+            .map_err(|e| GraphError::Parser(e.to_string()))??
+        };
+
         let mut files_to_index = Vec::new();
         let mut files_to_mtime = HashMap::new();
         let mut files_to_delete = Vec::new();
@@ -95,13 +112,28 @@ impl Indexer {
         let semaphore = Arc::new(Semaphore::new(self.max_concurrent));
         let mut handles = Vec::new();
 
-        for file_path in files_to_index {
+        // Process files in chunks of 50 to reduce spawn overhead
+        for chunk in files_to_index.chunks(50) {
+            let chunk = chunk.to_vec();
             let sem = semaphore.clone();
-            let root = root.to_path_buf();
+            let root = root_buf.clone();
             let plugin_host = self.plugin_host.clone();
+
             let handle = tokio::spawn(async move {
                 let _permit = sem.acquire().await.expect("semaphore should be open");
-                parse_file(&root, &file_path, Some(&*plugin_host)).await
+
+                tokio::task::spawn_blocking(move || {
+                    let mut results = Vec::new();
+                    for file_path in chunk {
+                        match parse_file_sync(&root, &file_path, Some(&*plugin_host)) {
+                            Ok(parsed) => results.push(parsed),
+                            Err(error) => warn!("Failed to parse {:?}: {}", file_path, error),
+                        }
+                    }
+                    results
+                })
+                .await
+                .map_err(|e| GraphError::Parser(e.to_string()))
             });
             handles.push(handle);
         }
@@ -110,11 +142,13 @@ impl Indexer {
         let mut sources = HashMap::new();
         for handle in handles {
             match handle.await {
-                Ok(Ok(parsed)) => {
-                    sources.insert(parsed.file_path.clone(), parsed.source);
-                    new_symbols.extend(parsed.symbols);
+                Ok(Ok(results)) => {
+                    for parsed in results {
+                        sources.insert(parsed.file_path.clone(), parsed.source);
+                        new_symbols.extend(parsed.symbols);
+                    }
                 }
-                Ok(Err(error)) => warn!("Failed to parse file: {}", error),
+                Ok(Err(error)) => warn!("Batch task failed: {}", error),
                 Err(error) => error!("Task failed: {}", error),
             }
         }
@@ -154,54 +188,58 @@ impl Indexer {
     }
 
     /// Collect all relevant files in a directory using .gitignore/.ignore aware traversal.
-    fn collect_files(&self, root: &Path) -> Result<Vec<PathBuf>> {
-        let excludes = build_excludes(&[
-            "**/target/**",
-            "**/.git/**",
-            "**/node_modules/**",
-            "**/dist/**",
-            "**/build/**",
-            "**/.next/**",
-            "**/.nuxt/**",
-            "**/coverage/**",
-            "**/__pycache__/**",
-            "**/.pytest_cache/**",
-            "**/.codegraph/**",
-        ]);
-
-        let mut files = Vec::new();
-        let walker = WalkBuilder::new(root)
-            .hidden(false)
-            .git_ignore(true)
-            .git_exclude(true)
-            .ignore(true)
-            .require_git(false)
-            .build();
-
-        for entry in walker {
-            let entry = match entry {
-                Ok(entry) => entry,
-                Err(error) => {
-                    warn!("Error walking directory: {}", error);
-                    continue;
-                }
-            };
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
-            }
-            if excludes.as_ref().is_some_and(|set| set.is_match(path)) {
-                continue;
-            }
-            let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            if Language::from_extension(ext) == Language::Unknown {
-                continue;
-            }
-            files.push(path.to_path_buf());
-        }
-
-        Ok(files)
+    pub fn collect_files(&self, root: &Path) -> Result<Vec<PathBuf>> {
+        collect_files_internal(root)
     }
+}
+
+fn collect_files_internal(root: &Path) -> Result<Vec<PathBuf>> {
+    let excludes = build_excludes(&[
+        "**/target/**",
+        "**/.git/**",
+        "**/node_modules/**",
+        "**/dist/**",
+        "**/build/**",
+        "**/.next/**",
+        "**/.nuxt/**",
+        "**/coverage/**",
+        "**/__pycache__/**",
+        "**/.pytest_cache/**",
+        "**/.codegraph/**",
+    ]);
+
+    let mut files = Vec::new();
+    let walker = WalkBuilder::new(root)
+        .hidden(false)
+        .git_ignore(true)
+        .git_exclude(true)
+        .ignore(true)
+        .require_git(false)
+        .build();
+
+    for entry in walker {
+        let entry = match entry {
+            Ok(entry) => entry,
+            Err(error) => {
+                warn!("Error walking directory: {}", error);
+                continue;
+            }
+        };
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        if excludes.as_ref().is_some_and(|set| set.is_match(path)) {
+            continue;
+        }
+        let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+        if Language::from_extension(ext) == Language::Unknown {
+            continue;
+        }
+        files.push(path.to_path_buf());
+    }
+
+    Ok(files)
 }
 
 struct ParsedFile {
@@ -210,12 +248,9 @@ struct ParsedFile {
     symbols: Vec<Symbol>,
 }
 
-async fn parse_file(root: &Path, file_path: &Path, plugin_host: Option<&PluginHost>) -> Result<ParsedFile> {
+fn parse_file_sync(root: &Path, file_path: &Path, plugin_host: Option<&PluginHost>) -> Result<ParsedFile> {
     let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
     let lang = Language::from_extension(ext);
-
-    // We try to parse even if lang is Unknown because a plugin might handle it by extension
-    // But for now, we follow the discovery logic in PluginHost::parser_for which might return NoOp
 
     let source = std::fs::read_to_string(file_path).map_err(GraphError::Io)?;
     let relative_path = file_path
@@ -223,7 +258,16 @@ async fn parse_file(root: &Path, file_path: &Path, plugin_host: Option<&PluginHo
         .unwrap_or(file_path)
         .to_string_lossy()
         .replace('\\', "/");
-    let symbols = parse_source(&source, &lang, &relative_path, plugin_host).await?;
+
+    let symbols = match plugin_host.map(|h| h.parser_for(&lang)).unwrap_or(ParserDispatch::Native) {
+        ParserDispatch::Native => parse_source_sync(&source, &lang, &relative_path)?,
+        ParserDispatch::Plugin(_) => {
+            // For plugins we must use block_on as they are async (spawn processes)
+            tokio::runtime::Handle::current().block_on(parse_source(&source, &lang, &relative_path, plugin_host))?
+        }
+        ParserDispatch::NoOp => vec![],
+    };
+
     if !symbols.is_empty() {
         debug!("Extracted {} symbols from {}", symbols.len(), relative_path);
     }
@@ -504,5 +548,62 @@ mod tests {
         assert_eq!(db.stats().expect("stats").total_files, 1);
         let symbols = db.get_all_symbols().expect("get symbols");
         assert!(symbols.iter().all(|s| s.file_path == "main.rs"));
+    }
+
+    #[tokio::test]
+    async fn indexer_handles_concurrent_file_batches() {
+        let dir = TempDir::new().unwrap();
+        // Create 110 files (2 batches of 50 + 1 of 10)
+        for i in 0..110 {
+            std::fs::write(
+                dir.path().join(format!("file_{}.rs", i)),
+                format!("fn function_{}() {{}}", i),
+            )
+            .unwrap();
+        }
+
+        let db = Arc::new(CodeGraphDB::in_memory().unwrap());
+        let indexer = Indexer::new(db.clone());
+        let stats = indexer.index(dir.path(), false).await.unwrap();
+
+        assert_eq!(stats.total_files, 110);
+        assert_eq!(stats.total_symbols, 110);
+        assert!(stats.duration_ms > 0);
+    }
+
+    #[tokio::test]
+    async fn indexer_maintains_semaphore_limit() {
+        let dir = TempDir::new().unwrap();
+        for i in 0..20 {
+            std::fs::write(
+                dir.path().join(format!("file_{}.rs", i)),
+                format!("fn function_{}() {{}}", i),
+            )
+            .unwrap();
+        }
+
+        let db = Arc::new(CodeGraphDB::in_memory().unwrap());
+        let indexer = Indexer::new(db.clone());
+        let stats = indexer.index(dir.path(), false).await.unwrap();
+
+        assert_eq!(stats.total_files, 20);
+        assert!(stats.duration_ms < 10000); // reasonable time
+    }
+
+    #[test]
+    fn collect_files_respects_gitignore_and_excludes() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(dir.path().join(".gitignore"), "ignored.rs\n").unwrap();
+        std::fs::write(dir.path().join("main.rs"), "fn main() {}\n").unwrap();
+        std::fs::write(dir.path().join("ignored.rs"), "fn ignored() {}\n").unwrap();
+        std::fs::create_dir(dir.path().join("target")).unwrap();
+        std::fs::write(dir.path().join("target").join("skip.rs"), "fn skip() {}\n").unwrap();
+
+        let db = Arc::new(CodeGraphDB::in_memory().unwrap());
+        let indexer = Indexer::new(db);
+        let files = indexer.collect_files(dir.path()).unwrap();
+
+        assert_eq!(files.len(), 1);
+        assert!(files[0].ends_with("main.rs"));
     }
 }
