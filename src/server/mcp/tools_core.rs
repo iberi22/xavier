@@ -76,7 +76,7 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
         },
         MCPTool {
             name: "get_code_graph".to_string(),
-            description: "Get the portable code graph dump (.xavier/codegraph.json)".to_string(),
+            description: "[DEPRECATED] Get the portable code graph dump (.xavier/codegraph.json). Prefer the engine-backed tools `codegraph_explore`, `trace_path`, `get_architecture`, and `detect_changes`, which query the live SQLite index instead of a stale JSON dump.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {}
