@@ -210,6 +210,32 @@ impl CodeGraphDB {
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS file_metadata (
+                file_path TEXT PRIMARY KEY,
+                last_indexed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                mtime_ms INTEGER NOT NULL
+            );
+
+            -- FTS5 Virtual Table for symbols
+            CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
+                name,
+                file_path,
+                content='symbols',
+                content_rowid='id'
+            );
+
+            -- Triggers to keep FTS5 in sync
+            CREATE TRIGGER IF NOT EXISTS symbols_ai AFTER INSERT ON symbols BEGIN
+                INSERT INTO symbols_fts(rowid, name, file_path) VALUES (new.id, new.name, new.file_path);
+            END;
+            CREATE TRIGGER IF NOT EXISTS symbols_ad AFTER DELETE ON symbols BEGIN
+                INSERT INTO symbols_fts(symbols_fts, rowid, name, file_path) VALUES('delete', old.id, old.name, old.file_path);
+            END;
+            CREATE TRIGGER IF NOT EXISTS symbols_au AFTER UPDATE ON symbols BEGIN
+                INSERT INTO symbols_fts(symbols_fts, rowid, name, file_path) VALUES('delete', old.id, old.name, old.file_path);
+                INSERT INTO symbols_fts(rowid, name, file_path) VALUES (new.id, new.name, new.file_path);
+            END;
             "#,
         )
         .map_err(|e| GraphError::Database(e.to_string()))?;
@@ -403,7 +429,7 @@ impl CodeGraphDB {
         0
     }
 
-    /// Find symbols by name with hybrid ranking
+    /// Find symbols by name with hybrid ranking (FTS5 + LIKE fallback)
     pub fn find_symbols(&self, query: &str, limit: usize) -> Result<QueryResult> {
         let start = std::time::Instant::now();
         let conn = self
@@ -411,17 +437,65 @@ impl CodeGraphDB {
             .lock()
             .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
 
+        // Attempt FTS5 search first
+        if query.is_empty() {
+            let mut stmt = conn
+                .prepare(
+                    r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
+                       FROM symbols
+                       LIMIT ?1"#,
+                )
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            let symbols: Vec<Symbol> = stmt
+                .query_map(params![limit as isize], |row| {
+                    Ok(Symbol {
+                        id: Some(row.get(0)?),
+                        stable_id: Some(row.get(1)?),
+                        name: row.get(2)?,
+                        kind: parse_symbol_kind(&row.get::<_, String>(3)?),
+                        lang: parse_language(&row.get::<_, String>(4)?),
+                        file_path: row.get(5)?,
+                        start_line: row.get(6)?,
+                        end_line: row.get(7)?,
+                        start_col: row.get(8)?,
+                        end_col: row.get(9)?,
+                        signature: row.get(10)?,
+                        parent: row.get(11)?,
+                        complexity: row.get(12)?,
+                    })
+                })
+                .map_err(|e| GraphError::Database(e.to_string()))?
+                .filter_map(|r| r.ok())
+                .collect();
+
+            let total = symbols.len();
+            let query_time_ms = start.elapsed().as_millis() as u64;
+
+            return Ok(QueryResult {
+                symbols,
+                total,
+                query_time_ms,
+            });
+        }
+
         let mut stmt = conn
             .prepare(
-                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
-                   FROM symbols
-                   WHERE name LIKE ?1"#,
+                r#"SELECT s.id, s.stable_id, s.name, s.kind, s.lang, s.file_path, s.start_line, s.end_line, s.start_col, s.end_col, s.signature, s.parent, s.complexity
+                   FROM symbols s
+                   JOIN symbols_fts f ON s.id = f.rowid
+                   WHERE symbols_fts MATCH ?1
+                   ORDER BY rank
+                   LIMIT ?2"#,
             )
             .map_err(|e| GraphError::Database(e.to_string()))?;
 
-        let pattern = format!("%{}%", query);
+        // Escape query for FTS5 and add wildcard
+        let escaped_query = query.replace('"', "\"\"");
+        let fts_query = format!("\"{}\"*", escaped_query);
+
         let mut symbols: Vec<Symbol> = stmt
-            .query_map(params![pattern], |row| {
+            .query_map(params![fts_query, limit as isize], |row| {
                 Ok(Symbol {
                     id: Some(row.get(0)?),
                     stable_id: Some(row.get(1)?),
@@ -442,7 +516,42 @@ impl CodeGraphDB {
             .filter_map(|r| r.ok())
             .collect();
 
-        // Apply scoring and ranking without mutating semantic fields.
+        // If FTS5 returned nothing, fallback to LIKE (fuzzy-ish)
+        if symbols.is_empty() {
+            let mut stmt = conn
+                .prepare(
+                    r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
+                       FROM symbols
+                       WHERE name LIKE ?1
+                       LIMIT ?2"#,
+                )
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            let pattern = format!("%{}%", query);
+            symbols = stmt
+                .query_map(params![pattern, limit as isize], |row| {
+                    Ok(Symbol {
+                        id: Some(row.get(0)?),
+                        stable_id: Some(row.get(1)?),
+                        name: row.get(2)?,
+                        kind: parse_symbol_kind(&row.get::<_, String>(3)?),
+                        lang: parse_language(&row.get::<_, String>(4)?),
+                        file_path: row.get(5)?,
+                        start_line: row.get(6)?,
+                        end_line: row.get(7)?,
+                        start_col: row.get(8)?,
+                        end_col: row.get(9)?,
+                        signature: row.get(10)?,
+                        parent: row.get(11)?,
+                        complexity: row.get(12)?,
+                    })
+                })
+                .map_err(|e| GraphError::Database(e.to_string()))?
+                .filter_map(|r| r.ok())
+                .collect();
+        }
+
+        // Apply scoring and ranking
         if !query.is_empty() {
             symbols.sort_by(|a, b| {
                 let score_for = |symbol: &Symbol| {
@@ -456,9 +565,6 @@ impl CodeGraphDB {
                 score_for(b).cmp(&score_for(a))
             });
         }
-
-        // Apply limit
-        symbols.truncate(limit);
 
         let total = symbols.len();
         let query_time_ms = start.elapsed().as_millis() as u64;
@@ -942,11 +1048,64 @@ impl CodeGraphDB {
             DELETE FROM imports;
             DELETE FROM edges;
             DELETE FROM symbols;
+            DELETE FROM file_metadata;
             "#,
         )
         .map_err(|e| GraphError::Database(e.to_string()))?;
 
         info!("Database cleared");
+        Ok(())
+    }
+
+    /// Update file metadata
+    pub fn update_file_metadata(&self, path: &str, mtime_ms: i64) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+        conn.execute(
+            "INSERT INTO file_metadata (file_path, last_indexed_at, mtime_ms)
+             VALUES (?1, CURRENT_TIMESTAMP, ?2)
+             ON CONFLICT(file_path) DO UPDATE SET
+               last_indexed_at = CURRENT_TIMESTAMP,
+               mtime_ms = excluded.mtime_ms",
+            params![path, mtime_ms],
+        )
+        .map_err(|e| GraphError::Database(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Get all file metadata
+    pub fn get_all_file_metadata(&self) -> Result<std::collections::HashMap<String, i64>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+        let mut stmt = conn
+            .prepare("SELECT file_path, mtime_ms FROM file_metadata")
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let mut map = std::collections::HashMap::new();
+        for row in rows {
+            let (path, mtime) = row.map_err(|e| GraphError::Database(e.to_string()))?;
+            map.insert(path, mtime);
+        }
+        Ok(map)
+    }
+
+    /// Optimize FTS index
+    pub fn optimize_index(&self) -> Result<()> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+        conn.execute("INSERT INTO symbols_fts(symbols_fts) VALUES('optimize');", [])
+            .map_err(|e| GraphError::Database(e.to_string()))?;
         Ok(())
     }
 }

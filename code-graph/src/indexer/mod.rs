@@ -70,6 +70,20 @@ impl Indexer {
         self.db.insert_symbols(&symbols)?;
         self.db.insert_edges(&edges)?;
 
+        // Update file metadata for staleness tracking
+        for (path, _) in &sources {
+            let full_path = root.join(path);
+            let mtime = std::fs::metadata(&full_path)
+                .and_then(|m| m.modified())
+                .map(|t| {
+                    t.duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as i64
+                })
+                .unwrap_or(0);
+            self.db.update_file_metadata(path, mtime)?;
+        }
+
         let mut stats = self.db.stats()?;
         stats.duration_ms = start.elapsed().as_millis() as u64;
 
@@ -132,6 +146,35 @@ impl Indexer {
         }
 
         Ok(files)
+    }
+
+    /// Check if any indexed files are stale (modified after indexing)
+    pub fn get_stale_files(&self, root: &Path) -> Result<Vec<String>> {
+        let metadata = self.db.get_all_file_metadata()?;
+        let mut stale = Vec::new();
+
+        for (path, indexed_mtime) in metadata {
+            let full_path = root.join(&path);
+            if !full_path.exists() {
+                stale.push(path);
+                continue;
+            }
+
+            let current_mtime = std::fs::metadata(&full_path)
+                .and_then(|m| m.modified())
+                .map(|t| {
+                    t.duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_millis() as i64
+                })
+                .unwrap_or(0);
+
+            if current_mtime > indexed_mtime {
+                stale.push(path);
+            }
+        }
+
+        Ok(stale)
     }
 }
 

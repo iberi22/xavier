@@ -12,6 +12,7 @@ use axum::{
 use clap::{Parser, Subcommand};
 use code_graph::db::CodeGraphDB;
 use code_graph::indexer::Indexer;
+use code_graph::mcp::McpServer;
 use code_graph::query::QueryEngine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -290,6 +291,13 @@ enum Commands {
 
     /// Show statistics (CLI mode)
     Stats,
+
+    /// Start MCP stdio server
+    Mcp {
+        /// Project root path to serve
+        #[arg(default_value = ".")]
+        path: PathBuf,
+    },
 }
 
 #[tokio::main]
@@ -405,6 +413,11 @@ async fn main() -> anyhow::Result<()> {
             for lang_count in stats.languages {
                 println!("  {:?}: {}", lang_count.lang, lang_count.count);
             }
+        }
+
+        Commands::Mcp { path } => {
+            let mcp_server = McpServer::new(indexer, query_engine, path);
+            mcp_server.run().await?;
         }
     }
 
