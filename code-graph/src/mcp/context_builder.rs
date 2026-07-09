@@ -77,7 +77,7 @@ impl ContextBuilder {
                         output.push_str(&format!("- `{}` (depth: {}) in `{}`\n",
                             caller.symbol.name, caller.depth, caller.symbol.file_path));
                     }
-                    output.push_str("\n");
+                    output.push('\n');
                 }
 
                 if !impact.callees.is_empty() {
@@ -86,7 +86,7 @@ impl ContextBuilder {
                         output.push_str(&format!("- `{}` (depth: {}) in `{}`\n",
                             callee.symbol.name, callee.depth, callee.symbol.file_path));
                     }
-                    output.push_str("\n");
+                    output.push('\n');
                 }
             }
         }

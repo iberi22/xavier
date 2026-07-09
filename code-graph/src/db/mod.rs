@@ -1057,6 +1057,11 @@ impl CodeGraphDB {
         Ok(())
     }
 
+    /// Delete all data associated with a single file path.
+    pub fn clear_by_file(&self, file_path: &str) -> Result<()> {
+        self.batch_delete_file_data(&[file_path.to_string()])
+    }
+
     /// Delete all data associated with multiple file paths in a single transaction
     pub fn batch_delete_file_data(&self, file_paths: &[String]) -> Result<()> {
         if file_paths.is_empty() {

@@ -42,6 +42,12 @@ pub struct PluginHost {
     plugins: HashMap<Language, PluginConfig>,
 }
 
+impl Default for PluginHost {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PluginHost {
     pub fn new() -> Self {
         let mut host = Self {
@@ -103,7 +109,7 @@ impl PluginHost {
             .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
-            .map_err(|e| GraphError::Io(e))?;
+            .map_err(GraphError::Io)?;
 
         let mut stdin = child.stdin.take().ok_or_else(|| GraphError::Parser("Failed to open stdin".to_string()))?;
         tokio::io::AsyncWriteExt::write_all(&mut stdin, input_json.as_bytes()).await.map_err(GraphError::Io)?;

@@ -1,5 +1,9 @@
 //! Indexer - scans and indexes codebases.
 
+pub mod watcher;
+#[cfg(test)]
+mod watcher_test;
+
 use crate::db::CodeGraphDB;
 use crate::error::{GraphError, Result};
 use crate::parser::{parse_source, parse_source_sync};
@@ -30,6 +34,64 @@ impl Indexer {
             max_concurrent: 8,
             plugin_host: Arc::new(PluginHost::new()),
         }
+    }
+
+    /// Re-index a single file incrementally.
+    pub async fn reindex_file(&self, root: &Path, file_path: &Path) -> Result<()> {
+        let (relative, mtime) = get_file_info(root, file_path);
+
+        // 1. Clear existing data
+        self.db.clear_by_file(&relative)?;
+
+        // If file was deleted, we just needed to clear it (done above)
+        if !file_path.exists() {
+            return Ok(());
+        }
+
+        // 2. Re-parse
+        let parsed = match parse_file(root, file_path, Some(&*self.plugin_host)).await {
+            Ok(p) => p,
+            Err(e) => {
+                debug!("Skipping re-index for {}: {}", relative, e);
+                return Ok(());
+            }
+        };
+
+        if parsed.symbols.is_empty() {
+            // Update mtime even if no symbols, so we don't keep trying to re-index it if it hasn't changed
+            let mut mtimes = HashMap::new();
+            mtimes.insert(relative, mtime);
+            self.db.batch_upsert_file_metadata(mtimes)?;
+            return Ok(());
+        }
+
+        // 3. Process symbols and edges
+        let mut new_symbols = parsed.symbols;
+        assign_stable_ids(&mut new_symbols);
+
+        let mut all_symbols = self.db.get_all_symbols()?;
+        all_symbols.extend(new_symbols.clone());
+
+        let mut sources = HashMap::new();
+        sources.insert(parsed.file_path.clone(), parsed.source);
+
+        let edges = build_edges(&new_symbols, &all_symbols, &sources);
+
+        // 4. Persist
+        self.db.insert_symbols(&new_symbols)?;
+        self.db.insert_edges(&edges)?;
+
+        let mut mtimes = HashMap::new();
+        mtimes.insert(relative.clone(), mtime);
+        self.db.batch_upsert_file_metadata(mtimes)?;
+
+        debug!(
+            "Re-indexed {}: {} symbols, {} edges",
+            relative,
+            new_symbols.len(),
+            edges.len()
+        );
+        Ok(())
     }
 
     /// Index a directory.
