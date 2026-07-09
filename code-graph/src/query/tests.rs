@@ -204,4 +204,61 @@ mod tests_inner {
         assert_eq!(reverse.len(), 1);
         assert_eq!(reverse[0].from_symbol, main);
     }
+
+    #[test]
+    fn find_symbols_uses_fts5_matching_signature_column() {
+        // The FTS5 index covers name, file_path AND signature. A term that only
+        // appears in the signature (not the symbol name) should still match.
+        let db = setup_test_db();
+        // "String" appears in process_data's signature ("data: String") but not
+        // in any symbol name. With the LIKE-only path this returned 0; with FTS5
+        // it should return at least the process_data symbol.
+        let result = db.find_symbols("String", 10).expect("fts search");
+        assert!(
+            !result.symbols.is_empty(),
+            "FTS5 should match the signature column, not just name"
+        );
+    }
+
+    #[test]
+    fn find_by_lang_returns_only_matching_language() {
+        let db = setup_test_db();
+        let rust = db.find_by_lang(Language::Rust, 100).expect("find_by_lang");
+        assert!(!rust.is_empty(), "should find Rust symbols");
+        assert!(rust.iter().all(|s| s.lang == Language::Rust));
+
+        let go = db.find_by_lang(Language::Go, 100).expect("find_by_lang go");
+        assert!(go.is_empty(), "no Go symbols seeded");
+    }
+
+    #[test]
+    fn by_language_engine_backed_by_find_by_lang() {
+        let db = Arc::new(setup_test_db());
+        let engine = QueryEngine::new(db);
+        let result = engine
+            .by_language(Language::Rust, 100)
+            .expect("by_language");
+        assert!(!result.is_empty(), "by_language must not be a stub anymore");
+    }
+
+    #[test]
+    fn clear_by_file_removes_only_that_file() {
+        let db = setup_test_db();
+        // process_data lives in /src/processor.rs
+        db.clear_by_file("/src/processor.rs")
+            .expect("clear_by_file");
+        let remaining = db
+            .find_symbols("process_data", 10)
+            .expect("find after clear");
+        assert!(
+            remaining.symbols.is_empty(),
+            "process_data should be gone after clearing its file"
+        );
+        // main lives in /src/main.rs and must survive.
+        let main = db.find_symbols("main", 10).expect("find main");
+        assert!(
+            !main.symbols.is_empty(),
+            "symbols from other files must survive clear_by_file"
+        );
+    }
 }

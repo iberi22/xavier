@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Premortem Report: Proyecto Xavier</title>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #0a0e1a;
+            color: #e2e8f0;
+            line-height: 1.6;
+            margin: 0;
+            padding: 40px 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+        header {
+            border-bottom: 1px solid #1e293b;
+            padding-bottom: 20px;
+            margin-bottom: 40px;
+        }
+        h1 { color: #f8fafc; font-size: 2.5em; margin-bottom: 5px; }
+        .subtitle { color: #94a3b8; font-size: 1.1em; }
+        
+        /* Síntesis Section */
+        .synthesis {
+            background-color: #111827;
+            border-left: 4px solid #3b82f6;
+            padding: 25px;
+            border-radius: 0 8px 8px 0;
+            margin-bottom: 50px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        }
+        .synthesis h2 { margin-top: 0; color: #60a5fa; }
+        .synthesis h3 { color: #f8fafc; font-size: 1.2em; margin-top: 25px; margin-bottom: 10px; }
+        .synthesis p { margin-top: 0; }
+        
+        .checklist {
+            background-color: #1e293b;
+            padding: 15px 20px;
+            border-radius: 6px;
+            margin-top: 15px;
+        }
+        .checklist ul { margin: 0; padding-left: 20px; }
+        .checklist li { margin-bottom: 8px; }
+
+        /* Grid for Failures */
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1px));
+            gap: 25px;
+            margin-bottom: 50px;
+        }
+        .card {
+            background-color: #1e293b;
+            border-radius: 8px;
+            padding: 25px;
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2);
+        }
+        /* Top accent bars */
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 4px;
+        }
+        .card-1::before { background-color: #ef4444; } /* Red - Event Loop */
+        .card-2::before { background-color: #f59e0b; } /* Orange - Concurrency */
+        .card-3::before { background-color: #8b5cf6; } /* Purple - Noise */
+        .card-4::before { background-color: #10b981; } /* Green - Sync */
+        
+        .card h3 { margin-top: 0; color: #f1f5f9; border-bottom: 1px solid #334155; padding-bottom: 10px; }
+        .section-label { font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.05em; color: #94a3b8; font-weight: 700; margin-top: 20px; margin-bottom: 5px; }
+        .card p { font-size: 0.95em; color: #cbd5e1; }
+        .warning-signs { background-color: #0f172a; padding: 12px; border-radius: 4px; border-left: 2px solid #ef4444; font-size: 0.9em; }
+
+        footer {
+            text-align: center;
+            color: #64748b;
+            font-size: 0.9em;
+            border-top: 1px solid #1e293b;
+            padding-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Premortem: Proyecto Xavier</h1>
+            <div class="subtitle">Han pasado 6 meses. El cerebro de memoria global ha fallado. Esta es la autopsia.</div>
+        </header>
+
+        <div class="synthesis">
+            <h2>Síntesis Ejecutiva</h2>
+            
+            <h3>🔴 El Fallo Más Probable</h3>
+            <p><strong>Bloqueo del Event Loop (Tokio + Rayon)</strong>. La tentación de usar iteradores paralelos directamente en endpoints asíncronos de Rust es extremadamente alta. Un solo despiste en el código tumbará todo el servidor, bloqueando a todos los agentes de SWAL simultáneamente.</p>
+
+            <h3>⚠️ El Fallo Más Peligroso</h3>
+            <p><strong>Colapso por Ruido de Contexto</strong>. Si Xavier deja de proveer información precisa y empuja ruido irrelavante, los agentes perderán la confianza en la memoria. Una vez que esto pasa y deciden no consultar el servidor, Xavier se convierte en software muerto.</p>
+
+            <h3>👁️ El Supuesto Oculto</h3>
+            <p>Asumes que la concurrencia nativa de SQLite-Vec es tan robusta como la de PostgreSQL y puede soportar las ráfagas masivas de lectura y escritura que generan múltiples agentes LLM autónomos operando de manera asíncrona.</p>
+
+            <h3>🛠️ El Plan Revisado</h3>
+            <p><strong>1.</strong> Implementar un test de integración o linter estricto que prohíba el uso de <code>.par_iter()</code> fuera de <code>tokio::task::spawn_blocking</code>.<br>
+            <strong>2.</strong> Implementar inmediatamente un "decaimiento por tiempo" (time decay) en el scoring de búsqueda vectorial, garantizando que el contexto reciente venza a registros antiguos voluminosos.</p>
+
+            <div class="checklist">
+                <strong>Lista de Verificación Pre-Lanzamiento / Acción Inmediata:</strong>
+                <ul>
+                    <li>Ejecutar un script de prueba de estrés: 5 agentes llamando <code>create_memory</code> a 100 req/s para validar bloqueos de SQLite.</li>
+                    <li>Configurar un log que alerte si alguna tarea del event loop de Tokio tarda más de 5ms.</li>
+                    <li>Validar manualmente que un PR cerrado por Jules inyecta memoria en localhost:8006 en menos de 1 minuto.</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="grid">
+            <div class="card card-1">
+                <h3>1. Bloqueo del Event Loop</h3>
+                <div class="section-label">La Historia del Fallo</div>
+                <p>En el mes 3, un agente intentó indexar masivamente en BM25. El endpoint no envolvió <code>par_iter()</code> de Rayon en <code>spawn_blocking</code>, secuestrando los hilos de Tokio. El puerto 8006 dejó de responder por completo, los Webhooks se perdieron, y todo el ecosistema de agentes SWAL quedó paralizado simultáneamente.</p>
+                <div class="section-label">El Supuesto Subyacente</div>
+                <p>Se asumió que los desarrolladores aplicarían la "Regla de Oro" consistentemente en cada endpoint sin un guardarraíl automatizado.</p>
+                <div class="section-label">Señales de Advertencia Tempranas</div>
+                <div class="warning-signs">
+                    - Latencia inestable bajo carga media.<br>
+                    - Tareas de Tokio reportando demoras > 1ms en los logs del servidor.
+                </div>
+            </div>
+
+            <div class="card card-2">
+                <h3>2. Caos de Concurrencia (SQLite)</h3>
+                <div class="section-label">La Historia del Fallo</div>
+                <p>Para el mes 4, la actividad asíncrona de los agentes provocó picos de colisiones de escritura. SQLite comenzó a lanzar errores de `database is locked`. Los clientes ignoraron estos fallos, asumiendo éxito. Fragmentos cruciales se perdieron silenciosamente, y los agentes tomaron malas decisiones basándose en amnesia inducida.</p>
+                <div class="section-label">El Supuesto Subyacente</div>
+                <p>Se asumió que SQLite-Vec manejaría las ráfagas concurrentes de múltiples agentes LLM sin configuración extrema de WAL o pools de conexión personalizados.</p>
+                <div class="section-label">Señales de Advertencia Tempranas</div>
+                <div class="warning-signs">
+                    - "database is locked" esporádico en stderr.<br>
+                    - Agentes reportando <code>save_fragment</code> exitoso pero sin poder recuperarlo después.
+                </div>
+            </div>
+
+            <div class="card card-3">
+                <h3>3. Ruido de Contexto Severo</h3>
+                <div class="section-label">La Historia del Fallo</div>
+                <p>A los 6 meses, la BD acumuló miles de registros. La búsqueda vectorial empezó a recuperar contexto antiguo e irrelevante que saturaba el límite de <code>max_chars</code>, desplazando decisiones arquitectónicas recientes críticas. Los agentes empezaron a alucinar basándose en contexto obsoleto y abandonaron el uso de Xavier.</p>
+                <div class="section-label">El Supuesto Subyacente</div>
+                <p>Se asumió que el scoring puramente semántico/BM25 priorizaría siempre la información vital sobre el ruido estadístico acumulado.</p>
+                <div class="section-label">Señales de Advertencia Tempranas</div>
+                <div class="warning-signs">
+                    - Agentes resolviendo bugs que ya habían documentado la semana anterior.<br>
+                    - Los prompts inyectados contenían más de 50% de texto inútil.
+                </div>
+            </div>
+
+            <div class="card card-4">
+                <h3>4. Desincronización Jules vs CLI</h3>
+                <div class="section-label">La Historia del Fallo</div>
+                <p>Jules generó un análisis crítico en GitHub y lo persistió, pero el dispatcher local falló al inyectarlo al cerebro de memoria. Días después, un CLI local síncrono sobrescribió la misma arquitectura al no tener este contexto, introduciendo una severa regresión al mezclar visiones incompatibles.</p>
+                <div class="section-label">El Supuesto Subyacente</div>
+                <p>Se asumió que el puente asíncrono GitHub-Localhost para los back-fills de memoria era infalible y en tiempo real.</p>
+                <div class="section-label">Señales de Advertencia Tempranas</div>
+                <div class="warning-signs">
+                    - PRs fusionados exitosamente cuya metadata no aparecía en búsquedas de memoria horas más tarde.
+                </div>
+            </div>
+        </div>
+
+        <footer>
+            <p>Generado el 2026-07-08 | Target: Xavier Memory Core Project</p>
+        </footer>
+    </div>
+</body>
+</html>
