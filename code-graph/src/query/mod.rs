@@ -269,4 +269,8 @@ impl QueryEngine {
     pub fn stats(&self) -> Result<crate::types::IndexStats> {
         self.db.stats()
     }
+
+    pub fn db(&self) -> Arc<CodeGraphDB> {
+        self.db.clone()
+    }
 }

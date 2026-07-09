@@ -255,6 +255,7 @@ async fn run_all_benchmarks() -> Vec<EmbeddingBenchResult> {
         docker_model.clone(),
         docker_url.to_string(),
         1536,
+        std::time::Duration::from_secs(30),
     ) {
         results.push(
             bench_embedder(
@@ -283,6 +284,7 @@ async fn run_all_benchmarks() -> Vec<EmbeddingBenchResult> {
                 "text-embedding-3-small".into(),
                 api_endpoint,
                 1536,
+                std::time::Duration::from_secs(30),
             ) {
                 results.push(
                     bench_embedder("text-embedding-3-small", "cloud-openrouter", Arc::new(e)).await,

@@ -4,8 +4,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 /// Programming language supported
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 pub enum Language {
+    #[default]
     Rust,
     TypeScript,
     JavaScript,
@@ -46,8 +47,9 @@ impl Language {
 }
 
 /// Symbol type in the codebase
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 pub enum SymbolKind {
+    #[default]
     Function,
     Struct,
     Enum,
@@ -113,7 +115,7 @@ impl EdgeType {
 }
 
 /// A code symbol with location
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Symbol {
     pub id: Option<i64>,
     pub stable_id: Option<String>,

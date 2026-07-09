@@ -12,6 +12,7 @@ use axum::{
 use clap::{Parser, Subcommand};
 use code_graph::db::CodeGraphDB;
 use code_graph::indexer::Indexer;
+use code_graph::mcp::McpServer;
 use code_graph::query::QueryEngine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -43,6 +44,7 @@ struct SymbolEntry {
 #[derive(Serialize, Deserialize)]
 struct ScanRequest {
     path: String,
+    incremental: Option<bool>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -253,7 +255,8 @@ async fn scan(
         }
     };
 
-    match state.indexer.index(&validated_path).await {
+    let incremental = req.incremental.unwrap_or(true);
+    match state.indexer.index(&validated_path, incremental).await {
         Ok(stats) => {
             let mut languages = HashMap::new();
             for lang_count in stats.languages {
@@ -367,6 +370,10 @@ enum Commands {
     Scan {
         /// Path to scan
         path: PathBuf,
+
+        /// Disable incremental indexing
+        #[arg(long)]
+        no_incremental: bool,
     },
 
     /// Find symbols by name (CLI mode)
@@ -381,6 +388,13 @@ enum Commands {
 
     /// Show statistics (CLI mode)
     Stats,
+
+    /// Start MCP stdio server
+    Mcp {
+        /// Project root path to serve
+        #[arg(default_value = ".")]
+        path: PathBuf,
+    },
 }
 
 #[tokio::main]
@@ -482,9 +496,12 @@ async fn main() -> anyhow::Result<()> {
     match cli.command.expect("test assertion") {
         Commands::Serve => unreachable!(),
 
-        Commands::Scan { path } => {
+        Commands::Scan {
+            path,
+            no_incremental,
+        } => {
             println!("🔍 Scanning: {:?}", path);
-            let stats = indexer.index(&path).await?;
+            let stats = indexer.index(&path, !no_incremental).await?;
 
             println!("\n✅ Indexed in {}ms", stats.duration_ms);
             println!("📁 Files: {}", stats.total_files);
@@ -517,6 +534,11 @@ async fn main() -> anyhow::Result<()> {
             for lang_count in stats.languages {
                 println!("  {:?}: {}", lang_count.lang, lang_count.count);
             }
+        }
+
+        Commands::Mcp { path } => {
+            let mcp_server = McpServer::new(indexer, query_engine, path);
+            mcp_server.run().await?;
         }
     }
 
