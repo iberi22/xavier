@@ -53,6 +53,10 @@ hyper-util = "0.1"
 # Async mutex for shared state
 parking_lot = "0.12"
 
+# Plugin types
+codegraph-types = "0.1.0"
+dirs = "6.0"
+
 # Database
 rusqlite = { version = "0.32.0", features = ["bundled"] }
 
