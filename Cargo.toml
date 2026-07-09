@@ -39,12 +39,10 @@ members = [
     "clients/flutter_android/rust",
     "code-graph",
     "codegraph-types",
-    "parsers/codegraph-types",
     "parsers/codegraph-parse-typescript",
     "panel-ui/src-tauri",
     "xavier-core"
 ]
-members = ["clients/flutter_android/rust", "code-graph", "panel-ui/src-tauri", "xavier-core", "codegraph-types"]
 
 [features]
 default = ["cli-interactive"]
