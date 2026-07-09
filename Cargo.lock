@@ -2898,6 +2898,7 @@ dependencies = [
  "hyper-util",
  "ignore",
  "parking_lot",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",
@@ -2921,7 +2922,7 @@ dependencies = [
 ]
 
 [[package]]
-<name = "codegraph-parse-typescript"
+name = "codegraph-parse-typescript"
 version = "0.1.0"
 dependencies = [
  "anyhow",
