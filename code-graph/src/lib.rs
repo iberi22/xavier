@@ -9,6 +9,7 @@ pub mod db;
 pub mod debug;
 pub mod indexer;
 pub mod parser;
+pub mod plugin_host;
 pub mod query;
 
 pub use error::GraphError;
