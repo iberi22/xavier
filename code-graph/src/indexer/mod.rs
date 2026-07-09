@@ -27,19 +27,72 @@ impl Indexer {
     }
 
     /// Index a directory.
-    pub async fn index(&self, root: &Path) -> Result<IndexStats> {
+    pub async fn index(&self, root: &Path, incremental: bool) -> Result<IndexStats> {
         let start = Instant::now();
-        info!("Starting indexing of {:?}", root);
+        info!(
+            "Starting {}indexing of {:?}",
+            if incremental { "incremental " } else { "" },
+            root
+        );
 
-        let files = self.collect_files(root)?;
-        info!("Found {} files to index", files.len());
+        let all_files = self.collect_files(root)?;
+        let mut files_to_index = Vec::new();
+        let mut files_to_mtime = HashMap::new();
+        let mut files_to_delete = Vec::new();
 
-        self.db.clear()?;
+        if !incremental {
+            self.db.clear()?;
+            files_to_index = all_files;
+            // For metadata update later
+            for file_path in &files_to_index {
+                let (rel, mtime) = get_file_info(root, file_path);
+                files_to_mtime.insert(rel, mtime);
+            }
+        } else {
+            let existing_metadata = self.db.get_all_file_metadata()?;
+            let mut current_files = std::collections::HashSet::new();
+
+            for file_path in all_files {
+                let (relative_path, mtime) = get_file_info(root, &file_path);
+                current_files.insert(relative_path.clone());
+
+                if let Some(&old_mtime) = existing_metadata.get(&relative_path) {
+                    if old_mtime != mtime {
+                        debug!("File changed: {}", relative_path);
+                        files_to_delete.push(relative_path.clone());
+                        files_to_index.push(file_path);
+                        files_to_mtime.insert(relative_path, mtime);
+                    }
+                } else {
+                    debug!("New file: {}", relative_path);
+                    files_to_index.push(file_path);
+                    files_to_mtime.insert(relative_path, mtime);
+                }
+            }
+
+            for path in existing_metadata.keys() {
+                if !current_files.contains(path) {
+                    info!("File removed: {}", path);
+                    files_to_delete.push(path.clone());
+                }
+            }
+
+            if files_to_index.is_empty() && files_to_delete.is_empty() {
+                info!("No changes detected, skipping index update.");
+                let mut stats = self.db.stats()?;
+                stats.duration_ms = start.elapsed().as_millis() as u64;
+                return Ok(stats);
+            }
+
+            self.db.batch_delete_file_data(&files_to_delete)?;
+        }
+
+        info!("Found {} files to index", files_to_index.len());
 
         let semaphore = Arc::new(Semaphore::new(self.max_concurrent));
         let mut handles = Vec::new();
 
-        for file_path in files {
+        for file_path in files_to_index {
             let sem = semaphore.clone();
             let root = root.to_path_buf();
             let handle = tokio::spawn(async move {
@@ -51,24 +104,38 @@ impl Indexer {
             handles.push(handle);
         }
 
-        let mut symbols = Vec::new();
+        let mut new_symbols = Vec::new();
         let mut sources = HashMap::new();
         for handle in handles {
             match handle.await {
                 Ok(Ok(parsed)) => {
                     sources.insert(parsed.file_path.clone(), parsed.source);
-                    symbols.extend(parsed.symbols);
+                    new_symbols.extend(parsed.symbols);
                 }
                 Ok(Err(error)) => warn!("Failed to parse file: {}", error),
                 Err(error) => error!("Task failed: {}", error),
             }
         }
 
-        assign_stable_ids(&mut symbols);
-        let edges = build_edges(&symbols, &sources);
+        assign_stable_ids(&mut new_symbols);
 
-        self.db.insert_symbols(&symbols)?;
+        // Load all symbols to build edges correctly (new symbols can point to old ones)
+        // Only load if there are actually new symbols to process
+        let all_symbols = if incremental && !new_symbols.is_empty() {
+            let mut all = self.db.get_all_symbols()?;
+            all.extend(new_symbols.clone());
+            all
+        } else {
+            new_symbols.clone()
+        };
+
+        let edges = build_edges(&new_symbols, &all_symbols, &sources);
+
+        self.db.insert_symbols(&new_symbols)?;
         self.db.insert_edges(&edges)?;
+
+        // Update file metadata in batch
+        self.db.batch_upsert_file_metadata(files_to_mtime)?;
 
         let mut stats = self.db.stats()?;
         stats.duration_ms = start.elapsed().as_millis() as u64;
@@ -178,14 +245,18 @@ fn assign_stable_ids(symbols: &mut [Symbol]) {
     }
 }
 
-fn build_edges(symbols: &[Symbol], sources: &HashMap<String, String>) -> Vec<CodeEdge> {
+fn build_edges(
+    new_symbols: &[Symbol],
+    all_symbols: &[Symbol],
+    sources: &HashMap<String, String>,
+) -> Vec<CodeEdge> {
     let mut edges = Vec::new();
-    let callable_symbols: Vec<&Symbol> = symbols
+    let callable_symbols: Vec<&Symbol> = all_symbols
         .iter()
         .filter(|symbol| matches!(symbol.kind, SymbolKind::Function | SymbolKind::Method))
         .collect();
 
-    for symbol in symbols {
+    for symbol in new_symbols {
         let symbol_id = symbol
             .stable_id
             .clone()
@@ -228,7 +299,13 @@ fn build_edges(symbols: &[Symbol], sources: &HashMap<String, String>) -> Vec<Cod
         }
     }
 
-    for caller in &callable_symbols {
+    // Only build edges FROM new symbols
+    let new_callable_symbols: Vec<&Symbol> = new_symbols
+        .iter()
+        .filter(|symbol| matches!(symbol.kind, SymbolKind::Function | SymbolKind::Method))
+        .collect();
+
+    for caller in &new_callable_symbols {
         let Some(source) = sources.get(&caller.file_path) else {
             continue;
         };
@@ -290,6 +367,25 @@ fn contains_call(source: &str, name: &str) -> bool {
     source.contains(&needle) || source.contains(&method_needle)
 }
 
+fn get_file_info(root: &Path, file_path: &Path) -> (String, i64) {
+    let relative_path = file_path
+        .strip_prefix(root)
+        .unwrap_or(file_path)
+        .to_string_lossy()
+        .replace('\\', "/");
+
+    let mtime = std::fs::metadata(file_path)
+        .and_then(|m| m.modified())
+        .map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64
+        })
+        .unwrap_or(0);
+
+    (relative_path, mtime)
+}
+
 fn build_excludes(patterns: &[&str]) -> Option<GlobSet> {
     let mut builder = GlobSetBuilder::new();
     let mut added = false;
@@ -326,7 +422,7 @@ mod tests {
 
         let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
         let indexer = Indexer::new(db.clone());
-        let stats = indexer.index(dir.path()).await.expect("index");
+        let stats = indexer.index(dir.path(), false).await.expect("index");
 
         assert_eq!(stats.total_files, 2);
         assert!(stats.total_symbols >= 5);
@@ -349,5 +445,66 @@ mod tests {
 
         assert_eq!(files.len(), 1);
         assert!(files[0].ends_with("main.rs"));
+    }
+
+    #[tokio::test]
+    async fn incremental_indexing_skips_unchanged_files() {
+        let dir = TempDir::new().expect("temp dir");
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "fn main() {}\n").expect("write rust");
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db.clone());
+
+        // First index
+        let stats1 = indexer.index(dir.path(), true).await.expect("first index");
+        assert_eq!(stats1.total_files, 1);
+        let symbols1 = db.get_all_symbols().expect("get symbols");
+        assert_eq!(symbols1.len(), 1);
+
+        // Second index (no changes)
+        let stats2 = indexer.index(dir.path(), true).await.expect("second index");
+        assert_eq!(stats2.total_files, 1);
+        // Duration should be low, but more importantly, we can check if it re-indexed
+        // In our current implementation, new_symbols will be empty if nothing changed
+        // We can check if it still has the same symbols
+        let symbols2 = db.get_all_symbols().expect("get symbols");
+        assert_eq!(symbols2.len(), 1);
+        assert_eq!(symbols1[0].stable_id, symbols2[0].stable_id);
+
+        // Modify file
+        // Since we can't easily set mtime in a cross-platform way without extra crates,
+        // and our implementation uses std::fs::metadata, let's just write and hope mtime changes
+        // or just wait a bit.
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        std::fs::write(&file_path, "fn main() { println!(\"hi\"); }\nfn other() {}\n")
+            .expect("write rust");
+
+        let stats3 = indexer.index(dir.path(), true).await.expect("third index");
+        assert_eq!(stats3.total_files, 1);
+        let symbols3 = db.get_all_symbols().expect("get symbols");
+        assert_eq!(symbols3.len(), 2); // main and other
+    }
+
+    #[tokio::test]
+    async fn incremental_indexing_removes_deleted_files() {
+        let dir = TempDir::new().expect("temp dir");
+        let file1 = dir.path().join("main.rs");
+        let file2 = dir.path().join("other.rs");
+        std::fs::write(&file1, "fn main() {}\n").expect("write file1");
+        std::fs::write(&file2, "fn other() {}\n").expect("write file2");
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db.clone());
+
+        indexer.index(dir.path(), true).await.expect("first index");
+        assert_eq!(db.stats().expect("stats").total_files, 2);
+
+        std::fs::remove_file(file2).expect("remove file2");
+        indexer.index(dir.path(), true).await.expect("second index");
+
+        assert_eq!(db.stats().expect("stats").total_files, 1);
+        let symbols = db.get_all_symbols().expect("get symbols");
+        assert!(symbols.iter().all(|s| s.file_path == "main.rs"));
     }
 }
