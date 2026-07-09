@@ -38,7 +38,7 @@ path = "src/lib.rs"
 members = [
     "clients/flutter_android/rust",
     "code-graph",
-    "codegraph-types",
+    "parsers/codegraph-types-legacy",
     "parsers/codegraph-parse-typescript",
     "panel-ui/src-tauri",
     "xavier-core"
