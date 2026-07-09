@@ -29,6 +29,7 @@ tree-sitter-cpp = "0.23"
 walkdir = "2"
 ignore = "0.4"
 globset = "0.4"
+notify-debouncer-mini = "0.4"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -54,7 +55,7 @@ hyper-util = "0.1"
 parking_lot = "0.12"
 
 # Plugin types
-codegraph-types = { path = "../codegraph-types" }
+codegraph-types = { path = "../parsers/codegraph-types" }
 dirs = "6"
 
 # Database

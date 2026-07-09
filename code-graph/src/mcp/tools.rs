@@ -41,8 +41,8 @@ pub async fn handle_codegraph_search(
 
 pub async fn handle_codegraph_explore(
     query_engine: Arc<QueryEngine>,
-    indexer: Arc<Indexer>,
-    root_path: &Path,
+    _indexer: Arc<Indexer>,
+    _root_path: &Path,
     arguments: Value,
 ) -> anyhow::Result<Value> {
     let symbols_queries = arguments.get("symbols").and_then(|v| v.as_array());

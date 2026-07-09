@@ -470,6 +470,27 @@
             "last_tested": "2026-06-25",
             "notes": "Implemented via PRs #342, #345, #346. Status and Sync subcommands added 2026-06-25. Issue #339 closed. cargo check passes, tests: 943 pass, 10 pre-existing failures.",
             "implemented_in": "src/cli/commands/enums.rs, src/cli/handlers/agent_cli.rs, src/cli/server.rs, src/cli/handlers/agent.rs"
+        },
+        {
+            "id": "cg-watcher",
+            "name": "Code Graph File Watcher",
+            "category": "integration",
+            "status": "stable",
+            "progress_pct": 100,
+            "description": "Real-time file watching and incremental re-indexing for Code Graph using notify-debouncer-mini",
+            "steps": [
+                "Implement Indexer::reindex_file for single-file incremental updates",
+                "Implement DebouncedWatcher using notify-debouncer-mini",
+                "Add unit tests for file creation, modification, and deletion",
+                "Verify debounce logic colapses multiple events",
+                "Expose watcher module in code-graph indexer"
+            ],
+            "passes": true,
+            "verified_by": "automated",
+            "github_issue": null,
+            "last_tested": "2026-07-28",
+            "notes": "Replaced placeholder AutoSyncWatcher with a professional DebouncedWatcher. Standardized workspace configuration and fixed compilation errors in parser.",
+            "implemented_in": "code-graph/src/indexer/watcher.rs, code-graph/src/indexer/mod.rs"
         }
     ],
     "verification_commands": {
