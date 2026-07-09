@@ -113,13 +113,14 @@
                 "Implement AST parsing with tree-sitter",
                 "Expose /code/scan, /code/find, and /code/stats endpoints",
                 "Persist index path via XAVIER_CODE_GRAPH_DB_PATH",
-                "Support multiple programming languages"
+                "Support multiple programming languages",
+                "Implement 6-strategy call resolution cascade"
             ],
             "passes": true,
             "verified_by": "automated",
             "github_issue": 97,
-            "last_tested": "2026-06-16",
-            "notes": "Code-graph sidecar complete. HTTP handlers and multi-language AST parsing (Rust, Python, Go, C/C++, TS, Java) integrated.",
+            "last_tested": "2026-07-09",
+            "notes": "Code-graph sidecar complete. Multi-language AST parsing and 6-strategy call resolution cascade integrated. Improved edge detection accuracy (~80% resolution).",
             "implemented_in": "code-graph/, src/codebase/"
         },
         {

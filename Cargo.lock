@@ -2994,6 +2994,7 @@ dependencies = [
  "hyper-util",
  "ignore",
  "parking_lot",
+ "regex",
  "rusqlite",
  "serde",
  "serde_json",

@@ -17,6 +17,9 @@ pub mod go;
 pub mod java;
 pub mod python;
 pub mod rust;
+pub mod typescript;
+
+use crate::parser::typescript::TypeScriptParser;
 
 /// Parse source code using tree-sitter or a plugin
 pub async fn parse_source(
@@ -79,6 +82,10 @@ pub fn parse_source_sync(source: &str, lang: &Language, file_path: &str) -> Resu
         }
         Language::Python => {
             let mut parser = PythonParser::new()?;
+            parser.parse(source, file_path)
+        }
+        Language::TypeScript | Language::JavaScript => {
+            let mut parser = TypeScriptParser::new(lang.clone())?;
             parser.parse(source, file_path)
         }
         _ => Ok(vec![]),
