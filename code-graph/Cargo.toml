@@ -56,7 +56,7 @@ hyper-util = "0.1"
 parking_lot = "0.12"
 
 # Plugin types
-codegraph-types = { path = "../parsers/codegraph-types" }
+codegraph-types = { path = "../codegraph-types" }
 dirs = "6"
 
 # Database

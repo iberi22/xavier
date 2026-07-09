@@ -1,7 +1,7 @@
 //! TypeScript parser using tree-sitter.
 
 use crate::error::{GraphError, Result};
-use crate::parser::{compact_node_signature, cyclomatic_complexity, PushSymbolArgs};
+use crate::parser::{compact_node_signature, cyclomatic_complexity};
 use crate::types::{Language, Symbol, SymbolKind};
 use tree_sitter::{Node, Parser};
 
@@ -13,7 +13,7 @@ pub struct TypeScriptParser {
 impl TypeScriptParser {
     pub fn new(lang: Language) -> Result<Self> {
         let mut parser = Parser::new();
-        let is_tsx = lang == Language::TypeScript && true; // Simple heuristic for now, or just use TSX as it usually works for TS too
+        let _is_tsx = lang == Language::TypeScript; // Simple heuristic for now, or just use TSX as it usually works for TS too
         // Actually, let's use the extension if we had it, but we only have Language here.
         // tree-sitter-typescript provides both.
         let grammar = tree_sitter_typescript::LANGUAGE_TYPESCRIPT;
