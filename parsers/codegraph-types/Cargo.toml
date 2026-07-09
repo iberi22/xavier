@@ -1,5 +1,5 @@
 [package]
-name = "codegraph-types"
+name = "codegraph-types-plugin"
 version = "0.1.0"
 edition = "2021"
 
