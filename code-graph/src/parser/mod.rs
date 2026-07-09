@@ -5,8 +5,8 @@ use crate::plugin_host::{FileToParse, ParserDispatch, PluginHost};
 use crate::parser::c::CParser;
 use crate::parser::cpp::CppParser;
 use crate::parser::go::GoParser;
-use crate::parser::java::JavaParser;
 use crate::parser::python::PythonParser;
+use crate::parser::java::JavaParser;
 use crate::parser::rust::RustParser;
 use crate::types::{Language, Symbol, SymbolKind};
 use tree_sitter::Node;
@@ -46,7 +46,6 @@ pub async fn parse_source(
                     e
                 })
         }
-<
         ParserDispatch::Native => match lang {
             Language::Rust => {
                 let mut parser = RustParser::new()?;
@@ -66,6 +65,10 @@ pub async fn parse_source(
             }
             Language::Cpp => {
                 let mut parser = CppParser::new()?;
+                parser.parse(source, file_path)
+            }
+            Language::Python => {
+                let mut parser = PythonParser::new()?;
                 parser.parse(source, file_path)
             }
             _ => Ok(vec![]),
@@ -171,10 +174,6 @@ mod tests {
     use super::*;
     use crate::types::SymbolKind;
 
-<<<<<<< HEAD
-    #[test]
-    fn parses_python_symbols() {
-=======
     #[tokio::test]
     async fn parses_typescript_symbols() {
         let symbols = parse_source(
@@ -208,7 +207,6 @@ mod tests {
 
     #[tokio::test]
     async fn parses_python_symbols() {
->>>>>>> origin/main
         let symbols = parse_source(
             "import os\nclass Service:\n    VERSION = 1\n    async def run(self):\n        return os.getcwd()\nx, y = (1, 2)",
             &Language::Python,
