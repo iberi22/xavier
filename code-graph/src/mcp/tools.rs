@@ -12,21 +12,31 @@ pub async fn handle_codegraph_search(
     query_engine: Arc<QueryEngine>,
     arguments: Value,
 ) -> anyhow::Result<Value> {
-    let query = arguments.get("query").and_then(|v| v.as_str()).unwrap_or("");
-    let limit = arguments.get("limit").and_then(|v| v.as_u64()).unwrap_or(10) as usize;
+    let query = arguments
+        .get("query")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    let limit = arguments
+        .get("limit")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(10) as usize;
 
     let result = query_engine.search(query, limit)?;
 
-    let symbols: Vec<Value> = result.symbols.into_iter().map(|s| {
-        json!({
-            "name": s.name,
-            "kind": format!("{:?}", s.kind),
-            "file": s.file_path,
-            "line": s.start_line,
-            "signature": s.signature,
-            "stable_id": s.stable_id
+    let symbols: Vec<Value> = result
+        .symbols
+        .into_iter()
+        .map(|s| {
+            json!({
+                "name": s.name,
+                "kind": format!("{:?}", s.kind),
+                "file": s.file_path,
+                "line": s.start_line,
+                "signature": s.signature,
+                "stable_id": s.stable_id
+            })
         })
-    }).collect();
+        .collect();
 
     Ok(json!({
         "content": [{
@@ -41,13 +51,16 @@ pub async fn handle_codegraph_search(
 
 pub async fn handle_codegraph_explore(
     query_engine: Arc<QueryEngine>,
-    indexer: Arc<Indexer>,
-    root_path: &Path,
+    _indexer: Arc<Indexer>,
+    _root_path: &Path,
     arguments: Value,
 ) -> anyhow::Result<Value> {
     let symbols_queries = arguments.get("symbols").and_then(|v| v.as_array());
     let depth = arguments.get("depth").and_then(|v| v.as_u64()).unwrap_or(2) as usize;
-    let max_chars = arguments.get("max_chars").and_then(|v| v.as_u64()).unwrap_or(8000) as usize;
+    let max_chars = arguments
+        .get("max_chars")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(8000) as usize;
 
     let mut resolved_symbols = Vec::new();
     let mut impact_analyses = Vec::new();

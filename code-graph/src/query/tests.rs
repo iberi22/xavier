@@ -235,7 +235,9 @@ mod tests_inner {
     fn by_language_engine_backed_by_find_by_lang() {
         let db = Arc::new(setup_test_db());
         let engine = QueryEngine::new(db);
-        let result = engine.by_language(Language::Rust, 100).expect("by_language");
+        let result = engine
+            .by_language(Language::Rust, 100)
+            .expect("by_language");
         assert!(!result.is_empty(), "by_language must not be a stub anymore");
     }
 
@@ -243,7 +245,8 @@ mod tests_inner {
     fn clear_by_file_removes_only_that_file() {
         let db = setup_test_db();
         // process_data lives in /src/processor.rs
-        db.clear_by_file("/src/processor.rs").expect("clear_by_file");
+        db.clear_by_file("/src/processor.rs")
+            .expect("clear_by_file");
         let remaining = db
             .find_symbols("process_data", 10)
             .expect("find after clear");

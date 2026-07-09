@@ -212,7 +212,11 @@ struct ParsedFile {
     symbols: Vec<Symbol>,
 }
 
-async fn parse_file(root: &Path, file_path: &Path, plugin_host: Option<&PluginHost>) -> Result<ParsedFile> {
+async fn parse_file(
+    root: &Path,
+    file_path: &Path,
+    plugin_host: Option<&PluginHost>,
+) -> Result<ParsedFile> {
     let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
     let lang = Language::from_extension(ext);
 
@@ -386,7 +390,7 @@ fn contains_call(source: &str, name: &str) -> bool {
     }
     let bytes = source.as_bytes();
     let needle_bytes = call_needle.as_bytes();
-    let name_first = name.as_bytes()[0];
+    let _name_first = name.as_bytes()[0];
     let mut from = 0;
     while let Some(idx) = source[from..].find(&call_needle) {
         let abs = from + idx;
@@ -524,8 +528,11 @@ mod tests {
         // and our implementation uses std::fs::metadata, let's just write and hope mtime changes
         // or just wait a bit.
         std::thread::sleep(std::time::Duration::from_secs(1));
-        std::fs::write(&file_path, "fn main() { println!(\"hi\"); }\nfn other() {}\n")
-            .expect("write rust");
+        std::fs::write(
+            &file_path,
+            "fn main() { println!(\"hi\"); }\nfn other() {}\n",
+        )
+        .expect("write rust");
 
         let stats3 = indexer.index(dir.path(), true).await.expect("third index");
         assert_eq!(stats3.total_files, 1);

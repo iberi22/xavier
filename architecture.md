@@ -4,12 +4,7 @@
 > Last verified: **2026-07-08** | Overall maturity: **91%** (reconciled tri-source — 7 gaps closed)
 > Codebase: 125,734 LOC Rust · 559 archivos · 1044 test fns en 206 archivos · build `cargo test --lib --no-run` ✔
 
-> **Update 2026-07-08 — CodeGraph structural intelligence:** the four MCP tools
-> (`codegraph_explore`, `trace_path`, `get_architecture`, `detect_changes`) are now wired to the
-> live `code_graph` engine instead of returning mocks; `find_symbols` uses FTS5 `MATCH`+`bm25`;
-> the sidecar binary is hardened (token required off-loopback, configurable CORS, constant-time
-> auth). Code Graph Index remains at **100% Stable**. See devlog
-> `2026-07-08-codegraph-mcp-wiring-and-security.md`.
+> **Update 2026-07-08 — CodeGraph v0.6.1-beta at 87% overall progress (see code-graph/features.json).** All 7 tree-sitter parsers operational (Rust, TS, Python, Go, Java, C, C++). FTS5+BM25 search with multi-word phrase matching and LIKE fallback. BFS graph traversal with path tracing via recursive CTE. Hub nodes and complexity hotspot analysis. Incremental indexing support (clear_by_file + deterministic stable IDs). Edge detection with heuristic call graph. HTTP sidecar with auth, CORS, path traversal protection. AutoSyncWatcher exists but needs wiring (15%). CI/CD missing (0%).**
 
 > **Reconciliation note (2026-07-02):** the `maturity deep-scan` (scanner v2) reports 6% due to a calibration
 > bug — its `test_scanner` reports `tests_passing: 0/0` across every feature despite 1044 verified tests and
@@ -30,14 +25,22 @@ src/
 ├── server/        — MCP Server (HTTP+SSE + Stdio)
 ├── cli/           — CLI commands (server, mcp, code-dump, security)
 ├── health/        — Self-monitoring & health checks
-├── cli/           — Runtime core
 ├── storage/       — Storage backends
 ├── crypto/        — Encryption, hashing
 ├── security/      — ACL, permissions, secrets
 ├── sync/          — Memory sync primitives
-└── tgd/           — Textual Gradient Descent optimization
+├── tgd/           — Textual Gradient Descent optimization
+└── agents/        — HORMER, evolution, system3
 
 xavier-core/       — Extracted core crate for Android/FFI (PR #207)
+
+code-graph/        — Workspace crate: code-graph v0.6.1-beta
+├── src/parser/    — Tree-sitter parsers (Rust, TS, Python, Go, Java, C, C++)
+├── src/db/        — SQLite + FTS5 + BM25 + Recursive CTE graphs
+├── src/indexer/   — File collection, parsing, edge building
+├── src/query/     — QueryEngine + QueryCache (TTL/LRU)
+├── src/main.rs    — Sidecar HTTP server (Axum) + CLI commands
+└── features.json  — Feature tracking (87% overall progress)
 ```
 
 ## Feature Maturity (reconciled 2026-07-02 — overall 74%)

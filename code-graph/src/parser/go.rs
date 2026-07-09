@@ -255,7 +255,13 @@ impl GoParser {
         }
     }
 
-    fn push_import_spec(&self, node: Node, source: &str, file_path: &str, symbols: &mut Vec<Symbol>) {
+    fn push_import_spec(
+        &self,
+        node: Node,
+        source: &str,
+        file_path: &str,
+        symbols: &mut Vec<Symbol>,
+    ) {
         if let Some(path_node) = node.child_by_field_name("path") {
             if let Ok(path) = path_node.utf8_text(source.as_bytes()) {
                 let name = path.trim_matches('"').to_string();
@@ -311,7 +317,11 @@ mod tests {
 
         let reader = symbols.iter().find(|s| s.name == "Reader").unwrap();
         assert_eq!(reader.kind, SymbolKind::Trait);
-        assert!(reader.signature.as_ref().unwrap().contains("type Reader interface { ... }"));
+        assert!(reader
+            .signature
+            .as_ref()
+            .unwrap()
+            .contains("type Reader interface { ... }"));
     }
 
     #[test]
@@ -335,7 +345,11 @@ mod tests {
         let source = "import \"fmt\"\nimport (\n    \"os\"\n    f \"framework/net\"\n)";
         let symbols = parser.parse(source, "main.go").unwrap();
 
-        let names: Vec<_> = symbols.iter().filter(|s| s.kind == SymbolKind::Import).map(|s| s.name.as_str()).collect();
+        let names: Vec<_> = symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Import)
+            .map(|s| s.name.as_str())
+            .collect();
         assert!(names.contains(&"fmt"));
         assert!(names.contains(&"os"));
         assert!(names.contains(&"framework/net"));

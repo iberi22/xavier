@@ -150,8 +150,9 @@ impl McpServer {
                             self.query_engine.clone(),
                             self.indexer.clone(),
                             &self.root_path,
-                            arguments
-                        ).await
+                            arguments,
+                        )
+                        .await
                     }
                     _ => Err(anyhow::anyhow!("Tool not found: {}", name)),
                 };
