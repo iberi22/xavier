@@ -7,7 +7,6 @@ use crate::parser::go::GoParser;
 use crate::parser::java::JavaParser;
 use crate::parser::python::PythonParser;
 use crate::parser::rust::RustParser;
-use crate::parser::typescript::TypeScriptParser;
 use crate::types::{Language, Symbol, SymbolKind};
 use tree_sitter::Node;
 
@@ -17,17 +16,12 @@ pub mod go;
 pub mod java;
 pub mod python;
 pub mod rust;
-pub mod typescript;
 
 /// Parse source code using tree-sitter
 pub fn parse_source(source: &str, lang: &Language, file_path: &str) -> Result<Vec<Symbol>> {
     match lang {
         Language::Rust => {
             let mut parser = RustParser::new()?;
-            parser.parse(source, file_path)
-        }
-        Language::TypeScript | Language::JavaScript => {
-            let mut parser = TypeScriptParser::new(lang.clone())?;
             parser.parse(source, file_path)
         }
         Language::Python => {
@@ -147,35 +141,6 @@ pub(crate) fn cyclomatic_complexity(node: Node, source: &str) -> f32 {
 mod tests {
     use super::*;
     use crate::types::SymbolKind;
-
-    #[test]
-    fn parses_typescript_symbols() {
-        let symbols = parse_source(
-            "import x from 'pkg';\nclass UserService { run() {} }\nfunction main() {}\nconst load = () => main();\nenum Color { Red }\nconst a = 1, b = 2;\nlet count = 0;",
-            &Language::TypeScript,
-            "app.ts",
-        )
-        .expect("parse");
-        assert!(symbols
-            .iter()
-            .any(|s| s.name == "UserService" && s.kind == SymbolKind::Class));
-        assert!(symbols
-            .iter()
-            .any(|s| s.name == "main" && s.kind == SymbolKind::Function));
-        assert!(symbols.iter().any(|s| s.kind == SymbolKind::Import));
-        assert!(symbols
-            .iter()
-            .any(|s| s.name == "Color" && s.kind == SymbolKind::Enum));
-        assert!(symbols
-            .iter()
-            .any(|s| s.name == "a" && s.kind == SymbolKind::Constant));
-        assert!(symbols
-            .iter()
-            .any(|s| s.name == "b" && s.kind == SymbolKind::Constant));
-        assert!(symbols
-            .iter()
-            .any(|s| s.name == "count" && s.kind == SymbolKind::Variable));
-    }
 
     #[test]
     fn parses_python_symbols() {
