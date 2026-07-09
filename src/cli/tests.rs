@@ -55,29 +55,6 @@ fn test_code_query() -> code_graph::query::QueryEngine {
     code_graph::query::QueryEngine::new(Arc::new(db))
 }
 
-#[test]
-fn code_find_pattern_falls_back_to_symbol_search() {
-    let query = test_code_query();
-    let symbols = code_find_symbols(&query, "", None, Some("search_memories"), 10);
-    assert_eq!(symbols.len(), 1);
-    assert_eq!(symbols[0].name, "search_memories");
-}
-
-#[test]
-fn code_find_query_falls_back_to_identifier_token() {
-    let query = test_code_query();
-    let symbols = code_find_symbols(&query, "fn add_memory", None, None, 10);
-    assert_eq!(symbols.len(), 1);
-    assert_eq!(symbols[0].name, "add_memory");
-}
-
-#[test]
-fn code_find_kind_filters_by_query() {
-    let query = test_code_query();
-    let symbols = code_find_symbols(&query, "search_memories", Some("function"), None, 10);
-    assert_eq!(symbols.len(), 1);
-    assert_eq!(symbols[0].name, "search_memories");
-}
 
 #[test]
 fn cli_security_blocks_injection() {

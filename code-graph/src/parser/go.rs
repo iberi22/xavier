@@ -195,7 +195,11 @@ impl GoParser {
                     self.push_symbol(
                         symbols,
                         PushSymbolArgs {
-                            node: child,
+                            node: if node.kind() == "type_declaration" {
+                                node
+                            } else {
+                                child
+                            },
                             source,
                             language: Language::Go,
                             kind,
@@ -239,21 +243,36 @@ impl GoParser {
     }
 
     fn push_import(&self, node: Node, source: &str, file_path: &str, symbols: &mut Vec<Symbol>) {
-        let raw = node.utf8_text(source.as_bytes()).unwrap_or_default();
-        for part in raw.split('"').skip(1).step_by(2) {
-            self.push_symbol(
-                symbols,
-                PushSymbolArgs {
-                    node,
-                    source,
-                    language: Language::Go,
-                    kind: SymbolKind::Import,
-                    file_path,
-                    name: part.to_string(),
-                    depth: 0,
-                    parent: None,
-                },
-            );
+        if node.kind() == "import_declaration" {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "import_spec" {
+                    self.push_import_spec(child, source, file_path, symbols);
+                }
+            }
+        } else if node.kind() == "import_spec" {
+            self.push_import_spec(node, source, file_path, symbols);
+        }
+    }
+
+    fn push_import_spec(&self, node: Node, source: &str, file_path: &str, symbols: &mut Vec<Symbol>) {
+        if let Some(path_node) = node.child_by_field_name("path") {
+            if let Ok(path) = path_node.utf8_text(source.as_bytes()) {
+                let name = path.trim_matches('"').to_string();
+                self.push_symbol(
+                    symbols,
+                    PushSymbolArgs {
+                        node,
+                        source,
+                        language: Language::Go,
+                        kind: SymbolKind::Import,
+                        file_path,
+                        name,
+                        depth: 0,
+                        parent: None,
+                    },
+                );
+            }
         }
     }
 
@@ -277,5 +296,48 @@ impl GoParser {
             parent: args.parent,
             complexity,
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_go_interface() {
+        let mut parser = GoParser::new().unwrap();
+        let source = "type Reader interface {\n    Read(p []byte) (n int, err error)\n}";
+        let symbols = parser.parse(source, "io.go").unwrap();
+
+        let reader = symbols.iter().find(|s| s.name == "Reader").unwrap();
+        assert_eq!(reader.kind, SymbolKind::Trait);
+        assert!(reader.signature.as_ref().unwrap().contains("type Reader interface { ... }"));
+    }
+
+    #[test]
+    fn parses_go_methods_with_receivers() {
+        let mut parser = GoParser::new().unwrap();
+        let source = "func (u User) ValueMethod() {}\nfunc (u *User) PointerMethod() {}";
+        let symbols = parser.parse(source, "user.go").unwrap();
+
+        let value_method = symbols.iter().find(|s| s.name == "ValueMethod").unwrap();
+        assert_eq!(value_method.kind, SymbolKind::Method);
+        assert_eq!(value_method.parent.as_deref(), Some("User"));
+
+        let pointer_method = symbols.iter().find(|s| s.name == "PointerMethod").unwrap();
+        assert_eq!(pointer_method.kind, SymbolKind::Method);
+        assert_eq!(pointer_method.parent.as_deref(), Some("User"));
+    }
+
+    #[test]
+    fn parses_go_imports() {
+        let mut parser = GoParser::new().unwrap();
+        let source = "import \"fmt\"\nimport (\n    \"os\"\n    f \"framework/net\"\n)";
+        let symbols = parser.parse(source, "main.go").unwrap();
+
+        let names: Vec<_> = symbols.iter().filter(|s| s.kind == SymbolKind::Import).map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"fmt"));
+        assert!(names.contains(&"os"));
+        assert!(names.contains(&"framework/net"));
     }
 }

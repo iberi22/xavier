@@ -236,6 +236,32 @@ impl CodeGraphDB {
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS file_metadata (
+                path TEXT PRIMARY KEY,
+                mtime INTEGER NOT NULL
+            );
+
+            CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
+                name,
+                content='symbols',
+                content_rowid='id',
+                tokenize="unicode61"
+            );
+
+            CREATE TRIGGER IF NOT EXISTS symbols_ai AFTER INSERT ON symbols BEGIN
+                INSERT INTO symbols_fts(rowid, name) VALUES (new.id, new.name);
+            END;
+            CREATE TRIGGER IF NOT EXISTS symbols_ad AFTER DELETE ON symbols BEGIN
+                INSERT INTO symbols_fts(symbols_fts, rowid, name) VALUES('delete', old.id, old.name);
+            END;
+            CREATE TRIGGER IF NOT EXISTS symbols_au AFTER UPDATE ON symbols BEGIN
+                INSERT INTO symbols_fts(symbols_fts, rowid, name) VALUES('delete', old.id, old.name);
+                INSERT INTO symbols_fts(rowid, name) VALUES (new.id, new.name);
+            END;
+
+            -- Rebuild FTS index to ensure it's in sync with existing data
+            INSERT INTO symbols_fts(symbols_fts) VALUES('rebuild');
             "#,
         )
         .map_err(|e| GraphError::Database(e.to_string()))?;
@@ -1086,6 +1112,120 @@ impl CodeGraphDB {
         Ok(edges)
     }
 
+    /// Get modification time for all indexed files
+    pub fn get_all_file_metadata(&self) -> Result<std::collections::HashMap<String, i64>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let mut stmt = conn
+            .prepare("SELECT path, mtime FROM file_metadata")
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let rows = stmt
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let mut metadata = std::collections::HashMap::new();
+        for (path, mtime) in rows.flatten() {
+            metadata.insert(path, mtime);
+        }
+
+        Ok(metadata)
+    }
+
+    /// Update or insert file metadata in batch
+    pub fn batch_upsert_file_metadata(
+        &self,
+        metadata: std::collections::HashMap<String, i64>,
+    ) -> Result<()> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let tx = conn
+            .transaction()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO file_metadata (path, mtime) VALUES (?1, ?2)
+                     ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime",
+                )
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            for (path, mtime) in metadata {
+                stmt.execute(params![path, mtime])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Delete all data associated with multiple file paths in a single transaction
+    pub fn batch_delete_file_data(&self, file_paths: &[String]) -> Result<()> {
+        if file_paths.is_empty() {
+            return Ok(());
+        }
+
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let tx = conn
+            .transaction()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        {
+            let mut stmt_symbols = tx
+                .prepare("DELETE FROM symbols WHERE file_path = ?1")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+            let mut stmt_edges = tx
+                .prepare("DELETE FROM edges WHERE file_path = ?1")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+            let mut stmt_refs = tx
+                .prepare("DELETE FROM refs WHERE file_path = ?1")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+            let mut stmt_imports = tx
+                .prepare("DELETE FROM imports WHERE file_path = ?1")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+            let mut stmt_meta = tx
+                .prepare("DELETE FROM file_metadata WHERE path = ?1")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            for path in file_paths {
+                stmt_symbols
+                    .execute(params![path])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+                stmt_edges
+                    .execute(params![path])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+                stmt_refs
+                    .execute(params![path])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+                stmt_imports
+                    .execute(params![path])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+                stmt_meta
+                    .execute(params![path])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
     /// Clear all data
     pub fn clear(&self) -> Result<()> {
         let conn = self
@@ -1099,6 +1239,7 @@ impl CodeGraphDB {
             DELETE FROM imports;
             DELETE FROM edges;
             DELETE FROM symbols;
+            DELETE FROM file_metadata;
             "#,
         )
         .map_err(|e| GraphError::Database(e.to_string()))?;
@@ -1208,5 +1349,96 @@ mod tests {
         let results = db.find_symbols("test", 1).expect("failed to find symbols");
         assert_eq!(results.symbols.len(), 1);
         assert!(results.symbols[0].stable_id.is_some());
+    }
+
+    #[test]
+    fn verifies_fts5_prefix_matching_and_ranking() {
+        let db = CodeGraphDB::in_memory().expect("db");
+        let symbols = vec![
+            Symbol {
+                id: None,
+                stable_id: None,
+                name: "main".to_string(),
+                kind: SymbolKind::Function,
+                lang: Language::Rust,
+                file_path: "src/main.rs".to_string(),
+                start_line: 1,
+                end_line: 3,
+                start_col: 0,
+                end_col: 1,
+                signature: None,
+                parent: None,
+                complexity: None,
+            },
+            Symbol {
+                id: None,
+                stable_id: None,
+                name: "main_loop".to_string(),
+                kind: SymbolKind::Function,
+                lang: Language::Rust,
+                file_path: "src/main.rs".to_string(),
+                start_line: 5,
+                end_line: 10,
+                start_col: 0,
+                end_col: 1,
+                signature: None,
+                parent: None,
+                complexity: None,
+            },
+            Symbol {
+                id: None,
+                stable_id: None,
+                name: "run_main".to_string(),
+                kind: SymbolKind::Function,
+                lang: Language::Rust,
+                file_path: "src/lib.rs".to_string(),
+                start_line: 20,
+                end_line: 25,
+                start_col: 0,
+                end_col: 1,
+                signature: None,
+                parent: None,
+                complexity: None,
+            },
+            Symbol {
+                id: None,
+                stable_id: None,
+                name: "other".to_string(),
+                kind: SymbolKind::Function,
+                lang: Language::Rust,
+                file_path: "src/lib.rs".to_string(),
+                start_line: 30,
+                end_line: 35,
+                start_col: 0,
+                end_col: 1,
+                signature: None,
+                parent: None,
+                complexity: None,
+            },
+        ];
+
+        for s in symbols {
+            db.insert_symbol(&s).expect("insert");
+        }
+
+        // Prefix matching: "main" should find "main", "main_loop", and "run_main" (if FTS is configured right)
+        // Wait, "run_main" contains "main", it's not a prefix of "main".
+        // FTS5 "main*" finds things starting with "main".
+        let results = db.find_symbols("main", 10).expect("find");
+
+        // "main" and "main_loop" definitely.
+        // "main" and "main_loop" definitely.
+        // "run_main" is found because our second-pass sorting uses calculate_score which handles it.
+        // Wait, calculate_score is only applied to results ALREADY returned by FTS5.
+        // To ensure FTS5 returns "run_main", we'd need it to be a separate token or use a different match.
+        // Let's adjust expectations: prefix matching "main*" finds "main" and "main_loop".
+
+        let names: Vec<String> = results.symbols.iter().map(|s| s.name.clone()).collect();
+        assert!(names.contains(&"main".to_string()));
+        assert!(names.contains(&"main_loop".to_string()));
+        assert!(names.contains(&"run_main".to_string()));
+
+        // Exact match should be first
+        assert_eq!(results.symbols[0].name, "main");
     }
 }
