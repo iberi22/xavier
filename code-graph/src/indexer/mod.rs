@@ -3,6 +3,7 @@
 use crate::db::CodeGraphDB;
 use crate::error::{GraphError, Result};
 use crate::parser::parse_source;
+use crate::plugin_host::PluginHost;
 use crate::types::{CodeEdge, EdgeType, IndexStats, Language, Symbol, SymbolKind};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use ignore::WalkBuilder;
@@ -16,6 +17,7 @@ use tracing::{debug, error, info, warn};
 pub struct Indexer {
     db: Arc<CodeGraphDB>,
     max_concurrent: usize,
+    plugin_host: Arc<PluginHost>,
 }
 
 impl Indexer {
@@ -23,6 +25,7 @@ impl Indexer {
         Self {
             db,
             max_concurrent: 8,
+            plugin_host: Arc::new(PluginHost::new()),
         }
     }
 
@@ -95,11 +98,10 @@ impl Indexer {
         for file_path in files_to_index {
             let sem = semaphore.clone();
             let root = root.to_path_buf();
+            let plugin_host = self.plugin_host.clone();
             let handle = tokio::spawn(async move {
                 let _permit = sem.acquire().await.expect("semaphore should be open");
-                tokio::task::spawn_blocking(move || parse_file(&root, &file_path))
-                    .await
-                    .map_err(|e| GraphError::Parser(e.to_string()))?
+                parse_file(&root, &file_path, Some(&*plugin_host)).await
             });
             handles.push(handle);
         }
@@ -208,16 +210,12 @@ struct ParsedFile {
     symbols: Vec<Symbol>,
 }
 
-fn parse_file(root: &Path, file_path: &Path) -> Result<ParsedFile> {
+async fn parse_file(root: &Path, file_path: &Path, plugin_host: Option<&PluginHost>) -> Result<ParsedFile> {
     let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
     let lang = Language::from_extension(ext);
-    if lang == Language::Unknown {
-        return Ok(ParsedFile {
-            file_path: file_path.to_string_lossy().to_string(),
-            source: String::new(),
-            symbols: Vec::new(),
-        });
-    }
+
+    // We try to parse even if lang is Unknown because a plugin might handle it by extension
+    // But for now, we follow the discovery logic in PluginHost::parser_for which might return NoOp
 
     let source = std::fs::read_to_string(file_path).map_err(GraphError::Io)?;
     let relative_path = file_path
@@ -225,7 +223,7 @@ fn parse_file(root: &Path, file_path: &Path) -> Result<ParsedFile> {
         .unwrap_or(file_path)
         .to_string_lossy()
         .replace('\\', "/");
-    let symbols = parse_source(&source, &lang, &relative_path)?;
+    let symbols = parse_source(&source, &lang, &relative_path, plugin_host).await?;
     if !symbols.is_empty() {
         debug!("Extracted {} symbols from {}", symbols.len(), relative_path);
     }
