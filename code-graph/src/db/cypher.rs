@@ -13,7 +13,12 @@ pub struct TraversalPath {
 impl CodeGraphDB {
     /// Executes a Cypher-like recursive CTE to find paths between symbols
     /// Pattern adapted from codebase-memory-mcp
-    pub fn trace_path(&self, start_symbol: &str, max_depth: u32, reverse: bool) -> Result<Vec<TraversalPath>> {
+    pub fn trace_path(
+        &self,
+        start_symbol: &str,
+        max_depth: u32,
+        reverse: bool,
+    ) -> Result<Vec<TraversalPath>> {
         let conn = self
             .conn
             .lock()
@@ -44,8 +49,7 @@ impl CodeGraphDB {
             SELECT DISTINCT current_symbol, depth, path_str FROM path_cte
             ORDER BY depth ASC;
             "#,
-            target_col, target_col, anchor_col, 
-            target_col, target_col, anchor_col
+            target_col, target_col, anchor_col, target_col, target_col, anchor_col
         );
 
         let mut stmt = conn
@@ -63,10 +67,8 @@ impl CodeGraphDB {
             .map_err(|e| GraphError::Database(e.to_string()))?;
 
         let mut paths = Vec::new();
-        for row in rows {
-            if let Ok(path) = row {
-                paths.push(path);
-            }
+        for path in rows.flatten() {
+            paths.push(path);
         }
 
         Ok(paths)

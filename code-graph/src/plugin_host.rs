@@ -1,9 +1,9 @@
+use crate::error::{GraphError, Result};
+use crate::types::{Language, Symbol};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::process::Stdio;
-use serde::{Deserialize, Serialize};
-use crate::error::{GraphError, Result};
-use crate::types::{Language, Symbol};
 use tracing::debug;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -42,6 +42,12 @@ pub struct PluginHost {
     plugins: HashMap<Language, PluginConfig>,
 }
 
+impl Default for PluginHost {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PluginHost {
     pub fn new() -> Self {
         let mut host = Self {
@@ -55,7 +61,12 @@ impl PluginHost {
 
     pub fn load_plugins(&mut self) -> Result<()> {
         let config_dir = dirs::config_dir()
-            .ok_or_else(|| GraphError::Io(std::io::Error::new(std::io::ErrorKind::NotFound, "Config dir not found")))?
+            .ok_or_else(|| {
+                GraphError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "Config dir not found",
+                ))
+            })?
             .join("code-graph");
 
         let plugins_json = config_dir.join("plugins.json");
@@ -64,7 +75,8 @@ impl PluginHost {
         }
 
         let content = fs::read_to_string(plugins_json).map_err(GraphError::Io)?;
-        let configs: Vec<PluginConfig> = serde_json::from_str(&content).map_err(|e| GraphError::Parser(e.to_string()))?;
+        let configs: Vec<PluginConfig> =
+            serde_json::from_str(&content).map_err(|e| GraphError::Parser(e.to_string()))?;
 
         for config in configs {
             for lang in &config.languages {
@@ -84,18 +96,30 @@ impl PluginHost {
             ParserDispatch::Plugin(config.clone())
         } else {
             match lang {
-                Language::TypeScript | Language::JavaScript | Language::Python | Language::Go | Language::Java | Language::C | Language::Cpp => ParserDispatch::Native,
+                Language::TypeScript
+                | Language::JavaScript
+                | Language::Python
+                | Language::Go
+                | Language::Java
+                | Language::C
+                | Language::Cpp => ParserDispatch::Native,
                 _ => ParserDispatch::NoOp,
             }
         }
     }
 
-    pub async fn parse_with_plugin(&self, config: &PluginConfig, lang: Language, files: Vec<FileToParse>) -> Result<Vec<Symbol>> {
+    pub async fn parse_with_plugin(
+        &self,
+        config: &PluginConfig,
+        lang: Language,
+        files: Vec<FileToParse>,
+    ) -> Result<Vec<Symbol>> {
         let request = PluginRequest {
             language: lang,
             files,
         };
-        let input_json = serde_json::to_string(&request).map_err(|e| GraphError::Parser(e.to_string()))?;
+        let input_json =
+            serde_json::to_string(&request).map_err(|e| GraphError::Parser(e.to_string()))?;
 
         let mut child = tokio::process::Command::new(&config.command)
             .stdin(Stdio::piped())
@@ -103,10 +127,15 @@ impl PluginHost {
             .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn()
-            .map_err(|e| GraphError::Io(e))?;
+            .map_err(GraphError::Io)?;
 
-        let mut stdin = child.stdin.take().ok_or_else(|| GraphError::Parser("Failed to open stdin".to_string()))?;
-        tokio::io::AsyncWriteExt::write_all(&mut stdin, input_json.as_bytes()).await.map_err(GraphError::Io)?;
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| GraphError::Parser("Failed to open stdin".to_string()))?;
+        tokio::io::AsyncWriteExt::write_all(&mut stdin, input_json.as_bytes())
+            .await
+            .map_err(GraphError::Io)?;
         drop(stdin);
 
         let timeout = tokio::time::Duration::from_secs(5);
@@ -124,10 +153,14 @@ impl PluginHost {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(GraphError::Parser(format!("Plugin exited with {}: {}", output.status, stderr)));
+            return Err(GraphError::Parser(format!(
+                "Plugin exited with {}: {}",
+                output.status, stderr
+            )));
         }
 
-        let response: PluginResponse = serde_json::from_slice(&output.stdout).map_err(|e| GraphError::Parser(e.to_string()))?;
+        let response: PluginResponse = serde_json::from_slice(&output.stdout)
+            .map_err(|e| GraphError::Parser(e.to_string()))?;
 
         if let Some(err) = response.error {
             return Err(GraphError::Parser(err));
@@ -175,6 +208,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires mock_plugin.py executable (platform-dependent)"]
     async fn test_parse_with_plugin() {
         let host = PluginHost {
             plugins: HashMap::new(),
@@ -193,7 +227,10 @@ mod tests {
             source: "function test() {}".to_string(),
         }];
 
-        let symbols = host.parse_with_plugin(&config, Language::TypeScript, files).await.expect("Plugin failed");
+        let symbols = host
+            .parse_with_plugin(&config, Language::TypeScript, files)
+            .await
+            .expect("Plugin failed");
         assert_eq!(symbols.len(), 1);
         assert_eq!(symbols[0].name, "MockPluginSymbol");
     }

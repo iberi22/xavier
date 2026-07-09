@@ -1,0 +1,274 @@
+{
+  "_comment": "Code-graph features tracking — actualizado 2026-07-08. ⚠️ PRs #441 (MCP wiring) y #464 (spawn_blocking) están OPEN/DRAFT, NO mergeados.",
+  "metadata": {
+    "crate": "code-graph",
+    "version": "0.6.1-beta",
+    "last_verified": "2026-07-08",
+    "total_features": 21,
+    "features_complete": 17,
+    "features_partial": 2,
+    "features_missing": 2,
+    "overall_progress_pct": 83,
+    "target": 100,
+    "target_date": "TBD",
+    "open_prs": [
+      {"pr": 441, "title": "feat(codegraph): wire MCP handlers to real engine + skill + security audit", "state": "OPEN", "conflicts": true, "branch": "feat/codegraph-mcp-wiring"},
+      {"pr": 464, "title": "Refactor Indexer I/O to spawn_blocking", "state": "DRAFT", "conflicts": true, "branch": "fix-indexer-blocking-io-v2-13303491742489367769"}
+    ],
+    "open_issues": [
+      {"issue": 446, "title": "[code-graph][P3] Usar spawn_blocking para I/O de archivos en Indexer — 0% actual", "state": "OPEN"},
+      {"issue": 166, "title": "feat-governance-dao: Bicameral DAO on-chain integration", "state": "OPEN"}
+    ],
+    "audit_findings_unresolved": [
+      {"severity": "HIGH (sec)", "finding": "Token por defecto 'default-token-change-me' en sidecar", "location": "code-graph/main.rs:310-313"},
+      {"severity": "HIGH (sec)", "finding": "CORS Any/Any/Any", "location": "code-graph/main.rs:327-330"},
+      {"severity": "MEDIUM", "finding": "contains_call falsos positivos por substring", "location": "code-graph/src/indexer/mod.rs:289"},
+      {"severity": "LOW", "finding": "Divergencia de rutas DB (MCP data/code_graph.db vs scanner .xavier/codegraph.sqlite)", "location": "cli/config.rs:103, scanner/code_graph.rs:86"},
+      {"severity": "LOW", "finding": "get_code_graph legacy solapa con tools nuevas", "location": "tools_core.rs"},
+      {"severity": "LOW", "finding": "QueryEngine::by_language es stub", "location": "query/mod.rs:264"}
+    ]
+  },
+  "features": [
+    {
+      "id": "cg-parser-infra",
+      "name": "Parser Infrastructure (tree-sitter)",
+      "category": "parsing",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Multi-language tree-sitter parser orchestration. All 7 language parsers registered, wired, and tested in parser/mod.rs.",
+      "files": ["src/parser/mod.rs"],
+      "tests": ["parses_rust_symbols", "parses_typescript_symbols", "parses_python_symbols", "parses_go_symbols", "parses_java_symbols", "parses_c_symbols", "parses_cpp_symbols"],
+      "verified_by": "automated"
+    },
+    {
+      "id": "cg-parser-rust",
+      "name": "Rust Parser",
+      "category": "parsing",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Full tree-sitter AST parsing for Rust: functions, methods, structs, enums, traits, impls, const/static, let declarations, modules. Cyclomatic complexity, compact signatures.",
+      "files": ["src/parser/rust.rs"],
+      "tests": ["extracts_compact_function_signature_without_body", "extracts_struct_signature_without_fields", "truncates_long_unicode_signature_on_char_boundary"],
+      "verified_by": "automated"
+    },
+    {
+      "id": "cg-parser-typescript",
+      "name": "TypeScript/JavaScript Parser",
+      "category": "parsing",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "tree-sitter-typescript parsing: class, function, import, enum, const, let, arrow functions. Shared parser for .ts, .tsx, .js, .jsx.",
+      "files": ["src/parser/typescript.rs"],
+      "tests": ["parses_typescript_symbols"],
+      "verified_by": "automated"
+    },
+    {
+      "id": "cg-parser-python",
+      "name": "Python Parser",
+      "category": "parsing",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "tree-sitter-python parsing: class, async/def methods, imports, variables, tuple destructuring.",
+      "files": ["src/parser/python.rs"],
+      "tests": ["parses_python_symbols"],
+      "verified_by": "automated"
+    },
+    {
+      "id": "cg-parser-go",
+      "name": "Go Parser",
+      "category": "parsing",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "tree-sitter-go parsing: struct, method (with receiver), function, const, var, imports.",
+      "files": ["src/parser/go.rs"],
+      "tests": ["parses_go_symbols"],
+      "verified_by": "automated"
+    },
+    {
+      "id": "cg-parser-java",
+      "name": "Java Parser",
+      "category": "parsing",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "tree-sitter-java parsing: class, method, imports.",
+      "files": ["src/parser/java.rs"],
+      "tests": ["parses_java_symbols"],
+      "verified_by": "automated"
+    },
+    {
+      "id": "cg-parser-c",
+      "name": "C Parser",
+      "category": "parsing",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "tree-sitter-c parsing: function, struct, #define constants, #include imports.",
+      "files": ["src/parser/c.rs"],
+      "tests": ["parses_c_symbols"],
+      "verified_by": "automated"
+    },
+    {
+      "id": "cg-parser-cpp",
+      "name": "C++ Parser",
+      "category": "parsing",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "tree-sitter-cpp parsing: function, class, method (with parent tracking), namespace modules, #include imports.",
+      "files": ["src/parser/cpp.rs"],
+      "tests": ["parses_cpp_symbols"],
+      "verified_by": "automated"
+    },
+    {
+      "id": "cg-fts5-search",
+      "name": "FTS5 Full-Text Search with BM25",
+      "category": "search",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "SQLite FTS5 virtual table for symbol search with BM25 ranking (name weight=10.0, signature=2.0, file_path=1.0). LIKE fallback for empty queries. Exact/prefix/contains scoring overlay on BM25 results. Multi-word phrase matching.",
+      "files": ["src/db/mod.rs"],
+      "tests": ["find_symbols_uses_fts5_matching_signature_column", "test_insert_and_find_symbol", "test_fuzzy_search", "test_case_insensitive", "test_empty_query", "test_no_results", "test_limit"],
+      "verified_by": "automated"
+    },
+    {
+      "id": "cg-edge-detection",
+      "name": "Edge Detection & Call Graph",
+      "category": "graph",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Edge building from parsed symbols: Contains (file→symbol), Defines (file→symbol), Imports (file→module), Calls (caller→callee with heuristic word-boundary detection), References. 14 edge types defined in EdgeType enum. Confidence scoring for heuristic edges.",
+      "files": ["src/indexer/mod.rs", "src/types.rs"],
+      "tests": ["indexes_multiple_languages_and_edges"],
+      "verified_by": "automated"
+    },
+    {
+      "id": "cg-query-engine",
+      "name": "Query Engine with Caching",
+      "category": "query",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "QueryEngine with: search (FTS5+cache), functions/structs/classes/enums finders, by-language filter, pattern-to-kind mapping, in-file query, dependencies (BFS), reverse-dependencies, call-chains, hub nodes (incoming/outgoing degree), complexity hotspots (risk = complexity × degree), stats. QueryCache with TTL + LRU eviction.",
+      "files": ["src/query/mod.rs"],
+      "tests": ["test_graph_queries_follow_edges", "test_find_by_kind", "test_limit", "test_query_result_metadata", "by_language_engine_backed_by_find_by_lang"],
+      "verified_by": "automated"
+    },
+    {
+      "id": "cg-path-tracing",
+      "name": "Cypher-like Path Tracing (Recursive CTE)",
+      "category": "graph",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Recursive SQL CTE for graph path tracing. trace_path(start_symbol, max_depth, reverse) returns TraversalPath entries with depth and path_str. Forward (callees) and reverse (callers) modes.",
+      "files": ["src/db/cypher.rs"],
+      "tests": ["test_graph_queries_follow_edges"],
+      "verified_by": "automated"
+    },
+    {
+      "id": "cg-hubs-hotspots",
+      "name": "Hub Nodes & Complexity Hotspots",
+      "category": "analysis",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "HubNodes: stable_id + incoming/outgoing/total edge counts via SQL aggregation. ComplexityHotspots: risk_score = complexity × (incoming + 1) for ranking high-risk functions.",
+      "files": ["src/db/mod.rs"],
+      "tests": [],
+      "verified_by": "code-audit"
+    },
+    {
+      "id": "cg-incremental-indexing",
+      "name": "Incremental Indexing Support",
+      "category": "indexing",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "clear_by_file(file_path) deletes symbols/edges/refs/imports for one file. Enables per-file re-index without full DB wipe. Stable IDs with deterministic SHA-256-based generation ensure idempotent upserts across re-indexes.",
+      "files": ["src/db/mod.rs", "src/types.rs"],
+      "tests": ["clear_by_file_removes_only_that_file", "deterministic_symbol_ids_upsert_on_reindex"],
+      "verified_by": "automated"
+    },
+    {
+      "id": "cg-watcher",
+      "name": "File Watcher (AutoSync)",
+      "category": "indexing",
+      "status": "draft",
+      "progress_pct": 15,
+      "description": "AutoSyncWatcher using notify crate: watches filesystem for Modify/Create/Remove events. Currently only LOGS the changed paths. Does NOT actually re-index. The incremental logic (clear_by_file + re-parse) is not connected.",
+      "files": ["src/indexer/watcher.rs"],
+      "tests": [],
+      "verified_by": "code-audit",
+      "notes": "TODO: Connect watcher events to incremental re-index pipeline using clear_by_file + parse_file"
+    },
+    {
+      "id": "cg-benchmarks",
+      "name": "Performance Benchmarks",
+      "category": "testing",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "4 benchmarks: search_exact (100 queries < 1000ms), search_fuzzy (100 queries < 2000ms), insert (100 symbols < 500ms), find_by_kind (100 queries < 1000ms). 1000-symbol test database.",
+      "files": ["src/db/benchmarks.rs"],
+      "tests": ["benchmark_search_exact", "benchmark_search_fuzzy", "benchmark_insert", "benchmark_find_by_kind"],
+      "verified_by": "automated"
+    },
+    {
+      "id": "cg-http-server",
+      "name": "HTTP Server (Sidecar)",
+      "category": "server",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Axum HTTP server with: health (public), /code/scan (POST, auth), /code/find (POST, auth), /code/stats (GET, auth). Constant-time auth comparison, path traversal validation, configurable CORS (CODE_GRAPH_ALLOWED_ORIGINS), ephemeral token generation for non-loopback binds. CLI mode for scan/find/stats commands.",
+      "files": ["src/main.rs"],
+      "tests": [],
+      "verified_by": "code-audit"
+    },
+    {
+      "id": "cg-debug-cli",
+      "name": "Debug CLI (DOT export, verify, list)",
+      "category": "debugging",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "DebugCLI with: list_files (language stats), list_symbols (by kind filter), export_dot (DOT graph format for Graphviz), verify (index integrity check).",
+      "files": ["src/debug.rs"],
+      "tests": [],
+      "verified_by": "code-audit"
+    },
+    {
+      "id": "cg-ci-cd",
+      "name": "CI/CD Pipeline (GitHub Actions)",
+      "category": "devops",
+      "status": "missing",
+      "progress_pct": 0,
+      "description": "No CI/CD workflow configured specifically for code-graph crate. Must add: cargo test, cargo clippy -- -D warnings, cargo fmt --check on PR/merge to main. Xavier's root CI has tests but doesn't guarantee code-graph passes independently.",
+      "files": [],
+      "tests": [],
+      "verified_by": "repo-audit"
+    },
+    {
+      "id": "cg-documentation",
+      "name": "Code-graph Technical Documentation",
+      "category": "docs",
+      "status": "draft",
+      "progress_pct": 40,
+      "description": "ARCHITECTURE.md in code-graph/ doesn't exist. README.md is minimal (package description only). API docs only from rustdoc. Missing: architecture doc, feature list, usage guide, configuration reference.",
+      "files": ["README.md"],
+      "tests": [],
+      "verified_by": "repo-audit"
+    },
+    {
+      "id": "cg-spawn-blocking",
+      "name": "Async I/O — spawn_blocking para Indexer",
+      "category": "performance",
+      "status": "draft",
+      "progress_pct": 0,
+      "description": "Indexer usa std::fs::read_to_string() dentro de tokio::spawn, bloqueando el thread async. Necesita migrar a tokio::task::spawn_blocking. PR #464 (DRAFT, +20/-11) existe pero tiene conflictos. Issue #446 tracking.",
+      "files": ["code-graph/src/indexer/mod.rs"],
+      "tests": [],
+      "verified_by": "code-audit",
+      "pr": 464,
+      "notes": "PR #464 created by Jules. Conflicts need resolution. Only 20 lines changed."
+    }
+  ],
+  "verification_commands": {
+    "all": "cargo.exe test --manifest-path code-graph/Cargo.toml",
+    "lint": "cargo.exe clippy --manifest-path code-graph/Cargo.toml --all-targets -- -D warnings",
+    "format": "cargo.exe fmt --manifest-path code-graph/Cargo.toml --check",
+    "benchmarks": "cargo.exe test --manifest-path code-graph/Cargo.toml --bench",
+    "full_ci": "cargo.exe fmt --check --manifest-path code-graph/Cargo.toml && cargo.exe clippy --manifest-path code-graph/Cargo.toml --all-targets -- -D warnings && cargo.exe test --manifest-path code-graph/Cargo.toml"
+  }
+}

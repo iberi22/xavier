@@ -1,11 +1,12 @@
+use crate::error::{GraphError, Result};
+use crate::indexer::Indexer;
+use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tracing::{error, info, debug};
-use notify::{Watcher, RecommendedWatcher, RecursiveMode, Event, Config};
-use crate::error::{GraphError, Result};
-use crate::indexer::Indexer;
+use tracing::{debug, info};
 
+#[allow(dead_code)]
 pub struct AutoSyncWatcher {
     indexer: Arc<Indexer>,
     root: PathBuf,
@@ -39,9 +40,11 @@ impl AutoSyncWatcher {
         // Simple debounce loop
         while let Some(event) = rx.recv().await {
             match event.kind {
-                notify::EventKind::Modify(_) | notify::EventKind::Create(_) | notify::EventKind::Remove(_) => {
+                notify::EventKind::Modify(_)
+                | notify::EventKind::Create(_)
+                | notify::EventKind::Remove(_) => {
                     for path in event.paths {
-                        // TODO: Implement fine-grained incremental update. 
+                        // TODO: Implement fine-grained incremental update.
                         // For now, we log the path to be updated. The actual incremental logic
                         // requires purging the old file's symbols and edges from DB, and re-parsing.
                         debug!("File changed, queuing incremental sync: {:?}", path);
