@@ -48,14 +48,19 @@ impl Indexer {
             return Ok(());
         }
 
-        // 2. Re-parse
-        let parsed = match parse_file(root, file_path, Some(&*self.plugin_host)).await {
-            Ok(p) => p,
-            Err(e) => {
-                debug!("Skipping re-index for {}: {}", relative, e);
-                return Ok(());
-            }
-        };
+        // 2. Re-parse using spawn_blocking + parse_file_sync
+        let root_owned = root.to_path_buf();
+        let file_path_owned = file_path.to_path_buf();
+        let plugin_host = self.plugin_host.clone();
+        let parsed = tokio::task::spawn_blocking(move || {
+            parse_file_sync(&root_owned, &file_path_owned, Some(&*plugin_host))
+        })
+        .await
+        .map_err(|e| GraphError::Indexer(format!("Join error: {}", e)))?
+        .map_err(|e| {
+            debug!("Skipping re-index for {}: {}", relative, e);
+            e
+        })?;
 
         if parsed.symbols.is_empty() {
             // Update mtime even if no symbols, so we don't keep trying to re-index it if it hasn't changed
@@ -472,13 +477,6 @@ fn symbol_source_slice(source: &str, symbol: &Symbol) -> String {
         .join("\n")
 }
 
-#[deprecated(note = "Use CallResolver instead")]
-fn contains_call(source: &str, name: &str) -> bool {
-    let needle = format!("{}(", name);
-    let method_needle = format!(".{}(", name);
-    source.contains(&needle) || source.contains(&method_needle)
-}
-
 fn get_file_info(root: &Path, file_path: &Path) -> (String, i64) {
     let relative_path = file_path
         .strip_prefix(root)
@@ -621,7 +619,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[tokio::test]
     async fn indexer_handles_concurrent_file_batches() {
         let dir = TempDir::new().unwrap();
         // Create 110 files (2 batches of 50 + 1 of 10)
@@ -658,7 +655,7 @@ mod tests {
         let stats = indexer.index(dir.path(), false).await.unwrap();
 
         assert_eq!(stats.total_files, 20);
-        assert!(stats.duration_ms < 10000); // reasonable time
+        assert!(stats.duration_ms < 10000);
     }
 
     #[test]
@@ -680,6 +677,7 @@ mod tests {
 
     #[tokio::test]
     async fn build_edges_uses_resolver_instead_of_contains_call() {
+        let dir = TempDir::new().unwrap();
         std::fs::write(
             dir.path().join("main.rs"),
             "mod processor;\nfn main() { processor::process_data(); }",
@@ -697,7 +695,6 @@ mod tests {
         let call_edges: Vec<_> = edges.iter().filter(|e| e.edge_type == EdgeType::Calls).collect();
 
         assert!(!call_edges.is_empty(), "Should have call edges");
-        // Verify at least one edge has metadata.strategy
         assert!(call_edges.iter().any(|e| {
             e.metadata.as_ref().and_then(|m| m.get("strategy")).is_some()
         }), "Call edges should include strategy metadata");
