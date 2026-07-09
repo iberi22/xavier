@@ -1,8 +1,15 @@
 # Xavier Architecture
 
 > **GitCore Protocol v3.6.1** | Feature tracking: [.xavier/feature-maturity.json](.xavier/feature-maturity.json)
-> Last verified: **2026-07-03** | Overall maturity: **91%** (reconciled tri-source — 7 gaps closed)
+> Last verified: **2026-07-08** | Overall maturity: **91%** (reconciled tri-source — 7 gaps closed)
 > Codebase: 125,734 LOC Rust · 559 archivos · 1044 test fns en 206 archivos · build `cargo test --lib --no-run` ✔
+
+> **Update 2026-07-08 — CodeGraph structural intelligence:** the four MCP tools
+> (`codegraph_explore`, `trace_path`, `get_architecture`, `detect_changes`) are now wired to the
+> live `code_graph` engine instead of returning mocks; `find_symbols` uses FTS5 `MATCH`+`bm25`;
+> the sidecar binary is hardened (token required off-loopback, configurable CORS, constant-time
+> auth). Code Graph Index remains at **100% Stable**. See devlog
+> `2026-07-08-codegraph-mcp-wiring-and-security.md`.
 
 > **Reconciliation note (2026-07-02):** the `maturity deep-scan` (scanner v2) reports 6% due to a calibration
 > bug — its `test_scanner` reports `tests_passing: 0/0` across every feature despite 1044 verified tests and
