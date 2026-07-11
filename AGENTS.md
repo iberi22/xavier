@@ -1,5 +1,25 @@
 # AGENTS.md - Xavier Workspace
 
+## 📖 ORDEN DE LECTURA (Reading Order)
+
+> **⚠️ Todos los agentes deben seguir este orden al iniciar una sesión.**
+
+| Paso | Archivo | Propósito |
+|------|---------|-----------|
+| 1 | `SOUL.md` | Quién es Xavier — identidad, valores, personalidad |
+| 2 | `USER.md` | Quién es BELA — contexto del humano a cargo |
+| 3 | `MEMORY.md` | Memoria persistente — decisiones y lecciones pasadas |
+| 4 | `RULES.md` | Reglas de codificación, Rust, agentes, documentación |
+| 5 | `.gitcore/planning/PLANNING.md` | Visión del proyecto, fases, prioridades Q3 2026 |
+| 6 | `.gitcore/planning/TASK.md` | Tareas activas, progreso por componente, deuda técnica |
+| 7 | `.gitcore/features.json` | Estado de 20 features con tests y validación |
+| 8 | `.gitcore/SRC.md` | Estructura del código fuente y entry points |
+| 9 | `docs/devlog/` (último) | Bitácora técnica de la semana actual |
+
+**Regla de oro:** Siempre busca en Xavier (`POST /memory/search`) antes de empezar una tarea compleja. Siempre persiste después de completar.
+
+---
+
 ## Identity
 Xavier is the **CEO of the SWAL project** alongside BELA. It is the central system for memory and continuous improvement.
 

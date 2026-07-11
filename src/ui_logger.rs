@@ -128,8 +128,12 @@ impl UILogger {
     }
 
     async fn send_notification(&self, entry: &UILogEntry) -> Result<()> {
-        let title = format!("UI {}: {}", entry.level.as_str().to_uppercase(), entry.component);
-        
+        let title = format!(
+            "UI {}: {}",
+            entry.level.as_str().to_uppercase(),
+            entry.component
+        );
+
         let body = if let Some(stack) = &entry.stack_trace {
             format!("{}\n\nStack:\n{}", entry.message, stack)
         } else {
@@ -150,7 +154,7 @@ impl UILogger {
 
     fn log_to_tracing(&self, entry: &UILogEntry) {
         let msg = format!("[UI:{}] {}", entry.component, entry.message);
-        
+
         match entry.level {
             UILogLevel::Debug => tracing::debug!("{}", msg),
             UILogLevel::Info => tracing::info!("{}", msg),
@@ -204,5 +208,12 @@ pub async fn log_ui_warning(component: &str, message: &str) {
 }
 
 pub async fn log_ui_critical(component: &str, message: &str, context: serde_json::Value) {
-    let _ = log_ui_event(UILogLevel::Critical, component, message, Some(context), None).await;
+    let _ = log_ui_event(
+        UILogLevel::Critical,
+        component,
+        message,
+        Some(context),
+        None,
+    )
+    .await;
 }

@@ -8,7 +8,7 @@ use tauri::{
     Emitter, Manager,
 };
 use tauri_plugin_shell::ShellExt;
-use xavier::ui_logger::{log_ui_error, log_ui_info, UILogLevel, log_ui_event};
+use xavier::ui_logger::{log_ui_error, log_ui_event, log_ui_info, UILogLevel};
 
 // ── Constants ──────────────────────────────────────────────────
 const LOCK_FILENAME: &str = "xavier.lock";
@@ -328,7 +328,7 @@ pub fn run() {
         .setup(|app| {
             // Initialize UI logger
             log::info!("Initializing Xavier Panel UI");
-            
+
             // Log startup
             tauri::async_runtime::spawn(async {
                 let _ = log_ui_info("TauriApp", "Xavier Panel UI starting up").await;
@@ -482,7 +482,7 @@ pub fn run() {
                 "Xavier sidecar spawned successfully (CWD: {:?})",
                 xavier_cwd
             );
-            
+
             // Log successful sidecar spawn
             let cwd_str = format!("{:?}", xavier_cwd);
             tauri::async_runtime::spawn(async move {

@@ -102,6 +102,33 @@ src/
 ├── observability/          # Logging, tracing, health
 ├── embedding/              # Cloud + local embedding providers
 └── storage/                # SQLite + sqlite-vec
+
+code-graph/                 # AST code indexing sidecar (workspace member)
+├── src/
+│   ├── main.rs             # CLI + HTTP server (Axum, sidecar binary)
+│   ├── lib.rs              # Public API: db, indexer, parser, query, debug
+│   ├── types.rs            # Symbol, CodeEdge, EdgeType, SymbolKind, Language
+│   ├── error.rs            # GraphError enum (8 variants)
+│   ├── db/
+│   │   ├── mod.rs          # CodeGraphDB: SQLite schema, CRUD, FTS5 search, hubs, hotspots
+│   │   ├── cypher.rs       # Recursive CTE path tracing (trace_path)
+│   │   └── benchmarks.rs   # Performance smoke tests (4 benchmarks)
+│   ├── indexer/
+│   │   ├── mod.rs          # Indexer: file collection, parsing, edge building
+│   │   └── watcher.rs      # AutoSyncWatcher (placeholder, not wired)
+│   ├── parser/
+│   │   ├── mod.rs          # parse_source() dispatcher (7 languages)
+│   │   ├── rust.rs         # Rust parser (tree-sitter)
+│   │   ├── typescript.rs   # TS/JS parser
+│   │   ├── python.rs       # Python parser
+│   │   ├── go.rs           # Go parser
+│   │   ├── java.rs         # Java parser
+│   │   ├── c.rs            # C parser
+│   │   └── cpp.rs          # C++ parser
+│   ├── query/
+│   │   ├── mod.rs          # QueryEngine + QueryCache (TTL+LRU)
+│   │   └── tests.rs        # Query engine tests (8)
+│   └── debug.rs            # DebugCLI (DOT export, verify, list)
 ```
 
 ## Key Architectural Constraints
