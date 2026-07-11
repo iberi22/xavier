@@ -8,6 +8,15 @@ const xavierTarget =
 
 export default defineConfig(({ command }) => {
   const isBuild = command === "build";
+  // Tauri embeds the frontend at the web root (tauri://localhost/), while the
+  // standalone Axum backend serves it under /panel. Detect the Tauri build via
+  // any of the env vars its CLI injects and only use the /panel base for the
+  // web bundle consumed by the Axum server.
+  const isTauriBuild = !!(
+    process.env.TAURI_ENV_PLATFORM ||
+    process.env.TAURI_PLATFORM ||
+    process.env.TAURI_ENV_ARCH
+  );
 
   return {
     define: {
@@ -15,7 +24,10 @@ export default defineConfig(({ command }) => {
         process.env.npm_package_version || "0.6.1-beta",
       ),
     },
-    base: "/",
+    // Backend serves the web panel at /panel (assets under /panel/assets/*).
+    // Tauri serves the same bundle from the root, so keep base "/" for it.
+    // The dev server also stays at "/" (its proxy already routes /panel/api).
+    base: isBuild && !isTauriBuild ? "/panel/" : "/",
     plugins: [tailwindcss(), react()],
     resolve: {
       alias: {

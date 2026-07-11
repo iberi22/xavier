@@ -408,10 +408,12 @@ fn local_config() -> OpenAICompatibleConfig {
         .unwrap_or_else(|_| DEFAULT_LOCAL_EMBEDDING_MODEL.to_string());
 
     OpenAICompatibleConfig {
-        api_key: settings
-            .embedding
-            .api_key
-            .clone()
+        // Env vars take precedence over the config file (12-factor: stale keys in
+        // config.json must not shadow a valid XAVIER_EMBEDDING_API_KEY in .env).
+        api_key: std::env::var("XAVIER_EMBEDDING_API_KEY")
+            .ok()
+            .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+            .or_else(|| settings.embedding.api_key.clone())
             .or_else(|| Some("ollama".to_string())),
         endpoint,
         dimension: embedding_dimension_for_model(&model),
@@ -435,13 +437,13 @@ fn cloud_config() -> OpenAICompatibleConfig {
         .unwrap_or_else(|_| DEFAULT_CLOUD_EMBEDDING_MODEL.to_string());
 
     OpenAICompatibleConfig {
-        api_key: settings
-            .embedding
-            .api_key
-            .clone()
-            .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+        // Env vars take precedence over the config file (12-factor: stale keys in
+        // config.json must not shadow a valid XAVIER_EMBEDDING_API_KEY in .env).
+        api_key: std::env::var("XAVIER_EMBEDDING_API_KEY")
+            .ok()
             .or_else(|| std::env::var("XAVIER_OPENROUTER_API_KEY").ok())
-            .or_else(|| std::env::var("XAVIER_EMBEDDING_API_KEY").ok()),
+            .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+            .or_else(|| settings.embedding.api_key.clone()),
         endpoint,
         dimension: embedding_dimension_for_model(&model),
         model,

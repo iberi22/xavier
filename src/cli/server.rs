@@ -518,6 +518,8 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         )
         .route("/panel/api/widgets", get(list_widgets).post(save_widget))
         .route("/panel/api/graph", get(get_graph).post(save_graph))
+        .route("/api/logs", get(list_logs))
+        .route("/api/logs/stats", get(log_stats))
         .route("/secrets/lend", post(lend_handler))
         .route("/secrets/leases", get(leases_handler))
         .route("/secrets/revoke", post(revoke_handler))
@@ -818,6 +820,14 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .merge(large_body_routes)
         .layer(Extension(workspace_ctx.clone()))
         .layer(CorsLayer::permissive());
+
+    // Observability: log every request via tracing, persist 5xx to the
+    // ServiceLogStore so they surface in the Panel "Logs" tab.
+    let obs_state = std::sync::Arc::new(xavier::observability::ObservabilityState::new());
+    let app = app.layer(middleware::from_fn_with_state(
+        obs_state,
+        xavier::observability::request_logger,
+    ));
 
     let agent_indexer_cron = state.agent_indexer.clone();
     let memory_port_cron = state.memory.clone();
