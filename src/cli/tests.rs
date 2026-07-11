@@ -55,7 +55,6 @@ fn test_code_query() -> code_graph::query::QueryEngine {
     code_graph::query::QueryEngine::new(Arc::new(db))
 }
 
-
 #[test]
 fn cli_security_blocks_injection() {
     let err = secure_cli_input(

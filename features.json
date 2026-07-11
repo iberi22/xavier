@@ -1,0 +1,185 @@
+{
+  "_comment": "Feature tracking file for Xavier — root-level summary. Full detail in .gitcore/features.json",
+  "metadata": {
+    "project": "Xavier",
+    "version": "0.12.0",
+    "created": "2026-07-09",
+    "last_verified": "2026-07-09",
+    "total_features": 20,
+    "features_complete": 10,
+    "features_beta": 5,
+    "features_draft": 2,
+    "features_planned": 2,
+    "features_stable": 14,
+    "overall_progress_pct": 91,
+    "reconciliation_notes": "Root-level summary. See .gitcore/features.json for full details."
+  },
+  "features": [
+    {
+      "id": "feat-unified-storage",
+      "name": "Unified SQLite Storage",
+      "category": "core",
+      "status": "beta",
+      "progress_pct": 95,
+      "description": "Unified durable storage using SQLite + SQLite-vec for vectors, graph data, and memory persistence"
+    },
+    {
+      "id": "feat-hybrid-search",
+      "name": "BM25 + Vector Hybrid Search",
+      "category": "search",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Hybrid Search combining BM25 keyword matching and vector retrieval with RRF merging"
+    },
+    {
+      "id": "feat-belief-graph",
+      "name": "Belief Graph",
+      "category": "cognitive",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Belief Graph for conceptual relationship mapping and cognitive inference"
+    },
+    {
+      "id": "feat-mcp-server",
+      "name": "MCP Server",
+      "category": "integration",
+      "status": "beta",
+      "progress_pct": 100,
+      "description": "HTTP-first integration with optional Model Context Protocol (MCP) support exposing 12 tools"
+    },
+    {
+      "id": "feat-code-graph-index",
+      "name": "Code Graph Index",
+      "category": "integration",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "AST-backed code indexing and symbol search through code-graph sidecar crate with MCP structural tools"
+    },
+    {
+      "id": "feat-session-management",
+      "name": "Session Management",
+      "category": "core",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Session persistence, authentication, and context management for AI agent interactions"
+    },
+    {
+      "id": "feat-encryption-at-rest",
+      "name": "Encryption at Rest",
+      "category": "security",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "AES-256-GCM encryption for stored memory data with Argon2 key derivation"
+    },
+    {
+      "id": "feat-documentation-site",
+      "name": "Starlight Documentation Site",
+      "category": "documentation",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Astro + Starlight documentation site for Xavier public-facing docs"
+    },
+    {
+      "id": "feat-src-reference",
+      "name": "SRC Reference Documentation",
+      "category": "documentation",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Source Code Reference (SRC) — comprehensive documentation per GitCore protocol"
+    },
+    {
+      "id": "feat-mesh-network",
+      "name": "Xavier Mesh P2P Network & Data Commons",
+      "category": "enterprise",
+      "status": "stable",
+      "progress_pct": 88,
+      "description": "Distributed P2P memory synchronization with encrypted telemetry, Ed25519 identity, ACL, and Data Commons"
+    },
+    {
+      "id": "feat-telegram-bot",
+      "name": "Telegram Bot Integration",
+      "category": "integration",
+      "status": "beta",
+      "progress_pct": 70,
+      "description": "Telegram bot for receiving commands and sending notifications from Xavier"
+    },
+    {
+      "id": "feat-notification-system",
+      "name": "Notification Persistence and Delivery",
+      "category": "core",
+      "status": "draft",
+      "progress_pct": 95,
+      "description": "Persistent notification system with event bus, SQLite storage, REST API, and Tauri real-time updates"
+    },
+    {
+      "id": "feat-hormer-navigation",
+      "name": "HORMER Hierarchical Navigation",
+      "category": "cognitive",
+      "status": "beta",
+      "progress_pct": 90,
+      "description": "Hierarchical memory navigation with RL policy, Textual Gradient Descent, and GRPO optimization"
+    },
+    {
+      "id": "feat-governance-dao",
+      "name": "Bicameral Governance DAO",
+      "category": "enterprise",
+      "status": "beta",
+      "progress_pct": 70,
+      "description": "Bicameral governance system with weighted voting, veto, XIP lifecycle, and on-chain integration"
+    },
+    {
+      "id": "feat-runtime-health",
+      "name": "Runtime Health & Self-Monitoring",
+      "category": "enterprise",
+      "status": "beta",
+      "progress_pct": 85,
+      "description": "Native runtime loop for system health, database integrity, embedding providers, and auto-benchmarks"
+    },
+    {
+      "id": "feat-auto-improvement",
+      "name": "Auto-Improvement Loop",
+      "category": "enterprise",
+      "status": "draft",
+      "progress_pct": 85,
+      "description": "Closed-loop auto-improvement: benchmark → gap analysis → generate experiment → validate → merge → re-measure"
+    },
+    {
+      "id": "feat-dual-license",
+      "name": "Dual License (AGPL + Commercial)",
+      "category": "governance",
+      "status": "beta",
+      "progress_pct": 90,
+      "description": "AGPL-3.0 for standalone use; Commercial/Mesh License for network participation and enterprise features"
+    },
+    {
+      "id": "feat-context-regeneration",
+      "name": "Context Regeneration & Perfect Recall",
+      "category": "core",
+      "status": "planned",
+      "progress_pct": 60,
+      "description": "Continuous context regeneration using real usage data to drive recall@k toward 100%"
+    },
+    {
+      "id": "feat-openclaw-scanner",
+      "name": "OpenClaw Agent Scanner",
+      "category": "integration",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Scans clawd/agents/ directories for OpenClaw agent memory files (MEMORY.md, SOUL.md, etc.)"
+    },
+    {
+      "id": "feat-agent-cli-commands",
+      "name": "Xavier Agent CLI Commands",
+      "category": "integration",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "CLI commands: xavier agent scan/index/push/pull/status/sync for managing OpenClaw agent memory"
+    }
+  ],
+  "verification_commands": {
+    "_note": "See .gitcore/features.json for full verification commands",
+    "all": "cargo test -p xavier",
+    "unit": "cargo test -p xavier --lib",
+    "lint": "cargo clippy -p xavier --all-targets -- -D warnings"
+  }
+}

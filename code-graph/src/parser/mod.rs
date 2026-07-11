@@ -7,7 +7,6 @@ use crate::parser::go::GoParser;
 use crate::parser::java::JavaParser;
 use crate::parser::python::PythonParser;
 use crate::parser::rust::RustParser;
-use crate::parser::typescript::TypeScriptParser;
 use crate::plugin_host::{FileToParse, ParserDispatch, PluginHost};
 use crate::types::{Language, Symbol, SymbolKind};
 use tree_sitter::Node;
@@ -50,7 +49,7 @@ pub async fn parse_source(
                     e
                 })
         }
-        
+
         ParserDispatch::Native => match lang {
             Language::Rust => {
                 let mut parser = RustParser::new()?;

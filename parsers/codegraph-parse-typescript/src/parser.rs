@@ -320,7 +320,10 @@ impl TypeScriptParser {
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             let k = child.kind();
-            if matches!(k, "export" | "default" | "*" | "{" | "}" | "," | "from" | ";") {
+            if matches!(
+                k,
+                "export" | "default" | "*" | "{" | "}" | "," | "from" | ";"
+            ) {
                 continue;
             }
             self.extract(child, source, file_path, symbols, parent.clone());

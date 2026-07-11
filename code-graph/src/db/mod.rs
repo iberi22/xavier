@@ -10,6 +10,7 @@ use crate::types::{
     QueryResult, Symbol, SymbolKind,
 };
 use rusqlite::{params, Connection};
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Mutex;
 use tracing::{debug, info};
@@ -214,23 +215,29 @@ impl CodeGraphDB {
 
             CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
                 name,
+                file_path,
+                signature,
                 content='symbols',
-                content_rowid='id',
-                tokenize="unicode61"
+                content_rowid='id'
             );
 
             CREATE TRIGGER IF NOT EXISTS symbols_ai AFTER INSERT ON symbols BEGIN
-                INSERT INTO symbols_fts(rowid, name) VALUES (new.id, new.name);
+                INSERT INTO symbols_fts(rowid, name, file_path, signature)
+                VALUES (new.id, new.name, new.file_path, new.signature);
             END;
+            
             CREATE TRIGGER IF NOT EXISTS symbols_ad AFTER DELETE ON symbols BEGIN
-                INSERT INTO symbols_fts(symbols_fts, rowid, name) VALUES('delete', old.id, old.name);
-            END;
-            CREATE TRIGGER IF NOT EXISTS symbols_au AFTER UPDATE ON symbols BEGIN
-                INSERT INTO symbols_fts(symbols_fts, rowid, name) VALUES('delete', old.id, old.name);
-                INSERT INTO symbols_fts(rowid, name) VALUES (new.id, new.name);
+                INSERT INTO symbols_fts(symbols_fts, rowid, name, file_path, signature)
+                VALUES('delete', old.id, old.name, old.file_path, old.signature);
             END;
 
-            -- Rebuild FTS index to ensure it's in sync with existing data
+            CREATE TRIGGER IF NOT EXISTS symbols_au AFTER UPDATE ON symbols BEGIN
+                INSERT INTO symbols_fts(symbols_fts, rowid, name, file_path, signature)
+                VALUES('delete', old.id, old.name, old.file_path, old.signature);
+                INSERT INTO symbols_fts(rowid, name, file_path, signature)
+                VALUES (new.id, new.name, new.file_path, new.signature);
+            END;
+
             INSERT INTO symbols_fts(symbols_fts) VALUES('rebuild');
             "#,
         )
@@ -498,7 +505,7 @@ impl CodeGraphDB {
                        FROM symbols s
                        JOIN symbols_fts f ON s.id = f.rowid
                        WHERE symbols_fts MATCH ?1
-                       ORDER BY rank
+                       ORDER BY bm25(symbols_fts, 10.0, 1.0, 2.0)
                        LIMIT ?2"#,
                 )
                 .map_err(|e| GraphError::Database(e.to_string()))?;
@@ -596,6 +603,48 @@ impl CodeGraphDB {
         let kind_str = format!("{:?}", kind);
         let symbols = stmt
             .query_map(params![kind_str, limit as isize], |row| {
+                Ok(Symbol {
+                    id: Some(row.get(0)?),
+                    stable_id: Some(row.get(1)?),
+                    name: row.get(2)?,
+                    kind: parse_symbol_kind(&row.get::<_, String>(3)?),
+                    lang: parse_language(&row.get::<_, String>(4)?),
+                    file_path: row.get(5)?,
+                    start_line: row.get(6)?,
+                    end_line: row.get(7)?,
+                    start_col: row.get(8)?,
+                    end_col: row.get(9)?,
+                    signature: row.get(10)?,
+                    parent: row.get(11)?,
+                    complexity: row.get(12)?,
+                })
+            })
+            .map_err(|e| GraphError::Database(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(symbols)
+    }
+
+    /// Find symbols by language.
+    pub fn find_by_lang(&self, lang: Language, limit: usize) -> Result<Vec<Symbol>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let mut stmt = conn
+            .prepare(
+                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
+                   FROM symbols
+                   WHERE lang = ?1
+                   LIMIT ?2"#,
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let lang_str = format!("{:?}", lang);
+        let symbols = stmt
+            .query_map(params![lang_str, limit as isize], |row| {
                 Ok(Symbol {
                     id: Some(row.get(0)?),
                     stable_id: Some(row.get(1)?),
@@ -994,6 +1043,92 @@ impl CodeGraphDB {
             .collect();
 
         Ok(edges)
+    }
+
+    /// Get all file metadata (mtime) for incremental indexing.
+    pub fn get_all_file_metadata(&self) -> Result<HashMap<String, i64>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let mut stmt = conn
+            .prepare("SELECT key, value FROM metadata WHERE key LIKE 'mtime:%'")
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let mut map = HashMap::new();
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?
+                        .strip_prefix("mtime:")
+                        .unwrap_or("")
+                        .to_string(),
+                    row.get::<_, String>(1)?.parse::<i64>().unwrap_or(0),
+                ))
+            })
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        for row in rows {
+            if let Ok((path, mtime)) = row {
+                map.insert(path, mtime);
+            }
+        }
+        Ok(map)
+    }
+
+    /// Batch delete all data for a list of files.
+    pub fn batch_delete_file_data(&self, files: &[String]) -> Result<()> {
+        if files.is_empty() {
+            return Ok(());
+        }
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        for file_path in files {
+            conn.execute("DELETE FROM edges WHERE file_path = ?1", params![file_path])
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+            conn.execute("DELETE FROM refs WHERE file_path = ?1", params![file_path])
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+            conn.execute(
+                "DELETE FROM imports WHERE file_path = ?1",
+                params![file_path],
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+            conn.execute(
+                "DELETE FROM symbols WHERE file_path = ?1",
+                params![file_path],
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+            conn.execute(
+                "DELETE FROM metadata WHERE key = ?1",
+                params![format!("mtime:{}", file_path)],
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    /// Batch upsert file metadata (mtime) after indexing.
+    pub fn batch_upsert_file_metadata(&self, files: HashMap<String, i64>) -> Result<()> {
+        if files.is_empty() {
+            return Ok(());
+        }
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        for (path, mtime) in &files {
+            conn.execute(
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES (?1, ?2)",
+                params![format!("mtime:{}", path), mtime.to_string()],
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+        }
+        Ok(())
     }
 
     /// Clear all data

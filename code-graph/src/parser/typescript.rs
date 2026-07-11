@@ -14,12 +14,12 @@ impl TypeScriptParser {
     pub fn new(lang: Language) -> Result<Self> {
         let mut parser = Parser::new();
         let is_tsx = lang == Language::TypeScript && true; // Simple heuristic for now, or just use TSX as it usually works for TS too
-        // Actually, let's use the extension if we had it, but we only have Language here.
-        // tree-sitter-typescript provides both.
+                                                           // Actually, let's use the extension if we had it, but we only have Language here.
+                                                           // tree-sitter-typescript provides both.
         let grammar = tree_sitter_typescript::LANGUAGE_TYPESCRIPT;
-        parser
-            .set_language(&grammar.into())
-            .map_err(|e| GraphError::TreeSitter(format!("failed to set TypeScript language: {}", e)))?;
+        parser.set_language(&grammar.into()).map_err(|e| {
+            GraphError::TreeSitter(format!("failed to set TypeScript language: {}", e))
+        })?;
         Ok(Self { parser, lang })
     }
 
@@ -325,7 +325,10 @@ impl TypeScriptParser {
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             let k = child.kind();
-            if matches!(k, "export" | "default" | "*" | "{" | "}" | "," | "from" | ";") {
+            if matches!(
+                k,
+                "export" | "default" | "*" | "{" | "}" | "," | "from" | ";"
+            ) {
                 continue;
             }
             self.extract(child, source, file_path, symbols, parent.clone());

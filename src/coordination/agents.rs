@@ -3,34 +3,20 @@
 //! Provides functions to emit events when agent tasks start, complete, or fail.
 
 use crate::coordination::events::{XavierEvent, XavierEventBus};
-use tracing::{info, error};
+use tracing::{error, info};
 
 /// Publish an event indicating that an agent has started a task.
-pub fn publish_task_start(
-    bus: &XavierEventBus,
-    agent_id: String,
-    task_id: String,
-) {
+pub fn publish_task_start(bus: &XavierEventBus, agent_id: String, task_id: String) {
     info!("Agent {} starting task {}", agent_id, task_id);
-    if let Err(e) = bus.publish(XavierEvent::AgentTaskStarted {
-        agent_id,
-        task_id,
-    }) {
+    if let Err(e) = bus.publish(XavierEvent::AgentTaskStarted { agent_id, task_id }) {
         error!("Failed to publish AgentTaskStarted: {}", e);
     }
 }
 
 /// Publish an event indicating that an agent has completed a task.
-pub fn publish_task_complete(
-    bus: &XavierEventBus,
-    agent_id: String,
-    task_id: String,
-) {
+pub fn publish_task_complete(bus: &XavierEventBus, agent_id: String, task_id: String) {
     info!("Agent {} completed task {}", agent_id, task_id);
-    if let Err(e) = bus.publish(XavierEvent::AgentTaskCompleted {
-        agent_id,
-        task_id,
-    }) {
+    if let Err(e) = bus.publish(XavierEvent::AgentTaskCompleted { agent_id, task_id }) {
         error!("Failed to publish AgentTaskCompleted: {}", e);
     }
 }

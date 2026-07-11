@@ -578,23 +578,30 @@ mod tests {
         std::fs::write(
             dir.path().join("main.rs"),
             "mod processor;\nfn main() { processor::process_data(); }",
-        ).unwrap();
-        std::fs::write(
-            dir.path().join("processor.rs"),
-            "pub fn process_data() {}",
-        ).unwrap();
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("processor.rs"), "pub fn process_data() {}").unwrap();
 
         let db = Arc::new(CodeGraphDB::in_memory().unwrap());
         let indexer = Indexer::new(db.clone());
         indexer.index(dir.path(), false).await.unwrap();
 
         let edges = db.get_all_edges().unwrap();
-        let call_edges: Vec<_> = edges.iter().filter(|e| e.edge_type == EdgeType::Calls).collect();
+        let call_edges: Vec<_> = edges
+            .iter()
+            .filter(|e| e.edge_type == EdgeType::Calls)
+            .collect();
 
         assert!(!call_edges.is_empty(), "Should have call edges");
         // Verify at least one edge has metadata.strategy
-        assert!(call_edges.iter().any(|e| {
-            e.metadata.as_ref().and_then(|m| m.get("strategy")).is_some()
-        }), "Call edges should include strategy metadata");
+        assert!(
+            call_edges.iter().any(|e| {
+                e.metadata
+                    .as_ref()
+                    .and_then(|m| m.get("strategy"))
+                    .is_some()
+            }),
+            "Call edges should include strategy metadata"
+        );
     }
 }

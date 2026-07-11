@@ -664,10 +664,13 @@ impl MemoryStore for SqliteMemoryStore {
                     TABLE_CHECKPOINTS
                 ))?;
 
-                match stmt.query_row(params![workspace_id.clone(), task_id.clone(), name.clone()], |row| {
-                    let data_str: String = row.get(0)?;
-                    Ok(serde_json::from_str(&data_str).unwrap_or_default())
-                }) {
+                match stmt.query_row(
+                    params![workspace_id.clone(), task_id.clone(), name.clone()],
+                    |row| {
+                        let data_str: String = row.get(0)?;
+                        Ok(serde_json::from_str(&data_str).unwrap_or_default())
+                    },
+                ) {
                     Ok(data) => Ok(Some(Checkpoint {
                         task_id: task_id.clone(),
                         name: name.clone(),
