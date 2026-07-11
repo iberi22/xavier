@@ -57,7 +57,10 @@ mod tests {
         let symbols = parser.parse(source, "test.ts").unwrap();
         assert_eq!(symbols.len(), 1);
         assert_eq!(symbols[0].name, "hello");
-        assert_eq!(symbols[0].signature, Some("function hello() { ... }".to_string()));
+        assert_eq!(
+            symbols[0].signature,
+            Some("function hello() { ... }".to_string())
+        );
     }
 
     #[test]

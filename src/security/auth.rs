@@ -1,16 +1,16 @@
 //! Authentication Module for Xavier
 //! JWT-based authentication, RBAC, and TOTP support
 
-use std::fmt;
 use anyhow::{anyhow, Result};
+use chrono::{Duration, Utc};
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use qrcode::render::unicode;
+use qrcode::QrCode;
 use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
-use jsonwebtoken::{encode, decode, Header, Algorithm, Validation, EncodingKey, DecodingKey};
-use chrono::{Utc, Duration};
-use totp_rs::{Algorithm as TotpAlgorithm, TOTP, Secret};
-use qrcode::QrCode;
-use qrcode::render::unicode;
+use std::fmt;
+use totp_rs::{Algorithm as TotpAlgorithm, Secret, TOTP};
 
 use crate::security::auth_store::AuthStore;
 
@@ -100,7 +100,8 @@ pub fn generate_jwt(user: &User, secret: &[u8]) -> Result<String> {
         &Header::default(),
         &claims,
         &EncodingKey::from_secret(secret),
-    ).map_err(|e| anyhow!("JWT encoding failed: {}", e))
+    )
+    .map_err(|e| anyhow!("JWT encoding failed: {}", e))
 }
 
 pub fn validate_jwt(token: &str, secret: &[u8]) -> Result<Claims> {
@@ -108,7 +109,8 @@ pub fn validate_jwt(token: &str, secret: &[u8]) -> Result<Claims> {
         token,
         &DecodingKey::from_secret(secret),
         &Validation::new(Algorithm::HS256),
-    ).map_err(|e| anyhow!("JWT validation failed: {}", e))?;
+    )
+    .map_err(|e| anyhow!("JWT validation failed: {}", e))?;
 
     Ok(token_data.claims)
 }
@@ -120,7 +122,9 @@ pub struct TotpProvider {
 
 impl TotpProvider {
     pub fn new(issuer: &str) -> Self {
-        Self { issuer: issuer.to_string() }
+        Self {
+            issuer: issuer.to_string(),
+        }
     }
 
     pub fn generate_secret(&self) -> String {
@@ -133,10 +137,13 @@ impl TotpProvider {
             6,
             1,
             30,
-            Secret::Encoded(secret_base32.to_string()).to_bytes().map_err(|_| anyhow!("invalid secret"))?,
+            Secret::Encoded(secret_base32.to_string())
+                .to_bytes()
+                .map_err(|_| anyhow!("invalid secret"))?,
             Some(self.issuer.clone()),
             account_name.to_string(),
-        ).map_err(|e| anyhow!("TOTP init failed: {}", e))?;
+        )
+        .map_err(|e| anyhow!("TOTP init failed: {}", e))?;
 
         let code = totp.get_url();
         let qr = QrCode::new(code.as_bytes())?;
@@ -180,15 +187,33 @@ pub trait Permission {
 }
 
 impl Permission for UserRole {
-    fn can_view_dashboard(&self) -> bool { true }
-    fn can_search_memory(&self) -> bool { true }
-    fn can_add_memory(&self) -> bool { matches!(self, UserRole::Admin | UserRole::User) }
-    fn can_delete_memory(&self) -> bool { matches!(self, UserRole::Admin | UserRole::User) }
-    fn can_manage_beliefs(&self) -> bool { matches!(self, UserRole::Admin | UserRole::User) }
-    fn can_run_agents(&self) -> bool { matches!(self, UserRole::Admin | UserRole::User) }
-    fn can_view_config(&self) -> bool { true }
-    fn can_edit_config(&self) -> bool { matches!(self, UserRole::Admin) }
-    fn can_manage_users(&self) -> bool { matches!(self, UserRole::Admin) }
+    fn can_view_dashboard(&self) -> bool {
+        true
+    }
+    fn can_search_memory(&self) -> bool {
+        true
+    }
+    fn can_add_memory(&self) -> bool {
+        matches!(self, UserRole::Admin | UserRole::User)
+    }
+    fn can_delete_memory(&self) -> bool {
+        matches!(self, UserRole::Admin | UserRole::User)
+    }
+    fn can_manage_beliefs(&self) -> bool {
+        matches!(self, UserRole::Admin | UserRole::User)
+    }
+    fn can_run_agents(&self) -> bool {
+        matches!(self, UserRole::Admin | UserRole::User)
+    }
+    fn can_view_config(&self) -> bool {
+        true
+    }
+    fn can_edit_config(&self) -> bool {
+        matches!(self, UserRole::Admin)
+    }
+    fn can_manage_users(&self) -> bool {
+        matches!(self, UserRole::Admin)
+    }
 }
 
 /// Resolves the Xavier token from environment variable

@@ -344,6 +344,7 @@ fn local_embedding_signal_present() -> bool {
 
 fn cloud_embedding_signal_present() -> bool {
     std::env::var("OPENAI_API_KEY").is_ok()
+        || std::env::var("XAVIER_EMBEDDING_API_KEY").is_ok()
         || crate::settings::XavierSettings::current()
             .embedding
             .api_key

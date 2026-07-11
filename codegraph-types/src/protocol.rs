@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::graph::Node;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginRequest {

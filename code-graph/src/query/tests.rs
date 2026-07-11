@@ -245,7 +245,7 @@ mod tests_inner {
     fn clear_by_file_removes_only_that_file() {
         let db = setup_test_db();
         // process_data lives in /src/processor.rs
-        db.clear_by_file("/src/processor.rs")
+        db.batch_delete_file_data(&["/src/processor.rs".to_string()])
             .expect("clear_by_file");
         let remaining = db
             .find_symbols("process_data", 10)

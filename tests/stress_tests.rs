@@ -1,9 +1,9 @@
+use serde_json::json;
 use std::sync::Arc;
+use tempfile::TempDir;
 use tokio::sync::{Barrier, RwLock};
 use tokio::task::JoinSet;
-use tempfile::TempDir;
-use serde_json::json;
-use xavier::memory::qmd_memory::{QmdMemory, MemoryDocument};
+use xavier::memory::qmd_memory::{MemoryDocument, QmdMemory};
 use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
 use xavier::memory::store::MemoryStore;
 
@@ -84,5 +84,10 @@ async fn test_qmd_high_concurrency() {
 
     // Final check: all documents should be there (at least the ones added by writers)
     let count = memory.count().await.expect("failed to count documents");
-    assert!(count >= num_writers, "Expected at least {} documents, found {}", num_writers, count);
+    assert!(
+        count >= num_writers,
+        "Expected at least {} documents, found {}",
+        num_writers,
+        count
+    );
 }

@@ -102,7 +102,9 @@ pub async fn handle_code_graph_tool(
                 "tool": name,
                 "error": err.to_string()
             });
-            Ok(serde_json::to_value(MCPToolResult::structured(payload, true))?)
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                payload, true,
+            ))?)
         }
     }
 }
@@ -127,7 +129,10 @@ fn label_for_node(state: &AppState, node_id: &str) -> String {
         return node_id.to_string();
     }
     match state.code_db.symbol_by_stable_id(node_id) {
-        Ok(Some(symbol)) => format!("{} ({}:{})", symbol.name, symbol.file_path, symbol.start_line),
+        Ok(Some(symbol)) => format!(
+            "{} ({}:{})",
+            symbol.name, symbol.file_path, symbol.start_line
+        ),
         Ok(None) => node_id.to_string(),
         Err(_) => node_id.to_string(),
     }
@@ -242,7 +247,9 @@ async fn handle_explore(state: AppState, arguments: Value) -> anyhow::Result<Val
         "returned": entries.len(),
         "symbols": entries,
     });
-    Ok(serde_json::to_value(MCPToolResult::structured(payload, false))?)
+    Ok(serde_json::to_value(MCPToolResult::structured(
+        payload, false,
+    ))?)
 }
 
 async fn handle_trace_path(state: AppState, arguments: Value) -> anyhow::Result<Value> {
@@ -266,9 +273,7 @@ async fn handle_trace_path(state: AppState, arguments: Value) -> anyhow::Result<
     let stable_id = resolve_stable_id(&state, symbol)?
         .ok_or_else(|| anyhow::anyhow!("Symbol '{}' not found in the code graph", symbol))?;
 
-    let paths: Vec<TraversalPath> = state
-        .code_db
-        .trace_path(&stable_id, max_depth, reverse)?;
+    let paths: Vec<TraversalPath> = state.code_db.trace_path(&stable_id, max_depth, reverse)?;
 
     let direction = if reverse { "callers" } else { "callees" };
     let annotated: Vec<Value> = paths
@@ -296,14 +301,21 @@ async fn handle_trace_path(state: AppState, arguments: Value) -> anyhow::Result<
         "paths_found": annotated.len(),
         "paths": annotated,
     });
-    Ok(serde_json::to_value(MCPToolResult::structured(payload, false))?)
+    Ok(serde_json::to_value(MCPToolResult::structured(
+        payload, false,
+    ))?)
 }
 
 async fn handle_get_architecture(state: AppState) -> anyhow::Result<Value> {
     let stats: IndexStats = state.code_db.stats()?;
     let hubs = state.code_db.hub_nodes(3, 15).unwrap_or_default();
-    let hotspots = state.code_db.complexity_hotspots(8.0, 10).unwrap_or_default();
-    let all_functions = state.code_db.find_by_kind(code_graph::types::SymbolKind::Function, 500)?;
+    let hotspots = state
+        .code_db
+        .complexity_hotspots(8.0, 10)
+        .unwrap_or_default();
+    let all_functions = state
+        .code_db
+        .find_by_kind(code_graph::types::SymbolKind::Function, 500)?;
 
     // Heuristic entry points: functions with no incoming Calls edges.
     let mut entry_points = Vec::new();
@@ -350,7 +362,9 @@ async fn handle_get_architecture(state: AppState) -> anyhow::Result<Value> {
             "risk_score": c.risk_score,
         })).collect::<Vec<_>>(),
     });
-    Ok(serde_json::to_value(MCPToolResult::structured(payload, false))?)
+    Ok(serde_json::to_value(MCPToolResult::structured(
+        payload, false,
+    ))?)
 }
 
 async fn handle_detect_changes(state: AppState) -> anyhow::Result<Value> {
@@ -372,14 +386,18 @@ async fn handle_detect_changes(state: AppState) -> anyhow::Result<Value> {
                 "reason": "git diff HEAD failed (not a git repo or git unavailable)",
                 "stderr": String::from_utf8_lossy(&out.stderr).to_string(),
             });
-            return Ok(serde_json::to_value(MCPToolResult::structured(payload, false))?);
+            return Ok(serde_json::to_value(MCPToolResult::structured(
+                payload, false,
+            ))?);
         }
         Err(err) => {
             let payload = json!({
                 "available": false,
                 "reason": format!("could not run git: {}", err),
             });
-            return Ok(serde_json::to_value(MCPToolResult::structured(payload, false))?);
+            return Ok(serde_json::to_value(MCPToolResult::structured(
+                payload, false,
+            ))?);
         }
     };
 
@@ -389,7 +407,9 @@ async fn handle_detect_changes(state: AppState) -> anyhow::Result<Value> {
             "changed_files": 0,
             "impacted_symbols": [],
         });
-        return Ok(serde_json::to_value(MCPToolResult::structured(payload, false))?);
+        return Ok(serde_json::to_value(MCPToolResult::structured(
+            payload, false,
+        ))?);
     }
 
     let mut impacts: Vec<Value> = Vec::new();
@@ -401,10 +421,7 @@ async fn handle_detect_changes(state: AppState) -> anyhow::Result<Value> {
                 None => continue,
             };
             // Who depends on this symbol? reverse trace.
-            let callers = state
-                .code_db
-                .trace_path(id, 2, true)
-                .unwrap_or_default();
+            let callers = state.code_db.trace_path(id, 2, true).unwrap_or_default();
             impacts.push(json!({
                 "changed_symbol": format!("{} ({}:{})", symbol.name, symbol.file_path, symbol.start_line),
                 "kind": format!("{:?}", symbol.kind),
@@ -423,5 +440,7 @@ async fn handle_detect_changes(state: AppState) -> anyhow::Result<Value> {
         "files": changed_files,
         "impacted_symbols": impacts,
     });
-    Ok(serde_json::to_value(MCPToolResult::structured(payload, false))?)
+    Ok(serde_json::to_value(MCPToolResult::structured(
+        payload, false,
+    ))?)
 }

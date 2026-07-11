@@ -253,7 +253,10 @@ impl ConnectionManager {
                         if let Some(sqlite_err) = err.downcast_ref::<rusqlite::Error>() {
                             if is_sqlite_lock_error(sqlite_err) && retries < 15 {
                                 retries += 1;
-                                tracing::warn!("SQLite is locked, retrying {}/15 in 200ms...", retries);
+                                tracing::warn!(
+                                    "SQLite is locked, retrying {}/15 in 200ms...",
+                                    retries
+                                );
                                 std::thread::sleep(std::time::Duration::from_millis(200));
                                 continue;
                             }

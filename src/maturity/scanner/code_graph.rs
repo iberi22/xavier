@@ -96,7 +96,9 @@ fn try_code_graph_db(
     // resolved data dir. This is the same file the live MCP server writes to.
     let db_path = std::env::var("XAVIER_CODE_GRAPH_DB_PATH")
         .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| crate::settings::XavierSettings::resolve_data_dir().join("code_graph.db"));
+        .unwrap_or_else(|_| {
+            crate::settings::XavierSettings::resolve_data_dir().join("code_graph.db")
+        });
     let legacy_path = Path::new(root).join(".xavier/codegraph.sqlite");
 
     // Try the canonical path first, then the legacy repo-relative path.

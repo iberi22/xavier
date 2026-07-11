@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use crate::types::{Symbol, SymbolKind};
+use std::collections::HashMap;
 
 /// 6-strategy call resolution cascade.
 /// Strategies 1-3 resolve ~80% of calls in well-structured codebases.
@@ -55,7 +55,10 @@ impl CallResolver {
                 continue;
             }
             let s_ref = SymbolRef {
-                stable_id: s.stable_id.clone().unwrap_or_else(|| s.deterministic_id("default")),
+                stable_id: s
+                    .stable_id
+                    .clone()
+                    .unwrap_or_else(|| s.deterministic_id("default")),
                 name: s.name.clone(),
                 file_path: s.file_path.clone(),
                 module_path: s.parent.clone(),
@@ -72,18 +75,23 @@ impl CallResolver {
                 if let Some(candidates) = symbol_index.get(&s.name) {
                     for cand in candidates {
                         if cand.file_path != s.file_path {
-                            import_map.entry(s.file_path.clone()).or_default().push(ResolvedImport {
-                                name: s.name.clone(),
-                                source_path: cand.file_path.clone(),
-                                stable_id: cand.stable_id.clone(),
-                            });
+                            import_map.entry(s.file_path.clone()).or_default().push(
+                                ResolvedImport {
+                                    name: s.name.clone(),
+                                    source_path: cand.file_path.clone(),
+                                    stable_id: cand.stable_id.clone(),
+                                },
+                            );
                         }
                     }
                 }
             }
         }
 
-        Self { import_map, symbol_index }
+        Self {
+            import_map,
+            symbol_index,
+        }
     }
 
     pub fn resolve(&self, caller_file: &str, callee_name: &str) -> Vec<ResolvedCall> {
@@ -101,13 +109,17 @@ impl CallResolver {
                 }
             }
         }
-        if !results.is_empty() { return results; }
+        if !results.is_empty() {
+            return results;
+        }
 
         // Strategy 2: Import Map Suffix
         // If we have an import like "models.User" and we are calling "User"
         if let Some(imports) = self.import_map.get(caller_file) {
             for import in imports {
-                if import.name.ends_with(&format!(".{}", callee_name)) || import.name.ends_with(&format!("::{}", callee_name)) {
+                if import.name.ends_with(&format!(".{}", callee_name))
+                    || import.name.ends_with(&format!("::{}", callee_name))
+                {
                     results.push(ResolvedCall {
                         stable_id: import.stable_id.clone(),
                         confidence: 0.85,
@@ -116,7 +128,9 @@ impl CallResolver {
                 }
             }
         }
-        if !results.is_empty() { return results; }
+        if !results.is_empty() {
+            return results;
+        }
 
         // Strategy 3: Same Module
         // Check if there is a symbol with the same name in the same directory
@@ -133,7 +147,9 @@ impl CallResolver {
                 }
             }
         }
-        if !results.is_empty() { return results; }
+        if !results.is_empty() {
+            return results;
+        }
 
         // Strategy 4: Unique Name
         if let Some(candidates) = self.symbol_index.get(callee_name) {
@@ -150,7 +166,7 @@ impl CallResolver {
         // Strategy 5: Suffix Match (import-distance scoring)
         // Match by suffix of the file path (e.g. calling something from a "utils" module)
         if let Some(candidates) = self.symbol_index.get(callee_name) {
-             for cand in candidates {
+            for cand in candidates {
                 // Low confidence fallback if the name matches but it's in another module
                 results.push(ResolvedCall {
                     stable_id: cand.stable_id.clone(),
@@ -159,7 +175,9 @@ impl CallResolver {
                 });
             }
         }
-        if !results.is_empty() { return results; }
+        if !results.is_empty() {
+            return results;
+        }
 
         // Strategy 6: Fuzzy
         // String similarity (Levenshtein) as last resort
@@ -214,7 +232,11 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
 
     for i in 1..=a_len {
         for j in 1..=b_len {
-            let cost = if a_chars[i - 1] == b_chars[j - 1] { 0 } else { 1 };
+            let cost = if a_chars[i - 1] == b_chars[j - 1] {
+                0
+            } else {
+                1
+            };
             matrix[i][j] = (matrix[i - 1][j] + 1)
                 .min(matrix[i][j - 1] + 1)
                 .min(matrix[i - 1][j - 1] + cost);
@@ -227,7 +249,7 @@ fn levenshtein_distance(a: &str, b: &str) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Symbol, SymbolKind, Language};
+    use crate::types::{Language, Symbol, SymbolKind};
 
     fn symbol(name: &str, file: &str, kind: SymbolKind) -> Symbol {
         Symbol {
@@ -301,9 +323,7 @@ mod tests {
 
     #[test]
     fn call_resolution_fuzzy_match() {
-        let symbols = vec![
-            symbol("initialize", "/src/lib.rs", SymbolKind::Function),
-        ];
+        let symbols = vec![symbol("initialize", "/src/lib.rs", SymbolKind::Function)];
         let sources = HashMap::new();
         let resolver = CallResolver::new(&symbols, &sources);
         let results = resolver.resolve("/src/main.rs", "initializ");
