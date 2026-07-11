@@ -339,7 +339,9 @@ impl AgentRuntime {
 
                 // Emit failure hook (from PR #378)
                 if let Some(ref bus) = self.event_bus {
-                    let sid = session_id.clone().unwrap_or_else(|| ulid::Ulid::new().to_string());
+                    let sid = session_id
+                        .clone()
+                        .unwrap_or_else(|| ulid::Ulid::new().to_string());
                     crate::coordination::agents::publish_task_failure(
                         bus,
                         "default-agent".to_string(),

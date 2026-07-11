@@ -1,9 +1,9 @@
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
+use xavier::agents::runtime::{AgentRuntime, RuntimeConfig};
+use xavier::coordination::core::CoordinationCore;
 use xavier::coordination::events::XavierEventBus;
 use xavier::coordination::secrets::KeyLendingEngine;
-use xavier::coordination::core::CoordinationCore;
-use xavier::agents::runtime::{AgentRuntime, RuntimeConfig};
 use xavier::memory::qmd_memory::QmdMemory;
 use xavier::secrets::audit::QmdAuditLogger;
 
@@ -12,7 +12,7 @@ async fn test_agent_task_lifecycle_lease_revocation() {
     // 1. Setup Event Bus and Secrets Engine
     let event_bus = XavierEventBus::new(100);
     let audit_logger = Box::new(QmdAuditLogger::new());
-    let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger));
+    let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger, None));
 
     // 2. Setup Coordination Core (The listener)
     let core = CoordinationCore::new(event_bus.clone(), secrets_engine.clone());
@@ -21,12 +21,16 @@ async fn test_agent_task_lifecycle_lease_revocation() {
     // 3. Setup Agent Runtime
     let docs = Arc::new(tokio::sync::RwLock::new(Vec::new()));
     let memory = Arc::new(QmdMemory::new_with_workspace(docs, "test-ws"));
-    let runtime = AgentRuntime::new(memory, None, RuntimeConfig::default()).unwrap()
+    let runtime = AgentRuntime::new(memory, None, RuntimeConfig::default())
+        .unwrap()
         .with_event_bus(Arc::new(event_bus));
 
     // 4. Lend a secret to the agent manually (simulating pre-task setup)
     let agent_id = "default-agent";
-    secrets_engine.lend("TEST_KEY", Some("secret_value"), agent_id, 3600).await.unwrap();
+    secrets_engine
+        .lend("TEST_KEY", Some("secret_value"), agent_id, 3600)
+        .await
+        .unwrap();
 
     let leases = secrets_engine.list_leases().await;
     assert_eq!(leases.len(), 1, "Should have 1 active lease before task");
@@ -49,7 +53,11 @@ async fn test_agent_task_lifecycle_lease_revocation() {
 
     // 7. Verify the lease was revoked
     let leases_after = secrets_engine.list_leases().await;
-    assert_eq!(leases_after.len(), 0, "Lease should have been automatically revoked after task completion");
+    assert_eq!(
+        leases_after.len(),
+        0,
+        "Lease should have been automatically revoked after task completion"
+    );
 }
 
 #[tokio::test]
@@ -57,7 +65,7 @@ async fn test_agent_task_failure_lease_revocation() {
     // 1. Setup
     let event_bus = XavierEventBus::new(100);
     let audit_logger = Box::new(QmdAuditLogger::new());
-    let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger));
+    let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger, None));
 
     let core = CoordinationCore::new(event_bus.clone(), secrets_engine.clone());
     core.start();
@@ -67,7 +75,10 @@ async fn test_agent_task_failure_lease_revocation() {
     // but the previous test already verifies that the runtime calls the hooks.
 
     let agent_id = "failing-agent";
-    secrets_engine.lend("FAIL_KEY", Some("value"), agent_id, 3600).await.unwrap();
+    secrets_engine
+        .lend("FAIL_KEY", Some("value"), agent_id, 3600)
+        .await
+        .unwrap();
 
     // Emit failure event manually
     let _ = event_bus.publish(xavier::coordination::events::XavierEvent::AgentTaskFailed {
@@ -79,5 +90,9 @@ async fn test_agent_task_failure_lease_revocation() {
     sleep(Duration::from_millis(100)).await;
 
     let leases = secrets_engine.list_leases().await;
-    assert_eq!(leases.len(), 0, "Lease should have been revoked after task failure");
+    assert_eq!(
+        leases.len(),
+        0,
+        "Lease should have been revoked after task failure"
+    );
 }

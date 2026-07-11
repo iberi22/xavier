@@ -3,7 +3,6 @@
 //! Implements adaptive gating that scores and fuses results from Working, Episodic,
 //! and Semantic memory layers using RRF (Reciprocal Rank Fusion).
 
-
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::HashSet;

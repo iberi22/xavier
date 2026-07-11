@@ -1,8 +1,9 @@
 //! # Code Graph Scanner — Layer 1: Static Code Analysis
 //!
-//! Uses Xavier's code-graph database (JSON dump in .xavier/) to quickly
-//! resolve symbol existence. Falls back to file grep if code-graph is
-//! unavailable (graceful degradation).
+//! Uses Xavier's code-graph SQLite database to quickly resolve symbol
+//! existence. Reads the canonical MCP path (`XAVIER_CODE_GRAPH_DB_PATH` /
+//! data dir) first, with a legacy `<root>/.xavier/codegraph.sqlite` fallback.
+//! Falls back to file grep if code-graph is unavailable (graceful degradation).
 //!
 //! Timing target: < 100ms with code graph, < 5s without.
 
@@ -78,16 +79,33 @@ fn load_anchored_symbols(codebase_root: &str) -> HashMap<String, Vec<String>> {
 }
 
 /// Try to load code graph DB and scan for symbols.
+///
+/// Resolves the database path in priority order:
+/// 1. The canonical MCP path (`crate::cli::config::code_graph_db_path()`),
+///    which honors `XAVIER_CODE_GRAPH_DB_PATH` and the data dir. This is the
+///    same file the live MCP server (`code_db` in `AppState`) writes to.
+/// 2. A legacy repo-relative fallback `<root>/.xavier/codegraph.sqlite` kept
+///    for backwards compatibility with older scans.
 fn try_code_graph_db(
     root: &str,
     feature_symbols: &HashMap<String, Vec<String>>,
 ) -> Option<CodeGraphScanResult> {
     let start = Instant::now();
-    let db_path = Path::new(root).join(".xavier/codegraph.sqlite");
-    
-    // Fall back to None if DB doesn't exist or fails to open
-    let db = code_graph::db::CodeGraphDB::new(&db_path).ok()?;
-    
+    // Mirror `crate::cli::config::code_graph_db_path()` (which lives in the
+    // binary-only `cli` module): honor XAVIER_CODE_GRAPH_DB_PATH, else the
+    // resolved data dir. This is the same file the live MCP server writes to.
+    let db_path = std::env::var("XAVIER_CODE_GRAPH_DB_PATH")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|_| {
+            crate::settings::XavierSettings::resolve_data_dir().join("code_graph.db")
+        });
+    let legacy_path = Path::new(root).join(".xavier/codegraph.sqlite");
+
+    // Try the canonical path first, then the legacy repo-relative path.
+    let db = code_graph::db::CodeGraphDB::new(&db_path)
+        .or_else(|_| code_graph::db::CodeGraphDB::new(&legacy_path))
+        .ok()?;
+
     // Check if the DB is actually populated by querying index stats
     let stats = db.stats().ok()?;
     if stats.total_symbols == 0 {

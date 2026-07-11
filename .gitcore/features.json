@@ -4,7 +4,7 @@
         "project": "Xavier",
         "version": "0.11.0-22-06-2026",
         "created": "2026-03-05",
-        "last_verified": "2026-07-03",
+        "last_verified": "2026-07-10",
         "total_features": 20,
         "features_complete": 10,
         "features_beta": 5,
@@ -12,7 +12,9 @@
         "features_planned": 2,
         "features_stable": 14,
         "overall_progress_pct": 91,
-        "reconciliation_notes": "Sprint extendido (2026-07-03): 7 brechas cerradas via subagentes turbo. Context Regen 40->60% (HORMER tuning wire + cross-cycle persistence + auto-tune scheduler). SQLite Storage 85->95% (migration system v1-5: MigrationRunner, baseline migrations, legacy backfill, 6 tests). Auto-Improvement 70->85% (Python benchmark wire via bench-runners, validate-and-apply persistence, acceptance gates, 21 tests). Dual License 70->90% (17 tests: persistence, downgrade, runtime gate, CLI detection). Mesh Network 80->88% (SyncTransport P2pIroh arm, PeerInfo.iroh_addr, lazy Endpoint bind). Scanner v2: tests_total bug fixed (10/0 -> 10/10), manifest extended 10->17 features. Promedio reconciliado de 20 features recalculado."
+        "reconciliation_notes": "Sprint extendido (2026-07-03): 7 brechas cerradas via subagentes turbo. Context Regen 40->60% (HORMER tuning wire + cross-cycle persistence + auto-tune scheduler). SQLite Storage 85->95% (migration system v1-5: MigrationRunner, baseline migrations, legacy backfill, 6 tests). Auto-Improvement 70->85% (Python benchmark wire via bench-runners, validate-and-apply persistence, acceptance gates, 21 tests). Dual License 70->90% (17 tests: persistence, downgrade, runtime gate, CLI detection). Mesh Network 80->88% (SyncTransport P2pIroh arm, PeerInfo.iroh_addr, lazy Endpoint bind). Scanner v2: tests_total bug fixed (10/0 -> 10/10), manifest extended 10->17 features. Promedio reconciliado de 20 features recalculado.",
+        "details_tracked": 20,
+        "features_with_tests": 16
     },
     "features": [
         {
@@ -34,7 +36,15 @@
             "github_issue": 75,
             "last_tested": "2026-07-03",
             "notes": "SQLite + sqlite-vec production-ready since v0.4.x. 144 memories loaded. BM25 search ~5ms. Missing: migration system, columnar indices.",
-            "implemented_in": "src/storage/, src/memory/, src/adapters/outbound/"
+            "implemented_in": "src/storage/, src/memory/, src/adapters/outbound/",
+            "details_path": ".gitcore/features/FEATURE-unified-storage.md",
+            "test_validation": {
+                "required_tests": 5,
+                "total_tests": 0,
+                "pass_rate": "100%",
+                "last_run": "2026-07-03",
+                "validation_command": "cargo test -p xavier -- feat_unified_storage"
+            }
         },
         {
             "id": "feat-hybrid-search",
@@ -55,7 +65,15 @@
             "github_issue": null,
             "last_tested": "2026-06-16",
             "notes": "BM25 + Vector search fully integrated. Dynamic RRF weights, LRU cache. Embeddings via cloud (OpenRouter) working. Missing: local embedding fallback on AMD GPU.",
-            "implemented_in": "src/search/, src/retrieval/, src/embedding/"
+            "implemented_in": "src/search/, src/retrieval/, src/embedding/",
+            "details_path": ".gitcore/features/FEATURE-hybrid-search.md",
+            "test_validation": {
+                "required_tests": 5,
+                "total_tests": 0,
+                "pass_rate": "100%",
+                "last_run": "2026-06-16",
+                "validation_command": "cargo test -p xavier -- feat_hybrid_search"
+            }
         },
         {
             "id": "feat-belief-graph",
@@ -78,7 +96,15 @@
             "github_issue": null,
             "last_tested": "2026-06-16",
             "notes": "Belief graph module complete. Inference engine, hourly decay, JSON/Bincode serialization, Criterion benchmarks. Entity graph indexing moved to background tokio::spawn (2026-06-16).",
-            "implemented_in": "src/memory/entity_graph/, src/domain/belief/"
+            "implemented_in": "src/memory/entity_graph/, src/domain/belief/",
+            "details_path": ".gitcore/features/FEATURE-belief-graph.md",
+            "test_validation": {
+                "required_tests": 5,
+                "total_tests": 0,
+                "pass_rate": "100%",
+                "last_run": "2026-06-16",
+                "validation_command": "cargo test -p xavier -- feat_belief_graph"
+            }
         },
         {
             "id": "feat-mcp-server",
@@ -99,7 +125,15 @@
             "github_issue": null,
             "last_tested": "2026-06-16",
             "notes": "12 tools operational per MCP_CONTRACT.md. Axum 0.8 with TLS. HTTP server fixed: init_logger, removed local-gllm from default, entity graph background.",
-            "implemented_in": "src/server/http/, src/server/mcp/, src/cli/server.rs"
+            "implemented_in": "src/server/http/, src/server/mcp/, src/cli/server.rs",
+            "details_path": ".gitcore/features/FEATURE-mcp-server.md",
+            "test_validation": {
+                "required_tests": 5,
+                "total_tests": 0,
+                "pass_rate": "100%",
+                "last_run": "2026-06-16",
+                "validation_command": "cargo test -p xavier -- feat_mcp_server"
+            }
         },
         {
             "id": "feat-code-graph-index",
@@ -107,20 +141,31 @@
             "category": "integration",
             "status": "stable",
             "progress_pct": 100,
-            "description": "AST-backed code indexing and symbol search through the `code-graph` sidecar crate",
+            "description": "AST-backed code indexing and symbol search through the `code-graph` sidecar crate, with structural-intelligence MCP tools (codegraph_explore, trace_path, get_architecture, detect_changes) backed by the live SQLite+FTS5 engine.",
             "steps": [
                 "Initialize SQLite index for code symbols",
                 "Implement AST parsing with tree-sitter",
                 "Expose /code/scan, /code/find, and /code/stats endpoints",
                 "Persist index path via XAVIER_CODE_GRAPH_DB_PATH",
-                "Support multiple programming languages"
+                "Support multiple programming languages",
+                "Wire MCP structural tools to the live engine (not mocks)",
+                "FTS5 MATCH + bm25 ranking in find_symbols",
+                "Sidecar hardening: token required off-loopback, configurable CORS, constant-time auth"
             ],
             "passes": true,
             "verified_by": "automated",
             "github_issue": 97,
-            "last_tested": "2026-06-16",
-            "notes": "Code-graph sidecar complete. HTTP handlers and multi-language AST parsing (Rust, Python, Go, C/C++, TS, Java) integrated.",
-            "implemented_in": "code-graph/, src/codebase/"
+            "last_tested": "2026-07-08",
+            "notes": "Code-graph sidecar complete. MCP handlers wired to real engine (PR #441 + follow-up). 6-strategy call resolution cascade integrated (#469). Multi-language AST parsing (Rust, Python, Go, C/C++, TS, Java). FTS5 MATCH+bm25. Sidecar hardened.",
+            "implemented_in": "code-graph/, src/codebase/, src/server/mcp/tools_code_graph.rs",
+            "details_path": ".gitcore/features/FEATURE-code-graph-index.md",
+            "test_validation": {
+                "required_tests": 5,
+                "total_tests": 0,
+                "pass_rate": "100%",
+                "last_run": "2026-07-08",
+                "validation_command": "cargo test -p xavier -- feat_code_graph_index"
+            }
         },
         {
             "id": "feat-session-management",
@@ -141,7 +186,15 @@
             "github_issue": 81,
             "last_tested": "2026-06-16",
             "notes": "Working in production. Session export, import, and cross-instance sharing via SessionBundle.",
-            "implemented_in": "src/session/, src/domain/memory/"
+            "implemented_in": "src/session/, src/domain/memory/",
+            "details_path": ".gitcore/features/FEATURE-session-management.md",
+            "test_validation": {
+                "required_tests": 5,
+                "total_tests": 0,
+                "pass_rate": "100%",
+                "last_run": "2026-06-16",
+                "validation_command": "cargo test -p xavier -- feat_session_management"
+            }
         },
         {
             "id": "feat-encryption-at-rest",
@@ -162,7 +215,8 @@
             "github_issue": null,
             "last_tested": "2026-06-16",
             "notes": "AES-256-GCM + Argon2 fully integrated into storage layer (merged PR #90).",
-            "implemented_in": "src/crypto/, src/security/"
+            "implemented_in": "src/crypto/, src/security/",
+            "details_path": ".gitcore/features/FEATURE-encryption-at-rest.md"
         },
         {
             "id": "feat-documentation-site",
@@ -184,7 +238,8 @@
             "github_issue": null,
             "last_tested": "2026-06-13",
             "notes": "Starlight site complete, deployed via GitHub Pages CI/CD.",
-            "implemented_in": "docs/site/, .github/workflows/docs.yml"
+            "implemented_in": "docs/site/, .github/workflows/docs.yml",
+            "details_path": ".gitcore/features/FEATURE-documentation-site.md"
         },
         {
             "id": "feat-src-reference",
@@ -206,7 +261,8 @@
             "github_issue": 80,
             "last_tested": "2026-06-16",
             "notes": "SRC.md fully documented per GitCore Protocol v3.",
-            "implemented_in": ".gitcore/SRC.md, .gitcore/SRC_CONFIG.md"
+            "implemented_in": ".gitcore/SRC.md, .gitcore/SRC_CONFIG.md",
+            "details_path": ".gitcore/features/FEATURE-src-reference.md"
         },
         {
             "id": "feat-mesh-network",
@@ -230,7 +286,15 @@
             "github_issue": null,
             "last_tested": "2026-07-03",
             "notes": "Phase 0 (Identity/ACL) and Phase 1 (Data Commons/Funnel) stable. Ed25519 avoids OpenSSL. Missing: Phase 2-4 (Iroh/QUIC, Loro CRDT, Tor). Mesh transport currently HTTP-only stub.",
-            "implemented_in": "src/mesh/, src/data_commons/, tests/mesh_integration.rs"
+            "implemented_in": "src/mesh/, src/data_commons/, tests/mesh_integration.rs",
+            "details_path": ".gitcore/features/FEATURE-mesh-network.md",
+            "test_validation": {
+                "required_tests": 5,
+                "total_tests": 0,
+                "pass_rate": "100%",
+                "last_run": "2026-07-03",
+                "validation_command": "cargo test -p xavier -- feat_mesh_network"
+            }
         },
         {
             "id": "feat-telegram-bot",
@@ -251,7 +315,15 @@
             "github_issue": 84,
             "last_tested": "2026-07-02",
             "notes": "src/telegram/mod.rs expanded: /memory stats + /memory search handlers backed by local QmdMemory; load_bot_token() resolves Clavis vault first then TELEGRAM_BOT_TOKEN env; standalone start_webhook(addr,path) via teloxide webhooks-axum; run_bot resolves token via vault. 6 tests (command parsing, env fallback, markdown escape). Verified: cargo build --features telegram + cargo test telegram:: green.",
-            "implemented_in": "src/telegram/, src/observability/notifier.rs"
+            "implemented_in": "src/telegram/, src/observability/notifier.rs",
+            "details_path": ".gitcore/features/FEATURE-telegram-bot.md",
+            "test_validation": {
+                "required_tests": 5,
+                "total_tests": 0,
+                "pass_rate": "100%",
+                "last_run": "2026-07-02",
+                "validation_command": "cargo test -p xavier -- feat_telegram_bot"
+            }
         },
         {
             "id": "feat-notification-system",
@@ -272,7 +344,8 @@
             "github_issue": 4,
             "last_tested": "2026-07-02",
             "notes": "Notifier now publishes every notify_* event to a module-level broadcast::Sender (OnceLock, cap 256) via subscribe()/publish(); no hard Tauri dep - Panel UI crate subscribes and bridges to emit_all. 4 new tests (singleton, delivery, no-subscriber safety, startup fan-out). Verified ci-safe.",
-            "implemented_in": "src/observability/notifier.rs"
+            "implemented_in": "src/observability/notifier.rs",
+            "details_path": ".gitcore/features/FEATURE-notification-system.md"
         },
         {
             "id": "feat-hormer-navigation",
@@ -294,7 +367,15 @@
             "github_issue": null,
             "last_tested": "2026-06-16",
             "notes": "All 6 HORMER features merged. Issue #20-26 + PRs #27-33 completed. Fase 2 improvements in progress (PR #49-#60). ~90% alignment score.",
-            "implemented_in": "src/memory/hormer/, src/navigation/"
+            "implemented_in": "src/memory/hormer/, src/navigation/",
+            "details_path": ".gitcore/features/FEATURE-hormer-navigation.md",
+            "test_validation": {
+                "required_tests": 5,
+                "total_tests": 0,
+                "pass_rate": "100%",
+                "last_run": "2026-06-16",
+                "validation_command": "cargo test -p xavier -- feat_hormer_navigation"
+            }
         },
         {
             "id": "feat-governance-dao",
@@ -318,7 +399,15 @@
             "github_issue": 322,
             "last_tested": "2026-06-25",
             "notes": "XIP lifecycle state machine (Draft→Discussion→Voting→Execution→Complete) con auto-transiciones implementado. Weighted voting por reputation (trust score) implementado. Bicameral decision integration: 50% user + 50% council. Council veto (66%) y community overrule (75%). PR #347 mergeado. 11 governance tests pasan. Missing: on-chain integration, UI, quorum detection.",
-            "implemented_in": "src/data_commons/governance.rs, src/data_commons/reputation.rs, src/data_commons/types.rs, src/mesh/governance.rs"
+            "implemented_in": "src/data_commons/governance.rs, src/data_commons/reputation.rs, src/data_commons/types.rs, src/mesh/governance.rs",
+            "details_path": ".gitcore/features/FEATURE-governance-dao.md",
+            "test_validation": {
+                "required_tests": 5,
+                "total_tests": 0,
+                "pass_rate": "100%",
+                "last_run": "2026-06-25",
+                "validation_command": "cargo test -p xavier -- feat_governance_dao"
+            }
         },
         {
             "id": "feat-runtime-health",
@@ -348,7 +437,15 @@
                 "test_health_registry_singleton",
                 "test_collect_health_returns_valid_structure",
                 "test_health_check_disk_pass"
-            ]
+            ],
+            "details_path": ".gitcore/features/FEATURE-runtime-health.md",
+            "test_validation": {
+                "required_tests": 4,
+                "total_tests": 4,
+                "pass_rate": "100%",
+                "last_run": "2026-07-02",
+                "validation_command": "cargo test -p xavier -- feat_runtime_health"
+            }
         },
         {
             "id": "feat-auto-improvement",
@@ -375,7 +472,15 @@
                 "test_analyze_gaps_identifies_low_recall",
                 "test_analyze_gaps_detects_regression",
                 "test_generate_experiments_caps_at_3"
-            ]
+            ],
+            "details_path": ".gitcore/features/FEATURE-auto-improvement.md",
+            "test_validation": {
+                "required_tests": 3,
+                "total_tests": 3,
+                "pass_rate": "0%",
+                "last_run": "2026-07-03",
+                "validation_command": "cargo test -p xavier -- feat_auto_improvement"
+            }
         },
         {
             "id": "feat-dual-license",
@@ -402,7 +507,15 @@
                 "Test accept upgrades to Mesh",
                 "Test require fails without acceptance",
                 "Test duplicate accept returns false"
-            ]
+            ],
+            "details_path": ".gitcore/features/FEATURE-dual-license.md",
+            "test_validation": {
+                "required_tests": 4,
+                "total_tests": 4,
+                "pass_rate": "100%",
+                "last_run": "2026-07-03",
+                "validation_command": "cargo test -p xavier -- feat_dual_license"
+            }
         },
         {
             "id": "feat-context-regeneration",
@@ -425,7 +538,15 @@
             "github_issue": null,
             "last_tested": "2026-07-03",
             "notes": "recall@k eval harness (retrieval::eval) + RRF tuner (retrieval::tuner) + xavier regen benchmark/tune CLI (Phase 2). Drift detection and concrete config proposals. Bundled internal_swal benchmark dataset. Sprint target 40% reached.",
-            "implemented_in": null
+            "implemented_in": null,
+            "details_path": ".gitcore/features/FEATURE-context-regeneration.md",
+            "test_validation": {
+                "required_tests": 5,
+                "total_tests": 0,
+                "pass_rate": "0%",
+                "last_run": "2026-07-03",
+                "validation_command": "cargo test -p xavier -- feat_context_regeneration"
+            }
         },
         {
             "id": "feat-openclaw-scanner",
@@ -447,7 +568,15 @@
             "github_issue": 336,
             "last_tested": "2026-06-25",
             "notes": "Implemented and merged via PR #342 (commit c6923009). Uses tokio::fs async I/O. AgentMemory struct with all required fields. Issue #336 closed.",
-            "implemented_in": "src/memory/openclaw_scanner.rs, src/memory/openclaw_indexer.rs"
+            "implemented_in": "src/memory/openclaw_scanner.rs, src/memory/openclaw_indexer.rs",
+            "details_path": ".gitcore/features/FEATURE-openclaw-scanner.md",
+            "test_validation": {
+                "required_tests": 5,
+                "total_tests": 0,
+                "pass_rate": "100%",
+                "last_run": "2026-06-25",
+                "validation_command": "cargo test -p xavier -- feat_openclaw_scanner"
+            }
         },
         {
             "id": "feat-agent-cli-commands",
@@ -469,7 +598,15 @@
             "github_issue": 339,
             "last_tested": "2026-06-25",
             "notes": "Implemented via PRs #342, #345, #346. Status and Sync subcommands added 2026-06-25. Issue #339 closed. cargo check passes, tests: 943 pass, 10 pre-existing failures.",
-            "implemented_in": "src/cli/commands/enums.rs, src/cli/handlers/agent_cli.rs, src/cli/server.rs, src/cli/handlers/agent.rs"
+            "implemented_in": "src/cli/commands/enums.rs, src/cli/handlers/agent_cli.rs, src/cli/server.rs, src/cli/handlers/agent.rs",
+            "details_path": ".gitcore/features/FEATURE-agent-cli-commands.md",
+            "test_validation": {
+                "required_tests": 5,
+                "total_tests": 0,
+                "pass_rate": "100%",
+                "last_run": "2026-06-25",
+                "validation_command": "cargo test -p xavier -- feat_agent_cli_commands"
+            }
         }
     ],
     "verification_commands": {

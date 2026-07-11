@@ -31,7 +31,7 @@ pub struct RegisterRequest {
     pub name: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct LoginRequest {
     pub email: String,
     pub password: String,
