@@ -24,12 +24,15 @@ fn test_security_hardening_prompt_injection() {
 
 #[test]
 fn test_security_hardening_debug_redaction() {
-    // User struct redaction
-    let user = User::new(
+    // User struct redaction — construct with a real (non-empty) API key so the
+    // redaction check is meaningful. User::new() defaults api_key to "" which
+    // would make a `.contains("")` assertion trivially true.
+    let mut user = User::new(
         "admin@xavier.local".to_string(),
         "Admin".to_string(),
         UserRole::Admin,
     );
+    user.api_key = "sk-super-secret-key-12345".to_string();
     let debug_output = format!("{:?}", user);
     assert!(
         !debug_output.contains(&user.api_key),

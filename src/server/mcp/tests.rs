@@ -1251,7 +1251,7 @@ async fn code_graph_explore_returns_real_data_not_mock() {
 
     state
         .code_indexer
-        .index(&dir)
+        .index(&dir, false)
         .await
         .expect("index test project");
 
@@ -1314,7 +1314,7 @@ async fn code_graph_trace_path_returns_real_callers() {
 
     state
         .code_indexer
-        .index(&dir)
+        .index(&dir, false)
         .await
         .expect("index test project");
 
