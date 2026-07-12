@@ -34,7 +34,10 @@ pub struct LogsQuery {
 /// 1. `?q=<text>` → FTS5 full-text search via `search_logs`.
 /// 2. `?level=error` / `?source=http_server` → filtered recent entries.
 /// 3. (no filters) → most recent entries of any level.
-pub async fn list_logs(State(_state): State<CliState>, Query(params): Query<LogsQuery>) -> axum::response::Response {
+pub async fn list_logs(
+    State(_state): State<CliState>,
+    Query(params): Query<LogsQuery>,
+) -> axum::response::Response {
     let limit = params.limit.unwrap_or(200).min(1000);
 
     let store = match ServiceLogStore::new().await {
@@ -50,19 +53,22 @@ pub async fn list_logs(State(_state): State<CliState>, Query(params): Query<Logs
         }
     };
 
-    let entries: Result<Vec<LogEntry>, _> = if let Some(query) = params.q.as_ref().filter(|q| !q.trim().is_empty()) {
-        store.search_logs(query, limit).await
-    } else {
-        let level = params
-            .level
-            .as_deref()
-            .map(|l| l.trim().to_ascii_lowercase());
-        let source = params
-            .source
-            .as_deref()
-            .map(|s| s.trim().to_ascii_lowercase());
-        store.query_recent(level.as_deref(), source.as_deref(), limit).await
-    };
+    let entries: Result<Vec<LogEntry>, _> =
+        if let Some(query) = params.q.as_ref().filter(|q| !q.trim().is_empty()) {
+            store.search_logs(query, limit).await
+        } else {
+            let level = params
+                .level
+                .as_deref()
+                .map(|l| l.trim().to_ascii_lowercase());
+            let source = params
+                .source
+                .as_deref()
+                .map(|s| s.trim().to_ascii_lowercase());
+            store
+                .query_recent(level.as_deref(), source.as_deref(), limit)
+                .await
+        };
 
     match entries {
         Ok(rows) => json_response(StatusCode::OK, serde_json::json!(rows)),
