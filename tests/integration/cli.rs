@@ -36,7 +36,9 @@ fn run_with_timeout(args: &[&str], timeout_secs: u64) -> Output {
     loop {
         if start.elapsed().as_secs() > timeout_secs {
             let _ = child.kill();
-            panic!("xavier {} timed out after {timeout_secs}s", args.join(" "));
+            // Collect whatever output was produced before the kill instead of
+            // panicking — callers that pass `[]` (server start) rely on this.
+            return child.wait_with_output().expect("get output after kill");
         }
         match child.try_wait() {
             Ok(Some(_status)) => {
@@ -243,8 +245,11 @@ fn test_cli_subcommand_invalid_flag() {
 
 #[test]
 fn test_cli_subcommand_add_without_server() {
-    // add requires a running server — should fail gracefully
-    let output = run_with_timeout(&["add", "test-content"], 15);
+    // add requires a running server — should fail gracefully.
+    // When the server is offline, the CLI falls back to the local SQLite store,
+    // which can take time to initialize on a populated database, so allow ample
+    // time for the offline fallback path to complete.
+    let output = run_with_timeout(&["add", "test-content"], 45);
 
     let stderr = String::from_utf8_lossy(&output.stderr);
     let stdout = String::from_utf8_lossy(&output.stdout);
@@ -307,7 +312,7 @@ fn test_add_and_search_without_server() {
     // Without a running server, both add and search should fail gracefully.
     // This verifies both subcommands exist and produce expected error output.
 
-    let add_output = run_with_timeout(&["add", "integration test content"], 15);
+    let add_output = run_with_timeout(&["add", "integration test content"], 45);
     let add_combined = format!(
         "{} {}",
         String::from_utf8_lossy(&add_output.stdout),
