@@ -222,28 +222,12 @@ impl EmbedderConfig {
     }
 
     fn cloud_only(api_flavor: ApiFlavor) -> Self {
-        // Primary: cloud endpoint, Fallback: local endpoint if available
+        // Primary: cloud endpoint
         let mut backends = vec![EmbedderBackendConfig::OpenAICompatible(cloud_config())];
 
-        // Always add GLLM as a fallback if in cloud mode to ensure offline/GPU availability
-        if api_flavor == ApiFlavor::OpenAICompatible {
-            backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
-        }
-
-        if local_embedding_signal_present() {
-            match api_flavor {
-                ApiFlavor::OpenAICompatible => {
-                    backends.push(EmbedderBackendConfig::OpenAICompatible(local_config()));
-                }
-                ApiFlavor::AnthropicCompatible => {
-                    if !backends
-                        .iter()
-                        .any(|b| matches!(b, EmbedderBackendConfig::Gllm(_)))
-                    {
-                        backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
-                    }
-                }
-            }
+        // Fallback: local OpenAI-compatible endpoint if available (e.g., Ollama)
+        if local_embedding_signal_present() && api_flavor == ApiFlavor::OpenAICompatible {
+            backends.push(EmbedderBackendConfig::OpenAICompatible(local_config()));
         }
 
         Self::Fallback(backends)
