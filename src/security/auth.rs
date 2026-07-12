@@ -81,6 +81,7 @@ impl fmt::Debug for User {
             .field("email", &self.email)
             .field("name", &self.name)
             .field("role", &self.role)
+            .field("api_key", &"<redacted>")
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
             .finish()
