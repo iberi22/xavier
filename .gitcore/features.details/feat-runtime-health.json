@@ -1,0 +1,50 @@
+{
+  "feature": "feat-runtime-health",
+  "name": "Runtime Health & Self-Monitoring",
+  "category": "enterprise",
+  "status": "beta",
+  "progress_pct": 85,
+  "score": 100,
+  "steps": {
+    "create_src/health/mod.rs_with_healthresp": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "system_metrics:_cpu,_memory,_disk": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "database_health:_size,_fragmentation,_va": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "embedding_health:_provider,_latency": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "mesh_health:_peers,_sync": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "get_/health_wired_to_axum_router": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "auto_vacuum_threshold_>30%": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "5+_unit_tests": {
+      "passed": true,
+      "weight": 16,
+      "score": 16
+    }
+  }
+}

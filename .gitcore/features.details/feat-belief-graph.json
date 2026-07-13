@@ -1,0 +1,45 @@
+{
+  "feature": "feat-belief-graph",
+  "name": "Belief Graph",
+  "category": "cognitive",
+  "status": "stable",
+  "progress_pct": 100,
+  "score": 100,
+  "steps": {
+    "define_relationship_nodes_and_edges": {
+      "passed": true,
+      "weight": 14,
+      "score": 14
+    },
+    "implement_extraction_logic_for_agent_ins": {
+      "passed": true,
+      "weight": 14,
+      "score": 14
+    },
+    "implement_graph_traversal_queries": {
+      "passed": true,
+      "weight": 14,
+      "score": 14
+    },
+    "verify_graph_traversal_performance": {
+      "passed": true,
+      "weight": 14,
+      "score": 14
+    },
+    "add_inference_and_decay_mechanisms": {
+      "passed": true,
+      "weight": 14,
+      "score": 14
+    },
+    "implement_json/bincode_serialization": {
+      "passed": true,
+      "weight": 14,
+      "score": 14
+    },
+    "add_performance_benchmarks": {
+      "passed": true,
+      "weight": 16,
+      "score": 16
+    }
+  }
+}
