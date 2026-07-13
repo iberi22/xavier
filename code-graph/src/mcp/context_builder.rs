@@ -46,7 +46,7 @@ impl ContextBuilder {
             for sym in syms {
                 output.push_str(&format!("### {:?} `{}`\n", sym.kind, sym.name));
                 if let Some(ref sig) = sym.signature {
-                    let lang_highlight = match sym.lang {
+                    let lang_highlight = match &sym.lang {
                         crate::types::Language::Rust => "rust",
                         crate::types::Language::TypeScript => "typescript",
                         crate::types::Language::JavaScript => "javascript",
@@ -55,6 +55,9 @@ impl ContextBuilder {
                         crate::types::Language::Java => "java",
                         crate::types::Language::C => "c",
                         crate::types::Language::Cpp => "cpp",
+                        // Plugin-backed languages have no fixed highlighter name;
+                        // fall back to the inner canonical name if present.
+                        crate::types::Language::Other(name) => name.as_str(),
                         crate::types::Language::Unknown => "",
                     };
                     output.push_str(&format!("```{}\n", lang_highlight));

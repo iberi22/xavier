@@ -22,17 +22,7 @@ pub struct CodeGraphDB {
 }
 
 fn parse_language(value: &str) -> Language {
-    serde_json::from_str(value).unwrap_or(match value {
-        "Rust" => Language::Rust,
-        "TypeScript" => Language::TypeScript,
-        "JavaScript" => Language::JavaScript,
-        "Python" => Language::Python,
-        "Go" => Language::Go,
-        "Java" => Language::Java,
-        "C" => Language::C,
-        "Cpp" => Language::Cpp,
-        _ => Language::Unknown,
-    })
+    Language::from_db_str(value)
 }
 
 fn parse_symbol_kind(value: &str) -> SymbolKind {
@@ -318,7 +308,7 @@ impl CodeGraphDB {
                 &stable_id,
                 symbol.name,
                 format!("{:?}", symbol.kind),
-                format!("{:?}", symbol.lang),
+                symbol.lang.as_db_str(),
                 symbol.file_path,
                 symbol.start_line,
                 symbol.end_line,
@@ -376,7 +366,7 @@ impl CodeGraphDB {
                     symbol.stable_id,
                     symbol.name,
                     format!("{:?}", symbol.kind),
-                    format!("{:?}", symbol.lang),
+                    symbol.lang.as_db_str(),
                     symbol.file_path,
                     symbol.start_line,
                     symbol.end_line,
@@ -642,7 +632,7 @@ impl CodeGraphDB {
             )
             .map_err(|e| GraphError::Database(e.to_string()))?;
 
-        let lang_str = format!("{:?}", lang);
+        let lang_str = lang.as_db_str();
         let symbols = stmt
             .query_map(params![lang_str, limit as isize], |row| {
                 Ok(Symbol {
@@ -1162,6 +1152,24 @@ mod tests {
         assert_eq!(parse_language("Rust"), Language::Rust);
         assert_eq!(parse_language("TypeScript"), Language::TypeScript);
         assert_eq!(parse_language("unknown-value"), Language::Unknown);
+    }
+
+    #[test]
+    fn language_other_round_trips_through_db_string() {
+        // New canonical form: plugin-backed languages survive the round-trip.
+        let ruby = Language::Other("ruby".to_string());
+        assert_eq!(ruby.as_db_str(), "other:ruby");
+        assert_eq!(parse_language("other:ruby"), ruby);
+
+        // Built-ins use their bare as_str() identifier.
+        assert_eq!(Language::Rust.as_db_str(), "rust");
+        assert_eq!(Language::Cpp.as_db_str(), "cpp");
+        assert_eq!(parse_language("rust"), Language::Rust);
+        assert_eq!(parse_language("cpp"), Language::Cpp);
+
+        // Legacy rows written with the old `Debug` form still parse.
+        assert_eq!(parse_language("Rust"), Language::Rust);
+        assert_eq!(parse_language("Cpp"), Language::Cpp);
     }
 
     #[test]

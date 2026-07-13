@@ -3,7 +3,11 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-/// Programming language supported
+/// Programming language supported.
+///
+/// `Other(String)` covers languages discovered dynamically from an installed
+/// parser plugin (e.g. `Language::Other("ruby")`). The payload is a lowercase
+/// canonical language name sourced from the plugin's declared languages.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 pub enum Language {
     #[default]
@@ -15,6 +19,8 @@ pub enum Language {
     Java,
     C,
     Cpp,
+    /// A language backed by a plugin rather than a built-in tree-sitter parser.
+    Other(String),
     Unknown,
 }
 
@@ -42,6 +48,74 @@ impl Language {
             "c" | "h" => Language::C,
             "cpp" | "cc" | "cxx" | "hpp" => Language::Cpp,
             _ => Language::Unknown,
+        }
+    }
+
+    /// Stable lowercase identifier for this language.
+    ///
+    /// Used for **DB persistence and API output** instead of `Debug` so that
+    /// `Language::Other("ruby")` survives a round-trip (its `Debug` form,
+    /// `Other("ruby")`, does not). For `Other(s)` this returns the inner
+    /// canonical name (`s`), lowercased.
+    pub fn as_str(&self) -> &str {
+        match self {
+            Language::Rust => "rust",
+            Language::TypeScript => "typescript",
+            Language::JavaScript => "javascript",
+            Language::Python => "python",
+            Language::Go => "go",
+            Language::Java => "java",
+            Language::C => "c",
+            Language::Cpp => "cpp",
+            Language::Other(name) => name,
+            Language::Unknown => "unknown",
+        }
+    }
+
+    /// Storage form used when writing the `lang` column to SQLite. For the
+    /// `Other(String)` variant this is `other:<name>` so the payload survives
+    /// the round-trip; built-ins use their bare `as_str()`.
+    pub fn as_db_str(&self) -> String {
+        match self {
+            Language::Other(name) => format!("other:{}", name),
+            other => other.as_str().to_string(),
+        }
+    }
+
+    /// Parse a value previously written by [`Language::as_db_str`] (or by the
+    /// legacy `Debug`/serde forms on existing rows) back into a `Language`.
+    pub fn from_db_str(value: &str) -> Self {
+        // New canonical form for plugin-backed languages.
+        if let Some(name) = value.strip_prefix("other:") {
+            return Language::Other(name.to_string());
+        }
+        // Canonical lowercase identifiers produced by `as_str`.
+        match value {
+            "rust" => Language::Rust,
+            "typescript" => Language::TypeScript,
+            "javascript" => Language::JavaScript,
+            "python" => Language::Python,
+            "go" => Language::Go,
+            "java" => Language::Java,
+            "c" => Language::C,
+            "cpp" => Language::Cpp,
+            "unknown" => Language::Unknown,
+            _ => {
+                // Legacy rows written with `Debug` ("Rust", "Cpp", ...) or
+                // externally-tagged serde ("\"Rust\""). Try serde first, then
+                // the bare capitalized form.
+                serde_json::from_str(value).unwrap_or_else(|_| match value {
+                    "Rust" => Language::Rust,
+                    "TypeScript" => Language::TypeScript,
+                    "JavaScript" => Language::JavaScript,
+                    "Python" => Language::Python,
+                    "Go" => Language::Go,
+                    "Java" => Language::Java,
+                    "C" => Language::C,
+                    "Cpp" => Language::Cpp,
+                    _ => Language::Unknown,
+                })
+            }
         }
     }
 }

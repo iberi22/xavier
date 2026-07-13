@@ -49,7 +49,7 @@ export default function LeaseHistoryPage({ token }: LeaseHistoryPageProps) {
     }
   };
 
-  const formatRelative = (timestamp: string): string => {
+  const formatRelative = (timestamp: string | number): string => {
     const date = new Date(timestamp);
     const diff = (Date.now() - date.getTime()) / 1000;
     if (diff < 60) return "just now";
@@ -124,7 +124,7 @@ export default function LeaseHistoryPage({ token }: LeaseHistoryPageProps) {
                     )}
                     <span className="text-white/40 font-mono">
                       <span className="text-white/10 mr-1 uppercase tracking-tighter font-medium">Token:</span>
-                      {entry.session_token.slice(0, 8)}...
+                      {entry.session_token?.slice(0, 8)}...
                     </span>
                   </div>
                   {entry.reason && (

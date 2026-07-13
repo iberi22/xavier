@@ -37,8 +37,7 @@ impl CveLearningAgent {
             Ok(SecurityRule {
                 rule_id: format!("RULE_{}", cve_id),
                 description: "Buffer overflow detected in C/Rust FFI boundary.".to_string(),
-                vulnerable_pattern:
-                    "unsafe { std::slice::from_raw_parts(ptr, len) } without bounds check"
+                vulnerable_pattern: "unsafe { std::slice::from_raw_parts(ptr, len) } without bounds check"
                         .to_string(),
                 recommended_fix:
                     "Implement rigorous bounds checking before unsafe block or use safe wrappers."
@@ -49,7 +48,7 @@ impl CveLearningAgent {
             Ok(SecurityRule {
                 rule_id: format!("RULE_{}", cve_id),
                 description: "SQL Injection in dynamic queries.".to_string(),
-                vulnerable_pattern: "format!(\"SELECT * FROM users WHERE id = {}\", user_input)"
+                vulnerable_pattern: "format!(\"SELECT * FROM users WHERE id = {0}\", user_input)"
                     .to_string(),
                 recommended_fix: "Use parameterized queries or ORM bindings (e.g., sqlx::query!)."
                     .to_string(),
@@ -63,8 +62,10 @@ impl CveLearningAgent {
     /// Translates an extracted rule into an embedding instruction for the CodeGraph.
     pub fn apply_rule_to_codegraph(&self, rule: &SecurityRule) -> String {
         format!(
-            "Injected [{}]: Scanners will now flag '{}' and suggest '{}'",
-            rule.source, rule.vulnerable_pattern, rule.recommended_fix
+            "Injected [{src}]: Scanners will now flag '{pat}' and suggest '{fix}'",
+            src = rule.source,
+            pat = rule.vulnerable_pattern,
+            fix = rule.recommended_fix
         )
     }
 }

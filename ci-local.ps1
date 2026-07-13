@@ -35,12 +35,9 @@ if ($job) {
 # Phase 1: Rust formatting
 # cargo fmt --all fails because xavier-core has unresolved module files
 # (incomplete crate). Format the live packages individually instead.
-Log "cargo fmt --check"
-$fmtFailed = $false
-foreach ($pkg in @("xavier", "code-graph", "codegraph-types")) {
-    $code = Invoke-Native { cargo fmt -p $pkg -- --check }
-    if ($code -ne 0) { $fmtFailed = $true }
-}
+Log "cargo fmt --all -- --check"
+$code = Invoke-Native { cargo fmt --all -- --check }
+if ($code -ne 0) { $fmtFailed = $true }
 if ($fmtFailed) { LogFail "fmt failed"; Pop-Location; exit 1 }
 LogOk "fmt OK"
 
@@ -50,19 +47,19 @@ LogOk "fmt OK"
 #   codegraph-parse-typescript   — stale PluginResponse fields (symbols/edges removed)
 # app is the Tauri panel (built separately via pnpm tauri build).
 Log "cargo check"
-$code = Invoke-Native { cargo check --workspace --all-targets --features ci-safe --exclude app --exclude xavier-core --exclude codegraph-parse-typescript }
+$code = Invoke-Native { cargo check --workspace --all-targets --features ci-safe --exclude app }
 if ($code -ne 0) { LogFail "check failed"; Pop-Location; exit 1 }
 LogOk "check OK"
 
 # Phase 3: Clippy + Tests (slow, skip with -fast)
 if (-not $fast) {
     Log "cargo clippy"
-    $code = Invoke-Native { cargo clippy --workspace --all-targets --features ci-safe --exclude app --exclude xavier-core --exclude codegraph-parse-typescript -- -D warnings }
+    $code = Invoke-Native { cargo clippy --workspace --all-targets --features ci-safe --exclude app -- -D warnings }
     if ($code -ne 0) { LogFail "clippy failed"; Pop-Location; exit 1 }
     LogOk "clippy OK"
 
     Log "cargo test"
-    $code = Invoke-Native { cargo test --workspace --no-default-features --features ci-safe --exclude app --exclude xavier-core --exclude codegraph-parse-typescript }
+    $code = Invoke-Native { cargo test --workspace --no-default-features --features ci-safe --exclude app }
     if ($code -ne 0) { LogFail "tests failed"; Pop-Location; exit 1 }
     LogOk "tests OK"
 }
@@ -73,13 +70,13 @@ $code = Invoke-Native { pnpm install --frozen-lockfile --config.dangerouslyAllow
 if ($code -ne 0) { LogFail "pnpm install failed"; Pop-Location; exit 1 }
 
 Log "pnpm panel-ui check"
-$code = Invoke-Native { pnpm --filter panel-ui check }
+$code = Invoke-Native { pnpm --filter xavier-panel-ui check }
 if ($code -ne 0) { LogFail "panel-ui check failed"; Pop-Location; exit 1 }
 LogOk "panel-ui check OK"
 
 if (-not $fast) {
     Log "pnpm panel-ui test"
-    $code = Invoke-Native { pnpm --filter panel-ui test }
+    $code = Invoke-Native { pnpm --filter xavier-panel-ui test }
     if ($code -ne 0) { LogFail "panel-ui tests failed"; Pop-Location; exit 1 }
     LogOk "panel-ui tests OK"
 }
