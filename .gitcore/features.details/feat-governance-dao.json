@@ -1,0 +1,50 @@
+{
+  "feature": "feat-governance-dao",
+  "name": "Bicameral Governance DAO",
+  "category": "enterprise",
+  "status": "beta",
+  "progress_pct": 70,
+  "score": 100,
+  "steps": {
+    "bicameral_dao_design_(users_+_council)": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "weighted_voting_by_reputation_+_activity": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "xip_lifecycle_(proposal_\u2192_discussion_\u2192_v": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "veto_mechanism_(66%_council_for_security": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "community_overrule_(75%_override_veto)": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "on_chain_integration_(solana/ethereum)": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "quorum_detection_and_dynamic_thresholds": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "ui_for_proposal_browsing_and_voting": {
+      "passed": true,
+      "weight": 16,
+      "score": 16
+    }
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "feature": "feat-code-graph-index",
+  "name": "Code Graph Index",
+  "category": "integration",
+  "status": "stable",
+  "progress_pct": 100,
+  "score": 100,
+  "steps": {
+    "initialize_sqlite_index_for_code_symbols": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "implement_ast_parsing_with_tree_sitter": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "expose_/code/scan,_/code/find,_and_/code": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "persist_index_path_via_xavier_code_graph": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "support_multiple_programming_languages": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "wire_mcp_structural_tools_to_the_live_en": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "fts5_match_+_bm25_ranking_in_find_symbol": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "sidecar_hardening:_token_required_off_lo": {
+      "passed": true,
+      "weight": 16,
+      "score": 16
+    }
+  }
+}

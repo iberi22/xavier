@@ -1,20 +1,20 @@
 {
-    "_comment": "Feature tracking file for Xavier — actualizado 2026-07-13: feat-plugin-system agregado (extraer parsers de lenguajes a plugins descargables). FIX: bug SQLite/NTFS code-graph.",
+    "_comment": "Feature tracking file for Xavier \u2014 actualizado 2026-07-13: feat-plugin-system agregado (extraer parsers de lenguajes a plugins descargables). FIX: bug SQLite/NTFS code-graph.",
     "metadata": {
         "project": "Xavier",
         "version": "0.12.0-13-07-2026",
         "created": "2026-03-05",
         "last_verified": "2026-07-13",
-        "total_features": 21,
+        "total_features": 22,
         "features_complete": 11,
         "features_beta": 7,
         "features_draft": 3,
-        "features_planned": 2,
+        "features_planned": 1,
         "features_stable": 11,
-        "overall_progress_pct": 87,
-        "reconciliation_notes": "feat-plugin-system F1+F2 completado (40%). Code-graph plugin system: Language::Other, PluginManager, ProcessEngine, FallbackChain, parse_source() reescrito con fallback chain. 4 new files + 7 modified. Commit bf2dec28.",
-        "details_tracked": 21,
-        "features_with_tests": 16
+        "overall_progress_pct": 89,
+        "reconciliation_notes": "2026-07-13: features.details/ generado con 22 JSON files. 22 scripts de validaci\u00f3n. Total: 22 features, 89% overall.",
+        "details_tracked": 22,
+        "features_with_tests": 22
     },
     "features": [
         {
@@ -247,7 +247,7 @@
             "category": "documentation",
             "status": "stable",
             "progress_pct": 100,
-            "description": "Source Code Reference (SRC) — comprehensive documentation per GitCore protocol",
+            "description": "Source Code Reference (SRC) \u2014 comprehensive documentation per GitCore protocol",
             "steps": [
                 "Document directory structure",
                 "Document core modules (a2a, agents, memory, server, tasks)",
@@ -383,11 +383,11 @@
             "category": "enterprise",
             "status": "beta",
             "progress_pct": 70,
-            "description": "Bicameral governance system — 50% node operators + 50% Xavier Core Council — with weighted voting, veto, XIP lifecycle, and on-chain integration",
+            "description": "Bicameral governance system \u2014 50% node operators + 50% Xavier Core Council \u2014 with weighted voting, veto, XIP lifecycle, and on-chain integration",
             "steps": [
                 "Bicameral DAO design (users + council)",
                 "Weighted voting by reputation + activity",
-                "XIP lifecycle (proposal → discussion → vote → execution)",
+                "XIP lifecycle (proposal \u2192 discussion \u2192 vote \u2192 execution)",
                 "Veto mechanism (66% council for security)",
                 "Community overrule (75% override veto)",
                 "On-chain integration (Solana/Ethereum)",
@@ -398,7 +398,7 @@
             "verified_by": "build",
             "github_issue": 322,
             "last_tested": "2026-06-25",
-            "notes": "XIP lifecycle state machine (Draft→Discussion→Voting→Execution→Complete) con auto-transiciones implementado. Weighted voting por reputation (trust score) implementado. Bicameral decision integration: 50% user + 50% council. Council veto (66%) y community overrule (75%). PR #347 mergeado. 11 governance tests pasan. Missing: on-chain integration, UI, quorum detection.",
+            "notes": "XIP lifecycle state machine (Draft\u2192Discussion\u2192Voting\u2192Execution\u2192Complete) con auto-transiciones implementado. Weighted voting por reputation (trust score) implementado. Bicameral decision integration: 50% user + 50% council. Council veto (66%) y community overrule (75%). PR #347 mergeado. 11 governance tests pasan. Missing: on-chain integration, UI, quorum detection.",
             "implemented_in": "src/data_commons/governance.rs, src/data_commons/reputation.rs, src/data_commons/types.rs, src/mesh/governance.rs",
             "details_path": ".gitcore/features/FEATURE-governance-dao.md",
             "test_validation": {
@@ -453,7 +453,7 @@
             "category": "enterprise",
             "status": "draft",
             "progress_pct": 85,
-            "description": "Closed-loop auto-improvement: benchmark → gap analysis → generate experiment → validate → merge → re-measure",
+            "description": "Closed-loop auto-improvement: benchmark \u2192 gap analysis \u2192 generate experiment \u2192 validate \u2192 merge \u2192 re-measure",
             "steps": [
                 "Benchmark runner",
                 "Gap analysis",
@@ -557,8 +557,8 @@
             "description": "Scans clawd/agents/ directories for OpenClaw agent memory files (MEMORY.md, SOUL.md, USER.md, daily logs)",
             "steps": [
                 "Implement OpenClawAgentScanner struct",
-                "scan_all_agents() — recursive directory scan",
-                "scan_agent(name) — single agent scan",
+                "scan_all_agents() \u2014 recursive directory scan",
+                "scan_agent(name) \u2014 single agent scan",
                 "Detect MEMORY.md, TOOLS.md, SOUL.md, USER.md, daily logs",
                 "Integration with OpenClawAgentIndexer for embedding",
                 "Wire into CloudMemorySync for Supabase push"
@@ -630,7 +630,7 @@
             "verified_by": "design",
             "github_issue": null,
             "last_tested": "2026-07-13",
-            "notes": "F1 (Foundation) and F2 (Engine+Fallback) COMPLETE ✅. Language::Other, PluginManager, ProcessEngine, FallbackChain implemented. plugin_host.rs deprecated as wrapper. Bugs: Rust hardcode, duplicate match arms fixed. Pending F3-F5: Registry, Lifecycle, CLI, Health, API, Discovery.",
+            "notes": "F1 (Foundation) and F2 (Engine+Fallback) COMPLETE \u2705. Language::Other, PluginManager, ProcessEngine, FallbackChain implemented. plugin_host.rs deprecated as wrapper. Bugs: Rust hardcode, duplicate match arms fixed. Pending F3-F5: Registry, Lifecycle, CLI, Health, API, Discovery.",
             "implemented_in": "code-graph/src/plugin_host.rs (existing), code-graph/src/plugin/ (new module)",
             "details_path": ".gitcore/features/FEATURE-plugin-system.md",
             "test_validation": {

@@ -1,0 +1,40 @@
+{
+  "feature": "feat-auto-improvement",
+  "name": "Auto-Improvement Loop",
+  "category": "enterprise",
+  "status": "draft",
+  "progress_pct": 85,
+  "score": 0,
+  "steps": {
+    "benchmark_runner": {
+      "passed": false,
+      "weight": 17,
+      "score": 0
+    },
+    "gap_analysis": {
+      "passed": false,
+      "weight": 17,
+      "score": 0
+    },
+    "experiment_generator": {
+      "passed": false,
+      "weight": 17,
+      "score": 0
+    },
+    "validation_loop": {
+      "passed": false,
+      "weight": 17,
+      "score": 0
+    },
+    "full_cycle": {
+      "passed": false,
+      "weight": 17,
+      "score": 0
+    },
+    "ci_integration": {
+      "passed": false,
+      "weight": 15,
+      "score": 0
+    }
+  }
+}
