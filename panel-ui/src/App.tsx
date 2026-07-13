@@ -322,7 +322,7 @@ export default function App() {
 
   if (health === "offline") {
     return (
-      <div className="w-full h-screen bg-black flex items-center justify-center text-[#39ff14] font-mono">
+      <div className="w-full h-dvh bg-black flex items-center justify-center text-[#39ff14] font-mono">
         <div className="text-center">
           <h1 className="text-2xl mb-4 uppercase tracking-widest border-b border-[#39ff14]/30 pb-2">
             Xavier Offline
@@ -358,7 +358,7 @@ export default function App() {
   }
 
   return (
-    <div className="relative w-full h-screen font-sans bg-[#050505] flex flex-col overflow-hidden text-white">
+    <div className="relative w-full h-dvh font-sans bg-[#050505] flex flex-col overflow-hidden text-white">
       <ParticleBackground />
       <TopStatusBar isModalOpen={isConfigOpen} />
 
