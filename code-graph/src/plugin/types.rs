@@ -165,9 +165,7 @@ pub trait PluginEngine: Send + Sync {
         config: &PluginConfig,
         lang: Language,
         files: Vec<FileToParse>,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<Vec<Symbol>>> + Send>,
-    >;
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<Symbol>>> + Send>>;
 }
 
 /// Resolves which fallback chain applies to a given language.

@@ -37,7 +37,8 @@ impl CveLearningAgent {
             Ok(SecurityRule {
                 rule_id: format!("RULE_{}", cve_id),
                 description: "Buffer overflow detected in C/Rust FFI boundary.".to_string(),
-                vulnerable_pattern: "unsafe { std::slice::from_raw_parts(ptr, len) } without bounds check"
+                vulnerable_pattern:
+                    "unsafe { std::slice::from_raw_parts(ptr, len) } without bounds check"
                         .to_string(),
                 recommended_fix:
                     "Implement rigorous bounds checking before unsafe block or use safe wrappers."

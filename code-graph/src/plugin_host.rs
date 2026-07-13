@@ -130,13 +130,14 @@ mod tests {
         }
 
         // Register a plugin and confirm the host surfaces it.
-        host.manager.register(crate::plugin::types::PluginDescriptor {
-            name: "parser-py".to_string(),
-            version: "1.0.0".to_string(),
-            command: "parser-py".to_string(),
-            languages: vec![Language::Python],
-            capabilities: vec!["parse".to_string()],
-        });
+        host.manager
+            .register(crate::plugin::types::PluginDescriptor {
+                name: "parser-py".to_string(),
+                version: "1.0.0".to_string(),
+                command: "parser-py".to_string(),
+                languages: vec![Language::Python],
+                capabilities: vec!["parse".to_string()],
+            });
         match host.parser_for(&Language::Python) {
             ParserDispatch::Plugin(c) => assert_eq!(c.command, "parser-py"),
             other => panic!("expected Plugin for Python, got {:?}", other),

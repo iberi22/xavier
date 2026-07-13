@@ -1,8 +1,8 @@
 //! Governance Command Handlers — CLI implementation for Xavier Governance DAO
 
-use xavier::data_commons::{governance, types};
 use crate::cli::commands::GovernanceCommand;
 use anyhow::Result;
+use xavier::data_commons::{governance, types};
 
 pub async fn handle_governance(command: GovernanceCommand) -> anyhow::Result<()> {
     // License check for Governance features
