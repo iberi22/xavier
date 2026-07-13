@@ -1,10 +1,13 @@
 # Issue: Plugin System — CLI + Health + API
 
+**Prerequisite: F1+F2 COMPLETE ✅** (Commit bf2dec28)
+- `Language::Other(String)` implemented
+- `PluginManager`, `ProcessEngine`, `FallbackChain` exist in `code-graph/src/plugin/`
+- `parse_source()` uses fallback chain with Plugin→Native→NoOp
+- `plugin_host.rs` deprecated as wrapper
+
 ## Labels
 `enhancement`, `plugin-system`, `P4-cli`
-
-## Description
-Implement CLI commands, health monitoring, and HTTP API endpoints for the plugin system.
 
 ## Changes Required
 
