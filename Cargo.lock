@@ -17218,35 +17218,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "xavier-core"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "anyhow",
- "async-trait",
- "base64 0.22.1",
- "chrono",
- "dirs 6.0.0",
- "hex",
- "libc",
- "once_cell",
- "rand 0.8.6",
- "regex",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "sqlite-vec",
- "subtle",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "ulid",
- "uuid",
- "walkdir",
-]
-
-[[package]]
 name = "xavier_mobile"
 version = "0.1.0"
 dependencies = [

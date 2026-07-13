@@ -40,8 +40,7 @@ members = [
     "code-graph",
     "codegraph-types",
     "parsers/codegraph-parse-typescript",
-    "panel-ui/src-tauri",
-    "xavier-core"
+    "panel-ui/src-tauri"
 ]
 
 [features]
