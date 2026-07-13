@@ -128,7 +128,9 @@ mod tests {
 
     #[test]
     fn built_in_language_defaults_to_native_then_noop() {
-        let chain = FallbackChain { overrides: HashMap::new() };
+        let chain = FallbackChain {
+            overrides: HashMap::new(),
+        };
         assert_eq!(
             chain.chain_for(&Language::Rust),
             vec![FallbackStep::Native, FallbackStep::NoOp],
@@ -141,8 +143,13 @@ mod tests {
 
     #[test]
     fn unknown_or_plugin_only_language_defaults_to_noop() {
-        let chain = FallbackChain { overrides: HashMap::new() };
-        assert_eq!(chain.chain_for(&Language::Unknown), vec![FallbackStep::NoOp]);
+        let chain = FallbackChain {
+            overrides: HashMap::new(),
+        };
+        assert_eq!(
+            chain.chain_for(&Language::Unknown),
+            vec![FallbackStep::NoOp]
+        );
         assert_eq!(
             chain.chain_for(&Language::Other("ruby".into())),
             vec![FallbackStep::NoOp],
@@ -178,7 +185,9 @@ mod tests {
 
     #[test]
     fn set_and_clear_round_trip() {
-        let mut chain = FallbackChain { overrides: HashMap::new() };
+        let mut chain = FallbackChain {
+            overrides: HashMap::new(),
+        };
         chain.set(
             &Language::Go,
             vec![FallbackStep::Plugin("parser-go".into()), FallbackStep::NoOp],

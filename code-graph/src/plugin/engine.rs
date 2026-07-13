@@ -44,11 +44,7 @@ impl ProcessEngine {
 
     /// Snapshot of recorded health for a plugin command.
     pub fn health_for(&self, command: &str) -> PluginHealth {
-        self.health
-            .lock()
-            .get(command)
-            .cloned()
-            .unwrap_or_default()
+        self.health.lock().get(command).cloned().unwrap_or_default()
     }
 
     fn record_success(&self, command: &str) {
@@ -74,9 +70,12 @@ impl ProcessEngine {
         lang: Language,
         files: Vec<FileToParse>,
     ) -> Result<Vec<Symbol>> {
-        let request = PluginRequest { language: lang, files };
-        let input_json = serde_json::to_string(&request)
-            .map_err(|e| GraphError::Parser(e.to_string()))?;
+        let request = PluginRequest {
+            language: lang,
+            files,
+        };
+        let input_json =
+            serde_json::to_string(&request).map_err(|e| GraphError::Parser(e.to_string()))?;
 
         let mut child = tokio::process::Command::new(&config.command)
             .stdin(Stdio::piped())
@@ -108,7 +107,10 @@ impl ProcessEngine {
                 // `wait_with_output` consumes the child; rely on `kill_on_drop`
                 // to terminate it once the join handle is released. The timeout
                 // is the contract the plugin agreed to.
-                let msg = format!("plugin '{}' timed out after {:?}", config.command, self.timeout);
+                let msg = format!(
+                    "plugin '{}' timed out after {:?}",
+                    config.command, self.timeout
+                );
                 self.record_failure(&config.command, &msg);
                 return Err(GraphError::Parser(msg));
             }
@@ -116,17 +118,19 @@ impl ProcessEngine {
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            let msg = format!("plugin '{}' exited {}: {}", config.command, output.status, stderr);
+            let msg = format!(
+                "plugin '{}' exited {}: {}",
+                config.command, output.status, stderr
+            );
             self.record_failure(&config.command, &msg);
             return Err(GraphError::Parser(msg));
         }
 
-        let response: PluginResponse = serde_json::from_slice(&output.stdout)
-            .map_err(|e| {
-                let msg = format!("plugin '{}' returned invalid JSON: {}", config.command, e);
-                self.record_failure(&config.command, &msg);
-                GraphError::Parser(msg)
-            })?;
+        let response: PluginResponse = serde_json::from_slice(&output.stdout).map_err(|e| {
+            let msg = format!("plugin '{}' returned invalid JSON: {}", config.command, e);
+            self.record_failure(&config.command, &msg);
+            GraphError::Parser(msg)
+        })?;
 
         let result = response.into_result();
         match &result {
@@ -158,7 +162,10 @@ impl PluginEngine for ProcessEngine {
         // behind Arc, so clone the Arc for the future.
         let health = self.health.clone();
         Box::pin(async move {
-            let engine = ProcessEngine { timeout: this_timeout, health };
+            let engine = ProcessEngine {
+                timeout: this_timeout,
+                health,
+            };
             engine.parse_inner(&config, lang, files).await
         })
     }
@@ -182,9 +189,7 @@ mod tests {
             languages: vec![Language::Python],
             capabilities: vec!["parse".into()],
         };
-        let result = engine
-            .parse_inner(&config, Language::Python, vec![])
-            .await;
+        let result = engine.parse_inner(&config, Language::Python, vec![]).await;
         // The contract: a bad/missing plugin must surface as an Err, never a
         // panic. We assert the error but not the exact failure_count, because
         // on Windows a missing command may resolve to a shell stub that exits
@@ -211,9 +216,7 @@ mod tests {
             languages: vec![Language::Python],
             capabilities: vec!["parse".into()],
         };
-        let result = engine
-            .parse(&config, Language::Python, vec![])
-            .await;
+        let result = engine.parse(&config, Language::Python, vec![]).await;
         assert!(result.is_err());
     }
 }
