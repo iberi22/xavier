@@ -26,6 +26,27 @@ Xavier **is** the memory system. Every agent MUST use it for persistence.
 - **Health:** `curl http://localhost:8006/health`
 - **Auth header:** `X-Xavier-Token: <token>` (from `XAVIER_TOKEN` env or `.env`)
 
+
+
+### Environment Detection
+Xavier can run in various environments. Detect the current environment with:
+```bash
+# Returns: wsl | docker | windows-native | not-running
+bash /home/belal/.hermes/scripts/which-xavier.sh
+```
+
+The MCP bridge (`xavier-memory`) exposes an `xavier_env()` tool that reports:
+- **environment**: wsl / docker / windows-native
+- **url**: Xavier's current URL
+- **version**: Xavier build version
+- **token_status**: configured / missing
+- **code_graph_available**: true / false
+
+### Clean Startup
+```bash
+bash /home/belal/.hermes/scripts/start-xavier.sh
+```
+
 ### Key Endpoints
 ```bash
 # Add memory
