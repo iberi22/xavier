@@ -1,0 +1,17 @@
+{
+  "_meta": {
+    "repo": "xavier",
+    "branch": "main",
+    "commit": "92491582c02e8dc7706383ae0174fd025c7b13cc",
+    "scanned_at": "2026-07-13T22:23:22+00:00",
+    "version": "3.0",
+    "engine": "code-graph v0.6.1-beta",
+    "db_location": "~/.xavier/code_graph.db"
+  },
+  "stats": {
+    "files": 873,
+    "symbols": 28633,
+    "imports": 610
+  },
+  "note": "Full repo scan from root. DB stored on ext4 (~/.xavier/) para evitar SQLite/NTFS issues."
+}

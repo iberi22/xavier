@@ -2,8 +2,8 @@
   "_meta": {
     "repo": "xavier",
     "branch": "main",
-    "commit": "8e260c7cce1c9d730050671f090413f928d8e26f",
-    "scanned_at": "2026-07-13T21:45:05+00:00",
+    "commit": "92491582c02e8dc7706383ae0174fd025c7b13cc",
+    "scanned_at": "2026-07-13T22:23:22+00:00",
     "version": "3.0",
     "engine": "code-graph v0.6.1-beta",
     "db_location": "~/.xavier/code_graph.db"
