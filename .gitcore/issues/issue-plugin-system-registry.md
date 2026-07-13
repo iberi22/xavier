@@ -1,10 +1,13 @@
 # Issue: Plugin System — Registry + Lifecycle
 
+**Prerequisite: F1+F2 COMPLETE ✅** (Commit bf2dec28)
+- `Language::Other(String)` implemented
+- `PluginManager`, `ProcessEngine`, `FallbackChain` exist in `code-graph/src/plugin/`
+- `parse_source()` uses fallback chain
+- `plugin_host.rs` deprecated as wrapper
+
 ## Labels
 `enhancement`, `plugin-system`, `P3-registry`
-
-## Description
-Implement the plugin registry client and lifecycle management (install/update/rollback/uninstall) for Xavier's code-graph plugin system.
 
 ## Changes Required
 
