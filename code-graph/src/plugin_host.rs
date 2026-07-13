@@ -1,172 +1,110 @@
-use crate::error::{GraphError, Result};
+//! Deprecated plugin host — thin wrapper over [`crate::plugin::PluginManager`].
+//!
+//! Historical note: this module used to own plugin loading, dispatch, and the
+//! subprocess protocol. All of that now lives under [`crate::plugin`]
+//! (`PluginManager`, `ProcessEngine`, `FallbackChain`). This file keeps the old
+//! API alive for the `Indexer` and any external callers, delegating to the new
+//! implementation. New code should use [`crate::plugin::PluginManager`] directly.
+//!
+//! Bug fixes carried over from the legacy implementation:
+//! - `Language::Rust` is no longer hard-wired to `Native`; it goes through the
+//!   fallback chain like every other language.
+//! - Protocol types (`PluginConfig`, `PluginRequest`, `PluginResponse`,
+//!   `FileToParse`) are re-exported from [`crate::plugin::types`].
+
+use crate::error::Result;
+use crate::plugin::types::{FileToParse, PluginConfig};
+use crate::plugin::PluginManager;
 use crate::types::{Language, Symbol};
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fs;
-use std::process::Stdio;
-use tracing::debug;
+use std::sync::Arc;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PluginConfig {
-    pub command: String,
-    pub version: String,
-    pub languages: Vec<Language>,
-    pub capabilities: Vec<String>,
-}
+// Re-export the protocol types so existing `use crate::plugin_host::{...}`
+// sites keep resolving without touching them.
+pub use crate::plugin::types::{PluginRequest, PluginResponse};
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PluginRequest {
-    pub language: Language,
-    pub files: Vec<FileToParse>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct FileToParse {
-    pub path: String,
-    pub source: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct PluginResponse {
-    pub symbols: Vec<Symbol>,
-    pub error: Option<String>,
-}
-
+/// Legacy dispatch decision retained for backwards compatibility.
+///
+/// New code should inspect the [`crate::plugin::types::FallbackStep`] chain
+/// from [`PluginManager::chain_for`] instead.
+#[derive(Debug)]
+#[deprecated(note = "Use PluginManager::chain_for / FallbackStep")]
 pub enum ParserDispatch {
     Native,
     Plugin(PluginConfig),
     NoOp,
 }
 
+/// Backwards-compatible wrapper around [`PluginManager`].
+#[deprecated(note = "Use crate::plugin::PluginManager directly")]
 pub struct PluginHost {
-    plugins: HashMap<Language, PluginConfig>,
+    manager: Arc<PluginManager>,
 }
 
+#[allow(deprecated)]
 impl Default for PluginHost {
     fn default() -> Self {
         Self::new()
     }
 }
 
+#[allow(deprecated)]
 impl PluginHost {
     pub fn new() -> Self {
-        let mut host = Self {
-            plugins: HashMap::new(),
-        };
-        if let Err(e) = host.load_plugins() {
-            debug!("Failed to load plugins: {}", e);
+        let manager = PluginManager::new();
+        // Load legacy plugins.json so existing operator configs still apply.
+        if let Err(e) = manager.load_config() {
+            tracing::debug!("Failed to load legacy plugin config: {}", e);
         }
-        host
+        Self {
+            manager: Arc::new(manager),
+        }
     }
 
-    pub fn load_plugins(&mut self) -> Result<()> {
-        let config_dir = dirs::config_dir()
-            .ok_or_else(|| {
-                GraphError::Io(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    "Config dir not found",
-                ))
-            })?
-            .join("code-graph");
-
-        let plugins_json = config_dir.join("plugins.json");
-        if !plugins_json.exists() {
-            return Ok(());
-        }
-
-        let content = fs::read_to_string(plugins_json).map_err(GraphError::Io)?;
-        let configs: Vec<PluginConfig> =
-            serde_json::from_str(&content).map_err(|e| GraphError::Parser(e.to_string()))?;
-
-        for config in configs {
-            for lang in &config.languages {
-                self.plugins.insert(lang.clone(), config.clone());
-            }
-        }
-
-        Ok(())
+    /// Access the underlying manager (for callers migrating off the wrapper).
+    pub fn manager(&self) -> &PluginManager {
+        &self.manager
     }
 
+    /// Legacy dispatch picker. Honours the fallback chain rather than the old
+    /// Rust-hardcoded-to-Native shortcut.
+    #[allow(deprecated)]
     pub fn parser_for(&self, lang: &Language) -> ParserDispatch {
-        if *lang == Language::Rust {
-            return ParserDispatch::Native;
-        }
-
-        if let Some(config) = self.plugins.get(lang) {
-            ParserDispatch::Plugin(config.clone())
-        } else {
-            match lang {
-                Language::TypeScript
-                | Language::JavaScript
-                | Language::Python
-                | Language::Go
-                | Language::Java
-                | Language::C
-                | Language::Cpp => ParserDispatch::Native,
-                _ => ParserDispatch::NoOp,
+        use crate::plugin::types::FallbackStep;
+        let chain = self.manager.chain_for(lang);
+        match chain.first() {
+            Some(FallbackStep::Plugin(name)) => {
+                if let Some(desc) = self.manager.descriptor_by_name(name) {
+                    return ParserDispatch::Plugin(PluginConfig {
+                        command: desc.command,
+                        version: desc.version,
+                        languages: desc.languages,
+                        capabilities: desc.capabilities,
+                    });
+                }
+                // Plugin referenced but not registered — fall through to next step.
+                if chain.iter().nth(1).is_some() {
+                    return ParserDispatch::Native;
+                }
+                ParserDispatch::NoOp
             }
+            Some(FallbackStep::Native) => ParserDispatch::Native,
+            _ => ParserDispatch::NoOp,
         }
     }
 
+    /// Run a plugin parse. Delegates to the shared engine.
     pub async fn parse_with_plugin(
         &self,
         config: &PluginConfig,
         lang: Language,
         files: Vec<FileToParse>,
     ) -> Result<Vec<Symbol>> {
-        let request = PluginRequest {
-            language: lang,
-            files,
-        };
-        let input_json =
-            serde_json::to_string(&request).map_err(|e| GraphError::Parser(e.to_string()))?;
-
-        let mut child = tokio::process::Command::new(&config.command)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true)
-            .spawn()
-            .map_err(GraphError::Io)?;
-
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| GraphError::Parser("Failed to open stdin".to_string()))?;
-        tokio::io::AsyncWriteExt::write_all(&mut stdin, input_json.as_bytes())
-            .await
-            .map_err(GraphError::Io)?;
-        drop(stdin);
-
-        let timeout = tokio::time::Duration::from_secs(5);
-        let output = match tokio::time::timeout(timeout, child.wait_with_output()).await {
-            Ok(Ok(output)) => output,
-            Ok(Err(e)) => return Err(GraphError::Io(e)),
-            Err(_) => {
-                // Kill the child process if it timed out
-                // child.kill().await.ok(); // child is consumed by wait_with_output?
-                // Actually wait_with_output takes ownership.
-                // We should use a different approach if we want to kill on timeout.
-                return Err(GraphError::Parser("Plugin timed out after 5s".to_string()));
-            }
-        };
-
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(GraphError::Parser(format!(
-                "Plugin exited with {}: {}",
-                output.status, stderr
-            )));
-        }
-
-        let response: PluginResponse = serde_json::from_slice(&output.stdout)
-            .map_err(|e| GraphError::Parser(e.to_string()))?;
-
-        if let Some(err) = response.error {
-            return Err(GraphError::Parser(err));
-        }
-
-        Ok(response.symbols)
+        // Register the config on the fly so the engine can resolve it by name.
+        // (Idempotent: re-registering the same language is first-wins.)
+        let descriptor = crate::plugin::types::PluginDescriptor::from(config);
+        let name = descriptor.name.clone();
+        self.manager.register(descriptor);
+        self.manager.parse_with_plugin(&name, lang, files).await
     }
 }
 
@@ -177,61 +115,34 @@ mod tests {
     use std::collections::HashMap;
 
     #[test]
-    fn test_plugin_dispatch() {
-        let mut host = PluginHost {
-            plugins: HashMap::new(),
-        };
+    #[allow(deprecated)]
+    fn plugin_host_delegates_to_manager_and_drops_rust_hardcode() {
+        let host = PluginHost::new();
 
-        let config = PluginConfig {
-            command: "true".to_string(),
-            version: "0.1.0".to_string(),
-            languages: vec![Language::TypeScript],
-            capabilities: vec!["parse".to_string()],
-        };
-
-        host.plugins.insert(Language::TypeScript, config);
-
-        match host.parser_for(&Language::TypeScript) {
-            ParserDispatch::Plugin(c) => assert_eq!(c.command, "true"),
-            _ => panic!("Expected Plugin dispatch"),
-        }
-
+        // Rust used to short-circuit to Native; now it follows the chain.
         match host.parser_for(&Language::Rust) {
             ParserDispatch::Native => (),
-            _ => panic!("Expected Native dispatch for Rust"),
+            other => panic!("expected Native for Rust, got {:?}", other),
         }
-
         match host.parser_for(&Language::Unknown) {
             ParserDispatch::NoOp => (),
-            _ => panic!("Expected NoOp dispatch for Unknown"),
+            other => panic!("expected NoOp for Unknown, got {:?}", other),
         }
-    }
 
-    #[tokio::test]
-    #[ignore = "requires mock_plugin.py executable (platform-dependent)"]
-    async fn test_parse_with_plugin() {
-        let host = PluginHost {
-            plugins: HashMap::new(),
-        };
-
-        let script_path = std::env::current_dir().unwrap().join("../mock_plugin.py");
-        let config = PluginConfig {
-            command: script_path.to_str().unwrap().to_string(),
-            version: "0.1.0".to_string(),
-            languages: vec![Language::TypeScript],
+        // Register a plugin and confirm the host surfaces it.
+        host.manager.register(crate::plugin::types::PluginDescriptor {
+            name: "parser-py".to_string(),
+            version: "1.0.0".to_string(),
+            command: "parser-py".to_string(),
+            languages: vec![Language::Python],
             capabilities: vec!["parse".to_string()],
-        };
+        });
+        match host.parser_for(&Language::Python) {
+            ParserDispatch::Plugin(c) => assert_eq!(c.command, "parser-py"),
+            other => panic!("expected Plugin for Python, got {:?}", other),
+        }
 
-        let files = vec![FileToParse {
-            path: "test.ts".to_string(),
-            source: "function test() {}".to_string(),
-        }];
-
-        let symbols = host
-            .parse_with_plugin(&config, Language::TypeScript, files)
-            .await
-            .expect("Plugin failed");
-        assert_eq!(symbols.len(), 1);
-        assert_eq!(symbols[0].name, "MockPluginSymbol");
+        // Silence unused-import noise from the legacy HashMap import.
+        let _ = HashMap::<Language, ()>::new();
     }
 }

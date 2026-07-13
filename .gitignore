@@ -80,8 +80,7 @@ notebooks/.ipynb_checkpoints/
 /IDENTITY.md
 /TOOLS.md
  
-# Local development
-.xavier/
+# Local development (runtime state, auth, security DBs)
 scratch/
 check-errors.txt
 /target_local/
@@ -92,8 +91,10 @@ backup/
 panel-ui/scripts/
 scripts/fix_*.py
 
-# Xavier runtime state (SQLite databases)
-.xavier/
+# CodeGraph runtime DB (binary, regenerated on each scan)
+code_graph.db
+code_graph.db-shm
+code_graph.db-wal
 # Playwright artifacts
 panel-ui/test-results/
 panel-ui/playwright-report/

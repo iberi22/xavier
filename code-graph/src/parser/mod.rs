@@ -7,7 +7,8 @@ use crate::parser::go::GoParser;
 use crate::parser::java::JavaParser;
 use crate::parser::python::PythonParser;
 use crate::parser::rust::RustParser;
-use crate::plugin_host::{FileToParse, ParserDispatch, PluginHost};
+use crate::plugin::types::{FallbackStep, FileToParse};
+use crate::plugin::PluginManager;
 use crate::types::{Language, Symbol, SymbolKind};
 use tree_sitter::Node;
 
@@ -21,78 +22,128 @@ pub mod typescript;
 
 use crate::parser::typescript::TypeScriptParser;
 
-/// Parse source code using tree-sitter or a plugin
+/// True when `lang` is backed by a built-in tree-sitter parser.
+///
+/// Used by the fallback chain to pick a sensible default and by callers that
+/// want to know whether `parse_native` can ever succeed for a language.
+pub fn has_native_parser(lang: &Language) -> bool {
+    matches!(
+        lang,
+        Language::Rust
+            | Language::TypeScript
+            | Language::JavaScript
+            | Language::Python
+            | Language::Go
+            | Language::Java
+            | Language::C
+            | Language::Cpp
+    )
+}
+
+/// Run the built-in tree-sitter parser for `lang`.
+///
+/// Returns `Ok(empty)` for languages without a native parser rather than an
+/// error, so the fallback chain can treat "no native parser" the same as
+/// "native parser found nothing".
+pub fn parse_native(source: &str, lang: &Language, file_path: &str) -> Result<Vec<Symbol>> {
+    match lang {
+        Language::Rust => {
+            let mut parser = RustParser::new()?;
+            parser.parse(source, file_path)
+        }
+        Language::TypeScript | Language::JavaScript => {
+            let mut parser = TypeScriptParser::new(lang.clone())?;
+            parser.parse(source, file_path)
+        }
+        Language::Python => {
+            let mut parser = PythonParser::new()?;
+            parser.parse(source, file_path)
+        }
+        Language::Go => {
+            let mut parser = GoParser::new()?;
+            parser.parse(source, file_path)
+        }
+        Language::Java => {
+            let mut parser = JavaParser::new()?;
+            parser.parse(source, file_path)
+        }
+        Language::C => {
+            let mut parser = CParser::new()?;
+            parser.parse(source, file_path)
+        }
+        Language::Cpp => {
+            let mut parser = CppParser::new()?;
+            parser.parse(source, file_path)
+        }
+        // Plugin-only or unknown languages have no native parser.
+        Language::Other(_) | Language::Unknown => Ok(vec![]),
+    }
+}
+
+/// Parse source code via the per-language fallback chain.
+///
+/// Resolution order, when a [`PluginManager`] is supplied:
+/// 1. The manager's live chain for `lang` (plugin-first if one is registered),
+///    falling back to its persisted overrides, then to the default chain.
+/// 2. Without a manager, the default chain applies (`[Native, NoOp]`).
+///
+/// Each step that errors is logged at `warn`; a step that succeeds short-
+/// circuits the chain. If every step fails or the chain ends in `NoOp`, an
+/// empty `Vec<Symbol>` is returned — this function never propagates a parse
+/// failure as a hard error so a single bad plugin can never crash the indexer.
 pub async fn parse_source(
     source: &str,
     lang: &Language,
     file_path: &str,
-    plugin_host: Option<&PluginHost>,
+    plugin_manager: Option<&PluginManager>,
 ) -> Result<Vec<Symbol>> {
-    let dispatch = if let Some(host) = plugin_host {
-        host.parser_for(lang)
-    } else {
-        ParserDispatch::Native
+    let chain = match plugin_manager {
+        Some(mgr) => mgr.chain_for(lang),
+        None => default_chain(lang),
     };
 
-    match dispatch {
-        ParserDispatch::Plugin(config) => {
-            let files = vec![FileToParse {
-                path: file_path.to_string(),
-                source: source.to_string(),
-            }];
-            plugin_host
-                .unwrap()
-                .parse_with_plugin(&config, lang.clone(), files)
-                .await
-                .map_err(|e| {
-                    tracing::warn!("Plugin parser failed for {}: {}", file_path, e);
-                    e
-                })
+    for step in &chain {
+        match step {
+            FallbackStep::Plugin(name) => {
+                let Some(mgr) = plugin_manager else { continue };
+                let files = vec![FileToParse {
+                    path: file_path.to_string(),
+                    source: source.to_string(),
+                }];
+                match mgr.parse_with_plugin(name, lang.clone(), files).await {
+                    Ok(symbols) => return Ok(symbols),
+                    Err(e) => tracing::warn!(
+                        plugin = %name,
+                        file = %file_path,
+                        error = %e,
+                        "plugin parse failed, continuing fallback chain"
+                    ),
+                }
+            }
+            FallbackStep::Native => {
+                return parse_native(source, lang, file_path);
+            }
+            FallbackStep::NoOp => {
+                tracing::debug!(
+                    lang = ?lang,
+                    file = %file_path,
+                    "no parser available (NoOp)"
+                );
+                return Ok(vec![]);
+            }
         }
+    }
 
-        ParserDispatch::Native => match lang {
-            Language::Rust => {
-                let mut parser = RustParser::new()?;
-                parser.parse(source, file_path)
-            }
-            Language::TypeScript | Language::JavaScript => {
-                let mut parser = TypeScriptParser::new(lang.clone())?;
-                parser.parse(source, file_path)
-            }
-            Language::Python => {
-                let mut parser = PythonParser::new()?;
-                parser.parse(source, file_path)
-            }
-            Language::Go => {
-                let mut parser = GoParser::new()?;
-                parser.parse(source, file_path)
-            }
-            Language::Java => {
-                let mut parser = JavaParser::new()?;
-                parser.parse(source, file_path)
-            }
-            Language::C => {
-                let mut parser = CParser::new()?;
-                parser.parse(source, file_path)
-            }
-            Language::Cpp => {
-                let mut parser = CppParser::new()?;
-                parser.parse(source, file_path)
-            }
-            Language::Python => {
-                let mut parser = PythonParser::new()?;
-                parser.parse(source, file_path)
-            }
-            Language::TypeScript | Language::JavaScript => {
-                let mut parser = TypeScriptParser::new(lang.clone())?;
-                parser.parse(source, file_path)
-            }
-            _ => Ok(vec![]),
-        },
-        ParserDispatch::NoOp => {
-            tracing::debug!("No parser available for language {:?}", lang);
-            Ok(vec![])
-        }
+    // Chain exhausted without hitting Native/NoOp explicitly.
+    Ok(vec![])
+}
+
+/// Default chain used when no [`PluginManager`] is present.
+fn default_chain(lang: &Language) -> Vec<FallbackStep> {
+    if has_native_parser(lang) {
+        vec![FallbackStep::Native, FallbackStep::NoOp]
+    } else {
+        vec![FallbackStep::NoOp]
     }
 }
 

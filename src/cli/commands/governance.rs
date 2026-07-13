@@ -1,6 +1,6 @@
 //! Governance Command Handlers — CLI implementation for Xavier Governance DAO
 
-use crate::cli::commands::data_commons::{governance, types};
+use xavier::data_commons::{governance, types};
 use crate::cli::commands::GovernanceCommand;
 use anyhow::Result;
 

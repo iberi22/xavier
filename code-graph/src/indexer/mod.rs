@@ -1,4 +1,10 @@
 //! Indexer - scans and indexes codebases.
+//!
+//! The Indexer holds the deprecated `PluginHost` for backwards compatibility;
+//! it delegates to the underlying `PluginManager` when calling `parse_source`.
+//! Silencing the deprecation here keeps the build log readable while we migrate
+//! callers incrementally.
+#![allow(deprecated)]
 
 pub mod watcher;
 
@@ -232,7 +238,11 @@ async fn parse_file(
         .unwrap_or(file_path)
         .to_string_lossy()
         .replace('\\', "/");
-    let symbols = parse_source(&source, &lang, &relative_path, plugin_host).await?;
+    // The deprecated PluginHost wraps a PluginManager; unwrap it so parse_source
+    // receives the fallback-chain-aware manager. When no host is supplied we
+    // fall back to the built-in native parsers.
+    let manager = plugin_host.map(|host| host.manager());
+    let symbols = parse_source(&source, &lang, &relative_path, manager).await?;
     if !symbols.is_empty() {
         debug!("Extracted {} symbols from {}", symbols.len(), relative_path);
     }

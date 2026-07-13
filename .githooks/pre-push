@@ -24,6 +24,13 @@ fi
 
 echo "🔍 Running pre-push CI checks (via $PS_BIN)..."
 
+# Run code-graph self-scan (lightning-fast, tree-sitter based)
+echo "📊 Running code-graph self-scan..."
+CODEGRAPH_SCAN="$REPO_ROOT/scripts/codegraph-self-scan.sh"
+if [ -f "$CODEGRAPH_SCAN" ]; then
+    "$CODEGRAPH_SCAN" --save 2>&1 || echo "⚠️  code-graph scan no bloqueante (puede continuar)"
+fi
+
 # Run the fast CI script; forward its exit code.
 "$PS_BIN" -NoProfile -ExecutionPolicy Bypass -File "$REPO_ROOT/ci-local.ps1" -fast
 RESULT=$?

@@ -37,7 +37,21 @@ Xavier/
 - Status: Complete
 - Purpose: Contains performance benchmarks for core components like embeddings and search.
 
-### benchmark-results
+## Auto-Indexing con CodeGraph
+
+- **Status**: Activo (pre-push hook)
+- **Purpose**: Xavier se indexa a sí mismo usando tree-sitter AST parsing.
+  Escanea `src/`, `scripts/`, `code-graph/src/`, `config/`, `tests/`, `benches/`.
+  Resultados: `code_graph.db` (runtime) + `.xavier/codegraph.json` (versionado).
+- **Binary**: `target/release/code-graph` (17MB)
+- **Script**: `scripts/codegraph-self-scan.sh` — corre en pre-push hook.
+- **Commit Snapshot**: `.xavier/codegraph-<short-commit>.json` por cada push.
+
+### bench-results
+
+| Directory | Purpose |
+|-----------|---------|
+| benches | Rust benchmarks (Criterion)
 - Status: Complete
 - Purpose: Stores the output of benchmark runs for historical comparison.
 
