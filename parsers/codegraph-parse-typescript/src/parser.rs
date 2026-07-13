@@ -1,13 +1,15 @@
-use codegraph_types::{Language, Symbol, SymbolKind};
-use tree_sitter::{Node, Parser};
+use codegraph_types::{Node, Position, SymbolKind};
+use tree_sitter::{Node as TSNode, Parser};
+use serde_json::json;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub struct TypeScriptParser {
     parser: Parser,
-    lang: Language,
+    lang: String,
 }
 
 impl TypeScriptParser {
-    pub fn new(lang: Language, is_tsx: bool) -> anyhow::Result<Self> {
+    pub fn new(lang: String, is_tsx: bool) -> anyhow::Result<Self> {
         let mut parser = Parser::new();
         let grammar = if is_tsx {
             tree_sitter_typescript::LANGUAGE_TSX
@@ -18,7 +20,7 @@ impl TypeScriptParser {
         Ok(Self { parser, lang })
     }
 
-    pub fn parse(&mut self, source: &str, file_path: &str) -> anyhow::Result<Vec<Symbol>> {
+    pub fn parse(&mut self, source: &str, file_path: &str) -> anyhow::Result<Vec<Node>> {
         let tree = self
             .parser
             .parse(source.as_bytes(), None)
@@ -30,11 +32,11 @@ impl TypeScriptParser {
 
     fn extract(
         &self,
-        node: Node,
+        node: TSNode,
         source: &str,
         file_path: &str,
-        symbols: &mut Vec<Symbol>,
-        parent: Option<String>,
+        symbols: &mut Vec<Node>,
+        parent_id: Option<String>,
     ) {
         match node.kind() {
             "function_declaration" | "generator_function_declaration" => {
@@ -44,7 +46,7 @@ impl TypeScriptParser {
                     file_path,
                     symbols,
                     SymbolKind::Function,
-                    parent.clone(),
+                    parent_id.clone(),
                 );
             }
             "enum_declaration" => {
@@ -54,7 +56,7 @@ impl TypeScriptParser {
                     file_path,
                     symbols,
                     SymbolKind::Enum,
-                    parent.clone(),
+                    parent_id.clone(),
                 );
             }
             "method_definition" | "public_field_definition" => {
@@ -64,19 +66,19 @@ impl TypeScriptParser {
                     file_path,
                     symbols,
                     SymbolKind::Method,
-                    parent.clone(),
+                    parent_id.clone(),
                 );
             }
             "class_declaration" => {
-                let class_name = self.push_named(
+                let class_id = self.push_named(
                     node,
                     source,
                     file_path,
                     symbols,
                     SymbolKind::Class,
-                    parent.clone(),
+                    parent_id.clone(),
                 );
-                self.extract_children(node, source, file_path, symbols, class_name.or(parent));
+                self.extract_children(node, source, file_path, symbols, class_id.or(parent_id));
                 return;
             }
             "interface_declaration" => {
@@ -85,8 +87,8 @@ impl TypeScriptParser {
                     source,
                     file_path,
                     symbols,
-                    SymbolKind::Trait,
-                    parent.clone(),
+                    SymbolKind::Interface,
+                    parent_id.clone(),
                 );
             }
             "type_alias_declaration" => {
@@ -96,61 +98,58 @@ impl TypeScriptParser {
                     file_path,
                     symbols,
                     SymbolKind::Struct,
-                    parent.clone(),
+                    parent_id.clone(),
                 );
             }
             "lexical_declaration" | "variable_declaration" => {
-                self.extract_variable_functions(node, source, file_path, symbols, parent.clone());
-            }
-            "import_statement" => {
-                self.push_import(node, source, file_path, symbols);
+                self.extract_variable_functions(node, source, file_path, symbols, parent_id.clone());
             }
             "export_statement" => {
-                self.push_export(node, source, file_path, symbols, parent.clone());
+                // For export statements, we just extract their children
+                self.extract_children(node, source, file_path, symbols, parent_id);
                 return;
             }
             _ => {}
         }
 
-        self.extract_children(node, source, file_path, symbols, parent);
+        self.extract_children(node, source, file_path, symbols, parent_id);
     }
 
     fn extract_children(
         &self,
-        node: Node,
+        node: TSNode,
         source: &str,
         file_path: &str,
-        symbols: &mut Vec<Symbol>,
-        parent: Option<String>,
+        symbols: &mut Vec<Node>,
+        parent_id: Option<String>,
     ) {
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
-            self.extract(child, source, file_path, symbols, parent.clone());
+            self.extract(child, source, file_path, symbols, parent_id.clone());
         }
     }
 
     fn push_named(
         &self,
-        node: Node,
+        node: TSNode,
         source: &str,
         file_path: &str,
-        symbols: &mut Vec<Symbol>,
+        symbols: &mut Vec<Node>,
         kind: SymbolKind,
-        parent: Option<String>,
+        parent_id: Option<String>,
     ) -> Option<String> {
         let name_node = node.child_by_field_name("name")?;
         let name = name_node.utf8_text(source.as_bytes()).ok()?.to_string();
-        self.push_symbol(symbols, node, source, file_path, name.clone(), kind, parent);
-        Some(name)
+        Some(self.push_symbol(symbols, node, source, file_path, name, kind, parent_id))
     }
 
     fn extract_variable_functions(
         &self,
-        node: Node,
+        node: TSNode,
         source: &str,
         file_path: &str,
-        symbols: &mut Vec<Symbol>,
-        parent: Option<String>,
+        symbols: &mut Vec<Node>,
+        parent_id: Option<String>,
     ) {
         let is_const = node.child(0).is_some_and(|c| c.kind() == "const");
         let base_kind = if is_const {
@@ -184,7 +183,7 @@ impl TypeScriptParser {
                     file_path,
                     symbols,
                     final_kind,
-                    parent.clone(),
+                    parent_id.clone(),
                 );
             }
         }
@@ -193,13 +192,13 @@ impl TypeScriptParser {
     #[allow(clippy::too_many_arguments)]
     fn extract_identifiers_from_pattern(
         &self,
-        node: Node,
-        symbol_node: Node,
+        node: TSNode,
+        symbol_node: TSNode,
         source: &str,
         file_path: &str,
-        symbols: &mut Vec<Symbol>,
+        symbols: &mut Vec<Node>,
         kind: SymbolKind,
-        parent: Option<String>,
+        parent_id: Option<String>,
     ) {
         match node.kind() {
             "identifier" => {
@@ -211,7 +210,7 @@ impl TypeScriptParser {
                         file_path,
                         name.to_string(),
                         kind,
-                        parent,
+                        parent_id,
                     );
                 }
             }
@@ -228,7 +227,7 @@ impl TypeScriptParser {
                         file_path,
                         symbols,
                         kind.clone(),
-                        parent.clone(),
+                        parent_id.clone(),
                     );
                 }
             }
@@ -241,7 +240,7 @@ impl TypeScriptParser {
                         file_path,
                         name.to_string(),
                         kind,
-                        parent,
+                        parent_id,
                     );
                 }
             }
@@ -254,7 +253,7 @@ impl TypeScriptParser {
                         file_path,
                         symbols,
                         kind,
-                        parent,
+                        parent_id,
                     );
                 }
             }
@@ -269,7 +268,7 @@ impl TypeScriptParser {
                             file_path,
                             symbols,
                             kind.clone(),
-                            parent.clone(),
+                            parent_id.clone(),
                         );
                     }
                 }
@@ -277,92 +276,62 @@ impl TypeScriptParser {
         }
     }
 
-    fn push_import(&self, node: Node, source: &str, file_path: &str, symbols: &mut Vec<Symbol>) {
-        let raw = node.utf8_text(source.as_bytes()).unwrap_or_default();
-        let name = raw
-            .split(['"', '\''])
-            .nth(1)
-            .unwrap_or(raw)
-            .trim()
-            .to_string();
-        self.push_symbol(
-            symbols,
-            node,
-            source,
-            file_path,
-            name,
-            SymbolKind::Import,
-            None,
-        );
-    }
-
-    fn push_export(
-        &self,
-        node: Node,
-        source: &str,
-        file_path: &str,
-        symbols: &mut Vec<Symbol>,
-        parent: Option<String>,
-    ) {
-        let raw = node.utf8_text(source.as_bytes()).unwrap_or_default();
-        let first_line = raw.lines().next().unwrap_or("export").to_string();
-
-        self.push_symbol(
-            symbols,
-            node,
-            source,
-            file_path,
-            first_line,
-            SymbolKind::Export,
-            parent.clone(),
-        );
-
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            let k = child.kind();
-            if matches!(
-                k,
-                "export" | "default" | "*" | "{" | "}" | "," | "from" | ";"
-            ) {
-                continue;
-            }
-            self.extract(child, source, file_path, symbols, parent.clone());
-        }
-    }
-
     #[allow(clippy::too_many_arguments)]
     fn push_symbol(
         &self,
-        symbols: &mut Vec<Symbol>,
-        node: Node,
+        symbols: &mut Vec<Node>,
+        node: TSNode,
         source: &str,
         file_path: &str,
         name: String,
         kind: SymbolKind,
-        parent: Option<String>,
-    ) {
+        parent_id: Option<String>,
+    ) -> String {
         let start = node.start_position();
         let end = node.end_position();
         let complexity = matches!(kind, SymbolKind::Function | SymbolKind::Method)
             .then(|| cyclomatic_complexity(node, source));
 
-        symbols.push(Symbol {
-            name,
-            kind,
-            lang: self.lang.clone(),
-            file_path: file_path.to_string(),
+        let position = Position {
             start_line: (start.row + 1) as u32,
-            end_line: (end.row + 1) as u32,
             start_col: start.column as u32,
+            end_line: (end.row + 1) as u32,
             end_col: end.column as u32,
+        };
+
+        let id = format!("{}:{}:{}:{}", file_path, name, format!("{:?}", kind), start.row);
+
+        let mut modifiers = json!({});
+        if let Some(c) = complexity {
+            modifiers["complexity"] = json!(c);
+        }
+
+        let updated_at = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        symbols.push(Node {
+            id: id.clone(),
+            kind,
+            name,
+            qual_name: None, // Could be improved
+            file_path: file_path.to_string(),
+            language: self.lang.clone(),
+            position,
             signature: compact_node_signature(node, source),
-            parent,
-            complexity,
+            docstring: None,
+            visibility: None,
+            modifiers,
+            parent_id,
+            updated_at,
         });
+
+        id
     }
 }
 
-fn compact_node_signature(node: Node, source: &str) -> Option<String> {
+fn compact_node_signature(node: TSNode, source: &str) -> Option<String> {
     let raw = node.utf8_text(source.as_bytes()).ok()?;
     let header = if let Some(body) = node.child_by_field_name("body") {
         let index = body.start_byte().saturating_sub(node.start_byte());
@@ -390,8 +359,8 @@ fn compact_node_signature(node: Node, source: &str) -> Option<String> {
     }
 }
 
-fn cyclomatic_complexity(node: Node, source: &str) -> f32 {
-    fn count(node: Node, _source: &str) -> usize {
+fn cyclomatic_complexity(node: TSNode, source: &str) -> f32 {
+    fn count(node: TSNode, _source: &str) -> usize {
         let kind = node.kind();
         let mut total = if matches!(
             kind,

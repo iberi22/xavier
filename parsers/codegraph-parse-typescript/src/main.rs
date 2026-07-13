@@ -3,6 +3,8 @@ mod parser;
 use crate::parser::TypeScriptParser;
 use codegraph_types::{PluginRequest, PluginResponse};
 use std::io::{self, Read};
+use std::time::Instant;
+use std::fs;
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
@@ -26,18 +28,32 @@ fn main() -> anyhow::Result<()> {
         }
     };
 
-    let mut all_symbols = Vec::new();
+    let start_time = Instant::now();
+    let mut all_results = Vec::new();
 
-    for file in request.files {
-        let is_tsx = file.path.ends_with(".tsx") || file.path.ends_with(".jsx");
-        let mut parser = TypeScriptParser::new(file.language, is_tsx)?;
-        let symbols = parser.parse(&file.content, &file.path)?;
-        all_symbols.extend(symbols);
+    for file_path in request.files {
+        let content = match fs::read_to_string(&file_path) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("Failed to read file {}: {}", file_path, e);
+                continue;
+            }
+        };
+
+        let is_tsx = file_path.ends_with(".tsx") || file_path.ends_with(".jsx");
+        let lang = if is_tsx { "typescriptreact" } else { "typescript" };
+
+        let mut parser = TypeScriptParser::new(lang.to_string(), is_tsx)?;
+        match parser.parse(&content, &file_path) {
+            Ok(nodes) => all_results.extend(nodes),
+            Err(e) => eprintln!("Failed to parse {}: {}", file_path, e),
+        }
     }
 
     let response = PluginResponse {
-        symbols: all_symbols,
-        edges: vec![],
+        version: "1.0".to_string(),
+        results: all_results,
+        duration_ms: start_time.elapsed().as_millis() as u64,
     };
 
     println!("{}", serde_json::to_string(&response)?);
@@ -48,11 +64,10 @@ fn main() -> anyhow::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codegraph_types::Language;
 
     #[test]
     fn test_parse_simple_ts() {
-        let mut parser = TypeScriptParser::new(Language::TypeScript, false).unwrap();
+        let mut parser = TypeScriptParser::new("typescript".to_string(), false).unwrap();
         let source = "function hello() { console.log('hello'); }";
         let symbols = parser.parse(source, "test.ts").unwrap();
         assert_eq!(symbols.len(), 1);
@@ -65,18 +80,19 @@ mod tests {
 
     #[test]
     fn test_parse_class() {
-        let mut parser = TypeScriptParser::new(Language::TypeScript, false).unwrap();
+        let mut parser = TypeScriptParser::new("typescript".to_string(), false).unwrap();
         let source = "class MyClass { myMethod() {} }";
         let symbols = parser.parse(source, "test.ts").unwrap();
         assert_eq!(symbols.len(), 2);
         assert_eq!(symbols[0].name, "MyClass");
         assert_eq!(symbols[1].name, "myMethod");
-        assert_eq!(symbols[1].parent, Some("MyClass".to_string()));
+        assert!(symbols[1].parent_id.is_some());
+        assert!(symbols[1].parent_id.as_ref().unwrap().contains("MyClass"));
     }
 
     #[test]
     fn test_parse_arrow_function() {
-        let mut parser = TypeScriptParser::new(Language::TypeScript, false).unwrap();
+        let mut parser = TypeScriptParser::new("typescript".to_string(), false).unwrap();
         let source = "const myFunc = () => {};";
         let symbols = parser.parse(source, "test.ts").unwrap();
         assert_eq!(symbols.len(), 1);
@@ -85,7 +101,7 @@ mod tests {
 
     #[test]
     fn test_parse_interface_and_type() {
-        let mut parser = TypeScriptParser::new(Language::TypeScript, false).unwrap();
+        let mut parser = TypeScriptParser::new("typescript".to_string(), false).unwrap();
         let source = "interface User { id: number; } type Point = { x: number; y: number; };";
         let symbols = parser.parse(source, "test.ts").unwrap();
         assert_eq!(symbols.len(), 2);
@@ -95,7 +111,7 @@ mod tests {
 
     #[test]
     fn test_parse_enum() {
-        let mut parser = TypeScriptParser::new(Language::TypeScript, false).unwrap();
+        let mut parser = TypeScriptParser::new("typescript".to_string(), false).unwrap();
         let source = "enum Color { Red, Green, Blue }";
         let symbols = parser.parse(source, "test.ts").unwrap();
         assert_eq!(symbols.len(), 1);
