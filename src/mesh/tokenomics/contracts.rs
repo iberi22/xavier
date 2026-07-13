@@ -116,12 +116,12 @@ contract StakingVault {
 
     constructor(address _token) {
         token = XAVToken(_token);
-        apyTiers[0] = 500;   // Base: 5%
-        apyTiers[1] = 750;   // Bronze: 7.5%
-        apyTiers[2] = 1000;  // Silver: 10%
-        apyTiers[3] = 1250;  // Gold: 12.5%
-        apyTiers[4] = 1750;  // Platinum: 17.5%
-        apyTiers[5] = 2500;  // Diamond: 25%
+        apyTiers[0] = 400;   // Base: 4%
+        apyTiers[1] = 627;   // Bronze: 6.27%
+        apyTiers[2] = 922;   // Silver: 9.22%
+        apyTiers[3] = 1249;  // Gold: 12.49%
+        apyTiers[4] = 1967;  // Platinum: 19.67%
+        apyTiers[5] = 2746;  // Diamond: 27.46%
         apyTiers[6] = 4000;  // Sovereign: 40%
     }
 
