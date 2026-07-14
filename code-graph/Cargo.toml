@@ -58,9 +58,25 @@ parking_lot = "0.12"
 codegraph-types = { path = "../codegraph-types" }
 dirs = "6"
 
+# Plugin registry: HTTP client (rustls to avoid OpenSSL on Windows),
+# archive extraction, and versioning. Pinned per FEATURE-plugin-system.md.
+# `zip` uses no-default-features + `deflate`: the default `xz`/`deflate-zlib`
+# features pull in liblzma-sys/xz2, which conflicts with the lzma linkage
+# already present in the workspace via the xavier burn/cubecl stack.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "stream"] }
+flate2 = "1"
+tar = "0.4"
+zip = { version = "2", default-features = false, features = ["deflate"] }
+semver = "1"
+chrono = { version = "0.4", default-features = false, features = ["serde", "clock"] }
+async-trait = "0.1"
+
 # Database
 rusqlite = { version = "0.32.0", features = ["bundled"] }
 notify = "6.1.1"
+
+# Plugin downloads need a scratch dir at runtime (tempfile is also a dev-dep).
+tempfile = "3"
 
 [dev-dependencies]
 tempfile = "3"
