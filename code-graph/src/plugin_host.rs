@@ -75,6 +75,7 @@ impl PluginHost {
             Some(FallbackStep::Plugin(name)) => {
                 if let Some(desc) = self.manager.descriptor_by_name(name) {
                     return ParserDispatch::Plugin(PluginConfig {
+                        name: desc.name,
                         command: desc.command,
                         version: desc.version,
                         languages: desc.languages,

@@ -106,6 +106,18 @@ pub async fn parse_source(
         match step {
             FallbackStep::Plugin(name) => {
                 let Some(mgr) = plugin_manager else { continue };
+
+                // Circuit breaker: skip plugin if its health circuit is Open.
+                if let Some(health) = mgr.health() {
+                    if health.is_open(name) {
+                        tracing::warn!(
+                            plugin = %name,
+                            "plugin circuit is OPEN, skipping to next fallback step"
+                        );
+                        continue;
+                    }
+                }
+
                 let files = vec![FileToParse {
                     path: file_path.to_string(),
                     source: source.to_string(),

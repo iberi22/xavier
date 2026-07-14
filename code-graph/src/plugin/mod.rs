@@ -18,17 +18,21 @@
 
 pub mod engine;
 pub mod fallback;
+pub mod health;
 pub mod types;
 
 use crate::error::{GraphError, Result};
 use crate::types::{Language, Symbol};
 use parking_lot::RwLock;
+use serde::Deserialize;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::debug;
 
 pub use engine::ProcessEngine;
 pub use fallback::FallbackChain;
+pub use health::{CircuitState, PluginHealthMonitor, PluginMetrics};
 pub use types::{
     FallbackResolver, FallbackStep, FileToParse, PluginConfig, PluginDescriptor, PluginEngine,
     PluginHealth, PluginRequest, PluginResponse,
@@ -46,6 +50,7 @@ pub struct PluginManager {
     by_name: RwLock<HashMap<String, PluginDescriptor>>,
     fallback: RwLock<FallbackChain>,
     engine: Arc<dyn PluginEngine>,
+    health: Option<Arc<PluginHealthMonitor>>,
 }
 
 impl PluginManager {
@@ -59,11 +64,14 @@ impl PluginManager {
     pub fn with_engine(engine: Arc<dyn PluginEngine>) -> Self {
         let installed: HashMap<Language, PluginDescriptor> = HashMap::new();
         let fallback = FallbackChain::load_or_default();
+        let health = Arc::new(PluginHealthMonitor::new(Duration::from_secs(60)));
+        engine.set_monitor(health.clone());
         Self {
             installed: RwLock::new(installed.clone()),
             by_name: RwLock::new(HashMap::new()),
             fallback: RwLock::new(fallback),
             engine,
+            health: Some(health),
         }
     }
 
@@ -99,6 +107,16 @@ impl PluginManager {
         self.by_name.read().get(name).cloned()
     }
 
+    /// Get all registered plugin names.
+    pub fn all_plugin_names(&self) -> Vec<String> {
+        self.by_name.read().keys().cloned().collect()
+    }
+
+    /// Get the health monitor associated with this manager, if any.
+    pub fn health(&self) -> Option<Arc<PluginHealthMonitor>> {
+        self.health.clone()
+    }
+
     /// Resolve the fallback chain for a language (plugin-first if one is
     /// installed, otherwise native → NoOp).
     pub fn chain_for(&self, lang: &Language) -> Vec<FallbackStep> {
@@ -130,6 +148,7 @@ impl PluginManager {
             .descriptor_by_name(name)
             .ok_or_else(|| GraphError::Parser(format!("unknown plugin '{}'", name)))?;
         let config = PluginConfig {
+            name: descriptor.name.clone(),
             command: descriptor.command,
             version: descriptor.version,
             languages: descriptor.languages,
@@ -152,12 +171,31 @@ impl PluginManager {
         }
 
         let content = std::fs::read_to_string(&plugins_json).map_err(GraphError::Io)?;
-        let configs: Vec<PluginConfig> =
+        // We use a temporary struct for deserialization to handle legacy configs
+        // that lack the 'name' field.
+        #[derive(Deserialize)]
+        struct LegacyConfig {
+            #[serde(default)]
+            name: String,
+            command: String,
+            version: String,
+            languages: Vec<Language>,
+            capabilities: Vec<String>,
+        }
+
+        let configs: Vec<LegacyConfig> =
             serde_json::from_str(&content).map_err(|e| GraphError::Parser(e.to_string()))?;
 
         for config in configs {
-            debug!(?config.command, "Registering plugin from config");
-            self.register(PluginDescriptor::from(&config));
+            let full_config = PluginConfig {
+                name: config.name,
+                command: config.command,
+                version: config.version,
+                languages: config.languages,
+                capabilities: config.capabilities,
+            };
+            debug!(?full_config.command, "Registering plugin from config");
+            self.register(PluginDescriptor::from(&full_config));
         }
         Ok(())
     }
