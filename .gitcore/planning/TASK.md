@@ -59,8 +59,8 @@ Xavier v0.11.0 con 20 features trackeadas. Core completo (F1-F4), en producción
 | T-13 | Plugin System: foundation (Language::Other, traits, types) | 🔴 ALTA | ✅ Completado | feat-plugin-system | - | `bf2dec28` (F1) |
 | T-14 | Plugin System: engine + fallback chain | 🔴 ALTA | ✅ Completado | feat-plugin-system | - | `bf2dec28` (F2) |
 | T-15 | Plugin System: registry + lifecycle (install/update/rollback) | 🟡 MEDIA | ✅ Completado | feat-plugin-system | - | `ac139304` (F3) |
-| T-16 | Plugin System: CLI commands + API endpoints | 🟡 MEDIA | Pendiente → Jules | feat-plugin-system | #F4-cli, #F4-api | F4 |
-| T-17 | Plugin System: health monitoring + discovery | 🟡 MEDIA | Pendiente → Jules | feat-plugin-system | #F4-health, #F4-discovery | F4 |
+| T-16 | Plugin System: CLI commands + API endpoints | 🟡 MEDIA | Pendiente → Jules | feat-plugin-system | #487, #488 | F4 |
+| T-17 | Plugin System: health monitoring + discovery | 🟡 MEDIA | Pendiente → Jules | feat-plugin-system | #485, #486 | F4 |
 
 ---
 
