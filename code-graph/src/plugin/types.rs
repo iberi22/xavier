@@ -35,13 +35,21 @@ pub struct PluginConfig {
 /// Richer descriptor used by the registry/lifecycle phases (F3+). Kept here so
 /// the engine and fallback chain can reason about an installed plugin uniformly
 /// even before the registry exists.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct PluginDescriptor {
     pub name: String,
     pub version: String,
     pub command: String,
     pub languages: Vec<Language>,
     pub capabilities: Vec<String>,
+}
+
+/// Metadata for an installed plugin, including its descriptor and version history.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InstalledPlugin {
+    pub descriptor: PluginDescriptor,
+    pub version: String,
+    pub cached_versions: Vec<String>,
 }
 
 impl From<&PluginConfig> for PluginDescriptor {
