@@ -51,6 +51,15 @@ impl Language {
         }
     }
 
+    /// Resolve an extension to a [`Language`], consulting discovery for plugins
+    /// if it's not a built-in.
+    pub fn from_extension_with_plugins(ext: &str, discovery: &dyn LanguageDiscovery) -> Self {
+        match Self::from_extension(ext) {
+            Language::Unknown => discovery.language_for_extension(ext),
+            built_in => built_in,
+        }
+    }
+
     /// Stable lowercase identifier for this language.
     ///
     /// Used for **DB persistence and API output** instead of `Debug` so that
@@ -303,6 +312,12 @@ pub struct IndexStats {
     pub total_imports: u64,
     pub languages: Vec<LanguageCount>,
     pub duration_ms: u64,
+}
+
+/// Trait for discovering languages supported by plugins.
+pub trait LanguageDiscovery: Send + Sync {
+    /// Resolve an extension to a [`Language`].
+    fn language_for_extension(&self, ext: &str) -> Language;
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

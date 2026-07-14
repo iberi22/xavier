@@ -21,7 +21,7 @@ pub mod fallback;
 pub mod types;
 
 use crate::error::{GraphError, Result};
-use crate::types::{Language, Symbol};
+use crate::types::{Language, LanguageDiscovery, Symbol};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -133,6 +133,7 @@ impl PluginManager {
             command: descriptor.command,
             version: descriptor.version,
             languages: descriptor.languages,
+            extensions: Some(descriptor.extensions),
             capabilities: descriptor.capabilities,
         };
         self.engine.parse(&config, lang, files).await
@@ -169,6 +170,19 @@ impl Default for PluginManager {
     }
 }
 
+impl LanguageDiscovery for PluginManager {
+    fn language_for_extension(&self, ext: &str) -> Language {
+        let ext = ext.to_lowercase();
+        let installed = self.installed.read();
+        for (lang, desc) in installed.iter() {
+            if desc.extensions.iter().any(|e| e.to_lowercase() == ext) {
+                return lang.clone();
+            }
+        }
+        Language::Unknown
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,6 +200,7 @@ mod tests {
             version: "1.0.0".into(),
             command: "parser-py".into(),
             languages: vec![Language::Python],
+            extensions: vec!["py".into()],
             capabilities: vec!["parse".into()],
         });
 
@@ -212,6 +227,7 @@ mod tests {
             version: "1.0.0".into(),
             command: "/usr/bin/parser-py".into(),
             languages: vec![Language::Python],
+            extensions: vec!["py".into()],
             capabilities: vec!["parse".into()],
         });
         assert_eq!(

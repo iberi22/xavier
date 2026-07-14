@@ -187,6 +187,7 @@ mod tests {
             command: "this-binary-does-not-exist-anywhere-12345".into(),
             version: "0.0.0".into(),
             languages: vec![Language::Python],
+            extensions: None,
             capabilities: vec!["parse".into()],
         };
         let result = engine.parse_inner(&config, Language::Python, vec![]).await;
@@ -214,6 +215,7 @@ mod tests {
             command: "this-binary-does-not-exist-anywhere-trait".into(),
             version: "0.0.0".into(),
             languages: vec![Language::Python],
+            extensions: None,
             capabilities: vec!["parse".into()],
         };
         let result = engine.parse(&config, Language::Python, vec![]).await;

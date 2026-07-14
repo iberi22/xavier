@@ -28,6 +28,8 @@ pub struct PluginConfig {
     pub version: String,
     /// Languages this plugin can parse.
     pub languages: Vec<Language>,
+    /// Extensions handled by this plugin (e.g. `["rb", "lua"]`).
+    pub extensions: Option<Vec<String>>,
     /// Operations the plugin advertises, e.g. `["parse"]`.
     pub capabilities: Vec<String>,
 }
@@ -41,6 +43,7 @@ pub struct PluginDescriptor {
     pub version: String,
     pub command: String,
     pub languages: Vec<Language>,
+    pub extensions: Vec<String>,
     pub capabilities: Vec<String>,
 }
 
@@ -58,6 +61,7 @@ impl From<&PluginConfig> for PluginDescriptor {
             version: cfg.version.clone(),
             command: cfg.command.clone(),
             languages: cfg.languages.clone(),
+            extensions: cfg.extensions.clone().unwrap_or_default(),
             capabilities: cfg.capabilities.clone(),
         }
     }
@@ -186,6 +190,7 @@ mod tests {
             version: "1.0.0".into(),
             command: "parser-py".into(),
             languages: vec![Language::Python],
+            extensions: vec!["py".into()],
             capabilities: vec!["parse".into()],
         };
         assert!(desc.supports(&Language::Python, "parse"));

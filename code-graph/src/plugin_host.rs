@@ -15,7 +15,7 @@
 use crate::error::Result;
 use crate::plugin::types::{FileToParse, PluginConfig};
 use crate::plugin::PluginManager;
-use crate::types::{Language, Symbol};
+use crate::types::{Language, LanguageDiscovery, Symbol};
 use std::sync::Arc;
 
 // Re-export the protocol types so existing `use crate::plugin_host::{...}`
@@ -65,6 +65,11 @@ impl PluginHost {
         &self.manager
     }
 
+    /// Access the underlying manager as a discovery source.
+    pub fn discovery(&self) -> &dyn LanguageDiscovery {
+        &*self.manager
+    }
+
     /// Legacy dispatch picker. Honours the fallback chain rather than the old
     /// Rust-hardcoded-to-Native shortcut.
     #[allow(deprecated)]
@@ -78,6 +83,7 @@ impl PluginHost {
                         command: desc.command,
                         version: desc.version,
                         languages: desc.languages,
+                        extensions: Some(desc.extensions),
                         capabilities: desc.capabilities,
                     });
                 }
@@ -136,6 +142,7 @@ mod tests {
                 version: "1.0.0".to_string(),
                 command: "parser-py".to_string(),
                 languages: vec![Language::Python],
+                extensions: vec!["py".to_string()],
                 capabilities: vec!["parse".to_string()],
             });
         match host.parser_for(&Language::Python) {

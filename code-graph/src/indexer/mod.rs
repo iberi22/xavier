@@ -205,7 +205,9 @@ impl Indexer {
                 continue;
             }
             let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
-            if Language::from_extension(ext) == Language::Unknown {
+            if Language::from_extension_with_plugins(ext, self.plugin_host.discovery())
+                == Language::Unknown
+            {
                 continue;
             }
             files.push(path.to_path_buf());
@@ -227,7 +229,11 @@ async fn parse_file(
     plugin_host: Option<&PluginHost>,
 ) -> Result<ParsedFile> {
     let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
-    let lang = Language::from_extension(ext);
+    let lang = if let Some(host) = plugin_host {
+        Language::from_extension_with_plugins(ext, host.discovery())
+    } else {
+        Language::from_extension(ext)
+    };
 
     // We try to parse even if lang is Unknown because a plugin might handle it by extension
     // But for now, we follow the discovery logic in PluginHost::parser_for which might return NoOp
@@ -580,6 +586,65 @@ mod tests {
         assert_eq!(db.stats().expect("stats").total_files, 1);
         let symbols = db.get_all_symbols().expect("get symbols");
         assert!(symbols.iter().all(|s| s.file_path == "main.rs"));
+    }
+
+    #[tokio::test]
+    async fn indexer_picks_up_plugin_backed_extension() {
+        let dir = TempDir::new().expect("temp dir");
+        std::fs::write(dir.path().join("script.rb"), "def hello; end\n").expect("write ruby");
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db.clone());
+
+        // Register a mock plugin for Ruby
+        let ruby_lang = Language::Other("ruby".to_string());
+        indexer.plugin_host.manager().register(crate::plugin::types::PluginDescriptor {
+            name: "parser-ruby".to_string(),
+            version: "1.0.0".to_string(),
+            command: "ruby-parser".to_string(), // Won't be called if we use a mock engine
+            languages: vec![ruby_lang.clone()],
+            extensions: vec!["rb".to_string()],
+            capabilities: vec!["parse".to_string()],
+        });
+
+        // Use a mock engine to avoid executing a real subprocess
+        // PluginManager::new uses ProcessEngine by default.
+        // We can't easily swap the engine in an existing Indexer/PluginHost,
+        // but for collect_files test we don't even need the engine.
+
+        let files = indexer.collect_files(dir.path()).expect("collect");
+        assert_eq!(files.len(), 1);
+        assert!(files[0].ends_with("script.rb"));
+
+        // To test full indexing, we'd need to mock the PluginEngine.
+        // Since PluginManager stores engine as Arc<dyn PluginEngine>, we could theoretically
+        // provide a mock one at construction.
+    }
+
+    #[tokio::test]
+    async fn indexer_skips_unknown_extension_with_no_plugin() {
+        let dir = TempDir::new().expect("temp dir");
+        std::fs::write(dir.path().join("readme.md"), "# Hello\n").expect("write md");
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db.clone());
+
+        let files = indexer.collect_files(dir.path()).expect("collect");
+        assert_eq!(files.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn indexer_builtin_languages_unchanged() {
+        let dir = TempDir::new().expect("temp dir");
+        std::fs::write(dir.path().join("main.rs"), "fn main() {}\n").expect("write rust");
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db.clone());
+        let stats = indexer.index(dir.path(), false).await.expect("index");
+
+        assert_eq!(stats.total_files, 1);
+        assert!(stats.total_symbols >= 1);
+        assert_eq!(stats.languages[0].lang, Language::Rust);
     }
 
     #[tokio::test]
