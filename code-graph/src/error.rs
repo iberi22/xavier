@@ -27,6 +27,16 @@ pub enum GraphError {
 
     #[error("Indexer error: {0}")]
     Indexer(String),
+
+    /// Plugin registry failures: index fetch, network, schema mismatch,
+    /// unknown plugin name, min-engine-version mismatch, etc.
+    #[error("Registry error: {0}")]
+    Registry(String),
+
+    /// Plugin lifecycle/execution failures: install, checksum mismatch,
+    /// extraction, version resolution, circuit breaker open, etc.
+    #[error("Plugin error: {0}")]
+    Plugin(String),
 }
 
 pub type Result<T> = std::result::Result<T, GraphError>;
