@@ -56,11 +56,11 @@ Xavier v0.11.0 con 20 features trackeadas. Core completo (F1-F4), en producción
 | T-10 | Mesh Ph3: Loro CRDT merge | 🟢 BAJA | Pendiente | feat-mesh-network | - | - |
 | T-11 | Mesh Ph4: Tor/Yggdrasil transport | 🟢 BAJA | Pendiente | feat-mesh-network | - | - |
 | T-12 | UI Dashboard v2 (notificaciones real-time) | 🟢 BAJA | Pendiente | feat-notification-system | #4 | - |
-| T-13 | Plugin System: foundation (Language::Other, traits, types) | 🔴 ALTA | Pendiente | feat-plugin-system | - | Pendiente de crear |
-| T-14 | Plugin System: engine + fallback chain | 🔴 ALTA | Pendiente | feat-plugin-system | - | Pendiente de crear |
-| T-15 | Plugin System: registry + lifecycle (install/update/rollback) | 🟡 MEDIA | Pendiente | feat-plugin-system | - | Pendiente de crear |
-| T-16 | Plugin System: CLI commands + API endpoints | 🟡 MEDIA | Pendiente | feat-plugin-system | - | Pendiente de crear |
-| T-17 | Plugin System: health monitoring + discovery | 🟡 MEDIA | Pendiente | feat-plugin-system | - | Pendiente de crear |
+| T-13 | Plugin System: foundation (Language::Other, traits, types) | 🔴 ALTA | ✅ Completado | feat-plugin-system | - | `bf2dec28` (F1) |
+| T-14 | Plugin System: engine + fallback chain | 🔴 ALTA | ✅ Completado | feat-plugin-system | - | `bf2dec28` (F2) |
+| T-15 | Plugin System: registry + lifecycle (install/update/rollback) | 🟡 MEDIA | ✅ Completado | feat-plugin-system | - | `ac139304` (F3) |
+| T-16 | Plugin System: CLI commands + API endpoints | 🟡 MEDIA | Pendiente → Jules | feat-plugin-system | #F4-cli, #F4-api | F4 |
+| T-17 | Plugin System: health monitoring + discovery | 🟡 MEDIA | Pendiente → Jules | feat-plugin-system | #F4-health, #F4-discovery | F4 |
 
 ---
 

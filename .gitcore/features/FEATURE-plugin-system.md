@@ -2,10 +2,30 @@
 
 **Feature ID:** `feat-plugin-system`
 **Category:** `infrastructure`
-**Status:** `planned`
-**Progress:** 0%
+**Status:** `beta` (F1+F2+F3 complete; F4 in progress)
+**Progress:** 60%
 **Version Target:** v0.12.0
 **Issue:** #TBD
+
+> **Implementation status (2026-07-13)**
+>
+> | Phase | Scope | State |
+> |-------|-------|-------|
+> | F1 | Foundation — `Language::Other(String)`, plugin types/traits, bug fixes | ✅ Done (`bf2dec28`) |
+> | F2 | Engine + Fallback chain — `ProcessEngine`, `FallbackChain`, rewritten `parse_source` | ✅ Done (`bf2dec28`) |
+> | F3 | Registry + Cache + Lifecycle — `GitHubRegistry`/`MockRegistry`, `PluginCache`, `PluginManager` install/update/rollback/uninstall/list | ✅ Done (`ac139304`) |
+> | F4 | CLI + Health + Discovery + API | ⏳ Pending (tracked in GitHub issues) |
+>
+> F3 is **trait-based and mock-tested**: the full lifecycle is exercised end-to-end
+> via `MockRegistry` (27 plugin tests pass). The live `swal/xavier-plugins` repo
+> is wired at `https://raw.githubusercontent.com/swal/xavier-plugins/main/plugins.json`
+> but not yet built — creating it is a separate infrastructure issue. Once it
+> exists, `GitHubRegistry` works with no code changes.
+>
+> Remaining F4 work is broken into discrete GitHub issues so it can be picked up
+> independently: health monitor (#F4-health), discovery (#F4-discovery),
+> CLI (#F4-cli), API routes (#F4-api), plus the registry-repo bootstrap
+> (#infra-registry-repo) and indexer dynamic-language wiring (#F4-indexer-wiring).
 
 ---
 
