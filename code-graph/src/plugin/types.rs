@@ -11,6 +11,7 @@
 use crate::error::{GraphError, Result};
 use crate::types::{Language, Symbol};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // ============================================================================
 // Plugin descriptor
@@ -153,8 +154,61 @@ impl PluginHealth {
 }
 
 // ============================================================================
+// Registry types (F3+)
+// ============================================================================
+
+/// Entry in the plugin registry.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegistryEntry {
+    pub name: String,
+    pub display_name: String,
+    pub description: String,
+    pub version: String,
+    pub author: String,
+    pub languages: Vec<Language>,
+    pub capabilities: Vec<String>,
+    pub platform: HashMap<String, PlatformEntry>,
+    pub min_engine_version: String,
+    pub license: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlatformEntry {
+    pub url: String,
+    pub checksum: String,
+    pub format: String,
+}
+
+// ============================================================================
+// Stubs for F4+
+// ============================================================================
+
+/// Monitor for plugin health and metrics. (Deferred to #485)
+pub struct PluginHealthMonitor {}
+
+/// Dynamic language discovery from installed plugins. (Deferred to #486)
+pub struct LanguageDiscovery {}
+
+// ============================================================================
 // Traits (shapes the engine/registry/health phases implement later)
 // ============================================================================
+
+/// Fetches and searches the plugin registry.
+pub trait PluginRegistry: Send + Sync {
+    fn fetch_index(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<RegistryEntry>>> + Send>>;
+
+    fn search(
+        &self,
+        query: &str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<RegistryEntry>>> + Send>>;
+
+    fn get(
+        &self,
+        name: &str,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<RegistryEntry>> + Send>>;
+}
 
 /// Executes a parse request against a plugin process.
 ///

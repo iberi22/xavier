@@ -99,6 +99,14 @@ impl FallbackChain {
     pub fn clear(&mut self, lang: &Language) {
         self.overrides.remove(&lang.as_db_str());
     }
+
+    /// Return all explicitly configured chains.
+    pub fn all_chains(&self) -> Vec<(Language, Vec<FallbackStep>)> {
+        self.overrides
+            .iter()
+            .map(|(lang_str, steps)| (Language::from_db_str(lang_str), steps.clone()))
+            .collect()
+    }
 }
 
 impl FallbackResolver for FallbackChain {

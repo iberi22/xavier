@@ -10,9 +10,11 @@ use axum::{
     Router,
 };
 use clap::{Parser, Subcommand};
+use code_graph::api::plugin_routes::{self, PluginApiState};
 use code_graph::db::CodeGraphDB;
 use code_graph::indexer::Indexer;
 use code_graph::mcp::McpServer;
+use code_graph::plugin::PluginManager;
 use code_graph::query::QueryEngine;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -30,6 +32,7 @@ struct AppState {
     token: String,
     indexer: Arc<Indexer>,
     query_engine: Arc<QueryEngine>,
+    manager: Arc<PluginManager>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -409,6 +412,10 @@ async fn main() -> anyhow::Result<()> {
     let db = Arc::new(CodeGraphDB::new(&db_path)?);
     let indexer = Arc::new(Indexer::new(Arc::clone(&db)));
     let query_engine = Arc::new(QueryEngine::new(Arc::clone(&db)));
+    let manager = Arc::new(PluginManager::new());
+    if let Err(e) = manager.load_config() {
+        eprintln!("⚠️  Failed to load plugin config: {}", e);
+    }
 
     // Server mode
     if cli.command.is_none() || matches!(cli.command, Some(Commands::Serve)) {
@@ -448,6 +455,7 @@ async fn main() -> anyhow::Result<()> {
             token: token.clone(),
             indexer,
             query_engine,
+            manager: Arc::clone(&manager),
         };
 
         // CORS: configurable via CODE_GRAPH_ALLOWED_ORIGINS (comma-separated).
@@ -455,10 +463,17 @@ async fn main() -> anyhow::Result<()> {
         // permissive behavior explicitly.
         let cors = build_cors_layer();
 
+        let plugin_state = PluginApiState {
+            manager: Arc::clone(&manager),
+            health: None,    // #485
+            discovery: None, // #486
+        };
+
         let protected_routes = Router::new()
             .route("/code/scan", post(scan))
             .route("/code/find", post(find))
             .route("/code/stats", get(stats))
+            .nest("/", plugin_routes::router(plugin_state))
             .layer(axum::middleware::from_fn_with_state(
                 state.clone(),
                 auth_middleware,
@@ -485,6 +500,7 @@ async fn main() -> anyhow::Result<()> {
         println!("  POST /code/scan        - Scan and index codebase (auth required)");
         println!("  POST /code/find        - Find symbols (auth required)");
         println!("  GET  /code/stats       - Get index statistics (auth required)");
+        println!("  [Plugin Management API mounted at /api/v1/plugins]");
 
         let listener = tokio::net::TcpListener::bind(addr).await?;
         axum::serve(listener, app).await?;
