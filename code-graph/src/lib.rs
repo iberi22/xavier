@@ -7,8 +7,12 @@
 
 pub mod db;
 pub mod debug;
+pub mod impact;
 pub mod indexer;
+pub mod mcp;
 pub mod parser;
+pub mod plugin;
+pub mod plugin_host;
 pub mod query;
 
 pub use error::GraphError;
