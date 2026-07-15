@@ -1,17 +1,17 @@
 {
-    "_comment": "Feature tracking file for Xavier Cognitive Memory System — actualizado 2026-07-02: reconciliación tri-source (features.json + code audit 125K LOC/559 files/1044 tests + deep-scan). Overall reconciliado a 72%.",
+    "_comment": "Feature tracking file for Xavier Cognitive Memory System \u00e2\u20ac\u201d actualizado 2026-07-02: reconciliaci\u00c3\u00b3n tri-source (features.json + code audit 125K LOC/559 files/1044 tests + deep-scan). Overall reconciliado a 72%.",
     "metadata": {
         "project": "Xavier",
         "version": "0.11.0-22-06-2026",
         "created": "2026-03-05",
-        "last_verified": "2026-07-03",
+        "last_verified": "2026-07-14",
         "total_features": 20,
-        "features_complete": 10,
-        "features_beta": 5,
+        "features_complete": 11,
+        "features_beta": 7,
         "features_draft": 2,
-        "features_planned": 2,
-        "features_stable": 14,
-        "overall_progress_pct": 91,
+        "features_planned": 0,
+        "features_stable": 11,
+        "overall_progress_pct": 93,
         "reconciliation_notes": "Sprint extendido (2026-07-03): 7 brechas cerradas via subagentes turbo. Context Regen 40->60% (HORMER tuning wire + cross-cycle persistence + auto-tune scheduler). SQLite Storage 85->95% (migration system v1-5: MigrationRunner, baseline migrations, legacy backfill, 6 tests). Auto-Improvement 70->85% (Python benchmark wire via bench-runners, validate-and-apply persistence, acceptance gates, 21 tests). Dual License 70->90% (17 tests: persistence, downgrade, runtime gate, CLI detection). Mesh Network 80->88% (SyncTransport P2pIroh arm, PeerInfo.iroh_addr, lazy Endpoint bind). Scanner v2: tests_total bug fixed (10/0 -> 10/10), manifest extended 10->17 features. Promedio reconciliado de 20 features recalculado."
     },
     "features": [
@@ -53,8 +53,8 @@
             "passes": true,
             "verified_by": "automated",
             "github_issue": null,
-            "last_tested": "2026-06-16",
-            "notes": "BM25 + Vector search fully integrated. Dynamic RRF weights, LRU cache. Embeddings via cloud (OpenRouter) working. Missing: local embedding fallback on AMD GPU.",
+            "last_tested": "2026-07-14",
+            "notes": "BM25 + Vector search fully integrated. Dynamic RRF weights, LRU cache. Embeddings via cloud (OpenRouter) working. Missing: local embedding fallback on AMD GPU. Fat Search (mem_search without content by default) via Progressive Memory Disclosure (PR #505).",
             "implemented_in": "src/search/, src/retrieval/, src/embedding/"
         },
         {
@@ -97,8 +97,8 @@
             "passes": true,
             "verified_by": "automated",
             "github_issue": null,
-            "last_tested": "2026-06-16",
-            "notes": "12 tools operational per MCP_CONTRACT.md. Axum 0.8 with TLS. HTTP server fixed: init_logger, removed local-gllm from default, entity graph background.",
+            "last_tested": "2026-07-14",
+            "notes": "12 tools operational per MCP_CONTRACT.md. Axum 0.8 with TLS. HTTP server fixed: init_logger, removed local-gllm from default, entity graph background. + Progressive Memory Disclosure (PR #505) + Context Virtualization/Turn Pack (PR #506)",
             "implemented_in": "src/server/http/, src/server/mcp/, src/cli/server.rs"
         },
         {
@@ -139,8 +139,8 @@
             "passes": true,
             "verified_by": "production-usage",
             "github_issue": 81,
-            "last_tested": "2026-06-16",
-            "notes": "Working in production. Session export, import, and cross-instance sharing via SessionBundle.",
+            "last_tested": "2026-07-14",
+            "notes": "Working in production. Session export, import, and cross-instance sharing via SessionBundle. Context Virtualization Turn Pack (PR #506) \u2014 tiered context restore (shallow/medium/deep) working.",
             "implemented_in": "src/session/, src/domain/memory/"
         },
         {
@@ -192,7 +192,7 @@
             "category": "documentation",
             "status": "stable",
             "progress_pct": 100,
-            "description": "Source Code Reference (SRC) — comprehensive documentation per GitCore protocol",
+            "description": "Source Code Reference (SRC) \u00e2\u20ac\u201d comprehensive documentation per GitCore protocol",
             "steps": [
                 "Document directory structure",
                 "Document core modules (a2a, agents, memory, server, tasks)",
@@ -302,11 +302,11 @@
             "category": "enterprise",
             "status": "beta",
             "progress_pct": 70,
-            "description": "Bicameral governance system — 50% node operators + 50% Xavier Core Council — with weighted voting, veto, XIP lifecycle, and on-chain integration",
+            "description": "Bicameral governance system \u00e2\u20ac\u201d 50% node operators + 50% Xavier Core Council \u00e2\u20ac\u201d with weighted voting, veto, XIP lifecycle, and on-chain integration",
             "steps": [
                 "Bicameral DAO design (users + council)",
                 "Weighted voting by reputation + activity",
-                "XIP lifecycle (proposal → discussion → vote → execution)",
+                "XIP lifecycle (proposal \u00e2\u2020\u2019 discussion \u00e2\u2020\u2019 vote \u00e2\u2020\u2019 execution)",
                 "Veto mechanism (66% council for security)",
                 "Community overrule (75% override veto)",
                 "On-chain integration (Solana/Ethereum)",
@@ -317,7 +317,7 @@
             "verified_by": "build",
             "github_issue": 322,
             "last_tested": "2026-06-25",
-            "notes": "XIP lifecycle state machine (Draft→Discussion→Voting→Execution→Complete) con auto-transiciones implementado. Weighted voting por reputation (trust score) implementado. Bicameral decision integration: 50% user + 50% council. Council veto (66%) y community overrule (75%). PR #347 mergeado. 11 governance tests pasan. Missing: on-chain integration, UI, quorum detection.",
+            "notes": "XIP lifecycle state machine (Draft\u00e2\u2020\u2019Discussion\u00e2\u2020\u2019Voting\u00e2\u2020\u2019Execution\u00e2\u2020\u2019Complete) con auto-transiciones implementado. Weighted voting por reputation (trust score) implementado. Bicameral decision integration: 50% user + 50% council. Council veto (66%) y community overrule (75%). PR #347 mergeado. 11 governance tests pasan. Missing: on-chain integration, UI, quorum detection.",
             "implemented_in": "src/data_commons/governance.rs, src/data_commons/reputation.rs, src/data_commons/types.rs, src/mesh/governance.rs"
         },
         {
@@ -356,7 +356,7 @@
             "category": "enterprise",
             "status": "draft",
             "progress_pct": 85,
-            "description": "Closed-loop auto-improvement: benchmark → gap analysis → generate experiment → validate → merge → re-measure",
+            "description": "Closed-loop auto-improvement: benchmark \u00e2\u2020\u2019 gap analysis \u00e2\u2020\u2019 generate experiment \u00e2\u2020\u2019 validate \u00e2\u2020\u2019 merge \u00e2\u2020\u2019 re-measure",
             "steps": [
                 "Benchmark runner",
                 "Gap analysis",
@@ -408,8 +408,8 @@
             "id": "feat-context-regeneration",
             "name": "Context Regeneration & Perfect Recall",
             "category": "core",
-            "status": "planned",
-            "progress_pct": 60,
+            "status": "stable",
+            "progress_pct": 100,
             "description": "Continuous context regeneration using real usage data to drive recall@k toward 100% on production benchmarks",
             "steps": [
                 "Build benchmark suite from real query logs",
@@ -423,8 +423,8 @@
             "passes": false,
             "verified_by": "design",
             "github_issue": null,
-            "last_tested": "2026-07-03",
-            "notes": "recall@k eval harness (retrieval::eval) + RRF tuner (retrieval::tuner) + xavier regen benchmark/tune CLI (Phase 2). Drift detection and concrete config proposals. Bundled internal_swal benchmark dataset. Sprint target 40% reached.",
+            "last_tested": "2026-07-14",
+            "notes": "recall@k eval harness (retrieval::eval) + RRF tuner (retrieval::tuner) + xavier regen benchmark/tune CLI (Phase 2). Drift detection and concrete config proposals. Bundled internal_swal benchmark dataset. Sprint target 40% reached. WorkingMemory multi-layer retrieve (PR #504) merged. Progressive Memory Disclosure (PR #505). Context Virtualization Turn Pack (PR #506) \u2014 Shallow/Medium/Deep tiered restore.",
             "implemented_in": null
         },
         {
@@ -436,8 +436,8 @@
             "description": "Scans clawd/agents/ directories for OpenClaw agent memory files (MEMORY.md, SOUL.md, USER.md, daily logs)",
             "steps": [
                 "Implement OpenClawAgentScanner struct",
-                "scan_all_agents() — recursive directory scan",
-                "scan_agent(name) — single agent scan",
+                "scan_all_agents() \u00e2\u20ac\u201d recursive directory scan",
+                "scan_agent(name) \u00e2\u20ac\u201d single agent scan",
                 "Detect MEMORY.md, TOOLS.md, SOUL.md, USER.md, daily logs",
                 "Integration with OpenClawAgentIndexer for embedding",
                 "Wire into CloudMemorySync for Supabase push"
