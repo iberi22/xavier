@@ -16,6 +16,7 @@
 //! Deferred to later phases: GitHub registry, archive extraction, lifecycle
 //! (install/update/rollback), CLI, health-monitor ring buffer, discovery.
 
+pub mod discovery;
 pub mod engine;
 pub mod fallback;
 pub mod types;
@@ -30,8 +31,8 @@ use tracing::debug;
 pub use engine::ProcessEngine;
 pub use fallback::FallbackChain;
 pub use types::{
-    FallbackResolver, FallbackStep, FileToParse, PluginConfig, PluginDescriptor, PluginEngine,
-    PluginHealth, PluginRequest, PluginResponse,
+    FallbackResolver, FallbackStep, FileToParse, InstalledPlugin, PluginConfig, PluginDescriptor,
+    PluginEngine, PluginHealth, PluginRequest, PluginResponse,
 };
 
 /// Orchestrates plugin lifecycle and execution for the indexer.
@@ -97,6 +98,20 @@ impl PluginManager {
     /// Look up a descriptor by plugin name (used by `FallbackStep::Plugin(name)`).
     pub fn descriptor_by_name(&self, name: &str) -> Option<PluginDescriptor> {
         self.by_name.read().get(name).cloned()
+    }
+
+    /// List all installed plugins.
+    pub fn list(&self) -> Vec<InstalledPlugin> {
+        self.by_name
+            .read()
+            .values()
+            .map(|desc| InstalledPlugin {
+                version: desc.version.clone(),
+                descriptor: desc.clone(),
+                // In this phase, we don't have multiple cached versions yet.
+                cached_versions: vec![desc.version.clone()],
+            })
+            .collect()
     }
 
     /// Resolve the fallback chain for a language (plugin-first if one is
