@@ -167,14 +167,8 @@ pub async fn handle_context_tool(
             // Build optimized context
             let builder_config = ContextBuilderConfig::default();
             let builder = ContextBuilder::new(builder_config);
-            let mut context_string = builder.build(level, &selected_docs, &[], &[]);
-
-            // Hard cut: strictly enforce budget on the final context string
-            let (truncated_context, _) =
-                crate::context::truncate_to_tokens(&context_string, token_budget);
-            context_string = truncated_context;
-
-            let optimized_token_count = crate::context::estimate_tokens(&context_string);
+            let context_string = builder.build(level, &selected_docs, &[], &[]);
+            let optimized_token_count = context_string.split_whitespace().count();
 
             let savings_percentage = if original_token_count > 0 {
                 (original_token_count as f32 - optimized_token_count as f32)
@@ -234,15 +228,11 @@ pub async fn handle_context_tool(
 
             let mut output = String::new();
             for (i, doc) in results.iter().enumerate() {
-                // Progressive disclosure: snippet only, max 100 chars
-                let snippet = if doc.content.chars().count() > 100 {
-                    let mut s: String = doc.content.chars().take(100).collect();
-                    s.push_str("...");
-                    s
+                let snippet = if doc.content.len() > 200 {
+                    format!("{}...", &doc.content[..200])
                 } else {
                     doc.content.clone()
                 };
-
                 let meta_preview = match &doc.metadata {
                     serde_json::Value::Object(m) => {
                         let entries: Vec<String> = m
@@ -254,12 +244,9 @@ pub async fn handle_context_tool(
                     }
                     _ => String::new(),
                 };
-
-                // ID and Score (if available) are key for progressive disclosure
                 output.push_str(&format!(
-                    "--- Result {} ---\nID: {}\nPath: {}\nMetadata: {}\nSnippet: {}\n\n",
+                    "--- Result {} ---\nPath: {}\nMetadata: {}\nSnippet: {}\n\n",
                     i + 1,
-                    doc.id.as_deref().unwrap_or("none"),
                     doc.path,
                     meta_preview,
                     snippet

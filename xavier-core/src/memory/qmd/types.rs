@@ -1,0 +1,139 @@
+//! Type definitions for QMD storage
+//!
+//! Provides the implementation and data structures for this module's
+//! responsibilities within the Xavier cognitive memory system.
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::atomic::AtomicUsize;
+use std::time::Instant;
+
+/// Type definitions for the QMD memory system.
+
+#[derive(Debug, Clone)]
+pub struct EmbeddingCacheEntry {
+    pub vector: Vec<f32>,
+    pub cached_at: Instant,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct MemoryDocument {
+    pub id: Option<String>,
+    pub path: String,
+    pub content: String,
+    pub metadata: serde_json::Value,
+    #[serde(default)]
+    pub content_vector: Option<Vec<f32>>,
+    pub embedding: Vec<f32>,
+    #[serde(default)]
+    pub cluster_id: Option<String>,
+    pub parent_id: Option<String>,
+    #[serde(default)]
+    pub level: crate::schema::MemoryLevel,
+    #[serde(default)]
+    pub relation: Option<crate::schema::RelationKind>,
+    #[serde(default)]
+    pub clearance: crate::schema::ClearanceLevel,
+    #[serde(default)]
+    pub minhash: Option<Vec<u64>>,
+}
+
+impl Default for MemoryDocument {
+    fn default() -> Self {
+        Self {
+            id: None,
+            path: String::new(),
+            content: String::new(),
+            metadata: serde_json::json!({}),
+            content_vector: None,
+            embedding: Vec::new(),
+            cluster_id: None,
+            parent_id: None,
+            level: crate::schema::MemoryLevel::Raw,
+            relation: None,
+            clearance: crate::schema::ClearanceLevel::TopSecret,
+            minhash: None,
+        }
+    }
+}
+
+impl MemoryDocument {
+    pub fn estimated_bytes(&self) -> u64 {
+        self.id
+            .as_ref()
+            .map(|value| value.len())
+            .unwrap_or_default() as u64
+            + self.path.len() as u64
+            + self.content.len() as u64
+            + self.metadata.to_string().len() as u64
+            + self
+                .content_vector
+                .as_ref()
+                .map(|value| value.len() * std::mem::size_of::<f32>())
+                .unwrap_or_default() as u64
+            + (self.embedding.len() * std::mem::size_of::<f32>()) as u64
+            + self.cluster_id.as_ref().map(|s| s.len()).unwrap_or(0) as u64
+            + self.parent_id.as_ref().map(|s| s.len()).unwrap_or(0) as u64
+            + 1 // level enum size estimate
+            + self.relation.as_ref().map(|r| r.name.len()).unwrap_or(0) as u64
+            + self
+                .minhash
+                .as_ref()
+                .map(|m| m.len() * std::mem::size_of::<u64>())
+                .unwrap_or(0) as u64
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct MemoryUsage {
+    pub document_count: usize,
+    pub storage_bytes: u64,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct CacheMetrics {
+    pub hits: usize,
+    pub misses: usize,
+    pub entries: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct CachedSearchResult {
+    pub documents: Vec<MemoryDocument>,
+    pub cache_hit: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NavEntry {
+    pub name: String,
+    pub path: String,
+    pub is_dir: bool,
+    pub is_doc: bool,
+    pub id: Option<String>,
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct SearchCacheKey {
+    pub workspace_id: String,
+    pub query: String,
+    pub limit: usize,
+    pub filters: String,
+}
+
+#[derive(Default)]
+pub struct CacheCounters {
+    pub hits: AtomicUsize,
+    pub misses: AtomicUsize,
+}
+
+#[derive(Debug, Clone)]
+pub struct QueryBundle {
+    pub normalized_query: String,
+    pub variants: Vec<String>,
+    pub weights: HashMap<String, f32>,
+}
+
+impl QueryBundle {
+    pub fn weight_for(&self, query: &str) -> f32 {
+        self.weights.get(query).copied().unwrap_or(1.0)
+    }
+}

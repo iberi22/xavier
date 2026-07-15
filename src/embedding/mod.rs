@@ -222,12 +222,28 @@ impl EmbedderConfig {
     }
 
     fn cloud_only(api_flavor: ApiFlavor) -> Self {
-        // Primary: cloud endpoint
+        // Primary: cloud endpoint, Fallback: local endpoint if available
         let mut backends = vec![EmbedderBackendConfig::OpenAICompatible(cloud_config())];
 
-        // Fallback: local OpenAI-compatible endpoint if available (e.g., Ollama)
-        if local_embedding_signal_present() && api_flavor == ApiFlavor::OpenAICompatible {
-            backends.push(EmbedderBackendConfig::OpenAICompatible(local_config()));
+        // Always add GLLM as a fallback if in cloud mode to ensure offline/GPU availability
+        if api_flavor == ApiFlavor::OpenAICompatible {
+            backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
+        }
+
+        if local_embedding_signal_present() {
+            match api_flavor {
+                ApiFlavor::OpenAICompatible => {
+                    backends.push(EmbedderBackendConfig::OpenAICompatible(local_config()));
+                }
+                ApiFlavor::AnthropicCompatible => {
+                    if !backends
+                        .iter()
+                        .any(|b| matches!(b, EmbedderBackendConfig::Gllm(_)))
+                    {
+                        backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
+                    }
+                }
+            }
         }
 
         Self::Fallback(backends)
@@ -328,7 +344,6 @@ fn local_embedding_signal_present() -> bool {
 
 fn cloud_embedding_signal_present() -> bool {
     std::env::var("OPENAI_API_KEY").is_ok()
-        || std::env::var("XAVIER_EMBEDDING_API_KEY").is_ok()
         || crate::settings::XavierSettings::current()
             .embedding
             .api_key
@@ -392,12 +407,10 @@ fn local_config() -> OpenAICompatibleConfig {
         .unwrap_or_else(|_| DEFAULT_LOCAL_EMBEDDING_MODEL.to_string());
 
     OpenAICompatibleConfig {
-        // Env vars take precedence over the config file (12-factor: stale keys in
-        // config.json must not shadow a valid XAVIER_EMBEDDING_API_KEY in .env).
-        api_key: std::env::var("XAVIER_EMBEDDING_API_KEY")
-            .ok()
-            .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-            .or_else(|| settings.embedding.api_key.clone())
+        api_key: settings
+            .embedding
+            .api_key
+            .clone()
             .or_else(|| Some("ollama".to_string())),
         endpoint,
         dimension: embedding_dimension_for_model(&model),
@@ -421,13 +434,13 @@ fn cloud_config() -> OpenAICompatibleConfig {
         .unwrap_or_else(|_| DEFAULT_CLOUD_EMBEDDING_MODEL.to_string());
 
     OpenAICompatibleConfig {
-        // Env vars take precedence over the config file (12-factor: stale keys in
-        // config.json must not shadow a valid XAVIER_EMBEDDING_API_KEY in .env).
-        api_key: std::env::var("XAVIER_EMBEDDING_API_KEY")
-            .ok()
-            .or_else(|| std::env::var("XAVIER_OPENROUTER_API_KEY").ok())
+        api_key: settings
+            .embedding
+            .api_key
+            .clone()
             .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-            .or_else(|| settings.embedding.api_key.clone()),
+            .or_else(|| std::env::var("XAVIER_OPENROUTER_API_KEY").ok())
+            .or_else(|| std::env::var("XAVIER_EMBEDDING_API_KEY").ok()),
         endpoint,
         dimension: embedding_dimension_for_model(&model),
         model,

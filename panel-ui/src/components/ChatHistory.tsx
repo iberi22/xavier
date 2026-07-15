@@ -74,10 +74,10 @@ export default function ChatHistory({
   }, [messages]);
 
   return (
-    <div className="absolute top-0 bottom-[100px] sm:bottom-[120px] left-1/2 -translate-x-1/2 w-full max-w-4xl p-2 sm:p-4 flex flex-col justify-end pointer-events-none z-10">
+    <div className="absolute top-0 bottom-[120px] left-1/2 -translate-x-1/2 w-full max-w-4xl p-4 flex flex-col justify-end pointer-events-none z-10">
       <div
         ref={scrollRef}
-        className="w-full overflow-y-auto flex flex-col gap-3 sm:gap-5 pointer-events-auto pb-4 scroll-smooth"
+        className="w-full overflow-y-auto flex flex-col gap-5 pointer-events-auto pb-4 scroll-smooth"
         style={{
           maskImage:
             "linear-gradient(to bottom, transparent, black 15%, black 100%)",
@@ -109,7 +109,7 @@ export default function ChatHistory({
 
               {/* Bubble */}
               <div
-                className={`flex flex-col max-w-[92%] sm:max-w-[85%] ${msg.role === "user" ? "items-end" : "items-start"}`}
+                className={`flex flex-col max-w-[85%] ${msg.role === "user" ? "items-end" : "items-start"}`}
               >
                 <div
                   className={`px-4 py-3 rounded-2xl backdrop-blur-md ${

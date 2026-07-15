@@ -3,6 +3,7 @@
 //! Implements adaptive gating that scores and fuses results from Working, Episodic,
 //! and Semantic memory layers using RRF (Reciprocal Rank Fusion).
 
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -747,7 +748,7 @@ impl AdaptiveGating {
             tokio::task::spawn_blocking(move || {
                 let query_terms: Vec<&str> = query_terms_owned.iter().map(|s| s.as_str()).collect();
                 working
-                    .iter()
+                    .par_iter()
                     .filter_map(|doc| {
                         score_single_working(
                             doc,
@@ -819,7 +820,7 @@ impl AdaptiveGating {
             tokio::task::spawn_blocking(move || {
                 let query_terms: Vec<&str> = query_terms_owned.iter().map(|s| s.as_str()).collect();
                 episodic
-                    .iter()
+                    .par_iter()
                     .filter_map(|session| {
                         score_single_episodic(
                             session,
@@ -875,7 +876,7 @@ impl AdaptiveGating {
 
             tokio::task::spawn_blocking(move || {
                 semantic
-                    .iter()
+                    .par_iter()
                     .filter_map(|entity| {
                         score_single_semantic(entity, &query_lower, now, recency_weight, half_life)
                     })

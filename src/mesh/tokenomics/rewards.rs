@@ -118,7 +118,7 @@ impl RewardEngine {
         contribution: &ContributionType,
         tier: super::wallet::InvestmentTier,
     ) -> u64 {
-        let apy_multiplier = tier.apy() / 4.0; // Base is 4.0
+        let apy_multiplier = tier.apy() / 5.0; // Base is 5.0
 
         let raw = match contribution {
             ContributionType::StorageProvided {

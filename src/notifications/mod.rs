@@ -65,9 +65,7 @@ impl NotificationManager {
     pub fn spawn_tauri_forwarder(&self) {
         use tauri::Emitter;
         let mut rx = self.subscribe();
-        // Use tauri's async runtime instead of tokio::spawn to avoid
-        // "there is no reactor running" panic when called from Tauri setup
-        tauri::async_runtime::spawn(async move {
+        tokio::spawn(async move {
             while let Ok(notification) = rx.recv().await {
                 if let Some(handle) = crate::utils::tauri_utils::get_tauri_app_handle() {
                     let _ = handle.emit("new-notification", notification);

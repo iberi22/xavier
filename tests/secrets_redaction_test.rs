@@ -18,9 +18,7 @@ async fn test_secrets_redaction_serialization() -> anyhow::Result<()> {
     let secrets_engine = Arc::new(KeyLendingEngine::new(Box::new(QmdAuditLogger::new()), None));
 
     // 3. Create a lease
-    let mut lease = secrets_engine
-        .lend("test-key", Some("secret-value"), "agent-1", 60)
-        .await?;
+    let mut lease = secrets_engine.lend("test-key", Some("secret-value"), "agent-1", 60).await?;
 
     // 4. Verify it HAS the value initially (internal state)
     assert_eq!(lease.secret_value.as_deref(), Some("secret-value"));
@@ -30,10 +28,7 @@ async fn test_secrets_redaction_serialization() -> anyhow::Result<()> {
 
     // 6. Verify serialization skips it
     let serialized = serde_json::to_value(&lease)?;
-    assert!(
-        serialized.get("secret_value").is_none(),
-        "secret_value should be missing from JSON when None"
-    );
+    assert!(serialized.get("secret_value").is_none(), "secret_value should be missing from JSON when None");
 
     Ok(())
 }

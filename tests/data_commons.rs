@@ -92,7 +92,7 @@ async fn test_data_commons_phase_2_e2e_flow() {
 
     // Community votes (4 upvotes, 0 downvotes => Not enough quorum)
     for _ in 0..4 {
-        dao.cast_vote("CLUSTER_CORE_RUST", true, 1).await.unwrap();
+        dao.cast_vote("CLUSTER_CORE_RUST", true).await.unwrap();
     }
     assert!(
         !dao.active_proposals
@@ -102,7 +102,7 @@ async fn test_data_commons_phase_2_e2e_flow() {
     );
 
     // 5th vote comes in! (100% approval, minimum quorum met)
-    dao.cast_vote("CLUSTER_CORE_RUST", true, 1).await.unwrap();
+    dao.cast_vote("CLUSTER_CORE_RUST", true).await.unwrap();
 
     // The PR is unlocked!
     let final_proposal = dao.active_proposals.get("CLUSTER_CORE_RUST").unwrap();

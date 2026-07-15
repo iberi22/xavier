@@ -12,7 +12,6 @@ import {
   Network,
   Plug,
   RefreshCw,
-  ScrollText,
   Server,
   Share2,
   Shield,
@@ -22,7 +21,6 @@ import { AnimatePresence, motion } from "motion/react";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiClient } from "../api/client";
-import LogsPage from "../pages/Settings/LogsPage";
 import ProvidersPage from "../pages/Settings/Providers";
 import SecurityConfigPanel from "../pages/Settings/Security";
 import type { Agent, BookmarkArtifact, GraphData } from "../types";
@@ -57,8 +55,7 @@ type MainTab =
   | "security"
   | "mesh"
   | "memory"
-  | "agents"
-  | "logs";
+  | "agents";
 
 export default function ConfigModal({
   onClose,
@@ -146,12 +143,6 @@ export default function ConfigModal({
             onClick={() => setMainTab("agents")}
             icon={<Bot className="w-4 h-4" />}
             label="Agents"
-          />
-          <TabButton
-            active={mainTab === "logs"}
-            onClick={() => setMainTab("logs")}
-            icon={<ScrollText className="w-4 h-4" />}
-            label="Logs"
           />
           <TabButton
             active={mainTab === "graph"}
@@ -339,17 +330,6 @@ export default function ConfigModal({
               className="w-full h-full overflow-y-auto p-8"
             >
               <AgentsView token={token || ""} />
-            </motion.div>
-          )}
-          {mainTab === "logs" && (
-            <motion.div
-              key="logs"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="w-full h-full overflow-hidden p-6"
-            >
-              <LogsPage token={token || ""} />
             </motion.div>
           )}
         </AnimatePresence>

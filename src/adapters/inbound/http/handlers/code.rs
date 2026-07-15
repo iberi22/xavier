@@ -88,11 +88,7 @@ pub async fn code_scan_handler(
         })));
     }
 
-    match state
-        .code_indexer
-        .index(Path::new(&requested_path), false)
-        .await
-    {
+    match state.code_indexer.index(Path::new(&requested_path)).await {
         Ok(stats) => Ok(Json(serde_json::json!({
             "status": "ok",
             "indexed_files": stats.total_files,

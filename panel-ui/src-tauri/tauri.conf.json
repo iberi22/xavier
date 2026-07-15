@@ -10,7 +10,6 @@
     "beforeBuildCommand": "cd .. \u0026\u0026 cd panel-ui \u0026\u0026 pnpm run build"
   },
   "app": {
-    "withGlobalTauri": true,
     "windows": [
       {
         "title": "xavier",

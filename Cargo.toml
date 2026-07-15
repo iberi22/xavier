@@ -1,4 +1,4 @@
-[patch.crates-io]
+﻿[patch.crates-io]
 burn-candle = { path = "patches/burn-candle" }
 
 [package]
@@ -35,11 +35,189 @@ name = "xavier"
 path = "src/lib.rs"
 
 [workspace]
-members = [
-    "clients/flutter_android/rust",
-    "code-graph",
-    "codegraph-types",
-    "parsers/codegraph-types-legacy",
-    "parsers/codegraph-parse-typescript",
-    "panel-ui/src-tauri"
-]
+members = ["clients/flutter_android/rust","code-graph", "panel-ui/src-tauri", "xavier-core"]
+
+[features]
+default = ["cli-interactive"]
+data-commons = ["post-quantum"]
+post-quantum = ["oqs"]
+cli-interactive = ["ratatui", "crossterm"]
+# All features that are safe to run on host CI (no GUI/Winit issues)
+ci-safe = []
+gpu-search = ["dep:candle-core", "dep:candle-nn"]
+gpu-search-cuda = ["gpu-search", "candle-core/cuda", "candle-nn/cuda"]
+gpu-search-metal = ["gpu-search", "candle-core/metal", "candle-nn/metal"]
+test-utils = []
+bench-runners = []
+tauri = ["dep:tauri"]
+telegram = ["teloxide/macros", "teloxide/webhooks-axum"]
+local-gllm = ["dep:gllm", "gllm/wgpu", "dep:candle-core"]
+local-gllm-cuda = ["dep:gllm", "gllm/cuda", "dep:candle-core"]
+dev-mode = []
+# Enterprise features: Cortex Enterprise Cloud integration
+enterprise = []
+mesh = ["dep:libp2p", "dep:iroh"]
+# Legacy libp2p transport ÔÇö kept for reference but disabled by default. The
+# libp2p_transport.rs and discovery.rs code is broken (doesn't compile against
+# current libp2p 0.56) and is superseded by the Iroh transport. Enable only to
+# inspect the old code path; it will not build without fixes.
+mesh-legacy = ["dep:libp2p"]
+dao-evm = ["dep:alloy"]
+
+[[bench]]
+name = "embedding_benchmark"
+path = "benches/embedding_benchmark.rs"
+harness = false
+
+[dependencies]
+code-graph = { path = "./code-graph" }
+anyhow = "1.0.102"
+git2 = { version = "0.21", default-features = false }
+async-trait = "0.1"
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+gllm = { version = "0.10.6", default-features = false, optional = true }
+candle-core = { version = "=0.9.1", optional = true }
+candle-nn = { version = "=0.9.1", optional = true }
+teloxide = { version = "0.12", default-features = false, features = ["rustls"], optional = true }
+tauri = { version = "2.11.1", default-features = false, optional = true }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.150"
+colored = "2.1"
+thiserror = "2.0.18"
+flate2 = "1.0"
+tokio = { version = "1.52.2", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tokio-stream = "0.1"
+# Used by the MCP Streamable HTTP (SSE) transport to build the keepalive stream.
+# Also a transitive dependency of axum, so no extra version is pulled in.
+futures-util = "0.3"
+ulid = "1.1"
+uuid = { version = "1.23", features = ["v4", "serde"] }
+dirs = "6.0"
+sysinfo = "0.36"
+
+# Constant-time comparison for security tokens
+subtle = "2.6"
+hkdf = "0.12"
+
+# HTTP Server
+axum = { version = "0.8", features = ["ws"] }
+axum-server = { version = "0.8", features = ["tls-rustls"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+tracing-appender = "0.2"
+
+# CLI arguments
+clap = { version = "4", features = ["derive"] }
+pulldown-cmark = "0.13.4"
+
+# TUI Dashboard
+ratatui = { version = "0.30", optional = true, features = ["serde"] }
+crossterm = { version = "0.28", optional = true }
+
+# Observability & Metrics
+autometrics = { version = "0.3", features = ["prometheus-exporter"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+cron = "0.15"
+# State management
+rayon = "1.10"
+parking_lot = "0.12"
+rusqlite = { version = "0.32.0", features = ["bundled", "load_extension", "chrono", "functions"] }
+jsonwebtoken = "9.3"
+totp-rs = { version = "5.5", features = ["gen_secret", "otpauth"] }
+qrcode = "0.14"
+rsa = "0.9"
+base32 = "0.5"
+libsql = { version = "0.9", default-features = false, features = ["core"] }
+sqlx = { version = "0.8", features = ["postgres", "runtime-tokio-rustls", "chrono", "json", "uuid"] }
+zerocopy = "0.8"
+
+# File traversal
+walkdir = "2"
+libc = "0.2"
+
+# Hardware Security
+keyring = "3"
+
+# For WASM web deployment
+wasm-bindgen = { version = "0.2", optional = true }
+web-sys = { version = "0.3", optional = true, features = ["console"] }
+js-sys = { version = "0.3", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+
+# URL parsing (Origin validation for MCP 2026-07-28)
+url = "2"
+
+# Security - Pattern matching
+regex = "1.10"
+
+memchr = "2.5"
+
+# Security - Prompt Injection Detection
+sha2 = "0.10"
+
+# Security - Phrase matching (Aho-Corasick)
+aho-corasick = "1.1"
+xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
+
+unicode-normalization = "0.1"
+
+# Embedding cache (LRU + TTL)
+moka = { version = "0.12", features = ["future"] }
+
+# E2E Encryption for cloud tier
+aes-gcm = "0.10"
+argon2 = "0.5"
+rand = "0.8"
+rand_chacha = "0.3"
+r2d2 = "0.8"
+r2d2_sqlite = "0.25"
+
+# HTTP body utilities for webhook handling
+http-body-util = "0.1"
+serde_yaml = "0.9.34"
+dialoguer = "0.12.0"
+oqs = { version = "0.11.0", features = ["kems", "sigs", "serde"], optional = true }
+bip39 = { version = "2.2.2", features = ["rand", "spanish"] }
+ed25519-dalek = { version = "2.2.0", features = ["rand_core", "serde"] }
+bech32 = "0.9.1"
+bincode = "1.3.3"
+x25519-dalek = { version = "2.0.1", features = ["static_secrets", "reusable_secrets"] }
+sqlite-vec = "0.1.0"
+libp2p = { version = "0.56", optional = true, default-features = false, features = ["noise", "kad", "gossipsub", "mdns", "tcp", "tokio", "serde", "identify", "yamux"] }
+# Iroh provides QUIC-based P2P transport with automatic NAT traversal (the mesh
+# roadmap's "Phase 2"). Feature-gated under `mesh` alongside libp2p so the default
+# build stays lean; the IrohTransport is the preferred P2P backend going forward.
+iroh = { version = "1.0", optional = true }
+alloy = { version = "2.1", optional = true, default-features = true, features = ["providers", "consensus", "signers", "signer-local", "contract", "rpc-types-eth", "reqwest", "network"] }
+
+[dev-dependencies]
+image = "0.25"
+proptest = "1.11.0"
+tempfile = "3.27.0"
+criterion = "0.5"
+axum = { version = "0.8", features = ["ws"] }
+tower = "0.5"
+tokio-tungstenite = "0.29"
+futures-util = "0.3"
+
+[[bin]]
+name = "xavier"
+path = "src/main.rs"
+test = false
+
+[[bin]]
+name = "xavier-tui"
+path = "src/main_tui.rs"
+required-features = ["cli-interactive"]
+
+[profile.release]
+opt-level = 3
+lto = false
+
