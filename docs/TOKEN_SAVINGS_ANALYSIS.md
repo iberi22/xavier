@@ -3,119 +3,47 @@
 ## El Problema: Costo de Contexto en Agentes LLM
 
 Cada vez que un agente AI (Claude, ChatGPT, DeepSeek) procesa una consulta,
-el **contexto completo de la conversación** se reenvía al LLM.
+el **contexto completo de la conversación** suele reenviarse al LLM si el host (por ejemplo, Claude Desktop o VSCode) no gestiona el historial de forma eficiente.
 
-### Ejemplo real: Sesión de debugging de 50 mensajes
+### El Ahorro Honesto de Xavier
 
-| Item | Costo SIN Xavier | Costo CON Xavier | Ahorro |
+Xavier no hace magia de compresión de 99% sobre el aire. El ahorro se consigue mediante **Progressive Disclosure** (Revelación Progresiva) y gestión de capas de memoria.
+
+| Item | Costo SIN Xavier (Full History) | Costo CON Xavier (Optimizado) | Ahorro Real |
 |------|-----------------|------------------|--------|
 | Último mensaje | 500 tokens | 500 tokens | — |
-| 49 mensajes anteriores | ~98,000 tokens reenviados | 0 (Xavier los regenera) | 100% |
-| Archivos mencionados | ~5,000 tokens | 0 (Xavier los referencea) | 100% |
-| Decisiones previas | ~2,000 tokens | ~200 tokens (medium depth) | 90% |
-| **Total por turno** | **~105,500 tokens** | **~700 tokens** | **99.3%** |
+| Historial (50 turnos) | ~98,000 tokens (reenvío ciego) | ~1,000 tokens (resumen + core slots) | ~99% |
+| Archivos del repo | ~5,000 tokens (contexto estático) | ~200 tokens (referencias + snippets) | ~96% |
+| **Total por turno** | **~103,500 tokens** | **~1,700 tokens** | **~98.3%** |
 
-### Proyección: Mes típico de trabajo (22 días, 20 sesiones/día)
+**Nota Crítica:** El ahorro del 99% es *teórico* respecto a lo que gastaría un agente sin Xavier si tuviera que leer todo el repo en cada turno. En la práctica, el ahorro depende de la política de reenvío del host. Xavier **garantiza** que el bloque de contexto que él genera es mínimo y suficiente.
 
-| Métrica | SIN Xavier | CON Xavier |
-|---------|-----------|-----------|
-| Tokens/día | 2,110,000 | 14,000 |
-| Tokens/mes | 46,420,000 | 308,000 |
-| Costo Claude Sonnet ($3/M) | $139.26/mes | $0.92/mes |
-| Costo DeepSeek V4 ($0.50/M) | $23.21/mes | $0.15/mes |
+## Mecanismo: Progressive Disclosure
 
-### Para OpenClaw específicamente
+Xavier aplica un patrón de "Page-In" similar a la gestión de memoria virtual:
 
-OpenClaw usa DeepSeek V4 Flash (modelo actual). Costo promedio:
+1.  **Search First (Fat Search):** Herramientas como `mem_search` devuelven por defecto solo metadata y snippets (ID, Path, Score). Esto permite al agente ver "qué hay" sin gastar miles de tokens.
+2.  **Page-In (Targeted Context):** El agente solo solicita el contenido completo (`memory_context(ids=[...])`) de los documentos que realmente necesita para el paso actual.
+3.  **Budget-Aware Selection:** El `Orchestrator` de Xavier selecciona qué mensajes del historial mantener basándose en un budget honesto (Shallow: 50t, Medium: 200t, Deep: 1000t).
 
-| Escenario | Turnos/sesión | Costo/turno sin Xavier | Costo/turno con Xavier |
-|-----------|---------------|----------------------|----------------------|
-| Chat simple | 20 | $0.05 | $0.0005 |
-| Debugging | 50 | $0.15 | $0.001 |
-| Documentación | 100 | $0.35 | $0.002 |
-| Revisión de PR | 30 | $0.08 | $0.0008 |
+## Estimación Honesta de Tokens
 
-## Mecanismo: Context Regeneration Engine
+Xavier utiliza un estimador conservador para sus reportes de ahorro:
+- **Fórmula:** `tokens = ceil(chars / 4)`
+- Esto evita el overclaim común de contar espacios o usar métricas optimistas.
 
-### Cómo funciona
+## Profundidades de Regeneración
 
-```
-1. Agente procesa consulta
-   ↓
-2. Antes de enviar al LLM, el hook de Xavier guarda:
-   - Resumen de la conversación (200 tokens)
-   - Decisiones clave extraídas (100 tokens)
-   - Archivos modificados (50 tokens)
-   - Estado del proyecto (50 tokens)
-   Total guardado: ~400 tokens
-   ↓
-3. LLM recibe solo el mensaje actual + breve resumen
-   En vez de: "toda la conversación + archivos + contexto"
-   Recibe: "resumen de Xavier + mensaje actual"
-   ↓
-4. Próxima consulta: Xavier regenera el contexto exacto
-   con la profundidad que el agente necesite
-```
-
-### Profundidades disponibles
-
-| Nivel | Tokens | Contenido | Cuándo usarlo |
+| Nivel | Budget (Tokens) | Contenido | Cuándo usarlo |
 |-------|--------|-----------|---------------|
-| Shallow | 50 | Solo metadata: fecha, proyecto, rama, última acción | Consultas rápidas, health check |
-| Medium | 200 | Metadata + decisiones clave + archivos relevantes | Tareas de mantenimiento, debugging |
-| Deep | 1,000 | Contexto completo regenerado con memorias relacionadas | Revisión de PR, análisis profundo |
-
-## Verificación experimental
-
-Para probar el ahorro real:
-
-```bash
-# 1. Arrancar Xavier
-./xavier-brain.ps1
-
-# 2. Enviar 10 consultas a Claude Code sin Xavier
-# (medir tokens gastados con /stats en OpenClaw)
-
-# 3. Repetir las mismas 10 consultas CON Xavier hook activado
-# (medir tokens con xavier-brain.ps1 stats)
-
-# 4. Comparar: diferencia = ahorro real
-```
-
-## Arquitectura
-
-```
-                                    ┌────────────────┐
-                                    │   LLM Provider  │
-                                    │  (DeepSeek,     │
-                                    │   Claude, etc)  │
-                                    └───────┬────────┘
-                                            │
-                                   ┌────────▼────────┐
-                                   │  Solo mensaje   │
-                                   │  actual (~500t) │
-                                   │  + resumen      │
-                                   └────────┬────────┘
-                                            │
-┌───────────────────────────────────────────┼──────────────────────┐
-│  AGENTE AI (OpenClaw/Claude Code)         │                     │
-│                                           │                     │
-│  ┌─────────────────────┐    ┌─────────────▼──────────────┐     │
-│  │  XAVIER HOOK        │    │  XAVIER BRAIN (:8006)       │     │
-│  │  (save/restore      │───>│  - Context Regeneration     │     │
-│  │   en cada turno)    │    │  - Memory Roaming           │     │
-│  └─────────────────────┘    │  - Memory Fusion            │     │
-│                             │  - Code Graph               │     │
-│                             │  - Belief Graph             │     │
-│                             └────────────────────────────┘     │
-└─────────────────────────────────────────────────────────────────┘
-```
+| **Shallow** | ~50 | Metadata básica, última acción, estado de la rama. | Consultas de estado rápido. |
+| **Medium** | ~200 | Resumen ejecutivo + 3-5 decisiones clave + archivos críticos. | Debugging estándar. |
+| **Deep** | ~1000 | Contexto expandido, grafos de creencia y call paths. | Tareas de arquitectura compleja. |
 
 ## Conclusión
 
-**Xavier como cerebro central ahorra 95-99% de tokens de contexto.**
+Xavier reduce drásticamente el desperdicio de tokens al eliminar la redundancia del historial y los archivos estáticos, sustituyéndolos por una **regeneración dinámica** del contexto necesario para el turno actual.
 
-Para OpenClaw específicamente, que usa DeepSeek V4 Flash:
-- **$23/mes → $0.15/mes** en contexto
-- **0 pérdida de fidelidad** (el contexto se regenera exacto)
-- **Regeneración instantánea** (Xavier responde en <50ms)
+- **Ahorro típico en debugging:** 90-95%
+- **Ahorro en repos grandes:** Hasta 98% mediante Fat Search.
+- **Transparencia:** Xavier reporta el uso original vs optimizado en cada restauración.

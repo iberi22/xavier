@@ -36,7 +36,8 @@ fn unique_test_path(prefix: &str, suffix: &str) -> PathBuf {
     std::env::temp_dir().join(format!("{prefix}-{unique:016x}-{tid:?}-{suffix}"))
 }
 
-async fn test_state() -> (AppState, WorkspaceContext) {
+pub async fn test_state() -> (AppState, WorkspaceContext) {
+    std::env::set_var("XAVIER_TOKEN", "test-token");
     let db_path = unique_test_path("xavier-code-mcp", "code_graph.db");
     let code_db = Arc::new(
         code_graph::db::CodeGraphDB::new(&db_path).expect("CodeGraphDB creation failed for test"),
@@ -89,7 +90,7 @@ async fn test_state() -> (AppState, WorkspaceContext) {
     )
 }
 
-fn test_router(state: AppState, workspace: WorkspaceContext) -> Router {
+pub fn test_router(state: AppState, workspace: WorkspaceContext) -> Router {
     Router::new()
         .route("/mcp", post(mcp_post_handler))
         .layer(axum::middleware::from_fn(super::auth::mcp_auth_middleware))
@@ -97,7 +98,7 @@ fn test_router(state: AppState, workspace: WorkspaceContext) -> Router {
         .with_state(state)
 }
 
-async fn post_json(app: Router, body: Value) -> axum::response::Response {
+pub async fn post_json(app: Router, body: Value) -> axum::response::Response {
     post_json_with_token(app, body, None).await
 }
 
@@ -155,7 +156,7 @@ async fn post_json_with_token(
     .expect("POST request to MCP endpoint failed")
 }
 
-async fn get_json_body(response: axum::response::Response) -> Value {
+pub async fn get_json_body(response: axum::response::Response) -> Value {
     let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await
         .expect("read response body failed");
@@ -1232,6 +1233,134 @@ async fn test_get_code_graph_success() {
     // Cleanup
     if dump_path.exists() {
         std::fs::remove_file(dump_path).unwrap();
+    }
+}
+
+#[tokio::test]
+async fn code_graph_explore_returns_real_data_not_mock() {
+    let (state, workspace) = test_state().await;
+
+    // Index a tiny project so the graph has real data to query.
+    let dir = unique_test_path("xavier-codegraph-explore", "dir");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("lib.rs"),
+        "fn alpha() { beta(); }\nfn beta() { gamma(); }\nfn gamma() {}\n",
+    )
+    .unwrap();
+
+    state
+        .code_indexer
+        .index(&dir, false)
+        .await
+        .expect("index test project");
+
+    let router = test_router(state, workspace);
+    let response = post_json(
+        router,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "codegraph_explore",
+                "arguments": { "query": "beta" }
+            }
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    let content = &body["result"]["content"][0];
+    // Structured content path (our new handlers return structuredContent).
+    let payload: Value = if content["structuredContent"].is_object() {
+        content["structuredContent"].clone()
+    } else {
+        serde_json::from_str(content["text"].as_str().unwrap()).unwrap()
+    };
+
+    // Must NOT be a mock response.
+    let serialized = serde_json::to_string(&payload).unwrap_or_default();
+    assert!(
+        !serialized.contains("(Mock)"),
+        "codegraph_explore still returns mock data: {serialized}"
+    );
+    // Should have found at least the `beta` symbol.
+    let returned = payload["returned"].as_u64().unwrap_or(0);
+    assert!(returned >= 1, "expected at least 1 symbol, got {payload}");
+    let first_name = payload["symbols"][0]["name"].as_str().unwrap_or("");
+    assert!(
+        first_name.contains("beta"),
+        "expected beta symbol, got '{first_name}'"
+    );
+
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
+#[tokio::test]
+async fn code_graph_trace_path_returns_real_callers() {
+    let (state, workspace) = test_state().await;
+
+    let dir = unique_test_path("xavier-codegraph-trace", "dir");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("lib.rs"),
+        "fn alpha() { beta(); }\nfn beta() { gamma(); }\nfn gamma() {}\n",
+    )
+    .unwrap();
+
+    state
+        .code_indexer
+        .index(&dir, false)
+        .await
+        .expect("index test project");
+
+    let router = test_router(state, workspace);
+    // reverse=true finds callers of `beta` -> alpha should be in reach.
+    let response = post_json(
+        router,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "trace_path",
+                "arguments": { "symbol": "beta", "max_depth": 3, "reverse": true }
+            }
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    let content = &body["result"]["content"][0];
+    let payload: Value = if content["structuredContent"].is_object() {
+        content["structuredContent"].clone()
+    } else {
+        serde_json::from_str(content["text"].as_str().unwrap()).unwrap()
+    };
+
+    let serialized = serde_json::to_string(&payload).unwrap_or_default();
+    assert!(
+        !serialized.contains("(Mock)"),
+        "trace_path still returns mock data: {serialized}"
+    );
+    assert_eq!(
+        payload["direction"].as_str().unwrap_or(""),
+        "callers",
+        "reverse=true should report callers"
+    );
+    // Symbol label should include `beta`.
+    assert!(
+        payload["symbol"].as_str().unwrap_or("").contains("beta"),
+        "expected symbol label to mention beta, got {payload}"
+    );
+
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
 

@@ -47,6 +47,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                 "properties": {
                     "query": { "type": "string", "description": "Search query" },
                     "limit": { "type": "number", "description": "Maximum results (default: 10, max: 100)", "default": 10 },
+                    "include_content": { "type": "boolean", "description": "Whether to include full content in results (default: false)", "default": false },
                     "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "RESERVED — currently ignored; search always runs the hybrid BM25+vector+RRF pipeline. Kept for forward-compatibility.", "default": "hybrid" },
                     "filters": { "type": "object", "description": "Optional filters" }
                 },
@@ -61,6 +62,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                 "properties": {
                     "query": { "type": "string", "description": "Search query" },
                     "limit": { "type": "number", "description": "Maximum results", "default": 10 },
+                    "include_content": { "type": "boolean", "description": "Whether to include full content in results (default: false)", "default": false },
                     "filters": { "type": "object", "description": "Optional filters" }
                 },
                 "required": ["query"]
@@ -209,17 +211,17 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
         },
         MCPTool {
             name: "memory_context".to_string(),
-            description: "Build an aggregated context block from the most relevant memories for a query. Returns full content bounded by max_chars. Use AFTER mem_search to identify the right memories.".to_string(),
+            description: "Build an aggregated context block from the most relevant memories for a query or specific IDs. Returns full content bounded by max_chars. Use AFTER mem_search to identify the right memories.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "Query describing the desired context" },
-                    "limit": { "type": "number", "description": "Maximum memories to include", "default": 5 },
+                    "ids": { "type": "array", "items": { "type": "string" }, "description": "Optional list of memory IDs to retrieve specifically" },
+                    "limit": { "type": "number", "description": "Maximum memories to include (if using query)", "default": 5 },
                     "max_chars": { "type": "number", "description": "Maximum characters to include in context output", "default": 4000 },
                     "depth": { "type": "number", "description": "Relationship depth to explore (0=flat, 1=direct, 2=two-hop)", "default": 0 },
                     "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "RESERVED — currently ignored; search always runs the hybrid pipeline.", "default": "hybrid" }
-                },
-                "required": ["query"]
+                }
             }),
         },
     ]
@@ -241,6 +243,10 @@ pub async fn handle_memory_tool(
                 .get("limit")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(10) as usize;
+            let include_content = arguments
+                .get("include_content")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
             let filters = arguments
                 .get("filters")
                 .cloned()
@@ -255,11 +261,24 @@ pub async fn handle_memory_tool(
             let content = results
                 .into_iter()
                 .map(|doc| {
+                    let snippet: String = doc.content.chars().take(100).collect();
+                    let content_str = if include_content {
+                        format!("Content: {}\n", doc.content)
+                    } else {
+                        String::new()
+                    };
+                    let kind = doc.metadata.get("kind").and_then(|v| v.as_str()).unwrap_or("unknown");
                     MCPContent::Text(MCPTextContent {
                         content_type: "text".to_string(),
                         text: format!(
-                            "Path: {}\nContent: {}\nMetadata: {:?}",
-                            doc.path, doc.content, doc.metadata
+                            "Id: {}\nPath: {}\nKind: {}\nScore: {:.4}\nSnippet: {}...\n{}Metadata: {:?}",
+                            doc.id.as_deref().unwrap_or("none"),
+                            doc.path,
+                            kind,
+                            doc.score,
+                            snippet,
+                            content_str,
+                            doc.metadata
                         ),
                     })
                 })
@@ -686,10 +705,13 @@ pub async fn handle_memory_tool(
             })?)
         }
         "memory_context" | "mem_context" => {
-            let query = arguments
-                .get("query")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let query = arguments.get("query").and_then(|v| v.as_str());
+            let ids = arguments.get("ids").and_then(|v| v.as_array());
+
+            if query.is_none() && ids.is_none() {
+                return Err(anyhow::anyhow!("Either 'query' or 'ids' must be provided"));
+            }
+
             let limit = arguments
                 .get("limit")
                 .and_then(|v| v.as_u64())
@@ -706,11 +728,23 @@ pub async fn handle_memory_tool(
                 .unwrap_or(0)
                 .clamp(0, 2) as usize;
 
-            let results = workspace
-                .workspace
-                .memory
-                .search_filtered(query, limit, None)
-                .await?;
+            let mut results = Vec::new();
+
+            if let Some(ids) = ids {
+                for id_val in ids {
+                    if let Some(id) = id_val.as_str() {
+                        if let Ok(Some(record)) = workspace.workspace.get_memory_record(id).await {
+                            results.push(record.to_document());
+                        }
+                    }
+                }
+            } else if let Some(q) = query {
+                results = workspace
+                    .workspace
+                    .memory
+                    .search_filtered(q, limit, None)
+                    .await?;
+            }
 
             if results.is_empty() {
                 let payload = MCPContextResult {
@@ -718,7 +752,7 @@ pub async fn handle_memory_tool(
                     total_records: 0,
                     truncated: false,
                     truncated_reason: None,
-                    content: format!("No relevant context found for query: {query}"),
+                    content: format!("No relevant context found for query/ids"),
                     sources: Vec::new(),
                 };
                 Ok(serde_json::to_value(MCPToolResult {
@@ -764,16 +798,26 @@ pub async fn handle_memory_tool(
 
                 // Phase 3: build context string
                 let mut context = String::from("# Relevant Memory Context\n\n");
+                let per_doc_limit = if expanded.is_empty() { 0 } else { max_chars / expanded.len() };
+
                 for record in &expanded {
+                    let doc_content = if record.content.chars().count() > per_doc_limit {
+                        let mut truncated: String = record.content.chars().take(per_doc_limit).collect();
+                        truncated.push_str("\n[... doc truncated ...]");
+                        truncated
+                    } else {
+                        record.content.clone()
+                    };
+
                     context.push_str(&format!(
                         "### {} (id: {})\n{}\n\n",
                         record.path,
                         record.id.as_deref().unwrap_or("none"),
-                        record.content
+                        doc_content
                     ));
                 }
 
-                // Phase 4: enforce max_chars truncation
+                // Phase 4: enforce absolute max_chars truncation
                 let truncated;
                 let truncated_reason;
                 let total_chars = context.chars().count();
