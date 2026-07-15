@@ -37,20 +37,34 @@ Triggered by applying the `jules` label to a GitHub issue. Runs in its own sandb
 opens a Pull Request. Jules reads this `AGENTS.md` first, so:
 - **Recall**: read the "Contexto recuperado de Xavier" block injected in the issue body
   (the dispatcher puts it there — use it, do not re-discover what is already decided).
-- **Persist**: document your decision/finding in the PR description so it can be back-filled
-  into Xavier by the dispatcher after merge.
-- If you have network access to `http://localhost:8006` in your sandbox, you MAY also call
-  `POST /memory/search` directly (header `X-Xavier-Token` from the issue context).
+- **Persist**: document your decision/finding in the PR description so it can be back-filled.
 
-### Dispatcher
-`scripts/subagents/dispatch.py` is the single entry point for routing a task to the right
-subagent type (`agi` for sync, `jules` for async). It handles Recall → Dispatch → Persist
-automatically. See `scripts/subagents/xavier_brain_prompt.md` for the full protocol.
+- **Progressive Memory Disclosure**: To save tokens, **ALWAYS** use `mem_search` (Fat Search) first to identify relevant memories via metadata and snippets. Only use `memory_context` or `get_memory` (Page-In) for the specific IDs or paths you need to see in full.
 
 ## Best Practices & Performance
 - **Golden Rule (Tokio + Rayon)**: When combining both, never call Rayon's `.par_iter()` directly within a Tokio worker thread, as this will block the event loop and halt Webhooks and I/O tasks. Always wrap Rayon-based computation inside `tokio::task::spawn_blocking`. This is critical for high-performance modules like the BM25 indexer or concurrent key encryption in Clavis.
 
-## Main Project
+## 🌍 Entorno de Xavier (Environment Detection)
+Xavier checks the following environment variables at startup to configure paths and behaviors:
+
+### `XAVIER_HOME` (optional)
+The workspace directory where Xavier stores configuration and data beyond the SQLite database.
+- If `$XAVIER_HOME` is set, Xavier uses it directly.
+- Otherwise, Xavier walks up the file tree from the current directory looking for a `.xavier-root` file or `.git` directory and places `XAVIER_HOME` at the repo root under `.xavier/`.
+- This directory stores non-DB artifacts: cron logs, lock files, temporary states.
+
+### `XAVIER_CRON_SLEEP_MINUTES` (optional)
+How many minutes to wait between cron cycles.
+- Default: `1` (one minute).
+- Values below `1` are clamped to `1`; values above `60` are clamped to `60`
+
+### `XAVIER_WORKTREE` (internal use)
+Used by the `worktree` command to delegate a full copy of Xavier to a subagent worktree.
+- Path to a full Xavier worktree copy.
+
+---
+
+## GitHub Integration
 - Repo: `iberi22/xavier` — Open source context engine.
 - Stack: Rust + SQLite-Vec.
 - Plugins: PgHeart ("~/dev/pgheart").
