@@ -7,7 +7,8 @@ use crate::parser::go::GoParser;
 use crate::parser::java::JavaParser;
 use crate::parser::python::PythonParser;
 use crate::parser::rust::RustParser;
-use crate::parser::typescript::TypeScriptParser;
+use crate::plugin::types::{FallbackStep, FileToParse};
+use crate::plugin::PluginManager;
 use crate::types::{Language, Symbol, SymbolKind};
 use tree_sitter::Node;
 
@@ -19,8 +20,32 @@ pub mod python;
 pub mod rust;
 pub mod typescript;
 
-/// Parse source code using tree-sitter
-pub fn parse_source(source: &str, lang: &Language, file_path: &str) -> Result<Vec<Symbol>> {
+use crate::parser::typescript::TypeScriptParser;
+
+/// True when `lang` is backed by a built-in tree-sitter parser.
+///
+/// Used by the fallback chain to pick a sensible default and by callers that
+/// want to know whether `parse_native` can ever succeed for a language.
+pub fn has_native_parser(lang: &Language) -> bool {
+    matches!(
+        lang,
+        Language::Rust
+            | Language::TypeScript
+            | Language::JavaScript
+            | Language::Python
+            | Language::Go
+            | Language::Java
+            | Language::C
+            | Language::Cpp
+    )
+}
+
+/// Run the built-in tree-sitter parser for `lang`.
+///
+/// Returns `Ok(empty)` for languages without a native parser rather than an
+/// error, so the fallback chain can treat "no native parser" the same as
+/// "native parser found nothing".
+pub fn parse_native(source: &str, lang: &Language, file_path: &str) -> Result<Vec<Symbol>> {
     match lang {
         Language::Rust => {
             let mut parser = RustParser::new()?;
@@ -50,7 +75,87 @@ pub fn parse_source(source: &str, lang: &Language, file_path: &str) -> Result<Ve
             let mut parser = CppParser::new()?;
             parser.parse(source, file_path)
         }
-        _ => Ok(vec![]),
+        // Plugin-only or unknown languages have no native parser.
+        Language::Other(_) | Language::Unknown => Ok(vec![]),
+    }
+}
+
+/// Parse source code via the per-language fallback chain.
+///
+/// Resolution order, when a [`PluginManager`] is supplied:
+/// 1. The manager's live chain for `lang` (plugin-first if one is registered),
+///    falling back to its persisted overrides, then to the default chain.
+/// 2. Without a manager, the default chain applies (`[Native, NoOp]`).
+///
+/// Each step that errors is logged at `warn`; a step that succeeds short-
+/// circuits the chain. If every step fails or the chain ends in `NoOp`, an
+/// empty `Vec<Symbol>` is returned — this function never propagates a parse
+/// failure as a hard error so a single bad plugin can never crash the indexer.
+pub async fn parse_source(
+    source: &str,
+    lang: &Language,
+    file_path: &str,
+    plugin_manager: Option<&PluginManager>,
+) -> Result<Vec<Symbol>> {
+    let chain = match plugin_manager {
+        Some(mgr) => mgr.chain_for(lang),
+        None => default_chain(lang),
+    };
+
+    for step in &chain {
+        match step {
+            FallbackStep::Plugin(name) => {
+                let Some(mgr) = plugin_manager else { continue };
+
+                // Circuit breaker: skip plugin if its health circuit is Open.
+                if let Some(health) = mgr.health() {
+                    if health.is_open(name) {
+                        tracing::warn!(
+                            plugin = %name,
+                            "plugin circuit is OPEN, skipping to next fallback step"
+                        );
+                        continue;
+                    }
+                }
+
+                let files = vec![FileToParse {
+                    path: file_path.to_string(),
+                    source: source.to_string(),
+                }];
+                match mgr.parse_with_plugin(name, lang.clone(), files).await {
+                    Ok(symbols) => return Ok(symbols),
+                    Err(e) => tracing::warn!(
+                        plugin = %name,
+                        file = %file_path,
+                        error = %e,
+                        "plugin parse failed, continuing fallback chain"
+                    ),
+                }
+            }
+            FallbackStep::Native => {
+                return parse_native(source, lang, file_path);
+            }
+            FallbackStep::NoOp => {
+                tracing::debug!(
+                    lang = ?lang,
+                    file = %file_path,
+                    "no parser available (NoOp)"
+                );
+                return Ok(vec![]);
+            }
+        }
+    }
+
+    // Chain exhausted without hitting Native/NoOp explicitly.
+    Ok(vec![])
+}
+
+/// Default chain used when no [`PluginManager`] is present.
+fn default_chain(lang: &Language) -> Vec<FallbackStep> {
+    if has_native_parser(lang) {
+        vec![FallbackStep::Native, FallbackStep::NoOp]
+    } else {
+        vec![FallbackStep::NoOp]
     }
 }
 
@@ -148,13 +253,15 @@ mod tests {
     use super::*;
     use crate::types::SymbolKind;
 
-    #[test]
-    fn parses_typescript_symbols() {
+    #[tokio::test]
+    async fn parses_typescript_symbols() {
         let symbols = parse_source(
             "import x from 'pkg';\nclass UserService { run() {} }\nfunction main() {}\nconst load = () => main();\nenum Color { Red }\nconst a = 1, b = 2;\nlet count = 0;",
             &Language::TypeScript,
             "app.ts",
+            None,
         )
+        .await
         .expect("parse");
         assert!(symbols
             .iter()
@@ -177,13 +284,15 @@ mod tests {
             .any(|s| s.name == "count" && s.kind == SymbolKind::Variable));
     }
 
-    #[test]
-    fn parses_python_symbols() {
+    #[tokio::test]
+    async fn parses_python_symbols() {
         let symbols = parse_source(
             "import os\nclass Service:\n    VERSION = 1\n    async def run(self):\n        return os.getcwd()\nx, y = (1, 2)",
             &Language::Python,
             "app.py",
+            None,
         )
+        .await
         .expect("parse");
         assert!(symbols
             .iter()
@@ -203,13 +312,15 @@ mod tests {
             .any(|s| s.name == "y" && s.kind == SymbolKind::Variable));
     }
 
-    #[test]
-    fn parses_go_symbols() {
+    #[tokio::test]
+    async fn parses_go_symbols() {
         let symbols = parse_source(
             "package main\nimport \"fmt\"\ntype User struct{}\nfunc (u *User) GetName() string { return \"\" }\nconst Max = 10\nvar count = 0\nfunc main() { fmt.Println(\"x\") }\n",
             &Language::Go,
             "main.go",
+            None,
         )
+        .await
         .expect("parse");
         assert!(symbols
             .iter()
@@ -229,13 +340,15 @@ mod tests {
             .any(|s| s.name == "count" && s.kind == SymbolKind::Variable));
     }
 
-    #[test]
-    fn parses_java_symbols() {
+    #[tokio::test]
+    async fn parses_java_symbols() {
         let symbols = parse_source(
             "import java.util.List; class Service { void run() {} }",
             &Language::Java,
             "Service.java",
+            None,
         )
+        .await
         .expect("parse");
         assert!(symbols
             .iter()
@@ -246,13 +359,15 @@ mod tests {
         assert!(symbols.iter().any(|s| s.kind == SymbolKind::Import));
     }
 
-    #[test]
-    fn parses_c_symbols() {
+    #[tokio::test]
+    async fn parses_c_symbols() {
         let symbols = parse_source(
             "#include <stdio.h>\n#define MAX 100\nstruct Point { int x; };\nvoid main() { printf(\"hello\"); }",
             &Language::C,
             "main.c",
+            None,
         )
+        .await
         .expect("parse");
         assert!(symbols
             .iter()
@@ -268,13 +383,15 @@ mod tests {
             .any(|s| s.name == "stdio.h" && s.kind == SymbolKind::Import));
     }
 
-    #[test]
-    fn parses_cpp_symbols() {
+    #[tokio::test]
+    async fn parses_cpp_symbols() {
         let symbols = parse_source(
             "#include <iostream>\nnamespace xav { class Scanner { public: void run() {} }; }\nint main() { return 0; }",
             &Language::Cpp,
             "main.cpp",
+            None,
         )
+        .await
         .expect("parse");
         assert!(symbols
             .iter()
