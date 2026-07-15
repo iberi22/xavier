@@ -39,6 +39,7 @@ members = [
     "clients/flutter_android/rust",
     "code-graph",
     "codegraph-types",
+    "parsers/codegraph-types-legacy",
     "panel-ui/src-tauri"
 ]
 
@@ -226,4 +227,3 @@ required-features = ["cli-interactive"]
 [profile.release]
 opt-level = 3
 lto = false
-
