@@ -125,14 +125,27 @@ pub async fn handle_context_tool(
 
             let original_token_count: usize = messages
                 .iter()
-                .map(|m| m.tokens.unwrap_or(0) as usize)
+                .map(|m| {
+                    let tokens = m.tokens.unwrap_or(0) as usize;
+                    if tokens > 0 {
+                        tokens
+                    } else {
+                        (m.content.chars().count() as f32 / 4.0).ceil() as usize
+                    }
+                })
                 .sum();
 
             let context_docs: Vec<ContextDocument> = messages
                 .into_iter()
                 .map(|m| {
+                    let token_count = m.tokens.unwrap_or(0) as usize;
+                    let token_count = if token_count > 0 {
+                        token_count
+                    } else {
+                        (m.content.chars().count() as f32 / 4.0).ceil() as usize
+                    };
                     ContextDocument::new(m.id, session_id, m.role, m.content)
-                        .with_token_count(m.tokens.unwrap_or(0) as usize)
+                        .with_token_count(token_count)
                         .with_created_at(m.created_at)
                 })
                 .collect();
@@ -168,7 +181,9 @@ pub async fn handle_context_tool(
             let builder_config = ContextBuilderConfig::default();
             let builder = ContextBuilder::new(builder_config);
             let context_string = builder.build(level, &selected_docs, &[], &[]);
-            let optimized_token_count = context_string.split_whitespace().count();
+
+            // Use honest estimator: chars / 4
+            let optimized_token_count = (context_string.chars().count() as f32 / 4.0).ceil() as usize;
 
             let savings_percentage = if original_token_count > 0 {
                 (original_token_count as f32 - optimized_token_count as f32)

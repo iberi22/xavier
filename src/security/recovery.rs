@@ -1,10 +1,10 @@
 //! Password Recovery System for Xavier
 //! Uses 12-word BIP39 seed phrases in Spanish
 
-use crate::utils::crypto::sha256_hex;
 use anyhow::{anyhow, Result};
-use bip39::{Language, Mnemonic};
+use bip39::{Mnemonic, Language};
 use rand::Rng;
+use crate::utils::crypto::sha256_hex;
 
 pub struct RecoverySystem;
 
@@ -80,8 +80,6 @@ mod tests {
         let phrase = RecoverySystem::generate_phrase();
         assert_eq!(phrase.split_whitespace().count(), 12);
         assert!(RecoverySystem::validate_phrase(&phrase));
-        assert!(!RecoverySystem::validate_phrase(
-            "un dos tres cuatro cinco seis siete ocho nueve diez once doce"
-        ));
+        assert!(!RecoverySystem::validate_phrase("un dos tres cuatro cinco seis siete ocho nueve diez once doce"));
     }
 }

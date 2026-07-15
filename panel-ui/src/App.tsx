@@ -1,13 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion } from "motion/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useAuthStore } from "./auth/AuthProvider";
-import { BackupCodesPage } from "./auth/BackupCodesPage";
-import { LoginPage } from "./auth/LoginPage";
-import { MasterKeyPage } from "./auth/MasterKeyPage";
-import { RecoveryPage } from "./auth/RecoveryPage";
-import { RegisterPage } from "./auth/RegisterPage";
-import { TwoFactorSetup } from "./auth/TwoFactorSetup";
 import ChatHistory from "./components/ChatHistory";
 import ConfigModal from "./components/ConfigModal";
 import DraggableWidget from "./components/DraggableWidget";
@@ -16,6 +9,13 @@ import { OnboardingFlow } from "./components/Onboarding/OnboardingFlow";
 import ParticleBackground from "./components/ParticleBackground";
 import TopStatusBar from "./components/TopStatusBar";
 import { initialBookmarks, initialGraphData } from "./data";
+import { useAuthStore } from "./auth/AuthProvider";
+import { LoginPage } from "./auth/LoginPage";
+import { RegisterPage } from "./auth/RegisterPage";
+import { TwoFactorSetup } from "./auth/TwoFactorSetup";
+import { RecoveryPage } from "./auth/RecoveryPage";
+import { BackupCodesPage } from "./auth/BackupCodesPage";
+import { MasterKeyPage } from "./auth/MasterKeyPage";
 
 import type {
   BackendGraphData,
@@ -37,10 +37,9 @@ const getApiUrl = (path: string) => {
 };
 
 export default function App() {
-  const { token, isAuthenticated } = useAuthStore();
+  const { user, token, isAuthenticated } = useAuthStore();
   const [hash, setHash] = useState(window.location.hash);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
-  const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [messages, setMessages] = useState<PanelMessage[]>([]);
   const [health, setHealth] = useState("checking");
   const [_isLoading, setIsLoading] = useState(false);
@@ -68,7 +67,7 @@ export default function App() {
         ...options,
         headers: {
           "Content-Type": "application/json",
-          "X-Xavier-Token": token ?? "",
+          "X-Xavier-Token": token,
           ...(options?.headers ?? {}),
         },
       });
@@ -94,7 +93,6 @@ export default function App() {
             }).catch(() => []),
             api<BackendGraphData>("/panel/api/graph", {
               headers: { "X-Xavier-Token": currentToken },
-              // biome-ignore lint/suspicious/noExplicitAny: bypass
             }).catch(() => null as any),
           ]);
         setBookmarks(bookmarksData);
@@ -122,7 +120,6 @@ export default function App() {
     const checkNativeConfig = async () => {
       if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
         try {
-          // biome-ignore lint/suspicious/noExplicitAny: bypass
           const configState: any = await invoke("get_current_config_state");
           setHasConfig(configState.has_openai || configState.has_gemini);
         } catch (e) {
@@ -223,7 +220,7 @@ export default function App() {
         ...prev,
         newUserMsg,
         {
-          id: `${tempId}_sys`,
+          id: tempId + "_sys",
           role: "assistant",
           plain_text:
             "⚠️ Sistema no configurado: No se detectaron proveedores de IA. Por favor, abre los ajustes y configura tu API Key de OpenAI o Gemini.",
@@ -288,7 +285,7 @@ export default function App() {
     setMessages((prev) => [
       ...prev,
       {
-        id: `${Date.now().toString()}_sys`,
+        id: Date.now().toString() + "_sys",
         role: "assistant",
         plain_text: text,
         created_at: new Date().toISOString(),
@@ -300,7 +297,6 @@ export default function App() {
     // For demo purposes, sync local state
   };
 
-  // biome-ignore lint/suspicious/noExplicitAny: bypass
   const handleUpdateGraphData = (_data: any) => {};
 
   const handlePinArtifact = (artifact: BookmarkArtifact) => {
@@ -395,12 +391,11 @@ export default function App() {
                 graphData={graphData || initialGraphData}
                 onUpdateGraphData={handleUpdateGraphData}
                 bookmarks={
-                  // biome-ignore lint/suspicious/noExplicitAny: bypass
                   bookmarks.length > 0 ? (bookmarks as any) : initialBookmarks
                 }
                 onPinArtifact={handlePinArtifact}
                 onUpdateBookmark={handleUpdateBookmark}
-                token={token ?? undefined}
+                token={token}
               />
             </motion.div>
           )}

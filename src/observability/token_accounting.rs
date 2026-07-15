@@ -33,6 +33,8 @@ impl TokenAccountingTracker {
         optimized_tokens: usize,
         model_price_per_1k: f32,
     ) {
+        // Honest cost calculation (original tokens come from host or estimated,
+        // optimized tokens are already calculated via chars / 4 in restore tools)
         let cost_optimized = (optimized_tokens as f32 / 1000.0) * model_price_per_1k;
         let cost_original = (original_tokens as f32 / 1000.0) * model_price_per_1k;
         let savings = cost_original - cost_optimized;

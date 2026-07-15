@@ -74,21 +74,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const refreshSession = useAuthStore((state) => state.refreshSession);
 
   useEffect(() => {
-    // TEMPORARY: Skip auth in development/Tauri mode
-    const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-    if (isTauri) {
-      // Auto-login with dummy token for Tauri standalone mode
-      useAuthStore.setState({
-        user: { id: "local", email: "local@xavier.local", name: "Local User" } as User,
-        token: "local-dev-token",
-        refreshToken: null,
-        isAuthenticated: true,
-        requires2FA: false,
-      });
-    } else {
-      // Attempt to refresh session on mount (web mode)
-      void refreshSession();
-    }
+    // Attempt to refresh session on mount
+    void refreshSession();
   }, [refreshSession]);
 
   return <AuthContext.Provider value={useAuthStore}>{children}</AuthContext.Provider>;

@@ -38,7 +38,6 @@ sha2 = "0.10"
 # Error handling
 thiserror = "2"
 anyhow = "1"
-regex = "1"
 
 # Logging
 tracing = "0.1"
@@ -54,13 +53,8 @@ hyper-util = "0.1"
 # Async mutex for shared state
 parking_lot = "0.12"
 
-# Plugin types
-codegraph-types = { path = "../codegraph-types" }
-dirs = "6"
-
 # Database
 rusqlite = { version = "0.32.0", features = ["bundled"] }
-notify = "6.1.1"
 
 [dev-dependencies]
 tempfile = "3"

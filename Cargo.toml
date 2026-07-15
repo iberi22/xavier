@@ -1,4 +1,4 @@
-[patch.crates-io]
+﻿[patch.crates-io]
 burn-candle = { path = "patches/burn-candle" }
 
 [package]
@@ -35,12 +35,7 @@ name = "xavier"
 path = "src/lib.rs"
 
 [workspace]
-members = [
-    "clients/flutter_android/rust",
-    "code-graph",
-    "codegraph-types",
-    "panel-ui/src-tauri"
-]
+members = ["clients/flutter_android/rust","code-graph", "panel-ui/src-tauri", "xavier-core"]
 
 [features]
 default = ["cli-interactive"]
@@ -131,7 +126,7 @@ autometrics = { version = "0.3", features = ["prometheus-exporter"] }
 chrono = { version = "0.4", features = ["serde"] }
 cron = "0.15"
 # State management
-
+rayon = "1.10"
 parking_lot = "0.12"
 rusqlite = { version = "0.32.0", features = ["bundled", "load_extension", "chrono", "functions"] }
 jsonwebtoken = "9.3"
@@ -201,7 +196,6 @@ libp2p = { version = "0.56", optional = true, default-features = false, features
 # build stays lean; the IrohTransport is the preferred P2P backend going forward.
 iroh = { version = "1.0", optional = true }
 alloy = { version = "2.1", optional = true, default-features = true, features = ["providers", "consensus", "signers", "signer-local", "contract", "rpc-types-eth", "reqwest", "network"] }
-hex = "0.4.3"
 
 [dev-dependencies]
 image = "0.25"

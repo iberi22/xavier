@@ -43,7 +43,6 @@ pub mod telegram;
 pub mod tgd;
 pub mod tools;
 pub mod ui;
-pub mod ui_logger;
 pub mod utils;
 pub mod verification;
 pub mod workspace;

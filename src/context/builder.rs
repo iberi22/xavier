@@ -19,9 +19,7 @@ impl Default for ContextBuilderConfig {
     fn default() -> Self {
         Self {
             persona: "You are Xavier, a cognitive memory runtime for AI agents.".to_string(),
-            rules: vec![
-                "STRUCTURAL CODE DISCOVERY: When answering questions about architecture, how components are connected, or tracing execution paths, ALWAYS use the `codegraph_explore` or `trace_path` tools instead of generic file searching or vector search (RAG).".to_string(),
-            ],
+            rules: vec![],
             goals: vec![],
             constraints: vec![],
             recent_messages_limit: 5,
@@ -92,9 +90,14 @@ impl ContextBuilder {
     }
 
     fn compress_and_cross_reference(&self, context: &mut String) {
+        // Skip compression for small contexts
         if context.len() < 1000 {
             return;
         }
+        // Simple "compression" by removing excessive whitespace and adding cross-refs
+        // NOTE: This is a shallow compression (whitespace only).
+        // Real savings come from progressive disclosure and budget-aware selection in Orchestrator.
+        let mut compressed = context.replace("  ", " ").replace("\n\n\n", "\n\n");
 
         let keywords = ["error", "fix", "critical", "decision", "architecture", "goal", "ref", "summary"];
         let lines: Vec<&str> = context.lines().collect();

@@ -24,9 +24,6 @@ pub enum GraphError {
 
     #[error("Query error: {0}")]
     Query(String),
-
-    #[error("Indexer error: {0}")]
-    Indexer(String),
 }
 
 pub type Result<T> = std::result::Result<T, GraphError>;

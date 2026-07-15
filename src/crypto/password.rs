@@ -1,8 +1,8 @@
-use anyhow::{anyhow, Result};
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
 };
+use anyhow::{anyhow, Result};
 
 /// Default Argon2 cost parameter
 pub const DEFAULT_COST: u32 = 3;
@@ -24,8 +24,8 @@ pub fn hash(password: &str, _cost: u32) -> Result<String> {
 
 /// Verifies a password against a previously generated Argon2id hash string.
 pub fn verify(password: &str, hashed: &str) -> Result<bool> {
-    let parsed_hash =
-        PasswordHash::new(hashed).map_err(|e| anyhow!("invalid password hash format: {}", e))?;
+    let parsed_hash = PasswordHash::new(hashed)
+        .map_err(|e| anyhow!("invalid password hash format: {}", e))?;
 
     let argon2 = Argon2::default();
 
