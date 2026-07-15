@@ -94,6 +94,8 @@ pub struct NodeIdentity {
     pub public_key: Vec<u8>,
     /// Ed25519 private key (32 bytes) — sensitive, not serialized
     private_key: Vec<u8>,
+    /// Optional cluster identifier for anti-smurf KYC
+    pub cluster_id: Option<String>,
 }
 
 impl fmt::Debug for NodeIdentity {
@@ -119,6 +121,7 @@ impl NodeIdentity {
             node_id,
             public_key: pk_bytes.to_vec(),
             private_key: signing_key.to_bytes().to_vec(),
+            cluster_id: None,
         }
     }
 
@@ -177,6 +180,7 @@ impl NodeIdentity {
             node_id: identity.node_id.0.clone(),
             public_key_hex: crate::crypto::hex_encode(&identity.public_key),
             private_key_hex: crate::crypto::hex_encode(&identity.private_key),
+            cluster_id: None,
         };
 
         let json = serde_json::to_string_pretty(&stored)?;
@@ -210,6 +214,7 @@ impl NodeIdentity {
             node_id,
             public_key,
             private_key,
+            cluster_id: stored.cluster_id,
         })
     }
 
@@ -224,6 +229,7 @@ impl NodeIdentity {
             node_id: self.node_id.clone(),
             public_key_hex: crate::crypto::hex_encode(&self.public_key),
             xavier_version: env!("CARGO_PKG_VERSION").to_string(),
+            cluster_id: self.cluster_id.clone(),
         }
     }
 }
@@ -234,6 +240,7 @@ pub struct PublicNodeInfo {
     pub node_id: NodeId,
     pub public_key_hex: String,
     pub xavier_version: String,
+    pub cluster_id: Option<String>,
 }
 
 /// Persisted form of the node identity (stored in config dir).
@@ -245,6 +252,8 @@ struct StoredIdentity {
     /// WARNING: private key stored in plaintext in config file.
     /// Phase 2 will move this to system keyring (keyring crate).
     private_key_hex: String,
+    #[serde(default)]
+    pub cluster_id: Option<String>,
 }
 
 // ---------------------------------------------------------------------------

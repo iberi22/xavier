@@ -38,9 +38,13 @@ pub struct GovernanceProposal {
     pub description: String,
     pub upvotes: u64,
     pub downvotes: u64,
+    pub voter_count: u64,
     pub is_approved_for_pr: bool,
     pub assigned_maintainer: Option<String>,
 }
+
+/// Maximum vote weight cap (5% of total staked)
+pub const VOTE_WEIGHT_CAP_BPS: u64 = 500;
 
 pub struct DaoGovernanceSystem {
     // In production, this syncs with GitHub API or Solana Smart Contract state
@@ -91,6 +95,7 @@ impl DaoGovernanceSystem {
                     description: description.to_string(),
                     upvotes: 0,
                     downvotes: 0,
+                    voter_count: 0,
                     is_approved_for_pr: false,
                     assigned_maintainer: None,
                 },
@@ -135,8 +140,22 @@ impl DaoGovernanceSystem {
         Ok(())
     }
 
+    /// Calculates the vote weight based on stake with a quadratic cap.
+    /// Formula: vote_weight = min(sqrt(stake_bps * 100), 500 bps)
+    pub fn calculate_vote_weight(&self, stake_bps: u64) -> u64 {
+        let weight = ((stake_bps as f64 * 100.0).sqrt() as u64).min(VOTE_WEIGHT_CAP_BPS);
+        weight
+    }
+
     /// Simulates a vote cast via GitHub Reaction (👍 or 👎).
-    pub async fn cast_vote(&mut self, cluster_id: &str, approve: bool) -> Result<(), String> {
+    pub async fn cast_vote(
+        &mut self,
+        cluster_id: &str,
+        approve: bool,
+        stake_bps: u64,
+    ) -> Result<(), String> {
+        let weight = self.calculate_vote_weight(stake_bps);
+
         {
             let proposal = self
                 .active_proposals
@@ -144,10 +163,11 @@ impl DaoGovernanceSystem {
                 .ok_or_else(|| "Proposal not found".to_string())?;
 
             if approve {
-                proposal.upvotes += 1;
+                proposal.upvotes += weight;
             } else {
-                proposal.downvotes += 1;
+                proposal.downvotes += weight;
             }
+            proposal.voter_count += 1;
         }
 
         #[cfg(feature = "dao-evm")]
@@ -190,8 +210,8 @@ impl DaoGovernanceSystem {
         use rand::prelude::*;
 
         if let Some(proposal) = self.active_proposals.get_mut(cluster_id) {
-            let total_votes = proposal.upvotes + proposal.downvotes;
-            if total_votes >= self.minimum_quorum && !proposal.is_approved_for_pr {
+            if proposal.voter_count >= self.minimum_quorum && !proposal.is_approved_for_pr {
+                let total_votes = proposal.upvotes + proposal.downvotes;
                 let approval_ratio = proposal.upvotes as f64 / total_votes as f64;
                 if approval_ratio >= self.required_approval_threshold {
                     proposal.is_approved_for_pr = true;
@@ -237,18 +257,18 @@ mod tests {
         )
         .await;
 
-        // Cast 4 upvotes (not enough quorum)
+        // Cast 4 upvotes (stake_bps=1 -> weight=10; not enough quorum)
         for _ in 0..4 {
-            dao.cast_vote("CLUSTER_P2P", true).await.unwrap();
+            dao.cast_vote("CLUSTER_P2P", true, 1).await.unwrap();
         }
         let prop = dao.active_proposals.get("CLUSTER_P2P").unwrap();
         assert!(!prop.is_approved_for_pr); // Quorum is 5
 
-        // Cast 1 downvote (total 5 votes: 4 up, 1 down = 80%)
-        dao.cast_vote("CLUSTER_P2P", false).await.unwrap();
+        // Cast 1 downvote (stake_bps=1 -> weight=10; total 50 votes: 40 up, 10 down = 80%)
+        dao.cast_vote("CLUSTER_P2P", false, 1).await.unwrap();
 
         let prop = dao.active_proposals.get("CLUSTER_P2P").unwrap();
-        assert!(prop.is_approved_for_pr); // Reached 80% with 5 votes!
+        assert!(prop.is_approved_for_pr); // Reached 80% with 50 weighted votes!
         assert!(prop.assigned_maintainer.is_some()); // Ensure a winner was randomly picked
         println!("Winner: {:?}", prop.assigned_maintainer);
     }
@@ -259,12 +279,12 @@ mod tests {
         dao.submit_proposal("CLUSTER_UI", "Change Button Color", "Minor UI tweak.")
             .await;
 
-        // Cast 3 upvotes and 3 downvotes (50%, below 80% threshold)
+        // Cast 3 upvotes and 3 downvotes (stake_bps=1 -> weight=10; 50%, below 80% threshold)
         for _ in 0..3 {
-            dao.cast_vote("CLUSTER_UI", true).await.unwrap();
+            dao.cast_vote("CLUSTER_UI", true, 1).await.unwrap();
         }
         for _ in 0..3 {
-            dao.cast_vote("CLUSTER_UI", false).await.unwrap();
+            dao.cast_vote("CLUSTER_UI", false, 1).await.unwrap();
         }
 
         let prop = dao.active_proposals.get("CLUSTER_UI").unwrap();
