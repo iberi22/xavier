@@ -945,26 +945,23 @@ impl AdaptiveGating {
     /// Perform multi-layer retrieval and return a LayeredSearchResult (for context pack export)
     pub async fn retrieve_layered(
         &self,
+        working_docs: &[MemoryDocument],
         all_docs: &[MemoryDocument],
         episodic: &[SessionSummary],
         semantic: &[EntityRecord],
         query: &str,
     ) -> LayeredSearchResult {
         let now = chrono::Utc::now();
-        // Level 0: Working Memory (Filtered for non-belief documents)
-        let working_docs: Vec<MemoryDocument> = all_docs
-            .iter()
-            .filter(|d| d.level != crate::memory::schema::MemoryLevel::Belief)
-            .cloned()
-            .collect();
+        // Level 0: Working Memory (Bounded hot set)
         let level_0_results = self
-            .score_working_layer_at(&working_docs, query, now, None)
+            .score_working_layer_at(working_docs, query, now, None)
             .await;
 
         // Level 1: Entity Graph
         let level_1_results = self.score_semantic_layer_at(semantic, query, now).await;
 
         // Level 2: Semantic (Rules, Definitions) -> Documents with MemoryLevel::Belief
+        // Note: Semantic Level 2 still uses the full corpus (all_docs) to find Beliefs.
         let level_2_results = self.score_belief_layer(all_docs, query);
 
         // Level 3: Episodic (History, snippets)

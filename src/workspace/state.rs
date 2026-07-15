@@ -22,6 +22,7 @@ use crate::checkpoint::CheckpointManager;
 use crate::codebase::conversations_db::ConversationsDb;
 use crate::memory::{
     belief_graph::{BeliefGraph, SharedBeliefGraph},
+    working::{MemoryItem, WorkingMemory, WorkingMemoryConfig},
     entity_graph::{EntityGraph, SharedEntityGraph},
     postgres_store::PostgresMemoryStore,
     qmd_memory::{estimate_document_bytes, MemoryUsage, QmdMemory},
@@ -106,6 +107,7 @@ pub struct WorkspaceState {
     pub(super) optimization_metrics: OptimizationMetrics,
     pub hormer: Arc<crate::agents::hormer::Hormer>,
     pub zone_booster: Arc<crate::retrieval::gating::AdaptiveZoneBooster>,
+    pub working_memory: Arc<RwLock<WorkingMemory>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -188,9 +190,36 @@ impl WorkspaceState {
                 .map(MemoryRecord::to_document)
                 .collect(),
         ));
-        let mut memory = QmdMemory::new_with_workspace(docs, config.id.clone());
+        let mut memory = QmdMemory::new_with_workspace(Arc::clone(&docs), config.id.clone());
         memory.set_store(Arc::clone(&store)).await;
         memory.init().await?;
+
+        let working_memory = Arc::new(RwLock::new(WorkingMemory::with_config(
+            WorkingMemoryConfig::from_env(),
+        )));
+        {
+            let wm = Arc::clone(&working_memory);
+            let docs_clone = Arc::clone(&docs);
+            tokio::spawn(async move {
+                let docs_guard = docs_clone.read().await;
+                let mut wm_guard = wm.write().await;
+                // Just take the last capacity items as initial working set
+                let capacity = wm_guard.capacity();
+                let start = docs_guard.len().saturating_sub(capacity);
+                for doc in &docs_guard[start..] {
+                    let item = MemoryItem::new(
+                        doc.id.as_deref().unwrap_or(&doc.path),
+                        &doc.content,
+                    )
+                    .with_metadata(doc.metadata.clone());
+                    wm_guard.push(item);
+                }
+                tracing::info!(
+                    "working memory initialized with {} items",
+                    wm_guard.len()
+                );
+            });
+        }
 
         let belief_graph = Arc::new(RwLock::new(BeliefGraph::new()));
         belief_graph
@@ -290,6 +319,7 @@ impl WorkspaceState {
             optimization_metrics: OptimizationMetrics::new(),
             hormer,
             zone_booster,
+            working_memory,
         };
 
         crate::scheduler::daemon::MemoryDaemon::new(Arc::clone(&state.memory_manager)).spawn();
@@ -617,6 +647,10 @@ impl WorkspaceState {
         if let Err(error) = self.semantic_memory.index_memory(memory_id, content).await {
             tracing::warn!(%error, memory_id = %memory_id, "failed to index semantic memory");
         }
+
+        // Upsert to working memory (hot set)
+        let item = MemoryItem::new(memory_id, content).with_metadata(metadata.clone());
+        self.working_memory.write().await.push(item);
     }
 
     pub async fn remove_memory_entities(&self, memory_id: &str) -> Result<()> {
@@ -719,7 +753,14 @@ impl WorkspaceState {
             timestamp.format("%Y%m%dT%H%M%S%.3fZ")
         );
         let content = format!("User: {user_message}\nAssistant: {assistant_message}");
-        self.memory.add_document_typed(path, content, serde_json::json!({ "session_time": timestamp.to_rfc3339(), "source": source_app, }), Some(crate::memory::schema::TypedMemoryPayload { kind: Some(crate::memory::schema::MemoryKind::Episodic), evidence_kind: Some(crate::memory::schema::EvidenceKind::SessionSummary), namespace: Some(crate::memory::schema::MemoryNamespace { session_id: Some(session_id.to_string()), ..crate::memory::schema::MemoryNamespace::default() }), provenance: Some(crate::memory::schema::MemoryProvenance { source_app: Some(source_app.to_string()), source_type: Some("session_exchange".to_string()), recorded_at: Some(timestamp.to_rfc3339()), ..crate::memory::schema::MemoryProvenance::default() }), ..crate::memory::schema::TypedMemoryPayload::default() })).await
+        let metadata = serde_json::json!({ "session_time": timestamp.to_rfc3339(), "source": source_app, });
+        let doc_id = self.memory.add_document_typed(path, content.clone(), metadata.clone(), Some(crate::memory::schema::TypedMemoryPayload { kind: Some(crate::memory::schema::MemoryKind::Episodic), evidence_kind: Some(crate::memory::schema::EvidenceKind::SessionSummary), namespace: Some(crate::memory::schema::MemoryNamespace { session_id: Some(session_id.to_string()), ..crate::memory::schema::MemoryNamespace::default() }), provenance: Some(crate::memory::schema::MemoryProvenance { source_app: Some(source_app.to_string()), source_type: Some("session_exchange".to_string()), recorded_at: Some(timestamp.to_rfc3339()), ..crate::memory::schema::MemoryProvenance::default() }), ..Default::default() })).await?;
+
+        // Session exchanges are hot, push to working memory
+        let item = MemoryItem::new(&doc_id, &content).with_metadata(metadata);
+        self.working_memory.write().await.push(item);
+
+        Ok(doc_id)
     }
 
     async fn load_usage_state(&self) -> Result<()> {
@@ -778,6 +819,20 @@ impl WorkspaceState {
             .unwrap_or(false)
     }
 
+    /// Get current documents in working memory (hot set) converted to MemoryDocument
+    pub async fn working_documents(&self) -> Vec<crate::memory::qmd_memory::MemoryDocument> {
+        let wm = self.working_memory.read().await;
+        wm.items()
+            .iter()
+            .map(|item| crate::memory::qmd_memory::MemoryDocument {
+                id: Some(item.id.clone()),
+                content: item.content.clone(),
+                metadata: item.metadata.clone().unwrap_or_else(|| serde_json::json!({})),
+                ..Default::default()
+            })
+            .collect()
+    }
+
     /// Creates a minimal workspace state for internal background tasks.
     pub async fn new_minimal(
         workspace_id: String,
@@ -804,6 +859,7 @@ impl WorkspaceState {
             workspace_id.clone(),
             Arc::clone(&store),
         ));
+        let working_memory = Arc::new(RwLock::new(WorkingMemory::new()));
 
         // Mocking conversations_db for minimal state
         #[cfg(any(test, feature = "test-utils"))]
@@ -863,6 +919,7 @@ impl WorkspaceState {
             optimization_metrics: OptimizationMetrics::new(),
             hormer,
             zone_booster,
+            working_memory,
         }
     }
 }
