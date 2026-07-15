@@ -6,7 +6,7 @@ use axum::{
 };
 
 pub fn estimate_tokens(text: &str) -> usize {
-    (text.len() / 4).max(1)
+    crate::xavier_lib::context::estimate_tokens(text).max(1)
 }
 
 pub struct ProxyErrorWrapper(pub xavier::domain::proxy::ProxyError);
