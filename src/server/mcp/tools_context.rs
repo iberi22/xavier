@@ -111,9 +111,9 @@ pub async fn handle_context_tool(
                 .unwrap_or("medium");
 
             let (level, token_budget) = match depth {
-                "shallow" => (ContextLevel::Minimal, 50),
-                "deep" => (ContextLevel::Maximum, 1000),
-                _ => (ContextLevel::Medium, 200),
+                "shallow" => (ContextLevel::Minimal, 150),
+                "deep" => (ContextLevel::Maximum, 2400),
+                _ => (ContextLevel::Medium, 800),
             };
 
             // Fetch session history

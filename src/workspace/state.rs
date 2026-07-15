@@ -106,6 +106,8 @@ pub struct WorkspaceState {
     pub(super) optimization_metrics: OptimizationMetrics,
     pub hormer: Arc<crate::agents::hormer::Hormer>,
     pub zone_booster: Arc<crate::retrieval::gating::AdaptiveZoneBooster>,
+    pub working_memory: Arc<tokio::sync::RwLock<crate::memory::working::WorkingMemory>>,
+    pub episodic_memory: Arc<tokio::sync::RwLock<crate::memory::episodic::EpisodicMemory>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,6 +265,13 @@ impl WorkspaceState {
                 .with_booster(Arc::clone(&zone_booster)),
         );
 
+        let working_memory = Arc::new(tokio::sync::RwLock::new(
+            crate::memory::working::WorkingMemory::new(),
+        ));
+        let episodic_memory = Arc::new(tokio::sync::RwLock::new(
+            crate::memory::episodic::EpisodicMemory::new(),
+        ));
+
         let state = Self {
             runtime: Arc::new(
                 AgentRuntime::new(
@@ -290,6 +299,8 @@ impl WorkspaceState {
             optimization_metrics: OptimizationMetrics::new(),
             hormer,
             zone_booster,
+            working_memory,
+            episodic_memory,
         };
 
         crate::scheduler::daemon::MemoryDaemon::new(Arc::clone(&state.memory_manager)).spawn();
@@ -863,6 +874,12 @@ impl WorkspaceState {
             optimization_metrics: OptimizationMetrics::new(),
             hormer,
             zone_booster,
+            working_memory: Arc::new(tokio::sync::RwLock::new(
+                crate::memory::working::WorkingMemory::new(),
+            )),
+            episodic_memory: Arc::new(tokio::sync::RwLock::new(
+                crate::memory::episodic::EpisodicMemory::new(),
+            )),
         }
     }
 }

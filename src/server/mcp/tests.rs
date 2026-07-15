@@ -1365,6 +1365,47 @@ async fn code_graph_trace_path_returns_real_callers() {
 }
 
 #[tokio::test]
+async fn test_mcp_compact_outputs() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // 1. Seed memory
+    post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+            "params": {
+                "name": "create_memory",
+                "arguments": {
+                    "path": "test.rs",
+                    "content": "fn main() { println!(\"Hello World\"); }",
+                    "kind": "code"
+                }
+            }
+        }),
+    )
+    .await;
+
+    // 2. Just verify restore (shallow)
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+            "params": {
+                "name": "xavier_context_restore",
+                "arguments": { "session_id": "s1", "depth": "shallow" }
+            }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let result_text = body["result"]["content"][0]["text"].as_str().unwrap();
+    let result_json: Value = serde_json::from_str(result_text).unwrap();
+    assert_eq!(result_json["depth"], "shallow");
+    assert!(result_json["context"].as_str().unwrap().contains("## Core Slots"));
+}
+
+#[tokio::test]
 async fn auth_success_with_valid_token() {
     std::env::set_var("XAVIER_TOKEN", "test-token");
     let (state, workspace) = test_state().await;

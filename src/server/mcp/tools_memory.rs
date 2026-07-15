@@ -255,11 +255,20 @@ pub async fn handle_memory_tool(
             let content = results
                 .into_iter()
                 .map(|doc| {
+                    let snippet: String = doc.content.chars().take(100).collect();
+                    let kind = doc
+                        .metadata
+                        .get("kind")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("document");
                     MCPContent::Text(MCPTextContent {
                         content_type: "text".to_string(),
                         text: format!(
-                            "Path: {}\nContent: {}\nMetadata: {:?}",
-                            doc.path, doc.content, doc.metadata
+                            "ID: {} | Path: {} | Kind: {} | Snippet: {}...",
+                            doc.id.unwrap_or_else(|| "none".to_string()),
+                            doc.path,
+                            kind,
+                            snippet
                         ),
                     })
                 })
