@@ -123,7 +123,7 @@ impl UserStore {
                     let mut stmt = tx.prepare(
                     "INSERT INTO backup_codes (id, user_id, code_hash, used) VALUES (?, ?, ?, ?)"
                 )?;
-                    for code in codes.clone() {
+                    for code in codes {
                         stmt.execute(params![
                             code.id,
                             code.user_id,

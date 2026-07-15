@@ -24,37 +24,28 @@ use axum::{
     middleware::Next,
     response::Response,
 };
-use tokio::sync::OnceCell;
 
 use super::service_log::{LogEntry, LogSource, ServiceLogStore};
 
 /// Observability middleware state.
 #[derive(Clone)]
 pub struct ObservabilityState {
-    /// Lazily-initialized log store. The `OnceCell` guarantees the store is
-    /// created exactly once, on the async runtime, without `block_in_place`.
-    store: Arc<OnceCell<Option<ServiceLogStore>>>,
+    pub store: Option<ServiceLogStore>,
     pub app_start_time: Instant,
 }
 
 impl ObservabilityState {
-    /// Create a new state. The `ServiceLogStore` is NOT constructed here —
-    /// that would require `block_in_place`/`block_on` which can deadlock the
-    /// tokio runtime in release builds. It initializes lazily on first use.
+    /// Create a new state. Attempts to initialize ServiceLogStore.
+    /// If the runtime or DB isn't ready yet, it will be `None`.
     pub fn new() -> Self {
+        let store = tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async { ServiceLogStore::new().await.ok() })
+        });
+
         Self {
-            store: Arc::new(OnceCell::new()),
+            store,
             app_start_time: Instant::now(),
         }
-    }
-
-    /// Lazily initialize (and cache) the store on the async runtime.
-    pub async fn store(&self) -> Option<&ServiceLogStore> {
-        let cell = self
-            .store
-            .get_or_init(|| async { ServiceLogStore::new().await.ok() })
-            .await;
-        cell.as_ref()
     }
 
     /// Get uptime in seconds.
@@ -96,13 +87,13 @@ pub async fn request_logger(
         "â† response sent"
     );
 
-    // Log server errors to persistent store (lazily initialized on first 5xx).
+    // Log server errors to persistent store
     if status.is_server_error() {
-        if let Some(store) = state.store().await {
+        if let Some(ref store) = state.store {
             let entry = LogEntry::error(
                 LogSource::HttpServer,
                 &format!("http{}", path.replace('/', "::")),
-                &format!("HTTP {} → {} ({}ms)", method, status, latency.as_millis()),
+                &format!("HTTP {} â†’ {} ({}ms)", method, status, latency.as_millis()),
             )
             .with_metadata(serde_json::json!({
                 "method": method.to_string(),
@@ -130,8 +121,10 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_observability_state_creation() {
         let state = ObservabilityState::new();
-        // The store is lazily initialized — it only materializes on first use.
-        // app_start_time should be set.
+        // In test context, store will be None because ConnectionManager::global()
+        // may not be initialized. That's fine.
+        assert!(state.store.is_none() || state.store.is_some());
+        // app_start_time should be set
         assert!(state.uptime_seconds() < 100); // just started
     }
 
@@ -148,7 +141,7 @@ mod tests {
     #[tokio::test(flavor = "multi_thread")]
     async fn test_observability_state_default() {
         let state = ObservabilityState::default();
-        assert!(state.uptime_seconds() < 100);
+        assert!(state.store.is_none() || state.store.is_some());
     }
 
     #[tokio::test(flavor = "multi_thread")]

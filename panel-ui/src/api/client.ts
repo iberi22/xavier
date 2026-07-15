@@ -184,26 +184,6 @@ export class ApiClient {
   async getLeaseHistory() {
     return this.fetch<SecretAuditLog[]>("/secrets/history");
   }
-
-  // Observability Logs
-  async getLogs(filters?: {
-    level?: string;
-    source?: string;
-    q?: string;
-    limit?: number;
-  }) {
-    const params = new URLSearchParams();
-    if (filters?.level) params.set("level", filters.level);
-    if (filters?.source) params.set("source", filters.source);
-    if (filters?.q) params.set("q", filters.q);
-    if (filters?.limit) params.set("limit", String(filters.limit));
-    const qs = params.toString();
-    return this.fetch<LogEntry[]>(`/api/logs${qs ? `?${qs}` : ""}`);
-  }
-
-  async getLogStats() {
-    return this.fetch<LogStats>("/api/logs/stats");
-  }
 }
 
 export interface ProviderConfig {
@@ -258,27 +238,4 @@ export interface DataCommonsConfig {
   enabled: boolean;
   consent_given: boolean;
   wallet_address?: string | null;
-}
-
-export interface LogEntry {
-  id: string;
-  timestamp: string;
-  level: "error" | "warn" | "info" | "debug" | "trace";
-  source: string;
-  module: string | null;
-  correlation_id: string | null;
-  message: string;
-  metadata: Record<string, unknown> | null;
-  resolved: boolean;
-  resolution: Record<string, unknown> | null;
-}
-
-export interface LogStats {
-  total_entries: number;
-  errors_last_hour: number;
-  errors_today: number;
-  warnings_today: number;
-  active_patterns: number;
-  uptime_seconds: number;
-  db_size_kb: number;
 }

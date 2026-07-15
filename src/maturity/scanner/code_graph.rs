@@ -1,9 +1,8 @@
 //! # Code Graph Scanner — Layer 1: Static Code Analysis
 //!
-//! Uses Xavier's code-graph SQLite database to quickly resolve symbol
-//! existence. Reads the canonical MCP path (`XAVIER_CODE_GRAPH_DB_PATH` /
-//! data dir) first, with a legacy `<root>/.xavier/codegraph.sqlite` fallback.
-//! Falls back to file grep if code-graph is unavailable (graceful degradation).
+//! Uses Xavier's code-graph database (JSON dump in .xavier/) to quickly
+//! resolve symbol existence. Falls back to file grep if code-graph is
+//! unavailable (graceful degradation).
 //!
 //! Timing target: < 100ms with code graph, < 5s without.
 
@@ -79,36 +78,34 @@ fn load_anchored_symbols(codebase_root: &str) -> HashMap<String, Vec<String>> {
 }
 
 /// Try to load code graph DB and scan for symbols.
-///
-/// Resolves the database path in priority order:
-/// 1. The canonical MCP path (`crate::cli::config::code_graph_db_path()`),
-///    which honors `XAVIER_CODE_GRAPH_DB_PATH` and the data dir. This is the
-///    same file the live MCP server (`code_db` in `AppState`) writes to.
-/// 2. A legacy repo-relative fallback `<root>/.xavier/codegraph.sqlite` kept
-///    for backwards compatibility with older scans.
 fn try_code_graph_db(
     root: &str,
     feature_symbols: &HashMap<String, Vec<String>>,
 ) -> Option<CodeGraphScanResult> {
     let start = Instant::now();
-    // Mirror `crate::cli::config::code_graph_db_path()` (which lives in the
-    // binary-only `cli` module): honor XAVIER_CODE_GRAPH_DB_PATH, else the
-    // resolved data dir. This is the same file the live MCP server writes to.
-    let db_path = std::env::var("XAVIER_CODE_GRAPH_DB_PATH")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|_| {
-            crate::settings::XavierSettings::resolve_data_dir().join("code_graph.db")
-        });
-    let legacy_path = Path::new(root).join(".xavier/codegraph.sqlite");
+    let json_path = Path::new(root).join(".xavier/codegraph.json");
 
-    // Try the canonical path first, then the legacy repo-relative path.
-    let db = code_graph::db::CodeGraphDB::new(&db_path)
-        .or_else(|_| code_graph::db::CodeGraphDB::new(&legacy_path))
+    let content = std::fs::read_to_string(&json_path)
+        .or_else(|_| -> std::result::Result<String, std::io::Error> {
+            // Code dump would recurse — skip
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "no code graph",
+            ))
+        })
         .ok()?;
 
-    // Check if the DB is actually populated by querying index stats
-    let stats = db.stats().ok()?;
-    if stats.total_symbols == 0 {
+    // Guard: if the codegraph dump has no real symbols (e.g. a stale test fixture or
+    // an empty dump from a server whose code-graph DB was never indexed), substring
+    // matching against it reports every symbol as missing and tanks the static score.
+    // Fall through to None so the grep fallback (which reads source directly) runs.
+    let parsed = serde_json::from_str::<serde_json::Value>(&content).ok();
+    let real_symbols = parsed
+        .as_ref()
+        .and_then(|v| v.get("symbols"))
+        .and_then(|s| s.as_array())
+        .map_or(0, |s| s.len());
+    if real_symbols == 0 {
         return None;
     }
 
@@ -119,16 +116,8 @@ fn try_code_graph_db(
         let mut missing = HashSet::new();
 
         for sym in symbols {
-            // We can query SQLite directly for the symbol existence.
-            // Using find_symbols to check if it exists.
-            if let Ok(matches) = db.find_symbols(sym, 1) {
-                // Assuming QueryResult has a symbols field or similar
-                // Wait, if we don't know QueryResult structure exactly, let's just assume `matches.symbols.is_empty()`
-                if !matches.symbols.is_empty() {
-                    found.insert(sym.clone());
-                } else {
-                    missing.insert(sym.clone());
-                }
+            if content.contains(sym.as_str()) {
+                found.insert(sym.clone());
             } else {
                 missing.insert(sym.clone());
             }

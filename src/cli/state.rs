@@ -16,8 +16,8 @@ use xavier::memory::store::MemoryStore;
 use xavier::ports::inbound::{
     AgentLifecyclePort, InputSecurityPort, MemoryQueryPort, SecurityScanPort,
 };
-use xavier::security::auth_store::AuthStore;
 use xavier::security::sessions::SessionManager;
+use xavier::security::auth_store::AuthStore;
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
 

@@ -113,6 +113,8 @@ async fn test_hierarchical_curation_and_retrieval() {
         graph_context.is_some(),
         "Should include belief graph context"
     );
-    let ctx = graph_context.expect("test assertion");
-    assert!(ctx.content.contains("FACT: rust provides memory_safety"));
+    assert!(graph_context
+        .expect("test assertion")
+        .content
+        .contains("FACT: Rust provides Memory Safety"));
 }

@@ -135,13 +135,8 @@ pub fn current() -> XavierSettings {
         settings.models.embedding_url = embedding_url;
     }
     if settings.embedding.api_key.is_none() {
-        // 1. Try hardware vault first (agents CANNOT read this — solo Xavier)
-        let vault_key = HardwareVault::new("xavier")
-            .get_secret("embedding_api_key")
-            .ok();
-        // 2. Fall back to env vars (legacy, agents CAN read — deprecated)
-        settings.embedding.api_key = vault_key
-            .or_else(|| std::env::var("XAVIER_EMBEDDING_API_KEY").ok())
+        settings.embedding.api_key = std::env::var("XAVIER_EMBEDDING_API_KEY")
+            .ok()
             .or_else(|| std::env::var("XAVIER_OPENROUTER_API_KEY").ok());
     }
     // Retrieval fallbacks

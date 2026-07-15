@@ -38,16 +38,6 @@ pub struct LoginRequest {
     pub totp_code: Option<String>,
 }
 
-impl std::fmt::Debug for LoginRequest {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("LoginRequest")
-            .field("email", &self.email)
-            .field("password", &"<redacted>")
-            .field("totp_code", &self.totp_code.as_ref().map(|_| "<redacted>"))
-            .finish()
-    }
-}
-
 #[derive(Serialize)]
 pub struct AuthResponse {
     pub access_token: String,

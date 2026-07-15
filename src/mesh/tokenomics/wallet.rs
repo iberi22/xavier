@@ -29,15 +29,15 @@ pub enum InvestmentTier {
 }
 
 impl InvestmentTier {
-    /// Returns the APY as a percentage (e.g. 4.0 for 4%).
+    /// Returns the APY as a percentage (e.g. 5.0 for 5%).
     pub fn apy(&self) -> f64 {
         match self {
-            InvestmentTier::Base => 4.0,
-            InvestmentTier::Bronze => 6.27,
-            InvestmentTier::Silver => 9.22,
-            InvestmentTier::Gold => 12.49,
-            InvestmentTier::Platinum => 19.67,
-            InvestmentTier::Diamond => 27.46,
+            InvestmentTier::Base => 5.0,
+            InvestmentTier::Bronze => 7.5,
+            InvestmentTier::Silver => 10.0,
+            InvestmentTier::Gold => 12.5,
+            InvestmentTier::Platinum => 17.5,
+            InvestmentTier::Diamond => 25.0,
             InvestmentTier::Sovereign => 40.0,
         }
     }

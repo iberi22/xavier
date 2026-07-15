@@ -1,9 +1,0 @@
-# Ignore everything inside .xavier/ by default
-*
-
-# But track codegraph scan snapshots (versionados por commit)
-!codegraph.json
-!codegraph-*.json
-
-# Don't ignore this file itself (needed for tracking)
-!.gitignore

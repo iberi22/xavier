@@ -352,10 +352,8 @@ impl Orchestrator {
         }
 
         let mut final_docs = Vec::new();
-        let mut total_tokens = 0usize;
-
         for document in selected {
-            let mut final_doc = if plan.level == ContextLevel::Minimal {
+            if plan.level == ContextLevel::Minimal {
                 // L0/L1 Virtualization: Only send summary and keywords
                 let path = document.metadata["path"]
                     .as_str()
@@ -376,27 +374,11 @@ impl Orchestrator {
 
                 let mut virtual_doc = document.clone();
                 virtual_doc.content = virtual_content;
-                virtual_doc.token_count = super::estimate_tokens(&virtual_doc.content);
-                virtual_doc
+                virtual_doc.token_count = virtual_doc.content.split_whitespace().count();
+                final_docs.push(virtual_doc);
             } else {
-                document.clone()
-            };
-
-            // Hard stop: strictly enforce budget per document adding
-            if total_tokens + final_doc.token_count > plan.max_tokens {
-                if final_docs.is_empty() {
-                    // Truncate the single large document to fit at least something
-                    let (truncated_content, _) =
-                        super::truncate_to_tokens(&final_doc.content, plan.max_tokens);
-                    final_doc.content = truncated_content;
-                    final_doc.token_count = super::estimate_tokens(&final_doc.content);
-                    final_docs.push(final_doc);
-                }
-                break;
+                final_docs.push(document.clone());
             }
-
-            total_tokens += final_doc.token_count;
-            final_docs.push(final_doc);
         }
 
         final_docs

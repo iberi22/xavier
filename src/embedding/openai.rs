@@ -54,7 +54,7 @@ impl OpenAICompatibleEmbedder {
 
 #[derive(Debug, Serialize)]
 struct EmbeddingRequest<'a> {
-    input: Vec<&'a str>,
+    input: &'a str,
     model: &'a str,
 }
 
@@ -91,7 +91,7 @@ impl Embedder for OpenAICompatibleEmbedder {
 
         let response = request
             .json(&EmbeddingRequest {
-                input: vec![text],
+                input: text,
                 model: &self.model,
             })
             .send()

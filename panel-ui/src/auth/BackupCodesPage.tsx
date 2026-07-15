@@ -27,7 +27,7 @@ export const BackupCodesPage: React.FC = () => {
   };
 
   return (
-    <div className="w-full h-dvh bg-[#050505] flex items-center justify-center text-white font-mono relative overflow-hidden">
+    <div className="w-full h-screen bg-[#050505] flex items-center justify-center text-white font-mono relative overflow-hidden">
       <ParticleBackground />
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}

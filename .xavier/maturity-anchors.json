@@ -183,9 +183,8 @@
           ],
           "required_feature": null,
           "test_anchors": [
-            "server::mcp::tests::test_get_code_graph_success",
-            "server::mcp::tests::code_graph_explore_returns_real_data_not_mock",
-            "server::mcp::tests::code_graph_trace_path_returns_real_callers"
+            "server::mcp::tests::test_tools_core_code_graph",
+            "server::mcp::tests::test_code_graph_tool"
           ],
           "memory_keywords": [
             "code-graph"

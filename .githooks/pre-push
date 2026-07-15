@@ -1,45 +1,17 @@
-#!/bin/sh
+#!/usr/bin/env pwsh
 # pre-push hook: corre checks rápidos antes de pushear
-# Invoca ci-local.ps1 -fast via Windows PowerShell.
-#
-# Nota: originalmente usaba "#!/usr/bin/env pwsh", pero pwsh (PowerShell 7/Core)
-# no siempre está instalado. Usamos /bin/sh + powershell.exe para máxima
-# compatibilidad con Windows (Windows PowerShell 5.1 viene preinstalado).
+# Para instalar: copiar a .git/hooks/pre-push
 
-set -e
+Write-Host "🔍 Running pre-push CI checks..." -ForegroundColor Cyan
 
-# Resolve repo root from hook location (.githooks/ -> parent)
-HOOK_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$HOOK_DIR/.." && pwd)"
+# Solo checks rápidos (sin tests completos)
+$result = & "$PSScriptRoot\..\ci-local.ps1" -fast 2>&1
 
-# Prefer pwsh (PowerShell 7) if available, fall back to Windows PowerShell.
-if command -v pwsh >/dev/null 2>&1; then
-    PS_BIN="pwsh"
-elif command -v powershell >/dev/null 2>&1; then
-    PS_BIN="powershell"
-else
-    echo "❌ No PowerShell found (neither pwsh nor powershell). Push bloqueado." >&2
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "❌ Pre-push checks FAILED. Push bloqueado." -ForegroundColor Red
+    Write-Host "   Corre '.\ci-local.ps1' para ver los errores" -ForegroundColor Yellow
     exit 1
-fi
+}
 
-echo "🔍 Running pre-push CI checks (via $PS_BIN)..."
-
-# Run code-graph self-scan (lightning-fast, tree-sitter based)
-echo "📊 Running code-graph self-scan..."
-CODEGRAPH_SCAN="$REPO_ROOT/scripts/codegraph-self-scan.sh"
-if [ -f "$CODEGRAPH_SCAN" ]; then
-    "$CODEGRAPH_SCAN" --save 2>&1 || echo "⚠️  code-graph scan no bloqueante (puede continuar)"
-fi
-
-# Run the fast CI script; forward its exit code.
-"$PS_BIN" -NoProfile -ExecutionPolicy Bypass -File "$REPO_ROOT/ci-local.ps1" -fast
-RESULT=$?
-
-if [ $RESULT -ne 0 ]; then
-    echo "❌ Pre-push checks FAILED. Push bloqueado." >&2
-    echo "   Corre '.\ci-local.ps1' para ver los errores" >&2
-    exit 1
-fi
-
-echo "✅ Pre-push checks passed. Pusheando..."
+Write-Host "✅ Pre-push checks passed. Pusheando..." -ForegroundColor Green
 exit 0

@@ -17,9 +17,3 @@ pub mod wallet;
 pub use accounting::{PeerAccount, ResourceAccounting};
 pub use rewards::{ContributionType, RewardEngine, RewardEvent};
 pub use wallet::{InvestmentTier, Transaction, TransactionKind, Wallet, WalletBalance};
-
-/// Anti-Smurf Cluster KYC Validation
-/// Checks if a cluster's total notional value meets the minimum threshold ($100M).
-pub fn is_valid_cluster(cluster_notional_usd: u64) -> bool {
-    cluster_notional_usd >= 100_000_000
-}

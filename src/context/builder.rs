@@ -19,9 +19,7 @@ impl Default for ContextBuilderConfig {
     fn default() -> Self {
         Self {
             persona: "You are Xavier, a cognitive memory runtime for AI agents.".to_string(),
-            rules: vec![
-                "STRUCTURAL CODE DISCOVERY: When answering questions about architecture, how components are connected, or tracing execution paths, ALWAYS use the `codegraph_explore` or `trace_path` tools instead of generic file searching or vector search (RAG).".to_string(),
-            ],
+            rules: vec![],
             goals: vec![],
             constraints: vec![],
             recent_messages_limit: 5,
@@ -108,7 +106,7 @@ impl ContextBuilder {
         let mut compressed = context.replace("  ", " ").replace("\n\n\n", "\n\n");
 
         // Add chunk headers for auto-containment
-        if super::estimate_tokens(&compressed) > 250 {
+        if compressed.len() > 1000 {
             compressed.insert_str(0, "## CONTEXT_CHUNK_START:v1:auto-contained\n");
             compressed.push_str("\n## CONTEXT_CHUNK_END\n");
         }

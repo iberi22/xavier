@@ -181,27 +181,3 @@ export interface PairingCodeResponse {
   code: string;
   secret: string;
 }
-
-export interface SecretLease {
-  id: string;
-  secret_id: string;
-  secret_name: string;
-  token: string;
-  agent_id: string;
-  created_at: number;
-  expires_at: number;
-  last_used_at: number | null;
-  status: "active" | "revoked" | "expired";
-}
-
-export interface SecretAuditLog {
-  id: string;
-  secret_id: string;
-  agent_id: string;
-  action: string;
-  event_type: string;
-  session_token?: string;
-  reason?: string;
-  timestamp: number;
-  details: string;
-}

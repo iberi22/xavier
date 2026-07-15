@@ -12,8 +12,8 @@
     "workflow": "powershell ./scripts/workflow.ps1",
     "install:all": "pnpm install",
     "prebuild": "node scripts/update-version.js",
-    "build": "pnpm --filter xavier-panel-ui build && pnpm --filter docs/site build",
-    "build:panel": "pnpm --filter xavier-panel-ui build",
+    "build": "pnpm --filter panel-ui build && pnpm --filter docs/site build",
+    "build:panel": "pnpm --filter panel-ui build",
     "build:docs": "pnpm --filter docs/site build",
     "lint": "biome check ."
   },
@@ -26,13 +26,5 @@
     "js-yaml": "^4.2.0",
     "standard-version": "^9.5.0",
     "husky": "^9.0.0"
-  },
-  "pnpm": {
-    "overrides": {
-      "esbuild@>=0.27.3 <0.28.1": ">=0.28.1",
-      "astro@<6.4.6": ">=6.4.6",
-      "undici@>=7.23.0 <7.28.0": ">=7.28.0",
-      "undici@>=7.0.0 <7.28.0": ">=7.28.0"
-    }
   }
 }

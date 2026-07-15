@@ -2,41 +2,15 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::process::Command as StdCommand;
 use sysinfo::System;
-#[cfg(desktop)]
 use tauri::{
     menu::{Menu, MenuItemBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Emitter, Manager,
 };
-use tauri::{Emitter, Manager};
 use tauri_plugin_shell::ShellExt;
-use xavier::ui_logger::{log_ui_error, log_ui_event, log_ui_info, UILogLevel};
 
 // ── Constants ──────────────────────────────────────────────────
 const LOCK_FILENAME: &str = "xavier.lock";
-
-// ── UI Logging commands ────────────────────────────────────────
-
-#[tauri::command]
-async fn log_ui_event_cmd(
-    level: String,
-    component: String,
-    message: String,
-    context: Option<serde_json::Value>,
-    stack_trace: Option<String>,
-) -> Result<(), String> {
-    let log_level = match level.as_str() {
-        "debug" => UILogLevel::Debug,
-        "info" => UILogLevel::Info,
-        "warning" => UILogLevel::Warning,
-        "error" => UILogLevel::Error,
-        "critical" => UILogLevel::Critical,
-        _ => UILogLevel::Info,
-    };
-
-    log_ui_event(log_level, &component, &message, context, stack_trace)
-        .await
-        .map_err(|e| e.to_string())
-}
 
 // ── Xavier token ───────────────────────────────────────────────
 
@@ -327,113 +301,100 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_log::Builder::default().build())
         .setup(|app| {
-            // Initialize UI logger
-            log::info!("Initializing Xavier Panel UI");
-
-            // Log startup
-            tauri::async_runtime::spawn(async {
-                let _ = log_ui_info("TauriApp", "Xavier Panel UI starting up").await;
-            });
-
             // Initialize Xavier's Tauri AppHandle
             xavier::utils::tauri_utils::set_tauri_app_handle(app.handle().clone());
 
             // Initialize Notification Forwarder
             xavier::notifications::NOTIFICATIONS.spawn_tauri_forwarder();
 
-            #[cfg(desktop)]
-            {
-                // ── Build tray menu ─────────────────────────────────────
-                let open_app = MenuItemBuilder::with_id("open_app", "Open Xavier")
-                    .build(app)
-                    .unwrap();
-                let open_history = MenuItemBuilder::with_id("open_history", "Open History")
-                    .build(app)
-                    .unwrap();
-                let open_graph = MenuItemBuilder::with_id("open_graph", "Open Knowledge Graph")
-                    .build(app)
-                    .unwrap();
-                let open_config = MenuItemBuilder::with_id("open_config", "Open Configuration")
-                    .build(app)
-                    .unwrap();
-                let open_providers = MenuItemBuilder::with_id("open_providers", "Open Providers")
-                    .build(app)
-                    .unwrap();
-                let separator = tauri::menu::PredefinedMenuItem::separator(app).unwrap();
-                let quit = MenuItemBuilder::with_id("quit", "Close Xavier")
-                    .accelerator("Alt+F4")
-                    .build(app)
-                    .unwrap();
-
-                let menu = Menu::with_items(
-                    app,
-                    &[
-                        &open_app,
-                        &open_history,
-                        &open_graph,
-                        &open_config,
-                        &open_providers,
-                        &separator,
-                        &quit,
-                    ],
-                )
+            // ── Build tray menu ─────────────────────────────────────
+            let open_app = MenuItemBuilder::with_id("open_app", "Open Xavier")
+                .build(app)
+                .unwrap();
+            let open_history = MenuItemBuilder::with_id("open_history", "Open History")
+                .build(app)
+                .unwrap();
+            let open_graph = MenuItemBuilder::with_id("open_graph", "Open Knowledge Graph")
+                .build(app)
+                .unwrap();
+            let open_config = MenuItemBuilder::with_id("open_config", "Open Configuration")
+                .build(app)
+                .unwrap();
+            let open_providers = MenuItemBuilder::with_id("open_providers", "Open Providers")
+                .build(app)
+                .unwrap();
+            let separator = tauri::menu::PredefinedMenuItem::separator(app).unwrap();
+            let quit = MenuItemBuilder::with_id("quit", "Close Xavier")
+                .accelerator("Alt+F4")
+                .build(app)
                 .unwrap();
 
-                // ── Build tray icon ─────────────────────────────────────
-                let _tray = TrayIconBuilder::new()
-                    .icon(app.default_window_icon().unwrap().clone())
-                    .menu(&menu)
-                    .tooltip("Xavier - Cognitive Memory System")
-                    .on_menu_event(move |app, event| match event.id().as_ref() {
-                        "open_app" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                        "open_history" => navigate_to_tab(app, "history"),
-                        "open_graph" => navigate_to_tab(app, "graph"),
-                        "open_config" => navigate_to_tab(app, "config"),
-                        "open_providers" => navigate_to_tab(app, "providers"),
-                        "quit" => {
-                            log::info!("Closing Xavier via tray menu");
-                            app.exit(0);
-                        }
-                        _ => {}
-                    })
-                    .on_tray_icon_event(|tray, event| {
-                        if let TrayIconEvent::Click {
-                            button: MouseButton::Left,
-                            button_state: MouseButtonState::Up,
-                            ..
-                        } = event
-                        {
-                            let app = tray.app_handle();
-                            if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
-                    })
-                    .build(app)
-                    .unwrap();
-            }
+            let menu = Menu::with_items(
+                app,
+                &[
+                    &open_app,
+                    &open_history,
+                    &open_graph,
+                    &open_config,
+                    &open_providers,
+                    &separator,
+                    &quit,
+                ],
+            )
+            .unwrap();
 
-            // ── Spawn Xavier sidecar (Desktop only for now) ─────────
-            #[cfg(desktop)]
-            {
-                // Xavier stores its SQLite databases in ~/.xavier/, so we must
-                // set the working directory to the user's home dir so it finds them.
-                let xavier_cwd = std::env::var_os("USERPROFILE")
-                    .map(std::path::PathBuf::from)
-                    .or_else(|| std::env::var_os("HOME").map(std::path::PathBuf::from))
-                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+            // ── Build tray icon ─────────────────────────────────────
+            let _tray = TrayIconBuilder::new()
+                .icon(app.default_window_icon().unwrap().clone())
+                .menu(&menu)
+                .tooltip("Xavier - Cognitive Memory System")
+                .on_menu_event(move |app, event| match event.id().as_ref() {
+                    "open_app" => {
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "open_history" => navigate_to_tab(app, "history"),
+                    "open_graph" => navigate_to_tab(app, "graph"),
+                    "open_config" => navigate_to_tab(app, "config"),
+                    "open_providers" => navigate_to_tab(app, "providers"),
+                    "quit" => {
+                        log::info!("Closing Xavier via tray menu");
+                        app.exit(0);
+                    }
+                    _ => {}
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        let app = tray.app_handle();
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                })
+                .build(app)
+                .unwrap();
 
-                let shell = app.shell();
-                let sidecar_command = shell.sidecar("xavier").map_err(|e| {
-                    log::error!("Failed to create sidecar command: {}", e);
-                    e
-                })?;
+            // ── Spawn Xavier sidecar ────────────────────────────────
+            // Xavier stores its SQLite databases in ~/.xavier/, so we must
+            // set the working directory to the user's home dir so it finds them.
+            let xavier_cwd = std::env::var_os("USERPROFILE")
+                .map(std::path::PathBuf::from)
+                .or_else(|| std::env::var_os("HOME").map(std::path::PathBuf::from))
+                .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+            let shell = app.shell();
+            let sidecar_command = shell.sidecar("xavier").map_err(|e| {
+                log::error!("Failed to create sidecar command: {}", e);
+                e
+            })?;
 
             let token = match get_xavier_token() {
                 Ok(t) => t,
@@ -465,40 +426,19 @@ pub fn run() {
             };
 
             let (mut _rx, _child) = sidecar_command
-                .env("XAVIER_TOKEN", token.clone())
+                .env("XAVIER_TOKEN", token)
                 .args(["http", "8006"])
                 .current_dir(&xavier_cwd)
                 .spawn()
                 .map_err(|e| {
-                    let err_msg = format!("{}", e);
-                    let err_debug = format!("{:?}", e);
                     log::error!("Failed to spawn xavier sidecar: {}", e);
-                    tauri::async_runtime::spawn(async move {
-                        let _ = log_ui_error(
-                            "XavierSidecar",
-                            &format!("Failed to spawn: {}", err_msg),
-                            Some(err_debug),
-                        )
-                        .await;
-                    });
                     e
                 })?;
 
-                log::info!(
-                    "Xavier sidecar spawned successfully (CWD: {:?})",
-                    xavier_cwd
-                );
-
-                // Log successful sidecar spawn
-                let cwd_str = format!("{:?}", xavier_cwd);
-                tauri::async_runtime::spawn(async move {
-                    let _ = log_ui_info(
-                        "XavierSidecar",
-                        &format!("Backend server started successfully at CWD: {}", cwd_str),
-                    )
-                    .await;
-                });
-            }
+            log::info!(
+                "Xavier sidecar spawned successfully (CWD: {:?})",
+                xavier_cwd
+            );
 
             // Hide window on close (minimize to tray instead of quitting)
             if let Some(window) = app.get_webview_window("main") {
@@ -514,7 +454,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            log_ui_event_cmd,
             get_xavier_token,
             scan_system,
             save_initial_config,
@@ -527,12 +466,9 @@ pub fn run() {
         .expect("error while running tauri application");
 
     // Clean up lock file on exit
-    #[cfg(desktop)]
-    {
-        let lock_dir = dirs_data_local_dir();
-        let lock_path = lock_dir.join(LOCK_FILENAME);
-        if lock_path.exists() {
-            let _ = std::fs::remove_file(&lock_path);
-        }
+    let lock_dir = dirs_data_local_dir();
+    let lock_path = lock_dir.join(LOCK_FILENAME);
+    if lock_path.exists() {
+        let _ = std::fs::remove_file(&lock_path);
     }
 }

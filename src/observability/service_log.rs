@@ -291,9 +291,9 @@ impl ServiceLogStore {
             conn.execute(
                 "INSERT INTO service_logs (id, timestamp, level, source, module, correlation_id, message, metadata, resolved, resolution)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-                params.clone(),
+                params,
             )?;
-            Ok(id.clone())
+            Ok(id)
         }).await
     }
 
@@ -323,74 +323,6 @@ impl ServiceLogStore {
             }
             Ok(entries)
         }).await
-    }
-
-    /// Query recent log entries, optionally filtered by level and source.
-    ///
-    /// Returns the most recent entries first. `level` and `source` are optional
-    /// lowercase filters (e.g. `"error"`, `"http_server"`); pass `None` to skip.
-    pub async fn query_recent(
-        &self,
-        level: Option<&str>,
-        source: Option<&str>,
-        limit: u32,
-    ) -> Result<Vec<LogEntry>> {
-        // Build the query dynamically. `level`/`source` are constrained to known
-        // enum variants upstream, so interpolating the literal into the WHERE
-        // clause is safe here (no user-supplied free text).
-        let mut where_clauses = Vec::new();
-        if level.is_some() {
-            where_clauses.push("level = :L");
-        }
-        if source.is_some() {
-            where_clauses.push("source = :S");
-        }
-        let where_sql = if where_clauses.is_empty() {
-            String::new()
-        } else {
-            format!("WHERE {}", where_clauses.join(" AND "))
-        };
-
-        let level = level.map(|s| s.to_string());
-        let source = source.map(|s| s.to_string());
-
-        self.conn
-            .with_conn("vec_store", move |conn| {
-                let sql = format!(
-                    "SELECT id, timestamp, level, source, module, correlation_id, \
-                     message, metadata, resolved, resolution \
-                     FROM service_logs {where_sql} \
-                     ORDER BY timestamp DESC LIMIT :N"
-                );
-                let mut stmt = conn.prepare(&sql)?;
-
-                // Bind dynamically depending on which filters are present.
-                let rows = if let (Some(l), Some(s)) = (&level, &source) {
-                    stmt.query_map(
-                        rusqlite::named_params! { ":L": l, ":S": s, ":N": limit },
-                        Self::map_row,
-                    )?
-                } else if let Some(l) = &level {
-                    stmt.query_map(
-                        rusqlite::named_params! { ":L": l, ":N": limit },
-                        Self::map_row,
-                    )?
-                } else if let Some(s) = &source {
-                    stmt.query_map(
-                        rusqlite::named_params! { ":S": s, ":N": limit },
-                        Self::map_row,
-                    )?
-                } else {
-                    stmt.query_map(rusqlite::named_params! { ":N": limit }, Self::map_row)?
-                };
-
-                let mut entries = Vec::new();
-                for row in rows {
-                    entries.push(row?);
-                }
-                Ok(entries)
-            })
-            .await
     }
 
     /// Detect error patterns: same module + message repeated > threshold times.

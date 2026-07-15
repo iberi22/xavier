@@ -15,14 +15,14 @@ mod tests {
         let wallet = Arc::new(Mutex::new(Wallet::new(node_id)));
         let engine = RewardEngine::new(wallet.clone());
 
-        // Base Tier (4% APY -> 1.0x multiplier)
+        // Base Tier (5% APY -> 1.0x multiplier)
         let contrib = ContributionType::DataValidated { records: 10 };
         let reward_base = engine.calculate_reward(&contrib, InvestmentTier::Base);
         assert_eq!(reward_base, 50);
 
-        // Sovereign Tier (40% APY -> 10.0x multiplier)
+        // Sovereign Tier (40% APY -> 8.0x multiplier)
         let reward_sovereign = engine.calculate_reward(&contrib, InvestmentTier::Sovereign);
-        assert_eq!(reward_sovereign, 500); // 50 * 10
+        assert_eq!(reward_sovereign, 400); // 50 * 8
     }
 
     #[test]

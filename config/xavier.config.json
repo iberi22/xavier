@@ -99,7 +99,7 @@
     "embedder": "",
     "gllm_model": "",
     "api_flavor": "openai-compatible",
-    "api_key": "",
+    "api_key": "REDACTED",
     "gllm_dimension": null,
     "cache_enabled": true,
     "cache_size": 10000,
