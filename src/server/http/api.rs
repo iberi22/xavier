@@ -62,7 +62,9 @@ pub async fn memory_retrieve(
     gating = gating
         .with_memory(Arc::clone(&workspace.workspace.memory))
         .with_booster(Arc::clone(&workspace.workspace.zone_booster));
-    let working_docs = workspace.workspace.memory.all_documents().await;
+
+    let working_docs = workspace.workspace.working_documents().await;
+
     let threads = workspace
         .workspace
         .conversations_db
@@ -158,6 +160,9 @@ pub async fn memory_export_pack(
     Json(payload): Json<ExportPackRequest>,
 ) -> impl IntoResponse {
     let gating = AdaptiveGating::with_defaults();
+
+    let working_docs = workspace.workspace.working_documents().await;
+
     let all_docs = workspace.workspace.memory.all_documents().await;
     let threads = workspace
         .workspace
@@ -178,6 +183,7 @@ pub async fn memory_export_pack(
     let semantic_entities = workspace.workspace.entity_graph.all_entities().await;
     let layered_result = gating
         .retrieve_layered(
+            &working_docs,
             &all_docs,
             &episodic_summaries,
             &semantic_entities,
