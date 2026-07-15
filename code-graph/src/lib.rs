@@ -5,6 +5,7 @@
 //!
 //! Note: Storage - use SQLite for standalone CLI, or SurrealDB via Xavier integration
 
+pub mod api;
 pub mod db;
 pub mod debug;
 pub mod impact;
