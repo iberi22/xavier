@@ -19,9 +19,7 @@ impl Default for ContextBuilderConfig {
     fn default() -> Self {
         Self {
             persona: "You are Xavier, a cognitive memory runtime for AI agents.".to_string(),
-            rules: vec![
-                "STRUCTURAL CODE DISCOVERY: When answering questions about architecture, how components are connected, or tracing execution paths, ALWAYS use the `codegraph_explore` or `trace_path` tools instead of generic file searching or vector search (RAG).".to_string(),
-            ],
+            rules: vec![],
             goals: vec![],
             constraints: vec![],
             recent_messages_limit: 5,

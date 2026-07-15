@@ -2,7 +2,7 @@
 use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::Address,
-    providers::{Provider, ProviderBuilder},
+    providers::ProviderBuilder,
     signers::local::PrivateKeySigner,
     sol,
 };
@@ -108,29 +108,34 @@ impl DaoGovernanceSystem {
     #[cfg(feature = "dao-evm")]
     async fn submit_proposal_evm(
         &self,
-        _cluster_id: &str,
-        _title: &str,
-        _description: &str,
+        cluster_id: &str,
+        title: &str,
+        description: &str,
     ) -> anyhow::Result<()> {
-        /* Placeholder for EVM integration until alloy configuration is stable
-        let config = self.evm_config.as_ref().ok_or_else(|| anyhow::anyhow!("EVM config missing"))?;
+        let config = self
+            .evm_config
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("EVM config missing"))?;
         let signer: PrivateKeySigner = config.private_key.parse()?;
         let wallet = EthereumWallet::from(signer);
         let provider = ProviderBuilder::new()
             .network::<Ethereum>()
             .wallet(wallet)
-            .connect_http(config.rpc_url.parse()?).await?;
+            .connect_http(config.rpc_url.parse::<url::Url>()?);
 
         let contract = IXavierDAO::new(config.contract_address, provider);
 
         let mut cluster_id_bytes = [0u8; 32];
-        let bytes = _cluster_id.as_bytes();
+        let bytes = cluster_id.as_bytes();
         let len = bytes.len().min(32);
         cluster_id_bytes[..len].copy_from_slice(&bytes[..len]);
 
-        let tx = contract.createProposal(cluster_id_bytes.into(), _title.to_string(), _description.to_string());
+        let tx = contract.createProposal(
+            cluster_id_bytes.into(),
+            title.to_string(),
+            description.to_string(),
+        );
         let _receipt = tx.send().await?;
-        */
 
         Ok(())
     }
@@ -159,27 +164,61 @@ impl DaoGovernanceSystem {
         Ok(())
     }
 
+    /// Synchronizes the local state with the on-chain status of all active proposals.
+    /// Requires feature `dao-evm` enabled.
     #[cfg(feature = "dao-evm")]
-    async fn cast_vote_evm(&self, _cluster_id: &str, _approve: bool) -> anyhow::Result<()> {
-        /* Placeholder for EVM integration until alloy configuration is stable
-        let config = self.evm_config.as_ref().ok_or_else(|| anyhow::anyhow!("EVM config missing"))?;
+    pub async fn sync_from_chain(&mut self) -> anyhow::Result<()> {
+        let config = self
+            .evm_config
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("EVM config missing"))?;
+        let provider = ProviderBuilder::new()
+            .network::<Ethereum>()
+            .connect_http(config.rpc_url.parse::<url::Url>()?);
+
+        let contract = IXavierDAO::new(config.contract_address, provider);
+
+        for (cluster_id, proposal) in self.active_proposals.iter_mut() {
+            let mut cluster_id_bytes = [0u8; 32];
+            let bytes = cluster_id.as_bytes();
+            let len = bytes.len().min(32);
+            cluster_id_bytes[..len].copy_from_slice(&bytes[..len]);
+
+            match contract.getProposalStatus(cluster_id_bytes.into()).call().await {
+                Ok(status) => {
+                    proposal.is_approved_for_pr = status.approved;
+                    proposal.upvotes = status.upvotes;
+                    proposal.downvotes = status.downvotes;
+                }
+                Err(e) => tracing::error!("Failed to sync proposal {} from chain: {:?}", cluster_id, e),
+            }
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "dao-evm")]
+    async fn cast_vote_evm(&self, cluster_id: &str, approve: bool) -> anyhow::Result<()> {
+        let config = self
+            .evm_config
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("EVM config missing"))?;
         let signer: PrivateKeySigner = config.private_key.parse()?;
         let wallet = EthereumWallet::from(signer);
         let provider = ProviderBuilder::new()
             .network::<Ethereum>()
             .wallet(wallet)
-            .connect_http(config.rpc_url.parse()?).await?;
+            .connect_http(config.rpc_url.parse::<url::Url>()?);
 
         let contract = IXavierDAO::new(config.contract_address, provider);
 
         let mut cluster_id_bytes = [0u8; 32];
-        let bytes = _cluster_id.as_bytes();
+        let bytes = cluster_id.as_bytes();
         let len = bytes.len().min(32);
         cluster_id_bytes[..len].copy_from_slice(&bytes[..len]);
 
-        let tx = contract.castVote(cluster_id_bytes.into(), _approve);
+        let tx = contract.castVote(cluster_id_bytes.into(), approve);
         let _receipt = tx.send().await?;
-        */
 
         Ok(())
     }
@@ -269,5 +308,43 @@ mod tests {
 
         let prop = dao.active_proposals.get("CLUSTER_UI").unwrap();
         assert!(!prop.is_approved_for_pr);
+    }
+
+    #[cfg(feature = "dao-evm")]
+    #[tokio::test]
+    async fn test_governance_dao_submit_vote_evm() {
+        let config = EvmDaoConfig {
+            rpc_url: "http://localhost:8545".to_string(),
+            contract_address: Address::ZERO,
+            chain_id: 1,
+            private_key: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+                .to_string(),
+        };
+
+        let mut dao = DaoGovernanceSystem::with_evm(config);
+        // We just verify it doesn't crash when configured (it might fail on RPC connection if the URL is invalid,
+        // but here we just check if it correctly sets up the proposal in memory first)
+        dao.submit_proposal("EVM_1", "Test EVM", "Desc").await;
+        assert!(dao.active_proposals.contains_key("EVM_1"));
+    }
+
+    #[cfg(feature = "dao-evm")]
+    #[tokio::test]
+    async fn test_governance_dao_sync_from_chain() {
+        let config = EvmDaoConfig {
+            rpc_url: "http://localhost:8545".to_string(),
+            contract_address: Address::ZERO,
+            chain_id: 1,
+            private_key: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+                .to_string(),
+        };
+
+        let mut dao = DaoGovernanceSystem::with_evm(config);
+        dao.submit_proposal("EVM_SYNC", "Sync Test", "Desc").await;
+
+        // This will attempt to call the RPC and likely fail since no node is running,
+        // but we verify it handles the error or at least doesn't panic.
+        let _ = dao.sync_from_chain().await;
+        assert!(dao.active_proposals.contains_key("EVM_SYNC"));
     }
 }

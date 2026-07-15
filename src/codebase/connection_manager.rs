@@ -213,9 +213,9 @@ impl ConnectionManager {
     }
 
     /// Execute a query closure using a connection from the active pool.
-    pub async fn with_active<F, T>(&self, mut f: F) -> Result<T>
+    pub async fn with_active<F, T>(&self, f: F) -> Result<T>
     where
-        F: FnMut(&Connection) -> Result<T> + Send + 'static,
+        F: FnOnce(&Connection) -> Result<T> + Send + 'static,
         T: Send + 'static,
     {
         let active_id = {
@@ -229,9 +229,9 @@ impl ConnectionManager {
     }
 
     /// Execute a query closure using a connection from a specific project's pool.
-    pub async fn with_conn<F, T>(&self, project_id: &str, mut f: F) -> Result<T>
+    pub async fn with_conn<F, T>(&self, project_id: &str, f: F) -> Result<T>
     where
-        F: FnMut(&Connection) -> Result<T> + Send + 'static,
+        F: FnOnce(&Connection) -> Result<T> + Send + 'static,
         T: Send + 'static,
     {
         let pool = {
@@ -244,27 +244,8 @@ impl ConnectionManager {
         };
 
         tokio::task::spawn_blocking(move || {
-            let mut retries = 0;
-            loop {
-                let conn = pool.get().context("failed to get connection from pool")?;
-                match f(&conn) {
-                    Ok(res) => return Ok(res),
-                    Err(err) => {
-                        if let Some(sqlite_err) = err.downcast_ref::<rusqlite::Error>() {
-                            if is_sqlite_lock_error(sqlite_err) && retries < 15 {
-                                retries += 1;
-                                tracing::warn!(
-                                    "SQLite is locked, retrying {}/15 in 200ms...",
-                                    retries
-                                );
-                                std::thread::sleep(std::time::Duration::from_millis(200));
-                                continue;
-                            }
-                        }
-                        return Err(err);
-                    }
-                }
-            }
+            let conn = pool.get().context("failed to get connection from pool")?;
+            f(&conn)
         })
         .await
         .context("blocking task panicked")?

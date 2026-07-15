@@ -98,6 +98,7 @@ pub async fn export_pack_handler(
 
     let layered_result = gating
         .retrieve_layered(
+            &all_docs, // In CLI, we don't have a separate working memory easily available, so we use all_docs as fallback
             &all_docs,
             &episodic_summaries,
             &semantic_entities,
@@ -166,10 +167,7 @@ pub async fn search_handler(
         .unwrap_or_else(|| xavier::memory::schema::parse_zones_from_prompt(effective_query));
     filters.zones = Some(zones);
 
-    let results: Vec<MemoryRecord> = match state
-        .memory
-        .search(effective_query, 10, Some(filters))
-        .await
+    let results: Vec<MemoryRecord> = match state.memory.search(effective_query, 10, Some(filters)).await
     {
         Ok(results) => results,
         Err(e) => {
