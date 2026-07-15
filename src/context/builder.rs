@@ -108,7 +108,7 @@ impl ContextBuilder {
         let mut compressed = context.replace("  ", " ").replace("\n\n\n", "\n\n");
 
         // Add chunk headers for auto-containment
-        if compressed.len() > 1000 {
+        if super::estimate_tokens(&compressed) > 250 {
             compressed.insert_str(0, "## CONTEXT_CHUNK_START:v1:auto-contained\n");
             compressed.push_str("\n## CONTEXT_CHUNK_END\n");
         }

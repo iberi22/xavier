@@ -16,6 +16,7 @@ pub mod skill_dispatcher;
 pub mod skill_registry;
 pub mod skills;
 pub mod timeline;
+pub mod token_budget;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -35,6 +36,7 @@ pub use skill_dispatcher::{
 pub use skill_registry::{IndexedSkill, SkillRegistry};
 pub use skills::{Skill, SkillLoader};
 pub use timeline::{TimeSlice, TimelineEngine, TimelineEventSummary, TimelineQuery};
+pub use token_budget::{estimate_tokens, truncate_to_tokens, TokenBudget};
 
 /// Canonical unit used by context regeneration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -63,7 +65,7 @@ impl ContextDocument {
             id: id.into(),
             session_id: session_id.into(),
             role: role.into(),
-            token_count: content.split_whitespace().count(),
+            token_count: estimate_tokens(&content),
             content,
             tool_calls: Vec::new(),
             metadata: serde_json::Value::Null,
