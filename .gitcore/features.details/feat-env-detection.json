@@ -1,0 +1,50 @@
+{
+  "feature": "feat-env-detection",
+  "name": "Environment Detection & MCP Bridge",
+  "category": "infrastructure",
+  "status": "stable",
+  "progress_pct": 100,
+  "score": 100,
+  "steps": {
+    "create_which_xavier.sh_script_detecting_": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "integrate_detection_into_mcp_bridge_star": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "add_lock_file_to_prevent_duplicate_mcp_b": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "add_xavier_env()_mcp_tool_reporting_envi": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "create_start_xavier.sh_cleanup_startup_s": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "persist_xavier_token_in_.env_file": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "auto_kill_zombie_bridges_on_startup": {
+      "passed": true,
+      "weight": 12,
+      "score": 12
+    },
+    "hermes_config_integration_with_real_toke": {
+      "passed": true,
+      "weight": 16,
+      "score": 16
+    }
+  }
+}

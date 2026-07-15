@@ -1,0 +1,35 @@
+{
+  "feature": "feat-notification-system",
+  "name": "Notification Persistence and Delivery",
+  "category": "core",
+  "status": "draft",
+  "progress_pct": 95,
+  "score": 0,
+  "steps": {
+    "create_notification_struct_and_event_typ": {
+      "passed": false,
+      "weight": 20,
+      "score": 0
+    },
+    "persist_notifications_to_sqlite": {
+      "passed": false,
+      "weight": 20,
+      "score": 0
+    },
+    "expose_rest_api_(get,_patch,_delete)": {
+      "passed": false,
+      "weight": 20,
+      "score": 0
+    },
+    "tauri_emit_all_for_real_time_ui_updates": {
+      "passed": false,
+      "weight": 20,
+      "score": 0
+    },
+    "4_category_islands_(system,_memory,_agen": {
+      "passed": false,
+      "weight": 20,
+      "score": 0
+    }
+  }
+}

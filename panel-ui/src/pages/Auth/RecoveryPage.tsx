@@ -30,7 +30,7 @@ export const RecoveryPage: React.FC = () => {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-black text-[#39ff14] font-mono">
+    <div className="flex flex-col items-center justify-center min-h-dvh bg-black text-[#39ff14] font-mono">
       <form onSubmit={handleSubmit} className="w-full max-w-md p-8 border border-[#39ff14]/30 rounded-lg bg-black/50">
         <h2 className="text-2xl mb-2 text-center tracking-tighter uppercase">TERMINAL RECOVERY</h2>
         <p className="text-xs text-center opacity-70 mb-6 uppercase">Use your 12-word seed phrase to reset access</p>

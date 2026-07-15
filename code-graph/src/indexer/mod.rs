@@ -1,8 +1,17 @@
 //! Indexer - scans and indexes codebases.
+//!
+//! The Indexer holds the deprecated `PluginHost` for backwards compatibility;
+//! it delegates to the underlying `PluginManager` when calling `parse_source`.
+//! Silencing the deprecation here keeps the build log readable while we migrate
+//! callers incrementally.
+#![allow(deprecated)]
+
+pub mod watcher;
 
 use crate::db::CodeGraphDB;
 use crate::error::{GraphError, Result};
 use crate::parser::parse_source;
+use crate::plugin_host::PluginHost;
 use crate::types::{CodeEdge, EdgeType, IndexStats, Language, Symbol, SymbolKind};
 use globset::{Glob, GlobSet, GlobSetBuilder};
 use ignore::WalkBuilder;
@@ -13,9 +22,13 @@ use std::time::Instant;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
+pub mod call_resolution;
+use call_resolution::{extract_call_names, CallResolver};
+
 pub struct Indexer {
     db: Arc<CodeGraphDB>,
     max_concurrent: usize,
+    plugin_host: Arc<PluginHost>,
 }
 
 impl Indexer {
@@ -23,61 +36,118 @@ impl Indexer {
         Self {
             db,
             max_concurrent: 8,
+            plugin_host: Arc::new(PluginHost::new()),
         }
     }
 
     /// Index a directory.
-    pub async fn index(&self, root: &Path) -> Result<IndexStats> {
+    pub async fn index(&self, root: &Path, incremental: bool) -> Result<IndexStats> {
         let start = Instant::now();
-        info!("Starting indexing of {:?}", root);
+        info!(
+            "Starting {}indexing of {:?}",
+            if incremental { "incremental " } else { "" },
+            root
+        );
 
-        let root_path = root.to_path_buf();
-        let files = tokio::task::spawn_blocking(move || Self::collect_files(&root_path))
-            .await
-            .map_err(|e| GraphError::Io(std::io::Error::other(e)))??;
-        info!("Found {} files to index", files.len());
+        let all_files = self.collect_files(root)?;
+        let mut files_to_index = Vec::new();
+        let mut files_to_mtime = HashMap::new();
+        let mut files_to_delete = Vec::new();
 
-        let db = Arc::clone(&self.db);
-        tokio::task::spawn_blocking(move || db.clear())
-            .await
-            .map_err(|e| GraphError::Io(std::io::Error::other(e)))??;
+        if !incremental {
+            self.db.clear()?;
+            files_to_index = all_files;
+            for file_path in &files_to_index {
+                let (rel, mtime) = get_file_info(root, file_path);
+                files_to_mtime.insert(rel, mtime);
+            }
+        } else {
+            let existing_metadata = self.db.get_all_file_metadata()?;
+            let mut current_files = std::collections::HashSet::new();
+
+            for file_path in all_files {
+                let (relative_path, mtime) = get_file_info(root, &file_path);
+                current_files.insert(relative_path.clone());
+
+                if let Some(&old_mtime) = existing_metadata.get(&relative_path) {
+                    if old_mtime != mtime {
+                        debug!("File changed: {}", relative_path);
+                        files_to_delete.push(relative_path.clone());
+                        files_to_index.push(file_path);
+                        files_to_mtime.insert(relative_path, mtime);
+                    }
+                } else {
+                    debug!("New file: {}", relative_path);
+                    files_to_index.push(file_path);
+                    files_to_mtime.insert(relative_path, mtime);
+                }
+            }
+
+            for path in existing_metadata.keys() {
+                if !current_files.contains(path) {
+                    info!("File removed: {}", path);
+                    files_to_delete.push(path.clone());
+                }
+            }
+
+            if files_to_index.is_empty() && files_to_delete.is_empty() {
+                info!("No changes detected, skipping index update.");
+                let mut stats = self.db.stats()?;
+                stats.duration_ms = start.elapsed().as_millis() as u64;
+                return Ok(stats);
+            }
+
+            self.db.batch_delete_file_data(&files_to_delete)?;
+        }
+
+        info!("Found {} files to index", files_to_index.len());
 
         let semaphore = Arc::new(Semaphore::new(self.max_concurrent));
         let mut handles = Vec::new();
 
-        for file_path in files {
+        for file_path in files_to_index {
             let sem = semaphore.clone();
             let root = root.to_path_buf();
+            let plugin_host = self.plugin_host.clone();
             let handle = tokio::spawn(async move {
                 let _permit = sem.acquire().await.expect("semaphore should be open");
-                tokio::task::spawn_blocking(move || parse_file(&root, &file_path))
-                    .await
-                    .map_err(|e| GraphError::Parser(e.to_string()))?
+                parse_file(&root, &file_path, Some(&*plugin_host)).await
             });
             handles.push(handle);
         }
 
-        let mut symbols = Vec::new();
+        let mut new_symbols = Vec::new();
         let mut sources = HashMap::new();
         for handle in handles {
             match handle.await {
                 Ok(Ok(parsed)) => {
                     sources.insert(parsed.file_path.clone(), parsed.source);
-                    symbols.extend(parsed.symbols);
+                    new_symbols.extend(parsed.symbols);
                 }
                 Ok(Err(error)) => warn!("Failed to parse file: {}", error),
                 Err(error) => error!("Task failed: {}", error),
             }
         }
 
-        assign_stable_ids(&mut symbols);
-        let edges = build_edges(&symbols, &sources);
+        assign_stable_ids(&mut new_symbols);
+
+        // Load all symbols to build edges correctly (new symbols can point to old ones)
+        let all_symbols = if incremental && !new_symbols.is_empty() {
+            let mut all = self.db.get_all_symbols()?;
+            all.extend(new_symbols.clone());
+            all
+        } else {
+            new_symbols.clone()
+        };
+
+        let edges = build_edges(&new_symbols, &all_symbols, &sources);
+        let edges_len = edges.len();
 
         let db = Arc::clone(&self.db);
-        let edges_len = edges.len();
         let mut stats = tokio::task::spawn_blocking(move || {
-            db.insert_symbols(&symbols)?;
+            db.insert_symbols(&new_symbols)?;
             db.insert_edges(&edges)?;
+            db.batch_upsert_file_metadata(files_to_mtime)?;
             db.stats()
         })
         .await
@@ -152,16 +222,16 @@ struct ParsedFile {
     symbols: Vec<Symbol>,
 }
 
-fn parse_file(root: &Path, file_path: &Path) -> Result<ParsedFile> {
+async fn parse_file(
+    root: &Path,
+    file_path: &Path,
+    plugin_host: Option<&PluginHost>,
+) -> Result<ParsedFile> {
     let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
     let lang = Language::from_extension(ext);
-    if lang == Language::Unknown {
-        return Ok(ParsedFile {
-            file_path: file_path.to_string_lossy().to_string(),
-            source: String::new(),
-            symbols: Vec::new(),
-        });
-    }
+
+    // We try to parse even if lang is Unknown because a plugin might handle it by extension
+    // But for now, we follow the discovery logic in PluginHost::parser_for which might return NoOp
 
     let source = std::fs::read_to_string(file_path).map_err(GraphError::Io)?;
     let relative_path = file_path
@@ -169,7 +239,11 @@ fn parse_file(root: &Path, file_path: &Path) -> Result<ParsedFile> {
         .unwrap_or(file_path)
         .to_string_lossy()
         .replace('\\', "/");
-    let symbols = parse_source(&source, &lang, &relative_path)?;
+    // The deprecated PluginHost wraps a PluginManager; unwrap it so parse_source
+    // receives the fallback-chain-aware manager. When no host is supplied we
+    // fall back to the built-in native parsers.
+    let manager = plugin_host.map(|host| host.manager());
+    let symbols = parse_source(&source, &lang, &relative_path, manager).await?;
     if !symbols.is_empty() {
         debug!("Extracted {} symbols from {}", symbols.len(), relative_path);
     }
@@ -189,14 +263,14 @@ fn assign_stable_ids(symbols: &mut [Symbol]) {
     }
 }
 
-fn build_edges(symbols: &[Symbol], sources: &HashMap<String, String>) -> Vec<CodeEdge> {
+fn build_edges(
+    new_symbols: &[Symbol],
+    all_symbols: &[Symbol],
+    sources: &HashMap<String, String>,
+) -> Vec<CodeEdge> {
     let mut edges = Vec::new();
-    let callable_symbols: Vec<&Symbol> = symbols
-        .iter()
-        .filter(|symbol| matches!(symbol.kind, SymbolKind::Function | SymbolKind::Method))
-        .collect();
 
-    for symbol in symbols {
+    for symbol in new_symbols {
         let symbol_id = symbol
             .stable_id
             .clone()
@@ -239,7 +313,15 @@ fn build_edges(symbols: &[Symbol], sources: &HashMap<String, String>) -> Vec<Cod
         }
     }
 
-    for caller in &callable_symbols {
+    // Only build edges FROM new symbols
+    let new_callable_symbols: Vec<&Symbol> = new_symbols
+        .iter()
+        .filter(|symbol| matches!(symbol.kind, SymbolKind::Function | SymbolKind::Method))
+        .collect();
+
+    let resolver = CallResolver::new(all_symbols, sources);
+
+    for caller in &new_callable_symbols {
         let Some(source) = sources.get(&caller.file_path) else {
             continue;
         };
@@ -248,34 +330,40 @@ fn build_edges(symbols: &[Symbol], sources: &HashMap<String, String>) -> Vec<Cod
             .clone()
             .unwrap_or_else(|| caller.deterministic_id("default"));
         let body = symbol_source_slice(source, caller);
-        for callee in &callable_symbols {
-            if caller.stable_id == callee.stable_id || caller.name == callee.name {
-                continue;
-            }
-            if contains_call(&body, &callee.name) {
-                let callee_id = callee
-                    .stable_id
-                    .clone()
-                    .unwrap_or_else(|| callee.deterministic_id("default"));
+        let callee_names = extract_call_names(&body);
+
+        for name in callee_names {
+            let resolved = resolver.resolve(&caller.file_path, &name);
+            for res in resolved {
+                if res.stable_id == caller_id {
+                    continue;
+                }
                 edges.push(CodeEdge {
                     id: None,
                     from_symbol: caller_id.clone(),
-                    to_symbol: callee_id.clone(),
+                    to_symbol: res.stable_id.clone(),
                     edge_type: EdgeType::Calls,
                     file_path: caller.file_path.clone(),
                     line: caller.start_line,
-                    confidence: 0.65,
-                    metadata: Some(serde_json::json!({"callee": callee.name})),
+                    confidence: res.confidence,
+                    metadata: Some(serde_json::json!({
+                        "callee": name,
+                        "strategy": res.strategy
+                    })),
                 });
+
                 edges.push(CodeEdge {
                     id: None,
                     from_symbol: caller_id.clone(),
-                    to_symbol: callee_id,
+                    to_symbol: res.stable_id,
                     edge_type: EdgeType::References,
                     file_path: caller.file_path.clone(),
                     line: caller.start_line,
-                    confidence: 0.55,
-                    metadata: Some(serde_json::json!({"reference": callee.name})),
+                    confidence: res.confidence * 0.8,
+                    metadata: Some(serde_json::json!({
+                        "reference": name,
+                        "strategy": res.strategy
+                    })),
                 });
             }
         }
@@ -295,10 +383,79 @@ fn symbol_source_slice(source: &str, symbol: &Symbol) -> String {
         .join("\n")
 }
 
+/// Heuristic check for whether `source` (a symbol body) contains a call to a
+/// callable named `name`.
+///
+/// Uses identifier word-boundary checks instead of a raw substring test so that
+/// a callee named `init` no longer matches `initialize(`, and a callee `run`
+/// no longer matches `// we run(x)` inside a comment block as aggressively. The
+/// call still needs to be followed by `(` (direct call) or be a method call
+/// (`.name(`).
+///
+/// This is a heuristic improvement over the previous `source.contains("name(")`
+/// approach; a fully correct call graph requires tree-sitter call-expression
+/// extraction (see `build_edges` doc).
+///
+/// ⚠️ DEPRECATED: Use `CallResolver` with 6-strategy cascade instead.
+#[deprecated(note = "Use CallResolver with 6-strategy cascade instead")]
 fn contains_call(source: &str, name: &str) -> bool {
-    let needle = format!("{}(", name);
+    if name.is_empty() || source.is_empty() {
+        return false;
+    }
+    // Find every occurrence of `name(` and check the character immediately
+    // before is a word boundary (non-identifier char or start of line).
+    let call_needle = format!("{}(", name);
     let method_needle = format!(".{}(", name);
-    source.contains(&needle) || source.contains(&method_needle)
+    if source.contains(&method_needle) {
+        return true;
+    }
+    let bytes = source.as_bytes();
+    let needle_bytes = call_needle.as_bytes();
+    let _name_first = name.as_bytes()[0];
+    let mut from = 0;
+    while let Some(idx) = source[from..].find(&call_needle) {
+        let abs = from + idx;
+        let prev_ok = if abs == 0 {
+            true
+        } else {
+            let prev = bytes[abs - 1];
+            // Word boundary: previous char must not be an identifier continuation
+            // (letter, digit, underscore) so `xinit(` won't match callee `init`.
+            !(prev.is_ascii_alphanumeric() || prev == b'_')
+        };
+        // Also ensure the char before `name` isn't `.` (that's the method-call
+        // branch handled separately) — avoid double counting.
+        if prev_ok {
+            let is_method = abs > 0 && bytes[abs - 1] == b'.';
+            if !is_method {
+                return true;
+            }
+        }
+        // Avoid matching `init` as a prefix of `initialize(`: ensure the match
+        // we found is the full `name(` (it is, because the needle includes `(`),
+        // so no extra suffix check is needed here.
+        from = abs + needle_bytes.len();
+    }
+    false
+}
+
+fn get_file_info(root: &Path, file_path: &Path) -> (String, i64) {
+    let relative_path = file_path
+        .strip_prefix(root)
+        .unwrap_or(file_path)
+        .to_string_lossy()
+        .replace('\\', "/");
+
+    let mtime = std::fs::metadata(file_path)
+        .and_then(|m| m.modified())
+        .map(|t| {
+            t.duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs() as i64
+        })
+        .unwrap_or(0);
+
+    (relative_path, mtime)
 }
 
 fn build_excludes(patterns: &[&str]) -> Option<GlobSet> {
@@ -337,7 +494,7 @@ mod tests {
 
         let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
         let indexer = Indexer::new(db.clone());
-        let stats = indexer.index(dir.path()).await.expect("index");
+        let stats = indexer.index(dir.path(), false).await.expect("index");
 
         assert_eq!(stats.total_files, 2);
         assert!(stats.total_symbols >= 5);
@@ -358,5 +515,102 @@ mod tests {
 
         assert_eq!(files.len(), 1);
         assert!(files[0].ends_with("main.rs"));
+    }
+
+    #[tokio::test]
+    async fn incremental_indexing_skips_unchanged_files() {
+        let dir = TempDir::new().expect("temp dir");
+        let file_path = dir.path().join("main.rs");
+        std::fs::write(&file_path, "fn main() {}\n").expect("write rust");
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db.clone());
+
+        // First index
+        let stats1 = indexer.index(dir.path(), true).await.expect("first index");
+        assert_eq!(stats1.total_files, 1);
+        let symbols1 = db.get_all_symbols().expect("get symbols");
+        assert_eq!(symbols1.len(), 1);
+
+        // Second index (no changes)
+        let stats2 = indexer.index(dir.path(), true).await.expect("second index");
+        assert_eq!(stats2.total_files, 1);
+        // Duration should be low, but more importantly, we can check if it re-indexed
+        // In our current implementation, new_symbols will be empty if nothing changed
+        // We can check if it still has the same symbols
+        let symbols2 = db.get_all_symbols().expect("get symbols");
+        assert_eq!(symbols2.len(), 1);
+        assert_eq!(symbols1[0].stable_id, symbols2[0].stable_id);
+
+        // Modify file
+        // Since we can't easily set mtime in a cross-platform way without extra crates,
+        // and our implementation uses std::fs::metadata, let's just write and hope mtime changes
+        // or just wait a bit.
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        std::fs::write(
+            &file_path,
+            "fn main() { println!(\"hi\"); }\nfn other() {}\n",
+        )
+        .expect("write rust");
+
+        let stats3 = indexer.index(dir.path(), true).await.expect("third index");
+        assert_eq!(stats3.total_files, 1);
+        let symbols3 = db.get_all_symbols().expect("get symbols");
+        assert_eq!(symbols3.len(), 2); // main and other
+    }
+
+    #[tokio::test]
+    async fn incremental_indexing_removes_deleted_files() {
+        let dir = TempDir::new().expect("temp dir");
+        let file1 = dir.path().join("main.rs");
+        let file2 = dir.path().join("other.rs");
+        std::fs::write(&file1, "fn main() {}\n").expect("write file1");
+        std::fs::write(&file2, "fn other() {}\n").expect("write file2");
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db.clone());
+
+        indexer.index(dir.path(), true).await.expect("first index");
+        assert_eq!(db.stats().expect("stats").total_files, 2);
+
+        std::fs::remove_file(file2).expect("remove file2");
+        indexer.index(dir.path(), true).await.expect("second index");
+
+        assert_eq!(db.stats().expect("stats").total_files, 1);
+        let symbols = db.get_all_symbols().expect("get symbols");
+        assert!(symbols.iter().all(|s| s.file_path == "main.rs"));
+    }
+
+    #[tokio::test]
+    async fn build_edges_uses_resolver_instead_of_contains_call() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(
+            dir.path().join("main.rs"),
+            "mod processor;\nfn main() { processor::process_data(); }",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("processor.rs"), "pub fn process_data() {}").unwrap();
+
+        let db = Arc::new(CodeGraphDB::in_memory().unwrap());
+        let indexer = Indexer::new(db.clone());
+        indexer.index(dir.path(), false).await.unwrap();
+
+        let edges = db.get_all_edges().unwrap();
+        let call_edges: Vec<_> = edges
+            .iter()
+            .filter(|e| e.edge_type == EdgeType::Calls)
+            .collect();
+
+        assert!(!call_edges.is_empty(), "Should have call edges");
+        // Verify at least one edge has metadata.strategy
+        assert!(
+            call_edges.iter().any(|e| {
+                e.metadata
+                    .as_ref()
+                    .and_then(|m| m.get("strategy"))
+                    .is_some()
+            }),
+            "Call edges should include strategy metadata"
+        );
     }
 }

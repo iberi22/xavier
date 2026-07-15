@@ -324,3 +324,42 @@ curl -X POST http://localhost:8006/memory/search \
   -H "Content-Type: application/json" \
   -d '{"query":"deployment smoke test","limit":1}'
 ```
+
+
+## 🧩 Environment Detection (Post-Install)
+
+Después de la instalación, verificar el entorno:
+
+### Verificar estado
+```bash
+# 1. Health check
+curl http://localhost:8006/health
+
+# 2. Detectar entorno
+bash /home/belal/.hermes/scripts/which-xavier.sh
+
+# 3. Verificar memoria
+curl -X POST http://localhost:8006/memory/search \
+  -H "X-Xavier-Token: $XAVIER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"test", "limit":1}'
+
+# 4. Verificar code-graph
+curl http://localhost:8006/code/stats -H "X-Xavier-Token: $XAVIER_TOKEN"
+
+# 5. Verificar bridge
+pgrep -f xavier-mcp-bridge
+```
+
+### Arranque Limpio
+```bash
+bash /home/belal/.hermes/scripts/start-xavier.sh
+```
+
+### Troubleshooting
+
+| Problema | Síntoma | Fix |
+|----------|---------|-----|
+| Bridges zombies | Múltiples instancias `pgrep -f xavier-mcp-bridge` | Matar todos y dejar que Hermes los respawnee |
+| Token inválido | `401 Unauthorized` | Verificar `/home/belal/.xavier/.env` |
+| Code-graph vacío | `0 files` en `/code/stats` | Ejecutar `./code-graph scan --no-incremental ./src` |

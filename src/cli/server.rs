@@ -23,8 +23,8 @@ use crate::cli::config::{
     code_graph_db_path, resolve_base_url_for_port, resolve_http_bind_host, resolve_http_token,
     state_panel_root,
 };
-use xavier::security::auth_store::AuthStore;
 use crate::cli::state::CliState;
+use xavier::security::auth_store::AuthStore;
 
 use crate::settings::XavierSettings;
 use xavier::adapters::inbound::http::routes::{
@@ -80,7 +80,6 @@ pub async fn metrics_handler() -> axum::response::Response {
 pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     // Initialize Prometheus exporter (v0.3.3 auto-initializes or uses global_metrics_exporter)
 
-
     // Initial health check run to populate the static HEALTH instance
     tokio::spawn(async {
         let _ = xavier::observability::health::HEALTH.run_checks().await;
@@ -120,7 +119,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let rate_manager = Arc::new(RateLimitManager::new());
     let threat_store = Arc::new(SecurityThreatStore::new());
 
-    let auth_db_path = format!("{}/.xavier/auth.db", std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    let auth_db_path = format!(
+        "{}/.xavier/auth.db",
+        std::env::var("HOME").unwrap_or_else(|_| ".".to_string())
+    );
     let auth_store = Arc::new(AuthStore::open(auth_db_path, [0u8; 32])?); // Use actual key in prod
 
     time_store.init_schema_async().await?;
@@ -281,7 +283,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                             .await;
                     }
                 }
-                xavier::coordination::events::XavierEvent::AgentTaskCompleted { agent_id, .. } => {
+                xavier::coordination::events::XavierEvent::AgentTaskCompleted {
+                    agent_id, ..
+                } => {
                     info!(
                         "Agent {} task completed. Revoking ephemeral keys...",
                         agent_id
@@ -290,7 +294,11 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                         .revoke_for_agent(&agent_id, "Agent Task Completed")
                         .await;
                 }
-                xavier::coordination::events::XavierEvent::AgentTaskFailed { agent_id, reason, .. } => {
+                xavier::coordination::events::XavierEvent::AgentTaskFailed {
+                    agent_id,
+                    reason,
+                    ..
+                } => {
                     info!(
                         "Agent {} task failed ({}). Revoking ephemeral keys...",
                         agent_id, reason
@@ -401,16 +409,18 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/v1/account/usage", get(account_usage_handler))
         .route("/v1/embeddings", post(embed_handler))
         .route("/v1/auth/session", post(session_create_handler))
-        .nest("/v1/auth", Router::new()
-            .route("/register", post(register_handler))
-            .route("/login", post(login_handler))
-            .route("/totp/verify", post(totp_verify_handler))
-            .route("/refresh", post(refresh_handler))
-            .route("/recover", post(recover_handler))
-            .layer(middleware::from_fn_with_state(
-                state.clone(),
-                rate_limit_middleware,
-            ))
+        .nest(
+            "/v1/auth",
+            Router::new()
+                .route("/register", post(register_handler))
+                .route("/login", post(login_handler))
+                .route("/totp/verify", post(totp_verify_handler))
+                .route("/refresh", post(refresh_handler))
+                .route("/recover", post(recover_handler))
+                .layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    rate_limit_middleware,
+                )),
         )
         .route("/security/scan", post(security_scan_handler))
         .route("/memory/query", post(memory_query_handler))
@@ -508,6 +518,8 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         )
         .route("/panel/api/widgets", get(list_widgets).post(save_widget))
         .route("/panel/api/graph", get(get_graph).post(save_graph))
+        .route("/api/logs", get(list_logs))
+        .route("/api/logs/stats", get(log_stats))
         .route("/secrets/lend", post(lend_handler))
         .route("/secrets/leases", get(leases_handler))
         .route("/secrets/revoke", post(revoke_handler))
@@ -809,6 +821,14 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .layer(Extension(workspace_ctx.clone()))
         .layer(CorsLayer::permissive());
 
+    // Observability: log every request via tracing, persist 5xx to the
+    // ServiceLogStore so they surface in the Panel "Logs" tab.
+    let obs_state = std::sync::Arc::new(xavier::observability::ObservabilityState::new());
+    let app = app.layer(middleware::from_fn_with_state(
+        obs_state,
+        xavier::observability::request_logger,
+    ));
+
     let agent_indexer_cron = state.agent_indexer.clone();
     let memory_port_cron = state.memory.clone();
     let app = app.with_state(state.clone());
@@ -964,17 +984,20 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             .await?;
     } else {
         use std::net::SocketAddr;
-        axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
-            .with_graceful_shutdown(async move {
-                if let Err(error) = tokio::signal::ctrl_c().await {
-                    info!("Failed to listen for Ctrl+C shutdown signal: {}", error);
-                }
-                if let Some(shutdown) = sync_shutdown {
-                    shutdown.shutdown();
-                    shutdown.wait_for_shutdown(Duration::from_secs(5)).await;
-                }
-            })
-            .await?;
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(async move {
+            if let Err(error) = tokio::signal::ctrl_c().await {
+                info!("Failed to listen for Ctrl+C shutdown signal: {}", error);
+            }
+            if let Some(shutdown) = sync_shutdown {
+                shutdown.shutdown();
+                shutdown.wait_for_shutdown(Duration::from_secs(5)).await;
+            }
+        })
+        .await?;
     }
 
     Ok(())

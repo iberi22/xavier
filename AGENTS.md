@@ -1,6 +1,84 @@
 # AGENTS.md - Xavier Workspace
 
+## 📖 ORDEN DE LECTURA (Reading Order)
+
+> **⚠️ Todos los agentes deben seguir este orden al iniciar una sesión.**
+
+| Paso | Archivo | Propósito |
+|------|---------|-----------|
+| 1 | `SOUL.md` | Quién es Xavier — identidad, valores, personalidad |
+| 2 | `USER.md` | Quién es BELA — contexto del humano a cargo |
+| 3 | `MEMORY.md` | Memoria persistente — decisiones y lecciones pasadas |
+| 4 | `RULES.md` | Reglas de codificación, Rust, agentes, documentación |
+| 5 | `.gitcore/planning/PLANNING.md` | Visión del proyecto, fases, prioridades Q3 2026 |
+| 6 | `.gitcore/planning/TASK.md` | Tareas activas, progreso por componente, deuda técnica |
+| 7 | `.gitcore/features.json` | Estado de 20 features con tests y validación |
+| 8 | `.gitcore/SRC.md` | Estructura del código fuente y entry points |
+| 9 | `docs/devlog/` (último) | Bitácora técnica de la semana actual |
+
+**Regla de oro:** Siempre busca en Xavier (`POST /memory/search`) antes de empezar una tarea compleja. Siempre persiste después de completar.
+
+---
+
 ## Identity
+
+## 🌍 Entorno de Xavier (Environment Detection)
+
+Xavier puede correr en múltiples entornos. Los agentes deben detectar el entorno automáticamente.
+
+### Script de Detección
+```bash
+# Retorna: wsl | docker | windows-native | not-running
+bash /home/belal/.hermes/scripts/which-xavier.sh
+```
+
+### URL por Entorno
+| Entorno | URL por defecto |
+|---------|----------------|
+| **WSL** (actual) | `http://127.0.0.1:8006` |
+| **Docker** | `http://<container>:8006` |
+| **Windows Native** | `http://127.0.0.1:8006` |
+
+### Token de Autenticación
+```bash
+# Header requerido en todas las llamadas
+X-Xavier-Token: 8ae8b4…91f7
+```
+
+### MCP Bridge (Hermes Integration)
+Xavier expone un bridge MCP que Hermes spawn bajo demanda:
+- **Lock file:** `/tmp/xavier-mcp-bridge.lock` — evita instancias duplicadas
+- **Tool `xavier_env()`:** reporta entorno, URL, versión, token status, code-graph available
+- **Auto-kill:** Los bridges zombies se limpian automáticamente
+
+### Startup Script
+```bash
+# Arranque limpio: mata zombies + inicia Xavier + spawn bridge
+bash /home/belal/.hermes/scripts/start-xavier.sh
+```
+
+### Key Endpoints (con auth)
+```bash
+# Search memory
+curl -X POST http://localhost:8006/memory/search \
+  -H "X-Xavier-Token: $XAVIER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"query":"search term", "limit":5}'
+
+# Add memory
+curl -X POST http://localhost:8006/memory/add \
+  -H "X-Xavier-Token: $XAVIER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"path":"decisions/my-decision", "content":"decision details"}'
+
+# Health
+curl http://localhost:8006/health
+
+# Code stats (code-graph)
+curl -H "X-Xavier-Token: $XAVIER_TOKEN" http://localhost:8006/code/stats
+```
+
+
 Xavier is the **CEO of the SWAL project** alongside BELA. It is the central system for memory and continuous improvement.
 
 ## Essential Files (Read at the start of every session)
@@ -20,6 +98,21 @@ Xavier is the global memory brain. **Cortex** (previously the synchronization pl
 - **Coordination** — Ensure all agents are aligned.
 - **Strategic Decisions** — Make architectural and priority decisions.
 - **DevLog Management** — Document the deep technical "why". See `docs/devlog/`.
+
+## 🧠 Self-Indexing con CodeGraph
+
+Xavier se indexa a sí mismo usando `code-graph` (tree-sitter AST parser).
+
+- **Auto-escaneo**: Cada push ejecuta `scripts/codegraph-self-scan.sh --save`
+- **Base de datos local**: `code_graph.db` (gitignored, binaria)
+- **Snapshots versionados**: `.xavier/codegraph.json` y `.xavier/codegraph-<commit>.json`
+- **Búsqueda**: `./target/release/code-graph find <symbol>` en el codebase de Xavier
+- **Estadísticas**: `./target/release/code-graph stats` para métricas del codebase
+
+### Flujo
+```
+Commit/Push → pre-push hook → codegraph-self-scan.sh → DB actualizada + Snapshot a .xavier/
+```
 
 ## 🧠 Subagents: Xavier as the shared brain (MANDATORY protocol)
 

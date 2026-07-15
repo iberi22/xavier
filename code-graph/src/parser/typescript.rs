@@ -1,4 +1,4 @@
-//! TypeScript and JavaScript parser using tree-sitter.
+//! TypeScript parser using tree-sitter.
 
 use crate::error::{GraphError, Result};
 use crate::parser::{compact_node_signature, cyclomatic_complexity, PushSymbolArgs};
@@ -10,17 +10,14 @@ pub struct TypeScriptParser {
     lang: Language,
 }
 
-impl Default for TypeScriptParser {
-    fn default() -> Self {
-        Self::new(Language::TypeScript).expect("failed to initialize TypeScript parser")
-    }
-}
-
 impl TypeScriptParser {
     pub fn new(lang: Language) -> Result<Self> {
         let mut parser = Parser::new();
-        let grammar = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
-        parser.set_language(&grammar).map_err(|e| {
+        let is_tsx = lang == Language::TypeScript && true; // Simple heuristic for now, or just use TSX as it usually works for TS too
+                                                           // Actually, let's use the extension if we had it, but we only have Language here.
+                                                           // tree-sitter-typescript provides both.
+        let grammar = tree_sitter_typescript::LANGUAGE_TYPESCRIPT;
+        parser.set_language(&grammar.into()).map_err(|e| {
             GraphError::TreeSitter(format!("failed to set TypeScript language: {}", e))
         })?;
         Ok(Self { parser, lang })
@@ -87,7 +84,17 @@ impl TypeScriptParser {
                 self.extract_children(node, source, file_path, symbols, class_name.or(parent));
                 return;
             }
-            "interface_declaration" | "type_alias_declaration" => {
+            "interface_declaration" => {
+                self.push_named(
+                    node,
+                    source,
+                    file_path,
+                    symbols,
+                    SymbolKind::Trait,
+                    parent.clone(),
+                );
+            }
+            "type_alias_declaration" => {
                 self.push_named(
                     node,
                     source,
@@ -102,6 +109,10 @@ impl TypeScriptParser {
             }
             "import_statement" => {
                 self.push_import(node, source, file_path, symbols);
+            }
+            "export_statement" => {
+                self.push_export(node, source, file_path, symbols, parent.clone());
+                return;
             }
             _ => {}
         }
@@ -134,19 +145,7 @@ impl TypeScriptParser {
     ) -> Option<String> {
         let name_node = node.child_by_field_name("name")?;
         let name = name_node.utf8_text(source.as_bytes()).ok()?.to_string();
-        self.push_symbol(
-            symbols,
-            PushSymbolArgs {
-                node,
-                source,
-                language: self.lang.clone(),
-                kind,
-                file_path,
-                name: name.clone(),
-                depth: 0,
-                parent,
-            },
-        );
+        self.push_symbol(symbols, node, source, file_path, name.clone(), kind, parent);
         Some(name)
     }
 
@@ -159,7 +158,7 @@ impl TypeScriptParser {
         parent: Option<String>,
     ) {
         let is_const = node.child(0).is_some_and(|c| c.kind() == "const");
-        let kind = if is_const {
+        let base_kind = if is_const {
             SymbolKind::Constant
         } else {
             SymbolKind::Variable
@@ -179,7 +178,7 @@ impl TypeScriptParser {
             let final_kind = if value_kind == "arrow_function" || value_kind == "function" {
                 SymbolKind::Function
             } else {
-                kind.clone()
+                base_kind.clone()
             };
 
             if let Some(name_node) = child.child_by_field_name("name") {
@@ -212,32 +211,21 @@ impl TypeScriptParser {
                 if let Ok(name) = node.utf8_text(source.as_bytes()) {
                     self.push_symbol(
                         symbols,
-                        PushSymbolArgs {
-                            node: symbol_node,
-                            source,
-                            language: self.lang.clone(),
-                            kind,
-                            file_path,
-                            name: name.to_string(),
-                            depth: 0,
-                            parent,
-                        },
+                        symbol_node,
+                        source,
+                        file_path,
+                        name.to_string(),
+                        kind,
+                        parent,
                     );
                 }
             }
             "object_pattern" | "array_pattern" => {
                 let mut cursor = node.walk();
                 for child in node.children(&mut cursor) {
-                    if child.kind() == "{"
-                        || child.kind() == "}"
-                        || child.kind() == "["
-                        || child.kind() == "]"
-                        || child.kind() == ","
-                    {
+                    if matches!(child.kind(), "{" | "}" | "[" | "]" | "," | ":") {
                         continue;
                     }
-                    // In patterns, we might have shorthand_property_identifier, or [identifier, identifier]
-                    // We need to be careful with depth or recursion
                     self.extract_identifiers_from_pattern(
                         child,
                         symbol_node,
@@ -253,16 +241,12 @@ impl TypeScriptParser {
                 if let Ok(name) = node.utf8_text(source.as_bytes()) {
                     self.push_symbol(
                         symbols,
-                        PushSymbolArgs {
-                            node: symbol_node,
-                            source,
-                            language: self.lang.clone(),
-                            kind,
-                            file_path,
-                            name: name.to_string(),
-                            depth: 0,
-                            parent,
-                        },
+                        symbol_node,
+                        source,
+                        file_path,
+                        name.to_string(),
+                        kind,
+                        parent,
                     );
                 }
             }
@@ -280,7 +264,6 @@ impl TypeScriptParser {
                 }
             }
             _ => {
-                // Other patterns like rest_pattern can be handled if needed
                 let mut cursor = node.walk();
                 for child in node.children(&mut cursor) {
                     if child.kind() == "identifier" || child.kind().contains("pattern") {
@@ -309,37 +292,78 @@ impl TypeScriptParser {
             .to_string();
         self.push_symbol(
             symbols,
-            PushSymbolArgs {
-                node,
-                source,
-                language: self.lang.clone(),
-                kind: SymbolKind::Import,
-                file_path,
-                name,
-                depth: 0,
-                parent: None,
-            },
+            node,
+            source,
+            file_path,
+            name,
+            SymbolKind::Import,
+            None,
         );
     }
 
-    fn push_symbol(&self, symbols: &mut Vec<Symbol>, args: PushSymbolArgs<'_>) {
-        let start = args.node.start_position();
-        let end = args.node.end_position();
-        let complexity = matches!(args.kind, SymbolKind::Function | SymbolKind::Method)
-            .then(|| cyclomatic_complexity(args.node, args.source));
+    fn push_export(
+        &self,
+        node: Node,
+        source: &str,
+        file_path: &str,
+        symbols: &mut Vec<Symbol>,
+        parent: Option<String>,
+    ) {
+        let raw = node.utf8_text(source.as_bytes()).unwrap_or_default();
+        let first_line = raw.lines().next().unwrap_or("export").to_string();
+
+        self.push_symbol(
+            symbols,
+            node,
+            source,
+            file_path,
+            first_line,
+            SymbolKind::Export,
+            parent.clone(),
+        );
+
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            let k = child.kind();
+            if matches!(
+                k,
+                "export" | "default" | "*" | "{" | "}" | "," | "from" | ";"
+            ) {
+                continue;
+            }
+            self.extract(child, source, file_path, symbols, parent.clone());
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn push_symbol(
+        &self,
+        symbols: &mut Vec<Symbol>,
+        node: Node,
+        source: &str,
+        file_path: &str,
+        name: String,
+        kind: SymbolKind,
+        parent: Option<String>,
+    ) {
+        let start = node.start_position();
+        let end = node.end_position();
+        let complexity = matches!(kind, SymbolKind::Function | SymbolKind::Method)
+            .then(|| cyclomatic_complexity(node, source));
+
         symbols.push(Symbol {
             id: None,
             stable_id: None,
-            name: args.name,
-            kind: args.kind,
+            name,
+            kind,
             lang: self.lang.clone(),
-            file_path: args.file_path.to_string(),
+            file_path: file_path.to_string(),
             start_line: (start.row + 1) as u32,
             end_line: (end.row + 1) as u32,
             start_col: start.column as u32,
             end_col: end.column as u32,
-            signature: compact_node_signature(args.node, args.source),
-            parent: args.parent,
+            signature: compact_node_signature(node, source),
+            parent,
             complexity,
         });
     }

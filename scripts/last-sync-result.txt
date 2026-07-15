@@ -1,0 +1,4 @@
+﻿LAST_SYNC: 2026-07-12 10:12:45
+STATUS: FAILED
+REASON: Xavier service not running on port 8006, Cortex not running on port 8003
+ACTION_TAKEN: agent-sync.ps1 tried but Xavier refused connection; run-sync.ps1 missing sync module; start-xavier.ps1 failed due to Start-Process redirect bug

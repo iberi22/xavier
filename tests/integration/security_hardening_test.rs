@@ -1,7 +1,8 @@
 //! Integration tests for Security Hardening Phase 1
 
 use std::env;
-use xavier::security::auth::{LoginRequest, User, UserRole};
+use xavier::auth2::LoginRequest;
+use xavier::security::auth::{User, UserRole};
 use xavier::security::prompt_guard::{detect_injection, AttackType};
 
 #[test]
@@ -23,12 +24,15 @@ fn test_security_hardening_prompt_injection() {
 
 #[test]
 fn test_security_hardening_debug_redaction() {
-    // User struct redaction
-    let user = User::new(
+    // User struct redaction — construct with a real (non-empty) API key so the
+    // redaction check is meaningful. User::new() defaults api_key to "" which
+    // would make a `.contains("")` assertion trivially true.
+    let mut user = User::new(
         "admin@xavier.local".to_string(),
         "Admin".to_string(),
         UserRole::Admin,
     );
+    user.api_key = "sk-super-secret-key-12345".to_string();
     let debug_output = format!("{:?}", user);
     assert!(
         !debug_output.contains(&user.api_key),
@@ -43,6 +47,7 @@ fn test_security_hardening_debug_redaction() {
     let login_req = LoginRequest {
         email: "user@xavier.local".to_string(),
         password: "SuperSecretPassword123".to_string(),
+        totp_code: None,
     };
     let debug_output = format!("{:?}", login_req);
     assert!(

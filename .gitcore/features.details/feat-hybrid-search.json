@@ -1,0 +1,35 @@
+{
+  "feature": "feat-hybrid-search",
+  "name": "BM25 + Vector Hybrid Search",
+  "category": "search",
+  "status": "stable",
+  "progress_pct": 100,
+  "score": 100,
+  "steps": {
+    "implement_bm25_full_text_search_with_fts": {
+      "passed": true,
+      "weight": 20,
+      "score": 20
+    },
+    "implement_vector_search_via_sqlite_vec": {
+      "passed": true,
+      "weight": 20,
+      "score": 20
+    },
+    "implement_reciprocal_rank_fusion_merging": {
+      "passed": true,
+      "weight": 20,
+      "score": 20
+    },
+    "embedding_provider_integration_(cloud_+_": {
+      "passed": true,
+      "weight": 20,
+      "score": 20
+    },
+    "caching_layer_for_repeated_queries": {
+      "passed": true,
+      "weight": 20,
+      "score": 20
+    }
+  }
+}
