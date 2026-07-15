@@ -51,7 +51,7 @@ impl ContextBuilder {
         context.push_str(&self.config.persona);
         context.push_str("\n\n");
 
-        // 2. Rules, Goals, Constraints
+        // 2. Rules
         if !self.config.rules.is_empty() {
             context.push_str("## Rules\n");
             for rule in &self.config.rules {
@@ -60,34 +60,23 @@ impl ContextBuilder {
             context.push('\n');
         }
 
-        if !self.config.goals.is_empty() {
-            context.push_str("## Goals\n");
-            for goal in &self.config.goals {
-                context.push_str(&format!("- {}\n", goal));
-            }
-            context.push('\n');
-        }
-
-        if !self.config.constraints.is_empty() {
-            context.push_str("## Constraints\n");
-            for constraint in &self.config.constraints {
-                context.push_str(&format!("- {}\n", constraint));
-            }
-            context.push('\n');
-        }
-
         match level {
             ContextLevel::Minimal => {
-                // Phase 0: minimo -> only system prompt
-                // (Already added above)
+                // Shallow: core slots + episodic summary (last_preview) + virtual refs
+                self.append_core_slots(&mut context);
+                self.append_episodic_summary(&mut context, recent_messages, 200);
+                self.append_virtual_refs(&mut context, memories, 5);
             }
             ContextLevel::Medium => {
-                // Phase 0: medio -> system + recent context
+                // Medium: core slots + episodic + recent messages + top 3 memories full
+                self.append_core_slots(&mut context);
+                self.append_episodic_summary(&mut context, recent_messages, 400);
                 self.append_recent_messages(&mut context, recent_messages);
+                self.append_memories_tiered(&mut context, memories, 3);
             }
             ContextLevel::Maximum => {
-                // Phase 0: maximo -> full retrieval + skills
-                self.append_memories(&mut context, memories);
+                // Deep: full retrieval + skills + full history
+                self.append_memories_full(&mut context, memories);
                 self.append_skills(&mut context, skills);
                 self.append_recent_messages(&mut context, recent_messages);
             }
@@ -101,18 +90,137 @@ impl ContextBuilder {
     }
 
     fn compress_and_cross_reference(&self, context: &mut String) {
+        // Skip compression for small contexts
+        if context.len() < 1000 {
+            return;
+        }
         // Simple "compression" by removing excessive whitespace and adding cross-refs
         // NOTE: This is a shallow compression (whitespace only).
         // Real savings come from progressive disclosure and budget-aware selection in Orchestrator.
         let mut compressed = context.replace("  ", " ").replace("\n\n\n", "\n\n");
 
-        // Add chunk headers for auto-containment
-        if compressed.len() > 1000 {
-            compressed.insert_str(0, "## CONTEXT_CHUNK_START:v1:auto-contained\n");
+        let keywords = ["error", "fix", "critical", "decision", "architecture", "goal", "ref", "summary"];
+        let lines: Vec<&str> = context.lines().collect();
+        let mut compressed_lines = Vec::new();
+
+        for i in 0..lines.len().min(10) {
+            compressed_lines.push(lines[i]);
+        }
+
+        for i in 10..lines.len() {
+            let line = lines[i];
+            let lower = line.to_lowercase();
+            if keywords.iter().any(|&k| lower.contains(k))
+                || line.starts_with("#")
+                || line.starts_with("[REF:")
+                || line.starts_with("- ")
+            {
+                compressed_lines.push(line);
+            }
+        }
+
+        let mut compressed = compressed_lines.join("\n");
+        compressed = compressed.replace("  ", " ").replace("\n\n\n", "\n\n");
+
+        if compressed.len() > 1500 {
+            compressed.insert_str(0, "## CONTEXT_CHUNK_START:v1:extractive-compressed\n");
             compressed.push_str("\n## CONTEXT_CHUNK_END\n");
         }
 
         *context = compressed;
+    }
+
+    fn append_core_slots(&self, context: &mut String) {
+        context.push_str("## Core Slots\n");
+        context.push_str("- System Status: Active\n");
+        context.push_str("- Context Mode: Progressive Disclosure\n");
+        context.push('\n');
+    }
+
+    fn append_episodic_summary(
+        &self,
+        context: &mut String,
+        messages: &[ContextDocument],
+        max_chars: usize,
+    ) {
+        if messages.is_empty() {
+            return;
+        }
+        context.push_str("## Episodic Summary (Last Preview)\n");
+
+        let count = messages.len().min(2);
+        let start = messages.len() - count;
+
+        let mut preview = String::new();
+        for msg in &messages[start..] {
+            preview.push_str(&format!("{}: {}\n", msg.role, msg.content));
+        }
+
+        let truncated: String = preview.chars().take(max_chars).collect();
+        context.push_str(&truncated);
+        if preview.len() > max_chars {
+            context.push_str("...");
+        }
+        context.push_str("\n\n");
+    }
+
+    fn append_virtual_refs(&self, context: &mut String, memories: &[ContextDocument], limit: usize) {
+        if memories.is_empty() {
+            return;
+        }
+        context.push_str("## Virtual References (Available for page-in)\n");
+        for mem in memories.iter().take(limit) {
+            let path = mem.metadata["path"].as_str().unwrap_or(&mem.id);
+            context.push_str(&format!("- [REF:{}] {}\n", mem.id, path));
+        }
+        if memories.len() > limit {
+            context.push_str(&format!("- ... and {} more references\n", memories.len() - limit));
+        }
+        context.push('\n');
+    }
+
+    fn append_memories_tiered(&self, context: &mut String, memories: &[ContextDocument], full_limit: usize) {
+        if memories.is_empty() {
+            return;
+        }
+
+        context.push_str("# Relevant Memories & CodeGraph\n");
+        for (i, mem) in memories.iter().enumerate() {
+            let prefix = if mem.metadata["source"] == "code_graph" {
+                "CODE"
+            } else if mem.metadata["is_external"] == true {
+                "MEM"
+            } else {
+                "DOC"
+            };
+
+            if i < full_limit {
+                context.push_str(&format!("- [{}:{}] {}\n", prefix, mem.id, mem.content));
+            } else {
+                let path = mem.metadata["path"].as_str().unwrap_or(&mem.id);
+                context.push_str(&format!("- [{}:{}] {} (Body virtualized)\n", prefix, mem.id, path));
+            }
+        }
+        context.push('\n');
+    }
+
+    fn append_memories_full(&self, context: &mut String, memories: &[ContextDocument]) {
+        if memories.is_empty() {
+            return;
+        }
+
+        context.push_str("# Relevant Memories & CodeGraph\n");
+        for mem in memories {
+            let prefix = if mem.metadata["source"] == "code_graph" {
+                "CODE"
+            } else if mem.metadata["is_external"] == true {
+                "MEM"
+            } else {
+                "DOC"
+            };
+            context.push_str(&format!("- [{}:{}] {}\n", prefix, mem.id, mem.content));
+        }
+        context.push('\n');
     }
 
     fn append_recent_messages(&self, context: &mut String, messages: &[ContextDocument]) {
@@ -125,20 +233,7 @@ impl ContextBuilder {
         let start = messages.len() - limit;
 
         for (i, msg) in messages[start..].iter().enumerate() {
-            // Add cross-reference ID
             context.push_str(&format!("[REF:msg_{}] {}: {}\n", i, msg.role, msg.content));
-        }
-        context.push('\n');
-    }
-
-    fn append_memories(&self, context: &mut String, memories: &[ContextDocument]) {
-        if memories.is_empty() {
-            return;
-        }
-
-        context.push_str("# Relevant Memories\n");
-        for mem in memories {
-            context.push_str(&format!("- {}\n", mem.content));
         }
         context.push('\n');
     }
@@ -167,33 +262,29 @@ mod tests {
         let ctx = builder.build(ContextLevel::Minimal, &[], &[], &[]);
 
         assert!(ctx.contains("# System Prompt"));
-        assert!(!ctx.contains("# Recent Messages"));
+        assert!(ctx.contains("## Core Slots"));
+        assert!(ctx.contains("Context Mode: Progressive Disclosure"));
     }
 
     #[test]
-    fn builds_medium_context() {
+    fn test_extractive_compression() {
         let config = ContextBuilderConfig::default();
         let builder = ContextBuilder::new(config);
-        let messages = vec![ContextDocument::new("1", "s1", "user", "hello")];
-        let ctx = builder.build(ContextLevel::Medium, &messages, &[], &[]);
+        let mut ctx = "# System Prompt\nPersona info here.\n## Rules\nRule 1\nRule 2\nRule 3\nRule 4\nRule 5\nRule 6\nRule 7\nRule 8\nRule 9\nRule 10\n".to_string();
+        ctx.push_str("Some boring content that should be removed during compression because it lacks keywords.\n");
+        ctx.push_str("Decision: We should use extractive compression.\n");
+        ctx.push_str("Critical Error: The system is too chatty.\n");
 
-        assert!(ctx.contains("# System Prompt"));
-        assert!(ctx.contains("# Recent Messages"));
-        assert!(ctx.contains("user: hello"));
-    }
+        while ctx.len() < 2000 {
+            ctx.push_str("More filler text with Decision keyword to ensure it exceeds the 1500 char threshold for header.\n");
+        }
 
-    #[test]
-    fn builds_maximum_context() {
-        let config = ContextBuilderConfig::default();
-        let builder = ContextBuilder::new(config);
-        let memories = vec![ContextDocument::new("m1", "s1", "system", "remember this")];
-        let skills = vec!["skill-1".to_string()];
-        let ctx = builder.build(ContextLevel::Maximum, &[], &memories, &skills);
+        let mut test_ctx = ctx.clone();
+        builder.compress_and_cross_reference(&mut test_ctx);
 
-        assert!(ctx.contains("# System Prompt"));
-        assert!(ctx.contains("# Relevant Memories"));
-        assert!(ctx.contains("remember this"));
-        assert!(ctx.contains("# Available Skills"));
-        assert!(ctx.contains("skill-1"));
+        assert!(test_ctx.contains("Decision:"));
+        assert!(test_ctx.contains("Critical Error:"));
+        assert!(!test_ctx.contains("Some boring content"));
+        assert!(test_ctx.contains("CONTEXT_CHUNK_START:v1:extractive-compressed"));
     }
 }

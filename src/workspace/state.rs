@@ -292,6 +292,13 @@ impl WorkspaceState {
                 .with_booster(Arc::clone(&zone_booster)),
         );
 
+        let working_memory = Arc::new(tokio::sync::RwLock::new(
+            crate::memory::working::WorkingMemory::new(),
+        ));
+        let episodic_memory = Arc::new(tokio::sync::RwLock::new(
+            crate::memory::episodic::EpisodicMemory::new(),
+        ));
+
         let state = Self {
             runtime: Arc::new(
                 AgentRuntime::new(
