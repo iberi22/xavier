@@ -60,8 +60,8 @@ export default function InputArea({
   };
 
   return (
-    <div className="absolute bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 pointer-events-auto z-10">
-      <div className="glass rounded-[24px] p-2 flex items-center gap-2 relative overflow-hidden transition-all duration-300 focus-within:shadow-[0_0_20px_rgba(57,255,20,0.15)] focus-within:border-white/20">
+    <div className="fixed bottom-4 sm:bottom-8 left-1/2 -translate-x-1/2 w-full max-w-2xl px-2 sm:px-4 pointer-events-auto z-50">
+      <div className="glass rounded-[18px] sm:rounded-[24px] p-1.5 sm:p-2 flex items-center gap-1 sm:gap-2 relative overflow-hidden transition-all duration-300 focus-within:shadow-[0_0_20px_rgba(57,255,20,0.15)] focus-within:border-white/20">
         {/* Animated background when recording */}
         {isRecording && (
           <div className="absolute inset-0 bg-[#39ff14]/5 animate-pulse" />
@@ -69,7 +69,7 @@ export default function InputArea({
 
         <button
           onClick={onOpenConfig}
-          className="relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 text-[#39ff14] hover:scale-105 active:scale-95 group"
+          className="relative z-10 w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 text-[#39ff14] hover:scale-105 active:scale-95 group"
           title="Open Control Node"
         >
           <div className="absolute inset-1 rounded-full border border-transparent group-hover:border-[#39ff14]/40 group-hover:shadow-[inset_0_0_10px_rgba(57,255,20,0.2)] transition-all duration-300" />
@@ -81,17 +81,17 @@ export default function InputArea({
 
         <button
           onClick={handleFolderClick}
-          className="relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 text-white/60 hover:text-blue-400"
+          className="relative z-10 w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 text-white/60 hover:text-blue-400 hidden sm:flex"
           title="Agregar Codebase (Proyecto Git)"
         >
           <FolderPlus className="w-5 h-5" />
         </button>
 
-        <div className="w-px h-8 bg-white/10 relative z-10 mx-1" />
+        <div className="w-px h-8 bg-white/10 relative z-10 mx-0.5 sm:mx-1" />
 
         <button
           onClick={handleMicClick}
-          className={`relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 ${
+          className={`relative z-10 w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 ${
             isRecording
               ? "text-[#39ff14]"
               : "text-white/60 hover:text-[#39ff14]"
@@ -156,7 +156,7 @@ export default function InputArea({
         <button
           onClick={handleSend}
           disabled={!inputText.trim() && !isTranscribing}
-          className={`relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 ${
+          className={`relative z-10 w-10 h-10 sm:w-12 sm:h-12 flex items-center justify-center rounded-full transition-all duration-300 ${
             inputText.trim()
               ? "bg-[#39ff14] text-[#050505] hover:brightness-110 shadow-[0_0_15px_rgba(57,255,20,0.3)]"
               : "bg-white/5 text-white/30 cursor-not-allowed"
