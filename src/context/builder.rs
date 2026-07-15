@@ -104,7 +104,8 @@ impl ContextBuilder {
 
     fn compress_and_cross_reference(&self, context: &mut String) {
         // Simple "compression" by removing excessive whitespace and adding cross-refs
-        // In a real scenario, this would use a more sophisticated chunking/summarization logic
+        // NOTE: This is a shallow compression (whitespace only).
+        // Real savings come from progressive disclosure and budget-aware selection in Orchestrator.
         let mut compressed = context.replace("  ", " ").replace("\n\n\n", "\n\n");
 
         // Add chunk headers for auto-containment
