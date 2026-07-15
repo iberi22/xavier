@@ -300,17 +300,22 @@ impl Orchestrator {
             } else if document_id.starts_with("code://") {
                 if let Some(cq) = &self.code_query {
                     let path = &document_id[7..];
-                    // Symbols returned from search have path, but we need the content.
-                    // Search for symbols in this file to get details.
                     if let Ok(symbols) = cq.in_file(path) {
                         if let Some(first) = symbols.first() {
-                            // Symbol doesn't have full file content, but we can't easily read it here without knowing the root.
-                            // For now, we'll use a placeholder or the symbol info.
-                            let content = format!("Symbol: {} in {}", first.name, path);
+                            let content = if let Some(sig) = &first.signature {
+                                format!("// CodeGraph Match: {}\n{}\n// Source: {}", first.name, sig, path)
+                            } else {
+                                format!("// CodeGraph Match: {} in {}", first.name, path)
+                            };
                             let mut c_doc =
                                 ContextDocument::new(document_id, session_id, "system", content);
                             c_doc.metadata =
-                                serde_json::json!({ "source": "code_graph", "path": path });
+                                serde_json::json!({
+                                    "source": "code_graph",
+                                    "path": path,
+                                    "symbol": first.name,
+                                    "kind": format!("{:?}", first.kind)
+                                });
                             c_doc
                         } else {
                             continue;
@@ -351,37 +356,7 @@ impl Orchestrator {
             selected.push(document);
         }
 
-        let mut final_docs = Vec::new();
-        for document in selected {
-            if plan.level == ContextLevel::Minimal {
-                // L0/L1 Virtualization: Only send summary and keywords
-                let path = document.metadata["path"]
-                    .as_str()
-                    .unwrap_or("unknown")
-                    .to_string();
-                let virtual_entry = VirtualMemoryEntry::new(
-                    path,
-                    document.content.clone(),
-                    document.metadata.clone(),
-                );
-                let reference = virtual_entry.to_reference();
-                let virtual_content = format!(
-                    "REF: {} | SUMMARY: {} | KEYWORDS: {}",
-                    reference.path,
-                    reference.summary,
-                    reference.keywords.join(", ")
-                );
-
-                let mut virtual_doc = document.clone();
-                virtual_doc.content = virtual_content;
-                virtual_doc.token_count = virtual_doc.content.split_whitespace().count();
-                final_docs.push(virtual_doc);
-            } else {
-                final_docs.push(document.clone());
-            }
-        }
-
-        final_docs
+        selected
     }
 
     pub fn ranked_hits(
@@ -621,6 +596,32 @@ mod tests {
         assert!(compact.max_documents > start.max_documents);
         assert!(compact.max_tokens > start.max_tokens);
         assert!(compact.include_metadata);
+    }
+
+    #[tokio::test]
+    async fn execute_returns_selected_documents() {
+        let orchestrator = Orchestrator::new();
+        let documents = vec![
+            doc("1", "s-1", "user", "doc 1 content", 10, 1),
+            doc("2", "s-1", "user", "doc 2 content", 10, 2),
+        ];
+
+        let plan = ExecutionPlan {
+            hook: HookKind::SessionStart,
+            level: ContextLevel::Minimal,
+            query: "test".to_string(),
+            active_zones: vec![],
+            max_documents: 10,
+            max_tokens: 5000,
+            include_tool_calls: false,
+            include_metadata: false,
+            selected_document_ids: vec!["1".to_string(), "2".to_string()],
+            retrieval_scope: None,
+        };
+        let out = orchestrator.execute(&plan, &documents, "s-1").await;
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].content, "doc 1 content");
+        assert_eq!(out[1].content, "doc 2 content");
     }
 
     #[tokio::test]
