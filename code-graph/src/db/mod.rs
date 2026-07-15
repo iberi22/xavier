@@ -1101,6 +1101,11 @@ impl CodeGraphDB {
         Ok(())
     }
 
+    /// Delete all data associated with a single file path (convenience wrapper).
+    pub fn clear_by_file(&self, file_path: &str) -> Result<()> {
+        self.batch_delete_file_data(&[file_path.to_string()])
+    }
+
     /// Batch upsert file metadata (mtime) after indexing.
     pub fn batch_upsert_file_metadata(&self, files: HashMap<String, i64>) -> Result<()> {
         if files.is_empty() {

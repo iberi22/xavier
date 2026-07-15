@@ -1,59 +1,63 @@
-use crate::error::{GraphError, Result};
+use crate::error::GraphError;
 use crate::indexer::Indexer;
-use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
+use notify_debouncer_mini::new_debouncer;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::mpsc;
-use tracing::{debug, info};
+use std::time::Duration;
+use tracing::{debug, error, info};
 
-#[allow(dead_code)]
-pub struct AutoSyncWatcher {
+pub struct DebouncedWatcher {
     indexer: Arc<Indexer>,
     root: PathBuf,
+    debounce_ms: u64,
 }
 
-impl AutoSyncWatcher {
+impl DebouncedWatcher {
     pub fn new(indexer: Arc<Indexer>, root: PathBuf) -> Self {
-        Self { indexer, root }
+        Self {
+            indexer,
+            root,
+            debounce_ms: 500,
+        }
     }
 
-    /// Starts watching the file system and incrementally syncs the graph.
-    pub async fn watch(&self) -> Result<()> {
-        let (tx, mut rx) = mpsc::channel(100);
+    pub fn with_debounce(mut self, ms: u64) -> Self {
+        self.debounce_ms = ms;
+        self
+    }
 
-        let mut watcher = RecommendedWatcher::new(
-            move |res: std::result::Result<Event, notify::Error>| {
-                if let Ok(event) = res {
-                    let _ = tx.blocking_send(event);
-                }
-            },
-            Config::default(),
-        )
-        .map_err(|e| GraphError::Indexer(format!("Failed to init watcher: {}", e)))?;
+    pub async fn watch(&self) -> crate::error::Result<()> {
+        let (tx, mut rx) = tokio::sync::mpsc::channel(100);
+        let tx_clone = tx.clone();
 
-        watcher
-            .watch(&self.root, RecursiveMode::Recursive)
-            .map_err(|e| GraphError::Indexer(format!("Failed to watch dir: {}", e)))?;
-
-        info!("Auto-Sync Watcher active on {:?}", self.root);
-
-        // Simple debounce loop
-        while let Some(event) = rx.recv().await {
-            match event.kind {
-                notify::EventKind::Modify(_)
-                | notify::EventKind::Create(_)
-                | notify::EventKind::Remove(_) => {
-                    for path in event.paths {
-                        // TODO: Implement fine-grained incremental update.
-                        // For now, we log the path to be updated. The actual incremental logic
-                        // requires purging the old file's symbols and edges from DB, and re-parsing.
-                        debug!("File changed, queuing incremental sync: {:?}", path);
+        let mut debouncer = new_debouncer(
+            Duration::from_millis(self.debounce_ms),
+            move |result: std::result::Result<Vec<notify_debouncer_mini::DebouncedEvent>, _>| {
+                if let Ok(events) = result {
+                    for event in events {
+                        let _ = tx_clone.try_send(event.path);
                     }
                 }
-                _ => {}
+            },
+        )
+        .map_err(|e| GraphError::Indexer(format!("Failed to init debouncer: {}", e)))?;
+
+        debouncer
+            .watcher()
+            .watch(&self.root, notify_debouncer_mini::notify::RecursiveMode::Recursive)
+            .map_err(|e| GraphError::Indexer(format!("Failed to watch dir: {}", e)))?;
+
+        info!(
+            "DebouncedWatcher active on {:?} (debounce: {}ms)",
+            self.root, self.debounce_ms
+        );
+
+        while let Some(path) = rx.recv().await {
+            debug!("File changed, re-indexing: {:?}", path);
+            if let Err(e) = self.indexer.reindex_file(&self.root, &path).await {
+                error!("Failed to re-index {:?}: {}", path, e);
             }
         }
-
         Ok(())
     }
 }
