@@ -2890,6 +2890,7 @@ version = "0.6.1-beta"
 dependencies = [
  "anyhow",
  "axum 0.8.9",
+ "chrono",
  "clap",
  "globset",
  "hyper 1.10.1",

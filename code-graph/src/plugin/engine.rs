@@ -6,6 +6,7 @@
 //! plugin can never leak past its parse call.
 
 use crate::error::{GraphError, Result};
+use crate::plugin::health::PluginHealthMonitor;
 use crate::plugin::types::{
     FileToParse, PluginConfig, PluginEngine, PluginHealth, PluginRequest, PluginResponse,
 };
@@ -26,6 +27,8 @@ pub struct ProcessEngine {
     timeout: Duration,
     /// Aggregate health counters per plugin command (best-effort diagnostics).
     health: Arc<Mutex<HashMap<String, PluginHealth>>>,
+    /// Optional health monitor for circuit breaking and metrics.
+    monitor: Arc<Mutex<Option<Arc<PluginHealthMonitor>>>>,
 }
 
 impl Default for ProcessEngine {
@@ -39,6 +42,7 @@ impl ProcessEngine {
         Self {
             timeout,
             health: Arc::new(Mutex::new(HashMap::new())),
+            monitor: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -76,6 +80,8 @@ impl ProcessEngine {
         };
         let input_json =
             serde_json::to_string(&request).map_err(|e| GraphError::Parser(e.to_string()))?;
+
+        let start = std::time::Instant::now();
 
         let mut child = tokio::process::Command::new(&config.command)
             .stdin(Stdio::piped())
@@ -133,6 +139,17 @@ impl ProcessEngine {
         })?;
 
         let result = response.into_result();
+        let latency_ms = start.elapsed().as_millis() as u64;
+
+        if let Some(monitor) = &*self.monitor.lock() {
+            monitor.record(
+                &config.name,
+                latency_ms,
+                result.is_ok(),
+                result.as_ref().err().map(|e| e.to_string()),
+            );
+        }
+
         match &result {
             Ok(symbols) => {
                 debug!(
@@ -161,13 +178,19 @@ impl PluginEngine for ProcessEngine {
         // Reconstruct a lightweight self-reference: ProcessEngine state lives
         // behind Arc, so clone the Arc for the future.
         let health = self.health.clone();
+        let monitor = self.monitor.clone();
         Box::pin(async move {
             let engine = ProcessEngine {
                 timeout: this_timeout,
                 health,
+                monitor,
             };
             engine.parse_inner(&config, lang, files).await
         })
+    }
+
+    fn set_monitor(&self, monitor: Arc<PluginHealthMonitor>) {
+        *self.monitor.lock() = Some(monitor);
     }
 }
 
@@ -184,6 +207,7 @@ mod tests {
     async fn missing_plugin_binary_is_an_error_not_a_panic() {
         let engine = ProcessEngine::default();
         let config = PluginConfig {
+            name: "test".into(),
             command: "this-binary-does-not-exist-anywhere-12345".into(),
             version: "0.0.0".into(),
             languages: vec![Language::Python],
@@ -212,6 +236,7 @@ mod tests {
         use crate::plugin::types::PluginEngine as _;
         let engine = ProcessEngine::default();
         let config = PluginConfig {
+            name: "test".into(),
             command: "this-binary-does-not-exist-anywhere-trait".into(),
             version: "0.0.0".into(),
             languages: vec![Language::Python],
