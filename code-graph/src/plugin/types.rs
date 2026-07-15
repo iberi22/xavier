@@ -22,6 +22,8 @@ use serde::{Deserialize, Serialize};
 /// deprecated [`crate::plugin_host::PluginHost`] can keep loading it unchanged.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginConfig {
+    /// The stable name of the plugin.
+    pub name: String,
     /// Executable invoked for a parse request (path or `$PATH`-resolvable name).
     pub command: String,
     /// Semver-ish version string, informational only at this phase.
@@ -57,13 +59,16 @@ pub struct InstalledPlugin {
 
 impl From<&PluginConfig> for PluginDescriptor {
     fn from(cfg: &PluginConfig) -> Self {
-        // Derive a stable name from the command basename when one isn't given.
-        let name = cfg
-            .command
-            .rsplit(['/', '\\'])
-            .next()
-            .unwrap_or(&cfg.command)
-            .to_string();
+        let name = if cfg.name.is_empty() {
+            // Derive a stable name from the command basename when one isn't given.
+            cfg.command
+                .rsplit(['/', '\\'])
+                .next()
+                .unwrap_or(&cfg.command)
+                .to_string()
+        } else {
+            cfg.name.clone()
+        };
         PluginDescriptor {
             name,
             version: cfg.version.clone(),
@@ -178,6 +183,9 @@ pub trait PluginEngine: Send + Sync {
         lang: Language,
         files: Vec<FileToParse>,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<Symbol>>> + Send>>;
+
+    /// Attach a health monitor to the engine.
+    fn set_monitor(&self, _monitor: std::sync::Arc<crate::plugin::health::PluginHealthMonitor>) {}
 }
 
 /// Resolves which fallback chain applies to a given language.
