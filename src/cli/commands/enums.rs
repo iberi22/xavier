@@ -165,7 +165,11 @@ pub enum Command {
         cmd: ProviderCommand,
     },
     /// Run interactive system detection and setup
-    Setup,
+    Setup {
+        /// Run 100% local guided flow (Ollama)
+        #[arg(long)]
+        local: bool,
+    },
 
     /// Manage Xavier Data Commons and fine-tuning readiness
     DataCommons {
