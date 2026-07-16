@@ -109,3 +109,58 @@ pub fn dimension_for_model(model: &str) -> usize {
         _ => DEFAULT_GLLM_DIMENSION,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_model_name() {
+        assert_eq!(normalize_model_name(""), DEFAULT_GLLM_MODEL);
+        assert_eq!(normalize_model_name("minilm-l6-v2"), DEFAULT_GLLM_MODEL);
+        assert_eq!(normalize_model_name("all-minilm-l6-v2"), DEFAULT_GLLM_MODEL);
+        assert_eq!(normalize_model_name("custom-model"), "custom-model");
+    }
+
+    #[test]
+    fn test_dimension_for_model() {
+        assert_eq!(dimension_for_model("all-minilm-l6-v2"), 384);
+        assert_eq!(dimension_for_model("bge-base-en"), 768);
+        assert_eq!(dimension_for_model("qwen3-embedding-0.6b"), 1024);
+        assert_eq!(dimension_for_model("unknown-model"), DEFAULT_GLLM_DIMENSION);
+    }
+
+    #[tokio::test]
+    #[ignore]
+    #[cfg(feature = "local-gllm")]
+    async fn test_gllm_embedder_load() {
+        let model = DEFAULT_GLLM_MODEL.to_string();
+        let dim = DEFAULT_GLLM_DIMENSION;
+        let embedder = GllmEmbedder::new(model, dim);
+        assert!(embedder.is_ok());
+    }
+
+    #[tokio::test]
+    #[ignore]
+    #[cfg(feature = "local-gllm")]
+    async fn test_gllm_embedder_encode() {
+        let model = DEFAULT_GLLM_MODEL.to_string();
+        let dim = DEFAULT_GLLM_DIMENSION;
+        let embedder = GllmEmbedder::new(model, dim).unwrap();
+        let result = embedder.encode("hello world").await;
+        assert!(result.is_ok());
+        let vector = result.unwrap();
+        assert_eq!(vector.len(), dim);
+    }
+
+    #[test]
+    #[cfg(not(any(feature = "local-gllm", feature = "local-gllm-cuda")))]
+    fn test_gllm_embedder_disabled_error() {
+        let model = DEFAULT_GLLM_MODEL.to_string();
+        let dim = DEFAULT_GLLM_DIMENSION;
+        let embedder = GllmEmbedder::new(model, dim);
+        assert!(embedder.is_err());
+        let err = embedder.unwrap_err();
+        assert!(err.to_string().contains("without the local-gllm feature"));
+    }
+}
