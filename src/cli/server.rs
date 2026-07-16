@@ -831,6 +831,39 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
 
     info!("Xavier HTTP server listening on http://{}", bound_addr);
     println!("Xavier HTTP server listening on http://{}", bound_addr);
+
+    // Operational mode summary (Issue #1-12)
+    let final_status = xavier::observability::health::HEALTH.run_checks().await;
+    let mode_icon = match final_status.mode {
+        xavier::server::alerts::OperationalMode::LocalHealthy => "🟢",
+        xavier::server::alerts::OperationalMode::LocalDegraded => "🟡",
+        xavier::server::alerts::OperationalMode::CloudFallback => "🔵",
+        xavier::server::alerts::OperationalMode::Disabled => "🔴",
+    };
+    let mode_str = match final_status.mode {
+        xavier::server::alerts::OperationalMode::LocalHealthy => "LOCAL",
+        xavier::server::alerts::OperationalMode::LocalDegraded => "LOCAL (DEGRADED)",
+        xavier::server::alerts::OperationalMode::CloudFallback => "CLOUD",
+        xavier::server::alerts::OperationalMode::Disabled => "DISABLED",
+    };
+    println!("{} Xavier iniciado — modo: {}", mode_icon, mode_str);
+    println!("   LLM:        {}/{} @ {} [{}]",
+        final_status.llm.provider,
+        final_status.llm.model,
+        final_status.llm.endpoint,
+        if final_status.llm.reachable { "reachable" } else { "unreachable" }
+    );
+    println!("   Embeddings: {}/{} @ {} [{}]",
+        final_status.embedding.provider,
+        final_status.embedding.model,
+        if final_status.embedding.provider.to_lowercase() == "openai" { "api.openai.com" } else { "localhost:11434" },
+        if final_status.embedding.status == xavier::observability::health::HealthLevel::Healthy { "reachable" } else { "unreachable" }
+    );
+    println!("   Vector DB:  {} ({})",
+        final_status.vector_db.backend,
+        final_status.vector_db.path
+    );
+
     println!("Press Ctrl+C to stop");
 
     // Spawn the MCP HTTP+SSE (Streamable HTTP) server alongside the main API.
