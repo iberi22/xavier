@@ -1,6 +1,72 @@
-# Local Embeddings Integration Tests
+# Local Embeddings in Xavier
 
-This document describes how to run and maintain integration tests for local embeddings in Xavier, specifically targeting Ollama and other OpenAI-compatible local providers.
+Xavier supports multiple modes for generating text embeddings locally. This document explains the differences between **GLLM** (in-process GPU/CPU) and **Ollama** (external process).
+
+## Comparison: GLLM vs Ollama
+
+| Feature | GLLM (Native) | Ollama (HTTP) |
+|---------|---------------|---------------|
+| **Deployment** | In-process (static binary) | External service (daemon) |
+| **Hardware** | GPU (WGPU/CUDA) or CPU | GPU (diverse backends) or CPU |
+| **Network** | None (direct memory access) | HTTP (localhost:11434) |
+| **Latency** | Ultra-low | Low (HTTP overhead) |
+| **Ease of Use** | Single binary, no setup | Requires installing Ollama |
+| **Models** | Built-in support for Qwen3, MiniLM | Any model in Ollama library |
+
+## GLLM (General Local LLM) Mode
+
+GLLM is the preferred way to achieve 100% local operation without external dependencies. It uses the `candle` inference framework to run models directly within the Xavier process.
+
+### Activation
+
+To activate GLLM, set the following environment variable:
+
+```bash
+export XAVIER_EMBEDDING_PROVIDER_MODE=local-gllm
+```
+
+Or via `XavierSettings` (JSON/Tauri):
+```json
+{
+  "workspace": {
+    "embedding_provider_mode": "local-gllm"
+  }
+}
+```
+
+### Configuration
+
+- **`XAVIER_GLLM_MODEL`**: The model identifier.
+  - Recommended: `Qwen/Qwen3-Embedding-0.6B` (default).
+  - Fast CPU: `all-MiniLM-L6-v2`.
+- **`XAVIER_GLLM_MODEL_PATH`**: Path to a local model file (GGUF/Safetensors). If set, Xavier will validate the file exists before starting.
+- **`XAVIER_GLLM_DIMENSION`**: The vector dimension. Automatically inferred for known models (1024 for Qwen3, 384 for MiniLM).
+
+### Troubleshooting
+
+- **"without the local-gllm feature"**: You are using a build of Xavier that doesn't have GLLM compiled in.
+- **"requires model at X"**: The path specified in `XAVIER_GLLM_MODEL_PATH` is invalid.
+
+## Ollama Mode
+
+If you already have Ollama running, Xavier can connect to it using the standard OpenAI-compatible embeddings API.
+
+### Activation
+
+```bash
+export XAVIER_EMBEDDING_PROVIDER_MODE=local
+export XAVIER_EMBEDDING_MODEL=nomic-embed-text
+```
+
+## Recommended Models
+
+| Model | Dimension | Performance | Use Case |
+|-------|-----------|-------------|----------|
+| **Qwen3-Embedding-0.6B** | 1024 | Excellent | Best quality/speed ratio on GPU |
+| **all-MiniLM-L6-v2** | 384 | Very Fast | Low-resource or CPU-only |
+| **bge-base-en-v1.5** | 768 | Balanced | General purpose |
+
+---
 
 ## Integration Test Suite
 
@@ -37,7 +103,7 @@ XAVIER_TEST_OLLAMA=1 cargo test --test embedding_local_integration
 
 The test will attempt to connect to `http://localhost:11434/v1/embeddings`.
 
-## Configuration
+### Test Configuration Environment Variables
 
 The tests use the following environment variables to configure the embedding system:
 
