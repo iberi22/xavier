@@ -23,6 +23,22 @@ pub enum HealthLevel {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LlmHealth {
+    pub provider: String,
+    pub model: String,
+    pub endpoint: String,
+    pub reachable: bool,
+    pub status: HealthLevel,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct VectorDbHealth {
+    pub backend: String,
+    pub path: String,
+    pub status: HealthLevel,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemHealth {
     pub cpu_usage: f32,
     pub ram_usage_percent: f32,
@@ -43,6 +59,7 @@ pub struct DbHealth {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EmbeddingHealth {
     pub provider: String,
+    pub model: String,
     pub latency_ms: u64,
     pub error_rate: f32,
     pub status: HealthLevel,
@@ -67,9 +84,12 @@ pub struct MeshHealth {
 pub struct HealthStatus {
     pub timestamp: DateTime<Utc>,
     pub status: HealthLevel,
+    pub mode: crate::server::alerts::OperationalMode,
     pub system: SystemHealth,
     pub database: DbHealth,
     pub embedding: EmbeddingHealth,
+    pub llm: LlmHealth,
+    pub vector_db: VectorDbHealth,
     pub mesh: MeshHealth,
     pub tgd_consolidation: Option<crate::tgd::consolidation::ProgressReport>,
 }
@@ -79,6 +99,7 @@ impl Default for HealthStatus {
         Self {
             timestamp: Utc::now(),
             status: HealthLevel::Healthy,
+            mode: crate::server::alerts::OperationalMode::LocalHealthy,
             system: SystemHealth {
                 cpu_usage: 0.0,
                 ram_usage_percent: 0.0,
@@ -95,8 +116,21 @@ impl Default for HealthStatus {
             },
             embedding: EmbeddingHealth {
                 provider: "unknown".into(),
+                model: "unknown".into(),
                 latency_ms: 0,
                 error_rate: 0.0,
+                status: HealthLevel::Healthy,
+            },
+            llm: LlmHealth {
+                provider: "unknown".into(),
+                model: "unknown".into(),
+                endpoint: "unknown".into(),
+                reachable: false,
+                status: HealthLevel::Healthy,
+            },
+            vector_db: VectorDbHealth {
+                backend: "unknown".into(),
+                path: "unknown".into(),
                 status: HealthLevel::Healthy,
             },
             mesh: MeshHealth {
@@ -115,6 +149,8 @@ pub struct HealthMonitor {
     peer_registry: Arc<RwLock<Option<Arc<PeerRegistry>>>>,
     embedder: Arc<RwLock<Option<Arc<dyn Embedder>>>>,
     tgd_progress: Arc<RwLock<Option<Arc<RwLock<crate::tgd::consolidation::ProgressReport>>>>>,
+    llm_failure_count: Arc<RwLock<u32>>,
+    http_client: reqwest::Client,
 }
 
 impl HealthMonitor {
@@ -125,6 +161,11 @@ impl HealthMonitor {
             peer_registry: Arc::new(RwLock::new(None)),
             embedder: Arc::new(RwLock::new(None)),
             tgd_progress: Arc::new(RwLock::new(None)),
+            llm_failure_count: Arc::new(RwLock::new(0)),
+            http_client: reqwest::Client::builder()
+                .timeout(Duration::from_secs(2))
+                .build()
+                .unwrap_or_default(),
         }
     }
 
@@ -156,28 +197,37 @@ impl HealthMonitor {
         let system = self.check_system(&mut sys_info).await;
         let database = self.check_database().await;
         let embedding = self.check_embedding().await;
+        let llm = self.check_llm().await;
+        let vector_db = self.check_vector_db().await;
         let mesh = self.check_mesh().await;
         let tgd_consolidation = self.check_tgd_progress().await;
 
         let mut status = HealthLevel::Healthy;
-        // Critical failures: system or database. Embedding failures only degrade the system.
+        // Critical failures: system or database. Embedding/LLM failures only degrade the system.
         if system.status == HealthLevel::Unhealthy || database.status == HealthLevel::Unhealthy {
             status = HealthLevel::Unhealthy;
         } else if system.status == HealthLevel::Degraded
             || database.status == HealthLevel::Degraded
             || embedding.status == HealthLevel::Unhealthy
             || embedding.status == HealthLevel::Degraded
+            || llm.status == HealthLevel::Unhealthy
+            || llm.status == HealthLevel::Degraded
             || mesh.status == HealthLevel::Degraded
         {
             status = HealthLevel::Degraded;
         }
 
+        let mode = crate::server::alerts::SYSTEM_ALERTS.get_mode();
+
         let new_status = HealthStatus {
             timestamp: Utc::now(),
             status,
+            mode,
             system,
             database,
             embedding,
+            llm,
+            vector_db,
             mesh,
             tgd_consolidation,
         };
@@ -338,6 +388,7 @@ impl HealthMonitor {
 
     async fn check_embedding(&self) -> EmbeddingHealth {
         let provider = std::env::var("XAVIER_EMBEDDER").unwrap_or_else(|_| "openai".into());
+        let model = std::env::var("XAVIER_EMBEDDING_MODEL").unwrap_or_else(|_| "unknown".into());
         let mut latency_ms = 0;
         let mut status = HealthLevel::Healthy;
 
@@ -359,9 +410,76 @@ impl HealthMonitor {
 
         EmbeddingHealth {
             provider,
+            model,
             latency_ms,
             error_rate: 0.0,
             status,
+        }
+    }
+
+    async fn check_llm(&self) -> LlmHealth {
+        let config = crate::agents::provider::ModelProviderConfig::from_env();
+        let provider = config.provider_label.clone();
+        let model = config.model.clone();
+        let endpoint = config.base_url.clone().unwrap_or_else(|| "none".to_string());
+        let mut reachable = false;
+        let mut status = HealthLevel::Healthy;
+
+        if config.provider_mode == crate::agents::provider::types::ProviderMode::Local {
+            if let Some(url) = &config.base_url {
+                // Ollama version endpoint or just the base
+                let check_url = if url.contains("11434") {
+                    format!("{}/api/version", url.trim_end_matches("/v1"))
+                } else {
+                    url.clone()
+                };
+
+                match self.http_client.get(&check_url).send().await {
+                    Ok(resp) if resp.status().is_success() => {
+                        reachable = true;
+                        let mut fail_count = self.llm_failure_count.write().await;
+                        *fail_count = 0;
+                    }
+                    _ => {
+                        reachable = false;
+                        let mut fail_count = self.llm_failure_count.write().await;
+                        *fail_count += 1;
+                        if *fail_count >= 3 {
+                            crate::server::alerts::SYSTEM_ALERTS.push_alert(
+                                "ERROR",
+                                "Ollama local no responde — modo degradado",
+                                "llm",
+                            );
+                            status = HealthLevel::Unhealthy;
+                        } else {
+                            status = HealthLevel::Degraded;
+                        }
+                    }
+                }
+            }
+        } else if config.provider_mode == crate::agents::provider::types::ProviderMode::Cloud {
+            reachable = true; // Assume cloud is reachable if configured for now
+        }
+
+        LlmHealth {
+            provider,
+            model,
+            endpoint,
+            reachable,
+            status,
+        }
+    }
+
+    async fn check_vector_db(&self) -> VectorDbHealth {
+        let settings = crate::settings::XavierSettings::current();
+        let backend = settings.memory.backend.clone();
+        let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig::from_env();
+        let path = config.path.to_string_lossy().to_string();
+
+        VectorDbHealth {
+            backend,
+            path,
+            status: HealthLevel::Healthy,
         }
     }
 

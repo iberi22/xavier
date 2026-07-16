@@ -2,7 +2,15 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::sync::RwLock;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "kebab-case")]
+pub enum OperationalMode {
+    LocalHealthy,
+    LocalDegraded,
+    CloudFallback,
+    Disabled,
+}
+
 pub struct SystemAlert {
     pub id: String,
     pub level: String,
@@ -53,6 +61,28 @@ impl SystemAlertStore {
             alerts.clear();
         }
     }
+
+    pub fn get_mode(&self) -> OperationalMode {
+        let alerts = self.get_alerts();
+        let provider = std::env::var("XAVIER_PROVIDER").unwrap_or_else(|_| "local".to_string());
+
+        if provider == "disabled" {
+            return OperationalMode::Disabled;
+        }
+
+        let has_llm_error = alerts.iter().any(|a| a.component == "llm" && a.level == "ERROR");
+        let is_local = provider == "local" || provider == "ollama";
+
+        if is_local {
+            if has_llm_error {
+                OperationalMode::LocalDegraded
+            } else {
+                OperationalMode::LocalHealthy
+            }
+        } else {
+            OperationalMode::CloudFallback
+        }
+    }
 }
 
 impl Default for SystemAlertStore {
@@ -64,3 +94,31 @@ impl Default for SystemAlertStore {
 // Global instance
 pub static SYSTEM_ALERTS: std::sync::LazyLock<SystemAlertStore> =
     std::sync::LazyLock::new(SystemAlertStore::new);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_mode_derivation() {
+        let store = SystemAlertStore::new();
+
+        // Default should be LocalHealthy (assuming no env var overrides in test)
+        std::env::set_var("XAVIER_PROVIDER", "local");
+        assert_eq!(store.get_mode(), OperationalMode::LocalHealthy);
+
+        // With LLM error, should be LocalDegraded
+        store.push_alert("ERROR", "Ollama down", "llm");
+        assert_eq!(store.get_mode(), OperationalMode::LocalDegraded);
+
+        // If provider is cloud, should be CloudFallback
+        std::env::set_var("XAVIER_PROVIDER", "openai");
+        assert_eq!(store.get_mode(), OperationalMode::CloudFallback);
+
+        // If provider is disabled, should be Disabled
+        std::env::set_var("XAVIER_PROVIDER", "disabled");
+        assert_eq!(store.get_mode(), OperationalMode::Disabled);
+
+        std::env::remove_var("XAVIER_PROVIDER");
+    }
+}
