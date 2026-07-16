@@ -96,6 +96,7 @@ pub(crate) enum EmbedderBackendConfig {
 pub(crate) enum EmbedderConfig {
     Fallback(Vec<EmbedderBackendConfig>),
     Noop,
+    Invalid(String),
 }
 
 impl EmbedderConfig {
@@ -142,6 +143,7 @@ impl EmbedderConfig {
 
     pub fn build_sync(self) -> Result<Arc<dyn Embedder>, EmbeddingError> {
         match self {
+            Self::Invalid(msg) => Err(EmbeddingError::Config(msg)),
             Self::Fallback(backends) => {
                 let mut embedders: Vec<Arc<dyn Embedder>> = Vec::new();
 
@@ -250,7 +252,27 @@ impl EmbedderConfig {
     }
 
     fn gllm_only() -> Self {
-        Self::Fallback(vec![EmbedderBackendConfig::Gllm(gllm_config())])
+        let config = gllm_config();
+        let model_path = std::env::var("XAVIER_GLLM_MODEL_PATH").ok();
+
+        if let Some(path) = model_path {
+            if !std::path::Path::new(&path).exists() {
+                return Self::Invalid(format!(
+                    "GLLM backend requires model at {}; set XAVIER_GLLM_MODEL_PATH",
+                    path
+                ));
+            }
+        } else if config.model.contains('/') || config.model.contains('\\') {
+            // If the model looks like a path but XAVIER_GLLM_MODEL_PATH is not set, validate it
+            if !std::path::Path::new(&config.model).exists() {
+                return Self::Invalid(format!(
+                    "GLLM backend requires model at {}; set XAVIER_GLLM_MODEL_PATH",
+                    config.model
+                ));
+            }
+        }
+
+        Self::Fallback(vec![EmbedderBackendConfig::Gllm(config)])
     }
 }
 
@@ -376,8 +398,10 @@ fn build_backend(config: EmbedderBackendConfig) -> Result<Arc<dyn Embedder>, Emb
 
 fn gllm_config() -> GllmConfig {
     let settings = crate::settings::XavierSettings::current();
-    let raw_model =
-        std::env::var("XAVIER_GLLM_MODEL").unwrap_or_else(|_| gllm::DEFAULT_GLLM_MODEL.to_string());
+    let raw_model = std::env::var("XAVIER_GLLM_MODEL_PATH")
+        .or_else(|_| std::env::var("XAVIER_GLLM_MODEL"))
+        .unwrap_or_else(|_| gllm::DEFAULT_GLLM_MODEL.to_string());
+
     let model = gllm::normalize_model_name(&raw_model);
     let dimension = settings
         .embedding
