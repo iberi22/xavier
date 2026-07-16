@@ -5,7 +5,10 @@
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
+use tracing::info;
 
 /// Supported provider types for the router.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -124,6 +127,44 @@ pub struct ProviderRouter {
 }
 
 impl ProviderRouter {
+    /// Checks if Ollama is reachable on the default local port.
+    pub async fn is_ollama_reachable() -> bool {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(1))
+            .build()
+            .unwrap_or_default();
+
+        let url = crate::agents::provider::config::DEFAULT_LOCAL_BASE_URL
+            .replace("/v1", "");
+
+        match client.get(&url).send().await {
+            Ok(resp) => resp.status().is_success() || resp.status() == reqwest::StatusCode::NOT_FOUND,
+            Err(_) => false,
+        }
+    }
+
+    /// Builds a default fallback chain based on configured providers and local availability.
+    pub async fn build_default_chain(configured: &[ProviderKind]) -> Vec<ProviderKind> {
+        let mut chain = Vec::new();
+
+        // 1. Add cloud providers (everything except Local)
+        for &p in configured {
+            if p != ProviderKind::Local {
+                chain.push(p);
+            }
+        }
+
+        // 2. Add Local as last resort if Ollama is reachable
+        if Self::is_ollama_reachable().await {
+            if !chain.contains(&ProviderKind::Local) {
+                chain.push(ProviderKind::Local);
+            }
+        }
+
+        info!("Provider fallback chain built: {:?}", chain);
+        chain
+    }
+
     /// Creates a new ProviderRouter with the given initial provider.
     pub fn new(initial: ProviderKind) -> Self {
         Self {
@@ -307,6 +348,41 @@ mod tests {
         // Third failure: no more fallbacks
         let next = router.on_provider_failure();
         assert_eq!(next, None);
+    }
+
+    #[tokio::test]
+    async fn test_build_default_chain_cloud_only() {
+        // Since we can't easily mock network in unit tests without complex traits,
+        // this test will depend on whether Ollama is actually running on the machine.
+        // We'll just check that cloud providers are always included.
+        let configured = vec![ProviderKind::OpenAI, ProviderKind::Anthropic];
+        let chain = ProviderRouter::build_default_chain(&configured).await;
+
+        assert!(chain.contains(&ProviderKind::OpenAI));
+        assert!(chain.contains(&ProviderKind::Anthropic));
+    }
+
+    #[tokio::test]
+    async fn test_build_default_chain_mixed() {
+        let configured = vec![ProviderKind::OpenAI, ProviderKind::Local];
+        let chain = ProviderRouter::build_default_chain(&configured).await;
+
+        assert!(chain.contains(&ProviderKind::OpenAI));
+        // Local might or might not be there depending on reachability,
+        // but if it is, it should be at the end.
+        if let Some(pos) = chain.iter().position(|&p| p == ProviderKind::Local) {
+            assert_eq!(pos, chain.len() - 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_build_default_chain_empty() {
+        let configured = vec![];
+        let chain = ProviderRouter::build_default_chain(&configured).await;
+        // Should only contain Local if reachable, otherwise empty
+        if chain.len() > 0 {
+            assert_eq!(chain, vec![ProviderKind::Local]);
+        }
     }
 
     #[test]
