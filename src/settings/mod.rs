@@ -76,6 +76,27 @@ pub mod tests {
     }
 
     #[test]
+    fn test_load_config_json() {
+        let _guard = ENV_LOCK.lock().expect("test assertion");
+
+        // Ensure we load from the actual config/xavier.config.json
+        std::env::remove_var("XAVIER_CONFIG_PATH");
+
+        let settings = XavierSettings::load().expect("Should parse config/xavier.config.json");
+        assert!(settings.is_some(), "config/xavier.config.json should exist in the environment");
+
+        let s = settings.unwrap();
+        // Check local-first defaults from Step 1
+        assert_eq!(s.workspace.embedding_provider_mode, "local");
+        assert_eq!(s.models.embedding_model, "embeddinggemma");
+        assert_eq!(s.models.router_fast_model, "");
+        assert_eq!(s.models.router_quality_model, "");
+        assert_eq!(s.embedding.endpoint, "http://localhost:11434/api/embeddings");
+        assert_eq!(s.embedding.embedder, "local");
+        assert_eq!(s.embedding.gllm_model, "embeddinggemma");
+    }
+
+    #[test]
     fn test_apply_to_env_sets_vars() {
         let _guard = ENV_LOCK.lock().expect("test assertion");
 
