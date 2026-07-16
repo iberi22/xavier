@@ -2975,8 +2975,10 @@ dependencies = [
 name = "codegraph-types"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]
