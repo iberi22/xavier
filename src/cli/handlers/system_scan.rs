@@ -1,11 +1,11 @@
 //! SystemScanner: Detect CLI agents, local models, GPU, env vars, and login status
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::process::Command;
 
 /// Result of a system scan
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SystemScanResult {
     pub ollama: OllamaStatus,
     pub cli_agents: Vec<CliAgentStatus>,
@@ -15,7 +15,7 @@ pub struct SystemScanResult {
     pub system_info: SystemInfo,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct OllamaStatus {
     pub installed: bool,
     pub running: bool,
@@ -24,7 +24,7 @@ pub struct OllamaStatus {
     pub url: String,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CliAgentStatus {
     pub name: String,
     pub installed: bool,
@@ -34,7 +34,7 @@ pub struct CliAgentStatus {
     pub usage_tier: Option<String>,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GpuStatus {
     pub detected: bool,
     pub vendor: Option<String>,
@@ -44,7 +44,7 @@ pub struct GpuStatus {
     pub cuda_available: bool,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DockerStatus {
     pub installed: bool,
     pub running: bool,
@@ -52,14 +52,14 @@ pub struct DockerStatus {
     pub containers: Vec<String>,
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct EnvVarStatus {
     pub present: bool,
     pub masked_value: Option<String>,
     pub source: String, // "env", "vault", "config"
 }
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct SystemInfo {
     pub os: String,
     pub arch: String,
@@ -88,11 +88,11 @@ pub async fn scan_system(detailed: bool) -> SystemScanResult {
 }
 
 async fn detect_ollama() -> OllamaStatus {
-    let url = "http://localhost:11434".to_string();
+    let base_url = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string());
     let client = reqwest::Client::new();
 
     // Try to get version
-    let version = match client.get(format!("{}/api/version", url)).send().await {
+    let version = match client.get(format!("{}/api/version", base_url)).send().await {
         Ok(resp) => resp.json::<serde_json::Value>().await.ok().and_then(|v| {
             v.get("version")
                 .and_then(|v| v.as_str().map(|s| s.to_string()))
@@ -100,8 +100,8 @@ async fn detect_ollama() -> OllamaStatus {
         Err(_) => None,
     };
 
-    // Try to list models
-    let models = match client.get(format!("{}/api/tags", url)).send().await {
+    // Try to list models using /api/tags (Ollama native)
+    let mut models = match client.get(format!("{}/api/tags", base_url)).send().await {
         Ok(resp) => {
             if let Ok(json) = resp.json::<serde_json::Value>().await {
                 json.get("models")
@@ -122,6 +122,22 @@ async fn detect_ollama() -> OllamaStatus {
         Err(_) => vec![],
     };
 
+    // Fallback or alternative: try /v1/models (OpenAI compatible)
+    if models.is_empty() {
+        if let Ok(resp) = client.get(format!("{}/v1/models", base_url)).send().await {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                if let Some(data) = json.get("data").and_then(|d| d.as_array()) {
+                    models = data.iter()
+                        .filter_map(|m| {
+                            m.get("id")
+                                .and_then(|n| n.as_str().map(|s| s.to_string()))
+                        })
+                        .collect();
+                }
+            }
+        }
+    }
+
     let running = version.is_some() || !models.is_empty();
     let installed = running
         || Command::new("ollama")
@@ -135,7 +151,7 @@ async fn detect_ollama() -> OllamaStatus {
         running,
         version,
         models,
-        url,
+        url: base_url,
     }
 }
 
@@ -602,4 +618,63 @@ pub fn format_as_markdown(result: &SystemScanResult) -> String {
     }
 
     md.join("\n")
+}
+
+#[cfg(test)]
+mod scanner_tests {
+    use super::*;
+    use mockito;
+
+    #[tokio::test]
+    async fn test_ollama_detection_with_models() {
+        let mut server = mockito::Server::new_async().await;
+        let url = server.url();
+        std::env::set_var("OLLAMA_HOST", &url);
+
+        let _v_mock = server.mock("GET", "/api/version")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"version": "0.1.48"}"#)
+            .create_async().await;
+
+        let _m_mock = server.mock("GET", "/api/tags")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"models": [{"name": "qwen3-coder:latest"}, {"name": "llama3:latest"}]}"#)
+            .create_async().await;
+
+        let status = detect_ollama().await;
+        assert!(status.running);
+        assert!(status.version.is_some());
+        assert_eq!(status.version.unwrap(), "0.1.48");
+        assert!(status.models.contains(&"qwen3-coder:latest".to_string()));
+        assert!(status.models.contains(&"llama3:latest".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_ollama_v1_models_fallback() {
+        let mut server = mockito::Server::new_async().await;
+        let url = server.url();
+        std::env::set_var("OLLAMA_HOST", &url);
+
+        let _v_mock = server.mock("GET", "/api/version")
+            .with_status(200)
+            .with_body(r#"{"version": "0.1.48"}"#)
+            .create_async().await;
+
+        // /api/tags returns empty or fails
+        let _m_tags_mock = server.mock("GET", "/api/tags")
+            .with_status(404)
+            .create_async().await;
+
+        // /v1/models (OpenAI compatible) succeeds
+        let _m_v1_mock = server.mock("GET", "/v1/models")
+            .with_status(200)
+            .with_body(r#"{"data": [{"id": "qwen3-coder"}]}"#)
+            .create_async().await;
+
+        let status = detect_ollama().await;
+        assert!(status.running);
+        assert!(status.models.contains(&"qwen3-coder".to_string()));
+    }
 }

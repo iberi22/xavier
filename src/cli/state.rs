@@ -71,6 +71,7 @@ pub struct CliState {
     pub agent_indexer: Arc<crate::memory::agent_indexer::AgentIndexer>,
     pub auth_store: Option<Arc<AuthStore>>,
     pub openclaw_indexer: Arc<crate::memory::openclaw_indexer::OpenClawAgentIndexer>,
+    pub system_scan_cache: Arc<tokio::sync::RwLock<Option<crate::cli::handlers::system_scan::SystemScanResult>>>,
 }
 
 impl CliState {

@@ -17,7 +17,7 @@ use std::time::Instant;
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
-use tracing::info;
+use tracing::{debug, info};
 
 use crate::cli::config::{
     code_graph_db_path, resolve_base_url_for_port, resolve_http_bind_host, resolve_http_token,
@@ -387,6 +387,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         openclaw_indexer: Arc::new(crate::memory::openclaw_indexer::OpenClawAgentIndexer::new(
             embedder.clone(),
         )),
+        system_scan_cache: Arc::new(tokio::sync::RwLock::new(None)),
     };
 
     info!(
@@ -926,6 +927,40 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             "info",
         )
         .await;
+
+    // Background System Scan (Ollama detection)
+    let scan_cache = state.system_scan_cache.clone();
+    tokio::spawn(async move {
+        let interval_secs = std::env::var("XAVIER_SCAN_INTERVAL_SECS")
+            .ok()
+            .and_then(|v| v.parse::<u64>().ok())
+            .unwrap_or(300);
+        let mut interval = tokio::time::interval(Duration::from_secs(interval_secs));
+
+        loop {
+            interval.tick().await;
+            debug!("Running background system scan...");
+            let result = crate::cli::handlers::system_scan::scan_system(true).await;
+
+            if result.ollama.running {
+                info!("🦙 Ollama detected: {} models ({})",
+                    result.ollama.models.len(),
+                    result.ollama.models.join(", ")
+                );
+
+                let default_model = "qwen3-coder";
+                if !result.ollama.models.iter().any(|m| m.contains(default_model)) {
+                    tracing::warn!("⚠️ Default model '{}' not found in Ollama. Run: ollama pull {}", default_model, default_model);
+                }
+            } else if result.ollama.installed {
+                debug!("Ollama is installed but not running.");
+            }
+
+            let mut cache = scan_cache.write().await;
+            *cache = Some(result);
+            drop(cache);
+        }
+    });
 
     #[cfg(feature = "enterprise")]
     {
