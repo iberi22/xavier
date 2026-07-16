@@ -105,18 +105,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "allo-isolate"
-version = "0.1.27"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "449e356a4864c017286dbbec0e12767ea07efba29e3b7d984194c2a7ff3c4550"
-dependencies = [
- "anyhow",
- "atomic 0.5.3",
- "backtrace",
- "chrono",
-]
-
-[[package]]
 name = "alloc-no-stdlib"
 version = "2.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1189,6 +1177,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "assert-json-diff"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "47e4f2b81832e72834d7518d8487a0396a28cc408186a2e8854c0f98011faf12"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "async-channel"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1317,12 +1315,6 @@ checksum = "f28d99ec8bfea296261ca1af174f24225171fea9664ba9003cbebee704810528"
 dependencies = [
  "num-traits",
 ]
-
-[[package]]
-name = "atomic"
-version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c59bdb34bc650a32731b31bd8f0829cc15d24a708ee31559e0bb34f2bc320cba"
 
 [[package]]
 name = "atomic"
@@ -2018,12 +2010,6 @@ checksum = "64f14468960818ce4f3e3553c32d524446687884f8e7af5d3e252331d8a87e43"
 dependencies = [
  "glob",
 ]
-
-[[package]]
-name = "build-target"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "832133bbabbbaa9fbdba793456a2827627a7d2b8fb96032fa1e7666d7895832b"
 
 [[package]]
 name = "built"
@@ -4140,15 +4126,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dart-sys"
-version = "4.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57967e4b200d767d091b961d6ab42cc7d0cc14fe9e052e75d0d3cf9eb732d895"
-dependencies = [
- "cc",
-]
-
-[[package]]
 name = "dary_heap"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5277,38 +5254,6 @@ dependencies = [
  "futures-sink",
  "spin 0.9.8",
 ]
-
-[[package]]
-name = "flutter_rust_bridge"
-version = "1.82.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23a5a7a1cd030cd63f53eafe2496eb4e40f520800e6e9b78cae6f3f3ba7f3c2b"
-dependencies = [
- "allo-isolate",
- "anyhow",
- "backtrace",
- "build-target",
- "bytemuck",
- "cc",
- "chrono",
- "console_error_panic_hook",
- "dart-sys",
- "flutter_rust_bridge_macros",
- "js-sys",
- "lazy_static",
- "libc",
- "log",
- "parking_lot",
- "threadpool",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
-name = "flutter_rust_bridge_macros"
-version = "1.82.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7fe743d921bedf4578b9472346d03a9643a01cd565ca7df7961baebad534ba5"
 
 [[package]]
 name = "fnv"
@@ -8840,6 +8785,31 @@ dependencies = [
  "log",
  "wasi 0.11.1+wasi-snapshot-preview1",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "mockito"
+version = "1.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90820618712cab19cfc46b274c6c22546a82affcb3c3bdf0f29e3db8e1bb92c0"
+dependencies = [
+ "assert-json-diff",
+ "bytes",
+ "colored 3.1.1",
+ "futures-core",
+ "http 1.4.2",
+ "http-body 1.0.1",
+ "http-body-util",
+ "hyper 1.10.1",
+ "hyper-util",
+ "log",
+ "pin-project-lite",
+ "rand 0.9.4",
+ "regex",
+ "serde_json",
+ "serde_urlencoded",
+ "similar",
+ "tokio",
 ]
 
 [[package]]
@@ -12865,6 +12835,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3a9fe34e3e7a50316060351f37187a3f546bce95496156754b601a5fa71b76e"
 
 [[package]]
+name = "similar"
+version = "2.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
+
+[[package]]
 name = "simple-dns"
 version = "0.11.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -15352,7 +15328,7 @@ version = "1.23.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bf80a72845275afea99e7f2b434723d3bc7e38470fcd1c7ed39a599c73319a53"
 dependencies = [
- "atomic 0.6.1",
+ "atomic",
  "getrandom 0.4.3",
  "js-sys",
  "rand 0.10.1",
@@ -16913,6 +16889,7 @@ dependencies = [
  "libp2p",
  "libsql",
  "memchr",
+ "mockito",
  "moka",
  "oqs",
  "parking_lot",
@@ -16990,20 +16967,6 @@ dependencies = [
  "ulid",
  "uuid",
  "walkdir",
-]
-
-[[package]]
-name = "xavier_mobile"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum 0.8.9",
- "flutter_rust_bridge",
- "serde",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "xavier",
 ]
 
 [[package]]
