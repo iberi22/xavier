@@ -1,65 +1,87 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Node {
-    pub id: String,
-    pub kind: SymbolKind,
-    pub name: String,
-    pub signature: Option<String>,
-    pub file_path: String,
-    pub range: Range,
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
+pub enum Language {
+    #[default]
+    Rust,
+    TypeScript,
+    JavaScript,
+    Python,
+    Go,
+    Java,
+    C,
+    Cpp,
+    Other(String),
+    Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash, Default)]
 pub enum SymbolKind {
+    #[default]
     Function,
-    Method,
-    Class,
-    Interface,
     Struct,
     Enum,
-    Module,
-    Constant,
+    Trait,
+    Impl,
+    Class,
+    Method,
     Variable,
-    Other,
+    Constant,
+    Import,
+    Export,
+    Module,
+    File,
+    Route,
+    Component,
+    Property,
+    Field,
+    Parameter,
+    TypeAlias,
+    Namespace,
+    Symbol,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct Range {
-    pub start: Point,
-    pub end: Point,
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Symbol {
+    pub id: Option<i64>,
+    pub stable_id: Option<String>,
+    pub name: String,
+    pub kind: SymbolKind,
+    pub lang: Language,
+    pub file_path: String,
+    pub start_line: u32,
+    pub end_line: u32,
+    pub start_col: u32,
+    pub end_col: u32,
+    pub signature: Option<String>,
+    pub parent: Option<String>,
+    pub complexity: Option<f32>,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub struct Point {
-    pub line: usize,
-    pub column: usize,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PluginRequest {
-    pub version: String,
-    pub files: Vec<String>,
-    pub config: PluginConfig,
+    pub language: Language,
+    pub files: Vec<FileToParse>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
+pub struct FileToParse {
+    pub path: String,
+    pub source: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PluginResponse {
-    pub version: String,
-    pub nodes: Vec<Node>,
+    pub symbols: Vec<Symbol>,
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginConfig {
     pub name: String,
     pub command: String,
-    pub args: Vec<String>,
-    pub extensions: Vec<String>,
-}
-
-pub enum EdgeKind {
-    Call,
-    Reference,
-    Inheritance,
-    Import,
+    pub version: String,
+    pub languages: Vec<Language>,
+    pub extensions: Option<Vec<String>>,
+    pub capabilities: Vec<String>,
 }
