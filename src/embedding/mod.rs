@@ -148,12 +148,34 @@ impl EmbedderConfig {
                 let mut embedders: Vec<Arc<dyn Embedder>> = Vec::new();
 
                 for backend in backends {
+                    let name = match &backend {
+                        EmbedderBackendConfig::Gllm(c) => format!("local-gllm({})", c.model),
+                        EmbedderBackendConfig::OpenAICompatible(c) => {
+                            if c.endpoint.contains("localhost") || c.endpoint.contains("127.0.0.1")
+                            {
+                                format!("local-ollama({})", c.model)
+                            } else {
+                                format!("cloud-openai({})", c.model)
+                            }
+                        }
+                    };
+
                     match build_backend(backend) {
-                        Ok(embedder) => embedders.push(embedder),
+                        Ok(embedder) => {
+                            tracing::info!("Embeddings backend: {}", name);
+                            if name.contains("local-ollama") && name.contains("embeddinggemma") {
+                                if !check_ollama_model_present("embeddinggemma") {
+                                    let msg = "Modelo embeddinggemma no encontrado en Ollama. Ejecuta: ollama pull embeddinggemma";
+                                    tracing::warn!("{}", msg);
+                                    crate::server::alerts::SYSTEM_ALERTS.push_alert("WARN", msg, "embedding");
+                                }
+                            }
+                            embedders.push(embedder);
+                        }
                         Err(error) => {
                             let msg = format!(
-                                "embedding backend unavailable; trying fallback error={}",
-                                error
+                                "embedding backend {} unavailable; trying fallback error={}",
+                                name, error
                             );
                             tracing::warn!("{}", msg);
                             crate::server::alerts::SYSTEM_ALERTS.push_alert(
@@ -176,7 +198,10 @@ impl EmbedderConfig {
                     _ => Ok(Arc::new(FallbackEmbedder { embedders })),
                 }
             }
-            Self::Noop => Ok(Arc::new(NoopEmbedder)),
+            Self::Noop => {
+                tracing::info!("Embeddings backend: disabled (noop)");
+                Ok(Arc::new(NoopEmbedder))
+            }
         }
     }
 
@@ -185,21 +210,26 @@ impl EmbedderConfig {
     }
 
     fn auto(api_flavor: ApiFlavor) -> Self {
+        if cloud_embedding_signal_present() {
+            return Self::cloud_only(api_flavor);
+        }
+
         let local_signal = local_embedding_signal_present();
-        let cloud_signal = cloud_embedding_signal_present();
         let explicit_local_llm = std::env::var("XAVIER_MODEL_PROVIDER")
             .map(|value| value.eq_ignore_ascii_case("local"))
             .unwrap_or(false);
 
-        match (local_signal || explicit_local_llm, cloud_signal) {
-            (true, true) => Self::Fallback(vec![
-                EmbedderBackendConfig::OpenAICompatible(local_config()),
-                EmbedderBackendConfig::OpenAICompatible(cloud_config()),
-            ]),
-            (true, false) => Self::local_only(api_flavor),
-            (false, true) => Self::cloud_only(api_flavor),
-            (false, false) => Self::Noop,
+        if local_signal || explicit_local_llm || is_ollama_reachable() {
+            return Self::local_only(api_flavor);
         }
+
+        tracing::warn!("Embeddings backend: disabled (noop) - no cloud keys and local Ollama unreachable");
+        crate::server::alerts::SYSTEM_ALERTS.push_alert(
+            "WARN",
+            "Embeddings disabled: no cloud keys found and local Ollama unreachable. Run 'ollama pull embeddinggemma' and start Ollama for local semantic memory.",
+            "embedding",
+        );
+        Self::Noop
     }
 
     fn auto_explicit(api_flavor: ApiFlavor) -> Self {
@@ -446,7 +476,7 @@ fn cloud_config() -> OpenAICompatibleConfig {
     let settings = crate::settings::XavierSettings::current();
     let endpoint = std::env::var("XAVIER_EMBEDDING_URL")
         .map(|value| normalize_openai_embeddings_endpoint(&value))
-        .unwrap_or_else(|_| {
+        .unwrap_or_else(|| {
             if !settings.models.embedding_url.is_empty() {
                 normalize_openai_embeddings_endpoint(&settings.models.embedding_url)
             } else {
@@ -482,6 +512,56 @@ fn normalize_openai_embeddings_endpoint(raw: &str) -> String {
     } else {
         format!("{trimmed}/v1/embeddings")
     }
+}
+
+fn check_ollama_model_present(model: &str) -> bool {
+    use std::process::Command;
+    let output = Command::new("ollama")
+        .arg("list")
+        .output();
+
+    if let Ok(output) = output {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            if line.split_whitespace().next() == Some(model) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn is_ollama_reachable() -> bool {
+    use std::net::{TcpStream, ToSocketAddrs};
+    use std::time::Duration;
+
+    let settings = crate::settings::XavierSettings::current();
+    let endpoint = std::env::var("XAVIER_EMBEDDING_LOCAL_URL")
+        .ok()
+        .or_else(|| std::env::var("XAVIER_EMBEDDING_URL").ok())
+        .unwrap_or_else(|| {
+            if !settings.models.embedding_url.is_empty() {
+                settings.models.embedding_url.clone()
+            } else {
+                DEFAULT_LOCAL_EMBEDDING_ENDPOINT.to_string()
+            }
+        });
+
+    let host_port = if let Ok(url) = url::Url::parse(&endpoint) {
+        let host = url.host_str().unwrap_or("127.0.0.1");
+        let port = url.port_or_known_default().unwrap_or(11434);
+        format!("{}:{}", host, port)
+    } else {
+        "127.0.0.1:11434".to_string()
+    };
+
+    if let Ok(mut addrs) = host_port.to_socket_addrs() {
+        if let Some(addr) = addrs.next() {
+            return TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok();
+        }
+    }
+
+    false
 }
 
 fn embedding_dimension_for_model(model: &str) -> usize {
@@ -586,5 +666,68 @@ mod tests {
 
         std::env::remove_var("XAVIER_OPENROUTER_API_KEY");
         std::env::remove_var("OPENAI_API_KEY");
+    }
+
+    #[test]
+    fn test_auto_preference_order() {
+        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+
+        // Clear all signals
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
+        std::env::remove_var("OPENAI_API_KEY");
+        std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+        std::env::remove_var("XAVIER_MODEL_PROVIDER");
+
+        // 1. No signals, Ollama unreachable -> Noop
+        // (Assuming Ollama is not running on 127.0.0.1:11434 in the test environment)
+        let config = EmbedderConfig::auto(ApiFlavor::OpenAICompatible);
+        // Note: this might fail if Ollama IS running in the CI/test environment,
+        // but typically it isn't.
+        if !is_ollama_reachable() {
+            assert!(matches!(config, EmbedderConfig::Noop));
+        }
+
+        // 2. Cloud signal present -> Cloud
+        std::env::set_var("OPENAI_API_KEY", "sk-test");
+        let config = EmbedderConfig::auto(ApiFlavor::OpenAICompatible);
+        match config {
+            EmbedderConfig::Fallback(backends) => {
+                assert!(backends.iter().any(|b| match b {
+                    EmbedderBackendConfig::OpenAICompatible(c) => c.model == DEFAULT_CLOUD_EMBEDDING_MODEL,
+                    _ => false,
+                }));
+            },
+            _ => panic!("Expected Fallback with cloud config"),
+        }
+        std::env::remove_var("OPENAI_API_KEY");
+
+        // 3. Local signal present -> Local
+        std::env::set_var("XAVIER_EMBEDDING_LOCAL_URL", "http://localhost:11434/v1/embeddings");
+        let config = EmbedderConfig::auto(ApiFlavor::OpenAICompatible);
+        match config {
+            EmbedderConfig::Fallback(backends) => {
+                assert!(backends.iter().any(|b| match b {
+                    EmbedderBackendConfig::OpenAICompatible(c) => c.model == DEFAULT_LOCAL_EMBEDDING_MODEL,
+                    _ => false,
+                }));
+            },
+            _ => panic!("Expected Fallback with local config"),
+        }
+        std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
+
+        // 4. Explicit local LLM provider -> Local
+        std::env::set_var("XAVIER_MODEL_PROVIDER", "local");
+        let config = EmbedderConfig::auto(ApiFlavor::OpenAICompatible);
+        match config {
+            EmbedderConfig::Fallback(backends) => {
+                assert!(backends.iter().any(|b| match b {
+                    EmbedderBackendConfig::OpenAICompatible(c) => c.model == DEFAULT_LOCAL_EMBEDDING_MODEL,
+                    _ => false,
+                }));
+            },
+            _ => panic!("Expected Fallback with local config"),
+        }
+        std::env::remove_var("XAVIER_MODEL_PROVIDER");
     }
 }
