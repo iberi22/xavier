@@ -13,6 +13,9 @@ use serde_json::json;
 
 use crate::cli::http_setup::SessionInfo;
 use crate::cli::state::CliState;
+use xavier::agents::provider::config::ModelProviderConfig;
+use xavier::agents::provider::router::{AutoStrategy, ProviderKind};
+use xavier::agents::provider::types::ProviderMode;
 use xavier::domain::proxy::{ProxyChatCommand, ProxyError};
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -134,45 +137,72 @@ pub async fn headless_chat(
 #[derive(Debug, Serialize)]
 pub struct ProviderStatus {
     pub name: String,
-    pub status: String,
-    pub latency_ms: Option<u64>,
-    pub quota_remaining: Option<f32>,
-    pub models: Vec<String>,
-    pub strategy: String,
+    pub mode: String, // "cloud" or "local"
+    pub configured: bool,
+    pub reachable: bool,
+    pub in_fallback_chain: bool,
 }
 
-pub async fn headless_providers() -> impl IntoResponse {
-    let providers = vec![
-        ProviderStatus {
-            name: "anthropic".to_string(),
-            status: "ok".to_string(),
-            latency_ms: Some(120),
-            quota_remaining: Some(0.85),
-            models: vec!["claude-3-5-sonnet".to_string()],
-            strategy: "auto:quality".to_string(),
-        },
-        ProviderStatus {
-            name: "openai".to_string(),
-            status: "ok".to_string(),
-            latency_ms: Some(95),
-            quota_remaining: Some(0.92),
-            models: vec!["gpt-4o".to_string()],
-            strategy: "manual".to_string(),
-        },
-    ];
+pub async fn headless_providers(State(state): State<CliState>) -> impl IntoResponse {
+    let router = state.provider_router.read().await;
+    let fallback_chain = router.fallback_chain();
+    let current = router.current_provider();
+
+    let mut providers = Vec::new();
+
+    for kind in ProviderKind::all() {
+        let name = kind.as_str().to_string();
+        let config = ModelProviderConfig::from_label(&name);
+
+        let is_configured = config.is_configured();
+        let is_in_chain = fallback_chain.contains(&kind);
+        let is_current = kind == current;
+
+        // Skip if not configured, not in fallback chain, and not active
+        if !is_configured && !is_in_chain && !is_current {
+            continue;
+        }
+
+        let mode = match config.provider_mode {
+            ProviderMode::Local => "local",
+            ProviderMode::Cloud => "cloud",
+            ProviderMode::Disabled => "disabled",
+        }
+        .to_string();
+
+        // Reachability check: In this phase, we use configuration as a proxy for reachability
+        // to avoid blocking synchronous network I/O during the API call.
+        // Future iterations (LOCAL1-01) may use a background health-check cache.
+        let reachable = is_configured;
+
+        providers.push(ProviderStatus {
+            name,
+            mode,
+            configured: is_configured,
+            reachable,
+            in_fallback_chain: is_in_chain,
+        });
+    }
 
     AxumJson(json!({
         "providers": providers,
-        "active": "anthropic",
-        "fallback_chain": ["openai", "groq"],
+        "active": current.as_str(),
+        "fallback_chain": fallback_chain.iter().map(|k| k.as_str()).collect::<Vec<_>>(),
     }))
 }
 
-pub async fn headless_provider_status() -> impl IntoResponse {
+pub async fn headless_provider_status(State(state): State<CliState>) -> impl IntoResponse {
+    let router = state.provider_router.read().await;
+    let active = router.current_provider();
+    let strategy = match router.active_mode() {
+        xavier::agents::provider::router::ActiveProvider::Auto { strategy } => strategy.as_str(),
+        _ => "manual",
+    };
+
     AxumJson(json!({
-        "active": "anthropic",
-        "strategy": "auto:quality",
-        "fallback_chain": ["openai", "groq", "local"],
+        "active": active.as_str(),
+        "strategy": strategy,
+        "fallback_chain": router.fallback_chain().iter().map(|k| k.as_str()).collect::<Vec<_>>(),
     }))
 }
 
@@ -196,30 +226,15 @@ pub async fn headless_switch_provider(Json(req): Json<SwitchRequest>) -> impl In
 // Quotas & Usage
 // ═════════════════════════════════════════════════════════════════════════════
 
-pub async fn headless_quota() -> impl IntoResponse {
-    AxumJson(json!({
-        "quotas": [
-            {
-                "provider": "anthropic",
-                "used_percentage": 0.15,
-                "remaining_percentage": 0.85,
-                "tokens_used_today": 150_000,
-                "tokens_limit_today": 1_000_000,
-                "requests_today": 42,
-                "status": "healthy",
-            },
-            {
-                "provider": "groq",
-                "used_percentage": 0.72,
-                "remaining_percentage": 0.28,
-                "tokens_used_today": 720_000,
-                "tokens_limit_today": 1_000_000,
-                "requests_today": 180,
-                "cooldown_until": "2026-06-09T22:00:00Z",
-                "status": "near-limit",
-            },
-        ]
-    }))
+pub async fn headless_quota(State(state): State<CliState>) -> impl IntoResponse {
+    match state.rate_manager.get_all_quotas().await {
+        Ok(quotas) => AxumJson(json!({ "quotas": quotas })).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            AxumJson(json!({ "error": e.to_string() })),
+        )
+            .into_response(),
+    }
 }
 
 pub async fn headless_usage() -> impl IntoResponse {
@@ -252,31 +267,27 @@ pub struct SpawnRequest {
     pub task: Option<String>,
 }
 
-pub async fn headless_agents() -> impl IntoResponse {
-    AxumJson(json!({
-        "agents": [
-            {
-                "id": "agent-001",
-                "status": "running",
-                "model": "claude-3-5-sonnet",
-                "provider": "anthropic",
-                "skills": ["rust", "doc-gen"],
-                "task": "Generate API docs",
-            }
-        ]
-    }))
+pub async fn headless_agents(State(_state): State<CliState>) -> impl IntoResponse {
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        AxumJson(json!({
+            "error": "Agent management not implemented in headless mode",
+            "code": 501
+        })),
+    )
 }
 
-pub async fn headless_spawn(Json(req): Json<SpawnRequest>) -> impl IntoResponse {
-    let ids: Vec<String> = (0..req.count)
-        .map(|i| format!("agent-{:03}", i + 1))
-        .collect();
-
-    AxumJson(json!({
-        "agents": ids,
-        "provider_used": req.provider.unwrap_or_else(|| "auto".to_string()),
-        "estimated_cost_usd": 0.05 * req.count as f64,
-    }))
+pub async fn headless_spawn(
+    State(_state): State<CliState>,
+    Json(_req): Json<SpawnRequest>,
+) -> impl IntoResponse {
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        AxumJson(json!({
+            "error": "Agent management not implemented in headless mode",
+            "code": 501
+        })),
+    )
 }
 
 // ═════════════════════════════════════════════════════════════════════════════
@@ -334,4 +345,15 @@ pub async fn headless_memory_export() -> impl IntoResponse {
             "tokens": 1024,
         },
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    // Note: Constructing a full CliState for unit testing is complex due to its many mandatory fields
+    // and dependencies on the local filesystem and SQLite databases.
+    // Testing for these endpoints is primarily covered by E2E tests in `tests/headless_api_test.rs`.
+    // The implementation ensures that:
+    // 1. /v1/providers and /v1/providers/status query the real state.provider_router.
+    // 2. /v1/quota queries the real state.rate_manager.
+    // 3. Agent-related endpoints explicitly return a 501 Not Implemented status.
 }
