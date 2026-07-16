@@ -339,6 +339,19 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         }
     });
 
+    let configured_providers = xavier::agents::provider::config::ModelProviderConfig::get_all_configured()
+        .iter()
+        .map(|c| xavier::agents::provider::router::ProviderKind::from_str(&c.provider_label))
+        .filter_map(|p| p)
+        .collect::<Vec<_>>();
+
+    let fallback_chain = xavier::agents::provider::router::ProviderRouter::build_default_chain(&configured_providers).await;
+    let initial_provider = fallback_chain.first().cloned().unwrap_or(xavier::agents::provider::router::ProviderKind::OpenAI);
+
+    let provider_router = xavier::agents::provider::router::ProviderRouter::new(initial_provider);
+    let mut provider_router = provider_router;
+    provider_router.set_fallback_chain(fallback_chain);
+
     let state = CliState {
         memory: memory_port,
         qmd_memory: Arc::clone(&memory),
@@ -362,11 +375,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         prompt_cache,
         proxy_use_case,
         http_client,
-        provider_router: Arc::new(tokio::sync::RwLock::new(
-            xavier::agents::provider::router::ProviderRouter::new(
-                xavier::agents::provider::router::ProviderKind::OpenAI,
-            ),
-        )),
+        provider_router: Arc::new(tokio::sync::RwLock::new(provider_router)),
         embedder: embedder.clone(),
         agent_indexer: Arc::new(crate::memory::agent_indexer::AgentIndexer::new(
             crate::memory::file_indexer::FileIndexer::new(
