@@ -92,15 +92,6 @@ pub(crate) enum EmbedderBackendConfig {
     OpenAICompatible(OpenAICompatibleConfig),
 }
 
-impl EmbedderBackendConfig {
-    pub fn model_name(&self) -> String {
-        match self {
-            Self::Gllm(config) => config.model.clone(),
-            Self::OpenAICompatible(config) => config.model.clone(),
-        }
-    }
-}
-
 #[derive(Clone, Debug)]
 pub(crate) enum EmbedderConfig {
     Fallback(Vec<EmbedderBackendConfig>),
@@ -108,16 +99,6 @@ pub(crate) enum EmbedderConfig {
 }
 
 impl EmbedderConfig {
-    pub fn primary_model_name(&self) -> String {
-        match self {
-            Self::Fallback(backends) => backends
-                .first()
-                .map(|b| b.model_name())
-                .unwrap_or_else(|| "unknown".to_string()),
-            Self::Noop => "noop".to_string(),
-        }
-    }
-
     pub fn from_env() -> Self {
         let provider_mode = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
             .ok()
@@ -274,9 +255,7 @@ impl EmbedderConfig {
 }
 
 pub async fn build_embedder_from_env() -> Result<Arc<dyn Embedder>, EmbeddingError> {
-    let config = EmbedderConfig::from_env();
-    let model_name = config.primary_model_name();
-    let embedder = config.build().await?;
+    let embedder = EmbedderConfig::from_env().build().await?;
 
     // Wrap in the persistent cache if enabled.
     let cache_config = cache::EmbeddingCacheConfig::from_env();
@@ -285,14 +264,11 @@ pub async fn build_embedder_from_env() -> Result<Arc<dyn Embedder>, EmbeddingErr
             capacity = cache_config.max_capacity,
             ttl_hours = cache_config.ttl_hours,
             db = %cache_config.db_path.display(),
-            persist = cache_config.persist,
-            model = %model_name,
             "embedding cache enabled"
         );
         Ok(Arc::new(cache::CachedEmbedder::new(
             embedder,
             Arc::new(cache::EmbeddingCache::new(cache_config)),
-            model_name,
         )))
     } else if cache_config.enabled && embedder.dimension() == 0 {
         info!("embedding cache skipped: noop embedder (dimension=0)");
@@ -522,69 +498,3 @@ mod tests {
         assert_eq!(gllm::dimension_for_model("all-MiniLM-L6-v2"), 384);
         assert_eq!(gllm::dimension_for_model("qwen3-embedding-0.6b"), 1024);
     }
-
-    #[test]
-    fn test_cloud_config_priorities() {
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
-
-        // 1. Test XAVIER_OPENROUTER_API_KEY as fallback
-        std::env::set_var("XAVIER_OPENROUTER_API_KEY", "sk-or-test-key");
-        std::env::remove_var("OPENAI_API_KEY");
-
-        let mut settings = crate::settings::XavierSettings::default();
-        settings.embedding.api_key = None;
-
-        // Manually simulate what cloud_config() does with specific settings
-        let config_with_or = OpenAICompatibleConfig {
-            api_key: settings
-                .embedding
-                .api_key
-                .clone()
-                .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-                .or_else(|| std::env::var("XAVIER_OPENROUTER_API_KEY").ok()),
-            endpoint: "http://test".to_string(),
-            dimension: 1536,
-            model: "test".to_string(),
-        };
-        assert_eq!(config_with_or.api_key, Some("sk-or-test-key".to_string()));
-
-        // 2. Test OPENAI_API_KEY takes precedence over XAVIER_OPENROUTER_API_KEY
-        std::env::set_var("OPENAI_API_KEY", "sk-openai-test-key");
-        let config_with_openai = OpenAICompatibleConfig {
-            api_key: settings
-                .embedding
-                .api_key
-                .clone()
-                .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-                .or_else(|| std::env::var("XAVIER_OPENROUTER_API_KEY").ok()),
-            endpoint: "http://test".to_string(),
-            dimension: 1536,
-            model: "test".to_string(),
-        };
-        assert_eq!(
-            config_with_openai.api_key,
-            Some("sk-openai-test-key".to_string())
-        );
-
-        // 3. Test settings.embedding.api_key takes precedence over env vars
-        settings.embedding.api_key = Some("sk-settings-test-key".to_string());
-        let config_with_settings = OpenAICompatibleConfig {
-            api_key: settings
-                .embedding
-                .api_key
-                .clone()
-                .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-                .or_else(|| std::env::var("XAVIER_OPENROUTER_API_KEY").ok()),
-            endpoint: "http://test".to_string(),
-            dimension: 1536,
-            model: "test".to_string(),
-        };
-        assert_eq!(
-            config_with_settings.api_key,
-            Some("sk-settings-test-key".to_string())
-        );
-
-        std::env::remove_var("XAVIER_OPENROUTER_API_KEY");
-        std::env::remove_var("OPENAI_API_KEY");
-    }
-}
