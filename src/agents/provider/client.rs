@@ -279,10 +279,13 @@ impl ModelProviderClient {
             cmd.env("ZAI_API_KEY", api_key);
         }
 
-        let output = cmd
-            .output()
-            .await
-            .context("failed to execute opencode CLI")?;
+        let output = cmd.output().await.map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                anyhow!("'opencode' binary not found in PATH. Please install it via: npm install -g @opencode/cli")
+            } else {
+                anyhow!("failed to execute opencode CLI: {}", e)
+            }
+        })?;
 
         if !output.status.success() {
             let err = String::from_utf8_lossy(&output.stderr);

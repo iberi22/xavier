@@ -89,6 +89,29 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
 
     let settings = XavierSettings::current();
     settings.apply_to_env();
+
+    // Validate opencode CLI if active
+    if settings.models.provider.trim().to_ascii_lowercase() == "opencode" {
+        use std::process::Command;
+        let opencode_exists = if cfg!(windows) {
+            Command::new("where")
+                .arg("opencode")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        } else {
+            Command::new("which")
+                .arg("opencode")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        };
+
+        if !opencode_exists {
+            return Err(anyhow!("'opencode' binary not found in PATH. It is required when XAVIER_MODEL_PROVIDER=opencode.\nInstallation: npm install -g @opencode/cli"));
+        }
+    }
+
     std::env::set_var("XAVIER_PORT", port.to_string());
 
     let bind_host = resolve_http_bind_host();
