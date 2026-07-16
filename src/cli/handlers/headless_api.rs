@@ -35,20 +35,19 @@ pub async fn headless_health() -> impl IntoResponse {
     }))
 }
 
-pub async fn headless_system_scan() -> impl IntoResponse {
-    use crate::cli::handlers::system_scan::{format_as_json, scan_system};
+pub async fn headless_system_scan(
+    State(state): State<CliState>,
+) -> impl IntoResponse {
+    let cache = state.system_scan_cache.read().await;
 
-    let result = scan_system(true).await;
-    let formatted = format_as_json(&result);
-
-    match serde_json::from_str::<serde_json::Value>(&formatted) {
-        Ok(json) => (StatusCode::OK, AxumJson(json)).into_response(),
-        Err(_) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            AxumJson(json!({"error": "Failed to format scan result"})),
-        )
-            .into_response(),
+    if let Some(result) = cache.as_ref() {
+        return (StatusCode::OK, AxumJson(json!(result))).into_response();
     }
+
+    // Fallback if cache is empty (e.g. very early call)
+    drop(cache);
+    let result = crate::cli::handlers::system_scan::scan_system(true).await;
+    (StatusCode::OK, AxumJson(json!(result))).into_response()
 }
 
 pub async fn headless_system_info() -> impl IntoResponse {
