@@ -96,7 +96,6 @@ pub(crate) enum EmbedderBackendConfig {
 pub(crate) enum EmbedderConfig {
     Fallback(Vec<EmbedderBackendConfig>),
     Noop,
-    Invalid(String),
 }
 
 impl EmbedderConfig {
@@ -143,7 +142,6 @@ impl EmbedderConfig {
 
     pub fn build_sync(self) -> Result<Arc<dyn Embedder>, EmbeddingError> {
         match self {
-            Self::Invalid(msg) => Err(EmbeddingError::Config(msg)),
             Self::Fallback(backends) => {
                 let mut embedders: Vec<Arc<dyn Embedder>> = Vec::new();
 
@@ -156,7 +154,7 @@ impl EmbedderConfig {
                                 error
                             );
                             tracing::warn!("{}", msg);
-                            crate::server::alerts::SYSTEM_ALERTS.push_alert(
+                            tracing::error!(
                                 "WARN",
                                 &msg,
                                 "embedding",
@@ -169,7 +167,7 @@ impl EmbedderConfig {
                     0 => {
                         let msg = "no embedding backend could be initialized; using no-op embedder";
                         tracing::warn!("{}", msg);
-                        crate::server::alerts::SYSTEM_ALERTS.push_alert("ERROR", msg, "embedding");
+                        tracing::error!("ERROR", msg, "embedding");
                         Ok(Arc::new(NoopEmbedder))
                     }
                     1 => Ok(embedders.remove(0)),
@@ -227,23 +225,13 @@ impl EmbedderConfig {
         // Primary: cloud endpoint, Fallback: local endpoint if available
         let mut backends = vec![EmbedderBackendConfig::OpenAICompatible(cloud_config())];
 
-        // Always add GLLM as a fallback if in cloud mode to ensure offline/GPU availability
-        if api_flavor == ApiFlavor::OpenAICompatible {
-            backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
-        }
-
         if local_embedding_signal_present() {
             match api_flavor {
                 ApiFlavor::OpenAICompatible => {
                     backends.push(EmbedderBackendConfig::OpenAICompatible(local_config()));
                 }
                 ApiFlavor::AnthropicCompatible => {
-                    if !backends
-                        .iter()
-                        .any(|b| matches!(b, EmbedderBackendConfig::Gllm(_)))
-                    {
-                        backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
-                    }
+                    backends.push(EmbedderBackendConfig::Gllm(gllm_config()));
                 }
             }
         }
@@ -252,27 +240,7 @@ impl EmbedderConfig {
     }
 
     fn gllm_only() -> Self {
-        let config = gllm_config();
-        let model_path = std::env::var("XAVIER_GLLM_MODEL_PATH").ok();
-
-        if let Some(path) = model_path {
-            if !std::path::Path::new(&path).exists() {
-                return Self::Invalid(format!(
-                    "GLLM backend requires model at {}; set XAVIER_GLLM_MODEL_PATH",
-                    path
-                ));
-            }
-        } else if config.model.contains('/') || config.model.contains('\\') {
-            // If the model looks like a path but XAVIER_GLLM_MODEL_PATH is not set, validate it
-            if !std::path::Path::new(&config.model).exists() {
-                return Self::Invalid(format!(
-                    "GLLM backend requires model at {}; set XAVIER_GLLM_MODEL_PATH",
-                    config.model
-                ));
-            }
-        }
-
-        Self::Fallback(vec![EmbedderBackendConfig::Gllm(config)])
+        Self::Fallback(vec![EmbedderBackendConfig::Gllm(gllm_config())])
     }
 }
 
@@ -354,11 +322,11 @@ fn local_embedding_signal_present() -> bool {
         || std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
             .map(|value| value.eq_ignore_ascii_case("local"))
             .unwrap_or(false)
-        || crate::settings::XavierSettings::current()
+        || crate::settings::types::XavierSettings::current()
             .embedding
             .endpoint
             .contains("localhost")
-        || crate::settings::XavierSettings::current()
+        || crate::settings::types::XavierSettings::current()
             .embedding
             .endpoint
             .contains("://localhost")
@@ -366,7 +334,7 @@ fn local_embedding_signal_present() -> bool {
 
 fn cloud_embedding_signal_present() -> bool {
     std::env::var("OPENAI_API_KEY").is_ok()
-        || crate::settings::XavierSettings::current()
+        || crate::settings::types::XavierSettings::current()
             .embedding
             .api_key
             .is_some()
@@ -382,26 +350,20 @@ fn build_backend(config: EmbedderBackendConfig) -> Result<Arc<dyn Embedder>, Emb
             config.dimension,
         )?)),
         EmbedderBackendConfig::OpenAICompatible(config) => {
-            let timeout_secs = crate::settings::XavierSettings::current()
-                .embedding
-                .timeout_secs;
             Ok(Arc::new(openai::OpenAICompatibleEmbedder::new(
                 config.api_key,
                 config.model,
                 config.endpoint,
                 config.dimension,
-                std::time::Duration::from_secs(timeout_secs),
             )?))
         }
     }
 }
 
 fn gllm_config() -> GllmConfig {
-    let settings = crate::settings::XavierSettings::current();
-    let raw_model = std::env::var("XAVIER_GLLM_MODEL_PATH")
-        .or_else(|_| std::env::var("XAVIER_GLLM_MODEL"))
-        .unwrap_or_else(|_| gllm::DEFAULT_GLLM_MODEL.to_string());
-
+    let settings = crate::settings::types::XavierSettings::current();
+    let raw_model =
+        std::env::var("XAVIER_GLLM_MODEL").unwrap_or_else(|_| gllm::DEFAULT_GLLM_MODEL.to_string());
     let model = gllm::normalize_model_name(&raw_model);
     let dimension = settings
         .embedding
@@ -413,7 +375,7 @@ fn gllm_config() -> GllmConfig {
 }
 
 fn local_config() -> OpenAICompatibleConfig {
-    let settings = crate::settings::XavierSettings::current();
+    let settings = crate::settings::types::XavierSettings::current();
     // Priority: XAVIER_EMBEDDING_LOCAL_URL > XAVIER_EMBEDDING_URL > settings.models.embedding_url > DEFAULT_LOCAL_EMBEDDING_ENDPOINT
     let endpoint = std::env::var("XAVIER_EMBEDDING_LOCAL_URL")
         .ok()
@@ -443,7 +405,7 @@ fn local_config() -> OpenAICompatibleConfig {
 }
 
 fn cloud_config() -> OpenAICompatibleConfig {
-    let settings = crate::settings::XavierSettings::current();
+    let settings = crate::settings::types::XavierSettings::current();
     let endpoint = std::env::var("XAVIER_EMBEDDING_URL")
         .map(|value| normalize_openai_embeddings_endpoint(&value))
         .unwrap_or_else(|_| {
@@ -462,9 +424,7 @@ fn cloud_config() -> OpenAICompatibleConfig {
             .embedding
             .api_key
             .clone()
-            .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-            .or_else(|| std::env::var("XAVIER_OPENROUTER_API_KEY").ok())
-            .or_else(|| std::env::var("XAVIER_EMBEDDING_API_KEY").ok()),
+            .or_else(|| std::env::var("OPENAI_API_KEY").ok()),
         endpoint,
         dimension: embedding_dimension_for_model(&model),
         model,
@@ -489,7 +449,7 @@ fn embedding_dimension_for_model(model: &str) -> usize {
         "embeddinggemma" => 768,
         "nomic-embed-text" | "nomic-embed-text-v1.5" => 768,
         "all-minilm" => 384,
-        "qwen3-embedding" | "qwen3-embedding-0.6b" => 1024,
+        "qwen3-embedding" => 1024,
         "text-embedding-3-large" => 3072,
         "text-embedding-3-small" | "text-embedding-ada-002" => 1536,
         _ => 768,
@@ -521,70 +481,5 @@ mod tests {
         );
         assert_eq!(gllm::dimension_for_model("all-MiniLM-L6-v2"), 384);
         assert_eq!(gllm::dimension_for_model("qwen3-embedding-0.6b"), 1024);
-    }
-
-    #[test]
-    fn test_cloud_config_priorities() {
-        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
-
-        // 1. Test XAVIER_OPENROUTER_API_KEY as fallback
-        std::env::set_var("XAVIER_OPENROUTER_API_KEY", "sk-or-test-key");
-        std::env::remove_var("OPENAI_API_KEY");
-
-        let mut settings = crate::settings::XavierSettings::default();
-        settings.embedding.api_key = None;
-
-        // Manually simulate what cloud_config() does with specific settings
-        let config_with_or = OpenAICompatibleConfig {
-            api_key: settings
-                .embedding
-                .api_key
-                .clone()
-                .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-                .or_else(|| std::env::var("XAVIER_OPENROUTER_API_KEY").ok()),
-            endpoint: "http://test".to_string(),
-            dimension: 1536,
-            model: "test".to_string(),
-        };
-        assert_eq!(config_with_or.api_key, Some("sk-or-test-key".to_string()));
-
-        // 2. Test OPENAI_API_KEY takes precedence over XAVIER_OPENROUTER_API_KEY
-        std::env::set_var("OPENAI_API_KEY", "sk-openai-test-key");
-        let config_with_openai = OpenAICompatibleConfig {
-            api_key: settings
-                .embedding
-                .api_key
-                .clone()
-                .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-                .or_else(|| std::env::var("XAVIER_OPENROUTER_API_KEY").ok()),
-            endpoint: "http://test".to_string(),
-            dimension: 1536,
-            model: "test".to_string(),
-        };
-        assert_eq!(
-            config_with_openai.api_key,
-            Some("sk-openai-test-key".to_string())
-        );
-
-        // 3. Test settings.embedding.api_key takes precedence over env vars
-        settings.embedding.api_key = Some("sk-settings-test-key".to_string());
-        let config_with_settings = OpenAICompatibleConfig {
-            api_key: settings
-                .embedding
-                .api_key
-                .clone()
-                .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-                .or_else(|| std::env::var("XAVIER_OPENROUTER_API_KEY").ok()),
-            endpoint: "http://test".to_string(),
-            dimension: 1536,
-            model: "test".to_string(),
-        };
-        assert_eq!(
-            config_with_settings.api_key,
-            Some("sk-settings-test-key".to_string())
-        );
-
-        std::env::remove_var("XAVIER_OPENROUTER_API_KEY");
-        std::env::remove_var("OPENAI_API_KEY");
     }
 }
