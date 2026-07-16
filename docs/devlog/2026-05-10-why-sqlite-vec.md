@@ -84,6 +84,7 @@ graph TD
 ---
 
 ## References
+- [ADR-006: 100% Local Vector Store with SQLite-Vec](../ADR/006-vector-store-local-sqlite-vec.md)
 - [SQLite-Vec Implementation](file:///e:/scripts-python/xavier/src/memory/sqlite_vec_store.rs)
 - [Storage Switch Guide](file:///e:/scripts-python/xavier/docs/STORAGE_SWITCH.md)
 - [sqlite-vec official repo](https://github.com/asg017/sqlite-vec)
