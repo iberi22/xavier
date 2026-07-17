@@ -241,10 +241,6 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
 
     let prompt_cache = Arc::new(parking_lot::Mutex::new(HashMap::new()));
     let security_service = Arc::new(AppSecurityService::new());
-    let proxy_use_case = Arc::new(
-        ProxyUseCase::new(rate_manager.clone(), prompt_cache.clone())
-            .with_threat_detector(security_service.clone()),
-    );
     let event_bus = XavierEventBus::new(100);
     let secrets_engine = Arc::new(KeyLendingEngine::new(
         Box::new(xavier::secrets::audit::QmdAuditLogger::new()),
@@ -351,6 +347,13 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let provider_router = xavier::agents::provider::router::ProviderRouter::new(initial_provider);
     let mut provider_router = provider_router;
     provider_router.set_fallback_chain(fallback_chain);
+    let provider_router_shared = Arc::new(tokio::sync::RwLock::new(provider_router));
+
+    let proxy_use_case = Arc::new(
+        ProxyUseCase::new(rate_manager.clone(), prompt_cache.clone())
+            .with_threat_detector(security_service.clone())
+            .with_provider_router(provider_router_shared.clone()),
+    );
 
     let state = CliState {
         memory: memory_port,
@@ -375,7 +378,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         prompt_cache,
         proxy_use_case,
         http_client,
-        provider_router: Arc::new(tokio::sync::RwLock::new(provider_router)),
+        provider_router: provider_router_shared,
         embedder: embedder.clone(),
         agent_indexer: Arc::new(crate::memory::agent_indexer::AgentIndexer::new(
             crate::memory::file_indexer::FileIndexer::new(
