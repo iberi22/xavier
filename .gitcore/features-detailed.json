@@ -1,1 +1,115 @@
-PART1_OF_2
+{
+  "feat-local-first": {
+    "id": "feat-local-first",
+    "name": "100% Local Operation (LLM + Embeddings via Ollama)",
+    "status": "beta",
+    "progress_pct": 85,
+    "description": "Chat del panel responde usando un LLM local (Ollama) con fallback a cloud y degradación elegante a memoria cuando ningún provider responde.",
+    "sub_features": [
+      {
+        "id": "feat-local-first-01",
+        "name": "Ola 2: local como candidato del ProxyUseCase (issue 01)",
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 1,
+        "implemented_in": "src/app/proxy_use_case.rs"
+      },
+      {
+        "id": "feat-local-first-02",
+        "name": "Ola 2: fallback chain cableada al ProxyUseCase (issue 02)",
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 2,
+        "implemented_in": "src/app/proxy_use_case.rs"
+      },
+      {
+        "id": "feat-local-first-03",
+        "name": "Ola 2: degradación a memoria (issue 03)",
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 3,
+        "implemented_in": "src/app/proxy_use_case.rs, src/agents/provider/memory_fallback.rs"
+      },
+      {
+        "id": "feat-local-first-04",
+        "name": "Ola 2: fallback chain al boot (issue 04)",
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 4,
+        "implemented_in": "src/cli/server.rs, src/config/"
+      },
+      {
+        "id": "feat-local-first-05",
+        "name": "Ola 2: provider local real, no stub (issue 05)",
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 5,
+        "implemented_in": "src/agents/provider/local_provider.rs"
+      },
+      {
+        "id": "feat-local-first-06",
+        "name": "Ola 2: health-check + boot log (issue 06)",
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 6,
+        "implemented_in": "src/observability/health.rs, src/cli/server.rs"
+      },
+      {
+        "id": "feat-local-first-07",
+        "name": "Ola 2: UI modo (issue 07)",
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 7,
+        "implemented_in": "panel-ui/src/components/"
+      },
+      {
+        "id": "feat-local-first-08",
+        "name": "Ola 2: memory-fallback UI (issue 08)",
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 8,
+        "implemented_in": "panel-ui/src/components/"
+      },
+      {
+        "id": "feat-local-first-09",
+        "name": "Ola 2: tests de integración (issue 09)",
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 9,
+        "implemented_in": "tests/local_integration_tests.rs"
+      },
+      {
+        "id": "feat-local-first-10",
+        "name": "Ola 2: endpoints (issue 10)",
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 10,
+        "implemented_in": "src/cli/handlers/"
+      },
+      {
+        "id": "feat-local-first-11",
+        "name": "Ola 2: circuit breaker (issue 11)",
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 11,
+        "implemented_in": "src/observability/circuit_breaker.rs"
+      },
+      {
+        "id": "feat-local-first-12",
+        "name": "Ola 2: config local por defecto (issue 12)",
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 12,
+        "implemented_in": "src/config/defaults.rs"
+      },
+      {
+        "id": "feat-local-first-13",
+        "name": "Ola 2: docs (issue 13)",
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 13,
+        "implemented_in": "docs/LOCAL_SETUP.md"
+      }
+    ]
+  }
+}
