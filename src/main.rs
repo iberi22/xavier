@@ -39,7 +39,16 @@ use cli::Cli;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    if let Some(settings) = XavierSettings::load()? {
+    let loaded_settings = XavierSettings::load()?;
+    if let Some(ref settings) = loaded_settings {
+        if let Err(problems) = crate::settings::validation::validate_local_config(settings) {
+            eprintln!("FATAL: Invalid Xavier configuration:");
+            for p in &problems {
+                eprintln!("  * {p}");
+            }
+            eprintln!("\nFix config/xavier.config.json or run `xavier setup --local` and retry.");
+            std::process::exit(2);
+        }
         settings.apply_to_env();
     }
 
