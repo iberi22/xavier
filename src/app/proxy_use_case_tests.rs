@@ -45,4 +45,49 @@ mod tests {
         let backed_off = secrets_engine.get_lease(&token).await.unwrap();
         assert!(backed_off.expires_at > updated.expires_at);
     }
+
+    #[tokio::test]
+    async fn test_proxy_use_case_provider_fallback() {
+        use crate::agents::provider::router::{ProviderRouter, ProviderKind};
+        use tokio::sync::RwLock;
+
+        let rate_manager = Arc::new(crate::agents::rate_limit::RateLimitManager::new());
+        let prompt_cache = Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()));
+
+        let mut router = ProviderRouter::new(ProviderKind::OpenAI);
+        router.set_fallback_chain(vec![
+            ProviderKind::OpenAI,
+            ProviderKind::Anthropic,
+            ProviderKind::Local,
+        ]);
+        let router_shared = Arc::new(RwLock::new(router));
+
+        let use_case = ProxyUseCase::new(rate_manager, prompt_cache)
+            .with_provider_router(router_shared.clone());
+
+        let mut fallback_attempted = false;
+        let result = use_case
+            .handle_provider_fallback(
+                "openai",
+                "gpt-4o",
+                &mut fallback_attempted,
+            )
+            .await;
+
+        assert!(result.is_some());
+        let (next_name, config) = result.unwrap();
+        assert_eq!(next_name, "anthropic");
+        assert_eq!(config.model, "gpt-4o");
+        assert!(fallback_attempted);
+
+        // A second fallback attempt should fail because fallback_attempted is now true (preventing recursion)
+        let result_second = use_case
+            .handle_provider_fallback(
+                "anthropic",
+                "gpt-4o",
+                &mut fallback_attempted,
+            )
+            .await;
+        assert!(result_second.is_none());
+    }
 }
