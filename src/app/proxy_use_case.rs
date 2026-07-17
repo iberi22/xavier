@@ -9,6 +9,20 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{info, warn};
 
+// Configurable via XAVIER_CB_FAILURES (default 3) and XAVIER_CB_OPEN_SECS (default 60)
+fn circuit_breaker_failure_threshold() -> u32 {
+    std::env::var("XAVIER_CB_FAILURES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3)
+}
+fn circuit_breaker_open_secs() -> i64 {
+    std::env::var("XAVIER_CB_OPEN_SECS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(60)
+}
+
 use crate::agents::provider::{ModelProviderClient, ModelProviderConfig, LLM_TIMEOUT};
 use crate::agents::provider::router::ProviderRouter;
 use crate::agents::provider::types::ProviderReachability;
@@ -26,6 +40,7 @@ use crate::security::auth::resolve_xavier_token;
 pub struct ProxyUseCase {
     pub rate_manager: Arc<RateLimitManager>,
     pub prompt_cache: Arc<Mutex<HashMap<String, Vec<String>>>>,
+    pub provider_failures: Arc<parking_lot::Mutex<HashMap<String, u32>>>,
     pub router: Router,
     pub threat_detector: Option<Arc<dyn ThreatDetectionPort>>,
     pub event_bus: Option<Arc<crate::coordination::XavierEventBus>>,
@@ -40,6 +55,7 @@ impl ProxyUseCase {
         Self {
             rate_manager,
             prompt_cache,
+            provider_failures: Arc::new(parking_lot::Mutex::new(HashMap::new())),
             router: Router::new(),
             threat_detector: None,
             event_bus: None,
@@ -63,6 +79,25 @@ impl ProxyUseCase {
     ) -> Self {
         self.provider_router = Some(provider_router);
         self
+    }
+
+    async fn record_failure(&self, provider: &str) {
+        let (should_report, cooldown_mins) = {
+            let mut map = self.provider_failures.lock();
+            let count = map.entry(provider.to_string()).and_modify(|c| *c += 1).or_insert(1);
+            if *count >= circuit_breaker_failure_threshold() {
+                let cooldown = (circuit_breaker_open_secs() / 60).max(1) as u32;
+                (true, cooldown)
+            } else {
+                (false, 0)
+            }
+        };
+
+        if should_report {
+            let _ = self.rate_manager.report_429(provider, cooldown_mins as i64).await;
+            warn!("Circuit breaker OPEN for {} ({} consecutive failures, cooldown {}min)",
+                  provider, circuit_breaker_failure_threshold(), cooldown_mins);
+        }
     }
 
     pub(crate) async fn handle_provider_fallback(
@@ -442,6 +477,9 @@ impl ProxyUseCase {
             match result {
                 Ok(Ok(resp)) => {
                     // Success logic
+                    // Reset circuit breaker counter on success
+                    self.provider_failures.lock().remove(&provider_name);
+
                     if let Some(token) = &cmd.lease_token {
                         let _ = secrets_engine.renew(token, 3600).await;
                         let _ = event_bus.publish(XavierEvent::LeaseRenewed {
@@ -532,9 +570,9 @@ impl ProxyUseCase {
                         }
                     }
 
-                    // TODO(issue 11): circuit breaker hook where appropriate
                     if err_msg.contains("timed out") {
                         warn!("Provider {} timed out (internal)", provider_name);
+                        self.record_failure(&provider_name).await;
                         if let Err(track_err) = self
                             .rate_manager
                             .track_request(&provider_name, 0, 504, 0.0, false)
@@ -564,6 +602,7 @@ impl ProxyUseCase {
                         )));
                     } else {
                         warn!("Provider {} failed: {}", provider_name, e);
+                        self.record_failure(&provider_name).await;
                         if let Err(track_err) = self
                             .rate_manager
                             .track_request(&provider_name, 0, 500, 0.0, false)
@@ -591,6 +630,7 @@ impl ProxyUseCase {
                 }
                 Err(_) => {
                     warn!("Provider {} timed out", provider_name);
+                    self.record_failure(&provider_name).await;
                     if let Err(track_err) = self
                         .rate_manager
                         .track_request(&provider_name, 0, 504, 0.0, false)
@@ -764,6 +804,30 @@ mod tests {
 
         mock_models.assert_async().await;
         mock_chat.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_opens_after_threshold() {
+        // Build a minimal ProxyUseCase with a test rate_manager
+        let rate_manager = Arc::new(RateLimitManager::new_with_project("test_circuit_breaker_cb"));
+        rate_manager.init_schema_async().await.unwrap();
+
+        // Ensure rate limit is clear initially
+        rate_manager.reset("test-provider").await.unwrap();
+
+        let prompt_cache = Arc::new(Mutex::new(HashMap::new()));
+        let proxy = ProxyUseCase::new(rate_manager.clone(), prompt_cache);
+
+        // Call record_failure 3 times for "test-provider" (threshold is 3 by default)
+        proxy.record_failure("test-provider").await;
+        proxy.record_failure("test-provider").await;
+        proxy.record_failure("test-provider").await;
+
+        // Assert that rate_manager.get_status("test-provider").rate_limited_until is in the future
+        let status = rate_manager.get_status("test-provider").await.unwrap();
+        assert!(status.rate_limited_until.is_some(), "Expected rate_limited_until to be set after 3 failures");
+        let now = chrono::Utc::now();
+        assert!(status.rate_limited_until.unwrap() > now, "Expected rate_limited_until to be in the future");
     }
 
     #[tokio::test]
