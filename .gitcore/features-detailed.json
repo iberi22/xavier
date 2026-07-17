@@ -3,113 +3,279 @@
     "id": "feat-local-first",
     "name": "100% Local Operation (LLM + Embeddings via Ollama)",
     "status": "beta",
-    "progress_pct": 85,
-    "description": "Chat del panel responde usando un LLM local (Ollama) con fallback a cloud y degradación elegante a memoria cuando ningún provider responde.",
+    "progress_pct": 93,
+    "github_issue": 522,
+    "description": "Chat del panel responde usando un LLM local (Ollama) con fallback a cloud y degradación elegante a memoria cuando ningún provider responde. Observabilidad y tooling local-first avanzados (Ola 3).",
+    "last_verified": "2026-07-17",
+    "verification_base": "main@5736dad3",
+    "formula": "Ola1+Ola2 baseline 85% post-cierre + (13/14)*~10pp Ola3 reserved band ≈ 93%. Ola4 hot-swap UI not started.",
     "sub_features": [
       {
-        "id": "feat-local-first-01",
-        "name": "Ola 2: local como candidato del ProxyUseCase (issue 01)",
+        "id": "feat-local-first-ola1",
+        "name": "Ola 1: estabilización (compile, is_reachable, EmbedderConfig::auto)",
         "status": "completed",
         "progress_pct": 100,
-        "github_issue": 1,
-        "implemented_in": "src/app/proxy_use_case.rs"
+        "wave": 1
+      },
+      {
+        "id": "feat-local-first-01",
+        "name": "Ola 2: local como candidato del ProxyUseCase",
+        "status": "completed",
+        "progress_pct": 100,
+        "wave": 2,
+        "github_issue": 563
       },
       {
         "id": "feat-local-first-02",
-        "name": "Ola 2: fallback chain cableada al ProxyUseCase (issue 02)",
+        "name": "Ola 2: fallback chain cableada al ProxyUseCase",
         "status": "completed",
         "progress_pct": 100,
-        "github_issue": 2,
-        "implemented_in": "src/app/proxy_use_case.rs"
+        "wave": 2
       },
       {
         "id": "feat-local-first-03",
-        "name": "Ola 2: degradación a memoria (issue 03)",
+        "name": "Ola 2: degradación a memoria",
         "status": "completed",
         "progress_pct": 100,
-        "github_issue": 3,
-        "implemented_in": "src/app/proxy_use_case.rs, src/agents/provider/memory_fallback.rs"
+        "wave": 2
       },
       {
         "id": "feat-local-first-04",
-        "name": "Ola 2: fallback chain al boot (issue 04)",
+        "name": "Ola 2: fallback chain al boot",
         "status": "completed",
         "progress_pct": 100,
-        "github_issue": 4,
-        "implemented_in": "src/cli/server.rs, src/config/"
+        "wave": 2
       },
       {
         "id": "feat-local-first-05",
-        "name": "Ola 2: provider local real, no stub (issue 05)",
+        "name": "Ola 2: provider local real, no stub",
         "status": "completed",
         "progress_pct": 100,
-        "github_issue": 5,
-        "implemented_in": "src/agents/provider/local_provider.rs"
+        "wave": 2
       },
       {
         "id": "feat-local-first-06",
-        "name": "Ola 2: health-check + boot log (issue 06)",
+        "name": "Ola 2: health-check + boot log",
         "status": "completed",
         "progress_pct": 100,
-        "github_issue": 6,
-        "implemented_in": "src/observability/health.rs, src/cli/server.rs"
+        "wave": 2
       },
       {
         "id": "feat-local-first-07",
-        "name": "Ola 2: UI modo (issue 07)",
+        "name": "Ola 2: UI modo local-first",
         "status": "completed",
         "progress_pct": 100,
-        "github_issue": 7,
-        "implemented_in": "panel-ui/src/components/"
+        "wave": 2
       },
       {
         "id": "feat-local-first-08",
-        "name": "Ola 2: memory-fallback UI (issue 08)",
+        "name": "Ola 2: memory-fallback UI",
         "status": "completed",
         "progress_pct": 100,
-        "github_issue": 8,
-        "implemented_in": "panel-ui/src/components/"
+        "wave": 2
       },
       {
         "id": "feat-local-first-09",
-        "name": "Ola 2: tests de integración (issue 09)",
+        "name": "Ola 2: tests de integración",
         "status": "completed",
         "progress_pct": 100,
-        "github_issue": 9,
-        "implemented_in": "tests/local_integration_tests.rs"
+        "wave": 2
       },
       {
         "id": "feat-local-first-10",
-        "name": "Ola 2: endpoints (issue 10)",
+        "name": "Ola 2: endpoints de estado/fallback",
         "status": "completed",
         "progress_pct": 100,
-        "github_issue": 10,
-        "implemented_in": "src/cli/handlers/"
+        "wave": 2
       },
       {
         "id": "feat-local-first-11",
-        "name": "Ola 2: circuit breaker (issue 11)",
+        "name": "Ola 2/3: circuit breaker por provider",
         "status": "completed",
         "progress_pct": 100,
-        "github_issue": 11,
-        "implemented_in": "src/observability/circuit_breaker.rs"
+        "wave": 3,
+        "github_issue": 576,
+        "merged_pr": 592,
+        "implemented_in": "src/app/proxy_use_case.rs"
       },
       {
         "id": "feat-local-first-12",
-        "name": "Ola 2: config local por defecto (issue 12)",
+        "name": "Ola 2: config local por defecto",
         "status": "completed",
         "progress_pct": 100,
-        "github_issue": 12,
-        "implemented_in": "src/config/defaults.rs"
+        "wave": 2
       },
       {
         "id": "feat-local-first-13",
-        "name": "Ola 2: docs (issue 13)",
+        "name": "Ola 2: docs LOCAL_SETUP",
         "status": "completed",
         "progress_pct": 100,
-        "github_issue": 13,
-        "implemented_in": "docs/LOCAL_SETUP.md"
+        "wave": 2
+      },
+      {
+        "id": "feat-local-first-ola3-02",
+        "name": "Ola 3: reindex memoria al cambiar embedding model",
+        "status": "completed",
+        "progress_pct": 100,
+        "wave": 3,
+        "github_issue": 577,
+        "merged_pr": 597,
+        "implemented_in": "src/memory/sqlite_vec_store/schema_impl.rs, src/storage/migrations.rs (MigrationV7)"
+      },
+      {
+        "id": "feat-local-first-ola3-03",
+        "name": "Ola 3: métricas de uso reales (tokens, providers, fallback hits)",
+        "status": "pending",
+        "progress_pct": 0,
+        "wave": 3,
+        "github_issue": 578,
+        "note": "Jules PR #603 was empty (0 files). Must re-implement: src/observability/usage_counters.rs + ProxyUseCase instrumentation + /v1/usage."
+      },
+      {
+        "id": "feat-local-first-ola3-04",
+        "name": "Ola 3: xavier doctor CLI",
+        "status": "completed",
+        "progress_pct": 100,
+        "wave": 3,
+        "github_issue": 579,
+        "merged_pr": 600,
+        "implemented_in": "src/cli/handlers/doctor.rs"
+      },
+      {
+        "id": "feat-local-first-ola3-05",
+        "name": "Ola 3: docker-compose.local.yml",
+        "status": "completed",
+        "progress_pct": 100,
+        "wave": 3,
+        "github_issue": 580,
+        "merged_pr": 593
+      },
+      {
+        "id": "feat-local-first-ola3-06",
+        "name": "Ola 3: USER_GUIDE_LOCAL.md",
+        "status": "completed",
+        "progress_pct": 100,
+        "wave": 3,
+        "github_issue": 581,
+        "merged_pr": 591
+      },
+      {
+        "id": "feat-local-first-ola3-07",
+        "name": "Ola 3: /health enriquecido",
+        "status": "completed",
+        "progress_pct": 100,
+        "wave": 3,
+        "github_issue": 582,
+        "merged_pr": 599
+      },
+      {
+        "id": "feat-local-first-ola3-08",
+        "name": "Ola 3: MCP xavier_local_status",
+        "status": "completed",
+        "progress_pct": 100,
+        "wave": 3,
+        "github_issue": 583,
+        "merged_pr": 604,
+        "implemented_in": "src/server/mcp/tools_core.rs"
+      },
+      {
+        "id": "feat-local-first-ola3-09",
+        "name": "Ola 3: Telegram /localstatus",
+        "status": "completed",
+        "progress_pct": 100,
+        "wave": 3,
+        "github_issue": 584,
+        "merged_pr": 604,
+        "implemented_in": "src/telegram/mod.rs"
+      },
+      {
+        "id": "feat-local-first-ola3-10",
+        "name": "Ola 3: E2E chat fallback test",
+        "status": "completed",
+        "progress_pct": 100,
+        "wave": 3,
+        "github_issue": 585,
+        "merged_pr": 596,
+        "implemented_in": "tests/e2e_chat_local.rs"
+      },
+      {
+        "id": "feat-local-first-ola3-11",
+        "name": "Ola 3: log retention + boot event",
+        "status": "completed",
+        "progress_pct": 100,
+        "wave": 3,
+        "github_issue": 586,
+        "merged_pr": 595
+      },
+      {
+        "id": "feat-local-first-ola3-12",
+        "name": "Ola 3: config fail-fast validation",
+        "status": "completed",
+        "progress_pct": 100,
+        "wave": 3,
+        "github_issue": 587,
+        "merged_pr": 594,
+        "implemented_in": "src/settings/validation.rs"
+      },
+      {
+        "id": "feat-local-first-ola3-13",
+        "name": "Ola 3: smoke test scripts",
+        "status": "completed",
+        "progress_pct": 100,
+        "wave": 3,
+        "github_issue": 588,
+        "merged_pr": 598
+      },
+      {
+        "id": "feat-local-first-ola3-panel",
+        "name": "Ola 3: panel STUB → real LLM + memory fallback",
+        "status": "completed",
+        "progress_pct": 100,
+        "wave": 3,
+        "github_issue": 590,
+        "merged_pr": 605,
+        "implemented_in": "src/cli/handlers/panel.rs"
+      },
+      {
+        "id": "feat-local-first-ola3-epic",
+        "name": "Ola 3: EPIC cierre (features.json 100%, ROADMAP, devlog)",
+        "status": "pending",
+        "progress_pct": 40,
+        "wave": 3,
+        "github_issue": 589,
+        "note": "Partial: features.json reconciled to 93% local-first / 94% overall. Blocked on #578. ROADMAP + devlog still need formal close."
+      },
+      {
+        "id": "feat-local-first-ola4-hotswap",
+        "name": "Ola 4: hot-swap UI modelos Ollama desde panel",
+        "status": "planned",
+        "progress_pct": 0,
+        "wave": 4
       }
     ]
+  },
+  "feat-runtime-health": {
+    "id": "feat-runtime-health",
+    "progress_pct": 93,
+    "status": "beta",
+    "notes": "doctor + enriched health + log retention done; usage metrics (#578) missing"
+  },
+  "feat-telegram-bot": {
+    "id": "feat-telegram-bot",
+    "progress_pct": 82,
+    "status": "beta",
+    "notes": "/localstatus + telegram feature compile green (PR #604)"
+  },
+  "feat-mcp-server": {
+    "id": "feat-mcp-server",
+    "progress_pct": 100,
+    "status": "beta",
+    "notes": "xavier_local_status added; progressive disclosure protocol still incomplete (#497)"
+  },
+  "feat-unified-storage": {
+    "id": "feat-unified-storage",
+    "progress_pct": 97,
+    "status": "beta",
+    "notes": "MigrationV7 embedding_model_meta + reindex on model change"
   }
 }

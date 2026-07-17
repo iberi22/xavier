@@ -1,77 +1,121 @@
 # Roadmap: Xavier 100% Local (LLM + Embeddings vía Ollama)
 
-Este documento detalla la visión, el estado actual, las olas de desarrollo y el plan futuro para la iniciativa de ejecución **100% Local** de Xavier (asociada al identificador de característica `feat-local-first`).
+Este documento detalla la visión, el estado actual, las olas de desarrollo y el plan futuro para la iniciativa de ejecución **100% Local** de Xavier (`feat-local-first`, EPIC GitHub **#522**).
+
+**Última reconciliación:** 2026-07-17 · `main@5736dad3` · `features.json` overall **94%** · `feat-local-first` **93%**
 
 ---
 
-## 🎯 Visión de la Iniciativa
+## Visión de la Iniciativa
 
 La iniciativa **Xavier 100% Local** busca habilitar el funcionamiento completo de Xavier de manera local y soberana, garantizando privacidad absoluta, reduciendo costes de nube y operando sin conexión a Internet (offline-first). Esto incluye:
-- **Capa de Razonamiento (LLMs locales):** Mediante la integración y orquestación con Ollama y herramientas del sistema.
-- **Capa Semántica (Embeddings locales):** Integración nativa a través de modelos locales eficientes (como GLLM o embeddings de Ollama).
-- **Capa de Persistencia (Vector DB local):** Almacenamiento y búsqueda híbrida (BM25 + sqlite-vec) completamente locales.
-- **Resiliencia & Fallback:** Un sistema robusto de degradación progresiva y elegante, garantizando que el chat responda usando memoria local o fallback a cloud si los proveedores locales fallan.
+
+- **Capa de Razonamiento (LLMs locales):** Ollama y bridges compatibles OpenAI.
+- **Capa Semántica (Embeddings locales):** GLLM / embeddings Ollama.
+- **Capa de Persistencia (Vector DB local):** BM25 + sqlite-vec.
+- **Resiliencia & Fallback:** degradación Local → Cloud → Memoria.
+- **Observabilidad local-first:** doctor, health, status MCP/Telegram, métricas (en curso).
 
 ---
 
-## 🗺️ Tabla de Olas de Progreso
+## Tabla de Olas de Progreso
 
-| Ola | Nombre de la Ola | Estado | Descripción |
+| Ola | Nombre | Estado | Descripción |
 | :--- | :--- | :--- | :--- |
-| **Ola 1** | Estabilización de Capacidad Local | ✅ **DONE** | Compilación limpia del workspace, detección activa de Ollama (`EmbedderConfig::auto()` y sondeos con `is_reachable()`), y endpoints HTTP iniciales. |
-| **Ola 2** | Integración & Fallback Elegante | ✅ **DONE** (Cerrado por este issue) | Chat del panel responde usando LLM local con fallback ordenado a Cloud y degradación final a memoria local cuando ningún proveedor responde. |
-| **Ola 3** | Observabilidad Avanzada | 📅 **PLANNED** | Métricas de latencia por proveedor, contabilidad de tokens consumidos local vs. cloud, visualización de estado de salud detallado. |
-| **Ola 4** | Gestión Dinámica de Modelos (Hot-swap UI) | 📅 **PLANNED** | Interfaz de usuario para descargar y cambiar modelos de Ollama al vuelo desde el panel administrativo de Xavier sin reiniciar el servidor. |
+| **Ola 1** | Estabilización de Capacidad Local | ✅ **DONE** | Compilación limpia, `EmbedderConfig::auto()`, `is_reachable()`, endpoints base. |
+| **Ola 2** | Integración & Fallback Elegante | ✅ **DONE** | Proxy local, fallback chain, memory degradation, UI modo, tests, config default. |
+| **Ola 3** | Observabilidad & Hardening | 🟡 **93% (13/14)** | Circuit breaker, doctor, health, reindex, panel LLM real, MCP/Telegram status, Docker/docs/smoke. **Falta #578 métricas de uso.** EPIC cierre #589 bloqueado. |
+| **Ola 4** | Gestión Dinámica + Cierre de deuda | 📅 **PLANNING** | (1) Cerrar #578/#589 · (2) Hot-swap UI Ollama · (3) Headless memory-fallback parity · (4) Cost/security backlog opcional |
 
 ---
 
-## 🔗 Enlaces de Interés
+## Enlaces de Interés
 
-Para configurar, desplegar u optimizar tu instancia local, consulta las siguientes guías detalladas:
-- [Guía de Usuario Final 100% Local (USER_GUIDE_LOCAL.md)](USER_GUIDE_LOCAL.md) — Manual integral paso a paso para la instalación de Ollama, configuración local e interfaz gráfica de Xavier.
-- [Guía de Configuración Local (LOCAL_SETUP.md)](LOCAL_SETUP.md) — Instrucciones paso a paso para arrancar Xavier con Ollama y modelos locales.
-- [Bridges de LLM Locales (LOCAL_LLM_BRIDGES.md)](LOCAL_LLM_BRIDGES.md) — Alternativas locales como OpenCode CLI, lm-studio u otros proveedores de red.
-- [Integración de Embeddings Locales (LOCAL_EMBEDDINGS.md)](LOCAL_EMBEDDINGS.md) — Detalle técnico del motor de embeddings (GLLM vs Ollama) y tests de integration local.
-
----
-
-## 📦 Detalle de Entregables por Ola
-
-### 🟢 Ola 1: Estabilización de Capacidad Local (PR #540, PR #547, PR #525)
-- **Compilación Limpia:** Garantizar que el workspace compile al 100% sin dependencias de red necesarias para compilar.
-- **Detección Dinámica:** `EmbedderConfig::auto()` sondea dinámicamente Ollama para determinar capacidades de embedding locales.
-- **is_reachable Check:** Métodos rápidos de ping de red para verificar la conectividad con el puerto `11434` de Ollama con un timeout corto de 2 segundos.
-- **Endpoints Básicos:** Registro de rutas de salud iniciales.
-
-### 🟡 Ola 2: Integración & Fallback Elegante (Issues 01–13)
-- **[issue 01] local como candidato del ProxyUseCase:** Permite que el proxy reconozca el proveedor local como candidato prioritario en la orquestación.
-- **[issue 02] fallback chain cableada al ProxyUseCase:** Implementación de la cadena de fallbacks ordenados de Local -> Cloud.
-- **[issue 03] degradación a memoria:** Si tanto Local como Cloud fallan, el sistema recurre de manera elegante a responder utilizando la memoria semántica disponible de Xavier.
-- **[issue 04] fallback chain al boot:** Configuración y arranque seguro de la cadena de fallbacks al inicializar el servidor.
-- **[issue 05] provider local real, no stub:** Implementación del cliente LLM real para conectarse y consumir la API compatible de Ollama.
-- **[issue 06] health-check + boot log:** Observabilidad básica del estado del proveedor local y alertas visibles en el log de inicio de Xavier.
-- **[issue 07] UI modo:** Selector visual en el panel UI para activar/forzar el modo local-first.
-- **[issue 08] memory-fallback UI:** Indicador visual en el chat cuando el sistema entra en modo de degradación elegante a memoria.
-- **[issue 09] tests de integración:** Suite de pruebas que verifica de extremo a extremo la cadena de fallbacks y degradaciones.
-- **[issue 10] endpoints:** Exposición en la API REST pública de la configuración activa de fallbacks y estados de los proveedores locales.
-- **[issue 11] circuit breaker:** Desconexión automática temporal de proveedores lentos o inestables para evitar congelar la interfaz.
-- **[issue 12] config local por defecto:** Establecer local-first por defecto en el archivo de configuración inicial de Xavier.
-- **[issue 13] docs:** Documentación integral sobre la arquitectura de resiliencia y el uso diario.
-
-### 🔵 Ola 3: Observabilidad Avanzada (Próximamente)
-- Métricas de latencia de Ollama en vivo.
-- Contador de tokens procesados y ahorro estimado frente a proveedores cloud.
-- Alertas proactivas en la UI si Ollama se detiene o el modelo configurado no está descargado.
-
-### 🔵 Ola 4: Gestión Dinámica de Modelos (Próximamente)
-- Consola de control para administrar Ollama directamente desde Xavier.
-- Capacidad para descargar nuevos modelos de embedding/razonamiento con un solo clic.
+- [USER_GUIDE_LOCAL.md](USER_GUIDE_LOCAL.md) — Guía usuario final 100% local (Ola 3).
+- [LOCAL_SETUP.md](LOCAL_SETUP.md) — Setup Ollama + Xavier.
+- [LOCAL_LLM_BRIDGES.md](LOCAL_LLM_BRIDGES.md) — Bridges alternativos.
+- [LOCAL_EMBEDDINGS.md](LOCAL_EMBEDDINGS.md) — Embeddings locales.
+- [OLA4_ANALYSIS.md](OLA4_ANALYSIS.md) — Análisis formal de la siguiente ola.
+- `.gitcore/features.json` · `.gitcore/features-detailed.json`
 
 ---
 
-## 📌 EPIC de Seguimiento en GitHub
+## Detalle por Ola
 
-Para ver la correlación de issues y el progreso global, el EPIC de referencia sugerido en GitHub es:
-> **EPIC: Xavier 100% Local (LLM + embeddings vía Ollama)**
+### Ola 1 — Estabilización (DONE)
+- Compilación limpia del workspace.
+- Detección dinámica Ollama (`EmbedderConfig::auto()`).
+- `is_reachable` con timeout corto.
+- Endpoints de salud base.
 
-*Nota: Este EPIC agrupa los issues 01 al 13 de la Ola 2 como tareas hijas.*
+### Ola 2 — Integración & Fallback (DONE)
+Issues 01–13 (local provider, fallback chain, memory degradation, boot, UI, tests, endpoints, circuit breaker legacy, config default, docs).
+
+### Ola 3 — Observabilidad & Hardening (13/14 DONE)
+
+| Issue | Entregable | PR | Estado |
+| ---: | :--- | ---: | :--- |
+| #576 | Circuit breaker por provider | #592 | ✅ |
+| #577 | Reindex al cambiar embedding model | #597 | ✅ |
+| **#578** | **Métricas de uso reales** | #603 vacío | ❌ **PENDING** |
+| #579 | `xavier doctor` | #600 | ✅ |
+| #580 | docker-compose.local | #593 | ✅ |
+| #581 | USER_GUIDE_LOCAL | #591 | ✅ |
+| #582 | `/health` enriquecido | #599 | ✅ |
+| #583 | MCP `xavier_local_status` | #604 | ✅ |
+| #584 | Telegram `/localstatus` | #604 | ✅ |
+| #585 | E2E chat fallback | #596 | ✅ |
+| #586 | Log retention + boot event | #595 | ✅ |
+| #587 | Config fail-fast | #594 | ✅ |
+| #588 | Smoke scripts | #598 | ✅ |
+| #590 | Panel STUB → LLM real | #605 | ✅ |
+| #589 | EPIC cierre features/ROADMAP/devlog | — | 🔒 blocked by #578 |
+
+**Notas de integración Ola 3:**
+- PRs Jules #601/#602 se cerraron por bloat (56 archivos); reemplazo quirúrgico #604.
+- Panel chat ya no es stub: `execute_secured` + memory fallback.
+- `cargo check --workspace` y `cargo check --features telegram` en verde post-integración.
+
+### Ola 4 — Plan (ver [OLA4_ANALYSIS.md](OLA4_ANALYSIS.md))
+
+**Fase 0 — Cerrar Ola 3 (bloqueante)**
+1. Implementar #578 `UsageCounters` reales en ProxyUseCase + `/v1/usage`.
+2. Cerrar #589: features 100% local-first band, ROADMAP, devlog.
+
+**Fase 1 — Producto local-first**
+3. Hot-swap de modelos Ollama desde panel (pull/list/select sin reinicio).
+4. Paridad headless: memory-fallback en `headless_chat` (hoy panel sí, headless no).
+5. Superficie de métricas en panel UI (tokens local vs cloud).
+
+**Fase 2 — Backlog transversal (priorizable)**
+6. #497 Progressive disclosure MCP (P0 cost).
+7. #478 Dependabot triage security.
+8. #445 code-graph FTS5.
+
+---
+
+## EPIC de Seguimiento en GitHub
+
+| Issue | Rol |
+| ---: | :--- |
+| **#522** | EPIC iniciativa 100% Local |
+| **#578** | Única deuda funcional Ola 3 |
+| **#589** | EPIC cierre formal Ola 3 |
+| **#590** | Panel STUB (cerrado vía #605) |
+
+---
+
+## Criterio de “100%” para `feat-local-first`
+
+| Criterio | Estado |
+| :--- | :--- |
+| LLM local usable vía ProxyUseCase | ✅ |
+| Fallback cloud + memoria | ✅ panel; ⚠️ headless sin memory-fallback explícito |
+| Circuit breaker | ✅ |
+| Doctor + health + local_status | ✅ |
+| Docker + docs + smoke | ✅ |
+| Métricas tokens/providers/fallback | ❌ #578 |
+| Hot-swap modelos UI | ❌ Ola 4 |
+| features.json + ROADMAP + devlog al día | 🟡 parcial (esta actualización) |
+
+Cuando #578 y #589 cierren: **feat-local-first → ~96%** (resta Ola 4 hot-swap para 100%).
