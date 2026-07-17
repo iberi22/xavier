@@ -15,6 +15,7 @@ import {
   Server,
   Share2,
   Shield,
+  TrendingUp,
   X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -34,6 +35,7 @@ import MessagingConfigModal, {
 import { CloudRelayConfig } from "./CloudRelayConfig";
 import DataCommonsConfigUI from "./DataCommonsConfigUI";
 import MeshConfig from "./MeshConfig";
+import UsageMetricsPanel from "./UsageMetricsPanel";
 
 interface ConfigModalProps {
   key?: React.Key;
@@ -55,7 +57,8 @@ type MainTab =
   | "security"
   | "mesh"
   | "memory"
-  | "agents";
+  | "agents"
+  | "usage";
 
 export default function ConfigModal({
   onClose,
@@ -113,6 +116,12 @@ export default function ConfigModal({
             onClick={() => setMainTab("providers")}
             icon={<Globe className="w-4 h-4" />}
             label="Providers"
+          />
+          <TabButton
+            active={mainTab === "usage"}
+            onClick={() => setMainTab("usage")}
+            icon={<TrendingUp className="w-4 h-4" />}
+            label="Usage Metrics"
           />
           <TabButton
             active={mainTab === "messaging"}
@@ -252,6 +261,17 @@ export default function ConfigModal({
             <div className="p-10 overflow-y-auto h-full">
               <ProvidersPage token={token || ""} />
             </div>
+          )}
+          {mainTab === "usage" && (
+            <motion.div
+              key="usage"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="w-full h-full overflow-hidden"
+            >
+              <UsageMetricsPanel token={token || ""} />
+            </motion.div>
           )}
           {mainTab === "messaging" && (
             <motion.div
