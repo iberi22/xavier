@@ -171,6 +171,17 @@ pub enum Command {
         local: bool,
     },
 
+    /// Diagnose local-first health (Ollama, models, DB, config, vector store)
+    #[command(name = "doctor")]
+    Doctor {
+        /// Output format: table (default), json, markdown
+        #[arg(long, default_value = "table")]
+        format: String,
+        /// Include soft/warning checks in output
+        #[arg(long, default_value_t = false)]
+        verbose: bool,
+    },
+
     /// Manage Xavier Data Commons and fine-tuning readiness
     DataCommons {
         #[command(subcommand)]

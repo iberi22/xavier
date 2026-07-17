@@ -8,6 +8,7 @@ pub mod auth;
 pub mod billing;
 pub mod cloud;
 pub mod code;
+pub mod doctor;
 pub mod headless_api;
 pub mod headless_e2e;
 pub mod memory;
