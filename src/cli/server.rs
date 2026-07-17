@@ -872,6 +872,17 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     info!("Xavier HTTP server listening on http://{}", bound_addr);
     println!("Xavier HTTP server listening on http://{}", bound_addr);
 
+    tracing::info!(
+        target: "xavier::boot",
+        event = "server_ready",
+        version = env!("CARGO_PKG_VERSION"),
+        provider = %std::env::var("XAVIER_MODEL_PROVIDER").unwrap_or_default(),
+        llm_model = %std::env::var("XAVIER_LOCAL_LLM_MODEL").unwrap_or_default(),
+        embedding_model = %std::env::var("XAVIER_EMBEDDING_MODEL").unwrap_or_default(),
+        port = %port,
+        "Xavier server ready"
+    );
+
     // Operational mode summary (Issue #1-12)
     let mut final_status = xavier::observability::health::HEALTH.run_checks().await;
 
