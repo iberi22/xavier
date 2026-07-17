@@ -1,8 +1,22 @@
 //! Integration tests for Security Hardening Phase 1
 
 use std::env;
-use xavier::security::auth::{LoginRequest, User, UserRole};
+use xavier::security::auth::{User, UserRole};
 use xavier::security::prompt_guard::{detect_injection, AttackType};
+
+pub struct LoginRequest {
+    pub email: String,
+    pub password: String,
+}
+
+impl std::fmt::Debug for LoginRequest {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LoginRequest")
+            .field("email", &self.email)
+            .field("password", &"<redacted>")
+            .finish()
+    }
+}
 
 #[test]
 fn test_security_hardening_prompt_injection() {
