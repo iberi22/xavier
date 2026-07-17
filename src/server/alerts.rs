@@ -63,19 +63,16 @@ impl SystemAlertStore {
         }
     }
 
-    pub fn get_mode(&self) -> OperationalMode {
-        let alerts = self.get_alerts();
-        let provider = std::env::var("XAVIER_PROVIDER").unwrap_or_else(|_| "local".to_string());
-
+    pub fn derive_operational_mode(
+        llm_reachable: bool,
+        embedding_reachable: bool,
+        provider_setting: &str,
+    ) -> OperationalMode {
+        let provider = provider_setting.trim().to_ascii_lowercase();
         if provider == "disabled" {
-            return OperationalMode::Disabled;
-        }
-
-        let has_llm_error = alerts.iter().any(|a| a.component == "llm" && a.level == "ERROR");
-        let is_local = provider == "local" || provider == "ollama";
-
-        if is_local {
-            if has_llm_error {
+            OperationalMode::Disabled
+        } else if provider == "local" || provider == "ollama" {
+            if !llm_reachable || !embedding_reachable {
                 OperationalMode::LocalDegraded
             } else {
                 OperationalMode::LocalHealthy
@@ -83,6 +80,16 @@ impl SystemAlertStore {
         } else {
             OperationalMode::CloudFallback
         }
+    }
+
+    pub fn get_mode(&self) -> OperationalMode {
+        let alerts = self.get_alerts();
+        let provider = std::env::var("XAVIER_PROVIDER").unwrap_or_else(|_| "local".to_string());
+
+        let has_llm_error = alerts.iter().any(|a| a.component == "llm" && a.level == "ERROR");
+        let has_embedding_error = alerts.iter().any(|a| a.component == "embedding" && a.level == "ERROR");
+
+        Self::derive_operational_mode(!has_llm_error, !has_embedding_error, &provider)
     }
 }
 
@@ -121,5 +128,52 @@ mod tests {
         assert_eq!(store.get_mode(), OperationalMode::Disabled);
 
         std::env::remove_var("XAVIER_PROVIDER");
+    }
+
+    #[test]
+    fn test_derive_operational_mode() {
+        // LocalHealthy
+        assert_eq!(
+            SystemAlertStore::derive_operational_mode(true, true, "local"),
+            OperationalMode::LocalHealthy
+        );
+        assert_eq!(
+            SystemAlertStore::derive_operational_mode(true, true, "ollama"),
+            OperationalMode::LocalHealthy
+        );
+
+        // LocalDegraded
+        assert_eq!(
+            SystemAlertStore::derive_operational_mode(false, true, "local"),
+            OperationalMode::LocalDegraded
+        );
+        assert_eq!(
+            SystemAlertStore::derive_operational_mode(true, false, "local"),
+            OperationalMode::LocalDegraded
+        );
+        assert_eq!(
+            SystemAlertStore::derive_operational_mode(false, false, "local"),
+            OperationalMode::LocalDegraded
+        );
+
+        // CloudFallback
+        assert_eq!(
+            SystemAlertStore::derive_operational_mode(true, true, "openai"),
+            OperationalMode::CloudFallback
+        );
+        assert_eq!(
+            SystemAlertStore::derive_operational_mode(false, false, "anthropic"),
+            OperationalMode::CloudFallback
+        );
+
+        // Disabled
+        assert_eq!(
+            SystemAlertStore::derive_operational_mode(true, true, "disabled"),
+            OperationalMode::Disabled
+        );
+        assert_eq!(
+            SystemAlertStore::derive_operational_mode(false, false, "disabled"),
+            OperationalMode::Disabled
+        );
     }
 }
