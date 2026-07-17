@@ -35,7 +35,12 @@ name = "xavier"
 path = "src/lib.rs"
 
 [workspace]
-members = ["code-graph", "panel-ui/src-tauri", "xavier-core"]
+members = ["code-graph", "panel-ui/src-tauri"]
+# NOTE: "xavier-core" is excluded from the workspace. It is an incomplete
+# WIP refactor (duplicates src/memory/sqlite_vec_store/) that does not compile
+# and is NOT consumed by any crate (xavier, code-graph, panel-ui). Re-add it
+# once its refactor is complete (see issue #542). Excluding is non-destructive:
+# the directory and its files remain in the repo.
 
 [features]
 default = ["cli-interactive"]

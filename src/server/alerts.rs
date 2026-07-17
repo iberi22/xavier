@@ -11,7 +11,7 @@ pub enum OperationalMode {
     Disabled,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct SystemAlert {
     pub id: String,
     pub level: String,
