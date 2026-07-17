@@ -141,6 +141,22 @@ impl EmbedderConfig {
         !matches!(self, Self::Noop)
     }
 
+    pub fn active_model_name(&self) -> Option<String> {
+        match self {
+            Self::Fallback(backends) => {
+                for backend in backends {
+                    match backend {
+                        EmbedderBackendConfig::Gllm(cfg) => return Some(cfg.model.clone()),
+                        EmbedderBackendConfig::OpenAICompatible(cfg) => return Some(cfg.model.clone()),
+                    }
+                }
+                None
+            }
+            Self::Noop => Some("noop".to_string()),
+            Self::Invalid(_) => None,
+        }
+    }
+
     pub fn build_sync(self) -> Result<Arc<dyn Embedder>, EmbeddingError> {
         match self {
             Self::Invalid(msg) => Err(EmbeddingError::Config(msg)),
