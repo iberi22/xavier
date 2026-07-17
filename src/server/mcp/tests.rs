@@ -1406,6 +1406,47 @@ async fn test_mcp_compact_outputs() {
 }
 
 #[tokio::test]
+async fn xavier_local_status_tool_integration() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    let response = post_json(
+        router,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "xavier_local_status",
+                "arguments": {}
+            }
+        }),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    let content = &body["result"]["content"][0];
+    assert_eq!(content["type"], "structuredContent");
+    let sc = &content["structuredContent"];
+
+    let mode = sc["mode"].as_str().expect("mode should be a string");
+    assert!(
+        mode == "local-healthy"
+            || mode == "local-degraded"
+            || mode == "cloud-fallback"
+            || mode == "disabled",
+        "unexpected operational mode: {}",
+        mode
+    );
+    assert!(sc["provider_setting"].is_string());
+    assert!(sc["llm_reachable"].is_boolean());
+    assert!(sc["embedding_reachable"].is_boolean());
+    assert!(sc["ollama_reachable"].is_boolean());
+    assert_eq!(sc["fallback_chain"], json!([]));
+}
+
+#[tokio::test]
 async fn auth_success_with_valid_token() {
     std::env::set_var("XAVIER_TOKEN", "test-token");
     let (state, workspace) = test_state().await;

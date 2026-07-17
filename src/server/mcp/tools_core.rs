@@ -82,6 +82,15 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
                 "properties": {}
             }),
         },
+        MCPTool {
+            name: "xavier_local_status".to_string(),
+            description: "Report Xavier local-first operation mode and reachability. \
+                          Returns: mode (local-healthy|local-degraded|cloud-fallback|disabled), \
+                          provider_setting, llm_reachable (bool), embedding_reachable (bool), \
+                          ollama_reachable (bool). Use this before delegating reasoning to Xavier."
+                .to_string(),
+            input_schema: json!({"type": "object", "properties": {}}),
+        },
     ]
 }
 
@@ -93,6 +102,7 @@ pub fn is_core_tool(name: &str) -> bool {
             | "sync_gitcore"
             | "health_check"
             | "get_code_graph"
+            | "xavier_local_status"
     )
 }
 
@@ -334,6 +344,34 @@ pub async fn handle_core_tool(
                 serde_json::to_value(&result)?,
                 health.status != "healthy",
             ))?)
+        }
+        "xavier_local_status" => {
+            let mode = crate::server::alerts::SYSTEM_ALERTS.get_mode();
+            let provider = std::env::var("XAVIER_PROVIDER")
+                .or_else(|_| std::env::var("XAVIER_MODEL_PROVIDER"))
+                .unwrap_or_else(|_| "local".into());
+            let health = crate::observability::health::HEALTH.get_status().await;
+            let llm_reachable = health.llm.reachable;
+            let embedding_reachable = !matches!(
+                health.embedding.status,
+                crate::observability::health::HealthLevel::Unhealthy
+            );
+            let ollama_ok = llm_reachable && (provider == "local" || provider == "ollama");
+            let mode_str = serde_json::to_value(&mode)
+                .ok()
+                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .unwrap_or_else(|| format!("{:?}", mode).to_lowercase());
+
+            let val = json!({
+                "mode": mode_str,
+                "provider_setting": provider,
+                "llm_reachable": llm_reachable,
+                "embedding_reachable": embedding_reachable,
+                "ollama_reachable": ollama_ok,
+                "fallback_chain": [],
+            });
+
+            Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
         }
         "get_code_graph" => {
             let dump_path = _state
