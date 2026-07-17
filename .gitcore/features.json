@@ -1,18 +1,18 @@
 {
-    "_comment": "Feature tracking file for Xavier Cognitive Memory System \u00e2\u20ac\u201d actualizado 2026-07-02: reconciliaci\u00c3\u00b3n tri-source (features.json + code audit 125K LOC/559 files/1044 tests + deep-scan). Overall reconciliado a 72%.",
+    "_comment": "Feature tracking file for Xavier Cognitive Memory System — actualizado 2026-07-17: cierre de Ola 2 de Xavier 100% Local (feat-local-first).",
     "metadata": {
         "project": "Xavier",
         "version": "0.11.0-22-06-2026",
         "created": "2026-03-05",
-        "last_verified": "2026-07-14",
-        "total_features": 20,
+        "last_verified": "2026-07-17",
+        "total_features": 21,
         "features_complete": 11,
-        "features_beta": 7,
+        "features_beta": 8,
         "features_draft": 2,
         "features_planned": 0,
         "features_stable": 11,
         "overall_progress_pct": 93,
-        "reconciliation_notes": "Sprint extendido (2026-07-03): 7 brechas cerradas via subagentes turbo. Context Regen 40->60% (HORMER tuning wire + cross-cycle persistence + auto-tune scheduler). SQLite Storage 85->95% (migration system v1-5: MigrationRunner, baseline migrations, legacy backfill, 6 tests). Auto-Improvement 70->85% (Python benchmark wire via bench-runners, validate-and-apply persistence, acceptance gates, 21 tests). Dual License 70->90% (17 tests: persistence, downgrade, runtime gate, CLI detection). Mesh Network 80->88% (SyncTransport P2pIroh arm, PeerInfo.iroh_addr, lazy Endpoint bind). Scanner v2: tests_total bug fixed (10/0 -> 10/10), manifest extended 10->17 features. Promedio reconciliado de 20 features recalculado."
+        "reconciliation_notes": "Sprint extendido (2026-07-17): Cierre de Ola 2 de Xavier 100% Local (feat-local-first) con 85% de progreso (reservando 15% para Ola 3/4). Verificados issues 01-13 como completos."
     },
     "features": [
         {
@@ -470,6 +470,34 @@
             "last_tested": "2026-06-25",
             "notes": "Implemented via PRs #342, #345, #346. Status and Sync subcommands added 2026-06-25. Issue #339 closed. cargo check passes, tests: 943 pass, 10 pre-existing failures.",
             "implemented_in": "src/cli/commands/enums.rs, src/cli/handlers/agent_cli.rs, src/cli/server.rs, src/cli/handlers/agent.rs"
+        },
+        {
+            "id": "feat-local-first",
+            "name": "100% Local Operation (LLM + Embeddings via Ollama)",
+            "category": "local-first",
+            "status": "beta",
+            "progress_pct": 85,
+            "description": "Chat del panel responde usando un LLM local (Ollama) con fallback a cloud y degradación elegante a memoria cuando ningún provider responde.",
+            "steps": [
+                "Ola 1: estabilización (compile limpio, is_reachable, EmbedderConfig::auto) — DONE",
+                "Ola 2: local como candidato del ProxyUseCase (issue 01)",
+                "Ola 2: fallback chain cableada al ProxyUseCase (issue 02)",
+                "Ola 2: degradación a memoria (issue 03)",
+                "Ola 2: fallback chain al boot + endpoints (issues 04, 10)",
+                "Ola 2: provider local real, no stub (issue 05)",
+                "Ola 2: health-check + boot log (issue 06)",
+                "Ola 2: UI modo + memory-fallback (issues 07, 08)",
+                "Ola 2: tests de integración (issue 09)",
+                "Ola 2: circuit breaker (issue 11)",
+                "Ola 2: config local por defecto (issue 12)",
+                "Ola 2: docs (issue 13)"
+            ],
+            "passes": true,
+            "verified_by": "integration-tests",
+            "github_issue": null,
+            "last_tested": "2026-07-17",
+            "notes": "Cierre de Ola 2. Pendiente Ola 3 (observabilidad avanzada) y Ola 4 (hot-swap UI).",
+            "implemented_in": "src/app/proxy_use_case.rs, src/agents/provider/, src/cli/handlers/, panel-ui/src/components/"
         }
     ],
     "verification_commands": {
