@@ -10,6 +10,7 @@ use std::time::Duration;
 use tracing::{info, warn};
 
 use crate::agents::provider::{ModelProviderClient, ModelProviderConfig, LLM_TIMEOUT};
+use crate::agents::provider::router::ProviderRouter;
 use crate::agents::provider::types::ProviderReachability;
 use crate::agents::rate_limit::RateLimitManager;
 use crate::agents::router::{load_routing_policy, RouteCategory, Router};
@@ -28,6 +29,7 @@ pub struct ProxyUseCase {
     pub router: Router,
     pub threat_detector: Option<Arc<dyn ThreatDetectionPort>>,
     pub event_bus: Option<Arc<crate::coordination::XavierEventBus>>,
+    pub provider_router: Option<Arc<tokio::sync::RwLock<ProviderRouter>>>,
 }
 
 impl ProxyUseCase {
@@ -41,6 +43,7 @@ impl ProxyUseCase {
             router: Router::new(),
             threat_detector: None,
             event_bus: None,
+            provider_router: None,
         }
     }
 
@@ -52,6 +55,42 @@ impl ProxyUseCase {
     pub fn with_event_bus(mut self, event_bus: Arc<crate::coordination::XavierEventBus>) -> Self {
         self.event_bus = Some(event_bus);
         self
+    }
+
+    pub fn with_provider_router(
+        mut self,
+        provider_router: Arc<tokio::sync::RwLock<ProviderRouter>>,
+    ) -> Self {
+        self.provider_router = Some(provider_router);
+        self
+    }
+
+    pub(crate) async fn handle_provider_fallback(
+        &self,
+        old_provider: &str,
+        requested_model: &str,
+        fallback_attempted: &mut bool,
+    ) -> Option<(String, ModelProviderConfig)> {
+        if *fallback_attempted {
+            return None;
+        }
+
+        if let Some(ref router) = self.provider_router {
+            let mut writer = router.write().await;
+            if let Some(next_kind) = writer.on_provider_failure() {
+                let next_name = next_kind.as_str().to_string();
+                warn!("Provider {} failed, falling back to {}", old_provider, next_name);
+                *fallback_attempted = true;
+
+                let config = ModelProviderConfig::for_provider(&next_name)
+                    .with_model_override(Some(requested_model.to_string()));
+                Some((next_name, config))
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 
     pub async fn execute_generic(
@@ -267,7 +306,7 @@ impl ProxyUseCase {
             }
         }
 
-        let provider_name = match selected_provider {
+        let mut provider_name = match selected_provider {
             Some(p) => p,
             None => return Err(ProxyError::RateLimited),
         };
@@ -377,7 +416,7 @@ impl ProxyUseCase {
         }
 
         // Ensure we are using secured keys from vault if available
-        let config = if !resolve_xavier_token().is_empty() {
+        let mut config = if !resolve_xavier_token().is_empty() {
             // This ensures that even if env vars are missing, we try to use the root token
             // or other mechanisms defined in resolve_xavier_token.
             // For actual provider keys, ModelProviderConfig::for_provider already handles env/settings.
@@ -388,6 +427,7 @@ impl ProxyUseCase {
 
         let mut retry_count = 0;
         let max_retries = 1;
+        let mut fallback_attempted = false;
 
         loop {
             let client = ModelProviderClient::new(config.clone());
@@ -492,6 +532,7 @@ impl ProxyUseCase {
                         }
                     }
 
+                    // TODO(issue 11): circuit breaker hook where appropriate
                     if err_msg.contains("timed out") {
                         warn!("Provider {} timed out (internal)", provider_name);
                         if let Err(track_err) = self
@@ -501,6 +542,21 @@ impl ProxyUseCase {
                         {
                             warn!("Failed to track timeout request: {}", track_err);
                         }
+
+                        if let Some((next_name, next_config)) = self
+                            .handle_provider_fallback(
+                                &provider_name,
+                                &requested_model,
+                                &mut fallback_attempted,
+                            )
+                            .await
+                        {
+                            provider_name = next_name;
+                            config = next_config;
+                            retry_count = 0;
+                            continue;
+                        }
+
                         return Err(ProxyError::ProviderError(format!(
                             "Provider {} timed out after {}s",
                             provider_name,
@@ -515,6 +571,21 @@ impl ProxyUseCase {
                         {
                             warn!("Failed to track failed request: {}", track_err);
                         }
+
+                        if let Some((next_name, next_config)) = self
+                            .handle_provider_fallback(
+                                &provider_name,
+                                &requested_model,
+                                &mut fallback_attempted,
+                            )
+                            .await
+                        {
+                            provider_name = next_name;
+                            config = next_config;
+                            retry_count = 0;
+                            continue;
+                        }
+
                         return Err(ProxyError::ProviderError(e.to_string()));
                     }
                 }
@@ -527,6 +598,21 @@ impl ProxyUseCase {
                     {
                         warn!("Failed to track timeout request: {}", track_err);
                     }
+
+                    if let Some((next_name, next_config)) = self
+                        .handle_provider_fallback(
+                            &provider_name,
+                            &requested_model,
+                            &mut fallback_attempted,
+                        )
+                        .await
+                    {
+                        provider_name = next_name;
+                        config = next_config;
+                        retry_count = 0;
+                        continue;
+                    }
+
                     return Err(ProxyError::ProviderError(format!(
                         "Provider {} timed out after {}s",
                         provider_name,
