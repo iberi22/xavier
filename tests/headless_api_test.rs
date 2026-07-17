@@ -132,6 +132,34 @@ async fn test_headless_api_e2e() {
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["result"]["tool"], "memory_search");
 
+    // 8. GET /v1/providers
+    let v1_url = format!("http://127.0.0.1:{port}/v1");
+    let resp = client
+        .get(format!("{}/providers", v1_url))
+        .header("Authorization", "Bearer test-token")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body_providers: Value = resp.json().await.unwrap();
+    assert!(body_providers["active"].is_string());
+    assert!(body_providers["mode"].is_string());
+    assert!(body_providers["strategy"].is_string());
+    assert!(body_providers["local_reachable"].is_boolean());
+    assert!(body_providers["fallback_chain"].is_array());
+    assert!(body_providers["providers"].is_array());
+
+    // 9. GET /v1/providers/status
+    let resp = client
+        .get(format!("{}/providers/status", v1_url))
+        .header("Authorization", "Bearer test-token")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body_status: Value = resp.json().await.unwrap();
+    assert_eq!(body_providers, body_status);
+
     // 7. Rate Limiting (61 requests/min)
     // We'll just do a few quick requests and verify it's working if possible,
     // but full 61 might be slow in CI. Let's do 5 and check they pass.
