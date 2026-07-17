@@ -12,6 +12,8 @@ Current release: **0.12.0**.
 
 ## Quick Start
 
+Para una guía de instalación paso a paso enfocada en el funcionamiento 100% privado y offline, consulte la [Guía de Usuario Final 100% Local (USER_GUIDE_LOCAL.md)](docs/USER_GUIDE_LOCAL.md).
+
 ### Windows (RAG Optimized)
 ```powershell
 ./start-xavier-rag.ps1
