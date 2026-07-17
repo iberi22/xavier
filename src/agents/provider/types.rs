@@ -21,6 +21,17 @@ pub enum ProviderMode {
     Disabled,
 }
 
+/// Indicates the current reachability status of a provider.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProviderReachability {
+    /// The provider is configured and can be successfully contacted.
+    ConfiguredAndReachable,
+    /// The provider is configured but unreachable (e.g. network error, timeout).
+    ConfiguredAndUnreachable,
+    /// The provider is not properly configured.
+    NotConfigured,
+}
+
 /// Supported API flavors for different model providers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApiFlavor {
