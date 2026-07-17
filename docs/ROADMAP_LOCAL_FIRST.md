@@ -28,9 +28,10 @@ La iniciativa **Xavier 100% Local** busca habilitar el funcionamiento completo d
 ## 🔗 Enlaces de Interés
 
 Para configurar, desplegar u optimizar tu instancia local, consulta las siguientes guías detalladas:
+- [Guía de Usuario Final 100% Local (USER_GUIDE_LOCAL.md)](USER_GUIDE_LOCAL.md) — Manual integral paso a paso para la instalación de Ollama, configuración local e interfaz gráfica de Xavier.
 - [Guía de Configuración Local (LOCAL_SETUP.md)](LOCAL_SETUP.md) — Instrucciones paso a paso para arrancar Xavier con Ollama y modelos locales.
 - [Bridges de LLM Locales (LOCAL_LLM_BRIDGES.md)](LOCAL_LLM_BRIDGES.md) — Alternativas locales como OpenCode CLI, lm-studio u otros proveedores de red.
-- [Integración de Embeddings Locales (LOCAL_EMBEDDINGS.md)](LOCAL_EMBEDDINGS.md) — Detalle técnico del motor de embeddings (GLLM vs Ollama) y tests de integración local.
+- [Integración de Embeddings Locales (LOCAL_EMBEDDINGS.md)](LOCAL_EMBEDDINGS.md) — Detalle técnico del motor de embeddings (GLLM vs Ollama) y tests de integration local.
 
 ---
 
