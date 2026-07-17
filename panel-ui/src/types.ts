@@ -13,19 +13,22 @@ export type PanelMessage = {
   plain_text: string;
   openui_lang?: string | null;
   created_at: string;
-  metadata?: {
-    confidence?: number;
-    timings?: {
-      system1_ms: number;
-      system2_ms: number;
-      system3_ms: number;
-      total_ms: number;
-    };
-    components?: string[];
-    rules?: string[];
-    documents?: number;
-    evidence?: number;
-  };
+  metadata?:
+    | {
+        confidence?: number;
+        timings?: {
+          system1_ms: number;
+          system2_ms: number;
+          system3_ms: number;
+          total_ms: number;
+        };
+        components?: string[];
+        rules?: string[];
+        documents?: number;
+        evidence?: number;
+        provider?: string;
+      }
+    | string;
 };
 
 export type Bookmark = {
