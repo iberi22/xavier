@@ -6,8 +6,7 @@ This directory contains utility scripts for Xavier development and operations.
 
 - enchmarks/ - Benchmarking scripts for memory systems
 - dev/ - Development utilities
--
-elease/ - Release and deployment scripts
+- release/ - Release and deployment scripts
 
 ## Scripts
 
@@ -20,6 +19,35 @@ elease/ - Release and deployment scripts
 | locomo_benchmark*.ps1 | LOCOMO benchmark suite |
 | cortex_cli.py | Cortex CLI utilities (⚠️ deprecated, project removed) |
 | enchmark_*.py | Various benchmark scripts |
+| smoke_test_local.sh | Bash script for local-first Xavier auto-contained smoke testing |
+| smoke_test_local.ps1 | PowerShell script for local-first Xavier auto-contained smoke testing |
+
+## Local Smoke Tests
+
+Local auto-contained smoke test scripts are provided to confirm that Xavier starts, accepts connections, and responds correctly, without requiring external infrastructure or model providers:
+
+- `scripts/smoke_test_local.sh`: Bash script (runs on Linux/macOS)
+- `scripts/smoke_test_local.ps1`: PowerShell script (runs on Windows/Linux/macOS)
+
+### Usage
+
+**Bash:**
+```bash
+# Run with default settings (port 18006, ./target/debug/xavier)
+bash scripts/smoke_test_local.sh
+
+# Run with custom binary and port
+XAVIER_BIN=./target/release/xavier XAVIER_PORT=19000 bash scripts/smoke_test_local.sh
+```
+
+**PowerShell:**
+```powershell
+# Run with default settings
+.\scripts\smoke_test_local.ps1
+
+# Run with custom binary and port
+.\scripts\smoke_test_local.ps1 -XavierBin "./target/release/xavier" -XavierPort 19000
+```
 
 ## Usage
 
