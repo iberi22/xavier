@@ -75,10 +75,11 @@ impl RateLimiter {
 /// Calls `f()` up to `max_retries` times. On failure, waits `2^attempt` seconds
 /// (capped at 16 s) before retrying. Returns the first successful value or the
 /// last error.
-async fn with_retry<F, Fut, T>(label: &str, max_retries: usize, f: F) -> Result<T>
+async fn with_retry<F, Fut, T, E>(label: &str, max_retries: usize, f: F) -> Result<T, E>
 where
     F: Fn() -> Fut,
-    Fut: std::future::Future<Output = Result<T>>,
+    Fut: std::future::Future<Output = Result<T, E>>,
+    E: std::fmt::Display,
 {
     let mut attempt = 0;
     loop {
@@ -114,6 +115,8 @@ pub enum Command {
     Start,
     #[command(description = "check system health.")]
     Health,
+    #[command(description = "show local-first operation mode and Ollama reachability.")]
+    LocalStatus,
     #[command(description = "show memory statistics.")]
     Stats,
     #[command(description = "search memories.")]
@@ -342,7 +345,7 @@ impl XavierBot {
     async fn start_polling(&self) {
         let me = match with_retry("get_me (polling)", 3, || {
             let bot = self.bot.clone();
-            async move { Ok(bot.get_me().await) }
+            async move { bot.get_me().await }
         })
         .await
         {
@@ -374,7 +377,7 @@ impl XavierBot {
     async fn start_webhook(&self, url: &str) {
         let me = match with_retry("get_me (webhook)", 3, || {
             let bot = self.bot.clone();
-            async move { Ok(bot.get_me().await) }
+            async move { bot.get_me().await }
         })
         .await
         {
@@ -483,6 +486,39 @@ impl XavierBot {
                 .parse_mode(ParseMode::MarkdownV2)
                 .await?;
             }
+            Command::LocalStatus => {
+                let mode = crate::server::alerts::SYSTEM_ALERTS.get_mode();
+                let provider = std::env::var("XAVIER_PROVIDER")
+                    .or_else(|_| std::env::var("XAVIER_MODEL_PROVIDER"))
+                    .unwrap_or_else(|_| "local".into());
+                let health = crate::observability::health::HEALTH.get_status().await;
+                let (icon, label) = match mode {
+                    crate::server::alerts::OperationalMode::LocalHealthy => ("🟢", "Local sano"),
+                    crate::server::alerts::OperationalMode::LocalDegraded => {
+                        ("🟡", "Local degradado")
+                    }
+                    crate::server::alerts::OperationalMode::CloudFallback => {
+                        ("☁️", "Cloud fallback")
+                    }
+                    crate::server::alerts::OperationalMode::Disabled => ("⚫", "Deshabilitado"),
+                };
+                let ollama_url = std::env::var("XAVIER_LOCAL_LLM_URL")
+                    .unwrap_or_else(|_| "http://localhost:11434".into());
+                let text = format!(
+                    "{} *Modo:* {}\n*Provider:* {}\n*LLM:* {} \\({}\\)\n*Embeddings:* {}\n*Ollama OK:* {}\n*URL:* {}",
+                    icon,
+                    escape_markdown_v2(label),
+                    escape_markdown_v2(&provider),
+                    escape_markdown_v2(&health.llm.model),
+                    escape_markdown_v2(&health.llm.provider),
+                    escape_markdown_v2(&health.embedding.model),
+                    health.llm.reachable,
+                    escape_markdown_v2(&ollama_url),
+                );
+                bot.send_message(msg.chat.id, text)
+                    .parse_mode(ParseMode::MarkdownV2)
+                    .await?;
+            }
             Command::Stats => match memory.list("default", 1).await {
                 Ok(_) => {
                     bot.send_message(
@@ -512,7 +548,7 @@ impl XavierBot {
                     .parse_mode(ParseMode::MarkdownV2)
                     .await?;
 
-                    match memory.search(&query, None).await {
+                    match memory.search(&query, 5, None).await {
                         Ok(results) => {
                             if results.is_empty() {
                                 bot.send_message(msg.chat.id, "No results found.").await?;
@@ -716,7 +752,7 @@ pub async fn handle_memory_command(args: &str) -> String {
                             "{}\\. \\*{}\\* \\(id: `{}`\\)\n\n",
                             i + 1,
                             escape_markdown_v2(title),
-                            escape_markdown_v2(&doc.id)
+                            escape_markdown_v2(doc.id.as_deref().unwrap_or("unknown"))
                         ));
                     }
                     response
@@ -736,7 +772,7 @@ pub async fn handle_memory_command(args: &str) -> String {
                 Ok(Some(deleted)) => {
                     format!(
                         "🗑 Memory deleted successfully\\. \\(id: `{}`\\)",
-                        escape_markdown_v2(&deleted.id)
+                        escape_markdown_v2(deleted.id.as_deref().unwrap_or("unknown"))
                     )
                 }
                 Ok(None) => {
@@ -1059,5 +1095,42 @@ mod tests {
         .await;
         assert!(result.is_err());
         assert_eq!(calls, 3, "should have tried exactly max_retries times");
+    }
+
+    #[test]
+    fn test_command_localstatus_description() {
+        let descriptions = Command::descriptions().to_string();
+        assert!(descriptions.contains("localstatus"));
+        assert!(descriptions.contains("show local-first operation mode and Ollama reachability."));
+    }
+
+    #[test]
+    fn test_localstatus_formatting_logic() {
+        let mode = crate::server::alerts::OperationalMode::LocalHealthy;
+        let provider = "local";
+        let health = crate::observability::health::HealthStatus::default();
+        let (icon, label) = match mode {
+            crate::server::alerts::OperationalMode::LocalHealthy => ("🟢", "Local sano"),
+            crate::server::alerts::OperationalMode::LocalDegraded => ("🟡", "Local degradado"),
+            crate::server::alerts::OperationalMode::CloudFallback => ("☁️", "Cloud fallback"),
+            crate::server::alerts::OperationalMode::Disabled => ("⚫", "Deshabilitado"),
+        };
+        let ollama_url = "http://localhost:11434";
+        let text = format!(
+            "{} *Modo:* {}\n*Provider:* {}\n*LLM:* {} \\({}\\)\n*Embeddings:* {}\n*Ollama OK:* {}\n*URL:* {}",
+            icon,
+            escape_markdown_v2(label),
+            escape_markdown_v2(provider),
+            escape_markdown_v2(&health.llm.model),
+            escape_markdown_v2(&health.llm.provider),
+            escape_markdown_v2(&health.embedding.model),
+            health.llm.reachable,
+            escape_markdown_v2(ollama_url),
+        );
+
+        assert!(text.contains("🟢"));
+        assert!(text.contains("Local sano"));
+        assert!(text.contains("local"));
+        assert!(text.contains("http://localhost:11434"));
     }
 }
