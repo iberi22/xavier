@@ -866,7 +866,41 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     println!("Xavier HTTP server listening on http://{}", bound_addr);
 
     // Operational mode summary (Issue #1-12)
-    let final_status = xavier::observability::health::HEALTH.run_checks().await;
+    let mut final_status = xavier::observability::health::HEALTH.run_checks().await;
+
+    // Real reachability check against Ollama
+    let is_ollama_reachable = xavier::agents::provider::router::ProviderRouter::is_ollama_reachable().await;
+    let local_config = xavier::agents::provider::ModelProviderConfig::for_provider("local");
+    let is_local_reachable = local_config.is_reachable().await == xavier::agents::provider::types::ProviderReachability::ConfiguredAndReachable;
+
+    // Check discrepancy
+    if is_ollama_reachable || is_local_reachable {
+        if !final_status.llm.reachable {
+            tracing::warn!("Discrepancy detected: final_status says LLM is unreachable, but direct reachability checks are successful.");
+            xavier::server::alerts::SYSTEM_ALERTS.push_alert(
+                "WARN",
+                "Ollama is reachable despite health check report",
+                "llm",
+            );
+            // Sync final_status with the actual reality for printing
+            final_status.llm.reachable = true;
+        }
+    } else {
+        // If Ollama/local provider should be up but doesn't respond
+        let provider_setting = std::env::var("XAVIER_PROVIDER").unwrap_or_else(|_| "local".to_string());
+        if provider_setting == "local" || provider_setting == "ollama" {
+            xavier::server::alerts::SYSTEM_ALERTS.push_alert(
+                "ERROR",
+                "Local provider (Ollama) is configured but unreachable",
+                "llm",
+            );
+            final_status.llm.reachable = false;
+        }
+    }
+
+    // Refresh mode based on potentially updated system alerts
+    final_status.mode = xavier::server::alerts::SYSTEM_ALERTS.get_mode();
+
     let mode_icon = match final_status.mode {
         xavier::server::alerts::OperationalMode::LocalHealthy => "🟢",
         xavier::server::alerts::OperationalMode::LocalDegraded => "🟡",
@@ -895,6 +929,21 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     println!("   Vector DB:  {} ({})",
         final_status.vector_db.backend,
         final_status.vector_db.path
+    );
+
+    // Compact single-line summary log for terminal outputs:
+    let llm_reach_str = if final_status.llm.reachable { "reachable" } else { "unreachable" };
+    let emb_reach_str = if final_status.embedding.status == xavier::observability::health::HealthLevel::Healthy { "reachable" } else { "unreachable" };
+    println!(
+        "{} Xavier iniciado — modo: {} | LLM: {}/{} [{}] | Embeddings: {}/{} [{}]",
+        mode_icon,
+        mode_str,
+        final_status.llm.provider,
+        final_status.llm.model,
+        llm_reach_str,
+        final_status.embedding.provider,
+        final_status.embedding.model,
+        emb_reach_str
     );
 
     println!("Press Ctrl+C to stop");
