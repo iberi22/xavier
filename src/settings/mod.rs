@@ -94,6 +94,11 @@ pub mod tests {
         assert_eq!(s.embedding.endpoint, "http://localhost:11434/api/embeddings");
         assert_eq!(s.embedding.embedder, "local");
         assert_eq!(s.embedding.gllm_model, "embeddinggemma");
+
+        // Assertions for provider=local and local_llm_* fields
+        assert_eq!(s.models.provider, "local");
+        assert_eq!(s.models.local_llm_model, "qwen3-coder");
+        assert_eq!(s.models.local_llm_url, "http://localhost:11434/v1");
     }
 
     #[test]
