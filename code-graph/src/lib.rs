@@ -8,7 +8,7 @@
 pub mod api;
 pub mod db;
 pub mod debug;
-pub mod impact;
+// pub mod impact;
 pub mod indexer;
 pub mod mcp;
 pub mod parser;
