@@ -16,8 +16,8 @@ use xavier::memory::store::MemoryStore;
 use xavier::ports::inbound::{
     AgentLifecyclePort, InputSecurityPort, MemoryQueryPort, SecurityScanPort,
 };
-use xavier::security::sessions::SessionManager;
 use xavier::security::auth_store::AuthStore;
+use xavier::security::sessions::SessionManager;
 use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 use xavier::time::TimeMetricsStore;
 
@@ -71,7 +71,8 @@ pub struct CliState {
     pub agent_indexer: Arc<crate::memory::agent_indexer::AgentIndexer>,
     pub auth_store: Option<Arc<AuthStore>>,
     pub openclaw_indexer: Arc<crate::memory::openclaw_indexer::OpenClawAgentIndexer>,
-    pub system_scan_cache: Arc<tokio::sync::RwLock<Option<crate::cli::handlers::system_scan::SystemScanResult>>>,
+    pub system_scan_cache:
+        Arc<tokio::sync::RwLock<Option<crate::cli::handlers::system_scan::SystemScanResult>>>,
 }
 
 impl CliState {

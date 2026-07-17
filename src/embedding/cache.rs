@@ -178,13 +178,19 @@ impl EmbeddingCache {
 
         // 1. Check in-memory cache.
         if let Some(embedding) = self.inner.get(&key).await {
-            tracing::debug!("Cache hit (memory) for embedding model: {}", self.config.model_name);
+            tracing::debug!(
+                "Cache hit (memory) for embedding model: {}",
+                self.config.model_name
+            );
             return Ok(embedding.as_ref().clone());
         }
 
         // 2. Check SQLite backing store.
         if let Some(embedding) = self.try_lookup_sqlite(&key) {
-            tracing::debug!("Cache hit (sqlite) for embedding model: {}", self.config.model_name);
+            tracing::debug!(
+                "Cache hit (sqlite) for embedding model: {}",
+                self.config.model_name
+            );
             let arc = Arc::new(embedding.clone());
             self.inner.insert(key.clone(), arc).await;
             return Ok(embedding);
@@ -502,7 +508,7 @@ mod tests {
         };
         let cache1 = Arc::new(EmbeddingCache::new(config1));
         let cache2 = Arc::new(EmbeddingCache::new(config2));
-        
+
         let embedder = Arc::new(NoopEmbedder);
 
         // Insert into first cache
@@ -537,7 +543,7 @@ mod tests {
 
         // Moka cache might take a moment to evict, but we can verify it doesn't grow indefinitely
         cache.inner.run_pending_tasks().await;
-        
+
         assert!(cache.entry_count() <= 2);
     }
 

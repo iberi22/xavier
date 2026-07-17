@@ -134,14 +134,14 @@ impl ProviderRouter {
             .build()
             .unwrap_or_default();
 
-        let url = std::env::var("_XAVIER_TEST_OLLAMA_REACHABLE_URL")
-            .unwrap_or_else(|_| {
-                crate::agents::provider::config::DEFAULT_LOCAL_BASE_URL
-                    .replace("/v1", "")
-            });
+        let url = std::env::var("_XAVIER_TEST_OLLAMA_REACHABLE_URL").unwrap_or_else(|_| {
+            crate::agents::provider::config::DEFAULT_LOCAL_BASE_URL.replace("/v1", "")
+        });
 
         match client.get(&url).send().await {
-            Ok(resp) => resp.status().is_success() || resp.status() == reqwest::StatusCode::NOT_FOUND,
+            Ok(resp) => {
+                resp.status().is_success() || resp.status() == reqwest::StatusCode::NOT_FOUND
+            }
             Err(_) => false,
         }
     }
@@ -398,7 +398,8 @@ mod tests {
     async fn test_build_default_chain_with_mocked_ollama_reachable() {
         let _guard = TEST_LOCK.lock().unwrap();
         let mut server = mockito::Server::new_async().await;
-        let _mock = server.mock("GET", "/")
+        let _mock = server
+            .mock("GET", "/")
             .with_status(200)
             .create_async()
             .await;

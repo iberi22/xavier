@@ -9,9 +9,9 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{info, warn};
 
-use crate::agents::provider::{ModelProviderClient, ModelProviderConfig, LLM_TIMEOUT};
 use crate::agents::provider::router::ProviderRouter;
 use crate::agents::provider::types::ProviderReachability;
+use crate::agents::provider::{ModelProviderClient, ModelProviderConfig, LLM_TIMEOUT};
 use crate::agents::rate_limit::RateLimitManager;
 use crate::agents::router::{load_routing_policy, RouteCategory, Router};
 use crate::coordination::events::XavierEvent;
@@ -79,7 +79,10 @@ impl ProxyUseCase {
             let mut writer = router.write().await;
             if let Some(next_kind) = writer.on_provider_failure() {
                 let next_name = next_kind.as_str().to_string();
-                warn!("Provider {} failed, falling back to {}", old_provider, next_name);
+                warn!(
+                    "Provider {} failed, falling back to {}",
+                    old_provider, next_name
+                );
                 *fallback_attempted = true;
 
                 let config = ModelProviderConfig::for_provider(&next_name)
@@ -291,7 +294,9 @@ impl ProxyUseCase {
                     let now = chrono::Utc::now();
                     if status.rate_limited_until.is_none_or(|until| until < now) {
                         if provider == "local" || provider == "ollama" {
-                            let reachability = ModelProviderConfig::for_provider(provider).is_reachable().await;
+                            let reachability = ModelProviderConfig::for_provider(provider)
+                                .is_reachable()
+                                .await;
                             if reachability != ProviderReachability::ConfiguredAndReachable {
                                 continue;
                             }
@@ -697,7 +702,9 @@ mod tests {
         // Enforce sequential execution of tests that modify environment variables
         let _guard = ENV_LOCK.lock().unwrap();
 
-        let rate_manager = Arc::new(RateLimitManager::new_with_project("test_proxy_local_selection"));
+        let rate_manager = Arc::new(RateLimitManager::new_with_project(
+            "test_proxy_local_selection",
+        ));
         rate_manager.init_schema_async().await.unwrap();
 
         // Mark all cloud providers as rate-limited
@@ -716,7 +723,8 @@ mod tests {
 
         // Start a mockito server to intercept reachability and chat completions for "local"
         let mut server = mockito::Server::new_async().await;
-        let mock_models = server.mock("GET", "/v1/models")
+        let mock_models = server
+            .mock("GET", "/v1/models")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(r#"{"object":"list","data":[]}"#)
@@ -748,7 +756,9 @@ mod tests {
             lease_token: None,
         };
 
-        let result = proxy.execute_secured(cmd, true, secrets_engine, event_bus).await;
+        let result = proxy
+            .execute_secured(cmd, true, secrets_engine, event_bus)
+            .await;
 
         // Restore original env value
         if let Some(val) = orig_url {
@@ -757,10 +767,17 @@ mod tests {
             std::env::remove_var("XAVIER_LOCAL_LLM_URL");
         }
 
-        assert!(result.is_ok(), "Expected execute_secured to succeed using the local provider, but got: {:?}", result);
+        assert!(
+            result.is_ok(),
+            "Expected execute_secured to succeed using the local provider, but got: {:?}",
+            result
+        );
         let completion = result.unwrap();
         assert_eq!(completion.model, "qwen3-coder");
-        assert_eq!(completion.choices[0].message.content, "mocked local response");
+        assert_eq!(
+            completion.choices[0].message.content,
+            "mocked local response"
+        );
 
         mock_models.assert_async().await;
         mock_chat.assert_async().await;
@@ -770,7 +787,9 @@ mod tests {
     async fn test_proxy_local_provider_unreachable() {
         let _guard = ENV_LOCK.lock().unwrap();
 
-        let rate_manager = Arc::new(RateLimitManager::new_with_project("test_proxy_local_unreachable"));
+        let rate_manager = Arc::new(RateLimitManager::new_with_project(
+            "test_proxy_local_unreachable",
+        ));
         rate_manager.init_schema_async().await.unwrap();
 
         let cloud_providers = [
@@ -804,7 +823,9 @@ mod tests {
             lease_token: None,
         };
 
-        let result = proxy.execute_secured(cmd, true, secrets_engine, event_bus).await;
+        let result = proxy
+            .execute_secured(cmd, true, secrets_engine, event_bus)
+            .await;
 
         if let Some(val) = orig_url {
             std::env::set_var("XAVIER_LOCAL_LLM_URL", val);
@@ -812,9 +833,12 @@ mod tests {
             std::env::remove_var("XAVIER_LOCAL_LLM_URL");
         }
 
-        assert!(result.is_err(), "Expected execute_secured to fail because local is unreachable");
+        assert!(
+            result.is_err(),
+            "Expected execute_secured to fail because local is unreachable"
+        );
         match result.unwrap_err() {
-            ProxyError::RateLimited => {},
+            ProxyError::RateLimited => {}
             other => panic!("Expected ProxyError::RateLimited, got {:?}", other),
         }
     }

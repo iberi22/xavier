@@ -1,15 +1,15 @@
+use crate::plugin::{FallbackStep, PluginHealthMonitor, PluginManager};
+use crate::types::Language;
+use crate::LanguageDiscovery;
 use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::{IntoResponse, Json},
-    routing::{get, post, delete},
+    routing::{delete, get, post},
     Router,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use crate::plugin::{PluginManager, FallbackStep, PluginHealthMonitor};
-use crate::LanguageDiscovery;
-use crate::types::Language;
 
 #[derive(Clone)]
 pub struct PluginApiState {
@@ -227,33 +227,49 @@ pub fn router<S>(state: PluginApiState) -> Router<S> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::Result;
+    use crate::plugin::types::{PluginDescriptor, PluginRegistry, RegistryEntry};
+    use crate::plugin::PluginManager;
     use axum::{
         body::Body,
         http::{Request, StatusCode},
     };
-    use crate::plugin::types::{RegistryEntry, PluginRegistry, PluginDescriptor};
-    use crate::plugin::PluginManager;
-    use crate::error::Result;
-    use tower::ServiceExt;
     use std::collections::HashMap;
+    use tower::ServiceExt;
 
     struct MockRegistry {
         entries: Vec<RegistryEntry>,
     }
 
     impl PluginRegistry for MockRegistry {
-        fn fetch_index(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<RegistryEntry>>> + Send>> {
+        fn fetch_index(
+            &self,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<RegistryEntry>>> + Send>>
+        {
             let entries = self.entries.clone();
             Box::pin(async move { Ok(entries) })
         }
 
-        fn search(&self, _query: &str) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<RegistryEntry>>> + Send>> {
+        fn search(
+            &self,
+            _query: &str,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<RegistryEntry>>> + Send>>
+        {
             let entries = self.entries.clone();
             Box::pin(async move { Ok(entries) })
         }
 
-        fn get(&self, name: &str) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<RegistryEntry>> + Send>> {
-            let entry = self.entries.iter().find(|e| e.name == name).cloned().expect("not found");
+        fn get(
+            &self,
+            name: &str,
+        ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<RegistryEntry>> + Send>>
+        {
+            let entry = self
+                .entries
+                .iter()
+                .find(|e| e.name == name)
+                .cloned()
+                .expect("not found");
             Box::pin(async move { Ok(entry) })
         }
     }
@@ -293,7 +309,8 @@ mod tests {
         let app = setup_test_router();
 
         // 1. POST /api/v1/plugins/install
-        let response = app.clone()
+        let response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
@@ -320,7 +337,9 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
         let plugins: Vec<PluginDescriptor> = serde_json::from_slice(&body).unwrap();
         assert_eq!(plugins.len(), 1);
         assert_eq!(plugins[0].name, "mock-plugin");
@@ -344,7 +363,8 @@ mod tests {
             .unwrap();
 
         // DELETE /api/v1/plugins/mock-plugin
-        let response = app.clone()
+        let response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method("DELETE")
@@ -369,7 +389,9 @@ mod tests {
             .await
             .unwrap();
 
-        let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
         let plugins: Vec<PluginDescriptor> = serde_json::from_slice(&body).unwrap();
         assert!(plugins.is_empty());
     }
@@ -379,7 +401,8 @@ mod tests {
         let app = setup_test_router();
 
         // 1. GET /api/v1/plugins/fallback (should be empty initially because all_chains() only returns overrides)
-        let response = app.clone()
+        let response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method("GET")
@@ -391,12 +414,15 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
         let chains: Vec<FallbackChainResponse> = serde_json::from_slice(&body).unwrap();
         assert!(chains.is_empty());
 
         // 2. POST /api/v1/plugins/fallback/python
-        let response = app.clone()
+        let response = app
+            .clone()
             .oneshot(
                 Request::builder()
                     .method("POST")
@@ -422,11 +448,16 @@ mod tests {
             .await
             .unwrap();
 
-        let body = axum::body::to_bytes(response.into_body(), 1024).await.unwrap();
+        let body = axum::body::to_bytes(response.into_body(), 1024)
+            .await
+            .unwrap();
         let chains: Vec<FallbackChainResponse> = serde_json::from_slice(&body).unwrap();
         assert_eq!(chains.len(), 1);
         assert_eq!(chains[0].lang, "python");
-        assert_eq!(chains[0].steps, vec![FallbackStep::Plugin("mock-plugin".to_string())]);
+        assert_eq!(
+            chains[0].steps,
+            vec![FallbackStep::Plugin("mock-plugin".to_string())]
+        );
     }
 
     #[tokio::test]
@@ -441,7 +472,8 @@ mod tests {
         ];
 
         for ep in endpoints {
-            let response = app.clone()
+            let response = app
+                .clone()
                 .oneshot(
                     Request::builder()
                         .method("GET")

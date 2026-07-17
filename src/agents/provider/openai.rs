@@ -33,22 +33,23 @@ pub(crate) async fn generate_openai_compatible(
         .post(endpoint)
         .header("Content-Type", "application/json");
 
-    let api_key_to_use = if config.provider_mode == ProviderMode::Local {
-        std::env::var("OLLAMA_API_KEY")
-            .ok()
-            .or_else(|| std::env::var("XAVIER_LOCAL_LLM_API_KEY").ok())
-            .or_else(|| {
-                config.api_key.as_ref().and_then(|k| {
-                    if k == "ollama" {
-                        None
-                    } else {
-                        Some(k.clone())
-                    }
+    let api_key_to_use =
+        if config.provider_mode == ProviderMode::Local {
+            std::env::var("OLLAMA_API_KEY")
+                .ok()
+                .or_else(|| std::env::var("XAVIER_LOCAL_LLM_API_KEY").ok())
+                .or_else(|| {
+                    config.api_key.as_ref().and_then(|k| {
+                        if k == "ollama" {
+                            None
+                        } else {
+                            Some(k.clone())
+                        }
+                    })
                 })
-            })
-    } else {
-        config.api_key.clone()
-    };
+        } else {
+            config.api_key.clone()
+        };
 
     if let Some(api_key) = api_key_to_use
         .as_ref()

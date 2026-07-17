@@ -6,14 +6,14 @@
 //! chain resolver, and the process engine.
 
 use crate::error::{GraphError, Result};
+use crate::plugin::engine::ProcessEngine;
+use crate::plugin::fallback::FallbackChain;
+use crate::plugin::health::PluginHealthMonitor;
 use crate::plugin::types::{
     FallbackResolver, FallbackStep, FileToParse, PluginConfig, PluginDescriptor, PluginEngine,
     PluginRegistry, RegistryEntry,
 };
-use crate::plugin::engine::ProcessEngine;
-use crate::plugin::fallback::FallbackChain;
-use crate::plugin::health::PluginHealthMonitor;
-use crate::types::{Language, Symbol, LanguageDiscovery};
+use crate::types::{Language, LanguageDiscovery, Symbol};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -238,7 +238,11 @@ impl LanguageDiscovery for PluginManager {
         let ext_lower = ext.to_lowercase();
         let by_name = self.by_name.read();
         for desc in by_name.values() {
-            if desc.extensions.iter().any(|e| e.to_lowercase() == ext_lower) {
+            if desc
+                .extensions
+                .iter()
+                .any(|e| e.to_lowercase() == ext_lower)
+            {
                 if let Some(lang) = desc.languages.first() {
                     return lang.clone();
                 }
