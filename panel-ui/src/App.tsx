@@ -41,6 +41,7 @@ export default function App() {
   const [hash, setHash] = useState(window.location.hash);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
+  const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [messages, setMessages] = useState<PanelMessage[]>([]);
   const [health, setHealth] = useState("checking");
   const [_isLoading, setIsLoading] = useState(false);
@@ -94,7 +95,7 @@ export default function App() {
             }).catch(() => []),
             api<BackendGraphData>("/panel/api/graph", {
               headers: { "X-Xavier-Token": currentToken },
-            }).catch(() => null as any),
+            }).catch(() => null as unknown as BackendGraphData),
           ]);
         setBookmarks(bookmarksData);
         if (graphDataResult) setGraphData(graphDataResult.data);
@@ -121,7 +122,10 @@ export default function App() {
     const checkNativeConfig = async () => {
       if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
         try {
-          const configState: any = await invoke("get_current_config_state");
+          const configState = (await invoke("get_current_config_state")) as {
+            has_openai: boolean;
+            has_gemini: boolean;
+          };
           setHasConfig(configState.has_openai || configState.has_gemini);
         } catch (e) {
           console.warn("Could not retrieve Xavier config", e);
@@ -298,7 +302,7 @@ export default function App() {
     // For demo purposes, sync local state
   };
 
-  const handleUpdateGraphData = (_data: any) => {};
+  const handleUpdateGraphData = (_data: unknown) => {};
 
   const handlePinArtifact = (artifact: BookmarkArtifact) => {
     const newWidget: CanvasWidget = {
@@ -392,7 +396,9 @@ export default function App() {
                 graphData={graphData || initialGraphData}
                 onUpdateGraphData={handleUpdateGraphData}
                 bookmarks={
-                  bookmarks.length > 0 ? (bookmarks as any) : initialBookmarks
+                  bookmarks.length > 0
+                    ? (bookmarks as unknown as BookmarkArtifact[])
+                    : initialBookmarks
                 }
                 onPinArtifact={handlePinArtifact}
                 onUpdateBookmark={handleUpdateBookmark}
