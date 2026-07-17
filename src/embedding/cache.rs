@@ -40,6 +40,10 @@ pub struct EmbeddingCacheConfig {
     pub ttl_hours: u64,
     /// Path to the SQLite database used for persistence (default: data/embedding_cache.db).
     pub db_path: PathBuf,
+    /// Whether disk persistence is enabled via SQLite (default: false).
+    pub persist: bool,
+    /// The name of the embedding model, used to namespace cache keys.
+    pub model_name: String,
 }
 
 impl Default for EmbeddingCacheConfig {
@@ -49,6 +53,8 @@ impl Default for EmbeddingCacheConfig {
             max_capacity: 10_000,
             ttl_hours: 24,
             db_path: PathBuf::from("data/embedding_cache.db"),
+            persist: false,
+            model_name: "default".to_string(),
         }
     }
 }
@@ -75,11 +81,22 @@ impl EmbeddingCacheConfig {
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("data/embedding_cache.db"));
 
+        let persist = std::env::var("XAVIER_EMBEDDING_CACHE_PERSIST")
+            .ok()
+            .map(|v| v == "1")
+            .unwrap_or(false);
+
+        let model_name = std::env::var("XAVIER_EMBEDDING_MODEL")
+            .or_else(|_| std::env::var("XAVIER_GLLM_MODEL"))
+            .unwrap_or_else(|_| "default".to_string());
+
         Self {
             enabled,
             max_capacity,
             ttl_hours,
             db_path,
+            persist,
+            model_name,
         }
     }
 }
@@ -88,9 +105,11 @@ impl EmbeddingCacheConfig {
 // Cache key helpers
 // ---------------------------------------------------------------------------
 
-/// Compute a SHA-256 hex digest of `text` to use as the cache key.
-pub fn content_hash(text: &str) -> String {
+/// Compute a SHA-256 hex digest of `model_name` and `text` to use as the cache key.
+pub fn content_hash(model_name: &str, text: &str) -> String {
     let mut hasher = Sha256::new();
+    hasher.update(model_name.as_bytes());
+    hasher.update(b":");
     hasher.update(text.as_bytes());
     crate::crypto::hex_encode(&hasher.finalize())
 }
@@ -155,21 +174,24 @@ impl EmbeddingCache {
         embedder: &dyn Embedder,
         text: &str,
     ) -> Result<Vec<f32>, EmbeddingError> {
-        let key = content_hash(text);
+        let key = content_hash(&self.config.model_name, text);
 
         // 1. Check in-memory cache.
         if let Some(embedding) = self.inner.get(&key).await {
+            tracing::debug!("Cache hit (memory) for embedding model: {}", self.config.model_name);
             return Ok(embedding.as_ref().clone());
         }
 
         // 2. Check SQLite backing store.
         if let Some(embedding) = self.try_lookup_sqlite(&key) {
+            tracing::debug!("Cache hit (sqlite) for embedding model: {}", self.config.model_name);
             let arc = Arc::new(embedding.clone());
             self.inner.insert(key.clone(), arc).await;
             return Ok(embedding);
         }
 
         // 3. Miss — call the real embedder.
+        tracing::debug!("Cache miss for embedding model: {}", self.config.model_name);
         let embedding = embedder.encode(text).await?;
 
         // Write-through to both stores.
@@ -182,7 +204,7 @@ impl EmbeddingCache {
 
     /// Invalidate a single entry from both caches.
     pub async fn invalidate(&self, text: &str) {
-        let key = content_hash(text);
+        let key = content_hash(&self.config.model_name, text);
         self.inner.invalidate(&key).await;
         self.try_delete_sqlite(&key);
     }
@@ -204,6 +226,10 @@ impl EmbeddingCache {
 
     /// Look up `key` in SQLite. Returns `None` if missing or expired.
     fn try_lookup_sqlite(&self, key: &str) -> Option<Vec<f32>> {
+        if !self.config.persist {
+            return None;
+        }
+
         let db = self.db.lock();
         let conn = db.as_ref()?;
 
@@ -244,6 +270,10 @@ impl EmbeddingCache {
 
     /// Persist `embedding` to SQLite under `key`.
     fn try_persist_sqlite(&self, key: &str, embedding: &[f32]) {
+        if !self.config.persist {
+            return;
+        }
+
         // Ensure the database directory exists.
         if let Some(parent) = self.config.db_path.parent() {
             if !parent.exists() {
@@ -282,6 +312,10 @@ impl EmbeddingCache {
     }
 
     fn try_delete_sqlite(&self, key: &str) {
+        if !self.config.persist {
+            return;
+        }
+
         if let Some(ref conn) = *self.db.lock() {
             let _ = conn.execute(
                 "DELETE FROM embedding_cache WHERE content_hash = ?1",
@@ -291,6 +325,10 @@ impl EmbeddingCache {
     }
 
     fn try_clear_sqlite(&self) {
+        if !self.config.persist {
+            return;
+        }
+
         if let Some(ref conn) = *self.db.lock() {
             let _ = conn.execute("DELETE FROM embedding_cache", []);
         }
@@ -386,16 +424,23 @@ mod tests {
 
     #[test]
     fn test_content_hash_is_deterministic() {
-        let h1 = content_hash("hello world");
-        let h2 = content_hash("hello world");
+        let h1 = content_hash("default", "hello world");
+        let h2 = content_hash("default", "hello world");
         assert_eq!(h1, h2);
         assert_eq!(h1.len(), 64); // SHA-256 hex
     }
 
     #[test]
     fn test_content_hash_differs_for_different_inputs() {
-        let h1 = content_hash("hello");
-        let h2 = content_hash("world");
+        let h1 = content_hash("default", "hello");
+        let h2 = content_hash("default", "world");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn test_content_hash_differs_for_different_models() {
+        let h1 = content_hash("model1", "hello");
+        let h2 = content_hash("model2", "hello");
         assert_ne!(h1, h2);
     }
 
@@ -424,6 +469,8 @@ mod tests {
             max_capacity: 100,
             ttl_hours: 24,
             db_path: PathBuf::from(":memory:"),
+            persist: true,
+            model_name: "default".to_string(),
         };
         let cache = Arc::new(EmbeddingCache::new(config));
         let embedder = Arc::new(NoopEmbedder);
@@ -433,6 +480,65 @@ mod tests {
         let result1 = cache.get_or_embed(&*embedder, "test").await.unwrap();
         let result2 = cache.get_or_embed(&*embedder, "test").await.unwrap();
         assert_eq!(result1, result2);
+    }
+
+    #[tokio::test]
+    async fn test_cache_miss_when_model_changes() {
+        let config1 = EmbeddingCacheConfig {
+            enabled: true,
+            max_capacity: 100,
+            ttl_hours: 24,
+            db_path: PathBuf::from(":memory:"),
+            persist: true,
+            model_name: "modelA".to_string(),
+        };
+        let config2 = EmbeddingCacheConfig {
+            enabled: true,
+            max_capacity: 100,
+            ttl_hours: 24,
+            db_path: PathBuf::from(":memory:"),
+            persist: true,
+            model_name: "modelB".to_string(),
+        };
+        let cache1 = Arc::new(EmbeddingCache::new(config1));
+        let cache2 = Arc::new(EmbeddingCache::new(config2));
+        
+        let embedder = Arc::new(NoopEmbedder);
+
+        // Insert into first cache
+        let _ = cache1.get_or_embed(&*embedder, "test").await.unwrap();
+        assert_eq!(cache1.entry_count(), 1);
+
+        // Second cache has different model name, should miss and not share memory
+        // Note: they don't share the sqlite DB either as :memory: is unique per connection
+        // but the content_hash ensures different keys anyway.
+        assert_eq!(cache2.entry_count(), 0);
+        let _ = cache2.get_or_embed(&*embedder, "test").await.unwrap();
+        assert_eq!(cache2.entry_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_cache_eviction_by_capacity() {
+        let config = EmbeddingCacheConfig {
+            enabled: true,
+            max_capacity: 2, // Tiny capacity
+            ttl_hours: 24,
+            db_path: PathBuf::from(":memory:"),
+            persist: false, // Ensure we are only testing in-memory eviction
+            model_name: "default".to_string(),
+        };
+        let cache = Arc::new(EmbeddingCache::new(config));
+        let embedder = Arc::new(NoopEmbedder);
+
+        // Insert 3 items
+        let _ = cache.get_or_embed(&*embedder, "test1").await.unwrap();
+        let _ = cache.get_or_embed(&*embedder, "test2").await.unwrap();
+        let _ = cache.get_or_embed(&*embedder, "test3").await.unwrap();
+
+        // Moka cache might take a moment to evict, but we can verify it doesn't grow indefinitely
+        cache.inner.run_pending_tasks().await;
+        
+        assert!(cache.entry_count() <= 2);
     }
 
     #[tokio::test]
@@ -456,6 +562,8 @@ mod tests {
             max_capacity: 100,
             ttl_hours: 24,
             db_path: PathBuf::from(":memory:"),
+            persist: true,
+            model_name: "default".to_string(),
         };
         let cache = Arc::new(EmbeddingCache::new(config));
         let embedder = Arc::new(NoopEmbedder);
