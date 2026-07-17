@@ -9,9 +9,16 @@ use tokio::process::Command;
 use tracing::instrument;
 
 /// Subprocess-based execution engine for plugins.
-#[derive(Default)]
 pub struct ProcessEngine {
-    monitor: Option<Arc<crate::plugin::health::PluginHealthMonitor>>,
+    monitor: parking_lot::RwLock<Option<Arc<crate::plugin::health::PluginHealthMonitor>>>,
+}
+
+impl Default for ProcessEngine {
+    fn default() -> Self {
+        Self {
+            monitor: parking_lot::RwLock::new(None),
+        }
+    }
 }
 
 impl ProcessEngine {
@@ -20,13 +27,13 @@ impl ProcessEngine {
     }
 
     fn record_success(&self, name: &str) {
-        if let Some(monitor) = &self.monitor {
+        if let Some(monitor) = &*self.monitor.read() {
             monitor.record_success(name);
         }
     }
 
     fn record_failure(&self, name: &str, error: String) {
-        if let Some(monitor) = &self.monitor {
+        if let Some(monitor) = &*self.monitor.read() {
             monitor.record_failure(name, error);
         }
     }
@@ -109,40 +116,20 @@ impl PluginEngine for ProcessEngine {
                 ))
             })?;
 
-            let results = response.results;
             engine.record_success(&plugin_name);
-
-            // Convert Node to Symbol
-            let symbols = results.into_iter().map(|n| {
-                Symbol {
-                    id: None,
-                    stable_id: Some(n.id),
-                    name: n.name,
-                    kind: n.kind,
-                    lang: lang.clone(),
-                    file_path: n.file_path,
-                    start_line: n.position.start_line,
-                    end_line: n.position.end_line,
-                    start_col: n.position.start_col,
-                    end_col: n.position.end_col,
-                    signature: n.signature,
-                    parent: n.parent_id,
-                    complexity: n.modifiers.get("complexity").and_then(|v| v.as_f64()).map(|f| f as f32),
-                }
-            }).collect();
-
-            Ok(symbols)
+            Ok(response.symbols)
         })
     }
 
-    fn set_monitor(&self, _monitor: Arc<crate::plugin::health::PluginHealthMonitor>) {
+    fn set_monitor(&self, monitor: Arc<crate::plugin::health::PluginHealthMonitor>) {
+        *self.monitor.write() = Some(monitor);
     }
 }
 
 impl ProcessEngine {
     fn clone_shim(&self) -> Self {
         Self {
-            monitor: self.monitor.clone(),
+            monitor: parking_lot::RwLock::new(self.monitor.read().clone()),
         }
     }
 }

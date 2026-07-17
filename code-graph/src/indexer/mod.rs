@@ -6,7 +6,7 @@
 //! callers incrementally.
 #![allow(deprecated)]
 
-pub mod watcher;
+// pub mod watcher;
 
 use crate::db::CodeGraphDB;
 use crate::error::{GraphError, Result};
@@ -166,7 +166,7 @@ impl Indexer {
     }
 
     /// Collect all relevant files in a directory using .gitignore/.ignore aware traversal.
-    fn collect_files(root: &Path) -> Result<Vec<PathBuf>> {
+    fn collect_files(&self, root: &Path) -> Result<Vec<PathBuf>> {
         let excludes = build_excludes(&[
             "**/target/**",
             "**/.git/**",
@@ -403,6 +403,7 @@ fn symbol_source_slice(source: &str, symbol: &Symbol) -> String {
 /// extraction (see `build_edges` doc).
 ///
 /// ⚠️ DEPRECATED: Use `CallResolver` with 6-strategy cascade instead.
+#[allow(dead_code)]
 #[deprecated(note = "Use CallResolver with 6-strategy cascade instead")]
 fn contains_call(source: &str, name: &str) -> bool {
     if name.is_empty() || source.is_empty() {
@@ -500,7 +501,23 @@ mod tests {
 
         let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
         let indexer = Indexer::new(db.clone());
+        let parsed_python = parse_file(dir.path(), &dir.path().join("app.py"), None).await;
+        println!("DEBUG PARSED PYTHON SUCCESS: {:?}", parsed_python.is_ok());
+        if let Ok(ref p) = parsed_python {
+            println!("DEBUG PARSED PYTHON SYMBOLS LEN: {}", p.symbols.len());
+        } else {
+            println!("DEBUG PARSED PYTHON ERR: {:?}", parsed_python.err());
+        }
+        let parsed_rust = parse_file(dir.path(), &dir.path().join("main.rs"), None).await;
+        println!("DEBUG PARSED RUST SUCCESS: {:?}", parsed_rust.is_ok());
+        if let Ok(ref r) = parsed_rust {
+            println!("DEBUG PARSED RUST SYMBOLS LEN: {}", r.symbols.len());
+        }
+
         let stats = indexer.index(dir.path(), false).await.expect("index");
+        println!("DEBUG STATS: {:?}", stats);
+        let collected_files = indexer.collect_files(dir.path()).expect("collect_files");
+        println!("DEBUG COLLECTED FILES: {:?}", collected_files);
 
         assert_eq!(stats.total_files, 2);
         assert!(stats.total_symbols >= 5);
@@ -517,7 +534,9 @@ mod tests {
         std::fs::create_dir(dir.path().join("target")).expect("target");
         std::fs::write(dir.path().join("target").join("skip.rs"), "fn skip() {}\n").expect("skip");
 
-        let files = Indexer::collect_files(dir.path()).expect("collect");
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db);
+        let files = indexer.collect_files(dir.path()).expect("collect");
 
         assert_eq!(files.len(), 1);
         assert!(files[0].ends_with("main.rs"));

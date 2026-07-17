@@ -210,6 +210,11 @@ impl CodeGraphDB {
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS file_metadata (
+                path TEXT PRIMARY KEY,
+                mtime INTEGER NOT NULL
+            );
             "#,
         )
         .map_err(|e| GraphError::Database(e.to_string()))?;
@@ -929,6 +934,119 @@ impl CodeGraphDB {
         Ok(edges)
     }
 
+    pub fn get_all_file_metadata(&self) -> Result<std::collections::HashMap<String, i64>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let mut stmt = conn
+            .prepare("SELECT path, mtime FROM file_metadata")
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let rows = stmt
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let mut metadata = std::collections::HashMap::new();
+        for (path, mtime) in rows.flatten() {
+            metadata.insert(path, mtime);
+        }
+
+        Ok(metadata)
+    }
+
+    /// Update or insert file metadata in batch
+    pub fn batch_upsert_file_metadata(
+        &self,
+        metadata: std::collections::HashMap<String, i64>,
+    ) -> Result<()> {
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let tx = conn
+            .transaction()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        {
+            let mut stmt = tx
+                .prepare(
+                    "INSERT INTO file_metadata (path, mtime) VALUES (?1, ?2)
+                     ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime",
+                )
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            for (path, mtime) in metadata {
+                stmt.execute(params![path, mtime])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Delete all data associated with multiple file paths in a single transaction
+    pub fn batch_delete_file_data(&self, file_paths: &[String]) -> Result<()> {
+        if file_paths.is_empty() {
+            return Ok(());
+        }
+
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let tx = conn
+            .transaction()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        {
+            let mut stmt_symbols = tx
+                .prepare("DELETE FROM symbols WHERE file_path = ?1")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+            let mut stmt_edges = tx
+                .prepare("DELETE FROM edges WHERE file_path = ?1")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+            let mut stmt_refs = tx
+                .prepare("DELETE FROM refs WHERE file_path = ?1")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+            let mut stmt_imports = tx
+                .prepare("DELETE FROM imports WHERE file_path = ?1")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+            let mut stmt_meta = tx
+                .prepare("DELETE FROM file_metadata WHERE path = ?1")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            for path in file_paths {
+                stmt_symbols
+                    .execute(params![path])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+                stmt_edges
+                    .execute(params![path])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+                stmt_refs
+                    .execute(params![path])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+                stmt_imports
+                    .execute(params![path])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+                stmt_meta
+                    .execute(params![path])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        Ok(())
+    }
+
     /// Clear all data
     pub fn clear(&self) -> Result<()> {
         let conn = self
@@ -942,6 +1060,7 @@ impl CodeGraphDB {
             DELETE FROM imports;
             DELETE FROM edges;
             DELETE FROM symbols;
+            DELETE FROM file_metadata;
             "#,
         )
         .map_err(|e| GraphError::Database(e.to_string()))?;
