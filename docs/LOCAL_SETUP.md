@@ -37,6 +37,48 @@ Ejecuta los siguientes comandos en tu terminal para preparar los modelos y arran
 
 ---
 
+## 🐳 Docker (todo en un comando)
+
+Para simplificar al máximo el despliegue de Xavier con Ollama de forma 100% local, puedes utilizar Docker Compose. Esto permite levantar Xavier y Ollama juntos con los modelos pre-descargados automáticamente con un único comando.
+
+### Prerrequisitos
+
+*   **Docker** y **Docker Compose** (V2 recomendado) instalados en tu sistema.
+
+### Instrucciones de Despliegue
+
+1.  **Copiar la configuración de ejemplo:**
+    Crea tu archivo `.env` a partir de la plantilla provista para Docker:
+    ```bash
+    cp docker/.env.docker.example docker/.env
+    ```
+    *(Nota: Asegúrate de editar `docker/.env` para definir tu `XAVIER_TOKEN` o cambiar opciones como `XAVIER_LOG_LEVEL` si es necesario).*
+
+2.  **Descargar los modelos locales (Solo la primera vez):**
+    Utiliza el perfil `init` para levantar Ollama y descargar automáticamente los modelos de LLM (`qwen3-coder`) y embeddings (`embeddinggemma`) necesarios:
+    ```bash
+    docker compose -f docker/docker-compose.local.yml --env-file docker/.env --profile init up --build
+    ```
+    Este comando compilará la imagen de Xavier, levantará Ollama, esperará a que esté saludable y luego el contenedor `ollama-init` descargará los modelos directamente en el volumen persistente compartido. Una vez que termine la descarga, el contenedor de inicialización se detendrá.
+
+3.  **Iniciar el entorno completo en segundo plano:**
+    Para arrancar Xavier y Ollama listos para producción:
+    ```bash
+    docker compose -f docker/docker-compose.local.yml --env-file docker/.env up -d
+    ```
+    Xavier estará disponible en `http://localhost:8006`, comunicándose de forma nativa e interna con el servicio `ollama` dentro de la red de Docker.
+
+### Soporte de GPU (Opcional)
+
+Si cuentas con una tarjeta gráfica NVIDIA y tienes instalado el **NVIDIA Container Toolkit**, puedes acelerar la inferencia descomentando la sección de recursos GPU en `docker/docker-compose.local.yml`:
+
+```yaml
+    # Para habilitar soporte de GPU NVIDIA, descomenta la siguiente sección:
+    deploy: resources: reservations: devices: [{driver: nvidia, capabilities: [gpu]}]
+```
+
+---
+
 ## 🔍 Verificación del Sistema
 
 ### 1. Boot Log (Consola)
@@ -117,7 +159,7 @@ Si sospechas que Ollama no responde, ejecuta el siguiente comando en tu terminal
 ```bash
 curl http://localhost:11434/api/tags
 ```
-Deberías recibir una respuesta en formato JSON que contenga los modelos `qwen3-coder` y `embeddinggemma`.
+Deberías recibir una respuesta en formato JSON que contenga los modelos `qwen3-coder` and `embeddinggemma`.
 
 ### El Badge de la UI indica `⚠️ Degradado`
 1.  Verifica que el servicio de Ollama esté ejecutándose en segundo plano (`lsof -i :11434` o `Get-Process ollama` en Windows).
