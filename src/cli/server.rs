@@ -355,6 +355,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             .with_provider_router(provider_router_shared.clone()),
     );
 
+    let chain_str = provider_router.fallback_chain().iter().map(|k| k.as_str()).collect::<Vec<_>>().join(" → ");
+    info!("Provider fallback chain: [{}]", chain_str);
+    println!("Provider fallback chain: [{}]", chain_str);
+
     let state = CliState {
         memory: memory_port,
         qmd_memory: Arc::clone(&memory),
