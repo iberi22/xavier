@@ -342,3 +342,4 @@ fn save_provider_config(config: &ProviderConfigV2) -> Result<()> {
     let yaml = serde_yaml::to_string(config)?;
     fs::write(config_path, yaml)?;
     Ok(())
+}

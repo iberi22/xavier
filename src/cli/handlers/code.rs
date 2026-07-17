@@ -34,7 +34,7 @@ pub async fn code_index_handler(
     let code_graph = state.code_graph.read().await;
     match code_graph
         .indexer
-        .index(std::path::Path::new(base_path))
+        .index(std::path::Path::new(base_path), true)
         .await
     {
         Ok(stats) => Json(serde_json::json!({
@@ -162,7 +162,7 @@ pub async fn code_scan_handler(
     info!("Code scan request: path={}", path);
 
     let code_graph = state.code_graph.read().await;
-    match code_graph.indexer.index(std::path::Path::new(&path)).await {
+    match code_graph.indexer.index(std::path::Path::new(&path), true).await {
         Ok(stats) => {
             // Automatically trigger dump after successful scan
             let dump_msg = match perform_dump(&code_graph, &path).await {
