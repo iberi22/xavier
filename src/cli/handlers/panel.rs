@@ -151,20 +151,66 @@ pub async fn panel_process_chat_inner(
         )
         .await?;
 
-    // TODO(issue 03): memory-fallback
-    // Here we would match on the result of calling the proxy. If it fails,
-    // we would fall back to searching memory and generating a synthetic response
-    // similar to `fallback_from_memory` in headless_api.rs.
+    let (assistant_content, status_value, source, timing_ms) = {
+        let start = std::time::Instant::now();
+        let cmd = xavier::domain::proxy::ProxyChatCommand {
+            model: "auto".to_string(),
+            messages: vec![serde_json::json!({
+                "role": "user",
+                "content": payload.message.trim()
+            })],
+            temperature: None,
+            max_tokens: None,
+            lease_token: None,
+        };
 
-    let assistant_content = format!("Structured Xavier response for: {}", payload.message.trim());
+        match state
+            .proxy_use_case
+            .execute_secured(
+                cmd,
+                false, // is_ephemeral
+                state.secrets_engine.clone(),
+                state.event_bus.clone(),
+            )
+            .await
+        {
+            Ok(resp) => {
+                let content = resp
+                    .choices
+                    .first()
+                    .map(|c| c.message.content.clone())
+                    .unwrap_or_else(|| "(respuesta vacia del LLM)".to_string());
+                (content, "Ready".to_string(), "LLM", start.elapsed().as_millis())
+            }
+            Err(e) => {
+                tracing::warn!("Panel chat LLM error, falling back to memory: {}", e);
+                let query = payload.message.trim();
+                let memory_result = match state.memory.search(query, 5, None).await {
+                    Ok(results) if !results.is_empty() => {
+                        let context = results
+                            .iter()
+                            .map(|r| r.content.as_str())
+                            .collect::<Vec<_>>()
+                            .join("\n---\n");
+                        format!("[Modo memoria - LLM no disponible]\n\n{}", context)
+                    }
+                    _ => format!("[LLM no disponible: {}]", e),
+                };
+                (memory_result, "Degraded".to_string(), "Memory-Fallback", start.elapsed().as_millis())
+            }
+        }
+    };
+
     let openui_lang = format!(
-        "<SectionBlock title=\"Xavier\" description=\"{}\"><InfoCard title=\"Status\" value=\"Ready\" /></SectionBlock>",
-        payload.message.replace('"', "'")
+        "<SectionBlock title=\"Xavier ({})\" description=\"{}\"><InfoCard title=\"Status\" value=\"{}\" /></SectionBlock>",
+        source,
+        payload.message.replace('"', "'"),
+        status_value
     );
     let metadata = serde_json::json!({
         "rules": ["deterministic", "ci-safe"],
         "components": ["SectionBlock", "InfoCard"],
-        "timings": { "total_ms": 0 }
+        "timings": { "total_ms": timing_ms }
     });
 
     state
