@@ -21,15 +21,34 @@ pub struct ProviderAutoPayload {
 }
 
 pub async fn provider_status_handler(State(state): State<CliState>) -> Response {
-    let router = state.provider_router.read().await;
+    let (active_mode, current_provider, fallback_chain, history) = {
+        let router = state.provider_router.read().await;
+        (
+            router.active_mode().clone(),
+            router.current_provider().as_str().to_string(),
+            router.fallback_chain().to_vec(),
+            router.history().to_vec(),
+        )
+    };
+
+    let mode = match xavier::server::alerts::SYSTEM_ALERTS.get_mode() {
+        xavier::server::alerts::OperationalMode::LocalHealthy => "local",
+        xavier::server::alerts::OperationalMode::LocalDegraded => "degraded",
+        xavier::server::alerts::OperationalMode::CloudFallback => "cloud",
+        xavier::server::alerts::OperationalMode::Disabled => "disabled",
+    };
+    let local_reachable = xavier::agents::provider::router::ProviderRouter::is_ollama_reachable().await;
+
     json_response(
         StatusCode::OK,
         serde_json::json!({
             "status": "ok",
-            "active": router.active_mode(),
-            "current": router.current_provider().as_str(),
-            "fallback_chain": router.fallback_chain(),
-            "history": router.history(),
+            "active": active_mode,
+            "current": current_provider,
+            "fallback_chain": fallback_chain,
+            "history": history,
+            "mode": mode,
+            "local_reachable": local_reachable,
         }),
     )
 }
