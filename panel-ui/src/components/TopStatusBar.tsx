@@ -19,6 +19,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import MessagingConfigModal from "./MessagingConfigModal";
 import NotificationsDropdown from "./NotificationsDropdown";
+import OperationModeBadge from "./OperationModeBadge";
 
 type MessagingPlatform =
   | "telegram"
@@ -146,6 +147,8 @@ export default function TopStatusBar({
               </span>
             </motion.div>
           )}
+
+          <OperationModeBadge />
 
           {/* System Resources Pill */}
           {modules.resources && (
