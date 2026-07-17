@@ -1,5 +1,5 @@
 use crate::agents::provider::config::ModelProviderConfig;
-use crate::agents::provider::types::LlmResponse;
+use crate::agents::provider::types::{LlmResponse, ProviderMode};
 use crate::domain::proxy::types::{ApiTier, ProviderKind, ProviderQuota};
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
@@ -33,8 +33,24 @@ pub(crate) async fn generate_openai_compatible(
         .post(endpoint)
         .header("Content-Type", "application/json");
 
-    if let Some(api_key) = config
-        .api_key
+    let api_key_to_use = if config.provider_mode == ProviderMode::Local {
+        std::env::var("OLLAMA_API_KEY")
+            .ok()
+            .or_else(|| std::env::var("XAVIER_LOCAL_LLM_API_KEY").ok())
+            .or_else(|| {
+                config.api_key.as_ref().and_then(|k| {
+                    if k == "ollama" {
+                        None
+                    } else {
+                        Some(k.clone())
+                    }
+                })
+            })
+    } else {
+        config.api_key.clone()
+    };
+
+    if let Some(api_key) = api_key_to_use
         .as_ref()
         .filter(|value| !value.trim().is_empty())
     {
