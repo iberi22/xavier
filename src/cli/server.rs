@@ -347,6 +347,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let provider_router = xavier::agents::provider::router::ProviderRouter::new(initial_provider);
     let mut provider_router = provider_router;
     provider_router.set_fallback_chain(fallback_chain);
+    // Log the chain BEFORE moving `provider_router` into the Arc below.
+    let chain_str = provider_router.fallback_chain().iter().map(|k| k.as_str()).collect::<Vec<_>>().join(" → ");
+    info!("Provider fallback chain: [{}]", chain_str);
+    println!("Provider fallback chain: [{}]", chain_str);
     let provider_router_shared = Arc::new(tokio::sync::RwLock::new(provider_router));
 
     let proxy_use_case = Arc::new(
@@ -354,10 +358,6 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             .with_threat_detector(security_service.clone())
             .with_provider_router(provider_router_shared.clone()),
     );
-
-    let chain_str = provider_router.fallback_chain().iter().map(|k| k.as_str()).collect::<Vec<_>>().join(" → ");
-    info!("Provider fallback chain: [{}]", chain_str);
-    println!("Provider fallback chain: [{}]", chain_str);
 
     let state = CliState {
         memory: memory_port,
