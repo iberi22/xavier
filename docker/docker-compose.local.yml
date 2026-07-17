@@ -1,0 +1,78 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: xavier-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    restart: unless-stopped
+    # Para habilitar soporte de GPU NVIDIA, descomenta la siguiente sección:
+    # deploy: resources: reservations: devices: [{driver: nvidia, capabilities: [gpu]}]
+    #
+    # O alternativamente en formato estructurado:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/version"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: xavier-ollama-init
+    profiles:
+      - init
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - OLLAMA_HOST=ollama:11434
+    entrypoint: ["/bin/sh", "-c", "ollama pull qwen3-coder && ollama pull embeddinggemma"]
+
+  xavier:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    container_name: xavier-local
+    restart: unless-stopped
+    ports:
+      - "8006:8006"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      - XAVIER_TOKEN=${XAVIER_TOKEN:?Set XAVIER_TOKEN before starting xavier}
+      - XAVIER_LOG_LEVEL=${XAVIER_LOG_LEVEL:-info}
+      - RUST_LOG=${XAVIER_LOG_LEVEL:-info}
+      - XAVIER_MODEL_PROVIDER=local
+      - XAVIER_LOCAL_LLM_URL=http://ollama:11434/v1
+      - XAVIER_LOCAL_LLM_MODEL=qwen3-coder
+      - XAVIER_EMBEDDING_PROVIDER_MODE=local
+      - XAVIER_EMBEDDING_URL=http://ollama:11434/api/embeddings
+      - XAVIER_EMBEDDING_MODEL=embeddinggemma
+      - XAVIER_HOST=0.0.0.0
+      - XAVIER_PORT=8006
+      - XAVIER_WORKSPACE_DIR=/data/workspaces
+      - XAVIER_CODE_GRAPH_DB_PATH=/data/code_graph.db
+    volumes:
+      - xavier_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  ollama_models:
+    name: xavier_ollama_models
+  xavier_data:
+    name: xavier_local_data
