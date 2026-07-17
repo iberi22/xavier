@@ -181,3 +181,31 @@ export interface PairingCodeResponse {
   code: string;
   secret: string;
 }
+
+export interface SecretLease {
+  token: string;
+  secret_name: string;
+  agent_id: string;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface SecretAuditLog {
+  id: string;
+  event_type: "LEND" | "REVOKE" | string;
+  timestamp: string;
+  agent_id: string;
+  secret_id?: string;
+  session_token: string;
+  reason?: string;
+}
+
+export type OperationMode = "local" | "cloud" | "degraded";
+
+export interface ProviderStatusResponse {
+  active: string;
+  strategy?: string;
+  fallback_chain?: string[];
+  mode?: OperationMode | "local-healthy" | "local-degraded" | "cloud-fallback" | "disabled" | string;
+  local_reachable?: boolean;
+}
