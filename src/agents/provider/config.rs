@@ -4,9 +4,16 @@
 //! mappings, and helper functions for constructing API endpoints and
 //! routing requests to the correct LLM backend.
 
-use crate::agents::provider::types::{ApiFlavor, ProviderMode, ProviderTarget};
+use std::collections::HashMap;
+use std::sync::{LazyLock, Mutex};
+use std::time::{Duration, Instant};
+
+use crate::agents::provider::types::{ApiFlavor, ProviderMode, ProviderReachability, ProviderTarget};
 use crate::domain::proxy::SecretInjectionStrategy;
 use crate::secrets::vault::HardwareVault;
+
+static REACHABILITY_CACHE: LazyLock<Mutex<HashMap<String, (bool, Instant)>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub(crate) const DEFAULT_LOCAL_BASE_URL: &str = "http://localhost:11434/v1";
 pub(crate) const DEFAULT_LOCAL_ANTHROPIC_BASE_URL: &str = "http://localhost:11434";
@@ -458,6 +465,70 @@ impl ModelProviderConfig {
         }
     }
 
+    /// Checks the reachability of the provider.
+    pub async fn is_reachable(&self) -> ProviderReachability {
+        if !self.is_configured() {
+            return ProviderReachability::NotConfigured;
+        }
+
+        let base_url = match &self.base_url {
+            Some(url) => url.clone(),
+            None => {
+                // If there's no base_url but it's configured, it's likely OpenCodeCLI
+                // where we just shell out locally. Thus, it's reachable.
+                return ProviderReachability::ConfiguredAndReachable;
+            }
+        };
+
+        let now = Instant::now();
+        let ttl = Duration::from_secs(15);
+
+        // Check cache first
+        {
+            if let Ok(cache) = REACHABILITY_CACHE.lock() {
+                if let Some((reachable, timestamp)) = cache.get(&base_url) {
+                    if now.duration_since(*timestamp) < ttl {
+                        return if *reachable {
+                            ProviderReachability::ConfiguredAndReachable
+                        } else {
+                            ProviderReachability::ConfiguredAndUnreachable
+                        };
+                    }
+                }
+            }
+        }
+
+        // It is not cached or cache is expired. We'll do a GET to {base_url}/models
+        // Note: some providers might not implement `/models` on their base_url.
+        // We trim trailing slashes.
+        let url = format!("{}/models", base_url.trim_end_matches('/'));
+        
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(2))
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
+
+        let mut req = client.get(&url);
+        if let Some(key) = &self.api_key {
+            req = req.bearer_auth(key);
+        }
+
+        let reachable = match req.send().await {
+            Ok(resp) => resp.status().is_success(),
+            Err(_) => false,
+        };
+
+        if let Ok(mut cache) = REACHABILITY_CACHE.lock() {
+            cache.insert(base_url, (reachable, now));
+        }
+
+        if reachable {
+            ProviderReachability::ConfiguredAndReachable
+        } else {
+            ProviderReachability::ConfiguredAndUnreachable
+        }
+    }
+
     /// Checks if the provider is correctly configured.
     pub fn is_configured(&self) -> bool {
         match self.provider_mode {
@@ -623,5 +694,57 @@ mod tests {
 
         let config = ModelProviderConfig::from_label("disabled");
         assert_eq!(config.provider_mode, ProviderMode::Disabled);
+    }
+
+    #[tokio::test]
+    async fn test_is_reachable_not_configured() {
+        let config = ModelProviderConfig::disabled();
+        let reachability = config.is_reachable().await;
+        assert_eq!(reachability, ProviderReachability::NotConfigured);
+    }
+
+    #[tokio::test]
+    async fn test_is_reachable_opencode() {
+        let config = ModelProviderConfig::opencode_from_env();
+        let reachability = config.is_reachable().await;
+        assert_eq!(reachability, ProviderReachability::ConfiguredAndReachable);
+    }
+
+    #[tokio::test]
+    async fn test_is_reachable_success() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mut config = ModelProviderConfig::local_from_env();
+        config.base_url = Some(server.url());
+        // force unique url so cache doesn't hit
+        config.base_url = Some(format!("{}/success", server.url()));
+
+        let mock = server.mock("GET", "/success/models")
+            .with_status(200)
+            .create_async()
+            .await;
+        
+        let reachability = config.is_reachable().await;
+        assert_eq!(reachability, ProviderReachability::ConfiguredAndReachable);
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_is_reachable_failure() {
+        let mut server = mockito::Server::new_async().await;
+
+        let mut config = ModelProviderConfig::local_from_env();
+        config.base_url = Some(server.url());
+        // force unique url so cache doesn't hit
+        config.base_url = Some(format!("{}/failure", server.url()));
+
+        let mock = server.mock("GET", "/failure/models")
+            .with_status(500)
+            .create_async()
+            .await;
+        
+        let reachability = config.is_reachable().await;
+        assert_eq!(reachability, ProviderReachability::ConfiguredAndUnreachable);
+        mock.assert_async().await;
     }
 }
