@@ -197,6 +197,9 @@ impl Cli {
             Command::Token { cmd } => token::handle_token_command(cmd.clone()).await,
             Command::Provider { cmd } => provider::handle_provider_command(cmd.clone()).await,
             Command::Setup { local } => crate::cli::handlers::setup::handle_setup(*local).await,
+            Command::Doctor { format, verbose } => {
+                crate::cli::handlers::doctor::handle_doctor(format.clone(), *verbose).await
+            }
             Command::DataCommons { cmd } => {
                 data_commons::handle_data_commons_command(cmd.clone()).await
             }
