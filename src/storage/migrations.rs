@@ -302,6 +302,16 @@ CREATE INDEX IF NOT EXISTS idx_backup_codes_user ON backup_codes(user_id);
 "#;
 
 // ===========================================================================
+// v7 — Embedding model metadata tracking.
+// ===========================================================================
+const V7_UP: &str = r#"
+CREATE TABLE IF NOT EXISTS embedding_model_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT
+);
+"#;
+
+// ===========================================================================
 // Legacy trait-based migration structs (kept for existing callers).
 //
 // These implement the old `Migration` trait (re-exported from
@@ -532,6 +542,21 @@ impl LegacyMigration for MigrationV6RecoverySystem {
     }
     fn run(&self, conn: &Connection) -> Result<()> {
         conn.execute_batch(V5_UP)?;
+        Ok(())
+    }
+}
+
+pub struct MigrationV7EmbeddingModelMeta;
+
+impl LegacyMigration for MigrationV7EmbeddingModelMeta {
+    fn version(&self) -> u32 {
+        7
+    }
+    fn description(&self) -> &str {
+        "Add embedding_model_meta table for tracking active embedding model"
+    }
+    fn run(&self, conn: &Connection) -> Result<()> {
+        conn.execute_batch(V7_UP)?;
         Ok(())
     }
 }
