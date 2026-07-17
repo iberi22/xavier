@@ -151,6 +151,11 @@ pub async fn panel_process_chat_inner(
         )
         .await?;
 
+    // TODO(issue 03): memory-fallback
+    // Here we would match on the result of calling the proxy. If it fails,
+    // we would fall back to searching memory and generating a synthetic response
+    // similar to `fallback_from_memory` in headless_api.rs.
+
     let assistant_content = format!("Structured Xavier response for: {}", payload.message.trim());
     let openui_lang = format!(
         "<SectionBlock title=\"Xavier\" description=\"{}\"><InfoCard title=\"Status\" value=\"Ready\" /></SectionBlock>",

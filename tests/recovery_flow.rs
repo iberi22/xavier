@@ -10,7 +10,7 @@ use tokio::net::TcpListener;
 use tower::ServiceExt;
 use uuid::Uuid;
 
-use xavier::security::recovery::RecoveryManager;
+use xavier::security::recovery::RecoverySystem;
 use xavier::security::user_store::{User, UserStore};
 
 // Helper function to create a test app
@@ -59,8 +59,8 @@ async fn test_full_recovery_flow() {
     let password = "password123";
     let security_mgr = xavier::security::SecurityManager::new();
     let password_hash = security_mgr.hash_password(password).unwrap();
-    let seed_phrase = RecoveryManager::generate_seed_phrase().unwrap();
-    let seed_hash = RecoveryManager::hash_seed_phrase(&seed_phrase);
+    let seed_phrase = RecoverySystem::generate_seed_phrase().unwrap();
+    let seed_hash = RecoverySystem::hash_seed_phrase(&seed_phrase);
 
     let user = User {
         id: Uuid::new_v4().to_string(),
@@ -76,14 +76,14 @@ async fn test_full_recovery_flow() {
 
     // 3. Verify seed phrase
     let provided_seed = seed_phrase.clone();
-    let verified_hash = RecoveryManager::hash_seed_phrase(&provided_seed);
+    let verified_hash = RecoverySystem::hash_seed_phrase(&provided_seed);
     assert_eq!(user.recovery_seed_hash, verified_hash);
 
     // 4. Reset password
     let new_password = "newpassword456";
     let new_password_hash = security_mgr.hash_password(new_password).unwrap();
-    let new_seed = RecoveryManager::generate_seed_phrase().unwrap();
-    let new_seed_hash = RecoveryManager::hash_seed_phrase(&new_seed);
+    let new_seed = RecoverySystem::generate_seed_phrase().unwrap();
+    let new_seed_hash = RecoverySystem::hash_seed_phrase(&new_seed);
 
     user_store
         .update_password_and_recovery(&user.id, &new_password_hash, &new_seed_hash)
@@ -99,13 +99,13 @@ async fn test_full_recovery_flow() {
     assert!(!updated_user.two_factor_enabled); // 2FA should be disabled
 
     // 6. Backup codes
-    let codes = RecoveryManager::generate_backup_codes();
+    let codes = RecoverySystem::generate_backup_codes();
     let mut backup_codes = Vec::new();
     for code in &codes {
         backup_codes.push(xavier::security::user_store::BackupCode {
             id: Uuid::new_v4().to_string(),
             user_id: user.id.clone(),
-            code_hash: RecoveryManager::hash_backup_code(code),
+            code_hash: RecoverySystem::hash_backup_code(code),
             used: false,
         });
     }
@@ -121,7 +121,7 @@ async fn test_full_recovery_flow() {
 
     // Use a backup code
     let first_code = &codes[0];
-    let first_code_hash = RecoveryManager::hash_backup_code(first_code);
+    let first_code_hash = RecoverySystem::hash_backup_code(first_code);
     let success = user_store
         .verify_and_consume_backup_code(&user.id, &first_code_hash)
         .await

@@ -55,6 +55,34 @@ fn test_code_query() -> code_graph::query::QueryEngine {
     code_graph::query::QueryEngine::new(Arc::new(db))
 }
 
+fn code_find_symbols(
+    query_engine: &code_graph::query::QueryEngine,
+    query: &str,
+    _kind: Option<&str>,
+    pattern: Option<&str>,
+    limit: usize,
+) -> Vec<code_graph::types::Symbol> {
+    let q = if !query.is_empty() {
+        query
+    } else {
+        pattern.unwrap_or("")
+    };
+
+    let clean_q = if q.starts_with("fn ") {
+        q.strip_prefix("fn ").unwrap_or(q)
+    } else {
+        q
+    };
+
+    match query_engine.search(clean_q, limit) {
+        Ok(res) if !res.symbols.is_empty() => res.symbols,
+        _ => match query_engine.search(q, limit) {
+            Ok(res) => res.symbols,
+            Err(_) => Vec::new(),
+        },
+    }
+}
+
 #[test]
 fn code_find_pattern_falls_back_to_symbol_search() {
     let query = test_code_query();

@@ -12,7 +12,7 @@ async fn test_agent_task_lifecycle_lease_revocation() {
     // 1. Setup Event Bus and Secrets Engine
     let event_bus = XavierEventBus::new(100);
     let audit_logger = Box::new(QmdAuditLogger::new());
-    let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger));
+    let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger, Some(event_bus.clone())));
 
     // 2. Setup Coordination Core (The listener)
     let core = CoordinationCore::new(event_bus.clone(), secrets_engine.clone());
@@ -57,7 +57,7 @@ async fn test_agent_task_failure_lease_revocation() {
     // 1. Setup
     let event_bus = XavierEventBus::new(100);
     let audit_logger = Box::new(QmdAuditLogger::new());
-    let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger));
+    let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger, Some(event_bus.clone())));
 
     let core = CoordinationCore::new(event_bus.clone(), secrets_engine.clone());
     core.start();

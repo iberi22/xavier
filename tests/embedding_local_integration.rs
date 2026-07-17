@@ -194,7 +194,7 @@ async fn test_full_chain_integration() -> Result<()> {
     let db_path = temp_dir.path().join("test_vec_store.db");
     let config = VecSqliteStoreConfig {
         path: db_path,
-        ..Default::default()
+        embedding_dimensions: dimension,
     };
     let store = VecSqliteMemoryStore::new(config).await?;
 
