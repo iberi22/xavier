@@ -196,17 +196,31 @@ pub async fn headless_providers(State(state): State<CliState>) -> impl IntoRespo
 }
 
 pub async fn headless_provider_status(State(state): State<CliState>) -> impl IntoResponse {
-    let router = state.provider_router.read().await;
-    let active = router.current_provider();
-    let strategy = match router.active_mode() {
-        xavier::agents::provider::router::ActiveProvider::Auto { strategy } => strategy.as_str(),
-        _ => "manual",
+    let (active_str, strategy_str, fallback_chain) = {
+        let router = state.provider_router.read().await;
+        let active = router.current_provider().as_str().to_string();
+        let strategy = match router.active_mode() {
+            xavier::agents::provider::router::ActiveProvider::Auto { strategy } => strategy.as_str(),
+            _ => "manual",
+        }.to_string();
+        let fallback = router.fallback_chain().iter().map(|k| k.as_str().to_string()).collect::<Vec<_>>();
+        (active, strategy, fallback)
     };
 
+    let mode = match xavier::server::alerts::SYSTEM_ALERTS.get_mode() {
+        xavier::server::alerts::OperationalMode::LocalHealthy => "local",
+        xavier::server::alerts::OperationalMode::LocalDegraded => "degraded",
+        xavier::server::alerts::OperationalMode::CloudFallback => "cloud",
+        xavier::server::alerts::OperationalMode::Disabled => "disabled",
+    };
+    let local_reachable = xavier::agents::provider::router::ProviderRouter::is_ollama_reachable().await;
+
     AxumJson(json!({
-        "active": active.as_str(),
-        "strategy": strategy,
-        "fallback_chain": router.fallback_chain().iter().map(|k| k.as_str()).collect::<Vec<_>>(),
+        "active": active_str,
+        "strategy": strategy_str,
+        "fallback_chain": fallback_chain,
+        "mode": mode,
+        "local_reachable": local_reachable,
     }))
 }
 

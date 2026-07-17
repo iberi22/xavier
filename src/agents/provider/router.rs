@@ -134,8 +134,11 @@ impl ProviderRouter {
             .build()
             .unwrap_or_default();
 
-        let url = crate::agents::provider::config::DEFAULT_LOCAL_BASE_URL
-            .replace("/v1", "");
+        let url = std::env::var("_XAVIER_TEST_OLLAMA_REACHABLE_URL")
+            .unwrap_or_else(|_| {
+                crate::agents::provider::config::DEFAULT_LOCAL_BASE_URL
+                    .replace("/v1", "")
+            });
 
         match client.get(&url).send().await {
             Ok(resp) => resp.status().is_success() || resp.status() == reqwest::StatusCode::NOT_FOUND,
@@ -350,8 +353,12 @@ mod tests {
         assert_eq!(next, None);
     }
 
+    static TEST_LOCK: std::sync::LazyLock<std::sync::Mutex<()>> =
+        std::sync::LazyLock::new(|| std::sync::Mutex::new(()));
+
     #[tokio::test]
     async fn test_build_default_chain_cloud_only() {
+        let _guard = TEST_LOCK.lock().unwrap();
         // Since we can't easily mock network in unit tests without complex traits,
         // this test will depend on whether Ollama is actually running on the machine.
         // We'll just check that cloud providers are always included.
@@ -364,6 +371,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_default_chain_mixed() {
+        let _guard = TEST_LOCK.lock().unwrap();
         let configured = vec![ProviderKind::OpenAI, ProviderKind::Local];
         let chain = ProviderRouter::build_default_chain(&configured).await;
 
@@ -377,12 +385,45 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_default_chain_empty() {
+        let _guard = TEST_LOCK.lock().unwrap();
         let configured = vec![];
         let chain = ProviderRouter::build_default_chain(&configured).await;
         // Should only contain Local if reachable, otherwise empty
         if chain.len() > 0 {
             assert_eq!(chain, vec![ProviderKind::Local]);
         }
+    }
+
+    #[tokio::test]
+    async fn test_build_default_chain_with_mocked_ollama_reachable() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let _mock = server.mock("GET", "/")
+            .with_status(200)
+            .create_async()
+            .await;
+
+        std::env::set_var("_XAVIER_TEST_OLLAMA_REACHABLE_URL", server.url());
+
+        let configured = vec![ProviderKind::OpenAI, ProviderKind::Local];
+        let chain = ProviderRouter::build_default_chain(&configured).await;
+
+        std::env::remove_var("_XAVIER_TEST_OLLAMA_REACHABLE_URL");
+
+        assert_eq!(chain, vec![ProviderKind::OpenAI, ProviderKind::Local]);
+    }
+
+    #[tokio::test]
+    async fn test_build_default_chain_with_mocked_ollama_unreachable() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        std::env::set_var("_XAVIER_TEST_OLLAMA_REACHABLE_URL", "http://127.0.0.1:1");
+
+        let configured = vec![ProviderKind::OpenAI, ProviderKind::Local];
+        let chain = ProviderRouter::build_default_chain(&configured).await;
+
+        std::env::remove_var("_XAVIER_TEST_OLLAMA_REACHABLE_URL");
+
+        assert_eq!(chain, vec![ProviderKind::OpenAI]);
     }
 
     #[test]
