@@ -3,7 +3,7 @@
     "id": "feat-local-first",
     "name": "100% Local Operation (LLM + Embeddings via Ollama)",
     "status": "beta",
-    "progress_pct": 93,
+    "progress_pct": 96,
     "github_issue": 522,
     "description": "Chat del panel responde usando un LLM local (Ollama) con fallback a cloud y degradación elegante a memoria cuando ningún provider responde. Observabilidad y tooling local-first avanzados (Ola 3).",
     "last_verified": "2026-07-17",
@@ -125,11 +125,12 @@
       {
         "id": "feat-local-first-ola3-03",
         "name": "Ola 3: métricas de uso reales (tokens, providers, fallback hits)",
-        "status": "pending",
-        "progress_pct": 0,
+        "status": "completed",
+        "progress_pct": 100,
         "wave": 3,
         "github_issue": 578,
-        "note": "Jules PR #603 was empty (0 files). Must re-implement: src/observability/usage_counters.rs + ProxyUseCase instrumentation + /v1/usage."
+        "implemented_in": "src/observability/usage_counters.rs, src/app/proxy_use_case.rs, src/cli/handlers/usage.rs, src/cli/handlers/headless_api.rs, src/cli/handlers/panel.rs",
+        "note": "Orchestrator re-implementation after empty Jules PR #603."
       },
       {
         "id": "feat-local-first-ola3-04",

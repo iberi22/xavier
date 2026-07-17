@@ -56,14 +56,20 @@ pub async fn account_usage_handler(State(state): State<CliState>, headers: Heade
         }
     }
 
+    let usage = state.usage_counters.snapshot();
+    let by_provider = serde_json::to_value(&usage.by_provider).unwrap_or_default();
+
     json_response(
         StatusCode::OK,
         serde_json::json!({
             "status": "ok",
-            "document_count": 0,
-            "requests_used": 0,
-            "storage_bytes_used": 0,
-            "storage_bytes_limit": 0,
+            "requests_used": usage.total_requests,
+            "total_tokens": usage.total_tokens,
+            "total_errors": usage.total_errors,
+            "total_cost_usd": usage.total_cost_usd,
+            "memory_fallback_hits": usage.memory_fallback_hits,
+            "fallback_chain_hops": usage.fallback_chain_hops,
+            "by_provider": by_provider,
             "provider_quotas": provider_quotas,
             "optimization": {
                 "router_direct_count": 0,

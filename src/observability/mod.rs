@@ -41,6 +41,7 @@ pub mod middleware;
 pub mod notifier;
 pub mod service_log;
 pub mod token_accounting;
+pub mod usage_counters;
 
 pub use analyzer::ErrorAnalyzer;
 pub use detector::LogDetector;
@@ -49,6 +50,7 @@ pub use health::{HealthMonitor, HealthStatus, HEALTH};
 pub use middleware::{request_logger, ObservabilityState};
 pub use notifier::Notifier;
 pub use service_log::{LogEntry, LogLevel, LogSource, ServiceLogStore};
+pub use usage_counters::{ProviderUsage, UsageCounters, UsageSnapshot};
 
 use std::sync::OnceLock;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
