@@ -10,6 +10,7 @@ use std::time::Duration;
 use tracing::{info, warn};
 
 use crate::agents::provider::{ModelProviderClient, ModelProviderConfig, LLM_TIMEOUT};
+use crate::agents::provider::types::ProviderReachability;
 use crate::agents::rate_limit::RateLimitManager;
 use crate::agents::router::{load_routing_policy, RouteCategory, Router};
 use crate::coordination::events::XavierEvent;
@@ -240,6 +241,8 @@ impl ProxyUseCase {
             "google",
             "openai",
             "anthropic",
+            "local",
+            "ollama",
         ];
         let mut selected_provider = None;
 
@@ -248,6 +251,12 @@ impl ProxyUseCase {
                 Ok(status) => {
                     let now = chrono::Utc::now();
                     if status.rate_limited_until.is_none_or(|until| until < now) {
+                        if provider == "local" || provider == "ollama" {
+                            let reachability = ModelProviderConfig::for_provider(provider).is_reachable().await;
+                            if reachability != ProviderReachability::ConfiguredAndReachable {
+                                continue;
+                            }
+                        }
                         selected_provider = Some(provider.to_string());
                         break;
                     }
@@ -552,6 +561,8 @@ mod tests {
         fn log_proxy_use(&self, _agent_id: &str, _lease_token: &str, _endpoint: &str) {}
     }
 
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[tokio::test]
     async fn test_proxy_leak_detection() {
         let rate_manager = Arc::new(RateLimitManager::new());
@@ -593,5 +604,132 @@ mod tests {
         // Leases for agent should be revoked
         let leases = secrets_engine.list_leases().await;
         assert!(leases.iter().all(|l| l.agent_id != agent_id));
+    }
+
+    #[tokio::test]
+    async fn test_proxy_local_provider_selection() {
+        // Enforce sequential execution of tests that modify environment variables
+        let _guard = ENV_LOCK.lock().unwrap();
+
+        let rate_manager = Arc::new(RateLimitManager::new_with_project("test_proxy_local_selection"));
+        rate_manager.init_schema_async().await.unwrap();
+
+        // Mark all cloud providers as rate-limited
+        let cloud_providers = [
+            "opencode-go",
+            "deepseek",
+            "groq",
+            "openrouter",
+            "google",
+            "openai",
+            "anthropic",
+        ];
+        for provider in cloud_providers {
+            rate_manager.report_429(provider, 30).await.unwrap();
+        }
+
+        // Start a mockito server to intercept reachability and chat completions for "local"
+        let mut server = mockito::Server::new_async().await;
+        let mock_models = server.mock("GET", "/v1/models")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"object":"list","data":[]}"#)
+            .create_async()
+            .await;
+
+        let mock_chat = server.mock("POST", "/v1/chat/completions")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{"choices":[{"message":{"role":"assistant","content":"mocked local response"}}]}"#)
+            .create_async()
+            .await;
+
+        // Save original env value
+        let orig_url = std::env::var("XAVIER_LOCAL_LLM_URL").ok();
+        std::env::set_var("XAVIER_LOCAL_LLM_URL", format!("{}/v1", server.url()));
+
+        let prompt_cache = Arc::new(Mutex::new(HashMap::new()));
+        let proxy = ProxyUseCase::new(rate_manager, prompt_cache);
+
+        let secrets_engine = Arc::new(KeyLendingEngine::new(Box::new(MockAuditLogger), None));
+        let event_bus = crate::coordination::events::XavierEventBus::new(10);
+
+        let cmd = ProxyChatCommand {
+            model: "qwen3-coder".to_string(),
+            messages: vec![serde_json::json!({"role": "user", "content": "hello"})],
+            temperature: None,
+            max_tokens: None,
+            lease_token: None,
+        };
+
+        let result = proxy.execute_secured(cmd, true, secrets_engine, event_bus).await;
+
+        // Restore original env value
+        if let Some(val) = orig_url {
+            std::env::set_var("XAVIER_LOCAL_LLM_URL", val);
+        } else {
+            std::env::remove_var("XAVIER_LOCAL_LLM_URL");
+        }
+
+        assert!(result.is_ok(), "Expected execute_secured to succeed using the local provider, but got: {:?}", result);
+        let completion = result.unwrap();
+        assert_eq!(completion.model, "qwen3-coder");
+        assert_eq!(completion.choices[0].message.content, "mocked local response");
+
+        mock_models.assert_async().await;
+        mock_chat.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_proxy_local_provider_unreachable() {
+        let _guard = ENV_LOCK.lock().unwrap();
+
+        let rate_manager = Arc::new(RateLimitManager::new_with_project("test_proxy_local_unreachable"));
+        rate_manager.init_schema_async().await.unwrap();
+
+        let cloud_providers = [
+            "opencode-go",
+            "deepseek",
+            "groq",
+            "openrouter",
+            "google",
+            "openai",
+            "anthropic",
+        ];
+        for provider in cloud_providers {
+            rate_manager.report_429(provider, 30).await.unwrap();
+        }
+
+        // Set local LLM URL to an unreachable port/address
+        let orig_url = std::env::var("XAVIER_LOCAL_LLM_URL").ok();
+        std::env::set_var("XAVIER_LOCAL_LLM_URL", "http://127.0.0.1:54321/v1");
+
+        let prompt_cache = Arc::new(Mutex::new(HashMap::new()));
+        let proxy = ProxyUseCase::new(rate_manager, prompt_cache);
+
+        let secrets_engine = Arc::new(KeyLendingEngine::new(Box::new(MockAuditLogger), None));
+        let event_bus = crate::coordination::events::XavierEventBus::new(10);
+
+        let cmd = ProxyChatCommand {
+            model: "qwen3-coder".to_string(),
+            messages: vec![serde_json::json!({"role": "user", "content": "hello"})],
+            temperature: None,
+            max_tokens: None,
+            lease_token: None,
+        };
+
+        let result = proxy.execute_secured(cmd, true, secrets_engine, event_bus).await;
+
+        if let Some(val) = orig_url {
+            std::env::set_var("XAVIER_LOCAL_LLM_URL", val);
+        } else {
+            std::env::remove_var("XAVIER_LOCAL_LLM_URL");
+        }
+
+        assert!(result.is_err(), "Expected execute_secured to fail because local is unreachable");
+        match result.unwrap_err() {
+            ProxyError::RateLimited => {},
+            other => panic!("Expected ProxyError::RateLimited, got {:?}", other),
+        }
     }
 }
