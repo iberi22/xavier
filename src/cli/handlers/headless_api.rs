@@ -23,15 +23,38 @@ use xavier::domain::proxy::{ProxyChatCommand, ProxyError};
 // ═════════════════════════════════════════════════════════════════════════════
 
 pub async fn headless_health() -> impl IntoResponse {
+    use xavier::observability::health::HealthLevel;
     let status = xavier::observability::health::HEALTH.get_status().await;
     AxumJson(json!({
         "status": status.status,
         "mode": status.mode,
         "service": "xavier-headless",
         "version": env!("CARGO_PKG_VERSION"),
-        "llm": status.llm,
-        "embeddings": status.embedding,
-        "vector_db": status.vector_db,
+        "uptime_secs": status.system.uptime_secs,
+        "llm": {
+            "provider": status.llm.provider,
+            "model": status.llm.model,
+            "endpoint": status.llm.endpoint,
+            "reachable": status.llm.reachable,
+            "status": status.llm.status,
+        },
+        "embeddings": {
+            "provider": status.embedding.provider,
+            "model": status.embedding.model,
+            "reachable": status.embedding.status != HealthLevel::Unhealthy,
+            "latency_ms": status.embedding.latency_ms,
+            "status": status.embedding.status,
+            "error_rate": status.embedding.error_rate,
+        },
+        "vector_db": {
+            "backend": status.vector_db.backend,
+            "path": status.vector_db.path,
+            "status": status.vector_db.status,
+        },
+        // Retro-compatibilidad:
+        "database": status.database,
+        "system": status.system,
+        "mesh": status.mesh,
     }))
 }
 
