@@ -41,6 +41,7 @@ pub struct ProxyUseCase {
     pub rate_manager: Arc<RateLimitManager>,
     pub prompt_cache: Arc<Mutex<HashMap<String, Vec<String>>>>,
     pub provider_failures: Arc<parking_lot::Mutex<HashMap<String, u32>>>,
+    pub usage_counters: Arc<crate::observability::UsageCounters>,
     pub router: Router,
     pub threat_detector: Option<Arc<dyn ThreatDetectionPort>>,
     pub event_bus: Option<Arc<crate::coordination::XavierEventBus>>,
@@ -56,11 +57,21 @@ impl ProxyUseCase {
             rate_manager,
             prompt_cache,
             provider_failures: Arc::new(parking_lot::Mutex::new(HashMap::new())),
+            usage_counters: Arc::new(crate::observability::UsageCounters::new()),
             router: Router::new(),
             threat_detector: None,
             event_bus: None,
             provider_router: None,
         }
+    }
+
+    /// Share process-local usage counters (same Arc as CliState).
+    pub fn with_usage_counters(
+        mut self,
+        usage_counters: Arc<crate::observability::UsageCounters>,
+    ) -> Self {
+        self.usage_counters = usage_counters;
+        self
     }
 
     pub fn with_threat_detector(mut self, threat_detector: Arc<dyn ThreatDetectionPort>) -> Self {
@@ -115,6 +126,7 @@ impl ProxyUseCase {
             if let Some(next_kind) = writer.on_provider_failure() {
                 let next_name = next_kind.as_str().to_string();
                 warn!("Provider {} failed, falling back to {}", old_provider, next_name);
+                self.usage_counters.record_fallback_hop();
                 *fallback_attempted = true;
 
                 let config = ModelProviderConfig::for_provider(&next_name)
@@ -519,6 +531,11 @@ impl ProxyUseCase {
                     {
                         warn!("Failed to track request usage: {}", e);
                     }
+                    self.usage_counters.record_success(
+                        &provider_name,
+                        total_tokens as u64,
+                        cost_usd,
+                    );
 
                     if let Some(quota) = resp.quota {
                         if let Err(e) = self.rate_manager.update_quota(quota).await {
@@ -580,6 +597,7 @@ impl ProxyUseCase {
                         {
                             warn!("Failed to track timeout request: {}", track_err);
                         }
+                        self.usage_counters.record_error(&provider_name);
 
                         if let Some((next_name, next_config)) = self
                             .handle_provider_fallback(
@@ -610,6 +628,7 @@ impl ProxyUseCase {
                         {
                             warn!("Failed to track failed request: {}", track_err);
                         }
+                        self.usage_counters.record_error(&provider_name);
 
                         if let Some((next_name, next_config)) = self
                             .handle_provider_fallback(
@@ -638,6 +657,7 @@ impl ProxyUseCase {
                     {
                         warn!("Failed to track timeout request: {}", track_err);
                     }
+                    self.usage_counters.record_error(&provider_name);
 
                     if let Some((next_name, next_config)) = self
                         .handle_provider_fallback(

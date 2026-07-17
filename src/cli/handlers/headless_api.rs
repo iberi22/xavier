@@ -303,18 +303,19 @@ pub async fn headless_quota(State(state): State<CliState>) -> impl IntoResponse 
     }
 }
 
-pub async fn headless_usage() -> impl IntoResponse {
+pub async fn headless_usage(State(state): State<CliState>) -> impl IntoResponse {
+    let usage = state.usage_counters.snapshot();
+    let providers_used: Vec<String> = usage.by_provider.keys().cloned().collect();
     AxumJson(json!({
-        "today": {
-            "requests": 222,
-            "tokens": 870_000,
-            "cost_usd": 0.45,
-            "providers_used": ["anthropic", "groq"],
-        },
-        "this_week": {
-            "requests": 1_540,
-            "tokens": 6_200_000,
-            "cost_usd": 3.12,
+        "process": {
+            "requests": usage.total_requests,
+            "tokens": usage.total_tokens,
+            "errors": usage.total_errors,
+            "cost_usd": usage.total_cost_usd,
+            "memory_fallback_hits": usage.memory_fallback_hits,
+            "fallback_chain_hops": usage.fallback_chain_hops,
+            "providers_used": providers_used,
+            "by_provider": usage.by_provider,
         },
     }))
 }

@@ -1,5 +1,5 @@
 {
-  "_comment": "Feature tracking — Xavier Cognitive Memory System. Verified 2026-07-17 after Ola 3 integration (13/14). Remaining local-first: #578 metrics + #589 epic close + Ola 4 hot-swap.",
+  "_comment": "Feature tracking — verified 2026-07-17. Ola 3 functional complete (incl. usage metrics). Ola 4: hot-swap UI.",
   "metadata": {
     "project": "Xavier",
     "version": "0.12.0",
@@ -11,8 +11,8 @@
     "features_draft": 2,
     "features_planned": 0,
     "features_stable": 11,
-    "overall_progress_pct": 94,
-    "reconciliation_notes": "2026-07-17 post-Ola3 integration: verified on main 5736dad3. Ola3 13/14 merged; #578 usage metrics pending; #589 EPIC cierre blocked. overall_progress_pct = mean(feature.progress_pct). feat-local-first 85% -> 93%."
+    "overall_progress_pct": 95.0,
+    "reconciliation_notes": "2026-07-17: #578 UsageCounters implemented. feat-local-first 93%->96%. overall=95%. Ola3 functional complete; #589 formal close next."
   },
   "features": [
     {
@@ -325,7 +325,7 @@
       "name": "Runtime Health & Self-Monitoring",
       "category": "enterprise",
       "status": "beta",
-      "progress_pct": 93,
+      "progress_pct": 98,
       "description": "Native runtime loop that monitors system health, database integrity, embedding providers, mesh peers, and runs auto-benchmarks",
       "steps": [
         "Create src/health/mod.rs with HealthResponse structs",
@@ -341,7 +341,7 @@
       "verified_by": "build",
       "github_issue": null,
       "last_tested": "2026-07-17",
-      "notes": "GET /health + SYSTEM_ALERTS + boot checks. Ola 3: enriched headless health (#599), xavier doctor CLI (#600), log retention purge_old_logs + structured boot event (#595). Gap: real-time LLM usage metrics counters (#578 still open).",
+      "notes": "doctor + enriched health + log retention + UsageCounters (#578) on /v1/account/usage and /v1/usage. Remaining: UI metrics surface (Ola 4).",
       "implemented_in": null,
       "tests": [
         "test_health_registry_init",
@@ -476,27 +476,20 @@
       "name": "100% Local Operation (LLM + Embeddings via Ollama)",
       "category": "local-first",
       "status": "beta",
-      "progress_pct": 93,
+      "progress_pct": 96,
       "description": "Chat del panel responde usando un LLM local (Ollama) con fallback a cloud y degradación elegante a memoria cuando ningún provider responde.",
       "steps": [
-        "Ola 1: estabilización (compile limpio, is_reachable, EmbedderConfig::auto) — DONE",
-        "Ola 2: ProxyUseCase local + fallback chain + memory degradation — DONE",
-        "Ola 2: health-check boot, UI modo, tests, config local default, docs — DONE",
-        "Ola 3: circuit breaker por provider (#576/#592) — DONE",
-        "Ola 3: reindex memoria al cambiar embedding model (#577/#597) — DONE",
-        "Ola 3: métricas de uso reales tokens/providers/fallback (#578) — PENDING",
-        "Ola 3: xavier doctor + /health enriquecido + log retention (#579/#582/#586) — DONE",
-        "Ola 3: Docker compose local + USER_GUIDE + smoke scripts (#580/#581/#588) — DONE",
-        "Ola 3: MCP xavier_local_status + Telegram /localstatus (#583/#584/#604) — DONE",
-        "Ola 3: E2E chat fallback + config fail-fast + panel LLM real (#585/#587/#590) — DONE",
-        "Ola 3: EPIC cierre features.json + ROADMAP + devlog (#589) — PENDING",
-        "Ola 4: hot-swap UI modelos Ollama desde panel — PLANNED"
+        "Ola 1: estabilización — DONE",
+        "Ola 2: ProxyUseCase local + fallback + memory + UI + tests — DONE",
+        "Ola 3: circuit breaker, reindex, metrics, doctor, health, docker, docs, MCP/Telegram status, E2E, smoke, fail-fast, panel LLM — DONE",
+        "Ola 3: EPIC cierre formal features/ROADMAP/devlog (#589) — IN PROGRESS",
+        "Ola 4: hot-swap UI modelos Ollama — PLANNED"
       ],
       "passes": true,
       "verified_by": "integration-tests",
       "github_issue": 522,
       "last_tested": "2026-07-17",
-      "notes": "Ola 1 DONE + Ola 2 DONE + Ola 3 13/14 DONE (PRs #591-#600,#592,#596-#599,#604,#605). Panel STUB replaced with real ProxyUseCase+memory fallback (#605). Circuit breaker (#592), reindex on embedding change (#597), doctor/docker/docs/smoke/E2E. ONLY missing: #578 usage metrics (empty Jules PR #603). EPIC cierre #589 blocked. Ola 4 (hot-swap UI) not started. Formula: 85% post-Ola2 + ~9pp Ola3 (13/14 of reserved Ola3 band).",
+      "notes": "Ola 1+2 DONE + Ola 3 COMPLETE (incl. #578 UsageCounters PR). Panel real LLM (#605), circuit breaker, doctor, health, MCP/Telegram status, docker/docs/smoke, metrics. Remaining for 100%: Ola 4 hot-swap UI. EPIC #589 formal close in progress.",
       "implemented_in": "src/app/proxy_use_case.rs, src/agents/provider/, src/cli/handlers/, src/observability/, src/server/mcp/tools_core.rs, src/telegram/mod.rs, docker/, docs/USER_GUIDE_LOCAL.md, scripts/smoke_test_local.*, tests/e2e_chat_local.rs, panel-ui/"
     }
   ],
