@@ -32,6 +32,7 @@ struct AppState {
     token: String,
     indexer: Arc<Indexer>,
     query_engine: Arc<QueryEngine>,
+    #[allow(dead_code)]
     manager: Arc<PluginManager>,
 }
 

@@ -16,6 +16,7 @@ pub mod types;
 
 pub use engine::ProcessEngine;
 pub use fallback::FallbackChain;
+pub use health::PluginHealthMonitor;
 pub use manager::PluginManager;
 pub use types::{
     FallbackResolver, FallbackStep, FileToParse, PluginConfig, PluginDescriptor, PluginEngine,

@@ -216,6 +216,14 @@ impl PluginHealthMonitor {
         }
     }
 
+    pub fn record_success(&self, name: &str) {
+        self.record(name, 0, true, None);
+    }
+
+    pub fn record_failure(&self, name: &str, error: String) {
+        self.record(name, 0, false, Some(error));
+    }
+
     /// Record a parse attempt for a plugin.
     pub fn record(&self, name: &str, latency_ms: u64, success: bool, error: Option<String>) {
         let entry = MetricsEntry {

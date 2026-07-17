@@ -12,7 +12,8 @@ use crate::plugin::types::{
 };
 use crate::plugin::engine::ProcessEngine;
 use crate::plugin::fallback::FallbackChain;
-use crate::types::{Language, Symbol};
+use crate::plugin::health::PluginHealthMonitor;
+use crate::types::{Language, Symbol, LanguageDiscovery};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -27,16 +28,28 @@ pub struct PluginManager {
     fallback: RwLock<FallbackChain>,
     engine: Arc<dyn PluginEngine>,
     registry: Arc<dyn PluginRegistry>,
+    health: RwLock<Option<Arc<PluginHealthMonitor>>>,
 }
 
 impl PluginManager {
     /// Build an empty manager with default fallback chains and the standard
     /// subprocess engine.
     pub fn new() -> Self {
-        Self::with_engine_and_registry(
-            Arc::new(ProcessEngine::default()),
-            Arc::new(DefaultRegistry::new()),
-        )
+        let engine = Arc::new(ProcessEngine::default());
+        let registry = Arc::new(DefaultRegistry::new());
+        let health = Arc::new(PluginHealthMonitor::new(std::time::Duration::from_secs(60)));
+        engine.set_monitor(Arc::clone(&health));
+
+        let installed: HashMap<Language, PluginDescriptor> = HashMap::new();
+        let fallback = FallbackChain::load_or_default();
+        Self {
+            installed: RwLock::new(installed),
+            by_name: RwLock::new(HashMap::new()),
+            fallback: RwLock::new(fallback),
+            engine,
+            registry,
+            health: RwLock::new(Some(health)),
+        }
     }
 
     /// Build a manager with a custom engine and registry.
@@ -52,6 +65,7 @@ impl PluginManager {
             fallback: RwLock::new(fallback),
             engine,
             registry,
+            health: RwLock::new(None),
         }
     }
 
@@ -115,9 +129,11 @@ impl PluginManager {
             .descriptor_by_name(name)
             .ok_or_else(|| GraphError::Parser(format!("unknown plugin '{}'", name)))?;
         let config = PluginConfig {
+            name: descriptor.name.clone(),
             command: descriptor.command,
             version: descriptor.version,
             languages: descriptor.languages,
+            extensions: Some(descriptor.extensions),
             capabilities: descriptor.capabilities,
         };
         self.engine.parse(&config, lang, files).await
@@ -160,6 +176,7 @@ impl PluginManager {
             version: version.unwrap_or(entry.version),
             command: "stub".to_string(), // In real impl, this would be the downloaded path
             languages: entry.languages,
+            extensions: vec![],
             capabilities: entry.capabilities,
         };
         self.register(desc.clone());
@@ -205,6 +222,29 @@ impl PluginManager {
 
     pub fn fallback(&self) -> &RwLock<FallbackChain> {
         &self.fallback
+    }
+
+    pub fn health(&self) -> Option<Arc<PluginHealthMonitor>> {
+        self.health.read().clone()
+    }
+
+    pub fn all_plugin_names(&self) -> Vec<String> {
+        self.by_name.read().keys().cloned().collect()
+    }
+}
+
+impl LanguageDiscovery for PluginManager {
+    fn language_for_extension(&self, ext: &str) -> Language {
+        let ext_lower = ext.to_lowercase();
+        let by_name = self.by_name.read();
+        for desc in by_name.values() {
+            if desc.extensions.iter().any(|e| e.to_lowercase() == ext_lower) {
+                if let Some(lang) = desc.languages.first() {
+                    return lang.clone();
+                }
+            }
+        }
+        Language::Unknown
     }
 }
 
@@ -274,6 +314,7 @@ mod tests {
             version: "1.0.0".into(),
             command: "parser-py".into(),
             languages: vec![Language::Python],
+            extensions: vec![],
             capabilities: vec!["parse".into()],
         });
 
@@ -300,6 +341,7 @@ mod tests {
             version: "1.0.0".into(),
             command: "/usr/bin/parser-py".into(),
             languages: vec![Language::Python],
+            extensions: vec![],
             capabilities: vec!["parse".into()],
         });
         assert_eq!(

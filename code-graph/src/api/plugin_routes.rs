@@ -7,14 +7,15 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use crate::plugin::{PluginManager, FallbackStep, LanguageDiscovery, PluginHealthMonitor};
+use crate::plugin::{PluginManager, FallbackStep, PluginHealthMonitor};
+use crate::LanguageDiscovery;
 use crate::types::Language;
 
 #[derive(Clone)]
 pub struct PluginApiState {
     pub manager: Arc<PluginManager>,
     pub health: Option<Arc<PluginHealthMonitor>>,
-    pub discovery: Option<Arc<LanguageDiscovery>>,
+    pub discovery: Option<Arc<dyn LanguageDiscovery>>,
 }
 
 #[derive(Serialize, Deserialize)]
