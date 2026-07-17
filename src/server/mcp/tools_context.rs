@@ -183,7 +183,8 @@ pub async fn handle_context_tool(
             let context_string = builder.build(level, &selected_docs, &[], &[]);
 
             // Use honest estimator: chars / 4
-            let optimized_token_count = (context_string.chars().count() as f32 / 4.0).ceil() as usize;
+            let optimized_token_count =
+                (context_string.chars().count() as f32 / 4.0).ceil() as usize;
 
             let savings_percentage = if original_token_count > 0 {
                 (original_token_count as f32 - optimized_token_count as f32)

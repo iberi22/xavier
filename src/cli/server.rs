@@ -23,8 +23,8 @@ use crate::cli::config::{
     code_graph_db_path, resolve_base_url_for_port, resolve_http_bind_host, resolve_http_token,
     state_panel_root,
 };
-use xavier::security::auth_store::AuthStore;
 use crate::cli::state::CliState;
+use xavier::security::auth_store::AuthStore;
 
 use crate::settings::XavierSettings;
 use xavier::adapters::inbound::http::routes::{
@@ -143,7 +143,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let rate_manager = Arc::new(RateLimitManager::new());
     let threat_store = Arc::new(SecurityThreatStore::new());
 
-    let auth_db_path = format!("{}/.xavier/auth.db", std::env::var("HOME").unwrap_or_else(|_| ".".to_string()));
+    let auth_db_path = format!(
+        "{}/.xavier/auth.db",
+        std::env::var("HOME").unwrap_or_else(|_| ".".to_string())
+    );
     let auth_store = Arc::new(AuthStore::open(auth_db_path, [0u8; 32])?); // Use actual key in prod
 
     time_store.init_schema_async().await?;
@@ -300,7 +303,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                             .await;
                     }
                 }
-                xavier::coordination::events::XavierEvent::AgentTaskCompleted { agent_id, .. } => {
+                xavier::coordination::events::XavierEvent::AgentTaskCompleted {
+                    agent_id, ..
+                } => {
                     info!(
                         "Agent {} task completed. Revoking ephemeral keys...",
                         agent_id
@@ -309,7 +314,11 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                         .revoke_for_agent(&agent_id, "Agent Task Completed")
                         .await;
                 }
-                xavier::coordination::events::XavierEvent::AgentTaskFailed { agent_id, reason, .. } => {
+                xavier::coordination::events::XavierEvent::AgentTaskFailed {
+                    agent_id,
+                    reason,
+                    ..
+                } => {
                     info!(
                         "Agent {} task failed ({}). Revoking ephemeral keys...",
                         agent_id, reason
@@ -335,20 +344,32 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         }
     });
 
-    let configured_providers = xavier::agents::provider::config::ModelProviderConfig::get_all_configured()
-        .iter()
-        .map(|c| xavier::agents::provider::router::ProviderKind::from_str(&c.provider_label))
-        .filter_map(|p| p)
-        .collect::<Vec<_>>();
+    let configured_providers =
+        xavier::agents::provider::config::ModelProviderConfig::get_all_configured()
+            .iter()
+            .map(|c| xavier::agents::provider::router::ProviderKind::from_str(&c.provider_label))
+            .filter_map(|p| p)
+            .collect::<Vec<_>>();
 
-    let fallback_chain = xavier::agents::provider::router::ProviderRouter::build_default_chain(&configured_providers).await;
-    let initial_provider = fallback_chain.first().cloned().unwrap_or(xavier::agents::provider::router::ProviderKind::OpenAI);
+    let fallback_chain = xavier::agents::provider::router::ProviderRouter::build_default_chain(
+        &configured_providers,
+    )
+    .await;
+    let initial_provider = fallback_chain
+        .first()
+        .cloned()
+        .unwrap_or(xavier::agents::provider::router::ProviderKind::OpenAI);
 
     let provider_router = xavier::agents::provider::router::ProviderRouter::new(initial_provider);
     let mut provider_router = provider_router;
     provider_router.set_fallback_chain(fallback_chain);
     // Log the chain BEFORE moving `provider_router` into the Arc below.
-    let chain_str = provider_router.fallback_chain().iter().map(|k| k.as_str()).collect::<Vec<_>>().join(" → ");
+    let chain_str = provider_router
+        .fallback_chain()
+        .iter()
+        .map(|k| k.as_str())
+        .collect::<Vec<_>>()
+        .join(" → ");
     info!("Provider fallback chain: [{}]", chain_str);
     println!("Provider fallback chain: [{}]", chain_str);
     let provider_router_shared = Arc::new(tokio::sync::RwLock::new(provider_router));
@@ -441,16 +462,18 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/v1/account/usage", get(account_usage_handler))
         .route("/v1/embeddings", post(embed_handler))
         .route("/v1/auth/session", post(session_create_handler))
-        .nest("/v1/auth", Router::new()
-            .route("/register", post(register_handler))
-            .route("/login", post(login_handler))
-            .route("/totp/verify", post(totp_verify_handler))
-            .route("/refresh", post(refresh_handler))
-            .route("/recover", post(recover_handler))
-            .layer(middleware::from_fn_with_state(
-                state.clone(),
-                rate_limit_middleware,
-            ))
+        .nest(
+            "/v1/auth",
+            Router::new()
+                .route("/register", post(register_handler))
+                .route("/login", post(login_handler))
+                .route("/totp/verify", post(totp_verify_handler))
+                .route("/refresh", post(refresh_handler))
+                .route("/recover", post(recover_handler))
+                .layer(middleware::from_fn_with_state(
+                    state.clone(),
+                    rate_limit_middleware,
+                )),
         )
         .route("/security/scan", post(security_scan_handler))
         .route("/memory/query", post(memory_query_handler))
@@ -876,9 +899,11 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let mut final_status = xavier::observability::health::HEALTH.run_checks().await;
 
     // Real reachability check against Ollama
-    let is_ollama_reachable = xavier::agents::provider::router::ProviderRouter::is_ollama_reachable().await;
+    let is_ollama_reachable =
+        xavier::agents::provider::router::ProviderRouter::is_ollama_reachable().await;
     let local_config = xavier::agents::provider::ModelProviderConfig::for_provider("local");
-    let is_local_reachable = local_config.is_reachable().await == xavier::agents::provider::types::ProviderReachability::ConfiguredAndReachable;
+    let is_local_reachable = local_config.is_reachable().await
+        == xavier::agents::provider::types::ProviderReachability::ConfiguredAndReachable;
 
     // Check discrepancy
     if is_ollama_reachable || is_local_reachable {
@@ -894,7 +919,8 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         }
     } else {
         // If Ollama/local provider should be up but doesn't respond
-        let provider_setting = std::env::var("XAVIER_PROVIDER").unwrap_or_else(|_| "local".to_string());
+        let provider_setting =
+            std::env::var("XAVIER_PROVIDER").unwrap_or_else(|_| "local".to_string());
         if provider_setting == "local" || provider_setting == "ollama" {
             xavier::server::alerts::SYSTEM_ALERTS.push_alert(
                 "ERROR",
@@ -921,26 +947,49 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         xavier::server::alerts::OperationalMode::Disabled => "DISABLED",
     };
     println!("{} Xavier iniciado — modo: {}", mode_icon, mode_str);
-    println!("   LLM:        {}/{} @ {} [{}]",
+    println!(
+        "   LLM:        {}/{} @ {} [{}]",
         final_status.llm.provider,
         final_status.llm.model,
         final_status.llm.endpoint,
-        if final_status.llm.reachable { "reachable" } else { "unreachable" }
+        if final_status.llm.reachable {
+            "reachable"
+        } else {
+            "unreachable"
+        }
     );
-    println!("   Embeddings: {}/{} @ {} [{}]",
+    println!(
+        "   Embeddings: {}/{} @ {} [{}]",
         final_status.embedding.provider,
         final_status.embedding.model,
-        if final_status.embedding.provider.to_lowercase() == "openai" { "api.openai.com" } else { "localhost:11434" },
-        if final_status.embedding.status == xavier::observability::health::HealthLevel::Healthy { "reachable" } else { "unreachable" }
+        if final_status.embedding.provider.to_lowercase() == "openai" {
+            "api.openai.com"
+        } else {
+            "localhost:11434"
+        },
+        if final_status.embedding.status == xavier::observability::health::HealthLevel::Healthy {
+            "reachable"
+        } else {
+            "unreachable"
+        }
     );
-    println!("   Vector DB:  {} ({})",
-        final_status.vector_db.backend,
-        final_status.vector_db.path
+    println!(
+        "   Vector DB:  {} ({})",
+        final_status.vector_db.backend, final_status.vector_db.path
     );
 
     // Compact single-line summary log for terminal outputs:
-    let llm_reach_str = if final_status.llm.reachable { "reachable" } else { "unreachable" };
-    let emb_reach_str = if final_status.embedding.status == xavier::observability::health::HealthLevel::Healthy { "reachable" } else { "unreachable" };
+    let llm_reach_str = if final_status.llm.reachable {
+        "reachable"
+    } else {
+        "unreachable"
+    };
+    let emb_reach_str =
+        if final_status.embedding.status == xavier::observability::health::HealthLevel::Healthy {
+            "reachable"
+        } else {
+            "unreachable"
+        };
     println!(
         "{} Xavier iniciado — modo: {} | LLM: {}/{} [{}] | Embeddings: {}/{} [{}]",
         mode_icon,
@@ -999,14 +1048,24 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             let result = crate::cli::handlers::system_scan::scan_system(true).await;
 
             if result.ollama.running {
-                info!("🦙 Ollama detected: {} models ({})",
+                info!(
+                    "🦙 Ollama detected: {} models ({})",
                     result.ollama.models.len(),
                     result.ollama.models.join(", ")
                 );
 
                 let default_model = "qwen3-coder";
-                if !result.ollama.models.iter().any(|m| m.contains(default_model)) {
-                    tracing::warn!("⚠️ Default model '{}' not found in Ollama. Run: ollama pull {}", default_model, default_model);
+                if !result
+                    .ollama
+                    .models
+                    .iter()
+                    .any(|m| m.contains(default_model))
+                {
+                    tracing::warn!(
+                        "⚠️ Default model '{}' not found in Ollama. Run: ollama pull {}",
+                        default_model,
+                        default_model
+                    );
                 }
             } else if result.ollama.installed {
                 debug!("Ollama is installed but not running.");
@@ -1120,17 +1179,20 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             .await?;
     } else {
         use std::net::SocketAddr;
-        axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>())
-            .with_graceful_shutdown(async move {
-                if let Err(error) = tokio::signal::ctrl_c().await {
-                    info!("Failed to listen for Ctrl+C shutdown signal: {}", error);
-                }
-                if let Some(shutdown) = sync_shutdown {
-                    shutdown.shutdown();
-                    shutdown.wait_for_shutdown(Duration::from_secs(5)).await;
-                }
-            })
-            .await?;
+        axum::serve(
+            listener,
+            app.into_make_service_with_connect_info::<SocketAddr>(),
+        )
+        .with_graceful_shutdown(async move {
+            if let Err(error) = tokio::signal::ctrl_c().await {
+                info!("Failed to listen for Ctrl+C shutdown signal: {}", error);
+            }
+            if let Some(shutdown) = sync_shutdown {
+                shutdown.shutdown();
+                shutdown.wait_for_shutdown(Duration::from_secs(5)).await;
+            }
+        })
+        .await?;
     }
 
     Ok(())

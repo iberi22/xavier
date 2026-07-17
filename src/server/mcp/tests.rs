@@ -1402,7 +1402,10 @@ async fn test_mcp_compact_outputs() {
     let result_text = body["result"]["content"][0]["text"].as_str().unwrap();
     let result_json: Value = serde_json::from_str(result_text).unwrap();
     assert_eq!(result_json["depth"], "shallow");
-    assert!(result_json["context"].as_str().unwrap().contains("## Core Slots"));
+    assert!(result_json["context"]
+        .as_str()
+        .unwrap()
+        .contains("## Core Slots"));
 }
 
 #[tokio::test]

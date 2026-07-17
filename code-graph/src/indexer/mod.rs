@@ -156,10 +156,7 @@ impl Indexer {
 
         info!(
             "Indexed {} files, {} symbols, {} edges in {}ms",
-            stats.total_files,
-            stats.total_symbols,
-            edges_len,
-            stats.duration_ms
+            stats.total_files, stats.total_symbols, edges_len, stats.duration_ms
         );
 
         Ok(stats)
@@ -616,14 +613,17 @@ mod tests {
 
         // Register a mock plugin for Ruby
         let ruby_lang = Language::Other("ruby".to_string());
-        indexer.plugin_host.manager().register(crate::plugin::types::PluginDescriptor {
-            name: "parser-ruby".to_string(),
-            version: "1.0.0".to_string(),
-            command: "ruby-parser".to_string(), // Won't be called if we use a mock engine
-            languages: vec![ruby_lang.clone()],
-            extensions: vec!["rb".to_string()],
-            capabilities: vec!["parse".to_string()],
-        });
+        indexer
+            .plugin_host
+            .manager()
+            .register(crate::plugin::types::PluginDescriptor {
+                name: "parser-ruby".to_string(),
+                version: "1.0.0".to_string(),
+                command: "ruby-parser".to_string(), // Won't be called if we use a mock engine
+                languages: vec![ruby_lang.clone()],
+                extensions: vec!["rb".to_string()],
+                capabilities: vec!["parse".to_string()],
+            });
 
         // Use a mock engine to avoid executing a real subprocess
         // PluginManager::new uses ProcessEngine by default.

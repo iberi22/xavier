@@ -124,8 +124,8 @@ pub async fn handle_setup(local: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use std::fs;
+    use tempfile::tempdir;
 
     #[tokio::test]
     async fn test_write_env_local_logic() {
@@ -278,7 +278,8 @@ async fn test_ollama_reachability(model: &str, embed: &str) -> Result<()> {
     let client = reqwest::Client::new();
 
     // Test Chat
-    let chat_resp = client.post("http://localhost:11434/api/chat")
+    let chat_resp = client
+        .post("http://localhost:11434/api/chat")
         .json(&serde_json::json!({
             "model": model,
             "messages": [{"role": "user", "content": "hi"}],
@@ -292,7 +293,8 @@ async fn test_ollama_reachability(model: &str, embed: &str) -> Result<()> {
     }
 
     // Test Embeddings
-    let embed_resp = client.post("http://localhost:11434/api/embeddings")
+    let embed_resp = client
+        .post("http://localhost:11434/api/embeddings")
         .json(&serde_json::json!({
             "model": embed,
             "prompt": "hello world"

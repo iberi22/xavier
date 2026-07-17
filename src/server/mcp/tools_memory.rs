@@ -798,11 +798,16 @@ pub async fn handle_memory_tool(
 
                 // Phase 3: build context string
                 let mut context = String::from("# Relevant Memory Context\n\n");
-                let per_doc_limit = if expanded.is_empty() { 0 } else { max_chars / expanded.len() };
+                let per_doc_limit = if expanded.is_empty() {
+                    0
+                } else {
+                    max_chars / expanded.len()
+                };
 
                 for record in &expanded {
                     let doc_content = if record.content.chars().count() > per_doc_limit {
-                        let mut truncated: String = record.content.chars().take(per_doc_limit).collect();
+                        let mut truncated: String =
+                            record.content.chars().take(per_doc_limit).collect();
                         truncated.push_str("\n[... doc truncated ...]");
                         truncated
                     } else {

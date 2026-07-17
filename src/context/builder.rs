@@ -99,7 +99,16 @@ impl ContextBuilder {
         // Real savings come from progressive disclosure and budget-aware selection in Orchestrator.
         let mut compressed = context.replace("  ", " ").replace("\n\n\n", "\n\n");
 
-        let keywords = ["error", "fix", "critical", "decision", "architecture", "goal", "ref", "summary"];
+        let keywords = [
+            "error",
+            "fix",
+            "critical",
+            "decision",
+            "architecture",
+            "goal",
+            "ref",
+            "summary",
+        ];
         let lines: Vec<&str> = context.lines().collect();
         let mut compressed_lines = Vec::new();
 
@@ -164,7 +173,12 @@ impl ContextBuilder {
         context.push_str("\n\n");
     }
 
-    fn append_virtual_refs(&self, context: &mut String, memories: &[ContextDocument], limit: usize) {
+    fn append_virtual_refs(
+        &self,
+        context: &mut String,
+        memories: &[ContextDocument],
+        limit: usize,
+    ) {
         if memories.is_empty() {
             return;
         }
@@ -174,12 +188,20 @@ impl ContextBuilder {
             context.push_str(&format!("- [REF:{}] {}\n", mem.id, path));
         }
         if memories.len() > limit {
-            context.push_str(&format!("- ... and {} more references\n", memories.len() - limit));
+            context.push_str(&format!(
+                "- ... and {} more references\n",
+                memories.len() - limit
+            ));
         }
         context.push('\n');
     }
 
-    fn append_memories_tiered(&self, context: &mut String, memories: &[ContextDocument], full_limit: usize) {
+    fn append_memories_tiered(
+        &self,
+        context: &mut String,
+        memories: &[ContextDocument],
+        full_limit: usize,
+    ) {
         if memories.is_empty() {
             return;
         }
@@ -198,7 +220,10 @@ impl ContextBuilder {
                 context.push_str(&format!("- [{}:{}] {}\n", prefix, mem.id, mem.content));
             } else {
                 let path = mem.metadata["path"].as_str().unwrap_or(&mem.id);
-                context.push_str(&format!("- [{}:{}] {} (Body virtualized)\n", prefix, mem.id, path));
+                context.push_str(&format!(
+                    "- [{}:{}] {} (Body virtualized)\n",
+                    prefix, mem.id, path
+                ));
             }
         }
         context.push('\n');

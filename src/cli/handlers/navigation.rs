@@ -364,7 +364,9 @@ mod tests {
                 None,
             ))),
             auth_store: None,
-            openclaw_indexer: Arc::new(xavier::memory::openclaw_indexer::OpenClawAgentIndexer::new(Arc::new(NoopEmbedder))),
+            openclaw_indexer: Arc::new(
+                xavier::memory::openclaw_indexer::OpenClawAgentIndexer::new(Arc::new(NoopEmbedder)),
+            ),
             system_scan_cache: Arc::new(tokio::sync::RwLock::new(None)),
         }
     }

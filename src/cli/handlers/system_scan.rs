@@ -88,7 +88,8 @@ pub async fn scan_system(detailed: bool) -> SystemScanResult {
 }
 
 async fn detect_ollama() -> OllamaStatus {
-    let base_url = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string());
+    let base_url =
+        std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string());
     let client = reqwest::Client::new();
 
     // Try to get version
@@ -127,11 +128,9 @@ async fn detect_ollama() -> OllamaStatus {
         if let Ok(resp) = client.get(format!("{}/v1/models", base_url)).send().await {
             if let Ok(json) = resp.json::<serde_json::Value>().await {
                 if let Some(data) = json.get("data").and_then(|d| d.as_array()) {
-                    models = data.iter()
-                        .filter_map(|m| {
-                            m.get("id")
-                                .and_then(|n| n.as_str().map(|s| s.to_string()))
-                        })
+                    models = data
+                        .iter()
+                        .filter_map(|m| m.get("id").and_then(|n| n.as_str().map(|s| s.to_string())))
                         .collect();
                 }
             }
@@ -631,17 +630,21 @@ mod scanner_tests {
         let url = server.url();
         std::env::set_var("OLLAMA_HOST", &url);
 
-        let _v_mock = server.mock("GET", "/api/version")
+        let _v_mock = server
+            .mock("GET", "/api/version")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(r#"{"version": "0.1.48"}"#)
-            .create_async().await;
+            .create_async()
+            .await;
 
-        let _m_mock = server.mock("GET", "/api/tags")
+        let _m_mock = server
+            .mock("GET", "/api/tags")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(r#"{"models": [{"name": "qwen3-coder:latest"}, {"name": "llama3:latest"}]}"#)
-            .create_async().await;
+            .create_async()
+            .await;
 
         let status = detect_ollama().await;
         assert!(status.running);
@@ -657,21 +660,27 @@ mod scanner_tests {
         let url = server.url();
         std::env::set_var("OLLAMA_HOST", &url);
 
-        let _v_mock = server.mock("GET", "/api/version")
+        let _v_mock = server
+            .mock("GET", "/api/version")
             .with_status(200)
             .with_body(r#"{"version": "0.1.48"}"#)
-            .create_async().await;
+            .create_async()
+            .await;
 
         // /api/tags returns empty or fails
-        let _m_tags_mock = server.mock("GET", "/api/tags")
+        let _m_tags_mock = server
+            .mock("GET", "/api/tags")
             .with_status(404)
-            .create_async().await;
+            .create_async()
+            .await;
 
         // /v1/models (OpenAI compatible) succeeds
-        let _m_v1_mock = server.mock("GET", "/v1/models")
+        let _m_v1_mock = server
+            .mock("GET", "/v1/models")
             .with_status(200)
             .with_body(r#"{"data": [{"id": "qwen3-coder"}]}"#)
-            .create_async().await;
+            .create_async()
+            .await;
 
         let status = detect_ollama().await;
         assert!(status.running);

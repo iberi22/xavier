@@ -162,7 +162,11 @@ pub async fn code_scan_handler(
     info!("Code scan request: path={}", path);
 
     let code_graph = state.code_graph.read().await;
-    match code_graph.indexer.index(std::path::Path::new(&path), true).await {
+    match code_graph
+        .indexer
+        .index(std::path::Path::new(&path), true)
+        .await
+    {
         Ok(stats) => {
             // Automatically trigger dump after successful scan
             let dump_msg = match perform_dump(&code_graph, &path).await {
