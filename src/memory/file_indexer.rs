@@ -213,7 +213,7 @@ impl FileIndexer {
                 let code_exts = ["rs", "py", "ts", "js", "go", "java"];
                 if code_exts.contains(&ext) {
                     debug!("🚀 Triggering code indexing for: {:?}", path);
-                    let _ = code_indexer.index(path).await;
+                    let _ = code_indexer.index(path, true).await;
                 }
             }
         }
