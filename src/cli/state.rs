@@ -64,6 +64,8 @@ pub struct CliState {
     )]
     pub http_client: reqwest::Client,
     pub proxy_use_case: Arc<ProxyUseCase>,
+    /// Process-local LLM proxy usage counters (shared with `proxy_use_case`).
+    pub usage_counters: Arc<xavier::observability::UsageCounters>,
     pub session_manager: Arc<SessionManager>,
     pub provider_router: Arc<tokio::sync::RwLock<xavier::agents::provider::router::ProviderRouter>>,
     #[allow(dead_code)]

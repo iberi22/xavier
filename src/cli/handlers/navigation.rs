@@ -354,6 +354,7 @@ mod tests {
                 Arc::new(RateLimitManager::new()),
                 Arc::new(Mutex::new(HashMap::new())),
             )),
+            usage_counters: Arc::new(xavier::observability::UsageCounters::new()),
             session_manager: Arc::new(SessionManager::new(60)),
             provider_router: Arc::new(tokio::sync::RwLock::new(ProviderRouter::new(
                 ProviderKind::OpenAI,

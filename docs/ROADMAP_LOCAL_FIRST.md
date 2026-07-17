@@ -2,7 +2,7 @@
 
 Este documento detalla la visión, el estado actual, las olas de desarrollo y el plan futuro para la iniciativa de ejecución **100% Local** de Xavier (`feat-local-first`, EPIC GitHub **#522**).
 
-**Última reconciliación:** 2026-07-17 · `main@5736dad3` · `features.json` overall **94%** · `feat-local-first` **93%**
+**Última reconciliación:** 2026-07-17 · `features.json` overall **~95%** · `feat-local-first` **96%**
 
 ---
 
@@ -24,8 +24,8 @@ La iniciativa **Xavier 100% Local** busca habilitar el funcionamiento completo d
 | :--- | :--- | :--- | :--- |
 | **Ola 1** | Estabilización de Capacidad Local | ✅ **DONE** | Compilación limpia, `EmbedderConfig::auto()`, `is_reachable()`, endpoints base. |
 | **Ola 2** | Integración & Fallback Elegante | ✅ **DONE** | Proxy local, fallback chain, memory degradation, UI modo, tests, config default. |
-| **Ola 3** | Observabilidad & Hardening | 🟡 **93% (13/14)** | Circuit breaker, doctor, health, reindex, panel LLM real, MCP/Telegram status, Docker/docs/smoke. **Falta #578 métricas de uso.** EPIC cierre #589 bloqueado. |
-| **Ola 4** | Gestión Dinámica + Cierre de deuda | 📅 **PLANNING** | (1) Cerrar #578/#589 · (2) Hot-swap UI Ollama · (3) Headless memory-fallback parity · (4) Cost/security backlog opcional |
+| **Ola 3** | Observabilidad & Hardening | ✅ **DONE (funcional)** | Circuit breaker, doctor, health, reindex, panel LLM, MCP/Telegram status, Docker/docs/smoke, **UsageCounters (#578)**. EPIC formal #589 en cierre. |
+| **Ola 4** | Gestión Dinámica + paridad | 📅 **READY** | Hot-swap UI Ollama · Headless memory-fallback parity · Panel métricas UI · Cost/security P2 |
 
 ---
 
@@ -57,7 +57,7 @@ Issues 01–13 (local provider, fallback chain, memory degradation, boot, UI, te
 | ---: | :--- | ---: | :--- |
 | #576 | Circuit breaker por provider | #592 | ✅ |
 | #577 | Reindex al cambiar embedding model | #597 | ✅ |
-| **#578** | **Métricas de uso reales** | #603 vacío | ❌ **PENDING** |
+| **#578** | **Métricas de uso reales** | orchestrator | ✅ UsageCounters |
 | #579 | `xavier doctor` | #600 | ✅ |
 | #580 | docker-compose.local | #593 | ✅ |
 | #581 | USER_GUIDE_LOCAL | #591 | ✅ |

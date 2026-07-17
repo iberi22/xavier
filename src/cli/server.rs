@@ -353,8 +353,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     println!("Provider fallback chain: [{}]", chain_str);
     let provider_router_shared = Arc::new(tokio::sync::RwLock::new(provider_router));
 
+    let usage_counters = Arc::new(xavier::observability::UsageCounters::new());
     let proxy_use_case = Arc::new(
         ProxyUseCase::new(rate_manager.clone(), prompt_cache.clone())
+            .with_usage_counters(usage_counters.clone())
             .with_threat_detector(security_service.clone())
             .with_provider_router(provider_router_shared.clone()),
     );
@@ -381,6 +383,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         rate_manager: rate_manager.clone(),
         prompt_cache,
         proxy_use_case,
+        usage_counters,
         http_client,
         provider_router: provider_router_shared,
         embedder: embedder.clone(),

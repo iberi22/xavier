@@ -184,6 +184,7 @@ pub async fn panel_process_chat_inner(
         }
         Err(e) => {
             tracing::warn!("Panel chat LLM error, falling back to memory: {}", e);
+            state.usage_counters.record_memory_fallback();
             let query = payload.message.trim();
             match state.memory.search(query, 5, None).await {
                 Ok(results) if !results.is_empty() => {
