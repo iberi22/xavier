@@ -3,6 +3,7 @@
 pub mod bm25;
 pub mod builder;
 pub mod classifier;
+pub mod token_estimate;
 pub mod executor;
 pub mod graph_retriever;
 pub mod hybrid;
@@ -22,6 +23,7 @@ use serde::{Deserialize, Serialize};
 
 pub use builder::{ContextBuilder, ContextBuilderConfig};
 pub use classifier::{ContextClassifier, ContextLevel};
+pub use token_estimate::estimate_tokens;
 pub use executor::SkillExecutor;
 pub use indexer::ContextIndexer;
 pub use manager::ContextManager;
@@ -59,11 +61,12 @@ impl ContextDocument {
         content: impl Into<String>,
     ) -> Self {
         let content = content.into();
+        let token_count = estimate_tokens(&content);
         Self {
             id: id.into(),
             session_id: session_id.into(),
             role: role.into(),
-            token_count: content.split_whitespace().count(),
+            token_count,
             content,
             tool_calls: Vec::new(),
             metadata: serde_json::Value::Null,

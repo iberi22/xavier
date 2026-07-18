@@ -767,6 +767,7 @@ pub async fn handle_memory_tool(
                     truncated_reason: None,
                     content: format!("No relevant context found for query/ids"),
                     sources: Vec::new(),
+                    estimated_tokens: 0,
                 };
                 Ok(serde_json::to_value(MCPToolResult {
                     content: vec![MCPContent::Structured(MCPStructuredContent {
@@ -853,6 +854,7 @@ pub async fn handle_memory_tool(
                 }
 
                 let final_total_chars = context.chars().count();
+                let estimated_tokens = crate::context::estimate_tokens(&context);
                 let payload = MCPContextResult {
                     total_chars: final_total_chars,
                     total_records: expanded.len(),
@@ -860,6 +862,7 @@ pub async fn handle_memory_tool(
                     truncated_reason,
                     content: context,
                     sources,
+                    estimated_tokens,
                 };
                 Ok(serde_json::to_value(MCPToolResult {
                     content: vec![MCPContent::Structured(MCPStructuredContent {

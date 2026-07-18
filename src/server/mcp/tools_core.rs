@@ -228,6 +228,7 @@ pub async fn handle_core_tool(
                         truncated_reason: None,
                         content: format!("No context found for project {project_id}."),
                         sources: vec![],
+                        estimated_tokens: 0,
                     }),
                     false,
                 ))?);
@@ -235,6 +236,7 @@ pub async fn handle_core_tool(
 
             let content = content_parts.join("\n\n---\n\n");
             let total_records = content_parts.len();
+            let estimated_tokens = crate::context::estimate_tokens(&content);
 
             Ok(serde_json::to_value(MCPToolResult::structured(
                 json!(MCPContextResult {
@@ -244,6 +246,7 @@ pub async fn handle_core_tool(
                     truncated_reason,
                     content,
                     sources,
+                    estimated_tokens,
                 }),
                 false,
             ))?)

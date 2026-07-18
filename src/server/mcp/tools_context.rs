@@ -130,7 +130,7 @@ pub async fn handle_context_tool(
                     if tokens > 0 {
                         tokens
                     } else {
-                        (m.content.chars().count() as f32 / 4.0).ceil() as usize
+                        crate::context::estimate_tokens(&m.content)
                     }
                 })
                 .sum();
@@ -142,7 +142,7 @@ pub async fn handle_context_tool(
                     let token_count = if token_count > 0 {
                         token_count
                     } else {
-                        (m.content.chars().count() as f32 / 4.0).ceil() as usize
+                        crate::context::estimate_tokens(&m.content)
                     };
                     ContextDocument::new(m.id, session_id, m.role, m.content)
                         .with_token_count(token_count)
@@ -182,8 +182,8 @@ pub async fn handle_context_tool(
             let builder = ContextBuilder::new(builder_config);
             let context_string = builder.build(level, &selected_docs, &[], &[]);
 
-            // Use honest estimator: chars / 4
-            let optimized_token_count = (context_string.chars().count() as f32 / 4.0).ceil() as usize;
+            // Use unified honest estimator
+            let optimized_token_count = crate::context::estimate_tokens(&context_string);
 
             let savings_percentage = if original_token_count > 0 {
                 (original_token_count as f32 - optimized_token_count as f32)

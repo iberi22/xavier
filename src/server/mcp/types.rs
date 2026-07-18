@@ -145,6 +145,7 @@ pub struct MCPContextResult {
     pub truncated_reason: Option<String>,
     pub content: String,
     pub sources: Vec<MCPSearchResult>,
+    pub estimated_tokens: usize,
 }
 
 /// Structured health result for the health_check tool.
