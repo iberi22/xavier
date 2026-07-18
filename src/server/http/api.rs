@@ -163,7 +163,20 @@ pub async fn memory_export_pack(
 
     let working_docs = workspace.workspace.working_documents().await;
 
-    let all_docs = workspace.workspace.memory.all_documents().await;
+    let belief_filters = crate::memory::schema::MemoryQueryFilters {
+        levels: Some(vec![crate::memory::schema::MemoryLevel::Belief]),
+        ..Default::default()
+    };
+    let belief_records = workspace
+        .workspace
+        .list_memory_records_filtered(belief_filters, 1000)
+        .await
+        .unwrap_or_default();
+    let all_docs: Vec<_> = belief_records
+        .into_iter()
+        .map(|r| r.to_document())
+        .collect();
+
     let threads = workspace
         .workspace
         .conversations_db
