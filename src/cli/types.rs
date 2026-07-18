@@ -267,3 +267,41 @@ pub struct CreateTokenPayload {
     #[serde(default)]
     pub expires_at: Option<chrono::DateTime<chrono::Utc>>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct CodeGraphViewParams {
+    #[serde(default = "default_graph_view_mode")]
+    pub mode: String,
+    #[serde(default)]
+    pub query: Option<String>,
+    #[serde(default = "default_graph_view_depth")]
+    pub depth: usize,
+    #[serde(default = "default_graph_view_limit")]
+    pub limit: usize,
+    #[serde(default)]
+    pub edge_type: Option<String>,
+    #[serde(default = "default_graph_view_include_file_nodes")]
+    pub include_file_nodes: bool,
+    #[serde(default = "default_graph_view_min_degree")]
+    pub min_degree: u64,
+}
+
+pub fn default_graph_view_mode() -> String {
+    "overview".to_string()
+}
+
+pub fn default_graph_view_depth() -> usize {
+    3
+}
+
+pub fn default_graph_view_limit() -> usize {
+    150
+}
+
+pub fn default_graph_view_include_file_nodes() -> bool {
+    false
+}
+
+pub fn default_graph_view_min_degree() -> u64 {
+    3
+}
