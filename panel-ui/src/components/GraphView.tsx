@@ -27,9 +27,15 @@ import { type GraphData, GraphLink, type GraphNode } from "../types";
 interface GraphViewProps {
   data: GraphData;
   onUpdateData: (data: GraphData) => void;
+  /** True when the unfiltered roadmap has no nodes (show create-root empty state). */
+  isFullGraphEmpty?: boolean;
 }
 
-export default function GraphView({ data, onUpdateData }: GraphViewProps) {
+export default function GraphView({
+  data,
+  onUpdateData,
+  isFullGraphEmpty = false,
+}: GraphViewProps) {
   const fgRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({
@@ -159,13 +165,32 @@ export default function GraphView({ data, onUpdateData }: GraphViewProps) {
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, []);
 
+  const linkEnd = (end: GraphLink["source"] | GraphLink["target"]) =>
+    typeof end === "object" && end !== null && "id" in end
+      ? String((end as { id: string }).id)
+      : String(end);
+
   const handleDeleteNode = (id: string) => {
     const newNodes = data.nodes.filter((n) => n.id !== id);
     const newLinks = data.links.filter(
-      (l) => l.source !== id && l.target !== id,
+      (l) => linkEnd(l.source) !== id && linkEnd(l.target) !== id,
     );
     onUpdateData({ nodes: newNodes, links: newLinks });
     handleCloseContext();
+  };
+
+  const handleAddRoot = () => {
+    const newNode: GraphNode = {
+      id: `node_${Date.now()}`,
+      label: "New organization",
+      description: "Root organization for this workspace roadmap",
+      type: "organization",
+      date: new Date().toISOString().slice(0, 10),
+    };
+    onUpdateData({
+      nodes: [...data.nodes, newNode],
+      links: [...data.links],
+    });
   };
 
   const handleAddSub = (parentId: string) => {
@@ -183,6 +208,7 @@ export default function GraphView({ data, onUpdateData }: GraphViewProps) {
       description: "Newly generated link",
       type,
       parentId,
+      date: new Date().toISOString().slice(0, 10),
     };
     const newLink = {
       source: parentId,
@@ -388,6 +414,35 @@ export default function GraphView({ data, onUpdateData }: GraphViewProps) {
           onBackgroundRightClick={handleCloseContext}
         />
       </div>
+
+      {isFullGraphEmpty && data.nodes.length === 0 && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+          <div className="pointer-events-auto text-center max-w-sm px-6 py-8 rounded-2xl border border-white/10 bg-[#050505]/90 backdrop-blur-md shadow-2xl">
+            <p className="text-sm text-white/80 font-medium mb-1">
+              No roadmap nodes yet
+            </p>
+            <p className="text-xs text-white/40 mb-5 leading-relaxed">
+              Build an org → project → session topology for this workspace. It
+              saves to Xavier automatically.
+            </p>
+            <button
+              type="button"
+              onClick={handleAddRoot}
+              className="px-4 py-2 rounded-lg bg-[#39ff14]/15 border border-[#39ff14]/40 text-[#39ff14] text-xs font-medium tracking-wide hover:bg-[#39ff14]/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 transition-all"
+            >
+              Add root organization
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!isFullGraphEmpty && data.nodes.length === 0 && (
+        <div className="absolute inset-0 z-20 flex items-center justify-center pointer-events-none">
+          <p className="pointer-events-auto text-xs text-white/40 px-4 py-2 rounded-lg border border-white/10 bg-black/70">
+            No nodes match the current filters
+          </p>
+        </div>
+      )}
 
       <AnimatePresence>
         {hoveredNode && !selectedNode && contextMenu === null && (

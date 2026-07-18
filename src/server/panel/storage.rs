@@ -176,6 +176,36 @@ pub async fn save_widget(
     }
 }
 
+/// Default empty roadmap graph when the workspace has never saved one.
+fn default_empty_panel_graph() -> GraphData {
+    GraphData {
+        id: "default".to_string(),
+        name: "Workspace roadmap".to_string(),
+        data: json!({ "nodes": [], "links": [] }),
+        created_at: Utc::now(),
+    }
+}
+
+/// Panel roadmap payload must be `{ "nodes": [], "links": [] }` (not freeform / edges).
+fn validate_panel_graph_payload(data: &serde_json::Value) -> Result<(), String> {
+    let obj = data
+        .as_object()
+        .ok_or_else(|| "data must be a JSON object".to_string())?;
+    let nodes = obj
+        .get("nodes")
+        .ok_or_else(|| "data.nodes is required".to_string())?;
+    let links = obj
+        .get("links")
+        .ok_or_else(|| "data.links is required".to_string())?;
+    if !nodes.is_array() {
+        return Err("data.nodes must be an array".to_string());
+    }
+    if !links.is_array() {
+        return Err("data.links must be an array".to_string());
+    }
+    Ok(())
+}
+
 pub async fn get_graph(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     let workspace_id = workspace.workspace.config().id.clone();
     let project_id = resolve_panel_project_id(&workspace);
@@ -193,7 +223,9 @@ pub async fn get_graph(Extension(workspace): Extension<WorkspaceContext>) -> imp
                 Ok(Some(GraphData {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    data: serde_json::from_str(&data_str).unwrap_or_default(),
+                    data: serde_json::from_str(&data_str).unwrap_or_else(|_| {
+                        json!({ "nodes": [], "links": [] })
+                    }),
                     created_at: created_at_str.parse().unwrap_or_else(|_| Utc::now()),
                 }))
             } else {
@@ -202,12 +234,9 @@ pub async fn get_graph(Extension(workspace): Extension<WorkspaceContext>) -> imp
         })
         .await
     {
+        // Empty workspace: 200 + empty nodes/links so the UI never falls back to demo data.
         Ok(Some(graph)) => Json(graph).into_response(),
-        Ok(None) => (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "graph data not found" })),
-        )
-            .into_response(),
+        Ok(None) => Json(default_empty_panel_graph()).into_response(),
         Err(error) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(json!({ "error": error.to_string() })),
@@ -220,6 +249,14 @@ pub async fn save_graph(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<GraphData>,
 ) -> impl IntoResponse {
+    if let Err(message) = validate_panel_graph_payload(&payload.data) {
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({ "error": message })),
+        )
+            .into_response();
+    }
+
     let workspace_id = workspace.workspace.config().id.clone();
     let project_id = resolve_panel_project_id(&workspace);
 

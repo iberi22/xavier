@@ -25,6 +25,10 @@ import { ApiClient } from "../api/client";
 import ProvidersPage from "../pages/Settings/Providers";
 import SecurityConfigPanel from "../pages/Settings/Security";
 import type { Agent, BookmarkArtifact, GraphData } from "../types";
+import {
+  linkEndpointId,
+  mergeFilteredGraphUpdate,
+} from "../utils/roadmapGraph";
 import AgentsView from "./AgentsView";
 import BookmarksView from "./BookmarksView";
 import GraphView from "./GraphView";
@@ -89,10 +93,23 @@ export default function ConfigModal({
 
     const nodeIds = new Set(nodes.map((n) => n.id));
     const links = graphData.links.filter(
-      (l) => nodeIds.has(l.source) && nodeIds.has(l.target),
+      (l) =>
+        nodeIds.has(linkEndpointId(l.source)) &&
+        nodeIds.has(linkEndpointId(l.target)),
     );
     return { nodes, links };
   }, [graphData, startDate, endDate, selectedMilestone]);
+
+  /** Apply GraphView edits to the full roadmap so filters never drop hidden nodes. */
+  const handleFilteredGraphUpdate = useCallback(
+    (updated: GraphData) => {
+      const visibleIds = new Set(filteredGraphData.nodes.map((n) => n.id));
+      onUpdateGraphData(
+        mergeFilteredGraphUpdate(graphData, visibleIds, updated),
+      );
+    },
+    [filteredGraphData.nodes, graphData, onUpdateGraphData],
+  );
 
   return (
     <motion.div
@@ -157,7 +174,7 @@ export default function ConfigModal({
             active={mainTab === "graph"}
             onClick={() => setMainTab("graph")}
             icon={<Share2 className="w-4 h-4" />}
-            label="Knowledge Graph"
+            label="Roadmap"
           />
           <TabButton
             active={mainTab === "bookmarks"}
@@ -192,15 +209,17 @@ export default function ConfigModal({
               <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex gap-4 bg-[#0a0a0a]/90 backdrop-blur-md p-4 rounded-xl border border-white/10 shadow-2xl items-end">
                 {(startDate || endDate || selectedMilestone !== "all") && (
                   <button
+                    type="button"
                     onClick={() => {
                       setStartDate("");
                       setEndDate("");
                       setSelectedMilestone("all");
                     }}
-                    className="h-7 w-7 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors flex items-center justify-center border border-transparent shrink-0"
+                    className="h-7 w-7 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors flex items-center justify-center border border-transparent shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
                     title="Clear Filters"
+                    aria-label="Clear roadmap filters"
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <X className="w-3.5 h-3.5" aria-hidden="true" />
                   </button>
                 )}
                 <div className="flex flex-col">
@@ -245,7 +264,8 @@ export default function ConfigModal({
               </div>
               <GraphView
                 data={filteredGraphData}
-                onUpdateData={onUpdateGraphData}
+                onUpdateData={handleFilteredGraphUpdate}
+                isFullGraphEmpty={graphData.nodes.length === 0}
               />
             </motion.div>
           )}

@@ -81,15 +81,15 @@ test.describe("Dashboard and UI Islands", () => {
     await expect(resourcesPill).toBeVisible();
   });
 
-  test("should navigate ConfigModal and interact with Knowledge Graph stats", async ({
+  test("should navigate ConfigModal and interact with Roadmap graph stats", async ({
     page,
   }) => {
     // Open Config Modal
     await page.click('button[title="Open Control Node"]');
-    await expect(page.getByText("Knowledge Graph")).toBeVisible();
+    await expect(page.getByText("Roadmap")).toBeVisible();
 
-    // Switch to Knowledge Graph tab
-    await page.click('button:has-text("Knowledge Graph")');
+    // Switch to Roadmap tab
+    await page.click('button:has-text("Roadmap")');
 
     // Verify GraphView is rendered (canvas should be present)
     await expect(page.locator("canvas")).toBeVisible();
