@@ -190,7 +190,158 @@ graph LR
 
 ---
 
-## 🛠️ 7. Troubleshooting (Solución de Problemas)
+## 🔄 7. Gestión de Modelos Ollama (Hot-Swap)
+
+Xavier introduce endpoints de plano de control para gestionar dinámicamente los modelos de Ollama desde el panel de administración o mediante API en caliente (hot-swap), permitiendo descargar y activar modelos sin tener que reiniciar el servidor.
+
+1. **Listar modelos disponibles en la instancia local (`GET /v1/ollama/models`)**:
+   Devuelve los modelos que están actualmente descargados en tu instancia de Ollama.
+   *   **Ejemplo de Petición**:
+       ```bash
+       curl -X GET http://localhost:8006/v1/ollama/models \
+         -H "X-Xavier-Token: TU_XAVIER_TOKEN"
+       ```
+   *   **Ejemplo de Respuesta**:
+       ```json
+       {
+         "status": "ok",
+         "models": [
+           {
+             "name": "qwen3-coder:latest",
+             "size": 4721453210,
+             "digest": "sha256:d8a23...",
+             "details": {
+               "format": "gguf",
+               "family": "qwen2",
+               "parameter_size": "7B",
+               "quantization_level": "Q4_K_M"
+             }
+           },
+           {
+             "name": "embeddinggemma:latest",
+             "size": 1712415120,
+             "digest": "sha256:f123c...",
+             "details": {
+               "format": "gguf",
+               "family": "gemma",
+               "parameter_size": "2B"
+             }
+           }
+         ]
+       }
+       ```
+
+2. **Descargar un nuevo modelo (`POST /v1/ollama/pull`)**:
+   Permite solicitar a Ollama la descarga/pull de un nuevo modelo en segundo plano.
+   *   **Ejemplo de Petición**:
+       ```bash
+       curl -X POST http://localhost:8006/v1/ollama/pull \
+         -H "Content-Type: application/json" \
+         -H "X-Xavier-Token: TU_XAVIER_TOKEN" \
+         -d '{"name": "llama3.2:3b"}'
+       ```
+   *   **Ejemplo de Respuesta**:
+       ```json
+       {
+         "status": "downloading",
+         "message": "Iniciada la descarga del modelo llama3.2:3b en segundo plano"
+       }
+       ```
+
+3. **Cambiar el modelo local activo en caliente (`POST /v1/ollama/active`)**:
+   Establece el modelo LLM activo para las siguientes conversaciones en Xavier.
+   ⚠️ **Nota de rendimiento**: Este comando actualiza de forma dinámica las variables de entorno de configuración interna del proceso (`process env`). Por lo tanto, **no se requiere un reinicio completo del servidor**; la próxima petición de chat que envíes utilizará el nuevo modelo seleccionado de inmediato de forma transparente.
+   *   **Ejemplo de Petición**:
+       ```bash
+       curl -X POST http://localhost:8006/v1/ollama/active \
+         -H "Content-Type: application/json" \
+         -H "X-Xavier-Token: TU_XAVIER_TOKEN" \
+         -d '{"model": "qwen3-coder"}'
+       ```
+   *   **Ejemplo de Respuesta**:
+       ```json
+       {
+         "status": "ok",
+         "active_model": "qwen3-coder",
+         "message": "Modelo local actualizado dinámicamente para las siguientes peticiones de chat"
+       }
+       ```
+
+---
+
+## 📈 8. Métricas de Uso
+
+Xavier cuenta con un sistema de observabilidad de alta precisión que registra en tiempo real el consumo de recursos tanto para proveedores en la nube como para inferencia local y caídas a memoria de recuperación (fallbacks).
+
+Puedes consultar de forma unificada estas métricas y cuotas consumidas utilizando el endpoint `/v1/account/usage`.
+
+*   **Ejemplo de Petición**:
+    ```bash
+    curl -X GET http://localhost:8006/v1/account/usage \
+      -H "X-Xavier-Token: TU_XAVIER_TOKEN"
+    ```
+
+*   **Estructura de la Respuesta**:
+    El endpoint devuelve un desglose completo de peticiones, tokens procesados, costes acumulados y métricas de resiliencia del sistema:
+    ```json
+    {
+      "status": "ok",
+      "requests_used": 142,
+      "total_tokens": 87450,
+      "total_errors": 4,
+      "total_cost_usd": 0.0423,
+      "memory_fallback_hits": 12,
+      "fallback_chain_hops": 3,
+      "by_provider": {
+        "local": {
+          "requests": 130,
+          "tokens_in": 45000,
+          "tokens_out": 38000,
+          "errors": 1,
+          "cost_usd": 0.0
+        },
+        "openai": {
+          "requests": 12,
+          "tokens_in": 2450,
+          "tokens_out": 2000,
+          "errors": 3,
+          "cost_usd": 0.0423
+        }
+      },
+      "provider_quotas": {
+        "local": {
+          "provider": "local",
+          "limit_tokens": null,
+          "used_tokens": 83000,
+          "is_blocked": false,
+          "cooldown_until": null
+        },
+        "openai": {
+          "provider": "openai",
+          "limit_tokens": 100000,
+          "used_tokens": 4450,
+          "is_blocked": false,
+          "cooldown_until": null
+        }
+      },
+      "optimization": {
+        "router_direct_count": 0,
+        "semantic_cache_hits": 15,
+        "semantic_cache_misses": 127
+      }
+    }
+    ```
+
+*   **Campos Clave a Monitorear**:
+    *   `requests_used` / `total_tokens`: Volumen total procesado por el orquestador.
+    *   `total_cost_usd`: Coste monetario de las llamadas a nube (es `0.0` para las llamadas al proveedor `local`/Ollama, reflejando el ahorro real).
+    *   `memory_fallback_hits`: Número de veces que el sistema tuvo que responder usando la base de datos de memoria vectorial local al no haber ningún LLM disponible.
+    *   `fallback_chain_hops`: Saltos automáticos realizados en la cadena de fallbacks (ej. reintento redirigido a local tras fallo de cloud).
+    *   `by_provider`: Desglose detallado de peticiones, tokens de entrada/salida, errores y costes por cada proveedor individual.
+
+---
+
+## 🛠️ 9. Troubleshooting (Solución de Problemas)
 
 A continuación se listan los 5 casos de error más comunes al utilizar Xavier en modo 100% local y cómo solucionarlos:
 
@@ -257,7 +408,7 @@ A continuación se listan los 5 casos de error más comunes al utilizar Xavier e
 
 ---
 
-## ❓ 8. FAQ (Preguntas Frecuentes)
+## ❓ 10. FAQ (Preguntas Frecuentes)
 
 ### Q1: ¿Necesito obligatoriamente una GPU dedicada para ejecutar Xavier local?
 **R:** No. Ollama y Xavier pueden ejecutarse al 100% en CPU (utilizando la memoria RAM del sistema). No obstante, los tiempos de generación de texto (tokens por segundo) serán significativamente inferiores comparados con un sistema acelerado por hardware GPU.
