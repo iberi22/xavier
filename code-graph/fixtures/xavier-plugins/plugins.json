@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "registry": "xavier-plugins-fixture",
+  "plugins": [
+    {
+      "name": "parser-python",
+      "display_name": "Python Parser (stdin/stdout JSON)",
+      "description": "Reference plugin that parses Python sources via tree-sitter and speaks the Xavier plugin JSON protocol on stdin/stdout.",
+      "version": "0.1.0",
+      "author": "iberi22",
+      "languages": ["Python"],
+      "capabilities": ["parse"],
+      "platform": {
+        "windows-x86_64": {
+          "url": "https://example.invalid/xavier-plugins/parser-python/0.1.0/windows-x86_64.zip",
+          "checksum": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+          "format": "zip"
+        },
+        "linux-x86_64": {
+          "url": "https://example.invalid/xavier-plugins/parser-python/0.1.0/linux-x86_64.tar.gz",
+          "checksum": "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+          "format": "tar.gz"
+        },
+        "macos-aarch64": {
+          "url": "https://example.invalid/xavier-plugins/parser-python/0.1.0/macos-aarch64.tar.gz",
+          "checksum": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "format": "tar.gz"
+        }
+      },
+      "min_engine_version": "0.6.0",
+      "license": "MIT"
+    },
+    {
+      "name": "parser-ruby",
+      "display_name": "Ruby Parser (plugin-backed Other language)",
+      "description": "Fixture-only entry demonstrating Language::Other(\"ruby\") style registration.",
+      "version": "0.0.1",
+      "author": "xavier-fixtures",
+      "languages": [{"Other": "ruby"}],
+      "capabilities": ["parse"],
+      "platform": {
+        "linux-x86_64": {
+          "url": "https://example.invalid/xavier-plugins/parser-ruby/0.0.1/linux-x86_64.tar.gz",
+          "checksum": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "format": "tar.gz"
+        }
+      },
+      "min_engine_version": "0.6.0",
+      "license": "Apache-2.0"
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {
   "last_verified": "2026-07-18",
-  "overall_progress_pct": 84,
-  "notes": "Honest audit after Ola 4. Sub-features map open GitHub issues to %.",
+  "overall_progress_pct": 89,
+  "notes": "Ola 5v2 integrated. Local-first 100%. Token-savings core path ~84%. Cargo transitive highs remain.",
   "feat-local-first": {
     "id": "feat-local-first",
     "progress_pct": 100,
@@ -16,7 +16,7 @@
   },
   "feat-token-savings": {
     "id": "feat-token-savings",
-    "progress_pct": 55,
+    "progress_pct": 84,
     "status": "beta",
     "github_issue": 496,
     "formula": "mean of sub_features",
@@ -27,7 +27,7 @@
         "status": "completed",
         "progress_pct": 100,
         "github_issue": 497,
-        "evidence": "tools_memory.rs:249 unwrap_or(false)"
+        "evidence": "tools_memory.rs include_content unwrap_or(false)"
       },
       {
         "id": "ts-p0-mem-search-structured",
@@ -35,7 +35,7 @@
         "status": "completed",
         "progress_pct": 100,
         "github_issue": 497,
-        "evidence": "structured candidates Ola5-01 on main 7a7c0809"
+        "evidence": "structured candidates on main; #658 closed superseded"
       },
       {
         "id": "ts-p0-memory-context-ids",
@@ -43,124 +43,149 @@
         "status": "completed",
         "progress_pct": 100,
         "github_issue": 497,
-        "evidence": "tools_memory.rs:733-740"
+        "evidence": "tools_memory.rs ids page-in"
       },
       {
         "id": "ts-p0-memory-context-per-doc-budget",
         "name": "memory_context max_chars per-doc + honest total",
-        "status": "partial",
-        "progress_pct": 50,
-        "github_issue": 497,
-        "evidence": "global max_chars only"
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 638,
+        "prs": [656],
+        "evidence": "max_chars_per_doc + truncation reporting"
       },
       {
         "id": "ts-p1-unified-estimate-tokens",
         "name": "Unified estimate_tokens",
-        "status": "pending",
-        "progress_pct": 20,
-        "github_issue": 496,
-        "evidence": "3 estimators still coexist"
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 639,
+        "prs": [661],
+        "evidence": "src/context/token_estimate.rs"
       },
       {
         "id": "ts-p2-working-memory-wire",
         "name": "Wire WorkingMemory; stop all_documents multi-layer",
-        "status": "pending",
-        "progress_pct": 25,
-        "github_issue": 496,
-        "evidence": "types exist; multi-layer still heavy"
+        "status": "completed",
+        "progress_pct": 85,
+        "github_issue": 640,
+        "prs": [657],
+        "evidence": "memory_export_pack uses filtered beliefs; working_documents tests"
       },
       {
         "id": "ts-p3-episodic-summaries",
         "name": "Real episodic session summaries",
-        "status": "pending",
-        "progress_pct": 30,
-        "github_issue": 500,
-        "evidence": "last_preview / mark_summarized placeholder"
+        "status": "completed",
+        "progress_pct": 90,
+        "github_issue": 641,
+        "prs": [660],
+        "evidence": "extractive non-LLM summaries default"
       },
       {
         "id": "ts-p5-honest-docs",
         "name": "TOKEN_SAVINGS_ANALYSIS honest closed-loop",
-        "status": "pending",
-        "progress_pct": 35,
-        "github_issue": 496
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 648,
+        "prs": [654],
+        "evidence": "docs/TOKEN_SAVINGS_ANALYSIS.md"
+      },
+      {
+        "id": "ts-p6-progressive-tests",
+        "name": "Progressive disclosure integration tests",
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 637,
+        "prs": [655],
+        "evidence": "src/server/mcp/progressive.rs"
+      },
+      {
+        "id": "ts-p7-tool-descriptors",
+        "name": "MCP tool descriptors progressive wording",
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 649,
+        "evidence": "mem_search + memory_context descriptions"
       }
     ]
   },
   "feat-code-graph-index": {
     "id": "feat-code-graph-index",
-    "progress_pct": 88,
+    "progress_pct": 96,
     "status": "beta",
     "github_issue": 445,
     "sub_features": [
       { "id": "cg-ast-multi-lang", "name": "AST multi-language indexing", "status": "completed", "progress_pct": 100 },
       { "id": "cg-http-api", "name": "HTTP scan/find/stats", "status": "completed", "progress_pct": 100 },
-      { "id": "cg-like-search", "name": "find_symbols LIKE scan", "status": "completed", "progress_pct": 100, "note": "works but O(n)" },
-      { "id": "cg-fts5", "name": "FTS5 virtual table + MATCH + BM25", "status": "pending", "progress_pct": 0, "github_issue": 445, "evidence": "db/mod.rs:423 LIKE" }
+      { "id": "cg-like-search", "name": "find_symbols LIKE scan (legacy)", "status": "completed", "progress_pct": 100, "note": "superseded by FTS5" },
+      { "id": "cg-fts5", "name": "FTS5 virtual table + MATCH + BM25", "status": "completed", "progress_pct": 100, "github_issue": 642, "prs": [653] }
     ]
   },
   "feat-plugin-system": {
     "id": "feat-plugin-system",
-    "progress_pct": 60,
+    "progress_pct": 78,
     "status": "beta",
     "github_issue": 489,
     "sub_features": [
       { "id": "pl-host-manager", "name": "Plugin host + manager", "status": "completed", "progress_pct": 100 },
       { "id": "pl-mock-registry", "name": "MockRegistry tests", "status": "completed", "progress_pct": 100 },
       { "id": "pl-github-client", "name": "GitHubRegistry client code", "status": "completed", "progress_pct": 90 },
+      { "id": "pl-fixture-index", "name": "In-repo plugins.json fixture + schema", "status": "completed", "progress_pct": 100, "github_issue": 645 },
       { "id": "pl-remote-repo", "name": "swal/xavier-plugins live repo", "status": "pending", "progress_pct": 0, "github_issue": 489 },
-      { "id": "pl-parser-python", "name": "parser-python release artifacts", "status": "pending", "progress_pct": 10, "github_issue": 489 },
+      { "id": "pl-parser-python", "name": "parser-python template", "status": "completed", "progress_pct": 85, "github_issue": 646, "prs": [652] },
       { "id": "pl-live-e2e", "name": "Unskip live registry e2e", "status": "pending", "progress_pct": 0, "github_issue": 489 }
     ]
   },
   "feat-security-hygiene": {
     "id": "feat-security-hygiene",
-    "progress_pct": 15,
-    "status": "draft",
+    "progress_pct": 48,
+    "status": "beta",
     "github_issue": 478,
     "sub_features": [
-      { "id": "sec-inventory", "name": "Dependabot inventory", "status": "partial", "progress_pct": 40, "evidence": "~30 open alerts API" },
-      { "id": "sec-npm", "name": "panel-ui npm audit fix", "status": "pending", "progress_pct": 10 },
-      { "id": "sec-cargo-high", "name": "Cargo high advisories", "status": "pending", "progress_pct": 10 },
+      { "id": "sec-inventory", "name": "Dependabot inventory", "status": "completed", "progress_pct": 100, "evidence": "alerts API + Ola 5 triage" },
+      { "id": "sec-npm", "name": "panel-ui npm audit fix", "status": "completed", "progress_pct": 90, "prs": [651], "evidence": "~34→~23 open alerts" },
+      { "id": "sec-cargo-high", "name": "Cargo high advisories", "status": "partial", "progress_pct": 25, "github_issue": 644, "evidence": "transitive dual-versions + major bumps deferred" },
       { "id": "sec-actions", "name": "GitHub Actions bumps", "status": "pending", "progress_pct": 20 },
-      { "id": "sec-dismiss", "name": "Document unfixable risks", "status": "pending", "progress_pct": 0 }
+      { "id": "sec-dismiss", "name": "Document unfixable risks", "status": "partial", "progress_pct": 40 }
     ]
   },
   "feat-mesh-network": {
     "id": "feat-mesh-network",
-    "progress_pct": 72,
+    "progress_pct": 80,
     "status": "beta",
     "github_issue": 115,
     "sub_features": [
-      { "id": "mesh-http", "name": "HTTP transport", "status": "completed", "progress_pct": 85 },
+      { "id": "mesh-http", "name": "HTTP transport", "status": "completed", "progress_pct": 90 },
       { "id": "mesh-libp2p", "name": "libp2p transport", "status": "completed", "progress_pct": 70 },
-      { "id": "mesh-acl", "name": "ACL permissions", "status": "completed", "progress_pct": 70 },
+      { "id": "mesh-acl", "name": "ACL permissions", "status": "completed", "progress_pct": 90 },
       { "id": "mesh-tokenomics", "name": "Wallet tokenomics", "status": "completed", "progress_pct": 60 },
       { "id": "mesh-dao-mock", "name": "Governance DAO mock", "status": "completed", "progress_pct": 55 },
       { "id": "mesh-dao-onchain", "name": "On-chain governance", "status": "pending", "progress_pct": 5 },
       { "id": "mesh-commons", "name": "Data Commons economy", "status": "partial", "progress_pct": 40 },
-      { "id": "mesh-iroh-tor", "name": "Iroh/QUIC + Tor phases", "status": "pending", "progress_pct": 15 }
+      { "id": "mesh-iroh-tor", "name": "Iroh/QUIC + Tor phases", "status": "pending", "progress_pct": 15 },
+      { "id": "mesh-maturity-status", "name": "Honest maturity JSON on health/status", "status": "completed", "progress_pct": 100, "github_issue": 647, "prs": [659] }
     ]
   },
   "feat-mcp-server": {
     "id": "feat-mcp-server",
-    "progress_pct": 82,
+    "progress_pct": 95,
     "status": "beta",
     "sub_features": [
       { "id": "mcp-tools-core", "name": "Core tools + health + local_status", "status": "completed", "progress_pct": 100 },
       { "id": "mcp-memory-crud", "name": "Memory CRUD tools", "status": "completed", "progress_pct": 100 },
-      { "id": "mcp-progressive", "name": "Progressive disclosure contract", "status": "partial", "progress_pct": 55, "github_issue": 497 },
+      { "id": "mcp-progressive", "name": "Progressive disclosure contract", "status": "completed", "progress_pct": 95, "github_issue": 497, "prs": [655, 656] },
       { "id": "mcp-auth", "name": "Token auth MCP", "status": "completed", "progress_pct": 95 }
     ]
   },
   "feat-context-regeneration": {
     "id": "feat-context-regeneration",
-    "progress_pct": 78,
+    "progress_pct": 88,
     "status": "beta",
     "sub_features": [
       { "id": "ctx-recall-harness", "name": "recall@k harness", "status": "completed", "progress_pct": 100 },
       { "id": "ctx-turn-pack", "name": "Shallow/medium/deep restore", "status": "completed", "progress_pct": 85 },
-      { "id": "ctx-episodic-real", "name": "Episodic LLM/extractive summaries", "status": "pending", "progress_pct": 30, "github_issue": 500 },
-      { "id": "ctx-working-wire", "name": "WorkingMemory multi-layer wire", "status": "pending", "progress_pct": 25, "github_issue": 496 }
+      { "id": "ctx-episodic-real", "name": "Episodic extractive summaries", "status": "completed", "progress_pct": 90, "github_issue": 641, "prs": [660] },
+      { "id": "ctx-working-wire", "name": "WorkingMemory multi-layer wire", "status": "completed", "progress_pct": 85, "github_issue": 640, "prs": [657] }
     ]
   }
 }

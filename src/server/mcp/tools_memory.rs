@@ -41,13 +41,13 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
         },
         MCPTool {
             name: "mem_search".to_string(),
-            description: "Search memory and return candidates with scores, snippets, and provenance. Use this to FIND relevant memories. Use mem_context to retrieve full content.".to_string(),
+            description: "Fat index search (progressive disclosure step 1). Returns structured candidates {id,path,score,snippet,kind} WITHOUT full body by default. Set include_content=true only when necessary. Use memory_context with ids to page-in full text.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
                     "query": { "type": "string", "description": "Search query" },
                     "limit": { "type": "number", "description": "Maximum results (default: 10, max: 100)", "default": 10 },
-                    "include_content": { "type": "boolean", "description": "Whether to include full content in results (default: false)", "default": false },
+                    "include_content": { "type": "boolean", "description": "Include full document body in each candidate (default false — prefer memory_context page-in by ids)", "default": false },
                     "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "RESERVED — currently ignored; search always runs the hybrid BM25+vector+RRF pipeline. Kept for forward-compatibility.", "default": "hybrid" },
                     "filters": { "type": "object", "description": "Optional filters" }
                 },
@@ -211,15 +211,15 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
         },
         MCPTool {
             name: "memory_context".to_string(),
-            description: "Build an aggregated context block from the most relevant memories for a query or specific IDs. Returns full content bounded by max_chars. Use AFTER mem_search to identify the right memories.".to_string(),
+            description: "Page-in full/partial content for specific memory ids (preferred progressive-disclosure step 2) or a query. Honors max_chars total budget and optional max_chars_per_doc per source. Prefer ids from mem_search over re-querying when possible.".to_string(),
             input_schema: json!({
                 "type": "object",
                 "properties": {
-                    "query": { "type": "string", "description": "Query describing the desired context" },
-                    "ids": { "type": "array", "items": { "type": "string" }, "description": "Optional list of memory IDs to retrieve specifically" },
+                    "query": { "type": "string", "description": "Query describing the desired context (used when ids omitted)" },
+                    "ids": { "type": "array", "items": { "type": "string" }, "description": "Preferred: memory IDs from mem_search candidates to page-in specifically" },
                     "limit": { "type": "number", "description": "Maximum memories to include (if using query)", "default": 5 },
-                    "max_chars": { "type": "number", "description": "Maximum characters to include in context output", "default": 4000 },
-                    "max_chars_per_doc": { "type": "number", "description": "Maximum characters to include per individual memory document (default: min(800, max_chars))" },
+                    "max_chars": { "type": "number", "description": "Maximum total characters in the aggregated context output", "default": 4000 },
+                    "max_chars_per_doc": { "type": "number", "description": "Maximum characters per individual memory document (default: min(800, max_chars)); response reports per-source truncation honesty" },
                     "depth": { "type": "number", "description": "Relationship depth to explore (0=flat, 1=direct, 2=two-hop)", "default": 0 },
                     "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "RESERVED — currently ignored; search always runs the hybrid pipeline.", "default": "hybrid" }
                 }

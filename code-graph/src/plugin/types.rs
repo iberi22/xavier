@@ -276,4 +276,44 @@ mod tests {
         let err = resp.into_result().unwrap_err();
         assert!(matches!(err, GraphError::Parser(_)));
     }
+
+    #[derive(Debug, Deserialize)]
+    struct RegistryIndexFixture {
+        plugins: Vec<RegistryEntry>,
+    }
+
+    /// Ola 5v2 · 09: in-repo plugins.json must serde into real `RegistryEntry` types.
+    #[test]
+    fn registry_fixture_plugins_json_deserializes() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixtures/xavier-plugins/plugins.json"
+        );
+        let raw = std::fs::read_to_string(path).expect("read plugins.json fixture");
+        let index: RegistryIndexFixture =
+            serde_json::from_str(&raw).expect("deserialize registry index");
+        assert!(
+            !index.plugins.is_empty(),
+            "fixture must list at least one plugin"
+        );
+        let py = index
+            .plugins
+            .iter()
+            .find(|p| p.name == "parser-python")
+            .expect("parser-python entry");
+        assert!(py.languages.contains(&Language::Python));
+        assert!(py.platform.contains_key("linux-x86_64"));
+        assert!(py
+            .platform
+            .get("linux-x86_64")
+            .expect("linux platform")
+            .checksum
+            .starts_with("sha256:"));
+        let ruby = index
+            .plugins
+            .iter()
+            .find(|p| p.name == "parser-ruby")
+            .expect("parser-ruby entry");
+        assert_eq!(ruby.languages, vec![Language::Other("ruby".into())]);
+    }
 }

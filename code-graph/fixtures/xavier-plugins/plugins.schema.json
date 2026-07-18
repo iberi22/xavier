@@ -1,0 +1,98 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://xavier.dev/schemas/xavier-plugins-index.schema.json",
+  "title": "Xavier plugin registry index",
+  "type": "object",
+  "required": ["plugins"],
+  "additionalProperties": true,
+  "properties": {
+    "schema_version": { "type": "integer", "minimum": 1 },
+    "registry": { "type": "string" },
+    "plugins": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/RegistryEntry" }
+    }
+  },
+  "$defs": {
+    "RegistryEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "display_name",
+        "description",
+        "version",
+        "author",
+        "languages",
+        "capabilities",
+        "platform",
+        "min_engine_version",
+        "license"
+      ],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "display_name": { "type": "string" },
+        "description": { "type": "string" },
+        "version": { "type": "string" },
+        "author": { "type": "string" },
+        "languages": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "Rust",
+                  "TypeScript",
+                  "JavaScript",
+                  "Python",
+                  "Go",
+                  "Java",
+                  "C",
+                  "Cpp",
+                  "Unknown"
+                ]
+              },
+              {
+                "type": "object",
+                "required": ["Other"],
+                "additionalProperties": false,
+                "properties": {
+                  "Other": { "type": "string", "minLength": 1 }
+                }
+              }
+            ]
+          }
+        },
+        "capabilities": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "platform": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/PlatformEntry" },
+          "description": "Keys such as windows-x86_64, linux-x86_64, macos-aarch64"
+        },
+        "min_engine_version": { "type": "string" },
+        "license": { "type": "string" }
+      }
+    },
+    "PlatformEntry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "checksum", "format"],
+      "properties": {
+        "url": { "type": "string", "format": "uri" },
+        "checksum": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-fA-F]{64}$",
+          "description": "Hex SHA-256 digest with sha256: prefix"
+        },
+        "format": {
+          "type": "string",
+          "enum": ["zip", "tar.gz", "binary"]
+        }
+      }
+    }
+  }
+}
