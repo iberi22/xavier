@@ -9,6 +9,7 @@ impl Drop for ChildGuard {
     }
 }
 
+// Run with: cargo test -p xavier --test e2e_chat_local -- --ignored --nocapture
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore] // requires compiled binary and may be slow in CI
 async fn test_chat_falls_back_gracefully_when_llm_unavailable() {
@@ -71,19 +72,26 @@ async fn test_chat_falls_back_gracefully_when_llm_unavailable() {
     let status = resp.status();
     let body: serde_json::Value = resp.json().await.unwrap_or_default();
 
-    // DIVERGENCIA CRÍTICA DOCUMENTADA:
-    // Hemos verificado que fallback_from_memory NO existe en src/cli/handlers/headless_api.rs.
-    // El PR #574 lo añadió pero el PR #568 lo pudo haber removido o revertido.
-    // Como no existe, el test documenta esto y aserta que la respuesta es 200 (no 500)
-    // en lugar de model == "memory-fallback", tal como se indica en las instrucciones.
-    // Esto significa que el test fallará intencionadamente si la respuesta es un error 500
-    // para indicar la ausencia del fallback esperado.
-    assert!(
-        status.is_success() || status.as_u16() == 200,
-        "Expected 200 but got {}: {:?}", status, body
+    // Assert headless chat fallback behaves as expected under Ola 4 (01 merged)
+    assert_eq!(
+        status.as_u16(), 200,
+        "Expected HTTP 200 but got {}: {:?}", status, body
     );
 
-    if let Some(model) = body.get("model").and_then(|m| m.as_str()) {
-        assert!(!model.is_empty(), "model field should not be empty");
-    }
+    let model = body.get("model").and_then(|m| m.as_str()).unwrap_or("");
+    assert_eq!(model, "memory-fallback", "Expected model 'memory-fallback' but got '{}'", model);
+
+    let content = body
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|arr| arr.get(0))
+        .and_then(|first| first.get("message"))
+        .and_then(|msg| msg.get("content"))
+        .and_then(|cnt| cnt.as_str())
+        .unwrap_or("");
+
+    assert!(
+        content.contains("Modo memoria") || content.contains("[Modo memoria"),
+        "Expected content to contain memory fallback marker, but got: '{}'", content
+    );
 }
