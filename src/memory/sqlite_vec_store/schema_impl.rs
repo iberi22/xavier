@@ -6,6 +6,7 @@ use crate::codebase::connection_manager::ConnectionManager;
 use crate::ports::outbound::schema_init::SchemaInitializer;
 use anyhow::Result;
 use rusqlite::{params, Connection};
+use std::sync::Arc;
 
 use super::{vector, VecSqliteMemoryStore};
 
@@ -95,8 +96,158 @@ impl VecSqliteMemoryStore {
                 active_model,
                 n
             );
+            if n > 0 {
+                let store_clone = self.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = store_clone.reindex_null_embeddings_background().await {
+                        tracing::error!("Background reindexing failed: {}", e);
+                    }
+                });
+            }
         }
 
+        Ok(())
+    }
+
+    pub async fn reindex_null_embeddings_background(&self) -> Result<()> {
+        let embedder = match crate::embedding::build_embedder_from_env().await {
+            Ok(emb) => emb,
+            Err(e) => {
+                tracing::error!("Failed to build embedder for background reindexing: {}", e);
+                return Err(anyhow::anyhow!("Embedder build failed: {}", e));
+            }
+        };
+
+        let project_id_c = self.project_id.clone();
+        let records = ConnectionManager::global()
+            .with_conn(&project_id_c, move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT id, workspace_id, path, content, metadata, X'' AS embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE embedding IS NULL"
+                )?;
+                let mut rows = stmt.query([])?;
+                let mut records = Vec::new();
+                while let Some(row) = rows.next()? {
+                    records.push(Self::deserialize_record(row)?);
+                }
+                Ok(records)
+            })
+            .await?;
+
+        let mut decrypted_records = Vec::new();
+        for mut record in records {
+            if let Err(e) = crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(&mut record) {
+                tracing::warn!("Failed to decrypt record {} during background reindexing: {}", record.id, e);
+                continue;
+            }
+            decrypted_records.push(record);
+        }
+
+        let total_records = decrypted_records.len();
+        if total_records == 0 {
+            return Ok(());
+        }
+
+        tracing::info!("Starting background reindexing for {} records.", total_records);
+
+        let batch_size = 10;
+        let mut processed_count = 0;
+
+        for chunk in decrypted_records.chunks(batch_size) {
+            let mut tasks = Vec::new();
+            for record in chunk {
+                let embedder = Arc::clone(&embedder);
+                let content = record.content.clone();
+                let record_id = record.id.clone();
+                tasks.push(async move {
+                    let res: Result<Vec<f32>, crate::embedding::EmbeddingError> = tokio::time::timeout(
+                        std::time::Duration::from_secs(60),
+                        embedder.encode(&content),
+                    )
+                    .await
+                    .map_err(|_| crate::embedding::EmbeddingError::Network("timeout".to_string()))
+                    .and_then(|r| r);
+
+                    match res {
+                        Ok(emb) => Ok((record_id, emb)),
+                        Err(e) => Err(format!("Embedding failed for record {}: {}", record_id, e)),
+                    }
+                });
+            }
+
+            let results = futures_util::future::join_all(tasks).await;
+
+            for res in results {
+                match res {
+                    Ok((record_id, embedding)) => {
+                        let project_id_c = self.project_id.clone();
+                        let record_to_update = chunk.iter().find(|r| r.id == record_id).cloned();
+                        if let Some(record) = record_to_update {
+                            let workspace_id = record.workspace_id.clone();
+                            let embedding_c: Vec<f32> = embedding.clone();
+                            let record_id_for_db = record_id.clone();
+                            let update_res = ConnectionManager::global()
+                                .with_conn(&project_id_c, move |conn| {
+                                    let qjl_enabled = {
+                                        let threshold = Self::configured_qjl_threshold();
+                                        let current_vectors: usize = conn.query_row(
+                                            "SELECT COUNT(*) FROM memory_embeddings WHERE workspace_id = ?",
+                                            params![workspace_id],
+                                            |row| row.get(0)
+                                        ).unwrap_or(0);
+                                        current_vectors >= threshold
+                                    };
+
+                                    let embedding_blob = if qjl_enabled {
+                                        vector::serialize_embedding_qjl(&embedding_c)
+                                    } else {
+                                        vector::serialize_embedding(&embedding_c)
+                                    };
+
+                                    // Update memory_records
+                                    conn.execute(
+                                        "UPDATE memory_records SET embedding = ?1, updated_at = ?2 WHERE id = ?3",
+                                        params![
+                                            embedding_blob,
+                                            chrono::Utc::now().to_rfc3339(),
+                                            record_id_for_db
+                                        ],
+                                    )?;
+
+                                    // Update memory_embeddings
+                                    let embedding_json = serde_json::to_string(&embedding_c).unwrap_or_default();
+                                    conn.execute(
+                                        "INSERT OR REPLACE INTO memory_embeddings(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
+                                        params![record_id_for_db, workspace_id, embedding_json],
+                                    )?;
+
+                                    Ok(())
+                                })
+                                .await;
+
+                            if let Err(e) = update_res {
+                                tracing::error!("Failed to update embedded record {} in database: {}", record_id, e);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        tracing::warn!("Gracefully handled error during background reindexing: {}", e);
+                    }
+                }
+            }
+
+            processed_count += chunk.len();
+            let prev_hundred = (processed_count - chunk.len()) / 100;
+            let curr_hundred = processed_count / 100;
+            if curr_hundred > prev_hundred || processed_count == total_records {
+                tracing::info!(
+                    "Reindexación en background: {}/{} registros procesados.",
+                    processed_count,
+                    total_records
+                );
+            }
+        }
+
+        tracing::info!("Background reindexing completed successfully.");
         Ok(())
     }
 
@@ -343,5 +494,111 @@ mod tests {
             |r| r.get(0)
         ).unwrap();
         assert_eq!(saved_model, "qwen3-coder");
+    }
+
+    #[tokio::test]
+    async fn test_reindex_null_embeddings_background() {
+        use crate::memory::store::MemoryStore;
+        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+
+        // Setup a mock API server using mockito
+        let mut server = mockito::Server::new_async().await;
+        let mock_url = server.url();
+
+        // Setup environment variables for cloud OpenAI-compatible embedder
+        std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "cloud");
+        std::env::set_var("XAVIER_EMBEDDING_URL", format!("{}/v1/embeddings", mock_url));
+        std::env::set_var("OPENAI_API_KEY", "test-api-key");
+        std::env::set_var("XAVIER_EMBEDDING_MODEL", "test-model");
+
+        // Mock the embedding API response
+        let _mock = server.mock("POST", "/v1/embeddings")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(r#"{
+                "data": [
+                    {
+                        "embedding": [0.1, 0.2, 0.3]
+                    }
+                ]
+            }"#)
+            .create_async()
+            .await;
+
+        // Create a temporary database using VecSqliteMemoryStore
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("test_reindex.db");
+        let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig {
+            path: db_path,
+            embedding_dimensions: 3,
+        };
+
+        let store = VecSqliteMemoryStore::new(config).await.unwrap();
+
+        // Insert a record with NULL embedding
+        let record = crate::memory::store::MemoryRecord {
+            id: "test_mem_1".to_string(),
+            workspace_id: "test_ws_1".to_string(),
+            path: "test/path".to_string(),
+            content: "Hello world".to_string(),
+            metadata: serde_json::json!({}),
+            embedding: vec![],
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            ..Default::default()
+        };
+
+        store.put(record).await.unwrap();
+
+        // Manually update to set embedding = NULL in the DB to simulate model change invalidation
+        ConnectionManager::global().with_conn(&store.project_id, |conn| {
+            conn.execute("UPDATE memory_records SET embedding = NULL", []).unwrap();
+            conn.execute("DELETE FROM memory_embeddings", []).unwrap();
+            Ok(())
+        }).await.unwrap();
+
+        // Verify that embedding is NULL before background reindexing
+        let is_null = ConnectionManager::global().with_conn(&store.project_id, |conn| {
+            let embedding: Option<Vec<u8>> = conn.query_row(
+                "SELECT embedding FROM memory_records WHERE id = 'test_mem_1'",
+                [],
+                |r| r.get(0)
+            ).unwrap();
+            Ok(embedding.is_none())
+        }).await.unwrap();
+        assert!(is_null);
+
+        // Run the background reindexing
+        store.reindex_null_embeddings_background().await.unwrap();
+
+        // Verify that embedding was successfully updated
+        let (updated_embedding, has_vector_row) = ConnectionManager::global().with_conn(&store.project_id, |conn| {
+            let embedding_blob: Option<Vec<u8>> = conn.query_row(
+                "SELECT embedding FROM memory_records WHERE id = 'test_mem_1'",
+                [],
+                |r| r.get(0)
+            ).unwrap();
+
+            let count: i64 = conn.query_row(
+                "SELECT COUNT(*) FROM memory_embeddings WHERE id = 'test_mem_1'",
+                [],
+                |r| r.get(0)
+            ).unwrap();
+
+            Ok((embedding_blob, count > 0))
+        }).await.unwrap();
+
+        assert!(updated_embedding.is_some());
+        assert!(has_vector_row);
+
+        // Check if the deserialized embedding has the correct values
+        let floats = vector::deserialize_embedding(&updated_embedding.unwrap());
+        assert_eq!(floats, vec![0.1f32, 0.2f32, 0.3f32]);
+
+        // Cleanup env vars
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
+        std::env::remove_var("XAVIER_EMBEDDING_URL");
+        std::env::remove_var("OPENAI_API_KEY");
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
     }
 }
