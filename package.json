@@ -26,5 +26,11 @@
     "js-yaml": "^4.2.0",
     "standard-version": "^9.5.0",
     "husky": "^9.0.0"
+  },
+  "pnpm": {
+    "overrides": {
+      "undici": "^7.28.0",
+      "esbuild": "^0.28.1"
+    }
   }
 }
