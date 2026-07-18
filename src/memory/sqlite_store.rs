@@ -105,6 +105,7 @@ impl SqliteMemoryStore {
                 manager.add_migration(crate::storage::migrations::MigrationV3UnifiedExtensions);
                 manager.add_migration(crate::storage::migrations::MigrationV4UnifiedIsolation);
                 manager.add_migration(crate::storage::migrations::MigrationV5SessionTokensId);
+                manager.add_migration(crate::storage::migrations::MigrationV8EntityGraphSnapshots);
                 manager.run_migrations(conn)
             })
             .await?;
@@ -542,6 +543,7 @@ impl MemoryStore for SqliteMemoryStore {
                 beliefs,
                 session_tokens,
                 checkpoints,
+                entity_graph_snapshot: None,
             })
         }).await
     }
@@ -717,6 +719,37 @@ impl MemoryStore for SqliteMemoryStore {
                 conn.execute(
                     &format!("DELETE FROM {} WHERE id = ?", TABLE_CHECKPOINTS),
                     [&checkpoint_key],
+                )?;
+                Ok(())
+            })
+            .await
+    }
+
+    async fn load_entity_graph_snapshot(&self, workspace_id: &str) -> Result<Option<String>> {
+        let workspace_id = workspace_id.to_string();
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT data FROM entity_graph_snapshots WHERE workspace_id = ?",
+                )?;
+                match stmt.query_row([&workspace_id], |row| row.get::<_, String>(0)) {
+                    Ok(data) => Ok(Some(data)),
+                    Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+                    Err(e) => Err(anyhow::anyhow!("SQLite query failed: {}", e)),
+                }
+            })
+            .await
+    }
+
+    async fn save_entity_graph_snapshot(&self, workspace_id: &str, data: &str) -> Result<()> {
+        let workspace_id = workspace_id.to_string();
+        let data = data.to_string();
+        let now = Utc::now().to_rfc3339();
+        ConnectionManager::global()
+            .with_conn(&self.project_id, move |conn| {
+                conn.execute(
+                    "INSERT OR REPLACE INTO entity_graph_snapshots (workspace_id, data, updated_at) VALUES (?, ?, ?)",
+                    params![workspace_id, data, now],
                 )?;
                 Ok(())
             })

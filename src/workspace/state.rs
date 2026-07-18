@@ -231,25 +231,59 @@ impl WorkspaceState {
         let entity_graph = Arc::new(EntityGraph::new());
         {
             let eg = Arc::clone(&entity_graph);
+            let store_clone = Arc::clone(&store);
+            let workspace_id = config.id.clone();
             let docs = memory.all_documents().await;
             tokio::spawn(async move {
-                for document in &docs {
-                    let memory_id = document
-                        .id
-                        .as_deref()
-                        .unwrap_or(document.path.as_str())
-                        .to_string();
-                    if let Err(error) = eg
-                        .upsert_memory(&memory_id, &document.content, Some(&document.metadata))
-                        .await
-                    {
-                        tracing::warn!(%error, memory_id = %memory_id, "failed to index entity graph from existing memory");
+                let mut restored = false;
+                match store_clone.load_entity_graph_snapshot(&workspace_id).await {
+                    Ok(Some(snapshot)) => {
+                        match eg.import_json(&snapshot).await {
+                            Ok(()) => {
+                                tracing::info!(
+                                    "entity graph restored from snapshot for workspace {}",
+                                    workspace_id
+                                );
+                                restored = true;
+                            }
+                            Err(error) => {
+                                tracing::warn!(%error, "failed to import entity graph snapshot; falling back to full reindex");
+                            }
+                        }
+                    }
+                    Ok(None) => {
+                        tracing::debug!("no entity graph snapshot found; starting full reindex");
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "failed to load entity graph snapshot; falling back to full reindex");
                     }
                 }
-                tracing::info!(
-                    "entity graph indexing complete for {} documents",
-                    docs.len()
-                );
+
+                if !restored {
+                    for document in &docs {
+                        let memory_id = document
+                            .id
+                            .as_deref()
+                            .unwrap_or(document.path.as_str())
+                            .to_string();
+                        if let Err(error) = eg
+                            .upsert_memory(&memory_id, &document.content, Some(&document.metadata))
+                            .await
+                        {
+                            tracing::warn!(%error, memory_id = %memory_id, "failed to index entity graph from existing memory");
+                        }
+                    }
+                    tracing::info!(
+                        "entity graph indexing complete for {} documents",
+                        docs.len()
+                    );
+                    // Save initial snapshot after reindexing so it doesn't have to reindex next time!
+                    if let Ok(json) = eg.export_json().await {
+                        if let Err(error) = store_clone.save_entity_graph_snapshot(&workspace_id, &json).await {
+                            tracing::warn!(%error, "failed to save initial entity graph snapshot after reindexing");
+                        }
+                    }
+                }
             });
         }
         let semantic_memory = Arc::new(SemanticMemory::new());
@@ -610,6 +644,12 @@ impl WorkspaceState {
             .map(|_| ());
 
         if result.is_ok() {
+            if let Ok(json) = self.entity_graph.export_json().await {
+                if let Err(error) = self.store.save_entity_graph_snapshot(&self.config.id, &json).await {
+                    tracing::warn!(%error, "failed to save entity graph snapshot after indexing");
+                }
+            }
+
             let _ = crate::notifications::NOTIFICATIONS
                 .notify(
                     crate::notifications::IslandId::Memory,
@@ -654,7 +694,15 @@ impl WorkspaceState {
     }
 
     pub async fn remove_memory_entities(&self, memory_id: &str) -> Result<()> {
-        self.entity_graph.remove_memory(memory_id).await
+        let result = self.entity_graph.remove_memory(memory_id).await;
+        if result.is_ok() {
+            if let Ok(json) = self.entity_graph.export_json().await {
+                if let Err(error) = self.store.save_entity_graph_snapshot(&self.config.id, &json).await {
+                    tracing::warn!(%error, "failed to save entity graph snapshot after removal");
+                }
+            }
+        }
+        result
     }
     pub async fn list_memory_records(&self) -> Result<Vec<MemoryRecord>> {
         self.store.list(&self.config.id).await

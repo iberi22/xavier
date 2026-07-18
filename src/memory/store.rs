@@ -205,6 +205,8 @@ pub struct DurableWorkspaceState {
     pub session_tokens: Vec<SessionTokenRecord>,
     #[serde(default)]
     pub checkpoints: Vec<Checkpoint>,
+    #[serde(default)]
+    pub entity_graph_snapshot: Option<String>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -547,6 +549,14 @@ pub trait MemoryStore: Send + Sync {
             self.backend().as_str()
         )
     }
+
+    async fn load_entity_graph_snapshot(&self, _workspace_id: &str) -> Result<Option<String>> {
+        Ok(None)
+    }
+
+    async fn save_entity_graph_snapshot(&self, _workspace_id: &str, _data: &str) -> Result<()> {
+        Ok(())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -811,6 +821,23 @@ impl MemoryStore for FileMemoryStore {
         let all = self.list(workspace_id).await?;
         Ok(MemoryTree::build_ls(all, path))
     }
+
+    async fn load_entity_graph_snapshot(&self, workspace_id: &str) -> Result<Option<String>> {
+        let state = self.state.read().await;
+        Ok(state
+            .workspaces
+            .get(workspace_id)
+            .and_then(|w| w.entity_graph_snapshot.clone()))
+    }
+
+    async fn save_entity_graph_snapshot(&self, workspace_id: &str, data: &str) -> Result<()> {
+        {
+            let mut state = self.state.write().await;
+            let workspace = Self::workspace_mut(&mut state, workspace_id);
+            workspace.entity_graph_snapshot = Some(data.to_string());
+        }
+        self.persist().await
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1003,6 +1030,24 @@ impl MemoryStore for InMemoryMemoryStore {
                 .checkpoints
                 .retain(|item| !(item.task_id == task_id && item.name == name));
         }
+        Ok(())
+    }
+
+    async fn load_entity_graph_snapshot(&self, workspace_id: &str) -> Result<Option<String>> {
+        let state = self.state.read().await;
+        Ok(state
+            .workspaces
+            .get(workspace_id)
+            .and_then(|w| w.entity_graph_snapshot.clone()))
+    }
+
+    async fn save_entity_graph_snapshot(&self, workspace_id: &str, data: &str) -> Result<()> {
+        let mut state = self.state.write().await;
+        let workspace = state
+            .workspaces
+            .entry(workspace_id.to_string())
+            .or_default();
+        workspace.entity_graph_snapshot = Some(data.to_string());
         Ok(())
     }
 }

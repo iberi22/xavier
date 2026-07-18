@@ -349,6 +349,7 @@ impl MemoryStore for PostgresMemoryStore {
             beliefs,
             session_tokens,
             checkpoints,
+            entity_graph_snapshot: None,
         })
     }
 
