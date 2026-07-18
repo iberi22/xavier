@@ -3,7 +3,7 @@
     "id": "feat-local-first",
     "name": "100% Local Operation (LLM + Embeddings via Ollama)",
     "status": "beta",
-    "progress_pct": 96,
+    "progress_pct": 100,
     "github_issue": 522,
     "description": "Chat del panel responde usando un LLM local (Ollama) con fallback a cloud y degradación elegante a memoria cuando ningún provider responde. Observabilidad y tooling local-first avanzados (Ola 3).",
     "last_verified": "2026-07-17",
