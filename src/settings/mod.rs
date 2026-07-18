@@ -247,6 +247,10 @@ pub mod tests {
             std::env::var("XAVIER_EPISODIC_MIN_EVENT_IMPORTANCE").unwrap(),
             "0.5"
         );
+        assert_eq!(
+            std::env::var("XAVIER_EPISODIC_LLM_SUMMARY_ENABLED").unwrap(),
+            "false"
+        );
 
         // Advanced
         assert_eq!(std::env::var("XAVIER_QJL_THRESHOLD").unwrap(), "500");

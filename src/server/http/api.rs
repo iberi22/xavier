@@ -71,16 +71,45 @@ pub async fn memory_retrieve(
         .list_threads(50)
         .await
         .unwrap_or_default();
-    let episodic_summaries = threads
-        .into_iter()
-        .map(|s| SessionSummary {
+    let mut episodic_summaries = Vec::new();
+    for s in threads {
+        let summary = if let Some(ref preview) = s.last_preview {
+            if preview.contains("### Extractive Session Summary") {
+                preview.clone()
+            } else {
+                if let Ok(messages) = workspace.workspace.conversations_db.get_thread_messages(&s.id).await {
+                    if !messages.is_empty() {
+                        let gen = crate::memory::episodic::summarize_session_extractive(&messages);
+                        let _ = workspace.workspace.conversations_db.update_last_preview(&s.id, &gen).await;
+                        gen
+                    } else {
+                        preview.clone()
+                    }
+                } else {
+                    preview.clone()
+                }
+            }
+        } else {
+            if let Ok(messages) = workspace.workspace.conversations_db.get_thread_messages(&s.id).await {
+                if !messages.is_empty() {
+                    let gen = crate::memory::episodic::summarize_session_extractive(&messages);
+                    let _ = workspace.workspace.conversations_db.update_last_preview(&s.id, &gen).await;
+                    gen
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            }
+        };
+        episodic_summaries.push(SessionSummary {
             session_id: s.id.clone(),
             start_time: s.started_at,
-            summary: s.last_preview.unwrap_or_default(),
+            summary,
             key_events: vec![],
             sentiment_timeline: vec![],
-        })
-        .collect::<Vec<_>>();
+        });
+    }
     let semantic_entities = workspace.workspace.entity_graph.all_entities().await;
     let results = gating
         .retrieve_with_telemetry(
@@ -183,16 +212,45 @@ pub async fn memory_export_pack(
         .list_threads(50)
         .await
         .unwrap_or_default();
-    let episodic_summaries = threads
-        .into_iter()
-        .map(|s| SessionSummary {
+    let mut episodic_summaries = Vec::new();
+    for s in threads {
+        let summary = if let Some(ref preview) = s.last_preview {
+            if preview.contains("### Extractive Session Summary") {
+                preview.clone()
+            } else {
+                if let Ok(messages) = workspace.workspace.conversations_db.get_thread_messages(&s.id).await {
+                    if !messages.is_empty() {
+                        let gen = crate::memory::episodic::summarize_session_extractive(&messages);
+                        let _ = workspace.workspace.conversations_db.update_last_preview(&s.id, &gen).await;
+                        gen
+                    } else {
+                        preview.clone()
+                    }
+                } else {
+                    preview.clone()
+                }
+            }
+        } else {
+            if let Ok(messages) = workspace.workspace.conversations_db.get_thread_messages(&s.id).await {
+                if !messages.is_empty() {
+                    let gen = crate::memory::episodic::summarize_session_extractive(&messages);
+                    let _ = workspace.workspace.conversations_db.update_last_preview(&s.id, &gen).await;
+                    gen
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            }
+        };
+        episodic_summaries.push(SessionSummary {
             session_id: s.id.clone(),
             start_time: s.started_at,
-            summary: s.last_preview.unwrap_or_default(),
+            summary,
             key_events: vec![],
             sentiment_timeline: vec![],
-        })
-        .collect::<Vec<_>>();
+        });
+    }
     let semantic_entities = workspace.workspace.entity_graph.all_entities().await;
     let layered_result = gating
         .retrieve_layered(

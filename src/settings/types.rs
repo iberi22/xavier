@@ -200,6 +200,8 @@ pub struct EpisodicMemoryLayerConfig {
     pub summary_window: usize,
     pub max_sessions: usize,
     pub min_event_importance: f32,
+    #[serde(default)]
+    pub llm_summary_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

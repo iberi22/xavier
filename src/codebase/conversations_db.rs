@@ -405,14 +405,20 @@ impl ConversationsDb {
                 params![id, thread_id_c, role_c, content_c, tool_calls_c, openui_lang_c, xui_json_c, metadata_c, now_c.clone(), tokens],
             ).context("failed to store message")?;
 
-            // Update thread's updated_at timestamp and last_preview
-            let preview = if content_c.len() > 120 { &content_c[..120] } else { &content_c };
+            // Update thread's updated_at timestamp
             let _ = conn.execute(
-                "UPDATE conversation_threads SET updated_at = ?1, last_preview = ?2 WHERE id = ?3",
-                params![now_c, preview, thread_id_for_update.clone()],
+                "UPDATE conversation_threads SET updated_at = ?1 WHERE id = ?2",
+                params![now_c, thread_id_for_update.clone()],
             );
             Ok(())
         }).await?;
+
+        // After successfully inserting the message, let's load all messages of this thread,
+        // generate the extractive summary, and save it to the thread's `last_preview`!
+        if let Ok(messages) = self.get_thread_messages(thread_id).await {
+            let summary = crate::memory::episodic::summarize_session_extractive(&messages);
+            let _ = self.update_last_preview(thread_id, &summary).await;
+        }
 
         Ok(Message {
             id: id_for_return,
@@ -426,6 +432,23 @@ impl ConversationsDb {
             created_at: Utc::now(),
             tokens,
         })
+    }
+
+    /// Update the last_preview of a thread.
+    pub async fn update_last_preview(&self, thread_id: &str, preview: &str) -> Result<()> {
+        self.ensure_schema().await?;
+        let thread_id_c = thread_id.to_string();
+        let preview_c = preview.to_string();
+        let now_c = Utc::now().to_rfc3339();
+
+        ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
+            let _ = conn.execute(
+                "UPDATE conversation_threads SET updated_at = ?1, last_preview = ?2 WHERE id = ?3",
+                params![now_c, preview_c, thread_id_c],
+            );
+            Ok(())
+        }).await?;
+        Ok(())
     }
 
     /// Get all messages for a thread, ordered by creation time.
@@ -980,6 +1003,8 @@ mod tests {
         // Test updated_at and last_preview on thread
         let thread_updated = db.get_thread(&thread.id).await.unwrap().unwrap();
         assert!(thread_updated.last_preview.is_some());
-        assert_eq!(thread_updated.last_preview.unwrap(), "Hello world");
+        let last_preview_val = thread_updated.last_preview.unwrap();
+        assert!(last_preview_val.contains("### Extractive Session Summary"));
+        assert!(last_preview_val.contains("Hello world"));
     }
 }
