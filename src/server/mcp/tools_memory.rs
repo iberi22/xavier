@@ -219,6 +219,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                     "ids": { "type": "array", "items": { "type": "string" }, "description": "Optional list of memory IDs to retrieve specifically" },
                     "limit": { "type": "number", "description": "Maximum memories to include (if using query)", "default": 5 },
                     "max_chars": { "type": "number", "description": "Maximum characters to include in context output", "default": 4000 },
+                    "max_chars_per_doc": { "type": "number", "description": "Maximum characters to include per individual memory document (default: min(800, max_chars))" },
                     "depth": { "type": "number", "description": "Relationship depth to explore (0=flat, 1=direct, 2=two-hop)", "default": 0 },
                     "search_mode": { "type": "string", "enum": ["bm25", "semantic", "hybrid"], "description": "RESERVED — currently ignored; search always runs the hybrid pipeline.", "default": "hybrid" }
                 }
@@ -722,6 +723,11 @@ pub async fn handle_memory_tool(
                 .and_then(|v| v.as_u64())
                 .unwrap_or(CONTEXT_DEFAULT_MAX_CHARS as u64)
                 .clamp(1, CONTEXT_ABSOLUTE_MAX_CHARS as u64) as usize;
+            let max_chars_per_doc = arguments
+                .get("max_chars_per_doc")
+                .and_then(|v| v.as_u64())
+                .map(|v| v as usize)
+                .unwrap_or_else(|| std::cmp::min(800, max_chars));
             let depth = arguments
                 .get("depth")
                 .and_then(|v| v.as_u64())
@@ -773,36 +779,19 @@ pub async fn handle_memory_tool(
                     results.to_vec()
                 };
 
-                // We need to preserve the "depth" information for the context formatter
-                // Let's use a simpler approach since expand_depth doesn't return depth info
-                // For memory_context we might want to keep the manual loop if we need depth labels,
-                // or we can just list them.
-
                 let mut sources: Vec<MCPSearchResult> = Vec::new();
-                for doc in &expanded {
-                    sources.push(MCPSearchResult {
-                        id: doc.id.clone().unwrap_or_default(),
-                        path: doc.path.clone(),
-                        score: 0.0,
-                        snippet: doc.content.chars().take(200).collect(),
-                        provenance: MCPProvenance {
-                            source: "search_filtered".to_string(),
-                            retrieved_at: chrono::Utc::now().to_rfc3339(),
-                            retrieval_method: "context_depth_search".to_string(),
-                            embedding_model: None,
-                            version: None,
-                        },
-                        metadata: doc.metadata.clone(),
-                    });
-                }
-
-                // Phase 3: build context string
                 let mut context = String::from("# Relevant Memory Context\n\n");
-                let per_doc_limit = if expanded.is_empty() { 0 } else { max_chars / expanded.len() };
+                let mut any_doc_truncated = false;
 
                 for record in &expanded {
-                    let doc_content = if record.content.chars().count() > per_doc_limit {
-                        let mut truncated: String = record.content.chars().take(per_doc_limit).collect();
+                    let total_record_chars = record.content.chars().count();
+                    let is_this_doc_truncated = total_record_chars > max_chars_per_doc;
+                    if is_this_doc_truncated {
+                        any_doc_truncated = true;
+                    }
+
+                    let doc_content = if is_this_doc_truncated {
+                        let mut truncated: String = record.content.chars().take(max_chars_per_doc).collect();
                         truncated.push_str("\n[... doc truncated ...]");
                         truncated
                     } else {
@@ -815,11 +804,32 @@ pub async fn handle_memory_tool(
                         record.id.as_deref().unwrap_or("none"),
                         doc_content
                     ));
+
+                    let mut meta = record.metadata.clone();
+                    if let Some(obj) = meta.as_object_mut() {
+                        obj.insert("truncated".to_string(), json!(is_this_doc_truncated));
+                        obj.insert("total_chars".to_string(), json!(total_record_chars));
+                    }
+
+                    sources.push(MCPSearchResult {
+                        id: record.id.clone().unwrap_or_default(),
+                        path: record.path.clone(),
+                        score: 0.0,
+                        snippet: record.content.chars().take(200).collect(),
+                        provenance: MCPProvenance {
+                            source: "search_filtered".to_string(),
+                            retrieved_at: chrono::Utc::now().to_rfc3339(),
+                            retrieval_method: "context_depth_search".to_string(),
+                            embedding_model: None,
+                            version: None,
+                        },
+                        metadata: meta,
+                    });
                 }
 
                 // Phase 4: enforce absolute max_chars truncation
-                let truncated;
-                let truncated_reason;
+                let mut truncated = any_doc_truncated;
+                let mut truncated_reason = None;
                 let total_chars = context.chars().count();
                 if total_chars > max_chars {
                     truncated = true;
@@ -831,9 +841,8 @@ pub async fn handle_memory_tool(
                     let mut truncated_text: String = context.chars().take(max_chars).collect();
                     truncated_text.push_str("\n[... truncated ...]");
                     context = truncated_text;
-                } else {
-                    truncated = false;
-                    truncated_reason = None;
+                } else if any_doc_truncated {
+                    truncated_reason = Some("One or more documents were truncated".to_string());
                 }
 
                 let final_total_chars = context.chars().count();
