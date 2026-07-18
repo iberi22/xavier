@@ -13,7 +13,8 @@ fn stable_key(kind: &str, parts: &[&str]) -> String {
         digest.update([0u8]);
         digest.update(part.as_bytes());
     }
-    hex::encode(digest.finalize())
+    let result = digest.finalize();
+    result.iter().map(|b| format!("{:02x}", b)).collect()
 }
 
 fn bench_hybrid_search(c: &mut Criterion) {
@@ -73,6 +74,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
                     content: content.to_string(),
                     metadata: serde_json::json!({}),
                     embedding,
+                    score: 0.0,
                     created_at: chrono::Utc::now(),
                     updated_at: chrono::Utc::now(),
                     revision: 1,
