@@ -78,6 +78,7 @@ impl Default for EpisodicMemoryLayerConfig {
             summary_window: 10,
             max_sessions: 50,
             min_event_importance: 0.5,
+            llm_summary_enabled: false,
         }
     }
 }
