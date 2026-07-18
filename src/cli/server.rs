@@ -24,6 +24,9 @@ use crate::cli::config::{
     state_panel_root,
 };
 use xavier::security::auth_store::AuthStore;
+use xavier::api::graph::{
+    memory_graph_entity, memory_graph_list_entities, memory_graph_relations, memory_graph_view,
+};
 use crate::cli::state::CliState;
 
 use crate::settings::XavierSettings;
@@ -427,6 +430,11 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             get(onboarding_suggestions_handler),
         )
         .route("/mcp/tools", get(mcp_tools_handler))
+        // Memory Knowledge Graph (EntityGraph)
+        .route("/memory/graph/entities", get(memory_graph_list_entities))
+        .route("/memory/graph/entities/:entity_id", get(memory_graph_entity))
+        .route("/memory/graph/relations", get(memory_graph_relations))
+        .route("/memory/graph/view", get(memory_graph_view))
         .route("/code/index", post(code_index_handler))
         .route("/code/find", post(code_find_handler))
         .route("/code/context", post(code_context_handler))
@@ -439,6 +447,8 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             post(code_reverse_dependencies_handler),
         )
         .route("/code/call-chain", post(code_call_chain_handler))
+        // Code graph canvas projection
+        .route("/code/graph/view", get(code_graph_view_handler))
         .route("/code/hubs", get(code_hubs_handler))
         .route("/code/hotspots", get(code_hotspots_handler))
         .route("/v1/account/usage", get(account_usage_handler))
