@@ -37,7 +37,8 @@ mod tests {
             }),
         ).await;
         let body_fat = get_json_body(resp_fat).await;
-        let text_fat = body_fat["result"]["content"][0]["text"].as_str().unwrap();
+        let sc_fat = &body_fat["result"]["content"][0]["structuredContent"];
+        let text_fat = serde_json::to_string(sc_fat).unwrap();
 
         // 3. Search with content
         let resp_full = post_json(
@@ -51,7 +52,8 @@ mod tests {
             }),
         ).await;
         let body_full = get_json_body(resp_full).await;
-        let text_full = body_full["result"]["content"][0]["text"].as_str().unwrap();
+        let sc_full = &body_full["result"]["content"][0]["structuredContent"];
+        let text_full = serde_json::to_string(sc_full).unwrap();
 
         println!("Fat search result length: {}", text_fat.len());
         println!("Full search result length: {}", text_full.len());
@@ -86,8 +88,8 @@ mod tests {
             "params": { "name": "mem_search", "arguments": { "query": "one" }}
         })).await;
         let body_search = get_json_body(resp_search).await;
-        let search_text = body_search["result"]["content"][0]["text"].as_str().unwrap();
-        let id1 = search_text.split('\n').next().unwrap().strip_prefix("Id: ").unwrap();
+        let sc_search = &body_search["result"]["content"][0]["structuredContent"];
+        let id1 = sc_search["results"][0]["id"].as_str().unwrap();
 
         // memory_context with ID (targeted page-in)
         let resp_context = post_json(router.clone(), json!({
