@@ -428,6 +428,27 @@ impl LegacyMigration for MigrationV1InitialSchema {
     }
 }
 
+pub struct MigrationV8EntityGraphSnapshots;
+
+impl LegacyMigration for MigrationV8EntityGraphSnapshots {
+    fn version(&self) -> u32 {
+        8
+    }
+    fn description(&self) -> &str {
+        "Add entity_graph_snapshots table for knowledge graph persistence"
+    }
+    fn run(&self, conn: &Connection) -> Result<()> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS entity_graph_snapshots (
+                workspace_id TEXT PRIMARY KEY,
+                data TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );",
+        )?;
+        Ok(())
+    }
+}
+
 pub struct MigrationV2ColumnarIndices;
 
 impl LegacyMigration for MigrationV2ColumnarIndices {

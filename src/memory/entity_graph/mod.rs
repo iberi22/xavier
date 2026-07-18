@@ -2,6 +2,20 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+//!
+//! ## Persistence Mechanism
+//!
+//! To avoid expensive full-document reindexing on boot, the `EntityGraph`'s
+//! in-memory state can be serialized to a JSON snapshot and persisted to
+//! the active `MemoryStore` backend.
+//!
+//! - **Saves**: When a document is indexed via `index_memory_entities` or removed via
+//!   `remove_memory_entities` in `WorkspaceState`, the latest state of the `EntityGraph`
+//!   is exported using `export_json` and immediately persisted in the database table
+//!   `entity_graph_snapshots` (or via `entity_graph_snapshot` in workspace state files/memory).
+//! - **Loads**: On startup, `WorkspaceState::new` attempts to load a snapshot via
+//!   `store.load_entity_graph_snapshot` and imports it with `import_json`. If successful,
+//!   the boot process skips the background document reindexing, significantly optimizing startup time.
 
 pub mod extraction;
 pub mod inference;

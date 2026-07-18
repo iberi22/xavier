@@ -244,6 +244,7 @@ impl MemoryStore for SupabaseMemoryStore {
             beliefs,
             session_tokens,
             checkpoints,
+            entity_graph_snapshot: None,
         })
     }
 

@@ -278,3 +278,59 @@ async fn test_workspace_working_memory_is_bounded_and_contains_recent_docs() {
     assert!(contents.contains("Content of document 20"));
     assert!(contents.contains("Content of document 119"));
 }
+
+#[tokio::test]
+async fn test_entity_graph_persists_and_restores_on_reload() {
+    let unique_id = Ulid::new().to_string();
+    let root = std::env::temp_dir().join(format!("xavier-eg-{}", unique_id));
+    let config = WorkspaceConfig {
+        id: format!("persist-eg-{}", unique_id),
+        token: "token".to_string(),
+        plan: PlanTier::Personal,
+        memory_backend: MemoryBackend::File,
+        storage_limit_bytes: Some(500 * MB),
+        request_limit: Some(50_000),
+        request_unit_limit: Some(100_000),
+        embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
+        managed_google_embeddings: false,
+        sync_policy: SyncPolicy::CloudMirror,
+    };
+
+    let workspace = WorkspaceState::new(config.clone(), RuntimeConfig::default(), &root)
+        .await
+        .expect("test assertion");
+
+    // Ingest a document that will extract some entities (mentions: @Alice, topics: #AI)
+    workspace
+        .ingest(
+            "doc-1".to_string(),
+            "Bela works at SWAL and knows @Alice. I love #AI.".to_string(),
+            serde_json::json!({}),
+            false,
+        )
+        .await
+        .expect("test assertion");
+
+    // Wait a tiny bit for async tasks/persistence to settle
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    // Verify entities are indeed in the graph
+    let entities_before = workspace.entity_graph.all_entities().await;
+    assert!(!entities_before.is_empty(), "Expected extracted entities");
+    let entities_before_count = entities_before.len();
+    let relations_before_count = workspace.entity_graph.all_relations().await.len();
+
+    // Re-initialize/reload the workspace
+    let reloaded = WorkspaceState::new(config, RuntimeConfig::default(), &root)
+        .await
+        .expect("test assertion");
+
+    // Give it a tiny bit of time for background startup tasks to execute
+    tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
+    // Verify the reloaded workspace restored exactly the same counts from snapshot
+    let entities_after = reloaded.entity_graph.all_entities().await;
+    let relations_after = reloaded.entity_graph.all_relations().await;
+    assert_eq!(entities_after.len(), entities_before_count);
+    assert_eq!(relations_after.len(), relations_before_count);
+}
