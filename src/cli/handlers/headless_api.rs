@@ -131,12 +131,23 @@ pub async fn headless_chat(
     axum::Extension(session): axum::Extension<crate::cli::http_setup::SessionInfo>,
     Json(req): Json<ChatRequest>,
 ) -> impl IntoResponse {
-    use crate::cli::utils::ProxyErrorWrapper;
     use xavier::domain::proxy::ProxyChatCommand;
 
+    let model = req.model.clone().unwrap_or_else(|| "auto".to_string());
+    let messages = req.messages.clone();
+
+    // Extract last user message for memory fallback query
+    let user_query = messages
+        .iter()
+        .rev()
+        .find(|m| m.get("role").and_then(|r| r.as_str()) == Some("user"))
+        .and_then(|m| m.get("content").and_then(|c| c.as_str()))
+        .unwrap_or("")
+        .to_string();
+
     let cmd = ProxyChatCommand {
-        model: req.model.unwrap_or_else(|| "auto".to_string()),
-        messages: req.messages,
+        model,
+        messages,
         temperature: req.temperature,
         max_tokens: req.max_tokens.map(|t| t as usize),
         lease_token: req.lease_token,
@@ -153,7 +164,44 @@ pub async fn headless_chat(
         .await
     {
         Ok(resp) => (StatusCode::OK, AxumJson(resp)).into_response(),
-        Err(e) => ProxyErrorWrapper(e).into_response(),
+        Err(e) => {
+            // Ola 4 · 01: parity with panel — degrade to memory instead of bare 500
+            tracing::warn!("headless_chat LLM error, falling back to memory: {}", e);
+            state.usage_counters.record_memory_fallback();
+
+            let content = match state.memory.search(&user_query, 5, None).await {
+                Ok(results) if !results.is_empty() => {
+                    let context = results
+                        .iter()
+                        .map(|r| r.content.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n---\n");
+                    format!("[Modo memoria - LLM no disponible]\n\n{}", context)
+                }
+                _ => format!("[LLM no disponible: {}]", e),
+            };
+
+            let completion = xavier::domain::proxy::ChatCompletion {
+                id: format!("chatcmpl-mem-{}", ulid::Ulid::new()),
+                object: "chat.completion".to_string(),
+                created: chrono::Utc::now().timestamp(),
+                model: "memory-fallback".to_string(),
+                choices: vec![xavier::domain::proxy::ChatChoice {
+                    index: 0,
+                    message: xavier::domain::proxy::ChatMessage {
+                        role: "assistant".to_string(),
+                        content,
+                    },
+                    finish_reason: "stop".to_string(),
+                }],
+                usage: xavier::domain::proxy::Usage {
+                    prompt_tokens: 0,
+                    completion_tokens: 0,
+                    total_tokens: 0,
+                },
+            };
+            (StatusCode::OK, AxumJson(completion)).into_response()
+        }
     }
 }
 

@@ -184,6 +184,37 @@ export class ApiClient {
   async getLeaseHistory() {
     return this.fetch<SecretAuditLog[]>("/secrets/history");
   }
+
+  // Ollama Model Manager (Ola 4 · 02/04) — routes from ollama_models handlers
+  async getOllamaModels() {
+    // Backend may return raw Ollama /api/tags shape: { models: [{ name, ... }] }
+    return this.fetch<{ models?: Array<string | { name?: string }> }>(
+      "/v1/ollama/models",
+    );
+  }
+
+  async pullOllamaModel(name: string) {
+    return this.fetch<Record<string, unknown>>("/v1/ollama/pull", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  async getOllamaActive() {
+    return this.fetch<{ llm?: string; embedding?: string | null; model?: string }>(
+      "/v1/ollama/active",
+    );
+  }
+
+  async setOllamaActive(model: string, kind: "llm" | "embedding") {
+    return this.fetch<{ ok?: boolean; success?: boolean; model?: string; kind?: string; error?: string }>(
+      "/v1/ollama/active",
+      {
+        method: "POST",
+        body: JSON.stringify({ model, kind }),
+      },
+    );
+  }
 }
 
 export interface ProviderConfig {
