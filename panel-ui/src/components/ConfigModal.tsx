@@ -25,7 +25,10 @@ import { ApiClient } from "../api/client";
 import ProvidersPage from "../pages/Settings/Providers";
 import SecurityConfigPanel from "../pages/Settings/Security";
 import type { Agent, BookmarkArtifact, GraphData } from "../types";
-import { mergeFilteredGraphUpdate } from "../utils/roadmapGraph";
+import {
+  linkEndpointId,
+  mergeFilteredGraphUpdate,
+} from "../utils/roadmapGraph";
 import AgentsView from "./AgentsView";
 import BookmarksView from "./BookmarksView";
 import GraphView from "./GraphView";
@@ -90,7 +93,9 @@ export default function ConfigModal({
 
     const nodeIds = new Set(nodes.map((n) => n.id));
     const links = graphData.links.filter(
-      (l) => nodeIds.has(String(l.source)) && nodeIds.has(String(l.target)),
+      (l) =>
+        nodeIds.has(linkEndpointId(l.source)) &&
+        nodeIds.has(linkEndpointId(l.target)),
     );
     return { nodes, links };
   }, [graphData, startDate, endDate, selectedMilestone]);

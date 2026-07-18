@@ -88,4 +88,36 @@ describe("roadmapGraph", () => {
     expect(merged.nodes.find((n) => n.id === "old")?.label).toBe("Old");
     expect(merged.links).toHaveLength(2);
   });
+
+  it("prunes dangling links when a filtered-visible node is deleted", () => {
+    // full also has proj -> old (visible -> hidden)
+    const withCrossLink: GraphData = {
+      nodes: full.nodes,
+      links: [
+        ...full.links,
+        { source: "proj", target: "old", relation: "depends_on" },
+      ],
+    };
+    const visibleIds = new Set(["org", "proj"]);
+    // GraphView deleted "proj" while filters hide "old"
+    const updated: GraphData = {
+      nodes: [
+        {
+          id: "org",
+          label: "Org",
+          type: "organization",
+          description: "",
+          date: "2026-01-01",
+        },
+      ],
+      links: [],
+    };
+
+    const merged = mergeFilteredGraphUpdate(withCrossLink, visibleIds, updated);
+    expect(merged.nodes.map((n) => n.id).sort()).toEqual(["old", "org"]);
+    // org->old kept; proj->old and org->proj must not dangle
+    expect(merged.links).toEqual([
+      { source: "org", target: "old", relation: "owns" },
+    ]);
+  });
 });
