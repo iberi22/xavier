@@ -39,6 +39,16 @@ pub struct VecSqliteMemoryStore {
     pub(crate) event_tx: Option<broadcast::Sender<crate::server::events::RealtimeEvent>>,
 }
 
+/// ConnectionManager project_id for a vec-store file path.
+///
+/// Must stay in sync with [`VecSqliteMemoryStore::new`] so panel / vacuum /
+/// other callers hit the same pool (and migrations) as memory operations.
+pub fn project_id_for_path(path: &std::path::Path) -> String {
+    let digest =
+        crate::crypto::hex_encode(&Sha256::digest(path.to_string_lossy().as_bytes()));
+    format!("vec_store_{}", &digest[..12])
+}
+
 impl VecSqliteMemoryStore {
     pub async fn from_env() -> Result<Self> {
         Self::new(VecSqliteStoreConfig::from_env()).await
@@ -53,13 +63,16 @@ impl VecSqliteMemoryStore {
         self.event_tx.as_ref()
     }
 
+    /// ConnectionManager pool id for this store instance.
+    pub fn connection_project_id(&self) -> &str {
+        &self.project_id
+    }
+
     pub async fn new(config: VecSqliteStoreConfig) -> Result<Self> {
         db::ensure_dir(&config.path).await?;
         vector::register_sqlite_vec_extension()?;
 
-        let digest =
-            crate::crypto::hex_encode(&Sha256::digest(config.path.to_string_lossy().as_bytes()));
-        let project_id = format!("vec_store_{}", &digest[..12]);
+        let project_id = project_id_for_path(&config.path);
         ConnectionManager::global().connect_with_path(&project_id, config.path.clone())?;
 
         let store = Self {
@@ -88,8 +101,9 @@ impl VecSqliteMemoryStore {
     }
 
     pub(crate) fn deserialize_record(row: &rusqlite::Row) -> Result<MemoryRecord> {
-        let metadata_str: String = row.get(4)?;
-        let embedding_blob: Vec<u8> = row.get(5)?;
+        let metadata_str: String = row.get(4).unwrap_or_else(|_| "{}".to_string());
+        // Null embeddings are valid (e.g. after model change invalidation / pending reindex).
+        let embedding_blob: Vec<u8> = row.get::<_, Option<Vec<u8>>>(5)?.unwrap_or_default();
 
         Ok(MemoryRecord {
             id: row.get(0)?,
@@ -97,7 +111,11 @@ impl VecSqliteMemoryStore {
             path: row.get(2)?,
             content: row.get(3)?,
             metadata: serde_json::from_str(&metadata_str).unwrap_or_default(),
-            embedding: vector::deserialize_embedding(&embedding_blob),
+            embedding: if embedding_blob.is_empty() {
+                Vec::new()
+            } else {
+                vector::deserialize_embedding(&embedding_blob)
+            },
             created_at: chrono::DateTime::parse_from_rfc3339(&row.get::<_, String>(6)?)
                 .map(|dt| dt.with_timezone(&chrono::Utc))
                 .unwrap_or_else(|_| chrono::Utc::now()),
