@@ -54,6 +54,7 @@ pub mod peer;
 pub mod protocol;
 pub mod telemetry;
 pub mod telemetry_collector;
+pub mod maturity;
 pub mod tokenomics;
 pub mod transport;
 // Legacy libp2p transport — broken against libp2p 0.56 and superseded by Iroh.
@@ -80,4 +81,5 @@ pub use tokenomics::{
     ContributionType, RewardEngine, RewardEvent, Transaction, TransactionKind, Wallet,
     WalletBalance,
 };
+pub use maturity::MeshMaturityReport;
 pub use transport::MeshTransport;

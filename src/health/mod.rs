@@ -76,6 +76,8 @@ pub struct MeshHealth {
     pub connected_peers: u32,
     pub sync_lag_ms: f64,
     pub connectivity: String,
+    #[serde(default)]
+    pub maturity: crate::mesh::MeshMaturityReport,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -149,6 +151,7 @@ impl Default for HealthState {
                 connected_peers: 0,
                 sync_lag_ms: 0.0,
                 connectivity: "unknown".to_string(),
+                maturity: crate::mesh::MeshMaturityReport::default(),
             },
             checks: Vec::new(),
         }
@@ -357,6 +360,7 @@ async fn collect_health_impl(
             } else {
                 "no peers".to_string()
             },
+            maturity: crate::mesh::MeshMaturityReport::default(),
         }
     } else {
         MeshHealth {
@@ -373,6 +377,7 @@ async fn collect_health_impl(
                 "disabled (mesh license not accepted)"
             }
             .to_string(),
+            maturity: crate::mesh::MeshMaturityReport::default(),
         }
     };
 

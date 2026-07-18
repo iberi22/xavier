@@ -9,7 +9,7 @@ use xavier::enterprise::rbac::Role;
 use xavier::memory::schema::ClearanceLevel;
 use xavier::mesh::{
     acl::{MeshAcl, NodeAclEntry},
-    NodeId, NodeIdentity, PeerInfo, PeerRegistry,
+    NodeId, NodeIdentity, PeerInfo, PeerRegistry, MeshMaturityReport,
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -322,6 +322,20 @@ pub async fn update_peer_acl_handler(
     }
 
     (StatusCode::OK, Json(serde_json::json!({ "status": "ok" }))).into_response()
+}
+
+pub async fn v1_mesh_status_handler() -> impl IntoResponse {
+    // License check
+    let settings = xavier::settings::XavierSettings::current();
+    if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
+    Json(MeshMaturityReport::default()).into_response()
 }
 
 pub async fn remove_peer_handler(Path(node_id): Path<String>) -> impl IntoResponse {

@@ -13,8 +13,7 @@ fn stable_key(kind: &str, parts: &[&str]) -> String {
         digest.update([0u8]);
         digest.update(part.as_bytes());
     }
-    let result = digest.finalize();
-    result.iter().map(|b| format!("{:02x}", b)).collect()
+    xavier::crypto::hex_encode(digest.finalize())
 }
 
 fn bench_hybrid_search(c: &mut Criterion) {
