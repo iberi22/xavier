@@ -1,18 +1,19 @@
 {
+  "protocol": "3.8.0",
   "_comment": "Feature tracking — product 1.0 MVP 100% stable (Ola 6). Phase-2 mesh R&D on #115.",
   "metadata": {
     "project": "Xavier",
     "version": "0.12.0",
     "created": "2026-03-05",
     "last_verified": "2026-07-18",
-    "total_features": 24,
-    "features_complete": 24,
+    "total_features": 25,
+    "features_complete": 23,
     "features_beta": 0,
     "features_draft": 0,
     "features_planned": 0,
-    "features_stable": 24,
-    "overall_progress_pct": 100.0,
-    "reconciliation_notes": "2026-07-18 Ola 6 product-1.0 closeout: all 24 features MVP-stable 100%. Phase-2 research (mesh Iroh/Tor/on-chain) remains on EPIC #115 without blocking overall."
+    "features_stable": 25,
+    "overall_progress_pct": 99.5,
+    "reconciliation_notes": "2026-07-18 post Ola Graph: added feat-graph-explorer 92%. Overall avg from feature progress_pct (not claimed 100%). Full lib battery 1104/1122 pass (98.4%). Graph-specific suites green. Release binary built; legacy schema_migrations needs name column upgrade for existing DBs."
   },
   "features": [
     {
@@ -76,8 +77,8 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-06-16",
-      "notes": "Belief graph module complete. Inference engine, hourly decay, JSON/Bincode serialization, Criterion benchmarks. Entity graph indexing moved to background tokio::spawn (2026-06-16).",
+      "last_tested": "2026-07-18",
+      "notes": "Belief graph module complete. Inference engine, hourly decay, JSON/Bincode serialization, Criterion benchmarks. Entity graph indexing moved to background tokio::spawn (2026-06-16). | 2026-07-18: EntityGraph snapshot durability (#677) + Memory KG HTTP view (#676/#679).",
       "implemented_in": "src/memory/entity_graph/, src/domain/belief/"
     },
     {
@@ -85,7 +86,7 @@
       "name": "MCP Server",
       "category": "integration",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 95,
       "description": "HTTP-first integration with optional Model Context Protocol (MCP) support exposing 12 tools",
       "steps": [
         "Expose authenticated HTTP endpoints for memory and code operations",
@@ -98,7 +99,7 @@
       "verified_by": "automated",
       "github_issue": null,
       "last_tested": "2026-07-18",
-      "notes": "Progressive disclosure contract + tools + tests (#655/#656) + descriptors. Production-ready MCP.",
+      "notes": "Progressive disclosure contract + tools + tests (#655/#656) + descriptors. Production-ready MCP. | 2026-07-18: Grok MCP doctor: handshake OK, tools/list Unexpected response type (protocol drift). 18 MCP unit tests failing in full lib suite.",
       "implemented_in": "src/server/http/, src/server/mcp/, src/cli/server.rs"
     },
     {
@@ -119,7 +120,7 @@
       "verified_by": "automated",
       "github_issue": 97,
       "last_tested": "2026-07-18",
-      "notes": "FTS5 + multi-lang index + plugins fixture. Multi-lang indexer test green.",
+      "notes": "FTS5 + multi-lang index + plugins fixture. Multi-lang indexer test green. | 2026-07-18: /code/graph/view force-graph payload (#674) wired to panel Code layer (#679).",
       "implemented_in": "code-graph/, src/codebase/"
     },
     {
@@ -555,6 +556,34 @@
       "last_tested": "2026-07-18",
       "notes": "Ola 6: undici root override 7.28.0, jsonwebtoken 10.x, SECURITY_DEPENDABOT.md inventory + deferred cargo dual-versions documented. Process complete; residual transitves owned by #478.",
       "implemented_in": ".github/, Cargo.lock, panel-ui/package.json"
+    },
+    {
+      "id": "feat-graph-explorer",
+      "name": "Multi-layer Graph Explorer (Roadmap | Memory KG | Code)",
+      "category": "ui",
+      "status": "stable",
+      "progress_pct": 92,
+      "description": "Panel multi-layer graph: roadmap CRUD (panel_graphs), Memory KG HTTP view from EntityGraph, Code force-view from code_graph.db, EntityGraph SQLite snapshot durability",
+      "steps": [
+        "Roadmap GET/POST /panel/api/graph + empty state UI",
+        "Memory API /memory/graph/view|entities|relations mounted",
+        "Code GET /code/graph/view overview+ego",
+        "panel-ui adapters + GraphCanvas multi-layer tabs",
+        "EntityGraph snapshot persistence",
+        "Legacy schema_migrations upgrade for name column",
+        "Docs GRAPH_LAYERS + live QA on production data dir"
+      ],
+      "passes": true,
+      "verified_by": "local-test-battery-2026-07-18",
+      "github_issue": 664,
+      "last_tested": "2026-07-18",
+      "notes": "Code landed via PRs #663,#676,#674,#675,#677,#679. Panel-ui tests 18/18. Graph/panel/entity_graph unit tests PASS. Full lib: 1104 pass / 18 fail (pre-existing MCP/settings/embedding). Live: new binary needs schema_migrations upgrade on legacy DB; clean data dir exposes graph routes 200. MCP stdio handshake OK, tools/list protocol mismatch with Grok. Docs polish residual.",
+      "implemented_in": "src/api/graph.rs, src/cli/handlers/code.rs, src/cli/server.rs, src/workspace/state.rs, panel-ui/src/components/GraphCanvas.tsx, panel-ui/src/api/graphAdapters.ts",
+      "tests": [
+        "server::panel::tests::graphs_crud",
+        "entity_graph unit suite",
+        "panel-ui graphAdapters + roadmapGraph tests"
+      ]
     }
   ],
   "verification_commands": {
@@ -568,3 +597,7 @@
     "benchmark_smoke": "python scripts/benchmarks/run_locomo_benchmark.py --sample-limit 1 --question-limit 2"
   }
 }
+
+
+
+

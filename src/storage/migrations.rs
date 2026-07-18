@@ -707,6 +707,35 @@ mod tests {
     }
 
     #[test]
+    fn upgrades_schema_migrations_missing_name_column() {
+        // Pre-name bookkeeping table (only version + applied_at) must not crash
+        // when the runner records migrations that include the `name` column.
+        let conn = mem_conn();
+        // App tables present + bookkeeping without `name`, already at latest version.
+        conn.execute_batch(V1_UP).expect("seed app tables");
+        conn.execute_batch(
+            "CREATE TABLE schema_migrations (
+                version INTEGER PRIMARY KEY,
+                applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            );
+            INSERT INTO schema_migrations (version) VALUES (1),(2),(3),(4),(5);",
+        )
+        .expect("seed old schema_migrations");
+
+        run(&conn).expect("upgrade old schema_migrations");
+
+        let has_name: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('schema_migrations') WHERE name='name'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(has_name, 1, "name column must exist after ensure_migration_table");
+        assert_version(&conn, 5);
+    }
+
+    #[test]
     fn migration_failure_rolls_back_transaction() {
         // A migration with deliberately broken SQL. It should fail and roll
         // back its transaction, leaving version 6 unrecorded.
