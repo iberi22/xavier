@@ -237,6 +237,30 @@ impl CodeGraphDB {
             .map_err(|e| GraphError::Database(e.to_string()))?;
         }
 
+        // Initialize FTS5 virtual table for symbols
+        {
+            let conn = self
+                .conn
+                .lock()
+                .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+            conn.execute_batch(
+                r#"
+                CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
+                    name,
+                    stable_id UNINDEXED,
+                    file_path UNINDEXED
+                );
+
+                -- Migrate existing data into symbols_fts if symbols_fts is empty or has missing symbols
+                INSERT INTO symbols_fts (name, stable_id, file_path)
+                SELECT s.name, s.stable_id, s.file_path FROM symbols s
+                LEFT JOIN symbols_fts f ON s.stable_id = f.stable_id
+                WHERE f.stable_id IS NULL;
+                "#,
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+        }
+
         info!("Database schema initialized");
         Ok(())
     }
@@ -307,6 +331,19 @@ impl CodeGraphDB {
         )
         .map_err(|e| GraphError::Database(e.to_string()))?;
 
+        // Sync FTS5 virtual table
+        conn.execute(
+            "DELETE FROM symbols_fts WHERE stable_id = ?1",
+            params![&stable_id],
+        )
+        .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        conn.execute(
+            "INSERT INTO symbols_fts (name, stable_id, file_path) VALUES (?1, ?2, ?3)",
+            params![&symbol.name, &stable_id, &symbol.file_path],
+        )
+        .map_err(|e| GraphError::Database(e.to_string()))?;
+
         conn.query_row(
             "SELECT id FROM symbols WHERE stable_id = ?1",
             params![&stable_id],
@@ -346,10 +383,19 @@ impl CodeGraphDB {
                 )
                 .map_err(|e| GraphError::Database(e.to_string()))?;
 
+            let mut delete_fts_stmt = tx
+                .prepare("DELETE FROM symbols_fts WHERE stable_id = ?1")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            let mut insert_fts_stmt = tx
+                .prepare("INSERT INTO symbols_fts (name, stable_id, file_path) VALUES (?1, ?2, ?3)")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+
             for symbol in symbols {
                 let symbol = normalize_symbol_for_insert(symbol);
+                let stable_id = symbol.stable_id.clone().unwrap_or_default();
                 stmt.execute(params![
-                    symbol.stable_id,
+                    &stable_id,
                     symbol.name,
                     format!("{:?}", symbol.kind),
                     format!("{:?}", symbol.lang),
@@ -363,6 +409,14 @@ impl CodeGraphDB {
                     symbol.complexity,
                 ])
                 .map_err(|e| GraphError::Database(e.to_string()))?;
+
+                delete_fts_stmt
+                    .execute(params![&stable_id])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+
+                insert_fts_stmt
+                    .execute(params![&symbol.name, &stable_id, &symbol.file_path])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
             }
         }
 
@@ -416,36 +470,75 @@ impl CodeGraphDB {
             .lock()
             .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
 
-        let mut stmt = conn
-            .prepare(
-                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
-                   FROM symbols
-                   WHERE name LIKE ?1"#,
-            )
-            .map_err(|e| GraphError::Database(e.to_string()))?;
+        let mut symbols: Vec<Symbol>;
 
-        let pattern = format!("%{}%", query);
-        let mut symbols: Vec<Symbol> = stmt
-            .query_map(params![pattern], |row| {
-                Ok(Symbol {
-                    id: Some(row.get(0)?),
-                    stable_id: Some(row.get(1)?),
-                    name: row.get(2)?,
-                    kind: parse_symbol_kind(&row.get::<_, String>(3)?),
-                    lang: parse_language(&row.get::<_, String>(4)?),
-                    file_path: row.get(5)?,
-                    start_line: row.get(6)?,
-                    end_line: row.get(7)?,
-                    start_col: row.get(8)?,
-                    end_col: row.get(9)?,
-                    signature: row.get(10)?,
-                    parent: row.get(11)?,
-                    complexity: row.get(12)?,
+        if query.is_empty() {
+            let mut stmt = conn
+                .prepare(
+                    r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
+                       FROM symbols
+                       WHERE name LIKE ?1"#,
+                )
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            let pattern = format!("%{}%", query);
+            symbols = stmt
+                .query_map(params![pattern], |row| {
+                    Ok(Symbol {
+                        id: Some(row.get(0)?),
+                        stable_id: Some(row.get(1)?),
+                        name: row.get(2)?,
+                        kind: parse_symbol_kind(&row.get::<_, String>(3)?),
+                        lang: parse_language(&row.get::<_, String>(4)?),
+                        file_path: row.get(5)?,
+                        start_line: row.get(6)?,
+                        end_line: row.get(7)?,
+                        start_col: row.get(8)?,
+                        end_col: row.get(9)?,
+                        signature: row.get(10)?,
+                        parent: row.get(11)?,
+                        complexity: row.get(12)?,
+                    })
                 })
-            })
-            .map_err(|e| GraphError::Database(e.to_string()))?
-            .filter_map(|r| r.ok())
-            .collect();
+                .map_err(|e| GraphError::Database(e.to_string()))?
+                .filter_map(|r| r.ok())
+                .collect();
+        } else {
+            // MATCH query with BM25 rank
+            let mut stmt = conn
+                .prepare(
+                    r#"SELECT s.id, s.stable_id, s.name, s.kind, s.lang, s.file_path, s.start_line, s.end_line, s.start_col, s.end_col, s.signature, s.parent, s.complexity
+                       FROM symbols s
+                       JOIN symbols_fts ON s.stable_id = symbols_fts.stable_id
+                       WHERE symbols_fts MATCH ?1
+                       ORDER BY bm25(symbols_fts)
+                       LIMIT ?2"#,
+                )
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+
+            let fts_query = format!("\"{}\"*", query.replace('"', "\"\""));
+            symbols = stmt
+                .query_map(params![fts_query, limit as isize], |row| {
+                    Ok(Symbol {
+                        id: Some(row.get(0)?),
+                        stable_id: Some(row.get(1)?),
+                        name: row.get(2)?,
+                        kind: parse_symbol_kind(&row.get::<_, String>(3)?),
+                        lang: parse_language(&row.get::<_, String>(4)?),
+                        file_path: row.get(5)?,
+                        start_line: row.get(6)?,
+                        end_line: row.get(7)?,
+                        start_col: row.get(8)?,
+                        end_col: row.get(9)?,
+                        signature: row.get(10)?,
+                        parent: row.get(11)?,
+                        complexity: row.get(12)?,
+                    })
+                })
+                .map_err(|e| GraphError::Database(e.to_string()))?
+                .filter_map(|r| r.ok())
+                .collect();
+        }
 
         // Apply scoring and ranking without mutating semantic fields.
         if !query.is_empty() {
@@ -1009,6 +1102,9 @@ impl CodeGraphDB {
             let mut stmt_symbols = tx
                 .prepare("DELETE FROM symbols WHERE file_path = ?1")
                 .map_err(|e| GraphError::Database(e.to_string()))?;
+            let mut stmt_fts = tx
+                .prepare("DELETE FROM symbols_fts WHERE file_path = ?1")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
             let mut stmt_edges = tx
                 .prepare("DELETE FROM edges WHERE file_path = ?1")
                 .map_err(|e| GraphError::Database(e.to_string()))?;
@@ -1024,6 +1120,9 @@ impl CodeGraphDB {
 
             for path in file_paths {
                 stmt_symbols
+                    .execute(params![path])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+                stmt_fts
                     .execute(params![path])
                     .map_err(|e| GraphError::Database(e.to_string()))?;
                 stmt_edges
@@ -1060,6 +1159,7 @@ impl CodeGraphDB {
             DELETE FROM imports;
             DELETE FROM edges;
             DELETE FROM symbols;
+            DELETE FROM symbols_fts;
             DELETE FROM file_metadata;
             "#,
         )
@@ -1170,5 +1270,72 @@ mod tests {
         let results = db.find_symbols("test", 1).expect("failed to find symbols");
         assert_eq!(results.symbols.len(), 1);
         assert!(results.symbols[0].stable_id.is_some());
+    }
+
+    #[test]
+    fn test_fts5_symbols_search_and_sync() {
+        let db = CodeGraphDB::in_memory().expect("db");
+
+        let sym1 = Symbol {
+            id: None,
+            stable_id: None,
+            name: "process_data".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "src/processor.rs".to_string(),
+            start_line: 1,
+            end_line: 5,
+            start_col: 0,
+            end_col: 0,
+            signature: Some("fn process_data()".to_string()),
+            parent: None,
+            complexity: None,
+        };
+
+        let sym2 = Symbol {
+            id: None,
+            stable_id: None,
+            name: "calculate_total".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "src/calc.rs".to_string(),
+            start_line: 10,
+            end_line: 15,
+            start_col: 0,
+            end_col: 0,
+            signature: Some("fn calculate_total()".to_string()),
+            parent: None,
+            complexity: None,
+        };
+
+        db.insert_symbol(&sym1).expect("insert sym1");
+        db.insert_symbol(&sym2).expect("insert sym2");
+
+        // Exact match
+        let res = db.find_symbols("process_data", 10).expect("find");
+        assert_eq!(res.symbols.len(), 1);
+        assert_eq!(res.symbols[0].name, "process_data");
+
+        // Token match (FTS5 tokenizes on non-alphanumeric, so "calculate" matches "calculate_total")
+        let res = db.find_symbols("calculate", 10).expect("find");
+        assert_eq!(res.symbols.len(), 1);
+        assert_eq!(res.symbols[0].name, "calculate_total");
+
+        // Case-insensitive match
+        let res = db.find_symbols("PROCESS", 10).expect("find");
+        assert_eq!(res.symbols.len(), 1);
+        assert_eq!(res.symbols[0].name, "process_data");
+
+        // Empty query should fallback to LIKE and return everything
+        let res = db.find_symbols("", 10).expect("find");
+        assert!(res.symbols.len() >= 2);
+
+        // Delete file sync verification
+        db.batch_delete_file_data(&["src/processor.rs".to_string()]).expect("delete file");
+        let res = db.find_symbols("process", 10).expect("find");
+        assert_eq!(res.symbols.len(), 0);
+
+        let res = db.find_symbols("calculate", 10).expect("find");
+        assert_eq!(res.symbols.len(), 1);
     }
 }
