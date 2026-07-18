@@ -3,7 +3,6 @@ import {
   Bot,
   Brain,
   Cpu,
-  Cpu as CpuIcon,
   Database,
   Globe,
   Grid,
@@ -17,17 +16,23 @@ import {
   Shield,
   TrendingUp,
   X,
+  Play,
+  ArrowLeft,
+  ChevronRight,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import type React from "react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ApiClient } from "../api/client";
+import { memoryViewToCanvas, codeViewToCanvas } from "../api/graphAdapters";
 import ProvidersPage from "../pages/Settings/Providers";
 import SecurityConfigPanel from "../pages/Settings/Security";
-import type { Agent, BookmarkArtifact, GraphData } from "../types";
+import type { Agent, BookmarkArtifact, GraphData, GraphNode } from "../types";
+import { mergeFilteredGraphUpdate } from "../utils/roadmapGraph";
 import AgentsView from "./AgentsView";
 import BookmarksView from "./BookmarksView";
 import GraphView from "./GraphView";
+import GraphCanvas from "./GraphCanvas";
 import MemoryBrowser from "./MemoryBrowser";
 import MessagingConfigModal, {
   MessagingConfigInner,
@@ -60,6 +65,8 @@ type MainTab =
   | "agents"
   | "usage";
 
+type SubLayer = "roadmap" | "memory" | "code";
+
 export default function ConfigModal({
   onClose,
   graphData,
@@ -70,6 +77,9 @@ export default function ConfigModal({
   token,
 }: ConfigModalProps) {
   const [mainTab, setMainTab] = useState<MainTab>("config");
+  const [subLayer, setSubLayer] = useState<SubLayer>("roadmap");
+
+  const api = useMemo(() => new ApiClient(token || ""), [token]);
 
   // Time and Milestone Filters
   const [startDate, setStartDate] = useState<string>("");
@@ -89,10 +99,173 @@ export default function ConfigModal({
 
     const nodeIds = new Set(nodes.map((n) => n.id));
     const links = graphData.links.filter(
-      (l) => nodeIds.has(l.source) && nodeIds.has(l.target),
+      (l) => nodeIds.has(String(l.source)) && nodeIds.has(String(l.target)),
     );
     return { nodes, links };
   }, [graphData, startDate, endDate, selectedMilestone]);
+
+  /** Apply GraphView edits to the full roadmap so filters never drop hidden nodes. */
+  const handleFilteredGraphUpdate = useCallback(
+    (updated: GraphData) => {
+      const visibleIds = new Set(filteredGraphData.nodes.map((n) => n.id));
+      onUpdateGraphData(
+        mergeFilteredGraphUpdate(graphData, visibleIds, updated),
+      );
+    },
+    [filteredGraphData.nodes, graphData, onUpdateGraphData],
+  );
+
+  // ─── Memory KG State ───
+  const [memoryData, setMemoryData] = useState<GraphData>({ nodes: [], links: [] });
+  const [memoryLoading, setMemoryLoading] = useState(false);
+  const [memoryError, setMemoryError] = useState<string | null>(null);
+  const [isMemoryTruncated, setIsMemoryTruncated] = useState(false);
+
+  // Fetch memory graph view
+  const fetchMemoryGraph = useCallback(async () => {
+    setMemoryLoading(true);
+    setMemoryError(null);
+    try {
+      const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+      const baseUrl = isTauri ? "http://127.0.0.1:8006" : "";
+      const res = await fetch(`${baseUrl}/memory/graph/view`, {
+        headers: {
+          "Content-Type": "application/json",
+          "X-Xavier-Token": token || "",
+        },
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const body = await res.json();
+      setMemoryData(memoryViewToCanvas(body));
+      if (body?.truncated || body?.is_truncated) {
+        setIsMemoryTruncated(true);
+      } else {
+        setIsMemoryTruncated(false);
+      }
+    } catch (e: any) {
+      setMemoryError(e.message || "Failed to load memory graph");
+    } finally {
+      setMemoryLoading(false);
+    }
+  }, [token]);
+
+  // Fetch specific entity detail (GET /memory/graph/entities/{id})
+  const fetchMemoryNodeDetail = useCallback(async (node: GraphNode) => {
+    try {
+      const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+      const baseUrl = isTauri ? "http://127.0.0.1:8006" : "";
+      const res = await fetch(`${baseUrl}/memory/graph/entities/${encodeURIComponent(node.id)}`, {
+        headers: {
+          "Content-Type": "application/json",
+          "X-Xavier-Token": token || "",
+        },
+      });
+      if (res.ok) {
+        return await res.json();
+      }
+    } catch (e) {
+      console.warn("Could not load entity details", e);
+    }
+    return null;
+  }, [token]);
+
+  // ─── Code State ───
+  const [codeStats, setCodeStats] = useState<{ total_symbols: number; total_files: number } | null>(null);
+  const [codeData, setCodeData] = useState<GraphData>({ nodes: [], links: [] });
+  const [codeLoading, setCodeLoading] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const [codeEgoQuery, setCodeEgoQuery] = useState<string | null>(null);
+
+  // Fetch code stats and graph view
+  const fetchCodeStatsAndGraph = useCallback(async (query: string | null = null) => {
+    setCodeLoading(true);
+    setCodeError(null);
+    try {
+      const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+      const baseUrl = isTauri ? "http://127.0.0.1:8006" : "";
+
+      // 1. Fetch Stats
+      const statsRes = await fetch(`${baseUrl}/code/stats`, {
+        headers: {
+          "Content-Type": "application/json",
+          "X-Xavier-Token": token || "",
+        },
+      });
+      if (!statsRes.ok) throw new Error("Failed to load code statistics");
+      const stats = await statsRes.json();
+      setCodeStats(stats);
+
+      // 2. Fetch graph if symbols exist
+      if (stats.total_symbols > 0 || stats.total_files > 0) {
+        const mode = query ? "ego" : "overview";
+        let url = `${baseUrl}/code/graph/view?mode=${mode}`;
+        if (query) {
+          url += `&query=${encodeURIComponent(query)}`;
+        }
+        const graphRes = await fetch(url, {
+          headers: {
+            "Content-Type": "application/json",
+            "X-Xavier-Token": token || "",
+          },
+        });
+        if (!graphRes.ok) throw new Error("Failed to load code graph view");
+        const graphBody = await graphRes.json();
+        setCodeData(codeViewToCanvas(graphBody));
+      } else {
+        setCodeData({ nodes: [], links: [] });
+      }
+    } catch (e: any) {
+      setCodeError(e.message || "Failed to load code view");
+    } finally {
+      setCodeLoading(false);
+    }
+  }, [token]);
+
+  // Scan Codebase
+  const handleScanCodebase = async () => {
+    setCodeLoading(true);
+    setCodeError(null);
+    try {
+      const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+      const baseUrl = isTauri ? "http://127.0.0.1:8006" : "";
+      const res = await fetch(`${baseUrl}/code/scan`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Xavier-Token": token || "",
+        },
+        body: JSON.stringify({ path: "src" }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      await fetchCodeStatsAndGraph();
+    } catch (e: any) {
+      setCodeError(e.message || "Codebase scan failed");
+    } finally {
+      setCodeLoading(false);
+    }
+  };
+
+  // Expand Ego Graph
+  const handleNodeExpand = (node: GraphNode) => {
+    setCodeEgoQuery(node.id);
+    void fetchCodeStatsAndGraph(node.id);
+  };
+
+  const handleResetCodeOverview = () => {
+    setCodeEgoQuery(null);
+    void fetchCodeStatsAndGraph(null);
+  };
+
+  // Trigger loading based on sub-layer switches
+  useEffect(() => {
+    if (mainTab === "graph") {
+      if (subLayer === "memory") {
+        void fetchMemoryGraph();
+      } else if (subLayer === "code") {
+        void fetchCodeStatsAndGraph(codeEgoQuery);
+      }
+    }
+  }, [mainTab, subLayer, fetchMemoryGraph, fetchCodeStatsAndGraph, codeEgoQuery]);
 
   return (
     <motion.div
@@ -157,7 +330,7 @@ export default function ConfigModal({
             active={mainTab === "graph"}
             onClick={() => setMainTab("graph")}
             icon={<Share2 className="w-4 h-4" />}
-            label="Knowledge Graph"
+            label="Roadmap"
           />
           <TabButton
             active={mainTab === "bookmarks"}
@@ -170,6 +343,7 @@ export default function ConfigModal({
           onClick={onClose}
           className="p-2 hover:bg-white/10 rounded-full transition-colors text-white/50 hover:text-white group"
           title="Salir"
+          aria-label="Cerrar ventana de configuración"
         >
           <X className="w-5 h-5 group-hover:scale-110 transition-transform" />
         </button>
@@ -187,66 +361,229 @@ export default function ConfigModal({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="w-full h-full relative"
+              className="w-full h-full relative flex flex-col"
             >
-              <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex gap-4 bg-[#0a0a0a]/90 backdrop-blur-md p-4 rounded-xl border border-white/10 shadow-2xl items-end">
-                {(startDate || endDate || selectedMilestone !== "all") && (
+              {/* Sub-tab list switcher inside graph section (Accessible WAI-ARIA) */}
+              <div className="flex items-center justify-between px-8 py-3 bg-[#0a0a0a]/80 border-b border-white/5 shrink-0 z-40">
+                <div
+                  role="tablist"
+                  aria-label="Knowledge layers"
+                  className="flex bg-white/5 p-1 rounded-xl gap-1 border border-white/5"
+                >
                   <button
-                    onClick={() => {
-                      setStartDate("");
-                      setEndDate("");
-                      setSelectedMilestone("all");
+                    role="tab"
+                    id="tab-sub-roadmap"
+                    aria-controls="panel-sub-roadmap"
+                    aria-selected={subLayer === "roadmap"}
+                    tabIndex={subLayer === "roadmap" ? 0 : -1}
+                    onClick={() => setSubLayer("roadmap")}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowRight") {
+                        document.getElementById("tab-sub-memory")?.focus();
+                        setSubLayer("memory");
+                      }
                     }}
-                    className="h-7 w-7 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors flex items-center justify-center border border-transparent shrink-0"
-                    title="Clear Filters"
+                    className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
+                      subLayer === "roadmap"
+                        ? "bg-[#39ff14] text-black shadow-[0_0_15px_rgba(57,255,20,0.3)] font-bold"
+                        : "text-white/60 hover:text-white hover:bg-white/5"
+                    }`}
                   >
-                    <X className="w-3.5 h-3.5" />
+                    Roadmap
+                  </button>
+                  <button
+                    role="tab"
+                    id="tab-sub-memory"
+                    aria-controls="panel-sub-memory"
+                    aria-selected={subLayer === "memory"}
+                    tabIndex={subLayer === "memory" ? 0 : -1}
+                    onClick={() => setSubLayer("memory")}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowLeft") {
+                        document.getElementById("tab-sub-roadmap")?.focus();
+                        setSubLayer("roadmap");
+                      } else if (e.key === "ArrowRight") {
+                        document.getElementById("tab-sub-code")?.focus();
+                        setSubLayer("code");
+                      }
+                    }}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
+                      subLayer === "memory"
+                        ? "bg-[#39ff14] text-black shadow-[0_0_15px_rgba(57,255,20,0.3)] font-bold"
+                        : "text-white/60 hover:text-white hover:bg-white/5"
+                    }`}
+                  >
+                    Memory KG
+                  </button>
+                  <button
+                    role="tab"
+                    id="tab-sub-code"
+                    aria-controls="panel-sub-code"
+                    aria-selected={subLayer === "code"}
+                    tabIndex={subLayer === "code" ? 0 : -1}
+                    onClick={() => setSubLayer("code")}
+                    onKeyDown={(e) => {
+                      if (e.key === "ArrowLeft") {
+                        document.getElementById("tab-sub-memory")?.focus();
+                        setSubLayer("memory");
+                      }
+                    }}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-semibold tracking-wide transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
+                      subLayer === "code"
+                        ? "bg-[#39ff14] text-black shadow-[0_0_15px_rgba(57,255,20,0.3)] font-bold"
+                        : "text-white/60 hover:text-white hover:bg-white/5"
+                    }`}
+                  >
+                    Code
+                  </button>
+                </div>
+
+                {/* Additional controls depending on sub-layer */}
+                {subLayer === "code" && codeEgoQuery && (
+                  <button
+                    type="button"
+                    onClick={handleResetCodeOverview}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 text-white/80 hover:text-white text-xs font-medium tracking-wide transition-colors"
+                  >
+                    <ArrowLeft className="w-3.5 h-3.5" />
+                    Reset to Overview
                   </button>
                 )}
-                <div className="flex flex-col">
-                  <label className="text-[10px] uppercase text-white/50 tracking-widest mb-1">
-                    Start Date
-                  </label>
-                  <input
-                    type="date"
-                    value={startDate}
-                    onChange={(e) => setStartDate(e.target.value)}
-                    className="h-7 bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-xs text-white/90 outline-none focus:border-[#39ff14] transition-colors [color-scheme:dark]"
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <label className="text-[10px] uppercase text-white/50 tracking-widest mb-1">
-                    End Date
-                  </label>
-                  <input
-                    type="date"
-                    value={endDate}
-                    onChange={(e) => setEndDate(e.target.value)}
-                    className="h-7 bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-xs text-white/90 outline-none focus:border-[#39ff14] transition-colors [color-scheme:dark]"
-                  />
-                </div>
-                <div className="flex flex-col">
-                  <label className="text-[10px] uppercase text-white/50 tracking-widest mb-1">
-                    Milestone
-                  </label>
-                  <select
-                    value={selectedMilestone}
-                    onChange={(e) => setSelectedMilestone(e.target.value)}
-                    className="h-7 bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-xs text-white/90 outline-none focus:border-[#39ff14] transition-colors w-32 appearance-none"
-                  >
-                    <option value="all">All Milestones</option>
-                    {milestones.map((m) => (
-                      <option key={m} value={m}>
-                        {m}
-                      </option>
-                    ))}
-                  </select>
-                </div>
               </div>
-              <GraphView
-                data={filteredGraphData}
-                onUpdateData={onUpdateGraphData}
-              />
+
+              {/* Sub-tab panels */}
+              <div className="flex-1 min-h-0 relative">
+                {subLayer === "roadmap" && (
+                  <div
+                    role="tabpanel"
+                    id="panel-sub-roadmap"
+                    aria-labelledby="tab-sub-roadmap"
+                    className="w-full h-full relative"
+                  >
+                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex gap-4 bg-[#0a0a0a]/90 backdrop-blur-md p-4 rounded-xl border border-white/10 shadow-2xl items-end">
+                      {(startDate || endDate || selectedMilestone !== "all") && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStartDate("");
+                            setEndDate("");
+                            setSelectedMilestone("all");
+                          }}
+                          className="h-7 w-7 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors flex items-center justify-center border border-transparent shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
+                          title="Clear Filters"
+                          aria-label="Clear roadmap filters"
+                        >
+                          <X className="w-3.5 h-3.5" aria-hidden="true" />
+                        </button>
+                      )}
+                      <div className="flex flex-col">
+                        <label className="text-[10px] uppercase text-white/50 tracking-widest mb-1">
+                          Start Date
+                        </label>
+                        <input
+                          type="date"
+                          value={startDate}
+                          onChange={(e) => setStartDate(e.target.value)}
+                          className="h-7 bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-xs text-white/90 outline-none focus:border-[#39ff14] transition-colors [color-scheme:dark]"
+                        />
+                      </div>
+                      <div className="flex flex-col">
+                        <label className="text-[10px] uppercase text-white/50 tracking-widest mb-1">
+                          End Date
+                        </label>
+                        <input
+                          type="date"
+                          value={endDate}
+                          onChange={(e) => setEndDate(e.target.value)}
+                          className="h-7 bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-xs text-white/90 outline-none focus:border-[#39ff14] transition-colors [color-scheme:dark]"
+                        />
+                      </div>
+                      <div className="flex flex-col">
+                        <label className="text-[10px] uppercase text-white/50 tracking-widest mb-1">
+                          Milestone
+                        </label>
+                        <select
+                          value={selectedMilestone}
+                          onChange={(e) => setSelectedMilestone(e.target.value)}
+                          className="h-7 bg-black/50 border border-white/10 rounded-lg px-2 py-1 text-xs text-white/90 outline-none focus:border-[#39ff14] transition-colors w-32 appearance-none"
+                        >
+                          <option value="all">All Milestones</option>
+                          {milestones.map((m) => (
+                            <option key={m} value={m}>
+                              {m}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                    <GraphView
+                      data={filteredGraphData}
+                      onUpdateData={handleFilteredGraphUpdate}
+                      isFullGraphEmpty={graphData.nodes.length === 0}
+                    />
+                  </div>
+                )}
+
+                {subLayer === "memory" && (
+                  <div
+                    role="tabpanel"
+                    id="panel-sub-memory"
+                    aria-labelledby="tab-sub-memory"
+                    className="w-full h-full relative"
+                  >
+                    <GraphCanvas
+                      data={memoryData}
+                      loading={memoryLoading}
+                      error={memoryError}
+                      emptyMessage="No entities yet — add memories to begin."
+                      isTruncated={isMemoryTruncated}
+                      onNodeSelect={fetchMemoryNodeDetail}
+                    />
+                  </div>
+                )}
+
+                {subLayer === "code" && (
+                  <div
+                    role="tabpanel"
+                    id="panel-sub-code"
+                    aria-labelledby="tab-sub-code"
+                    className="w-full h-full relative"
+                  >
+                    {/* Empty stats scan CTA */}
+                    {codeStats && codeStats.total_symbols === 0 && !codeLoading ? (
+                      <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#050505]/80 p-6">
+                        <div className="flex flex-col items-center max-w-sm text-center bg-[#0a0a0a] border border-white/10 rounded-[24px] p-8 shadow-2xl">
+                          <Cpu className="w-12 h-12 text-[#39ff14] mb-4 animate-pulse" />
+                          <h3 className="text-lg font-light text-white mb-2 tracking-tight">
+                            Scan Codebase
+                          </h3>
+                          <p className="text-xs text-white/40 leading-relaxed mb-6">
+                            Index symbols, classes, structs, and calls within your "src/" directory to navigate relationships.
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleScanCodebase}
+                            className="flex items-center justify-center gap-2 px-6 py-2.5 bg-[#39ff14] text-black font-bold tracking-wider uppercase text-xs rounded-xl hover:shadow-[0_0_20px_rgba(57,255,20,0.5)] focus:outline-none transition-all duration-300"
+                          >
+                            <Play className="w-4 h-4 fill-current" />
+                            Scan Now
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <GraphCanvas
+                        data={codeData}
+                        loading={codeLoading}
+                        error={codeError}
+                        emptyMessage="No code graph overview available. Click scan if necessary."
+                        onNodeDoubleClick={handleNodeExpand}
+                        onNodeExpand={handleNodeExpand}
+                        isCodeMode={true}
+                      />
+                    )}
+                  </div>
+                )}
+              </div>
             </motion.div>
           )}
           {mainTab === "bookmarks" && (
@@ -458,7 +795,7 @@ function ConfigView({
     {
       id: "models",
       label: "AI Models & Routing",
-      icon: <CpuIcon className="w-4 h-4" />,
+      icon: <Cpu className="w-4 h-4" />,
     },
     {
       id: "embedding",
