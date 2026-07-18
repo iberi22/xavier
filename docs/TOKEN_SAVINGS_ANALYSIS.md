@@ -1,49 +1,235 @@
-# Xavier Token Economics — Estudio de Ahorro
+# Xavier Token Economics — Estudio de Ahorro Honesto
 
-## El Problema: Costo de Contexto en Agentes LLM
+Este documento detalla el análisis de economía de tokens y la optimización de contexto de Xavier. Se eliminan las afirmaciones teóricas sin medición y se presenta el diseño real basado en la reducción de contexto mediante la revelación progresiva (*Progressive Disclosure*).
 
-Cada vez que un agente AI (Claude, ChatGPT, DeepSeek) procesa una consulta,
-el **contexto completo de la conversación** suele reenviarse al LLM si el host (por ejemplo, Claude Desktop o VSCode) no gestiona el historial de forma eficiente.
+Este desarrollo se enmarca dentro de las iniciativas de **Ola 5 (#496)** y el protocolo de revelación progresiva y optimización de costos de MCP **(#497)**.
 
-### El Ahorro Honesto de Xavier
+---
 
-Xavier no hace magia de compresión de 99% sobre el aire. El ahorro se consigue mediante **Progressive Disclosure** (Revelación Progresiva) y gestión de capas de memoria.
+## El Problema: El Costo del Contexto Completo en Agentes LLM
 
-| Item | Costo SIN Xavier (Full History) | Costo CON Xavier (Optimizado) | Ahorro Real |
-|------|-----------------|------------------|--------|
-| Último mensaje | 500 tokens | 500 tokens | — |
-| Historial (50 turnos) | ~98,000 tokens (reenvío ciego) | ~1,000 tokens (resumen + core slots) | ~99% |
-| Archivos del repo | ~5,000 tokens (contexto estático) | ~200 tokens (referencias + snippets) | ~96% |
-| **Total por turno** | **~103,500 tokens** | **~1,700 tokens** | **~98.3%** |
+En la mayoría de los flujos de trabajo con agentes AI (como Claude Code, OpenClaw o asistentes CLI tradicionales), todo el historial de la conversación y el contenido de los archivos relevantes se reenvían al LLM en cada turno. En repositorios de mediano a gran tamaño, esto provoca que el uso de tokens crezca de manera lineal o exponencial, encareciendo y ralentizando la operación del agente.
 
-**Nota Crítica:** El ahorro del 99% es *teórico* respecto a lo que gastaría un agente sin Xavier si tuviera que leer todo el repo en cada turno. En la práctica, el ahorro depende de la política de reenvío del host. Xavier **garantiza** que el bloque de contexto que él genera es mínimo y suficiente.
+### Estimación y Ahorro Honesto de Xavier
 
-## Mecanismo: Progressive Disclosure
+Xavier no realiza compresión algorítmica de texto ni "magia" en el aire. El ahorro de tokens es un resultado directo de la **arquitectura de revelación progresiva** (*Progressive Disclosure*) y la granularidad de sus herramientas.
 
-Xavier aplica un patrón de "Page-In" similar a la gestión de memoria virtual:
+*   **Ahorro de Historial:** En lugar de enviar un historial ciego de todos los turnos, Xavier permite estructurar la memoria mediante checkpoints de conversación y budgets configurables (*Shallow*, *Medium*, *Deep*).
+*   **Estimación Conservadora:** Para evitar reportes optimistas, Xavier calcula el consumo de tokens de forma honesta mediante la fórmula estándar de estimación rápida:
+    $$\text{tokens} \approx \lceil \text{chars} / 4 \rceil$$
+    Esta métrica es un estimador lineal conservador y transparente (ver `regression_token_estimation_honest_reporting` en el conjunto de pruebas de regresión).
+*   **Ahorro por Selección Reticular:** La reducción real de tokens depende del tamaño del repositorio, la profundidad del historial y la estrategia del cliente. En un repositorio de $10\text{ MB}$, cargar todo el código insumiría más de $2.5\text{ M}$ de tokens por turno. Con Xavier, el agente solo "trae" a su contexto activo las porciones identificadas como estrictamente relevantes.
 
-1.  **Search First (Fat Search):** Herramientas como `mem_search` devuelven por defecto solo metadata y snippets (ID, Path, Score). Esto permite al agente ver "qué hay" sin gastar miles de tokens.
-2.  **Page-In (Targeted Context):** El agente solo solicita el contenido completo (`memory_context(ids=[...])`) de los documentos que realmente necesita para el paso actual.
-3.  **Budget-Aware Selection:** El `Orchestrator` de Xavier selecciona qué mensajes del historial mantener basándose en un budget honesto (Shallow: 50t, Medium: 200t, Deep: 1000t).
+---
 
-## Estimación Honesta de Tokens
+## El Flujo de Revelación Progresiva: `mem_search` $\rightarrow$ `memory_context`
 
-Xavier utiliza un estimador conservador para sus reportes de ahorro:
-- **Fórmula:** `tokens = ceil(chars / 4)`
-- Esto evita el overclaim común de contar espacios o usar métricas optimistas.
+La estrategia clave de Xavier para optimizar el uso de tokens se divide en dos fases bien definidas: **Fat Search** (Búsqueda Gorda) y **Page-In** (Paginación de Contexto Directa).
 
-## Profundidades de Regeneración
+```
++-----------------------------------------------------------+
+| 1. FAT SEARCH (mem_search)                                |
+|    Query -> Retorna IDs, scores, paths, snippets cortos.  |
+|    Uso de tokens: Mínimo (~200 - 500 tokens).             |
++-----------------------------+-----------------------------+
+                              |
+                              v (Agente identifica IDs clave)
++-----------------------------+-----------------------------+
+| 2. PAGE-IN (memory_context)                               |
+|    IDs -> Pide y concatena el contenido completo.         |
+|    Uso de tokens: Acotado y bajo demanda.                 |
++-----------------------------------------------------------+
+```
 
-| Nivel | Budget (Tokens) | Contenido | Cuándo usarlo |
-|-------|--------|-----------|---------------|
-| **Shallow** | ~50 | Metadata básica, última acción, estado de la rama. | Consultas de estado rápido. |
-| **Medium** | ~200 | Resumen ejecutivo + 3-5 decisiones clave + archivos críticos. | Debugging estándar. |
-| **Deep** | ~1000 | Contexto expandido, grafos de creencia y call paths. | Tareas de arquitectura compleja. |
+### Fase 1: Fat Search (`mem_search`)
+El agente realiza una búsqueda híbrida (semántica + léxica) mediante la herramienta `mem_search`. Por defecto, esta consulta **no incluye el contenido completo de los documentos** (`include_content: false`).
 
-## Conclusión
+El LLM recibe una lista de resultados con:
+- `Id` (ULID único del registro)
+- `Path` (Ruta o identificador del recurso)
+- `Kind` (Tipo de memoria)
+- `Score` (Puntuación de relevancia)
+- `Snippet` (Los primeros 100 caracteres del texto como previsualización)
+- `Metadata`
 
-Xavier reduce drásticamente el desperdicio de tokens al eliminar la redundancia del historial y los archivos estáticos, sustituyéndolos por una **regeneración dinámica** del contexto necesario para el turno actual.
+Esto permite al agente inspeccionar un amplio catálogo de memorias candidatas gastando apenas una fracción del contexto.
 
-- **Ahorro típico en debugging:** 90-95%
-- **Ahorro en repos grandes:** Hasta 98% mediante Fat Search.
-- **Transparencia:** Xavier reporta el uso original vs optimizado en cada restauración.
+### Fase 2: Page-In (`memory_context`)
+Una vez que el agente analiza las opciones devueltas por `mem_search`, selecciona los identificadores de los documentos que requiere analizar en profundidad.
+
+A continuación, invoca la herramienta `memory_context` pasando explícitamente el parámetro `ids` con la lista de identificadores seleccionados. Esta herramienta realiza el "Page-In", recuperando el contenido completo de dichos registros desde la base de datos local de Xavier y devolviendo un bloque de contexto unificado y delimitado por `max_chars`.
+
+---
+
+## Ejemplos de Uso Reales (MCP y API Headless)
+
+A continuación, se documentan los payloads exactos conformes a los esquemas de herramientas de Xavier definidos en `src/server/mcp/tools_memory.rs` y los endpoints REST de `src/server/headless/routes.rs`.
+
+### 1. Búsqueda Fat via MCP (`mem_search`)
+
+**Petición JSON-RPC (MCP):**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "search-1",
+  "method": "tools/call",
+  "params": {
+    "name": "mem_search",
+    "arguments": {
+      "query": "autenticación oqs quantum",
+      "limit": 3,
+      "include_content": false
+    }
+  }
+}
+```
+
+**Respuesta MCP (Snippet):**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "search-1",
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "Id: 01HZN34Y8R9WZ7K8Q5BXMC910A\nPath: docs/security/oqs_auth.md\nKind: Document\nScore: 0.9412\nSnippet: Implementación del handshake híbrido post-cuántico empleando ML-KEM y Kyber...\nMetadata: {\"tags\":[\"security\",\"crypto\"]}"
+      }
+    ],
+    "is_error": false
+  }
+}
+```
+
+### 2. Page-In Context via MCP (`memory_context` / `mem_context`)
+
+**Petición JSON-RPC (MCP):**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "context-1",
+  "method": "tools/call",
+  "params": {
+    "name": "memory_context",
+    "arguments": {
+      "ids": ["01HZN34Y8R9WZ7K8Q5BXMC910A"],
+      "max_chars": 4000
+    }
+  }
+}
+```
+
+**Respuesta MCP (Snippet con contenido estructurado):**
+```json
+{
+  "jsonrpc": "2.0",
+  "id": "context-1",
+  "result": {
+    "content": [
+      {
+        "type": "structuredContent",
+        "structuredContent": {
+          "total_chars": 1250,
+          "total_records": 1,
+          "truncated": false,
+          "truncated_reason": null,
+          "content": "# Relevant Memory Context\n\n### docs/security/oqs_auth.md (id: 01HZN34Y8R9WZ7K8Q5BXMC910A)\nImplementación del handshake híbrido post-cuántico empleando ML-KEM y Kyber. El protocolo de intercambio de claves garantiza la confidencialidad persistente incluso frente a adversarios con capacidades de cómputo cuántico...\n",
+          "sources": [
+            {
+              "id": "01HZN34Y8R9WZ7K8Q5BXMC910A",
+              "path": "docs/security/oqs_auth.md",
+              "score": 0.0,
+              "snippet": "Implementación del handshake híbrido post-cuántico...",
+              "provenance": {
+                "source": "search_filtered",
+                "retrieved_at": "2026-07-18T12:00:00Z",
+                "retrieval_method": "context_depth_search",
+                "embedding_model": null,
+                "version": null
+              },
+              "metadata": {"tags":["security","crypto"]}
+            }
+          ]
+        }
+      }
+    ],
+    "is_error": false
+  }
+}
+```
+
+---
+
+### 3. Equivalente REST Headless (Curl)
+
+Xavier expone los endpoints correspondientes para su consumo fuera del ecosistema MCP directo.
+
+#### Buscar con `POST /headless/memory/search` (Fat Search)
+
+**Comando Curl:**
+```bash
+curl -X POST http://localhost:8006/headless/memory/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "text": "autenticación oqs quantum",
+    "limit": 3
+  }'
+```
+
+**Respuesta JSON:**
+```json
+{
+  "results": [
+    {
+      "id": "01HZN34Y8R9WZ7K8Q5BXMC910A",
+      "path": "docs/security/oqs_auth.md",
+      "revision": 1,
+      "primary": true,
+      "content": "Implementación del handshake híbrido post-cuántico empleando ML-KEM y Kyber. El protocolo de intercambio de claves garantiza la confidencialidad persistente incluso frente a adversarios con capacidades de cómputo cuántico...",
+      "metadata": {
+        "tags": ["security", "crypto"]
+      }
+    }
+  ],
+  "total": 1
+}
+```
+
+*Nota:* El endpoint `/headless/memory/search` expone por defecto la estructura de `MemoryRecord` completa para integraciones HTTP simplificadas. Sin embargo, para flujos de agentes con altos requisitos de optimización de tokens, se recomienda la ruta MCP `mem_search` que reduce la transferencia de texto redundante.
+
+#### Obtener Contexto con `GET /headless/context` (Paginación de Contexto)
+
+**Comando Curl:**
+```bash
+curl -X GET "http://localhost:8006/headless/context?query=autenticacion&limit=2" \
+  -H "Content-Type: application/json"
+```
+
+**Respuesta JSON:**
+```json
+{
+  "items": [
+    {
+      "id": "01HZN34Y8R9WZ7K8Q5BXMC910A",
+      "path": "docs/security/oqs_auth.md",
+      "revision": 1,
+      "primary": true,
+      "content": "Implementación del handshake híbrido post-cuántico empleando ML-KEM y Kyber. El protocolo de intercambio de claves garantiza la confidencialidad persistente incluso frente a adversarios con capacidades de cómputo cuántico...",
+      "metadata": {
+        "tags": ["security", "crypto"]
+      }
+    }
+  ],
+  "total": 1
+}
+```
+
+---
+
+## Verificación de Integridad
+
+El comportamiento honesto y la exactitud de estos mecanismos son evaluados continuamente mediante nuestro suite de pruebas integradas:
+
+1.  **Prueba de Ahorro en Fat Search:** `regression_fat_search_token_savings` en `src/server/mcp/regression_token_savings.rs` verifica que las búsquedas "Fat" sin contenido mantengan un tamaño significativamente inferior al contenido real indexado.
+2.  **Prueba de Page-In Dirigido:** `regression_memory_context_targeted_page_in` en el mismo módulo asegura que la invocación de `memory_context` con un array de `ids` recupere exclusivamente el contenido de esos documentos seleccionados, bloqueando la intrusión de memorias no solicitadas en el prompt.
+3.  **Prueba de Estimación Honesta:** `regression_token_estimation_honest_reporting` corrobora que la estimación de tokens reportada por el sistema cumpla con la regla lineal de caracteres divididos entre 4 ($\lceil \text{chars}/4 \rceil$), previniendo reportes sesgados de eficiencia.
