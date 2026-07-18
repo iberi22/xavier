@@ -36,7 +36,10 @@ mod tests {
             }),
         ).await;
         let body_fat = get_json_body(resp_fat).await;
-        let text_fat = body_fat["result"]["content"][0]["text"].as_str().unwrap();
+        let sc_fat = &body_fat["result"]["content"][0]["structuredContent"];
+        let candidates_fat = sc_fat["candidates"].as_array().expect("candidates fat array");
+        assert!(!candidates_fat.is_empty());
+        assert!(candidates_fat[0].get("content").is_none(), "Fat search should not contain full content in candidates");
 
         // 3. Search with content
         let resp_full = post_json(
@@ -50,15 +53,21 @@ mod tests {
             }),
         ).await;
         let body_full = get_json_body(resp_full).await;
-        let text_full = body_full["result"]["content"][0]["text"].as_str().unwrap();
+        let sc_full = &body_full["result"]["content"][0]["structuredContent"];
+        let candidates_full = sc_full["candidates"].as_array().expect("candidates full array");
+        assert!(!candidates_full.is_empty());
+        let full_text = candidates_full[0]["content"].as_str().expect("Full search must contain content field");
 
-        println!("Fat search result length: {}", text_fat.len());
-        println!("Full search result length: {}", text_full.len());
+        let serialized_fat_len = serde_json::to_string(&body_fat).unwrap().len();
+        let serialized_full_len = serde_json::to_string(&body_full).unwrap().len();
+
+        println!("Fat search serialized length: {}", serialized_fat_len);
+        println!("Full search serialized length: {}", serialized_full_len);
 
         // Regression: Fat search should be significantly smaller than full search
-        assert!(text_fat.len() < 1000, "Fat search should not contain full content");
-        assert!(text_full.len() > 5000, "Full search should contain full content");
-        assert!(text_fat.len() < text_full.len() / 5, "Fat search should be at least 5x smaller");
+        assert!(serialized_fat_len < 1000, "Fat search should be compact");
+        assert!(full_text.len() >= 5000, "Full search should contain full content");
+        assert!(serialized_fat_len < serialized_full_len / 5, "Fat search should be at least 5x smaller");
     }
 
     #[tokio::test]
@@ -85,8 +94,7 @@ mod tests {
             "params": { "name": "mem_search", "arguments": { "query": "one" }}
         })).await;
         let body_search = get_json_body(resp_search).await;
-        let search_text = body_search["result"]["content"][0]["text"].as_str().unwrap();
-        let id1 = search_text.split('\n').next().unwrap().strip_prefix("Id: ").unwrap();
+        let id1 = body_search["result"]["content"][0]["structuredContent"]["candidates"][0]["id"].as_str().unwrap();
 
         // memory_context with ID (targeted page-in)
         let resp_context = post_json(router.clone(), json!({
