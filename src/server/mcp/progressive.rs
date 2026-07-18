@@ -54,16 +54,18 @@ mod tests {
             .expect("content should be an array");
         assert!(!content_array_default.is_empty(), "Should return at least one search result");
 
-        let text_default = content_array_default[0]["text"]
-            .as_str()
-            .expect("First content item should have text");
+        let structured_default = &content_array_default[0]["structuredContent"];
+        let candidates_default = structured_default["candidates"]
+            .as_array()
+            .expect("candidates should be an array");
+        assert!(!candidates_default.is_empty(), "Should have candidates");
 
+        let candidate_default = &candidates_default[0];
         // Assert no full content is included by default (progressive disclosure)
-        assert!(text_default.contains("Id:"), "Search result should contain the ID prefix");
-        assert!(text_default.contains("Path: specs/prod-999.txt"), "Search result should contain the path");
-        assert!(text_default.contains("Snippet: PROD_SPEC_999"), "Search result should contain snippet");
-        assert!(!text_default.contains("END_SPEC"), "Search result must NOT contain the full body");
-        assert!(text_default.len() < 1000, "Progressive disclosure search response must be compact");
+        assert!(!candidate_default["id"].as_str().unwrap_or("").is_empty(), "Search result should contain the ID");
+        assert_eq!(candidate_default["path"].as_str().unwrap_or(""), "specs/prod-999.txt", "Search result should contain the path");
+        assert!(candidate_default["snippet"].as_str().unwrap_or("").contains("PROD_SPEC_999"), "Search result should contain snippet");
+        assert!(candidate_default["content"].is_null() || candidate_default["content"].as_str().unwrap_or("").is_empty(), "Search result must NOT contain the full body");
 
         // 3. Perform a search using `mem_search` with include_content = true
         let search_resp_full = post_json(
@@ -88,14 +90,17 @@ mod tests {
         let content_array_full = body_full["result"]["content"]
             .as_array()
             .expect("content should be an array");
-        let text_full = content_array_full[0]["text"]
-            .as_str()
-            .expect("First content item should have text");
+        let structured_full = &content_array_full[0]["structuredContent"];
+        let candidates_full = structured_full["candidates"]
+            .as_array()
+            .expect("candidates should be an array");
+        assert!(!candidates_full.is_empty(), "Should have candidates");
+        let candidate_full = &candidates_full[0];
 
         // Assert full content is disclosed when requested
-        assert!(text_full.contains("Content: PROD_SPEC_999"), "Full search result must contain the content prefix");
-        assert!(text_full.contains("END_SPEC"), "Full search result must contain the full body ending");
-        assert!(text_full.len() > 4000, "Disclosed full search response should be large");
+        assert!(candidate_full["content"].as_str().unwrap_or("").contains("PROD_SPEC_999"), "Full search result must contain the content prefix");
+        assert!(candidate_full["content"].as_str().unwrap_or("").contains("END_SPEC"), "Full search result must contain the full body ending");
+        assert!(candidate_full["content"].as_str().unwrap_or("").len() > 4000, "Disclosed full search response should be large");
     }
 
     #[tokio::test]
@@ -160,13 +165,8 @@ mod tests {
         )
         .await;
         let body_rust = get_json_body(search_rust_resp).await;
-        let text_rust = body_rust["result"]["content"][0]["text"].as_str().unwrap();
-        let id_rust = text_rust
-            .split('\n')
-            .next()
-            .unwrap()
-            .strip_prefix("Id: ")
-            .unwrap();
+        let candidates_rust = body_rust["result"]["content"][0]["structuredContent"]["candidates"].as_array().unwrap();
+        let id_rust = candidates_rust[0]["id"].as_str().unwrap();
 
         let search_python_resp = post_json(
             router.clone(),
@@ -184,13 +184,8 @@ mod tests {
         )
         .await;
         let body_python = get_json_body(search_python_resp).await;
-        let text_python = body_python["result"]["content"][0]["text"].as_str().unwrap();
-        let id_python = text_python
-            .split('\n')
-            .next()
-            .unwrap()
-            .strip_prefix("Id: ")
-            .unwrap();
+        let candidates_python = body_python["result"]["content"][0]["structuredContent"]["candidates"].as_array().unwrap();
+        let id_python = candidates_python[0]["id"].as_str().unwrap();
 
         // Ensure we retrieved two different valid IDs
         assert_ne!(id_rust, id_python, "The two documents should have unique IDs");

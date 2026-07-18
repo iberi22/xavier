@@ -36,7 +36,9 @@ mod tests {
             }),
         ).await;
         let body_fat = get_json_body(resp_fat).await;
-        let text_fat = body_fat["result"]["content"][0]["text"].as_str().unwrap();
+        let candidates_fat = body_fat["result"]["content"][0]["structuredContent"]["candidates"].as_array().unwrap();
+        assert!(!candidates_fat.is_empty());
+        let snippet_len = candidates_fat[0]["snippet"].as_str().unwrap_or("").len();
 
         // 3. Search with content
         let resp_full = post_json(
@@ -50,15 +52,17 @@ mod tests {
             }),
         ).await;
         let body_full = get_json_body(resp_full).await;
-        let text_full = body_full["result"]["content"][0]["text"].as_str().unwrap();
+        let candidates_full = body_full["result"]["content"][0]["structuredContent"]["candidates"].as_array().unwrap();
+        assert!(!candidates_full.is_empty());
+        let content_len = candidates_full[0]["content"].as_str().unwrap_or("").len();
 
-        println!("Fat search result length: {}", text_fat.len());
-        println!("Full search result length: {}", text_full.len());
+        println!("Fat search snippet length: {}", snippet_len);
+        println!("Full search content length: {}", content_len);
 
         // Regression: Fat search should be significantly smaller than full search
-        assert!(text_fat.len() < 1000, "Fat search should not contain full content");
-        assert!(text_full.len() > 5000, "Full search should contain full content");
-        assert!(text_fat.len() < text_full.len() / 5, "Fat search should be at least 5x smaller");
+        assert!(snippet_len < 1000, "Fat search snippet should be small");
+        assert!(content_len >= 5000, "Full search content should contain full content");
+        assert!(snippet_len < content_len / 5, "Fat search snippet should be at least 5x smaller");
     }
 
     #[tokio::test]
@@ -85,8 +89,9 @@ mod tests {
             "params": { "name": "mem_search", "arguments": { "query": "one" }}
         })).await;
         let body_search = get_json_body(resp_search).await;
-        let search_text = body_search["result"]["content"][0]["text"].as_str().unwrap();
-        let id1 = search_text.split('\n').next().unwrap().strip_prefix("Id: ").unwrap();
+        let candidates_search = body_search["result"]["content"][0]["structuredContent"]["candidates"].as_array().unwrap();
+        assert!(!candidates_search.is_empty());
+        let id1 = candidates_search[0]["id"].as_str().unwrap();
 
         // memory_context with ID (targeted page-in)
         let resp_context = post_json(router.clone(), json!({

@@ -268,14 +268,14 @@ async fn create_and_get_memory_integration() {
     let content = &body["result"]["content"][0];
     if content["type"] == "structuredContent" {
         let empty: Vec<_> = vec![];
-        let results = content["structuredContent"]["results"]
+        let candidates = content["structuredContent"]["candidates"]
             .as_array()
             .unwrap_or(&empty);
-        assert!(!results.is_empty(), "search should return results");
-        let snippet = results[0]["snippet"].as_str().unwrap();
+        assert!(!candidates.is_empty(), "search should return results");
+        let snippet = candidates[0]["snippet"].as_str().unwrap();
         assert!(
             snippet.contains("test content")
-                || results[0]["path"].as_str().unwrap().contains("test")
+                || candidates[0]["path"].as_str().unwrap().contains("test")
         );
     } else {
         let search_text = content["text"].as_str().unwrap();

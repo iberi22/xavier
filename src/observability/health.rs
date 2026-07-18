@@ -263,9 +263,11 @@ impl HealthMonitor {
                 "Auto-repair: High fragmentation ({:.1}%), running VACUUM...",
                 new_status.database.fragmentation_percent
             );
+            let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig::from_env();
+            let project_id = crate::memory::sqlite_vec_store::project_id_for_path(&config.path);
             let _ = self
                 .cm
-                .with_conn("vec_store", |conn| {
+                .with_conn(&project_id, |conn| {
                     conn.execute("VACUUM", [])?;
                     Ok(())
                 })
@@ -335,9 +337,12 @@ impl HealthMonitor {
         let mut fragmentation_percent = 0.0;
         let mut page_count = 0;
 
+        let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig::from_env();
+        let project_id = crate::memory::sqlite_vec_store::project_id_for_path(&config.path);
+
         let res = self
             .cm
-            .with_conn("vec_store", |conn| {
+            .with_conn(&project_id, |conn| {
                 let integrity: String =
                     conn.query_row("PRAGMA integrity_check", [], |r| r.get(0))?;
                 let pc: u32 = conn.query_row("PRAGMA page_count", [], |r| r.get(0))?;
@@ -362,13 +367,10 @@ impl HealthMonitor {
         }
 
         let mut wal_size_bytes = 0;
-        let home = std::env::var("USERPROFILE")
-            .or_else(|_| std::env::var("HOME"))
-            .unwrap_or_else(|_| ".".to_string());
-        let wal_path = std::path::PathBuf::from(home)
-            .join(".xavier")
-            .join("data")
-            .join("vec-store.sqlite3-wal");
+        let mut wal_path = config.path.clone();
+        let mut os_str = wal_path.into_os_string();
+        os_str.push("-wal");
+        let wal_path = std::path::PathBuf::from(os_str);
         if let Ok(metadata) = std::fs::metadata(wal_path) {
             wal_size_bytes = metadata.len();
         }
