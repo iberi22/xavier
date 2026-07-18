@@ -161,7 +161,7 @@ mod tests {
                 get(list_bookmarks).post(save_bookmark),
             )
             .route("/panel/api/widgets", get(list_widgets).post(save_widget))
-            .route("/panel/api/graphs", get(get_graph).post(save_graph))
+            .route("/panel/api/graph", get(get_graph).post(save_graph))
             .layer(Extension(workspace))
             .with_state(state)
     }
@@ -317,16 +317,43 @@ mod tests {
         let (state, workspace) = test_state().await;
         let app = test_router(state, workspace);
 
+        // Empty workspace returns 200 + empty roadmap (not 404).
+        let empty_get = Request::builder()
+            .method("GET")
+            .uri("/panel/api/graph")
+            .body(Body::empty())
+            .expect("test assertion");
+        let empty_response = app
+            .clone()
+            .oneshot(empty_get)
+            .await
+            .expect("test assertion");
+        assert_eq!(empty_response.status(), StatusCode::OK);
+        let empty_body = to_bytes(empty_response.into_body(), usize::MAX)
+            .await
+            .expect("test assertion");
+        let empty_graph: GraphData =
+            serde_json::from_slice(&empty_body).expect("test assertion");
+        assert_eq!(empty_graph.id, "default");
+        assert_eq!(
+            empty_graph.data["nodes"].as_array().map(|a| a.len()),
+            Some(0)
+        );
+        assert_eq!(
+            empty_graph.data["links"].as_array().map(|a| a.len()),
+            Some(0)
+        );
+
         let graph = GraphData {
             id: "graph-1".to_string(),
-            name: "Knowledge Graph".to_string(),
-            data: serde_json::json!({"nodes": [], "edges": []}),
+            name: "Workspace roadmap".to_string(),
+            data: serde_json::json!({"nodes": [], "links": []}),
             created_at: Utc::now(),
         };
 
         let create_request = Request::builder()
             .method("POST")
-            .uri("/panel/api/graphs")
+            .uri("/panel/api/graph")
             .header("content-type", "application/json")
             .body(Body::from(serde_json::to_string(&graph).unwrap()))
             .expect("test assertion");
@@ -338,9 +365,29 @@ mod tests {
             .expect("test assertion");
         assert_eq!(response.status(), StatusCode::OK);
 
+        // Reject legacy `edges` shape without `links`.
+        let bad = GraphData {
+            id: "graph-bad".to_string(),
+            name: "bad".to_string(),
+            data: serde_json::json!({"nodes": [], "edges": []}),
+            created_at: Utc::now(),
+        };
+        let bad_request = Request::builder()
+            .method("POST")
+            .uri("/panel/api/graph")
+            .header("content-type", "application/json")
+            .body(Body::from(serde_json::to_string(&bad).unwrap()))
+            .expect("test assertion");
+        let bad_response = app
+            .clone()
+            .oneshot(bad_request)
+            .await
+            .expect("test assertion");
+        assert_eq!(bad_response.status(), StatusCode::BAD_REQUEST);
+
         let get_request = Request::builder()
             .method("GET")
-            .uri("/panel/api/graphs")
+            .uri("/panel/api/graph")
             .body(Body::empty())
             .expect("test assertion");
 
@@ -350,6 +397,6 @@ mod tests {
             .expect("test assertion");
         let result: GraphData = serde_json::from_slice(&body).expect("test assertion");
         assert_eq!(result.id, "graph-1");
-        assert_eq!(result.name, "Knowledge Graph");
+        assert_eq!(result.name, "Workspace roadmap");
     }
 }
