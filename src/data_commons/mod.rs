@@ -1,30 +1,31 @@
-//! # Xavier Data Commons ($XAV)
+//! # Xavier Data Commons ($SWAL / legacy $XAV naming)
 //!
-//! Sistema descentralizado de compartición de datos técnicos entre nodos Xavier.
+//! Sistema descentralizado de compartición de datos técnicos entre nodos Xavier
+//! y aplicaciones del ecosistema SWAL.
 //! - **Wallet post-cuántica:** ML-KEM (Kyber-1024) + ML-DSA (Dilithium-5)
 //! - **TPM 2.0 opcional:** HW wallet cuando está disponible
-//! - **Reputación EigenTrust:** Trust scoring descentralizado sin blockchain
-//! - **MINTER automático:** Recompensas por contribución de datos técnicos
-//! - **Gobernanza 100% democrática:** 1 wallet = 1 voto
+//! - **Reputación EigenTrust:** Trust scoring descentralizado
+//! - **Rewards / MINTER:** alineados al token de ecosistema **$SWAL**
+//! - **Pro en apps:** nodo SWAL activo — **sin Stripe**
+//! - **Namespaces multi-app:** `app/{app_id}/instance/{instance_id}/…`
 //!
 //! ## Filosofía
 //!
-//! > "Los datos técnicos de Xavier son el combustible para la evolución autónoma
-//! > de toda la mesh. Quien contribuye es recompensado. Quien consume, paga.
-//! > La red decide su futuro, no una entidad central."
+//! > "Los datos técnicos y de trabajo con consentimiento son el combustible de la
+//! > mesh SWAL. Quien contribuye es recompensado. Quien consume, paga.
+//! > La propiedad de $SWAL es de las personas; el stake genera % de interés de red."
 //!
-//! ## Token: $XAV
+//! ## Token: $SWAL
 //!
-//! - **Supply:** No fijo — se mintea solo con contribución válida
-//! - **Quema:** 80% del precio pagado por consumir contextos se quema
-//! - **Pre-mining:** 0 — arranca desde cero con cada nodo
-//! - **Bridge:** No por ahora (independiente de GARA)
+//! - **Ownership:** wallet del usuario
+//! - **Yield:** stake (economic core, donor gara-g)
+//! - **Burn/mint:** equilibrio tipo BME en consumo vs contribución
+//! - Naming legacy `$XAV` en tipos/docs → migrar a $SWAL
 //!
 //! ## Estado
 //!
-//! ⚠️ **FASE 0 — Diseño e investigación.** Sin implementación aún.
-//! El código en este módulo define la estructura de datos y tipos,
-//! pero las features están en documentos de diseño.
+//! ⚠️ **FASE 0–1.** Tipos + wallet parcial; marketplace multi-app en roadmap.
+//! Ver monorepo `docs/SWAL/README.md`.
 
 pub mod funnel;
 pub mod governance;

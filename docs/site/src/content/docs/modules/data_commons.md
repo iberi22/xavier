@@ -3,27 +3,31 @@ title: Data Commons
 description: Decentralized data sharing and rewards ($XAV)
 ---
 
-# Xavier Data Commons ($XAV)
+# Xavier Data Commons ($SWAL / legacy $XAV naming)
 
-The Data Commons is a decentralized system for sharing technical data between Xavier nodes.
+The Data Commons is a decentralized system for sharing technical data between Xavier nodes and SWAL apps.
+
+> **Ecosystem roadmap:** monorepo [`docs/SWAL/README.md`](../../../../../../docs/SWAL/README.md)  
+> **Pro apps:** active **SWAL node** — no Stripe.  
+> **Token naming:** ecosystem token is **$SWAL**; code/docs may still say `$XAV` during migration.
 
 - **Wallet post-cuántica:** ML-KEM (Kyber-1024) + ML-DSA (Dilithium-5)
 - **TPM 2.0 opcional:** Hardware wallet support when available.
-- **Reputación EigenTrust:** Decentralized trust scoring without a blockchain.
-- **MINTER automático:** Rewards for technical data contributions.
-- **Gobernanza 100% democrática:** 1 wallet = 1 vote.
+- **Reputación EigenTrust:** Decentralized trust scoring.
+- **MINTER / rewards:** aligned to **$SWAL** economic core (gara-g stake + BME).
+- **Namespaces:** multi-app isolation `app/{appId}/instance/{instanceId}/…`
 
 ## Philosophy
 
-> "Xavier technical data is the fuel for the autonomous evolution of the entire mesh. Those who contribute are rewarded. Those who consume, pay. The network decides its future, not a central entity."
+> "Technical and consented work data is the fuel for the autonomous evolution of the SWAL mesh. Those who contribute are rewarded. Those who consume, pay. Ownership of $SWAL stays with people; staking yields network interest."
 
-## Token: $XAV
+## Token: $SWAL (ex-$XAV module name)
 
-- **Supply:** Non-fixed — minted only through valid contributions.
-- **Burn:** 80% of the price paid for consuming contexts is burned.
-- **Pre-mining:** 0 — starts from zero with each node.
-- **Bridge:** Independent of GARA (no bridge for now).
+- **Ownership:** user wallet.
+- **Yield:** stake periods → % interest from network fees.
+- **Burn / mint:** BME-style equilibrium on useful contribution vs consumption.
+- **Access to purchased data:** sealed box (not balance-gating alone).
 
 ## Status
 
-⚠️ **PHASE 0 — Design and Research.** This module currently defines data structures and types based on design documents. Full implementation is ongoing.
+⚠️ **PHASE 0–1 — Design + partial types/wallet.** Full multi-app marketplace ongoing. See monorepo SWAL roadmap.
