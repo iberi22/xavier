@@ -126,13 +126,46 @@ pub struct Usage {
     pub total_tokens: usize,
 }
 
+fn extract_query(messages: &[serde_json::Value]) -> String {
+    // Extract query string from the last user message in messages where role == "user", or join contents
+    let mut query = messages
+        .iter()
+        .rev()
+        .find(|msg| {
+            msg.get("role")
+                .and_then(|r| r.as_str())
+                .map(|r| r == "user")
+                .unwrap_or(false)
+        })
+        .and_then(|msg| {
+            msg.get("content")
+                .and_then(|c| c.as_str())
+        })
+        .map(|c| c.trim())
+        .unwrap_or("")
+        .to_string();
+
+    if query.is_empty() {
+        let parts: Vec<&str> = messages
+            .iter()
+            .filter_map(|msg| msg.get("content").and_then(|c| c.as_str()))
+            .map(|c| c.trim())
+            .filter(|c| !c.is_empty())
+            .collect();
+        query = parts.join(" ");
+    }
+    query
+}
+
 pub async fn headless_chat(
     axum::extract::State(state): axum::extract::State<crate::cli::state::CliState>,
     axum::Extension(session): axum::Extension<crate::cli::http_setup::SessionInfo>,
     Json(req): Json<ChatRequest>,
 ) -> impl IntoResponse {
     use crate::cli::utils::ProxyErrorWrapper;
-    use xavier::domain::proxy::ProxyChatCommand;
+    use xavier::domain::proxy::{ChatChoice, ChatCompletion, ChatMessage, ProxyChatCommand};
+
+    let query = extract_query(&req.messages);
 
     let cmd = ProxyChatCommand {
         model: req.model.unwrap_or_else(|| "auto".to_string()),
@@ -153,7 +186,50 @@ pub async fn headless_chat(
         .await
     {
         Ok(resp) => (StatusCode::OK, AxumJson(resp)).into_response(),
-        Err(e) => ProxyErrorWrapper(e).into_response(),
+        Err(e) => {
+            tracing::warn!("Headless chat LLM error, falling back to memory: {}", e);
+            state.usage_counters.record_memory_fallback();
+
+            let (assistant_content, model) = match state.memory.search(&query, 5, None).await {
+                Ok(results) if !results.is_empty() => {
+                    let context = results
+                        .iter()
+                        .map(|r| r.content.as_str())
+                        .collect::<Vec<_>>()
+                        .join("\n---\n");
+                    (
+                        format!("[Modo memoria - LLM no disponible]\n\n{}", context),
+                        "memory-fallback".to_string(),
+                    )
+                }
+                _ => (
+                    format!("[LLM no disponible: {}]", e),
+                    "memory-fallback".to_string(),
+                ),
+            };
+
+            let fallback_resp = ChatCompletion {
+                id: format!("chatcmpl-{}", ulid::Ulid::new().to_string().to_lowercase()),
+                object: "chat.completion".to_string(),
+                created: chrono::Utc::now().timestamp(),
+                model,
+                choices: vec![ChatChoice {
+                    index: 0,
+                    message: ChatMessage {
+                        role: "assistant".to_string(),
+                        content: assistant_content,
+                    },
+                    finish_reason: "stop".to_string(),
+                }],
+                usage: xavier::domain::proxy::Usage {
+                    prompt_tokens: 0,
+                    completion_tokens: 0,
+                    total_tokens: 0,
+                },
+            };
+
+            (StatusCode::OK, AxumJson(fallback_resp)).into_response()
+        }
     }
 }
 
@@ -416,6 +492,9 @@ pub async fn headless_memory_export() -> impl IntoResponse {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use serde_json::json;
+
     // Note: Constructing a full CliState for unit testing is complex due to its many mandatory fields
     // and dependencies on the local filesystem and SQLite databases.
     // Testing for these endpoints is primarily covered by E2E tests in `tests/headless_api_test.rs`.
@@ -423,4 +502,56 @@ mod tests {
     // 1. /v1/providers and /v1/providers/status query the real state.provider_router.
     // 2. /v1/quota queries the real state.rate_manager.
     // 3. Agent-related endpoints explicitly return a 501 Not Implemented status.
+
+    #[test]
+    fn test_extract_query_last_user_message() {
+        let messages = vec![
+            json!({"role": "system", "content": "You are a helpful assistant."}),
+            json!({"role": "user", "content": "Hello, world!"}),
+            json!({"role": "assistant", "content": "How can I help you?"}),
+            json!({"role": "user", "content": "What is 2+2?"}),
+        ];
+        let query = extract_query(&messages);
+        assert_eq!(query, "What is 2+2?");
+    }
+
+    #[test]
+    fn test_extract_query_fallback_join() {
+        // No "user" role, join all content
+        let messages = vec![
+            json!({"role": "system", "content": "System prompt"}),
+            json!({"role": "assistant", "content": "Assistant prompt"}),
+        ];
+        let query = extract_query(&messages);
+        assert_eq!(query, "System prompt Assistant prompt");
+    }
+
+    #[test]
+    fn test_build_fallback_chat_completion() {
+        use xavier::domain::proxy::{ChatChoice, ChatCompletion, ChatMessage};
+        let assistant_content = "fallback content".to_string();
+        let fallback_resp = ChatCompletion {
+            id: format!("chatcmpl-{}", ulid::Ulid::new().to_string().to_lowercase()),
+            object: "chat.completion".to_string(),
+            created: chrono::Utc::now().timestamp(),
+            model: "memory-fallback".to_string(),
+            choices: vec![ChatChoice {
+                index: 0,
+                message: ChatMessage {
+                    role: "assistant".to_string(),
+                    content: assistant_content.clone(),
+                },
+                finish_reason: "stop".to_string(),
+            }],
+            usage: xavier::domain::proxy::Usage {
+                prompt_tokens: 0,
+                completion_tokens: 0,
+                total_tokens: 0,
+            },
+        };
+
+        assert_eq!(fallback_resp.model, "memory-fallback");
+        assert_eq!(fallback_resp.choices.len(), 1);
+        assert_eq!(fallback_resp.choices[0].message.content, "fallback content");
+    }
 }
