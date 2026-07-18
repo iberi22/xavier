@@ -141,6 +141,9 @@ impl PluginManager {
 
     /// Load plugins from the legacy `plugins.json` config file.
     pub fn load_config(&self) -> Result<()> {
+        if cfg!(test) {
+            return Ok(());
+        }
         let Some(config_dir) = dirs::config_dir() else {
             return Ok(());
         };
