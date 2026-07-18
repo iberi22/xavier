@@ -1,18 +1,18 @@
 {
-  "_comment": "Feature tracking — verified 2026-07-17. Ola 3 functional complete (incl. usage metrics). Ola 4: hot-swap UI.",
+  "_comment": "Feature tracking — Ola 4 closed 2026-07-18. Xavier 100% local control plane complete.",
   "metadata": {
     "project": "Xavier",
     "version": "0.12.0",
     "created": "2026-03-05",
-    "last_verified": "2026-07-17",
+    "last_verified": "2026-07-18",
     "total_features": 21,
-    "features_complete": 11,
-    "features_beta": 8,
+    "features_complete": 13,
+    "features_beta": 6,
     "features_draft": 2,
     "features_planned": 0,
-    "features_stable": 11,
+    "features_stable": 13,
     "overall_progress_pct": 95.0,
-    "reconciliation_notes": "2026-07-17: #578 UsageCounters implemented. feat-local-first 93%->96%. overall=95%. Ola3 functional complete; #589 formal close next."
+    "reconciliation_notes": "2026-07-18 Ola 4 closed. feat-local-first 100% stable. overall=95%. PRs: #607 usage, #615 panel metrics, #619 ollama API, #622 headless+UI+docs."
   },
   "features": [
     {
@@ -324,8 +324,8 @@
       "id": "feat-runtime-health",
       "name": "Runtime Health & Self-Monitoring",
       "category": "enterprise",
-      "status": "beta",
-      "progress_pct": 98,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Native runtime loop that monitors system health, database integrity, embedding providers, mesh peers, and runs auto-benchmarks",
       "steps": [
         "Create src/health/mod.rs with HealthResponse structs",
@@ -340,8 +340,8 @@
       "passes": true,
       "verified_by": "build",
       "github_issue": null,
-      "last_tested": "2026-07-17",
-      "notes": "doctor + enriched health + log retention + UsageCounters (#578) on /v1/account/usage and /v1/usage. Remaining: UI metrics surface (Ola 4).",
+      "last_tested": "2026-07-18",
+      "notes": "doctor + enriched health + UsageCounters + panel UsageMetricsPanel. Fully operational.",
       "implemented_in": null,
       "tests": [
         "test_health_registry_init",
@@ -475,21 +475,20 @@
       "id": "feat-local-first",
       "name": "100% Local Operation (LLM + Embeddings via Ollama)",
       "category": "local-first",
-      "status": "beta",
-      "progress_pct": 96,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Chat del panel responde usando un LLM local (Ollama) con fallback a cloud y degradación elegante a memoria cuando ningún provider responde.",
       "steps": [
-        "Ola 1: estabilización — DONE",
-        "Ola 2: ProxyUseCase local + fallback + memory + UI + tests — DONE",
-        "Ola 3: circuit breaker, reindex, metrics, doctor, health, docker, docs, MCP/Telegram status, E2E, smoke, fail-fast, panel LLM — DONE",
-        "Ola 3: EPIC cierre formal features/ROADMAP/devlog (#589) — IN PROGRESS",
-        "Ola 4: hot-swap UI modelos Ollama — PLANNED"
+        "Ola 1 estabilizacion — DONE",
+        "Ola 2 fallback chain + local provider — DONE",
+        "Ola 3 observabilidad + panel LLM + UsageCounters — DONE",
+        "Ola 4 headless memory-fallback + Ollama hot-swap API/UI + metrics UI + docs — DONE"
       ],
       "passes": true,
       "verified_by": "integration-tests",
       "github_issue": 522,
-      "last_tested": "2026-07-17",
-      "notes": "Ola 1+2 DONE + Ola 3 COMPLETE (incl. #578 UsageCounters PR). Panel real LLM (#605), circuit breaker, doctor, health, MCP/Telegram status, docker/docs/smoke, metrics. Remaining for 100%: Ola 4 hot-swap UI. EPIC #589 formal close in progress.",
+      "last_tested": "2026-07-18",
+      "notes": "Ola 1-4 COMPLETE. Hot-swap API (#619) + UI (#622), headless memory-fallback (#622), usage metrics API (#607) + panel (#615), doctor/health/panel LLM from Ola 3. Initiative 100% local control plane achieved.",
       "implemented_in": "src/app/proxy_use_case.rs, src/agents/provider/, src/cli/handlers/, src/observability/, src/server/mcp/tools_core.rs, src/telegram/mod.rs, docker/, docs/USER_GUIDE_LOCAL.md, scripts/smoke_test_local.*, tests/e2e_chat_local.rs, panel-ui/"
     }
   ],
