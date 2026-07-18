@@ -224,3 +224,57 @@ async fn session_tokens_beliefs_and_checkpoints_persist_between_reloads() {
         .expect("test assertion");
     assert!(checkpoint.is_some());
 }
+
+#[tokio::test]
+async fn test_workspace_working_memory_is_bounded_and_contains_recent_docs() {
+    let unique_id = Ulid::new().to_string();
+    let root = std::env::temp_dir().join(format!("xavier-wm-{}", unique_id));
+    let config = WorkspaceConfig {
+        id: format!("persist-wm-{}", unique_id),
+        token: "token".to_string(),
+        plan: PlanTier::Personal,
+        memory_backend: MemoryBackend::File,
+        storage_limit_bytes: Some(500 * MB),
+        request_limit: Some(50_000),
+        request_unit_limit: Some(100_000),
+        embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
+        managed_google_embeddings: false,
+        sync_policy: SyncPolicy::CloudMirror,
+    };
+
+    let workspace = WorkspaceState::new(config.clone(), RuntimeConfig::default(), &root)
+        .await
+        .expect("test assertion");
+
+    // Add 120 documents (capacity defaults to 100)
+    for i in 0..120 {
+        workspace
+            .memory
+            .add_document_typed(
+                format!("doc-{}", i),
+                format!("Content of document {}", i),
+                serde_json::json!({}),
+                None,
+            )
+            .await
+            .expect("test assertion");
+    }
+
+    // Now re-initialize/reload the workspace
+    let reloaded = WorkspaceState::new(config, RuntimeConfig::default(), &root)
+        .await
+        .expect("test assertion");
+
+    // Give it a tiny bit of time for the spawned task to complete
+    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+    // Verify the working documents list has bounded capacity of 100 items
+    let working_docs = reloaded.working_documents().await;
+    assert_eq!(working_docs.len(), 100);
+
+    // Verify it contains the most recent documents (e.g. doc-20 through doc-119)
+    let contents: std::collections::HashSet<String> = working_docs.iter().map(|d| d.content.clone()).collect();
+    assert!(!contents.contains("Content of document 19"));
+    assert!(contents.contains("Content of document 20"));
+    assert!(contents.contains("Content of document 119"));
+}
