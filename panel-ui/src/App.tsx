@@ -39,7 +39,6 @@ const getApiUrl = (path: string) => {
 export default function App() {
   const { token, isAuthenticated } = useAuthStore();
   const [hash, setHash] = useState(window.location.hash);
-  const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [messages, setMessages] = useState<PanelMessage[]>([]);
