@@ -49,6 +49,7 @@ pub struct MCPError {
 pub struct MCPTool {
     pub name: String,
     pub description: String,
+    #[serde(rename = "inputSchema")]
     pub input_schema: Value,
 }
 
@@ -56,6 +57,7 @@ pub struct MCPTool {
 pub struct MCPResource {
     pub uri: String,
     pub name: String,
+    #[serde(rename = "mimeType")]
     pub mime_type: String,
 }
 
@@ -98,6 +100,7 @@ pub struct MCPResourceContent {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MCPResourceRef {
     pub uri: String,
+    #[serde(rename = "mimeType")]
     pub mime_type: String,
     pub text: Option<String>,
 }
@@ -107,6 +110,7 @@ pub struct MCPResourceRef {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MCPToolResult {
     pub content: Vec<MCPContent>,
+    #[serde(rename = "isError")]
     pub is_error: Option<bool>,
 }
 
@@ -127,8 +131,11 @@ pub struct MCPSearchResult {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MCPProvenance {
     pub source: String,
+    #[serde(rename = "retrievedAt")]
     pub retrieved_at: String,
+    #[serde(rename = "retrievalMethod")]
     pub retrieval_method: String,
+    #[serde(rename = "embeddingModel")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub embedding_model: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -138,13 +145,17 @@ pub struct MCPProvenance {
 /// Packaged context result with truncation awareness.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MCPContextResult {
+    #[serde(rename = "totalChars")]
     pub total_chars: usize,
+    #[serde(rename = "totalRecords")]
     pub total_records: usize,
     pub truncated: bool,
+    #[serde(rename = "truncatedReason")]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub truncated_reason: Option<String>,
     pub content: String,
     pub sources: Vec<MCPSearchResult>,
+    #[serde(rename = "estimatedTokens")]
     pub estimated_tokens: usize,
 }
 
@@ -152,10 +163,15 @@ pub struct MCPContextResult {
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct MCPHealthResult {
     pub status: String,
+    #[serde(rename = "toolsCount")]
     pub tools_count: usize,
+    #[serde(rename = "handshakeOk")]
     pub handshake_ok: bool,
+    #[serde(rename = "memoryStoreOk")]
     pub memory_store_ok: bool,
+    #[serde(rename = "embeddingOk")]
     pub embedding_ok: bool,
+    #[serde(rename = "mcpProtocol")]
     pub mcp_protocol: String,
 }
 

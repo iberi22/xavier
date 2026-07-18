@@ -248,7 +248,7 @@ async fn create_and_get_memory_integration() {
     let stats_text = body["result"]["content"][0]["text"].as_str().unwrap();
     assert!(stats_text.contains("\"total_memories\":1"));
 
-    // Search memory — now returns structuredContent with results array
+    // Search memory — now returns structuredContent with candidates array
     let response = post_json(
         router.clone(),
         json!({
@@ -268,7 +268,7 @@ async fn create_and_get_memory_integration() {
     let content = &body["result"]["content"][0];
     if content["type"] == "structuredContent" {
         let empty: Vec<_> = vec![];
-        let results = content["structuredContent"]["results"]
+        let results = content["structuredContent"]["candidates"]
             .as_array()
             .unwrap_or(&empty);
         assert!(!results.is_empty(), "search should return results");
@@ -363,7 +363,7 @@ async fn core_tools_integration() {
     if content["type"] == "structuredContent" {
         let sc = &content["structuredContent"];
         assert!(sc["content"].as_str().unwrap().contains("c1"));
-        assert!(sc["total_records"].as_u64().unwrap_or(0) >= 1);
+        assert!(sc["totalRecords"].as_u64().unwrap_or(0) >= 1);
     } else {
         assert!(content["text"].as_str().unwrap().contains("c1"));
     }
@@ -621,8 +621,8 @@ async fn tools_health_check_returns_structured() {
     if content["type"] == "structuredContent" {
         let sc = &content["structuredContent"];
         assert!(sc["status"].is_string());
-        assert!(sc["tools_count"].as_u64().unwrap_or(0) >= 16);
-        assert_eq!(sc["mcp_protocol"], "2026-07-28");
+        assert!(sc["toolsCount"].as_u64().unwrap_or(0) >= 16);
+        assert_eq!(sc["mcpProtocol"], "2026-07-28");
     } else {
         // backward compat: ensure text fallback works
         let text = content["text"].as_str().unwrap();
@@ -643,11 +643,11 @@ async fn all_tools_have_valid_schema() {
 
     for tool in tools {
         let name = tool["name"].as_str().unwrap_or("?");
-        let schema = &tool["input_schema"];
+        let schema = &tool["inputSchema"];
         // Each tool must have a valid JSON Schema object with type "object"
         assert!(
             schema["type"] == "object" || schema["type"] == json!(null),
-            "tool {} has invalid input_schema: {:?}",
+            "tool {} has invalid inputSchema: {:?}",
             name,
             schema
         );
@@ -831,14 +831,14 @@ async fn get_project_context_size_limits() {
     let content = &body["result"]["content"][0];
     if content["type"] == "structuredContent" {
         let sc = &content["structuredContent"];
-        let total_chars = sc["total_chars"].as_u64().unwrap_or(0);
+        let total_chars = sc["totalChars"].as_u64().unwrap_or(0);
         let is_truncated = sc["truncated"].as_bool().unwrap_or(false);
         assert!(
             total_chars <= 150 || is_truncated,
             "chars exceeded 100 without truncation"
         );
         if is_truncated {
-            assert!(sc["truncated_reason"].is_string());
+            assert!(sc["truncatedReason"].is_string());
         }
     }
 }
@@ -942,8 +942,8 @@ async fn memory_context_returns_context_block() {
             "got: {ctx_text}"
         );
         assert!(
-            sc["total_chars"].as_u64().unwrap_or(0) > 0
-                || sc["total_records"].as_u64().unwrap_or(0) == 0
+            sc["totalChars"].as_u64().unwrap_or(0) > 0
+                || sc["totalRecords"].as_u64().unwrap_or(0) == 0
         );
     } else {
         let text = content["text"].as_str().unwrap();
@@ -992,7 +992,7 @@ async fn memory_context_depth_flat() {
     let sc = &content["structuredContent"];
     assert!(
         sc["content"].as_str().unwrap().contains("memory safety")
-            || sc["total_records"].as_u64().unwrap_or(0) == 0
+            || sc["totalRecords"].as_u64().unwrap_or(0) == 0
     );
 }
 
@@ -1021,7 +1021,7 @@ async fn memory_context_depth_one() {
         "depth/1 should return structured"
     );
     let sc = &content["structuredContent"];
-    assert!(sc["total_records"].as_u64().is_some());
+    assert!(sc["totalRecords"].as_u64().is_some());
 }
 
 #[tokio::test]
@@ -1059,7 +1059,7 @@ async fn memory_context_max_chars() {
         "max_chars should return structured"
     );
     let sc = &content["structuredContent"];
-    let total_chars = sc["total_chars"].as_u64().unwrap_or(0);
+    let total_chars = sc["totalChars"].as_u64().unwrap_or(0);
     let is_truncated = sc["truncated"].as_bool().unwrap_or(false);
     // The content should be truncated (or total_chars <= ~100 + truncation suffix)
     assert!(
@@ -1595,13 +1595,13 @@ async fn memory_context_max_chars_per_doc_and_multi_id() {
     // Check that doc 2 IS truncated (since length is 104, which is > 20)
     assert!(ctx_text.contains("[... doc truncated ...]"));
 
-    // Check honest total_chars reporting (the characters in final aggregated context string)
-    let reported_total = sc["total_chars"].as_u64().unwrap() as usize;
+    // Check honest totalChars reporting (the characters in final aggregated context string)
+    let reported_total = sc["totalChars"].as_u64().unwrap() as usize;
     assert_eq!(reported_total, ctx_text.chars().count());
 
     // Check honest truncated flags reporting in overall payload
     assert!(sc["truncated"].as_bool().unwrap());
-    assert_eq!(sc["truncated_reason"].as_str().unwrap(), "One or more documents were truncated");
+    assert_eq!(sc["truncatedReason"].as_str().unwrap(), "One or more documents were truncated");
 
     // Check honest reporting in sources metadata
     let sources = sc["sources"].as_array().unwrap();
