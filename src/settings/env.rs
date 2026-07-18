@@ -131,6 +131,14 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
             .min_event_importance
             .to_string(),
     );
+    set_if_absent(
+        "XAVIER_EPISODIC_LLM_SUMMARY_ENABLED",
+        if settings.memory_layers.episodic.llm_summary_enabled {
+            "true"
+        } else {
+            "false"
+        },
+    );
 
     set_if_absent("XAVIER_MODEL_PROVIDER", &settings.models.provider);
     set_if_absent("XAVIER_API_FLAVOR", &settings.models.api_flavor);

@@ -11,6 +11,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use crate::codebase::conversations_db::Message;
 
 /// A key event extracted from a session
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -413,6 +414,116 @@ pub async fn generate_session_summary(_items: &[String], _events: &[KeyEvent]) -
     Ok("Session summary placeholder - implement LLM integration".to_string())
 }
 
+/// Generates a non-LLM extractive summary of a conversation session
+/// using the first and last N messages plus key topics/keywords.
+/// Kept under ~400 tokens (~1600 characters) to ensure efficiency.
+pub fn summarize_session_extractive(messages: &[Message]) -> String {
+    if messages.is_empty() {
+        return "### Extractive Session Summary\n\n(No messages in conversation thread)".to_string();
+    }
+
+    let mut summary = String::new();
+    summary.push_str("### Extractive Session Summary\n\n");
+
+    let total_messages = messages.len();
+
+    // 1. Context flow/previews
+    if total_messages <= 6 {
+        summary.push_str("**Conversation Flow:**\n");
+        for msg in messages {
+            let content_clean = msg.content.trim().replace('\n', " ");
+            let truncated = if content_clean.len() > 120 {
+                format!("{}...", &content_clean[..120])
+            } else {
+                content_clean
+            };
+            summary.push_str(&format!("- **{}**: {}\n", msg.role, truncated));
+        }
+    } else {
+        summary.push_str("**First Messages:**\n");
+        for msg in &messages[0..3] {
+            let content_clean = msg.content.trim().replace('\n', " ");
+            let truncated = if content_clean.len() > 120 {
+                format!("{}...", &content_clean[..120])
+            } else {
+                content_clean
+            };
+            summary.push_str(&format!("- **{}**: {}\n", msg.role, truncated));
+        }
+        summary.push_str("\n**Last Messages:**\n");
+        for msg in &messages[total_messages - 3..] {
+            let content_clean = msg.content.trim().replace('\n', " ");
+            let truncated = if content_clean.len() > 120 {
+                format!("{}...", &content_clean[..120])
+            } else {
+                content_clean
+            };
+            summary.push_str(&format!("- **{}**: {}\n", msg.role, truncated));
+        }
+    }
+
+    // 2. Keyword bullets (bullet points extracted from entire conversation)
+    summary.push_str("\n**Key Topics & Keywords:**\n");
+    let keywords = extract_keywords(messages);
+    if keywords.is_empty() {
+        summary.push_str("- None identified\n");
+    } else {
+        for kw in keywords {
+            summary.push_str(&format!("- {}\n", kw));
+        }
+    }
+
+    // Enforce token/char limit (saturating at 1600 chars (~400 tokens))
+    if summary.len() > 1600 {
+        summary.truncate(1597);
+        summary.push_str("...");
+    }
+
+    summary
+}
+
+/// Simple stopword-filtered keyword extraction
+fn extract_keywords(messages: &[Message]) -> Vec<String> {
+    use std::collections::HashMap;
+    use std::collections::HashSet;
+
+    let stop_words: HashSet<&str> = [
+        // English stopwords
+        "the", "a", "an", "and", "or", "but", "if", "then", "else", "with", "from", "for", "to", "in", "on", "at", "by",
+        "this", "that", "these", "those", "is", "are", "was", "were", "be", "been", "have", "has", "had", "do", "does",
+        "did", "of", "not", "your", "mine", "about", "what", "where", "when", "how", "who", "which", "will", "would",
+        "should", "could", "there", "their", "them", "they", "some", "any", "all", "more", "most", "than", "user",
+        "assistant", "system", "please", "thanks", "thank",
+        // Spanish stopwords
+        "el", "la", "los", "las", "un", "una", "unos", "unas", "y", "o", "pero", "si", "entonces", "con", "de", "desde",
+        "para", "por", "en", "sobre", "este", "esta", "estos", "estas", "ese", "esa", "esos", "esas", "es", "son",
+        "era", "eran", "ser", "sido", "haber", "tiene", "tienen", "tenia", "hacer", "hace", "hacen", "no", "tu", "mio",
+        "que", "donde", "cuando", "como", "quien", "cual", "sera", "seria", "deberia", "podria", "alli", "su", "sus",
+        "ellos", "ellas", "algun", "algunos", "todo", "todos", "mas", "hola", "buenos", "dias", "tarde", "noches"
+    ].iter().cloned().collect();
+
+    let mut counts = HashMap::new();
+    for msg in messages {
+        for word in msg.content.split_whitespace() {
+            let cleaned: String = word.chars()
+                .filter(|c| c.is_alphabetic())
+                .collect::<String>()
+                .to_lowercase();
+            if cleaned.len() >= 4 && !stop_words.contains(cleaned.as_str()) {
+                *counts.entry(cleaned).or_insert(0) += 1;
+            }
+        }
+    }
+
+    let mut sorted_counts: Vec<(String, usize)> = counts.into_iter().collect();
+    sorted_counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+
+    sorted_counts.into_iter()
+        .take(8)
+        .map(|(w, _)| w)
+        .collect()
+}
+
 /// Extract key events from session items (placeholder)
 ///
 /// This is a placeholder function. In production, this would:
@@ -718,5 +829,61 @@ mod tests {
 
         let result = em.add_sentiment_to_session("nonexistent", 0.5);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_summarize_session_extractive() {
+        let messages = vec![
+            Message {
+                id: "m1".to_string(),
+                thread_id: "t1".to_string(),
+                role: "user".to_string(),
+                content: "Hola! I am testing the new extractive summary feature for Xavier. It should extract key topics and keywords correctly.".to_string(),
+                tool_calls: None,
+                openui_lang: None,
+                xui_json: None,
+                metadata: None,
+                created_at: Utc::now(),
+                tokens: None,
+            },
+            Message {
+                id: "m2".to_string(),
+                thread_id: "t1".to_string(),
+                role: "assistant".to_string(),
+                content: "That sounds excellent. Extractive summarization is great for local-first efficiency without paid LLMs. We should test it with several messages to verify context flow, keywords bullets, and proper truncation.".to_string(),
+                tool_calls: None,
+                openui_lang: None,
+                xui_json: None,
+                metadata: None,
+                created_at: Utc::now(),
+                tokens: None,
+            },
+            Message {
+                id: "m3".to_string(),
+                thread_id: "t1".to_string(),
+                role: "user".to_string(),
+                content: "Make sure we verify that it is NOT just raw last_preview of the last message!".to_string(),
+                tool_calls: None,
+                openui_lang: None,
+                xui_json: None,
+                metadata: None,
+                created_at: Utc::now(),
+                tokens: None,
+            },
+        ];
+
+        let summary = summarize_session_extractive(&messages);
+
+        // Assertions
+        assert!(summary.contains("### Extractive Session Summary"));
+        assert!(summary.contains("Conversation Flow:"));
+        assert!(summary.contains("user"));
+        assert!(summary.contains("assistant"));
+        assert!(summary.contains("Key Topics & Keywords:"));
+        // Key terms should be extracted
+        assert!(summary.contains("extractive") || summary.contains("testing") || summary.contains("summarization"));
+
+        // Assert it's not raw last_preview
+        assert_ne!(summary, "Make sure we verify that it is NOT just raw last_preview of the last message!");
     }
 }

@@ -83,16 +83,45 @@ pub async fn export_pack_handler(
     };
 
     let threads = state.panel_store.list_threads(50).await.unwrap_or_default();
-    let episodic_summaries = threads
-        .into_iter()
-        .map(|s| xavier::retrieval::gating::SessionSummary {
+    let mut episodic_summaries = Vec::new();
+    for s in threads {
+        let summary = if let Some(ref preview) = s.last_preview {
+            if preview.contains("### Extractive Session Summary") {
+                preview.clone()
+            } else {
+                if let Ok(messages) = state.panel_store.get_thread_messages(&s.id).await {
+                    if !messages.is_empty() {
+                        let gen = xavier::memory::episodic::summarize_session_extractive(&messages);
+                        let _ = state.panel_store.update_last_preview(&s.id, &gen).await;
+                        gen
+                    } else {
+                        preview.clone()
+                    }
+                } else {
+                    preview.clone()
+                }
+            }
+        } else {
+            if let Ok(messages) = state.panel_store.get_thread_messages(&s.id).await {
+                if !messages.is_empty() {
+                    let gen = xavier::memory::episodic::summarize_session_extractive(&messages);
+                    let _ = state.panel_store.update_last_preview(&s.id, &gen).await;
+                    gen
+                } else {
+                    String::new()
+                }
+            } else {
+                String::new()
+            }
+        };
+        episodic_summaries.push(xavier::retrieval::gating::SessionSummary {
             session_id: s.id.clone(),
             start_time: s.started_at,
-            summary: s.last_preview.unwrap_or_default(),
+            summary,
             key_events: vec![],
             sentiment_timeline: vec![],
-        })
-        .collect::<Vec<_>>();
+        });
+    }
 
     let semantic_entities = Vec::new();
 
