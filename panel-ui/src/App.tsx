@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion } from "motion/react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuthStore } from "./auth/AuthProvider";
 import { BackupCodesPage } from "./auth/BackupCodesPage";
 import { LoginPage } from "./auth/LoginPage";
@@ -15,7 +15,8 @@ import InputArea from "./components/InputArea";
 import { OnboardingFlow } from "./components/Onboarding/OnboardingFlow";
 import ParticleBackground from "./components/ParticleBackground";
 import TopStatusBar from "./components/TopStatusBar";
-import { initialBookmarks, initialGraphData } from "./data";
+import { initialBookmarks } from "./data";
+import { EMPTY_ROADMAP_GRAPH, normalizeGraphData } from "./utils/roadmapGraph";
 
 import type {
   BackendGraphData,
@@ -29,6 +30,18 @@ import type {
   ThreadSummary,
   Widget,
 } from "./types";
+
+type RoadmapGraphMeta = {
+  id: string;
+  name: string;
+  created_at: string;
+};
+
+const DEFAULT_GRAPH_META: RoadmapGraphMeta = {
+  id: "default",
+  name: "Workspace roadmap",
+  created_at: new Date(0).toISOString(),
+};
 
 const getApiUrl = (path: string) => {
   const isTauri =
@@ -51,7 +64,11 @@ export default function App() {
 
   const [bookmarks, setBookmarks] = useState<Bookmark[]>([]);
   const [widgets, setWidgets] = useState<CanvasWidget[]>([]);
-  const [graphData, setGraphData] = useState<GraphData | null>(null);
+  const [graphData, setGraphData] = useState<GraphData>(EMPTY_ROADMAP_GRAPH);
+  const [graphMeta, setGraphMeta] =
+    useState<RoadmapGraphMeta>(DEFAULT_GRAPH_META);
+  const graphMetaRef = useRef(graphMeta);
+  const graphSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [hasConfig, setHasConfig] = useState(true);
 
@@ -81,6 +98,18 @@ export default function App() {
     [token],
   );
 
+  useEffect(() => {
+    graphMetaRef.current = graphMeta;
+  }, [graphMeta]);
+
+  useEffect(() => {
+    return () => {
+      if (graphSaveTimerRef.current) {
+        clearTimeout(graphSaveTimerRef.current);
+      }
+    };
+  }, []);
+
   const loadPanelData = useCallback(
     async (currentToken: string) => {
       try {
@@ -97,7 +126,24 @@ export default function App() {
             }).catch(() => null as unknown as BackendGraphData),
           ]);
         setBookmarks(bookmarksData);
-        if (graphDataResult) setGraphData(graphDataResult.data);
+        if (graphDataResult) {
+          const payload = graphDataResult.data as GraphData | undefined;
+          const nodes = Array.isArray(payload?.nodes) ? payload.nodes : [];
+          const links = Array.isArray(payload?.links) ? payload.links : [];
+          setGraphData(normalizeGraphData({ nodes, links }));
+          const meta: RoadmapGraphMeta = {
+            id: graphDataResult.id || DEFAULT_GRAPH_META.id,
+            name: graphDataResult.name || DEFAULT_GRAPH_META.name,
+            created_at:
+              graphDataResult.created_at || new Date().toISOString(),
+          };
+          setGraphMeta(meta);
+          graphMetaRef.current = meta;
+        } else {
+          setGraphData(EMPTY_ROADMAP_GRAPH);
+          setGraphMeta(DEFAULT_GRAPH_META);
+          graphMetaRef.current = DEFAULT_GRAPH_META;
+        }
       } catch (e) {
         console.warn("Failed to load panel state:", e);
       }
@@ -301,7 +347,34 @@ export default function App() {
     // For demo purposes, sync local state
   };
 
-  const handleUpdateGraphData = (_data: unknown) => {};
+  const handleUpdateGraphData = useCallback(
+    (data: GraphData) => {
+      const normalized = normalizeGraphData(data);
+      setGraphData(normalized);
+
+      if (graphSaveTimerRef.current) {
+        clearTimeout(graphSaveTimerRef.current);
+      }
+
+      graphSaveTimerRef.current = setTimeout(async () => {
+        const meta = graphMetaRef.current;
+        try {
+          await api("/panel/api/graph", {
+            method: "POST",
+            body: JSON.stringify({
+              id: meta.id,
+              name: meta.name,
+              data: normalized,
+              created_at: meta.created_at || new Date().toISOString(),
+            }),
+          });
+        } catch (e) {
+          console.warn("Failed to save roadmap graph:", e);
+        }
+      }, 400);
+    },
+    [api],
+  );
 
   const handlePinArtifact = (artifact: BookmarkArtifact) => {
     const newWidget: CanvasWidget = {
@@ -392,7 +465,7 @@ export default function App() {
               <ConfigModal
                 key="modal"
                 onClose={() => setIsConfigOpen(false)}
-                graphData={graphData || initialGraphData}
+                graphData={graphData}
                 onUpdateGraphData={handleUpdateGraphData}
                 bookmarks={
                   bookmarks.length > 0
