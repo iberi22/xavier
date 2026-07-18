@@ -1,0 +1,80 @@
+{
+  "symbols": [
+    {
+      "id": null,
+      "stable_id": null,
+      "name": "math",
+      "kind": "Import",
+      "lang": "Python",
+      "file_path": "example.py",
+      "start_line": 1,
+      "end_line": 1,
+      "start_col": 0,
+      "end_col": 11,
+      "signature": "import math",
+      "parent": null,
+      "complexity": null
+    },
+    {
+      "id": null,
+      "stable_id": null,
+      "name": "datetime",
+      "kind": "Import",
+      "lang": "Python",
+      "file_path": "example.py",
+      "start_line": 2,
+      "end_line": 2,
+      "start_col": 0,
+      "end_col": 29,
+      "signature": "from datetime import datetime",
+      "parent": null,
+      "complexity": null
+    },
+    {
+      "id": null,
+      "stable_id": null,
+      "name": "Calculator",
+      "kind": "Class",
+      "lang": "Python",
+      "file_path": "example.py",
+      "start_line": 4,
+      "end_line": 7,
+      "start_col": 0,
+      "end_col": 20,
+      "signature": "class Calculator",
+      "parent": null,
+      "complexity": null
+    },
+    {
+      "id": null,
+      "stable_id": null,
+      "name": "add",
+      "kind": "Method",
+      "lang": "Python",
+      "file_path": "example.py",
+      "start_line": 5,
+      "end_line": 7,
+      "start_col": 4,
+      "end_col": 20,
+      "signature": "def add(...)",
+      "parent": "Calculator",
+      "complexity": 1.0
+    },
+    {
+      "id": null,
+      "stable_id": null,
+      "name": "greet",
+      "kind": "Function",
+      "lang": "Python",
+      "file_path": "example.py",
+      "start_line": 9,
+      "end_line": 10,
+      "start_col": 0,
+      "end_col": 26,
+      "signature": "def greet(...)",
+      "parent": null,
+      "complexity": 1.0
+    }
+  ],
+  "error": null
+}

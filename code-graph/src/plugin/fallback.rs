@@ -127,7 +127,11 @@ impl FallbackResolver for FallbackChain {
 /// Path to `fallback.json` under the platform config dir (or `None` if the
 /// platform exposes no config dir).
 fn config_path() -> Option<PathBuf> {
-    Some(dirs::config_dir()?.join("code-graph").join("fallback.json"))
+    if cfg!(test) {
+        None
+    } else {
+        Some(dirs::config_dir()?.join("code-graph").join("fallback.json"))
+    }
 }
 
 #[cfg(test)]

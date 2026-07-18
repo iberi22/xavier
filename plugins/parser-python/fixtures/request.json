@@ -1,0 +1,9 @@
+{
+  "language": "Python",
+  "files": [
+    {
+      "path": "example.py",
+      "source": "import math\nfrom datetime import datetime\n\nclass Calculator:\n    def add(self, a, b):\n        \"\"\"Adds two numbers.\"\"\"\n        return a + b\n\ndef greet(name):\n    print(f'Hello {name}')\n"
+    }
+  ]
+}
