@@ -68,30 +68,38 @@ export default function InputArea({
         )}
 
         <button
+          type="button"
           onClick={onOpenConfig}
-          className="relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 text-[#39ff14] hover:scale-105 active:scale-95 group"
+          aria-label="Open Control Node"
+          className="relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 text-[#39ff14] hover:scale-105 active:scale-95 group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
           title="Open Control Node"
         >
           <div className="absolute inset-1 rounded-full border border-transparent group-hover:border-[#39ff14]/40 group-hover:shadow-[inset_0_0_10px_rgba(57,255,20,0.2)] transition-all duration-300" />
           <BrainCircuit
             className="w-6 h-6 group-hover:drop-shadow-[0_0_10px_rgba(57,255,20,0.8)] transition-all duration-300"
             strokeWidth={1.5}
+            aria-hidden="true"
           />
         </button>
 
         <button
+          type="button"
           onClick={handleFolderClick}
-          className="relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 text-white/60 hover:text-blue-400"
+          aria-label="Add project codebase"
+          className="relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 text-white/60 hover:text-blue-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
           title="Agregar Codebase (Proyecto Git)"
         >
-          <FolderPlus className="w-5 h-5" />
+          <FolderPlus className="w-5 h-5" aria-hidden="true" />
         </button>
 
-        <div className="w-px h-8 bg-white/10 relative z-10 mx-1" />
+        <div className="w-px h-8 bg-white/10 relative z-10 mx-1" aria-hidden="true" />
 
         <button
+          type="button"
           onClick={handleMicClick}
-          className={`relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 ${
+          aria-label={isRecording ? "Stop recording" : "Record audio"}
+          aria-pressed={isRecording}
+          className={`relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 hover:bg-white/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
             isRecording
               ? "text-[#39ff14]"
               : "text-white/60 hover:text-[#39ff14]"
@@ -99,7 +107,7 @@ export default function InputArea({
           title={isRecording ? "Stop recording" : "Record audio"}
         >
           {isRecording ? (
-            <div className="flex gap-[3px] items-center justify-center h-full">
+            <div className="flex gap-[3px] items-center justify-center h-full" aria-hidden="true">
               <div
                 className="w-[3px] bg-[#39ff14] rounded-full animate-[audioBar_1s_ease-in-out_infinite_0ms]"
                 style={{ height: "12px" }}
@@ -118,15 +126,20 @@ export default function InputArea({
               />
             </div>
           ) : (
-            <Mic className="w-5 h-5" />
+            <Mic className="w-5 h-5" aria-hidden="true" />
           )}
         </button>
 
         <div className="flex-1 relative z-10 flex flex-col justify-center min-h-[48px]">
           {isTranscribing ? (
-            <div className="flex items-center gap-2 px-2 text-[#39ff14]/80 text-sm italic font-medium w-full animate-pulse">
+            <div
+              className="flex items-center gap-2 px-2 text-[#39ff14]/80 text-sm italic font-medium w-full animate-pulse"
+              role="status"
+              aria-live="polite"
+              aria-busy="true"
+            >
               Transcribing
-              <span className="flex gap-1">
+              <span className="flex gap-1" aria-hidden="true">
                 <span
                   className="w-1 h-1 bg-[#39ff14] rounded-full animate-bounce"
                   style={{ animationDelay: "-0.3s" }}
@@ -147,23 +160,26 @@ export default function InputArea({
               placeholder={
                 isRecording ? "Listening..." : "Initialize command sequence..."
               }
-              className="w-full bg-transparent border-none outline-none text-white px-2 placeholder:text-white/30 text-sm font-medium"
+              aria-label="Command input"
+              className="w-full bg-transparent border-none outline-none text-white px-2 placeholder:text-white/30 text-sm font-medium focus-visible:ring-0"
               disabled={isRecording}
             />
           )}
         </div>
 
         <button
+          type="button"
           onClick={handleSend}
           disabled={!inputText.trim() && !isTranscribing}
-          className={`relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 ${
+          aria-label="Send command"
+          className={`relative z-10 w-12 h-12 flex items-center justify-center rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
             inputText.trim()
               ? "bg-[#39ff14] text-[#050505] hover:brightness-110 shadow-[0_0_15px_rgba(57,255,20,0.3)]"
               : "bg-white/5 text-white/30 cursor-not-allowed"
           }`}
           title="Send command"
         >
-          <Send className="w-5 h-5 ml-1" />
+          <Send className="w-5 h-5 ml-1" aria-hidden="true" />
         </button>
       </div>
     </div>
