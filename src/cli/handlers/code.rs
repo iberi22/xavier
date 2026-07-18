@@ -12,7 +12,7 @@ use crate::cli::security::secure_optional_request_field;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
 use crate::cli::utils::estimate_tokens;
-use code_graph::types::{EdgeType, Symbol, SymbolKind};
+use code_graph::types::{CodeEdge, EdgeType, Symbol, SymbolKind};
 
 use xavier::ports::inbound::input_security_port::SecureInputResult;
 
@@ -641,4 +641,427 @@ fn truncate_json_items<T: Serialize>(
     }
 
     (output, truncated, used_tokens)
+}
+
+pub async fn code_graph_view_handler(
+    State(state): State<CliState>,
+    axum::extract::Query(params): axum::extract::Query<CodeGraphViewParams>,
+) -> impl axum::response::IntoResponse {
+    let edge_type_str = match secure_optional_request_field(
+        state.security.as_ref(),
+        "code/graph/view edge_type",
+        params.edge_type.as_deref(),
+    )
+    .await
+    {
+        Ok(et) => et,
+        Err(sec_result) => {
+            return axum::Json(serde_json::json!({
+                "status": "blocked",
+                "reason": "security_policy_violation",
+                "blocked": true,
+                "field": "edge_type",
+                "detection": {
+                    "is_injection": sec_result.is_injection,
+                    "confidence": sec_result.detection_confidence,
+                    "attack_type": sec_result.attack_type,
+                }
+            }));
+        }
+    };
+
+    let edge_type = match parse_code_edge_type(edge_type_str.as_deref()) {
+        Ok(et) => et,
+        Err(message) => {
+            return axum::Json(serde_json::json!({
+                "status": "error",
+                "message": message,
+            }))
+        }
+    };
+
+    let depth = params.depth.clamp(1, 8);
+    let limit = params.limit.clamp(1, 1000);
+
+    let code_graph = state.code_graph.read().await;
+    let total_symbols = code_graph.db.stats().map(|s| s.total_symbols).unwrap_or(0);
+
+    let mut seed_symbols = Vec::new();
+    let mut candidate_edges = Vec::new();
+
+    if params.mode == "ego" {
+        let query_param = match params.query.as_ref() {
+            Some(q) => q,
+            None => {
+                return axum::Json(serde_json::json!({
+                    "status": "error",
+                    "message": "query is required for ego mode",
+                }))
+            }
+        };
+
+        let sec_result = state
+            .security
+            .process_input(query_param)
+            .await
+            .unwrap_or_else(|_| SecureInputResult {
+                allowed: false,
+                sanitized_input: None,
+                original_input: query_param.clone(),
+                detection_confidence: 1.0,
+                is_injection: true,
+                attack_type: "unknown".to_string(),
+            });
+
+        if !sec_result.allowed {
+            return axum::Json(serde_json::json!({
+                "status": "blocked",
+                "reason": "security_policy_violation",
+                "blocked": true,
+                "detection": {
+                    "is_injection": sec_result.is_injection,
+                    "confidence": sec_result.detection_confidence,
+                    "attack_type": sec_result.attack_type,
+                }
+            }));
+        }
+
+        let query = sec_result
+            .sanitized_input
+            .unwrap_or_else(|| sec_result.original_input.clone());
+
+        if query.len() == 64 && query.chars().all(|ch| ch.is_ascii_hexdigit()) {
+            if let Ok(Some(sym)) = code_graph.db.symbol_by_stable_id(&query) {
+                seed_symbols.push(sym);
+            }
+        } else {
+            if let Ok(result) = code_graph.db.find_symbols(&query, 1) {
+                if let Some(sym) = result.symbols.into_iter().next() {
+                    seed_symbols.push(sym);
+                }
+            }
+        }
+
+        let edges_res = if edge_type == Some(::code_graph::types::EdgeType::Calls) {
+            code_graph.query.call_chain(&query, depth, limit)
+        } else {
+            code_graph.query.dependencies(&query, edge_type, depth, limit)
+        };
+
+        match edges_res {
+            Ok(edges) => candidate_edges = edges,
+            Err(err) => {
+                return axum::Json(serde_json::json!({
+                    "status": "error",
+                    "message": err.to_string(),
+                }))
+            }
+        }
+    } else {
+        // default to "overview"
+        let hubs = match code_graph.query.hubs(params.min_degree, limit) {
+            Ok(h) => h,
+            Err(err) => {
+                return axum::Json(serde_json::json!({
+                    "status": "error",
+                    "message": err.to_string(),
+                }))
+            }
+        };
+
+        seed_symbols = hubs.into_iter().map(|h| h.symbol).collect();
+
+        for sym in &seed_symbols {
+            if let Some(ref stable_id) = sym.stable_id {
+                if let Ok(from_edges) = code_graph.db.find_edges_from(stable_id, edge_type.clone(), limit) {
+                    candidate_edges.extend(from_edges);
+                }
+                if let Ok(to_edges) = code_graph.db.find_edges_to(stable_id, edge_type.clone(), limit) {
+                    candidate_edges.extend(to_edges);
+                }
+            }
+        }
+    }
+
+    let (nodes, links, truncated) = map_edges_to_graph(
+        seed_symbols,
+        candidate_edges,
+        params.include_file_nodes,
+        limit,
+        &code_graph.db,
+    );
+
+    let shown_nodes = nodes.len();
+    let shown_links = links.len();
+
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "layer": "code",
+        "truncated": truncated,
+        "nodes": nodes,
+        "links": links,
+        "stats": {
+            "total_symbols": total_symbols,
+            "shown_nodes": shown_nodes,
+            "shown_links": shown_links,
+        }
+    }))
+}
+
+fn map_edges_to_graph(
+    seed_symbols: Vec<Symbol>,
+    candidate_edges: Vec<CodeEdge>,
+    include_file_nodes: bool,
+    limit: usize,
+    db: &::code_graph::db::CodeGraphDB,
+) -> (Vec<serde_json::Value>, Vec<serde_json::Value>, bool) {
+    let mut symbol_map: std::collections::HashMap<String, Symbol> = std::collections::HashMap::new();
+    let mut seed_symbols_filtered = Vec::new();
+
+    for sym in seed_symbols {
+        if let Some(ref stable_id) = sym.stable_id {
+            if !include_file_nodes && (stable_id.starts_with("file:") || stable_id.starts_with("module:")) {
+                continue;
+            }
+            symbol_map.insert(stable_id.clone(), sym.clone());
+            seed_symbols_filtered.push(sym);
+        }
+    }
+
+    let mut filtered_edges = Vec::new();
+    let mut edge_keys = std::collections::HashSet::new();
+
+    for edge in candidate_edges {
+        let from = &edge.from_symbol;
+        let to = &edge.to_symbol;
+
+        if !include_file_nodes {
+            if from.starts_with("file:") || from.starts_with("module:") ||
+               to.starts_with("file:") || to.starts_with("module:") {
+                continue;
+            }
+        }
+
+        let edge_key = (from.clone(), to.clone(), edge.edge_type.as_str().to_string());
+        if !edge_keys.insert(edge_key) {
+            continue;
+        }
+
+        filtered_edges.push(edge);
+    }
+
+    let mut shown_node_ids = std::collections::HashSet::new();
+    let mut final_nodes = Vec::new();
+
+    for sym in seed_symbols_filtered {
+        if let Some(ref stable_id) = sym.stable_id {
+            if final_nodes.len() >= limit {
+                break;
+            }
+            if shown_node_ids.insert(stable_id.clone()) {
+                final_nodes.push(sym);
+            }
+        }
+    }
+
+    let mut accepted_edges = Vec::new();
+    let mut pending_edges = Vec::new();
+
+    for edge in filtered_edges {
+        let from = &edge.from_symbol;
+        let to = &edge.to_symbol;
+
+        let from_in = shown_node_ids.contains(from);
+        let to_in = shown_node_ids.contains(to);
+
+        if from_in && to_in {
+            accepted_edges.push(edge);
+        } else if from_in || to_in {
+            pending_edges.push(edge);
+        }
+    }
+
+    for edge in pending_edges {
+        let from = &edge.from_symbol;
+        let to = &edge.to_symbol;
+
+        let from_in = shown_node_ids.contains(from);
+        let neighbor_id = if from_in { to } else { from };
+
+        if shown_node_ids.contains(neighbor_id) {
+            accepted_edges.push(edge);
+            continue;
+        }
+
+        if final_nodes.len() < limit {
+            let sym_opt = if let Ok(Some(sym)) = db.symbol_by_stable_id(neighbor_id) {
+                Some(sym)
+            } else {
+                if neighbor_id.starts_with("file:") || neighbor_id.starts_with("module:") {
+                    let parts: Vec<&str> = neighbor_id.splitn(2, ':').collect();
+                    let name = parts.get(1).unwrap_or(&neighbor_id.as_str()).to_string();
+                    let kind = if neighbor_id.starts_with("file:") {
+                        SymbolKind::File
+                    } else {
+                        SymbolKind::Module
+                    };
+                    Some(Symbol {
+                        id: None,
+                        stable_id: Some(neighbor_id.clone()),
+                        name,
+                        kind,
+                        lang: ::code_graph::types::Language::Unknown,
+                        file_path: "".to_string(),
+                        start_line: 0,
+                        end_line: 0,
+                        start_col: 0,
+                        end_col: 0,
+                        signature: None,
+                        parent: None,
+                        complexity: None,
+                    })
+                } else {
+                    None
+                }
+            };
+
+            if let Some(sym) = sym_opt {
+                shown_node_ids.insert(neighbor_id.clone());
+                final_nodes.push(sym);
+                accepted_edges.push(edge);
+            }
+        }
+    }
+
+    let mut all_possible_node_ids = std::collections::HashSet::new();
+    for id in symbol_map.keys() {
+        all_possible_node_ids.insert(id.clone());
+    }
+    for edge in &accepted_edges {
+        all_possible_node_ids.insert(edge.from_symbol.clone());
+        all_possible_node_ids.insert(edge.to_symbol.clone());
+    }
+    let truncated = all_possible_node_ids.len() > limit;
+
+    let nodes_json: Vec<serde_json::Value> = final_nodes
+        .into_iter()
+        .map(|sym| {
+            let id = sym.stable_id.unwrap_or_default();
+            let label = sym.name;
+            let kind = format!("{:?}", sym.kind);
+            let meta = serde_json::json!({
+                "path": sym.file_path,
+                "line": sym.start_line,
+                "lang": format!("{:?}", sym.lang),
+                "complexity": sym.complexity.unwrap_or(0.0),
+            });
+            serde_json::json!({
+                "id": id,
+                "label": label,
+                "kind": kind,
+                "meta": meta,
+            })
+        })
+        .collect();
+
+    let links_json: Vec<serde_json::Value> = accepted_edges
+        .into_iter()
+        .map(|edge| {
+            serde_json::json!({
+                "source": edge.from_symbol,
+                "target": edge.to_symbol,
+                "relation": edge.edge_type.as_str(),
+                "weight": edge.confidence as f64,
+            })
+        })
+        .collect();
+
+    (nodes_json, links_json, truncated)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use code_graph::db::CodeGraphDB;
+    use code_graph::types::{CodeEdge, EdgeType, Language, Symbol, SymbolKind};
+
+    #[test]
+    fn test_map_edges_to_graph() {
+        let db = CodeGraphDB::in_memory().unwrap();
+
+        let s1 = Symbol {
+            id: Some(1),
+            stable_id: Some("stable-1".to_string()),
+            name: "func_one".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "src/one.rs".to_string(),
+            start_line: 10,
+            end_line: 20,
+            start_col: 1,
+            end_col: 1,
+            signature: None,
+            parent: None,
+            complexity: Some(1.5),
+        };
+
+        let s2 = Symbol {
+            id: Some(2),
+            stable_id: Some("stable-2".to_string()),
+            name: "func_two".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "src/two.rs".to_string(),
+            start_line: 30,
+            end_line: 40,
+            start_col: 1,
+            end_col: 1,
+            signature: None,
+            parent: None,
+            complexity: Some(2.5),
+        };
+
+        db.insert_symbol(&s1).unwrap();
+        db.insert_symbol(&s2).unwrap();
+
+        let seed_symbols = vec![s1.clone()];
+        let candidate_edges = vec![CodeEdge {
+            id: Some(1),
+            from_symbol: "stable-1".to_string(),
+            to_symbol: "stable-2".to_string(),
+            edge_type: EdgeType::Calls,
+            file_path: "src/one.rs".to_string(),
+            line: 15,
+            confidence: 1.0,
+            metadata: None,
+        }];
+
+        // Test with include_file_nodes = false
+        let (nodes, links, truncated) = map_edges_to_graph(
+            seed_symbols,
+            candidate_edges,
+            false,
+            10,
+            &db,
+        );
+
+        assert!(!truncated);
+        assert_eq!(nodes.len(), 2);
+        assert_eq!(links.len(), 1);
+
+        assert_eq!(nodes[0]["id"], "stable-1");
+        assert_eq!(nodes[0]["label"], "func_one");
+        assert_eq!(nodes[0]["kind"], "Function");
+        assert_eq!(nodes[0]["meta"]["complexity"], 1.5);
+
+        assert_eq!(nodes[1]["id"], "stable-2");
+        assert_eq!(nodes[1]["label"], "func_two");
+        assert_eq!(nodes[1]["kind"], "Function");
+        assert_eq!(nodes[1]["meta"]["complexity"], 2.5);
+
+        assert_eq!(links[0]["source"], "stable-1");
+        assert_eq!(links[0]["target"], "stable-2");
+        assert_eq!(links[0]["relation"], "Calls");
+        assert_eq!(links[0]["weight"], 1.0);
+    }
 }
