@@ -41,7 +41,6 @@ export default function App() {
   const [hash, setHash] = useState(window.location.hash);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [selectedThreadId, setSelectedThreadId] = useState<string | null>(null);
-  const [threads, setThreads] = useState<ThreadSummary[]>([]);
   const [messages, setMessages] = useState<PanelMessage[]>([]);
   const [health, setHealth] = useState("checking");
   const [_isLoading, setIsLoading] = useState(false);

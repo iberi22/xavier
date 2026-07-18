@@ -184,6 +184,29 @@ export class ApiClient {
   async getLeaseHistory() {
     return this.fetch<SecretAuditLog[]>("/secrets/history");
   }
+
+  // Ollama Model Manager
+  async getOllamaModels() {
+    return this.fetch<{ models: string[] }>("/v1/ollama/models");
+  }
+
+  async pullOllamaModel(name: string) {
+    return this.fetch<{ success: boolean; status: string }>("/v1/ollama/pull", {
+      method: "POST",
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  async getOllamaActive() {
+    return this.fetch<{ llm: string; embedding: string; model?: string; kind?: string }>("/v1/ollama/active");
+  }
+
+  async setOllamaActive(model: string, kind: "llm" | "embedding") {
+    return this.fetch<{ success: boolean; message: string }>("/v1/ollama/active", {
+      method: "POST",
+      body: JSON.stringify({ model, kind }),
+    });
+  }
 }
 
 export interface ProviderConfig {

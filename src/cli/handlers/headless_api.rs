@@ -414,6 +414,168 @@ pub async fn headless_memory_export() -> impl IntoResponse {
     }))
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// Ollama Model Manager (Ola 4 · 02)
+// ═════════════════════════════════════════════════════════════════════════════
+
+#[derive(Debug, Deserialize)]
+pub struct OllamaPullRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct OllamaSetActiveRequest {
+    pub model: String,
+    pub kind: String, // "llm" or "embedding"
+}
+
+pub async fn ollama_list_models() -> impl IntoResponse {
+    let base_url = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string());
+    let client = reqwest::Client::new();
+
+    // Check version first to confirm Ollama is running
+    let version_check = client.get(format!("{}/api/version", base_url))
+        .timeout(std::time::Duration::from_secs(3))
+        .send()
+        .await;
+
+    if version_check.is_err() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            AxumJson(json!({
+                "error": "Ollama no responde en :11434",
+                "url": base_url
+            })),
+        )
+            .into_response();
+    }
+
+    // List models from /api/tags
+    match client.get(format!("{}/api/tags", base_url)).send().await {
+        Ok(resp) => {
+            if let Ok(json) = resp.json::<serde_json::Value>().await {
+                if let Some(models) = json.get("models").and_then(|m| m.as_array()) {
+                    let list: Vec<String> = models
+                        .iter()
+                        .filter_map(|m| {
+                            m.get("name")
+                                .and_then(|n| n.as_str().map(|s| s.to_string()))
+                        })
+                        .collect();
+                    return (StatusCode::OK, AxumJson(json!({ "models": list }))).into_response();
+                }
+            }
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                AxumJson(json!({ "error": "Invalid response format from Ollama" })),
+            )
+                .into_response()
+        }
+        Err(e) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            AxumJson(json!({ "error": format!("Ollama no responde en :11434: {}", e), "url": base_url })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn ollama_pull_model(
+    Json(req): Json<OllamaPullRequest>,
+) -> impl IntoResponse {
+    let base_url = std::env::var("OLLAMA_HOST").unwrap_or_else(|_| "http://localhost:11434".to_string());
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(600)) // 10 minutes timeout for model pulls
+        .build()
+        .unwrap_or_default();
+
+    match client
+        .post(format!("{}/api/pull", base_url))
+        .json(&json!({ "name": req.name, "stream": false }))
+        .send()
+        .await
+    {
+        Ok(resp) => {
+            if resp.status().is_success() {
+                (
+                    StatusCode::OK,
+                    AxumJson(json!({ "success": true, "status": "completed" })),
+                )
+                    .into_response()
+            } else {
+                let err_text = resp.text().await.unwrap_or_default();
+                (
+                    StatusCode::BAD_REQUEST,
+                    AxumJson(json!({ "success": false, "error": err_text })),
+                )
+                    .into_response()
+            }
+        }
+        Err(e) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            AxumJson(json!({ "success": false, "error": format!("Ollama no responde en :11434: {}", e) })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn ollama_get_active() -> impl IntoResponse {
+    let settings = xavier::settings::XavierSettings::current();
+
+    // Check environment overrides first, then settings
+    let active_llm = std::env::var("XAVIER_LOCAL_LLM_MODEL")
+        .unwrap_or_else(|_| settings.models.local_llm_model.clone());
+    let active_embedding = std::env::var("XAVIER_EMBEDDING_MODEL")
+        .or_else(|_| std::env::var("XAVIER_GLLM_MODEL"))
+        .unwrap_or_else(|_| settings.models.embedding_model.clone());
+
+    AxumJson(json!({
+        "llm": active_llm,
+        "embedding": active_embedding,
+        // retro-compatibility if the client expects structure with model and kind:
+        "model": active_llm,
+        "kind": "llm"
+    }))
+}
+
+pub async fn ollama_set_active(
+    Json(req): Json<OllamaSetActiveRequest>,
+) -> impl IntoResponse {
+    let mut settings = xavier::settings::XavierSettings::current();
+    let mut updated = false;
+
+    if req.kind == "llm" {
+        settings.models.local_llm_model = req.model.clone();
+        std::env::set_var("XAVIER_LOCAL_LLM_MODEL", &req.model);
+        updated = true;
+    } else if req.kind == "embedding" {
+        settings.models.embedding_model = req.model.clone();
+        std::env::set_var("XAVIER_EMBEDDING_MODEL", &req.model);
+        std::env::set_var("XAVIER_GLLM_MODEL", &req.model);
+        updated = true;
+    }
+
+    if updated {
+        if let Err(e) = settings.save().await {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                AxumJson(json!({ "success": false, "error": format!("Failed to save settings: {}", e) })),
+            )
+                .into_response();
+        }
+        (
+            StatusCode::OK,
+            AxumJson(json!({ "success": true, "message": format!("Active {} model set to {}", req.kind, req.model) })),
+        )
+            .into_response()
+    } else {
+        (
+            StatusCode::BAD_REQUEST,
+            AxumJson(json!({ "success": false, "error": format!("Invalid model kind: {}", req.kind) })),
+        )
+            .into_response()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     // Note: Constructing a full CliState for unit testing is complex due to its many mandatory fields

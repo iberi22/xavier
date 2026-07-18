@@ -622,6 +622,19 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             get(crate::cli::handlers::headless_api::headless_provider_status),
         )
         .route(
+            "/v1/ollama/models",
+            get(crate::cli::handlers::headless_api::ollama_list_models),
+        )
+        .route(
+            "/v1/ollama/pull",
+            post(crate::cli::handlers::headless_api::ollama_pull_model),
+        )
+        .route(
+            "/v1/ollama/active",
+            get(crate::cli::handlers::headless_api::ollama_get_active)
+                .post(crate::cli::handlers::headless_api::ollama_set_active),
+        )
+        .route(
             "/v1/providers/switch",
             post(crate::cli::handlers::headless_api::headless_switch_provider),
         )

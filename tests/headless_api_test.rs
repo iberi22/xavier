@@ -160,6 +160,57 @@ async fn test_headless_api_e2e() {
     let body_status: Value = resp.json().await.unwrap();
     assert_eq!(body_providers, body_status);
 
+    // 10. Ollama Hot-Swap Endpoints (Ola 4 · 02)
+    // 10a. GET /v1/ollama/active
+    let resp = client
+        .get(format!("{}/ollama/active", v1_url))
+        .header("Authorization", "Bearer test-token")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let active_body: Value = resp.json().await.unwrap();
+    assert!(active_body["llm"].is_string());
+    assert!(active_body["embedding"].is_string());
+
+    // 10b. POST /v1/ollama/active (LLM kind)
+    let resp = client
+        .post(format!("{}/ollama/active", v1_url))
+        .header("Authorization", "Bearer test-token")
+        .json(&serde_json::json!({
+            "model": "qwen3-coder-test",
+            "kind": "llm"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let set_active_body: Value = resp.json().await.unwrap();
+    assert_eq!(set_active_body["success"], true);
+
+    // 10c. GET /v1/ollama/active (Verify it updated)
+    let resp = client
+        .get(format!("{}/ollama/active", v1_url))
+        .header("Authorization", "Bearer test-token")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let active_body_2: Value = resp.json().await.unwrap();
+    assert_eq!(active_body_2["llm"], "qwen3-coder-test");
+
+    // 10d. GET /v1/ollama/models (Returns 503 if Ollama down)
+    let resp = client
+        .get(format!("{}/ollama/models", v1_url))
+        .header("Authorization", "Bearer test-token")
+        .send()
+        .await
+        .unwrap();
+    // Ollama is not running in the sandbox, so expect 503 Service Unavailable
+    assert_eq!(resp.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let models_body: Value = resp.json().await.unwrap();
+    assert!(models_body["error"].as_str().unwrap().contains("Ollama no responde"));
+
     // 7. Rate Limiting (61 requests/min)
     // We'll just do a few quick requests and verify it's working if possible,
     // but full 61 might be slow in CI. Let's do 5 and check they pass.
