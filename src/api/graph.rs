@@ -140,3 +140,45 @@ pub async fn memory_graph_relations(
         .into_response()
     }
 }
+
+#[derive(Debug, Deserialize)]
+pub struct EntitiesQuery {
+    pub q: Option<String>,
+}
+
+pub async fn memory_graph_entities(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Query(query): Query<EntitiesQuery>,
+) -> impl IntoResponse {
+    let entities = workspace.workspace.entity_graph.all_entities().await;
+    let result = if let Some(q) = query.q {
+        let q = q.to_lowercase();
+        entities
+            .into_iter()
+            .filter(|e| {
+                e.name.to_lowercase().contains(&q)
+                    || e.normalized_name.to_lowercase().contains(&q)
+            })
+            .collect::<Vec<_>>()
+    } else {
+        entities
+    };
+    Json(serde_json::json!({
+        "status": "ok",
+        "entities": result,
+    }))
+    .into_response()
+}
+
+pub async fn memory_graph_view(
+    Extension(workspace): Extension<WorkspaceContext>,
+) -> impl IntoResponse {
+    let entities = workspace.workspace.entity_graph.all_entities().await;
+    let relations = workspace.workspace.entity_graph.all_relations().await;
+    Json(serde_json::json!({
+        "status": "ok",
+        "nodes": entities,
+        "links": relations,
+    }))
+    .into_response()
+}

@@ -642,3 +642,41 @@ fn truncate_json_items<T: Serialize>(
 
     (output, truncated, used_tokens)
 }
+
+#[derive(Debug, serde::Deserialize)]
+pub struct CodeGraphViewQuery {
+    pub mode: Option<String>,
+}
+
+pub async fn code_graph_view_handler(
+    State(state): State<CliState>,
+    axum::extract::Query(_query): axum::extract::Query<CodeGraphViewQuery>,
+) -> impl axum::response::IntoResponse {
+    let code_graph = state.code_graph.read().await;
+    let symbols = code_graph.db.get_all_symbols().unwrap_or_default();
+    let edges = code_graph.db.get_all_edges().unwrap_or_default();
+
+    // Map to JSON
+    let nodes: Vec<serde_json::Value> = symbols.iter().map(|s| {
+        serde_json::json!({
+            "id": s.stable_id.clone().unwrap_or_else(|| s.name.clone()),
+            "label": s.name,
+            "type": format!("{:?}", s.kind).to_lowercase(),
+            "file_path": s.file_path,
+        })
+    }).collect();
+
+    let links: Vec<serde_json::Value> = edges.iter().map(|e| {
+        serde_json::json!({
+            "source": e.from_symbol,
+            "target": e.to_symbol,
+            "relation": format!("{:?}", e.edge_type).to_lowercase(),
+        })
+    }).collect();
+
+    axum::Json(serde_json::json!({
+        "status": "ok",
+        "nodes": nodes,
+        "links": links,
+    }))
+}
