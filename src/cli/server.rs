@@ -131,15 +131,18 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     }
 
     cm.connect("memory", ".")?;
-    cm.connect("vec_store", ".")?;
     cm.connect("metrics", ".")?;
     cm.connect("security", ".")?;
     cm.set_active("default", ".").await?;
 
+    // VecSqliteMemoryStore::new registers sqlite-vec (vec_f32) via sqlite3_auto_extension
+    // *before* opening its hashed pool. Do not open the vec pool earlier or connections
+    // will lack vec_f32 and memory/add will 500.
     let mut store_inner = VecSqliteMemoryStore::new(config.clone()).await?;
     let (event_tx, _) = tokio::sync::broadcast::channel(100);
     store_inner.set_event_tx(event_tx);
     let store = Arc::new(store_inner);
+    let vec_project_id_for_vacuum = store.connection_project_id().to_string();
 
     let time_store = Arc::new(TimeMetricsStore::new());
     let audit_logger = Arc::new(xavier::secrets::audit::QmdAuditLogger::new());
@@ -161,7 +164,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         loop {
             tokio::time::sleep(tokio::time::Duration::from_secs(3600)).await;
             let _ = ConnectionManager::global()
-                .with_conn("vec_store", |conn| {
+                .with_conn(&vec_project_id_for_vacuum, |conn| {
                     conn.execute("PRAGMA incremental_vacuum(100)", ())?;
                     Ok(())
                 })

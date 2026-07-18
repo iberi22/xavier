@@ -237,21 +237,80 @@ impl CodeGraphDB {
             .map_err(|e| GraphError::Database(e.to_string()))?;
         }
 
-        // Initialize FTS5 virtual table for symbols
+        // Initialize FTS5 virtual table for symbols (upgrade legacy schemas without stable_id).
         {
             let conn = self
                 .conn
                 .lock()
                 .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+            self.ensure_symbols_fts(&conn)?;
+        }
+
+        info!("Database schema initialized");
+        Ok(())
+    }
+
+    /// Ensure `symbols_fts` has the current schema (name + stable_id + file_path).
+    ///
+    /// Older DBs created FTS with content='symbols' and no `stable_id` column.
+    /// `CREATE VIRTUAL TABLE IF NOT EXISTS` is a no-op on those — drop & rebuild.
+    fn ensure_symbols_fts(&self, conn: &rusqlite::Connection) -> Result<()> {
+        let fts_exists: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='symbols_fts'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let needs_rebuild = if fts_exists > 0 {
+            // fts5 exposes columns via pragma_table_info
+            let has_stable: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM pragma_table_info('symbols_fts') WHERE name='stable_id'",
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap_or(0);
+            has_stable == 0
+        } else {
+            false
+        };
+
+        if needs_rebuild {
+            // Drop content-sync triggers from the old content='symbols' FTS, if any.
+            let _ = conn.execute_batch(
+                "DROP TRIGGER IF EXISTS symbols_ai;
+                 DROP TRIGGER IF EXISTS symbols_ad;
+                 DROP TRIGGER IF EXISTS symbols_au;
+                 DROP TABLE IF EXISTS symbols_fts;",
+            );
+        }
+
+        conn.execute_batch(
+            r#"
+            CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
+                name,
+                stable_id UNINDEXED,
+                file_path UNINDEXED
+            );
+            "#,
+        )
+        .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        // Rebuild / fill FTS from symbols (safe after drop or on fresh table).
+        if needs_rebuild || fts_exists == 0 {
             conn.execute_batch(
                 r#"
-                CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
-                    name,
-                    stable_id UNINDEXED,
-                    file_path UNINDEXED
-                );
-
-                -- Migrate existing data into symbols_fts if symbols_fts is empty or has missing symbols
+                INSERT INTO symbols_fts (name, stable_id, file_path)
+                SELECT s.name, s.stable_id, s.file_path FROM symbols s;
+                "#,
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+        } else {
+            // Incremental fill for any symbols missing from FTS.
+            conn.execute_batch(
+                r#"
                 INSERT INTO symbols_fts (name, stable_id, file_path)
                 SELECT s.name, s.stable_id, s.file_path FROM symbols s
                 LEFT JOIN symbols_fts f ON s.stable_id = f.stable_id
@@ -261,7 +320,6 @@ impl CodeGraphDB {
             .map_err(|e| GraphError::Database(e.to_string()))?;
         }
 
-        info!("Database schema initialized");
         Ok(())
     }
 

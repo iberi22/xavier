@@ -322,55 +322,31 @@ CREATE TABLE IF NOT EXISTS embedding_model_meta (
 
 pub struct MigrationV1InitialSchema;
 
-impl LegacyMigration for MigrationV1InitialSchema {
-    fn version(&self) -> u32 {
-        1
-    }
-    fn description(&self) -> &str {
-        "Initial unified schema"
-    }
-    fn run(&self, conn: &Connection) -> Result<()> {
-        // Apply the baseline v1 + v2 + v4 SQL via the struct-based constants so
-        // the two representations can't drift. (Legacy callers historically
-        // created the *entire* schema in one shot, so we replay v1+v2+v4 here.)
-        conn.execute_batch(V1_UP)?;
-        conn.execute_batch(V2_UP)?;
-        conn.execute_batch(V3_UP)?;
-        conn.execute_batch(V4_UP)?;
+/// True if `table` exists in sqlite_master.
+fn table_exists(conn: &Connection, table: &str) -> Result<bool> {
+    let count: i64 = conn.query_row(
+        "SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?1",
+        [table],
+        |row| row.get(0),
+    )?;
+    Ok(count > 0)
+}
 
-        // Column repair for memory_records (idempotent ALTERs for legacy DBs).
-        let memory_columns = [
-            ("primary_flag", "INTEGER DEFAULT 1"),
-            ("parent_id", "TEXT"),
-            ("cluster_id", "TEXT"),
-            ("level", "TEXT DEFAULT 'atom'"),
-            ("relation", "TEXT"),
-            ("revisions", "TEXT"),
-            ("encrypted_dek", "BLOB"),
-            ("content_iv", "BLOB"),
-            ("metadata_iv", "BLOB"),
-        ];
-        for (col, def) in memory_columns {
-            if !table_has_column(conn, "memory_records", col)? {
-                conn.execute(
-                    &format!("ALTER TABLE memory_records ADD COLUMN {} {}", col, def),
-                    [],
-                )?;
-            }
-        }
-
-        // Column repair for entities and relations.
+/// Idempotent column repair for pre-unified `entities` / `relations` tables.
+///
+/// Must run *before* V4_UP indexes that reference `workspace_id`, because
+/// `CREATE TABLE IF NOT EXISTS` is a no-op on legacy tables missing those columns.
+fn repair_entity_graph_columns(conn: &Connection) -> Result<()> {
+    if table_exists(conn, "entities")? {
         if !table_has_column(conn, "entities", "language_family")? {
             conn.execute("ALTER TABLE entities ADD COLUMN language_family TEXT", [])?;
         }
         if !table_has_column(conn, "entities", "workspace_id")? {
             conn.execute("ALTER TABLE entities ADD COLUMN workspace_id TEXT", [])?;
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_entities_workspace ON entities (workspace_id)",
-                [],
-            )?;
         }
+    }
 
+    if table_exists(conn, "relations")? {
         let relation_columns = [
             ("weight", "REAL DEFAULT 1.0"),
             ("confidence_score", "REAL DEFAULT 1.0"),
@@ -396,7 +372,57 @@ impl LegacyMigration for MigrationV1InitialSchema {
                 )?;
             }
         }
-        if !table_has_column(conn, "relations", "source_id")? {
+    }
+    Ok(())
+}
+
+impl LegacyMigration for MigrationV1InitialSchema {
+    fn version(&self) -> u32 {
+        1
+    }
+    fn description(&self) -> &str {
+        "Initial unified schema"
+    }
+    fn run(&self, conn: &Connection) -> Result<()> {
+        // Apply the baseline v1 + v2 + v4 SQL via the struct-based constants so
+        // the two representations can't drift. (Legacy callers historically
+        // created the *entire* schema in one shot, so we replay v1+v2+v4 here.)
+        conn.execute_batch(V1_UP)?;
+        conn.execute_batch(V2_UP)?;
+        conn.execute_batch(V3_UP)?;
+        // Pre-repair legacy entity/relation tables so V4 indexes on workspace_id succeed.
+        repair_entity_graph_columns(conn)?;
+        conn.execute_batch(V4_UP)?;
+
+        // Column repair for memory_records (idempotent ALTERs for legacy DBs).
+        let memory_columns = [
+            ("primary_flag", "INTEGER DEFAULT 1"),
+            ("parent_id", "TEXT"),
+            ("cluster_id", "TEXT"),
+            ("level", "TEXT DEFAULT 'atom'"),
+            ("relation", "TEXT"),
+            ("revisions", "TEXT"),
+            ("encrypted_dek", "BLOB"),
+            ("content_iv", "BLOB"),
+            ("metadata_iv", "BLOB"),
+        ];
+        for (col, def) in memory_columns {
+            if !table_has_column(conn, "memory_records", col)? {
+                conn.execute(
+                    &format!("ALTER TABLE memory_records ADD COLUMN {} {}", col, def),
+                    [],
+                )?;
+            }
+        }
+
+        // Ensure indexes exist after column repair (idempotent with V4_UP).
+        if table_exists(conn, "entities")? && table_has_column(conn, "entities", "workspace_id")? {
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_entities_workspace ON entities (workspace_id)",
+                [],
+            )?;
+        }
+        if table_exists(conn, "relations")? && table_has_column(conn, "relations", "source_id")? {
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_relations_source ON relations (source_id)",
                 [],
@@ -412,7 +438,9 @@ impl LegacyMigration for MigrationV1InitialSchema {
             ("curr_hash", "TEXT DEFAULT ''"),
         ];
         for (col, def) in timeline_columns {
-            if !table_has_column(conn, "timeline_events", col)? {
+            if table_exists(conn, "timeline_events")?
+                && !table_has_column(conn, "timeline_events", col)?
+            {
                 conn.execute(
                     &format!("ALTER TABLE timeline_events ADD COLUMN {} {}", col, def),
                     [],
@@ -420,7 +448,9 @@ impl LegacyMigration for MigrationV1InitialSchema {
             }
         }
 
-        if !table_has_column(conn, "memory_chain", "workspace_id")? {
+        if table_exists(conn, "memory_chain")?
+            && !table_has_column(conn, "memory_chain", "workspace_id")?
+        {
             conn.execute("ALTER TABLE memory_chain ADD COLUMN workspace_id TEXT", [])?;
         }
 
@@ -805,5 +835,53 @@ mod tests {
             assert_eq!(name, ename, "name mismatch for v{}", v);
             assert!(!ts.is_empty(), "applied_at populated for v{}", v);
         }
+    }
+
+    #[test]
+    fn legacy_entities_missing_workspace_id_survives_v1_closure() {
+        // Real Windows DBs predate workspace_id on entities. MigrationManager
+        // re-runs V1 (which includes V4_UP indexes) — must not fail with
+        // "no such column: workspace_id".
+        let conn = mem_conn();
+        // Start from baseline core tables (indexes need parent_id etc.), then
+        // downgrade entities/relations to the pre-workspace_id shape seen in prod.
+        conn.execute_batch(V1_UP).expect("seed core tables");
+        conn.execute_batch(
+            "DROP TABLE IF EXISTS entities;
+             DROP TABLE IF EXISTS relations;
+             CREATE TABLE entities (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                properties TEXT
+             );
+             CREATE TABLE relations (
+                id TEXT PRIMARY KEY,
+                source_id TEXT NOT NULL,
+                target_id TEXT NOT NULL,
+                relation_type TEXT NOT NULL,
+                properties TEXT
+             );",
+        )
+        .expect("downgrade entity graph to legacy shape");
+
+        let mut manager = crate::storage::MigrationManager::new();
+        manager.add_migration(MigrationV1InitialSchema);
+        manager
+            .run_migrations(&conn)
+            .expect("legacy entities without workspace_id must upgrade");
+
+        assert!(
+            table_has_column(&conn, "entities", "workspace_id").unwrap(),
+            "workspace_id added to entities"
+        );
+        let panel: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name='panel_graphs'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(panel, 1, "panel_graphs created by V4 replay");
     }
 }
