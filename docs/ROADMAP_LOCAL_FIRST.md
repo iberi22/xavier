@@ -25,7 +25,7 @@ La iniciativa **Xavier 100% Local** busca habilitar el funcionamiento completo d
 | **Ola 1** | Estabilización de Capacidad Local | ✅ **DONE** | Compilación limpia, `EmbedderConfig::auto()`, `is_reachable()`, endpoints base. |
 | **Ola 2** | Integración & Fallback Elegante | ✅ **DONE** | Proxy local, fallback chain, memory degradation, UI modo, tests, config default. |
 | **Ola 3** | Observabilidad & Hardening | ✅ **DONE (funcional)** | Circuit breaker, doctor, health, reindex, panel LLM, MCP/Telegram status, Docker/docs/smoke, **UsageCounters (#578)**. EPIC formal #589 en cierre. |
-| **Ola 4** | Gestión Dinámica + paridad | 📅 **READY** | Hot-swap UI Ollama · Headless memory-fallback parity · Panel métricas UI · Cost/security P2 |
+| **Ola 4** | Gestión Dinámica + paridad | 🚧 **IN PROGRESS** | Hot-swap UI Ollama · Headless memory-fallback parity · Panel métricas UI · Cost/security P2 |
 
 ---
 

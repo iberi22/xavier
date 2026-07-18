@@ -182,6 +182,16 @@ Puedes forzar el cambio de proveedor de inferencia de Xavier en cualquier moment
       -d '{"provider": "local"}'
     ```
 
+### Gestión de Modelos en Caliente (Hot-Swap Ollama) y Métricas
+A partir de la Ola 4, Xavier introduce endpoints adicionales para administrar de forma remota y dinámica la instancia local de Ollama y monitorear métricas de uso reales:
+
+*   **Listar modelos instalados**: `GET /v1/ollama/models`
+*   **Descargar/pull un modelo en segundo plano**: `POST /v1/ollama/pull` (ej. `{"name": "qwen3-coder"}`)
+*   **Activar un modelo en caliente (sin reiniciar)**: `POST /v1/ollama/active` (ej. `{"model": "qwen3-coder"}`). Al ejecutarse, actualiza de forma transparente el entorno en proceso (`process env`) de Xavier para usar el nuevo modelo en la siguiente interacción de chat.
+*   **Métricas de uso unificadas**: `GET /v1/account/usage` (con desgloses de tokens consumidos, coste monetario nulo en llamadas locales, saltos de fallback y hits de memoria).
+
+Para consultar todos los ejemplos de petición y estructuras JSON completas, consulta la sección dedicada en [USER_GUIDE_LOCAL.md](USER_GUIDE_LOCAL.md).
+
 ---
 
 ## 🔗 Enlaces Relacionados
