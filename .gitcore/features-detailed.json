@@ -32,8 +32,10 @@
       {
         "id": "ts-p0-mem-search-structured",
         "name": "mem_search structured candidates (no Metadata dump)",
-        "status": "in_progress",
-        "progress_pct": 100, "github_issue": 497, "evidence": "structured candidates Ola5-01"
+        "status": "completed",
+        "progress_pct": 100,
+        "github_issue": 497,
+        "evidence": "structured candidates Ola5-01 on main 7a7c0809"
       },
       {
         "id": "ts-p0-memory-context-ids",
