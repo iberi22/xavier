@@ -77,9 +77,33 @@ impl MigrationRunner {
     }
 
     /// Ensure the bookkeeping table exists.
+    ///
+    /// Also upgrades pre-`name` column variants of `schema_migrations`
+    /// (older binaries only stored `version` + `applied_at`).
     fn ensure_migration_table(conn: &Connection) -> Result<()> {
         conn.execute_batch(SCHEMA_MIGRATIONS_DDL)
             .context("Failed to create schema_migrations table")?;
+
+        // Legacy DBs may already have schema_migrations without `name`.
+        let cols: Vec<String> = conn
+            .prepare("PRAGMA table_info(schema_migrations)")
+            .and_then(|mut stmt| {
+                let names = stmt
+                    .query_map([], |row| row.get::<_, String>(1))?
+                    .filter_map(|c| c.ok())
+                    .collect::<Vec<_>>();
+                Ok(names)
+            })
+            .unwrap_or_default();
+
+        if !cols.iter().any(|c| c == "name") {
+            conn.execute("ALTER TABLE schema_migrations ADD COLUMN name TEXT", [])
+                .context("Failed to add schema_migrations.name")?;
+        }
+        if !cols.iter().any(|c| c == "applied_at") {
+            conn.execute("ALTER TABLE schema_migrations ADD COLUMN applied_at TEXT", [])
+                .context("Failed to add schema_migrations.applied_at")?;
+        }
         Ok(())
     }
 
