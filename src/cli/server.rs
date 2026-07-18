@@ -432,7 +432,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/mcp/tools", get(mcp_tools_handler))
         // Memory Knowledge Graph (EntityGraph)
         .route("/memory/graph/entities", get(memory_graph_list_entities))
-        .route("/memory/graph/entities/:entity_id", get(memory_graph_entity))
+        .route("/memory/graph/entities/{entity_id}", get(memory_graph_entity))
         .route("/memory/graph/relations", get(memory_graph_relations))
         .route("/memory/graph/view", get(memory_graph_view))
         .route("/code/index", post(code_index_handler))
