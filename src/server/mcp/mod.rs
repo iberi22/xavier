@@ -19,3 +19,5 @@ pub use types::*;
 pub mod tests;
 #[cfg(test)]
 pub mod regression_token_savings;
+#[cfg(test)]
+pub mod progressive;
