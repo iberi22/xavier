@@ -1,0 +1,44 @@
+[
+  {
+    "status": "PASS",
+    "secs": 3.8633145,
+    "name": "panel-ui-test",
+    "code": 0
+  },
+  {
+    "status": "PASS",
+    "secs": 4.3018982,
+    "name": "panel-ui-typecheck",
+    "code": 0
+  },
+  {
+    "status": "PASS",
+    "secs": 1.8157889,
+    "name": "panel-ui-build",
+    "code": 0
+  },
+  {
+    "status": "PASS",
+    "secs": 63.0166257,
+    "name": "cargo-check-ci-safe",
+    "code": 0
+  },
+  {
+    "status": "PASS",
+    "secs": 125.0855454,
+    "name": "cargo-test-lib-graph",
+    "code": 0
+  },
+  {
+    "status": "PASS",
+    "secs": 14.2042195,
+    "name": "cargo-test-lib-panel",
+    "code": 0
+  },
+  {
+    "status": "PASS",
+    "secs": 3.5707664,
+    "name": "cargo-test-entity-graph",
+    "code": 0
+  }
+]
