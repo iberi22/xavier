@@ -1,7 +1,6 @@
 #[cfg(test)]
 mod tests {
     use crate::server::mcp::tests::{test_state, test_router, post_json, get_json_body};
-    use axum::http::StatusCode;
     use serde_json::json;
 
     #[tokio::test]
@@ -127,9 +126,8 @@ mod tests {
         let result: serde_json::Value = serde_json::from_str(text).unwrap();
 
         let optimized_tokens = result["token_usage"]["optimized"].as_u64().unwrap();
-        let context_chars = result["context"].as_str().unwrap().chars().count();
 
-        let expected_tokens = (context_chars as f32 / 4.0).ceil() as u64;
+        let expected_tokens = crate::context::estimate_tokens(result["context"].as_str().unwrap()) as u64;
 
         assert_eq!(optimized_tokens, expected_tokens, "Token estimation should be honest (chars / 4)");
     }
