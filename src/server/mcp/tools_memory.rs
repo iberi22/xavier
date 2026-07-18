@@ -258,36 +258,43 @@ pub async fn handle_memory_tool(
                 .memory
                 .search_filtered(query, limit, filters.as_ref())
                 .await?;
-            let content = results
+
+            // Progressive disclosure (Ola 5 · 01 / #497): fat index by default.
+            // Structured candidates avoid Debug-dumping full Metadata (token bloat).
+            let candidates: Vec<Value> = results
                 .into_iter()
                 .map(|doc| {
                     let snippet: String = doc.content.chars().take(100).collect();
-                    let content_str = if include_content {
-                        format!("Content: {}\n", doc.content)
-                    } else {
-                        String::new()
-                    };
-                    let kind = doc.metadata.get("kind").and_then(|v| v.as_str()).unwrap_or("unknown");
-                    MCPContent::Text(MCPTextContent {
-                        content_type: "text".to_string(),
-                        text: format!(
-                            "Id: {}\nPath: {}\nKind: {}\nScore: {:.4}\nSnippet: {}...\n{}Metadata: {:?}",
-                            doc.id.as_deref().unwrap_or("none"),
-                            doc.path,
-                            kind,
-                            doc.score,
-                            snippet,
-                            content_str,
-                            doc.metadata
-                        ),
-                    })
+                    let kind = doc
+                        .metadata
+                        .get("kind")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("unknown")
+                        .to_string();
+                    let mut obj = json!({
+                        "id": doc.id.clone().unwrap_or_default(),
+                        "path": doc.path,
+                        "score": doc.score,
+                        "snippet": snippet,
+                        "kind": kind,
+                    });
+                    if include_content {
+                        obj.as_object_mut()
+                            .expect("object")
+                            .insert("content".to_string(), json!(doc.content));
+                    }
+                    obj
                 })
                 .collect();
 
-            Ok(serde_json::to_value(MCPToolResult {
-                content,
-                is_error: Some(false),
-            })?)
+            let payload = json!({
+                "query": query,
+                "include_content": include_content,
+                "count": candidates.len(),
+                "candidates": candidates,
+            });
+
+            Ok(serde_json::to_value(MCPToolResult::structured(payload, false))?)
         }
         "get_memory" => {
             let id = arguments

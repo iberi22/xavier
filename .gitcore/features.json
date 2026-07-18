@@ -1,18 +1,18 @@
 {
-  "_comment": "Feature tracking — Ola 4 closed 2026-07-18. Xavier 100% local control plane complete.",
+  "_comment": "Feature tracking — honest audit 2026-07-18. Local-first 100%. Ola 5: cost + FTS5 + plugins + security + mesh honesty.",
   "metadata": {
     "project": "Xavier",
     "version": "0.12.0",
     "created": "2026-03-05",
     "last_verified": "2026-07-18",
-    "total_features": 21,
-    "features_complete": 13,
-    "features_beta": 6,
-    "features_draft": 2,
+    "total_features": 24,
+    "features_complete": 10,
+    "features_beta": 11,
+    "features_draft": 3,
     "features_planned": 0,
-    "features_stable": 13,
-    "overall_progress_pct": 95.0,
-    "reconciliation_notes": "2026-07-18 Ola 4 closed. feat-local-first 100% stable. overall=95%. PRs: #607 usage, #615 panel metrics, #619 ollama API, #622 headless+UI+docs."
+    "features_stable": 10,
+    "overall_progress_pct": 85.0,
+    "reconciliation_notes": "2026-07-18 Ola5 launched #623-636. Honest downgrades + new cost/plugin/security features. structured mem_search landed in same commit. overall=85%."
   },
   "features": [
     {
@@ -85,7 +85,7 @@
       "name": "MCP Server",
       "category": "integration",
       "status": "beta",
-      "progress_pct": 100,
+      "progress_pct": 88,
       "description": "HTTP-first integration with optional Model Context Protocol (MCP) support exposing 12 tools",
       "steps": [
         "Expose authenticated HTTP endpoints for memory and code operations",
@@ -97,16 +97,16 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-07-17",
-      "notes": "Core + memory MCP tools operational (incl. mem_search, memory_context progressive disclosure path). Ola 3: xavier_local_status tool (PR #604). Still beta: full progressive-disclosure agent protocol (#497) and schema polish.",
+      "last_tested": "2026-07-18",
+      "notes": "mem_search now structuredContent fat index (Ola 5 · 01 partial on main). memory_context ids OK. Remaining progressive tests + per-doc budget.",
       "implemented_in": "src/server/http/, src/server/mcp/, src/cli/server.rs"
     },
     {
       "id": "feat-code-graph-index",
       "name": "Code Graph Index",
       "category": "integration",
-      "status": "stable",
-      "progress_pct": 100,
+      "status": "beta",
+      "progress_pct": 88,
       "description": "AST-backed code indexing and symbol search through the `code-graph` sidecar crate",
       "steps": [
         "Initialize SQLite index for code symbols",
@@ -118,8 +118,8 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": 97,
-      "last_tested": "2026-06-16",
-      "notes": "Code-graph sidecar complete. HTTP handlers and multi-language AST parsing (Rust, Python, Go, C/C++, TS, Java) integrated.",
+      "last_tested": "2026-07-18",
+      "notes": "AST multi-lang + index OK. find_symbols still uses LIKE table-scan (code-graph/src/db/mod.rs:423). FTS5 migration pending #445. Was overstated at 100%.",
       "implemented_in": "code-graph/, src/codebase/"
     },
     {
@@ -212,8 +212,8 @@
       "id": "feat-mesh-network",
       "name": "Xavier Mesh P2P Network & Data Commons",
       "category": "enterprise",
-      "status": "stable",
-      "progress_pct": 88,
+      "status": "beta",
+      "progress_pct": 72,
       "description": "Distributed P2P memory synchronization with encrypted telemetry, Ed25519 identity, Deep Permissions (ACL), and Data Commons reward funnel",
       "steps": [
         "Define P2P node identity and discovery (Ed25519)",
@@ -228,8 +228,8 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-07-03",
-      "notes": "Phase 0 (Identity/ACL) and Phase 1 (Data Commons/Funnel) stable. Ed25519 avoids OpenSSL. Missing: Phase 2-4 (Iroh/QUIC, Loro CRDT, Tor). Mesh transport currently HTTP-only stub.",
+      "last_tested": "2026-07-18",
+      "notes": "HTTP/libp2p/ACL/tokenomics present. On-chain governance ~5%, Data Commons partial, Iroh/Tor later. Issue #115 EPIC. Downgraded from 88% stable — not fully production mesh.",
       "implemented_in": "src/mesh/, src/data_commons/, tests/mesh_integration.rs"
     },
     {
@@ -258,7 +258,7 @@
       "name": "Notification Persistence and Delivery",
       "category": "core",
       "status": "draft",
-      "progress_pct": 95,
+      "progress_pct": 70,
       "description": "Persistent notification system with event bus, SQLite storage, REST API, and Tauri real-time updates",
       "steps": [
         "Create notification struct and event types",
@@ -270,8 +270,8 @@
       "passes": false,
       "verified_by": "code-audit",
       "github_issue": 4,
-      "last_tested": "2026-07-02",
-      "notes": "Notifier now publishes every notify_* event to a module-level broadcast::Sender (OnceLock, cap 256) via subscribe()/publish(); no hard Tauri dep - Panel UI crate subscribes and bridges to emit_all. 4 new tests (singleton, delivery, no-subscriber safety, startup fan-out). Verified ci-safe.",
+      "last_tested": "2026-07-18",
+      "notes": "broadcast notifier exists; SQLite persistence + full UI islands incomplete.",
       "implemented_in": "src/observability/notifier.rs"
     },
     {
@@ -301,7 +301,7 @@
       "name": "Bicameral Governance DAO",
       "category": "enterprise",
       "status": "beta",
-      "progress_pct": 70,
+      "progress_pct": 55,
       "description": "Bicameral governance system â€” 50% node operators + 50% Xavier Core Council â€” with weighted voting, veto, XIP lifecycle, and on-chain integration",
       "steps": [
         "Bicameral DAO design (users + council)",
@@ -316,8 +316,8 @@
       "passes": true,
       "verified_by": "build",
       "github_issue": 322,
-      "last_tested": "2026-06-25",
-      "notes": "XIP lifecycle state machine (Draftâ†’Discussionâ†’Votingâ†’Executionâ†’Complete) con auto-transiciones implementado. Weighted voting por reputation (trust score) implementado. Bicameral decision integration: 50% user + 50% council. Council veto (66%) y community overrule (75%). PR #347 mergeado. 11 governance tests pasan. Missing: on-chain integration, UI, quorum detection.",
+      "last_tested": "2026-07-18",
+      "notes": "Mock DAO + veto logic. On-chain integration missing (#115/#166). Honest downgrade from 70%.",
       "implemented_in": "src/data_commons/governance.rs, src/data_commons/reputation.rs, src/data_commons/types.rs, src/mesh/governance.rs"
     },
     {
@@ -408,8 +408,8 @@
       "id": "feat-context-regeneration",
       "name": "Context Regeneration & Perfect Recall",
       "category": "core",
-      "status": "stable",
-      "progress_pct": 100,
+      "status": "beta",
+      "progress_pct": 78,
       "description": "Continuous context regeneration using real usage data to drive recall@k toward 100% on production benchmarks",
       "steps": [
         "Build benchmark suite from real query logs",
@@ -423,8 +423,8 @@
       "passes": false,
       "verified_by": "design",
       "github_issue": null,
-      "last_tested": "2026-07-14",
-      "notes": "recall@k eval harness (retrieval::eval) + RRF tuner (retrieval::tuner) + xavier regen benchmark/tune CLI (Phase 2). Drift detection and concrete config proposals. Bundled internal_swal benchmark dataset. Sprint target 40% reached. WorkingMemory multi-layer retrieve (PR #504) merged. Progressive Memory Disclosure (PR #505). Context Virtualization Turn Pack (PR #506) — Shallow/Medium/Deep tiered restore.",
+      "last_tested": "2026-07-18",
+      "notes": "recall harness + turn pack exist. Episodic still last_preview; WorkingMemory not fully wired; compress is whitespace. Issues #496/#500. Was overstated at 100%.",
       "implemented_in": null
     },
     {
@@ -490,6 +490,71 @@
       "last_tested": "2026-07-18",
       "notes": "Ola 1-4 COMPLETE. Hot-swap API (#619) + UI (#622), headless memory-fallback (#622), usage metrics API (#607) + panel (#615), doctor/health/panel LLM from Ola 3. Initiative 100% local control plane achieved.",
       "implemented_in": "src/app/proxy_use_case.rs, src/agents/provider/, src/cli/handlers/, src/observability/, src/server/mcp/tools_core.rs, src/telegram/mod.rs, docker/, docs/USER_GUIDE_LOCAL.md, scripts/smoke_test_local.*, tests/e2e_chat_local.rs, panel-ui/"
+    },
+    {
+      "id": "feat-token-savings",
+      "name": "Token Savings Progressive Disclosure",
+      "category": "cost",
+      "status": "beta",
+      "progress_pct": 62,
+      "description": "MemGPT-style index-first MCP search + page-in context + real memory layers for ~90% agent token savings",
+      "steps": [
+        "mem_search fat index default",
+        "memory_context by ids + max_chars",
+        "unified estimate_tokens",
+        "WorkingMemory wire",
+        "episodic summaries",
+        "honest TOKEN_SAVINGS_ANALYSIS"
+      ],
+      "passes": false,
+      "verified_by": "code-audit",
+      "github_issue": 496,
+      "last_tested": "2026-07-18",
+      "notes": "Ola 5 start: structured mem_search candidates (no Metadata dump). include_content default false + memory_context ids already done. Remaining: per-doc budget, working memory, episodic, docs. Issues #623-#636.",
+      "implemented_in": "src/server/mcp/tools_memory.rs, src/context/, src/memory/"
+    },
+    {
+      "id": "feat-plugin-system",
+      "name": "Code-Graph Plugin System + Registry",
+      "category": "integration",
+      "status": "beta",
+      "progress_pct": 60,
+      "description": "Plugin manager, GitHubRegistry client, mock tests; live swal/xavier-plugins repo missing",
+      "steps": [
+        "plugin host+manager",
+        "MockRegistry tests",
+        "GitHubRegistry client",
+        "swal/xavier-plugins repo",
+        "parser-python release",
+        "live e2e unskip"
+      ],
+      "passes": false,
+      "verified_by": "code-audit",
+      "github_issue": 489,
+      "last_tested": "2026-07-18",
+      "notes": "code-graph/src/plugin/* implemented with MockRegistry. Live registry URL points to non-existent swal/xavier-plugins. Issue #489.",
+      "implemented_in": "code-graph/src/plugin/"
+    },
+    {
+      "id": "feat-security-hygiene",
+      "name": "Dependency Security Hygiene (Dependabot)",
+      "category": "security",
+      "status": "draft",
+      "progress_pct": 15,
+      "description": "Triage and remediate Dependabot alerts on main",
+      "steps": [
+        "inventory alerts",
+        "npm panel-ui audit fix",
+        "cargo high bumps",
+        "actions bumps",
+        "dismiss unfixable with rationale"
+      ],
+      "passes": false,
+      "verified_by": "github-dependabot",
+      "github_issue": 478,
+      "last_tested": "2026-07-18",
+      "notes": "~30 open Dependabot alerts (11 high class). Zero systematic remediation yet. Issue #478.",
+      "implemented_in": ".github/, Cargo.lock, panel-ui/package.json"
     }
   ],
   "verification_commands": {
