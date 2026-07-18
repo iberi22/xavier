@@ -258,14 +258,69 @@ impl Default for PluginManager {
 }
 
 // ============================================================================
-// Default Registry Stub
+// Default Registry (fixture / env-backed index)
 // ============================================================================
 
-struct DefaultRegistry {}
+/// Loads a registry index from disk.
+///
+/// Resolution order:
+/// 1. `XAVIER_PLUGINS_INDEX` env (path to `plugins.json`)
+/// 2. In-repo fixture `code-graph/fixtures/xavier-plugins/plugins.json`
+///    (relative to CARGO_MANIFEST_DIR when built, else cwd walk)
+///
+/// Production can point `XAVIER_PLUGINS_INDEX` at a live remote mirror path.
+struct DefaultRegistry {
+    entries: Vec<RegistryEntry>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct RegistryIndexFile {
+    plugins: Vec<RegistryEntry>,
+}
 
 impl DefaultRegistry {
     fn new() -> Self {
-        Self {}
+        let entries = Self::load_entries();
+        Self { entries }
+    }
+
+    fn load_entries() -> Vec<RegistryEntry> {
+        let candidates: Vec<std::path::PathBuf> = {
+            let mut paths = Vec::new();
+            if let Ok(p) = std::env::var("XAVIER_PLUGINS_INDEX") {
+                paths.push(std::path::PathBuf::from(p));
+            }
+            // Built-in fixture (crate root when compiling code-graph)
+            paths.push(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+                "fixtures/xavier-plugins/plugins.json",
+            ));
+            // Workspace-relative fallback when running from monorepo root
+            paths.push(std::path::PathBuf::from(
+                "code-graph/fixtures/xavier-plugins/plugins.json",
+            ));
+            paths
+        };
+
+        for path in candidates {
+            match std::fs::read_to_string(&path) {
+                Ok(raw) => match serde_json::from_str::<RegistryIndexFile>(&raw) {
+                    Ok(index) => {
+                        debug!(
+                            path = %path.display(),
+                            count = index.plugins.len(),
+                            "loaded plugin registry index"
+                        );
+                        return index.plugins;
+                    }
+                    Err(err) => {
+                        debug!(path = %path.display(), %err, "invalid plugins.json");
+                    }
+                },
+                Err(_) => continue,
+            }
+        }
+        debug!("no plugin registry index found; DefaultRegistry empty");
+        Vec::new()
     }
 }
 
@@ -274,27 +329,39 @@ impl PluginRegistry for DefaultRegistry {
         &self,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<RegistryEntry>>> + Send>>
     {
-        Box::pin(async { Ok(vec![]) })
+        let entries = self.entries.clone();
+        Box::pin(async move { Ok(entries) })
     }
 
     fn search(
         &self,
-        _query: &str,
+        query: &str,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<RegistryEntry>>> + Send>>
     {
-        Box::pin(async { Ok(vec![]) })
+        let q = query.to_ascii_lowercase();
+        let entries = self
+            .entries
+            .iter()
+            .filter(|e| {
+                e.name.to_ascii_lowercase().contains(&q)
+                    || e.display_name.to_ascii_lowercase().contains(&q)
+                    || e.description.to_ascii_lowercase().contains(&q)
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        Box::pin(async move { Ok(entries) })
     }
 
     fn get(
         &self,
         name: &str,
     ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<RegistryEntry>> + Send>> {
+        let found = self.entries.iter().find(|e| e.name == name).cloned();
         let name = name.to_string();
         Box::pin(async move {
-            Err(GraphError::Parser(format!(
-                "Plugin {} not found in registry",
-                name
-            )))
+            found.ok_or_else(|| {
+                GraphError::Parser(format!("Plugin {} not found in registry", name))
+            })
         })
     }
 }
@@ -302,6 +369,23 @@ impl PluginRegistry for DefaultRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn default_registry_loads_fixture_index() {
+        let registry = DefaultRegistry::new();
+        let index = registry.fetch_index().await.expect("fetch_index");
+        assert!(
+            !index.is_empty(),
+            "fixture plugins.json must load into DefaultRegistry"
+        );
+        let py = registry
+            .get("parser-python")
+            .await
+            .expect("parser-python in fixture");
+        assert_eq!(py.name, "parser-python");
+        let hits = registry.search("python").await.expect("search");
+        assert!(hits.iter().any(|e| e.name == "parser-python"));
+    }
 
     #[test]
     fn chain_prefers_installed_plugin_for_a_language() {

@@ -91,10 +91,18 @@ pub async fn hybrid_search(
         None
     };
 
+    // Prefer cheap count() over all_documents() (token/cost hygiene — Ola 6).
+    let total_available = workspace
+        .workspace
+        .memory
+        .count()
+        .await
+        .unwrap_or(0);
+
     let response = SearchResponse {
         results: build_results(&workspace.workspace.memory, results).await,
         query_vector,
-        total_available: workspace.workspace.memory.all_documents().await.len(),
+        total_available,
         search_type: "hybrid".to_string(),
     };
 
