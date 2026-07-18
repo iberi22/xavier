@@ -133,4 +133,107 @@ async fn test_health_endpoints_e2e() {
     assert!(body_v1["database"].is_object());
     assert!(body_v1["system"].is_object());
     assert!(body_v1["mesh"].is_object());
+
+    // Maturity JSON shape checks
+    let mesh_maturity = &body_v1["mesh"]["maturity"];
+    assert_eq!(mesh_maturity["http_transport"].as_bool(), Some(true));
+    assert_eq!(mesh_maturity["http_transport_percent"].as_u64(), Some(100));
+    assert_eq!(mesh_maturity["libp2p"].as_bool(), Some(false));
+    assert_eq!(mesh_maturity["libp2p_percent"].as_u64(), Some(10));
+    assert_eq!(mesh_maturity["acl"].as_bool(), Some(true));
+    assert_eq!(mesh_maturity["acl_percent"].as_u64(), Some(90));
+    assert_eq!(mesh_maturity["tokenomics"].as_bool(), Some(true));
+    assert_eq!(mesh_maturity["tokenomics_percent"].as_u64(), Some(40));
+    assert_eq!(mesh_maturity["onchain_gov"].as_bool(), Some(false));
+    assert_eq!(mesh_maturity["onchain_gov_percent"].as_u64(), Some(0));
+
+    // 3. GET /v1/mesh/status (without accepted license) -> should return 403 Forbidden
+    let resp_forbidden = client
+        .get(format!("http://127.0.0.1:{port}/v1/mesh/status"))
+        .header("Authorization", "Bearer test-token")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp_forbidden.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_mesh_status_with_license_e2e() {
+    let port = TcpListener::bind("127.0.0.1:0")
+        .expect("bind ephemeral port")
+        .local_addr()
+        .expect("local addr")
+        .port();
+
+    // Create a temporary config file with mesh_accepted = true
+    let temp_config_path = std::env::temp_dir().join(format!("xavier-test-config-{port}.json"));
+    let config_json = serde_json::json!({
+        "license": {
+            "mesh_accepted": true,
+            "license_type": "Xavier-Mesh-1.0"
+        }
+    });
+    std::fs::write(&temp_config_path, config_json.to_string()).unwrap();
+
+    let _child = ChildGuard(
+        std::process::Command::new(env!("CARGO_BIN_EXE_xavier"))
+            .env("XAVIER_HOST", "127.0.0.1")
+            .env("XAVIER_PORT", port.to_string())
+            .env("XAVIER_TOKEN", "test-token")
+            .env("XAVIER_HEADLESS", "true")
+            .env("XAVIER_CONFIG_PATH", temp_config_path.to_str().unwrap())
+            .env(
+                "XAVIER_CODE_GRAPH_DB_PATH",
+                format!("data/health-test-code-{port}.db"),
+            )
+            .env(
+                "XAVIER_MEMORY_VEC_PATH",
+                format!("data/health-test-mem-{port}.db"),
+            )
+            .stdout(Stdio::inherit())
+            .stderr(Stdio::inherit())
+            .spawn()
+            .expect("failed to start xavier binary"),
+    );
+
+    let client = Client::new();
+    let mut started = false;
+    for _ in 0..30 {
+        if let Ok(resp) = client
+            .get(format!("http://127.0.0.1:{port}/health"))
+            .send()
+            .await
+        {
+            if resp.status().is_success() {
+                started = true;
+                break;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    assert!(started, "Server failed to start");
+
+    // GET /v1/mesh/status (with accepted license)
+    let resp = client
+        .get(format!("http://127.0.0.1:{port}/v1/mesh/status"))
+        .header("Authorization", "Bearer test-token")
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: Value = resp.json().await.unwrap();
+
+    assert_eq!(body["http_transport"].as_bool(), Some(true));
+    assert_eq!(body["http_transport_percent"].as_u64(), Some(100));
+    assert_eq!(body["libp2p"].as_bool(), Some(false));
+    assert_eq!(body["libp2p_percent"].as_u64(), Some(10));
+    assert_eq!(body["acl"].as_bool(), Some(true));
+    assert_eq!(body["acl_percent"].as_u64(), Some(90));
+    assert_eq!(body["tokenomics"].as_bool(), Some(true));
+    assert_eq!(body["tokenomics_percent"].as_u64(), Some(40));
+    assert_eq!(body["onchain_gov"].as_bool(), Some(false));
+    assert_eq!(body["onchain_gov_percent"].as_u64(), Some(0));
+
+    // Cleanup
+    let _ = std::fs::remove_file(temp_config_path);
 }
