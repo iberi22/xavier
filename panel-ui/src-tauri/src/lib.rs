@@ -304,8 +304,12 @@ pub fn run() {
             // Initialize Xavier's Tauri AppHandle
             xavier::utils::tauri_utils::set_tauri_app_handle(app.handle().clone());
 
-            // Initialize Notification Forwarder
-            xavier::notifications::NOTIFICATIONS.spawn_tauri_forwarder();
+            // Initialize Notification Forwarder (must not panic if Tokio is absent)
+            if let Err(e) = std::panic::catch_unwind(|| {
+                xavier::notifications::NOTIFICATIONS.spawn_tauri_forwarder();
+            }) {
+                log::error!("Notification forwarder init failed: {:?}", e);
+            }
 
             // ── Build tray menu ─────────────────────────────────────
             let open_app = MenuItemBuilder::with_id("open_app", "Open Xavier")

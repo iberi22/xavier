@@ -876,7 +876,12 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/ready", get(readiness_handler))
         .route("/readiness", get(readiness_handler))
         .route("/v1/health/ready", get(readiness_handler))
+        // Panel UI: Vite production build uses absolute `/assets/*` paths.
+        // Serve index + assets at both `/` and `/panel` so portable installs and
+        // bookmarked `/panel` URLs both work.
+        .route("/", get(panel_index))
         .route("/panel", get(panel_index))
+        .route("/assets/{*path}", get(panel_asset))
         .route("/panel/assets/{*path}", get(panel_asset))
         .merge(protected_routes)
         .merge(large_body_routes)
