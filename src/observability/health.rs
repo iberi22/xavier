@@ -78,6 +78,8 @@ pub struct MeshHealth {
     pub active_peers: usize,
     pub peers: Vec<PeerHealth>,
     pub status: HealthLevel,
+    #[serde(default)]
+    pub maturity: crate::mesh::MeshMaturityReport,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -137,6 +139,7 @@ impl Default for HealthStatus {
                 active_peers: 0,
                 peers: vec![],
                 status: HealthLevel::Healthy,
+                maturity: crate::mesh::MeshMaturityReport::default(),
             },
             tgd_consolidation: None,
         }
@@ -524,6 +527,7 @@ impl HealthMonitor {
             active_peers,
             peers: peer_healths,
             status,
+            maturity: crate::mesh::MeshMaturityReport::default(),
         }
     }
 
