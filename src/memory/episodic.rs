@@ -7,11 +7,11 @@
 //! - Key event extraction
 //! - Sentiment tracking per session
 
+use crate::codebase::conversations_db::Message;
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use crate::codebase::conversations_db::Message;
 
 /// A key event extracted from a session
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -419,7 +419,8 @@ pub async fn generate_session_summary(_items: &[String], _events: &[KeyEvent]) -
 /// Kept under ~400 tokens (~1600 characters) to ensure efficiency.
 pub fn summarize_session_extractive(messages: &[Message]) -> String {
     if messages.is_empty() {
-        return "### Extractive Session Summary\n\n(No messages in conversation thread)".to_string();
+        return "### Extractive Session Summary\n\n(No messages in conversation thread)"
+            .to_string();
     }
 
     let mut summary = String::new();
@@ -489,23 +490,150 @@ fn extract_keywords(messages: &[Message]) -> Vec<String> {
 
     let stop_words: HashSet<&str> = [
         // English stopwords
-        "the", "a", "an", "and", "or", "but", "if", "then", "else", "with", "from", "for", "to", "in", "on", "at", "by",
-        "this", "that", "these", "those", "is", "are", "was", "were", "be", "been", "have", "has", "had", "do", "does",
-        "did", "of", "not", "your", "mine", "about", "what", "where", "when", "how", "who", "which", "will", "would",
-        "should", "could", "there", "their", "them", "they", "some", "any", "all", "more", "most", "than", "user",
-        "assistant", "system", "please", "thanks", "thank",
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "but",
+        "if",
+        "then",
+        "else",
+        "with",
+        "from",
+        "for",
+        "to",
+        "in",
+        "on",
+        "at",
+        "by",
+        "this",
+        "that",
+        "these",
+        "those",
+        "is",
+        "are",
+        "was",
+        "were",
+        "be",
+        "been",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "of",
+        "not",
+        "your",
+        "mine",
+        "about",
+        "what",
+        "where",
+        "when",
+        "how",
+        "who",
+        "which",
+        "will",
+        "would",
+        "should",
+        "could",
+        "there",
+        "their",
+        "them",
+        "they",
+        "some",
+        "any",
+        "all",
+        "more",
+        "most",
+        "than",
+        "user",
+        "assistant",
+        "system",
+        "please",
+        "thanks",
+        "thank",
         // Spanish stopwords
-        "el", "la", "los", "las", "un", "una", "unos", "unas", "y", "o", "pero", "si", "entonces", "con", "de", "desde",
-        "para", "por", "en", "sobre", "este", "esta", "estos", "estas", "ese", "esa", "esos", "esas", "es", "son",
-        "era", "eran", "ser", "sido", "haber", "tiene", "tienen", "tenia", "hacer", "hace", "hacen", "no", "tu", "mio",
-        "que", "donde", "cuando", "como", "quien", "cual", "sera", "seria", "deberia", "podria", "alli", "su", "sus",
-        "ellos", "ellas", "algun", "algunos", "todo", "todos", "mas", "hola", "buenos", "dias", "tarde", "noches"
-    ].iter().cloned().collect();
+        "el",
+        "la",
+        "los",
+        "las",
+        "un",
+        "una",
+        "unos",
+        "unas",
+        "y",
+        "o",
+        "pero",
+        "si",
+        "entonces",
+        "con",
+        "de",
+        "desde",
+        "para",
+        "por",
+        "en",
+        "sobre",
+        "este",
+        "esta",
+        "estos",
+        "estas",
+        "ese",
+        "esa",
+        "esos",
+        "esas",
+        "es",
+        "son",
+        "era",
+        "eran",
+        "ser",
+        "sido",
+        "haber",
+        "tiene",
+        "tienen",
+        "tenia",
+        "hacer",
+        "hace",
+        "hacen",
+        "no",
+        "tu",
+        "mio",
+        "que",
+        "donde",
+        "cuando",
+        "como",
+        "quien",
+        "cual",
+        "sera",
+        "seria",
+        "deberia",
+        "podria",
+        "alli",
+        "su",
+        "sus",
+        "ellos",
+        "ellas",
+        "algun",
+        "algunos",
+        "todo",
+        "todos",
+        "mas",
+        "hola",
+        "buenos",
+        "dias",
+        "tarde",
+        "noches",
+    ]
+    .iter()
+    .cloned()
+    .collect();
 
     let mut counts = HashMap::new();
     for msg in messages {
         for word in msg.content.split_whitespace() {
-            let cleaned: String = word.chars()
+            let cleaned: String = word
+                .chars()
                 .filter(|c| c.is_alphabetic())
                 .collect::<String>()
                 .to_lowercase();
@@ -518,10 +646,7 @@ fn extract_keywords(messages: &[Message]) -> Vec<String> {
     let mut sorted_counts: Vec<(String, usize)> = counts.into_iter().collect();
     sorted_counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
 
-    sorted_counts.into_iter()
-        .take(8)
-        .map(|(w, _)| w)
-        .collect()
+    sorted_counts.into_iter().take(8).map(|(w, _)| w).collect()
 }
 
 /// Extract key events from session items (placeholder)
@@ -881,9 +1006,16 @@ mod tests {
         assert!(summary.contains("assistant"));
         assert!(summary.contains("Key Topics & Keywords:"));
         // Key terms should be extracted
-        assert!(summary.contains("extractive") || summary.contains("testing") || summary.contains("summarization"));
+        assert!(
+            summary.contains("extractive")
+                || summary.contains("testing")
+                || summary.contains("summarization")
+        );
 
         // Assert it's not raw last_preview
-        assert_ne!(summary, "Make sure we verify that it is NOT just raw last_preview of the last message!");
+        assert_ne!(
+            summary,
+            "Make sure we verify that it is NOT just raw last_preview of the last message!"
+        );
     }
 }

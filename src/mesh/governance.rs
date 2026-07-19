@@ -184,13 +184,19 @@ impl DaoGovernanceSystem {
             let len = bytes.len().min(32);
             cluster_id_bytes[..len].copy_from_slice(&bytes[..len]);
 
-            match contract.getProposalStatus(cluster_id_bytes.into()).call().await {
+            match contract
+                .getProposalStatus(cluster_id_bytes.into())
+                .call()
+                .await
+            {
                 Ok(status) => {
                     proposal.is_approved_for_pr = status.approved;
                     proposal.upvotes = status.upvotes;
                     proposal.downvotes = status.downvotes;
                 }
-                Err(e) => tracing::error!("Failed to sync proposal {} from chain: {:?}", cluster_id, e),
+                Err(e) => {
+                    tracing::error!("Failed to sync proposal {} from chain: {:?}", cluster_id, e)
+                }
             }
         }
 

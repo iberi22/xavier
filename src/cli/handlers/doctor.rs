@@ -1,14 +1,14 @@
 //! Doctor: CLI subcommand to diagnose local-first health.
 
-use crate::settings::XavierSettings;
 use crate::cli::handlers::system_scan::scan_system;
+use crate::settings::XavierSettings;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DoctorCheck {
     pub name: String,
-    pub status: CheckStatus,  // Ok / Warn / Fail
+    pub status: CheckStatus, // Ok / Warn / Fail
     pub detail: String,
     pub hint: Option<String>,
 }
@@ -36,16 +36,30 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
     let ollama_reachable = scan.ollama.running;
     checks.push(DoctorCheck {
         name: "Ollama Reachability".to_string(),
-        status: if ollama_reachable { CheckStatus::Ok } else { CheckStatus::Fail },
-        detail: if ollama_reachable {
-            format!("Ollama is running at {} (version: {})", scan.ollama.url, scan.ollama.version.as_deref().unwrap_or("unknown"))
+        status: if ollama_reachable {
+            CheckStatus::Ok
         } else {
-            format!("Ollama is not running or not reachable at {}", scan.ollama.url)
+            CheckStatus::Fail
+        },
+        detail: if ollama_reachable {
+            format!(
+                "Ollama is running at {} (version: {})",
+                scan.ollama.url,
+                scan.ollama.version.as_deref().unwrap_or("unknown")
+            )
+        } else {
+            format!(
+                "Ollama is not running or not reachable at {}",
+                scan.ollama.url
+            )
         },
         hint: if ollama_reachable {
             None
         } else {
-            Some("Please start Ollama with 'ollama serve' or install it from https://ollama.com".to_string())
+            Some(
+                "Please start Ollama with 'ollama serve' or install it from https://ollama.com"
+                    .to_string(),
+            )
         },
     });
 
@@ -62,12 +76,17 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         });
 
     let llm_installed = scan.ollama.models.iter().any(|m| {
-        m.to_lowercase().contains(&expected_llm.to_lowercase()) || expected_llm.to_lowercase().contains(&m.to_lowercase())
+        m.to_lowercase().contains(&expected_llm.to_lowercase())
+            || expected_llm.to_lowercase().contains(&m.to_lowercase())
     });
 
     checks.push(DoctorCheck {
         name: "LLM Model Installed".to_string(),
-        status: if llm_installed { CheckStatus::Ok } else { CheckStatus::Fail },
+        status: if llm_installed {
+            CheckStatus::Ok
+        } else {
+            CheckStatus::Fail
+        },
         detail: if llm_installed {
             format!("Model '{}' is installed in Ollama", expected_llm)
         } else {
@@ -76,7 +95,10 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         hint: if llm_installed {
             None
         } else {
-            Some(format!("Run 'ollama pull {}' to install the model", expected_llm))
+            Some(format!(
+                "Run 'ollama pull {}' to install the model",
+                expected_llm
+            ))
         },
     });
 
@@ -93,21 +115,35 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         });
 
     let embed_installed = scan.ollama.models.iter().any(|m| {
-        m.to_lowercase().contains(&expected_embed.to_lowercase()) || expected_embed.to_lowercase().contains(&m.to_lowercase())
+        m.to_lowercase().contains(&expected_embed.to_lowercase())
+            || expected_embed.to_lowercase().contains(&m.to_lowercase())
     });
 
     checks.push(DoctorCheck {
         name: "Embedding Model Installed".to_string(),
-        status: if embed_installed { CheckStatus::Ok } else { CheckStatus::Fail },
-        detail: if embed_installed {
-            format!("Embedding model '{}' is installed in Ollama", expected_embed)
+        status: if embed_installed {
+            CheckStatus::Ok
         } else {
-            format!("Embedding model '{}' is not installed in Ollama", expected_embed)
+            CheckStatus::Fail
+        },
+        detail: if embed_installed {
+            format!(
+                "Embedding model '{}' is installed in Ollama",
+                expected_embed
+            )
+        } else {
+            format!(
+                "Embedding model '{}' is not installed in Ollama",
+                expected_embed
+            )
         },
         hint: if embed_installed {
             None
         } else {
-            Some(format!("Run 'ollama pull {}' to install the embedding model", expected_embed))
+            Some(format!(
+                "Run 'ollama pull {}' to install the embedding model",
+                expected_embed
+            ))
         },
     });
 
@@ -128,7 +164,8 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         .unwrap_or_else(|| settings.models.local_llm_model.clone());
 
     let provider_is_local = provider == "local";
-    let url_is_valid = !local_llm_url.trim().is_empty() && (local_llm_url.starts_with("http://") || local_llm_url.starts_with("https://"));
+    let url_is_valid = !local_llm_url.trim().is_empty()
+        && (local_llm_url.starts_with("http://") || local_llm_url.starts_with("https://"));
     let model_is_valid = !local_llm_model.trim().is_empty();
     let config_valid = provider_is_local && url_is_valid && model_is_valid;
 
@@ -161,7 +198,12 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
             format!("{}/api/version", local_llm_url)
         };
 
-        match client.get(&url1).timeout(std::time::Duration::from_secs(2)).send().await {
+        match client
+            .get(&url1)
+            .timeout(std::time::Duration::from_secs(2))
+            .send()
+            .await
+        {
             Ok(resp) if resp.status().is_success() => {
                 url_reachable = true;
             }
@@ -175,7 +217,12 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
 
         if !url_reachable {
             let url2 = format!("{}/api/version", local_llm_url);
-            if let Ok(resp) = client.get(&url2).timeout(std::time::Duration::from_secs(2)).send().await {
+            if let Ok(resp) = client
+                .get(&url2)
+                .timeout(std::time::Duration::from_secs(2))
+                .send()
+                .await
+            {
                 if resp.status().is_success() {
                     url_reachable = true;
                 }
@@ -187,7 +234,11 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
 
     checks.push(DoctorCheck {
         name: "Local LLM URL Reachability".to_string(),
-        status: if url_reachable { CheckStatus::Ok } else { CheckStatus::Fail },
+        status: if url_reachable {
+            CheckStatus::Ok
+        } else {
+            CheckStatus::Fail
+        },
         detail: if url_reachable {
             format!("Local LLM URL is reachable and responded successfully")
         } else {
@@ -196,7 +247,10 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         hint: if url_reachable {
             None
         } else {
-            Some("Check if Ollama is running and the URL is correct in your configuration".to_string())
+            Some(
+                "Check if Ollama is running and the URL is correct in your configuration"
+                    .to_string(),
+            )
         },
     });
 
@@ -213,35 +267,42 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
 
     let (db_access_ok, db_detail, db_hint) = match rusqlite::Connection::open(&db_path) {
         Ok(conn) => {
-            match conn.query_row("SELECT count(*) FROM memory_records", [], |row| row.get::<_, i64>(0)) {
-                Ok(count) => {
-                    (
-                        true,
-                        format!("Database accessible at '{}' (contains {} memory records)", db_path.display(), count),
-                        None,
-                    )
-                }
-                Err(e) => {
-                    (
-                        false,
-                        format!("Failed to query database at '{}': {}", db_path.display(), e),
-                        Some("Verify that the database schema is initialized and up to date.".to_string()),
-                    )
-                }
+            match conn.query_row("SELECT count(*) FROM memory_records", [], |row| {
+                row.get::<_, i64>(0)
+            }) {
+                Ok(count) => (
+                    true,
+                    format!(
+                        "Database accessible at '{}' (contains {} memory records)",
+                        db_path.display(),
+                        count
+                    ),
+                    None,
+                ),
+                Err(e) => (
+                    false,
+                    format!("Failed to query database at '{}': {}", db_path.display(), e),
+                    Some(
+                        "Verify that the database schema is initialized and up to date."
+                            .to_string(),
+                    ),
+                ),
             }
         }
-        Err(e) => {
-            (
-                false,
-                format!("Failed to open database at '{}': {}", db_path.display(), e),
-                Some("Check file permissions or if the path is correct.".to_string()),
-            )
-        }
+        Err(e) => (
+            false,
+            format!("Failed to open database at '{}': {}", db_path.display(), e),
+            Some("Check file permissions or if the path is correct.".to_string()),
+        ),
     };
 
     checks.push(DoctorCheck {
         name: "Database Access".to_string(),
-        status: if db_access_ok { CheckStatus::Ok } else { CheckStatus::Fail },
+        status: if db_access_ok {
+            CheckStatus::Ok
+        } else {
+            CheckStatus::Fail
+        },
         detail: db_detail,
         hint: db_hint,
     });
@@ -251,7 +312,9 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
 
     // 7. Embedding Model Consistency (Soft/Warn)
     let mut check_7_status = CheckStatus::Ok;
-    let mut check_7_detail = "Table 'embedding_model_meta' does not exist, skipping consistency check (not applicable)".to_string();
+    let mut check_7_detail =
+        "Table 'embedding_model_meta' does not exist, skipping consistency check (not applicable)"
+            .to_string();
     let mut check_7_hint = None;
 
     if db_access_ok {
@@ -263,14 +326,34 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
             ).unwrap_or(0) > 0;
 
             if table_exists {
-                let db_model: Option<String> = conn.query_row("SELECT model_name FROM embedding_model_meta LIMIT 1", [], |row| row.get(0))
-                    .or_else(|_| conn.query_row("SELECT model FROM embedding_model_meta LIMIT 1", [], |row| row.get(0)))
+                let db_model: Option<String> = conn
+                    .query_row(
+                        "SELECT model_name FROM embedding_model_meta LIMIT 1",
+                        [],
+                        |row| row.get(0),
+                    )
+                    .or_else(|_| {
+                        conn.query_row(
+                            "SELECT model FROM embedding_model_meta LIMIT 1",
+                            [],
+                            |row| row.get(0),
+                        )
+                    })
                     .ok();
 
                 if let Some(model) = db_model {
-                    if model.to_lowercase().contains(&expected_embed.to_lowercase()) || expected_embed.to_lowercase().contains(&model.to_lowercase()) {
+                    if model
+                        .to_lowercase()
+                        .contains(&expected_embed.to_lowercase())
+                        || expected_embed
+                            .to_lowercase()
+                            .contains(&model.to_lowercase())
+                    {
                         check_7_status = CheckStatus::Ok;
-                        check_7_detail = format!("Embedding model in database ('{}') is consistent with config ('{}')", model, expected_embed);
+                        check_7_detail = format!(
+                            "Embedding model in database ('{}') is consistent with config ('{}')",
+                            model, expected_embed
+                        );
                     } else {
                         check_7_status = CheckStatus::Warn;
                         check_7_detail = format!("Embedding model mismatch: Database has '{}' but configuration expects '{}'", model, expected_embed);
@@ -278,8 +361,12 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
                     }
                 } else {
                     check_7_status = CheckStatus::Warn;
-                    check_7_detail = "Table 'embedding_model_meta' exists but is empty or could not be read".to_string();
-                    check_7_hint = Some("Ensure the embedding model metadata is correctly populated.".to_string());
+                    check_7_detail =
+                        "Table 'embedding_model_meta' exists but is empty or could not be read"
+                            .to_string();
+                    check_7_hint = Some(
+                        "Ensure the embedding model metadata is correctly populated.".to_string(),
+                    );
                 }
             }
         }
@@ -328,7 +415,9 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
     }
 
     // Código salida 0 si todos los críticos (1-6) son Ok, 1 si alguno falla.
-    let any_critical_failed = critical_checks.iter().any(|c| matches!(c.status, CheckStatus::Fail));
+    let any_critical_failed = critical_checks
+        .iter()
+        .any(|c| matches!(c.status, CheckStatus::Fail));
     if any_critical_failed {
         std::process::exit(1);
     } else {

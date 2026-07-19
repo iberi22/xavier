@@ -22,7 +22,6 @@ use crate::checkpoint::CheckpointManager;
 use crate::codebase::conversations_db::ConversationsDb;
 use crate::memory::{
     belief_graph::{BeliefGraph, SharedBeliefGraph},
-    working::{MemoryItem, WorkingMemory, WorkingMemoryConfig},
     entity_graph::{EntityGraph, SharedEntityGraph},
     postgres_store::PostgresMemoryStore,
     qmd_memory::{estimate_document_bytes, MemoryUsage, QmdMemory},
@@ -32,6 +31,7 @@ use crate::memory::{
     sqlite_vec_store::VecSqliteMemoryStore,
     store::{MemoryBackend, MemoryRecord, MemoryStore, SessionTokenRecord},
     supabase_store::SupabaseMemoryStore,
+    working::{MemoryItem, WorkingMemory, WorkingMemoryConfig},
 };
 use crate::retrieval::LayerWeights;
 use crate::settings::XavierSettings;
@@ -207,17 +207,12 @@ impl WorkspaceState {
                 let capacity = wm_guard.capacity();
                 let start = docs_guard.len().saturating_sub(capacity);
                 for doc in &docs_guard[start..] {
-                    let item = MemoryItem::new(
-                        doc.id.as_deref().unwrap_or(&doc.path),
-                        &doc.content,
-                    )
-                    .with_metadata(doc.metadata.clone());
+                    let item =
+                        MemoryItem::new(doc.id.as_deref().unwrap_or(&doc.path), &doc.content)
+                            .with_metadata(doc.metadata.clone());
                     wm_guard.push(item);
                 }
-                tracing::info!(
-                    "working memory initialized with {} items",
-                    wm_guard.len()
-                );
+                tracing::info!("working memory initialized with {} items", wm_guard.len());
             });
         }
 
@@ -237,20 +232,18 @@ impl WorkspaceState {
             tokio::spawn(async move {
                 let mut restored = false;
                 match store_clone.load_entity_graph_snapshot(&workspace_id).await {
-                    Ok(Some(snapshot)) => {
-                        match eg.import_json(&snapshot).await {
-                            Ok(()) => {
-                                tracing::info!(
-                                    "entity graph restored from snapshot for workspace {}",
-                                    workspace_id
-                                );
-                                restored = true;
-                            }
-                            Err(error) => {
-                                tracing::warn!(%error, "failed to import entity graph snapshot; falling back to full reindex");
-                            }
+                    Ok(Some(snapshot)) => match eg.import_json(&snapshot).await {
+                        Ok(()) => {
+                            tracing::info!(
+                                "entity graph restored from snapshot for workspace {}",
+                                workspace_id
+                            );
+                            restored = true;
                         }
-                    }
+                        Err(error) => {
+                            tracing::warn!(%error, "failed to import entity graph snapshot; falling back to full reindex");
+                        }
+                    },
                     Ok(None) => {
                         tracing::debug!("no entity graph snapshot found; starting full reindex");
                     }
@@ -279,7 +272,10 @@ impl WorkspaceState {
                     );
                     // Save initial snapshot after reindexing so it doesn't have to reindex next time!
                     if let Ok(json) = eg.export_json().await {
-                        if let Err(error) = store_clone.save_entity_graph_snapshot(&workspace_id, &json).await {
+                        if let Err(error) = store_clone
+                            .save_entity_graph_snapshot(&workspace_id, &json)
+                            .await
+                        {
                             tracing::warn!(%error, "failed to save initial entity graph snapshot after reindexing");
                         }
                     }
@@ -645,7 +641,11 @@ impl WorkspaceState {
 
         if result.is_ok() {
             if let Ok(json) = self.entity_graph.export_json().await {
-                if let Err(error) = self.store.save_entity_graph_snapshot(&self.config.id, &json).await {
+                if let Err(error) = self
+                    .store
+                    .save_entity_graph_snapshot(&self.config.id, &json)
+                    .await
+                {
                     tracing::warn!(%error, "failed to save entity graph snapshot after indexing");
                 }
             }
@@ -697,7 +697,11 @@ impl WorkspaceState {
         let result = self.entity_graph.remove_memory(memory_id).await;
         if result.is_ok() {
             if let Ok(json) = self.entity_graph.export_json().await {
-                if let Err(error) = self.store.save_entity_graph_snapshot(&self.config.id, &json).await {
+                if let Err(error) = self
+                    .store
+                    .save_entity_graph_snapshot(&self.config.id, &json)
+                    .await
+                {
                     tracing::warn!(%error, "failed to save entity graph snapshot after removal");
                 }
             }
@@ -801,8 +805,31 @@ impl WorkspaceState {
             timestamp.format("%Y%m%dT%H%M%S%.3fZ")
         );
         let content = format!("User: {user_message}\nAssistant: {assistant_message}");
-        let metadata = serde_json::json!({ "session_time": timestamp.to_rfc3339(), "source": source_app, });
-        let doc_id = self.memory.add_document_typed(path, content.clone(), metadata.clone(), Some(crate::memory::schema::TypedMemoryPayload { kind: Some(crate::memory::schema::MemoryKind::Episodic), evidence_kind: Some(crate::memory::schema::EvidenceKind::SessionSummary), namespace: Some(crate::memory::schema::MemoryNamespace { session_id: Some(session_id.to_string()), ..crate::memory::schema::MemoryNamespace::default() }), provenance: Some(crate::memory::schema::MemoryProvenance { source_app: Some(source_app.to_string()), source_type: Some("session_exchange".to_string()), recorded_at: Some(timestamp.to_rfc3339()), ..crate::memory::schema::MemoryProvenance::default() }), ..Default::default() })).await?;
+        let metadata =
+            serde_json::json!({ "session_time": timestamp.to_rfc3339(), "source": source_app, });
+        let doc_id = self
+            .memory
+            .add_document_typed(
+                path,
+                content.clone(),
+                metadata.clone(),
+                Some(crate::memory::schema::TypedMemoryPayload {
+                    kind: Some(crate::memory::schema::MemoryKind::Episodic),
+                    evidence_kind: Some(crate::memory::schema::EvidenceKind::SessionSummary),
+                    namespace: Some(crate::memory::schema::MemoryNamespace {
+                        session_id: Some(session_id.to_string()),
+                        ..crate::memory::schema::MemoryNamespace::default()
+                    }),
+                    provenance: Some(crate::memory::schema::MemoryProvenance {
+                        source_app: Some(source_app.to_string()),
+                        source_type: Some("session_exchange".to_string()),
+                        recorded_at: Some(timestamp.to_rfc3339()),
+                        ..crate::memory::schema::MemoryProvenance::default()
+                    }),
+                    ..Default::default()
+                }),
+            )
+            .await?;
 
         // Session exchanges are hot, push to working memory
         let item = MemoryItem::new(&doc_id, &content).with_metadata(metadata);
@@ -875,7 +902,10 @@ impl WorkspaceState {
             .map(|item| crate::memory::qmd_memory::MemoryDocument {
                 id: Some(item.id.clone()),
                 content: item.content.clone(),
-                metadata: item.metadata.clone().unwrap_or_else(|| serde_json::json!({})),
+                metadata: item
+                    .metadata
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!({})),
                 ..Default::default()
             })
             .collect()

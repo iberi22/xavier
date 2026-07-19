@@ -139,7 +139,6 @@ pub async fn agent_push_context_handler(
     }
 }
 
-
 pub async fn agent_unregister_handler(
     State(state): State<CliState>,
     AxumPath(agent_id): AxumPath<String>,
@@ -241,7 +240,6 @@ pub async fn agent_scan_handler(
         })),
     }
 }
-
 
 pub async fn agent_index_handler(
     State(state): State<CliState>,

@@ -1,9 +1,9 @@
 use reqwest::Client;
 use serde_json::json;
-use std::process::{Command, Child};
-use std::time::Duration;
 use std::net::TcpListener;
 use std::path::PathBuf;
+use std::process::{Child, Command};
+use std::time::Duration;
 
 fn get_free_port() -> u16 {
     TcpListener::bind("127.0.0.1:0")
@@ -52,7 +52,12 @@ impl XavierServer {
             attempts += 1;
         }
 
-        Self { child, port, token, _data_dir: data_dir }
+        Self {
+            child,
+            port,
+            token,
+            _data_dir: data_dir,
+        }
     }
 }
 
@@ -70,7 +75,8 @@ async fn test_proxy_auth_and_rate_limit_e2e() {
     let url = format!("http://127.0.0.1:{}/v1/proxy/request", server.port);
 
     // 1. Test 401 Unauthorized
-    let resp = client.post(&url)
+    let resp = client
+        .post(&url)
         .json(&json!({
             "url": "https://httpbin.org/post",
             "method": "POST",
@@ -83,7 +89,8 @@ async fn test_proxy_auth_and_rate_limit_e2e() {
     assert_eq!(resp.status(), 401);
 
     // 2. Test 200 OK with token
-    let resp = client.post(&url)
+    let resp = client
+        .post(&url)
         .header("X-Xavier-Token", &server.token)
         .json(&json!({
             "url": "https://httpbin.org/post",
@@ -107,7 +114,8 @@ async fn test_proxy_auth_and_rate_limit_e2e() {
     }
 
     for i in 0..10 {
-        let resp = client.post(&url)
+        let resp = client
+            .post(&url)
             .header("X-Xavier-Token", &server.token)
             .json(&json!({
                 "url": "https://httpbin.org/post",
@@ -126,6 +134,13 @@ async fn test_proxy_auth_and_rate_limit_e2e() {
         }
     }
 
-    assert!(success_count <= 5, "Should not allow more than 5 requests, but allowed {}", success_count);
-    assert!(limited_count >= 1, "Should have been rate limited eventually");
+    assert!(
+        success_count <= 5,
+        "Should not allow more than 5 requests, but allowed {}",
+        success_count
+    );
+    assert!(
+        limited_count >= 1,
+        "Should have been rate limited eventually"
+    );
 }

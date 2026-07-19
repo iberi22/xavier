@@ -86,8 +86,12 @@ impl SystemAlertStore {
         let alerts = self.get_alerts();
         let provider = std::env::var("XAVIER_PROVIDER").unwrap_or_else(|_| "local".to_string());
 
-        let has_llm_error = alerts.iter().any(|a| a.component == "llm" && a.level == "ERROR");
-        let has_embedding_error = alerts.iter().any(|a| a.component == "embedding" && a.level == "ERROR");
+        let has_llm_error = alerts
+            .iter()
+            .any(|a| a.component == "llm" && a.level == "ERROR");
+        let has_embedding_error = alerts
+            .iter()
+            .any(|a| a.component == "embedding" && a.level == "ERROR");
 
         Self::derive_operational_mode(!has_llm_error, !has_embedding_error, &provider)
     }

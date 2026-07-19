@@ -62,7 +62,8 @@ impl VecSqliteMemoryStore {
         let project_id_c = self.project_id.clone();
         let old_model = ConnectionManager::global()
             .with_conn(&project_id_c, move |conn| {
-                let mut stmt = conn.prepare("SELECT value FROM embedding_model_meta WHERE key = 'active'")?;
+                let mut stmt =
+                    conn.prepare("SELECT value FROM embedding_model_meta WHERE key = 'active'")?;
                 let mut rows = stmt.query([])?;
                 if let Some(row) = rows.next()? {
                     let value: String = row.get(0)?;
@@ -84,7 +85,10 @@ impl VecSqliteMemoryStore {
         let reindex_action = ConnectionManager::global()
             .with_conn(&project_id_c2, move |conn| {
                 let rt = tokio::runtime::Handle::current();
-                rt.block_on(Self::check_and_handle_embedding_model_change(conn, &active_model_c))
+                rt.block_on(Self::check_and_handle_embedding_model_change(
+                    conn,
+                    &active_model_c,
+                ))
             })
             .await?;
 
@@ -104,7 +108,8 @@ impl VecSqliteMemoryStore {
         conn: &Connection,
         active_model: &str,
     ) -> Result<ReindexAction> {
-        let mut stmt = conn.prepare("SELECT value FROM embedding_model_meta WHERE key = 'active'")?;
+        let mut stmt =
+            conn.prepare("SELECT value FROM embedding_model_meta WHERE key = 'active'")?;
         let mut rows = stmt.query([])?;
         let old_model: Option<String> = if let Some(row) = rows.next()? {
             Some(row.get(0)?)
@@ -198,8 +203,9 @@ mod tests {
             CREATE TABLE IF NOT EXISTS embedding_model_meta (
                 key TEXT PRIMARY KEY,
                 value TEXT
-            );"
-        ).unwrap();
+            );",
+        )
+        .unwrap();
         conn
     }
 
@@ -210,42 +216,46 @@ mod tests {
         // Insert a record with an embedding to check invalidation
         conn.execute(
             "INSERT INTO memory_records (id, embedding) VALUES ('mem_1', X'1234')",
-            []
-        ).unwrap();
+            [],
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO memory_embeddings (id, workspace_id, embedding) VALUES ('mem_1', 'ws_1', X'5678')",
             []
         ).unwrap();
 
         // Since it's the first time, no 'active' key exists in embedding_model_meta
-        let action = VecSqliteMemoryStore::check_and_handle_embedding_model_change(&conn, "qwen3-coder")
-            .await
-            .unwrap();
+        let action =
+            VecSqliteMemoryStore::check_and_handle_embedding_model_change(&conn, "qwen3-coder")
+                .await
+                .unwrap();
 
         assert_eq!(action, ReindexAction::Invalidated(1));
 
         // Check that embedding is now NULL
-        let embedding: Option<Vec<u8>> = conn.query_row(
-            "SELECT embedding FROM memory_records WHERE id = 'mem_1'",
-            [],
-            |r| r.get(0)
-        ).unwrap();
+        let embedding: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT embedding FROM memory_records WHERE id = 'mem_1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert!(embedding.is_none());
 
         // Check that memory_embeddings was cleared
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM memory_embeddings",
-            [],
-            |r| r.get(0)
-        ).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM memory_embeddings", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 0);
 
         // Check that model was saved as active
-        let saved_model: String = conn.query_row(
-            "SELECT value FROM embedding_model_meta WHERE key = 'active'",
-            [],
-            |r| r.get(0)
-        ).unwrap();
+        let saved_model: String = conn
+            .query_row(
+                "SELECT value FROM embedding_model_meta WHERE key = 'active'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(saved_model, "qwen3-coder");
     }
 
@@ -256,40 +266,43 @@ mod tests {
         // Pre-save the model
         conn.execute(
             "INSERT INTO embedding_model_meta (key, value) VALUES ('active', 'qwen3-coder')",
-            []
-        ).unwrap();
+            [],
+        )
+        .unwrap();
 
         // Insert a record with an embedding
         conn.execute(
             "INSERT INTO memory_records (id, embedding) VALUES ('mem_1', X'1234')",
-            []
-        ).unwrap();
+            [],
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO memory_embeddings (id, workspace_id, embedding) VALUES ('mem_1', 'ws_1', X'5678')",
             []
         ).unwrap();
 
         // Same model, should return ReindexAction::None
-        let action = VecSqliteMemoryStore::check_and_handle_embedding_model_change(&conn, "qwen3-coder")
-            .await
-            .unwrap();
+        let action =
+            VecSqliteMemoryStore::check_and_handle_embedding_model_change(&conn, "qwen3-coder")
+                .await
+                .unwrap();
 
         assert_eq!(action, ReindexAction::None);
 
         // Check that embedding was NOT nullified
-        let embedding: Option<Vec<u8>> = conn.query_row(
-            "SELECT embedding FROM memory_records WHERE id = 'mem_1'",
-            [],
-            |r| r.get(0)
-        ).unwrap();
+        let embedding: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT embedding FROM memory_records WHERE id = 'mem_1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert!(embedding.is_some());
 
         // Check that memory_embeddings was NOT cleared
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM memory_embeddings",
-            [],
-            |r| r.get(0)
-        ).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM memory_embeddings", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 1);
     }
 
@@ -300,48 +313,53 @@ mod tests {
         // Pre-save an old model name
         conn.execute(
             "INSERT INTO embedding_model_meta (key, value) VALUES ('active', 'old-model')",
-            []
-        ).unwrap();
+            [],
+        )
+        .unwrap();
 
         // Insert a record with an embedding
         conn.execute(
             "INSERT INTO memory_records (id, embedding) VALUES ('mem_1', X'1234')",
-            []
-        ).unwrap();
+            [],
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO memory_embeddings (id, workspace_id, embedding) VALUES ('mem_1', 'ws_1', X'5678')",
             []
         ).unwrap();
 
         // Different model, should invalidate and return Invalidated(1)
-        let action = VecSqliteMemoryStore::check_and_handle_embedding_model_change(&conn, "qwen3-coder")
-            .await
-            .unwrap();
+        let action =
+            VecSqliteMemoryStore::check_and_handle_embedding_model_change(&conn, "qwen3-coder")
+                .await
+                .unwrap();
 
         assert_eq!(action, ReindexAction::Invalidated(1));
 
         // Check that embedding is now NULL
-        let embedding: Option<Vec<u8>> = conn.query_row(
-            "SELECT embedding FROM memory_records WHERE id = 'mem_1'",
-            [],
-            |r| r.get(0)
-        ).unwrap();
+        let embedding: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT embedding FROM memory_records WHERE id = 'mem_1'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert!(embedding.is_none());
 
         // Check that memory_embeddings was cleared
-        let count: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM memory_embeddings",
-            [],
-            |r| r.get(0)
-        ).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM memory_embeddings", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 0);
 
         // Check that the new model was saved
-        let saved_model: String = conn.query_row(
-            "SELECT value FROM embedding_model_meta WHERE key = 'active'",
-            [],
-            |r| r.get(0)
-        ).unwrap();
+        let saved_model: String = conn
+            .query_row(
+                "SELECT value FROM embedding_model_meta WHERE key = 'active'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(saved_model, "qwen3-coder");
     }
 }
