@@ -53,6 +53,7 @@ pub mod pairing;
 pub mod pairing_registry;
 pub mod peer;
 pub mod protocol;
+pub mod context_bridge;
 pub mod telemetry;
 pub mod telemetry_collector;
 pub mod tokenomics;
@@ -75,6 +76,7 @@ pub use maturity::MeshMaturityReport;
 pub use node::{NodeId, NodeIdentity};
 pub use peer::{PeerInfo, PeerRegistry};
 pub use protocol::{MeshHandshake, MeshManifest, MeshSyncRequest};
+pub use context_bridge::{BridgeKind, ContextBridge, BridgeRegistry};
 pub use telemetry_collector::{
     RetentionPolicy, TelemetryAggregate, TelemetryCollector, TelemetrySample,
 };
