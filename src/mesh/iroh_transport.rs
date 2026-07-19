@@ -364,6 +364,8 @@ mod tests {
             sync_enabled: true,
             is_cloud: false,
             iroh_addr: None,
+            shared_workspace_ids: Vec::new(),
+            shared_workspace_tokens: std::collections::HashMap::new(),
         };
         assert!(IrohTransport::addr_from_peer(&peer).is_err());
 
@@ -385,6 +387,8 @@ mod tests {
             sync_enabled: true,
             is_cloud: false,
             iroh_addr: Some("deadbeefdeadbeef".into()),
+            shared_workspace_ids: Vec::new(),
+            shared_workspace_tokens: std::collections::HashMap::new(),
         };
         assert_eq!(
             IrohTransport::addr_from_peer(&peer).unwrap(),

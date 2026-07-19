@@ -30,6 +30,10 @@ pub struct PeerInfo {
     /// `#[serde(default)]`.
     #[serde(default)]
     pub iroh_addr: Option<String>,
+    #[serde(default)]
+    pub shared_workspace_ids: Vec<String>,
+    #[serde(default)]
+    pub shared_workspace_tokens: HashMap<String, String>,
 }
 
 /// A persistent, file-backed registry of trusted peers.
@@ -136,6 +140,8 @@ mod tests {
             sync_enabled: true,
             is_cloud: false,
             iroh_addr: None,
+            shared_workspace_ids: Vec::new(),
+            shared_workspace_tokens: HashMap::new(),
         };
 
         registry.add_peer(peer).unwrap();

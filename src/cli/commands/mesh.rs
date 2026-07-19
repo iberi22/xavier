@@ -46,6 +46,8 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 sync_enabled: true,
                 is_cloud: cloud,
                 iroh_addr: None,
+                shared_workspace_ids: Vec::new(),
+                shared_workspace_tokens: std::collections::HashMap::new(),
             };
 
             registry.add_peer(peer)?;
@@ -296,6 +298,8 @@ pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
                 sync_enabled: true,
                 is_cloud: false,
                 iroh_addr: None,
+                shared_workspace_ids: Vec::new(),
+                shared_workspace_tokens: std::collections::HashMap::new(),
             };
 
             registry.add_peer(peer)?;
