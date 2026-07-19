@@ -215,6 +215,7 @@ pub fn extract_call_names(source: &str) -> Vec<String> {
     names
 }
 
+#[allow(clippy::needless_range_loop)]
 fn levenshtein_distance(a: &str, b: &str) -> usize {
     let a_chars: Vec<char> = a.chars().collect();
     let b_chars: Vec<char> = b.chars().collect();

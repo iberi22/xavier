@@ -89,7 +89,7 @@ impl PluginHost {
                     });
                 }
                 // Plugin referenced but not registered — fall through to next step.
-                if chain.iter().nth(1).is_some() {
+                if chain.get(1).is_some() {
                     return ParserDispatch::Native;
                 }
                 ParserDispatch::NoOp

@@ -363,7 +363,7 @@ async fn core_tools_integration() {
     if content["type"] == "structuredContent" {
         let sc = &content["structuredContent"];
         assert!(sc["content"].as_str().unwrap().contains("c1"));
-        assert!(sc["total_records"].as_u64().unwrap_or(0) >= 1);
+        assert!(sc["totalRecords"].as_u64().unwrap_or(0) >= 1);
     } else {
         assert!(content["text"].as_str().unwrap().contains("c1"));
     }
@@ -621,8 +621,8 @@ async fn tools_health_check_returns_structured() {
     if content["type"] == "structuredContent" {
         let sc = &content["structuredContent"];
         assert!(sc["status"].is_string());
-        assert!(sc["tools_count"].as_u64().unwrap_or(0) >= 16);
-        assert_eq!(sc["mcp_protocol"], "2026-07-28");
+        assert!(sc["toolsCount"].as_u64().unwrap_or(0) >= 16);
+        assert_eq!(sc["mcpProtocol"], "2026-07-28");
     } else {
         // backward compat: ensure text fallback works
         let text = content["text"].as_str().unwrap();
