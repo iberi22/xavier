@@ -27,7 +27,7 @@ impl AuthStore {
         let mut stmt = conn.prepare(
             "SELECT id, email, name, role, created_at, updated_at FROM users WHERE id = ?"
         )?;
-        
+
         let mut rows = stmt.query(params![user_id])?;
         if let Some(row) = rows.next()? {
             let role_str: String = row.get(3)?;
@@ -215,6 +215,34 @@ impl AuthStore {
         Ok(())
     }
 
+    pub fn get_active_sessions(&self) -> Result<Vec<ActiveSession>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT token, user_id, expires_at, revoked FROM refresh_tokens WHERE revoked = 0 AND expires_at > ?"
+        )?;
+        let now = Utc::now().timestamp();
+        let mut rows = stmt.query(params![now])?;
+        let mut sessions = Vec::new();
+        while let Some(row) = rows.next()? {
+            sessions.push(ActiveSession {
+                token: row.get(0)?,
+                user_id: row.get(1)?,
+                expires_at: row.get(2)?,
+                revoked: row.get::<_, i32>(3)? == 1,
+            });
+        }
+        Ok(sessions)
+    }
+
+    pub fn count_failed_logins(&self, ip_address: &str, since_timestamp: i64) -> Result<i32> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT COUNT(1) FROM audit_logs WHERE ip_address = ? AND event_type = 'login_failed' AND timestamp > ?"
+        )?;
+        let count: i32 = stmt.query_row(params![ip_address, since_timestamp], |r| r.get(0))?;
+        Ok(count)
+    }
+
     pub fn log_event(&self, user_id: Option<&str>, event_type: &str, ip: Option<&str>, ua: Option<&str>, metadata: Option<&str>) -> Result<()> {
         let id = ulid::Ulid::new().to_string();
         let timestamp = Utc::now().timestamp();
@@ -258,4 +286,13 @@ impl AuthStore {
 
         Ok(plaintext)
     }
+}
+
+/// Active session details representing an active refresh token
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActiveSession {
+    pub token: String,
+    pub user_id: String,
+    pub expires_at: i64,
+    pub revoked: bool,
 }
