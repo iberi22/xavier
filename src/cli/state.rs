@@ -67,6 +67,7 @@ pub struct CliState {
     pub openclaw_indexer: Arc<crate::memory::openclaw_indexer::OpenClawAgentIndexer>,
     pub system_scan_cache:
         Arc<tokio::sync::RwLock<Option<crate::cli::handlers::system_scan::SystemScanResult>>>,
+    pub multi_db: xavier::storage::multi_db::MultiDbManager,
 }
 
 impl CliState {

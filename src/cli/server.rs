@@ -388,6 +388,8 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             .with_provider_router(provider_router_shared.clone()),
     );
 
+    let multi_db = xavier::storage::multi_db::MultiDbManager::new();
+
     let state = CliState {
         memory: memory_port,
         qmd_memory: Arc::clone(&memory),
@@ -425,6 +427,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             embedder.clone(),
         )),
         system_scan_cache: Arc::new(tokio::sync::RwLock::new(None)),
+        multi_db,
     };
 
     info!(
@@ -449,6 +452,8 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/v1/memories/search", post(search_handler))
         .route("/agents", get(agent_list_handler))
         .route("/workspace/default", get(workspace_info_handler))
+        .route("/v1/workspaces/db", post(create_workspace_db_handler).get(list_workspace_dbs_handler))
+        .route("/v1/workspaces/db/:id", delete(delete_workspace_db_handler))
         .route(
             "/v1/onboarding/suggestions",
             get(onboarding_suggestions_handler),
