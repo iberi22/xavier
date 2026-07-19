@@ -463,6 +463,8 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             .route("/totp/verify", post(totp_verify_handler))
             .route("/refresh", post(refresh_handler))
             .route("/recover", post(recover_handler))
+            .route("/sessions", get(list_sessions_handler))
+            .route("/sessions/:id", delete(revoke_session_handler))
             .layer(middleware::from_fn_with_state(
                 state.clone(),
                 rate_limit_middleware,
