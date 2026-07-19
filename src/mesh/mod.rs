@@ -62,10 +62,10 @@ pub mod transport;
 #[cfg(feature = "mesh-legacy")]
 pub mod libp2p_transport;
 
-pub use acl::{MeshAcl, NodeAclEntry};
+pub use acl::{MeshAcl, NodeAclEntry, NamespaceAclEntry};
 #[cfg(feature = "mesh")]
 pub use auto_update::{AutoUpdateService, UpdateStatus};
-pub use data_consent::{ConsentLevel, DataConsentManager};
+pub use data_consent::{ConsentLevel, DataConsentManager, ConsentRecord};
 pub use data_sanitizer::{DataSanitizer, SanitizationAction, SanitizationRule};
 #[cfg(feature = "mesh-legacy")]
 pub use discovery::DiscoveryService;

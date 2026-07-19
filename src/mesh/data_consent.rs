@@ -37,6 +37,16 @@ pub enum ConsentLevel {
 use serde::Deserialize;
 
 // ---------------------------------------------------------------------------
+// ConsentRecord
+// ---------------------------------------------------------------------------
+
+/// Tracks consent settings for specific namespaces or filters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConsentRecord {
+    pub namespace_filter: Option<Vec<String>>,
+}
+
+// ---------------------------------------------------------------------------
 // DataConsentManager
 // ---------------------------------------------------------------------------
 
