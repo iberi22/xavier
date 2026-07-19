@@ -161,6 +161,7 @@ async fn test_chunk_payload_encryption_roundtrip() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::TopSecret,
                 namespaces: None,
+                namespace_acl: None,
                 public_key_hex: xavier::crypto::hex_encode(&identity_b.public_key),
             },
         )
@@ -360,6 +361,7 @@ async fn test_handshake_signature_verification() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::Unclassified,
                 namespaces: None,
+                namespace_acl: None,
                 public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
             },
         )
@@ -446,6 +448,7 @@ async fn test_acl_clearance_enforcement() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::Unclassified,
                 namespaces: None,
+                namespace_acl: None,
                 public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
             },
         )
@@ -477,6 +480,7 @@ async fn test_acl_clearance_enforcement() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::TopSecret,
                 namespaces: None,
+                namespace_acl: None,
                 public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
             },
         )
@@ -542,6 +546,7 @@ async fn test_acl_namespace_isolation() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::TopSecret,
                 namespaces: Some(vec!["open".to_string()]),
+                namespace_acl: None,
                 public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
             },
         )
@@ -572,6 +577,7 @@ async fn test_acl_namespace_isolation() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::TopSecret,
                 namespaces: Some(vec!["closed".to_string()]),
+                namespace_acl: None,
                 public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
             },
         )
@@ -625,6 +631,7 @@ async fn test_acl_role_enforcement() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::Unclassified,
                 namespaces: None,
+                namespace_acl: None,
                 public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
             },
         )
@@ -815,6 +822,7 @@ async fn test_acl_persistence_across_load() {
                 role: Role::Admin,
                 clearance: ClearanceLevel::TopSecret,
                 namespaces: Some(vec!["foo".to_string(), "bar".to_string()]),
+                namespace_acl: None,
                 public_key_hex: id1_pk_hex.clone(),
             },
         )
@@ -825,6 +833,7 @@ async fn test_acl_persistence_across_load() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::Unclassified,
                 namespaces: None,
+                namespace_acl: None,
                 public_key_hex: xavier::crypto::hex_encode(&id_2.public_key),
             },
         )
@@ -872,6 +881,7 @@ async fn test_full_e2e_encrypted_mesh_sync_with_acl() {
                 role: Role::Admin,
                 clearance: ClearanceLevel::TopSecret,
                 namespaces: None,
+                namespace_acl: None,
                 public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
             },
         )
@@ -970,6 +980,7 @@ async fn test_empty_workspace_sync() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::Unclassified,
                 namespaces: None,
+                namespace_acl: None,
                 public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
             },
         )
