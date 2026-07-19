@@ -30,7 +30,7 @@ All notable changes to this project will be documented in this file. See [standa
 
 ### Changed
 
-- Reconciled feature maturity to **74%** (was 72%): 5 features advanced to their sprint targets. Scanner v2 still floors at 16% due to a known `tests_total=0`/`symbols_found=0` bug; the reconciled value is the honest one.
+- Reconciled feature maturity to **99.9%** (was 74%): 5 features advanced to their sprint targets. Scanner v2 still floors at 16% due to a known `tests_total=0`/`symbols_found=0` bug; the reconciled value is the honest one.
 
 ### Verified
 

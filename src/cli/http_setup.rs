@@ -63,6 +63,7 @@ pub async fn auth_middleware(
         req.extensions_mut().insert(SessionInfo {
             is_ephemeral: false,
             api_token: None,
+            user_id: None,
             lease: None,
         });
         return next.run(req).await;
@@ -75,6 +76,7 @@ pub async fn auth_middleware(
             req.extensions_mut().insert(SessionInfo {
                 is_ephemeral: true,
                 api_token: None,
+                user_id: None,
                 lease: Some(lease),
             });
             return next.run(req).await;
@@ -87,6 +89,7 @@ pub async fn auth_middleware(
         req.extensions_mut().insert(SessionInfo {
             is_ephemeral: true,
             api_token: None,
+            user_id: None,
             lease: None,
         });
         return next.run(req).await;
@@ -140,10 +143,24 @@ pub async fn auth_middleware(
             req.extensions_mut().insert(SessionInfo {
                 is_ephemeral: false,
                 api_token: Some(token_meta),
+                user_id: None,
                 lease: None,
             });
             return next.run(req).await;
         }
+    }
+
+    // 5. Check JWT Tokens
+    let secret = std::env::var("XAVIER_JWT_SECRET").unwrap_or_else(|_| "default_secret_change_me".to_string());
+    if let Ok(claims) = xavier::security::auth::validate_jwt(provided_token_str, secret.as_bytes()) {
+        let mut req = req;
+        req.extensions_mut().insert(SessionInfo {
+            is_ephemeral: false,
+            api_token: None,
+            user_id: Some(claims.sub),
+            lease: None,
+        });
+        return next.run(req).await;
     }
 
     json_response(
@@ -156,6 +173,7 @@ pub async fn auth_middleware(
 pub struct SessionInfo {
     pub is_ephemeral: bool,
     pub api_token: Option<xavier::security::tokens::ApiTokenMetadata>,
+    pub user_id: Option<String>,
     pub lease: Option<SecretLease>,
 }
 
