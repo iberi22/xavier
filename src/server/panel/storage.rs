@@ -2,6 +2,7 @@ use super::types::{Bookmark, GraphData, Widget};
 use crate::{
     codebase::connection_manager::ConnectionManager,
     memory::sqlite_store::{TABLE_PANEL_BOOKMARKS, TABLE_PANEL_GRAPHS, TABLE_PANEL_WIDGETS},
+    memory::sqlite_vec_store::{project_id_for_path, VecSqliteMemoryStore, VecSqliteStoreConfig},
     workspace::WorkspaceContext,
 };
 use axum::{http::StatusCode, response::IntoResponse, Extension, Json};
@@ -9,19 +10,34 @@ use chrono::Utc;
 use rusqlite::params;
 use serde_json::json;
 
+/// Resolve the ConnectionManager project_id used for panel bookmarks/widgets/graphs.
+///
+/// For the vec backend this MUST match [`VecSqliteMemoryStore`]'s hashed pool id
+/// (not the literal `"vec_store"` alias that only points at `./vec-store.sqlite3`).
 pub fn resolve_panel_project_id(workspace: &WorkspaceContext) -> String {
     let backend = workspace.workspace.durable_store_backend();
-    let base_id = if backend == "vec" {
-        "vec_store"
-    } else {
-        "memory"
-    };
 
     if cfg!(test) {
-        format!("{}_test_{}", base_id, workspace.workspace_id)
-    } else {
-        base_id.to_string()
+        let base_id = if backend == "vec" { "vec_store" } else { "memory" };
+        return format!("{}_test_{}", base_id, workspace.workspace_id);
     }
+
+    if backend == "vec" {
+        if let Some(id) = workspace
+            .workspace
+            .durable_store()
+            .as_any()
+            .downcast_ref::<VecSqliteMemoryStore>()
+            .map(|s| s.connection_project_id().to_string())
+        {
+            return id;
+        }
+        // Fallback when the workspace store is not yet a live VecSqliteMemoryStore
+        // (e.g. early boot paths): derive the same id as VecSqliteMemoryStore::new.
+        return project_id_for_path(&VecSqliteStoreConfig::from_env().path);
+    }
+
+    "memory".to_string()
 }
 
 pub async fn list_bookmarks(

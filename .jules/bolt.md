@@ -1,0 +1,3 @@
+## 2026-07-18 - [Eliminated Deep Clones in Post-Migration Telemetry]
+**Learning:** During legacy file store migration (`src/workspace/ops.rs`), large structures like vectors were being eagerly `.clone()`d simply to preserve the lengths needed for telemetry logging *after* the target store absorbed the data. This creates completely unnecessary O(N) memory allocation overhead for large schemas.
+**Action:** Extract and store integer representations (like lengths) of complex objects before transferring ownership across asynchronous execution blocks (or scopes) instead of deep cloning just to read lengths later.

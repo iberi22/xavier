@@ -1,3 +1,16 @@
+
+## SWAL ecosystem goal (do not disconnect)
+
+- **Canonical:** monorepo `docs/SWAL/GOAL.md` · `docs/SWAL/PROJECT_MAP.md` · `docs/SWAL/README.md`
+- **Local copy:** `.gitcore/docs/SWAL_GOAL.md` (via `gitcore-update`)
+- **Pro:** active SWAL node only — **no Stripe** as Pro unlock
+- **Memory:** Xavier HTTP/MCP · namespaces `app/{appId}/instance/{instanceId}`
+- **Mesh:** edge-mesh · `swal/{appId}/{instanceId}` (when P2P applies)
+- **Token:** $SWAL ownership + stake yield (not parallel OMNI/XAV coins)
+- **Backoffice:** `maloca/apps/swal-backoffice`
+- **Protocol:** GitCore 3.8 · feature-verify / implementation-score under `.gitcore/scripts/`
+
+> **GitCore 3.8.0** applied 2026-07-17. Full bootstrap rules are in protocol sections; preserve project-specific content below.
 # AGENTS.md - Xavier Workspace
 
 ## Identity
@@ -73,3 +86,5 @@ Used by the `worktree` command to delegate a full copy of Xavier to a subagent w
 ---
 
 _Last updated: 2026-05-13_
+
+
