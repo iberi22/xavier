@@ -151,16 +151,17 @@ pub async fn auth_middleware(
     }
 
     // 5. Check JWT Tokens
-    let secret = std::env::var("XAVIER_JWT_SECRET").unwrap_or_else(|_| "default_secret_change_me".to_string());
-    if let Ok(claims) = xavier::security::auth::validate_jwt(provided_token_str, secret.as_bytes()) {
-        let mut req = req;
-        req.extensions_mut().insert(SessionInfo {
-            is_ephemeral: false,
-            api_token: None,
-            user_id: Some(claims.sub),
-            lease: None,
-        });
-        return next.run(req).await;
+    if let Ok(secret) = std::env::var("XAVIER_JWT_SECRET") {
+        if let Ok(claims) = xavier::security::auth::validate_jwt(provided_token_str, secret.as_bytes()) {
+            let mut req = req;
+            req.extensions_mut().insert(SessionInfo {
+                is_ephemeral: false,
+                api_token: None,
+                user_id: Some(claims.sub),
+                lease: None,
+            });
+            return next.run(req).await;
+        }
     }
 
     json_response(

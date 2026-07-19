@@ -142,6 +142,7 @@ async fn test_mesh_handshake_and_sync() {
                 role: Role::Viewer,
                 clearance: ClearanceLevel::TopSecret,
                 namespaces: None,
+                namespace_acl: None,
                 public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
             },
         )

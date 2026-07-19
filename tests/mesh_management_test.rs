@@ -21,6 +21,7 @@ async fn test_mesh_acl_management() {
             role: Role::Editor,
             clearance: ClearanceLevel::Secret,
             namespaces: Some(vec!["workspace:test".to_string()]),
+            namespace_acl: None,
             public_key_hex: "test-public-key".to_string(),
         },
     )

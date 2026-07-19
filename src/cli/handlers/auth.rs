@@ -380,8 +380,15 @@ async fn issue_tokens(
     ua: Option<&str>,
 ) -> Response {
     let auth_store = state.auth_store().unwrap();
-    let secret = std::env::var("XAVIER_JWT_SECRET")
-        .unwrap_or_else(|_| "default_secret_change_me".to_string());
+    let secret = match std::env::var("XAVIER_JWT_SECRET") {
+        Ok(s) => s,
+        Err(_) => {
+            return json_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                serde_json::json!({"error": "Authentication misconfigured: Missing XAVIER_JWT_SECRET"}),
+            )
+        }
+    };
 
     let token: String = match generate_jwt(user, secret.as_bytes()) {
         Ok(t) => t,
