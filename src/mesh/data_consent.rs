@@ -150,6 +150,111 @@ impl DataConsentManager {
     pub fn consent_map(&self) -> &HashMap<String, ConsentLevel> {
         &self.consent_map
     }
+
+    /// Register a newly issued sharing token as an active consent.
+    pub fn register_active_consent(consent: ActiveConsent) -> anyhow::Result<()> {
+        let path = get_active_consents_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut list = if path.exists() {
+            let content = std::fs::read_to_string(&path)?;
+            serde_json::from_str::<Vec<ActiveConsent>>(&content).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        list.push(consent);
+        let json = serde_json::to_string_pretty(&list)?;
+        std::fs::write(&path, json)?;
+        Ok(())
+    }
+
+    /// Mark a token_id as revoked under the `mesh_token_revocations` table.
+    pub fn revoke_consent(token_id: &str) -> anyhow::Result<()> {
+        let path = get_token_revocations_path();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut revocations = if path.exists() {
+            let content = std::fs::read_to_string(&path)?;
+            serde_json::from_str::<Vec<String>>(&content).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        if !revocations.contains(&token_id.to_string()) {
+            revocations.push(token_id.to_string());
+            let json = serde_json::to_string_pretty(&revocations)?;
+            std::fs::write(&path, json)?;
+        }
+        Ok(())
+    }
+
+    /// Check whether a token_id is revoked.
+    pub fn is_token_revoked(token_id: &str) -> anyhow::Result<bool> {
+        let path = get_token_revocations_path();
+        if !path.exists() {
+            return Ok(false);
+        }
+        let content = std::fs::read_to_string(&path)?;
+        let revocations: Vec<String> = serde_json::from_str(&content).unwrap_or_default();
+        Ok(revocations.contains(&token_id.to_string()))
+    }
+
+    /// List all registered consents that are active (non-revoked and non-expired).
+    pub fn list_active_consents() -> anyhow::Result<Vec<ActiveConsent>> {
+        let path = get_active_consents_path();
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let content = std::fs::read_to_string(&path)?;
+        let all_consents: Vec<ActiveConsent> = serde_json::from_str(&content).unwrap_or_default();
+
+        let revocations_path = get_token_revocations_path();
+        let revocations: std::collections::HashSet<String> = if revocations_path.exists() {
+            let rev_content = std::fs::read_to_string(&revocations_path)?;
+            serde_json::from_str::<Vec<String>>(&rev_content).unwrap_or_default().into_iter().collect()
+        } else {
+            std::collections::HashSet::new()
+        };
+
+        let now = chrono::Utc::now().timestamp() as u64;
+        let active = all_consents
+            .into_iter()
+            .filter(|c| !revocations.contains(&c.token_id) && c.expires_at >= now)
+            .collect();
+        Ok(active)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ActiveConsent
+// ---------------------------------------------------------------------------
+
+/// Represents a workspace sharing consent registered at the node level.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActiveConsent {
+    pub token_id: String,
+    pub workspace_id: String,
+    pub expires_at: u64,
+    pub token: String,
+}
+
+fn get_config_dir() -> std::path::PathBuf {
+    if let Ok(val) = std::env::var("XAVIER_CONFIG_DIR") {
+        std::path::PathBuf::from(val)
+    } else if let Some(dir) = dirs::config_dir() {
+        dir.join("xavier")
+    } else {
+        std::path::PathBuf::from(".").join("xavier")
+    }
+}
+
+fn get_active_consents_path() -> std::path::PathBuf {
+    get_config_dir().join("mesh_active_consents.json")
+}
+
+fn get_token_revocations_path() -> std::path::PathBuf {
+    get_config_dir().join("mesh_token_revocations.json")
 }
 
 #[cfg(test)]
