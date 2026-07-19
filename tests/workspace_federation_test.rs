@@ -203,6 +203,8 @@ fn test_namespace_acl_entry_and_consent_record_serde() {
     let consent_serialized = serde_json::to_string(&consent).unwrap();
     let consent_deserialized: xavier::mesh::data_consent::ConsentRecord = serde_json::from_str(&consent_serialized).unwrap();
     assert_eq!(consent_deserialized.namespace_filter.unwrap()[0], "docs/publico");
+}
+
 #[tokio::test]
 async fn test_data_consent_token_revocation() {
     // Set a temporary config directory to avoid overwriting real user files
