@@ -12,11 +12,10 @@ pub(crate) async fn generate_minimax_legacy(
     _use_cache: bool,
 ) -> Result<LlmResponse> {
     let api_key = config.api_key.as_ref().context("missing MiniMax API key")?;
-    let base_url = config
-        .base_url
-        .as_ref()
-        .context("missing MiniMax base URL")?
-        .trim_end_matches('/');
+    let base_url_str = config
+        .get_resolved_base_url()
+        .context("missing MiniMax base URL")?;
+    let base_url = base_url_str.trim_end_matches('/');
     let endpoint = format!("{}/text/chatcompletion_pro", base_url);
     let response = client
         .post(endpoint)

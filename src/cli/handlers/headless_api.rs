@@ -253,6 +253,7 @@ async fn collect_provider_status_data(state: &CliState) -> UnifiedProvidersRespo
 
         let mode = match config.provider_mode {
             ProviderMode::Local => "local",
+            ProviderMode::ManagedLocal => "managed-local",
             ProviderMode::Cloud => "cloud",
             ProviderMode::Disabled => "disabled",
         }
@@ -295,6 +296,7 @@ async fn collect_provider_status_data(state: &CliState) -> UnifiedProvidersRespo
     let active_config = ModelProviderConfig::from_label(current.as_str());
     let active_mode = match active_config.provider_mode {
         ProviderMode::Local => "local",
+        ProviderMode::ManagedLocal => "managed-local",
         ProviderMode::Cloud => "cloud",
         ProviderMode::Disabled => "disabled",
     }

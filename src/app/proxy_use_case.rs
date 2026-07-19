@@ -340,6 +340,7 @@ impl ProxyUseCase {
             "google",
             "openai",
             "anthropic",
+            "managed-local",
             "local",
             "ollama",
         ];
@@ -350,7 +351,7 @@ impl ProxyUseCase {
                 Ok(status) => {
                     let now = chrono::Utc::now();
                     if status.rate_limited_until.is_none_or(|until| until < now) {
-                        if provider == "local" || provider == "ollama" {
+                        if provider == "local" || provider == "ollama" || provider == "managed-local" {
                             let reachability = ModelProviderConfig::for_provider(provider)
                                 .is_reachable()
                                 .await;

@@ -15,6 +15,8 @@ pub const LLM_TIMEOUT: Duration = Duration::from_secs(30);
 pub enum ProviderMode {
     /// Provider is running locally (e.g., Ollama).
     Local,
+    /// Managed local llama-server.
+    ManagedLocal,
     /// Provider is a cloud-based API (e.g., OpenAI, Anthropic).
     Cloud,
     /// Provider is disabled.
