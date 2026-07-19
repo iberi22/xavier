@@ -215,7 +215,7 @@ mod tests {
         // Assert the returned context block has only the requested doc
         assert!(content_rust_out.contains("Rust is a systems"), "Context should contain requested Rust document");
         assert!(!content_rust_out.contains("Python is an interpreted"), "Context must NOT contain Python document");
-        assert_eq!(sc_rust["total_records"].as_u64().unwrap(), 1, "Only 1 record should be in context");
+        assert_eq!(sc_rust["totalRecords"].as_u64().unwrap(), 1, "Only 1 record should be in context");
 
         let sources_rust = sc_rust["sources"].as_array().unwrap();
         assert_eq!(sources_rust.len(), 1, "There should be exactly one source record");
@@ -246,7 +246,7 @@ mod tests {
         // Assert the returned context block has only the requested doc
         assert!(content_python_out.contains("Python is an interpreted"), "Context should contain requested Python document");
         assert!(!content_python_out.contains("Rust is a systems"), "Context must NOT contain Rust document");
-        assert_eq!(sc_python["total_records"].as_u64().unwrap(), 1, "Only 1 record should be in context");
+        assert_eq!(sc_python["totalRecords"].as_u64().unwrap(), 1, "Only 1 record should be in context");
 
         let sources_python = sc_python["sources"].as_array().unwrap();
         assert_eq!(sources_python.len(), 1, "There should be exactly one source record");

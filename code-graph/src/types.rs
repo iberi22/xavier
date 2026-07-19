@@ -113,7 +113,7 @@ impl Language {
                 // Legacy rows written with `Debug` ("Rust", "Cpp", ...) or
                 // externally-tagged serde ("\"Rust\""). Try serde first, then
                 // the bare capitalized form.
-                serde_json::from_str(value).unwrap_or_else(|_| match value {
+                serde_json::from_str(value).unwrap_or(match value {
                     "Rust" => Language::Rust,
                     "TypeScript" => Language::TypeScript,
                     "JavaScript" => Language::JavaScript,
