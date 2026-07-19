@@ -1,0 +1,731 @@
+From bad52f03987de91d41c232c72836237d6ae3324d Mon Sep 17 00:00:00 2001
+From: iberi22 <10615454+iberi22@users.noreply.github.com>
+Date: Sun, 19 Jul 2026 07:49:37 +0000
+Subject: [PATCH] feat: implement controlled propagation deep federated search
+
+- Define FederatedSearchRequest struct in src/memory/schema.rs
+- Add federated options to MemoryQueryFilters and MemoryQueryPayload
+- Refactor memory_query_handler and query_workspace_handler to support local_dbs filtering, propagate_to_mesh/peer_nodes routing, and max_hops propagation depth control with cycle prevention
+- Enrich search results with source_node_id and source_db_id
+- Add integration tests for FederatedSearchRequest serialization/deserialization
+---
+ config/test_hormer_config.json     | 183 -----------------------------
+ src/cli/handlers/memory.rs         | 153 +++++++++++++++---------
+ src/cli/handlers/mesh.rs           | 107 ++++++++++++++++-
+ src/cli/types.rs                   |   6 +-
+ src/memory/qmd/types.rs            |   8 ++
+ src/memory/qmd/writer.rs           |   1 +
+ src/memory/schema.rs               |  29 +++++
+ src/memory/store.rs                |   1 +
+ src/workspace/state.rs             |   1 +
+ tests/workspace_federation_test.rs |  26 ++++
+ 10 files changed, 273 insertions(+), 242 deletions(-)
+ delete mode 100644 config/test_hormer_config.json
+
+diff --git a/config/test_hormer_config.json b/config/test_hormer_config.json
+deleted file mode 100644
+index 9b65d353..00000000
+--- a/config/test_hormer_config.json
++++ /dev/null
+@@ -1,183 +0,0 @@
+-{
+-  "server": {
+-    "host": "0.0.0.0",
+-    "port": 8006,
+-    "log_level": "info",
+-    "code_graph_db_path": "data/code_graph.db",
+-    "url": "",
+-    "config_path": null
+-  },
+-  "workspace": {
+-    "default_workspace_id": "default",
+-    "default_plan": "community",
+-    "storage_limit_bytes": null,
+-    "request_limit": null,
+-    "request_unit_limit": null,
+-    "embedding_provider_mode": "bring_your_own",
+-    "managed_google_embeddings": false,
+-    "sync_policy": "local_only"
+-  },
+-  "memory": {
+-    "backend": "vec",
+-    "data_dir": "/home/jules/.local/share/xavier",
+-    "embedding_dimensions": 768,
+-    "workspace_dir": "/home/jules/.local/share/xavier/workspaces",
+-    "file_path": "/home/jules/.local/share/xavier/workspaces/default/memory-store.json",
+-    "sqlite_path": "/home/jules/.local/share/xavier/memory-store.sqlite3",
+-    "vec_path": "/home/jules/.local/share/xavier/vec-store.sqlite3",
+-    "supabase_url": null,
+-    "supabase_key": null,
+-    "postgres_url": null
+-  },
+-  "memory_layers": {
+-    "working": {
+-      "capacity": 100,
+-      "lru_exempt_access_threshold": 2,
+-      "bm25_k1": 1.5,
+-      "bm25_b": 0.75
+-    },
+-    "episodic": {
+-      "summary_window": 10,
+-      "max_sessions": 50,
+-      "min_event_importance": 0.5,
+-      "llm_summary_enabled": false
+-    }
+-  },
+-  "models": {
+-    "provider": "local",
+-    "api_flavor": "openai-compatible",
+-    "local_llm_url": "http://localhost:11434/v1",
+-    "local_llm_model": "qwen3-coder",
+-    "embedding_url": "http://localhost:11434/v1",
+-    "embedding_model": "embeddinggemma",
+-    "router_retrieved_model": "",
+-    "router_complex_model": "",
+-    "router_fast_model": "opencode/minimax-m2.7",
+-    "router_quality_model": "opencode/deepseek-v4-pro",
+-    "llm_model": null,
+-    "llm_api_key": null,
+-    "cloud_llm_model": null,
+-    "cloud_llm_url": null,
+-    "local_llm_api_key": null,
+-    "local_anthropic_url": null,
+-    "compaction_model": null,
+-    "zai_api_key": null,
+-    "zai_model": "glm-5.1",
+-    "opencode_model": "opencode/deepseek-v4-flash"
+-  },
+-  "retrieval": {
+-    "disable_hyde": true,
+-    "rrf_k": null,
+-    "keyword_weight": null,
+-    "vector_weight": null,
+-    "zone_boost_multiplier": null,
+-    "zone_penalty_multiplier": null,
+-    "cache_warming_enabled": false,
+-    "cache_warming_threshold": null,
+-    "cache_ttl_secs": null,
+-    "learned_policy": {
+-      "working_weight": 0.3,
+-      "episodic_weight": 0.3,
+-      "semantic_weight": 0.4,
+-      "semantic_similarity_weight": 0.49999994,
+-      "confidence_weight": 0.09999999,
+-      "edge_weight": 0.09999999,
+-      "recency_weight": 0.09999999,
+-      "cross_layer_weight": 0.049999993,
+-      "cross_dir_weight": 0.09999999,
+-      "peripheral_hub_weight": 0.049999993,
+-      "learning_rate": 0.01,
+-      "update_count": 1
+-    }
+-  },
+-  "sync": {
+-    "interval_ms": 300000,
+-    "lag_threshold_ms": 30000,
+-    "save_ok_rate_threshold": 0.95,
+-    "max_retries": 3,
+-    "retry_delay_ms": 1000,
+-    "min_health_interval_ms": 1000,
+-    "timeout_ms": 5000
+-  },
+-  "embedding": {
+-    "endpoint": "",
+-    "embedder": "",
+-    "gllm_model": "",
+-    "api_flavor": "openai-compatible",
+-    "api_key": null,
+-    "gllm_dimension": null,
+-    "cache_enabled": true,
+-    "cache_size": 10000,
+-    "cache_ttl_hours": 24,
+-    "cache_db_path": "data/embedding_cache.db",
+-    "timeout_secs": 30
+-  },
+-  "security": {
+-    "allowed_domains": "",
+-    "token_secret": null,
+-    "encryption_at_rest_enabled": false,
+-    "master_key_name": ""
+-  },
+-  "telegram": {
+-    "enabled": false,
+-    "bot_token": null,
+-    "webhook_url": null,
+-    "webhook_port": 0,
+-    "admin_ids": [],
+-    "notification_chat_id": null
+-  },
+-  "discord": {
+-    "enabled": false,
+-    "webhook_url": null,
+-    "bot_token": null,
+-    "rate_limit_per_min": 30
+-  },
+-  "router": {
+-    "policy_path": "",
+-    "policy_refresh_secs": 300
+-  },
+-  "chronicle": {
+-    "model": ""
+-  },
+-  "tgd": {
+-    "enabled": true,
+-    "schedule": "0 0 2 * * *",
+-    "confidence_threshold": 0.7,
+-    "min_new_history": 20,
+-    "iterations": 3,
+-    "learning_rate": 0.1,
+-    "refinement_threshold": 0.6,
+-    "refinement_batch_size": 5
+-  },
+-  "enterprise": {
+-    "db_path": "data/enterprise.db"
+-  },
+-  "agents": {
+-    "weekly_budget": null
+-  },
+-  "advanced": {
+-    "qjl_threshold": 500,
+-    "entity_extraction_enabled": true,
+-    "audit_chain_enabled": true,
+-    "panel_store_dir": "",
+-    "minhash_threshold": 0.85
+-  },
+-  "pgheart": {
+-    "url": null,
+-    "token": null,
+-    "instance_id": null,
+-    "sync_interval_ms": 60000,
+-    "auto_heartbeat": true
+-  },
+-  "data_commons": {
+-    "enabled": false,
+-    "consent_given": false,
+-    "data_dir": "data/commons",
+-    "wallet_address": null
+-  },
+-  "license": {
+-    "mesh_accepted": false,
+-    "license_type": "AGPL-3.0",
+-    "commercial_key": null
+-  }
+-}
+\ No newline at end of file
+diff --git a/src/cli/handlers/memory.rs b/src/cli/handlers/memory.rs
+index 7af65a3b..c2b87832 100644
+--- a/src/cli/handlers/memory.rs
++++ b/src/cli/handlers/memory.rs
+@@ -719,24 +719,51 @@ pub async fn memory_query_handler(
+         payload.query, limit
+     );
+ 
++    let local_node_id = if let Ok(identity) = xavier::mesh::NodeIdentity::load_or_create() {
++        identity.node_id.0
++    } else {
++        "local".to_string()
++    };
++
++    let federated = payload.federated.clone().unwrap_or_default();
++    let local_dbs = federated.local_dbs.clone();
++    let peer_nodes = federated.peer_nodes.clone();
++    let propagate_to_mesh = federated.propagate_to_mesh;
++    let max_hops = federated.max_hops;
++
+     // 1. Local workspace search future
+     let local_query = payload.query.clone();
+-    let memory = state.memory.clone();
++    let store = state.store.clone();
++    let default_workspace = state.workspace_id.clone();
++    let local_node_id_clone = local_node_id.clone();
+     let local_future = async move {
+         let mut results_list = Vec::new();
+-        match memory.search(&local_query, limit, None).await {
+-            Ok(results) => {
+-                for doc in results {
+-                    results_list.push(serde_json::json!({
+-                        "id": doc.id,
+-                        "content": doc.content,
+-                        "embedding": doc.embedding,
+-                        "source": "local",
+-                    }));
++        let target_dbs = if local_dbs.is_empty() {
++            vec![default_workspace]
++        } else {
++            local_dbs
++        };
++
++        for ws_id in target_dbs {
++            match store.search(&ws_id, &local_query, None).await {
++                Ok(results) => {
++                    for record in results {
++                        let doc = record.to_document();
++                        results_list.push(serde_json::json!({
++                            "id": doc.id,
++                            "path": doc.path,
++                            "content": doc.content,
++                            "metadata": doc.metadata,
++                            "embedding": doc.embedding,
++                            "source": "local",
++                            "source_node_id": local_node_id_clone.clone(),
++                            "source_db_id": ws_id.clone(),
++                        }));
++                    }
++                }
++                Err(e) => {
++                    info!("Memory query local error for DB {}: {}", ws_id, e);
+                 }
+-            }
+-            Err(e) => {
+-                info!("Memory query error: {}", e);
+             }
+         }
+         results_list
+@@ -744,53 +771,71 @@ pub async fn memory_query_handler(
+ 
+     // 2. Parallel fan-out to remote workspaces via the Mesh P2P API
+     let mut remote_futures = Vec::new();
+-    if let Ok(registry) = xavier::mesh::PeerRegistry::load() {
+-        let peers = registry.list_peers();
+-        
+-        for peer in peers {
+-            for ws_id in &peer.shared_workspace_ids {
+-                if let Some(token) = peer.shared_workspace_tokens.get(ws_id) {
+-                    let client = state.http_client.clone();
+-                    let url = format!("{}/v1/mesh/workspaces/query", peer.endpoint_url);
+-                    let query_payload = serde_json::json!({
+-                        "token": token,
+-                        "query": payload.query,
+-                        "limit": limit,
+-                    });
+-
+-                    let ws_id = ws_id.clone();
+-                    let peer_node_id = peer.node_id.0.clone();
+-                    remote_futures.push(async move {
+-                        let res = client.post(&url)
+-                            .json(&query_payload)
+-                            .timeout(std::time::Duration::from_secs(5))
+-                            .send()
+-                            .await;
+-
+-                        match res {
+-                            Ok(resp) => {
+-                                if resp.status().is_success() {
+-                                    if let Ok(body) = resp.json::<serde_json::Value>().await {
+-                                        if let Some(results_arr) = body.get("results").and_then(|v| v.as_array()) {
+-                                            let mut remote_docs = Vec::new();
+-                                            for r in results_arr {
+-                                                let mut r_clone = r.clone();
+-                                                if let Some(obj) = r_clone.as_object_mut() {
+-                                                    obj.insert("source".to_string(), serde_json::json!(format!("remote:{}::{}", peer_node_id, ws_id)));
++    if max_hops > 0 {
++        let next_federated = xavier::memory::schema::FederatedSearchRequest {
++            max_hops: max_hops - 1,
++            ..federated.clone()
++        };
++
++        if let Ok(registry) = xavier::mesh::PeerRegistry::load() {
++            let peers = registry.list_peers();
++
++            for peer in peers {
++                if !propagate_to_mesh && !peer_nodes.contains(&peer.node_id.0) {
++                    continue;
++                }
++
++                for ws_id in &peer.shared_workspace_ids {
++                    if let Some(token) = peer.shared_workspace_tokens.get(ws_id) {
++                        let client = state.http_client.clone();
++                        let url = format!("{}/v1/mesh/workspaces/query", peer.endpoint_url);
++                        let query_payload = serde_json::json!({
++                            "token": token,
++                            "query": payload.query,
++                            "limit": limit,
++                            "federated": next_federated,
++                        });
++
++                        let ws_id = ws_id.clone();
++                        let peer_node_id = peer.node_id.0.clone();
++                        remote_futures.push(async move {
++                            let res = client.post(&url)
++                                .json(&query_payload)
++                                .timeout(std::time::Duration::from_secs(5))
++                                .send()
++                                .await;
++
++                            match res {
++                                Ok(resp) => {
++                                    if resp.status().is_success() {
++                                        if let Ok(body) = resp.json::<serde_json::Value>().await {
++                                            if let Some(results_arr) = body.get("results").and_then(|v| v.as_array()) {
++                                                let mut remote_docs = Vec::new();
++                                                for r in results_arr {
++                                                    let mut r_clone = r.clone();
++                                                    if let Some(obj) = r_clone.as_object_mut() {
++                                                        obj.insert("source".to_string(), serde_json::json!(format!("remote:{}::{}", peer_node_id, ws_id)));
++                                                        if obj.get("source_node_id").is_none() {
++                                                            obj.insert("source_node_id".to_string(), serde_json::json!(peer_node_id.clone()));
++                                                        }
++                                                        if obj.get("source_db_id").is_none() {
++                                                            obj.insert("source_db_id".to_string(), serde_json::json!(ws_id.clone()));
++                                                        }
++                                                    }
++                                                    remote_docs.push(r_clone);
+                                                 }
+-                                                remote_docs.push(r_clone);
++                                                return Some(remote_docs);
+                                             }
+-                                            return Some(remote_docs);
+                                         }
+                                     }
+                                 }
++                                Err(e) => {
++                                    tracing::warn!("Failed to query remote workspace {} on peer {}: {}", ws_id, peer_node_id, e);
++                                }
+                             }
+-                            Err(e) => {
+-                                tracing::warn!("Failed to query remote workspace {} on peer {}: {}", ws_id, peer_node_id, e);
+-                            }
+-                        }
+-                        None
+-                    });
++                            None
++                        });
++                    }
+                 }
+             }
+         }
+diff --git a/src/cli/handlers/mesh.rs b/src/cli/handlers/mesh.rs
+index e19ff970..f08d0dad 100644
+--- a/src/cli/handlers/mesh.rs
++++ b/src/cli/handlers/mesh.rs
+@@ -8,7 +8,7 @@ use crate::cli::server::json_response;
+ use serde::{Deserialize, Serialize};
+ use tracing::info;
+ use xavier::enterprise::rbac::Role;
+-use xavier::memory::schema::ClearanceLevel;
++use xavier::memory::schema::{ClearanceLevel, FederatedSearchRequest};
+ use xavier::mesh::{
+     acl::{MeshAcl, NodeAclEntry},
+     MeshMaturityReport, NodeId, NodeIdentity, PeerInfo, PeerRegistry,
+@@ -350,11 +350,13 @@ pub struct JoinWorkspaceResponse {
+     pub workspace_id: String,
+ }
+ 
+-#[derive(Debug, Deserialize)]
++#[derive(Debug, Deserialize, Serialize, Clone)]
+ pub struct QueryWorkspaceRequest {
+     pub token: String,
+     pub query: String,
+     pub limit: Option<usize>,
++    #[serde(default)]
++    pub federated: Option<FederatedSearchRequest>,
+ }
+ 
+ pub async fn share_workspace_handler(
+@@ -655,6 +657,8 @@ pub async fn query_workspace_handler(
+         return json_response(StatusCode::UNAUTHORIZED, serde_json::json!({ "error": "Invalid token signature (forgery detected)" }));
+     }
+ 
++    let sender_node_id = inner_payload.get("node_id").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
++
+     let workspace_id = match inner_payload.get("workspace_id").and_then(|v| v.as_str()) {
+         Some(s) => s.to_string(),
+         None => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Missing workspace_id in token payload" })),
+@@ -723,17 +727,114 @@ pub async fn query_workspace_handler(
+         }
+     };
+ 
+-    let search_results: Vec<serde_json::Value> = results
++    let local_node_id = if let Ok(identity) = xavier::mesh::NodeIdentity::load_or_create() {
++        identity.node_id.0
++    } else {
++        "local".to_string()
++    };
++
++    let mut search_results: Vec<serde_json::Value> = results
+         .into_iter()
+         .map(|document| {
+             serde_json::json!({
+                 "id": document.id,
++                "path": document.path,
+                 "content": document.content,
++                "metadata": document.metadata,
+                 "embedding": document.embedding,
++                "source": format!("remote:{}::{}", local_node_id, workspace_id),
++                "source_node_id": local_node_id.clone(),
++                "source_db_id": workspace_id.clone(),
+             })
+         })
+         .collect();
+ 
++    let federated = payload.federated.clone().unwrap_or_default();
++    let max_hops = federated.max_hops;
++    let propagate_to_mesh = federated.propagate_to_mesh;
++    let peer_nodes = federated.peer_nodes.clone();
++
++    if max_hops > 0 {
++        let next_federated = xavier::memory::schema::FederatedSearchRequest {
++            max_hops: max_hops - 1,
++            ..federated.clone()
++        };
++
++        let mut remote_futures = Vec::new();
++        if let Ok(registry) = xavier::mesh::PeerRegistry::load() {
++            let peers = registry.list_peers();
++            for peer in peers {
++                if peer.node_id.0 == sender_node_id {
++                    continue;
++                }
++
++                if !propagate_to_mesh && !peer_nodes.contains(&peer.node_id.0) {
++                    continue;
++                }
++
++                for peer_ws_id in &peer.shared_workspace_ids {
++                    if let Some(peer_token) = peer.shared_workspace_tokens.get(peer_ws_id) {
++                        let client = state.http_client.clone();
++                        let url = format!("{}/v1/mesh/workspaces/query", peer.endpoint_url);
++                        let query_payload = serde_json::json!({
++                            "token": peer_token,
++                            "query": payload.query,
++                            "limit": payload.limit.unwrap_or(10),
++                            "federated": next_federated,
++                        });
++
++                        let peer_ws_id = peer_ws_id.clone();
++                        let peer_node_id = peer.node_id.0.clone();
++                        remote_futures.push(async move {
++                            let res = client.post(&url)
++                                .json(&query_payload)
++                                .timeout(std::time::Duration::from_secs(5))
++                                .send()
++                                .await;
++
++                            match res {
++                                Ok(resp) => {
++                                    if resp.status().is_success() {
++                                        if let Ok(body) = resp.json::<serde_json::Value>().await {
++                                            if let Some(results_arr) = body.get("results").and_then(|v| v.as_array()) {
++                                                let mut remote_docs = Vec::new();
++                                                for r in results_arr {
++                                                    let mut r_clone = r.clone();
++                                                    if let Some(obj) = r_clone.as_object_mut() {
++                                                        obj.insert("source".to_string(), serde_json::json!(format!("remote:{}::{}", peer_node_id, peer_ws_id)));
++                                                        if obj.get("source_node_id").is_none() {
++                                                            obj.insert("source_node_id".to_string(), serde_json::json!(peer_node_id.clone()));
++                                                        }
++                                                        if obj.get("source_db_id").is_none() {
++                                                            obj.insert("source_db_id".to_string(), serde_json::json!(peer_ws_id.clone()));
++                                                        }
++                                                    }
++                                                    remote_docs.push(r_clone);
++                                                }
++                                                return Some(remote_docs);
++                                            }
++                                        }
++                                    }
++                                }
++                                Err(e) => {
++                                    tracing::warn!("Failed to query remote workspace {} on peer {}: {}", peer_ws_id, peer_node_id, e);
++                                }
++                            }
++                            None
++                        });
++                    }
++                }
++            }
++        }
++
++        let remote_results = futures_util::future::join_all(remote_futures).await;
++        for res_opt in remote_results {
++            if let Some(mut remote_list) = res_opt {
++                search_results.append(&mut remote_list);
++            }
++        }
++    }
++
+     Json(serde_json::json!({
+         "status": "ok",
+         "query": payload.query,
+diff --git a/src/cli/types.rs b/src/cli/types.rs
+index e6afebb3..bcf61168 100644
+--- a/src/cli/types.rs
++++ b/src/cli/types.rs
+@@ -5,7 +5,7 @@
+ 
+ use serde::Deserialize;
+ use std::collections::HashMap;
+-use xavier::memory::schema::{ContextZone, MemoryQueryFilters};
++use xavier::memory::schema::{ContextZone, MemoryQueryFilters, FederatedSearchRequest};
+ 
+ #[derive(Debug, Deserialize)]
+ pub(crate) struct SearchPayload {
+@@ -99,12 +99,14 @@ pub(crate) struct SecurityScanPayload {
+     pub input: String,
+ }
+ 
+-#[derive(Debug, Deserialize)]
++#[derive(Debug, Deserialize, Clone)]
+ pub(crate) struct MemoryQueryPayload {
+     pub query: String,
+     pub limit: Option<usize>,
+     #[serde(default, rename = "filters")]
+     pub _filters: Option<serde_json::Value>,
++    #[serde(default)]
++    pub federated: Option<FederatedSearchRequest>,
+ }
+ 
+ #[derive(Debug, Deserialize)]
+diff --git a/src/memory/qmd/types.rs b/src/memory/qmd/types.rs
+index 92eb5ca2..558e305a 100644
+--- a/src/memory/qmd/types.rs
++++ b/src/memory/qmd/types.rs
+@@ -37,6 +37,10 @@ pub struct MemoryDocument {
+     pub minhash: Option<Vec<u64>>,
+     #[serde(default)]
+     pub score: f32,
++    #[serde(default)]
++    pub source_node_id: Option<String>,
++    #[serde(default)]
++    pub source_db_id: Option<String>,
+ }
+ 
+ impl Default for MemoryDocument {
+@@ -55,6 +59,8 @@ impl Default for MemoryDocument {
+             clearance: crate::memory::schema::ClearanceLevel::TopSecret,
+             minhash: None,
+             score: 0.0,
++            source_node_id: None,
++            source_db_id: None,
+         }
+     }
+ }
+@@ -84,6 +90,8 @@ impl MemoryDocument {
+                 .map(|m| m.len() * std::mem::size_of::<u64>())
+                 .unwrap_or(0) as u64
+             + 4 // score f32
++            + self.source_node_id.as_ref().map(|s| s.len()).unwrap_or(0) as u64
++            + self.source_db_id.as_ref().map(|s| s.len()).unwrap_or(0) as u64
+     }
+ }
+ 
+diff --git a/src/memory/qmd/writer.rs b/src/memory/qmd/writer.rs
+index fb8fc81b..07be9a7d 100644
+--- a/src/memory/qmd/writer.rs
++++ b/src/memory/qmd/writer.rs
+@@ -238,6 +238,7 @@ pub async fn add_document_typed_with_embedding(
+                 clearance: typed.as_ref().and_then(|t| t.clearance).unwrap_or_default(),
+                 minhash: None,
+                 score: 0.0,
++                ..Default::default()
+             })
+             .await?;
+     }
+diff --git a/src/memory/schema.rs b/src/memory/schema.rs
+index 9dc1c51d..669a11eb 100644
+--- a/src/memory/schema.rs
++++ b/src/memory/schema.rs
+@@ -338,6 +338,33 @@ pub struct TypedMemoryPayload {
+     pub clearance: Option<ClearanceLevel>,
+ }
+ 
++#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
++pub struct FederatedSearchRequest {
++    #[serde(default)]
++    pub local_dbs: Vec<String>,
++    #[serde(default)]
++    pub peer_nodes: Vec<String>,
++    #[serde(default)]
++    pub propagate_to_mesh: bool,
++    #[serde(default = "default_max_hops")]
++    pub max_hops: u8,
++}
++
++fn default_max_hops() -> u8 {
++    1
++}
++
++impl Default for FederatedSearchRequest {
++    fn default() -> Self {
++        Self {
++            local_dbs: Vec::new(),
++            peer_nodes: Vec::new(),
++            propagate_to_mesh: false,
++            max_hops: 1,
++        }
++    }
++}
++
+ #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+ pub struct MemoryQueryFilters {
+     pub kinds: Option<Vec<MemoryKind>>,
+@@ -368,6 +395,8 @@ pub struct MemoryQueryFilters {
+     pub clearances: Option<Vec<ClearanceLevel>>,
+     #[serde(default)]
+     pub path_prefix: Option<String>,
++    #[serde(default)]
++    pub federated: Option<FederatedSearchRequest>,
+ }
+ 
+ #[derive(Debug, Clone, PartialEq, Eq)]
+diff --git a/src/memory/store.rs b/src/memory/store.rs
+index bc1d0974..0dc5c6ff 100644
+--- a/src/memory/store.rs
++++ b/src/memory/store.rs
+@@ -357,6 +357,7 @@ impl MemoryRecord {
+             clearance: self.clearance,
+             minhash: None,
+             score: 0.0,
++            ..Default::default()
+         }
+     }
+ 
+diff --git a/src/workspace/state.rs b/src/workspace/state.rs
+index ab47a555..fa2196a4 100644
+--- a/src/workspace/state.rs
++++ b/src/workspace/state.rs
+@@ -764,6 +764,7 @@ impl WorkspaceState {
+                 .unwrap_or(existing.clearance),
+             minhash: None,
+             score: 0.0,
++            ..Default::default()
+         };
+         if let Some(object) = document.metadata.as_object_mut() {
+             let revision = existing
+diff --git a/tests/workspace_federation_test.rs b/tests/workspace_federation_test.rs
+index cf4d6259..442484c9 100644
+--- a/tests/workspace_federation_test.rs
++++ b/tests/workspace_federation_test.rs
+@@ -78,3 +78,29 @@ async fn test_workspace_sharing_token_roundtrip() {
+     assert_eq!(decoded_payload["workspace_id"], "default-workspace");
+     assert_eq!(decoded_payload["node_id"], "xv1-localnode");
+ }
++
++#[test]
++fn test_federated_search_request_serde() {
++    let json_str = r#"
++    {
++        "local_dbs": ["local1", "local2"],
++        "peer_nodes": ["node_a", "node_b"],
++        "propagate_to_mesh": true,
++        "max_hops": 3
++    }
++    "#;
++
++    let req: xavier::memory::schema::FederatedSearchRequest = serde_json::from_str(json_str).unwrap();
++    assert_eq!(req.local_dbs, vec!["local1".to_string(), "local2".to_string()]);
++    assert_eq!(req.peer_nodes, vec!["node_a".to_string(), "node_b".to_string()]);
++    assert!(req.propagate_to_mesh);
++    assert_eq!(req.max_hops, 3);
++
++    // Test default serialization/deserialization with missing fields
++    let json_empty = "{}";
++    let req_empty: xavier::memory::schema::FederatedSearchRequest = serde_json::from_str(json_empty).unwrap();
++    assert!(req_empty.local_dbs.is_empty());
++    assert!(req_empty.peer_nodes.is_empty());
++    assert!(!req_empty.propagate_to_mesh);
++    assert_eq!(req_empty.max_hops, 1);
++}
+-- 
+2.45.1.windows.1
+

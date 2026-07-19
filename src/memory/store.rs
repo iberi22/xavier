@@ -357,6 +357,7 @@ impl MemoryRecord {
             clearance: self.clearance,
             minhash: None,
             score: 0.0,
+            ..Default::default()
         }
     }
 

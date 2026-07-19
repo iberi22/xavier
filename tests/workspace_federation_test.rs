@@ -74,6 +74,31 @@ async fn test_workspace_sharing_token_roundtrip() {
     assert_eq!(decoded_payload["node_id"], "xv1-localnode");
 }
 
+#[test]
+fn test_federated_search_request_serde() {
+    let json_str = r#"
+    {
+        "local_dbs": ["local1", "local2"],
+        "peer_nodes": ["node_a", "node_b"],
+        "propagate_to_mesh": true,
+        "max_hops": 3
+    }
+    "#;
+
+    let req: xavier::memory::schema::FederatedSearchRequest = serde_json::from_str(json_str).unwrap();
+    assert_eq!(req.local_dbs, vec!["local1".to_string(), "local2".to_string()]);
+    assert_eq!(req.peer_nodes, vec!["node_a".to_string(), "node_b".to_string()]);
+    assert!(req.propagate_to_mesh);
+    assert_eq!(req.max_hops, 3);
+
+    // Test default serialization/deserialization with missing fields
+    let json_empty = "{}";
+    let req_empty: xavier::memory::schema::FederatedSearchRequest = serde_json::from_str(json_empty).unwrap();
+    assert!(req_empty.local_dbs.is_empty());
+    assert!(req_empty.peer_nodes.is_empty());
+    assert!(!req_empty.propagate_to_mesh);
+    assert_eq!(req_empty.max_hops, 1);
+}
 #[tokio::test]
 
 async fn test_workspace_sharing_with_namespace_acl_filtering() {
