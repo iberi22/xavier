@@ -19,6 +19,16 @@ Para una guía de instalación paso a paso enfocada en el funcionamiento 100% pr
 ./start-xavier-rag.ps1
 ```
 
+
+## SWAL ecosystem
+
+Xavier is the **L3 agentic memory** for all SWAL apps (not a product business DB).
+
+- Goal: monorepo `docs/SWAL/GOAL.md` · map: `docs/SWAL/PROJECT_MAP.md`
+- Local: `.gitcore/docs/SWAL_GOAL.md`
+- Consumers: shelf, hosteler, worldexams, maloca, veedur, backoffice, …
+- Pro unlock in apps: **SWAL node** (not Stripe). Mesh for PWAs: **edge-mesh**.
+- Platform shell: `maloca/apps/swal-backoffice`
 ### Manual / Linux
 ```bash
 # Install from source
@@ -222,3 +232,4 @@ Xavier is dual-licensed:
 - **Xavier Mesh License**: For network participation (Mesh), Governance, Data Commons, and Enterprise features. Free for individuals/OSS; paid for commercial entities above certain thresholds.
 
 See [LICENSE](LICENSE) and [LICENSE-MESH](LICENSE-MESH) for details. Commercial terms are documented in [docs/PRICING.md](docs/PRICING.md).
+

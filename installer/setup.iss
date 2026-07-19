@@ -1,9 +1,10 @@
 ; Inno Setup Script for Xavier
 #define MyAppName "Xavier"
-#define MyAppVersion "0.6.1-beta"
+#define MyAppVersion "0.12.0"
 #define MyAppPublisher "SouthWest AI Labs"
 #define MyAppURL "https://github.com/iberi22/xavier"
-#define MyAppExeName "xavier-gui.exe"
+; Main entry is the HTTP/CLI binary (serves Panel UI from panel-ui/build).
+#define MyAppExeName "xavier.exe"
 
 [Setup]
 ; NOTE: The value of AppId uniquely identifies this application. Do not use the same AppId value in installers for other applications.
@@ -35,19 +36,19 @@ Name: "envpath"; Description: "Add Xavier to system PATH"; GroupDescription: "Ad
 
 [Files]
 Source: "..\target\release\xavier.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\target\release\xavier-tui.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\target\release\xavier-gui.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\config\xavier.config.json"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\panel-ui\build\*"; DestDir: "{app}\panel-ui"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\target\release\xavier-tui.exe"; DestDir: "{app}"; Flags: ignoreversion; Check: FileExists(ExpandConstant('{src}\..\target\release\xavier-tui.exe'))
+Source: "..\config\xavier.config.json"; DestDir: "{app}"; Flags: ignoreversion skipifsourcedoesntexist
+; Panel UI must live under panel-ui/build (resolved next to the exe at runtime).
+Source: "..\panel-ui\build\*"; DestDir: "{app}\panel-ui\build"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; NOTE: Don't use "Flags: ignoreversion" on any shared system files
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName} GUI"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autoprograms}\{#MyAppName} TUI"; Filename: "{app}\xavier-tui.exe"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "http 8006 --mcp-port 0"; WorkingDir: "{app}"
+Name: "{autoprograms}\{#MyAppName} TUI"; Filename: "{app}\xavier-tui.exe"; Check: FileExists(ExpandConstant('{app}\xavier-tui.exe'))
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Parameters: "http 8006 --mcp-port 0"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipfsreqterminate
+Filename: "{app}\{#MyAppExeName}"; Parameters: "http 8006 --mcp-port 0"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipfsreqterminate
 
 [Code]
 const
