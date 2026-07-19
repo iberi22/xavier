@@ -203,9 +203,7 @@ impl Cli {
             Command::DataCommons { cmd } => {
                 data_commons::handle_data_commons_command(cmd.clone()).await
             }
-            Command::Governance { command } => {
-                governance::handle_governance(command.clone()).await
-            }
+            Command::Governance { command } => governance::handle_governance(command.clone()).await,
             Command::Wallet { cmd } => wallet::handle_wallet_command(cmd.clone()).await,
             Command::Session { cmd } => session::handle_session_command(cmd.clone()).await,
             Command::IndexSelf => {

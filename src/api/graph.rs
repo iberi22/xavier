@@ -2,16 +2,16 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
-use std::collections::HashSet;
 use axum::{
     extract::{Extension, Path, Query},
     response::IntoResponse,
     Json,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 use crate::{
-    memory::entity_graph::{EntityNeighbors, GraphDirection, EntityRecord, EntityRelationRecord},
+    memory::entity_graph::{EntityNeighbors, EntityRecord, EntityRelationRecord, GraphDirection},
     workspace::WorkspaceContext,
 };
 
@@ -257,14 +257,13 @@ pub async fn memory_graph_list_entities(
             .map(|s| s.trim().to_lowercase())
             .filter(|s| !s.is_empty())
             .collect();
-        entities.retain(|e| {
-            allowed_types.contains(&e.entity_type.as_str().to_lowercase())
-        });
+        entities.retain(|e| allowed_types.contains(&e.entity_type.as_str().to_lowercase()));
     }
 
     // Sort entities by trust_score desc, then name (stable order)
     entities.sort_by(|a, b| {
-        b.trust_score.total_cmp(&a.trust_score)
+        b.trust_score
+            .total_cmp(&a.trust_score)
             .then_with(|| a.name.cmp(&b.name))
     });
 
@@ -272,11 +271,8 @@ pub async fn memory_graph_list_entities(
     let limit = query.limit.unwrap_or(500).min(2000);
     let offset = query.offset.unwrap_or(0);
 
-    let paginated_entities: Vec<EntityRecord> = entities
-        .into_iter()
-        .skip(offset)
-        .take(limit)
-        .collect();
+    let paginated_entities: Vec<EntityRecord> =
+        entities.into_iter().skip(offset).take(limit).collect();
 
     let count = paginated_entities.len();
 
@@ -356,14 +352,13 @@ pub async fn memory_graph_view(
             .map(|s| s.trim().to_lowercase())
             .filter(|s| !s.is_empty())
             .collect();
-        nodes.retain(|e| {
-            allowed_types.contains(&e.entity_type.as_str().to_lowercase())
-        });
+        nodes.retain(|e| allowed_types.contains(&e.entity_type.as_str().to_lowercase()));
     }
 
     // Sort nodes stably: trust_score desc, then name asc
     nodes.sort_by(|a, b| {
-        b.trust_score.total_cmp(&a.trust_score)
+        b.trust_score
+            .total_cmp(&a.trust_score)
             .then_with(|| a.name.cmp(&b.name))
     });
 
@@ -404,7 +399,8 @@ pub async fn memory_graph_view(
 
     // Sort links stably for reliable UI representation
     links.sort_by(|a, b| {
-        a.source.cmp(&b.source)
+        a.source
+            .cmp(&b.source)
             .then_with(|| a.target.cmp(&b.target))
             .then_with(|| a.relation_type.cmp(&b.relation_type))
     });
@@ -434,13 +430,13 @@ pub async fn memory_graph_view(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::workspace::config::PlanTier;
-    use crate::workspace::EmbeddingProviderMode;
-    use crate::workspace::SyncPolicy;
-    use crate::workspace::state::WorkspaceState;
-    use crate::workspace::WorkspaceConfig;
     use crate::agents::RuntimeConfig;
     use crate::memory::store::MemoryBackend;
+    use crate::workspace::config::PlanTier;
+    use crate::workspace::state::WorkspaceState;
+    use crate::workspace::EmbeddingProviderMode;
+    use crate::workspace::SyncPolicy;
+    use crate::workspace::WorkspaceConfig;
     use axum::response::IntoResponse;
     use std::sync::Arc;
     use ulid::Ulid;
@@ -480,7 +476,9 @@ mod tests {
             limit: None,
             offset: None,
         };
-        let response = memory_graph_list_entities(Extension(ctx.clone()), Query(list_query)).await.into_response();
+        let response = memory_graph_list_entities(Extension(ctx.clone()), Query(list_query))
+            .await
+            .into_response();
         assert_eq!(response.status(), axum::http::StatusCode::OK);
 
         // Test view projection on empty graph
@@ -491,7 +489,9 @@ mod tests {
             max_depth: None,
             entity_type: None,
         };
-        let response = memory_graph_view(Extension(ctx), Query(view_query)).await.into_response();
+        let response = memory_graph_view(Extension(ctx), Query(view_query))
+            .await
+            .into_response();
         assert_eq!(response.status(), axum::http::StatusCode::OK);
     }
 
@@ -523,7 +523,9 @@ mod tests {
             max_depth: None,
             entity_type: None,
         };
-        let response = memory_graph_view(Extension(ctx), Query(view_query)).await.into_response();
+        let response = memory_graph_view(Extension(ctx), Query(view_query))
+            .await
+            .into_response();
         assert_eq!(response.status(), axum::http::StatusCode::NOT_FOUND);
     }
 
@@ -548,7 +550,9 @@ mod tests {
             limit: Some(10),
             offset: Some(0),
         };
-        let response = memory_graph_list_entities(Extension(ctx.clone()), Query(list_query)).await.into_response();
+        let response = memory_graph_list_entities(Extension(ctx.clone()), Query(list_query))
+            .await
+            .into_response();
         assert_eq!(response.status(), axum::http::StatusCode::OK);
 
         // 2. View projection test (limit truncates and sets truncated flag)
@@ -581,10 +585,12 @@ mod tests {
             entity_type: Some("person".to_string()),
         };
         let response_filtered = memory_graph_view(Extension(ctx), Query(view_query_filtered)).await;
-        let body_bytes_filtered = axum::body::to_bytes(response_filtered.into_response().into_body(), 1024 * 1024)
-            .await
-            .unwrap();
-        let view_res_filtered: GraphViewResponse = serde_json::from_slice(&body_bytes_filtered).unwrap();
+        let body_bytes_filtered =
+            axum::body::to_bytes(response_filtered.into_response().into_body(), 1024 * 1024)
+                .await
+                .unwrap();
+        let view_res_filtered: GraphViewResponse =
+            serde_json::from_slice(&body_bytes_filtered).unwrap();
 
         assert_eq!(view_res_filtered.status, "ok");
         assert!(!view_res_filtered.truncated);

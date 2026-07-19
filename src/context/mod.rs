@@ -3,7 +3,6 @@
 pub mod bm25;
 pub mod builder;
 pub mod classifier;
-pub mod token_estimate;
 pub mod executor;
 pub mod graph_retriever;
 pub mod hybrid;
@@ -17,13 +16,13 @@ pub mod skill_dispatcher;
 pub mod skill_registry;
 pub mod skills;
 pub mod timeline;
+pub mod token_estimate;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 pub use builder::{ContextBuilder, ContextBuilderConfig};
 pub use classifier::{ContextClassifier, ContextLevel};
-pub use token_estimate::estimate_tokens;
 pub use executor::SkillExecutor;
 pub use indexer::ContextIndexer;
 pub use manager::ContextManager;
@@ -37,6 +36,7 @@ pub use skill_dispatcher::{
 pub use skill_registry::{IndexedSkill, SkillRegistry};
 pub use skills::{Skill, SkillLoader};
 pub use timeline::{TimeSlice, TimelineEngine, TimelineEventSummary, TimelineQuery};
+pub use token_estimate::estimate_tokens;
 
 /// Canonical unit used by context regeneration.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

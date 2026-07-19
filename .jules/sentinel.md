@@ -1,0 +1,4 @@
+## 2026-07-18 - Fix Command Injection in memory scanner
+**Vulnerability:** A `Command::new("cmd")` shell command was constructed using `format!` and the `session_db_path` dynamically in `src/maturity/scanner/memory_scanner.rs`, allowing Command Injection.
+**Learning:** Shell commands should not be constructed dynamically using untrusted data or dynamically generated paths. Furthermore, relying on Windows-only binaries like `findstr` via `cmd /C` within a multi-platform app breaks the fallback mechanism on macOS and Linux.
+**Prevention:** Avoid shelling out for tasks that can be performed safely via standard library functions. For example, falling back to scanning files using `std::fs::read` and inspecting bytes securely with `windows().filter()` avoids injecting external commands altogether and works across all platforms.

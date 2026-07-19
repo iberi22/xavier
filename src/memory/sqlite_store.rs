@@ -729,9 +729,8 @@ impl MemoryStore for SqliteMemoryStore {
         let workspace_id = workspace_id.to_string();
         ConnectionManager::global()
             .with_conn(&self.project_id, move |conn| {
-                let mut stmt = conn.prepare(
-                    "SELECT data FROM entity_graph_snapshots WHERE workspace_id = ?",
-                )?;
+                let mut stmt =
+                    conn.prepare("SELECT data FROM entity_graph_snapshots WHERE workspace_id = ?")?;
                 match stmt.query_row([&workspace_id], |row| row.get::<_, String>(0)) {
                     Ok(data) => Ok(Some(data)),
                     Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),

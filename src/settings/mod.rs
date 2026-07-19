@@ -83,7 +83,10 @@ pub mod tests {
         std::env::remove_var("XAVIER_CONFIG_PATH");
 
         let settings = XavierSettings::load().expect("Should parse config/xavier.config.json");
-        assert!(settings.is_some(), "config/xavier.config.json should exist in the environment");
+        assert!(
+            settings.is_some(),
+            "config/xavier.config.json should exist in the environment"
+        );
 
         let s = settings.unwrap();
         // Check local-first defaults from Step 1
@@ -91,7 +94,10 @@ pub mod tests {
         assert_eq!(s.models.embedding_model, "embeddinggemma");
         assert_eq!(s.models.router_fast_model, "");
         assert_eq!(s.models.router_quality_model, "");
-        assert_eq!(s.embedding.endpoint, "http://localhost:11434/api/embeddings");
+        assert_eq!(
+            s.embedding.endpoint,
+            "http://localhost:11434/api/embeddings"
+        );
         assert_eq!(s.embedding.embedder, "local");
         assert_eq!(s.embedding.gllm_model, "embeddinggemma");
 

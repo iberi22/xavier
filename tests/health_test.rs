@@ -88,9 +88,7 @@ async fn test_health_endpoints_e2e() {
     // - embeddings.model (string no vacío)
     // - uptime_secs (número >= 0)
 
-    let mode = body_v1["mode"]
-        .as_str()
-        .expect("mode should be a string");
+    let mode = body_v1["mode"].as_str().expect("mode should be a string");
     println!("Retrieved mode: {}", mode);
 
     let llm_reachable = body_v1["llm"]["reachable"]
@@ -101,7 +99,10 @@ async fn test_health_endpoints_e2e() {
     let embeddings_model = body_v1["embeddings"]["model"]
         .as_str()
         .expect("embeddings.model should be a string");
-    assert!(!embeddings_model.is_empty(), "embeddings.model should not be empty");
+    assert!(
+        !embeddings_model.is_empty(),
+        "embeddings.model should not be empty"
+    );
     println!("Retrieved embeddings.model: {}", embeddings_model);
 
     let uptime_secs = body_v1["uptime_secs"]

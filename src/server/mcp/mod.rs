@@ -16,8 +16,8 @@ pub use session::*;
 pub use transport::*;
 pub use types::*;
 #[cfg(test)]
-pub mod tests;
+pub mod progressive;
 #[cfg(test)]
 pub mod regression_token_savings;
 #[cfg(test)]
-pub mod progressive;
+pub mod tests;

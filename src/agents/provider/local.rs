@@ -73,7 +73,8 @@ mod tests {
             }
         });
 
-        let mock = server.mock("POST", "/v1/chat/completions")
+        let mock = server
+            .mock("POST", "/v1/chat/completions")
             .match_header("Content-Type", "application/json")
             // Verify there is NO Authorization header
             .match_header("Authorization", mockito::Matcher::Missing)
@@ -90,7 +91,9 @@ mod tests {
             .create_async()
             .await;
 
-        let res = client.generate_text("You are a helpful assistant.", "Hello").await;
+        let res = client
+            .generate_text("You are a helpful assistant.", "Hello")
+            .await;
         assert!(res.is_ok(), "Failed to generate response: {:?}", res.err());
         let res = res.unwrap();
         assert_eq!(res.text, "Hello from mock local Ollama!");
@@ -132,7 +135,8 @@ mod tests {
             }]
         });
 
-        let mock = server.mock("POST", "/v1/chat/completions")
+        let mock = server
+            .mock("POST", "/v1/chat/completions")
             .match_header("Content-Type", "application/json")
             // Verify the Authorization header contains Bearer ollama-secret-token
             .match_header("Authorization", "Bearer ollama-secret-token")

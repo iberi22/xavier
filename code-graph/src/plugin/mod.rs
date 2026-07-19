@@ -20,5 +20,5 @@ pub use health::PluginHealthMonitor;
 pub use manager::PluginManager;
 pub use types::{
     FallbackResolver, FallbackStep, FileToParse, PluginConfig, PluginDescriptor, PluginEngine,
-    PluginHealth, PluginRequest, PluginResponse, PluginRegistry, RegistryEntry,
+    PluginHealth, PluginRegistry, PluginRequest, PluginResponse, RegistryEntry,
 };

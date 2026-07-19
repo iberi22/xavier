@@ -303,19 +303,21 @@ impl Orchestrator {
                     if let Ok(symbols) = cq.in_file(path) {
                         if let Some(first) = symbols.first() {
                             let content = if let Some(sig) = &first.signature {
-                                format!("// CodeGraph Match: {}\n{}\n// Source: {}", first.name, sig, path)
+                                format!(
+                                    "// CodeGraph Match: {}\n{}\n// Source: {}",
+                                    first.name, sig, path
+                                )
                             } else {
                                 format!("// CodeGraph Match: {} in {}", first.name, path)
                             };
                             let mut c_doc =
                                 ContextDocument::new(document_id, session_id, "system", content);
-                            c_doc.metadata =
-                                serde_json::json!({
-                                    "source": "code_graph",
-                                    "path": path,
-                                    "symbol": first.name,
-                                    "kind": format!("{:?}", first.kind)
-                                });
+                            c_doc.metadata = serde_json::json!({
+                                "source": "code_graph",
+                                "path": path,
+                                "symbol": first.name,
+                                "kind": format!("{:?}", first.kind)
+                            });
                             c_doc
                         } else {
                             continue;

@@ -48,7 +48,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_proxy_use_case_provider_fallback() {
-        use crate::agents::provider::router::{ProviderRouter, ProviderKind};
+        use crate::agents::provider::router::{ProviderKind, ProviderRouter};
         use tokio::sync::RwLock;
 
         let rate_manager = Arc::new(crate::agents::rate_limit::RateLimitManager::new());
@@ -67,11 +67,7 @@ mod tests {
 
         let mut fallback_attempted = false;
         let result = use_case
-            .handle_provider_fallback(
-                "openai",
-                "gpt-4o",
-                &mut fallback_attempted,
-            )
+            .handle_provider_fallback("openai", "gpt-4o", &mut fallback_attempted)
             .await;
 
         assert!(result.is_some());
@@ -82,11 +78,7 @@ mod tests {
 
         // A second fallback attempt should fail because fallback_attempted is now true (preventing recursion)
         let result_second = use_case
-            .handle_provider_fallback(
-                "anthropic",
-                "gpt-4o",
-                &mut fallback_attempted,
-            )
+            .handle_provider_fallback("anthropic", "gpt-4o", &mut fallback_attempted)
             .await;
         assert!(result_second.is_none());
     }

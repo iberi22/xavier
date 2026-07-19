@@ -8,7 +8,9 @@ use std::collections::HashMap;
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
-use crate::agents::provider::types::{ApiFlavor, ProviderMode, ProviderReachability, ProviderTarget};
+use crate::agents::provider::types::{
+    ApiFlavor, ProviderMode, ProviderReachability, ProviderTarget,
+};
 use crate::domain::proxy::SecretInjectionStrategy;
 use crate::secrets::vault::HardwareVault;
 
@@ -502,7 +504,7 @@ impl ModelProviderConfig {
         // Note: some providers might not implement `/models` on their base_url.
         // We trim trailing slashes.
         let url = format!("{}/models", base_url.trim_end_matches('/'));
-        
+
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(2))
             .build()
@@ -719,11 +721,12 @@ mod tests {
         // force unique url so cache doesn't hit
         config.base_url = Some(format!("{}/success", server.url()));
 
-        let mock = server.mock("GET", "/success/models")
+        let mock = server
+            .mock("GET", "/success/models")
             .with_status(200)
             .create_async()
             .await;
-        
+
         let reachability = config.is_reachable().await;
         assert_eq!(reachability, ProviderReachability::ConfiguredAndReachable);
         mock.assert_async().await;
@@ -738,11 +741,12 @@ mod tests {
         // force unique url so cache doesn't hit
         config.base_url = Some(format!("{}/failure", server.url()));
 
-        let mock = server.mock("GET", "/failure/models")
+        let mock = server
+            .mock("GET", "/failure/models")
             .with_status(500)
             .create_async()
             .await;
-        
+
         let reachability = config.is_reachable().await;
         assert_eq!(reachability, ProviderReachability::ConfiguredAndUnreachable);
         mock.assert_async().await;

@@ -9,7 +9,7 @@ use xavier::enterprise::rbac::Role;
 use xavier::memory::schema::ClearanceLevel;
 use xavier::mesh::{
     acl::{MeshAcl, NodeAclEntry},
-    NodeId, NodeIdentity, PeerInfo, PeerRegistry, MeshMaturityReport,
+    MeshMaturityReport, NodeId, NodeIdentity, PeerInfo, PeerRegistry,
 };
 
 #[derive(Debug, Serialize, Deserialize)]

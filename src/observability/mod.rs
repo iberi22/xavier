@@ -61,8 +61,8 @@ static LOGGER_GUARD: OnceLock<[tracing_appender::non_blocking::WorkerGuard; 1]> 
 
 /// Purges log files in `log_dir` starting with "xavier." that are older than `max_age_days`.
 pub fn purge_old_logs(log_dir: &std::path::Path, max_age_days: u32) {
-    let cutoff = std::time::SystemTime::now()
-        - std::time::Duration::from_secs(max_age_days as u64 * 86400);
+    let cutoff =
+        std::time::SystemTime::now() - std::time::Duration::from_secs(max_age_days as u64 * 86400);
     if let Ok(entries) = std::fs::read_dir(log_dir) {
         let mut purged = 0usize;
         for entry in entries.flatten() {

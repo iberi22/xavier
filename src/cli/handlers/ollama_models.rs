@@ -4,15 +4,10 @@
 //! environment. The ProxyUseCase and ModelProviderConfig read these variables dynamically on
 //! subsequent requests, allowing model hot-swapping without restarting the Xavier server process.
 
-use axum::{
-    extract::State,
-    http::StatusCode,
-    response::Response,
-    Json,
-};
+use axum::{extract::State, http::StatusCode, response::Response, Json};
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
-use tracing::{info, error};
+use tracing::{error, info};
 
 use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
@@ -53,7 +48,12 @@ pub async fn list_models_handler(State(state): State<CliState>) -> Response {
 
     // Use a reasonable timeout for checking tags
     let client = &state.http_client;
-    match client.get(&url).timeout(Duration::from_secs(5)).send().await {
+    match client
+        .get(&url)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await
+    {
         Ok(resp) => {
             if resp.status().is_success() {
                 match resp.json::<serde_json::Value>().await {
@@ -167,7 +167,10 @@ pub async fn set_active_handler(Json(payload): Json<SetActivePayload>) -> Respon
             }),
         )
     } else if kind == "embedding" {
-        info!("Hot-swapping active local embedding model to '{}'", payload.model);
+        info!(
+            "Hot-swapping active local embedding model to '{}'",
+            payload.model
+        );
         std::env::set_var("XAVIER_EMBEDDING_MODEL", &payload.model);
         json_response(
             StatusCode::OK,
@@ -215,32 +218,32 @@ pub async fn get_active_handler() -> Response {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::cli::state::CodeGraphState;
     use axum::body::to_bytes;
-    use std::sync::{Arc, Mutex};
     use std::collections::HashMap;
     use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
     use tokio::sync::RwLock as AsyncRwLock;
-    use crate::cli::state::CodeGraphState;
 
     // A static mutex to serialize tests modifying environment variables
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     async fn create_test_state() -> CliState {
-        use xavier::ports::inbound::AgentLifecyclePort;
-        use xavier::coordination::SimpleAgentRegistry;
-        use xavier::memory::qmd_memory::QmdMemory;
-        use xavier::app::qmd_memory_adapter::QmdMemoryAdapter;
-        use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
-        use xavier::codebase::conversations_db::ConversationsDb;
-        use xavier::coordination::KeyLendingEngine;
-        use xavier::secrets::audit::QmdAuditLogger;
-        use xavier::tasks::store::{TaskService, InMemoryTaskStore};
+        use xavier::agents::provider::router::{ProviderKind, ProviderRouter};
         use xavier::agents::rate_limit::RateLimitManager;
         use xavier::app::proxy_use_case::ProxyUseCase;
-        use xavier::agents::provider::router::{ProviderRouter, ProviderKind};
+        use xavier::app::qmd_memory_adapter::QmdMemoryAdapter;
+        use xavier::codebase::conversations_db::ConversationsDb;
+        use xavier::coordination::KeyLendingEngine;
+        use xavier::coordination::SimpleAgentRegistry;
         use xavier::embedding::NoopEmbedder;
         use xavier::memory::agent_indexer::AgentIndexer;
         use xavier::memory::file_indexer::{FileIndexer, FileIndexerConfig};
+        use xavier::memory::qmd_memory::QmdMemory;
+        use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
+        use xavier::ports::inbound::AgentLifecyclePort;
+        use xavier::secrets::audit::QmdAuditLogger;
+        use xavier::tasks::store::{InMemoryTaskStore, TaskService};
 
         let docs = Arc::new(AsyncRwLock::new(Vec::new()));
         let qmd_memory = Arc::new(QmdMemory::new_with_workspace(docs, "test-ws"));
@@ -270,7 +273,11 @@ mod tests {
             security_scan: Arc::new(xavier::app::security_service::SecurityService::new()),
             _time_store: None,
             agent_registry: SimpleAgentRegistry::new(None) as Arc<dyn AgentLifecyclePort>,
-            panel_store: Arc::new(ConversationsDb::open_in_memory("test-project").await.unwrap()),
+            panel_store: Arc::new(
+                ConversationsDb::open_in_memory("test-project")
+                    .await
+                    .unwrap(),
+            ),
             secrets_engine: Arc::new(KeyLendingEngine::new(Box::new(QmdAuditLogger::new()), None)),
             event_bus: xavier::coordination::XavierEventBus::new(10),
             tasks: Arc::new(TaskService::new(Arc::new(InMemoryTaskStore::new()))),
@@ -283,16 +290,17 @@ mod tests {
             )),
             usage_counters: Arc::new(xavier::observability::UsageCounters::new()),
             session_manager: Arc::new(xavier::security::sessions::SessionManager::new(60)),
-            provider_router: Arc::new(tokio::sync::RwLock::new(
-                ProviderRouter::new(ProviderKind::Local)
-            )),
+            provider_router: Arc::new(tokio::sync::RwLock::new(ProviderRouter::new(
+                ProviderKind::Local,
+            ))),
             embedder: Arc::new(NoopEmbedder),
-            agent_indexer: Arc::new(AgentIndexer::new(
-                FileIndexer::new(FileIndexerConfig::default(), None)
-            )),
+            agent_indexer: Arc::new(AgentIndexer::new(FileIndexer::new(
+                FileIndexerConfig::default(),
+                None,
+            ))),
             auth_store: None,
             openclaw_indexer: Arc::new(crate::memory::openclaw_indexer::OpenClawAgentIndexer::new(
-                Arc::new(NoopEmbedder)
+                Arc::new(NoopEmbedder),
             )),
             system_scan_cache: Arc::new(tokio::sync::RwLock::new(None)),
         }
@@ -349,7 +357,10 @@ mod tests {
         };
         let response = set_active_handler(Json(payload)).await;
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(std::env::var("XAVIER_LOCAL_LLM_MODEL").unwrap(), "swapped-llm-model");
+        assert_eq!(
+            std::env::var("XAVIER_LOCAL_LLM_MODEL").unwrap(),
+            "swapped-llm-model"
+        );
 
         // 2. Swap Embedding
         let payload = SetActivePayload {
@@ -358,7 +369,10 @@ mod tests {
         };
         let response = set_active_handler(Json(payload)).await;
         assert_eq!(response.status(), StatusCode::OK);
-        assert_eq!(std::env::var("XAVIER_EMBEDDING_MODEL").unwrap(), "swapped-emb-model");
+        assert_eq!(
+            std::env::var("XAVIER_EMBEDDING_MODEL").unwrap(),
+            "swapped-emb-model"
+        );
 
         // 3. Swap Invalid
         let payload = SetActivePayload {
@@ -389,7 +403,8 @@ mod tests {
             ]
         });
 
-        let mock = server.mock("GET", "/api/tags")
+        let mock = server
+            .mock("GET", "/api/tags")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(serde_json::to_string(&response_data).unwrap())
@@ -421,7 +436,8 @@ mod tests {
             "status": "success"
         });
 
-        let mock = server.mock("POST", "/api/pull")
+        let mock = server
+            .mock("POST", "/api/pull")
             .match_body(mockito::Matcher::Json(serde_json::json!({
                 "name": "llama3:latest",
                 "stream": false
@@ -439,7 +455,8 @@ mod tests {
             Json(PullModelPayload {
                 name: "llama3:latest".to_string(),
             }),
-        ).await;
+        )
+        .await;
         assert_eq!(response.status(), StatusCode::OK);
 
         let body_bytes = to_bytes(response.into_body(), 2048).await.unwrap();
@@ -464,7 +481,10 @@ mod tests {
 
         let body_bytes = to_bytes(response.into_body(), 2048).await.unwrap();
         let json_body: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-        assert!(json_body["error"].as_str().unwrap().contains("ollama unreachable"));
+        assert!(json_body["error"]
+            .as_str()
+            .unwrap()
+            .contains("ollama unreachable"));
 
         std::env::remove_var("XAVIER_LOCAL_LLM_URL");
     }
