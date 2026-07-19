@@ -194,6 +194,7 @@ async fn test_mesh_permissions_and_pairing() {
                 clearance: ClearanceLevel::TopSecret, // High clearance but...
                 namespaces: Some(vec!["project-x".to_string()]), // ...restricted namespace
                 public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
+                namespace_acl: None,
             },
         )
         .unwrap();
@@ -220,6 +221,7 @@ async fn test_mesh_permissions_and_pairing() {
                 clearance: ClearanceLevel::TopSecret,
                 namespaces: Some(vec!["open".to_string()]),
                 public_key_hex: xavier::crypto::hex_encode(&identity_a.public_key),
+                namespace_acl: None,
             },
         )
         .unwrap();

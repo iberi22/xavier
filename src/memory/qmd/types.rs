@@ -37,6 +37,10 @@ pub struct MemoryDocument {
     pub minhash: Option<Vec<u64>>,
     #[serde(default)]
     pub score: f32,
+    #[serde(default)]
+    pub source_node_id: Option<String>,
+    #[serde(default)]
+    pub source_db_id: Option<String>,
 }
 
 impl Default for MemoryDocument {
@@ -55,6 +59,8 @@ impl Default for MemoryDocument {
             clearance: crate::memory::schema::ClearanceLevel::TopSecret,
             minhash: None,
             score: 0.0,
+            source_node_id: None,
+            source_db_id: None,
         }
     }
 }
@@ -84,6 +90,8 @@ impl MemoryDocument {
                 .map(|m| m.len() * std::mem::size_of::<u64>())
                 .unwrap_or(0) as u64
             + 4 // score f32
+            + self.source_node_id.as_ref().map(|s| s.len()).unwrap_or(0) as u64
+            + self.source_db_id.as_ref().map(|s| s.len()).unwrap_or(0) as u64
     }
 }
 
