@@ -24,7 +24,7 @@ La iniciativa **Xavier 100% Local** busca habilitar el funcionamiento completo d
 | :--- | :--- | :--- | :--- |
 | **Ola 1** | Estabilización de Capacidad Local | ✅ **DONE** | Compilación limpia, `EmbedderConfig::auto()`, `is_reachable()`, endpoints base. |
 | **Ola 2** | Integración & Fallback Elegante | ✅ **DONE** | Proxy local, fallback chain, memory degradation, UI modo, tests, config default. |
-| **Ola 3** | Observabilidad & Hardening | ✅ **DONE (funcional)** | Circuit breaker, doctor, health, reindex, panel LLM, MCP/Telegram status, Docker/docs/smoke, **UsageCounters (#578)**. EPIC formal #589 en cierre. |
+| **Ola 3** | Observabilidad & Hardening | ✅ **DONE** | Circuit breaker, doctor, health, reindex, panel LLM, MCP/Telegram status, Docker/docs/smoke, **UsageCounters (#578)**. EPIC formal #589 en cierre. |
 | **Ola 4** | Gestión Dinámica + paridad | ✅ **DONE** | #619 Ollama API · #615 metrics UI · #622 headless fallback + Ollama UI + e2e + docs. `feat-local-first` **100%**. |
 
 ---
@@ -110,12 +110,12 @@ Issues 01–13 (local provider, fallback chain, memory degradation, boot, UI, te
 | Criterio | Estado |
 | :--- | :--- |
 | LLM local usable vía ProxyUseCase | ✅ |
-| Fallback cloud + memoria | ✅ panel; ⚠️ headless sin memory-fallback explícito |
+| Fallback cloud + memoria | ✅ panel y headless con memory-fallback explícito |
 | Circuit breaker | ✅ |
 | Doctor + health + local_status | ✅ |
 | Docker + docs + smoke | ✅ |
-| Métricas tokens/providers/fallback | ❌ #578 |
-| Hot-swap modelos UI | ❌ Ola 4 |
-| features.json + ROADMAP + devlog al día | 🟡 parcial (esta actualización) |
+| Métricas tokens/providers/fallback | ✅ #578 (UsageCounters) |
+| Hot-swap modelos UI | ✅ (Ola 4 hot-swap completo) |
+| features.json + ROADMAP + devlog al día | ✅ completo |
 
-Cuando #578 y #589 cierren: **feat-local-first → ~96%** (resta Ola 4 hot-swap para 100%).
+Todo completado con éxito: **feat-local-first → 100% DONE** estable.

@@ -116,5 +116,5 @@ async fn test_hierarchical_curation_and_retrieval() {
     assert!(graph_context
         .expect("test assertion")
         .content
-        .contains("FACT: Rust provides Memory Safety"));
+        .contains("FACT: rust provides memory_safety"));
 }

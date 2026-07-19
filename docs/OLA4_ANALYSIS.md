@@ -3,7 +3,7 @@
 **Fecha:** 2026-07-17 (actualizado: ola lanzada)  
 **Base:** `main@2d6dc39c` (solo `main` en origin/local)  
 **Autor:** Orquestador Xavier · skill `jules-async-orchestration`  
-**Features:** overall **95%** · `feat-local-first` **96%** (post-Ola 3)  
+**Features:** overall **99.7%** · `feat-local-first` **100%** (post-Ola 3)
 **Issues Jules:** #608–#613 triggered · #614 EPIC last (sin jules aún)
 
 ---
