@@ -12,8 +12,8 @@
     "features_draft": 0,
     "features_planned": 0,
     "features_stable": 25,
-    "overall_progress_pct": 99.5,
-    "reconciliation_notes": "2026-07-18 post Ola Graph: added feat-graph-explorer 92%. Overall avg from feature progress_pct (not claimed 100%). Full lib battery 1104/1122 pass (98.4%). Graph-specific suites green. Release binary built; legacy schema_migrations needs name column upgrade for existing DBs."
+    "overall_progress_pct": 99.7,
+    "reconciliation_notes": "2026-07-18 Windows full-working: feat-graph-explorer 98% after live smoke (memory/code/panel graphs 200, memory add/search 200). Residual: MCP tools/list protocol drift, optional GRAPH_LAYERS.md, bulk reindex after embedding model change. Prefer HTTP over MCP."
   },
   "features": [
     {
@@ -562,7 +562,7 @@
       "name": "Multi-layer Graph Explorer (Roadmap | Memory KG | Code)",
       "category": "ui",
       "status": "stable",
-      "progress_pct": 92,
+      "progress_pct": 98,
       "description": "Panel multi-layer graph: roadmap CRUD (panel_graphs), Memory KG HTTP view from EntityGraph, Code force-view from code_graph.db, EntityGraph SQLite snapshot durability",
       "steps": [
         "Roadmap GET/POST /panel/api/graph + empty state UI",
@@ -571,16 +571,18 @@
         "panel-ui adapters + GraphCanvas multi-layer tabs",
         "EntityGraph snapshot persistence",
         "Legacy schema_migrations upgrade for name column",
-        "Docs GRAPH_LAYERS + live QA on production data dir"
+        "Windows live smoke: panel project_id + null embeddings + FTS upgrade",
+        "Docs GRAPH_LAYERS residual"
       ],
       "passes": true,
-      "verified_by": "local-test-battery-2026-07-18",
+      "verified_by": "windows-smoke-2026-07-18",
       "github_issue": 664,
       "last_tested": "2026-07-18",
-      "notes": "Code landed via PRs #663,#676,#674,#675,#677,#679. Panel-ui tests 18/18. Graph/panel/entity_graph unit tests PASS. Full lib: 1104 pass / 18 fail (pre-existing MCP/settings/embedding). Live: new binary needs schema_migrations upgrade on legacy DB; clean data dir exposes graph routes 200. MCP stdio handshake OK, tools/list protocol mismatch with Grok. Docs polish residual.",
-      "implemented_in": "src/api/graph.rs, src/cli/handlers/code.rs, src/cli/server.rs, src/workspace/state.rs, panel-ui/src/components/GraphCanvas.tsx, panel-ui/src/api/graphAdapters.ts",
+      "notes": "Live Windows smoke PASS on :8006 with AppData vec-store: /memory/graph/* /code/graph/view /panel/api/graph /memory/add|search all 200. Fixes: panel uses hashed vec_store project_id; null embeddings; legacy entities.workspace_id before V4 indexes; symbols_fts rebuild with stable_id; sqlite-vec registered before pool. Script: scripts/start-xavier-windows.ps1. Residual: MCP tools/list, GRAPH_LAYERS.md.",
+      "implemented_in": "src/api/graph.rs, src/cli/handlers/code.rs, src/cli/server.rs, src/server/panel/storage.rs, src/memory/sqlite_vec_store/mod.rs, code-graph/src/db/mod.rs, panel-ui/src/components/GraphCanvas.tsx, panel-ui/src/api/graphAdapters.ts, scripts/start-xavier-windows.ps1",
       "tests": [
         "server::panel::tests::graphs_crud",
+        "storage::migrations::tests::legacy_entities_missing_workspace_id_survives_v1_closure",
         "entity_graph unit suite",
         "panel-ui graphAdapters + roadmapGraph tests"
       ]
@@ -597,6 +599,10 @@
     "benchmark_smoke": "python scripts/benchmarks/run_locomo_benchmark.py --sample-limit 1 --question-limit 2"
   }
 }
+
+
+
+
 
 
 

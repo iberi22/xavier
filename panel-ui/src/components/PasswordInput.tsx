@@ -1,16 +1,27 @@
 import React, { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
 
-interface PasswordInputProps extends React.InputHTMLAttributes<HTMLInputElement> {
+interface PasswordInputProps
+  extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
 }
 
-export const PasswordInput: React.FC<PasswordInputProps> = ({ label, ...props }) => {
+export const PasswordInput: React.FC<PasswordInputProps> = ({
+  label,
+  ...props
+}) => {
   const [show, setShow] = useState(false);
 
   return (
     <div className="flex flex-col gap-1 w-full">
-      {label && <label htmlFor={props.id} className="text-xs text-white/60 uppercase tracking-widest">{label}</label>}
+      {label && (
+        <label
+          htmlFor={props.id}
+          className="text-xs text-white/60 uppercase tracking-widest"
+        >
+          {label}
+        </label>
+      )}
       <div className="relative">
         <input
           {...props}
@@ -20,9 +31,16 @@ export const PasswordInput: React.FC<PasswordInputProps> = ({ label, ...props })
         <button
           type="button"
           onClick={() => setShow(!show)}
-          className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/80 transition-colors"
+          className="absolute right-3 top-1/2 -translate-y-1/2 text-white/40 hover:text-white/80 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 rounded-sm"
+          title={show ? "Hide password" : "Show password"}
+          aria-label={show ? "Hide password" : "Show password"}
+          aria-pressed={show}
         >
-          {show ? <EyeOff size={18} /> : <Eye size={18} />}
+          {show ? (
+            <EyeOff size={18} aria-hidden="true" />
+          ) : (
+            <Eye size={18} aria-hidden="true" />
+          )}
         </button>
       </div>
     </div>

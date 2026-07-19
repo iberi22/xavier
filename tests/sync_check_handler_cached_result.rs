@@ -70,6 +70,7 @@ impl MemoryStore for MockMemoryStore {
             beliefs: Vec::new(),
             session_tokens: Vec::new(),
             checkpoints: Vec::new(),
+            entity_graph_snapshot: None,
         })
     }
 

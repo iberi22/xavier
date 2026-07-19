@@ -66,26 +66,31 @@ pub async fn migrate_file_store_if_needed(
     let legacy_state = legacy_store.load_workspace_state(workspace_id).await?;
     let target_state = target_store.load_workspace_state(workspace_id).await?;
 
+    let legacy_memories_len = legacy_state.memories.len();
+    let legacy_beliefs_len = legacy_state.beliefs.len();
+    let legacy_session_tokens_len = legacy_state.session_tokens.len();
+    let legacy_checkpoints_len = legacy_state.checkpoints.len();
+
     let should_import = target_state.memories.is_empty()
         && target_state.beliefs.is_empty()
         && target_state.session_tokens.is_empty()
         && target_state.checkpoints.is_empty()
-        && (!legacy_state.memories.is_empty()
-            || !legacy_state.beliefs.is_empty()
-            || !legacy_state.session_tokens.is_empty()
-            || !legacy_state.checkpoints.is_empty());
+        && (legacy_memories_len > 0
+            || legacy_beliefs_len > 0
+            || legacy_session_tokens_len > 0
+            || legacy_checkpoints_len > 0);
 
     if should_import {
-        for record in legacy_state.memories.clone() {
+        for record in legacy_state.memories {
             target_store.put(record).await?;
         }
         target_store
-            .save_beliefs(workspace_id, legacy_state.beliefs.clone())
+            .save_beliefs(workspace_id, legacy_state.beliefs)
             .await?;
-        for token in legacy_state.session_tokens.clone() {
+        for token in legacy_state.session_tokens {
             target_store.save_session_token(workspace_id, token).await?;
         }
-        for checkpoint in legacy_state.checkpoints.clone() {
+        for checkpoint in legacy_state.checkpoints {
             target_store
                 .save_checkpoint(workspace_id, checkpoint)
                 .await?;
@@ -95,10 +100,10 @@ pub async fn migrate_file_store_if_needed(
     let detail = serde_json::json!({
         "migrated": should_import,
         "source": file_store_path.display().to_string(),
-        "legacy_memories": legacy_state.memories.len(),
-        "legacy_beliefs": legacy_state.beliefs.len(),
-        "legacy_session_tokens": legacy_state.session_tokens.len(),
-        "legacy_checkpoints": legacy_state.checkpoints.len(),
+        "legacy_memories": legacy_memories_len,
+        "legacy_beliefs": legacy_beliefs_len,
+        "legacy_session_tokens": legacy_session_tokens_len,
+        "legacy_checkpoints": legacy_checkpoints_len,
         "reason": if should_import { format!("imported legacy file store into {}", target_store.backend().as_str()) } else { "skipped legacy import because target store already contained data or file was empty".to_string() }
     }).to_string();
     fs::write(marker_path, &detail).await?;

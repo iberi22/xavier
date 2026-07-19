@@ -220,13 +220,16 @@ pub struct ObservabilityStats {
 #[derive(Clone)]
 pub struct ServiceLogStore {
     conn: &'static ConnectionManager,
+    project_id: String,
 }
 
 impl ServiceLogStore {
     /// Create a new ServiceLogStore, ensuring the table exists.
     pub async fn new() -> Result<Self> {
         let conn = ConnectionManager::global();
-        let store = Self { conn };
+        let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig::from_env();
+        let project_id = crate::memory::sqlite_vec_store::project_id_for_path(&config.path);
+        let store = Self { conn, project_id };
         store.initialize_schema().await?;
         Ok(store)
     }
@@ -261,7 +264,7 @@ impl ServiceLogStore {
         "#;
 
         self.conn
-            .with_conn("vec_store", |conn| {
+            .with_conn(&self.project_id, |conn| {
                 conn.execute_batch(sql)
                     .context("Failed to create service_logs schema")
             })
@@ -287,7 +290,7 @@ impl ServiceLogStore {
             entry.resolution.clone().map(|r| r.to_string()),
         );
 
-        self.conn.with_conn("vec_store", move |conn| {
+        self.conn.with_conn(&self.project_id, move |conn| {
             conn.execute(
                 "INSERT INTO service_logs (id, timestamp, level, source, module, correlation_id, message, metadata, resolved, resolution)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
@@ -305,7 +308,7 @@ impl ServiceLogStore {
         minutes: u32,
     ) -> Result<Vec<LogEntry>> {
         let module = module.to_string();
-        self.conn.with_conn("vec_store", move |conn| {
+        self.conn.with_conn(&self.project_id, move |conn| {
             let mut stmt = conn.prepare(
                 "SELECT id, timestamp, level, source, module, correlation_id, message, metadata, resolved, resolution
                  FROM service_logs
@@ -328,7 +331,7 @@ impl ServiceLogStore {
     /// Detect error patterns: same module + message repeated > threshold times.
     pub async fn detect_patterns(&self, minutes: u32, threshold: u32) -> Result<Vec<ErrorPattern>> {
         self.conn
-            .with_conn("vec_store", move |conn| {
+            .with_conn(&self.project_id, move |conn| {
                 let mut stmt = conn.prepare(
                     r#"
                 SELECT
@@ -375,7 +378,7 @@ impl ServiceLogStore {
     pub async fn search_logs(&self, query: &str, limit: u32) -> Result<Vec<LogEntry>> {
         let query = query.to_string();
         self.conn
-            .with_conn("vec_store", move |conn| {
+            .with_conn(&self.project_id, move |conn| {
                 let mut stmt = conn.prepare(
                     r#"
                 SELECT sl.id, sl.timestamp, sl.level, sl.source, sl.module,
@@ -400,7 +403,7 @@ impl ServiceLogStore {
 
     /// Get aggregate statistics for the monitor dashboard.
     pub async fn get_stats(&self) -> Result<ObservabilityStats> {
-        self.conn.with_conn("vec_store", |conn| {
+        self.conn.with_conn(&self.project_id, |conn| {
             let total_entries: u64 = conn
                 .query_row("SELECT COUNT(*) FROM service_logs", [], |r| r.get(0))
                 .unwrap_or(0);
@@ -455,7 +458,7 @@ impl ServiceLogStore {
         let id = id.to_string();
         let resolution_str = resolution.to_string();
         self.conn
-            .with_conn("vec_store", move |conn| {
+            .with_conn(&self.project_id, move |conn| {
                 conn.execute(
                     "UPDATE service_logs SET resolved = 1, resolution = ?1 WHERE id = ?2",
                     rusqlite::params![resolution_str, id],
