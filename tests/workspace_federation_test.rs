@@ -1,11 +1,6 @@
-use axum::extract::{Json, State};
-use axum::response::IntoResponse;
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
 use tempfile::tempdir;
 use xavier::mesh::{PeerInfo, PeerRegistry, NodeId};
-use xavier::settings::XavierSettings;
 
 // Import our handlers from the binary crate if possible, or define mock tests.
 // Since CLI handlers are in the main binary target of `xavier`, let's check if they can be verified directly.
@@ -80,6 +75,7 @@ async fn test_workspace_sharing_token_roundtrip() {
 }
 
 #[tokio::test]
+
 async fn test_workspace_sharing_with_namespace_acl_filtering() {
     // 1. Prepare three memory records in a test workspace
     let workspace_id = "test-ws-federated".to_string();
@@ -207,4 +203,64 @@ fn test_namespace_acl_entry_and_consent_record_serde() {
     let consent_serialized = serde_json::to_string(&consent).unwrap();
     let consent_deserialized: xavier::mesh::data_consent::ConsentRecord = serde_json::from_str(&consent_serialized).unwrap();
     assert_eq!(consent_deserialized.namespace_filter.unwrap()[0], "docs/publico");
+#[tokio::test]
+async fn test_data_consent_token_revocation() {
+    // Set a temporary config directory to avoid overwriting real user files
+    let dir = tempfile::tempdir().unwrap();
+    std::env::set_var("XAVIER_CONFIG_DIR", dir.path().to_str().unwrap());
+
+    // 1. Initial active consents should be empty
+    let initial_active = xavier::mesh::DataConsentManager::list_active_consents().unwrap();
+    assert!(initial_active.is_empty());
+
+    // 2. Register an active consent
+    let token_id = "test-token-123".to_string();
+    let consent = xavier::mesh::ActiveConsent {
+        token_id: token_id.clone(),
+        workspace_id: "workspace-alpha".to_string(),
+        expires_at: chrono::Utc::now().timestamp() as u64 + 3600, // active
+        token: "mock-base64-token-string".to_string(),
+    };
+
+    xavier::mesh::DataConsentManager::register_active_consent(consent).unwrap();
+
+    // Check that it's listed as active
+    let active_list = xavier::mesh::DataConsentManager::list_active_consents().unwrap();
+    assert_eq!(active_list.len(), 1);
+    assert_eq!(active_list[0].token_id, token_id);
+    assert_eq!(active_list[0].workspace_id, "workspace-alpha");
+
+    // Check that it's NOT revoked
+    let is_rev = xavier::mesh::DataConsentManager::is_token_revoked(&token_id).unwrap();
+    assert!(!is_rev);
+
+    // 3. Revoke the consent
+    xavier::mesh::DataConsentManager::revoke_consent(&token_id).unwrap();
+
+    // Check that it's now revoked
+    let is_rev_after = xavier::mesh::DataConsentManager::is_token_revoked(&token_id).unwrap();
+    assert!(is_rev_after);
+
+    // Check that it's no longer listed as active
+    let active_list_after = xavier::mesh::DataConsentManager::list_active_consents().unwrap();
+    assert!(active_list_after.is_empty());
+
+    // 4. Test fallback token ID extraction and revocation in the same sequence
+    let payload_str = "{\"workspace_id\":\"test-ws\",\"node_id\":\"node1\"}";
+    let fallback_token_id = {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(payload_str.as_bytes());
+        format!("hash-{}", &xavier::crypto::hex_encode(&hasher.finalize())[..16])
+    };
+
+    // Assert fallback initially not revoked
+    assert!(!xavier::mesh::DataConsentManager::is_token_revoked(&fallback_token_id).unwrap());
+
+    // Revoke the fallback token_id
+    xavier::mesh::DataConsentManager::revoke_consent(&fallback_token_id).unwrap();
+
+    // Assert fallback now revoked
+    assert!(xavier::mesh::DataConsentManager::is_token_revoked(&fallback_token_id).unwrap());
+
 }
