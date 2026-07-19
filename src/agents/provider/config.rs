@@ -78,6 +78,7 @@ impl ModelProviderConfig {
     pub fn from_label(label: &str) -> Self {
         match label.trim().to_ascii_lowercase().as_str() {
             "local" => Self::local_from_env(),
+            "managedlocal" | "managed-local" | "managed_local" => Self::managed_local_from_env(),
             "cloud" => Self::cloud_from_env(),
             "disabled" => Self::disabled(),
             "anthropic" => Self::anthropic_cloud_from_env(),
@@ -173,6 +174,43 @@ impl ModelProviderConfig {
                 secret_injection_strategy: None,
                 lease_token: None,
             },
+        }
+    }
+
+    pub(crate) fn managed_local_from_env() -> Self {
+        let settings = crate::settings::XavierSettings::current();
+        let api_flavor = std::env::var("XAVIER_API_FLAVOR")
+            .ok()
+            .and_then(|value| ApiFlavor::from_env(&value))
+            .unwrap_or_else(|| {
+                ApiFlavor::from_env(&settings.models.api_flavor)
+                    .unwrap_or(ApiFlavor::OpenAICompatible)
+            });
+
+        Self {
+            provider_mode: ProviderMode::ManagedLocal,
+            api_flavor,
+            provider_label: "managed-local".to_string(),
+            model: std::env::var("XAVIER_LOCAL_LLM_MODEL")
+                .or_else(|_| std::env::var("XAVIER_LLM_MODEL"))
+                .ok()
+                .or_else(|| Some(settings.models.local_llm_model.clone()))
+                .or_else(|| settings.models.llm_model.clone())
+                .unwrap_or_else(|| DEFAULT_LOCAL_MODEL.to_string()),
+            api_key: std::env::var("XAVIER_LOCAL_LLM_API_KEY")
+                .ok()
+                .or_else(|| settings.models.local_llm_api_key.clone())
+                .or_else(|| Some("ollama".to_string())),
+            base_url: Some(
+                std::env::var("XAVIER_LOCAL_LLM_URL")
+                    .ok()
+                    .or_else(|| Some(settings.models.local_llm_url.clone()))
+                    .unwrap_or_else(|| DEFAULT_LOCAL_BASE_URL.to_string()),
+            ),
+            target: ProviderTarget::GenericOpenAICompatible,
+            lease_config: None,
+            secret_injection_strategy: None,
+            lease_token: None,
         }
     }
 
@@ -467,14 +505,24 @@ impl ModelProviderConfig {
         }
     }
 
+    /// Gets the base URL, resolving dynamically for ManagedLocal if a managed server is in memory.
+    pub fn get_resolved_base_url(&self) -> Option<String> {
+        if self.provider_mode == ProviderMode::ManagedLocal {
+            if let Some(port) = crate::agents::provider::get_managed_server_port() {
+                return Some(format!("http://127.0.0.1:{}/v1", port));
+            }
+        }
+        self.base_url.clone()
+    }
+
     /// Checks the reachability of the provider.
     pub async fn is_reachable(&self) -> ProviderReachability {
         if !self.is_configured() {
             return ProviderReachability::NotConfigured;
         }
 
-        let base_url = match &self.base_url {
-            Some(url) => url.clone(),
+        let base_url = match self.get_resolved_base_url() {
+            Some(url) => url,
             None => {
                 // If there's no base_url but it's configured, it's likely OpenCodeCLI
                 // where we just shell out locally. Thus, it's reachable.
@@ -535,17 +583,17 @@ impl ModelProviderConfig {
     pub fn is_configured(&self) -> bool {
         match self.provider_mode {
             ProviderMode::Disabled => false,
-            ProviderMode::Local => {
+            ProviderMode::Local | ProviderMode::ManagedLocal => {
                 if self.target == ProviderTarget::OpenCodeCLI {
                     return true;
                 }
-                self.base_url
+                self.get_resolved_base_url()
                     .as_ref()
                     .is_some_and(|value| !value.trim().is_empty())
             }
             ProviderMode::Cloud => {
                 let has_url = self
-                    .base_url
+                    .get_resolved_base_url()
                     .as_ref()
                     .is_some_and(|value| !value.trim().is_empty());
                 let has_key = self
