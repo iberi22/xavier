@@ -67,7 +67,7 @@ impl User {
             email,
             name,
             role,
-            api_key: "".to_string(),
+            api_key: format!("sk-{}", ulid::Ulid::new().to_string().to_lowercase()),
             created_at: now,
             updated_at: now,
         }
@@ -81,6 +81,7 @@ impl fmt::Debug for User {
             .field("email", &self.email)
             .field("name", &self.name)
             .field("role", &self.role)
+            .field("api_key", &"<redacted>")
             .field("created_at", &self.created_at)
             .field("updated_at", &self.updated_at)
             .finish()
