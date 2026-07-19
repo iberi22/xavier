@@ -736,6 +736,18 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         )
         .route("/v1/mesh/peers/{node_id}/acl", put(update_peer_acl_handler))
         .route("/v1/mesh/peers/{node_id}", delete(remove_peer_handler))
+        .route(
+            "/v1/mesh/workspaces/share",
+            post(crate::cli::handlers::mesh::share_workspace_handler),
+        )
+        .route(
+            "/v1/mesh/workspaces/join",
+            post(crate::cli::handlers::mesh::join_workspace_handler),
+        )
+        .route(
+            "/v1/mesh/workspaces/query",
+            post(crate::cli::handlers::mesh::query_workspace_handler),
+        )
         // ── Headless E2E API (New Structure) ──────────────────────────────
         .route(
             "/headless/health",

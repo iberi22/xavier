@@ -112,6 +112,8 @@ fn make_test_peer(identity: &NodeIdentity, url: &str) -> PeerInfo {
         sync_enabled: true,
         is_cloud: false,
         iroh_addr: None,
+        shared_workspace_ids: Vec::new(),
+        shared_workspace_tokens: std::collections::HashMap::new(),
     }
 }
 
