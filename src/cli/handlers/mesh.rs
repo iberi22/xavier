@@ -329,6 +329,63 @@ pub async fn update_peer_acl_handler(
 }
 
 #[derive(Debug, Deserialize)]
+pub struct RevokeConsentRequest {
+    pub token_id: String,
+}
+
+pub async fn revoke_consent_handler(
+    Json(payload): Json<RevokeConsentRequest>,
+) -> impl IntoResponse {
+    // License check
+    let settings = xavier::settings::XavierSettings::current();
+    if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
+    match xavier::mesh::DataConsentManager::revoke_consent(&payload.token_id) {
+        Ok(_) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "status": "ok", "message": "Consent revoked successfully" })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": format!("Failed to revoke consent: {}", e) })),
+        )
+            .into_response(),
+    }
+}
+
+pub async fn list_consents_handler() -> impl IntoResponse {
+    // License check
+    let settings = xavier::settings::XavierSettings::current();
+    if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
+    match xavier::mesh::DataConsentManager::list_active_consents() {
+        Ok(consents) => (
+            StatusCode::OK,
+            Json(serde_json::json!({ "active_consents": consents })),
+        )
+            .into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": format!("Failed to list active consents: {}", e) })),
+        )
+            .into_response(),
+    }
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ShareWorkspaceRequest {
     pub workspace_id: String,
 }
@@ -385,12 +442,16 @@ pub async fn share_workspace_handler(
     let port = std::env::var("XAVIER_PORT").unwrap_or_else(|_| "8006".to_string());
     let endpoint = format!("http://localhost:{}", port);
 
+    let token_id = uuid::Uuid::new_v4().to_string();
+    let expires_at = chrono::Utc::now().timestamp() + 31536000; // 1 year
+
     let payload_data = serde_json::json!({
+        "token_id": token_id.clone(),
         "node_id": identity.node_id.0,
         "endpoint": endpoint,
         "public_key_hex": xavier::crypto::hex_encode(&identity.public_key),
         "workspace_id": payload.workspace_id,
-        "expires_at": chrono::Utc::now().timestamp() + 31536000, // 1 year
+        "expires_at": expires_at,
     });
 
     let payload_str = match serde_json::to_string(&payload_data) {
@@ -422,6 +483,21 @@ pub async fn share_workspace_handler(
     };
 
     let token = xavier::crypto::base64_encode(token_json);
+
+    // Register active consent
+    let consent_entry = xavier::mesh::ActiveConsent {
+        token_id,
+        workspace_id: payload.workspace_id.clone(),
+        expires_at: expires_at as u64,
+        token: token.clone(),
+    };
+    if let Err(e) = xavier::mesh::DataConsentManager::register_active_consent(consent_entry) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": format!("Failed to register active consent: {}", e) })),
+        )
+            .into_response();
+    }
 
     Json(ShareWorkspaceResponse { token }).into_response()
 }
@@ -504,6 +580,36 @@ pub async fn join_workspace_handler(
 
     if !xavier::mesh::node::NodeIdentity::verify(&public_key_bytes, payload_str.as_bytes(), &signature_bytes) {
         return json_response(StatusCode::UNAUTHORIZED, serde_json::json!({ "error": "Invalid token signature (forgery detected)" }));
+    }
+
+    // Determine token_id or use fallback hash of payload_str
+    let token_id = inner_payload
+        .get("token_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(payload_str.as_bytes());
+            format!("hash-{}", &xavier::crypto::hex_encode(&hasher.finalize())[..16])
+        });
+
+    match xavier::mesh::DataConsentManager::is_token_revoked(&token_id) {
+        Ok(true) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({ "error": "Token has been revoked" })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": format!("Revocation check failed: {}", e) })),
+            )
+                .into_response();
+        }
+        _ => {}
     }
 
     let workspace_id = match inner_payload.get("workspace_id").and_then(|v| v.as_str()) {
@@ -653,6 +759,36 @@ pub async fn query_workspace_handler(
 
     if !xavier::mesh::node::NodeIdentity::verify(&public_key_bytes, payload_str.as_bytes(), &signature_bytes) {
         return json_response(StatusCode::UNAUTHORIZED, serde_json::json!({ "error": "Invalid token signature (forgery detected)" }));
+    }
+
+    // Determine token_id or use fallback hash of payload_str
+    let token_id = inner_payload
+        .get("token_id")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(payload_str.as_bytes());
+            format!("hash-{}", &xavier::crypto::hex_encode(&hasher.finalize())[..16])
+        });
+
+    match xavier::mesh::DataConsentManager::is_token_revoked(&token_id) {
+        Ok(true) => {
+            return (
+                StatusCode::UNAUTHORIZED,
+                Json(serde_json::json!({ "error": "Token has been revoked" })),
+            )
+                .into_response();
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": format!("Revocation check failed: {}", e) })),
+            )
+                .into_response();
+        }
+        _ => {}
     }
 
     let workspace_id = match inner_payload.get("workspace_id").and_then(|v| v.as_str()) {
