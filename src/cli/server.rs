@@ -776,6 +776,14 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             "/v1/mesh/workspaces/query",
             post(crate::cli::handlers::mesh::query_workspace_handler),
         )
+        .route(
+            "/v1/mesh/bridges",
+            post(crate::cli::handlers::mesh::create_bridge_handler).get(crate::cli::handlers::mesh::list_bridges_handler),
+        )
+        .route(
+            "/v1/mesh/bridges/:id",
+            delete(crate::cli::handlers::mesh::delete_bridge_handler),
+        )
         // ── Headless E2E API (New Structure) ──────────────────────────────
         .route(
             "/headless/health",
