@@ -16,8 +16,6 @@ import { OnboardingFlow } from "./components/Onboarding/OnboardingFlow";
 import ParticleBackground from "./components/ParticleBackground";
 import TopStatusBar from "./components/TopStatusBar";
 import { initialBookmarks } from "./data";
-import { EMPTY_ROADMAP_GRAPH, normalizeGraphData } from "./utils/roadmapGraph";
-
 import type {
   BackendGraphData,
   Bookmark,
@@ -30,6 +28,7 @@ import type {
   ThreadSummary,
   Widget,
 } from "./types";
+import { EMPTY_ROADMAP_GRAPH, normalizeGraphData } from "./utils/roadmapGraph";
 
 type RoadmapGraphMeta = {
   id: string;
@@ -134,8 +133,7 @@ export default function App() {
           const meta: RoadmapGraphMeta = {
             id: graphDataResult.id || DEFAULT_GRAPH_META.id,
             name: graphDataResult.name || DEFAULT_GRAPH_META.name,
-            created_at:
-              graphDataResult.created_at || new Date().toISOString(),
+            created_at: graphDataResult.created_at || new Date().toISOString(),
           };
           setGraphMeta(meta);
           graphMetaRef.current = meta;
