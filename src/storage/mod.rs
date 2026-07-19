@@ -101,8 +101,11 @@ impl MigrationRunner {
                 .context("Failed to add schema_migrations.name")?;
         }
         if !cols.iter().any(|c| c == "applied_at") {
-            conn.execute("ALTER TABLE schema_migrations ADD COLUMN applied_at TEXT", [])
-                .context("Failed to add schema_migrations.applied_at")?;
+            conn.execute(
+                "ALTER TABLE schema_migrations ADD COLUMN applied_at TEXT",
+                [],
+            )
+            .context("Failed to add schema_migrations.applied_at")?;
         }
         Ok(())
     }

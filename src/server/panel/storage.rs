@@ -239,9 +239,8 @@ pub async fn get_graph(Extension(workspace): Extension<WorkspaceContext>) -> imp
                 Ok(Some(GraphData {
                     id: row.get(0)?,
                     name: row.get(1)?,
-                    data: serde_json::from_str(&data_str).unwrap_or_else(|_| {
-                        json!({ "nodes": [], "links": [] })
-                    }),
+                    data: serde_json::from_str(&data_str)
+                        .unwrap_or_else(|_| json!({ "nodes": [], "links": [] })),
                     created_at: created_at_str.parse().unwrap_or_else(|_| Utc::now()),
                 }))
             } else {
@@ -266,11 +265,7 @@ pub async fn save_graph(
     Json(payload): Json<GraphData>,
 ) -> impl IntoResponse {
     if let Err(message) = validate_panel_graph_payload(&payload.data) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(json!({ "error": message })),
-        )
-            .into_response();
+        return (StatusCode::BAD_REQUEST, Json(json!({ "error": message }))).into_response();
     }
 
     let workspace_id = workspace.workspace.config().id.clone();

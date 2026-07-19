@@ -273,7 +273,8 @@ async fn test_workspace_working_memory_is_bounded_and_contains_recent_docs() {
     assert_eq!(working_docs.len(), 100);
 
     // Verify it contains the most recent documents (e.g. doc-20 through doc-119)
-    let contents: std::collections::HashSet<String> = working_docs.iter().map(|d| d.content.clone()).collect();
+    let contents: std::collections::HashSet<String> =
+        working_docs.iter().map(|d| d.content.clone()).collect();
     assert!(!contents.contains("Content of document 19"));
     assert!(contents.contains("Content of document 20"));
     assert!(contents.contains("Content of document 119"));

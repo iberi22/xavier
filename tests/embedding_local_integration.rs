@@ -3,9 +3,9 @@ use axum::{routing::post, Json, Router};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::net::TcpListener;
-use xavier::embedding::{build_embedder_from_env, Embedder, NoopEmbedder, EmbeddingError};
+use xavier::embedding::{build_embedder_from_env, Embedder, EmbeddingError, NoopEmbedder};
 use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
-use xavier::memory::store::{MemoryRecord, MemoryStore, HybridSearchMode};
+use xavier::memory::store::{HybridSearchMode, MemoryRecord, MemoryStore};
 
 async fn start_mock_ollama(dimension: usize) -> Result<(String, tokio::task::JoinHandle<()>)> {
     let app = Router::new().route(
@@ -63,7 +63,11 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
 
 async fn is_ollama_reachable(url: &str) -> bool {
     let client = reqwest::Client::new();
-    match client.get(url.replace("/v1/embeddings", "/api/tags")).send().await {
+    match client
+        .get(url.replace("/v1/embeddings", "/api/tags"))
+        .send()
+        .await
+    {
         Ok(resp) => resp.status().is_success(),
         Err(_) => false,
     }
@@ -124,7 +128,12 @@ async fn test_fallback_embedder() -> Result<()> {
 
     let failing_app = Router::new().route(
         "/v1/embeddings",
-        post(|| async { (axum::http::StatusCode::INTERNAL_SERVER_ERROR, "Primary failed") }),
+        post(|| async {
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                "Primary failed",
+            )
+        }),
     );
     tokio::spawn(async move {
         let _ = axum::serve(failing_listener, failing_app).await;
@@ -155,9 +164,12 @@ async fn test_fallback_embedder() -> Result<()> {
             println!("Fallback succeeded, got vector of size {}", v.len());
             assert_eq!(v.len(), dimension);
             assert!(!v.iter().all(|&x| x == 0.0));
-        },
+        }
         Err(e) => {
-            panic!("Fallback chain failed to reach working local backend: {}", e);
+            panic!(
+                "Fallback chain failed to reach working local backend: {}",
+                e
+            );
         }
     }
 
@@ -218,13 +230,9 @@ async fn test_full_chain_integration() -> Result<()> {
 
     // 4. Search
     let query_embedding = embedder.encode("color del cielo").await?;
-    let results = store.hybrid_search_with_embedding(
-        "ws-1",
-        "cielo",
-        query_embedding,
-        None,
-        5
-    ).await?;
+    let results = store
+        .hybrid_search_with_embedding("ws-1", "cielo", query_embedding, None, 5)
+        .await?;
 
     assert!(!results.is_empty());
     assert_eq!(results[0].record.id, "test-1");

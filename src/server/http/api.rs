@@ -77,10 +77,19 @@ pub async fn memory_retrieve(
             if preview.contains("### Extractive Session Summary") {
                 preview.clone()
             } else {
-                if let Ok(messages) = workspace.workspace.conversations_db.get_thread_messages(&s.id).await {
+                if let Ok(messages) = workspace
+                    .workspace
+                    .conversations_db
+                    .get_thread_messages(&s.id)
+                    .await
+                {
                     if !messages.is_empty() {
                         let gen = crate::memory::episodic::summarize_session_extractive(&messages);
-                        let _ = workspace.workspace.conversations_db.update_last_preview(&s.id, &gen).await;
+                        let _ = workspace
+                            .workspace
+                            .conversations_db
+                            .update_last_preview(&s.id, &gen)
+                            .await;
                         gen
                     } else {
                         preview.clone()
@@ -90,10 +99,19 @@ pub async fn memory_retrieve(
                 }
             }
         } else {
-            if let Ok(messages) = workspace.workspace.conversations_db.get_thread_messages(&s.id).await {
+            if let Ok(messages) = workspace
+                .workspace
+                .conversations_db
+                .get_thread_messages(&s.id)
+                .await
+            {
                 if !messages.is_empty() {
                     let gen = crate::memory::episodic::summarize_session_extractive(&messages);
-                    let _ = workspace.workspace.conversations_db.update_last_preview(&s.id, &gen).await;
+                    let _ = workspace
+                        .workspace
+                        .conversations_db
+                        .update_last_preview(&s.id, &gen)
+                        .await;
                     gen
                 } else {
                     String::new()
@@ -218,10 +236,19 @@ pub async fn memory_export_pack(
             if preview.contains("### Extractive Session Summary") {
                 preview.clone()
             } else {
-                if let Ok(messages) = workspace.workspace.conversations_db.get_thread_messages(&s.id).await {
+                if let Ok(messages) = workspace
+                    .workspace
+                    .conversations_db
+                    .get_thread_messages(&s.id)
+                    .await
+                {
                     if !messages.is_empty() {
                         let gen = crate::memory::episodic::summarize_session_extractive(&messages);
-                        let _ = workspace.workspace.conversations_db.update_last_preview(&s.id, &gen).await;
+                        let _ = workspace
+                            .workspace
+                            .conversations_db
+                            .update_last_preview(&s.id, &gen)
+                            .await;
                         gen
                     } else {
                         preview.clone()
@@ -231,10 +258,19 @@ pub async fn memory_export_pack(
                 }
             }
         } else {
-            if let Ok(messages) = workspace.workspace.conversations_db.get_thread_messages(&s.id).await {
+            if let Ok(messages) = workspace
+                .workspace
+                .conversations_db
+                .get_thread_messages(&s.id)
+                .await
+            {
                 if !messages.is_empty() {
                     let gen = crate::memory::episodic::summarize_session_extractive(&messages);
-                    let _ = workspace.workspace.conversations_db.update_last_preview(&s.id, &gen).await;
+                    let _ = workspace
+                        .workspace
+                        .conversations_db
+                        .update_last_preview(&s.id, &gen)
+                        .await;
                     gen
                 } else {
                     String::new()

@@ -47,6 +47,7 @@ pub mod governance;
 pub mod heartbeat;
 #[cfg(feature = "mesh")]
 pub mod iroh_transport;
+pub mod maturity;
 pub mod node;
 pub mod pairing;
 pub mod pairing_registry;
@@ -54,7 +55,6 @@ pub mod peer;
 pub mod protocol;
 pub mod telemetry;
 pub mod telemetry_collector;
-pub mod maturity;
 pub mod tokenomics;
 pub mod transport;
 // Legacy libp2p transport — broken against libp2p 0.56 and superseded by Iroh.
@@ -71,6 +71,7 @@ pub use data_sanitizer::{DataSanitizer, SanitizationAction, SanitizationRule};
 pub use discovery::DiscoveryService;
 #[cfg(feature = "mesh")]
 pub use heartbeat::{HeartbeatPayload, HeartbeatReceipt, HeartbeatService};
+pub use maturity::MeshMaturityReport;
 pub use node::{NodeId, NodeIdentity};
 pub use peer::{PeerInfo, PeerRegistry};
 pub use protocol::{MeshHandshake, MeshManifest, MeshSyncRequest};
@@ -81,5 +82,4 @@ pub use tokenomics::{
     ContributionType, RewardEngine, RewardEvent, Transaction, TransactionKind, Wallet,
     WalletBalance,
 };
-pub use maturity::MeshMaturityReport;
 pub use transport::MeshTransport;

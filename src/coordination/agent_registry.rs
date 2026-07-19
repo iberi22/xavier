@@ -188,11 +188,12 @@ impl AgentLifecyclePort for SimpleAgentRegistry {
             Err(e) => {
                 tracing::error!("Task {} failed for agent {}: {}", task_id, agent_id, e);
                 if let Some(bus) = &self.event_bus {
-                    let _ = bus.publish(crate::coordination::events::XavierEvent::AgentTaskFailed {
-                        agent_id: agent_id.to_string(),
-                        task_id: task_id.to_string(),
-                        reason: e.to_string(),
-                    });
+                    let _ =
+                        bus.publish(crate::coordination::events::XavierEvent::AgentTaskFailed {
+                            agent_id: agent_id.to_string(),
+                            task_id: task_id.to_string(),
+                            reason: e.to_string(),
+                        });
                 }
             }
         }

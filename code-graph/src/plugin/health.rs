@@ -258,7 +258,10 @@ impl PluginHealthMonitor {
             };
 
             if let Some(opened_at) = last_open {
-                if Utc::now().signed_duration_since(opened_at).to_std().unwrap_or(Duration::ZERO)
+                if Utc::now()
+                    .signed_duration_since(opened_at)
+                    .to_std()
+                    .unwrap_or(Duration::ZERO)
                     >= self.check_interval
                 {
                     return CircuitState::HalfOpen;
@@ -291,7 +294,10 @@ impl PluginHealthMonitor {
                     .iter()
                     .rev()
                     .take_while(|e| {
-                        now.signed_duration_since(e.ts).to_std().unwrap_or(Duration::ZERO) <= window
+                        now.signed_duration_since(e.ts)
+                            .to_std()
+                            .unwrap_or(Duration::ZERO)
+                            <= window
                     })
                     .filter(|e| !e.success)
                     .count();
@@ -324,9 +330,9 @@ impl PluginHealthMonitor {
 
     /// Run a health check for a single plugin.
     pub async fn check_one(&self, mgr: &PluginManager, name: &str) -> Result<()> {
-        let descriptor = mgr
-            .descriptor_by_name(name)
-            .ok_or_else(|| crate::error::GraphError::Parser(format!("unknown plugin '{}'", name)))?;
+        let descriptor = mgr.descriptor_by_name(name).ok_or_else(|| {
+            crate::error::GraphError::Parser(format!("unknown plugin '{}'", name))
+        })?;
 
         let lang = descriptor
             .languages
@@ -371,10 +377,7 @@ impl PluginHealthMonitor {
         let avg_latency_ms = latencies.iter().sum::<u64>() as f64 / latencies.len() as f64;
         let p95_index = (latencies.len() * 95 / 100).min(latencies.len() - 1);
         let p95_latency_ms = latencies[p95_index] as f64;
-        let last_error = buffer
-            .iter()
-            .rev()
-            .find_map(|e| e.error.clone());
+        let last_error = buffer.iter().rev().find_map(|e| e.error.clone());
 
         Some(PluginMetrics {
             success_count,

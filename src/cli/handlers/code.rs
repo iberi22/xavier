@@ -162,7 +162,11 @@ pub async fn code_scan_handler(
     info!("Code scan request: path={}", path);
 
     let code_graph = state.code_graph.read().await;
-    match code_graph.indexer.index(std::path::Path::new(&path), true).await {
+    match code_graph
+        .indexer
+        .index(std::path::Path::new(&path), true)
+        .await
+    {
         Ok(stats) => {
             // Automatically trigger dump after successful scan
             let dump_msg = match perform_dump(&code_graph, &path).await {
@@ -745,7 +749,9 @@ pub async fn code_graph_view_handler(
         let edges_res = if edge_type == Some(::code_graph::types::EdgeType::Calls) {
             code_graph.query.call_chain(&query, depth, limit)
         } else {
-            code_graph.query.dependencies(&query, edge_type, depth, limit)
+            code_graph
+                .query
+                .dependencies(&query, edge_type, depth, limit)
         };
 
         match edges_res {
@@ -773,10 +779,18 @@ pub async fn code_graph_view_handler(
 
         for sym in &seed_symbols {
             if let Some(ref stable_id) = sym.stable_id {
-                if let Ok(from_edges) = code_graph.db.find_edges_from(stable_id, edge_type.clone(), limit) {
+                if let Ok(from_edges) =
+                    code_graph
+                        .db
+                        .find_edges_from(stable_id, edge_type.clone(), limit)
+                {
                     candidate_edges.extend(from_edges);
                 }
-                if let Ok(to_edges) = code_graph.db.find_edges_to(stable_id, edge_type.clone(), limit) {
+                if let Ok(to_edges) =
+                    code_graph
+                        .db
+                        .find_edges_to(stable_id, edge_type.clone(), limit)
+                {
                     candidate_edges.extend(to_edges);
                 }
             }
@@ -815,12 +829,15 @@ fn map_edges_to_graph(
     limit: usize,
     db: &::code_graph::db::CodeGraphDB,
 ) -> (Vec<serde_json::Value>, Vec<serde_json::Value>, bool) {
-    let mut symbol_map: std::collections::HashMap<String, Symbol> = std::collections::HashMap::new();
+    let mut symbol_map: std::collections::HashMap<String, Symbol> =
+        std::collections::HashMap::new();
     let mut seed_symbols_filtered = Vec::new();
 
     for sym in seed_symbols {
         if let Some(ref stable_id) = sym.stable_id {
-            if !include_file_nodes && (stable_id.starts_with("file:") || stable_id.starts_with("module:")) {
+            if !include_file_nodes
+                && (stable_id.starts_with("file:") || stable_id.starts_with("module:"))
+            {
                 continue;
             }
             symbol_map.insert(stable_id.clone(), sym.clone());
@@ -836,13 +853,20 @@ fn map_edges_to_graph(
         let to = &edge.to_symbol;
 
         if !include_file_nodes {
-            if from.starts_with("file:") || from.starts_with("module:") ||
-               to.starts_with("file:") || to.starts_with("module:") {
+            if from.starts_with("file:")
+                || from.starts_with("module:")
+                || to.starts_with("file:")
+                || to.starts_with("module:")
+            {
                 continue;
             }
         }
 
-        let edge_key = (from.clone(), to.clone(), edge.edge_type.as_str().to_string());
+        let edge_key = (
+            from.clone(),
+            to.clone(),
+            edge.edge_type.as_str().to_string(),
+        );
         if !edge_keys.insert(edge_key) {
             continue;
         }
@@ -1037,13 +1061,8 @@ mod tests {
         }];
 
         // Test with include_file_nodes = false
-        let (nodes, links, truncated) = map_edges_to_graph(
-            seed_symbols,
-            candidate_edges,
-            false,
-            10,
-            &db,
-        );
+        let (nodes, links, truncated) =
+            map_edges_to_graph(seed_symbols, candidate_edges, false, 10, &db);
 
         assert!(!truncated);
         assert_eq!(nodes.len(), 2);

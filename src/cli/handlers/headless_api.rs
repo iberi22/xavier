@@ -58,9 +58,7 @@ pub async fn headless_health() -> impl IntoResponse {
     }))
 }
 
-pub async fn headless_system_scan(
-    State(state): State<CliState>,
-) -> impl IntoResponse {
+pub async fn headless_system_scan(State(state): State<CliState>) -> impl IntoResponse {
     let cache = state.system_scan_cache.read().await;
 
     if let Some(result) = cache.as_ref() {
@@ -264,15 +262,17 @@ async fn collect_provider_status_data(state: &CliState) -> UnifiedProvidersRespo
     }
 
     // Run reachability checks concurrently using join_all from futures_util
-    let reachability_futures = providers_to_check.iter().map(|(_, _, config, _, _, _)| {
-        config.is_reachable()
-    });
+    let reachability_futures = providers_to_check
+        .iter()
+        .map(|(_, _, config, _, _, _)| config.is_reachable());
     let reachability_results = futures_util::future::join_all(reachability_futures).await;
 
     let mut providers = Vec::new();
     let mut local_reachable = false;
 
-    for (i, (kind, name, _, mode, is_configured, is_in_chain)) in providers_to_check.into_iter().enumerate() {
+    for (i, (kind, name, _, mode, is_configured, is_in_chain)) in
+        providers_to_check.into_iter().enumerate()
+    {
         let reachability = reachability_results[i];
         let reachable = match reachability {
             xavier::agents::provider::types::ProviderReachability::ConfiguredAndReachable => true,
@@ -304,7 +304,10 @@ async fn collect_provider_status_data(state: &CliState) -> UnifiedProvidersRespo
         active: current.as_str().to_string(),
         mode: active_mode,
         strategy,
-        fallback_chain: fallback_chain.iter().map(|k| k.as_str().to_string()).collect(),
+        fallback_chain: fallback_chain
+            .iter()
+            .map(|k| k.as_str().to_string())
+            .collect(),
         local_reachable,
         providers,
     }
