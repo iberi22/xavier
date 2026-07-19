@@ -1,10 +1,16 @@
-use crate::enterprise::rbac::Role;
+use crate::enterprise::rbac::{Permission, Role};
 use crate::memory::schema::ClearanceLevel;
 use crate::mesh::node::NodeId;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct NamespaceAclEntry {
+    pub namespace_pattern: String,
+    pub permissions: Vec<Permission>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeAclEntry {
@@ -14,6 +20,8 @@ pub struct NodeAclEntry {
     pub namespaces: Option<Vec<String>>,
     #[serde(default)]
     pub public_key_hex: String,
+    #[serde(default)]
+    pub namespace_acl: Option<Vec<NamespaceAclEntry>>,
 }
 
 pub struct MeshAcl {
