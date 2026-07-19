@@ -50,20 +50,31 @@ fn test_peer_registry_with_workspace_federation_fields() {
 
 #[tokio::test]
 async fn test_workspace_sharing_token_roundtrip() {
-    let payload = serde_json::json!({
+    let identity = xavier::mesh::node::NodeIdentity::generate();
+    let payload_data = serde_json::json!({
         "node_id": "xv1-localnode",
         "endpoint": "http://localhost:8006",
-        "public_key_hex": "123456",
+        "public_key_hex": xavier::crypto::hex_encode(&identity.public_key),
         "workspace_id": "default-workspace",
         "expires_at": chrono::Utc::now().timestamp() + 3600,
     });
 
-    let token_json = serde_json::to_string(&payload).unwrap();
+    let payload_str = serde_json::to_string(&payload_data).unwrap();
+    let signature = identity.sign(payload_str.as_bytes());
+
+    let token_data = serde_json::json!({
+        "payload": payload_str,
+        "signature": xavier::crypto::hex_encode(&signature),
+    });
+
+    let token_json = serde_json::to_string(&token_data).unwrap();
     let token = xavier::crypto::base64_encode(token_json);
 
     let decoded_bytes = xavier::crypto::base64_decode(&token).unwrap();
-    let token_data: serde_json::Value = serde_json::from_slice(&decoded_bytes).unwrap();
+    let decoded_token_data: serde_json::Value = serde_json::from_slice(&decoded_bytes).unwrap();
+    let decoded_payload_str = decoded_token_data["payload"].as_str().unwrap();
+    let decoded_payload: serde_json::Value = serde_json::from_str(decoded_payload_str).unwrap();
 
-    assert_eq!(token_data["workspace_id"], "default-workspace");
-    assert_eq!(token_data["node_id"], "xv1-localnode");
+    assert_eq!(decoded_payload["workspace_id"], "default-workspace");
+    assert_eq!(decoded_payload["node_id"], "xv1-localnode");
 }

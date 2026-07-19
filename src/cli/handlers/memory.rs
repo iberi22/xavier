@@ -716,30 +716,34 @@ pub async fn memory_query_handler(
         payload.query, limit
     );
 
-    let mut results_list = Vec::new();
-
-    // 1. Local workspace search
-    match state.memory.search(&payload.query, limit, None).await {
-        Ok(results) => {
-            for doc in results {
-                results_list.push(serde_json::json!({
-                    "id": doc.id,
-                    "content": doc.content,
-                    "embedding": doc.embedding,
-                    "source": "local",
-                }));
+    // 1. Local workspace search future
+    let local_query = payload.query.clone();
+    let memory = state.memory.clone();
+    let local_future = async move {
+        let mut results_list = Vec::new();
+        match memory.search(&local_query, limit, None).await {
+            Ok(results) => {
+                for doc in results {
+                    results_list.push(serde_json::json!({
+                        "id": doc.id,
+                        "content": doc.content,
+                        "embedding": doc.embedding,
+                        "source": "local",
+                    }));
+                }
+            }
+            Err(e) => {
+                info!("Memory query error: {}", e);
             }
         }
-        Err(e) => {
-            info!("Memory query error: {}", e);
-        }
-    }
+        results_list
+    };
 
     // 2. Parallel fan-out to remote workspaces via the Mesh P2P API
+    let mut remote_futures = Vec::new();
     if let Ok(registry) = xavier::mesh::PeerRegistry::load() {
         let peers = registry.list_peers();
-        let mut futures = Vec::new();
-
+        
         for peer in peers {
             for ws_id in &peer.shared_workspace_ids {
                 if let Some(token) = peer.shared_workspace_tokens.get(ws_id) {
@@ -753,7 +757,7 @@ pub async fn memory_query_handler(
 
                     let ws_id = ws_id.clone();
                     let peer_node_id = peer.node_id.0.clone();
-                    futures.push(async move {
+                    remote_futures.push(async move {
                         let res = client.post(&url)
                             .json(&query_payload)
                             .timeout(std::time::Duration::from_secs(5))
@@ -787,14 +791,12 @@ pub async fn memory_query_handler(
                 }
             }
         }
+    }
 
-        if !futures.is_empty() {
-            let joined_results = futures_util::future::join_all(futures).await;
-            for res_opt in joined_results {
-                if let Some(mut remote_results) = res_opt {
-                    results_list.append(&mut remote_results);
-                }
-            }
+    let (mut results_list, joined_remote_results) = tokio::join!(local_future, futures_util::future::join_all(remote_futures));
+    for res_opt in joined_remote_results {
+        if let Some(mut remote_results) = res_opt {
+            results_list.append(&mut remote_results);
         }
     }
 
