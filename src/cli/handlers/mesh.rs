@@ -329,6 +329,117 @@ pub async fn update_peer_acl_handler(
 }
 
 #[derive(Debug, Deserialize)]
+pub struct CreateBridgeRequest {
+    pub source_db: String,
+    pub source_namespace: String,
+    pub target_db: String,
+    pub bridge_kind: xavier::mesh::BridgeKind,
+    pub acl: Vec<String>,
+}
+
+pub async fn create_bridge_handler(
+    Json(payload): Json<CreateBridgeRequest>,
+) -> impl IntoResponse {
+    let settings = xavier::settings::XavierSettings::current();
+    if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
+    let mut registry = match xavier::mesh::BridgeRegistry::load() {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let bridge = xavier::mesh::ContextBridge {
+        id,
+        source_db: payload.source_db,
+        source_namespace: payload.source_namespace,
+        target_db: payload.target_db,
+        bridge_kind: payload.bridge_kind,
+        acl: payload.acl,
+    };
+
+    if let Err(e) = registry.add_bridge(bridge.clone()) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response();
+    }
+
+    (StatusCode::CREATED, Json(bridge)).into_response()
+}
+
+pub async fn list_bridges_handler() -> impl IntoResponse {
+    let settings = xavier::settings::XavierSettings::current();
+    if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
+    let registry = match xavier::mesh::BridgeRegistry::load() {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    Json(registry.list_bridges()).into_response()
+}
+
+pub async fn delete_bridge_handler(
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    let settings = xavier::settings::XavierSettings::current();
+    if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
+    let mut registry = match xavier::mesh::BridgeRegistry::load() {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    if let Err(e) = registry.remove_bridge(&id) {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        )
+            .into_response();
+    }
+
+    Json(serde_json::json!({ "status": "ok" })).into_response()
+}
+
+#[derive(Debug, Deserialize)]
 pub struct ShareWorkspaceRequest {
     pub workspace_id: String,
 }
