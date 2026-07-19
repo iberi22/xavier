@@ -24,6 +24,8 @@ async fn test_proxy_use_case_rate_limited() {
         "google",
         "openai",
         "anthropic",
+        "local",
+        "ollama",
     ];
     for p in providers {
         rate_manager.report_429(p, 10).await.unwrap();
@@ -45,5 +47,5 @@ async fn test_proxy_use_case_rate_limited() {
     let result = use_case
         .execute_secured(cmd, false, secrets_engine, event_bus)
         .await;
-    assert!(matches!(result, Err(ProxyError::RateLimited)));
+    assert!(matches!(result, Err(ProxyError::RateLimited)), "Expected RateLimited, got {:?}", result);
 }
