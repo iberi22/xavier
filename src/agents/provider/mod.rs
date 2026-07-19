@@ -5,6 +5,7 @@
 
 pub mod anthropic;
 pub mod client;
+pub mod hardware;
 pub mod config;
 pub mod gemini;
 pub mod local;
