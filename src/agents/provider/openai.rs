@@ -25,16 +25,17 @@ pub(crate) async fn generate_openai_compatible(
     use_cache: bool,
 ) -> Result<LlmResponse> {
     let base_url = config
-        .base_url
+        .get_resolved_base_url()
         .as_ref()
-        .context("missing OpenAI-compatible base URL")?;
-    let endpoint = openai_chat_endpoint(base_url);
+        .context("missing OpenAI-compatible base URL")?
+        .clone();
+    let endpoint = openai_chat_endpoint(&base_url);
     let mut request = client
         .post(endpoint)
         .header("Content-Type", "application/json");
 
     let api_key_to_use =
-        if config.provider_mode == ProviderMode::Local {
+        if config.provider_mode == ProviderMode::Local || config.provider_mode == ProviderMode::ManagedLocal {
             std::env::var("OLLAMA_API_KEY")
                 .ok()
                 .or_else(|| std::env::var("XAVIER_LOCAL_LLM_API_KEY").ok())

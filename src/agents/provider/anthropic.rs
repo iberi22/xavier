@@ -25,14 +25,15 @@ pub(crate) async fn generate_anthropic_compatible(
     use_cache: bool,
 ) -> Result<LlmResponse> {
     let base_url = config
-        .base_url
+        .get_resolved_base_url()
         .as_ref()
-        .context("missing Anthropic-compatible base URL")?;
+        .context("missing Anthropic-compatible base URL")?
+        .clone();
     let api_key = config
         .api_key
         .as_ref()
         .context("missing Anthropic-compatible API key")?;
-    let endpoint = anthropic_messages_endpoint(base_url);
+    let endpoint = anthropic_messages_endpoint(&base_url);
 
     let mut system_json = json!([
         {
