@@ -332,6 +332,7 @@ pub async fn v1_mesh_handshake(
                             clearance: crate::memory::schema::ClearanceLevel::Unclassified,
                             namespaces: None,
                             public_key_hex: payload.public_key_hex.clone(),
+                            namespace_acl: None,
                         },
                     );
                     info!("Auto-registered peer {} in MeshAcl", payload.node_id);
