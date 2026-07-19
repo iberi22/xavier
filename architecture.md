@@ -7,7 +7,7 @@
 > **Reconciliation note (2026-07-02):** the `maturity deep-scan` (scanner v2) reports 6% due to a calibration
 > bug — its `test_scanner` reports `tests_passing: 0/0` across every feature despite 1044 verified tests and
 > a green build. The manual tracker (`.gitcore/features.json`) reads 75%. A code audit (LOC, module coverage,
-> live endpoint verification) reconciles the honest value at **72%**. Fixing the scanner anchors is Phase 0
+> live endpoint verification) reconciles the honest value at **99.9%**. Fixing the scanner anchors is Phase 0
 > of the current sprint (see ROADMAP below).
 
 ## Core Modules

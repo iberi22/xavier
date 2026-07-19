@@ -267,13 +267,19 @@ async fn issue_tokens(state: &CliState, user: &User, ip: Option<&str>, ua: Optio
 
 pub async fn list_sessions_handler(
     State(state): State<CliState>,
+    axum::Extension(session): axum::Extension<crate::cli::http_setup::SessionInfo>,
 ) -> Response {
+    let user_id = match &session.user_id {
+        Some(uid) => uid,
+        None => return json_response(StatusCode::UNAUTHORIZED, serde_json::json!({"error": "User not authenticated"})),
+    };
+
     let auth_store = match state.auth_store() {
         Some(s) => s,
         None => return json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({"error": "Auth store not initialized"})),
     };
 
-    match auth_store.get_active_sessions() {
+    match auth_store.get_active_sessions(user_id) {
         Ok(sessions) => json_response(StatusCode::OK, serde_json::json!({
             "status": "ok",
             "sessions": sessions
@@ -394,13 +400,19 @@ mod tests {
 pub async fn revoke_session_handler(
     State(state): State<CliState>,
     Path(token_id): Path<String>,
+    axum::Extension(session): axum::Extension<crate::cli::http_setup::SessionInfo>,
 ) -> Response {
+    let user_id = match &session.user_id {
+        Some(uid) => uid,
+        None => return json_response(StatusCode::UNAUTHORIZED, serde_json::json!({"error": "User not authenticated"})),
+    };
+
     let auth_store = match state.auth_store() {
         Some(s) => s,
         None => return json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({"error": "Auth store not initialized"})),
     };
 
-    match auth_store.revoke_refresh_token(&token_id) {
+    match auth_store.revoke_user_session(user_id, &token_id) {
         Ok(_) => json_response(StatusCode::OK, serde_json::json!({
             "status": "ok",
             "message": "Session revoked"

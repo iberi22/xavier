@@ -1,0 +1,51 @@
+name: Data Commons E2E Test
+
+on:
+  push:
+    paths:
+      - 'src/mesh/**'
+      - 'src/agents/anomaly_scanner.rs'
+      - '.github/workflows/data-commons-test.yml'
+  pull_request:
+    paths:
+      - 'src/mesh/**'
+      - 'src/agents/anomaly_scanner.rs'
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  XAVIER_ENV: test
+
+jobs:
+  test_data_commons:
+    name: Token-Gated Data Commons E2E
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Data Commons Simulator (Unit Tests)
+        run: cargo test --test data_commons -- --nocapture
+        
+      - name: Run Crypto Gating Tests
+        run: cargo test mesh::crypto_gating -- --nocapture
+
+      - name: Run Telemetry Anonymizer Tests
+        run: cargo test mesh::telemetry -- --nocapture
+
+      - name: Run DAO Governance Tests
+        run: cargo test mesh::governance -- --nocapture
+
+      - name: Run Autonomous Remediation Pipeline Tests
+        run: cargo test agents::anomaly_scanner -- --nocapture
+
+      - name: Run CVE Learning Intelligence Tests
+        run: cargo test agents::cve_learner -- --nocapture
+
