@@ -9,6 +9,7 @@ pub mod config;
 pub mod gemini;
 pub mod local;
 pub mod minimax;
+pub mod model_manager;
 pub mod openai;
 pub mod rate_limit;
 pub mod router;
@@ -17,6 +18,7 @@ pub mod types;
 
 pub use client::ModelProviderClient;
 pub use config::ModelProviderConfig;
+pub use model_manager::{LocalModel, scan_local_models};
 pub use rate_limit::{QuotaStatus, RateLimitManager};
 pub use traits::LlmProvider;
 pub use types::{ApiFlavor, ModelProviderStatus, ProviderMode, LLM_TIMEOUT};
