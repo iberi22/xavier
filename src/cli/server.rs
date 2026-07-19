@@ -459,7 +459,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             get(onboarding_suggestions_handler),
         )
         .route("/v1/auth/sessions", get(list_sessions_handler))
-        .route("/v1/auth/sessions/:id", delete(revoke_session_handler))
+        .route("/v1/auth/sessions/{id}", delete(revoke_session_handler))
         .route("/mcp/tools", get(mcp_tools_handler))
         // Memory Knowledge Graph (EntityGraph)
         .route("/memory/graph/entities", get(memory_graph_list_entities))
