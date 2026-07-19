@@ -31,8 +31,14 @@ async fn test_chat_falls_back_gracefully_when_llm_unavailable() {
         .env("XAVIER_LOCAL_LLM_URL", "http://127.0.0.1:1/v1") // puerto cerrado = fallo
         .env("XAVIER_LOCAL_LLM_MODEL", "qwen3-coder")
         .env("XAVIER_EMBEDDING_MODEL", "embeddinggemma")
-        .env("XAVIER_CODE_GRAPH_DB_PATH", data_dir.path().join(format!("code-{port}.db")))
-        .env("XAVIER_MEMORY_VEC_PATH", data_dir.path().join(format!("vec-{port}.db")))
+        .env(
+            "XAVIER_CODE_GRAPH_DB_PATH",
+            data_dir.path().join(format!("code-{port}.db")),
+        )
+        .env(
+            "XAVIER_MEMORY_VEC_PATH",
+            data_dir.path().join(format!("vec-{port}.db")),
+        )
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .spawn()
@@ -43,7 +49,13 @@ async fn test_chat_falls_back_gracefully_when_llm_unavailable() {
     let client = reqwest::Client::new();
     let mut server_up = false;
     for _ in 0..30 {
-        if client.get(format!("http://127.0.0.1:{port}/health")).send().await.map(|r| r.status().is_success()).unwrap_or(false) {
+        if client
+            .get(format!("http://127.0.0.1:{port}/health"))
+            .send()
+            .await
+            .map(|r| r.status().is_success())
+            .unwrap_or(false)
+        {
             server_up = true;
             break;
         }
@@ -66,7 +78,8 @@ async fn test_chat_falls_back_gracefully_when_llm_unavailable() {
             "model": "auto",
             "messages": [{"role": "user", "content": "donde guarda Xavier los recuerdos?"}]
         }))
-        .send().await
+        .send()
+        .await
         .unwrap();
 
     let status = resp.status();
@@ -74,12 +87,19 @@ async fn test_chat_falls_back_gracefully_when_llm_unavailable() {
 
     // Assert headless chat fallback behaves as expected under Ola 4 (01 merged)
     assert_eq!(
-        status.as_u16(), 200,
-        "Expected HTTP 200 but got {}: {:?}", status, body
+        status.as_u16(),
+        200,
+        "Expected HTTP 200 but got {}: {:?}",
+        status,
+        body
     );
 
     let model = body.get("model").and_then(|m| m.as_str()).unwrap_or("");
-    assert_eq!(model, "memory-fallback", "Expected model 'memory-fallback' but got '{}'", model);
+    assert_eq!(
+        model, "memory-fallback",
+        "Expected model 'memory-fallback' but got '{}'",
+        model
+    );
 
     let content = body
         .get("choices")
@@ -92,6 +112,7 @@ async fn test_chat_falls_back_gracefully_when_llm_unavailable() {
 
     assert!(
         content.contains("Modo memoria") || content.contains("[Modo memoria"),
-        "Expected content to contain memory fallback marker, but got: '{}'", content
+        "Expected content to contain memory fallback marker, but got: '{}'",
+        content
     );
 }

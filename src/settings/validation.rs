@@ -41,11 +41,17 @@ pub fn validate_local_config(settings: &XavierSettings) -> Result<(), Vec<String
         }
 
         if settings.models.local_llm_model.trim().is_empty() {
-            errors.push("local_llm_model is empty (set it to qwen3-coder or another Ollama model)".to_string());
+            errors.push(
+                "local_llm_model is empty (set it to qwen3-coder or another Ollama model)"
+                    .to_string(),
+            );
         }
 
         if settings.models.embedding_url.trim().is_empty() {
-            errors.push("embedding_url is empty (set it to http://localhost:11434/api/embeddings)".to_string());
+            errors.push(
+                "embedding_url is empty (set it to http://localhost:11434/api/embeddings)"
+                    .to_string(),
+            );
         } else if !is_http_url(&settings.models.embedding_url) {
             errors.push(format!(
                 "embedding_url '{}' is not a valid http/https URL",
@@ -54,7 +60,10 @@ pub fn validate_local_config(settings: &XavierSettings) -> Result<(), Vec<String
         }
 
         if settings.models.embedding_model.trim().is_empty() {
-            errors.push("embedding_model is empty (set it to embeddinggemma or another Ollama model)".to_string());
+            errors.push(
+                "embedding_model is empty (set it to embeddinggemma or another Ollama model)"
+                    .to_string(),
+            );
         }
     }
 
@@ -108,7 +117,9 @@ mod tests {
         let res = validate_local_config(&settings);
         assert!(res.is_err());
         let errs = res.unwrap_err();
-        assert!(errs.iter().any(|e| e.contains("not a valid http/https URL")));
+        assert!(errs
+            .iter()
+            .any(|e| e.contains("not a valid http/https URL")));
     }
 
     #[test]

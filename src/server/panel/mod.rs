@@ -332,8 +332,7 @@ mod tests {
         let empty_body = to_bytes(empty_response.into_body(), usize::MAX)
             .await
             .expect("test assertion");
-        let empty_graph: GraphData =
-            serde_json::from_slice(&empty_body).expect("test assertion");
+        let empty_graph: GraphData = serde_json::from_slice(&empty_body).expect("test assertion");
         assert_eq!(empty_graph.id, "default");
         assert_eq!(
             empty_graph.data["nodes"].as_array().map(|a| a.len()),

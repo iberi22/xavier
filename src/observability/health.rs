@@ -426,7 +426,10 @@ impl HealthMonitor {
         let config = crate::agents::provider::ModelProviderConfig::from_env();
         let provider = config.provider_label.clone();
         let model = config.model.clone();
-        let endpoint = config.base_url.clone().unwrap_or_else(|| "none".to_string());
+        let endpoint = config
+            .base_url
+            .clone()
+            .unwrap_or_else(|| "none".to_string());
         let mut reachable = false;
         let mut status = HealthLevel::Healthy;
 

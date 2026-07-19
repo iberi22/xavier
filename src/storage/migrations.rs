@@ -761,7 +761,10 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(has_name, 1, "name column must exist after ensure_migration_table");
+        assert_eq!(
+            has_name, 1,
+            "name column must exist after ensure_migration_table"
+        );
         assert_version(&conn, 5);
     }
 

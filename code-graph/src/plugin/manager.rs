@@ -6,14 +6,14 @@
 //! chain resolver, and the process engine.
 
 use crate::error::{GraphError, Result};
+use crate::plugin::engine::ProcessEngine;
+use crate::plugin::fallback::FallbackChain;
+use crate::plugin::health::PluginHealthMonitor;
 use crate::plugin::types::{
     FallbackResolver, FallbackStep, FileToParse, PluginConfig, PluginDescriptor, PluginEngine,
     PluginRegistry, RegistryEntry,
 };
-use crate::plugin::engine::ProcessEngine;
-use crate::plugin::fallback::FallbackChain;
-use crate::plugin::health::PluginHealthMonitor;
-use crate::types::{Language, Symbol, LanguageDiscovery};
+use crate::types::{Language, LanguageDiscovery, Symbol};
 use parking_lot::RwLock;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -241,7 +241,11 @@ impl LanguageDiscovery for PluginManager {
         let ext_lower = ext.to_lowercase();
         let by_name = self.by_name.read();
         for desc in by_name.values() {
-            if desc.extensions.iter().any(|e| e.to_lowercase() == ext_lower) {
+            if desc
+                .extensions
+                .iter()
+                .any(|e| e.to_lowercase() == ext_lower)
+            {
                 if let Some(lang) = desc.languages.first() {
                     return lang.clone();
                 }
@@ -291,9 +295,10 @@ impl DefaultRegistry {
                 paths.push(std::path::PathBuf::from(p));
             }
             // Built-in fixture (crate root when compiling code-graph)
-            paths.push(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
-                "fixtures/xavier-plugins/plugins.json",
-            ));
+            paths.push(
+                std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("fixtures/xavier-plugins/plugins.json"),
+            );
             // Workspace-relative fallback when running from monorepo root
             paths.push(std::path::PathBuf::from(
                 "code-graph/fixtures/xavier-plugins/plugins.json",
@@ -359,9 +364,8 @@ impl PluginRegistry for DefaultRegistry {
         let found = self.entries.iter().find(|e| e.name == name).cloned();
         let name = name.to_string();
         Box::pin(async move {
-            found.ok_or_else(|| {
-                GraphError::Parser(format!("Plugin {} not found in registry", name))
-            })
+            found
+                .ok_or_else(|| GraphError::Parser(format!("Plugin {} not found in registry", name)))
         })
     }
 }

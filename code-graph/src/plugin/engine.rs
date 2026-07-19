@@ -1,7 +1,9 @@
 //! Subprocess-based execution engine for plugins.
 
 use crate::error::{GraphError, Result};
-use crate::plugin::types::{FileToParse, PluginConfig, PluginEngine, PluginRequest, PluginResponse};
+use crate::plugin::types::{
+    FileToParse, PluginConfig, PluginEngine, PluginRequest, PluginResponse,
+};
 use crate::types::{Language, Symbol};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -82,9 +84,7 @@ impl PluginEngine for ProcessEngine {
                 .unwrap()
                 .read_to_end(&mut stdout)
                 .await
-                .map_err(|e| {
-                    GraphError::Parser(format!("failed to read plugin stdout: {}", e))
-                })?;
+                .map_err(|e| GraphError::Parser(format!("failed to read plugin stdout: {}", e)))?;
 
             let mut stderr = String::new();
             child
@@ -95,9 +95,10 @@ impl PluginEngine for ProcessEngine {
                 .await
                 .ok();
 
-            let status = child.wait().await.map_err(|e| {
-                GraphError::Parser(format!("plugin process failed to exit: {}", e))
-            })?;
+            let status = child
+                .wait()
+                .await
+                .map_err(|e| GraphError::Parser(format!("plugin process failed to exit: {}", e)))?;
 
             if !status.success() {
                 let err = format!(

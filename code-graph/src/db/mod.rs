@@ -1096,7 +1096,9 @@ impl CodeGraphDB {
             .map_err(|e| GraphError::Database(e.to_string()))?;
 
         let rows = stmt
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)))
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
             .map_err(|e| GraphError::Database(e.to_string()))?;
 
         let mut metadata = std::collections::HashMap::new();
@@ -1389,7 +1391,8 @@ mod tests {
         assert!(res.symbols.len() >= 2);
 
         // Delete file sync verification
-        db.batch_delete_file_data(&["src/processor.rs".to_string()]).expect("delete file");
+        db.batch_delete_file_data(&["src/processor.rs".to_string()])
+            .expect("delete file");
         let res = db.find_symbols("process", 10).expect("find");
         assert_eq!(res.symbols.len(), 0);
 

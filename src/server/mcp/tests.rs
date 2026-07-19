@@ -1404,7 +1404,10 @@ async fn test_mcp_compact_outputs() {
     let result_text = body["result"]["content"][0]["text"].as_str().unwrap();
     let result_json: Value = serde_json::from_str(result_text).unwrap();
     assert_eq!(result_json["depth"], "shallow");
-    assert!(result_json["context"].as_str().unwrap().contains("## Core Slots"));
+    assert!(result_json["context"]
+        .as_str()
+        .unwrap()
+        .contains("## Core Slots"));
 }
 
 #[tokio::test]
@@ -1601,17 +1604,26 @@ async fn memory_context_max_chars_per_doc_and_multi_id() {
 
     // Check honest truncated flags reporting in overall payload
     assert!(sc["truncated"].as_bool().unwrap());
-    assert_eq!(sc["truncated_reason"].as_str().unwrap(), "One or more documents were truncated");
+    assert_eq!(
+        sc["truncated_reason"].as_str().unwrap(),
+        "One or more documents were truncated"
+    );
 
     // Check honest reporting in sources metadata
     let sources = sc["sources"].as_array().unwrap();
     assert_eq!(sources.len(), 2);
 
-    let src1 = sources.iter().find(|s| s["id"].as_str().unwrap() == id1).unwrap();
+    let src1 = sources
+        .iter()
+        .find(|s| s["id"].as_str().unwrap() == id1)
+        .unwrap();
     assert!(!src1["metadata"]["truncated"].as_bool().unwrap());
     assert_eq!(src1["metadata"]["total_chars"].as_u64().unwrap(), 10);
 
-    let src2 = sources.iter().find(|s| s["id"].as_str().unwrap() == id2).unwrap();
+    let src2 = sources
+        .iter()
+        .find(|s| s["id"].as_str().unwrap() == id2)
+        .unwrap();
     assert!(src2["metadata"]["truncated"].as_bool().unwrap());
     assert_eq!(src2["metadata"]["total_chars"].as_u64().unwrap(), 103);
 }

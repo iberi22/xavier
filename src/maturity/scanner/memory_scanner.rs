@@ -152,22 +152,16 @@ fn scan_sessions(root: &str, keywords: &[String]) -> usize {
             // Count occurrences (rough proxy for session mentions)
             mentions += content.matches(kw.as_str()).count();
         }
-    } else {
-        // SQLite binary format — try with strings-like approach
-        let output = std::process::Command::new("cmd")
-            .args([
-                "/C",
-                &format!(
-                    "findstr /M \"{}\" \"{}\" 2>nul",
-                    keywords.join(" "),
-                    session_db_path
-                ),
-            ])
-            .output()
-            .ok();
-        if let Some(out) = output {
-            let stdout = String::from_utf8_lossy(&out.stdout);
-            mentions = stdout.lines().count();
+    } else if let Ok(bytes) = std::fs::read(&session_db_path) {
+        // SQLite binary format — fallback to scanning bytes
+        for kw in keywords {
+            let kw_bytes = kw.as_bytes();
+            if !kw_bytes.is_empty() {
+                mentions += bytes
+                    .windows(kw_bytes.len())
+                    .filter(|window| window == &kw_bytes)
+                    .count();
+            }
         }
     }
 

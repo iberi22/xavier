@@ -441,13 +441,15 @@ impl ConversationsDb {
         let preview_c = preview.to_string();
         let now_c = Utc::now().to_rfc3339();
 
-        ConnectionManager::global().with_conn(&self.full_project_id, move |conn| {
-            let _ = conn.execute(
+        ConnectionManager::global()
+            .with_conn(&self.full_project_id, move |conn| {
+                let _ = conn.execute(
                 "UPDATE conversation_threads SET updated_at = ?1, last_preview = ?2 WHERE id = ?3",
                 params![now_c, preview_c, thread_id_c],
             );
-            Ok(())
-        }).await?;
+                Ok(())
+            })
+            .await?;
         Ok(())
     }
 

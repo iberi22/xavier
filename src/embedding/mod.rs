@@ -147,7 +147,9 @@ impl EmbedderConfig {
                 for backend in backends {
                     match backend {
                         EmbedderBackendConfig::Gllm(cfg) => return Some(cfg.model.clone()),
-                        EmbedderBackendConfig::OpenAICompatible(cfg) => return Some(cfg.model.clone()),
+                        EmbedderBackendConfig::OpenAICompatible(cfg) => {
+                            return Some(cfg.model.clone())
+                        }
                     }
                 }
                 None
@@ -212,7 +214,9 @@ impl EmbedderConfig {
         if local_signal || explicit_local_llm || cloud_signal {
             match (local_signal || explicit_local_llm, cloud_signal) {
                 (true, true) => {
-                    tracing::info!("Embeddings backend: local-ollama(embeddinggemma) | cloud-openai");
+                    tracing::info!(
+                        "Embeddings backend: local-ollama(embeddinggemma) | cloud-openai"
+                    );
                     Self::Fallback(vec![
                         EmbedderBackendConfig::OpenAICompatible(local_config()),
                         EmbedderBackendConfig::OpenAICompatible(cloud_config()),
@@ -236,18 +240,15 @@ impl EmbedderConfig {
 
             let handle = tokio::runtime::Handle::try_current();
             let models_opt = match handle {
-                Ok(h) => {
-                    tokio::task::block_in_place(|| {
-                        h.block_on(async {
-                            probe_ollama_async(&probe_url).await
-                        })
-                    })
-                }
+                Ok(h) => tokio::task::block_in_place(|| {
+                    h.block_on(async { probe_ollama_async(&probe_url).await })
+                }),
                 Err(_) => {
-                    if let Ok(rt) = tokio::runtime::Builder::new_current_thread().enable_all().build() {
-                        rt.block_on(async {
-                            probe_ollama_async(&probe_url).await
-                        })
+                    if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        rt.block_on(async { probe_ollama_async(&probe_url).await })
                     } else {
                         None
                     }
@@ -257,15 +258,23 @@ impl EmbedderConfig {
             if let Some(models) = models_opt {
                 tracing::info!("Embeddings backend: local-ollama(embeddinggemma)");
 
-                let has_embeddinggemma = models.iter().any(|m| m == "embeddinggemma" || m.starts_with("embeddinggemma:"));
+                let has_embeddinggemma = models
+                    .iter()
+                    .any(|m| m == "embeddinggemma" || m.starts_with("embeddinggemma:"));
                 if !has_embeddinggemma {
-                    tracing::warn!("Modelo embeddinggemma no encontrado. Ejecuta: ollama pull embeddinggemma");
+                    tracing::warn!(
+                        "Modelo embeddinggemma no encontrado. Ejecuta: ollama pull embeddinggemma"
+                    );
                 }
 
                 Self::local_only(api_flavor)
             } else {
                 tracing::warn!("Ollama no responde en http://localhost:11434/v1/models");
-                crate::server::alerts::SYSTEM_ALERTS.push_alert("WARN", "Ollama no responde en http://localhost:11434/v1/models", "embedding");
+                crate::server::alerts::SYSTEM_ALERTS.push_alert(
+                    "WARN",
+                    "Ollama no responde en http://localhost:11434/v1/models",
+                    "embedding",
+                );
                 tracing::info!("Embeddings backend: disabled(noop)");
                 Self::Noop
             }
@@ -684,7 +693,10 @@ mod tests {
     async fn test_auto_respects_explicit_local_signal() {
         let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
 
-        std::env::set_var("XAVIER_EMBEDDING_LOCAL_URL", "http://localhost:11434/v1/embeddings");
+        std::env::set_var(
+            "XAVIER_EMBEDDING_LOCAL_URL",
+            "http://localhost:11434/v1/embeddings",
+        );
         std::env::remove_var("OPENAI_API_KEY");
         std::env::remove_var("_XAVIER_TEST_OLLAMA_PROBE_URL");
 
@@ -718,12 +730,17 @@ mod tests {
         // Start a mockito server
         let mut server = mockito::Server::new_async().await;
         let mock_url = server.url();
-        std::env::set_var("_XAVIER_TEST_OLLAMA_PROBE_URL", format!("{}/v1/models", mock_url));
+        std::env::set_var(
+            "_XAVIER_TEST_OLLAMA_PROBE_URL",
+            format!("{}/v1/models", mock_url),
+        );
 
-        let _mock = server.mock("GET", "/v1/models")
+        let _mock = server
+            .mock("GET", "/v1/models")
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{
+            .with_body(
+                r#"{
                 "object": "list",
                 "data": [
                     {
@@ -731,7 +748,8 @@ mod tests {
                         "object": "model"
                     }
                 ]
-            }"#)
+            }"#,
+            )
             .create_async()
             .await;
 
@@ -752,12 +770,17 @@ mod tests {
         // Start a mockito server
         let mut server = mockito::Server::new_async().await;
         let mock_url = server.url();
-        std::env::set_var("_XAVIER_TEST_OLLAMA_PROBE_URL", format!("{}/v1/models", mock_url));
+        std::env::set_var(
+            "_XAVIER_TEST_OLLAMA_PROBE_URL",
+            format!("{}/v1/models", mock_url),
+        );
 
-        let _mock = server.mock("GET", "/v1/models")
+        let _mock = server
+            .mock("GET", "/v1/models")
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(r#"{
+            .with_body(
+                r#"{
                 "object": "list",
                 "data": [
                     {
@@ -765,7 +788,8 @@ mod tests {
                         "object": "model"
                     }
                 ]
-            }"#)
+            }"#,
+            )
             .create_async()
             .await;
 
@@ -784,7 +808,10 @@ mod tests {
         std::env::remove_var("OPENAI_API_KEY");
 
         // Use an invalid/unreachable URL
-        std::env::set_var("_XAVIER_TEST_OLLAMA_PROBE_URL", "http://127.0.0.1:1/v1/models");
+        std::env::set_var(
+            "_XAVIER_TEST_OLLAMA_PROBE_URL",
+            "http://127.0.0.1:1/v1/models",
+        );
 
         let config = EmbedderConfig::auto(ApiFlavor::OpenAICompatible);
         // Should return Noop because Ollama is unreachable

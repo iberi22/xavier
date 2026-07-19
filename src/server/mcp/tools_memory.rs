@@ -295,7 +295,9 @@ pub async fn handle_memory_tool(
                 "candidates": candidates,
             });
 
-            Ok(serde_json::to_value(MCPToolResult::structured(payload, false))?)
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                payload, false,
+            ))?)
         }
         "get_memory" => {
             let id = arguments
@@ -799,7 +801,8 @@ pub async fn handle_memory_tool(
                     }
 
                     let doc_content = if is_this_doc_truncated {
-                        let mut truncated: String = record.content.chars().take(max_chars_per_doc).collect();
+                        let mut truncated: String =
+                            record.content.chars().take(max_chars_per_doc).collect();
                         truncated.push_str("\n[... doc truncated ...]");
                         truncated
                     } else {
