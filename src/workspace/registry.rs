@@ -14,6 +14,23 @@ use super::templates::seed_workspace;
 use crate::agents::RuntimeConfig;
 use crate::settings::XavierSettings;
 
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WorkspaceDbKind {
+    Personal,
+    Family,
+    Org,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceDb {
+    pub db_id: String,
+    pub db_path: String,
+    pub display_name: String,
+    pub kind: WorkspaceDbKind,
+}
+
 #[derive(Clone)]
 pub struct WorkspaceContext {
     pub workspace_id: String,

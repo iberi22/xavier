@@ -32,8 +32,10 @@ pub mod tokens;
 pub mod usage;
 pub mod verify;
 pub mod workspace;
+pub mod workspace_db;
 
 pub use agent::*;
+pub use workspace_db::*;
 pub use agent_cli::*;
 pub use auth::*;
 pub use code::*;

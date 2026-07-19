@@ -10,6 +10,7 @@
 //! the bottom of this file. New code should prefer [`MigrationRunner`].
 
 pub mod migrations;
+pub mod multi_db;
 
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension};
