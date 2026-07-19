@@ -429,8 +429,34 @@ pub fn run() {
                 }
             };
 
+            // Resolve the data directory: prefer XAVIER_DATA_DIR env var,
+            // then fall back to %APPDATA%\xavier (standard install location).
+            let data_dir = std::env::var_os("XAVIER_DATA_DIR")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| {
+                    let mut p = std::env::var_os("APPDATA")
+                        .map(std::path::PathBuf::from)
+                        .unwrap_or_else(|| xavier_cwd.clone());
+                    p.push("xavier");
+                    p
+                });
+            let _ = std::fs::create_dir_all(&data_dir);
+            let vec_path = std::env::var_os("XAVIER_MEMORY_VEC_PATH")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| data_dir.join("vec-store.sqlite3"));
+            let xavier_home = std::env::var_os("XAVIER_HOME")
+                .map(std::path::PathBuf::from)
+                .unwrap_or_else(|| {
+                    let mut p = xavier_cwd.clone();
+                    p.push(".xavier");
+                    p
+                });
+
             let (mut _rx, _child) = sidecar_command
                 .env("XAVIER_TOKEN", token)
+                .env("XAVIER_DATA_DIR", &data_dir)
+                .env("XAVIER_MEMORY_VEC_PATH", &vec_path)
+                .env("XAVIER_HOME", &xavier_home)
                 .args(["http", "8006"])
                 .current_dir(&xavier_cwd)
                 .spawn()

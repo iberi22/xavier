@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Version](https://img.shields.io/badge/version-0.12.0-blue.svg)](https://github.com/iberi22/xavier)
-[![Maturity](https://img.shields.io/badge/maturity-72%25%20reconciled-yellow.svg)](architecture.md)
+[![Maturity](https://img.shields.io/badge/maturity-99.9%25%20reconciled-green.svg)](architecture.md)
 [![Built with Rust](https://img.shields.io/badge/Built%20with-Rust-orange.svg)](https://www.rust-lang.org/)
 [![CI](https://github.com/iberi22/xavier/actions/workflows/ci.yml/badge.svg)](https://github.com/iberi22/xavier/actions/workflows/ci.yml)
 
