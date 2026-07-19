@@ -719,24 +719,51 @@ pub async fn memory_query_handler(
         payload.query, limit
     );
 
+    let local_node_id = if let Ok(identity) = xavier::mesh::NodeIdentity::load_or_create() {
+        identity.node_id.0
+    } else {
+        "local".to_string()
+    };
+
+    let federated = payload.federated.clone().unwrap_or_default();
+    let local_dbs = federated.local_dbs.clone();
+    let peer_nodes = federated.peer_nodes.clone();
+    let propagate_to_mesh = federated.propagate_to_mesh;
+    let max_hops = federated.max_hops;
+
     // 1. Local workspace search future
     let local_query = payload.query.clone();
-    let memory = state.memory.clone();
+    let store = state.store.clone();
+    let default_workspace = state.workspace_id.clone();
+    let local_node_id_clone = local_node_id.clone();
     let local_future = async move {
         let mut results_list = Vec::new();
-        match memory.search(&local_query, limit, None).await {
-            Ok(results) => {
-                for doc in results {
-                    results_list.push(serde_json::json!({
-                        "id": doc.id,
-                        "content": doc.content,
-                        "embedding": doc.embedding,
-                        "source": "local",
-                    }));
+        let target_dbs = if local_dbs.is_empty() {
+            vec![default_workspace]
+        } else {
+            local_dbs
+        };
+
+        for ws_id in target_dbs {
+            match store.search(&ws_id, &local_query, None).await {
+                Ok(results) => {
+                    for record in results {
+                        let doc = record.to_document();
+                        results_list.push(serde_json::json!({
+                            "id": doc.id,
+                            "path": doc.path,
+                            "content": doc.content,
+                            "metadata": doc.metadata,
+                            "embedding": doc.embedding,
+                            "source": "local",
+                            "source_node_id": local_node_id_clone.clone(),
+                            "source_db_id": ws_id.clone(),
+                        }));
+                    }
                 }
-            }
-            Err(e) => {
-                info!("Memory query error: {}", e);
+                Err(e) => {
+                    info!("Memory query local error for DB {}: {}", ws_id, e);
+                }
             }
         }
         results_list
@@ -744,53 +771,71 @@ pub async fn memory_query_handler(
 
     // 2. Parallel fan-out to remote workspaces via the Mesh P2P API
     let mut remote_futures = Vec::new();
-    if let Ok(registry) = xavier::mesh::PeerRegistry::load() {
-        let peers = registry.list_peers();
-        
-        for peer in peers {
-            for ws_id in &peer.shared_workspace_ids {
-                if let Some(token) = peer.shared_workspace_tokens.get(ws_id) {
-                    let client = state.http_client.clone();
-                    let url = format!("{}/v1/mesh/workspaces/query", peer.endpoint_url);
-                    let query_payload = serde_json::json!({
-                        "token": token,
-                        "query": payload.query,
-                        "limit": limit,
-                    });
+    if max_hops > 0 {
+        let next_federated = xavier::memory::schema::FederatedSearchRequest {
+            max_hops: max_hops - 1,
+            ..federated.clone()
+        };
 
-                    let ws_id = ws_id.clone();
-                    let peer_node_id = peer.node_id.0.clone();
-                    remote_futures.push(async move {
-                        let res = client.post(&url)
-                            .json(&query_payload)
-                            .timeout(std::time::Duration::from_secs(5))
-                            .send()
-                            .await;
+        if let Ok(registry) = xavier::mesh::PeerRegistry::load() {
+            let peers = registry.list_peers();
 
-                        match res {
-                            Ok(resp) => {
-                                if resp.status().is_success() {
-                                    if let Ok(body) = resp.json::<serde_json::Value>().await {
-                                        if let Some(results_arr) = body.get("results").and_then(|v| v.as_array()) {
-                                            let mut remote_docs = Vec::new();
-                                            for r in results_arr {
-                                                let mut r_clone = r.clone();
-                                                if let Some(obj) = r_clone.as_object_mut() {
-                                                    obj.insert("source".to_string(), serde_json::json!(format!("remote:{}::{}", peer_node_id, ws_id)));
+            for peer in peers {
+                if !propagate_to_mesh && !peer_nodes.contains(&peer.node_id.0) {
+                    continue;
+                }
+
+                for ws_id in &peer.shared_workspace_ids {
+                    if let Some(token) = peer.shared_workspace_tokens.get(ws_id) {
+                        let client = state.http_client.clone();
+                        let url = format!("{}/v1/mesh/workspaces/query", peer.endpoint_url);
+                        let query_payload = serde_json::json!({
+                            "token": token,
+                            "query": payload.query,
+                            "limit": limit,
+                            "federated": next_federated,
+                        });
+
+                        let ws_id = ws_id.clone();
+                        let peer_node_id = peer.node_id.0.clone();
+                        remote_futures.push(async move {
+                            let res = client.post(&url)
+                                .json(&query_payload)
+                                .timeout(std::time::Duration::from_secs(5))
+                                .send()
+                                .await;
+
+                            match res {
+                                Ok(resp) => {
+                                    if resp.status().is_success() {
+                                        if let Ok(body) = resp.json::<serde_json::Value>().await {
+                                            if let Some(results_arr) = body.get("results").and_then(|v| v.as_array()) {
+                                                let mut remote_docs = Vec::new();
+                                                for r in results_arr {
+                                                    let mut r_clone = r.clone();
+                                                    if let Some(obj) = r_clone.as_object_mut() {
+                                                        obj.insert("source".to_string(), serde_json::json!(format!("remote:{}::{}", peer_node_id, ws_id)));
+                                                        if obj.get("source_node_id").is_none() {
+                                                            obj.insert("source_node_id".to_string(), serde_json::json!(peer_node_id.clone()));
+                                                        }
+                                                        if obj.get("source_db_id").is_none() {
+                                                            obj.insert("source_db_id".to_string(), serde_json::json!(ws_id.clone()));
+                                                        }
+                                                    }
+                                                    remote_docs.push(r_clone);
                                                 }
-                                                remote_docs.push(r_clone);
+                                                return Some(remote_docs);
                                             }
-                                            return Some(remote_docs);
                                         }
                                     }
                                 }
+                                Err(e) => {
+                                    tracing::warn!("Failed to query remote workspace {} on peer {}: {}", ws_id, peer_node_id, e);
+                                }
                             }
-                            Err(e) => {
-                                tracing::warn!("Failed to query remote workspace {} on peer {}: {}", ws_id, peer_node_id, e);
-                            }
-                        }
-                        None
-                    });
+                            None
+                        });
+                    }
                 }
             }
         }

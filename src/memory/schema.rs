@@ -338,6 +338,33 @@ pub struct TypedMemoryPayload {
     pub clearance: Option<ClearanceLevel>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FederatedSearchRequest {
+    #[serde(default)]
+    pub local_dbs: Vec<String>,
+    #[serde(default)]
+    pub peer_nodes: Vec<String>,
+    #[serde(default)]
+    pub propagate_to_mesh: bool,
+    #[serde(default = "default_max_hops")]
+    pub max_hops: u8,
+}
+
+fn default_max_hops() -> u8 {
+    1
+}
+
+impl Default for FederatedSearchRequest {
+    fn default() -> Self {
+        Self {
+            local_dbs: Vec::new(),
+            peer_nodes: Vec::new(),
+            propagate_to_mesh: false,
+            max_hops: 1,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MemoryQueryFilters {
     pub kinds: Option<Vec<MemoryKind>>,
@@ -368,6 +395,8 @@ pub struct MemoryQueryFilters {
     pub clearances: Option<Vec<ClearanceLevel>>,
     #[serde(default)]
     pub path_prefix: Option<String>,
+    #[serde(default)]
+    pub federated: Option<FederatedSearchRequest>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
