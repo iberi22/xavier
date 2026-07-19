@@ -61,17 +61,37 @@ impl NotificationManager {
         self.event_tx.subscribe()
     }
 
+    /// Forward notifications to the Tauri webview.
+    ///
+    /// Safe to call from the Tauri setup hook (which is **not** on a Tokio
+    /// runtime). Uses a dedicated background thread + Tokio runtime instead of
+    /// bare `tokio::spawn`, which panics with "no reactor running".
     #[cfg(feature = "tauri")]
     pub fn spawn_tauri_forwarder(&self) {
         use tauri::Emitter;
         let mut rx = self.subscribe();
-        tokio::spawn(async move {
-            while let Ok(notification) = rx.recv().await {
-                if let Some(handle) = crate::utils::tauri_utils::get_tauri_app_handle() {
-                    let _ = handle.emit("new-notification", notification);
-                }
-            }
-        });
+        std::thread::Builder::new()
+            .name("xavier-tauri-notify".into())
+            .spawn(move || {
+                let rt = match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        eprintln!("Failed to create notification runtime: {e}");
+                        return;
+                    }
+                };
+                rt.block_on(async move {
+                    while let Ok(notification) = rx.recv().await {
+                        if let Some(handle) = crate::utils::tauri_utils::get_tauri_app_handle() {
+                            let _ = handle.emit("new-notification", notification);
+                        }
+                    }
+                });
+            })
+            .ok();
     }
 
     pub async fn notify(

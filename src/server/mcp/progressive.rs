@@ -54,20 +54,18 @@ mod tests {
             .expect("content should be an array");
         assert!(!content_array_default.is_empty(), "Should return at least one search result");
 
-        let sc_default = &content_array_default[0]["structuredContent"];
-        let candidates_default = sc_default["candidates"].as_array().expect("candidates should be an array");
-        assert!(!candidates_default.is_empty(), "Candidates must not be empty");
+        let structured_default = &content_array_default[0]["structuredContent"];
+        let candidates_default = structured_default["candidates"]
+            .as_array()
+            .expect("candidates should be an array");
+        assert!(!candidates_default.is_empty(), "Should have candidates");
 
-        let first_cand = &candidates_default[0];
-        let id_default = first_cand["id"].as_str().expect("ID should be a string");
-        let path_default = first_cand["path"].as_str().expect("Path should be a string");
-        let snippet_default = first_cand["snippet"].as_str().expect("Snippet should be a string");
-
+        let candidate_default = &candidates_default[0];
         // Assert no full content is included by default (progressive disclosure)
-        assert!(!id_default.is_empty(), "ID should not be empty");
-        assert_eq!(path_default, "specs/prod-999.txt");
-        assert!(snippet_default.contains("PROD_SPEC_999"));
-        assert!(first_cand.get("content").is_none(), "Search result must NOT contain full body content by default");
+        assert!(!candidate_default["id"].as_str().unwrap_or("").is_empty(), "Search result should contain the ID");
+        assert_eq!(candidate_default["path"].as_str().unwrap_or(""), "specs/prod-999.txt", "Search result should contain the path");
+        assert!(candidate_default["snippet"].as_str().unwrap_or("").contains("PROD_SPEC_999"), "Search result should contain snippet");
+        assert!(candidate_default["content"].is_null() || candidate_default["content"].as_str().unwrap_or("").is_empty(), "Search result must NOT contain the full body");
 
         // 3. Perform a search using `mem_search` with include_content = true
         let search_resp_full = post_json(
@@ -92,14 +90,17 @@ mod tests {
         let content_array_full = body_full["result"]["content"]
             .as_array()
             .expect("content should be an array");
-        let sc_full = &content_array_full[0]["structuredContent"];
-        let candidates_full = sc_full["candidates"].as_array().expect("candidates array");
-        let content_full = candidates_full[0]["content"].as_str().expect("Content must be disclosed");
+        let structured_full = &content_array_full[0]["structuredContent"];
+        let candidates_full = structured_full["candidates"]
+            .as_array()
+            .expect("candidates should be an array");
+        assert!(!candidates_full.is_empty(), "Should have candidates");
+        let candidate_full = &candidates_full[0];
 
         // Assert full content is disclosed when requested
-        assert!(content_full.contains("PROD_SPEC_999"), "Full search result must contain prefix");
-        assert!(content_full.contains("END_SPEC"), "Full search result must contain the full body ending");
-        assert!(content_full.len() > 4000, "Disclosed full search response should be large");
+        assert!(candidate_full["content"].as_str().unwrap_or("").contains("PROD_SPEC_999"), "Full search result must contain the content prefix");
+        assert!(candidate_full["content"].as_str().unwrap_or("").contains("END_SPEC"), "Full search result must contain the full body ending");
+        assert!(candidate_full["content"].as_str().unwrap_or("").len() > 4000, "Disclosed full search response should be large");
     }
 
     #[tokio::test]
@@ -164,7 +165,8 @@ mod tests {
         )
         .await;
         let body_rust = get_json_body(search_rust_resp).await;
-        let id_rust = body_rust["result"]["content"][0]["structuredContent"]["candidates"][0]["id"].as_str().unwrap();
+        let candidates_rust = body_rust["result"]["content"][0]["structuredContent"]["candidates"].as_array().unwrap();
+        let id_rust = candidates_rust[0]["id"].as_str().unwrap();
 
         let search_python_resp = post_json(
             router.clone(),
@@ -182,7 +184,8 @@ mod tests {
         )
         .await;
         let body_python = get_json_body(search_python_resp).await;
-        let id_python = body_python["result"]["content"][0]["structuredContent"]["candidates"][0]["id"].as_str().unwrap();
+        let candidates_python = body_python["result"]["content"][0]["structuredContent"]["candidates"].as_array().unwrap();
+        let id_python = candidates_python[0]["id"].as_str().unwrap();
 
         // Ensure we retrieved two different valid IDs
         assert_ne!(id_rust, id_python, "The two documents should have unique IDs");
@@ -212,7 +215,7 @@ mod tests {
         // Assert the returned context block has only the requested doc
         assert!(content_rust_out.contains("Rust is a systems"), "Context should contain requested Rust document");
         assert!(!content_rust_out.contains("Python is an interpreted"), "Context must NOT contain Python document");
-        assert_eq!(sc_rust["totalRecords"].as_u64().unwrap(), 1, "Only 1 record should be in context");
+        assert_eq!(sc_rust["total_records"].as_u64().unwrap(), 1, "Only 1 record should be in context");
 
         let sources_rust = sc_rust["sources"].as_array().unwrap();
         assert_eq!(sources_rust.len(), 1, "There should be exactly one source record");
@@ -243,7 +246,7 @@ mod tests {
         // Assert the returned context block has only the requested doc
         assert!(content_python_out.contains("Python is an interpreted"), "Context should contain requested Python document");
         assert!(!content_python_out.contains("Rust is a systems"), "Context must NOT contain Rust document");
-        assert_eq!(sc_python["totalRecords"].as_u64().unwrap(), 1, "Only 1 record should be in context");
+        assert_eq!(sc_python["total_records"].as_u64().unwrap(), 1, "Only 1 record should be in context");
 
         let sources_python = sc_python["sources"].as_array().unwrap();
         assert_eq!(sources_python.len(), 1, "There should be exactly one source record");
