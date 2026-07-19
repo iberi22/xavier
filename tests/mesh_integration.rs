@@ -126,6 +126,8 @@ async fn test_mesh_handshake_and_sync() {
         sync_enabled: true,
         is_cloud: false,
         iroh_addr: None,
+        shared_workspace_ids: Vec::new(),
+        shared_workspace_tokens: std::collections::HashMap::new(),
     };
 
     // Since we now enforce NodeID in manifest request, we must make sure Node A is in Node B's ACL

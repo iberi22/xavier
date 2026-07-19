@@ -318,6 +318,8 @@ pub async fn v1_mesh_handshake(
                         sync_enabled: true,
                         is_cloud: false,
                         iroh_addr: None,
+                        shared_workspace_ids: Vec::new(),
+                        shared_workspace_tokens: std::collections::HashMap::new(),
                     });
                     info!("Auto-registered peer {} in PeerRegistry", payload.node_id);
                 }
