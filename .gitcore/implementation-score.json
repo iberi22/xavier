@@ -1,0 +1,27 @@
+﻿{
+    "project":  "xavier",
+    "path":  "E:\\proyectosSWAL\\xavier",
+    "generated_at":  "2026-07-18T22:37:41.5649828-05:00",
+    "protocol_version":  "3.8.0",
+    "overall_pct":  99.9,
+    "breakdown":  {
+                      "protocol_pct":  100,
+                      "src_pct":  100,
+                      "srs_pct":  100,
+                      "features_pct":  99.7,
+                      "features_count":  25,
+                      "features_source":  "metadata.overall_progress_pct",
+                      "swal_compliance":  100
+                  },
+    "weights":  {
+                    "protocol":  0.2,
+                    "src":  0.15,
+                    "srs":  0.2,
+                    "features":  0.35,
+                    "swal":  0.1
+                },
+    "gaps":  [
+
+             ],
+    "grade":  "A"
+}

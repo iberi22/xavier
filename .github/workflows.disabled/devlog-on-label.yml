@@ -1,0 +1,61 @@
+name: Xavier DevLog Generator
+
+on:
+  issues:
+    types: [labeled]
+
+jobs:
+  generate-devlog:
+    if: github.event.label.name == 'devlog'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          cache: true
+
+      - name: Build Xavier
+        run: cargo build --release --bin xavier
+
+      - name: Generate DevLog post from issue
+        id: generate
+        run: |
+          bash scripts/generate-devlog-post.sh \
+            "${{ github.event.issue.title }}" \
+            "${{ github.event.issue.body }}" \
+            ${{ github.event.issue.number }}
+
+      - name: Generate DevLog static site
+        run: |
+          if [ -f ./target/release/xavier ]; then
+            ./target/release/xavier chronicle build
+          fi
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          commit-message: "docs: devlog post for #${{ github.event.issue.number }}"
+          title: "docs: ${{ github.event.issue.title }}"
+          body: |
+            Automated DevLog post generated from issue #${{ github.event.issue.number }}.
+            This PR adds a new DevLog post and regenerates the static blog.
+          branch: devlog/${{ github.event.issue.number }}
+          labels: devlog, documentation
+          delete-branch: true
+
+      - name: Update issue with PR link
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment ${{ github.event.issue.number }} \
+            --body "DevLog post generated. See the automated PR for details."
+

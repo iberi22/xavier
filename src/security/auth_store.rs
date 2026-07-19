@@ -215,13 +215,21 @@ impl AuthStore {
         Ok(())
     }
 
-    pub fn get_active_sessions(&self) -> Result<Vec<ActiveSession>> {
+    pub fn revoke_user_session(&self, user_id: &str, token: &str) -> Result<()> {
+        self.conn.lock().unwrap().execute(
+            "UPDATE refresh_tokens SET revoked = 1 WHERE token = ? AND user_id = ?",
+            params![token, user_id],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_active_sessions(&self, user_id: &str) -> Result<Vec<ActiveSession>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT token, user_id, expires_at, revoked FROM refresh_tokens WHERE revoked = 0 AND expires_at > ?"
+            "SELECT token, user_id, expires_at, revoked FROM refresh_tokens WHERE revoked = 0 AND expires_at > ? AND user_id = ?"
         )?;
         let now = Utc::now().timestamp();
-        let mut rows = stmt.query(params![now])?;
+        let mut rows = stmt.query(params![now, user_id])?;
         let mut sessions = Vec::new();
         while let Some(row) = rows.next()? {
             sessions.push(ActiveSession {
