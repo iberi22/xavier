@@ -1,17 +1,15 @@
 //! Authentication API Handlers for Xavier
 
-use axum::{extract::{State, ConnectInfo, Path}, http::{StatusCode, HeaderMap}, response::Response, Json};
-use serde::{Deserialize, Serialize};
-use crate::cli::handlers::json_response;
-use crate::cli::state::CliState;
 use axum::{
-    extract::{ConnectInfo, State},
+    extract::{ConnectInfo, Path, State},
     http::{HeaderMap, StatusCode},
     response::Response,
     Json,
 };
-use chrono::{Duration, Utc};
 use serde::{Deserialize, Serialize};
+use crate::cli::handlers::json_response;
+use crate::cli::state::CliState;
+use chrono::{Duration, Utc};
 use xavier::crypto::password;
 use xavier::security::auth::{generate_jwt, validate_jwt, TotpProvider, User, UserRole};
 use xavier::security::recovery::RecoverySystem;

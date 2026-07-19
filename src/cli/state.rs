@@ -46,10 +46,6 @@ pub struct CliState {
     pub agent_registry: Arc<dyn AgentLifecyclePort>,
     pub panel_store: Arc<ConversationsDb>,
     pub secrets_engine: Arc<KeyLendingEngine>,
-    #[expect(
-        dead_code,
-        reason = "Wire event_bus into event-driven architecture (e.g. system3 event bus integration)"
-    )]
     pub event_bus: XavierEventBus,
     pub tasks: Arc<TaskService<InMemoryTaskStore>>,
     pub rate_manager: Arc<RateLimitManager>,
@@ -58,10 +54,6 @@ pub struct CliState {
         reason = "Implement structured prompt caching (keyed by session+model, auto-expire TTL)"
     )]
     pub prompt_cache: Arc<Mutex<HashMap<String, Vec<String>>>>,
-    #[expect(
-        dead_code,
-        reason = "Use http_client for background provider health checks (model status, rate limits)"
-    )]
     pub http_client: reqwest::Client,
     pub proxy_use_case: Arc<ProxyUseCase>,
     /// Process-local LLM proxy usage counters (shared with `proxy_use_case`).
