@@ -262,6 +262,7 @@ pub async fn pair_peer_handler(Json(payload): Json<PairRequest>) -> impl IntoRes
             clearance: ClearanceLevel::Unclassified,
             namespaces: None,
             public_key_hex: data.public_key_hex.clone(),
+            namespace_acl: None,
         },
     ) {
         return (
@@ -314,8 +315,10 @@ pub async fn update_peer_acl_handler(
             clearance: payload.clearance,
             namespaces: existing.as_ref().and_then(|entry| entry.namespaces.clone()),
             public_key_hex: existing
-                .map(|entry| entry.public_key_hex)
+                .as_ref()
+                .map(|entry| entry.public_key_hex.clone())
                 .unwrap_or_default(),
+            namespace_acl: existing.as_ref().and_then(|entry| entry.namespace_acl.clone()),
         },
     ) {
         return (
@@ -331,6 +334,7 @@ pub async fn update_peer_acl_handler(
 #[derive(Debug, Deserialize)]
 pub struct ShareWorkspaceRequest {
     pub workspace_id: String,
+    pub namespaces: Option<Vec<String>>,
 }
 
 #[derive(Debug, Serialize)]
@@ -390,6 +394,7 @@ pub async fn share_workspace_handler(
         "endpoint": endpoint,
         "public_key_hex": xavier::crypto::hex_encode(&identity.public_key),
         "workspace_id": payload.workspace_id,
+        "namespaces": payload.namespaces,
         "expires_at": chrono::Utc::now().timestamp() + 31536000, // 1 year
     });
 
@@ -578,6 +583,7 @@ pub async fn join_workspace_handler(
                 clearance: ClearanceLevel::Unclassified,
                 namespaces: None,
                 public_key_hex,
+                namespace_acl: None,
             },
         ) {
             return (
@@ -702,11 +708,35 @@ pub async fn query_workspace_handler(
         }
     };
 
-    let docs = std::sync::Arc::new(tokio::sync::RwLock::new(
+    let allowed_namespaces: Option<Vec<String>> = inner_payload
+        .get("namespaces")
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
+
+    let filtered_memories: Vec<&xavier::memory::store::MemoryRecord> = if let Some(ref namespaces) = allowed_namespaces {
         durable_state
             .memories
             .iter()
-            .map(|r: &xavier::memory::store::MemoryRecord| r.to_document())
+            .filter(|r| {
+                namespaces.iter().any(|pattern| {
+                    let record_clean = r.path.trim_end_matches('/');
+                    let pattern_clean = pattern.trim_end_matches('/');
+                    if record_clean == pattern_clean {
+                        true
+                    } else {
+                        let prefix = format!("{}/", pattern_clean);
+                        record_clean.starts_with(&prefix)
+                    }
+                })
+            })
+            .collect()
+    } else {
+        durable_state.memories.iter().collect()
+    };
+
+    let docs = std::sync::Arc::new(tokio::sync::RwLock::new(
+        filtered_memories
+            .iter()
+            .map(|r: &&xavier::memory::store::MemoryRecord| r.to_document())
             .collect::<Vec<_>>(),
     ));
 

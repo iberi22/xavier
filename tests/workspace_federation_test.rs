@@ -78,3 +78,133 @@ async fn test_workspace_sharing_token_roundtrip() {
     assert_eq!(decoded_payload["workspace_id"], "default-workspace");
     assert_eq!(decoded_payload["node_id"], "xv1-localnode");
 }
+
+#[tokio::test]
+async fn test_workspace_sharing_with_namespace_acl_filtering() {
+    // 1. Prepare three memory records in a test workspace
+    let workspace_id = "test-ws-federated".to_string();
+
+    let rec_public = xavier::memory::store::MemoryRecord {
+        id: "rec-1".to_string(),
+        workspace_id: workspace_id.clone(),
+        path: "docs/publico/readme.md".to_string(),
+        content: "Public info".to_string(),
+        ..Default::default()
+    };
+
+    let rec_private = xavier::memory::store::MemoryRecord {
+        id: "rec-2".to_string(),
+        workspace_id: workspace_id.clone(),
+        path: "docs/privado/secret.md".to_string(),
+        content: "Secret info".to_string(),
+        ..Default::default()
+    };
+
+    let rec_other = xavier::memory::store::MemoryRecord {
+        id: "rec-3".to_string(),
+        workspace_id: workspace_id.clone(),
+        path: "other/publico/intro.md".to_string(),
+        content: "Other public info".to_string(),
+        ..Default::default()
+    };
+
+    let memories = vec![rec_public, rec_private, rec_other];
+
+    // 2. Generate a node identity and create a shared token with namespaces: ["docs/publico"]
+    let identity = xavier::mesh::node::NodeIdentity::generate();
+    let payload_data = serde_json::json!({
+        "node_id": "xv1-localnode",
+        "endpoint": "http://localhost:8006",
+        "public_key_hex": xavier::crypto::hex_encode(&identity.public_key),
+        "workspace_id": workspace_id,
+        "namespaces": vec!["docs/publico".to_string()],
+        "expires_at": chrono::Utc::now().timestamp() + 3600,
+    });
+
+    let payload_str = serde_json::to_string(&payload_data).unwrap();
+    let signature = identity.sign(payload_str.as_bytes());
+
+    let token_data = serde_json::json!({
+        "payload": payload_str,
+        "signature": xavier::crypto::hex_encode(&signature),
+    });
+
+    let token_json = serde_json::to_string(&token_data).unwrap();
+    let token = xavier::crypto::base64_encode(token_json);
+
+    // 3. Emulate query_workspace_handler's token decoding and validation
+    let decoded_bytes = xavier::crypto::base64_decode(&token).unwrap();
+    let decoded_token_data: serde_json::Value = serde_json::from_slice(&decoded_bytes).unwrap();
+    let decoded_payload_str = decoded_token_data["payload"].as_str().unwrap();
+    let decoded_signature_hex = decoded_token_data["signature"].as_str().unwrap();
+    let decoded_signature_bytes = xavier::crypto::hex_decode(decoded_signature_hex).unwrap();
+
+    let inner_payload: serde_json::Value = serde_json::from_str(decoded_payload_str).unwrap();
+    let public_key_hex = inner_payload["public_key_hex"].as_str().unwrap();
+    let public_key_bytes = xavier::crypto::hex_decode(public_key_hex).unwrap();
+
+    // Verify signature
+    assert!(xavier::mesh::node::NodeIdentity::verify(
+        &public_key_bytes,
+        decoded_payload_str.as_bytes(),
+        &decoded_signature_bytes
+    ));
+
+    // Extract allowed namespaces and workspace ID
+    let token_workspace_id = inner_payload["workspace_id"].as_str().unwrap();
+    let allowed_namespaces: Option<Vec<String>> = inner_payload
+        .get("namespaces")
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
+
+    assert_eq!(token_workspace_id, "test-ws-federated");
+    assert_eq!(allowed_namespaces.as_ref().unwrap().len(), 1);
+    assert_eq!(allowed_namespaces.as_ref().unwrap()[0], "docs/publico");
+
+    // 4. Perform the segment-wise filtering logic
+    let filtered_memories: Vec<&xavier::memory::store::MemoryRecord> = if let Some(ref namespaces) = allowed_namespaces {
+        memories
+            .iter()
+            .filter(|r| {
+                namespaces.iter().any(|pattern| {
+                    let record_clean = r.path.trim_end_matches('/');
+                    let pattern_clean = pattern.trim_end_matches('/');
+                    if record_clean == pattern_clean {
+                        true
+                    } else {
+                        let prefix = format!("{}/", pattern_clean);
+                        record_clean.starts_with(&prefix)
+                    }
+                })
+            })
+            .collect()
+    } else {
+        memories.iter().collect()
+    };
+
+    // 5. Assert that only the records matching the allowed namespace are returned
+    assert_eq!(filtered_memories.len(), 1);
+    assert_eq!(filtered_memories[0].path, "docs/publico/readme.md");
+    assert_eq!(filtered_memories[0].content, "Public info");
+}
+
+#[test]
+fn test_namespace_acl_entry_and_consent_record_serde() {
+    let entry = xavier::mesh::acl::NamespaceAclEntry {
+        namespace_pattern: "docs/publico".to_string(),
+        permissions: vec![xavier::enterprise::rbac::Permission::Read],
+    };
+
+    let serialized = serde_json::to_string(&entry).unwrap();
+    let deserialized: xavier::mesh::acl::NamespaceAclEntry = serde_json::from_str(&serialized).unwrap();
+    assert_eq!(deserialized.namespace_pattern, "docs/publico");
+    assert_eq!(deserialized.permissions.len(), 1);
+    assert_eq!(deserialized.permissions[0], xavier::enterprise::rbac::Permission::Read);
+
+    let consent = xavier::mesh::data_consent::ConsentRecord {
+        namespace_filter: Some(vec!["docs/publico".to_string()]),
+    };
+
+    let consent_serialized = serde_json::to_string(&consent).unwrap();
+    let consent_deserialized: xavier::mesh::data_consent::ConsentRecord = serde_json::from_str(&consent_serialized).unwrap();
+    assert_eq!(consent_deserialized.namespace_filter.unwrap()[0], "docs/publico");
+}
