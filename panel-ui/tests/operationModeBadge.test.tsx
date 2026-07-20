@@ -5,9 +5,11 @@ import OperationModeBadge from "../src/components/OperationModeBadge";
 
 // Mock useAuthStore
 vi.mock("../src/auth/AuthProvider", () => ({
-  useAuthStore: vi.fn((selector) => selector({
-    token: "mock-token",
-  })),
+  useAuthStore: vi.fn((selector) =>
+    selector({
+      token: "mock-token",
+    }),
+  ),
 }));
 
 describe("OperationModeBadge", () => {
@@ -37,15 +39,16 @@ describe("OperationModeBadge", () => {
       if (url.endsWith("/health")) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({
-            status: "healthy",
-            mode: "local-healthy",
-            llm: {
-              provider: "ollama",
-              model: "qwen3-coder",
-              reachable: true,
-            },
-          }),
+          json: () =>
+            Promise.resolve({
+              status: "healthy",
+              mode: "local-healthy",
+              llm: {
+                provider: "ollama",
+                model: "qwen3-coder",
+                reachable: true,
+              },
+            }),
         } as Response);
       }
       return Promise.resolve({ ok: false } as Response);
@@ -65,15 +68,16 @@ describe("OperationModeBadge", () => {
       if (url.endsWith("/health")) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({
-            status: "healthy",
-            mode: "cloud-fallback",
-            llm: {
-              provider: "openai",
-              model: "gpt-4o",
-              reachable: true,
-            },
-          }),
+          json: () =>
+            Promise.resolve({
+              status: "healthy",
+              mode: "cloud-fallback",
+              llm: {
+                provider: "openai",
+                model: "gpt-4o",
+                reachable: true,
+              },
+            }),
         } as Response);
       }
       return Promise.resolve({ ok: false } as Response);
@@ -92,15 +96,16 @@ describe("OperationModeBadge", () => {
       if (url.endsWith("/health")) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({
-            status: "degraded",
-            mode: "local-degraded",
-            llm: {
-              provider: "ollama",
-              model: "qwen3-coder",
-              reachable: false,
-            },
-          }),
+          json: () =>
+            Promise.resolve({
+              status: "degraded",
+              mode: "local-degraded",
+              llm: {
+                provider: "ollama",
+                model: "qwen3-coder",
+                reachable: false,
+              },
+            }),
         } as Response);
       }
       return Promise.resolve({ ok: false } as Response);

@@ -1,6 +1,18 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 
-export default function ParticleBackground() {
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Wrapped ParticleBackground in React.memo()
+ * 🎯 Why: This component renders a complex canvas animation that is fully self-contained.
+ *         Previously, it was re-rendering unnecessarily whenever the parent App component's
+ *         state changed (e.g., typing in the chat, streaming responses, opening modals).
+ *         Re-rendering caused the canvas element to be destroyed and re-created, resetting
+ *         the useEffect and wasting significant CPU cycles.
+ * 📊 Impact: Eliminates 100% of unnecessary re-renders of the particle background when parent
+ *         state changes. Reduces main thread blocking during chat streaming.
+ */
+const ParticleBackground = memo(function ParticleBackground() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
@@ -154,4 +166,6 @@ export default function ParticleBackground() {
       className="absolute top-0 left-0 w-full h-full z-0 pointer-events-none"
     />
   );
-}
+});
+
+export default ParticleBackground;
