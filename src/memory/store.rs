@@ -421,6 +421,27 @@ impl MemoryRecord {
 
         true
     }
+
+    /// Returns the last accessed time, falling back to `updated_at`.
+    pub fn last_accessed(&self) -> DateTime<Utc> {
+        if let Some(last_accessed_val) = self.metadata.get("last_accessed_at").and_then(|v| v.as_str()) {
+            if let Ok(parsed) = DateTime::parse_from_rfc3339(last_accessed_val) {
+                return parsed.with_timezone(&Utc);
+            }
+        }
+        self.updated_at
+    }
+
+    /// Update/touch the last accessed time in metadata.
+    pub fn touch(&mut self, now: DateTime<Utc>) {
+        if let serde_json::Value::Object(ref mut map) = self.metadata {
+            map.insert("last_accessed_at".to_string(), serde_json::json!(now.to_rfc3339()));
+        } else {
+            let mut map = serde_json::Map::new();
+            map.insert("last_accessed_at".to_string(), serde_json::json!(now.to_rfc3339()));
+            self.metadata = serde_json::Value::Object(map);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
