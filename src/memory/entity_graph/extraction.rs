@@ -111,7 +111,7 @@ pub(super) fn extract_entities(text: &str) -> Vec<ExtractedEntity> {
             continue;
         }
         let normalized = normalize_name(&name);
-        let entity_type = guess_entity_type(&name, &subject_names, &object_names);
+        let entity_type = guess_entity_type(&name, &normalized, &subject_names, &object_names);
         let key = format!("{}|{:?}", normalized, entity_type);
         if seen.insert(key) {
             entities.push(ExtractedEntity {
@@ -127,16 +127,16 @@ pub(super) fn extract_entities(text: &str) -> Vec<ExtractedEntity> {
 
 pub(super) fn guess_entity_type(
     name: &str,
+    normalized: &str,
     subject_names: &HashSet<String>,
     object_names: &HashSet<String>,
 ) -> EntityType {
-    let normalized = normalize_name(name);
     let lowered = normalized.to_ascii_lowercase();
 
-    if subject_names.contains(&normalized) {
+    if subject_names.contains(normalized) {
         return EntityType::Person;
     }
-    if object_names.contains(&normalized) {
+    if object_names.contains(normalized) {
         if looks_like_location(&lowered) {
             return EntityType::Location;
         }
@@ -161,6 +161,12 @@ pub(super) fn guess_entity_type(
 
 pub(super) fn extract_relation_candidates(text: &str) -> Vec<RawRelation> {
     let entities = extract_entities_without_relations(text);
+    let mut normalized_entities = std::collections::HashMap::with_capacity(entities.len());
+    for entity in entities {
+        let norm = normalize_name(&entity);
+        normalized_entities.entry(norm).or_insert(entity);
+    }
+
     let mut relations = Vec::new();
     for (pattern, relation_type, score) in RELATION_PATTERNS {
         let re = Regex::new(pattern).expect("valid relation pattern regex");
@@ -171,8 +177,8 @@ pub(super) fn extract_relation_candidates(text: &str) -> Vec<RawRelation> {
             let Some(target) = cap.name("target").map(|m| m.as_str().trim()) else {
                 continue;
             };
-            let source = best_match(source, &entities).unwrap_or_else(|| source.to_string());
-            let target = best_match(target, &entities).unwrap_or_else(|| target.to_string());
+            let source = best_match(source, &normalized_entities).unwrap_or_else(|| source.to_string());
+            let target = best_match(target, &normalized_entities).unwrap_or_else(|| target.to_string());
             relations.push(RawRelation {
                 source,
                 target,
@@ -202,12 +208,9 @@ pub(super) fn extract_entities_without_relations(text: &str) -> Vec<String> {
         .collect()
 }
 
-pub(super) fn best_match(candidate: &str, entities: &[String]) -> Option<String> {
+pub(super) fn best_match(candidate: &str, normalized_entities: &std::collections::HashMap<String, String>) -> Option<String> {
     let normalized = normalize_name(candidate);
-    entities
-        .iter()
-        .find(|entity| normalize_name(entity) == normalized)
-        .cloned()
+    normalized_entities.get(&normalized).cloned()
 }
 
 pub(super) fn co_occurrence_score(entity_count: usize) -> f32 {
