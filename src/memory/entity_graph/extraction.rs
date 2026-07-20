@@ -20,48 +20,102 @@ pub(super) static URL_RE: LazyLock<Regex> =
 
 pub(super) static RELATION_PATTERNS: &[(&str, &str, f32)] = &[
     (
-        r"(?i)\b(?P<source>[A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)\s+works?\s+at\s+(?P<target>[A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)",
+        r"(?i)\b(?P<source>[A-Z][\w-]*(?:\s+[A-Z][\w-]*){0,3})\s+works?\s+at\s+(?P<target>[A-Z][\w-]*(?:\s+[A-Z][\w-]*){0,3})",
         "works_at",
         0.95,
     ),
     (
-        r"(?i)\b(?P<source>[A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)\s+knows?\s+(?P<target>[A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)",
+        r"(?i)\b(?P<source>[A-Z][\w-]*(?:\s+[A-Z][\w-]*){0,3})\s+knows?\s+(?P<target>[A-Z][\w-]*(?:\s+[A-Z][\w-]*){0,3})",
         "knows",
         0.9,
     ),
     (
-        r"(?i)\b(?P<source>[A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)\s+uses?\s+(?P<target>[A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)",
+        r"(?i)\b(?P<source>[A-Z][\w-]*(?:\s+[A-Z][\w-]*){0,3})\s+uses?\s+(?P<target>[A-Z][\w-]*(?:\s+[A-Z][\w-]*){0,3})",
         "uses",
         0.85,
     ),
     (
-        r"(?i)\b(?P<source>[A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)\s+is\s+a[n]?\s+(?P<target>[A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)",
+        r"(?i)\b(?P<source>[A-Z][\w-]*(?:\s+[A-Z][\w-]*){0,3})\s+is\s+a[n]?\s+(?P<target>[A-Z][\w-]*(?:\s+[A-Z][\w-]*){0,3})",
         "is_a",
         0.8,
     ),
     (
-        r"(?i)\b(?P<source>[A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)\s+part\s+of\s+(?P<target>[A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)",
+        r"(?i)\b(?P<source>[A-Z][\w-]*(?:\s+[A-Z][\w-]*){0,3})\s+part\s+of\s+(?P<target>[A-Z][\w-]*(?:\s+[A-Z][\w-]*){0,3})",
         "part_of",
         0.9,
     ),
     (
-        r"(?i)\b(?P<source>[A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)\s+located\s+in\s+(?P<target>[A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)",
+        r"(?i)\b(?P<source>[A-Z][\w-]*(?:\s+[A-Z][\w-]*){0,3})\s+located\s+in\s+(?P<target>[A-Z][\w-]*(?:\s+[A-Z][\w-]*){0,3})",
         "located_in",
         0.9,
     ),
     (
-        r"(?i)\b(?P<source>[A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)\s+related\s+to\s+(?P<target>[A-Z][\w-]*(?:\s+[A-Z][\w-]*)*)",
+        r"(?i)\b(?P<source>[A-Z][\w-]*(?:\s+[A-Z][\w-]*){0,3})\s+related\s+to\s+(?P<target>[A-Z][\w-]*(?:\s+[A-Z][\w-]*){0,3})",
         "related_to",
         0.7,
     ),
 ];
+
+pub(super) struct CompiledRelationPattern {
+    pub regex: Regex,
+    pub relation_type: String,
+    pub score: f32,
+}
+
+pub(super) static COMPILED_RELATION_PATTERNS: LazyLock<Vec<CompiledRelationPattern>> = LazyLock::new(|| {
+    RELATION_PATTERNS
+        .iter()
+        .map(|(pattern, relation_type, score)| CompiledRelationPattern {
+            regex: Regex::new(pattern).expect("valid relation pattern regex"),
+            relation_type: relation_type.to_string(),
+            score: *score,
+        })
+        .collect()
+});
 
 pub(super) static COMMON_WORDS: &[&str] = &[
     "the", "this", "that", "these", "those", "and", "or", "but", "for", "with", "from", "into",
     "onto", "your", "our", "their", "his", "her", "its", "in", "on", "at", "by", "to", "of",
 ];
 
+fn chunk_text_by_lines(text: &str) -> Vec<(&str, usize)> {
+    let mut chunks = Vec::new();
+    let mut offset = 0;
+    for line in text.split_inclusive('\n') {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            chunks.push((line, offset));
+        }
+        offset += line.len();
+    }
+    chunks
+}
+
 pub(super) fn extract_entities(text: &str) -> Vec<ExtractedEntity> {
+    let mut entities = Vec::new();
+    if text.len() > 500 {
+        for (chunk, offset) in chunk_text_by_lines(text) {
+            let mut chunk_entities = extract_entities_chunk(chunk);
+            for ent in &mut chunk_entities {
+                ent.span.0 += offset;
+                ent.span.1 += offset;
+            }
+            entities.extend(chunk_entities);
+        }
+    } else {
+        entities.extend(extract_entities_chunk(text));
+    }
+
+    let mut seen = HashSet::new();
+    entities.retain(|ent| {
+        let key = format!("{}|{:?}", normalize_name(&ent.name), ent.entity_type);
+        seen.insert(key)
+    });
+
+    entities
+}
+
+fn extract_entities_chunk(text: &str) -> Vec<ExtractedEntity> {
     let mut seen = HashSet::new();
     let mut entities = Vec::new();
     let explicit_relations = extract_relation_candidates(text);
@@ -160,11 +214,22 @@ pub(super) fn guess_entity_type(
 }
 
 pub(super) fn extract_relation_candidates(text: &str) -> Vec<RawRelation> {
+    let mut relations = Vec::new();
+    if text.len() > 500 {
+        for (chunk, _) in chunk_text_by_lines(text) {
+            relations.extend(extract_relation_candidates_chunk(chunk));
+        }
+    } else {
+        relations.extend(extract_relation_candidates_chunk(text));
+    }
+    relations
+}
+
+fn extract_relation_candidates_chunk(text: &str) -> Vec<RawRelation> {
     let entities = extract_entities_without_relations(text);
     let mut relations = Vec::new();
-    for (pattern, relation_type, score) in RELATION_PATTERNS {
-        let re = Regex::new(pattern).expect("valid relation pattern regex");
-        for cap in re.captures_iter(text) {
+    for item in COMPILED_RELATION_PATTERNS.iter() {
+        for cap in item.regex.captures_iter(text) {
             let Some(source) = cap.name("source").map(|m| m.as_str().trim()) else {
                 continue;
             };
@@ -176,8 +241,8 @@ pub(super) fn extract_relation_candidates(text: &str) -> Vec<RawRelation> {
             relations.push(RawRelation {
                 source,
                 target,
-                relation_type: relation_type.to_string(),
-                score: *score,
+                relation_type: item.relation_type.clone(),
+                score: item.score,
             });
         }
     }
@@ -318,4 +383,46 @@ pub(super) fn looks_like_person(name: &str) -> bool {
                 || token.chars().all(|c| c.is_ascii_uppercase())
         }))
         || name.len() <= 8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_extraction_extremely_long_text() {
+        // Generate a 150KB long string composed of repeating natural and realistic prose.
+        let mut large_text = String::new();
+        for _ in 0..600 {
+            large_text.push_str("Xavier is an advanced cognitive memory manager and AI agent orchestrator. It helps developers organize information.\n");
+            large_text.push_str("SWAL is a leading research institute located in Bogota. Leonardo works at SWAL as a principal scientist.\n");
+            large_text.push_str("Alice works at Acme. Alice knows Leonardo.\n");
+        }
+
+        assert!(large_text.len() > 150_000, "Text size should be greater than 150KB");
+
+        let start = std::time::Instant::now();
+        let entities = extract_entities(&large_text);
+        let duration_entities = start.elapsed();
+
+        let start_relations = std::time::Instant::now();
+        let relations = extract_relation_candidates(&large_text);
+        let duration_relations = start_relations.elapsed();
+
+        println!("Text length: {}, Entities count: {}, took {}ms", large_text.len(), entities.len(), duration_entities.as_millis());
+        println!("Relations count: {}, took {}ms", relations.len(), duration_relations.as_millis());
+
+        // Ensure parser is resilient and handles text efficiently (e.g., under 1 second for a huge 150KB doc)
+        assert!(duration_entities.as_millis() < 1000, "Entity extraction took too long: {}ms", duration_entities.as_millis());
+        assert!(duration_relations.as_millis() < 1000, "Relation extraction took too long: {}ms", duration_relations.as_millis());
+
+        // Ensure we did find several matches and did not crash or stack overflow
+        assert!(!entities.is_empty(), "Should extract entities successfully");
+        assert!(!relations.is_empty(), "Should extract relations successfully");
+
+        // Validate a few extracted samples
+        let has_swal = entities.iter().any(|e| e.name.contains("SWAL"));
+        let has_bogota = entities.iter().any(|e| e.name.contains("Bogota"));
+        assert!(has_swal && has_bogota, "Expected core entities SWAL and Bogota to be extracted");
+    }
 }

@@ -144,15 +144,10 @@ impl EmbedderConfig {
     pub fn active_model_name(&self) -> Option<String> {
         match self {
             Self::Fallback(backends) => {
-                for backend in backends {
-                    match backend {
-                        EmbedderBackendConfig::Gllm(cfg) => return Some(cfg.model.clone()),
-                        EmbedderBackendConfig::OpenAICompatible(cfg) => {
-                            return Some(cfg.model.clone())
-                        }
-                    }
-                }
-                None
+                backends.first().map(|backend| match backend {
+                    EmbedderBackendConfig::Gllm(cfg) => cfg.model.clone(),
+                    EmbedderBackendConfig::OpenAICompatible(cfg) => cfg.model.clone(),
+                })
             }
             Self::Noop => Some("noop".to_string()),
             Self::Invalid(_) => None,

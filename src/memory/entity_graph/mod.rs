@@ -587,6 +587,139 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_decay_clock_progression() {
+        let graph = EntityGraph::new();
+        graph
+            .upsert_memory("memory-1", "BELA works at SWAL and knows Leonardo in Bogota.", None)
+            .await
+            .unwrap();
+
+        let initial_relations = graph.all_relations().await;
+        let initial_entities = graph.all_entities().await;
+
+        assert!(!initial_relations.is_empty());
+        assert!(!initial_entities.is_empty());
+
+        let initial_rel_weight = initial_relations[0].weight;
+        let initial_entity_trust = initial_entities[0].trust_score;
+
+        // 1. Shift back in time by 6 hours
+        {
+            let mut data = graph.inner.write().await;
+            for r in data.relations.values_mut() {
+                r.updated_at = Utc::now() - chrono::Duration::hours(6);
+            }
+            for e in data.entities.values_mut() {
+                e.last_seen = Utc::now() - chrono::Duration::hours(6);
+            }
+        }
+
+        // Apply 5% hourly decay
+        graph.apply_decay(0.05).await.unwrap();
+
+        let decayed_6h_relations = graph.all_relations().await;
+        let decayed_6h_entities = graph.all_entities().await;
+
+        let weight_6h = decayed_6h_relations[0].weight;
+        let trust_6h = decayed_6h_entities[0].trust_score;
+
+        assert!(weight_6h < initial_rel_weight, "Weight should decay after 6 hours");
+        assert!(trust_6h < initial_entity_trust, "Trust score should decay after 6 hours");
+
+        // 2. Shift back in time by 24 hours total (18 more hours)
+        {
+            let mut data = graph.inner.write().await;
+            for r in data.relations.values_mut() {
+                r.updated_at = Utc::now() - chrono::Duration::hours(24);
+            }
+            for e in data.entities.values_mut() {
+                e.last_seen = Utc::now() - chrono::Duration::hours(24);
+            }
+        }
+
+        // Apply 5% hourly decay again
+        graph.apply_decay(0.05).await.unwrap();
+
+        let decayed_24h_relations = graph.all_relations().await;
+        let decayed_24h_entities = graph.all_entities().await;
+
+        let weight_24h = decayed_24h_relations[0].weight;
+        let trust_24h = decayed_24h_entities[0].trust_score;
+
+        assert!(weight_24h < weight_6h, "Weight should continue to decay monotonically");
+        assert!(trust_24h < trust_6h, "Trust score should continue to decay monotonically");
+
+        // 3. Test decay with factor 0.0 (no decay should happen)
+        let before_zero_decay = graph.all_relations().await;
+        {
+            let mut data = graph.inner.write().await;
+            for r in data.relations.values_mut() {
+                r.updated_at = Utc::now() - chrono::Duration::hours(10);
+            }
+        }
+        graph.apply_decay(0.0).await.unwrap();
+        let after_zero_decay = graph.all_relations().await;
+        assert_eq!(before_zero_decay[0].weight, after_zero_decay[0].weight, "No decay should happen when factor is 0.0");
+    }
+
+    #[tokio::test]
+    async fn test_entity_graph_concurrency() {
+        let graph = std::sync::Arc::new(EntityGraph::new());
+        let mut handles = Vec::new();
+
+        // Spawn 15 concurrent tasks performing intensive operations on the same graph instance
+        for t in 0..15 {
+            let graph_clone = std::sync::Arc::clone(&graph);
+            let handle = tokio::spawn(async move {
+                for i in 0..20 {
+                    let mem_id = format!("task-{t}-mem-{i}");
+                    let content = format!(
+                        "Alice{} works at Acme{} and knows Bob{} in London{}.",
+                        t, i, t, i
+                    );
+
+                    // Concurrent Write: Upsert
+                    let view = graph_clone.upsert_memory(&mem_id, &content, None).await;
+                    assert!(view.is_ok(), "Upsert should succeed concurrently");
+
+                    // Concurrent Read & Write: Export / Import / Decay / Inference
+                    if i % 3 == 0 {
+                        let json = graph_clone.export_json().await;
+                        assert!(json.is_ok());
+
+                        let temp_graph = EntityGraph::new();
+                        let import_res = temp_graph.import_json(&json.unwrap()).await;
+                        assert!(import_res.is_ok());
+                    }
+
+                    if i % 4 == 0 {
+                        let decay_res = graph_clone.apply_decay(0.02).await;
+                        assert!(decay_res.is_ok());
+                    }
+
+                    if i % 5 == 0 {
+                        let inf_res = graph_clone.run_inference().await;
+                        assert!(inf_res.is_ok());
+                    }
+                }
+            });
+            handles.push(handle);
+        }
+
+        // Wait for all concurrent tasks to finish without deadlocks
+        for h in handles {
+            h.await.expect("Task panicked or deadlocked");
+        }
+
+        // Verify all elements are safely stored and lookup functions behave correctly
+        let entities = graph.all_entities().await;
+        let relations = graph.all_relations().await;
+
+        assert!(!entities.is_empty(), "Should have populated entities concurrently");
+        assert!(!relations.is_empty(), "Should have populated relations concurrently");
+    }
+
+    #[tokio::test]
     async fn test_inference() {
         let graph = EntityGraph::new();
 
