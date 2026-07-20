@@ -159,6 +159,18 @@ mod tests {
 
         std::env::remove_var("XAVIER_CONFIG_PATH");
     }
+
+    #[tokio::test]
+    async fn test_get_offline_status() {
+        let resp = get_offline_status_handler().await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body_bytes = axum::body::to_bytes(resp.into_body(), 2048).await.unwrap();
+        let status: LocalEngineStatus = serde_json::from_slice(&body_bytes).unwrap();
+        
+        // Assert that the fields exist and have correct types by virtue of deserializing successfully
+        assert_eq!(status.engine_status, "running");
+        assert!(status.port > 0);
+    }
 }
 
 /// GET /v1/offline/models
