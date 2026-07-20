@@ -673,6 +673,24 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             get(crate::cli::handlers::ollama_models::get_active_handler)
                 .post(crate::cli::handlers::ollama_models::set_active_handler),
         )
+        // ── Offline Models API ──────────────────────────────────────────
+        .route(
+            "/v1/offline/config",
+            get(crate::cli::handlers::offline_models::get_offline_config_handler)
+                .post(crate::cli::handlers::offline_models::update_offline_config_handler),
+        )
+        .route(
+            "/v1/offline/models",
+            get(crate::cli::handlers::offline_models::list_offline_models_handler),
+        )
+        .route(
+            "/v1/offline/status",
+            get(crate::cli::handlers::offline_models::get_offline_status_handler),
+        )
+        .route(
+            "/v1/offline/download",
+            post(crate::cli::handlers::offline_models::download_offline_model_handler),
+        )
         .route(
             "/v1/providers",
             get(crate::cli::handlers::headless_api::headless_providers),

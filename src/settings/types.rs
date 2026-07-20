@@ -244,6 +244,10 @@ pub struct ModelSettings {
     pub zai_model: Option<String>,
     #[serde(default)]
     pub opencode_model: Option<String>,
+    #[serde(default)]
+    pub local_model_dirs: Vec<String>,
+    #[serde(default)]
+    pub auto_start_last_model: bool,
 }
 
 impl fmt::Debug for ModelSettings {
@@ -269,6 +273,8 @@ impl fmt::Debug for ModelSettings {
             .field("zai_api_key", &"[REDACTED]")
             .field("zai_model", &self.zai_model)
             .field("opencode_model", &self.opencode_model)
+            .field("local_model_dirs", &self.local_model_dirs)
+            .field("auto_start_last_model", &self.auto_start_last_model)
             .finish()
     }
 }
