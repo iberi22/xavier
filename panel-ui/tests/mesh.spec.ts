@@ -122,15 +122,18 @@ test.describe("Mesh and Data Commons Flow", () => {
     await page.route("**/v1/mesh/peers/pair", async (route) => {
       await route.fulfill({ json: { status: "ok", node_id: "new-node" } });
     });
-    await page.fill('input[placeholder="Paste code from another node"]', "PEER-CODE-999");
+    await page.fill(
+      'input[placeholder="Paste code from another node"]',
+      "PEER-CODE-999",
+    );
     await page.click('button:has-text("Join")');
 
     // Update ACL
     await page.route("**/v1/mesh/peers/peer-node-456/acl", async (route) => {
       await route.fulfill({ json: { status: "ok" } });
     });
-    await page.locator('select').first().selectOption('secret');
-    await page.locator('select').last().selectOption('admin');
+    await page.locator("select").first().selectOption("secret");
+    await page.locator("select").last().selectOption("admin");
   });
 
   test("should configure cloud relay and data commons", async ({ page }) => {
@@ -140,8 +143,13 @@ test.describe("Mesh and Data Commons Flow", () => {
     await page.click('button:has-text("Server & Network")');
 
     // Cloud Relay
-    await expect(page.locator('input[value="https://xyz.supabase.co"]')).toBeVisible();
-    await page.fill('input[placeholder="pgheart-namespace-id"]', "new-instance");
+    await expect(
+      page.locator('input[value="https://xyz.supabase.co"]'),
+    ).toBeVisible();
+    await page.fill(
+      'input[placeholder="pgheart-namespace-id"]',
+      "new-instance",
+    );
 
     await page.route("**/v1/mesh/cloud", async (route) => {
       expect(route.request().method()).toBe("PUT");
@@ -157,9 +165,22 @@ test.describe("Mesh and Data Commons Flow", () => {
 
     // Toggle opt-in
     // Find the section and then the specific toggle button
-    await page.locator('div.flex.items-center.justify-between', { hasText: 'Enable Data Telemetry' }).locator('button').click();
-    await page.locator('div.flex.items-center.justify-between', { hasText: 'GDPR / Legal Consent' }).locator('button').click();
-    await page.fill('input[placeholder^="e.g. HN7cABqLq46Es1jh92d"]', "my-wallet-address");
+    await page
+      .locator("div.flex.items-center.justify-between", {
+        hasText: "Enable Data Telemetry",
+      })
+      .locator("button")
+      .click();
+    await page
+      .locator("div.flex.items-center.justify-between", {
+        hasText: "GDPR / Legal Consent",
+      })
+      .locator("button")
+      .click();
+    await page.fill(
+      'input[placeholder^="e.g. HN7cABqLq46Es1jh92d"]',
+      "my-wallet-address",
+    );
 
     await page.route("**/v1/mesh/data_commons/opt_in", async (route) => {
       expect(route.request().method()).toBe("POST");
@@ -177,7 +198,7 @@ test.describe("Mesh and Data Commons Flow", () => {
     // Check unread count on bell
     const bell = page.locator('button[title*="Memories"]');
     // MOCK_UNREAD is 3 in TopStatusBar.tsx, we can't easily override it since it's hardcoded
-    await expect(bell.locator('text=3')).toBeVisible();
+    await expect(bell.locator("text=3")).toBeVisible();
 
     await bell.click();
     await expect(page.getByText("System Update")).toBeVisible();
@@ -191,7 +212,7 @@ test.describe("Mesh and Data Commons Flow", () => {
     // Mark as read
     await page.click('button:has-text("All")');
     // Just click backdrop to close
-    await page.locator('div.fixed.inset-0.z-\\[65\\]').click();
+    await page.locator("div.fixed.inset-0.z-\\[65\\]").click();
 
     // Since it's mock 3, it should still show 3 or whatever TopStatusBar hardcodes
   });

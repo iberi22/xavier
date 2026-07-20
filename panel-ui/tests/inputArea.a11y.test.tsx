@@ -13,9 +13,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 
 describe("InputArea accessibility", () => {
   it("exposes aria-labels on icon-only controls and command input", () => {
-    render(
-      <InputArea onSendMessage={vi.fn()} onOpenConfig={vi.fn()} />,
-    );
+    render(<InputArea onSendMessage={vi.fn()} onOpenConfig={vi.fn()} />);
 
     expect(
       screen.getByRole("button", { name: "Open Control Node" }),
@@ -35,9 +33,7 @@ describe("InputArea accessibility", () => {
   });
 
   it("marks mic as pressed while recording", () => {
-    render(
-      <InputArea onSendMessage={vi.fn()} onOpenConfig={vi.fn()} />,
-    );
+    render(<InputArea onSendMessage={vi.fn()} onOpenConfig={vi.fn()} />);
 
     const mic = screen.getByRole("button", { name: "Record audio" });
     expect(mic).toHaveAttribute("aria-pressed", "false");
