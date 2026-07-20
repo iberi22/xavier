@@ -831,14 +831,21 @@ async fn get_project_context_size_limits() {
     let content = &body["result"]["content"][0];
     if content["type"] == "structuredContent" {
         let sc = &content["structuredContent"];
-        let total_chars = sc["total_chars"].as_u64().unwrap_or(0);
+        let total_chars = sc.get("totalChars")
+            .or_else(|| sc.get("total_chars"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         let is_truncated = sc["truncated"].as_bool().unwrap_or(false);
         assert!(
             total_chars <= 150 || is_truncated,
             "chars exceeded 100 without truncation"
         );
         if is_truncated {
-            assert!(sc["truncated_reason"].is_string());
+            let truncated_reason_ok = sc.get("truncatedReason")
+                .or_else(|| sc.get("truncated_reason"))
+                .map(|v| v.is_string())
+                .unwrap_or(false);
+            assert!(truncated_reason_ok, "expected a string for truncatedReason/truncated_reason");
         }
     }
 }
@@ -941,9 +948,16 @@ async fn memory_context_returns_context_block() {
             ctx_text.contains("ownership") || ctx_text.contains("No relevant context"),
             "got: {ctx_text}"
         );
+        let total_chars = sc.get("totalChars")
+            .or_else(|| sc.get("total_chars"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let total_records = sc.get("totalRecords")
+            .or_else(|| sc.get("total_records"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
         assert!(
-            sc["total_chars"].as_u64().unwrap_or(0) > 0
-                || sc["total_records"].as_u64().unwrap_or(0) == 0
+            total_chars > 0 || total_records == 0
         );
     } else {
         let text = content["text"].as_str().unwrap();
@@ -990,9 +1004,13 @@ async fn memory_context_depth_flat() {
         "depth/0 should return structured"
     );
     let sc = &content["structuredContent"];
+    let total_records = sc.get("totalRecords")
+        .or_else(|| sc.get("total_records"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     assert!(
         sc["content"].as_str().unwrap().contains("memory safety")
-            || sc["total_records"].as_u64().unwrap_or(0) == 0
+            || total_records == 0
     );
 }
 
@@ -1021,7 +1039,10 @@ async fn memory_context_depth_one() {
         "depth/1 should return structured"
     );
     let sc = &content["structuredContent"];
-    assert!(sc["total_records"].as_u64().is_some());
+    let total_records = sc.get("totalRecords")
+        .or_else(|| sc.get("total_records"))
+        .and_then(|v| v.as_u64());
+    assert!(total_records.is_some(), "expected totalRecords to be a numeric value, but got: {:?}", sc);
 }
 
 #[tokio::test]
@@ -1059,7 +1080,10 @@ async fn memory_context_max_chars() {
         "max_chars should return structured"
     );
     let sc = &content["structuredContent"];
-    let total_chars = sc["total_chars"].as_u64().unwrap_or(0);
+    let total_chars = sc.get("totalChars")
+        .or_else(|| sc.get("total_chars"))
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     let is_truncated = sc["truncated"].as_bool().unwrap_or(false);
     // The content should be truncated (or total_chars <= ~100 + truncation suffix)
     assert!(
@@ -1599,13 +1623,20 @@ async fn memory_context_max_chars_per_doc_and_multi_id() {
     assert!(ctx_text.contains("[... doc truncated ...]"));
 
     // Check honest total_chars reporting (the characters in final aggregated context string)
-    let reported_total = sc["total_chars"].as_u64().unwrap() as usize;
+    let reported_total = sc.get("totalChars")
+        .or_else(|| sc.get("total_chars"))
+        .and_then(|v| v.as_u64())
+        .unwrap() as usize;
     assert_eq!(reported_total, ctx_text.chars().count());
 
     // Check honest truncated flags reporting in overall payload
     assert!(sc["truncated"].as_bool().unwrap());
+    let truncated_reason = sc.get("truncatedReason")
+        .or_else(|| sc.get("truncated_reason"))
+        .and_then(|v| v.as_str())
+        .unwrap();
     assert_eq!(
-        sc["truncated_reason"].as_str().unwrap(),
+        truncated_reason,
         "One or more documents were truncated"
     );
 
@@ -1618,12 +1649,20 @@ async fn memory_context_max_chars_per_doc_and_multi_id() {
         .find(|s| s["id"].as_str().unwrap() == id1)
         .unwrap();
     assert!(!src1["metadata"]["truncated"].as_bool().unwrap());
-    assert_eq!(src1["metadata"]["total_chars"].as_u64().unwrap(), 10);
+    let src1_total_chars = src1["metadata"].get("totalChars")
+        .or_else(|| src1["metadata"].get("total_chars"))
+        .and_then(|v| v.as_u64())
+        .unwrap();
+    assert_eq!(src1_total_chars, 10);
 
     let src2 = sources
         .iter()
         .find(|s| s["id"].as_str().unwrap() == id2)
         .unwrap();
     assert!(src2["metadata"]["truncated"].as_bool().unwrap());
-    assert_eq!(src2["metadata"]["total_chars"].as_u64().unwrap(), 103);
+    let src2_total_chars = src2["metadata"].get("totalChars")
+        .or_else(|| src2["metadata"].get("total_chars"))
+        .and_then(|v| v.as_u64())
+        .unwrap();
+    assert_eq!(src2_total_chars, 103);
 }
