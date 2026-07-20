@@ -110,7 +110,7 @@ pub async fn code_scan_handler(
         })));
     }
 
-    match state.code_indexer.index(&canonical_target).await {
+    match state.code_indexer.index(&canonical_target, true).await {
         Ok(stats) => Ok(Json(serde_json::json!({
             "status": "ok",
             "indexed_files": stats.total_files,
