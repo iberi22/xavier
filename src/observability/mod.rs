@@ -85,6 +85,54 @@ pub fn purge_old_logs(log_dir: &std::path::Path, max_age_days: u32) {
     }
 }
 
+/// Resolves the final log directory path. If the directory cannot be created or is not writeable,
+/// falls back to std::env::temp_dir().join("xavier_logs").
+pub fn resolve_log_dir(log_dir: &std::path::Path) -> std::path::PathBuf {
+    let mut final_log_dir = log_dir.to_path_buf();
+    let mut use_fallback = false;
+
+    if let Err(err) = std::fs::create_dir_all(&final_log_dir) {
+        eprintln!(
+            "Warning: Failed to create log directory '{}' ({:?}). Falling back to temp directory.",
+            final_log_dir.display(),
+            err
+        );
+        use_fallback = true;
+    } else {
+        // Attempt to create/write to a temporary test file to verify write permissions
+        let test_file = final_log_dir.join(".xavier_write_test");
+        if let Err(err) = std::fs::OpenOptions::new()
+            .write(true)
+            .create(true)
+            .truncate(true)
+            .open(&test_file)
+        {
+            eprintln!(
+                "Warning: Log directory '{}' is not writeable ({:?}). Falling back to temp directory.",
+                final_log_dir.display(),
+                err
+            );
+            use_fallback = true;
+        } else {
+            let _ = std::fs::remove_file(test_file);
+        }
+    }
+
+    if use_fallback {
+        let fallback_dir = std::env::temp_dir().join("xavier_logs");
+        if let Err(fallback_err) = std::fs::create_dir_all(&fallback_dir) {
+            eprintln!(
+                "Error: Failed to create fallback log directory '{}' ({:?}). Logging to file may fail.",
+                fallback_dir.display(),
+                fallback_err
+            );
+        }
+        final_log_dir = fallback_dir;
+    }
+
+    final_log_dir
+}
+
 /// Initialize the tracing subscriber with:
 /// - stdout (human-readable, colored, with level + target)
 /// - file (JSON-structured, rotativo diario)
@@ -101,8 +149,10 @@ pub fn init_logger(log_dir: &std::path::Path, level: &str) {
 
     let filter = EnvFilter::try_from_env("XAVIER_LOG").unwrap_or_else(|_| EnvFilter::new(level));
 
+    let final_log_dir = resolve_log_dir(log_dir);
+
     // File appender — rotates daily
-    let file_appender = RollingFileAppender::new(Rotation::DAILY, log_dir, "xavier");
+    let file_appender = RollingFileAppender::new(Rotation::DAILY, &final_log_dir, "xavier");
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     // Set the guard so it lives for the entire app
@@ -129,7 +179,7 @@ pub fn init_logger(log_dir: &std::path::Path, level: &str) {
         .init();
 
     tracing::info!(
-        log_dir = %log_dir.display(),
+        log_dir = %final_log_dir.display(),
         log_level = %level,
         "Observability logger initialized"
     );
@@ -138,7 +188,7 @@ pub fn init_logger(log_dir: &std::path::Path, level: &str) {
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(30);
-    purge_old_logs(log_dir, retention_days);
+    purge_old_logs(&final_log_dir, retention_days);
 }
 
 #[cfg(test)]
@@ -189,6 +239,35 @@ mod tests {
         let guard_value = LOGGER_GUARD.get();
         // First call should be None since we haven't initialized
         assert!(guard_value.is_none());
+    }
+
+    #[test]
+    fn test_resolve_log_dir_success() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let target_dir = temp_dir.path().join("my_logs");
+
+        let resolved = resolve_log_dir(&target_dir);
+        assert_eq!(resolved, target_dir);
+        assert!(resolved.exists());
+        assert!(resolved.is_dir());
+    }
+
+    #[test]
+    fn test_resolve_log_dir_failure_creation() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        // Create a file at some path
+        let file_path = temp_dir.path().join("blocking_file");
+        std::fs::File::create(&file_path).unwrap();
+
+        // Pass a subpath under that file. Creating this directory MUST fail because the parent component is a file.
+        let impossible_dir = file_path.join("sub_dir");
+
+        let resolved = resolve_log_dir(&impossible_dir);
+        // It must fallback to std::env::temp_dir().join("xavier_logs")
+        let expected_fallback = std::env::temp_dir().join("xavier_logs");
+        assert_eq!(resolved, expected_fallback);
+        assert!(resolved.exists());
+        assert!(resolved.is_dir());
     }
 
     #[test]
