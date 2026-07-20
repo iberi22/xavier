@@ -146,6 +146,7 @@ zerocopy = "0.8"
 # File traversal
 walkdir = "2"
 libc = "0.2"
+notify = "6.1.1"
 
 # Hardware Security
 keyring = "3"
