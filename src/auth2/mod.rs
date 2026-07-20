@@ -18,7 +18,7 @@ use sha2::{Digest, Sha256};
 use std::time::{SystemTime, UNIX_EPOCH};
 use totp_rs::{Algorithm as TOTPAlgorithm, Secret, TOTP};
 // use crate::cli::server::CliState;
-use crate::auth2::db::{AuditLog, AuthDb, User};
+use crate::auth2::db::{AuditLog, AuthDb, PublicUser, User};
 use crate::auth2::jwt::JwtManager;
 use crate::auth2::password::{hash_password, verify_password};
 use crate::auth2::refresh::RefreshTokenManager;
@@ -73,7 +73,7 @@ pub struct RecoveryRequest {
 
 #[derive(Serialize)]
 pub struct RegisterResponse {
-    pub user: User,
+    pub user: PublicUser,
     pub seed_phrase: String,
 }
 
@@ -81,7 +81,7 @@ pub struct RegisterResponse {
 pub struct LoginResponse {
     pub access_token: String,
     pub refresh_token: String,
-    pub user: User,
+    pub user: PublicUser,
     pub requires_2fa: bool,
 }
 
@@ -177,7 +177,7 @@ async fn register_handler<S>(
 
     Ok(Json(RegisterResponse {
         seed_phrase: seed_phrase_str,
-        user,
+        user: PublicUser::from(user),
     }))
 }
 
@@ -255,7 +255,7 @@ async fn login_handler<S>(
     Ok(Json(LoginResponse {
         access_token,
         refresh_token,
-        user,
+        user: PublicUser::from(user),
         requires_2fa,
     }))
 }

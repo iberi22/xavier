@@ -407,16 +407,53 @@ mod tests {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq)]
+pub struct PublicUser {
+    pub id: String,
+    pub email: String,
+    pub name: String,
+    pub role: String,
+    pub created_at: i64,
+}
+
+impl From<User> for PublicUser {
+    fn from(user: User) -> Self {
+        PublicUser {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            created_at: user.created_at,
+        }
+    }
+}
+
+impl From<&User> for PublicUser {
+    fn from(user: &User) -> Self {
+        PublicUser {
+            id: user.id.clone(),
+            email: user.email.clone(),
+            name: user.name.clone(),
+            role: user.role.clone(),
+            created_at: user.created_at,
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct User {
     pub id: String,
     pub email: String,
+    #[serde(skip_serializing, default)]
     pub password_hash: String,
     pub name: String,
     pub role: String,
+    #[serde(skip_serializing, default)]
     pub totp_secret: Option<String>,
     pub totp_enabled: bool,
+    #[serde(skip_serializing, default)]
     pub recovery_seed_hash: Option<String>,
+    #[serde(skip_serializing, default)]
     pub backup_codes: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
