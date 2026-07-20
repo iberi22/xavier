@@ -5,23 +5,15 @@
     "project": "Xavier",
     "version": "0.12.0",
     "created": "2026-03-05",
-
     "last_verified": "2026-07-19",
-
-    "last_verified": "2026-07-19",
-
     "total_features": 25,
     "features_complete": 25,
     "features_beta": 0,
     "features_draft": 0,
     "features_planned": 0,
     "features_stable": 25,
-
-    "overall_progress_pct": 100.0,
-
-    "overall_progress_pct": 100.0,
-
-    "reconciliation_notes": "2026-07-18 Windows full-working: feat-graph-explorer 98% after live smoke (memory/code/panel graphs 200, memory add/search 200). Residual: MCP tools/list protocol drift, optional GRAPH_LAYERS.md, bulk reindex after embedding model change. Prefer HTTP over MCP."
+    "overall_progress_pct": 78.0,
+    "reconciliation_notes": "2026-07-19 Ola 5 Reconciliation Audit: Multiple features adjusted to realistic progress percentages based on deep audit findings. Added E2E tests for RBAC, Crypto, and Telegram bot. Verified MCP server progressive disclosure and double-division TOTP logic."
   },
   "features": [
     {
@@ -94,7 +86,7 @@
       "name": "MCP Server",
       "category": "integration",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 70,
       "description": "HTTP-first integration with optional Model Context Protocol (MCP) support exposing 12 tools",
       "steps": [
         "Expose authenticated HTTP endpoints for memory and code operations",
@@ -178,7 +170,7 @@
       "name": "Starlight Documentation Site",
       "category": "documentation",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 70,
       "description": "Astro + Starlight documentation site for Xavier public-facing docs",
       "steps": [
         "Set up Astro + Starlight project",
@@ -200,7 +192,7 @@
       "name": "SRC Reference Documentation",
       "category": "documentation",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 60,
       "description": "Source Code Reference (SRC) â€” comprehensive documentation per GitCore protocol",
       "steps": [
         "Document directory structure",
@@ -267,7 +259,7 @@
       "name": "Notification Persistence and Delivery",
       "category": "core",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 50,
       "description": "Persistent notification system with event bus, SQLite storage, REST API, and Tauri real-time updates",
       "steps": [
         "Create notification struct and event types",
@@ -288,7 +280,7 @@
       "name": "HORMER Hierarchical Navigation",
       "category": "cognitive",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 50,
       "description": "Hierarchical memory navigation with RL policy, Textual Gradient Descent, and GRPO optimization",
       "steps": [
         "Dynamic directory hierarchy",
@@ -310,7 +302,7 @@
       "name": "Bicameral Governance DAO",
       "category": "enterprise",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 30,
       "description": "Bicameral governance system â€” 50% node operators + 50% Xavier Core Council â€” with weighted voting, veto, XIP lifecycle, and on-chain integration",
       "steps": [
         "Bicameral DAO design (users + council)",
@@ -391,7 +383,7 @@
       "name": "Dual License (MIT + Mesh License)",
       "category": "governance",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 20,
       "description": "MIT for standalone use; Mesh License activates governance opt-in, data commons, and network participation rights",
       "steps": [
         "Create src/security/license.rs with LicenseKind enum",
@@ -418,7 +410,7 @@
       "name": "Context Regeneration & Perfect Recall",
       "category": "core",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 50,
       "description": "Continuous context regeneration using real usage data to drive recall@k toward 100% on production benchmarks",
       "steps": [
         "Build benchmark suite from real query logs",
@@ -607,11 +599,3 @@
     "benchmark_smoke": "python scripts/benchmarks/run_locomo_benchmark.py --sample-limit 1 --question-limit 2"
   }
 }
-
-
-
-
-
-
-
-

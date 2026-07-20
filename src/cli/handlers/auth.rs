@@ -437,6 +437,8 @@ mod tests {
             store,
             workspace_id: "test-ws".to_string(),
             workspace_dir: std::env::current_dir().unwrap(),
+            state_dir: std::env::current_dir().unwrap(),
+            auth_db: None,
             code_graph: cg_state,
             security: Arc::new(xavier::app::security_service::SecurityService::new()),
             security_scan: Arc::new(xavier::app::security_service::SecurityService::new()),
