@@ -74,6 +74,10 @@ name = "embedding_benchmark"
 path = "benches/embedding_benchmark.rs"
 harness = false
 
+[[test]]
+name = "auth_full_flow_test"
+path = "tests/integration/auth_full_flow_test.rs"
+
 [dependencies]
 code-graph = { path = "./code-graph" }
 anyhow = "1.0.102"
@@ -134,7 +138,7 @@ cron = "0.15"
 rayon = "1.10"
 parking_lot = "0.12"
 rusqlite = { version = "0.32.0", features = ["bundled", "load_extension", "chrono", "functions"] }
-jsonwebtoken = "10.3"
+jsonwebtoken = { version = "10.3", features = ["rust_crypto"] }
 totp-rs = { version = "5.5", features = ["gen_secret", "otpauth"] }
 qrcode = "0.14"
 rsa = "0.9"
