@@ -1,43 +1,53 @@
-import React, { useState } from 'react';
-import { useAuthStore } from '../../store/authStore';
+import type React from "react";
+import { useState } from "react";
+import { useAuthStore } from "../../store/authStore";
 
 export const LoginPage: React.FC = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const setAuth = useAuthStore(state => state.setAuth);
-  const setMfaRequired = useAuthStore(state => state.setMfaRequired);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const setAuth = useAuthStore((state) => state.setAuth);
+  const setMfaRequired = useAuthStore((state) => state.setMfaRequired);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setError("");
 
     try {
-      const response = await fetch('/v1/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/v1/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
 
       const data = await response.json();
 
-      if (response.status === 202 && data.status === 'mfa_required') {
+      if (response.status === 202 && data.status === "mfa_required") {
         setMfaRequired(email);
       } else if (response.ok) {
         setAuth(data.user, data.access_token, data.refresh_token);
       } else {
-        setError(data.error || 'Login failed');
+        setError(data.error || "Login failed");
       }
     } catch (err) {
-      setError('Connection error');
+      setError("Connection error");
     }
   };
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-black text-[#39ff14] font-mono">
-      <form onSubmit={handleSubmit} className="w-full max-w-md p-8 border border-[#39ff14]/30 rounded-lg bg-black/50">
-        <h2 className="text-2xl mb-6 text-center tracking-tighter uppercase">Xavier Login</h2>
-        {error && <div className="mb-4 text-red-500 text-sm border border-red-500/30 p-2">{error}</div>}
+      <form
+        onSubmit={handleSubmit}
+        className="w-full max-w-md p-8 border border-[#39ff14]/30 rounded-lg bg-black/50"
+      >
+        <h2 className="text-2xl mb-6 text-center tracking-tighter uppercase">
+          Xavier Login
+        </h2>
+        {error && (
+          <div className="mb-4 text-red-500 text-sm border border-red-500/30 p-2">
+            {error}
+          </div>
+        )}
         <div className="mb-4">
           <label className="block text-xs uppercase mb-1">Email</label>
           <input

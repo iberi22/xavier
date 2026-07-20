@@ -1,9 +1,9 @@
-import { useEffect, useState, useCallback } from "react";
-import { RefreshCw, ShieldAlert, Key } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import { Key, RefreshCw, ShieldAlert } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiClient } from "../../api/client";
-import { SecretLease } from "../../types";
 import LeaseCard from "../../components/LeaseCard";
+import type { SecretLease } from "../../types";
 
 interface LeasesPageProps {
   token: string;
@@ -49,7 +49,9 @@ export default function LeasesPage({ token }: LeasesPageProps) {
     return (
       <div className="flex flex-col items-center justify-center h-64 text-white/40">
         <RefreshCw className="w-8 h-8 mb-4 animate-spin opacity-20" />
-        <p className="text-sm font-light tracking-widest uppercase">Scanning for active leases...</p>
+        <p className="text-sm font-light tracking-widest uppercase">
+          Scanning for active leases...
+        </p>
       </div>
     );
   }
@@ -58,7 +60,9 @@ export default function LeasesPage({ token }: LeasesPageProps) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-medium text-white/80">Active Secret Leases</h3>
+          <h3 className="text-sm font-medium text-white/80">
+            Active Secret Leases
+          </h3>
           <p className="text-[10px] text-white/30 mt-0.5">
             Temporary keys currently lent to agents and external services.
           </p>
@@ -82,7 +86,9 @@ export default function LeasesPage({ token }: LeasesPageProps) {
       {leases.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-12 px-4 rounded-2xl bg-white/[0.01] border border-dashed border-white/5">
           <Key className="w-12 h-12 text-white/5 mb-4" />
-          <p className="text-white/30 text-sm text-center">No active secret leases found.</p>
+          <p className="text-white/30 text-sm text-center">
+            No active secret leases found.
+          </p>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

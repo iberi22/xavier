@@ -209,6 +209,12 @@ export interface ProviderStatusResponse {
   active: string;
   strategy?: string;
   fallback_chain?: string[];
-  mode?: OperationMode | "local-healthy" | "local-degraded" | "cloud-fallback" | "disabled" | string;
+  mode?:
+    | OperationMode
+    | "local-healthy"
+    | "local-degraded"
+    | "cloud-fallback"
+    | "disabled"
+    | string;
   local_reachable?: boolean;
 }

@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from "react";
+import { Check, Copy } from "lucide-react";
 import { motion } from "motion/react";
-import { Copy, Check } from "lucide-react";
-import ParticleBackground from "../components/ParticleBackground";
+import type React from "react";
+import { useEffect, useState } from "react";
 import { authClient } from "../api/authClient";
+import ParticleBackground from "../components/ParticleBackground";
 
 export const BackupCodesPage: React.FC = () => {
   const [codes, setCodes] = useState<string[]>([]);
@@ -10,12 +11,12 @@ export const BackupCodesPage: React.FC = () => {
 
   useEffect(() => {
     const fetchCodes = async () => {
-        try {
-            const response = await authClient.setup2FA();
-            setCodes(response.backup_codes);
-        } catch (e) {
-            console.error("Failed to fetch backup codes", e);
-        }
+      try {
+        const response = await authClient.setup2FA();
+        setCodes(response.backup_codes);
+      } catch (e) {
+        console.error("Failed to fetch backup codes", e);
+      }
     };
     void fetchCodes();
   }, []);
@@ -38,32 +39,45 @@ export const BackupCodesPage: React.FC = () => {
           Backup Access Codes
         </h1>
         <p className="text-xs opacity-70 mb-6 leading-relaxed uppercase">
-          Save these codes in a secure location. Each code can be used <span className="text-[#39ff14]">ONCE</span> to bypass 2FA if you lose your device.
+          Save these codes in a secure location. Each code can be used{" "}
+          <span className="text-[#39ff14]">ONCE</span> to bypass 2FA if you lose
+          your device.
         </p>
 
         <div className="grid grid-cols-2 gap-2 mb-8">
           {codes.map((code, i) => (
-            <div key={i} className="bg-white/5 border border-white/10 rounded-lg p-2 text-center font-mono text-sm tracking-widest text-white/80">
+            <div
+              key={i}
+              className="bg-white/5 border border-white/10 rounded-lg p-2 text-center font-mono text-sm tracking-widest text-white/80"
+            >
               {code}
             </div>
           ))}
         </div>
 
         <div className="flex flex-col gap-3">
-            <button
-                type="button"
-                onClick={handleCopy}
-                className="flex items-center justify-center gap-2 w-full py-3 border border-[#39ff14]/30 rounded-lg text-xs text-[#39ff14] hover:bg-[#39ff14]/10 transition-colors uppercase tracking-widest"
-            >
-                {copied ? <><Check size={16}/> Codes Copied</> : <><Copy size={16}/> Copy All Codes</>}
-            </button>
-            <button
-                type="button"
-                className="w-full bg-[#39ff14] text-black font-bold text-sm tracking-widest py-3 rounded-lg hover:shadow-[0_0_15px_rgba(57,255,20,0.5)] transition-all mt-2"
-                onClick={() => window.location.hash = "#/"}
-            >
-                I HAVE SAVED MY CODES
-            </button>
+          <button
+            type="button"
+            onClick={handleCopy}
+            className="flex items-center justify-center gap-2 w-full py-3 border border-[#39ff14]/30 rounded-lg text-xs text-[#39ff14] hover:bg-[#39ff14]/10 transition-colors uppercase tracking-widest"
+          >
+            {copied ? (
+              <>
+                <Check size={16} /> Codes Copied
+              </>
+            ) : (
+              <>
+                <Copy size={16} /> Copy All Codes
+              </>
+            )}
+          </button>
+          <button
+            type="button"
+            className="w-full bg-[#39ff14] text-black font-bold text-sm tracking-widest py-3 rounded-lg hover:shadow-[0_0_15px_rgba(57,255,20,0.5)] transition-all mt-2"
+            onClick={() => (window.location.hash = "#/")}
+          >
+            I HAVE SAVED MY CODES
+          </button>
         </div>
       </motion.div>
     </div>

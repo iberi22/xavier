@@ -1,10 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useState } from "react";
+import { AuthStep } from "./AuthStep";
 import { HardwareStep } from "./HardwareStep";
 import { IntegrationsStep } from "./IntegrationsStep";
 import { SystemScanStep } from "./SystemScanStep";
 import { WelcomeStep } from "./WelcomeStep";
-import { AuthStep } from "./AuthStep";
 
 export type SystemInfo = {
   total_ram_gb: number;
@@ -80,12 +80,7 @@ export function OnboardingFlow({ onComplete }: { onComplete: () => void }) {
           />
         );
       case 4:
-        return (
-          <AuthStep
-            onSkip={handleComplete}
-            onComplete={handleComplete}
-          />
-        );
+        return <AuthStep onSkip={handleComplete} onComplete={handleComplete} />;
       default:
         return null;
     }

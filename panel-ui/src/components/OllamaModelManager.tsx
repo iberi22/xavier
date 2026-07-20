@@ -1,5 +1,6 @@
 import { AlertCircle, Check, Download, Loader2, RefreshCw } from "lucide-react";
-import React, { useCallback, useEffect, useState } from "react";
+import type React from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiClient } from "../api/client";
 
 interface OllamaModelManagerProps {
@@ -7,7 +8,10 @@ interface OllamaModelManagerProps {
   onModelChanged?: () => void;
 }
 
-export function OllamaModelManager({ token, onModelChanged }: OllamaModelManagerProps) {
+export function OllamaModelManager({
+  token,
+  onModelChanged,
+}: OllamaModelManagerProps) {
   const [client] = useState(() => new ApiClient(token));
   const [models, setModels] = useState<string[]>([]);
   const [activeLLM, setActiveLLM] = useState<string>("");
@@ -113,7 +117,9 @@ export function OllamaModelManager({ token, onModelChanged }: OllamaModelManager
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="relative">
-            <div className={`w-2.5 h-2.5 rounded-full ${error ? "bg-red-500" : "bg-[#39ff14]"}`} />
+            <div
+              className={`w-2.5 h-2.5 rounded-full ${error ? "bg-red-500" : "bg-[#39ff14]"}`}
+            />
             {!error && (
               <div className="absolute inset-0 w-2.5 h-2.5 rounded-full bg-[#39ff14] animate-ping opacity-75" />
             )}
@@ -138,7 +144,8 @@ export function OllamaModelManager({ token, onModelChanged }: OllamaModelManager
           <div>
             <p className="text-sm font-semibold">{error}</p>
             <p className="text-xs text-red-400/60 mt-1">
-              Asegúrate de que Ollama está corriendo (`ollama serve`) en localhost:11434.
+              Asegúrate de que Ollama está corriendo (`ollama serve`) en
+              localhost:11434.
             </p>
           </div>
         </div>
@@ -147,19 +154,30 @@ export function OllamaModelManager({ token, onModelChanged }: OllamaModelManager
           {/* Active Status Header */}
           <div className="grid grid-cols-2 gap-4 bg-white/5 border border-white/5 p-4 rounded-xl text-xs">
             <div>
-              <span className="text-white/40 block mb-0.5">Chat LLM Activo</span>
-              <span className="font-mono text-white/90 truncate block">{activeLLM || "Ninguno"}</span>
+              <span className="text-white/40 block mb-0.5">
+                Chat LLM Activo
+              </span>
+              <span className="font-mono text-white/90 truncate block">
+                {activeLLM || "Ninguno"}
+              </span>
             </div>
             <div>
-              <span className="text-white/40 block mb-0.5">Embedding Activo</span>
-              <span className="font-mono text-white/90 truncate block">{activeEmbedding || "Ninguno"}</span>
+              <span className="text-white/40 block mb-0.5">
+                Embedding Activo
+              </span>
+              <span className="font-mono text-white/90 truncate block">
+                {activeEmbedding || "Ninguno"}
+              </span>
             </div>
           </div>
 
           {/* Selector & Switch Active */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <label htmlFor="model-select" className="text-[10px] uppercase text-white/50 tracking-widest block font-medium">
+              <label
+                htmlFor="model-select"
+                className="text-[10px] uppercase text-white/50 tracking-widest block font-medium"
+              >
                 Modelos Disponibles
               </label>
               <div className="flex items-center gap-2">
@@ -211,7 +229,9 @@ export function OllamaModelManager({ token, onModelChanged }: OllamaModelManager
               <button
                 type="button"
                 onClick={handleSetActive}
-                disabled={!selectedModel || settingActive || models.length === 0}
+                disabled={
+                  !selectedModel || settingActive || models.length === 0
+                }
                 className="px-4 py-2.5 bg-white/5 hover:bg-[#39ff14]/10 border border-white/10 hover:border-[#39ff14]/30 hover:text-[#39ff14] text-white/80 font-bold rounded-xl text-xs transition-all flex items-center justify-center gap-2 shrink-0 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-white/80 disabled:hover:border-white/10"
               >
                 {settingActive ? (
@@ -219,14 +239,24 @@ export function OllamaModelManager({ token, onModelChanged }: OllamaModelManager
                 ) : activeSuccess ? (
                   <Check className="w-4 h-4 text-[#39ff14]" />
                 ) : null}
-                {settingActive ? "Estableciendo..." : activeSuccess ? "Activo" : "Establecer"}
+                {settingActive
+                  ? "Estableciendo..."
+                  : activeSuccess
+                    ? "Activo"
+                    : "Establecer"}
               </button>
             </div>
           </div>
 
           {/* Pull New Model */}
-          <form onSubmit={handlePullModel} className="space-y-3 pt-2 border-t border-white/5">
-            <label htmlFor="pull-input" className="text-[10px] uppercase text-white/50 tracking-widest block font-medium">
+          <form
+            onSubmit={handlePullModel}
+            className="space-y-3 pt-2 border-t border-white/5"
+          >
+            <label
+              htmlFor="pull-input"
+              className="text-[10px] uppercase text-white/50 tracking-widest block font-medium"
+            >
               Descargar nuevo modelo (Pull)
             </label>
             <div className="flex gap-2">
@@ -251,11 +281,17 @@ export function OllamaModelManager({ token, onModelChanged }: OllamaModelManager
                 ) : (
                   <Download className="w-4 h-4" />
                 )}
-                {pulling ? "Descargando..." : pullSuccess ? "Descargado" : "Descargar"}
+                {pulling
+                  ? "Descargando..."
+                  : pullSuccess
+                    ? "Descargado"
+                    : "Descargar"}
               </button>
             </div>
             {pullError && (
-              <p className="text-[11px] text-red-400 font-medium">{pullError}</p>
+              <p className="text-[11px] text-red-400 font-medium">
+                {pullError}
+              </p>
             )}
           </form>
         </div>

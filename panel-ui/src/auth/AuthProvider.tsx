@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect } from "react";
+import type React from "react";
+import { createContext, useContext, useEffect } from "react";
 import { create } from "zustand";
 import { authClient } from "../api/authClient";
 import type { AuthState, User } from "../types";
@@ -21,10 +22,10 @@ const useAuthStore = create<AuthState>((set) => ({
         requires2FA: false,
       });
     } catch (error) {
-        if (error instanceof Error && error.message.includes("2FA")) {
-            set({ requires2FA: true });
-        }
-        throw error;
+      if (error instanceof Error && error.message.includes("2FA")) {
+        set({ requires2FA: true });
+      }
+      throw error;
     }
   },
 
@@ -70,7 +71,9 @@ export { useAuthStore };
 
 const AuthContext = createContext<ReturnType<typeof useAuthStore> | null>(null);
 
-export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
+  children,
+}) => {
   const refreshSession = useAuthStore((state) => state.refreshSession);
 
   useEffect(() => {
@@ -78,5 +81,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     void refreshSession();
   }, [refreshSession]);
 
-  return <AuthContext.Provider value={useAuthStore}>{children}</AuthContext.Provider>;
+  return (
+    <AuthContext.Provider value={useAuthStore}>{children}</AuthContext.Provider>
+  );
 };

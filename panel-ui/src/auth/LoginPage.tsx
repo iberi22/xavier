@@ -1,9 +1,10 @@
-import React, { useState } from "react";
 import { motion } from "motion/react";
-import { useAuth } from "../hooks/useAuth";
+import type React from "react";
+import { useState } from "react";
+import ParticleBackground from "../components/ParticleBackground";
 import { PasswordInput } from "../components/PasswordInput";
 import { TwoFactorInput } from "../components/TwoFactorInput";
-import ParticleBackground from "../components/ParticleBackground";
+import { useAuth } from "../hooks/useAuth";
 
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -44,7 +45,12 @@ export const LoginPage: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1 w-full">
-            <label htmlFor="email-input" className="text-xs text-white/60 uppercase tracking-widest">Email</label>
+            <label
+              htmlFor="email-input"
+              className="text-xs text-white/60 uppercase tracking-widest"
+            >
+              Email
+            </label>
             <input
               id="email-input"
               className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:border-[#39ff14] focus:outline-none transition-colors font-mono"
@@ -95,15 +101,15 @@ export const LoginPage: React.FC = () => {
         <div className="mt-8 flex flex-col gap-3">
           <button
             type="button"
-            onClick={() => window.location.hash = "#/register"}
+            onClick={() => (window.location.hash = "#/register")}
             className="text-[10px] text-white/40 hover:text-[#39ff14] transition-colors uppercase tracking-widest"
           >
             Register new operator
           </button>
           <button
-             type="button"
-             onClick={() => window.location.hash = "#/recovery"}
-             className="text-[10px] text-white/40 hover:text-[#39ff14] transition-colors uppercase tracking-widest"
+            type="button"
+            onClick={() => (window.location.hash = "#/recovery")}
+            className="text-[10px] text-white/40 hover:text-[#39ff14] transition-colors uppercase tracking-widest"
           >
             Forgot access credentials?
           </button>

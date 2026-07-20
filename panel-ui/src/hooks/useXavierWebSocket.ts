@@ -47,10 +47,12 @@ export function useXavierWebSocket(threadId: string | null) {
 
   const sendXUIEvent = (event: XUIEvent) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const { type, ...rest } = event;
       wsRef.current.send(
         JSON.stringify({
           type: "xui_event",
-          ...event,
+          event_type: type,
+          ...rest,
           thread_id: threadId,
         }),
       );

@@ -8,7 +8,8 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { motion } from "motion/react";
-import React, { useCallback, useEffect, useState } from "react";
+import type React from "react";
+import { useCallback, useEffect, useState } from "react";
 
 const getApiUrl = (path: string) => {
   const isTauri =
@@ -66,7 +67,9 @@ export default function UsageMetricsPanel({ token }: UsageMetricsPanelProps) {
         setError(null);
       } catch (err) {
         console.error("Failed to fetch usage metrics:", err);
-        setError(err instanceof Error ? err.message : "Failed to load usage data");
+        setError(
+          err instanceof Error ? err.message : "Failed to load usage data",
+        );
       } finally {
         setLoading(false);
         setRefreshing(false);
@@ -89,7 +92,9 @@ export default function UsageMetricsPanel({ token }: UsageMetricsPanelProps) {
     return (
       <div className="flex flex-col items-center justify-center h-full gap-3">
         <RefreshCw className="w-8 h-8 text-[#39ff14] animate-spin opacity-75" />
-        <span className="text-sm text-white/50 font-mono">Loading telemetry...</span>
+        <span className="text-sm text-white/50 font-mono">
+          Loading telemetry...
+        </span>
       </div>
     );
   }
@@ -104,7 +109,9 @@ export default function UsageMetricsPanel({ token }: UsageMetricsPanelProps) {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-3xl font-light tracking-tight">Usage & Telemetry</h2>
+          <h2 className="text-3xl font-light tracking-tight">
+            Usage & Telemetry
+          </h2>
           <p className="text-sm text-white/40 mt-1">
             Real-time local vs cloud traffic audit logs and cost estimation.
           </p>
@@ -115,7 +122,9 @@ export default function UsageMetricsPanel({ token }: UsageMetricsPanelProps) {
           className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 text-white/80 rounded-xl text-sm font-bold transition-all disabled:opacity-50"
           title="Manual refresh"
         >
-          <RefreshCw className={`w-4 h-4 ${refreshing ? "animate-spin text-[#39ff14]" : ""}`} />
+          <RefreshCw
+            className={`w-4 h-4 ${refreshing ? "animate-spin text-[#39ff14]" : ""}`}
+          />
           {refreshing ? "Refreshing..." : "Refresh"}
         </button>
       </div>
@@ -201,63 +210,72 @@ export default function UsageMetricsPanel({ token }: UsageMetricsPanelProps) {
                 <tbody className="divide-y divide-white/5">
                   {Object.entries(data.by_provider).length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="px-6 py-8 text-center text-sm text-white/30">
+                      <td
+                        colSpan={6}
+                        className="px-6 py-8 text-center text-sm text-white/30"
+                      >
                         No active provider traffic logs recorded yet.
                       </td>
                     </tr>
                   ) : (
-                    Object.entries(data.by_provider).map(([providerName, usage]) => {
-                      const isLocal = isLocalOrOllama(providerName);
-                      return (
-                        <tr
-                          key={providerName}
-                          className={`transition-colors group ${
-                            isLocal
-                              ? "bg-[#39ff14]/5 hover:bg-[#39ff14]/10"
-                              : "hover:bg-white/[0.02]"
-                          }`}
-                        >
-                          <td className="px-6 py-4">
-                            <span
-                              className={`text-sm font-medium capitalize ${
-                                isLocal ? "text-[#39ff14] font-semibold" : "text-white"
-                              }`}
-                            >
-                              {providerName}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 font-mono text-xs text-white/80">
-                            {usage.requests}
-                          </td>
-                          <td className="px-6 py-4 font-mono text-xs text-white/80">
-                            {usage.tokens.toLocaleString()}
-                          </td>
-                          <td
-                            className={`px-6 py-4 font-mono text-xs ${
-                              usage.errors > 0 ? "text-red-400 font-bold" : "text-white/80"
+                    Object.entries(data.by_provider).map(
+                      ([providerName, usage]) => {
+                        const isLocal = isLocalOrOllama(providerName);
+                        return (
+                          <tr
+                            key={providerName}
+                            className={`transition-colors group ${
+                              isLocal
+                                ? "bg-[#39ff14]/5 hover:bg-[#39ff14]/10"
+                                : "hover:bg-white/[0.02]"
                             }`}
                           >
-                            {usage.errors}
-                          </td>
-                          <td className="px-6 py-4 font-mono text-xs text-white/80">
-                            ${usage.cost_usd.toFixed(4)}
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex justify-center">
-                              {isLocal ? (
-                                <span className="text-[10px] text-[#39ff14] bg-[#39ff14]/10 border border-[#39ff14]/30 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shadow-[0_0_8px_rgba(57,255,20,0.2)]">
-                                  ⚡ Local
-                                </span>
-                              ) : (
-                                <span className="text-[10px] text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
-                                  ☁️ Cloud
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
+                            <td className="px-6 py-4">
+                              <span
+                                className={`text-sm font-medium capitalize ${
+                                  isLocal
+                                    ? "text-[#39ff14] font-semibold"
+                                    : "text-white"
+                                }`}
+                              >
+                                {providerName}
+                              </span>
+                            </td>
+                            <td className="px-6 py-4 font-mono text-xs text-white/80">
+                              {usage.requests}
+                            </td>
+                            <td className="px-6 py-4 font-mono text-xs text-white/80">
+                              {usage.tokens.toLocaleString()}
+                            </td>
+                            <td
+                              className={`px-6 py-4 font-mono text-xs ${
+                                usage.errors > 0
+                                  ? "text-red-400 font-bold"
+                                  : "text-white/80"
+                              }`}
+                            >
+                              {usage.errors}
+                            </td>
+                            <td className="px-6 py-4 font-mono text-xs text-white/80">
+                              ${usage.cost_usd.toFixed(4)}
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex justify-center">
+                                {isLocal ? (
+                                  <span className="text-[10px] text-[#39ff14] bg-[#39ff14]/10 border border-[#39ff14]/30 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider shadow-[0_0_8px_rgba(57,255,20,0.2)]">
+                                    ⚡ Local
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-blue-400 bg-blue-500/10 border border-blue-500/20 px-2 py-0.5 rounded-full font-bold uppercase tracking-wider">
+                                    ☁️ Cloud
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      },
+                    )
                   )}
                 </tbody>
               </table>
@@ -277,7 +295,13 @@ interface MetricCardProps {
   isSuccess?: boolean;
 }
 
-function MetricCard({ title, value, icon, isAlert, isSuccess }: MetricCardProps) {
+function MetricCard({
+  title,
+  value,
+  icon,
+  isAlert,
+  isSuccess,
+}: MetricCardProps) {
   let borderStyle = "border-white/5";
   let glowStyle = "";
   if (isAlert) {

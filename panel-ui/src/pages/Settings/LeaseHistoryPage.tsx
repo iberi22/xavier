@@ -1,8 +1,15 @@
-import { useEffect, useState, useCallback } from "react";
-import { History, RefreshCw, Activity, ShieldCheck, ShieldAlert, Clock } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
+import {
+  Activity,
+  Clock,
+  History,
+  RefreshCw,
+  ShieldAlert,
+  ShieldCheck,
+} from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiClient } from "../../api/client";
-import { SecretAuditLog } from "../../types";
+import type { SecretAuditLog } from "../../types";
 
 interface LeaseHistoryPageProps {
   token: string;
@@ -35,17 +42,23 @@ export default function LeaseHistoryPage({ token }: LeaseHistoryPageProps) {
 
   const getEventIcon = (type: string) => {
     switch (type) {
-      case "LEND": return <ShieldCheck className="w-3 h-3 text-[#39ff14]/70" />;
-      case "REVOKE": return <ShieldAlert className="w-3 h-3 text-red-400/70" />;
-      default: return <Activity className="w-3 h-3 text-white/40" />;
+      case "LEND":
+        return <ShieldCheck className="w-3 h-3 text-[#39ff14]/70" />;
+      case "REVOKE":
+        return <ShieldAlert className="w-3 h-3 text-red-400/70" />;
+      default:
+        return <Activity className="w-3 h-3 text-white/40" />;
     }
   };
 
   const getEventColor = (type: string) => {
     switch (type) {
-      case "LEND": return "text-[#39ff14]/80";
-      case "REVOKE": return "text-red-400/80";
-      default: return "text-white/70";
+      case "LEND":
+        return "text-[#39ff14]/80";
+      case "REVOKE":
+        return "text-red-400/80";
+      default:
+        return "text-white/70";
     }
   };
 
@@ -62,7 +75,9 @@ export default function LeaseHistoryPage({ token }: LeaseHistoryPageProps) {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-medium text-white/80">Lease Audit History</h3>
+          <h3 className="text-sm font-medium text-white/80">
+            Lease Audit History
+          </h3>
           <p className="text-[10px] text-white/30 mt-0.5">
             Immutable log of all secret lending and revocation events.
           </p>
@@ -98,13 +113,19 @@ export default function LeaseHistoryPage({ token }: LeaseHistoryPageProps) {
                 animate={{ opacity: 1, y: 0 }}
                 className="flex items-start gap-4 px-4 py-3 rounded-xl border border-white/[0.04] bg-white/[0.02] hover:bg-white/[0.04] transition-colors group"
               >
-                <div className={`mt-1 p-1.5 rounded-lg bg-black/40 border border-white/5 group-hover:border-white/10 transition-colors`}>
+                <div
+                  className={`mt-1 p-1.5 rounded-lg bg-black/40 border border-white/5 group-hover:border-white/10 transition-colors`}
+                >
                   {getEventIcon(entry.event_type)}
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between gap-2">
-                    <p className={`text-xs font-medium ${getEventColor(entry.event_type)}`}>
-                      {entry.event_type === "LEND" ? "Secret Lent" : "Lease Revoked"}
+                    <p
+                      className={`text-xs font-medium ${getEventColor(entry.event_type)}`}
+                    >
+                      {entry.event_type === "LEND"
+                        ? "Secret Lent"
+                        : "Lease Revoked"}
                     </p>
                     <div className="flex items-center gap-1 text-[10px] text-white/20">
                       <Clock className="w-2.5 h-2.5" />
@@ -113,17 +134,23 @@ export default function LeaseHistoryPage({ token }: LeaseHistoryPageProps) {
                   </div>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-[10px]">
                     <span className="text-white/60">
-                      <span className="text-white/20 mr-1 uppercase tracking-tighter font-medium">Agent:</span>
+                      <span className="text-white/20 mr-1 uppercase tracking-tighter font-medium">
+                        Agent:
+                      </span>
                       {entry.agent_id}
                     </span>
                     {entry.secret_id && (
                       <span className="text-white/60">
-                        <span className="text-white/20 mr-1 uppercase tracking-tighter font-medium">Secret:</span>
+                        <span className="text-white/20 mr-1 uppercase tracking-tighter font-medium">
+                          Secret:
+                        </span>
                         {entry.secret_id}
                       </span>
                     )}
                     <span className="text-white/40 font-mono">
-                      <span className="text-white/10 mr-1 uppercase tracking-tighter font-medium">Token:</span>
+                      <span className="text-white/10 mr-1 uppercase tracking-tighter font-medium">
+                        Token:
+                      </span>
                       {entry.session_token.slice(0, 8)}...
                     </span>
                   </div>

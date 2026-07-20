@@ -1,4 +1,5 @@
-import React, { useState } from "react";
+import type React from "react";
+import { useState } from "react";
 import { authClient } from "../../api/authClient";
 
 interface AuthStepProps {
@@ -60,7 +61,10 @@ export function AuthStep({ onSkip, onComplete }: AuthStepProps) {
         </p>
         <div className="grid grid-cols-2 gap-2 bg-neutral-900 p-4 rounded-lg border border-emerald-800/30 max-w-md w-full">
           {seedPhrase.split(" ").map((word, i) => (
-            <div key={i} className="flex gap-1 text-xs text-emerald-300 font-mono">
+            <div
+              key={i}
+              className="flex gap-1 text-xs text-emerald-300 font-mono"
+            >
               <span className="text-neutral-600 w-5 text-right">{i + 1}.</span>
               <span>{word}</span>
             </div>

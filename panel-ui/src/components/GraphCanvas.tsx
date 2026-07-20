@@ -1,14 +1,14 @@
 import {
+  AlertCircle,
+  Bookmark,
   Brain,
+  ChevronRight,
+  Cpu,
   FileCode,
   FolderCode,
-  AlertCircle,
-  X,
-  Minimize2,
   Maximize2,
-  Cpu,
-  Bookmark,
-  ChevronRight,
+  Minimize2,
+  X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import React, {
@@ -56,11 +56,28 @@ export default function GraphCanvas({
   const [selectedNodeExtra, setSelectedNodeExtra] = useState<any>(null);
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const lastClickTimeRef = useRef<number>(0);
+  const isMountedRef = useRef<boolean>(true);
+
+  // Handle unmount ref flag & force graph engine cleanup
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => {
+      isMountedRef.current = false;
+      // Stop the d3 force simulation to prevent any active timer loops
+      if (fgRef.current) {
+        fgRef.current.d3Force("link", null);
+        fgRef.current.d3Force("charge", null);
+        fgRef.current.d3Force("center", null);
+        fgRef.current.d3Force("forceX", null);
+        fgRef.current.d3Force("forceY", null);
+      }
+    };
+  }, []);
 
   // Handle auto resizing
   useEffect(() => {
     const observer = new ResizeObserver((entries) => {
-      if (entries[0]) {
+      if (entries[0] && isMountedRef.current) {
         setDimensions({
           width: entries[0].contentRect.width,
           height: entries[0].contentRect.height,
@@ -82,9 +99,11 @@ export default function GraphCanvas({
   // Track global mouse position for tooltip placement
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      setMousePos({ x: e.clientX, y: e.clientY });
+      if (isMountedRef.current) {
+        setMousePos({ x: e.clientX, y: e.clientY });
+      }
     };
-    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
     return () => window.removeEventListener("mousemove", handleMouseMove);
   }, []);
 
@@ -99,8 +118,10 @@ export default function GraphCanvas({
   const linkCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     data.links.forEach((l) => {
-      const source = typeof l.source === "object" ? (l.source as any).id : l.source;
-      const target = typeof l.target === "object" ? (l.target as any).id : l.target;
+      const source =
+        typeof l.source === "object" ? (l.source as any).id : l.source;
+      const target =
+        typeof l.target === "object" ? (l.target as any).id : l.target;
       counts[source] = (counts[source] || 0) + 1;
       counts[target] = (counts[target] || 0) + 1;
     });
@@ -131,7 +152,7 @@ export default function GraphCanvas({
     if (onNodeSelect) {
       try {
         const extra = await onNodeSelect(nodeObj);
-        if (extra) {
+        if (extra && isMountedRef.current) {
           setSelectedNodeExtra(extra);
         }
       } catch (err) {
@@ -152,9 +173,17 @@ export default function GraphCanvas({
       const typeLower = String(
         node.type || node.kind || node.meta?.kind || "",
       ).toLowerCase();
-      if (typeLower === "concept" || typeLower === "class" || typeLower === "struct") {
+      if (
+        typeLower === "concept" ||
+        typeLower === "class" ||
+        typeLower === "struct"
+      ) {
         baseR = 7;
-      } else if (typeLower === "person" || typeLower === "function" || typeLower === "fn") {
+      } else if (
+        typeLower === "person" ||
+        typeLower === "function" ||
+        typeLower === "fn"
+      ) {
         baseR = 6;
       }
 
@@ -168,9 +197,15 @@ export default function GraphCanvas({
       if (isCodeMode) {
         if (typeLower.includes("fn") || typeLower.includes("function")) {
           nodeColor = "#00bcd4"; // Cyan
-        } else if (typeLower.includes("struct") || typeLower.includes("class")) {
+        } else if (
+          typeLower.includes("struct") ||
+          typeLower.includes("class")
+        ) {
           nodeColor = "#9c27b0"; // Purple
-        } else if (typeLower.includes("import") || typeLower.includes("module")) {
+        } else if (
+          typeLower.includes("import") ||
+          typeLower.includes("module")
+        ) {
           nodeColor = "#ff9800"; // Orange
         } else {
           nodeColor = "#4caf50"; // Green
@@ -231,7 +266,8 @@ export default function GraphCanvas({
           ? "rgba(255, 255, 255, 0.5)"
           : "rgba(255, 255, 255, 0.12)";
 
-      ctx.lineWidth = isSelectedLink || isHoveredLink ? 1.5 / globalScale : 0.8 / globalScale;
+      ctx.lineWidth =
+        isSelectedLink || isHoveredLink ? 1.5 / globalScale : 0.8 / globalScale;
       ctx.moveTo(s.x, s.y);
       ctx.lineTo(t.x, t.y);
       ctx.stroke();
@@ -261,7 +297,9 @@ export default function GraphCanvas({
             <h4 className="text-sm font-semibold text-white mb-2">
               Failed to load graph
             </h4>
-            <p className="text-xs text-white/50 leading-relaxed mb-4">{error}</p>
+            <p className="text-xs text-white/50 leading-relaxed mb-4">
+              {error}
+            </p>
           </div>
         </div>
       )}
@@ -407,7 +445,9 @@ export default function GraphCanvas({
                   </div>
                   {selectedNode.meta?.kind && (
                     <div className="bg-black/30 p-2.5 rounded-lg border border-white/5">
-                      <span className="text-[9px] text-white/40 block">Kind</span>
+                      <span className="text-[9px] text-white/40 block">
+                        Kind
+                      </span>
                       <span className="text-[10px] text-white font-mono truncate block">
                         {selectedNode.meta.kind}
                       </span>
@@ -415,7 +455,9 @@ export default function GraphCanvas({
                   )}
                   {selectedNode.meta?.trust !== undefined && (
                     <div className="bg-black/30 p-2.5 rounded-lg border border-white/5">
-                      <span className="text-[9px] text-white/40 block">Trust Level</span>
+                      <span className="text-[9px] text-white/40 block">
+                        Trust Level
+                      </span>
                       <span className="text-[10px] text-white font-mono block">
                         {selectedNode.meta.trust}
                       </span>
@@ -423,7 +465,9 @@ export default function GraphCanvas({
                   )}
                   {selectedNode.meta?.memory_count !== undefined && (
                     <div className="bg-black/30 p-2.5 rounded-lg border border-white/5">
-                      <span className="text-[9px] text-white/40 block">Memory Count</span>
+                      <span className="text-[9px] text-white/40 block">
+                        Memory Count
+                      </span>
                       <span className="text-[10px] text-[#39ff14] font-mono block">
                         {selectedNode.meta.memory_count}
                       </span>
@@ -431,7 +475,9 @@ export default function GraphCanvas({
                   )}
                   {selectedNode.meta?.language && (
                     <div className="bg-black/30 p-2.5 rounded-lg border border-white/5">
-                      <span className="text-[9px] text-white/40 block">Language</span>
+                      <span className="text-[9px] text-white/40 block">
+                        Language
+                      </span>
                       <span className="text-[10px] text-white font-mono block">
                         {selectedNode.meta.language}
                       </span>
@@ -439,7 +485,9 @@ export default function GraphCanvas({
                   )}
                   {selectedNode.meta?.complexity !== undefined && (
                     <div className="bg-black/30 p-2.5 rounded-lg border border-white/5">
-                      <span className="text-[9px] text-white/40 block">Complexity</span>
+                      <span className="text-[9px] text-white/40 block">
+                        Complexity
+                      </span>
                       <span className="text-[10px] text-white font-mono block">
                         {selectedNode.meta.complexity}
                       </span>
@@ -455,15 +503,19 @@ export default function GraphCanvas({
                     Extended Evidence
                   </span>
                   <div className="bg-black/40 border border-[#39ff14]/15 p-3 rounded-xl space-y-2 font-mono text-[10px] text-white/70">
-                    {Object.entries(selectedNodeExtra).map(([key, val]: [string, any]) => {
-                      if (typeof val === "object") return null;
-                      return (
-                        <div key={key} className="flex justify-between gap-4">
-                          <span className="text-white/40">{key}:</span>
-                          <span className="text-right truncate max-w-[180px]">{String(val)}</span>
-                        </div>
-                      );
-                    })}
+                    {Object.entries(selectedNodeExtra).map(
+                      ([key, val]: [string, any]) => {
+                        if (typeof val === "object") return null;
+                        return (
+                          <div key={key} className="flex justify-between gap-4">
+                            <span className="text-white/40">{key}:</span>
+                            <span className="text-right truncate max-w-[180px]">
+                              {String(val)}
+                            </span>
+                          </div>
+                        );
+                      },
+                    )}
                   </div>
                 </section>
               )}
@@ -475,7 +527,8 @@ export default function GraphCanvas({
                     type="button"
                     onClick={() => {
                       if (onNodeExpand) onNodeExpand(selectedNode);
-                      else if (onNodeDoubleClick) onNodeDoubleClick(selectedNode);
+                      else if (onNodeDoubleClick)
+                        onNodeDoubleClick(selectedNode);
                     }}
                     className="w-full flex items-center justify-center gap-1.5 py-2 px-3 bg-[#39ff14]/15 border border-[#39ff14]/40 text-[#39ff14] font-medium tracking-wide rounded-lg hover:bg-[#39ff14]/25 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 transition-all text-xs"
                   >

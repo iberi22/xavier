@@ -22,7 +22,7 @@ import ForceGraph2D, {
   ForceGraphMethods,
   NodeObject,
 } from "react-force-graph-2d";
-import { type GraphData, GraphLink, type GraphNode } from "../types";
+import type { GraphData, GraphLink, GraphNode } from "../types";
 
 interface GraphViewProps {
   data: GraphData;

@@ -92,7 +92,10 @@ export default function InputArea({
           <FolderPlus className="w-5 h-5" aria-hidden="true" />
         </button>
 
-        <div className="w-px h-8 bg-white/10 relative z-10 mx-1" aria-hidden="true" />
+        <div
+          className="w-px h-8 bg-white/10 relative z-10 mx-1"
+          aria-hidden="true"
+        />
 
         <button
           type="button"
@@ -107,7 +110,10 @@ export default function InputArea({
           title={isRecording ? "Stop recording" : "Record audio"}
         >
           {isRecording ? (
-            <div className="flex gap-[3px] items-center justify-center h-full" aria-hidden="true">
+            <div
+              className="flex gap-[3px] items-center justify-center h-full"
+              aria-hidden="true"
+            >
               <div
                 className="w-[3px] bg-[#39ff14] rounded-full animate-[audioBar_1s_ease-in-out_infinite_0ms]"
                 style={{ height: "12px" }}

@@ -1,5 +1,5 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { create } from "zustand";
+import { persist } from "zustand/middleware";
 
 interface User {
   id: string;
@@ -38,14 +38,14 @@ export const useAuthStore = create<AuthState>()(
           refreshToken,
           isAuthenticated: true,
           mfaRequired: false,
-          mfaEmail: null
+          mfaEmail: null,
         }),
 
       setMfaRequired: (email) =>
         set({
           mfaRequired: true,
           mfaEmail: email,
-          isAuthenticated: false
+          isAuthenticated: false,
         }),
 
       logout: () =>
@@ -55,11 +55,11 @@ export const useAuthStore = create<AuthState>()(
           refreshToken: null,
           isAuthenticated: false,
           mfaRequired: false,
-          mfaEmail: null
+          mfaEmail: null,
         }),
     }),
     {
-      name: 'xavier-auth-storage',
-    }
-  )
+      name: "xavier-auth-storage",
+    },
+  ),
 );
