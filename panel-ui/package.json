@@ -11,6 +11,7 @@
     "biome:write": "biome check --write src/App.tsx src/main.tsx playwright.config.ts tests/generative-ui.spec.ts",
     "typecheck": "tsc --noEmit -p tsconfig.generative.json",
     "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
     "test:e2e:generative": "playwright test"
   },
@@ -39,6 +40,7 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^5.2.0",
+    "@vitest/coverage-v8": "4.1.8",
     "astro": "^6.4.6",
     "defu": "^6.1.5",
     "jsdom": "^29.1.1",
