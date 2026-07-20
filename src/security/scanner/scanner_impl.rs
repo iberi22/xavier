@@ -222,6 +222,25 @@ impl SecurityScanner {
                 context: None,
             });
         }
+
+        // Also check with leetspeak/accent normalization
+        let normalized = crate::security::prompt_guard::strip_accents(
+            &crate::security::prompt_guard::normalize_leetspeak(&input.to_lowercase())
+        );
+        if normalized != input.to_lowercase() {
+            let matches_norm = self.phrase_matcher.find_matches(&normalized);
+            for m in matches_norm {
+                // To avoid duplicate findings if already matched in original
+                if !triggered.iter().any(|t| t.layer == DetectionLayer::PhraseMatch && t.matched == m.phrase) {
+                    triggered.push(TriggeredDetection {
+                        layer: DetectionLayer::PhraseMatch,
+                        matched: m.phrase,
+                        severity: 0.8,
+                        context: Some("Detected via normalization".to_string()),
+                    });
+                }
+            }
+        }
     }
 
     /// Layer 2: Detect encoded injection attempts (base64, hex, URL)
@@ -239,7 +258,11 @@ impl SecurityScanner {
                 let encoded = m.as_str();
 
                 if let Some(decoded) = self.try_decode(encoded) {
-                    if self.phrase_matcher.contains_injection(&decoded) {
+                    let decoded_normalized = crate::security::prompt_guard::strip_accents(
+                        &crate::security::prompt_guard::normalize_leetspeak(&decoded.to_lowercase())
+                    );
+                    if self.phrase_matcher.contains_injection(&decoded)
+                        || self.phrase_matcher.contains_injection(&decoded_normalized) {
                         triggered.push(TriggeredDetection {
                             layer: DetectionLayer::EncodedContent,
                             matched: format!("{encoding} encoded injection"),
