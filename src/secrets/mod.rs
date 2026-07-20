@@ -36,34 +36,46 @@ impl std::fmt::Debug for Secret {
 }
 
 #[deprecated(note = "SecretsManager is deprecated. Use Clavis or another secure provider.")]
-#[derive(Default)]
 #[allow(deprecated)]
-pub struct SecretsManager;
+pub struct SecretsManager {
+    store: std::collections::HashMap<String, String>,
+}
+
+#[allow(deprecated)]
+impl Default for SecretsManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[allow(deprecated)]
 impl SecretsManager {
     pub fn new() -> Self {
-        Self
+        Self {
+            store: std::collections::HashMap::new(),
+        }
     }
 
     pub fn is_empty(&self) -> bool {
-        true
+        self.store.is_empty()
     }
 
-    pub fn store(&mut self, _key: String, _value: String) -> SecretResult<()> {
+    pub fn store(&mut self, key: String, value: String) -> SecretResult<()> {
+        self.store.insert(key, value);
         Ok(())
     }
 
     pub fn get(&self, key: &str) -> SecretResult<String> {
-        Err(SecretError::NotFound(key.to_string()))
+        self.store.get(key).cloned().ok_or_else(|| SecretError::NotFound(key.to_string()))
     }
 
-    pub fn delete(&mut self, _key: &str) -> SecretResult<()> {
+    pub fn delete(&mut self, key: &str) -> SecretResult<()> {
+        self.store.remove(key);
         Ok(())
     }
 
-    pub fn exists(&self, _key: &str) -> bool {
-        false
+    pub fn exists(&self, key: &str) -> bool {
+        self.store.contains_key(key)
     }
 }
 

@@ -97,14 +97,22 @@ mod distributed_lock_tests {
     }
 
     #[tokio::test]
-    #[ignore = "timeout behaviour not implemented in the lightweight compatibility lock"]
     async fn test_lock_timeout() {
         let lock = DistributedLock::new("timeout_test".to_string());
 
-        lock.try_acquire("owner").await;
+        // Acquire with a 10ms timeout
+        let acquired = lock.try_acquire_with_timeout("owner", std::time::Duration::from_millis(10)).await;
+        assert!(acquired);
 
-        // After timeout, should be available
-        // Implementation depends on timeout configuration
-        todo!("Test with actual timeout");
+        // Try to acquire with other owner immediately (should fail)
+        let acquired_other = lock.try_acquire("other").await;
+        assert!(!acquired_other);
+
+        // Sleep for 15ms so it expires
+        tokio::time::sleep(std::time::Duration::from_millis(15)).await;
+
+        // Try again (should succeed)
+        let acquired_expired = lock.try_acquire("other").await;
+        assert!(acquired_expired);
     }
 }

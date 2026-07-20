@@ -135,17 +135,85 @@ mod checkpoint_tests {
 
 #[cfg(test)]
 mod checkpoint_recovery_tests {
-    #[tokio::test]
-    #[ignore = "recovery integration pending full task-system wiring"]
-    async fn test_full_recovery() {
-        // Test full task recovery from checkpoints
-        todo!("Implement with actual task system");
+    use xavier::checkpoint::{Checkpoint, CheckpointManager};
+
+    struct MockTask {
+        id: String,
+        current_step: u32,
+        data: String,
+    }
+
+    impl MockTask {
+        fn new(id: String, data: String) -> Self {
+            Self {
+                id,
+                current_step: 0,
+                data,
+            }
+        }
+
+        async fn run_step(&mut self, manager: &CheckpointManager) -> Result<(), anyhow::Error> {
+            self.current_step += 1;
+            let checkpoint = Checkpoint::new(
+                self.id.clone(),
+                format!("step_{}", self.current_step),
+                serde_json::json!({
+                    "step": self.current_step,
+                    "data": self.data
+                }),
+            );
+            manager.save(checkpoint).await?;
+            Ok(())
+        }
+
+        async fn recover(&mut self, manager: &CheckpointManager, step_name: &str) -> Result<(), anyhow::Error> {
+            if let Some(checkpoint) = manager.load(self.id.clone(), step_name.to_string()).await? {
+                self.current_step = checkpoint.data["step"].as_u64().unwrap_or(0) as u32;
+                self.data = checkpoint.data["data"].as_str().unwrap_or("").to_string();
+            }
+            Ok(())
+        }
     }
 
     #[tokio::test]
-    #[ignore = "recovery integration pending full task-system wiring"]
+    async fn test_full_recovery() {
+        let manager = CheckpointManager::new();
+        let mut task = MockTask::new("task_recovery_1".to_string(), "step1_data".to_string());
+
+        // Run step 1
+        task.run_step(&manager).await.unwrap();
+        assert_eq!(task.current_step, 1);
+
+        // Modify task state to simulate a crash/loss of memory state
+        task.current_step = 0;
+        task.data = "corrupted".to_string();
+
+        // Recover to step_1
+        task.recover(&manager, "step_1").await.unwrap();
+        assert_eq!(task.current_step, 1);
+        assert_eq!(task.data, "step1_data");
+    }
+
+    #[tokio::test]
     async fn test_partial_recovery() {
-        // Test recovery from specific checkpoint
-        todo!("Implement with actual task system");
+        let manager = CheckpointManager::new();
+        let mut task = MockTask::new("task_recovery_2".to_string(), "step2_data".to_string());
+
+        // Save multiple steps
+        task.run_step(&manager).await.unwrap(); // step_1
+        task.data = "step2_data_new".to_string();
+        task.run_step(&manager).await.unwrap(); // step_2
+
+        // Recover specifically to step_1
+        let mut restored_task = MockTask::new("task_recovery_2".to_string(), "".to_string());
+        restored_task.recover(&manager, "step_1").await.unwrap();
+        assert_eq!(restored_task.current_step, 1);
+        assert_eq!(restored_task.data, "step2_data");
+
+        // Recover specifically to step_2
+        let mut restored_task_2 = MockTask::new("task_recovery_2".to_string(), "".to_string());
+        restored_task_2.recover(&manager, "step_2").await.unwrap();
+        assert_eq!(restored_task_2.current_step, 2);
+        assert_eq!(restored_task_2.data, "step2_data_new");
     }
 }

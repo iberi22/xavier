@@ -102,7 +102,7 @@ impl Coordinator {
 
 pub struct DistributedLock {
     resource_id: String,
-    owner: RwLock<Option<String>>,
+    owner: RwLock<Option<(String, std::time::Instant, std::time::Duration)>>,
 }
 
 impl DistributedLock {
@@ -119,19 +119,30 @@ impl DistributedLock {
     }
 
     pub async fn try_acquire(&self, owner: &str) -> bool {
+        self.try_acquire_with_timeout(owner, std::time::Duration::from_secs(3600 * 24)).await
+    }
+
+    pub async fn try_acquire_with_timeout(&self, owner: &str, timeout: std::time::Duration) -> bool {
         let mut current = self.owner.write().await;
-        if current.is_none() {
-            *current = Some(owner.to_string());
-            true
-        } else {
+        let now = std::time::Instant::now();
+        if let Some((_, acquired_at, duration)) = &*current {
+            if now.duration_since(*acquired_at) >= *duration {
+                *current = Some((owner.to_string(), now, timeout));
+                return true;
+            }
             false
+        } else {
+            *current = Some((owner.to_string(), now, timeout));
+            true
         }
     }
 
     pub async fn release(&self, owner: &str) {
         let mut current = self.owner.write().await;
-        if current.as_deref() == Some(owner) {
-            *current = None;
+        if let Some((current_owner, _, _)) = &*current {
+            if current_owner == owner {
+                *current = None;
+            }
         }
     }
 }

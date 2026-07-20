@@ -65,7 +65,6 @@ mod secrets_tests {
     }
 
     #[test]
-    #[ignore]
     fn test_store_secret() {
         let mut manager = SecretsManager::new();
 
@@ -77,7 +76,6 @@ mod secrets_tests {
     }
 
     #[test]
-    #[ignore]
     fn test_retrieve_secret() {
         let mut manager = SecretsManager::new();
 
@@ -90,7 +88,6 @@ mod secrets_tests {
     }
 
     #[test]
-    #[ignore]
     fn test_delete_secret() {
         let mut manager = SecretsManager::new();
 
@@ -103,9 +100,28 @@ mod secrets_tests {
     }
 
     #[test]
-    #[ignore] // Requires actual secrets backend
     fn test_secrets_encryption_at_rest() {
-        // Test that secrets are encrypted when stored
-        todo!("Implement with actual secrets backend (Vault, AWS Secrets Manager, etc.)");
+        let tmp = tempfile::tempdir().unwrap();
+        let vault_key = [7u8; 32];
+        let vault = xavier::secrets::local_vault::LocalSecretsVault::new(tmp.path(), vault_key);
+
+        let name = "secret-key";
+        let value = "super-sensitive-content";
+
+        vault.set(name, value).unwrap();
+
+        // Verify we can retrieve it correctly
+        assert_eq!(vault.get(name).unwrap(), value);
+
+        // Read the file directly from disk and check that the plaintext is NOT in it
+        let file_path = tmp.path().join(format!("{}.enc", name));
+        let encrypted_content = std::fs::read(file_path).unwrap();
+
+        // It must be different from the plaintext
+        assert_ne!(encrypted_content, value.as_bytes());
+
+        // And the plaintext shouldn't be a simple substring of the encrypted content
+        let content_str = String::from_utf8_lossy(&encrypted_content);
+        assert!(!content_str.contains(value));
     }
 }
