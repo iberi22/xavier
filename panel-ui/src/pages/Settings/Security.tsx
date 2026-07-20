@@ -9,20 +9,20 @@ import {
   FileText,
   Fingerprint,
   Globe,
+  History,
   Key,
+  KeyRound,
   Lock,
   Plus,
   RefreshCw,
   Shield,
   Trash2,
   Unlock,
-  KeyRound,
-  History,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
-import LeasesPage from "./LeasesPage";
 import LeaseHistoryPage from "./LeaseHistoryPage";
+import LeasesPage from "./LeasesPage";
 
 // ── Mock Data ──────────────────────────────────────────────────────────────
 
@@ -614,7 +614,13 @@ function ProxySection() {
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-type SecuritySection = "tokens" | "leases" | "lease-history" | "apikeys" | "audit" | "proxy";
+type SecuritySection =
+  | "tokens"
+  | "leases"
+  | "lease-history"
+  | "apikeys"
+  | "audit"
+  | "proxy";
 
 interface SecurityConfigPanelProps {
   embedded?: boolean;
@@ -712,8 +718,12 @@ export default function SecurityConfigPanel({
 
         <AnimatePresence mode="wait">
           {activeSection === "tokens" && <TokensSection key="tokens" />}
-          {activeSection === "leases" && <LeasesPage key="leases" token={token} />}
-          {activeSection === "lease-history" && <LeaseHistoryPage key="lease-history" token={token} />}
+          {activeSection === "leases" && (
+            <LeasesPage key="leases" token={token} />
+          )}
+          {activeSection === "lease-history" && (
+            <LeaseHistoryPage key="lease-history" token={token} />
+          )}
           {activeSection === "apikeys" && <ApiKeysSection key="apikeys" />}
           {activeSection === "audit" && <AuditLogSection key="audit" />}
           {activeSection === "proxy" && <ProxySection key="proxy" />}

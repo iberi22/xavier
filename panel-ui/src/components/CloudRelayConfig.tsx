@@ -1,5 +1,6 @@
 import { Cloud } from "lucide-react";
-import React, { useEffect, useState } from "react";
+import type React from "react";
+import { useEffect, useState } from "react";
 import { ApiClient, type CloudNodeConfig } from "../api/client";
 
 export function CloudRelayConfig({ token }: { token: string }) {
@@ -57,7 +58,9 @@ export function CloudRelayConfig({ token }: { token: string }) {
           <Cloud size={18} />
         </div>
         <div>
-          <h2 className="font-semibold text-white/90">Zero-Trust Cloud Relay</h2>
+          <h2 className="font-semibold text-white/90">
+            Zero-Trust Cloud Relay
+          </h2>
           <p className="text-xs text-white/40 uppercase tracking-widest mt-1">
             Configure Supabase / Neon endpoints
           </p>

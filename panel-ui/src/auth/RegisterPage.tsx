@@ -1,10 +1,11 @@
-import React, { useState } from "react";
 import { motion } from "motion/react";
-import { useAuth } from "../hooks/useAuth";
+import type React from "react";
+import { useState } from "react";
+import { authClient } from "../api/authClient";
+import ParticleBackground from "../components/ParticleBackground";
 import { PasswordInput } from "../components/PasswordInput";
 import { SeedPhraseDisplay } from "../components/SeedPhraseDisplay";
-import ParticleBackground from "../components/ParticleBackground";
-import { authClient } from "../api/authClient";
+import { useAuth } from "../hooks/useAuth";
 
 export const RegisterPage: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -33,7 +34,11 @@ export const RegisterPage: React.FC = () => {
       return;
     }
 
-    if (password.length < 8 || !/[A-Z]/.test(password) || !/[0-9]/.test(password)) {
+    if (
+      password.length < 8 ||
+      !/[A-Z]/.test(password) ||
+      !/[0-9]/.test(password)
+    ) {
       setError("Password must be 8+ chars, with 1 uppercase & 1 number");
       return;
     }
@@ -63,7 +68,9 @@ export const RegisterPage: React.FC = () => {
             Emergency Recovery Seed
           </h1>
           <p className="text-xs opacity-70 mb-6 leading-relaxed">
-            Write down these 12 words and keep them safe. This is the <span className="text-[#39ff14]">ONLY WAY</span> to recover your account if you lose access.
+            Write down these 12 words and keep them safe. This is the{" "}
+            <span className="text-[#39ff14]">ONLY WAY</span> to recover your
+            account if you lose access.
           </p>
 
           <SeedPhraseDisplay phrase={seedPhrase} />
@@ -71,7 +78,7 @@ export const RegisterPage: React.FC = () => {
           <button
             type="button"
             className="w-full bg-[#39ff14] text-black font-bold text-sm tracking-widest py-3 rounded-lg hover:shadow-[0_0_15px_rgba(57,255,20,0.5)] transition-all mt-8"
-            onClick={() => window.location.hash = "#/2fa/setup"}
+            onClick={() => (window.location.hash = "#/2fa/setup")}
           >
             I HAVE SAVED MY WORDS
           </button>
@@ -97,7 +104,9 @@ export const RegisterPage: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1 w-full">
-            <label className="text-xs text-white/60 uppercase tracking-widest">Name</label>
+            <label className="text-xs text-white/60 uppercase tracking-widest">
+              Name
+            </label>
             <input
               className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:border-[#39ff14] focus:outline-none transition-colors font-mono"
               value={name}
@@ -108,7 +117,9 @@ export const RegisterPage: React.FC = () => {
           </div>
 
           <div className="flex flex-col gap-1 w-full">
-            <label className="text-xs text-white/60 uppercase tracking-widest">Email</label>
+            <label className="text-xs text-white/60 uppercase tracking-widest">
+              Email
+            </label>
             <input
               className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:border-[#39ff14] focus:outline-none transition-colors font-mono"
               value={email}
@@ -136,8 +147,8 @@ export const RegisterPage: React.FC = () => {
                         ? step <= 2
                           ? "bg-red-500"
                           : step === 3
-                          ? "bg-yellow-500"
-                          : "bg-[#39ff14]"
+                            ? "bg-yellow-500"
+                            : "bg-[#39ff14]"
                         : "bg-white/10"
                     }`}
                   />
@@ -171,7 +182,7 @@ export const RegisterPage: React.FC = () => {
         <div className="mt-8">
           <button
             type="button"
-            onClick={() => window.location.hash = "#/login"}
+            onClick={() => (window.location.hash = "#/login")}
             className="text-[10px] text-white/40 hover:text-[#39ff14] transition-colors uppercase tracking-widest"
           >
             Back to login

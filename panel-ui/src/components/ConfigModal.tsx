@@ -1,7 +1,9 @@
 import {
+  ArrowLeft,
   Bookmark,
   Bot,
   Brain,
+  ChevronRight,
   Cpu,
   Database,
   Globe,
@@ -9,6 +11,7 @@ import {
   Layers,
   MessageSquare,
   Network,
+  Play,
   Plug,
   RefreshCw,
   Server,
@@ -16,9 +19,6 @@ import {
   Shield,
   TrendingUp,
   X,
-  Play,
-  ArrowLeft,
-  ChevronRight,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import type React from "react";
@@ -35,15 +35,15 @@ import type { Agent, BookmarkArtifact, GraphData, GraphNode } from "../types";
 import { mergeFilteredGraphUpdate } from "../utils/roadmapGraph";
 import AgentsView from "./AgentsView";
 import BookmarksView from "./BookmarksView";
-import GraphView from "./GraphView";
+import { CloudRelayConfig } from "./CloudRelayConfig";
+import DataCommonsConfigUI from "./DataCommonsConfigUI";
 import GraphCanvas from "./GraphCanvas";
+import GraphView from "./GraphView";
 import MemoryBrowser from "./MemoryBrowser";
+import MeshConfig from "./MeshConfig";
 import MessagingConfigModal, {
   MessagingConfigInner,
 } from "./MessagingConfigModal";
-import { CloudRelayConfig } from "./CloudRelayConfig";
-import DataCommonsConfigUI from "./DataCommonsConfigUI";
-import MeshConfig from "./MeshConfig";
 import UsageMetricsPanel from "./UsageMetricsPanel";
 
 interface ConfigModalProps {
@@ -120,7 +120,10 @@ export default function ConfigModal({
   );
 
   // ─── Memory KG State ───
-  const [memoryData, setMemoryData] = useState<GraphData>({ nodes: [], links: [] });
+  const [memoryData, setMemoryData] = useState<GraphData>({
+    nodes: [],
+    links: [],
+  });
   const [memoryLoading, setMemoryLoading] = useState(false);
   const [memoryError, setMemoryError] = useState<string | null>(null);
   const [isMemoryTruncated, setIsMemoryTruncated] = useState(false);
@@ -130,7 +133,8 @@ export default function ConfigModal({
     setMemoryLoading(true);
     setMemoryError(null);
     try {
-      const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+      const isTauri =
+        typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
       const baseUrl = isTauri ? "http://127.0.0.1:8006" : "";
       const res = await fetch(`${baseUrl}/memory/graph/view`, {
         headers: {
@@ -155,83 +159,98 @@ export default function ConfigModal({
   }, [token]);
 
   // Fetch specific entity detail (GET /memory/graph/entities/{id})
-  const fetchMemoryNodeDetail = useCallback(async (node: GraphNode) => {
-    try {
-      const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-      const baseUrl = isTauri ? "http://127.0.0.1:8006" : "";
-      const res = await fetch(`${baseUrl}/memory/graph/entities/${encodeURIComponent(node.id)}`, {
-        headers: {
-          "Content-Type": "application/json",
-          "X-Xavier-Token": token || "",
-        },
-      });
-      if (res.ok) {
-        return await res.json();
+  const fetchMemoryNodeDetail = useCallback(
+    async (node: GraphNode) => {
+      try {
+        const isTauri =
+          typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+        const baseUrl = isTauri ? "http://127.0.0.1:8006" : "";
+        const res = await fetch(
+          `${baseUrl}/memory/graph/entities/${encodeURIComponent(node.id)}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              "X-Xavier-Token": token || "",
+            },
+          },
+        );
+        if (res.ok) {
+          return await res.json();
+        }
+      } catch (e) {
+        console.warn("Could not load entity details", e);
       }
-    } catch (e) {
-      console.warn("Could not load entity details", e);
-    }
-    return null;
-  }, [token]);
+      return null;
+    },
+    [token],
+  );
 
   // ─── Code State ───
-  const [codeStats, setCodeStats] = useState<{ total_symbols: number; total_files: number } | null>(null);
+  const [codeStats, setCodeStats] = useState<{
+    total_symbols: number;
+    total_files: number;
+  } | null>(null);
   const [codeData, setCodeData] = useState<GraphData>({ nodes: [], links: [] });
   const [codeLoading, setCodeLoading] = useState(false);
   const [codeError, setCodeError] = useState<string | null>(null);
   const [codeEgoQuery, setCodeEgoQuery] = useState<string | null>(null);
 
   // Fetch code stats and graph view
-  const fetchCodeStatsAndGraph = useCallback(async (query: string | null = null) => {
-    setCodeLoading(true);
-    setCodeError(null);
-    try {
-      const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-      const baseUrl = isTauri ? "http://127.0.0.1:8006" : "";
+  const fetchCodeStatsAndGraph = useCallback(
+    async (query: string | null = null) => {
+      setCodeLoading(true);
+      setCodeError(null);
+      try {
+        const isTauri =
+          typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+        const baseUrl = isTauri ? "http://127.0.0.1:8006" : "";
 
-      // 1. Fetch Stats
-      const statsRes = await fetch(`${baseUrl}/code/stats`, {
-        headers: {
-          "Content-Type": "application/json",
-          "X-Xavier-Token": token || "",
-        },
-      });
-      if (!statsRes.ok) throw new Error("Failed to load code statistics");
-      const stats = await statsRes.json();
-      setCodeStats(stats);
-
-      // 2. Fetch graph if symbols exist
-      if (stats.total_symbols > 0 || stats.total_files > 0) {
-        const mode = query ? "ego" : "overview";
-        let url = `${baseUrl}/code/graph/view?mode=${mode}`;
-        if (query) {
-          url += `&query=${encodeURIComponent(query)}`;
-        }
-        const graphRes = await fetch(url, {
+        // 1. Fetch Stats
+        const statsRes = await fetch(`${baseUrl}/code/stats`, {
           headers: {
             "Content-Type": "application/json",
             "X-Xavier-Token": token || "",
           },
         });
-        if (!graphRes.ok) throw new Error("Failed to load code graph view");
-        const graphBody = await graphRes.json();
-        setCodeData(canvasToForceData(codeViewToCanvas(graphBody)));
-      } else {
-        setCodeData({ nodes: [], links: [] });
+        if (!statsRes.ok) throw new Error("Failed to load code statistics");
+        const stats = await statsRes.json();
+        setCodeStats(stats);
+
+        // 2. Fetch graph if symbols exist
+        if (stats.total_symbols > 0 || stats.total_files > 0) {
+          const mode = query ? "ego" : "overview";
+          let url = `${baseUrl}/code/graph/view?mode=${mode}`;
+          if (query) {
+            url += `&query=${encodeURIComponent(query)}`;
+          }
+          const graphRes = await fetch(url, {
+            headers: {
+              "Content-Type": "application/json",
+              "X-Xavier-Token": token || "",
+            },
+          });
+          if (!graphRes.ok) throw new Error("Failed to load code graph view");
+          const graphBody = await graphRes.json();
+          setCodeData(canvasToForceData(codeViewToCanvas(graphBody)));
+        } else {
+          setCodeData({ nodes: [], links: [] });
+        }
+      } catch (e: any) {
+        setCodeError(e.message || "Failed to load code view");
+      } finally {
+        setCodeLoading(false);
       }
-    } catch (e: any) {
-      setCodeError(e.message || "Failed to load code view");
-    } finally {
-      setCodeLoading(false);
-    }
-  }, [token]);
+    },
+    [token],
+  );
 
   // Scan Codebase
   const handleScanCodebase = async () => {
     setCodeLoading(true);
     setCodeError(null);
     try {
-      const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+      const isTauri =
+        typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
       const baseUrl = isTauri ? "http://127.0.0.1:8006" : "";
       const res = await fetch(`${baseUrl}/code/scan`, {
         method: "POST",
@@ -270,7 +289,13 @@ export default function ConfigModal({
         void fetchCodeStatsAndGraph(codeEgoQuery);
       }
     }
-  }, [mainTab, subLayer, fetchMemoryGraph, fetchCodeStatsAndGraph, codeEgoQuery]);
+  }, [
+    mainTab,
+    subLayer,
+    fetchMemoryGraph,
+    fetchCodeStatsAndGraph,
+    codeEgoQuery,
+  ]);
 
   return (
     <motion.div
@@ -358,7 +383,11 @@ export default function ConfigModal({
       <div className="flex-1 overflow-hidden relative bg-black/20">
         <AnimatePresence mode="wait">
           {mainTab === "config" && (
-            <ConfigView key="config" graphData={graphData} token={token || ""} />
+            <ConfigView
+              key="config"
+              graphData={graphData}
+              token={token || ""}
+            />
           )}
           {mainTab === "graph" && (
             <motion.div
@@ -466,7 +495,9 @@ export default function ConfigModal({
                     className="w-full h-full relative"
                   >
                     <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex gap-4 bg-[#0a0a0a]/90 backdrop-blur-md p-4 rounded-xl border border-white/10 shadow-2xl items-end">
-                      {(startDate || endDate || selectedMilestone !== "all") && (
+                      {(startDate ||
+                        endDate ||
+                        selectedMilestone !== "all") && (
                         <button
                           type="button"
                           onClick={() => {
@@ -555,7 +586,9 @@ export default function ConfigModal({
                     className="w-full h-full relative"
                   >
                     {/* Empty stats scan CTA */}
-                    {codeStats && codeStats.total_symbols === 0 && !codeLoading ? (
+                    {codeStats &&
+                    codeStats.total_symbols === 0 &&
+                    !codeLoading ? (
                       <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#050505]/80 p-6">
                         <div className="flex flex-col items-center max-w-sm text-center bg-[#0a0a0a] border border-white/10 rounded-[24px] p-8 shadow-2xl">
                           <Cpu className="w-12 h-12 text-[#39ff14] mb-4 animate-pulse" />
@@ -563,7 +596,8 @@ export default function ConfigModal({
                             Scan Codebase
                           </h3>
                           <p className="text-xs text-white/40 leading-relaxed mb-6">
-                            Index symbols, classes, structs, and calls within your "src/" directory to navigate relationships.
+                            Index symbols, classes, structs, and calls within
+                            your "src/" directory to navigate relationships.
                           </p>
                           <button
                             type="button"
@@ -726,7 +760,6 @@ function MessagingEmbedded() {
     </div>
   );
 }
-
 
 function TabButton({
   active,
@@ -1160,7 +1193,8 @@ function ConfigView({
                   Server & Network
                 </h2>
                 <p className="text-sm text-white/40 mt-1">
-                  Configure Xavier's connectivity, P2P Cloud Relays, and Data Commons.
+                  Configure Xavier's connectivity, P2P Cloud Relays, and Data
+                  Commons.
                 </p>
               </div>
               <div className="space-y-6">

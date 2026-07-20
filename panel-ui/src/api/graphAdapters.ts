@@ -1,9 +1,5 @@
-import { type GraphData } from "../types";
-import {
-  type CanvasGraph,
-  type CanvasNode,
-  type CanvasLink,
-} from "../types/graphLayers";
+import type { GraphData } from "../types";
+import type { CanvasGraph, CanvasLink, CanvasNode } from "../types/graphLayers";
 
 function getEndpointId(endpoint: any): string {
   if (endpoint === null || endpoint === undefined) {
@@ -66,8 +62,8 @@ export function memoryViewToCanvas(json: any): CanvasGraph {
   const rawNodes = Array.isArray(json.nodes)
     ? json.nodes
     : Array.isArray(json.entities)
-    ? json.entities
-    : [];
+      ? json.entities
+      : [];
 
   for (const n of rawNodes) {
     if (n && typeof n === "object") {
@@ -89,8 +85,8 @@ export function memoryViewToCanvas(json: any): CanvasGraph {
   const rawLinks = Array.isArray(json.links)
     ? json.links
     : Array.isArray(json.relations)
-    ? json.relations
-    : [];
+      ? json.relations
+      : [];
 
   const links: CanvasLink[] = [];
   for (const l of rawLinks) {
@@ -99,7 +95,9 @@ export function memoryViewToCanvas(json: any): CanvasGraph {
       const target = getEndpointId(l.target || l.to || l.target_id);
       if (!source || !target) continue;
 
-      const relation = String(l.relation || l.relation_type || l.edge_type || "");
+      const relation = String(
+        l.relation || l.relation_type || l.edge_type || "",
+      );
       const weight = typeof l.weight === "number" ? l.weight : undefined;
 
       links.push({
@@ -162,10 +160,10 @@ export function codeViewToCanvas(json: any): CanvasGraph {
   const rawNodes = Array.isArray(json.symbols)
     ? json.symbols
     : Array.isArray(json.nodes)
-    ? json.nodes
-    : Array.isArray(json.entities)
-    ? json.entities
-    : [];
+      ? json.nodes
+      : Array.isArray(json.entities)
+        ? json.entities
+        : [];
 
   for (const n of rawNodes) {
     if (n && typeof n === "object") {
@@ -188,10 +186,10 @@ export function codeViewToCanvas(json: any): CanvasGraph {
   const rawLinks = Array.isArray(json.edges)
     ? json.edges
     : Array.isArray(json.links)
-    ? json.links
-    : Array.isArray(json.relations)
-    ? json.relations
-    : [];
+      ? json.links
+      : Array.isArray(json.relations)
+        ? json.relations
+        : [];
 
   const links: CanvasLink[] = [];
   for (const l of rawLinks) {
@@ -200,7 +198,9 @@ export function codeViewToCanvas(json: any): CanvasGraph {
       const target = getEndpointId(l.to_symbol || l.target || l.to);
       if (!source || !target) continue;
 
-      const relation = String(l.edge_type || l.relation || l.relation_type || "");
+      const relation = String(
+        l.edge_type || l.relation || l.relation_type || "",
+      );
       const weight = typeof l.weight === "number" ? l.weight : undefined;
 
       links.push({
@@ -260,7 +260,7 @@ export function canvasToForceData(canvas: CanvasGraph): GraphData {
       type: (n.kind as GraphData["nodes"][number]["type"]) || "session",
       description: n.description || "",
       // Carry original kind for GraphCanvas paint fallbacks
-      ...( { kind: n.kind, meta: n.meta } as object ),
+      ...({ kind: n.kind, meta: n.meta } as object),
     })),
     links: canvas.links.map((l) => ({
       source: l.source,

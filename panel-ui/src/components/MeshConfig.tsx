@@ -106,7 +106,8 @@ export default function MeshConfig({ token }: MeshConfigProps) {
             Mesh Network & Sharing
           </h2>
           <p className="text-sm text-white/40 mt-1">
-            Connect multiple Xavier instances and manage data sharing permissions.
+            Connect multiple Xavier instances and manage data sharing
+            permissions.
           </p>
         </div>
         <div className="text-right">
@@ -153,7 +154,9 @@ export default function MeshConfig({ token }: MeshConfigProps) {
 
             <div className="pt-4 border-t border-white/[0.04] space-y-4">
               <div className="flex items-center justify-between">
-                <p className="text-xs text-white/60">Generate my pairing code</p>
+                <p className="text-xs text-white/60">
+                  Generate my pairing code
+                </p>
                 <button
                   onClick={handleGenerateCode}
                   className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-white/70 border border-white/10 rounded-lg hover:border-white/20 transition-all"

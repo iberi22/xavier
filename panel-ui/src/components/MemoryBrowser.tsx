@@ -1,5 +1,13 @@
-import { ChevronLeft, ChevronRight, Filter, Plus, Search, X } from "lucide-react";
-import React, { useCallback, useEffect, useState } from "react";
+import {
+  ChevronLeft,
+  ChevronRight,
+  Filter,
+  Plus,
+  Search,
+  X,
+} from "lucide-react";
+import type React from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiClient } from "../api/client";
 import type { MemoryEntry } from "../types";
 
@@ -38,7 +46,8 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
     (q: string, k: string, p: number) => {
       setLoading(true);
       setError(null);
-      api.searchMemories(q, k || undefined, PAGE_SIZE * p)
+      api
+        .searchMemories(q, k || undefined, PAGE_SIZE * p)
         .then((results) => {
           const start = (p - 1) * PAGE_SIZE;
           setMemories(results.slice(start, start + PAGE_SIZE));
@@ -96,7 +105,7 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-white/90">Add New Memory</h3>
             <button type="button" onClick={() => setShowAdd(false)}>
-                <X size={16} className="text-white/40 hover:text-white" />
+              <X size={16} className="text-white/40 hover:text-white" />
             </button>
           </div>
           <textarea
@@ -157,7 +166,9 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
             }}
             className="px-3 py-2 rounded-xl border border-white/10 bg-black/30 text-white text-sm focus:outline-none focus:border-[#39ff14] appearance-none cursor-pointer min-w-[120px]"
           >
-            <option value="" className="bg-stone-900">All kinds</option>
+            <option value="" className="bg-stone-900">
+              All kinds
+            </option>
             {KIND_OPTIONS.slice(1).map((k) => (
               <option key={k} value={k} className="bg-stone-900">
                 {k}

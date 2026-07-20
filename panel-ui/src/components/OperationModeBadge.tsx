@@ -1,6 +1,6 @@
+import { motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { useAuthStore } from "../auth/AuthProvider";
-import { motion } from "motion/react";
 
 const getApiUrl = (path: string) => {
   const isTauri =
@@ -10,7 +10,9 @@ const getApiUrl = (path: string) => {
 
 export default function OperationModeBadge() {
   const token = useAuthStore((state) => state.token);
-  const [mode, setMode] = useState<"local" | "cloud" | "degraded" | "offline">("cloud");
+  const [mode, setMode] = useState<"local" | "cloud" | "degraded" | "offline">(
+    "cloud",
+  );
   const [activeProvider, setActiveProvider] = useState<string>("unknown");
   const [modelName, setModelName] = useState<string>("");
 
@@ -28,7 +30,9 @@ export default function OperationModeBadge() {
         }
 
         // Fetch from /health first as it has most details
-        const healthRes = await fetch(getApiUrl("/health"), { headers }).catch(() => null);
+        const healthRes = await fetch(getApiUrl("/health"), { headers }).catch(
+          () => null,
+        );
         let healthData: any = null;
         if (healthRes && healthRes.ok) {
           healthData = await healthRes.json().catch(() => null);
@@ -37,11 +41,15 @@ export default function OperationModeBadge() {
         // Also try `/provider/status` or `/v1/providers/status` if healthData doesn't have mode
         let providerData: any = null;
         if (!healthData || !healthData.mode) {
-          const providerRes = await fetch(getApiUrl("/provider/status"), { headers }).catch(() => null);
+          const providerRes = await fetch(getApiUrl("/provider/status"), {
+            headers,
+          }).catch(() => null);
           if (providerRes && providerRes.ok) {
             providerData = await providerRes.json().catch(() => null);
           } else {
-            const v1Res = await fetch(getApiUrl("/v1/providers/status"), { headers }).catch(() => null);
+            const v1Res = await fetch(getApiUrl("/v1/providers/status"), {
+              headers,
+            }).catch(() => null);
             if (v1Res && v1Res.ok) {
               providerData = await v1Res.json().catch(() => null);
             }
@@ -58,7 +66,8 @@ export default function OperationModeBadge() {
 
         // Extract mode
         const rawMode = healthData?.mode || providerData?.mode || "cloud";
-        const active = healthData?.llm?.provider || providerData?.active || "unknown";
+        const active =
+          healthData?.llm?.provider || providerData?.active || "unknown";
         const model = healthData?.llm?.model || "";
 
         // Normalize mode
@@ -74,7 +83,9 @@ export default function OperationModeBadge() {
         }
 
         // Check reachability overrides
-        const reachable = healthData?.llm?.reachable !== false && providerData?.local_reachable !== false;
+        const reachable =
+          healthData?.llm?.reachable !== false &&
+          providerData?.local_reachable !== false;
         if (!reachable && normalizedMode === "local") {
           normalizedMode = "degraded";
         }
@@ -122,7 +133,8 @@ export default function OperationModeBadge() {
     glowShadow = "shadow-[0_0_8px_rgba(96,165,250,0.4)]";
     emoji = "☁️";
     title = "Cloud";
-    tooltip = "Operando en modo Cloud. Se pueden aplicar cargos por el uso de APIs.";
+    tooltip =
+      "Operando en modo Cloud. Se pueden aplicar cargos por el uso de APIs.";
     textColorStyle = { color: "#60a5fa" };
   } else if (mode === "degraded") {
     dotColor = "bg-amber-400";
@@ -130,7 +142,8 @@ export default function OperationModeBadge() {
     glowShadow = "shadow-[0_0_8px_rgba(251,191,36,0.4)]";
     emoji = "⚠️";
     title = "Degradado";
-    tooltip = "El LLM local no responde. Las solicitudes están fallando o se están redireccionando.";
+    tooltip =
+      "El LLM local no responde. Las solicitudes están fallando o se están redireccionando.";
     textColorStyle = { color: "#fbbf24" };
   }
 
@@ -144,9 +157,13 @@ export default function OperationModeBadge() {
       {/* Status Dot */}
       <div className="relative flex h-1.5 w-1.5 mr-2">
         {mode !== "offline" && (
-          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${dotColor}`} />
+          <span
+            className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${dotColor}`}
+          />
         )}
-        <span className={`relative inline-flex rounded-full h-1.5 w-1.5 ${dotColor} ${glowShadow}`} />
+        <span
+          className={`relative inline-flex rounded-full h-1.5 w-1.5 ${dotColor} ${glowShadow}`}
+        />
       </div>
 
       {/* Emoji and Title */}
@@ -177,12 +194,16 @@ export default function OperationModeBadge() {
         {mode !== "offline" && (
           <>
             <div>
-              <span className="text-white/40 font-semibold mr-1">Proveedor:</span>
+              <span className="text-white/40 font-semibold mr-1">
+                Proveedor:
+              </span>
               <span className="capitalize">{activeProvider}</span>
             </div>
             {modelName && (
               <div>
-                <span className="text-white/40 font-semibold mr-1">Modelo:</span>
+                <span className="text-white/40 font-semibold mr-1">
+                  Modelo:
+                </span>
                 <span>{modelName}</span>
               </div>
             )}

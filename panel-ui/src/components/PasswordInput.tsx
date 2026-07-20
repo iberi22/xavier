@@ -1,5 +1,6 @@
-import React, { useState } from "react";
 import { Eye, EyeOff } from "lucide-react";
+import type React from "react";
+import { useState } from "react";
 
 interface PasswordInputProps
   extends React.InputHTMLAttributes<HTMLInputElement> {

@@ -1,5 +1,5 @@
-import { getApiUrl } from "./client";
 import type { User } from "../types";
+import { getApiUrl } from "./client";
 
 export interface RegisterResponse {
   user: User;
@@ -27,7 +27,7 @@ export class AuthClient {
         "Content-Type": "application/json",
         ...(options?.headers ?? {}),
       },
-      credentials: 'include',
+      credentials: "include",
     });
 
     if (!response.ok) {
@@ -37,14 +37,22 @@ export class AuthClient {
     return (await response.json()) as T;
   }
 
-  async login(email: string, password: string, totp_code?: string): Promise<LoginResponse> {
+  async login(
+    email: string,
+    password: string,
+    totp_code?: string,
+  ): Promise<LoginResponse> {
     return this.fetch<LoginResponse>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ email, password, totp_code }),
     });
   }
 
-  async register(email: string, name: string, password: string): Promise<RegisterResponse> {
+  async register(
+    email: string,
+    name: string,
+    password: string,
+  ): Promise<RegisterResponse> {
     return this.fetch<RegisterResponse>("/auth/register", {
       method: "POST",
       body: JSON.stringify({ email, name, password }),
@@ -60,7 +68,9 @@ export class AuthClient {
   }
 
   async setup2FA(): Promise<TwoFactorSetupResponse> {
-    return this.fetch<TwoFactorSetupResponse>("/auth/2fa/setup", { method: "POST" });
+    return this.fetch<TwoFactorSetupResponse>("/auth/2fa/setup", {
+      method: "POST",
+    });
   }
 
   async verify2FA(code: string): Promise<{ status: string }> {
@@ -70,7 +80,11 @@ export class AuthClient {
     });
   }
 
-  async recover(email: string, seed_phrase: string, new_password: string): Promise<void> {
+  async recover(
+    email: string,
+    seed_phrase: string,
+    new_password: string,
+  ): Promise<void> {
     await this.fetch("/auth/recovery", {
       method: "POST",
       body: JSON.stringify({ email, seed_phrase, new_password }),

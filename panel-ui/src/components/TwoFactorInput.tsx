@@ -1,11 +1,14 @@
-import React from "react";
+import type React from "react";
 
 interface TwoFactorInputProps {
   value: string;
   onChange: (value: string) => void;
 }
 
-export const TwoFactorInput: React.FC<TwoFactorInputProps> = ({ value, onChange }) => {
+export const TwoFactorInput: React.FC<TwoFactorInputProps> = ({
+  value,
+  onChange,
+}) => {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value.replace(/\D/g, "").slice(0, 6);
     onChange(val);

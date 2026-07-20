@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from "react";
 import { motion } from "motion/react";
+import type React from "react";
+import { useEffect, useState } from "react";
+import { authClient } from "../api/authClient";
+import ParticleBackground from "../components/ParticleBackground";
 import { QrCodeDisplay } from "../components/QrCodeDisplay";
 import { TwoFactorInput } from "../components/TwoFactorInput";
-import ParticleBackground from "../components/ParticleBackground";
-import { authClient } from "../api/authClient";
 
 export const TwoFactorSetup: React.FC = () => {
   const [qrCode, setQrCode] = useState<string | null>(null);
@@ -54,17 +55,23 @@ export const TwoFactorSetup: React.FC = () => {
         {qrCode && <QrCodeDisplay svg={qrCode} />}
 
         <div className="text-left mt-8 mb-6 flex flex-col gap-2">
-          <p className="text-[10px] text-white/50 uppercase">1. Open your authenticator app</p>
-          <p className="text-[10px] text-white/50 uppercase">2. Scan the QR code above</p>
-          <p className="text-[10px] text-white/50 uppercase">3. Enter the 6-digit verification code</p>
+          <p className="text-[10px] text-white/50 uppercase">
+            1. Open your authenticator app
+          </p>
+          <p className="text-[10px] text-white/50 uppercase">
+            2. Scan the QR code above
+          </p>
+          <p className="text-[10px] text-white/50 uppercase">
+            3. Enter the 6-digit verification code
+          </p>
         </div>
 
         <TwoFactorInput value={code} onChange={setCode} />
 
         {error && (
-            <div className="mt-4 text-red-500 text-[10px] uppercase tracking-widest bg-red-500/10 border border-red-500/20 p-2 rounded-lg">
-              {error}
-            </div>
+          <div className="mt-4 text-red-500 text-[10px] uppercase tracking-widest bg-red-500/10 border border-red-500/20 p-2 rounded-lg">
+            {error}
+          </div>
         )}
 
         <div className="mt-8 flex flex-col gap-3">
@@ -78,7 +85,7 @@ export const TwoFactorSetup: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={() => window.location.hash = "#/"}
+            onClick={() => (window.location.hash = "#/")}
             className="text-[10px] text-white/40 hover:text-white/80 transition-colors uppercase tracking-widest py-2"
           >
             Skip (Not Recommended)

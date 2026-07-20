@@ -1,11 +1,13 @@
+import { Check, Copy } from "lucide-react";
 import React from "react";
-import { Copy, Check } from "lucide-react";
 
 interface SeedPhraseDisplayProps {
   phrase: string;
 }
 
-export const SeedPhraseDisplay: React.FC<SeedPhraseDisplayProps> = ({ phrase }) => {
+export const SeedPhraseDisplay: React.FC<SeedPhraseDisplayProps> = ({
+  phrase,
+}) => {
   const [copied, setCopied] = React.useState(false);
   const words = phrase.split(" ");
 
@@ -23,7 +25,9 @@ export const SeedPhraseDisplay: React.FC<SeedPhraseDisplayProps> = ({ phrase }) 
             key={i}
             className="bg-white/5 border border-white/10 rounded-lg p-2 flex items-center gap-2"
           >
-            <span className="text-[10px] text-white/30 font-mono w-4">{i + 1}</span>
+            <span className="text-[10px] text-white/30 font-mono w-4">
+              {i + 1}
+            </span>
             <span className="text-sm font-mono text-white/80">{word}</span>
           </div>
         ))}

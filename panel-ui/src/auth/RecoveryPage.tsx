@@ -1,8 +1,9 @@
-import React, { useState } from "react";
 import { motion } from "motion/react";
-import { PasswordInput } from "../components/PasswordInput";
-import ParticleBackground from "../components/ParticleBackground";
+import type React from "react";
+import { useState } from "react";
 import { authClient } from "../api/authClient";
+import ParticleBackground from "../components/ParticleBackground";
+import { PasswordInput } from "../components/PasswordInput";
 
 export const RecoveryPage: React.FC = () => {
   const [email, setEmail] = useState("");
@@ -45,12 +46,13 @@ export const RecoveryPage: React.FC = () => {
             Access Restored
           </h1>
           <p className="text-xs opacity-70 mb-8 leading-relaxed uppercase">
-            Your credentials have been reset. You can now log in with your new password.
+            Your credentials have been reset. You can now log in with your new
+            password.
           </p>
           <button
             type="button"
             className="w-full bg-[#39ff14] text-black font-bold text-sm tracking-widest py-3 rounded-lg hover:shadow-[0_0_15px_rgba(57,255,20,0.5)] transition-all"
-            onClick={() => window.location.hash = "#/login"}
+            onClick={() => (window.location.hash = "#/login")}
           >
             BACK TO LOGIN
           </button>
@@ -76,7 +78,9 @@ export const RecoveryPage: React.FC = () => {
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1 w-full">
-            <label className="text-xs text-white/60 uppercase tracking-widest">Email</label>
+            <label className="text-xs text-white/60 uppercase tracking-widest">
+              Email
+            </label>
             <input
               className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:border-[#39ff14] focus:outline-none transition-colors font-mono"
               value={email}
@@ -88,7 +92,9 @@ export const RecoveryPage: React.FC = () => {
           </div>
 
           <div className="flex flex-col gap-1 w-full">
-            <label className="text-xs text-white/60 uppercase tracking-widest">Seed Phrase</label>
+            <label className="text-xs text-white/60 uppercase tracking-widest">
+              Seed Phrase
+            </label>
             <textarea
               className="w-full bg-white/5 border border-white/10 rounded-lg p-3 text-sm focus:border-[#39ff14] focus:outline-none transition-colors font-mono min-h-[100px] resize-none"
               value={seedPhrase}
@@ -130,7 +136,7 @@ export const RecoveryPage: React.FC = () => {
         <div className="mt-8">
           <button
             type="button"
-            onClick={() => window.location.hash = "#/login"}
+            onClick={() => (window.location.hash = "#/login")}
             className="text-[10px] text-white/40 hover:text-[#39ff14] transition-colors uppercase tracking-widest"
           >
             Back to login
