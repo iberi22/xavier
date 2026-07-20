@@ -81,6 +81,54 @@ mod tests {
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     #[tokio::test]
+    async fn test_get_offline_status_running() {
+        let _guard = TEST_LOCK.lock().unwrap();
+
+        // Start a mock TCP listener to simulate a running model engine
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let local_addr = listener.local_addr().unwrap();
+        let port = local_addr.port();
+
+        // Point XAVIER_LOCAL_LLM_URL to this mock listener
+        std::env::set_var("XAVIER_LOCAL_LLM_URL", format!("http://127.0.0.1:{}", port));
+
+        // Call the status handler
+        let resp = get_offline_status_handler().await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body_bytes = to_bytes(resp.into_body(), 2048).await.unwrap();
+        let status: LocalEngineStatus = serde_json::from_slice(&body_bytes).unwrap();
+
+        assert_eq!(status.port, port);
+        assert_eq!(status.engine_status, "running");
+
+        // Clean up environment
+        std::env::remove_var("XAVIER_LOCAL_LLM_URL");
+    }
+
+    #[tokio::test]
+    async fn test_get_offline_status_stopped() {
+        let _guard = TEST_LOCK.lock().unwrap();
+
+        // Point XAVIER_LOCAL_LLM_URL to a port where nothing is listening (e.g. 64321)
+        let port = 64321; // unlikely to have a service listening
+        std::env::set_var("XAVIER_LOCAL_LLM_URL", format!("http://127.0.0.1:{}", port));
+
+        // Call the status handler
+        let resp = get_offline_status_handler().await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body_bytes = to_bytes(resp.into_body(), 2048).await.unwrap();
+        let status: LocalEngineStatus = serde_json::from_slice(&body_bytes).unwrap();
+
+        assert_eq!(status.port, port);
+        assert_eq!(status.engine_status, "stopped");
+
+        // Clean up environment
+        std::env::remove_var("XAVIER_LOCAL_LLM_URL");
+    }
+
+    #[tokio::test]
     async fn test_get_and_update_offline_config() {
         let _guard = TEST_LOCK.lock().unwrap();
         let dir = tempdir().unwrap();
@@ -188,13 +236,54 @@ pub async fn get_offline_status_handler() -> Response {
     };
 
     let active_model = settings.models.local_llm_model.clone();
-    let port = settings.server.port; // default or from local url
+
+    // Determine the configured local model engine URL and port
+    let local_llm_url = std::env::var("XAVIER_LOCAL_LLM_URL")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| settings.models.local_llm_url.clone());
+
+    let mut port = 11434; // default Ollama port fallback
+    let mut is_reachable = false;
+
+    if let Ok(parsed_url) = url::Url::parse(&local_llm_url) {
+        if let Some(p) = parsed_url.port() {
+            port = p;
+        } else {
+            match parsed_url.scheme() {
+                "https" => port = 443,
+                "http" => port = 80,
+                _ => {}
+            }
+        }
+
+        if let Some(host) = parsed_url.host_str() {
+            let host_port = format!("{}:{}", host, port);
+            if let Ok(mut addrs) = tokio::net::lookup_host(host_port).await {
+                while let Some(addr) = addrs.next() {
+                    if let Ok(Ok(_)) = tokio::time::timeout(
+                        std::time::Duration::from_millis(500),
+                        tokio::net::TcpStream::connect(addr)
+                    ).await {
+                        is_reachable = true;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let engine_status = if is_reachable {
+        "running".to_string()
+    } else {
+        "stopped".to_string()
+    };
 
     let status = LocalEngineStatus {
         gpu_detected: gpu_info.vendor != GpuVendor::Unknown,
         gpu_vendor: gpu_vendor_str.to_string(),
         vram_mb: gpu_info.vram_bytes / (1024 * 1024),
-        engine_status: "running".to_string(), // Server is managed dynamically and active
+        engine_status,
         active_model,
         port,
     };
