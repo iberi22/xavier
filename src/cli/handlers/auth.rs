@@ -14,13 +14,6 @@ use xavier::crypto::password;
 use xavier::security::auth::{generate_jwt, validate_jwt, TotpProvider, User, UserRole};
 use xavier::security::recovery::RecoverySystem;
 
-#[derive(Deserialize)]
-pub struct RegisterRequest {
-    pub email: String,
-    pub password: String,
-    pub name: String,
-}
-
 #[derive(Deserialize, Clone, Serialize)]
 pub struct LoginRequest {
     pub email: String,
@@ -43,85 +36,6 @@ pub struct RecoverRequest {
     pub email: String,
     pub seed_phrase: String,
     pub new_password: String,
-}
-
-pub async fn register_handler(
-    State(state): State<CliState>,
-    headers: HeaderMap,
-    Json(payload): Json<RegisterRequest>,
-) -> Response {
-    let auth_store = match state.auth_store() {
-        Some(s) => s,
-        None => {
-            return json_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                serde_json::json!({"error": "Auth store not initialized"}),
-            )
-        }
-    };
-
-    if auth_store
-        .get_user_by_email(&payload.email)
-        .unwrap_or(None)
-        .is_some()
-    {
-        return json_response(
-            StatusCode::CONFLICT,
-            serde_json::json!({"error": "User already exists"}),
-        );
-    }
-
-    let password_hash = match password::hash(&payload.password, 0) {
-        Ok(h) => h,
-        Err(e) => {
-            return json_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                serde_json::json!({"error": e.to_string()}),
-            )
-        }
-    };
-
-    let user = User::new(payload.email.clone(), payload.name, UserRole::User);
-    let seed_phrase = RecoverySystem::generate_phrase();
-
-    if let Err(e) = auth_store.create_user(&user, &password_hash) {
-        return json_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            serde_json::json!({"error": e.to_string()}),
-        );
-    }
-
-    if let Err(e) = auth_store.set_recovery_phrase(&user.id, &seed_phrase) {
-        return json_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            serde_json::json!({"error": e.to_string()}),
-        );
-    }
-
-    let ip = headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-    let ua = headers
-        .get("user-agent")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-    let _ = auth_store.log_event(
-        Some(&user.id),
-        "register",
-        ip.as_deref(),
-        ua.as_deref(),
-        None,
-    );
-
-    json_response(
-        StatusCode::CREATED,
-        serde_json::json!({
-            "status": "ok",
-            "user_id": user.id,
-            "seed_phrase": seed_phrase
-        }),
-    )
 }
 
 pub async fn login_handler(
