@@ -45,7 +45,7 @@ pub struct VecSqliteMemoryStore {
 /// other callers hit the same pool (and migrations) as memory operations.
 pub fn project_id_for_path(path: &std::path::Path) -> String {
     let digest =
-        crate::crypto::hex_encode(&Sha256::digest(path.to_string_lossy().as_bytes()));
+        crate::crypto::hex_encode(Sha256::digest(path.to_string_lossy().as_bytes()));
     format!("vec_store_{}", &digest[..12])
 }
 
