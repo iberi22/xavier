@@ -17017,6 +17017,7 @@ dependencies = [
  "memchr",
  "mockito",
  "moka",
+ "notify",
  "oqs",
  "parking_lot",
  "proptest",
