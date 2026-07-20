@@ -490,7 +490,6 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .nest(
             "/v1/auth",
             Router::new()
-                .route("/register", post(register_handler))
                 .route("/login", post(login_handler))
                 .route("/totp/verify", post(totp_verify_handler))
                 .route("/refresh", post(refresh_handler))
