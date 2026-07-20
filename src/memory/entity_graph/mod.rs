@@ -795,4 +795,69 @@ mod tests {
             graph.all_relations().await.len()
         );
     }
+
+    #[tokio::test]
+    async fn test_concurrent_graph_operations_heavy() {
+        use std::sync::Arc;
+        use std::time::Duration;
+
+        let graph = Arc::new(EntityGraph::new());
+        let mut tasks = Vec::new();
+
+        // Spawn 60 concurrent Tokio tasks performing heavy read/write operations
+        for i in 0..60 {
+            let g = Arc::clone(&graph);
+            tasks.push(tokio::spawn(async move {
+                let memory_id = format!("heavy-mem-{}", i);
+
+                // Perform writes
+                let content = format!("Node{} links to Node{} and relates to Node{}.", i, i + 1, i + 2);
+                let _ = g.upsert_memory(&memory_id, &content, None).await.unwrap();
+
+                // Perform reads & queries
+                let _entities = g.all_entities().await;
+                let _relations = g.all_relations().await;
+
+                if i % 3 == 0 {
+                    let _ = g.entity(&format!("Node{}", i)).await;
+                    let _ = g.entity_neighbors(&format!("Node{}", i), 2, None, GraphDirection::Both).await;
+                }
+
+                // Apply decay and inference under load
+                if i % 5 == 0 {
+                    let _ = g.apply_decay(0.02).await;
+                }
+                if i % 7 == 0 {
+                    let _ = g.run_inference().await;
+                }
+
+                // Some tasks perform removals
+                if i % 4 == 0 {
+                    let _ = g.remove_memory(&memory_id).await;
+                }
+            }));
+        }
+
+        // Set a strict timeout of 10 seconds to ensure it does not deadlock
+        let timeout_res = tokio::time::timeout(Duration::from_secs(10), async move {
+            for task in tasks {
+                task.await.expect("Task panicked or failed");
+            }
+        })
+        .await;
+
+        assert!(
+            timeout_res.is_ok(),
+            "EntityGraph concurrent operations deadlocked or timed out under heavy load"
+        );
+
+        // Verify state is consistent
+        let entities = graph.all_entities().await;
+        let relations = graph.all_relations().await;
+        println!(
+            "Heavy concurrent stress test completed successfully. Entities: {}, Relations: {}",
+            entities.len(),
+            relations.len()
+        );
+    }
 }
