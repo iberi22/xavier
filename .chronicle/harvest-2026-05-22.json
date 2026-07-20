@@ -1,0 +1,594 @@
+{
+  "date": "2026-05-22",
+  "commits": [
+    {
+      "hash": "b7426b8a26b657e3b9c47bc165c44f8c599dc717",
+      "message": "feat: implement hierarchical retrieval scope for context zones\n\n- Introduce `RetrievalScope` enum (`Global`, `Zone`, `Detailed`) mapping to specific `MemoryLevel` combinations in `src/memory/schema.rs`.\n- Update `System1Retriever` filter logic to respect `retrieval_scope` during queries.\n- Add `group_into_zone` method to `CurationAgent` to aggregate and summarize `Raw` level memories into a hierarchical `Extracted` zone.\n- Update `ContextOrchestrator` to automatically map internal `ContextLevel` to `RetrievalScope` to enforce strict context boundaries.\n- Fix flaky test `test_websocket_streaming` by applying timeout loops over system timeline events.",
+      "files": [
+        "src/agents/curation.rs",
+        "src/agents/system1.rs",
+        "src/context/orchestrator.rs",
+        "src/memory/schema.rs",
+        "tests/websocket_events.rs"
+      ]
+    },
+    {
+      "hash": "4c17b8169c833fceb861fd952444eaf56fba6489",
+      "message": "Implementación de Árbol de Información y Zonas de Contexto Inteligentes (#356)\n\nMerge PR #356: Hierarchical information tree and context zones for intelligent retrieval\n\n- ContextZone enum (Atomic/Cluster/Global/Relational)\n- RAPTOR-style recursive summarization in CurationAgent\n- Zone-weighted retrieval (1.5x boost for active zones)\n- BeliefGraph grounding validation\n- parent_id for hierarchical memory trees\n- Keywork-based zone parsing in Orchestrator\n\nFix applied: hoist list_nodes() outside loop in validate_grounding (perf)\n\nCo-authored-by: iberi22 <10615454+iberi22@users.noreply.github.com>\nCo-authored-by: google-labs-jules[bot] <161369871+google-labs-jules[bot]@users.noreply.github.com>",
+      "files": [
+        "src/agents/curation.rs",
+        "src/context/orchestrator.rs",
+        "src/memory/belief_graph.rs",
+        "src/memory/qmd/types.rs",
+        "src/memory/qmd/writer.rs",
+        "src/memory/schema.rs",
+        "src/memory/store.rs",
+        "src/retrieval/gating.rs",
+        "src/server/http.rs",
+        "src/workspace.rs",
+        "tests/websocket_events.rs"
+      ]
+    },
+    {
+      "hash": "bfc27364c372ac453e636a822ff5fad188cd29b5",
+      "message": "Refactor y unificación de persistencia bajo LibsqlConnectionPool asíncrono y robusto",
+      "files": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "src/agents/rate_limit.rs",
+        "src/app/proxy_use_case.rs",
+        "src/app/security_service.rs",
+        "src/cli/server.rs",
+        "src/memory/sqlite_vec_store/audit.rs",
+        "src/memory/sqlite_vec_store/backend_impl.rs",
+        "src/memory/sqlite_vec_store/db.rs",
+        "src/memory/sqlite_vec_store/graph.rs",
+        "src/memory/sqlite_vec_store/mod.rs",
+        "src/memory/sqlite_vec_store/schema_impl.rs",
+        "src/memory/sqlite_vec_store/store_impl.rs",
+        "src/memory/sqlite_vec_store/vector.rs",
+        "src/secrets/audit.rs",
+        "src/security/threat_store.rs",
+        "src/time/mod.rs",
+        "src/utils/connection_pool.rs",
+        "tests/clavis_integration.rs",
+        "tests/connection_pool_integration.rs",
+        "tests/e2e.rs",
+        "tests/proxy_integration.rs",
+        "tests/rate_limit_integration.rs",
+        "tests/sevier_stress_test.rs"
+      ]
+    },
+    {
+      "hash": "121d2649aef5c88e16fe8d0c78828a7b74a91fff",
+      "message": "chore: cleanup pending libSQL migration diffs in audit.rs and vector.rs",
+      "files": [
+        "src/memory/sqlite_vec_store/audit.rs",
+        "src/memory/sqlite_vec_store/vector.rs"
+      ]
+    },
+    {
+      "hash": "78fee1388bc78fcbd397ac60be093d57089c9fbc",
+      "message": "feat(config): consolidate 11 missing env vars into XavierSettings struct\n\nAdd missing fields to sub-configs:\n- ModelSettings: llm_model, llm_api_key, cloud_llm_model, cloud_llm_url,\n  local_llm_api_key, local_anthropic_url\n- SecuritySettings: token_secret\n- TelegramSettings: bot_token\n- EmbeddingSettings: api_key, gllm_dimension\n- ServerSettings: config_path\n\nWire all new fields into apply_to_env() for backward compatibility.\nAdd 3 env var aliases: XAVIER_API_URL, XAVIER_AUTH_TOKEN, XAVIER_WORKSPACE_ID.\nExtend Debug redaction for all sensitive fields (api keys, tokens, secrets).\nPopulate sensitive fields from env in current() when not set via config file.\n\nMigrate consumer modules to use XavierSettings::current():\n- security/mod.rs: XAVIER_TOKEN_SECRET\n- telegram/mod.rs: XAVIER_TELEGRAM_TOKEN, XAVIER_TELEGRAM_ENABLED\n- embedding/mod.rs: XAVIER_EMBEDDING_API_KEY, XAVIER_GLLM_DIMENSION\n\nAll 482 tests pass. No behavioral change for callers.",
+      "files": [
+        "src/embedding/mod.rs",
+        "src/security/mod.rs",
+        "src/settings.rs",
+        "src/telegram/mod.rs"
+      ]
+    },
+    {
+      "hash": "626b3ab2e1d5eaca81228432e7568ef3971d5082",
+      "message": "fix(server): wire missing /v1/memories, /agents, /workspace/default, /mcp/tools routes\n\n- Added /v1/memories (POST/GET) and /v1/memories/search as aliases to existing handlers\n- Added /agents endpoint listing active agents via AgentLifecyclePort\n- Added /workspace/default endpoint showing workspace info\n- Added /mcp/tools endpoint listing available MCP tools\n- All 6 previously-404 routes now return 200\n\nRoot cause: v1_memories routes only existed in test_router, never merged into main app router.\nOther routes (/agents, /workspace/default, /mcp/tools) simply didn't exist.",
+      "files": [
+        "src/cli/server.rs"
+      ]
+    },
+    {
+      "hash": "4d46b9df6286216fe420a1749a3ac7790f3768eb",
+      "message": "feat: Integrate validate_grounding() into retrieval pipeline\n\n- Updated `BeliefGraph::validate_grounding` with `min_confidence` and Aho-Corasick optimization.\n- Added grounding configuration to `GatingConfig`.\n- Integrated grounding validation into `AdaptiveGating::retrieve` (async).\n- Integrated grounding validation into `Orchestrator::plan` for hybrid search results.\n- Updated HTTP API `MultiLayerRetrieveRequest` to support grounding parameters.",
+      "files": [
+        "src/context/orchestrator.rs",
+        "src/memory/belief_graph.rs",
+        "src/retrieval/gating.rs",
+        "src/server/http.rs"
+      ]
+    },
+    {
+      "hash": "02a9bdc799a8fdc646b6bc583c566c133104504a",
+      "message": "feat: Make zone boost/penalty multipliers configurable via XavierSettings\n\n- Add `DEFAULT_ZONE_BOOST_MULTIPLIER` and `DEFAULT_ZONE_PENALTY_MULTIPLIER` to `src/retrieval/config.rs`.\n- Update `RetrievalSettings` in `src/settings.rs` to include `zone_boost_multiplier` and `zone_penalty_multiplier`.\n- Update `GatingConfig` in `src/retrieval/gating.rs` to use configurable multipliers instead of hardcoded values in `score_working_layer`.\n- Update `src/server/http.rs` to propagate global settings to the retrieval gating logic.\n- Add unit test `test_zone_multipliers` to verify the new functionality.",
+      "files": [
+        "src/retrieval/config.rs",
+        "src/retrieval/gating.rs",
+        "src/server/http.rs",
+        "src/settings.rs"
+      ]
+    },
+    {
+      "hash": "d3345492e6db026e19a4032de805b8417ee54a64",
+      "message": "feat: implement dynamic layer weight adjustment based on query characteristics\n\n- Added `LayerWeights::adaptive` to adjust weights based on query type and context level.\n- Implemented `query_factuality_score` and `query_procedural_score` heuristics.\n- Integrated adaptive weights into the multi-layer retrieval HTTP handler.\n- Added comprehensive unit tests for the new logic.",
+      "files": [
+        "src/retrieval/gating.rs",
+        "src/server/http.rs"
+      ]
+    },
+    {
+      "hash": "d6b9a7800c791b8b6c660a163b9a65c03c4c182c",
+      "message": "perf: Cross-encoder re-ranking after RRF fusion for precision boost\n\n- Implemented `Reranker` trait and `HttpReranker` in `src/search/rerank.rs`\n- Integrated `RerankHook` into `HybridSearcher` and `AdaptiveGating`\n- Made `AdaptiveGating::retrieve` asynchronous to support re-ranking\n- Added `DEFAULT_RERANK_LIMIT` to cap candidates for reranking\n- Used shared `DEFAULT_HTTP_CLIENT` for API-based reranking\n- Verified with unit tests in `src/search/rerank.rs` and `src/retrieval/gating.rs`",
+      "files": [
+        "src/api/search.rs",
+        "src/retrieval/config.rs",
+        "src/retrieval/gating.rs",
+        "src/search/hybrid.rs",
+        "src/search/mod.rs",
+        "src/search/rerank.rs",
+        "src/server/http.rs"
+      ]
+    },
+    {
+      "hash": "16978b4e77ff2d82b55935a93afe66b969d82497",
+      "message": "perf: Parallelize score_documents() in AdaptiveGating\n\n- Added `rayon` dependency to `Cargo.toml`.\n- Refactored `AdaptiveGating` scoring logic into free functions (`score_single_working`, `score_single_episodic`, `score_single_semantic`).\n- Updated `score_working_layer`, `score_episodic_layer`, and `score_semantic_layer` to be asynchronous and use `rayon::par_iter` via `tokio::task::spawn_blocking` when document count exceeds 100.\n- Updated public retrieval methods (`retrieve`, `retrieve_working`, etc.) to be asynchronous.\n- Updated `src/server/http.rs` to `.await` the retrieval results.\n- Added unit tests to verify that parallel scoring results are identical to sequential scoring.\n- Adhered to the \"Golden Rule\" for combining Tokio and Rayon.",
+      "files": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "src/retrieval/gating.rs",
+        "src/server/http.rs"
+      ]
+    },
+    {
+      "hash": "e01cc0ce4e109c32efc946257051e420822a7863",
+      "message": "feat: Wire active_zones to HTTP search/retrieve API endpoints\n\n- Moved `parse_zones_from_prompt` to `src/memory/schema.rs` to share it across the codebase.\n- Added `active_zones` field to `MultiLayerRetrieveRequest`, `V1SearchRequest`, and `SearchPayload`.\n- Wired `active_zones` in `build_multi_layer_retrieve_response`, `v1_memories_search`, and `search_handler` to enable explicit zone selection and fallback to keyword-based detection.\n- Updated `MemoryQueryFilters` usage in API handlers to include the specified or detected zones.",
+      "files": [
+        "src/cli/server.rs",
+        "src/context/orchestrator.rs",
+        "src/memory/schema.rs",
+        "src/server/http.rs",
+        "src/server/v1_api.rs"
+      ]
+    },
+    {
+      "hash": "094afed8f62bbe836acc73cc288499cfd278f4a5",
+      "message": "feat: implement recency-aware scoring with exponential time decay\n\nImplemented recency boosting in `AdaptiveGating` using exponential decay:\n`boost = 1.0 + (recency_weight * exp(-age_hours / half_life_hours))`.\n\nChanges:\n- Added `DEFAULT_RECENCY_WEIGHT` (0.3) and `DEFAULT_HALF_LIFE_HOURS` (168.0) to `src/retrieval/config.rs`.\n- Updated `GatingConfig` in `src/retrieval/gating.rs` to include recency parameters.\n- Implemented `calculate_recency_boost` and applied it to scoring in working, episodic, and semantic layers.\n- Exposed `recency_weight` and `half_life_hours` in `MultiLayerRetrieveRequest` API in `src/server/http.rs`.\n- Added unit tests for recency bias and updated existing tests.\n- Ensured safety with guards for future timestamps and zero half-life.",
+      "files": [
+        "src/retrieval/config.rs",
+        "src/retrieval/gating.rs",
+        "src/server/http.rs"
+      ]
+    },
+    {
+      "hash": "6ad8d8c3d0b4f9392e0d1a7a27aa7b659e91083d",
+      "message": "chore: migrate XAVIER_RRF_K and related retrieval settings to XavierSettings\n\nConsolidate retrieval-related environment variables into the centralized XavierSettings system.\nThis includes:\n- XAVIER_RRF_K\n- XAVIER_ZONE_BOOST\n- XAVIER_ZONE_PENALTY\n- XAVIER_DISABLE_HYDE\n- XAVIER_QJL_THRESHOLD\n- XAVIER_ENTITY_EXTRACTION_ENABLED\n- XAVIER_AUDIT_CHAIN_ENABLED\n\nUpdated src/settings.rs, src/retrieval/config.rs, src/memory/sqlite_vec_store/utils.rs, and src/agents/system1.rs to use the new settings system.\nUpdated relevant tests to match the new configuration structure and defaults.",
+      "files": [
+        "src/agents/system1.rs",
+        "src/memory/sqlite_vec_store/utils.rs",
+        "src/retrieval/config.rs",
+        "src/settings.rs"
+      ]
+    },
+    {
+      "hash": "10f9eb89efce5edee6985e6ad4864f9e9e0af467",
+      "message": "feat: multi-zone query expansion and decomposition\n\n- Added QueryProcessor for LLM-powered query expansion and decomposition.\n- Modified VirtualMemory to support filtered retrieval.\n- Refactored Orchestrator to use zone-specific queries and filters.\n- Improved retrieval recall and relevance for complex and multi-zone queries.",
+      "files": [
+        "src/context/mod.rs",
+        "src/context/orchestrator.rs",
+        "src/context/query_processor.rs",
+        "src/memory/virtual_memory.rs"
+      ]
+    },
+    {
+      "hash": "6903da79cc78be39116200b6157998a8cb7678cc",
+      "message": "Merge branch 'pr-368' into integration-jules\n\n# Conflicts:\n#\tsrc/settings.rs",
+      "files": [
+        "src/retrieval/config.rs",
+        "src/retrieval/gating.rs",
+        "src/server/http.rs",
+        "src/settings.rs"
+      ]
+    },
+    {
+      "hash": "c0e8050bf3a1431a9c47dd0630ad326570b3e7bd",
+      "message": "Merge branch 'pr-372' into integration-jules\n\n# Conflicts:\n#\tsrc/server/http.rs",
+      "files": [
+        "src/cli/server.rs",
+        "src/context/orchestrator.rs",
+        "src/memory/schema.rs",
+        "src/server/http.rs",
+        "src/server/v1_api.rs"
+      ]
+    },
+    {
+      "hash": "7e4195e4ee9925ddee0e5ba22d6632a8d5b1a2a4",
+      "message": "fix bench for V1SearchRequest active_zones field",
+      "files": [
+        "benches/api_v1.rs"
+      ]
+    },
+    {
+      "hash": "15f01117207f8d59c9b7f34668801789079e5d06",
+      "message": "Merge branch 'pr-373' into integration-jules\n\n# Conflicts:\n#\tsrc/retrieval/gating.rs\n#\tsrc/server/http.rs",
+      "files": [
+        "src/retrieval/config.rs",
+        "src/retrieval/gating.rs",
+        "src/server/http.rs",
+        "src/settings.rs"
+      ]
+    },
+    {
+      "hash": "648f8086b21aebc39977d7e90ae48313489b05da",
+      "message": "Merge branch 'pr-369' into integration-jules\n\n# Conflicts:\n#\tsrc/retrieval/gating.rs\n#\tsrc/server/http.rs",
+      "files": [
+        "src/retrieval/gating.rs",
+        "src/server/http.rs"
+      ]
+    },
+    {
+      "hash": "ae160b39f089ff4c91a00e20b6c32fa6374035d9",
+      "message": "Merge branch 'pr-371' into integration-jules\n\n# Conflicts:\n#\tsrc/retrieval/gating.rs",
+      "files": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "src/retrieval/gating.rs",
+        "src/server/http.rs"
+      ]
+    },
+    {
+      "hash": "7f3a9c1e0217b725d4bcc889c874d61caeba287c",
+      "message": "Merge branch 'pr-367' into integration-jules\n\n# Conflicts:\n#\tsrc/retrieval/gating.rs\n#\tsrc/server/http.rs",
+      "files": [
+        "src/context/orchestrator.rs",
+        "src/memory/belief_graph.rs",
+        "src/retrieval/gating.rs",
+        "src/server/http.rs"
+      ]
+    },
+    {
+      "hash": "00d8b683ec2f81869359bf281a8cc894b22f4380",
+      "message": "Merge branch 'pr-370' into integration-jules\n\n# Conflicts:\n#\tsrc/retrieval/gating.rs\n#\tsrc/server/http.rs",
+      "files": [
+        "src/api/search.rs",
+        "src/retrieval/config.rs",
+        "src/retrieval/gating.rs",
+        "src/search/hybrid.rs",
+        "src/search/mod.rs",
+        "src/search/rerank.rs"
+      ]
+    },
+    {
+      "hash": "f3a9b1ea00829135b26f752f2d66e0f35da87b0d",
+      "message": "Merge branch 'pr-375' into integration-jules",
+      "files": [
+        "src/context/mod.rs",
+        "src/context/orchestrator.rs",
+        "src/context/query_processor.rs",
+        "src/memory/virtual_memory.rs"
+      ]
+    },
+    {
+      "hash": "0d39900e352b9ef0d7bdbdef7602231994f72766",
+      "message": "feat: Persistent embedding cache with LRU eviction (fixes #359)\n\nImplements a persistent embedding cache:\n- In-memory LRU cache via moka with configurable size and TTL\n- SQLite persistence for cache durability across restarts\n- SHA-256 content hashing for deterministic cache keys\n- Auto-wrapped in build_embedder_from_env() — zero-touch integration\n- Configurable via XAVIER_EMBEDDING_CACHE_ENABLED/SIZE/TTL_HOURS/DB_PATH",
+      "files": [
+        "Cargo.lock",
+        "Cargo.toml",
+        "src/embedding/cache.rs",
+        "src/embedding/mod.rs",
+        "src/settings.rs"
+      ]
+    },
+    {
+      "hash": "90d7a04f3f50851c9b064f3f5b4bc2c313a0e470",
+      "message": "fix: Websocket test race condition fix",
+      "files": [
+        "src/agents/system1.rs",
+        "src/chronicle/ssg.rs",
+        "src/cli/tests.rs",
+        "src/enterprise/tenancy.rs",
+        "src/enterprise/tests.rs",
+        "src/memory/belief_graph.rs",
+        "src/memory/sqlite_vec_store/backend_impl.rs",
+        "src/memory/sqlite_vec_store/store_impl.rs",
+        "src/retrieval/gating.rs",
+        "src/search/hybrid.rs",
+        "src/search/rerank.rs",
+        "src/settings.rs",
+        "src/utils/connection_pool.rs",
+        "tests/rate_limit_integration.rs",
+        "tests/websocket_events.rs"
+      ]
+    },
+    {
+      "hash": "d21e21f0bc5f6471dcf385f2e628c0f019fd034e",
+      "message": "fix: Clippy errors - &PathBuf ref, too_many_arguments refactor, field_reassign_with_default, useless_vec, module_inception",
+      "files": [
+        "src/agents/system1.rs",
+        "src/cli/tests.rs",
+        "src/memory/sqlite_vec_store/db.rs",
+        "src/retrieval/gating.rs"
+      ]
+    },
+    {
+      "hash": "92cba79d58470f3cdcb3cafec50efead31d5e347",
+      "message": "Integrate Context Pack Export (#340) + Websocket Test Race Fix (#349)\n\nPR #341 (Context Pack Export): src/memory/pack.rs, CLI commands/server,\nretrieve_layered() method, belief layer scoring, gating updates.\n\nPR #351 (Websocket Test Race): Fix test to wait for memory.add event\nignoring other event types.\n\nBoth PRs had CI failures - fixed clippy errors across codebase,\nmade retrieve_layered async to match existing parallel architecture.",
+      "files": [
+        "TASK_STATE.md",
+        "src/chronicle/ssg.rs",
+        "src/cli/commands.rs",
+        "src/cli/server.rs",
+        "src/memory/mod.rs",
+        "src/memory/pack.rs",
+        "src/retrieval/gating.rs",
+        "src/security/url_validator.rs",
+        "src/server/http.rs"
+      ]
+    },
+    {
+      "hash": "3dc557ac9d11c33767545801660010590869a359",
+      "message": "Merge branch 'pr-355'\n\n# Conflicts:\n#\tsrc/agents/curation.rs\n#\tsrc/context/orchestrator.rs\n#\ttests/websocket_events.rs",
+      "files": [
+        "src/agents/curation.rs",
+        "src/agents/system1.rs",
+        "src/context/orchestrator.rs",
+        "src/memory/schema.rs",
+        "tests/websocket_events.rs"
+      ]
+    },
+    {
+      "hash": "5027fbd3c7044d19e91b675dabafab44531225bb",
+      "message": "Merge branch 'main' of https://github.com/iberi22/xavier\n\n# Conflicts:\n#\ttests/websocket_events.rs",
+      "files": [
+        "TASK_STATE.md",
+        "src/agents/system1.rs",
+        "src/chronicle/ssg.rs",
+        "src/cli/commands.rs",
+        "src/cli/server.rs",
+        "src/cli/tests.rs",
+        "src/enterprise/tenancy.rs",
+        "src/enterprise/tests.rs",
+        "src/memory/belief_graph.rs",
+        "src/memory/mod.rs",
+        "src/memory/pack.rs",
+        "src/memory/sqlite_vec_store/backend_impl.rs",
+        "src/memory/sqlite_vec_store/db.rs",
+        "src/memory/sqlite_vec_store/store_impl.rs",
+        "src/retrieval/gating.rs",
+        "src/search/hybrid.rs",
+        "src/search/rerank.rs",
+        "src/security/url_validator.rs",
+        "src/server/http.rs",
+        "src/settings.rs",
+        "src/utils/connection_pool.rs",
+        "tests/rate_limit_integration.rs",
+        "tests/websocket_events.rs"
+      ]
+    },
+    {
+      "hash": "9a64b126540e43d49c781b915c09a554ee776967",
+      "message": "docs: mark data race fix as completed in TODO.md\n\nUpdates docs/TODO.md to reflect that the data race in\nget_last_sync_result() has been resolved using a unified lock\nstrategy on LAST_CHECK_RESULT, as implemented in\nsrc/tasks/session_sync_task.rs.\n\nAlso updates the v1.0 release criteria to mark this task as\ncompleted.",
+      "files": [
+        "docs/TODO.md"
+      ]
+    },
+    {
+      "hash": "28c5bfbe9beab46e38be01dfa02b97a7e6fea563",
+      "message": "fix(chronicle): resolve SSG tests I/O panic and unify documentation workflows",
+      "files": [
+        ".github/workflows/devlog-on-label.yml",
+        ".github/workflows/docs.yml",
+        "scripts/generate-devlog-post.sh",
+        "src/chronicle/auto_docs.rs",
+        "src/chronicle/cli.rs",
+        "src/chronicle/mod.rs",
+        "src/chronicle/ssg.rs",
+        "src/devlog/generator.rs",
+        "src/devlog/mod.rs",
+        "src/devlog/models.rs",
+        "src/lib.rs"
+      ]
+    },
+    {
+      "hash": "4e749c28221d5c2e82f1fd36e77f931dcc1dfdbb",
+      "message": "Implement dynamic indexing lag calculation and improve fallback logic\n\nSummary of changes:\n- Refactored `estimate_index_lag` in `src/tasks/session_sync_task.rs` to use a new dynamic calculation method that averages the lag of the last 10 session events.\n- Added a public `calculate_indexing_lag` utility function to `src/tasks/session_sync_task.rs`.\n- Enhanced `run_sync_check` to use `health_status.lag_ms` as a fallback when local estimation returns 0.\n- Updated the `/health` endpoint in `src/cli/server.rs` to include dynamic `lag_ms` information.\n- Updated the `/health` endpoint in `src/server/http.rs` to include dynamic `lag_ms` information, leveraging `AppState`.\n- Wired the `MemoryStore` into `SessionSyncTask` during CLI server initialization to enable local dynamic monitoring.\n- Cleaned up an unused `StatusCode` import in `src/server/http.rs`.\n\nThese changes replace static stubs with real-time indexing performance metrics, improving the observability and reliability of the Xavier session sync system.",
+      "files": [
+        "src/cli/server.rs",
+        "src/server/http.rs",
+        "src/tasks/session_sync_task.rs"
+      ]
+    },
+    {
+      "hash": "5730056b3ee1dc5a0c9e0ff8c51924dfabe0c364",
+      "message": "fix(chronicle): resolve clippy warnings in auto-docs generator",
+      "files": [
+        "src/chronicle/auto_docs.rs"
+      ]
+    },
+    {
+      "hash": "b1a4974b693767c93a22c561084490caa27c2bed",
+      "message": "fix: remove strict literal filtering from semantic code search\n\n- Refactor `code_find_symbols` and `code_context_handler` to skip literal `.contains()` filtering during general searches.\n- Preserve strict filtering only for explicit kind/pattern listing operations.\n- Correctly wire the `handlers` module tree in `src/adapters/inbound/http/`.\n- Add unit tests to verify semantic match preservation.",
+      "files": [
+        "src/adapters/inbound/http/handlers/code.rs",
+        "src/adapters/inbound/http/handlers/mod.rs",
+        "src/adapters/inbound/http/mod.rs"
+      ]
+    },
+    {
+      "hash": "fbd11779d3dd54c9feab3e9aa6d7b224e167660b",
+      "message": "Merge branch 'pr-384-temp' into integrate-jules-prs",
+      "files": [
+        "src/cli/server.rs",
+        "src/server/http.rs",
+        "src/tasks/session_sync_task.rs"
+      ]
+    },
+    {
+      "hash": "3af96f4491a65fb296d8e95c8eaebb35b36c1c08",
+      "message": "Merge branch 'pr-385-temp' into integrate-jules-prs",
+      "files": [
+        "src/adapters/inbound/http/handlers/code.rs",
+        "src/adapters/inbound/http/handlers/mod.rs",
+        "src/adapters/inbound/http/mod.rs"
+      ]
+    },
+    {
+      "hash": "ce0ed9985e520ddbfa6741bcb05a35894567f644",
+      "message": "feat(chronicle): implement pre-commit RAG indexing and Maloca communal portal",
+      "files": [
+        ".husky/pre-commit",
+        "README.md",
+        "docs/CHRONICLE_RAG_BLUEPRINT.md",
+        "docs/auto-docs/README.md",
+        "docs/auto-docs/a2a-module.md",
+        "docs/auto-docs/adapters-module.md",
+        "docs/auto-docs/agents-module.md",
+        "docs/auto-docs/api-module.md",
+        "docs/auto-docs/app-module.md",
+        "docs/auto-docs/checkpoint-module.md",
+        "docs/auto-docs/chronicle-module.md",
+        "docs/auto-docs/consistency-module.md",
+        "docs/auto-docs/consolidation-module.md",
+        "docs/auto-docs/context-module.md",
+        "docs/auto-docs/coordination-module.md",
+        "docs/auto-docs/crypto-module.md",
+        "docs/auto-docs/domain-module.md",
+        "docs/auto-docs/embedding-module.md",
+        "docs/auto-docs/enterprise-module.md",
+        "docs/auto-docs/memory-module.md",
+        "docs/auto-docs/ports-module.md",
+        "docs/auto-docs/retrieval-module.md",
+        "docs/auto-docs/scheduler-module.md",
+        "docs/auto-docs/search-module.md",
+        "docs/auto-docs/secrets-module.md",
+        "docs/auto-docs/security-module.md",
+        "docs/auto-docs/server-module.md",
+        "docs/auto-docs/session-module.md",
+        "docs/auto-docs/sync-module.md",
+        "docs/auto-docs/tasks-module.md",
+        "docs/auto-docs/telegram-module.md",
+        "docs/auto-docs/time-module.md",
+        "docs/auto-docs/tools-module.md",
+        "docs/auto-docs/ui-module.md",
+        "docs/auto-docs/utils-module.md",
+        "docs/auto-docs/verification-module.md",
+        "package-lock.json",
+        "package.json",
+        "public/devlog/2026-05-10-hexagonal-architecture.html",
+        "public/devlog/2026-05-10-prompt-injection-detector.html",
+        "public/devlog/2026-05-10-why-sqlite-vec.html",
+        "public/devlog/index.html",
+        "public/devlog/main.js",
+        "public/devlog/review.html",
+        "public/devlog/style.css",
+        "public/maloca",
+        "scripts/pre-commit-chronicle.sh",
+        "src/chronicle/cli.rs",
+        "src/chronicle/harvest.rs",
+        "web/chronicle/review.html"
+      ]
+    },
+    {
+      "hash": "5f73354cf7cd72a2863705716d5b768e62313f87",
+      "message": "feat(maloca): enable dynamic git diff database from main branch history",
+      "files": [
+        "docs/auto-docs/a2a-module.md",
+        "docs/auto-docs/adapters-module.md",
+        "docs/auto-docs/agents-module.md",
+        "docs/auto-docs/api-module.md",
+        "docs/auto-docs/app-module.md",
+        "docs/auto-docs/checkpoint-module.md",
+        "docs/auto-docs/chronicle-module.md",
+        "docs/auto-docs/consistency-module.md",
+        "docs/auto-docs/consolidation-module.md",
+        "docs/auto-docs/context-module.md",
+        "docs/auto-docs/coordination-module.md",
+        "docs/auto-docs/crypto-module.md",
+        "docs/auto-docs/domain-module.md",
+        "docs/auto-docs/embedding-module.md",
+        "docs/auto-docs/enterprise-module.md",
+        "docs/auto-docs/memory-module.md",
+        "docs/auto-docs/ports-module.md",
+        "docs/auto-docs/retrieval-module.md",
+        "docs/auto-docs/scheduler-module.md",
+        "docs/auto-docs/search-module.md",
+        "docs/auto-docs/secrets-module.md",
+        "docs/auto-docs/security-module.md",
+        "docs/auto-docs/server-module.md",
+        "docs/auto-docs/session-module.md",
+        "docs/auto-docs/sync-module.md",
+        "docs/auto-docs/tasks-module.md",
+        "docs/auto-docs/telegram-module.md",
+        "docs/auto-docs/time-module.md",
+        "docs/auto-docs/tools-module.md",
+        "docs/auto-docs/ui-module.md",
+        "docs/auto-docs/utils-module.md",
+        "docs/auto-docs/verification-module.md",
+        "public/devlog/commits-db.json",
+        "public/devlog/review.html",
+        "scripts/generate-diff-db.js",
+        "scripts/pre-commit-chronicle.sh",
+        "src/chronicle/harvest.rs",
+        "web/chronicle/review.html"
+      ]
+    },
+    {
+      "hash": "f34c8851d58afa71712898e3181aff0bd7b22009",
+      "message": "fix(codebase): resolve 5 high-priority anomalies (security path scan, fuzzy symbol search, dead ports cleanup, sync tasks, and TODO update)",
+      "files": [
+        "docs/TODO.md",
+        "docs/auto-docs/README.md",
+        "docs/auto-docs/a2a-module.md",
+        "docs/auto-docs/adapters-module.md",
+        "docs/auto-docs/agents-module.md",
+        "docs/auto-docs/api-module.md",
+        "docs/auto-docs/app-module.md",
+        "docs/auto-docs/checkpoint-module.md",
+        "docs/auto-docs/chronicle-module.md",
+        "docs/auto-docs/consistency-module.md",
+        "docs/auto-docs/consolidation-module.md",
+        "docs/auto-docs/context-module.md",
+        "docs/auto-docs/coordination-module.md",
+        "docs/auto-docs/crypto-module.md",
+        "docs/auto-docs/domain-module.md",
+        "docs/auto-docs/embedding-module.md",
+        "docs/auto-docs/enterprise-module.md",
+        "docs/auto-docs/memory-module.md",
+        "docs/auto-docs/ports-module.md",
+        "docs/auto-docs/retrieval-module.md",
+        "docs/auto-docs/scheduler-module.md",
+        "docs/auto-docs/search-module.md",
+        "docs/auto-docs/secrets-module.md",
+        "docs/auto-docs/security-module.md",
+        "docs/auto-docs/server-module.md",
+        "docs/auto-docs/session-module.md",
+        "docs/auto-docs/sync-module.md",
+        "docs/auto-docs/tasks-module.md",
+        "docs/auto-docs/telegram-module.md",
+        "docs/auto-docs/time-module.md",
+        "docs/auto-docs/tools-module.md",
+        "docs/auto-docs/ui-module.md",
+        "docs/auto-docs/utils-module.md",
+        "docs/auto-docs/verification-module.md",
+        "docs/issues/ANOMALY-1-code-scan-security.md",
+        "docs/issues/ANOMALY-2-code-query-strict-filtering.md",
+        "docs/issues/ANOMALY-3-data-race-sync-docs.md",
+        "docs/issues/ANOMALY-4-dead-ports-cleanup.md",
+        "docs/issues/ANOMALY-5-estimate-index-lag-stub.md",
+        "docs/issues/PHASE-1-embeddings.md",
+        "docs/issues/PHASE-2-reranking.md",
+        "docs/issues/PHASE-3-memory-graph.md",
+        "docs/issues/PHASE-4-consolidation.md",
+        "docs/issues/PHASE-5-docker-production.md",
+        "docs/issues/STABILITY_ISSUES.md",
+        "docs/issues/XAVIER_BUILD_FIX.md",
+        "docs/security_issue_2.md",
+        "docs/security_issue_3.md",
+        "docs/security_issue_4.md",
+        "public/devlog/commits-db.json",
+        "src/adapters/inbound/http/handlers/code.rs",
+        "src/ports/outbound/agent_port.rs",
+        "src/ports/outbound/mod.rs"
+      ]
+    }
+  ],
+  "decisions": [],
+  "bugs": [],
+  "sessions": [],
+  "code_changes": []
+}
