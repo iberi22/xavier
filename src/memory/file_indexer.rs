@@ -131,6 +131,14 @@ impl FileIndexer {
     pub async fn index_all(&self) -> Result<IndexResult> {
         info!("📂 Starting file indexing: {:?}", self.config.root_path);
 
+        // Load cached index to check for unchanged files (mtime/size)
+        let cached_index = self.load_index().await.ok().flatten();
+        let cached_files: std::collections::HashMap<String, IndexedFile> = if let Some(cache) = cached_index {
+            cache.files.into_iter().map(|f| (f.path.clone(), f)).collect()
+        } else {
+            std::collections::HashMap::new()
+        };
+
         let mut result = IndexResult {
             total_files: 0,
             total_chunks: 0,
@@ -160,18 +168,50 @@ impl FileIndexer {
                     } else if entry_path.is_file() {
                         // Only index files that match the pattern
                         if self.should_include(&entry_path) {
-                            match self.index_file(&entry_path).await {
-                                Ok(file) => {
-                                    let path_clone = file.path.clone();
-                                    result.total_files += 1;
-                                    result.total_chunks += file.chunks.len();
-                                    result.indexed_paths.push(path_clone.clone());
-                                    result.files.push(file);
-                                    debug!("Indexed: {}", path_clone);
+                            let path_str = entry_path.to_string_lossy().to_string();
+                            let mut cached_file = None;
+
+                            if let Some(cached) = cached_files.get(&path_str) {
+                                if let Ok(metadata) = fs::metadata(&entry_path).await {
+                                    let current_mtime = metadata
+                                        .modified()
+                                        .map(|t| {
+                                            let datetime: chrono::DateTime<chrono::Utc> = t.into();
+                                            datetime.to_rfc3339()
+                                        })
+                                        .unwrap_or_else(|_| "unknown".to_string());
+                                    let current_size = metadata.len() as usize;
+
+                                    if current_mtime != "unknown"
+                                        && cached.last_modified == current_mtime
+                                        && cached.size == current_size
+                                    {
+                                        cached_file = Some(cached.clone());
+                                    }
                                 }
-                                Err(e) => {
-                                    warn!("Error indexing {:?}: {}", entry_path, e);
-                                    result.errors.push(format!("{:?}: {}", entry_path, e));
+                            }
+
+                            if let Some(file) = cached_file {
+                                let path_clone = file.path.clone();
+                                result.total_files += 1;
+                                result.total_chunks += file.chunks.len();
+                                result.indexed_paths.push(path_clone.clone());
+                                result.files.push(file);
+                                debug!("ℹ️ Reusing cached index for: {}", path_clone);
+                            } else {
+                                match self.index_file(&entry_path).await {
+                                    Ok(file) => {
+                                        let path_clone = file.path.clone();
+                                        result.total_files += 1;
+                                        result.total_chunks += file.chunks.len();
+                                        result.indexed_paths.push(path_clone.clone());
+                                        result.files.push(file);
+                                        debug!("Indexed: {}", path_clone);
+                                    }
+                                    Err(e) => {
+                                        warn!("Error indexing {:?}: {}", entry_path, e);
+                                        result.errors.push(format!("{:?}: {}", entry_path, e));
+                                    }
                                 }
                             }
                         }
@@ -327,10 +367,8 @@ impl FileIndexer {
     pub async fn sync_incremental(&self, _memory: &QmdMemory) -> Result<IndexResult> {
         info!("🔄 Starting incremental sync");
 
-        // Note: Implement incremental sync — check file modification times vs indexed times
-        // Currently falls back to full re-index (index_all). Track mtime in metadata store
-        // and only re-index files where mtime has changed.
-
+        // Uses the cached mtime indexing logic built into index_all,
+        // avoiding re-indexing files whose modified time or size remains unchanged.
         self.index_all().await
     }
 }
@@ -358,5 +396,63 @@ mod tests {
         assert!(indexer.should_exclude(Path::new("/foo/node_modules/bar")));
         assert!(indexer.should_exclude(Path::new("/foo/.git/config")));
         assert!(!indexer.should_exclude(Path::new("/foo/src/main.rs")));
+    }
+
+    #[tokio::test]
+    async fn test_incremental_indexing_mtime_cache() {
+        use tempfile::tempdir;
+
+        // Create a temp directory
+        let tmp_dir = tempdir().unwrap();
+        let root_path = tmp_dir.path().to_path_buf();
+
+        // Create test files
+        let test_file1 = root_path.join("file1.md");
+        fs::write(&test_file1, "# File 1\nThis is a test file for index caching.\n")
+            .await
+            .unwrap();
+
+        let test_file2 = root_path.join("file2.md");
+        fs::write(&test_file2, "# File 2\nAnother markdown file.\n")
+            .await
+            .unwrap();
+
+        // Configure indexer
+        let mut config = FileIndexerConfig::default();
+        config.root_path = root_path.clone();
+
+        let indexer = FileIndexer::new(config, None);
+
+        // Run index_all first time
+        let result1 = indexer.index_all().await.unwrap();
+        assert_eq!(result1.total_files, 2);
+
+        // Let's modify file1.md (changes both size and mtime)
+        fs::write(
+            &test_file1,
+            "# File 1\nThis is a test file for index caching.\nUpdated content!\n",
+        )
+        .await
+        .unwrap();
+
+        // We run index_all second time
+        // We expect it to reuse file2.md cache but reindex file1.md.
+        let result2 = indexer.index_all().await.unwrap();
+        assert_eq!(result2.total_files, 2);
+
+        // Find file1.md in both index results and compare contents/last_modified.
+        let f1_first = result1.files.iter().find(|f| f.path.contains("file1.md")).unwrap();
+        let f1_second = result2.files.iter().find(|f| f.path.contains("file1.md")).unwrap();
+
+        let f2_first = result1.files.iter().find(|f| f.path.contains("file2.md")).unwrap();
+        let f2_second = result2.files.iter().find(|f| f.path.contains("file2.md")).unwrap();
+
+        // Since file1.md was modified:
+        assert_ne!(f1_first.content, f1_second.content);
+        assert_ne!(f1_first.last_modified, f1_second.last_modified);
+
+        // Since file2.md was NOT modified, its cached values should be completely identical:
+        assert_eq!(f2_first.content, f2_second.content);
+        assert_eq!(f2_first.last_modified, f2_second.last_modified);
     }
 }
