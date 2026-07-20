@@ -29,6 +29,7 @@ export function ApiKeyInput({
   const [testResult, setTestResult] = React.useState<
     "none" | "success" | "error"
   >("none");
+  const inputId = React.useId();
 
   const handleTest = async () => {
     setTesting(true);
@@ -36,7 +37,7 @@ export function ApiKeyInput({
     try {
       await onTest();
       setTestResult("success");
-    } catch (e) {
+    } catch (_e) {
       setTestResult("error");
     } finally {
       setTesting(false);
@@ -45,12 +46,16 @@ export function ApiKeyInput({
 
   return (
     <div className="space-y-2">
-      <label className="text-[10px] uppercase text-white/50 tracking-widest block">
+      <label
+        htmlFor={inputId}
+        className="text-[10px] uppercase text-white/50 tracking-widest block"
+      >
         {label}
       </label>
       <div className="flex gap-2">
         <div className="relative flex-1 group">
           <input
+            id={inputId}
             type={show ? "text" : "password"}
             value={value}
             onChange={(e) => onChange(e.target.value)}
@@ -58,18 +63,22 @@ export function ApiKeyInput({
             placeholder="sk-...."
           />
           <button
+            type="button"
             onClick={() => setShow(!show)}
-            className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 hover:text-white/60 transition-colors"
+            aria-label={show ? "Hide API key" : "Show API key"}
+            title={show ? "Hide API key" : "Show API key"}
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-white/20 hover:text-white/60 transition-colors focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 rounded"
           >
             {show ? (
-              <EyeOff className="w-4 h-4" />
+              <EyeOff className="w-4 h-4" aria-hidden="true" />
             ) : (
-              <Eye className="w-4 h-4" />
+              <Eye className="w-4 h-4" aria-hidden="true" />
             )}
           </button>
         </div>
 
         <button
+          type="button"
           onClick={handleTest}
           disabled={testing || !value}
           className={`flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-bold tracking-wider transition-all
@@ -101,11 +110,13 @@ export function ApiKeyInput({
         </button>
 
         <button
+          type="button"
           onClick={onRemove}
-          className="p-3 bg-white/5 hover:bg-red-500/10 hover:text-red-400 border border-white/5 rounded-xl transition-all"
+          aria-label="Remove API key"
+          className="p-3 bg-white/5 hover:bg-red-500/10 hover:text-red-400 border border-white/5 rounded-xl transition-all focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
           title="Remove Key"
         >
-          <Trash2 className="w-4 h-4" />
+          <Trash2 className="w-4 h-4" aria-hidden="true" />
         </button>
       </div>
     </div>
