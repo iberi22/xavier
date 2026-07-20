@@ -220,7 +220,7 @@ impl Harvester {
                     // Initial commit — all files are "Added"
                     let tree = commit.tree()?;
                     tree.walk(git2::TreeWalkMode::PreOrder, |root, entry| {
-                        if let Some(name) = entry.name() {
+                        if let Ok(name) = entry.name() {
                             let path = format!("{}{}", root, name);
                             files.push(path.clone());
                             aggregated_changes.entry(path.clone()).or_insert(FileChange {
