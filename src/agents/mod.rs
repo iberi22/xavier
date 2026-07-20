@@ -145,7 +145,7 @@ impl Agent {
         memory: std::sync::Arc<crate::memory::qmd_memory::QmdMemory>,
         lifecycle: Option<Arc<dyn AgentLifecyclePort>>,
     ) -> anyhow::Result<crate::agents::runtime::AgentResponse> {
-        self.run_with_lifecycle(memory, None).await
+        self.run_with_lifecycle(memory, lifecycle).await
     }
 
     pub async fn run_with_lifecycle(
@@ -186,7 +186,6 @@ impl Agent {
             runtime = runtime.with_provider_config(p_config);
         }
 
-        let result = runtime.run(&task, None, None).await;
         let result = runtime.run(&task, None, None).await;
 
         // Notify lifecycle hooks for this task completion

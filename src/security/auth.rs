@@ -6,13 +6,9 @@ use chrono::{Duration, Utc};
 use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
 use qrcode::render::unicode;
 use qrcode::QrCode;
-use rand::rngs::OsRng;
-use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use totp_rs::{Algorithm as TotpAlgorithm, Secret, TOTP};
-
-use crate::security::auth_store::AuthStore;
 
 /// JWT Claims for authentication
 #[derive(Debug, Clone, Serialize, Deserialize)]
