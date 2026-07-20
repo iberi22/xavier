@@ -69,6 +69,10 @@ mesh = ["dep:libp2p", "dep:iroh"]
 mesh-legacy = ["dep:libp2p"]
 dao-evm = ["dep:alloy"]
 
+[[test]]
+name = "auth_register_test"
+path = "tests/integration/auth_register_test.rs"
+
 [[bench]]
 name = "embedding_benchmark"
 path = "benches/embedding_benchmark.rs"
