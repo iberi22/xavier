@@ -303,7 +303,7 @@
       "github_issue": null,
       "last_tested": "2026-07-18",
       "notes": "HORMER features shipped; Fase 2 polish closed for product 1.0.",
-      "implemented_in": "src/memory/hormer/, src/navigation/"
+      "implemented_in": "src/agents/hormer/, src/retrieval/navigation.rs, src/cli/handlers/navigation.rs"
     },
     {
       "id": "feat-governance-dao",
