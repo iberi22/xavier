@@ -7,7 +7,7 @@ const xavierTarget =
   process.env.XAVIER_WEB_PROXY_TARGET ?? "http://127.0.0.1:8006";
 
 export default defineConfig(({ command }) => {
-  const isBuild = command === "build";
+  const _isBuild = command === "build";
 
   return {
     define: {
@@ -43,6 +43,10 @@ export default defineConfig(({ command }) => {
           changeOrigin: true,
         },
         "/v1": {
+          target: xavierTarget,
+          changeOrigin: true,
+        },
+        "/auth": {
           target: xavierTarget,
           changeOrigin: true,
         },
