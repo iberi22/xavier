@@ -528,6 +528,7 @@ mod tests {
             openclaw_indexer: Arc::new(crate::memory::openclaw_indexer::OpenClawAgentIndexer::new(
                 Arc::new(NoopEmbedder)
             )),
+            multi_db: xavier::storage::multi_db::MultiDbManager::new(),
             system_scan_cache: Arc::new(tokio::sync::RwLock::new(None)),
         }
     }
