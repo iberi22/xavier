@@ -334,6 +334,8 @@ mod tests {
             store: store.clone(),
             workspace_id: "test-ws".to_string(),
             workspace_dir: PathBuf::from("."),
+            state_dir: PathBuf::from("."),
+            auth_db: None,
             code_graph: cg_state,
             security: Arc::new(SecurityService::new()),
             security_scan: Arc::new(SecurityService::new()),
