@@ -34,6 +34,7 @@
 //! - Phase 4: Tor/Yggdrasil transport for anonymous operation
 
 pub mod acl;
+pub mod auth;
 #[cfg(feature = "mesh")]
 pub mod auto_update;
 pub mod cloud_node;
