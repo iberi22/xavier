@@ -35,6 +35,8 @@ pub struct CliState {
     pub store: Arc<dyn MemoryStore>,
     pub workspace_id: String,
     pub workspace_dir: PathBuf,
+    pub state_dir: PathBuf,
+    pub auth_db: Option<Arc<Mutex<xavier::auth2::db::AuthDb>>>,
     pub code_graph: Arc<tokio::sync::RwLock<CodeGraphState>>,
     pub security: Arc<dyn InputSecurityPort>,
     #[expect(
@@ -82,6 +84,12 @@ impl CliState {
             xavier::agents::provider::ModelProviderConfig::from_label(&format!("{:?}", p_kind));
         let provider = xavier::agents::provider::ModelProviderClient::new(config);
         Some(xavier::tgd::TgdEngine::new(provider))
+    }
+}
+
+impl xavier::auth2::HasAuthDb for CliState {
+    fn auth_db(&self) -> Option<Arc<Mutex<xavier::auth2::db::AuthDb>>> {
+        self.auth_db.clone()
     }
 }
 
