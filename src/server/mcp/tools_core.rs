@@ -2,6 +2,9 @@
 //!
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
+//!
+//! Note: All tools define their input schema using `input_schema` internally,
+//! which is serialized to the MCP-compliant `inputSchema` camelCase field via Serde.
 use super::types::*;
 use crate::memory::schema::{
     EvidenceKind, MemoryKind, MemoryNamespace, MemoryProvenance, MemoryQueryFilters,
