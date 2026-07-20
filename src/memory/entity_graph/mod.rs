@@ -587,6 +587,136 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_decay_extensive() {
+        let graph = EntityGraph::new();
+        graph
+            .upsert_memory("memory-1", "Alice works at Acme", None)
+            .await
+            .unwrap();
+
+        let initial_relations = graph.all_relations().await;
+        let initial_entities = graph.all_entities().await;
+        assert!(!initial_relations.is_empty());
+        assert!(!initial_entities.is_empty());
+
+        let initial_weight = initial_relations[0].weight;
+        let initial_trust = initial_entities[0].trust_score;
+
+        // 1. Zero factor decay (no decay should happen)
+        {
+            let mut data = graph.inner.write().await;
+            for r in data.relations.values_mut() {
+                r.updated_at = Utc::now() - chrono::Duration::hours(12);
+            }
+            for e in data.entities.values_mut() {
+                e.last_seen = Utc::now() - chrono::Duration::hours(12);
+            }
+        }
+        graph.apply_decay(0.0).await.unwrap();
+        assert_eq!(graph.all_relations().await[0].weight, initial_weight);
+        assert_eq!(graph.all_entities().await[0].trust_score, initial_trust);
+
+        // 2. Clamp factor > 1.0 down to 1.0 (complete decay)
+        // Manually adjust updated_at back in time again
+        {
+            let mut data = graph.inner.write().await;
+            for r in data.relations.values_mut() {
+                r.updated_at = Utc::now() - chrono::Duration::hours(12);
+            }
+            for e in data.entities.values_mut() {
+                e.last_seen = Utc::now() - chrono::Duration::hours(12);
+            }
+        }
+        graph.apply_decay(1.5).await.unwrap();
+        assert_eq!(graph.all_relations().await[0].weight, 0.0);
+        assert_eq!(graph.all_entities().await[0].trust_score, 0.0);
+
+        // Restore initial values
+        {
+            let mut data = graph.inner.write().await;
+            for r in data.relations.values_mut() {
+                r.weight = initial_weight;
+                r.confidence_score = 1.0;
+                r.updated_at = Utc::now() - chrono::Duration::hours(24);
+            }
+            for e in data.entities.values_mut() {
+                e.trust_score = initial_trust;
+                e.last_seen = Utc::now() - chrono::Duration::hours(24);
+            }
+        }
+
+        // 3. Normal decay of 5% hourly over 24 hours
+        graph.apply_decay(0.05).await.unwrap();
+        let decayed_relations = graph.all_relations().await;
+        let decayed_entities = graph.all_entities().await;
+        assert!(decayed_relations[0].weight < initial_weight);
+        assert!(decayed_entities[0].trust_score < initial_trust);
+
+        // 4. Clamp negative factor to 0.0 (no decay)
+        let before_negative_weight = decayed_relations[0].weight;
+        {
+            let mut data = graph.inner.write().await;
+            for r in data.relations.values_mut() {
+                r.updated_at = Utc::now() - chrono::Duration::hours(10);
+            }
+        }
+        graph.apply_decay(-0.2).await.unwrap();
+        assert_eq!(graph.all_relations().await[0].weight, before_negative_weight);
+    }
+
+    #[test]
+    fn test_semantic_extraction_large_text() {
+        use std::time::Instant;
+
+        // Construct a large 60KB text with various repeating sentences, punctuation, and entities
+        let base_paragraphs = vec![
+            "BELA works at SWAL and knows Leonardo in Bogota.",
+            "Alice works at Acme Corporation in New York and uses Rust with Python.",
+            "Bob is a SoftwareEngineer and part of the CoreTeam.",
+            "Acme Corp is located in London near the Thames River.",
+            "This is a paragraph with no special entities, just common words like the, of, that, these, those, and so on.",
+            "The model Qwen2.5-Coder-7B is a state of the art LLM used by developers globally.",
+        ];
+
+        let mut large_text = String::new();
+        for i in 0..150 {
+            for (p_idx, p) in base_paragraphs.iter().enumerate() {
+                large_text.push_str(p);
+                large_text.push_str(&format!(" [Marker-{}-{}] ", i, p_idx));
+                large_text.push('\n');
+            }
+        }
+
+        assert!(large_text.len() >= 60 * 1024, "Text should be at least 60KB, got {} bytes", large_text.len());
+
+        let start = Instant::now();
+        let entities = EntityGraph::extract_entities(&large_text);
+        let duration_entities = start.elapsed();
+
+        let start_relations = Instant::now();
+        let relations = EntityGraph::extract_relation_candidates(&large_text);
+        let duration_relations = start_relations.elapsed();
+
+        println!(
+            "Large text semantic extraction completed: {} bytes, {} entities (took {:?}), {} relations (took {:?})",
+            large_text.len(),
+            entities.len(),
+            duration_entities,
+            relations.len(),
+            duration_relations
+        );
+
+        // Verify that extraction completes very quickly (under 2000ms in debug mode, typically <20ms in release) and doesn't saturate or hang
+        assert!(duration_entities.as_millis() < 2000, "Entity extraction took too long: {:?}", duration_entities);
+        assert!(duration_relations.as_millis() < 2000, "Relation extraction took too long: {:?}", duration_relations);
+
+        // Ensure we successfully parsed the expected entities
+        assert!(entities.iter().any(|e| e.name == "BELA"));
+        assert!(entities.iter().any(|e| e.name.contains("Acme")));
+        assert!(relations.iter().any(|r| r.relation_type == "works_at"));
+    }
+
+    #[tokio::test]
     async fn test_inference() {
         let graph = EntityGraph::new();
 
@@ -608,5 +738,61 @@ mod tests {
             .iter()
             .find(|r| r.source_name(&data) == "alice" && r.target_name(&data) == "london");
         assert!(alice_london.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_graph_operations() {
+        use std::sync::Arc;
+
+        let graph = Arc::new(EntityGraph::new());
+        let mut tasks = Vec::new();
+
+        // Spawn concurrent tasks that read, write, decay, and export snapshots of the same EntityGraph
+        for i in 0..20 {
+            let g = Arc::clone(&graph);
+            tasks.push(tokio::spawn(async move {
+                let memory_id = format!("mem-{}", i);
+
+                // Concurrent Upsert
+                let content = format!("User{} works at Company{} and knows User{} who lives in City{}.", i, i, i + 1, i);
+                g.upsert_memory(&memory_id, &content, None).await.unwrap();
+
+                // Concurrent Export
+                let _json = g.export_json().await.unwrap();
+
+                // Concurrent Decay and Inference
+                if i % 3 == 0 {
+                    g.apply_decay(0.05).await.unwrap();
+                }
+                if i % 5 == 0 {
+                    let _ = g.run_inference().await.unwrap();
+                }
+
+                // Concurrent Read / Neighbors lookup
+                let _entities = g.all_entities().await;
+
+                // Concurrent Removal
+                if i % 2 == 0 {
+                    g.remove_memory(&memory_id).await.unwrap();
+                }
+            }));
+        }
+
+        // Wait for all concurrent tasks to finish to ensure no deadlocks or lock poisoning
+        for task in tasks {
+            let res = task.await;
+            assert!(res.is_ok(), "Concurrent graph operation task failed/panicked");
+        }
+
+        // Verify the final graph can be exported and imported perfectly
+        let final_json = graph.export_json().await.expect("Can export after concurrent access");
+        let new_graph = EntityGraph::new();
+        new_graph.import_json(&final_json).await.expect("Can import the exported concurrent graph state");
+
+        println!(
+            "Concurrent stress test complete. Entities in graph: {}, Relations: {}",
+            graph.all_entities().await.len(),
+            graph.all_relations().await.len()
+        );
     }
 }

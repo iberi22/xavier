@@ -223,6 +223,7 @@ impl GraphData {
     }
 
     pub(super) fn apply_decay(&mut self, factor: f32, now: DateTime<Utc>) {
+        let factor = factor.clamp(0.0, 1.0);
         for relation in self.relations.values_mut() {
             let hours_since = (now - relation.updated_at).num_hours() as f32;
             if hours_since > 0.0 {
