@@ -556,3 +556,42 @@ async fn test_multi_step_workflow() {
     let sync_body: Value = sync.json().await.expect("sync body");
     assert!(sync_body["status"].is_string());
 }
+
+// ─── Axum 0.8 Route Path Parameter Extraction Regression Test ──────────────
+
+#[tokio::test]
+async fn test_router_path_extraction() {
+    use axum::{routing::get, Router, extract::Path};
+    use tower::util::ServiceExt;
+    use axum::body::Body;
+    use http_body_util::BodyExt;
+    use axum::http::{Request, StatusCode};
+
+    async fn test_handler(Path(id): Path<String>) -> String {
+        format!("Extracted: {id}")
+    }
+
+    let app = Router::new().route("/v1/test/{id}", get(test_handler));
+
+    let response = app
+        .oneshot(
+            Request::builder()
+                .uri("/v1/test/733-ghost-merge")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .expect("oneshot request failed");
+
+    assert_eq!(response.status(), StatusCode::OK);
+
+    let body = response
+        .into_body()
+        .collect()
+        .await
+        .expect("collect body failed")
+        .to_bytes();
+
+    let body_str = String::from_utf8(body.to_vec()).expect("invalid utf-8 response");
+    assert_eq!(body_str, "Extracted: 733-ghost-merge");
+}
