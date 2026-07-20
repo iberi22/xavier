@@ -174,9 +174,7 @@ describe("graphAdapters", () => {
   it("canvasToForceData maps kind onto type for GraphCanvas paint", () => {
     const force = canvasToForceData({
       layer: "memory",
-      nodes: [
-        { id: "e1", label: "Alice", kind: "person", description: "dev" },
-      ],
+      nodes: [{ id: "e1", label: "Alice", kind: "person", description: "dev" }],
       links: [{ source: "e1", target: "e2", relation: "knows" }],
     });
     expect(force.nodes[0].type).toBe("person");

@@ -60,7 +60,11 @@ test.describe("Dashboard and UI Islands", () => {
     await expect(page.getByText(/Xavier /i)).toBeVisible();
 
     // Hover near identity to show gear
-    await page.locator('div:has-text("Xavier")').filter({ hasText: /Xavier /i }).first().hover();
+    await page
+      .locator('div:has-text("Xavier")')
+      .filter({ hasText: /Xavier /i })
+      .first()
+      .hover();
     const gear = page.locator('button[title="Configure Status Bar"]');
     await expect(gear).toBeVisible();
     await gear.click();
@@ -69,9 +73,7 @@ test.describe("Dashboard and UI Islands", () => {
     await expect(page.getByText("Modules")).toBeVisible();
 
     // Toggle System Resources (it is enabled by default)
-    const resourcesPill = page.locator(
-      'div[title^="CPU:"]',
-    );
+    const resourcesPill = page.locator('div[title^="CPU:"]');
     await expect(resourcesPill).toBeVisible();
 
     await page.click('button:has-text("System Resources")');
