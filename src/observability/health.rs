@@ -367,7 +367,7 @@ impl HealthMonitor {
         }
 
         let mut wal_size_bytes = 0;
-        let mut wal_path = config.path.clone();
+        let wal_path = config.path.clone();
         let mut os_str = wal_path.into_os_string();
         os_str.push("-wal");
         let wal_path = std::path::PathBuf::from(os_str);
