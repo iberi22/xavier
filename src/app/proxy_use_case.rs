@@ -389,7 +389,7 @@ impl ProxyUseCase {
 
         let mut hasher = Sha256::new();
         hasher.update(system_msg.as_bytes());
-        let system_hash = crate::crypto::hex_encode(&hasher.finalize());
+        let system_hash = crate::crypto::hex_encode(hasher.finalize());
 
         let is_cache_hit = {
             let mut cache = self.prompt_cache.lock();
@@ -723,7 +723,7 @@ mod tests {
         fn log_proxy_use(&self, _agent_id: &str, _lease_token: &str, _endpoint: &str) {}
     }
 
-    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     #[tokio::test]
     async fn test_proxy_leak_detection() {
@@ -771,7 +771,7 @@ mod tests {
     #[tokio::test]
     async fn test_proxy_local_provider_selection() {
         // Enforce sequential execution of tests that modify environment variables
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().await;
 
         let rate_manager = Arc::new(RateLimitManager::new_with_project(
             "test_proxy_local_selection",
@@ -888,7 +888,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_proxy_local_provider_unreachable() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().await;
 
         let rate_manager = Arc::new(RateLimitManager::new_with_project(
             "test_proxy_local_unreachable",

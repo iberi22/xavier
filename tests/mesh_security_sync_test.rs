@@ -263,8 +263,8 @@ async fn test_e2e_encrypted_sync_pipeline() {
     }
 
     for (orig, enc) in push_diffs.iter().zip(encrypted_diffs.iter()) {
-        if orig.data.is_some() {
-            assert_ne!(enc.data.as_ref().unwrap(), orig.data.as_ref().unwrap());
+        if let (Some(orig_data), Some(enc_data)) = (orig.data.as_ref(), enc.data.as_ref()) {
+            assert_ne!(enc_data, orig_data);
         }
     }
 
@@ -463,7 +463,7 @@ async fn test_acl_clearance_enforcement() {
         .await
         .unwrap();
 
-    for (_hash, data) in &chunks {
+    for data in chunks.values() {
         let content_str = String::from_utf8_lossy(data);
         assert!(
             !content_str.contains("SECRET:"),
@@ -560,7 +560,7 @@ async fn test_acl_namespace_isolation() {
         .await
         .unwrap();
 
-    for (_hash, data) in &chunks {
+    for data in chunks.values() {
         let s = String::from_utf8_lossy(data);
         assert!(
             !s.contains("Closed namespace"),
@@ -590,7 +590,7 @@ async fn test_acl_namespace_isolation() {
         .await
         .unwrap();
 
-    for (_hash, data) in &chunks_c {
+    for data in chunks_c.values() {
         let s = String::from_utf8_lossy(data);
         assert!(
             !s.contains("Open namespace"),
@@ -912,7 +912,7 @@ async fn test_full_e2e_encrypted_mesh_sync_with_acl() {
         "Should get exactly {} chunks back",
         hashes.len()
     );
-    for (_hash, data) in &chunks_map {
+    for data in chunks_map.values() {
         assert!(!data.is_empty(), "Chunk content must not be empty");
     }
 

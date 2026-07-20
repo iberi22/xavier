@@ -30,9 +30,7 @@ pub fn validate_local_config(settings: &XavierSettings) -> Result<(), Vec<String
 
     if provider == "local" || provider == "ollama" {
         if settings.models.local_llm_url.trim().is_empty() {
-            errors.push(format!(
-                "local_llm_url is empty. Set it to http://localhost:11434/v1 or run `xavier setup --local`"
-            ));
+            errors.push("local_llm_url is empty. Set it to http://localhost:11434/v1 or run `xavier setup --local`".to_string());
         } else if !is_http_url(&settings.models.local_llm_url) {
             errors.push(format!(
                 "local_llm_url '{}' is not a valid http/https URL",

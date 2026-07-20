@@ -60,7 +60,7 @@ impl SecurityThreatStore {
             hasher.update(message.as_bytes());
             hasher.update(evidence.as_bytes());
             hasher.update(component.as_bytes());
-            let threat_hash = crate::crypto::hex_encode(&hasher.finalize());
+            let threat_hash = crate::crypto::hex_encode(hasher.finalize());
 
             let id = ulid::Ulid::new().to_string();
             let now = Utc::now().to_rfc3339();

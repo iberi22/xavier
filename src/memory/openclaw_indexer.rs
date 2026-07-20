@@ -120,14 +120,14 @@ impl OpenClawAgentIndexer {
         let mut sections = Vec::new();
 
         for line in content.lines() {
-            if line.starts_with("## ") {
+            if let Some(stripped) = line.strip_prefix("## ") {
                 if !current_section_content.trim().is_empty() {
                     sections.push((
                         current_section_title.clone(),
                         current_section_content.clone(),
                     ));
                 }
-                current_section_title = line["## ".len()..].trim().to_string();
+                current_section_title = stripped.trim().to_string();
                 current_section_content = line.to_string();
                 current_section_content.push('\n');
             } else {
@@ -141,8 +141,10 @@ impl OpenClawAgentIndexer {
 
         let total_chunks = sections.len();
         for (i, (title, content)) in sections.into_iter().enumerate() {
-            let mut record = MemoryRecord::default();
-            record.workspace_id = format!("agent:{}", agent_id);
+            let mut record = MemoryRecord {
+                workspace_id: format!("agent:{}", agent_id),
+                ..Default::default()
+            };
 
             let title_slug = title
                 .to_lowercase()
@@ -175,8 +177,10 @@ impl OpenClawAgentIndexer {
 
         // 1 chunk per file if < 5KB
         if log.content.len() < 5120 {
-            let mut record = MemoryRecord::default();
-            record.workspace_id = format!("agent:{}", agent_id);
+            let mut record = MemoryRecord {
+                workspace_id: format!("agent:{}", agent_id),
+                ..Default::default()
+            };
             record.path = format!("{}/logs/{}", agent_id, log.date);
             record.content = log.content.clone();
             record.metadata = json!({
@@ -207,8 +211,10 @@ impl OpenClawAgentIndexer {
             }
 
             for (i, content) in sections.into_iter().enumerate() {
-                let mut record = MemoryRecord::default();
-                record.workspace_id = format!("agent:{}", agent_id);
+                let mut record = MemoryRecord {
+                    workspace_id: format!("agent:{}", agent_id),
+                    ..Default::default()
+                };
                 record.path = format!("{}/logs/{}#section-{}", agent_id, log.date, i);
                 record.content = content;
                 record.metadata = json!({
@@ -231,8 +237,10 @@ impl OpenClawAgentIndexer {
         file_type: &str,
         content: &str,
     ) -> MemoryRecord {
-        let mut record = MemoryRecord::default();
-        record.workspace_id = format!("agent:{}", agent_id);
+        let mut record = MemoryRecord {
+            workspace_id: format!("agent:{}", agent_id),
+            ..Default::default()
+        };
         record.path = format!("{}/{}", agent_id, file_name);
         record.content = content.to_string();
         record.metadata = json!({

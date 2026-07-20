@@ -71,10 +71,8 @@ pub async fn handle_visualize(
     }
 
     let body: serde_json::Value = response.json().await?;
-    let output_text: String;
-
-    if format == "json" {
-        output_text = serde_json::to_string_pretty(&body)?;
+    let output_text = if format == "json" {
+        serde_json::to_string_pretty(&body)?
     } else {
         let mut lines = Vec::new();
 
@@ -224,8 +222,8 @@ pub async fn handle_visualize(
             }
         }
 
-        output_text = lines.join("\n");
-    }
+        lines.join("\n")
+    };
 
     // --output <file>: write to file instead of stdout
     match output_file {
@@ -276,6 +274,7 @@ fn render_tree_lines(
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn print_node_lines(
         name: &str,
         node: &Node,

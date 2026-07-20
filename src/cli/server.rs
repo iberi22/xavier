@@ -94,7 +94,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     settings.apply_to_env();
 
     // Validate opencode CLI if active
-    if settings.models.provider.trim().to_ascii_lowercase() == "opencode" {
+    if settings.models.provider.trim().eq_ignore_ascii_case("opencode") {
         use std::process::Command;
         let opencode_exists = if cfg!(windows) {
             Command::new("where")
@@ -353,8 +353,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let configured_providers =
         xavier::agents::provider::config::ModelProviderConfig::get_all_configured()
             .iter()
-            .map(|c| xavier::agents::provider::router::ProviderKind::from_str(&c.provider_label))
-            .filter_map(|p| p)
+            .filter_map(|c| xavier::agents::provider::router::ProviderKind::from_str(&c.provider_label))
             .collect::<Vec<_>>();
 
     let fallback_chain = xavier::agents::provider::router::ProviderRouter::build_default_chain(

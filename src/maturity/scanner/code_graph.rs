@@ -86,12 +86,12 @@ fn try_code_graph_db(
     let json_path = Path::new(root).join(".xavier/codegraph.json");
 
     let content = std::fs::read_to_string(&json_path)
-        .or_else(|_| -> std::result::Result<String, std::io::Error> {
+        .map_err(|_| -> std::io::Error {
             // Code dump would recurse — skip
-            Err(std::io::Error::new(
+            std::io::Error::new(
                 std::io::ErrorKind::NotFound,
                 "no code graph",
-            ))
+            )
         })
         .ok()?;
 
@@ -161,7 +161,7 @@ fn grep_fallback(
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| {
-            e.path().extension().map_or(false, |ext| ext == "rs")
+            e.path().extension().is_some_and(|ext| ext == "rs")
                 && !e.path().to_string_lossy().contains("target")
         })
         .take(300); // Safety limit

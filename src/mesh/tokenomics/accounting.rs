@@ -120,7 +120,7 @@ impl ResourceAccounting {
     pub fn get_account_mut(&mut self, node_id: &NodeId) -> &mut PeerAccount {
         self.accounts
             .entry(node_id.clone())
-            .or_insert_with(PeerAccount::new)
+            .or_default()
     }
 
     /// Record a resource contribution and update reputation.

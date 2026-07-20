@@ -175,7 +175,7 @@ impl DataSanitizer {
         let mut hasher = Sha256::new();
         hasher.update(input.as_bytes());
         let result = hasher.finalize();
-        crate::crypto::hex_encode(&result)
+        crate::crypto::hex_encode(result)
     }
 
     /// Returns the list of rules currently registered.

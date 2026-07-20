@@ -852,15 +852,14 @@ fn map_edges_to_graph(
         let from = &edge.from_symbol;
         let to = &edge.to_symbol;
 
-        if !include_file_nodes {
-            if from.starts_with("file:")
+        if !include_file_nodes
+            && (from.starts_with("file:")
                 || from.starts_with("module:")
                 || to.starts_with("file:")
-                || to.starts_with("module:")
+                || to.starts_with("module:"))
             {
                 continue;
             }
-        }
 
         let edge_key = (
             from.clone(),

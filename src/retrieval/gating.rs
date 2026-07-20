@@ -408,6 +408,7 @@ impl AdaptiveGating {
     }
 
     /// Retrieve from all memory layers with telemetry recording
+    #[allow(clippy::too_many_arguments)]
     pub async fn retrieve_with_telemetry(
         &self,
         working: &[MemoryDocument],

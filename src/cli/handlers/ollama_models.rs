@@ -226,7 +226,7 @@ mod tests {
     use tokio::sync::RwLock as AsyncRwLock;
 
     // A static mutex to serialize tests modifying environment variables
-    static ENV_LOCK: Mutex<()> = Mutex::new(());
+    static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     async fn create_test_state() -> CliState {
         use xavier::agents::provider::router::{ProviderKind, ProviderRouter};
@@ -309,7 +309,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_ollama_base_url() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().await;
 
         std::env::set_var("XAVIER_LOCAL_LLM_URL", "http://my-ollama:11434/v1");
         assert_eq!(get_ollama_base_url(), "http://my-ollama:11434");
@@ -326,7 +326,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_active_handler() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().await;
 
         std::env::set_var("XAVIER_LOCAL_LLM_MODEL", "custom-model-llm");
         std::env::set_var("XAVIER_EMBEDDING_MODEL", "custom-model-emb");
@@ -346,7 +346,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_set_active_handler() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().await;
 
         std::env::remove_var("XAVIER_LOCAL_LLM_MODEL");
         std::env::remove_var("XAVIER_EMBEDDING_MODEL");
@@ -389,7 +389,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_models_handler_success() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().await;
 
         let mut server = mockito::Server::new_async().await;
         let mock_url = format!("{}/v1", server.url());
@@ -427,7 +427,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_pull_model_handler_success() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().await;
 
         let mut server = mockito::Server::new_async().await;
         let mock_url = format!("{}/v1", server.url());
@@ -470,7 +470,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_list_models_handler_unreachable() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = ENV_LOCK.lock().await;
 
         // Use a closed port URL
         std::env::set_var("XAVIER_LOCAL_LLM_URL", "http://127.0.0.1:54321/v1");

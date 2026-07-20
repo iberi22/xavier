@@ -3,9 +3,8 @@ use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::sync::{Barrier, RwLock};
 use tokio::task::JoinSet;
-use xavier::memory::qmd_memory::{MemoryDocument, QmdMemory};
+use xavier::memory::qmd_memory::QmdMemory;
 use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
-use xavier::memory::store::MemoryStore;
 
 /// Helper to setup a QmdMemory engine with a temporary SQLite-vec store.
 async fn setup_stress_test_engine() -> (QmdMemory, TempDir) {
@@ -57,7 +56,7 @@ async fn test_qmd_high_concurrency() {
     }
 
     // Spawn readers
-    for i in 0..num_readers {
+    for _i in 0..num_readers {
         let mem = Arc::clone(&memory);
         let b = Arc::clone(&barrier);
         set.spawn(async move {

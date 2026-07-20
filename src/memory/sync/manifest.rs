@@ -31,9 +31,9 @@ pub async fn build_manifest(store: &dyn MemoryStore) -> Result<Manifest> {
             use sha2::{Digest, Sha256};
             let mut hasher = Sha256::new();
             hasher.update(rec.path.as_bytes());
-            hasher.update(&rec.revision.to_le_bytes());
-            hasher.update(&rec.updated_at.timestamp().to_le_bytes());
-            let hash = crate::crypto::hex_encode(&hasher.finalize());
+            hasher.update(rec.revision.to_le_bytes());
+            hasher.update(rec.updated_at.timestamp().to_le_bytes());
+            let hash = crate::crypto::hex_encode(hasher.finalize());
 
             if seen.insert(hash.clone()) {
                 entries.push(ManifestEntry {

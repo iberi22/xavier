@@ -138,7 +138,7 @@ impl TrainingExporter {
         hasher.update(wallet.as_bytes());
         hasher.update(seed.to_be_bytes());
         let result = hasher.finalize();
-        crate::crypto::hex_encode(&result)[0..16].to_string()
+        crate::crypto::hex_encode(result)[0..16].to_string()
     }
 }
 

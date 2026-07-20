@@ -1010,13 +1010,13 @@ mod auto_detect_tests {
     use super::*;
     use crate::memory::store::MemoryBackend;
     use std::sync::LazyLock;
-    use std::sync::Mutex;
+    use tokio::sync::Mutex;
 
     static SERIAL_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
     #[tokio::test]
     async fn test_detect_cloud_backend_fallback() {
-        let _guard = SERIAL_LOCK.lock().unwrap();
+        let _guard = SERIAL_LOCK.lock().await;
         let old_pg = std::env::var("XAVIER_POSTGRES_URL").ok();
         let old_sb_url = std::env::var("XAVIER_SUPABASE_URL").ok();
         let old_sb_key = std::env::var("XAVIER_SUPABASE_KEY").ok();
@@ -1041,7 +1041,7 @@ mod auto_detect_tests {
 
     #[tokio::test]
     async fn test_detect_cloud_backend_supabase() {
-        let _guard = SERIAL_LOCK.lock().unwrap();
+        let _guard = SERIAL_LOCK.lock().await;
         let old_pg = std::env::var("XAVIER_POSTGRES_URL").ok();
         let old_sb_url = std::env::var("XAVIER_SUPABASE_URL").ok();
         let old_sb_key = std::env::var("XAVIER_SUPABASE_KEY").ok();
@@ -1069,7 +1069,7 @@ mod auto_detect_tests {
 
     #[tokio::test]
     async fn test_detect_cloud_backend_postgres_fail_fallback() {
-        let _guard = SERIAL_LOCK.lock().unwrap();
+        let _guard = SERIAL_LOCK.lock().await;
         let old_pg = std::env::var("XAVIER_POSTGRES_URL").ok();
         let old_sb_url = std::env::var("XAVIER_SUPABASE_URL").ok();
         let old_sb_key = std::env::var("XAVIER_SUPABASE_KEY").ok();

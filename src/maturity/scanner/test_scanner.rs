@@ -79,7 +79,7 @@ fn check_test_anchors_in_sources(
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| {
-            e.path().extension().map_or(false, |ext| ext == "rs")
+            e.path().extension().is_some_and(|ext| ext == "rs")
                 && !e.path().to_string_lossy().contains("target")
         })
         .collect();
@@ -167,8 +167,8 @@ pub fn list_tests(codebase_root: &str) -> TestListScanResult {
     for (feat_id, anchor_names) in &feature_tests_map {
         let passing: Vec<String> = anchor_names
             .iter()
+            .filter(|&anchor| found_anchors.contains(anchor))
             .cloned()
-            .filter(|anchor| found_anchors.contains(anchor))
             .collect();
 
         feature_results.insert(feat_id.clone(), (passing, anchor_names.clone()));

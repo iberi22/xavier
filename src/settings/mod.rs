@@ -74,10 +74,10 @@ async fn watch_config_changes() -> Result<()> {
     while let Some(res) = rx.recv().await {
         match res {
             Ok(event) => {
-                let is_write_event = match event.kind {
-                    notify::EventKind::Modify(_) | notify::EventKind::Create(_) => true,
-                    _ => false,
-                };
+                let is_write_event = matches!(
+                    event.kind,
+                    notify::EventKind::Modify(_) | notify::EventKind::Create(_)
+                );
 
                 if is_write_event {
                     let matches_path = event.paths.iter().any(|p| {

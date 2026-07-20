@@ -144,7 +144,7 @@ impl EmbedderConfig {
     pub fn active_model_name(&self) -> Option<String> {
         match self {
             Self::Fallback(backends) => {
-                for backend in backends {
+                if let Some(backend) = backends.iter().next() {
                     match backend {
                         EmbedderBackendConfig::Gllm(cfg) => return Some(cfg.model.clone()),
                         EmbedderBackendConfig::OpenAICompatible(cfg) => {
@@ -721,6 +721,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_auto_triggers_probe_ollama_reachable_with_embeddinggemma() {
         let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
 
@@ -761,6 +762,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_auto_triggers_probe_ollama_reachable_without_embeddinggemma() {
         let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
 

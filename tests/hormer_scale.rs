@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use xavier::agents::hormer::Hormer;
 use xavier::memory::belief_graph::BeliefGraph;
-use xavier::retrieval::{LayerWeights, NavigationPolicy};
+use xavier::retrieval::NavigationPolicy;
 use xavier::search::rrf::ScoredResult;
 
 #[tokio::test]

@@ -102,7 +102,7 @@ impl DataConsentManager {
                 let mut raw = serde_json::to_value(payload)?;
                 if let Some(obj) = raw.as_object_mut() {
                     let allowlist = self.metadata_fields(data_type);
-                    obj.retain(|key, _| allowlist.iter().any(|&f| f == key.as_str()));
+                    obj.retain(|key, _| allowlist.contains(&key.as_str()));
                 }
                 Ok(Some(raw))
             }
@@ -138,7 +138,7 @@ impl DataConsentManager {
         let mut hasher = Sha256::new();
         hasher.update(self.node_id.0.as_bytes());
         let result = hasher.finalize();
-        format!("anon-{}", &crate::crypto::hex_encode(&result)[..16])
+        format!("anon-{}", &crate::crypto::hex_encode(result)[..16])
     }
 
     /// Returns the node ID this manager belongs to.

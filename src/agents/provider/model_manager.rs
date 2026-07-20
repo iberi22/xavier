@@ -22,7 +22,7 @@ pub struct LocalModel {
 /// Scans each directory recursively. If a directory does not exist or is not
 /// a valid directory, it is skipped.
 pub async fn scan_local_models(directories: &[String]) -> Vec<LocalModel> {
-    let dirs: Vec<String> = directories.iter().cloned().collect();
+    let dirs: Vec<String> = directories.to_vec();
     tokio::task::spawn_blocking(move || {
         let mut models = Vec::new();
         for dir_str in dirs {

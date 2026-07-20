@@ -17,9 +17,11 @@ async fn test_hormer_full_pipeline_e2e() {
         0.1,
     )));
 
-    let mut config = GatingConfig::default();
-    config.relevance_threshold = 0.0; // Ensure we see results
-    config.grounding_enabled = false;
+    let config = GatingConfig {
+        relevance_threshold: 0.0, // Ensure we see results
+        grounding_enabled: false,
+        ..Default::default()
+    };
 
     let gating = AdaptiveGating::with_policy(config, policy.clone());
     let hormer = Hormer::new(policy.clone());
@@ -104,9 +106,11 @@ async fn test_hormer_edge_empty_corpus() {
 #[tokio::test]
 async fn test_hormer_edge_single_document() {
     let policy = Arc::new(RwLock::new(NavigationPolicy::default()));
-    let mut config = GatingConfig::default();
-    config.relevance_threshold = 0.0;
-    config.grounding_enabled = false;
+    let config = GatingConfig {
+        relevance_threshold: 0.0,
+        grounding_enabled: false,
+        ..Default::default()
+    };
     let gating = AdaptiveGating::with_policy(config, policy);
 
     let docs = vec![MemoryDocument {
@@ -123,9 +127,11 @@ async fn test_hormer_edge_single_document() {
 #[tokio::test]
 async fn test_hormer_edge_duplicate_documents() {
     let policy = Arc::new(RwLock::new(NavigationPolicy::default()));
-    let mut config = GatingConfig::default();
-    config.relevance_threshold = 0.0;
-    config.grounding_enabled = false;
+    let config = GatingConfig {
+        relevance_threshold: 0.0,
+        grounding_enabled: false,
+        ..Default::default()
+    };
     let gating = AdaptiveGating::with_policy(config, policy);
 
     // Duplicate content and ID in same layer
@@ -152,8 +158,10 @@ async fn test_hormer_edge_duplicate_documents() {
 #[tokio::test]
 async fn test_hormer_ranking_consistency() {
     let policy = Arc::new(RwLock::new(NavigationPolicy::default()));
-    let mut config = GatingConfig::default();
-    config.relevance_threshold = 0.0;
+    let config = GatingConfig {
+        relevance_threshold: 0.0,
+        ..Default::default()
+    };
     let gating = AdaptiveGating::with_policy(config, policy);
 
     let docs = vec![

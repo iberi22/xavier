@@ -27,20 +27,11 @@ pub struct ProgressReport {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct SchedulerState {
     pub last_run_at: Option<DateTime<Utc>>,
     pub last_duration_ms: u64,
     pub items_processed: usize,
-}
-
-impl Default for SchedulerState {
-    fn default() -> Self {
-        Self {
-            last_run_at: None,
-            last_duration_ms: 0,
-            items_processed: 0,
-        }
-    }
 }
 
 pub struct TgdConsolidationScheduler {
@@ -90,11 +81,7 @@ impl TgdConsolidationScheduler {
                 }
             };
 
-            loop {
-                let next = match schedule.upcoming(Utc).next() {
-                    Some(n) => n,
-                    None => break,
-                };
+            while let Some(next) = schedule.upcoming(Utc).next() {
 
                 let now = Utc::now();
                 if next > now {
@@ -135,8 +122,10 @@ impl TgdConsolidationScheduler {
             };
         }
 
-        let mut task = ConsolidationTask::default();
-        task.enable_tgd_in_consolidation = true; // Ensure it's enabled for scheduled runs
+        let task = ConsolidationTask {
+            enable_tgd_in_consolidation: true,
+            ..Default::default()
+        };
 
         // 1. Run Memory Consolidation
         info!("🧠 Phase 1: Memory Consolidation...");

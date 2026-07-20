@@ -840,10 +840,8 @@ pub async fn memory_query_handler(
         }
 
         let remote_results = futures_util::future::join_all(remote_futures).await;
-        for res_opt in remote_results {
-            if let Some(mut remote_list) = res_opt {
-                search_results.append(&mut remote_list);
-            }
+        for mut remote_list in remote_results.into_iter().flatten() {
+            search_results.append(&mut remote_list);
         }
     }
 

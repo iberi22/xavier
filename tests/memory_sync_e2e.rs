@@ -32,7 +32,7 @@ async fn populate(store: &InMemoryMemoryStore, prefix: &str, count: u64) {
                 ..Default::default()
             })
             .await
-            .expect(&format!("put {}-{}", prefix, i));
+            .unwrap_or_else(|_| panic!("put {}-{}", prefix, i));
     }
 }
 

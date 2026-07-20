@@ -223,9 +223,11 @@ pub async fn v1_context_deepen(
     }
 
     // 2. Use Orchestrator to select relevant documents (deep budget)
-    let mut budget_config = ContextBudgetConfig::default();
-    budget_config.session_start_max_tokens = token_budget;
-    budget_config.session_start_max_docs = 10;
+    let budget_config = ContextBudgetConfig {
+        session_start_max_tokens: token_budget,
+        session_start_max_docs: 10,
+        ..Default::default()
+    };
 
     let orchestrator = Orchestrator::with_budgets(budget_config).with_memory(
         Arc::clone(&workspace.workspace.memory),

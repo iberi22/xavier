@@ -111,12 +111,11 @@ impl ContextBuilder {
         let lines: Vec<&str> = context.lines().collect();
         let mut compressed_lines = Vec::new();
 
-        for i in 0..lines.len().min(10) {
-            compressed_lines.push(lines[i]);
+        for &line in lines.iter().take(lines.len().min(10)) {
+            compressed_lines.push(line);
         }
 
-        for i in 10..lines.len() {
-            let line = lines[i];
+        for &line in lines.iter().skip(10) {
             let lower = line.to_lowercase();
             if keywords.iter().any(|&k| lower.contains(k))
                 || line.starts_with("#")

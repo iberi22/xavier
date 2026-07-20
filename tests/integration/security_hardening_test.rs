@@ -4,6 +4,7 @@ use std::env;
 use xavier::security::auth::{User, UserRole};
 use xavier::security::prompt_guard::{detect_injection, AttackType};
 
+#[allow(dead_code)]
 pub struct LoginRequest {
     pub email: String,
     pub password: String,

@@ -15,9 +15,7 @@ pub fn estimate_tokens(text: &str) -> usize {
     if char_count == 0 {
         return 0;
     }
-    // Perform integer division that rounds up: (char_count + 3) / 4.
-    // This is equivalent to `(char_count as f64 / 4.0).ceil() as usize`.
-    (char_count + 3) / 4
+    char_count.div_ceil(4)
 }
 
 #[cfg(test)]

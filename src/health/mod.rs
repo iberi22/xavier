@@ -802,7 +802,7 @@ mod tests {
             health.status == "healthy" || health.status == "warn" || health.status == "degraded"
         );
         // uptime can be 0 in test environments where no real clock has elapsed
-        assert!(true);
+
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -881,7 +881,7 @@ mod tests {
         // but the function must not panic and must return a sane value.
         let frag = conn_fragmentation_pct(&conn);
         assert!(
-            frag >= 0.0 && frag <= 100.0,
+            (0.0..=100.0).contains(&frag),
             "fragmentation out of range: {frag}"
         );
     }

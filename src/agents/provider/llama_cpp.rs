@@ -51,8 +51,12 @@ impl ManagedLlamaServer {
     }
 
     pub async fn stop_server(&self) -> Result<(), std::io::Error> {
-        let mut guard = self.child.lock();
-        if let Some(mut child) = guard.take() {
+        let child_opt = {
+            let mut guard = self.child.lock();
+            guard.take()
+        };
+        
+        if let Some(mut child) = child_opt {
             child.kill().await?;
         }
         Ok(())

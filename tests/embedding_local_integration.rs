@@ -1,11 +1,10 @@
 use anyhow::Result;
 use axum::{routing::post, Json, Router};
 use serde_json::{json, Value};
-use std::sync::Arc;
 use tokio::net::TcpListener;
-use xavier::embedding::{build_embedder_from_env, Embedder, EmbeddingError, NoopEmbedder};
+use xavier::embedding::{build_embedder_from_env, Embedder, NoopEmbedder};
 use xavier::memory::sqlite_vec_store::{VecSqliteMemoryStore, VecSqliteStoreConfig};
-use xavier::memory::store::{HybridSearchMode, MemoryRecord, MemoryStore};
+use xavier::memory::store::{MemoryRecord, MemoryStore};
 
 async fn start_mock_ollama(dimension: usize) -> Result<(String, tokio::task::JoinHandle<()>)> {
     let app = Router::new().route(

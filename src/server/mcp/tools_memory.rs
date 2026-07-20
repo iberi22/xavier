@@ -767,7 +767,7 @@ pub async fn handle_memory_tool(
                     total_records: 0,
                     truncated: false,
                     truncated_reason: None,
-                    content: format!("No relevant context found for query/ids"),
+                    content: "No relevant context found for query/ids".to_string(),
                     sources: Vec::new(),
                     estimated_tokens: 0,
                 };

@@ -35,7 +35,15 @@ impl PeerMetrics {
             last_seen: now,
         }
     }
+}
 
+impl Default for PeerMetrics {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl PeerMetrics {
     pub fn record_latency(&mut self, latency_ms: u64) {
         if self.latencies_ms.len() >= WINDOW_SIZE {
             self.latencies_ms.pop_front();
@@ -84,7 +92,7 @@ impl MeshTelemetryCollector {
         let mut metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
         metrics
             .entry(node_id.clone())
-            .or_insert_with(PeerMetrics::new)
+            .or_default()
             .record_latency(latency_ms);
     }
 
@@ -92,7 +100,7 @@ impl MeshTelemetryCollector {
         let mut metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
         metrics
             .entry(node_id.clone())
-            .or_insert_with(PeerMetrics::new)
+            .or_default()
             .record_agreement(agreed);
     }
 

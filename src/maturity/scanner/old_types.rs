@@ -61,7 +61,7 @@ pub fn scan_code_graph(root: &str, symbols: &[String]) -> CodeGraphScan {
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| {
-            e.path().extension().map_or(false, |ext| ext == "rs")
+            e.path().extension().is_some_and(|ext| ext == "rs")
                 && !e.path().to_string_lossy().contains("target")
         });
 
@@ -185,7 +185,7 @@ pub fn count_loc_for_symbol(root: &str, pattern: &str) -> usize {
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| {
-            e.path().extension().map_or(false, |ext| ext == "rs")
+            e.path().extension().is_some_and(|ext| ext == "rs")
                 && !e.path().to_string_lossy().contains("target")
         });
 
