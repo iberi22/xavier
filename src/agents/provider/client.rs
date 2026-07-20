@@ -3,7 +3,7 @@
 //! Provides a shared reqwest client with configurable timeouts,
 //! retry logic, and connection management for all provider backends.
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 use reqwest::Client;
 use std::sync::Arc;

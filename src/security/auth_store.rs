@@ -2,18 +2,18 @@
 //! Manages users, sessions, and audit logs in a dedicated auth.db
 
 use std::path::Path;
-use anyhow::{Result, Context, anyhow};
+use anyhow::{Result, anyhow};
 use std::sync::Mutex;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use aes_gcm::{
-    aead::{Aead, KeyInit, Payload},
+    aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
 use rand::{RngCore, thread_rng};
 
-use crate::security::auth::{UserRole, User};
+use crate::security::auth::User;
 
 /// Persistent storage for authentication data
 pub struct AuthStore {

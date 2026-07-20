@@ -453,7 +453,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/agents", get(agent_list_handler))
         .route("/workspace/default", get(workspace_info_handler))
         .route("/v1/workspaces/db", post(create_workspace_db_handler).get(list_workspace_dbs_handler))
-        .route("/v1/workspaces/db/:id", delete(delete_workspace_db_handler))
+        .route("/v1/workspaces/db/{id}", delete(delete_workspace_db_handler))
         .route(
             "/v1/onboarding/suggestions",
             get(onboarding_suggestions_handler),
@@ -812,7 +812,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             post(crate::cli::handlers::mesh::create_bridge_handler).get(crate::cli::handlers::mesh::list_bridges_handler),
         )
         .route(
-            "/v1/mesh/bridges/:id",
+            "/v1/mesh/bridges/{id}",
             delete(crate::cli::handlers::mesh::delete_bridge_handler),
         )
         // ── Headless E2E API (New Structure) ──────────────────────────────

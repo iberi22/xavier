@@ -984,6 +984,7 @@ async fn memory_context_depth_flat() {
     )
     .await;
     let body = get_json_body(response).await;
+    println!("DEBUG BODY DEPTH ONE: {}", serde_json::to_string_pretty(&body).unwrap());
     let content = &body["result"]["content"][0];
     assert_eq!(
         content["type"], "structuredContent",

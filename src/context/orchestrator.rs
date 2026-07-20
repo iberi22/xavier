@@ -16,7 +16,7 @@ use crate::memory::belief_graph::SharedBeliefGraph;
 use crate::memory::qmd_memory::QmdMemory;
 use crate::memory::schema::ContextZone;
 use crate::memory::schema::RetrievalScope;
-use crate::memory::virtual_memory::{VirtualMemory, VirtualMemoryEntry};
+use crate::memory::virtual_memory::VirtualMemory;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum HookKind {

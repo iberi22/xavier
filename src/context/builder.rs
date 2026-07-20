@@ -97,7 +97,6 @@ impl ContextBuilder {
         // Simple "compression" by removing excessive whitespace and adding cross-refs
         // NOTE: This is a shallow compression (whitespace only).
         // Real savings come from progressive disclosure and budget-aware selection in Orchestrator.
-        let mut compressed = context.replace("  ", " ").replace("\n\n\n", "\n\n");
 
         let keywords = [
             "error",

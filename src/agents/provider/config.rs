@@ -672,6 +672,7 @@ impl ModelProviderConfig {
     }
 
     /// Internal method to set the lease token.
+    #[allow(dead_code)]
     pub(crate) fn with_lease_token(mut self, token: Option<String>) -> Self {
         self.lease_token = token;
         self
