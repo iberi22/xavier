@@ -1,0 +1,83 @@
+name: Panel UI Coverage
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  coverage:
+    name: Run Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
+
+      - name: Run test coverage
+        run: pnpm --filter xavier-panel-ui run test:coverage
+
+      - name: Generate Coverage Badge and Summary
+        run: |
+          node -e "
+          const fs = require('fs');
+          const summary = JSON.parse(fs.readFileSync('panel-ui/coverage/coverage-summary.json', 'utf8'));
+          const pct = summary.total.statements.pct;
+          const color = pct >= 82.5 ? 'brightgreen' : pct >= 70 ? 'yellow' : 'red';
+          const badgeUrl = \`https://img.shields.io/badge/coverage-\${pct}%25-\${color}\`;
+
+          console.log(\`Coverage percent: \${pct}%\\n\`);
+          console.log(\`Badge URL: \${badgeUrl}\\n\`);
+
+          // Generate a local badge.svg
+          const https = require('https');
+          const file = fs.createWriteStream('panel-ui/coverage/badge.svg');
+          https.get(badgeUrl + '.svg', response => {
+            response.pipe(file);
+            file.on('finish', () => {
+              file.close();
+              console.log('Badge downloaded successfully as panel-ui/coverage/badge.svg');
+            });
+          });
+
+          // Write to GitHub Actions step summary
+          const summaryMarkdown = \`
+          ### 📊 Panel UI Test Coverage Results
+
+          - **Statement Coverage**: \${pct}% (Target: 82.5% ✅)
+          - **Lines Coverage**: \${summary.total.lines.pct}%
+          - **Functions Coverage**: \${summary.total.functions.pct}%
+          - **Branches Coverage**: \${summary.total.branches.pct}%
+
+          ![Coverage Badge](\${badgeUrl})
+          \`;
+          fs.writeFileSync(process.env.GITHUB_STEP_SUMMARY, summaryMarkdown);
+          "
+
+      - name: Upload Coverage Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-ui-coverage
+          path: |
+            panel-ui/coverage/
+            !panel-ui/coverage/node_modules/
+          retention-days: 14
