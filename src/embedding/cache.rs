@@ -111,7 +111,7 @@ pub fn content_hash(model_name: &str, text: &str) -> String {
     hasher.update(model_name.as_bytes());
     hasher.update(b":");
     hasher.update(text.as_bytes());
-    crate::crypto::hex_encode(&hasher.finalize())
+    crate::crypto::hex_encode(hasher.finalize())
 }
 
 // ---------------------------------------------------------------------------

@@ -669,7 +669,7 @@ mod tests {
         use std::time::Instant;
 
         // Construct a large 60KB text with various repeating sentences, punctuation, and entities
-        let base_paragraphs = vec![
+        let base_paragraphs = [
             "BELA works at SWAL and knows Leonardo in Bogota.",
             "Alice works at Acme Corporation in New York and uses Rust with Python.",
             "Bob is a SoftwareEngineer and part of the CoreTeam.",

@@ -418,8 +418,10 @@ mod tests {
             .unwrap();
 
         // Configure indexer
-        let mut config = FileIndexerConfig::default();
-        config.root_path = root_path.clone();
+        let config = FileIndexerConfig {
+            root_path: root_path.clone(),
+            ..Default::default()
+        };
 
         let indexer = FileIndexer::new(config, None);
 

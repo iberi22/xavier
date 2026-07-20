@@ -1,19 +1,11 @@
-use axum::{
-    body::Body,
-    http::{self, Request, StatusCode},
-};
 use chrono::Utc;
-use http_body_util::BodyExt;
-use serde_json::{json, Value};
-use std::sync::Arc;
-use tokio::net::TcpListener;
-use tower::ServiceExt;
 use uuid::Uuid;
 
 use xavier::security::recovery::RecoverySystem;
 use xavier::security::user_store::{User, UserStore};
 
 // Helper function to create a test app
+#[allow(dead_code)]
 async fn setup_test_app() -> axum::Router {
     // Setup environment for tests
     std::env::set_var("XAVIER_TOKEN", "test-token");

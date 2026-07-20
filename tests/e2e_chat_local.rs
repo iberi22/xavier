@@ -104,7 +104,7 @@ async fn test_chat_falls_back_gracefully_when_llm_unavailable() {
     let content = body
         .get("choices")
         .and_then(|c| c.as_array())
-        .and_then(|arr| arr.get(0))
+        .and_then(|arr| arr.first())
         .and_then(|first| first.get("message"))
         .and_then(|msg| msg.get("content"))
         .and_then(|cnt| cnt.as_str())

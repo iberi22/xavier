@@ -297,9 +297,8 @@ impl Orchestrator {
         for document_id in &plan.selected_document_ids {
             let document = if let Some(doc) = by_id.get(document_id) {
                 doc.clone()
-            } else if document_id.starts_with("code://") {
+            } else if let Some(path) = document_id.strip_prefix("code://") {
                 if let Some(cq) = &self.code_query {
-                    let path = &document_id[7..];
                     if let Ok(symbols) = cq.in_file(path) {
                         if let Some(first) = symbols.first() {
                             let content = if let Some(sig) = &first.signature {

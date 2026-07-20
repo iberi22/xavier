@@ -32,7 +32,7 @@ pub const SCORING_VERSION: &str = "1.0.0";
 // ═══════════════════════════════════════════════
 
 /// Input data for scoring a contribution/data quality
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ContributionInput {
     /// Size of the contributed data in bytes
     pub byte_size: u64,
@@ -47,7 +47,7 @@ pub struct ContributionInput {
 }
 
 /// Boolean feature flags for a contribution
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ContributionFeatures {
     pub has_code: bool,
     pub has_markdown: bool,
@@ -109,7 +109,7 @@ pub struct ScoreRecord {
 }
 
 /// Bundled evidence that produced a score
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EvidenceBundle {
     pub contribution: Option<ContributionInput>,
     pub task_difficulty: Option<TaskDifficultyInput>,
@@ -358,6 +358,34 @@ pub fn detect_spam_patterns(
     reasons
 }
 
+impl Default for TaskDifficultyInput {
+    fn default() -> Self {
+        Self {
+            estimated_loc: 0,
+            modules_touched: 0,
+            dependencies_count: 0,
+            involves_crypto: false,
+            requires_new_deps: false,
+            involves_mesh: false,
+            label_complexity: 1,
+        }
+    }
+}
+
+impl Default for ContextUsefulnessInput {
+    fn default() -> Self {
+        Self {
+            recall_at_k: 0.0,
+            mrr: 0.0,
+            query_count: 0,
+            avg_latency_ms: 0.0,
+            relevance_crossed: false,
+        }
+    }
+}
+
+
+
 // ═══════════════════════════════════════════════
 // Tests — Regression fixtures
 // ═══════════════════════════════════════════════
@@ -574,65 +602,5 @@ mod tests {
         let reasons = detect_spam_patterns(&input, &[input.clone(), input.clone(), input.clone()]);
         // Should find both LowValue and possibly Spam
         assert!(!reasons.is_empty());
-    }
-}
-
-impl Default for ContributionInput {
-    fn default() -> Self {
-        Self {
-            byte_size: 0,
-            unique_terms: 0,
-            has_tests: false,
-            has_docs: false,
-            features: ContributionFeatures::default(),
-        }
-    }
-}
-
-impl Default for ContributionFeatures {
-    fn default() -> Self {
-        Self {
-            has_code: false,
-            has_markdown: false,
-            has_json: false,
-            has_config: false,
-        }
-    }
-}
-
-impl Default for TaskDifficultyInput {
-    fn default() -> Self {
-        Self {
-            estimated_loc: 0,
-            modules_touched: 0,
-            dependencies_count: 0,
-            involves_crypto: false,
-            requires_new_deps: false,
-            involves_mesh: false,
-            label_complexity: 1,
-        }
-    }
-}
-
-impl Default for ContextUsefulnessInput {
-    fn default() -> Self {
-        Self {
-            recall_at_k: 0.0,
-            mrr: 0.0,
-            query_count: 0,
-            avg_latency_ms: 0.0,
-            relevance_crossed: false,
-        }
-    }
-}
-
-impl Default for EvidenceBundle {
-    fn default() -> Self {
-        Self {
-            contribution: None,
-            task_difficulty: None,
-            context_usefulness: None,
-            additional_notes: vec![],
-        }
     }
 }

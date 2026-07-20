@@ -2,7 +2,7 @@
 
 use crate::agents::evolve::config::BenchmarkType;
 use anyhow::{anyhow, Context, Result};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::info;
@@ -126,9 +126,9 @@ fn run_benchmark_script(script: &str, args: &[&str]) -> Result<()> {
     #[cfg(not(feature = "bench-runners"))]
     {
         let _ = (script, args);
-        return Err(anyhow!(
+        Err(anyhow!(
             "benchmark runners disabled; rebuild with --features bench-runners or run benchmarks in CI/admin"
-        ));
+        ))
     }
 
     #[cfg(feature = "bench-runners")]
@@ -150,7 +150,7 @@ fn run_benchmark_script(script: &str, args: &[&str]) -> Result<()> {
     }
 }
 
-fn load_summary(output_dir: &PathBuf) -> Result<serde_json::Value> {
+fn load_summary(output_dir: &Path) -> Result<serde_json::Value> {
     let path = output_dir.join("summary.json");
     let payload = std::fs::read_to_string(&path)
         .with_context(|| format!("failed to read benchmark summary {}", path.display()))?;

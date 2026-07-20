@@ -310,14 +310,15 @@ mod tests {
 
     #[test]
     fn test_score_transition_weight_variation() {
-        let mut traversal_weights = TraversalWeights::default();
-        traversal_weights.semantic_similarity = 1.0;
-        traversal_weights.confidence = 0.0;
-        traversal_weights.edge_weight = 0.0;
-        traversal_weights.recency = 0.0;
-        traversal_weights.cross_layer = 0.0;
-        traversal_weights.cross_dir = 0.0;
-        traversal_weights.peripheral_hub = 0.0;
+        let traversal_weights = TraversalWeights {
+            semantic_similarity: 1.0,
+            confidence: 0.0,
+            edge_weight: 0.0,
+            recency: 0.0,
+            cross_layer: 0.0,
+            cross_dir: 0.0,
+            peripheral_hub: 0.0,
+        };
 
         let policy = NavigationPolicy::new(LayerWeights::default(), traversal_weights, 0.01);
 
@@ -340,9 +341,11 @@ mod tests {
 
     #[test]
     fn test_peripheral_hub_boost() {
-        let mut traversal_weights = TraversalWeights::default();
-        traversal_weights.semantic_similarity = 0.0;
-        traversal_weights.peripheral_hub = 1.0;
+        let traversal_weights = TraversalWeights {
+            semantic_similarity: 0.0,
+            peripheral_hub: 1.0,
+            ..Default::default()
+        };
 
         let policy = NavigationPolicy::new(LayerWeights::default(), traversal_weights, 0.01);
 

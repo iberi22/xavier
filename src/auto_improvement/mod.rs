@@ -581,7 +581,7 @@ impl AutoImprovementEngine {
             let clears_threshold = composite >= self.acceptance_threshold;
             let meaningful = (composite - self.acceptance_threshold).abs() >= self.min_improvement
                 && composite > self.acceptance_threshold;
-            let no_recall_regression = !(recall_delta < -0.01);
+            let no_recall_regression = recall_delta >= -0.01;
             let passed = clears_threshold && meaningful && no_recall_regression;
             exp.status = if passed {
                 accepted.push(exp.name.clone());
@@ -845,9 +845,9 @@ fn run_benchmark_script(script: &str, args: &[&str]) -> Result<()> {
     #[cfg(not(feature = "bench-runners"))]
     {
         let _ = (script, args);
-        return Err(anyhow!(
+        Err(anyhow!(
             "benchmark runners disabled; rebuild with --features bench-runners"
-        ));
+        ))
     }
 
     #[cfg(feature = "bench-runners")]
@@ -1330,7 +1330,7 @@ mod tests {
         let recall_delta = 0.05f64;
         let clears_threshold = composite >= threshold;
         let meaningful = (composite - threshold).abs() >= min_improvement && composite > threshold;
-        let no_recall_regression = !(recall_delta < -0.01);
+        let no_recall_regression = recall_delta >= -0.01;
         let passed = clears_threshold && meaningful && no_recall_regression;
         assert!(
             passed,

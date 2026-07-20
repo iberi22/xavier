@@ -545,24 +545,24 @@ impl QmdMemory {
 
                     // Fetch children (documents whose parent_id matches this id)
                     if let Some(ref cluster) = doc.cluster_id {
-                        let mut child_filters = MemoryQueryFilters::default();
-                        child_filters.cluster_ids = Some(vec![cluster.clone()]);
+                        let child_filters = MemoryQueryFilters {
+                            cluster_ids: Some(vec![cluster.clone()]),
+                            ..Default::default()
+                        };
                         if let Ok(children) =
                             self.search_filtered("", 50, Some(&child_filters)).await
                         {
                             for child in children {
                                 if let Some(ref cid) = child.id {
-                                    if cid != doc_id && !seen_ids.contains(cid) {
-                                        if matches_filters(
-                                            &child.path,
-                                            &child.metadata,
-                                            &self.workspace_id,
-                                            filters,
-                                        ) {
-                                            seen_ids.insert(cid.clone());
-                                            next_ids.push(cid.clone());
-                                            all_docs.push(child);
-                                        }
+                                    if cid != doc_id && !seen_ids.contains(cid) && matches_filters(
+                                        &child.path,
+                                        &child.metadata,
+                                        &self.workspace_id,
+                                        filters,
+                                    ) {
+                                        seen_ids.insert(cid.clone());
+                                        next_ids.push(cid.clone());
+                                        all_docs.push(child);
                                     }
                                 }
                             }

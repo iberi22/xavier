@@ -291,10 +291,9 @@ impl AuthDb {
     }
 
     pub fn count_users(&self) -> AnyhowResult<i64> {
-        Ok(self
-            .conn
+        self.conn
             .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))
-            .map_err(|e| anyhow!("Failed to count users: {}", e))?)
+            .map_err(|e| anyhow!("Failed to count users: {}", e))
     }
 
     // Audit Log Operations

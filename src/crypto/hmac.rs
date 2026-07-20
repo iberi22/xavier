@@ -29,7 +29,7 @@ impl HmacSha256 {
         }
 
         let mut inner = Sha256::new();
-        inner.update(&i_key_pad);
+        inner.update(i_key_pad);
 
         Self { inner, o_key_pad }
     }
@@ -41,8 +41,8 @@ impl HmacSha256 {
     pub fn finalize(self) -> [u8; 32] {
         let inner_hash = self.inner.finalize();
         let mut outer = Sha256::new();
-        outer.update(&self.o_key_pad);
-        outer.update(&inner_hash);
+        outer.update(self.o_key_pad);
+        outer.update(inner_hash);
         outer.finalize().into()
     }
 

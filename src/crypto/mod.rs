@@ -59,7 +59,7 @@ pub fn hex_encode(bytes: impl AsRef<[u8]>) -> String {
 
 /// Decode a hex string into bytes. Returns an error on invalid input.
 pub fn hex_decode(hex_str: &str) -> anyhow::Result<Vec<u8>> {
-    if hex_str.len() % 2 != 0 {
+    if !hex_str.len().is_multiple_of(2) {
         anyhow::bail!("hex string must have even length");
     }
     let bytes = hex_str.as_bytes();
@@ -96,7 +96,7 @@ pub fn base64_encode(data: impl AsRef<[u8]>) -> String {
     if data.is_empty() {
         return String::new();
     }
-    let mut result = String::with_capacity(((data.len() + 2) / 3) * 4);
+    let mut result = String::with_capacity(data.len().div_ceil(3) * 4);
     for chunk in data.chunks(3) {
         let b0 = chunk[0];
         let b1 = chunk.get(1).copied().unwrap_or(0);
@@ -149,11 +149,11 @@ pub fn base64_decode(input: &str) -> Option<Vec<u8>> {
             result.push((triple >> 8) as u8);
             result.push(triple as u8);
         } else if chunk.len() == 3 {
-            result.push(((buf[0] << 2) | (buf[1] >> 4)) as u8);
-            result.push((((buf[1] & 0x0f) << 4) | (buf[2] >> 2)) as u8);
+            result.push((buf[0] << 2) | (buf[1] >> 4));
+            result.push(((buf[1] & 0x0f) << 4) | (buf[2] >> 2));
         } else {
             // len == 2
-            result.push(((buf[0] << 2) | (buf[1] >> 4)) as u8);
+            result.push((buf[0] << 2) | (buf[1] >> 4));
         }
     }
     Some(result)

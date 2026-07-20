@@ -262,7 +262,7 @@ fn generate_random_key() -> String {
 fn hash_key(key: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(key.as_bytes());
-    crate::crypto::hex_encode(&hasher.finalize())
+    crate::crypto::hex_encode(hasher.finalize())
 }
 
 /// Extract key prefix from full key (pk_live_xxxxxxxx)

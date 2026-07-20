@@ -19,6 +19,12 @@ pub struct TokenAccountingTracker {
     entries: Arc<RwLock<Vec<TokenAccountingEntry>>>,
 }
 
+impl Default for TokenAccountingTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TokenAccountingTracker {
     pub fn new() -> Self {
         Self {

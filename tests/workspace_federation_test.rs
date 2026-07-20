@@ -129,7 +129,7 @@ async fn test_workspace_sharing_with_namespace_acl_filtering() {
         ..Default::default()
     };
 
-    let memories = vec![rec_public, rec_private, rec_other];
+    let memories = [rec_public, rec_private, rec_other];
 
     // 2. Generate a node identity and create a shared token with namespaces: ["docs/publico"]
     let identity = xavier::mesh::node::NodeIdentity::generate();
@@ -278,7 +278,7 @@ async fn test_data_consent_token_revocation() {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(payload_str.as_bytes());
-        format!("hash-{}", &xavier::crypto::hex_encode(&hasher.finalize())[..16])
+        format!("hash-{}", &xavier::crypto::hex_encode(hasher.finalize())[..16])
     };
 
     // Assert fallback initially not revoked

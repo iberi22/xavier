@@ -446,6 +446,30 @@ pub async fn list_sessions_handler(
     }
 }
 
+pub async fn revoke_session_handler(
+    State(state): State<CliState>,
+    Path(token_id): Path<String>,
+    axum::Extension(session): axum::Extension<crate::cli::http_setup::SessionInfo>,
+) -> Response {
+    let user_id = match &session.user_id {
+        Some(uid) => uid,
+        None => return json_response(StatusCode::UNAUTHORIZED, serde_json::json!({"error": "User not authenticated"})),
+    };
+
+    let auth_store = match state.auth_store() {
+        Some(s) => s,
+        None => return json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({"error": "Auth store not initialized"})),
+    };
+
+    match auth_store.revoke_user_session(user_id, &token_id) {
+        Ok(_) => json_response(StatusCode::OK, serde_json::json!({
+            "status": "ok",
+            "message": "Session revoked"
+        })),
+        Err(e) => json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({"error": e.to_string()})),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -553,29 +577,5 @@ mod tests {
         // 6th attempt should return 429 Too Many Requests
         let res = login_handler(State(state.clone()), connect_info.clone(), headers.clone(), Json(payload.clone())).await;
         assert_eq!(res.status(), StatusCode::TOO_MANY_REQUESTS);
-    }
-}
-
-pub async fn revoke_session_handler(
-    State(state): State<CliState>,
-    Path(token_id): Path<String>,
-    axum::Extension(session): axum::Extension<crate::cli::http_setup::SessionInfo>,
-) -> Response {
-    let user_id = match &session.user_id {
-        Some(uid) => uid,
-        None => return json_response(StatusCode::UNAUTHORIZED, serde_json::json!({"error": "User not authenticated"})),
-    };
-
-    let auth_store = match state.auth_store() {
-        Some(s) => s,
-        None => return json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({"error": "Auth store not initialized"})),
-    };
-
-    match auth_store.revoke_user_session(user_id, &token_id) {
-        Ok(_) => json_response(StatusCode::OK, serde_json::json!({
-            "status": "ok",
-            "message": "Session revoked"
-        })),
-        Err(e) => json_response(StatusCode::INTERNAL_SERVER_ERROR, serde_json::json!({"error": e.to_string()})),
     }
 }

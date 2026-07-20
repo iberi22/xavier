@@ -27,6 +27,7 @@ mod tests {
     static ENV_MUTEX: Mutex<()> = Mutex::new(());
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_local_provider_request_without_auth() {
         let _guard = ENV_MUTEX.lock().unwrap();
         // Ensure env variables are not present
@@ -102,6 +103,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_local_provider_request_with_ollama_api_key() {
         let _guard = ENV_MUTEX.lock().unwrap();
         // Set OLLAMA_API_KEY

@@ -253,16 +253,16 @@ pub enum XipState {
 impl XipState {
     /// Validar si una transición de estado es legal
     pub fn can_transition_to(&self, new_state: &XipState) -> bool {
-        match (self, new_state) {
+        matches!(
+            (self, new_state),
             (XipState::Draft { .. }, XipState::Discussion { .. })
-            | (XipState::Draft { .. }, XipState::Complete { .. }) => true,
-            (XipState::Discussion { .. }, XipState::Voting { .. })
-            | (XipState::Discussion { .. }, XipState::Complete { .. }) => true,
-            (XipState::Voting { .. }, XipState::Execution { .. })
-            | (XipState::Voting { .. }, XipState::Complete { .. }) => true,
-            (XipState::Execution { .. }, XipState::Complete { .. }) => true,
-            _ => false,
-        }
+                | (XipState::Draft { .. }, XipState::Complete { .. })
+                | (XipState::Discussion { .. }, XipState::Voting { .. })
+                | (XipState::Discussion { .. }, XipState::Complete { .. })
+                | (XipState::Voting { .. }, XipState::Execution { .. })
+                | (XipState::Voting { .. }, XipState::Complete { .. })
+                | (XipState::Execution { .. }, XipState::Complete { .. })
+        )
     }
 
     pub fn label(&self) -> &str {

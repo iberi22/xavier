@@ -408,7 +408,7 @@ impl System2Reasoner {
                     contra_strength,
                 ),
                 pro_evidence: vec![],
-                contra_evidence: contra_evidence,
+                contra_evidence,
                 strength: 1.0 - contra_strength,
             });
         }

@@ -35,7 +35,7 @@ async fn send_json(
     uri: &str,
     body: Option<String>,
 ) -> serde_json::Value {
-    let mut builder = Request::builder().method(method).uri(uri);
+    let builder = Request::builder().method(method).uri(uri);
     let request = match body {
         Some(json_body) => builder
             .header("content-type", "application/json")

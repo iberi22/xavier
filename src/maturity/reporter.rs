@@ -103,6 +103,7 @@ pub struct HistoryEntry {
 
 impl MaturityReport {
     /// Build a report from scanned and scored features.
+    #[allow(clippy::too_many_arguments)]
     pub fn from_scored(
         features: Vec<ScoredFeature>,
         summary: Summary,

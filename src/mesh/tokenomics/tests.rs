@@ -1,5 +1,5 @@
 #[cfg(test)]
-mod tests {
+mod tokenomics_tests {
     use crate::mesh::node::NodeId;
     use crate::mesh::tokenomics::economy::{CircuitBreakerLevel, EconomyEngine};
     use crate::mesh::tokenomics::rewards::{ContributionType, RewardEngine};

@@ -158,10 +158,10 @@ impl ProviderRouter {
         }
 
         // 2. Add Local as last resort if Ollama is reachable
-        if Self::is_ollama_reachable().await {
-            if !chain.contains(&ProviderKind::Local) {
-                chain.push(ProviderKind::Local);
-            }
+        if Self::is_ollama_reachable().await
+            && !chain.contains(&ProviderKind::Local)
+        {
+            chain.push(ProviderKind::Local);
         }
 
         info!("Provider fallback chain built: {:?}", chain);
@@ -357,6 +357,7 @@ mod tests {
         std::sync::LazyLock::new(|| std::sync::Mutex::new(()));
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_build_default_chain_cloud_only() {
         let _guard = TEST_LOCK.lock().unwrap();
         // Since we can't easily mock network in unit tests without complex traits,
@@ -370,6 +371,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_build_default_chain_mixed() {
         let _guard = TEST_LOCK.lock().unwrap();
         let configured = vec![ProviderKind::OpenAI, ProviderKind::Local];
@@ -384,17 +386,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_build_default_chain_empty() {
+    #[allow(clippy::await_holding_lock)]
+    async fn test_provider_router_build_openai() {
         let _guard = TEST_LOCK.lock().unwrap();
         let configured = vec![];
         let chain = ProviderRouter::build_default_chain(&configured).await;
         // Should only contain Local if reachable, otherwise empty
-        if chain.len() > 0 {
+        if !chain.is_empty() {
             assert_eq!(chain, vec![ProviderKind::Local]);
         }
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_build_default_chain_with_mocked_ollama_reachable() {
         let _guard = TEST_LOCK.lock().unwrap();
         let mut server = mockito::Server::new_async().await;
@@ -415,6 +419,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_build_default_chain_with_mocked_ollama_unreachable() {
         let _guard = TEST_LOCK.lock().unwrap();
         std::env::set_var("_XAVIER_TEST_OLLAMA_REACHABLE_URL", "http://127.0.0.1:1");

@@ -68,7 +68,7 @@ impl TgdCache {
             hasher.update(b";");
         }
 
-        crate::crypto::hex_encode(&hasher.finalize())
+        crate::crypto::hex_encode(hasher.finalize())
     }
 
     /// Determines if TGD should be skipped

@@ -103,9 +103,9 @@ pub fn deserialise_chunk(data: &[u8]) -> Result<MemoryRecord> {
 pub fn chunk_hash(record: &MemoryRecord) -> String {
     let mut hasher = Sha256::new();
     hasher.update(record.path.as_bytes());
-    hasher.update(&record.revision.to_le_bytes());
-    hasher.update(&record.updated_at.timestamp().to_le_bytes());
-    crate::crypto::hex_encode(&hasher.finalize())
+    hasher.update(record.revision.to_le_bytes());
+    hasher.update(record.updated_at.timestamp().to_le_bytes());
+    crate::crypto::hex_encode(hasher.finalize())
 }
 
 #[cfg(test)]

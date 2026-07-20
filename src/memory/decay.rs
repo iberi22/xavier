@@ -74,8 +74,10 @@ impl DecayManager {
     ) -> Result<DecayReport> {
         let now = Utc::now();
         let records = store.list(workspace_id).await?;
-        let mut report = DecayReport::default();
-        report.total_processed = records.len();
+        let mut report = DecayReport {
+            total_processed: records.len(),
+            ..Default::default()
+        };
 
         for mut record in records {
             let (new_score, should_prune) = calculate_decay(&record, now, &self.config);
@@ -206,12 +208,14 @@ mod tests {
 
     #[test]
     fn test_ebbinghaus_decay_calculation() {
-        let mut record = MemoryRecord::default();
-        record.score = 1.0;
-        record.metadata = serde_json::json!({
-            "memory_priority": "medium",
-            "last_accessed_at": (Utc::now() - chrono::Duration::days(45)).to_rfc3339()
-        });
+        let record = MemoryRecord {
+            score: 1.0,
+            metadata: serde_json::json!({
+                "memory_priority": "medium",
+                "last_accessed_at": (Utc::now() - chrono::Duration::days(45)).to_rfc3339()
+            }),
+            ..Default::default()
+        };
 
         let config = DecayConfig {
             prune_threshold: Some(0.1),
@@ -231,12 +235,14 @@ mod tests {
 
     #[test]
     fn test_no_decay_within_inactivity_window() {
-        let mut record = MemoryRecord::default();
-        record.score = 1.0;
-        record.metadata = serde_json::json!({
-            "memory_priority": "medium",
-            "last_accessed_at": (Utc::now() - chrono::Duration::days(15)).to_rfc3339()
-        });
+        let record = MemoryRecord {
+            score: 1.0,
+            metadata: serde_json::json!({
+                "memory_priority": "medium",
+                "last_accessed_at": (Utc::now() - chrono::Duration::days(15)).to_rfc3339()
+            }),
+            ..Default::default()
+        };
 
         let config = DecayConfig {
             prune_threshold: Some(0.1),
@@ -253,12 +259,14 @@ mod tests {
 
     #[test]
     fn test_critical_never_decays() {
-        let mut record = MemoryRecord::default();
-        record.score = 1.0;
-        record.metadata = serde_json::json!({
-            "memory_priority": "critical",
-            "last_accessed_at": (Utc::now() - chrono::Duration::days(500)).to_rfc3339()
-        });
+        let record = MemoryRecord {
+            score: 1.0,
+            metadata: serde_json::json!({
+                "memory_priority": "critical",
+                "last_accessed_at": (Utc::now() - chrono::Duration::days(500)).to_rfc3339()
+            }),
+            ..Default::default()
+        };
 
         let config = DecayConfig {
             prune_threshold: Some(0.1),
@@ -275,12 +283,14 @@ mod tests {
 
     #[test]
     fn test_pruning_below_threshold() {
-        let mut record = MemoryRecord::default();
-        record.score = 0.2;
-        record.metadata = serde_json::json!({
-            "memory_priority": "low",
-            "last_accessed_at": (Utc::now() - chrono::Duration::days(40)).to_rfc3339()
-        });
+        let record = MemoryRecord {
+            score: 0.2,
+            metadata: serde_json::json!({
+                "memory_priority": "low",
+                "last_accessed_at": (Utc::now() - chrono::Duration::days(40)).to_rfc3339()
+            }),
+            ..Default::default()
+        };
 
         let config = DecayConfig {
             prune_threshold: Some(0.15),
@@ -307,32 +317,38 @@ mod tests {
         // 2. Medium inactive for 40 days (decays)
         // 3. Ephemeral inactive for 10 days (pruned because limit for Ephemeral is 1 day max age)
 
-        let mut record1 = MemoryRecord::default();
-        record1.id = "m1".to_string();
-        record1.workspace_id = workspace_id.to_string();
-        record1.score = 1.0;
-        record1.metadata = serde_json::json!({
-            "memory_priority": "critical",
-            "last_accessed_at": (Utc::now() - chrono::Duration::days(100)).to_rfc3339()
-        });
+        let record1 = MemoryRecord {
+            id: "m1".to_string(),
+            workspace_id: workspace_id.to_string(),
+            score: 1.0,
+            metadata: serde_json::json!({
+                "memory_priority": "critical",
+                "last_accessed_at": (Utc::now() - chrono::Duration::days(100)).to_rfc3339()
+            }),
+            ..Default::default()
+        };
 
-        let mut record2 = MemoryRecord::default();
-        record2.id = "m2".to_string();
-        record2.workspace_id = workspace_id.to_string();
-        record2.score = 0.8;
-        record2.metadata = serde_json::json!({
-            "memory_priority": "medium",
-            "last_accessed_at": (Utc::now() - chrono::Duration::days(45)).to_rfc3339()
-        });
+        let record2 = MemoryRecord {
+            id: "m2".to_string(),
+            workspace_id: workspace_id.to_string(),
+            score: 0.8,
+            metadata: serde_json::json!({
+                "memory_priority": "medium",
+                "last_accessed_at": (Utc::now() - chrono::Duration::days(45)).to_rfc3339()
+            }),
+            ..Default::default()
+        };
 
-        let mut record3 = MemoryRecord::default();
-        record3.id = "m3".to_string();
-        record3.workspace_id = workspace_id.to_string();
-        record3.score = 0.5;
-        record3.metadata = serde_json::json!({
-            "memory_priority": "ephemeral",
-            "last_accessed_at": (Utc::now() - chrono::Duration::days(10)).to_rfc3339()
-        });
+        let record3 = MemoryRecord {
+            id: "m3".to_string(),
+            workspace_id: workspace_id.to_string(),
+            score: 0.5,
+            metadata: serde_json::json!({
+                "memory_priority": "ephemeral",
+                "last_accessed_at": (Utc::now() - chrono::Duration::days(10)).to_rfc3339()
+            }),
+            ..Default::default()
+        };
 
         store.put(record1).await.unwrap();
         store.put(record2).await.unwrap();

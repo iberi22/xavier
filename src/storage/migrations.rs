@@ -779,8 +779,7 @@ mod tests {
         let conn = mem_conn();
         let err = MigrationRunner::new(migrations)
             .run(&conn)
-            .err()
-            .expect("broken migration should have errored");
+            .expect_err("broken migration should have errored");
         assert!(
             err.to_string().contains("v2"),
             "error should reference failing migration v2, got: {}",

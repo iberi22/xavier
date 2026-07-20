@@ -121,48 +121,6 @@ pub async fn handle_setup(local: bool) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::tempdir;
-
-    #[tokio::test]
-    async fn test_write_env_local_logic() {
-        let dir = tempdir().unwrap();
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir.path()).unwrap();
-
-        write_env_local().unwrap();
-
-        let content = fs::read_to_string(dir.path().join(".env")).unwrap();
-        assert!(content.contains("LOCAL-FIRST SETUP"));
-        assert!(content.contains("XAVIER_MODEL_PROVIDER=local"));
-        assert!(content.contains("XAVIER_LOCAL_LLM_MODEL=qwen3-coder"));
-        assert!(content.contains("XAVIER_EMBEDDING_MODEL=embeddinggemma"));
-
-        std::env::set_current_dir(original_dir).unwrap();
-    }
-
-    #[tokio::test]
-    async fn test_settings_update_logic() {
-        let dir = tempdir().unwrap();
-        let config_path = dir.path().join("xavier.config.json");
-        std::env::set_var("XAVIER_CONFIG_PATH", config_path.to_str().unwrap());
-
-        let mut settings = XavierSettings::default();
-        settings.models.provider = "local".to_string();
-        settings.models.local_llm_model = "qwen3-coder".to_string();
-        settings.save().await.unwrap();
-
-        let saved_content = fs::read_to_string(&config_path).unwrap();
-        assert!(saved_content.contains("\"provider\": \"local\""));
-        assert!(saved_content.contains("\"local_llm_model\": \"qwen3-coder\""));
-
-        std::env::remove_var("XAVIER_CONFIG_PATH");
-    }
-}
-
 async fn handle_local_setup() -> Result<()> {
     println!("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
     println!("🦙 Xavier 100% Local Setup Wizard");
@@ -344,4 +302,46 @@ fn save_provider_config(config: &ProviderConfigV2) -> Result<()> {
     let yaml = serde_yaml::to_string(config)?;
     fs::write(config_path, yaml)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_write_env_local_logic() {
+        let dir = tempdir().unwrap();
+        let original_dir = std::env::current_dir().unwrap();
+        std::env::set_current_dir(dir.path()).unwrap();
+
+        write_env_local().unwrap();
+
+        let content = fs::read_to_string(dir.path().join(".env")).unwrap();
+        assert!(content.contains("LOCAL-FIRST SETUP"));
+        assert!(content.contains("XAVIER_MODEL_PROVIDER=local"));
+        assert!(content.contains("XAVIER_LOCAL_LLM_MODEL=qwen3-coder"));
+        assert!(content.contains("XAVIER_EMBEDDING_MODEL=embeddinggemma"));
+
+        std::env::set_current_dir(original_dir).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_settings_update_logic() {
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("xavier.config.json");
+        std::env::set_var("XAVIER_CONFIG_PATH", config_path.to_str().unwrap());
+
+        let mut settings = XavierSettings::default();
+        settings.models.provider = "local".to_string();
+        settings.models.local_llm_model = "qwen3-coder".to_string();
+        settings.save().await.unwrap();
+
+        let saved_content = fs::read_to_string(&config_path).unwrap();
+        assert!(saved_content.contains("\"provider\": \"local\""));
+        assert!(saved_content.contains("\"local_llm_model\": \"qwen3-coder\""));
+
+        std::env::remove_var("XAVIER_CONFIG_PATH");
+    }
 }

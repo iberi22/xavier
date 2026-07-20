@@ -1,7 +1,6 @@
 use reqwest::Client;
 use serde_json::json;
 use std::net::TcpListener;
-use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::time::Duration;
 
@@ -28,7 +27,7 @@ impl XavierServer {
 
         // Build the binary first to ensure it exists
         let status = Command::new("cargo")
-            .args(&["build", "--bin", "xavier"])
+            .args(["build", "--bin", "xavier"])
             .status()
             .expect("failed to build xavier");
         assert!(status.success());

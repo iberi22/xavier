@@ -240,7 +240,7 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
             CheckStatus::Fail
         },
         detail: if url_reachable {
-            format!("Local LLM URL is reachable and responded successfully")
+            "Local LLM URL is reachable and responded successfully".to_string()
         } else {
             format!("Failed to reach LLM URL '{}': {}", local_llm_url, url_error)
         },

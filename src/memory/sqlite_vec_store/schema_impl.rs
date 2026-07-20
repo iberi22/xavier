@@ -515,6 +515,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn test_reindex_null_embeddings_background() {
         use crate::memory::store::MemoryStore;
         let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();

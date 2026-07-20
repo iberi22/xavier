@@ -707,7 +707,7 @@ pub async fn join_workspace_handler(
             use sha2::{Digest, Sha256};
             let mut hasher = Sha256::new();
             hasher.update(payload_str.as_bytes());
-            format!("hash-{}", &xavier::crypto::hex_encode(&hasher.finalize())[..16])
+            format!("hash-{}", &xavier::crypto::hex_encode(hasher.finalize())[..16])
         });
 
     match xavier::mesh::DataConsentManager::is_token_revoked(&token_id) {
@@ -887,7 +887,7 @@ pub async fn query_workspace_handler(
             use sha2::{Digest, Sha256};
             let mut hasher = Sha256::new();
             hasher.update(payload_str.as_bytes());
-            format!("hash-{}", &xavier::crypto::hex_encode(&hasher.finalize())[..16])
+            format!("hash-{}", &xavier::crypto::hex_encode(hasher.finalize())[..16])
         });
 
     match xavier::mesh::DataConsentManager::is_token_revoked(&token_id) {
@@ -1103,10 +1103,8 @@ pub async fn query_workspace_handler(
         }
 
         let remote_results = futures_util::future::join_all(remote_futures).await;
-        for res_opt in remote_results {
-            if let Some(mut remote_list) = res_opt {
-                search_results.append(&mut remote_list);
-            }
+        for mut remote_list in remote_results.into_iter().flatten() {
+            search_results.append(&mut remote_list);
         }
     }
 

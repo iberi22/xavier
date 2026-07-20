@@ -275,10 +275,10 @@ async fn collect_provider_status_data(state: &CliState) -> UnifiedProvidersRespo
         providers_to_check.into_iter().enumerate()
     {
         let reachability = reachability_results[i];
-        let reachable = match reachability {
-            xavier::agents::provider::types::ProviderReachability::ConfiguredAndReachable => true,
-            _ => false,
-        };
+        let reachable = matches!(
+            reachability,
+            xavier::agents::provider::types::ProviderReachability::ConfiguredAndReachable
+        );
 
         if kind == ProviderKind::Local {
             local_reachable = reachable;

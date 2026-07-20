@@ -100,7 +100,7 @@ fn count_memory_mentions(root: &str, keywords: &[String]) -> usize {
             .max_depth(2)
             .into_iter()
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "md"));
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"));
 
         for entry in walker {
             if let Ok(content) = std::fs::read_to_string(entry.path()) {
@@ -122,7 +122,7 @@ fn count_memory_mentions(root: &str, keywords: &[String]) -> usize {
             .filter(|e| {
                 e.path()
                     .extension()
-                    .map_or(false, |ext| ext == "md" || ext == "json")
+                    .is_some_and(|ext| ext == "md" || ext == "json")
             });
 
         for entry in walker {
@@ -147,7 +147,7 @@ fn count_todos_and_fixmes(root: &str, keywords: &[String]) -> (usize, usize) {
         .into_iter()
         .filter_map(|e| e.ok())
         .filter(|e| {
-            e.path().extension().map_or(false, |ext| ext == "rs")
+            e.path().extension().is_some_and(|ext| ext == "rs")
                 && !e.path().to_string_lossy().contains("target")
         })
         .take(200);

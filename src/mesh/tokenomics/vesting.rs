@@ -8,7 +8,7 @@ impl VestingEngine {
     pub fn calculate_releasable(state: &VestingState) -> u64 {
         let now = Utc::now();
         let start = chrono::DateTime::from_timestamp(state.start_timestamp, 0)
-            .unwrap_or_else(|| Utc::now());
+            .unwrap_or_else(Utc::now);
 
         let months_passed =
             (now.year() - start.year()) * 12 + (now.month() as i32 - start.month() as i32);
@@ -26,10 +26,6 @@ impl VestingEngine {
             0
         };
 
-        if total_eligible > state.amount_released {
-            total_eligible - state.amount_released
-        } else {
-            0
-        }
+        total_eligible.saturating_sub(state.amount_released)
     }
 }

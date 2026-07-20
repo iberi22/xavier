@@ -7,6 +7,12 @@ pub struct EconomyEngine {
     pub annual_inflation: f64,               // 0.02 (2% decreasing)
 }
 
+impl Default for EconomyEngine {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EconomyEngine {
     pub fn new() -> Self {
         Self {

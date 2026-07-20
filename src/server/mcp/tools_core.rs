@@ -338,7 +338,7 @@ pub async fn handle_core_tool(
                 status: health.status.clone(),
                 tools_count,
                 handshake_ok: true,
-                memory_store_ok: health.database.size_mb > 0.0 || health.database.size_mb == 0.0, // store exists
+                memory_store_ok: health.database.size_mb >= 0.0, // store exists
                 embedding_ok: health.embedding.connected,
                 mcp_protocol: "2026-07-28".to_string(),
             };

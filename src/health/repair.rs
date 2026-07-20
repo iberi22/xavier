@@ -347,7 +347,7 @@ impl HealthAutoRepair {
 
         let client = match reqwest::Client::builder()
             .timeout(Duration::from_secs(
-                self.config.reconnect_timeout_secs as u64,
+                self.config.reconnect_timeout_secs,
             ))
             .build()
         {
@@ -410,7 +410,7 @@ impl HealthAutoRepair {
             .to_str()
             .unwrap_or("memory.db");
 
-        let wal_patterns = vec![format!("{}-wal", db_name), format!("{}-shm", db_name)];
+        let wal_patterns = [format!("{}-wal", db_name), format!("{}-shm", db_name)];
 
         let mut cleaned = 0u32;
         let mut errors = 0u32;

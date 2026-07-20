@@ -71,156 +71,6 @@ pub async fn update_offline_config_handler(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use axum::body::to_bytes;
-    use tempfile::tempdir;
-    use std::sync::Mutex;
-
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
-
-    #[tokio::test]
-    async fn test_get_offline_status_running() {
-        let _guard = TEST_LOCK.lock().unwrap();
-
-        // Start a mock TCP listener to simulate a running model engine
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let local_addr = listener.local_addr().unwrap();
-        let port = local_addr.port();
-
-        // Point XAVIER_LOCAL_LLM_URL to this mock listener
-        std::env::set_var("XAVIER_LOCAL_LLM_URL", format!("http://127.0.0.1:{}", port));
-
-        // Call the status handler
-        let resp = get_offline_status_handler().await;
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        let body_bytes = to_bytes(resp.into_body(), 2048).await.unwrap();
-        let status: LocalEngineStatus = serde_json::from_slice(&body_bytes).unwrap();
-
-        assert_eq!(status.port, port);
-        assert_eq!(status.engine_status, "running");
-
-        // Clean up environment
-        std::env::remove_var("XAVIER_LOCAL_LLM_URL");
-    }
-
-    #[tokio::test]
-    async fn test_get_offline_status_stopped() {
-        let _guard = TEST_LOCK.lock().unwrap();
-
-        // Point XAVIER_LOCAL_LLM_URL to a port where nothing is listening (e.g. 64321)
-        let port = 64321; // unlikely to have a service listening
-        std::env::set_var("XAVIER_LOCAL_LLM_URL", format!("http://127.0.0.1:{}", port));
-
-        // Call the status handler
-        let resp = get_offline_status_handler().await;
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        let body_bytes = to_bytes(resp.into_body(), 2048).await.unwrap();
-        let status: LocalEngineStatus = serde_json::from_slice(&body_bytes).unwrap();
-
-        assert_eq!(status.port, port);
-        assert_eq!(status.engine_status, "stopped");
-
-        // Clean up environment
-        std::env::remove_var("XAVIER_LOCAL_LLM_URL");
-    }
-
-    #[tokio::test]
-    async fn test_get_and_update_offline_config() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let dir = tempdir().unwrap();
-        let config_path = dir.path().join("xavier.config.json");
-        std::env::set_var("XAVIER_CONFIG_PATH", config_path.to_str().unwrap());
-
-        // 1. Initial config check
-        let resp = get_offline_config_handler().await;
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        let body_bytes = to_bytes(resp.into_body(), 2048).await.unwrap();
-        let config: OfflineConfigPayload = serde_json::from_slice(&body_bytes).unwrap();
-        assert!(config.local_model_dirs.is_empty());
-        assert_eq!(config.auto_start_last_model, false);
-
-        // 2. Update config
-        let updated = OfflineConfigPayload {
-            local_model_dirs: vec!["/test/dir1".to_string(), "/test/dir2".to_string()],
-            auto_start_last_model: true,
-        };
-        let resp = update_offline_config_handler(Json(updated)).await;
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        // 3. Verify get config reflects changes
-        let resp = get_offline_config_handler().await;
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        let body_bytes = to_bytes(resp.into_body(), 2048).await.unwrap();
-        let config: OfflineConfigPayload = serde_json::from_slice(&body_bytes).unwrap();
-        assert_eq!(config.local_model_dirs.len(), 2);
-        assert_eq!(config.local_model_dirs[0], "/test/dir1");
-        assert_eq!(config.auto_start_last_model, true);
-
-        std::env::remove_var("XAVIER_CONFIG_PATH");
-    }
-
-    #[tokio::test]
-    async fn test_offline_download_and_list() {
-        let _guard = TEST_LOCK.lock().unwrap();
-        let dir = tempdir().unwrap();
-        let config_path = dir.path().join("xavier.config.json");
-        std::env::set_var("XAVIER_CONFIG_PATH", config_path.to_str().unwrap());
-
-        // Set local_model_dirs to temp directory
-        let model_dir = dir.path().join("models_folder");
-        let payload = OfflineConfigPayload {
-            local_model_dirs: vec![model_dir.to_string_lossy().to_string()],
-            auto_start_last_model: false,
-        };
-        let resp = update_offline_config_handler(Json(payload)).await;
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        // Download GGUF model (mock)
-        let download_payload = DownloadModelPayload {
-            url: "https://huggingface.co/TheBloke/Llama-3-8B-GGUF/resolve/main/llama-3.Q4_K_M.gguf".to_string(),
-        };
-        let resp = download_offline_model_handler(Json(download_payload)).await;
-        let status = resp.status();
-        let body_bytes = to_bytes(resp.into_body(), 2048).await.unwrap();
-        let result: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-        println!("DOWNLOAD RESPONSE BODY: {:?}", result);
-        assert_eq!(status, StatusCode::OK);
-        assert_eq!(result["status"], "ok");
-        assert_eq!(result["filename"], "llama-3.Q4_K_M.gguf");
-
-        // List offline models
-        let resp = list_offline_models_handler().await;
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        let body_bytes = to_bytes(resp.into_body(), 4096).await.unwrap();
-        let result: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
-        let models_arr = result["models"].as_array().unwrap();
-        assert_eq!(models_arr.len(), 1);
-        assert_eq!(models_arr[0]["name"], "llama-3.Q4_K_M.gguf");
-        assert_eq!(models_arr[0]["quantization"], "Q4_K_M");
-
-        std::env::remove_var("XAVIER_CONFIG_PATH");
-    }
-
-    #[tokio::test]
-    async fn test_get_offline_status() {
-        let resp = get_offline_status_handler().await;
-        assert_eq!(resp.status(), StatusCode::OK);
-        let body_bytes = axum::body::to_bytes(resp.into_body(), 2048).await.unwrap();
-        let status: LocalEngineStatus = serde_json::from_slice(&body_bytes).unwrap();
-        
-        // Assert that the fields exist and have correct types by virtue of deserializing successfully
-        assert_eq!(status.engine_status, "running");
-        assert!(status.port > 0);
-    }
-}
-
 /// GET /v1/offline/models
 pub async fn list_offline_models_handler() -> Response {
     let settings = XavierSettings::current();
@@ -272,7 +122,7 @@ pub async fn get_offline_status_handler() -> Response {
         if let Some(host) = parsed_url.host_str() {
             let host_port = format!("{}:{}", host, port);
             if let Ok(mut addrs) = tokio::net::lookup_host(host_port).await {
-                while let Some(addr) = addrs.next() {
+                for addr in addrs.by_ref() {
                     if let Ok(Ok(_)) = tokio::time::timeout(
                         std::time::Duration::from_millis(500),
                         tokio::net::TcpStream::connect(addr)
@@ -316,7 +166,7 @@ pub async fn download_offline_model_handler(
     }
 
     // Try to extract model name from URL
-    let filename = if let Some(last_segment) = url.split('/').last() {
+    let filename = if let Some(last_segment) = url.split('/').next_back() {
         if last_segment.to_ascii_lowercase().ends_with(".gguf") {
             last_segment.to_string()
         } else {
@@ -373,5 +223,155 @@ pub async fn download_offline_model_handler(
                 }),
             )
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::to_bytes;
+    use tempfile::tempdir;
+    use std::sync::Mutex;
+
+    static TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    #[tokio::test]
+    async fn test_get_offline_status_running() {
+        let _guard = TEST_LOCK.lock().await;
+
+        // Start a mock TCP listener to simulate a running model engine
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let local_addr = listener.local_addr().unwrap();
+        let port = local_addr.port();
+
+        // Point XAVIER_LOCAL_LLM_URL to this mock listener
+        std::env::set_var("XAVIER_LOCAL_LLM_URL", format!("http://127.0.0.1:{}", port));
+
+        // Call the status handler
+        let resp = get_offline_status_handler().await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body_bytes = to_bytes(resp.into_body(), 2048).await.unwrap();
+        let status: LocalEngineStatus = serde_json::from_slice(&body_bytes).unwrap();
+
+        assert_eq!(status.port, port);
+        assert_eq!(status.engine_status, "running");
+
+        // Clean up environment
+        std::env::remove_var("XAVIER_LOCAL_LLM_URL");
+    }
+
+    #[tokio::test]
+    async fn test_get_offline_status_stopped() {
+        let _guard = TEST_LOCK.lock().await;
+
+        // Point XAVIER_LOCAL_LLM_URL to a port where nothing is listening (e.g. 64321)
+        let port = 64321; // unlikely to have a service listening
+        std::env::set_var("XAVIER_LOCAL_LLM_URL", format!("http://127.0.0.1:{}", port));
+
+        // Call the status handler
+        let resp = get_offline_status_handler().await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body_bytes = to_bytes(resp.into_body(), 2048).await.unwrap();
+        let status: LocalEngineStatus = serde_json::from_slice(&body_bytes).unwrap();
+
+        assert_eq!(status.port, port);
+        assert_eq!(status.engine_status, "stopped");
+
+        // Clean up environment
+        std::env::remove_var("XAVIER_LOCAL_LLM_URL");
+    }
+
+    #[tokio::test]
+    async fn test_get_and_update_offline_config() {
+        let _guard = TEST_LOCK.lock().await;
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("xavier.config.json");
+        std::env::set_var("XAVIER_CONFIG_PATH", config_path.to_str().unwrap());
+
+        // 1. Initial config check
+        let resp = get_offline_config_handler().await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body_bytes = to_bytes(resp.into_body(), 2048).await.unwrap();
+        let config: OfflineConfigPayload = serde_json::from_slice(&body_bytes).unwrap();
+        assert!(config.local_model_dirs.is_empty());
+        assert!(!config.auto_start_last_model);
+
+        // 2. Update config
+        let updated = OfflineConfigPayload {
+            local_model_dirs: vec!["/test/dir1".to_string(), "/test/dir2".to_string()],
+            auto_start_last_model: true,
+        };
+        let resp = update_offline_config_handler(Json(updated)).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // 3. Verify get config reflects changes
+        let resp = get_offline_config_handler().await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body_bytes = to_bytes(resp.into_body(), 2048).await.unwrap();
+        let config: OfflineConfigPayload = serde_json::from_slice(&body_bytes).unwrap();
+        assert_eq!(config.local_model_dirs.len(), 2);
+        assert_eq!(config.local_model_dirs[0], "/test/dir1");
+        assert!(config.auto_start_last_model);
+
+        std::env::remove_var("XAVIER_CONFIG_PATH");
+    }
+
+    #[tokio::test]
+    async fn test_offline_download_and_list() {
+        let _guard = TEST_LOCK.lock().await;
+        let dir = tempdir().unwrap();
+        let config_path = dir.path().join("xavier.config.json");
+        std::env::set_var("XAVIER_CONFIG_PATH", config_path.to_str().unwrap());
+
+        // Set local_model_dirs to temp directory
+        let model_dir = dir.path().join("models_folder");
+        let payload = OfflineConfigPayload {
+            local_model_dirs: vec![model_dir.to_string_lossy().to_string()],
+            auto_start_last_model: false,
+        };
+        let resp = update_offline_config_handler(Json(payload)).await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Download GGUF model (mock)
+        let download_payload = DownloadModelPayload {
+            url: "https://huggingface.co/TheBloke/Llama-3-8B-GGUF/resolve/main/llama-3.Q4_K_M.gguf".to_string(),
+        };
+        let resp = download_offline_model_handler(Json(download_payload)).await;
+        let status = resp.status();
+        let body_bytes = to_bytes(resp.into_body(), 2048).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        println!("DOWNLOAD RESPONSE BODY: {:?}", result);
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(result["status"], "ok");
+        assert_eq!(result["filename"], "llama-3.Q4_K_M.gguf");
+
+        // List offline models
+        let resp = list_offline_models_handler().await;
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body_bytes = to_bytes(resp.into_body(), 4096).await.unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&body_bytes).unwrap();
+        let models_arr = result["models"].as_array().unwrap();
+        assert_eq!(models_arr.len(), 1);
+        assert_eq!(models_arr[0]["name"], "llama-3.Q4_K_M.gguf");
+        assert_eq!(models_arr[0]["quantization"], "Q4_K_M");
+
+        std::env::remove_var("XAVIER_CONFIG_PATH");
+    }
+
+    #[tokio::test]
+    async fn test_get_offline_status() {
+        let resp = get_offline_status_handler().await;
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body_bytes = axum::body::to_bytes(resp.into_body(), 2048).await.unwrap();
+        let status: LocalEngineStatus = serde_json::from_slice(&body_bytes).unwrap();
+        
+        // Assert that the fields exist and have correct types by virtue of deserializing successfully
+        assert_eq!(status.engine_status, "running");
+        assert!(status.port > 0);
     }
 }
