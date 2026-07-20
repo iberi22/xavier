@@ -221,4 +221,172 @@ mod tests {
         assert_eq!(fused.len(), 1);
         assert_eq!(fused[0].id, "a");
     }
+
+    #[test]
+    fn test_rrf_precise_mathematical_weights() {
+        // We'll perform explicit RRF weighted calculation and assert the scores match precisely.
+        let set_1 = vec![
+            ScoredResult {
+                id: "doc_a".into(),
+                content: "A content".into(),
+                score: 1.0,
+                source: "keyword".into(),
+                path: "path/a".into(),
+                updated_at: Some(100),
+                zone: None,
+            },
+        ];
+        let set_2 = vec![
+            ScoredResult {
+                id: "doc_b".into(),
+                content: "B content".into(),
+                score: 1.0,
+                source: "vector".into(),
+                path: "path/b".into(),
+                updated_at: Some(100),
+                zone: None,
+            },
+            ScoredResult {
+                id: "doc_a_alt".into(),
+                content: "A alt content".into(),
+                score: 0.8,
+                source: "vector".into(),
+                path: "path/a".into(), // Same path as doc_a, but rank 2 (index 1)
+                updated_at: Some(150), // More recent timestamp
+                zone: None,
+            },
+        ];
+
+        let rrf_k = 60;
+        let weight_1 = 0.6;
+        let weight_2 = 0.4;
+
+        let results = vec![
+            (set_1, weight_1),
+            (set_2, weight_2),
+        ];
+
+        let fused = reciprocal_rank_fusion_weighted(results, rrf_k);
+
+        // Let's compute expected scores:
+        // doc_a (path/a):
+        //   - Rank 1 in set_1: contribution_1 = 0.6 / (60 + 1) = 0.6 / 61
+        //   - Rank 2 in set_2: contribution_2 = 0.4 / (60 + 2) = 0.4 / 62
+        //   - Total RRF Score = (0.6 / 61) + (0.4 / 62)
+        // doc_b (path/b):
+        //   - Rank 1 in set_2: contribution_1 = 0.4 / (60 + 1) = 0.4 / 61
+        //   - Total RRF Score = 0.4 / 61
+
+        let expected_score_a = (weight_1 / 61.0) + (weight_2 / 62.0);
+        let expected_score_b = weight_2 / 61.0;
+
+        assert_eq!(fused.len(), 2);
+
+        // Since expected_score_a > expected_score_b, fused[0] must be path/a, and fused[1] must be path/b
+        assert_eq!(fused[0].path, "path/a");
+        assert_eq!(fused[1].path, "path/b");
+
+        // Verify the score tolerance
+        let tolerance = 1e-6;
+        assert!((fused[0].score - expected_score_a).abs() < tolerance);
+        assert!((fused[1].score - expected_score_b).abs() < tolerance);
+
+        // Path deduplication must have occurred. Since doc_a_alt had updated_at 150 > 100 (doc_a),
+        // the final fused result for path/a must have preserved doc_a_alt's properties:
+        assert_eq!(fused[0].id, "doc_a_alt");
+        assert_eq!(fused[0].content, "A alt content");
+        assert_eq!(fused[0].updated_at, Some(150));
+    }
+
+    #[test]
+    fn test_rrf_tie_breaker_by_id() {
+        // Tying score and weight, check if tie-breaker falls back to alphabetical id ordering.
+        let set_1 = vec![
+            ScoredResult {
+                id: "z_id".into(),
+                content: "Z".into(),
+                score: 1.0,
+                source: "keyword".into(),
+                path: "path/z".into(),
+                updated_at: Some(100),
+                zone: None,
+            },
+            ScoredResult {
+                id: "m_id".into(),
+                content: "M".into(),
+                score: 0.9,
+                source: "keyword".into(),
+                path: "path/m".into(),
+                updated_at: Some(100),
+                zone: None,
+            },
+        ];
+        let set_2 = vec![
+            ScoredResult {
+                id: "a_id".into(),
+                content: "A".into(),
+                score: 1.0,
+                source: "vector".into(),
+                path: "path/a".into(),
+                updated_at: Some(100),
+                zone: None,
+            },
+        ];
+
+        // Let's run reciprocal_rank_fusion with k=60.
+        // z_id at rank 1 in set_1: 1.0 / 61
+        // a_id at rank 1 in set_2: 1.0 / 61
+        // Since weights are identical, both will have a total_rrf of 1.0 / 61 and total_weight of 1.0.
+        // The alphabetical tie-breaker should place a_id before z_id.
+        let fused = reciprocal_rank_fusion(vec![set_1, set_2], 60);
+
+        assert_eq!(fused[0].id, "a_id");
+        assert_eq!(fused[1].id, "z_id");
+        assert_eq!(fused[2].id, "m_id"); // Rank 2 in set_1: 1.0 / 62
+    }
+
+    #[test]
+    fn test_rrf_deduplication_by_path_most_recent_timestamp() {
+        // Construct multiple ScoredResults with the exact same path.
+        // Ensure that the one with the maximum timestamp is kept.
+        let set_1 = vec![
+            ScoredResult {
+                id: "doc_old".into(),
+                content: "Old Version".into(),
+                score: 1.0,
+                source: "keyword".into(),
+                path: "shared_path".into(),
+                updated_at: Some(100),
+                zone: None,
+            },
+        ];
+        let set_2 = vec![
+            ScoredResult {
+                id: "doc_new".into(),
+                content: "New Version".into(),
+                score: 1.0,
+                source: "vector".into(),
+                path: "shared_path".into(),
+                updated_at: Some(300),
+                zone: None,
+            },
+        ];
+        let set_3 = vec![
+            ScoredResult {
+                id: "doc_mid".into(),
+                content: "Mid Version".into(),
+                score: 1.0,
+                source: "hybrid".into(),
+                path: "shared_path".into(),
+                updated_at: Some(200),
+                zone: None,
+            },
+        ];
+
+        let fused = reciprocal_rank_fusion(vec![set_1, set_2, set_3], 60);
+        assert_eq!(fused.len(), 1);
+        assert_eq!(fused[0].id, "doc_new");
+        assert_eq!(fused[0].content, "New Version");
+        assert_eq!(fused[0].updated_at, Some(300));
+    }
 }
