@@ -149,11 +149,21 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let rate_manager = Arc::new(RateLimitManager::new());
     let threat_store = Arc::new(SecurityThreatStore::new());
 
-    let auth_db_path = format!(
-        "{}/.xavier/auth.db",
-        std::env::var("HOME").unwrap_or_else(|_| ".".to_string())
-    );
-    let auth_store = Arc::new(AuthStore::open(auth_db_path, [0u8; 32])?); // Use actual key in prod
+    let state_dir_str = std::env::var("XAVIER_STATE_DIR")
+        .or_else(|_| std::env::var("HOME"))
+        .or_else(|_| std::env::var("USERPROFILE"))
+        .unwrap_or_else(|_| ".".to_string());
+    let state_dir = PathBuf::from(&state_dir_str);
+    let xavier_dir = state_dir.join(".xavier");
+    std::fs::create_dir_all(&xavier_dir)?;
+
+    let auth_store_file_path = xavier_dir.join("auth_store.db");
+    let auth_db_path = auth_store_file_path.to_string_lossy().to_string();
+    let auth_store = Arc::new(AuthStore::open(&auth_db_path, [0u8; 32])?); // Use actual key in prod
+
+    let auth_db_file_path = xavier_dir.join("auth.db");
+
+    let auth2_db = Arc::new(parking_lot::Mutex::new(xavier::auth2::db::AuthDb::new(&auth_db_file_path)?));
 
     time_store.init_schema_async().await?;
     audit_logger.init_schema_async().await?;
@@ -396,6 +406,8 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         store,
         workspace_id,
         workspace_dir,
+        state_dir: state_dir.clone(),
+        auth_db: Some(auth2_db),
         code_graph: code_graph_state,
         security: security_service.clone() as Arc<dyn InputSecurityPort>,
         security_scan: security_service.clone() as Arc<dyn SecurityScanPort>,
@@ -940,7 +952,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     };
 
     let app = Router::new()
-        .nest("/auth", auth_routes::<CliState>())
+        .nest("/auth", auth_routes::<CliState>(&state.state_dir.to_string_lossy()))
         .route("/health", get(health_handler))
         .route("/metrics", get(metrics_handler))
         .route("/health/cloud", get(cloud_health_handler))
