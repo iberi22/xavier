@@ -15,6 +15,7 @@ pub mod memory;
 pub mod mesh;
 pub mod navigation;
 pub mod notifications;
+pub mod offline_models;
 pub mod ollama_models;
 pub mod onboarding;
 pub mod panel;

@@ -10,6 +10,7 @@ import {
 import { ApiKeyInput } from "../../components/ApiKeyInput";
 import { CliAgentList } from "../../components/CliAgentList";
 import { HeadlessToggle } from "../../components/HeadlessToggle";
+import { OfflineModelManager } from "../../components/OfflineModelManager";
 import { OllamaModelManager } from "../../components/OllamaModelManager";
 import { ProviderSelector } from "../../components/ProviderSelector";
 import { QuotaTable } from "../../components/QuotaTable";
@@ -162,6 +163,9 @@ export default function ProvidersPage({ token }: ProvidersPageProps) {
 
           {/* Ollama Model Manager (Ola 4 hot-swap UI) */}
           <OllamaModelManager token={token} onModelChanged={fetchData} />
+
+          {/* Offline GGUF Local Model Manager */}
+          <OfflineModelManager token={token} />
 
           {/* API Credentials */}
           <section className="space-y-6">

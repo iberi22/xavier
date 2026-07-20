@@ -139,10 +139,13 @@ export class ApiClient {
   }
 
   async pairPeer(code: string) {
-    return this.fetch<{ status: string; node_id: string }>("/v1/mesh/peers/pair", {
-      method: "POST",
-      body: JSON.stringify({ code }),
-    });
+    return this.fetch<{ status: string; node_id: string }>(
+      "/v1/mesh/peers/pair",
+      {
+        method: "POST",
+        body: JSON.stringify({ code }),
+      },
+    );
   }
 
   async generatePairingCode(endpoint?: string) {
@@ -201,19 +204,79 @@ export class ApiClient {
   }
 
   async getOllamaActive() {
-    return this.fetch<{ llm?: string; embedding?: string | null; model?: string }>(
-      "/v1/ollama/active",
-    );
+    return this.fetch<{
+      llm?: string;
+      embedding?: string | null;
+      model?: string;
+    }>("/v1/ollama/active");
   }
 
   async setOllamaActive(model: string, kind: "llm" | "embedding") {
-    return this.fetch<{ ok?: boolean; success?: boolean; model?: string; kind?: string; error?: string }>(
-      "/v1/ollama/active",
+    return this.fetch<{
+      ok?: boolean;
+      success?: boolean;
+      model?: string;
+      kind?: string;
+      error?: string;
+    }>("/v1/ollama/active", {
+      method: "POST",
+      body: JSON.stringify({ model, kind }),
+    });
+  }
+
+  // Offline Models
+  async getOfflineConfig() {
+    return this.fetch<{
+      local_model_dirs: string[];
+      auto_start_last_model: boolean;
+    }>("/v1/offline/config");
+  }
+
+  async updateOfflineConfig(config: {
+    local_model_dirs: string[];
+    auto_start_last_model: boolean;
+  }) {
+    return this.fetch<{ status: string; message: string }>(
+      "/v1/offline/config",
       {
         method: "POST",
-        body: JSON.stringify({ model, kind }),
+        body: JSON.stringify(config),
       },
     );
+  }
+
+  async getOfflineModels() {
+    return this.fetch<{
+      models: Array<{
+        name: string;
+        path: string;
+        size_bytes: number;
+        quantization: string | null;
+      }>;
+    }>("/v1/offline/models");
+  }
+
+  async getOfflineStatus() {
+    return this.fetch<{
+      gpu_detected: boolean;
+      gpu_vendor: string;
+      vram_mb: number;
+      engine_status: string;
+      active_model: string;
+      port: number;
+    }>("/v1/offline/status");
+  }
+
+  async downloadOfflineModel(url: string) {
+    return this.fetch<{
+      status: string;
+      message: string;
+      filename: string;
+      path: string;
+    }>("/v1/offline/download", {
+      method: "POST",
+      body: JSON.stringify({ url }),
+    });
   }
 }
 
@@ -258,11 +321,11 @@ interface PgHeartSettings {
 }
 
 export interface CloudNodeConfig {
-    url: string;
-    token: string;
-    instance_id: string;
-    sync_interval_ms?: number;
-    auto_heartbeat?: boolean;
+  url: string;
+  token: string;
+  instance_id: string;
+  sync_interval_ms?: number;
+  auto_heartbeat?: boolean;
 }
 
 export interface DataCommonsConfig {
