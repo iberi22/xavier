@@ -85,9 +85,13 @@ pub struct LoginResponse {
     pub requires_2fa: bool,
 }
 
-pub fn auth_routes<S>() -> Router<S>
+pub trait HasAuthDb {
+    fn auth_db(&self) -> Option<std::sync::Arc<parking_lot::Mutex<crate::auth2::db::AuthDb>>>;
+}
+
+pub fn auth_routes<S>(base_path: &str) -> Router<S>
 where
-    S: Clone + Send + Sync + 'static,
+    S: HasAuthDb + Clone + Send + Sync + 'static,
 {
     use crate::auth2::middleware::auth_middleware;
     use axum::middleware::from_fn;
@@ -109,14 +113,25 @@ where
         .route("/check-users", get(check_users_handler::<S>))
         .route("/recovery", post(recovery_handler::<S>))
         .merge(protected)
+        .layer(axum::Extension(std::sync::Arc::new(base_path.to_string())))
 }
 
 async fn register_handler<S>(
-    State(_state): State<S>,
+    State(state): State<S>,
+    axum::Extension(base_path): axum::Extension<std::sync::Arc<String>>,
     Json(payload): Json<RegisterRequest>,
-) -> Result<impl IntoResponse, StatusCode> {
-    let auth_db = AuthDb::new(std::path::Path::new("auth.db"))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+) -> Result<impl IntoResponse, StatusCode>
+where
+    S: HasAuthDb + Clone + Send + Sync + 'static,
+{
+    let auth_db_lock = match state.auth_db() {
+        Some(db) => db,
+        None => std::sync::Arc::new(parking_lot::Mutex::new(
+            AuthDb::new(std::path::Path::new(&format!("{}/.xavier/auth.db", base_path)))
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        )),
+    };
+    let auth_db = auth_db_lock.lock();
 
     // Check if user exists
     if auth_db
@@ -182,11 +197,21 @@ async fn register_handler<S>(
 }
 
 async fn login_handler<S>(
-    State(_state): State<S>,
+    State(state): State<S>,
+    axum::Extension(base_path): axum::Extension<std::sync::Arc<String>>,
     Json(payload): Json<LoginRequest>,
-) -> Result<impl IntoResponse, StatusCode> {
-    let auth_db = AuthDb::new(std::path::Path::new("auth.db"))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+) -> Result<impl IntoResponse, StatusCode>
+where
+    S: HasAuthDb + Clone + Send + Sync + 'static,
+{
+    let auth_db_lock = match state.auth_db() {
+        Some(db) => db,
+        None => std::sync::Arc::new(parking_lot::Mutex::new(
+            AuthDb::new(std::path::Path::new(&format!("{}/.xavier/auth.db", base_path)))
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        )),
+    };
+    let auth_db = auth_db_lock.lock();
 
     let user = auth_db
         .get_user_by_email(&payload.email)
@@ -261,11 +286,21 @@ async fn login_handler<S>(
 }
 
 async fn refresh_handler<S>(
-    State(_state): State<S>,
+    State(state): State<S>,
+    axum::Extension(base_path): axum::Extension<std::sync::Arc<String>>,
     Json(payload): Json<RefreshRequest>,
-) -> Result<impl IntoResponse, StatusCode> {
-    let auth_db = AuthDb::new(std::path::Path::new("auth.db"))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+) -> Result<impl IntoResponse, StatusCode>
+where
+    S: HasAuthDb + Clone + Send + Sync + 'static,
+{
+    let auth_db_lock = match state.auth_db() {
+        Some(db) => db,
+        None => std::sync::Arc::new(parking_lot::Mutex::new(
+            AuthDb::new(std::path::Path::new(&format!("{}/.xavier/auth.db", base_path)))
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        )),
+    };
+    let auth_db = auth_db_lock.lock();
     let refresh_manager = RefreshTokenManager::new(&auth_db);
 
     let (new_refresh_token, user_id) = refresh_manager
@@ -295,11 +330,21 @@ async fn refresh_handler<S>(
 }
 
 async fn logout_handler<S>(
-    State(_state): State<S>,
+    State(state): State<S>,
+    axum::Extension(base_path): axum::Extension<std::sync::Arc<String>>,
     Json(payload): Json<RefreshRequest>,
-) -> Result<impl IntoResponse, StatusCode> {
-    let auth_db = AuthDb::new(std::path::Path::new("auth.db"))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+) -> Result<impl IntoResponse, StatusCode>
+where
+    S: HasAuthDb + Clone + Send + Sync + 'static,
+{
+    let auth_db_lock = match state.auth_db() {
+        Some(db) => db,
+        None => std::sync::Arc::new(parking_lot::Mutex::new(
+            AuthDb::new(std::path::Path::new(&format!("{}/.xavier/auth.db", base_path)))
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        )),
+    };
+    let auth_db = auth_db_lock.lock();
 
     let hash = {
         let mut hasher = sha2::Sha256::new();
@@ -334,9 +379,21 @@ async fn logout_handler<S>(
     Ok(StatusCode::OK)
 }
 
-async fn setup_2fa_handler<S>(State(_state): State<S>) -> Result<impl IntoResponse, StatusCode> {
-    let auth_db = AuthDb::new(std::path::Path::new("auth.db"))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+async fn setup_2fa_handler<S>(
+    State(state): State<S>,
+    axum::Extension(base_path): axum::Extension<std::sync::Arc<String>>,
+) -> Result<impl IntoResponse, StatusCode>
+where
+    S: HasAuthDb + Clone + Send + Sync + 'static,
+{
+    let auth_db_lock = match state.auth_db() {
+        Some(db) => db,
+        None => std::sync::Arc::new(parking_lot::Mutex::new(
+            AuthDb::new(std::path::Path::new(&format!("{}/.xavier/auth.db", base_path)))
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        )),
+    };
+    let auth_db = auth_db_lock.lock();
 
     // Get first user for setup (JWT claims are validated by middleware already)
     let user = auth_db
@@ -425,11 +482,21 @@ async fn setup_2fa_handler<S>(State(_state): State<S>) -> Result<impl IntoRespon
 }
 
 async fn verify_2fa_handler<S>(
-    State(_state): State<S>,
+    State(state): State<S>,
+    axum::Extension(base_path): axum::Extension<std::sync::Arc<String>>,
     Json(payload): Json<TwoFactorVerifyRequest>,
-) -> Result<impl IntoResponse, StatusCode> {
-    let auth_db = AuthDb::new(std::path::Path::new("auth.db"))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+) -> Result<impl IntoResponse, StatusCode>
+where
+    S: HasAuthDb + Clone + Send + Sync + 'static,
+{
+    let auth_db_lock = match state.auth_db() {
+        Some(db) => db,
+        None => std::sync::Arc::new(parking_lot::Mutex::new(
+            AuthDb::new(std::path::Path::new(&format!("{}/.xavier/auth.db", base_path)))
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        )),
+    };
+    let auth_db = auth_db_lock.lock();
 
     // Get first user (JWT claims validated by middleware)
     let user = auth_db
@@ -486,11 +553,21 @@ async fn verify_2fa_handler<S>(
 }
 
 async fn recovery_handler<S>(
-    State(_state): State<S>,
+    State(state): State<S>,
+    axum::Extension(base_path): axum::Extension<std::sync::Arc<String>>,
     Json(payload): Json<RecoveryRequest>,
-) -> Result<impl IntoResponse, StatusCode> {
-    let auth_db = AuthDb::new(std::path::Path::new("auth.db"))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+) -> Result<impl IntoResponse, StatusCode>
+where
+    S: HasAuthDb + Clone + Send + Sync + 'static,
+{
+    let auth_db_lock = match state.auth_db() {
+        Some(db) => db,
+        None => std::sync::Arc::new(parking_lot::Mutex::new(
+            AuthDb::new(std::path::Path::new(&format!("{}/.xavier/auth.db", base_path)))
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        )),
+    };
+    let auth_db = auth_db_lock.lock();
 
     let user = auth_db
         .get_user_by_email(&payload.email)
@@ -542,9 +619,21 @@ async fn recovery_handler<S>(
     Ok(Json(serde_json::json!({"status": "recovery_completed"})))
 }
 
-async fn check_users_handler<S>(State(_state): State<S>) -> Result<impl IntoResponse, StatusCode> {
-    let auth_db = AuthDb::new(std::path::Path::new("auth.db"))
-        .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+async fn check_users_handler<S>(
+    State(state): State<S>,
+    axum::Extension(base_path): axum::Extension<std::sync::Arc<String>>,
+) -> Result<impl IntoResponse, StatusCode>
+where
+    S: HasAuthDb + Clone + Send + Sync + 'static,
+{
+    let auth_db_lock = match state.auth_db() {
+        Some(db) => db,
+        None => std::sync::Arc::new(parking_lot::Mutex::new(
+            AuthDb::new(std::path::Path::new(&format!("{}/.xavier/auth.db", base_path)))
+                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+        )),
+    };
+    let auth_db = auth_db_lock.lock();
     let count = auth_db
         .count_users()
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
