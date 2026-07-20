@@ -5,7 +5,6 @@
 use crate::codebase::connection_manager::ConnectionManager;
 use anyhow::Result;
 use rusqlite::Connection;
-use sha2::Digest;
 use std::path::Path;
 use tokio::fs;
 
