@@ -47,7 +47,7 @@ pub async fn test_state() -> (AppState, WorkspaceContext) {
     let workspace_registry = Arc::new(WorkspaceRegistry::new());
     let workspace = WorkspaceState::new(
         WorkspaceConfig {
-            id: "test".to_string(),
+            id: format!("test-{}", ulid::Ulid::new()),
             token: "test-token".to_string(),
             plan: crate::workspace::PlanTier::Personal,
             memory_backend: crate::memory::store::MemoryBackend::File,
@@ -673,11 +673,11 @@ async fn all_tools_have_valid_schema() {
 
     for tool in tools {
         let name = tool["name"].as_str().unwrap_or("?");
-        let schema = &tool["input_schema"];
+        let schema = &tool["inputSchema"];
         // Each tool must have a valid JSON Schema object with type "object"
         assert!(
             schema["type"] == "object" || schema["type"] == json!(null),
-            "tool {} has invalid input_schema: {:?}",
+            "tool {} has invalid inputSchema: {:?}",
             name,
             schema
         );
