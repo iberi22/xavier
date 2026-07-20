@@ -1,5 +1,4 @@
 import { Hash, MonitorOff } from "lucide-react";
-import React from "react";
 
 interface HeadlessToggleProps {
   enabled: boolean;
@@ -21,7 +20,7 @@ export function HeadlessToggle({
           <div
             className={`p-3 rounded-xl transition-colors ${enabled ? "bg-[#39ff14]/10 text-[#39ff14]" : "bg-white/5 text-white/30"}`}
           >
-            <MonitorOff className="w-6 h-6" />
+            <MonitorOff className="w-6 h-6" aria-hidden="true" />
           </div>
           <div>
             <h3 className="text-lg font-bold tracking-tight">Headless Mode</h3>
@@ -31,8 +30,13 @@ export function HeadlessToggle({
           </div>
         </div>
         <button
+          type="button"
           onClick={() => onToggle(!enabled)}
-          className={`relative w-14 h-8 rounded-full transition-all duration-300 ${enabled ? "bg-[#39ff14]" : "bg-white/10"}`}
+          role="switch"
+          aria-checked={enabled}
+          aria-label="Toggle Headless Mode"
+          title="Toggle Headless Mode"
+          className={`relative w-14 h-8 rounded-full transition-all duration-300 focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${enabled ? "bg-[#39ff14]" : "bg-white/10"}`}
         >
           <div
             className={`absolute top-1 left-1 w-6 h-6 rounded-full bg-white transition-transform duration-300 shadow-lg ${enabled ? "translate-x-6" : "translate-x-0"}`}
@@ -43,15 +47,19 @@ export function HeadlessToggle({
       <div
         className={`space-y-2 transition-all duration-300 ${enabled ? "opacity-100" : "opacity-30 pointer-events-none grayscale"}`}
       >
-        <label className="text-[10px] uppercase text-white/50 tracking-widest flex items-center gap-2">
-          <Hash className="w-3 h-3" />
+        <label
+          htmlFor="headless-port-input"
+          className="text-[10px] uppercase text-white/50 tracking-widest flex items-center gap-2"
+        >
+          <Hash className="w-3 h-3" aria-hidden="true" />
           API Listener Port
         </label>
         <div className="relative">
           <input
+            id="headless-port-input"
             type="number"
             value={port}
-            onChange={(e) => onPortChange(parseInt(e.target.value))}
+            onChange={(e) => onPortChange(parseInt(e.target.value, 10))}
             className="w-full bg-[#050505] border border-white/10 focus:border-[#39ff14]/50 rounded-xl px-4 py-3 text-sm font-mono transition-all outline-none"
             placeholder="8006"
           />
