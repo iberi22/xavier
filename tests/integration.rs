@@ -12,6 +12,8 @@ mod belief_graph_test;
 mod checkpoint_test;
 #[path = "integration/cli.rs"]
 mod cli;
+#[path = "integration/cli_test.rs"]
+mod cli_test;
 #[path = "integration/coordination_test.rs"]
 mod coordination_test;
 #[path = "integration/hierarchical_curation_test.rs"]
