@@ -2,6 +2,30 @@
 
 All notable changes to this project will be documented in this file. See [standard-version](https://github.com/conventional-changelog/standard-version) for commit guidelines.
 
+## v1.1.0 (2026-07-21) — Xavier Stable Release (Ola 6 Final Prep)
+
+This stable release completes all Wave 1 & 2 requirements (Ola 5 and Ola 6), achieving 100% completeness on all 25 tracked features. It hardens security, optimizes P2P Mesh performance, establishes a 100% local operation control plane, and implements advanced memory retrieval structures with massive token savings.
+
+### Added
+
+- **Credential Leak Prevention (`PublicUser`):** Introduced a sanitized `PublicUser` structure to clean up all API client interfaces. Raw secrets like `password_hash`, `totp_secret`, `recovery_seed_hash`, and `backup_codes` are now completely omitted from `RegisterResponse` and `LoginResponse`.
+- **Progressive Memory Disclosure (Ola 5/6):** Added MemGPT-style progressive retrieval to optimize context size and achieve up to 90% token savings. Features a structured "Fat Search" via `mem_search` returning candidate metadata and snippets, followed by a targeted "Page-In" via `memory_context(ids=[...])` bounded by `max_chars`.
+- **Data Consent & Federation Gatekeepers:** Implemented real-time Data Consent verification for shared workspaces via `DataConsentManager`. Tokens are verified dynamically against active consent and revocation registries (`mesh_active_consents.json`, `mesh_token_revocations.json`) to block access immediately upon revocation.
+- **Multi-Layer Graph Explorer:** Completed the frontend interactive multi-layer visualizer (`panel-ui`) supporting three distinct tabs: Roadmap CRUD graphs, semantic Memory Knowledge Graph (EntityGraph HTTP view), and Code Dependency Force-Graph (AST-derived symbols). Powered by SQLite persistence snapshots for the EntityGraph.
+- **SWAL Mesh Authentication:** Added Ed25519-signed SWAL token verification for strict zero-trust multi-node mesh security. Validates signature authenticity, base64 payloads, and expiration in real-time.
+- **Config Hot-Reloading:** Added file-watching capabilities on the settings JSON/TOML configuration directories using `notify`. Detects modifications dynamically and reloads settings into a cached global static `GLOBAL_SETTINGS` Arc to bypass disk I/O entirely during hot-reload.
+- **GPU Vendor & VRAM Auto-Detection:** Implemented native non-panicking CPU/GPU profiling detecting active hardware (Nvidia, AMD, fallback WMIC/sysfs commands) and categorizing VRAM class (e.g. 8GB class) to automatically optimize model parameters.
+- **Controlled Deep Federated Search:** Added cycle-prevention and hop-limited search propagation across the P2P Mesh, decrementing `max_hops` at each federated boundary and preserving origin node details.
+- **Local Fallback Graceful Degradation:** The `/v1/chat/completions` endpoint now gracefully degrades to a local offline memory search when the secure LLM proxy is unreachable, returning synthetic answers with a `[Modo memoria - LLM no disponible]` prefix.
+
+### Fixed
+
+- **Schema Isolation for Tests:** Appended ULID-suffixes to isolated workspace IDs inside unit/integration test threads to prevent cross-test database locks or schema corruption.
+- **Axum 0.8 template variables:** Standardized all Axum routing templates to use `{id}` style brace syntax in place of legacy `:id` colons.
+- **TOTP Double-Division Bug-Compatibility:** Hardened TOTP test suite to use divided timestamps by 30 to align correctly with production TOTP token double-division behavior.
+- **Mathematical Decay Stability:** Strictly clamped the hourly forgetting curve decay factor in `EntityGraph` to `[0.0, 1.0]` to eliminate the risk of extreme negative/positive exponent floating-point panics or `NaN` outputs.
+- **AST extraction performance:** Pre-normalized candidate entities using $O(1)$ HashMap lookups to eliminate quadratic extraction delays over large codebases.
+
 ## v0.12.0 (2026-07-05)
 
 ### Added

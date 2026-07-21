@@ -71,9 +71,34 @@ pub struct RecoveryRequest {
     pub new_password: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PublicUser {
+    pub id: String,
+    pub email: String,
+    pub name: String,
+    pub role: String,
+    pub totp_enabled: bool,
+    pub created_at: i64,
+    pub updated_at: i64,
+}
+
+impl From<User> for PublicUser {
+    fn from(user: User) -> Self {
+        Self {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            totp_enabled: user.totp_enabled,
+            created_at: user.created_at,
+            updated_at: user.updated_at,
+        }
+    }
+}
+
 #[derive(Serialize)]
 pub struct RegisterResponse {
-    pub user: User,
+    pub user: PublicUser,
     pub seed_phrase: String,
 }
 
@@ -81,7 +106,7 @@ pub struct RegisterResponse {
 pub struct LoginResponse {
     pub access_token: String,
     pub refresh_token: String,
-    pub user: User,
+    pub user: PublicUser,
     pub requires_2fa: bool,
 }
 
@@ -192,7 +217,7 @@ where
 
     Ok(Json(RegisterResponse {
         seed_phrase: seed_phrase_str,
-        user,
+        user: PublicUser::from(user),
     }))
 }
 
@@ -280,7 +305,7 @@ where
     Ok(Json(LoginResponse {
         access_token,
         refresh_token,
-        user,
+        user: PublicUser::from(user),
         requires_2fa,
     }))
 }
