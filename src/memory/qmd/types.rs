@@ -66,6 +66,7 @@ impl Default for MemoryDocument {
 }
 
 impl MemoryDocument {
+    /// Estimated bytes.
     pub fn estimated_bytes(&self) -> u64 {
         self.id
             .as_ref()
@@ -145,6 +146,7 @@ pub struct QueryBundle {
 }
 
 impl QueryBundle {
+    /// Weight for.
     pub fn weight_for(&self, query: &str) -> f32 {
         self.weights.get(query).copied().unwrap_or(1.0)
     }

@@ -26,6 +26,7 @@ pub enum AttackType {
 }
 
 impl AttackType {
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             AttackType::DirectPromptInjection => "direct_prompt_injection",
@@ -75,6 +76,7 @@ impl Default for PromptInjectionDetector {
 }
 
 // Normalizes leetspeak to standard English/Spanish characters.
+/// Normalize leetspeak.
 pub fn normalize_leetspeak(input: &str) -> String {
     let mut normalized = String::with_capacity(input.len());
     for c in input.chars() {
@@ -98,6 +100,7 @@ pub fn normalize_leetspeak(input: &str) -> String {
 }
 
 // Strips accent marks and common diacritics, mostly for Spanish.
+/// Strip accents.
 pub fn strip_accents(input: &str) -> String {
     input
         .chars()

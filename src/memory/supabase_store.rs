@@ -24,6 +24,7 @@ pub struct SupabaseMemoryStore {
 }
 
 impl SupabaseMemoryStore {
+    /// From env.
     pub async fn from_env() -> Result<Self> {
         let settings = XavierSettings::current();
         let url = std::env::var("XAVIER_SUPABASE_URL")
@@ -38,6 +39,7 @@ impl SupabaseMemoryStore {
         Self::new(&url, &key).await
     }
 
+    /// New.
     pub async fn new(url: &str, key: &str) -> Result<Self> {
         let client = Client::builder()
             .timeout(std::time::Duration::from_secs(30))
@@ -71,6 +73,7 @@ impl SupabaseMemoryStore {
         Ok(resp.json().await?)
     }
 
+    /// Health check.
     pub async fn health_check(&self) -> Result<()> {
         let url = format!("{}/rest/v1/", self.url);
         let resp = self

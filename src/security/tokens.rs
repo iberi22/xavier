@@ -36,12 +36,14 @@ impl Default for TokenStore {
 }
 
 impl TokenStore {
+    /// New.
     pub fn new() -> Self {
         Self {
             project_id: "security".to_string(),
         }
     }
 
+    /// With project id.
     pub fn with_project_id(project_id: impl Into<String>) -> Self {
         Self {
             project_id: project_id.into(),

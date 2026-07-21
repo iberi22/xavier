@@ -29,6 +29,7 @@ pub enum Mutation {
 pub struct Mutator {}
 
 impl Mutator {
+    /// New.
     pub fn new() -> Self {
         Self {}
     }

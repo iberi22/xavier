@@ -9,10 +9,12 @@ pub struct RefreshTokenManager<'a> {
 }
 
 impl<'a> RefreshTokenManager<'a> {
+    /// New.
     pub fn new(db: &'a AuthDb) -> Self {
         Self { db }
     }
 
+    /// Generate token.
     pub fn generate_token(&self, user_id: &str, device_info: Option<String>) -> Result<String> {
         let mut token_bytes = [0u8; 32];
         thread_rng().fill_bytes(&mut token_bytes);
@@ -38,6 +40,7 @@ impl<'a> RefreshTokenManager<'a> {
         Ok(token)
     }
 
+    /// Rotate token.
     pub fn rotate_token(
         &self,
         token: &str,

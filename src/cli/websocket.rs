@@ -15,6 +15,7 @@ use xavier::memory::store::MemoryRecord;
 use xavier::session::event_mapper::PanelThreadEntry;
 use xavier::session::types::SessionEvent;
 
+/// Session event handler.
 pub async fn session_event_handler(
     State(state): State<CliState>,
     axum::Json(event): axum::Json<SessionEvent>,
@@ -119,6 +120,7 @@ pub async fn session_event_handler(
     }
 }
 
+/// Session compact handler.
 pub async fn session_compact_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<SessionCompactPayload>,

@@ -14,6 +14,7 @@ pub enum Severity {
 }
 
 impl Severity {
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             Severity::Critical => "critical",
@@ -57,6 +58,7 @@ pub enum ThreatCategory {
 }
 
 impl ThreatCategory {
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             ThreatCategory::PromptInjection => "prompt_injection",
@@ -98,6 +100,7 @@ pub struct Threat {
 }
 
 impl Threat {
+    /// New.
     pub fn new(
         severity: Severity,
         layer: &str,
@@ -142,16 +145,19 @@ impl Default for ScanResult {
 }
 
 impl ScanResult {
+    /// New.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// With threat.
     pub fn with_threat(mut self, threat: Threat) -> Self {
         self.clean = false;
         self.threats.push(threat);
         self
     }
 
+    /// Add layer.
     pub fn add_layer(&mut self, layer: &str) {
         if !self.layers_triggered.contains(&layer.to_string()) {
             self.layers_triggered.push(layer.to_string());

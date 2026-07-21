@@ -22,6 +22,7 @@ pub struct AuthStore {
 }
 
 impl AuthStore {
+    /// Get user by id.
     pub fn get_user_by_id(&self, user_id: &str) -> Result<Option<User>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -45,6 +46,7 @@ impl AuthStore {
         }
     }
 
+    /// Update password.
     pub fn update_password(&self, user_id: &str, new_hash: &str) -> Result<()> {
         self.conn.lock().unwrap().execute(
             "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
@@ -95,6 +97,7 @@ impl AuthStore {
         Ok(())
     }
 
+    /// Create user.
     pub fn create_user(&self, user: &User, password_hash: &str) -> Result<()> {
         self.conn.lock().unwrap().execute(
             "INSERT INTO users (id, email, name, role, password_hash, created_at, updated_at)
@@ -112,6 +115,7 @@ impl AuthStore {
         Ok(())
     }
 
+    /// Get user by email.
     pub fn get_user_by_email(&self, email: &str) -> Result<Option<(User, String)>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -138,6 +142,7 @@ impl AuthStore {
         }
     }
 
+    /// Set totp secret.
     pub fn set_totp_secret(&self, user_id: &str, secret: &str) -> Result<()> {
         let encrypted = self.encrypt(secret.as_bytes())?;
         self.conn.lock().unwrap().execute(
@@ -147,6 +152,7 @@ impl AuthStore {
         Ok(())
     }
 
+    /// Get totp secret.
     pub fn get_totp_secret(&self, user_id: &str) -> Result<Option<String>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT totp_secret FROM users WHERE id = ?")?;
@@ -161,6 +167,7 @@ impl AuthStore {
         }
     }
 
+    /// Set recovery phrase.
     pub fn set_recovery_phrase(&self, user_id: &str, phrase: &str) -> Result<()> {
         let encrypted = self.encrypt(phrase.as_bytes())?;
         self.conn.lock().unwrap().execute(
@@ -170,6 +177,7 @@ impl AuthStore {
         Ok(())
     }
 
+    /// Get recovery phrase.
     pub fn get_recovery_phrase(&self, user_id: &str) -> Result<Option<String>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare("SELECT recovery_phrase FROM users WHERE id = ?")?;
@@ -184,6 +192,7 @@ impl AuthStore {
         }
     }
 
+    /// Save refresh token.
     pub fn save_refresh_token(&self, token: &str, user_id: &str, expires_at: i64) -> Result<()> {
         self.conn.lock().unwrap().execute(
             "INSERT INTO refresh_tokens (token, user_id, expires_at) VALUES (?, ?, ?)",
@@ -192,6 +201,7 @@ impl AuthStore {
         Ok(())
     }
 
+    /// Verify refresh token.
     pub fn verify_refresh_token(&self, token: &str) -> Result<Option<String>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -207,6 +217,7 @@ impl AuthStore {
         }
     }
 
+    /// Revoke refresh token.
     pub fn revoke_refresh_token(&self, token: &str) -> Result<()> {
         self.conn.lock().unwrap().execute(
             "UPDATE refresh_tokens SET revoked = 1 WHERE token = ?",
@@ -215,6 +226,7 @@ impl AuthStore {
         Ok(())
     }
 
+    /// Revoke user session.
     pub fn revoke_user_session(&self, user_id: &str, token: &str) -> Result<()> {
         self.conn.lock().unwrap().execute(
             "UPDATE refresh_tokens SET revoked = 1 WHERE token = ? AND user_id = ?",
@@ -223,6 +235,7 @@ impl AuthStore {
         Ok(())
     }
 
+    /// Get active sessions.
     pub fn get_active_sessions(&self, user_id: &str) -> Result<Vec<ActiveSession>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -242,6 +255,7 @@ impl AuthStore {
         Ok(sessions)
     }
 
+    /// Count failed logins.
     pub fn count_failed_logins(&self, ip_address: &str, since_timestamp: i64) -> Result<i32> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
@@ -251,6 +265,7 @@ impl AuthStore {
         Ok(count)
     }
 
+    /// Log event.
     pub fn log_event(&self, user_id: Option<&str>, event_type: &str, ip: Option<&str>, ua: Option<&str>, metadata: Option<&str>) -> Result<()> {
         let id = ulid::Ulid::new().to_string();
         let timestamp = Utc::now().timestamp();

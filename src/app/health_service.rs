@@ -12,6 +12,7 @@ pub struct HealthService {
 }
 
 impl HealthService {
+    /// New.
     pub fn new() -> Self {
         Self {
             start_time: Instant::now(),

@@ -181,34 +181,42 @@ pub struct SwarmAgentConfig {
     pub task: String,
 }
 
+/// Default limit.
 pub fn default_limit() -> usize {
     10
 }
 
+/// Default token budget.
 pub fn default_token_budget() -> usize {
     800
 }
 
+/// Default graph depth.
 pub fn default_graph_depth() -> usize {
     3
 }
 
+/// Default graph limit.
 pub fn default_graph_limit() -> usize {
     50
 }
 
+/// Default graph budget.
 pub fn default_graph_budget() -> usize {
     1200
 }
 
+/// Default min degree.
 pub fn default_min_degree() -> u64 {
     3
 }
 
+/// Default min complexity.
 pub fn default_min_complexity() -> f32 {
     5.0
 }
 
+/// Default compaction threshold.
 pub fn default_compaction_threshold() -> f64 {
     80.0
 }
@@ -257,6 +265,7 @@ pub struct ExportPackPayload {
     pub max_level: usize,
 }
 
+/// Default max level val.
 pub fn default_max_level_val() -> usize {
     3
 }
@@ -288,22 +297,27 @@ pub struct CodeGraphViewParams {
     pub min_degree: u64,
 }
 
+/// Default graph view mode.
 pub fn default_graph_view_mode() -> String {
     "overview".to_string()
 }
 
+/// Default graph view depth.
 pub fn default_graph_view_depth() -> usize {
     3
 }
 
+/// Default graph view limit.
 pub fn default_graph_view_limit() -> usize {
     150
 }
 
+/// Default graph view include file nodes.
 pub fn default_graph_view_include_file_nodes() -> bool {
     false
 }
 
+/// Default graph view min degree.
 pub fn default_graph_view_min_degree() -> u64 {
     3
 }

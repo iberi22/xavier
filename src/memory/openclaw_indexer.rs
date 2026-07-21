@@ -15,6 +15,7 @@ pub struct OpenClawAgentIndexer {
 }
 
 impl OpenClawAgentIndexer {
+    /// New.
     pub fn new(embedder: Arc<dyn Embedder>) -> Self {
         Self { embedder }
     }

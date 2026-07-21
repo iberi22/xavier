@@ -57,6 +57,7 @@ pub struct MemoryRefResponse {
     pub keywords: Vec<String>,
 }
 
+/// Dispatch skill.
 pub async fn dispatch_skill(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(request): Json<DispatchRequest>,
@@ -125,6 +126,7 @@ pub struct MemoryHealthResponse {
     pub decayed_count: usize,
 }
 
+/// Memory health.
 pub async fn memory_health(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     let memory = &workspace.workspace.memory;
     let docs = memory.all_documents().await;
@@ -174,6 +176,7 @@ pub struct SkillListEntry {
     pub token_cost: usize,
 }
 
+/// List skills.
 pub async fn list_skills(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     use crate::context::skill_registry::SkillRegistry;
 

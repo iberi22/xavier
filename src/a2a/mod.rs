@@ -595,6 +595,7 @@ pub struct A2AMessage {
 }
 
 impl A2AMessage {
+    /// New.
     pub fn new(sender: String, receiver: String, message_type: MessageType, data: String) -> Self {
         Self {
             sender,
@@ -610,14 +611,17 @@ impl A2AMessage {
 pub struct A2AProtocol;
 
 impl A2AProtocol {
+    /// New.
     pub fn new() -> Self {
         Self
     }
 
+    /// Is valid.
     pub fn is_valid(&self) -> bool {
         true
     }
 
+    /// Validate message.
     pub fn validate_message(&self, payload: &str) -> Result<(), String> {
         if payload.trim().is_empty() {
             Err("payload cannot be empty".to_string())
@@ -626,6 +630,7 @@ impl A2AProtocol {
         }
     }
 
+    /// Handle request.
     pub async fn handle_request(
         &self,
         sender: String,

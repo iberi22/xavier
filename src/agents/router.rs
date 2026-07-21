@@ -153,10 +153,12 @@ fn default_weak_reasoning_confidence() -> f32 {
 pub struct Router;
 
 impl Router {
+    /// New.
     pub fn new() -> Self {
         Self
     }
 
+    /// Classify.
     pub fn classify(&self, query: &str) -> RouteDecision {
         let trimmed = query.trim();
         let lowered = trimmed.to_lowercase();
@@ -187,6 +189,7 @@ impl Router {
         }
     }
 
+    /// Resolve model override.
     pub fn resolve_model_override(
         &self,
         route_category: RouteCategory,
@@ -240,6 +243,7 @@ impl Router {
         }
     }
 
+    /// Direct response.
     pub fn direct_response(&self, query: &str) -> Option<String> {
         let lowered = query.trim().to_lowercase();
 
@@ -270,6 +274,7 @@ fn routing_policy_cache() -> &'static Mutex<Option<CachedPolicy>> {
     CACHE.get_or_init(|| Mutex::new(None))
 }
 
+/// Load routing policy.
 pub fn load_routing_policy() -> Option<RoutingPolicy> {
     let path = std::env::var("XAVIER_ROUTER_POLICY_PATH")
         .ok()

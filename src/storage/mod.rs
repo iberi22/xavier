@@ -272,6 +272,7 @@ pub struct MigrationManager {
 }
 
 impl MigrationManager {
+    /// New.
     pub fn new() -> Self {
         Self { legacy: Vec::new() }
     }

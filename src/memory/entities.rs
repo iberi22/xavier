@@ -305,6 +305,7 @@ pub struct UpsertEntityRequest {
 }
 
 impl UpsertEntityRequest {
+    /// New.
     pub fn new(name: String) -> Self {
         Self {
             name,
@@ -315,6 +316,7 @@ impl UpsertEntityRequest {
         }
     }
 
+    /// With type.
     pub fn with_type(mut self, entity_type: SemanticEntityType) -> Self {
         self.entity_type = entity_type;
         self
@@ -336,6 +338,7 @@ pub struct UpsertRelationRequest {
 }
 
 impl UpsertRelationRequest {
+    /// New.
     pub fn new(source: String, target: String, relation_type: String) -> Self {
         Self {
             source_name: source,

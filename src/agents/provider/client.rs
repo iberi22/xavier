@@ -143,6 +143,7 @@ impl ModelProviderClient {
         })?
     }
 
+    /// Generate response.
     pub async fn generate_response(
         &self,
         query: &str,
@@ -151,10 +152,12 @@ impl ModelProviderClient {
         <Self as LlmProvider>::generate_response(self, query, context).await
     }
 
+    /// Generate hypothetical document.
     pub async fn generate_hypothetical_document(&self, query: &str) -> Result<LlmResponse> {
         <Self as LlmProvider>::generate_hypothetical_document(self, query).await
     }
 
+    /// Evaluate context.
     pub async fn evaluate_context(
         &self,
         query: &str,
@@ -163,6 +166,7 @@ impl ModelProviderClient {
         <Self as LlmProvider>::evaluate_context(self, query, context).await
     }
 
+    /// Generate text.
     pub async fn generate_text(
         &self,
         system_prompt: &str,
@@ -188,6 +192,7 @@ pub struct KeyLeaseManager {
 }
 
 impl KeyLeaseManager {
+    /// New.
     pub fn new(
         inner: ModelProviderClient,
         secrets_engine: Arc<crate::coordination::KeyLendingEngine>,

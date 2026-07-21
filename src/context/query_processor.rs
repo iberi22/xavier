@@ -25,12 +25,14 @@ impl Default for QueryProcessor {
 }
 
 impl QueryProcessor {
+    /// New.
     pub fn new() -> Self {
         Self {
             provider: ModelProviderClient::from_env(),
         }
     }
 
+    /// Expand and decompose.
     pub async fn expand_and_decompose(
         &self,
         prompt: &str,

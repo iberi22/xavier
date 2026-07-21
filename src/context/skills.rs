@@ -19,12 +19,14 @@ pub struct SkillLoader {
 }
 
 impl SkillLoader {
+    /// New.
     pub fn new(base_path: impl Into<PathBuf>) -> Self {
         Self {
             base_path: base_path.into(),
         }
     }
 
+    /// Load all.
     pub async fn load_all(&self) -> Result<Vec<Skill>> {
         let mut skills = Vec::new();
 
@@ -54,6 +56,7 @@ impl SkillLoader {
         Ok(skills)
     }
 
+    /// Validate skill.
     pub fn validate_skill(&self, content: &str) -> bool {
         // Simple validation: check for # Purpose or ## Purpose
         content.contains("# Purpose") || content.contains("## Purpose")

@@ -90,6 +90,7 @@ pub struct Harvester {
 }
 
 impl Harvester {
+    /// New.
     pub fn new(workspace_path: PathBuf, memory: Arc<QmdMemory>, code_db: Arc<CodeGraphDB>) -> Self {
         Self {
             workspace_path,
@@ -98,6 +99,7 @@ impl Harvester {
         }
     }
 
+    /// Run.
     pub async fn run(&self, since: DateTime<Utc>) -> Result<PathBuf> {
         let date = Utc::now().format("%Y-%m-%d").to_string();
 

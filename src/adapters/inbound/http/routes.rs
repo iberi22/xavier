@@ -55,10 +55,12 @@ pub fn init_health_port(port: Arc<HttpHealthAdapter>) {
 
 // ─── Router ─────────────────────────────────────────────────────────────────
 
+/// Create router.
 pub fn create_router() -> Router {
     create_router_with_agent_registry(SimpleAgentRegistry::new(None))
 }
 
+/// Create router with agent registry.
 pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecyclePort>) -> Router {
     let router = Router::new()
         .route("/health", get(health_handler))
@@ -146,6 +148,7 @@ async fn build_handler() -> Json<serde_json::Value> {
     }))
 }
 
+/// Session event handler.
 pub async fn session_event_handler(Json(event): Json<SessionEvent>) -> Json<serde_json::Value> {
     let Some(entry) = PanelThreadEntry::from_session_event(&event) else {
         return Json(serde_json::json!({
@@ -196,6 +199,7 @@ pub struct VerifySaveResponse {
     pub match_score: f32,
 }
 
+/// Verify save handler.
 pub async fn verify_save_handler(
     Json(payload): Json<VerifySaveRequest>,
 ) -> Json<VerifySaveResponse> {
@@ -262,6 +266,7 @@ pub struct TimeMetricResponse {
     pub agent_id: String,
 }
 
+/// Time metric handler.
 pub async fn time_metric_handler(Json(payload): Json<TimeMetricDto>) -> Json<TimeMetricResponse> {
     let workspace_id =
         std::env::var("XAVIER_WORKSPACE_ID").unwrap_or_else(|_| "default".to_string());
@@ -307,6 +312,7 @@ pub struct SyncCheckResponse {
     pub alerts: Vec<String>,
 }
 
+/// Sync check handler.
 pub async fn sync_check_handler() -> Json<SyncCheckResponse> {
     // Return cached sync check results from the SessionSyncTask cron.
     let result = get_last_sync_result();
@@ -397,6 +403,7 @@ pub fn get_plugin_registry(
 }
 
 #[cfg(feature = "enterprise")]
+/// Plugins health handler.
 pub async fn plugins_health_handler() -> Json<PluginsHealthResponse> {
     #[allow(unused_imports)]
     use crate::adapters::inbound::http::plugins::Plugin;
@@ -440,6 +447,7 @@ pub async fn plugins_health_handler() -> Json<PluginsHealthResponse> {
 }
 
 #[cfg(feature = "enterprise")]
+/// Plugins sync handler.
 pub async fn plugins_sync_handler(
     Json(payload): Json<PluginSyncRequest>,
 ) -> Json<PluginSyncResponse> {

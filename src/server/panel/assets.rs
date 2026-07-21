@@ -55,6 +55,7 @@ pub fn panel_ui_root() -> PathBuf {
     .clone()
 }
 
+/// Panel index.
 pub async fn panel_index() -> impl IntoResponse {
     match tokio::fs::read_to_string(panel_build_path("index.html")).await {
         Ok(contents) => Html(contents).into_response(),
@@ -70,6 +71,7 @@ pub async fn panel_index() -> impl IntoResponse {
     }
 }
 
+/// Panel asset.
 pub async fn panel_asset(AxumPath(path): AxumPath<String>) -> impl IntoResponse {
     let asset_path = panel_build_path(&format!("assets/{path}"));
     match tokio::fs::read(&asset_path).await {
@@ -78,10 +80,12 @@ pub async fn panel_asset(AxumPath(path): AxumPath<String>) -> impl IntoResponse 
     }
 }
 
+/// Panel build path.
 pub fn panel_build_path(relative: &str) -> PathBuf {
     panel_ui_root().join(relative)
 }
 
+/// Asset content type.
 pub fn asset_content_type(path: &Path) -> &'static str {
     match path.extension().and_then(|value| value.to_str()) {
         Some("js") => "application/javascript; charset=utf-8",
@@ -92,6 +96,7 @@ pub fn asset_content_type(path: &Path) -> &'static str {
     }
 }
 
+/// Asset response.
 pub fn asset_response(bytes: Vec<u8>, content_type: &'static str) -> Response {
     Response::builder()
         .status(StatusCode::OK)

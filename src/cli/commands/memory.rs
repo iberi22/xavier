@@ -4,6 +4,7 @@ use crate::cli::commands::enums::CLI_HTTP_CLIENT;
 use crate::cli::config::{require_xavier_token, resolve_base_url};
 use anyhow::Result;
 
+/// Handle memory command.
 pub async fn handle_memory_command(
     cmd: crate::cli::commands::enums::memory::MemoryCommand,
 ) -> Result<()> {

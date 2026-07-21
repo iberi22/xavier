@@ -6,6 +6,7 @@ use crate::memory::graph_traversal::AffectedNode;
 use crate::memory::qmd::types::NavEntry;
 use anyhow::Result;
 
+/// Handle ls.
 pub async fn handle_ls(path: Option<String>) -> Result<()> {
     let token = require_xavier_token()?;
     let base_url = resolve_base_url();
@@ -49,6 +50,7 @@ pub async fn handle_ls(path: Option<String>) -> Result<()> {
     Ok(())
 }
 
+/// Handle visualize.
 pub async fn handle_visualize(
     format: String,
     show_hotspots: bool,
@@ -429,6 +431,7 @@ fn render_tree(
     }
 }
 
+/// Handle cd.
 pub async fn handle_cd(path: String) -> Result<()> {
     let token = require_xavier_token()?;
     let base_url = resolve_base_url();
@@ -480,12 +483,14 @@ pub async fn handle_cd(path: String) -> Result<()> {
     Ok(())
 }
 
+/// Handle pwd.
 pub async fn handle_pwd() -> Result<()> {
     let cwd = resolve_cwd();
     println!("{}", cwd);
     Ok(())
 }
 
+/// Handle telemetry.
 pub async fn handle_telemetry(kind: Option<String>) -> Result<()> {
     let token = require_xavier_token()?;
     let base_url = resolve_base_url();
@@ -566,6 +571,7 @@ pub async fn handle_telemetry(kind: Option<String>) -> Result<()> {
     Ok(())
 }
 
+/// Handle affected.
 pub async fn handle_affected(
     path: String,
     depth: usize,

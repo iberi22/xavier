@@ -25,12 +25,14 @@ pub struct SystemAlertStore {
 }
 
 impl SystemAlertStore {
+    /// New.
     pub fn new() -> Self {
         Self {
             alerts: RwLock::new(Vec::new()),
         }
     }
 
+    /// Push alert.
     pub fn push_alert(&self, level: &str, message: &str, component: &str) {
         let alert = SystemAlert {
             id: uuid::Uuid::new_v4().to_string(),
@@ -49,6 +51,7 @@ impl SystemAlertStore {
         }
     }
 
+    /// Get alerts.
     pub fn get_alerts(&self) -> Vec<SystemAlert> {
         if let Ok(alerts) = self.alerts.read() {
             alerts.clone()
@@ -57,12 +60,14 @@ impl SystemAlertStore {
         }
     }
 
+    /// Clear.
     pub fn clear(&self) {
         if let Ok(mut alerts) = self.alerts.write() {
             alerts.clear();
         }
     }
 
+    /// Derive operational mode.
     pub fn derive_operational_mode(
         llm_reachable: bool,
         embedding_reachable: bool,
@@ -82,6 +87,7 @@ impl SystemAlertStore {
         }
     }
 
+    /// Get mode.
     pub fn get_mode(&self) -> OperationalMode {
         let alerts = self.get_alerts();
         let provider = std::env::var("XAVIER_PROVIDER").unwrap_or_else(|_| "local".to_string());

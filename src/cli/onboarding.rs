@@ -74,6 +74,7 @@ pub struct ApiKeyInfo {
 pub struct SystemScanner;
 
 impl SystemScanner {
+    /// Scan.
     pub async fn scan() -> ScanResult {
         let (gpu_name, vram_gb) = detect_gpu_and_vram();
         let ram_gb = detect_ram_gb();
@@ -92,10 +93,12 @@ impl SystemScanner {
     }
 }
 
+/// Detect os.
 pub fn detect_os() -> String {
     std::env::consts::OS.to_string()
 }
 
+/// Detect os detailed.
 pub fn detect_os_detailed() -> String {
     let os = std::env::consts::OS;
     match os {
@@ -136,6 +139,7 @@ pub fn detect_os_detailed() -> String {
     }
 }
 
+/// Detect gpu and vram.
 pub fn detect_gpu_and_vram() -> (Option<String>, Option<f32>) {
     let os = std::env::consts::OS;
     let mut gpu_name = None;
@@ -233,6 +237,7 @@ pub fn detect_gpu_and_vram() -> (Option<String>, Option<f32>) {
     (gpu_name, vram_gb)
 }
 
+/// Detect ram gb.
 pub fn detect_ram_gb() -> f32 {
     let os = std::env::consts::OS;
     if os == "windows" {
@@ -273,6 +278,7 @@ pub fn detect_ram_gb() -> f32 {
     16.0 // Fallback assuming 16GB
 }
 
+/// Detect ollama.
 pub async fn detect_ollama() -> OllamaStatus {
     let client = reqwest::Client::new();
     let resp = client.get("http://localhost:11434/api/tags").send().await;
@@ -304,6 +310,7 @@ pub async fn detect_ollama() -> OllamaStatus {
     }
 }
 
+/// Detect cli agents.
 pub fn detect_cli_agents() -> Vec<AgentInfo> {
     let agents = ["opencode", "codex", "claude", "copilot"];
     agents
@@ -328,6 +335,7 @@ fn check_command_exists(cmd: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Detect api keys.
 pub fn detect_api_keys() -> Vec<ApiKeyInfo> {
     let keys = ["OPENAI", "GEMINI", "GROQ", "FIRECRAWL"];
     let vault = HardwareVault::new("xavier");
@@ -344,6 +352,7 @@ pub fn detect_api_keys() -> Vec<ApiKeyInfo> {
         .collect()
 }
 
+/// Is wsl.
 pub fn is_wsl() -> bool {
     if cfg!(target_os = "linux") {
         if let Ok(version) = std::fs::read_to_string("/proc/version") {
@@ -354,10 +363,12 @@ pub fn is_wsl() -> bool {
     false
 }
 
+/// Is docker.
 pub fn is_docker() -> bool {
     Path::new("/.dockerenv").exists()
 }
 
+/// Check tool.
 pub fn check_tool(name: &str, arg: &str) -> ToolInfo {
     let output = Command::new(name).arg(arg).output();
     match output {
@@ -377,6 +388,7 @@ pub fn check_tool(name: &str, arg: &str) -> ToolInfo {
     }
 }
 
+/// Detect tools.
 pub fn detect_tools() -> Vec<ToolInfo> {
     let tools_to_check = [
         ("rustc", "--version"),
@@ -393,6 +405,7 @@ pub fn detect_tools() -> Vec<ToolInfo> {
         .collect()
 }
 
+/// Detect workspace type.
 pub fn detect_workspace_type(path: &Path) -> WorkspaceInfo {
     let mut indicators = Vec::new();
     let mut project_type = "Generic".to_string();
@@ -427,6 +440,7 @@ pub fn detect_workspace_type(path: &Path) -> WorkspaceInfo {
     }
 }
 
+/// Generate suggestions.
 pub fn generate_suggestions(workspace_path: &Path) -> OnboardingSuggestions {
     let is_docker = is_docker();
     let is_wsl = is_wsl();
@@ -519,6 +533,7 @@ pub fn generate_suggestions(workspace_path: &Path) -> OnboardingSuggestions {
     }
 }
 
+/// Generate model recommendations.
 pub fn generate_model_recommendations(hardware: &HardwareSpecs) -> Vec<ModelRecommendation> {
     let mut recs = Vec::new();
     let ram = hardware.ram_gb;

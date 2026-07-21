@@ -38,10 +38,12 @@ struct GitHubRelease {
 }
 
 impl AutoUpdateService {
+    /// New.
     pub fn new() -> Self {
         Self::with_current_version(env!("CARGO_PKG_VERSION"))
     }
 
+    /// With current version.
     pub fn with_current_version(version: impl Into<String>) -> Self {
         let client = reqwest::Client::builder()
             .timeout(Duration::from_secs(15))
@@ -56,11 +58,13 @@ impl AutoUpdateService {
         }
     }
 
+    /// With latest release url.
     pub fn with_latest_release_url(mut self, url: impl Into<String>) -> Self {
         self.latest_release_url = url.into();
         self
     }
 
+    /// Check for updates.
     pub async fn check_for_updates(&self) -> Result<UpdateStatus> {
         let release: GitHubRelease = self
             .client
@@ -78,6 +82,7 @@ impl AutoUpdateService {
         Ok(self.compare_versions_with_url(&release.tag_name, release.html_url))
     }
 
+    /// Compare versions.
     pub fn compare_versions(&self, latest_version: &str) -> UpdateStatus {
         self.compare_versions_with_url(latest_version, String::new())
     }

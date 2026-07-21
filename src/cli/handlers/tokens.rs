@@ -12,6 +12,7 @@ use crate::cli::state::CliState;
 use crate::cli::types::CreateTokenPayload;
 use xavier::security::tokens::TokenStore;
 
+/// List tokens handler.
 pub async fn list_tokens_handler(State(_state): State<CliState>) -> Response {
     let store = TokenStore::new();
     match store.list_tokens().await {
@@ -26,6 +27,7 @@ pub async fn list_tokens_handler(State(_state): State<CliState>) -> Response {
     }
 }
 
+/// Create token handler.
 pub async fn create_token_handler(
     State(_state): State<CliState>,
     Json(payload): Json<CreateTokenPayload>,
@@ -50,6 +52,7 @@ pub async fn create_token_handler(
     }
 }
 
+/// Revoke token handler.
 pub async fn revoke_token_handler(
     State(_state): State<CliState>,
     Path(id): Path<String>,
@@ -64,6 +67,7 @@ pub async fn revoke_token_handler(
     }
 }
 
+/// Rotate token handler.
 pub async fn rotate_token_handler(
     State(_state): State<CliState>,
     Path(id): Path<String>,

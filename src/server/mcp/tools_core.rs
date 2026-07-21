@@ -16,6 +16,7 @@ use crate::AppState;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+/// Get xavier core tools.
 pub fn get_xavier_core_tools() -> Vec<MCPTool> {
     vec![
         MCPTool {
@@ -97,6 +98,7 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
     ]
 }
 
+/// Is core tool.
 pub fn is_core_tool(name: &str) -> bool {
     matches!(
         name,
@@ -109,6 +111,7 @@ pub fn is_core_tool(name: &str) -> bool {
     )
 }
 
+/// Handle core tool.
 pub async fn handle_core_tool(
     _state: AppState,
     workspace: WorkspaceContext,

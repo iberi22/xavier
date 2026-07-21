@@ -29,6 +29,7 @@ pub enum AuditSeverity {
 }
 
 impl AuditSeverity {
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             AuditSeverity::Critical => "critical",

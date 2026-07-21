@@ -13,6 +13,7 @@ use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
 
+/// Account usage handler.
 pub async fn account_usage_handler(State(state): State<CliState>, headers: HeaderMap) -> Response {
     let expected_token = match resolve_http_token() {
         Ok(token) => token,
@@ -80,6 +81,7 @@ pub async fn account_usage_handler(State(state): State<CliState>, headers: Heade
     )
 }
 
+/// Usage status handler.
 pub async fn usage_status_handler(
     State(state): State<CliState>,
     AxumPath(provider): AxumPath<String>,
@@ -96,6 +98,7 @@ pub async fn usage_status_handler(
     }
 }
 
+/// Usage track handler.
 pub async fn usage_track_handler(
     State(state): State<CliState>,
     Json(payload): Json<UsageTrackPayload>,
@@ -120,6 +123,7 @@ pub async fn usage_track_handler(
 }
 
 #[allow(dead_code)]
+/// Providers quota handler.
 pub async fn providers_quota_handler(State(state): State<CliState>) -> Response {
     let mut quotas = Vec::new();
     match state.rate_manager.get_all_providers().await {
@@ -151,6 +155,7 @@ pub async fn providers_quota_handler(State(state): State<CliState>) -> Response 
     )
 }
 
+/// Usage summary handler.
 pub async fn usage_summary_handler(
     State(state): State<CliState>,
     AxumPath(provider): AxumPath<String>,
@@ -164,6 +169,7 @@ pub async fn usage_summary_handler(
     }
 }
 
+/// Usage update handler.
 pub async fn usage_update_handler(
     State(state): State<CliState>,
     Json(payload): Json<UsageUpdatePayload>,
@@ -181,6 +187,7 @@ pub async fn usage_update_handler(
     }
 }
 
+/// Usage cooldown handler.
 pub async fn usage_cooldown_handler(
     State(state): State<CliState>,
     Json(payload): Json<UsageCooldownPayload>,

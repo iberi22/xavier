@@ -19,6 +19,7 @@ pub enum EntityType {
 }
 
 impl EntityType {
+    /// As str.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Person => "person",
@@ -79,6 +80,7 @@ pub struct EntityRelationRecord {
 }
 
 impl EntityRelationRecord {
+    /// Source name.
     pub fn source_name(&self, data: &super::storage::GraphData) -> String {
         data.entities
             .get(&self.source)
@@ -86,6 +88,7 @@ impl EntityRelationRecord {
             .unwrap_or_else(|| self.source.clone())
     }
 
+    /// Target name.
     pub fn target_name(&self, data: &super::storage::GraphData) -> String {
         data.entities
             .get(&self.target)

@@ -118,6 +118,7 @@ pub struct User {
 }
 
 impl User {
+    /// New.
     pub fn new(tenant_id: Uuid, role: Role) -> Self {
         Self {
             id: Uuid::new_v4(),
@@ -129,11 +130,13 @@ impl User {
         }
     }
 
+    /// With email.
     pub fn with_email(mut self, email: impl Into<String>) -> Self {
         self.email = Some(email.into());
         self
     }
 
+    /// With name.
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
@@ -150,6 +153,7 @@ pub struct PermissionCheck {
 }
 
 impl PermissionCheck {
+    /// Allow.
     pub fn allow(permission: Permission, user_id: Uuid) -> Self {
         Self {
             allowed: true,
@@ -159,6 +163,7 @@ impl PermissionCheck {
         }
     }
 
+    /// Deny.
     pub fn deny(permission: Permission, user_id: Uuid, reason: impl Into<String>) -> Self {
         Self {
             allowed: false,
@@ -176,6 +181,7 @@ pub struct RoleGuard {
 }
 
 impl RoleGuard {
+    /// New.
     pub fn new(role: Role, user_id: Uuid) -> Self {
         Self { role, user_id }
     }

@@ -5,10 +5,12 @@ use axum::{
 };
 use xavier_lib::server::headless;
 
+/// Health.
 pub async fn health() -> impl IntoResponse {
     headless::routes::health().await
 }
 
+/// Context.
 pub async fn context(
     State(state): State<CliState>,
     Query(params): Query<headless::routes::ContextParams>,
@@ -16,6 +18,7 @@ pub async fn context(
     headless::routes::context(state.memory.as_ref(), params).await
 }
 
+/// Memory search.
 pub async fn memory_search(
     State(state): State<CliState>,
     Json(req): Json<headless::routes::SearchRequest>,
@@ -23,10 +26,12 @@ pub async fn memory_search(
     headless::routes::memory_search(state.memory.as_ref(), req).await
 }
 
+/// Tools.
 pub async fn tools() -> impl IntoResponse {
     headless::routes::tools().await
 }
 
+/// Execute tool.
 pub async fn execute_tool(
     Path(name): Path<String>,
     Json(req): Json<headless::routes::ToolExecuteRequest>,
@@ -34,6 +39,7 @@ pub async fn execute_tool(
     headless::routes::execute_tool(name, req).await
 }
 
+/// Provider status.
 pub async fn provider_status(State(state): State<CliState>) -> impl IntoResponse {
     let router = state.provider_router.read().await;
     let active = router.current_provider().as_str().to_string();

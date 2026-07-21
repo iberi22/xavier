@@ -50,10 +50,12 @@ pub fn project_id_for_path(path: &std::path::Path) -> String {
 }
 
 impl VecSqliteMemoryStore {
+    /// From env.
     pub async fn from_env() -> Result<Self> {
         Self::new(VecSqliteStoreConfig::from_env()).await
     }
 
+    /// Set event tx.
     pub fn set_event_tx(&mut self, tx: broadcast::Sender<crate::server::events::RealtimeEvent>) {
         self.event_tx = Some(tx);
     }
@@ -68,6 +70,7 @@ impl VecSqliteMemoryStore {
         &self.project_id
     }
 
+    /// New.
     pub async fn new(config: VecSqliteStoreConfig) -> Result<Self> {
         db::ensure_dir(&config.path).await?;
         vector::register_sqlite_vec_extension()?;
@@ -87,19 +90,23 @@ impl VecSqliteMemoryStore {
         Ok(store)
     }
 
+    /// Register sqlite vec extension.
     pub fn register_sqlite_vec_extension() -> Result<()> {
         vector::register_sqlite_vec_extension()
     }
 
+    /// Configured qjl threshold.
     pub(crate) fn configured_qjl_threshold() -> usize {
         utils::configured_qjl_threshold()
     }
 
     #[allow(dead_code)]
+    /// Row key.
     pub(crate) fn row_key(workspace_id: &str, memory_id: &str) -> String {
         stable_key("sqlite_mem", &[workspace_id, memory_id])
     }
 
+    /// Deserialize record.
     pub(crate) fn deserialize_record(row: &rusqlite::Row) -> Result<MemoryRecord> {
         let metadata_str: String = row.get(4).unwrap_or_else(|_| "{}".to_string());
         // Null embeddings are valid (e.g. after model change invalidation / pending reindex).
@@ -142,26 +149,32 @@ impl VecSqliteMemoryStore {
         })
     }
 
+    /// Candidate limit.
     pub(crate) fn candidate_limit(limit: usize) -> usize {
         limit.max(1).saturating_mul(5)
     }
 
+    /// Configured rrf k.
     pub(crate) fn configured_rrf_k() -> usize {
         utils::configured_rrf_k()
     }
 
+    /// Dynamic rrf k.
     pub(crate) fn dynamic_rrf_k(dataset_size: usize) -> usize {
         utils::dynamic_rrf_k(dataset_size)
     }
 
+    /// Entity extraction enabled.
     pub(crate) fn entity_extraction_enabled() -> bool {
         utils::entity_extraction_enabled()
     }
 
+    /// Audit chain enabled.
     pub(crate) fn audit_chain_enabled() -> bool {
         utils::audit_chain_enabled()
     }
 
+    /// Row matches filters.
     pub(crate) fn row_matches_filters(
         workspace_id: &str,
         record: &MemoryRecord,
@@ -197,6 +210,7 @@ impl VecSqliteMemoryStore {
     }
 
     #[allow(dead_code)]
+    /// Load record by id.
     pub(crate) async fn load_record_by_id(
         &self,
         workspace_id: &str,
@@ -222,6 +236,7 @@ impl VecSqliteMemoryStore {
     }
 
     #[allow(dead_code)]
+    /// Sync memory entities.
     pub(crate) async fn sync_memory_entities(
         &self,
         workspace_id: &str,
@@ -237,6 +252,7 @@ impl VecSqliteMemoryStore {
     }
 
     #[allow(dead_code)]
+    /// Resolve graph seed entities.
     pub(crate) async fn resolve_graph_seed_entities(
         &self,
         workspace_id: &str,
@@ -253,6 +269,7 @@ impl VecSqliteMemoryStore {
             .await
     }
 
+    /// Hybrid search with embedding.
     pub async fn hybrid_search_with_embedding(
         &self,
         workspace_id: &str,

@@ -44,6 +44,7 @@ impl std::str::FromStr for TaskStatus {
 }
 
 impl TaskStatus {
+    /// To planka list.
     pub fn to_planka_list(&self) -> &'static str {
         match self {
             TaskStatus::Backlog => "Backlog",
@@ -159,6 +160,7 @@ pub struct Project {
 }
 
 impl Project {
+    /// New.
     pub fn new(name: &str, description: &str) -> Self {
         Self {
             id: Ulid::new().to_string(),
@@ -184,6 +186,7 @@ pub struct TaskFilter {
 }
 
 impl TaskFilter {
+    /// Matches.
     pub fn matches(&self, task: &Task) -> bool {
         if let Some(ref p) = self.project {
             if &task.project != p {
@@ -230,6 +233,7 @@ pub struct TaskStats {
 }
 
 impl TaskStats {
+    /// From tasks.
     pub fn from_tasks(tasks: &[Task]) -> Self {
         let mut stats = TaskStats::default();
 

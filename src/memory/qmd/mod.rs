@@ -87,6 +87,7 @@ impl fmt::Display for NormalizedId {
 }
 
 impl NormalizedId {
+    /// As str.
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -99,10 +100,12 @@ impl NormalizedId {
 }
 
 impl QmdMemory {
+    /// New.
     pub fn new(docs: Arc<AsyncRwLock<Vec<MemoryDocument>>>) -> Self {
         Self::new_with_workspace(docs, "default")
     }
 
+    /// New with workspace.
     pub fn new_with_workspace(
         docs: Arc<AsyncRwLock<Vec<MemoryDocument>>>,
         workspace_id: impl Into<String>,
@@ -118,18 +121,22 @@ impl QmdMemory {
         }
     }
 
+    /// Workspace id.
     pub fn workspace_id(&self) -> &str {
         &self.workspace_id
     }
 
+    /// Set store.
     pub async fn set_store(&self, store: Arc<dyn MemoryStore>) {
         *self.store.write().await = Some(store);
     }
 
+    /// Set belief graph.
     pub fn set_belief_graph(&mut self, graph: crate::memory::belief_graph::SharedBeliefGraph) {
         self.belief_graph = Some(graph);
     }
 
+    /// Store.
     pub(crate) async fn store(&self) -> Option<Arc<dyn MemoryStore>> {
         self.store.read().await.clone()
     }
@@ -152,10 +159,12 @@ impl QmdMemory {
     }
 
     #[autometrics]
+    /// Search.
     pub async fn search(&self, query_text: &str, limit: usize) -> Result<Vec<MemoryDocument>> {
         self.search_filtered(query_text, limit, None).await
     }
 
+    /// Bm25 search.
     pub async fn bm25_search(
         &self,
         query: &str,
@@ -193,6 +202,7 @@ impl QmdMemory {
         Ok(results)
     }
 
+    /// Search filtered.
     pub async fn search_filtered(
         &self,
         query_text: &str,
@@ -247,6 +257,7 @@ impl QmdMemory {
         Ok(Vec::new())
     }
 
+    /// Search hybrid optimized.
     pub async fn search_hybrid_optimized(
         &self,
         query_text: &str,
@@ -256,10 +267,12 @@ impl QmdMemory {
         search::search_hybrid_optimized(self, query_text, limit, filters).await
     }
 
+    /// Export.
     pub async fn export(&self, public_only: bool) -> Result<Vec<MemoryDocument>> {
         reader::export(self, public_only).await
     }
 
+    /// Search with cache.
     pub async fn search_with_cache(
         &self,
         query_text: &str,
@@ -269,6 +282,7 @@ impl QmdMemory {
             .await
     }
 
+    /// Search with cache filtered.
     pub async fn search_with_cache_filtered(
         &self,
         query_text: &str,
@@ -278,6 +292,7 @@ impl QmdMemory {
         reader::search_with_cache_filtered(self, query_text, limit, filters).await
     }
 
+    /// Vsearch.
     pub async fn vsearch(
         &self,
         query_vector: Vec<f32>,
@@ -286,6 +301,7 @@ impl QmdMemory {
         search::vsearch(self, query_vector, limit).await
     }
 
+    /// Query with hybrid search.
     pub async fn query_with_hybrid_search(
         &self,
         query_text: &str,
@@ -295,6 +311,7 @@ impl QmdMemory {
         search::query_with_hybrid_search(self, query_text, query_vector, limit).await
     }
 
+    /// Query.
     pub async fn query(
         &self,
         query_text: &str,
@@ -305,6 +322,7 @@ impl QmdMemory {
             .await
     }
 
+    /// Query filtered.
     pub async fn query_filtered(
         &self,
         query_text: &str,
@@ -315,19 +333,23 @@ impl QmdMemory {
         search::query_filtered(self, query_text, query_vector, limit, filters).await
     }
 
+    /// Get.
     pub async fn get(&self, path_or_id: &str) -> Result<Option<MemoryDocument>> {
         reader::get(self, path_or_id).await
     }
 
+    /// Add.
     pub async fn add(&self, doc: MemoryDocument) -> Result<()> {
         writer::add(self, doc).await
     }
 
+    /// Update.
     pub async fn update(&self, doc: MemoryDocument) -> Result<()> {
         writer::update(self, doc).await
     }
 
     #[autometrics]
+    /// Add document.
     pub async fn add_document(
         &self,
         path: String,
@@ -337,6 +359,7 @@ impl QmdMemory {
         writer::add_document(self, path, content, metadata).await
     }
 
+    /// Add document typed.
     pub async fn add_document_typed(
         &self,
         path: String,
@@ -347,6 +370,7 @@ impl QmdMemory {
         writer::add_document_typed(self, path, content, metadata, typed).await
     }
 
+    /// Add document typed with embedding.
     pub async fn add_document_typed_with_embedding(
         &self,
         path: String,
@@ -359,22 +383,27 @@ impl QmdMemory {
             .await
     }
 
+    /// Delete.
     pub async fn delete(&self, path_or_id: &str) -> Result<Option<MemoryDocument>> {
         writer::delete(self, path_or_id).await
     }
 
+    /// Clear.
     pub async fn clear(&self) -> Result<usize> {
         writer::clear(self).await
     }
 
+    /// Count.
     pub async fn count(&self) -> Result<usize> {
         Ok(self.docs.read().await.len())
     }
 
+    /// All documents.
     pub async fn all_documents(&self) -> Vec<MemoryDocument> {
         self.docs.read().await.clone()
     }
 
+    /// Ls.
     pub async fn ls(&self, path_prefix: &str) -> Result<Vec<NavEntry>> {
         // [B1] Predictive cache warming based on navigation patterns
         if let Some(warmup) = &self.cache_warmup {
@@ -446,14 +475,17 @@ impl QmdMemory {
         Ok(result)
     }
 
+    /// Usage.
     pub async fn usage(&self) -> MemoryUsage {
         reader::usage(self).await
     }
 
+    /// Cache metrics.
     pub async fn cache_metrics(&self) -> CacheMetrics {
         reader::cache_metrics(self).await
     }
 
+    /// Multi hop context.
     pub async fn multi_hop_context(
         &self,
         query: &str,
@@ -463,10 +495,12 @@ impl QmdMemory {
         search::multi_hop_context(self, query, seed_docs, filters).await
     }
 
+    /// Invalidate cache.
     pub async fn invalidate_cache(&self) {
         reader::invalidate_cache(self).await
     }
 
+    /// List directory.
     pub async fn list_directory(&self, path: &str) -> Result<Vec<MemoryHierarchyNode>> {
         if let Some(store) = self.store().await {
             store.ls(&self.workspace_id, path).await
@@ -582,6 +616,7 @@ impl QmdMemory {
 
 // ── Free functions ──────────────────────────────────────────────────
 
+/// Query with embedding.
 pub async fn query_with_embedding(
     memory: &QmdMemory,
     query_text: &str,
@@ -590,6 +625,7 @@ pub async fn query_with_embedding(
     search::query_with_embedding(memory, query_text, limit).await
 }
 
+/// Query with embedding filtered.
 pub async fn query_with_embedding_filtered(
     memory: &QmdMemory,
     query_text: &str,

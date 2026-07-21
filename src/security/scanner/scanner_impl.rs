@@ -34,6 +34,7 @@ pub enum ThreatLevel {
 }
 
 impl ThreatLevel {
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             ThreatLevel::Clean => "clean",
@@ -88,6 +89,7 @@ pub enum DetectionLayer {
 }
 
 impl DetectionLayer {
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             DetectionLayer::PhraseMatch => "phrase_match",

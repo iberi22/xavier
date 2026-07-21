@@ -12,6 +12,7 @@ pub struct DLQEntry {
 }
 
 impl DLQEntry {
+    /// New.
     pub fn new(message: AgentMessage, reason: &str) -> Self {
         Self {
             message,
@@ -21,6 +22,7 @@ impl DLQEntry {
         }
     }
 
+    /// With retry.
     pub fn with_retry(mut self, count: u32) -> Self {
         self.retry_count = count;
         self

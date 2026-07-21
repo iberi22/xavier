@@ -28,6 +28,7 @@ pub struct CheckpointState {
 }
 
 impl CheckpointState {
+    /// New.
     pub fn new(
         session_id: impl Into<String>,
         messages: Vec<ConversationMessage>,
@@ -44,14 +45,17 @@ impl CheckpointState {
     }
 }
 
+/// Save checkpoint.
 pub async fn save_checkpoint(state: &CheckpointState) -> Result<PathBuf> {
     save_checkpoint_in_dir(Path::new(CHECKPOINT_ROOT), state).await
 }
 
+/// Load latest checkpoint.
 pub async fn load_latest_checkpoint(session_id: &str) -> Result<CheckpointState> {
     load_latest_checkpoint_in_dir(Path::new(CHECKPOINT_ROOT), session_id).await
 }
 
+/// Is session restorable.
 pub async fn is_session_restorable(session_id: &str) -> Result<bool> {
     is_session_restorable_in_dir(Path::new(CHECKPOINT_ROOT), session_id).await
 }

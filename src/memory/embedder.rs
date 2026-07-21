@@ -13,6 +13,7 @@ pub struct EmbeddingClient {
 }
 
 impl EmbeddingClient {
+    /// From env.
     pub fn from_env() -> Result<Self> {
         let config = EmbedderConfig::from_env();
         if !config.is_configured() {
@@ -26,10 +27,12 @@ impl EmbeddingClient {
         })
     }
 
+    /// Is configured from env.
     pub fn is_configured_from_env() -> bool {
         EmbedderConfig::from_env().is_configured()
     }
 
+    /// Embed.
     pub async fn embed(&self, input: &str) -> Result<Vec<f32>> {
         self.embedder
             .encode(input)
@@ -37,10 +40,12 @@ impl EmbeddingClient {
             .map_err(|error| anyhow!(error.to_string()))
     }
 
+    /// Health.
     pub async fn health(&self) -> Result<bool> {
         Ok(!self.embed("health check").await?.is_empty())
     }
 
+    /// From env async.
     pub async fn from_env_async() -> Result<Self> {
         let config = EmbedderConfig::from_env();
         if !config.is_configured() {

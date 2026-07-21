@@ -120,6 +120,7 @@ pub struct PersistedUsageState {
 }
 
 impl WorkspaceState {
+    /// New.
     pub async fn new(
         mut config: WorkspaceConfig,
         runtime_config: RuntimeConfig,
@@ -358,25 +359,32 @@ impl WorkspaceState {
         Ok(state)
     }
 
+    /// Config.
     pub fn config(&self) -> &WorkspaceConfig {
         &self.config
     }
+    /// Durable store backend.
     pub fn durable_store_backend(&self) -> &'static str {
         self.store.backend().as_str()
     }
+    /// Durable store.
     pub fn durable_store(&self) -> Arc<dyn MemoryStore> {
         Arc::clone(&self.store)
     }
+    /// Durable store migrated from file.
     pub fn durable_store_migrated_from_file(&self) -> bool {
         self.store_migrated_from_file
     }
+    /// Durable store migration detail.
     pub fn durable_store_migration_detail(&self) -> &str {
         &self.store_migration_detail
     }
+    /// Durable store health.
     pub async fn durable_store_health(&self) -> Result<String> {
         self.store.health().await
     }
 
+    /// Event tx channel.
     pub fn event_tx_channel(
         &self,
     ) -> Option<&broadcast::Sender<crate::server::events::RealtimeEvent>> {
@@ -388,12 +396,14 @@ impl WorkspaceState {
         store.event_tx_ref()
     }
 
+    /// Record request.
     pub async fn record_request(&self, event: UsageEvent) -> Result<()> {
         self.requests_used.fetch_add(1, Ordering::Relaxed);
         self.usage_metrics.record(event);
         self.persist_usage_state().await
     }
 
+    /// Usage snapshot.
     pub async fn usage_snapshot(&self) -> WorkspaceUsageSnapshot {
         let usage = self.memory.usage().await;
         WorkspaceUsageSnapshot {
@@ -416,6 +426,7 @@ impl WorkspaceState {
         }
     }
 
+    /// Export sync.
     pub async fn export_sync(&self) -> Result<String> {
         let sync_dir = self
             .usage_state_path
@@ -427,6 +438,7 @@ impl WorkspaceState {
         crate::sync::chunks::export_to_chunk(&sync_dir, &docs, &mut manifest)
     }
 
+    /// Import sync.
     pub async fn import_sync(&self) -> Result<usize> {
         let sync_dir = self
             .usage_state_path
@@ -452,6 +464,7 @@ impl WorkspaceState {
         Ok(total_imported)
     }
 
+    /// Record optimization.
     pub async fn record_optimization(
         &self,
         route_category: RouteCategory,
@@ -465,6 +478,7 @@ impl WorkspaceState {
         self.persist_usage_state().await
     }
 
+    /// Limits snapshot.
     pub fn limits_snapshot(&self) -> WorkspaceLimitsSnapshot {
         WorkspaceLimitsSnapshot {
             workspace_id: self.config.id.clone(),
@@ -478,6 +492,7 @@ impl WorkspaceState {
         }
     }
 
+    /// Sync policy snapshot.
     pub fn sync_policy_snapshot(&self) -> SyncPolicySnapshot {
         SyncPolicySnapshot {
             workspace_id: self.config.id.clone(),
@@ -486,6 +501,7 @@ impl WorkspaceState {
         }
     }
 
+    /// Embedding provider snapshot.
     pub async fn embedding_provider_snapshot(&self) -> EmbeddingProviderSnapshot {
         use crate::memory::embedder::EmbeddingClient;
         use crate::settings::XavierSettings;
@@ -532,6 +548,7 @@ impl WorkspaceState {
         }
     }
 
+    /// Ensure within request limit.
     pub async fn ensure_within_request_limit(&self) -> Result<()> {
         if let Some(limit) = self.config.request_limit {
             let current = self.requests_used.load(Ordering::Relaxed);
@@ -558,6 +575,7 @@ impl WorkspaceState {
         Ok(())
     }
 
+    /// Ensure within storage limit.
     pub async fn ensure_within_storage_limit(
         &self,
         path: &str,
@@ -575,6 +593,7 @@ impl WorkspaceState {
         Ok(())
     }
 
+    /// Ingest.
     pub async fn ingest(
         &self,
         path: String,
@@ -586,6 +605,7 @@ impl WorkspaceState {
             .await
     }
 
+    /// Ingest typed.
     pub async fn ingest_typed(
         &self,
         path: String,
@@ -622,11 +642,13 @@ impl WorkspaceState {
         Ok(doc_id)
     }
 
+    /// Persist beliefs.
     pub async fn persist_beliefs(&self) -> Result<()> {
         let beliefs = self.belief_graph.read().await.get_relations();
         self.store.save_beliefs(&self.config.id, beliefs).await
     }
 
+    /// Index memory entities.
     pub async fn index_memory_entities(
         &self,
         memory_id: &str,
@@ -672,6 +694,7 @@ impl WorkspaceState {
         result
     }
 
+    /// Index memory layers.
     pub async fn index_memory_layers(
         &self,
         memory_id: &str,
@@ -693,6 +716,7 @@ impl WorkspaceState {
         self.working_memory.write().await.push(item);
     }
 
+    /// Remove memory entities.
     pub async fn remove_memory_entities(&self, memory_id: &str) -> Result<()> {
         let result = self.entity_graph.remove_memory(memory_id).await;
         if result.is_ok() {
@@ -708,9 +732,11 @@ impl WorkspaceState {
         }
         result
     }
+    /// List memory records.
     pub async fn list_memory_records(&self) -> Result<Vec<MemoryRecord>> {
         self.store.list(&self.config.id).await
     }
+    /// List memory records filtered.
     pub async fn list_memory_records_filtered(
         &self,
         filters: MemoryQueryFilters,
@@ -720,13 +746,16 @@ impl WorkspaceState {
             .list_filtered(&self.config.id, &filters, limit)
             .await
     }
+    /// Get memory record.
     pub async fn get_memory_record(&self, id_or_path: &str) -> Result<Option<MemoryRecord>> {
         self.store.get(&self.config.id, id_or_path).await
     }
+    /// Delete memory record.
     pub async fn delete_memory_record(&self, id: &str) -> Result<Option<MemoryRecord>> {
         self.store.delete(&self.config.id, id).await
     }
 
+    /// Update primary memory.
     pub async fn update_primary_memory(
         &self,
         id: &str,
@@ -792,6 +821,7 @@ impl WorkspaceState {
         Ok(document.id)
     }
 
+    /// Record session exchange.
     pub async fn record_session_exchange(
         &self,
         session_id: &str,
@@ -871,6 +901,7 @@ impl WorkspaceState {
         Ok(())
     }
 
+    /// Generate session token.
     pub async fn generate_session_token(&self) -> Result<String> {
         let token = ulid::Ulid::new().to_string();
         let now = Utc::now();
@@ -888,6 +919,7 @@ impl WorkspaceState {
         Ok(token)
     }
 
+    /// Is session token valid.
     pub async fn is_session_token_valid(&self, token_str: &str) -> bool {
         self.store
             .is_session_token_valid(&self.config.id, token_str)

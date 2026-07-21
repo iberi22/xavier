@@ -20,6 +20,7 @@ pub struct ProviderAutoPayload {
     pub strategy: String,
 }
 
+/// Provider status handler.
 pub async fn provider_status_handler(State(state): State<CliState>) -> Response {
     let (active_mode, current_provider, fallback_chain, history) = {
         let router = state.provider_router.read().await;
@@ -53,6 +54,7 @@ pub async fn provider_status_handler(State(state): State<CliState>) -> Response 
     )
 }
 
+/// Provider list handler.
 pub async fn provider_list_handler() -> Response {
     let providers = ProviderKind::all();
     let strategies = vec![
@@ -72,6 +74,7 @@ pub async fn provider_list_handler() -> Response {
     )
 }
 
+/// Provider set handler.
 pub async fn provider_set_handler(
     State(state): State<CliState>,
     Json(payload): Json<ProviderSetPayload>,
@@ -99,6 +102,7 @@ pub async fn provider_set_handler(
     }
 }
 
+/// Provider auto handler.
 pub async fn provider_auto_handler(
     State(state): State<CliState>,
     Json(payload): Json<ProviderAutoPayload>,

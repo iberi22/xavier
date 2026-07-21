@@ -14,6 +14,7 @@ pub struct Evaluator {
 }
 
 impl Evaluator {
+    /// New.
     pub fn new(benchmark: BenchmarkType) -> Self {
         Self {
             benchmark,

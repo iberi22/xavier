@@ -5,6 +5,7 @@
 pub struct EmbeddingPort;
 
 impl EmbeddingPort {
+    /// New.
     pub fn new() -> Self {
         Self
     }

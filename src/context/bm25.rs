@@ -23,6 +23,7 @@ pub struct Bm25Index {
 }
 
 impl Bm25Index {
+    /// New.
     pub fn new(documents: Vec<ContextDocument>) -> Self {
         let mut document_frequency = HashMap::new();
         let mut total_length = 0usize;
@@ -50,14 +51,17 @@ impl Bm25Index {
         }
     }
 
+    /// Len.
     pub fn len(&self) -> usize {
         self.documents.len()
     }
 
+    /// Is empty.
     pub fn is_empty(&self) -> bool {
         self.documents.is_empty()
     }
 
+    /// Search.
     pub fn search(&self, query: &str, limit: usize) -> Vec<Bm25Hit> {
         if limit == 0 || self.documents.is_empty() {
             return Vec::new();
@@ -112,6 +116,7 @@ impl Bm25Index {
     }
 }
 
+/// Tokenize.
 pub fn tokenize(input: &str) -> Vec<String> {
     input
         .split_whitespace()

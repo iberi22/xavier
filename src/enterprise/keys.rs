@@ -113,6 +113,7 @@ pub struct ApiKeyStore {
 }
 
 impl ApiKeyStore {
+    /// New.
     pub fn new() -> Self {
         Self {
             keys: HashMap::new(),

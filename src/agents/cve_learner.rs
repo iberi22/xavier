@@ -17,6 +17,7 @@ pub struct CveLearningAgent {
 }
 
 impl CveLearningAgent {
+    /// New.
     pub fn new() -> Self {
         Self {
             name: "Xavier-CVE-Learner".to_string(),

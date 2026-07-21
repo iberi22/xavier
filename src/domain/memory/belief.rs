@@ -32,6 +32,7 @@ pub struct BeliefEdge {
 }
 
 impl BeliefEdge {
+    /// New.
     pub fn new(
         source: String,
         target: String,

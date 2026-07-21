@@ -201,6 +201,7 @@ pub struct GovernanceEngine {
 }
 
 impl GovernanceEngine {
+    /// New.
     pub fn new(config: GovernanceConfig) -> Self {
         Self {
             config,
@@ -929,6 +930,7 @@ impl GovernanceEngine {
 
     // ── Getters ──────────────────────────────────────────
 
+    /// Active proposals.
     pub fn active_proposals(&self) -> Vec<&XipProposal> {
         self.proposals
             .iter()
@@ -941,14 +943,17 @@ impl GovernanceEngine {
             .collect()
     }
 
+    /// Get proposal.
     pub fn get_proposal(&self, id: &str) -> Option<&XipProposal> {
         self.proposals.iter().find(|p| p.id == id)
     }
 
+    /// Council size.
     pub fn council_size(&self) -> usize {
         self.active_council_members().len()
     }
 
+    /// Active voter count.
     pub fn active_voter_count(&self) -> usize {
         self.active_voter_wallets().len()
     }

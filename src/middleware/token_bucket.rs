@@ -65,35 +65,42 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
+    /// New.
     pub fn new(capacity: f64, fill_rate: f64) -> Self {
         Self {
             bucket: Mutex::new(TokenBucket::new(capacity, fill_rate)),
         }
     }
 
+    /// Try consume sync.
     pub fn try_consume_sync(&self, amount: f64) -> bool {
         let mut bucket = self.bucket.lock();
         bucket.try_consume(amount)
     }
 
+    /// Tokens sync.
     pub fn tokens_sync(&self) -> f64 {
         let mut bucket = self.bucket.lock();
         bucket.tokens()
     }
 
+    /// Retry after sync.
     pub fn retry_after_sync(&self, amount: f64) -> Duration {
         let mut bucket = self.bucket.lock();
         bucket.retry_after(amount)
     }
 
+    /// Try consume.
     pub async fn try_consume(&self, amount: f64) -> bool {
         self.try_consume_sync(amount)
     }
 
+    /// Tokens.
     pub async fn tokens(&self) -> f64 {
         self.tokens_sync()
     }
 
+    /// Retry after.
     pub async fn retry_after(&self, amount: f64) -> Duration {
         self.retry_after_sync(amount)
     }
