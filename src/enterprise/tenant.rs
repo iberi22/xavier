@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Multi-tenancy support
 //!
 //! Manages tenant isolation, plan-based feature tiers, and tenant metadata.

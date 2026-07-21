@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI usage tracking commands
 //!
 //! Handles the `xavier usage` subcommand for displaying provider usage

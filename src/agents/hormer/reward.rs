@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! HORMER Reward Model - Evaluation of retrieval quality
 //!
 //! Evaluates the effectiveness of a navigation policy by scoring

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::agents::provider::types::LlmResponse;
 use crate::agents::system1::RetrievedDocument;
 use anyhow::Result;

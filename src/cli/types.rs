@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Request and response types for the CLI HTTP API.
 //!
 //! This module defines the data structures used for communication between the

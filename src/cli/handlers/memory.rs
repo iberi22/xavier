@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory handlers for search, addition, deletion, and management of memories.
 
 use axum::{

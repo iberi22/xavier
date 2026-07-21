@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory quality scoring and evaluation.
 //!
 //! Implements memory quality metrics including recency scoring,

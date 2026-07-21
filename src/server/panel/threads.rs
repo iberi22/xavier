@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use super::types::CreateThreadRequest;
 use crate::{
     codebase::conversations_db::{ThreadDetail, ThreadSummary},

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Billing CLI command handlers
 //!
 //! Implements billing status and invoice via HTTP API.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::cli::state::CliState;
 use axum::{
     extract::{Json, Path, Query, State},

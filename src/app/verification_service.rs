@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Content verification service
 //!
 //! Provides the implementation and data structures for this module's

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::agents::runtime::ConversationMessage;
 use crate::agents::system1::RetrievedDocument;
 use anyhow::Result;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! UI modules for Xavier
 //!
 //! This provides various UI components for different interfaces.

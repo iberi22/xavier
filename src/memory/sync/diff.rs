@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Diff two memory store manifests → list of operations to reconcile.
 //!
 //! The diff algorithm compares local and remote manifests entry-by-entry

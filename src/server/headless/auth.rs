@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::security::auth::resolve_xavier_token;
 use subtle::ConstantTimeEq;
 

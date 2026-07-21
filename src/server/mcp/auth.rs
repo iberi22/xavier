@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! MCP Security and Authentication
 //!
 //! Provides token-based authentication and Origin header validation

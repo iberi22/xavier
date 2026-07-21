@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Manifest building and reconciliation for memory sync.
 //!
 //! A manifest is a compact snapshot of all chunks known to a store,

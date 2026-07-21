@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use axum::{
     extract::Path as AxumPath,
     http::{header, StatusCode},

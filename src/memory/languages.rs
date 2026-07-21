@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Language Family detection for file-type aware filtering
 //!
 //! Provides utilities to categorize source files into language families

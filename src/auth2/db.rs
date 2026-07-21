@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::secrets::vault::HardwareVault;
 use anyhow::{anyhow, Result as AnyhowResult};
 use rusqlite::{params, Connection};

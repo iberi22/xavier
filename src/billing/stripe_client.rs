@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Stripe API client for billing operations.
 
 use anyhow::{anyhow, Result};

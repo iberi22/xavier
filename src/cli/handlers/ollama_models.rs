@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Ollama models handlers for list, pull, and set-active (hot-swap backend) operations.
 //!
 //! Note: Setting XAVIER_LOCAL_LLM_MODEL or XAVIER_EMBEDDING_MODEL updates the process

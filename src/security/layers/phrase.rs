@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Aho-Corasick phrase matching layer for prompt injection detection
 
 use aho_corasick::AhoCorasick;

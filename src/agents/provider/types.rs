@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Provider-related type definitions and enums.
 //!
 //! Defines shared types used across LLM provider implementations,

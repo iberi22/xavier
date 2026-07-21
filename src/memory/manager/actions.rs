@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory manager action types and event logging.
 //!
 //! Defines the action types that the memory manager can perform,

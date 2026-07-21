@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Agent memory management CLI handlers (client-side)
 
 use anyhow::Result;

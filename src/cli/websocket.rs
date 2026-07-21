@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Handlers for session events and memory compaction.
 //!
 //! This module manages session-related events, including indexing chat entries

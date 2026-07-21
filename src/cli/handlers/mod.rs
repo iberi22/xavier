@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI Request Handlers
 //!
 //! This module re-exports handlers from sub-modules for cleaner organization.

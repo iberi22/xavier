@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Retrieval module - Multi-layer memory retrieval with adaptive gating
 //!
 //! This module provides adaptive retrieval gating that combines results from

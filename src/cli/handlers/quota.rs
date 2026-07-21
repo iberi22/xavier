@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
 use anyhow::Result;

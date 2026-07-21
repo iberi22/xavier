@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::notifications::{Notification, NOTIFICATIONS};
 use tokio::sync::mpsc;
 use tracing::info;

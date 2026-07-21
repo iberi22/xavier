@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! HTTP inbound adapter and REST API implementation
 //!
 //! Aggregates and re-exports the sub-modules within this module,

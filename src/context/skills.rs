@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Skills integration for context-aware tool use
 //!
 //! Provides the implementation and data structures for this module's

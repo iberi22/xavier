@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Chronicle Redact Module
 //!
 //! Automatic privacy filter for sensitive content. This is a critical security layer.

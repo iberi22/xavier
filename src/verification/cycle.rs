@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Standardized Save/Retrieve Verification Cycle for SWAL Agents
 //!
 //! Implements the mandatory verification loop:

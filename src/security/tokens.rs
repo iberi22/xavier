@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! API Token Management for Xavier
 //!
 //! Provides secure storage and validation of API tokens using SHA-256 hashing

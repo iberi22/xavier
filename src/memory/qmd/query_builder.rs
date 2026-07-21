@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! QMD query builder
 //!
 //! Provides the implementation and data structures for this module's

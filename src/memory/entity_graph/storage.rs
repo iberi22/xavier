@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Entity graph storage and persistence.
 //!
 //! Implements storage operations for the entity graph, including

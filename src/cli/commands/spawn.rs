@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI agent spawning and swarm commands
 //!
 //! Handles `xavier spawn`, `xavier multi-spawn`, and `xavier swarm` subcommands.

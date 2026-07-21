@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory decay logic
 //!
 //! Applies time-based relevance decay to all tracked memories

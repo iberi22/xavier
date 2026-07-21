@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory Manager - Intelligent Memory Management System
 //!
 //! Provides autonomous memory lifecycle management:

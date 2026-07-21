@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Funnel de Recompensas — MINTER + BURN
 //!
 //! ## MINTER Automático

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Pairing Secret Registry — Persistent storage for pending pairing secrets
 //!
 //! Stores secrets generated for node pairing to verify them during handshake.

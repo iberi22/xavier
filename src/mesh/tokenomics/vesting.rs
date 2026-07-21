@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::mesh::tokenomics::wallet::VestingState;
 use chrono::{Datelike, Utc};
 

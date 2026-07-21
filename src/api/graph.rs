@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Knowledge graph API endpoints
 //!
 //! Provides the implementation and data structures for this module's

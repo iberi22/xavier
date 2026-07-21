@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Entropy-based secret detection
 //!
 //! Detects high-entropy strings that may indicate secrets or tokens.

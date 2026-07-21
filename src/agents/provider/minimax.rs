@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::agents::provider::config::ModelProviderConfig;
 use crate::agents::provider::types::LlmResponse;
 use anyhow::{anyhow, Context, Result};

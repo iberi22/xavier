@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Deterministic Xavier Rating Engine
 //!
 //! Implements a scoring engine for data quality, task difficulty, context usefulness,

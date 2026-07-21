@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Provider router for hot-switching LLM providers.
 //!
 //! This module implements the logic for switching providers at runtime,

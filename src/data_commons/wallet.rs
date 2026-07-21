@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Wallet Post-Cuántica $XAV
 //!
 //! ## Stack Criptográfico

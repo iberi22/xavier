@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Auto-update checks for Xavier releases.
 
 use anyhow::{Context, Result};

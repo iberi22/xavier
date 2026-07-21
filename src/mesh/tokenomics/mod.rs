@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Tokenomics — XP-based incentive system for Xavier Mesh.
 //!
 //! This module implements a placeholder tokenomics system where nodes earn

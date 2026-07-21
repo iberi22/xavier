@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! In-process LLM proxy usage counters (Ola 3 / issue #578).
 //!
 //! Complements `RateLimitManager` persistence with a cheap, process-local

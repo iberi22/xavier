@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::enterprise::rbac::{Permission, Role};
 use crate::memory::schema::ClearanceLevel;
 use crate::mesh::node::NodeId;

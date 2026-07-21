@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Retrieval scoring and ranking algorithms
 //!
 //! Provides the implementation and data structures for this module's

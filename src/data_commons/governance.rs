@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Gobernanza Bicameral — 50% Usuarios + 50% Consejo Xavier Core
 //!
 //! ## XIP Lifecycle State Machine

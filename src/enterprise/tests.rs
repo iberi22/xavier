@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Enterprise feature unit tests
 //!
 //! Tests for tenant CRUD, API key management, rate limiting, and audit logging.
@@ -197,17 +198,20 @@ mod http_tests {
         http::{Request, StatusCode},
         Router,
     };
-    use std::sync::{Arc, Mutex};
+    use std::sync::{Arc, LazyLock, Mutex};
     use tower::util::ServiceExt;
 
     use crate::enterprise::http::{enterprise_router, EnterpriseState};
 
     const TEST_TOKEN: &str = "test-enterprise-token";
 
+    // Serializes all HTTP tests to prevent parallel/concurrent test interference
+    static HTTP_TEST_MUTEX: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
     /// Build a router with the enterprise routes (no auth layer — tested separately via CLI integration).
     fn test_router() -> Router {
         let state = Arc::new(Mutex::new(EnterpriseState {
-            tenant_store: crate::enterprise::tenancy::TenantStore::new(),
+            tenant_store: crate::enterprise::tenant::TenantStore::new(),
             api_key_store: crate::enterprise::keys::ApiKeyStore::new(),
             audit_log: crate::enterprise::audit::AuditLog::new(),
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
@@ -251,6 +255,7 @@ mod http_tests {
 
     #[tokio::test]
     async fn create_tenant_returns_200_with_id() {
+        let _guard = HTTP_TEST_MUTEX.lock().unwrap();
         std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
         let app = test_router();
         let resp = app
@@ -273,9 +278,10 @@ mod http_tests {
 
     #[tokio::test]
     async fn list_tenants_returns_created_tenant() {
+        let _guard = HTTP_TEST_MUTEX.lock().unwrap();
         std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
         let state = Arc::new(Mutex::new(EnterpriseState {
-            tenant_store: crate::enterprise::tenancy::TenantStore::new(),
+            tenant_store: crate::enterprise::tenant::TenantStore::new(),
             api_key_store: crate::enterprise::keys::ApiKeyStore::new(),
             audit_log: crate::enterprise::audit::AuditLog::new(),
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
@@ -307,9 +313,10 @@ mod http_tests {
 
     #[tokio::test]
     async fn get_tenant_by_id_returns_correct_tenant() {
+        let _guard = HTTP_TEST_MUTEX.lock().unwrap();
         std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
         let state = Arc::new(Mutex::new(EnterpriseState {
-            tenant_store: crate::enterprise::tenancy::TenantStore::new(),
+            tenant_store: crate::enterprise::tenant::TenantStore::new(),
             api_key_store: crate::enterprise::keys::ApiKeyStore::new(),
             audit_log: crate::enterprise::audit::AuditLog::new(),
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
@@ -347,6 +354,7 @@ mod http_tests {
 
     #[tokio::test]
     async fn get_nonexistent_tenant_returns_404() {
+        let _guard = HTTP_TEST_MUTEX.lock().unwrap();
         std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
         let app = test_router();
         let fake_id = uuid::Uuid::new_v4();
@@ -361,9 +369,10 @@ mod http_tests {
 
     #[tokio::test]
     async fn create_api_key_returns_raw_key() {
+        let _guard = HTTP_TEST_MUTEX.lock().unwrap();
         std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
         let state = Arc::new(Mutex::new(EnterpriseState {
-            tenant_store: crate::enterprise::tenancy::TenantStore::new(),
+            tenant_store: crate::enterprise::tenant::TenantStore::new(),
             api_key_store: crate::enterprise::keys::ApiKeyStore::new(),
             audit_log: crate::enterprise::audit::AuditLog::new(),
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
@@ -414,6 +423,7 @@ mod http_tests {
 
     #[tokio::test]
     async fn create_api_key_for_missing_tenant_returns_404() {
+        let _guard = HTTP_TEST_MUTEX.lock().unwrap();
         std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
         let app = test_router();
         let fake_id = uuid::Uuid::new_v4();
@@ -430,9 +440,10 @@ mod http_tests {
 
     #[tokio::test]
     async fn revoke_api_key_returns_204() {
+        let _guard = HTTP_TEST_MUTEX.lock().unwrap();
         std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
         let state = Arc::new(Mutex::new(EnterpriseState {
-            tenant_store: crate::enterprise::tenancy::TenantStore::new(),
+            tenant_store: crate::enterprise::tenant::TenantStore::new(),
             api_key_store: crate::enterprise::keys::ApiKeyStore::new(),
             audit_log: crate::enterprise::audit::AuditLog::new(),
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
@@ -483,9 +494,10 @@ mod http_tests {
 
     #[tokio::test]
     async fn audit_log_records_key_creation() {
+        let _guard = HTTP_TEST_MUTEX.lock().unwrap();
         std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
         let state = Arc::new(Mutex::new(EnterpriseState {
-            tenant_store: crate::enterprise::tenancy::TenantStore::new(),
+            tenant_store: crate::enterprise::tenant::TenantStore::new(),
             api_key_store: crate::enterprise::keys::ApiKeyStore::new(),
             audit_log: crate::enterprise::audit::AuditLog::new(),
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
@@ -544,6 +556,7 @@ mod http_tests {
 
     #[tokio::test]
     async fn get_rate_limits_returns_200() {
+        let _guard = HTTP_TEST_MUTEX.lock().unwrap();
         std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
         let app = test_router();
         let resp = app
@@ -555,9 +568,10 @@ mod http_tests {
 
     #[tokio::test]
     async fn patch_rate_limits_returns_200() {
+        let _guard = HTTP_TEST_MUTEX.lock().unwrap();
         std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
         let state = Arc::new(Mutex::new(EnterpriseState {
-            tenant_store: crate::enterprise::tenancy::TenantStore::new(),
+            tenant_store: crate::enterprise::tenant::TenantStore::new(),
             api_key_store: crate::enterprise::keys::ApiKeyStore::new(),
             audit_log: crate::enterprise::audit::AuditLog::new(),
             rate_limiter: crate::enterprise::rate_limit::RateLimiter::new(),
@@ -579,5 +593,40 @@ mod http_tests {
 
         let resp = app.oneshot(req).await.expect("request should complete");
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn enterprise_endpoints_fail_without_mesh_license_and_succeed_when_active() {
+        let _guard = HTTP_TEST_MUTEX.lock().unwrap();
+        use crate::enterprise::http::{TEST_BYPASS_LICENSE, TEST_FORCE_LICENSE_ACTIVE};
+        std::env::set_var("XAVIER_TOKEN", TEST_TOKEN);
+        let app = test_router();
+
+        // 1. Disable bypass to run standard validation
+        TEST_BYPASS_LICENSE.store(false, std::sync::atomic::Ordering::Relaxed);
+        TEST_FORCE_LICENSE_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
+
+        // This request should now fail with BAD_REQUEST because the license is not accepted
+        let resp_fail = app
+            .clone()
+            .oneshot(authed_get("/v1/tenants"))
+            .await
+            .expect("request");
+        assert_eq!(resp_fail.status(), StatusCode::BAD_REQUEST);
+
+        // 2. Force license to active
+        TEST_FORCE_LICENSE_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
+
+        // This request should now succeed with OK
+        let resp_success = app
+            .clone()
+            .oneshot(authed_get("/v1/tenants"))
+            .await
+            .expect("request");
+        assert_eq!(resp_success.status(), StatusCode::OK);
+
+        // Reset state so we don't affect other tests
+        TEST_BYPASS_LICENSE.store(true, std::sync::atomic::Ordering::Relaxed);
+        TEST_FORCE_LICENSE_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 }

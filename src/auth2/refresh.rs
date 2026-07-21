@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::auth2::db::{AuthDb, RefreshToken};
 use anyhow::{anyhow, Result};
 use rand::{thread_rng, RngCore};

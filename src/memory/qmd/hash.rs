@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! MinHash implementation for near-duplicate detection
 //!
 //! Provides MinHash signature generation and Jaccard similarity computation

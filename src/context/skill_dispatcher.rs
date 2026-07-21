@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Skill Dispatcher — Routes tasks to skills and builds pre-digested context packs
 //!
 //! This is the core of Xavier's "masticación" capability. Instead of IDEs or CLI

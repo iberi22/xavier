@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! BM25 (Best Matching 25) ranking algorithm implementation.
 //!
 //! BM25 is a ranking function used by search engines to estimate the relevance

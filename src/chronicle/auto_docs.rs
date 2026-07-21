@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Auto-Docs Generator Module
 //!
 //! Generates structured markdown documentation for each module in the Xavier codebase

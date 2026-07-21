@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Anchor Definitions
 //!
 //! Defines the data structures for feature anchors — the mapping between

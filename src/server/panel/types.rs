@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::codebase::conversations_db::{Message, ThreadSummary};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};

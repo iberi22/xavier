@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI handler for the auto-improvement loop.
 //!
 //! Implements `xavier improve run` and `xavier improve status`. The handler builds

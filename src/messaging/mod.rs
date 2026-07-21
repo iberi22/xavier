@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Messaging Integrations module for Xavier
 //!
 //! Supports Discord, Telegram (via separate module), and others.

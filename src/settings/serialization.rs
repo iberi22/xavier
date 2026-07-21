@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Logical concern: Serialization and path resolution for Xavier settings.
 //!
 //! This module handles loading configurations from files and resolving system paths.

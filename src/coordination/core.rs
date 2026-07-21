@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Coordination Core - Integrates events with system components.
 //!
 //! Listens for agent task events and manages secret leases automatically.

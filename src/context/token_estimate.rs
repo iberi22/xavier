@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Unified token estimation utility.
 
 /// Estimates the number of tokens in a given text.

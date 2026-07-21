@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Headless API handlers — REST endpoints for external CLI agents.
 //!
 //! These are mounted under `/v1/*` in `src/cli/server.rs` and

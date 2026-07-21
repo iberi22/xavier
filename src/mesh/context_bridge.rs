@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Context Bridge — Semantic relations between isolated databases
 //!
 //! Allows defining connections between documents residing in separate databases

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! SystemScanner: Detect CLI agents, local models, GPU, env vars, and login status
 
 use serde::{Deserialize, Serialize};

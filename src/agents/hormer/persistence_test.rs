@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 #[cfg(test)]
 mod persistence_tests {
     use super::super::*;

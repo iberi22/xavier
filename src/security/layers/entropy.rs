@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Shannon entropy detection for secrets and high-entropy content
 
 use regex::Regex;

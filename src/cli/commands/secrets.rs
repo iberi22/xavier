@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI commands for secret/ephemeral credential management (Clavis)
 //!
 //! Handles the `xavier secrets` subcommand for lending, listing, and

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Lexical scoring and contextual boost functions for QMD search.
 //!
 //! Computes relevance scores for documents against a query using

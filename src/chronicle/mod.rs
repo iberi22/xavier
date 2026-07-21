@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Chronicle module.
 //!
 //! Chronicle provides harvesting, redaction, generation, publishing, and CLI

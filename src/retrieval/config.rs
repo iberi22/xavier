@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Shared retrieval tuning defaults.
 
 pub const DEFAULT_WORKING_WEIGHT: f32 = 0.3;

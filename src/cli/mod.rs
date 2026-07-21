@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Command-line interface module
 //!
 //! Aggregates and re-exports the sub-modules within this module,

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Message Bus for Agent Coordination
 //!
 //! Provides async message passing between agents using tokio channels.

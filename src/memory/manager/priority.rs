@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory priority and scoring system.
 //!
 //! Defines memory priority levels and scoring algorithms used

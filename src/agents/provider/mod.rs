@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Model provider system for Xavier agents.
 //!
 //! This module provides a unified interface for interacting with different

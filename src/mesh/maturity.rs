@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use serde::{Deserialize, Serialize};
 
 /// Maturity report of the Xavier Mesh components.

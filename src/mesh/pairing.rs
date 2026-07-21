@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::mesh::node::NodeId;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};

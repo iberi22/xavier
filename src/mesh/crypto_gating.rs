@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use serde::{Deserialize, Serialize};
 
 /// Simplified mock representation of Token Gating and Symmetric Encryption for Data Commons.

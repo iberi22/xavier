@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use serde::{Deserialize, Serialize};
 
 /// Represents a Security Rule extracted from a CVE or an Open Source Pattern.

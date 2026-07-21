@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Belief evaluation engine for agent reasoning
 //!
 //! Provides the implementation and data structures for this module's

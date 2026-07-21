@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory consolidation — deduplication of similar memories.
 //!
 //! Merges near-duplicate documents based on a normalized content signature,

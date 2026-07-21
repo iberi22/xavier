@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::coordination::message_bus::{AgentMessage, MessageBus, MessageBusError, MessageType};
 use tokio::sync::mpsc;
 use ulid::Ulid;

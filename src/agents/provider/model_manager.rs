@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use std::path::Path;
 use std::sync::OnceLock;
 use regex::Regex;

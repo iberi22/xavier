@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Provider rate limiting and token bucket implementation.
 //!
 //! Implements per-provider rate limiting with configurable RPM/TPM

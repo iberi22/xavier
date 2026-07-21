@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Persistent embedding cache with LRU eviction.
 //!
 //! Provides an in-memory LRU cache backed by SQLite for embedding vectors,

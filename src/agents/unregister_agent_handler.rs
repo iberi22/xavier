@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Handler for agent unregistration
 //!
 //! Provides the implementation and data structures for this module's

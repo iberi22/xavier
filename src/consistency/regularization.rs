@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Retention Regularizer - Memory coherence and semantic drift detection
 //!
 //! Implements retention regularization for detecting conflicts, verifying

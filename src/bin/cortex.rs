@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Cortex binary entry point
 //!
 //! Provides the implementation and data structures for this module's

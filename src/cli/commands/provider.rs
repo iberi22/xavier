@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Provider management CLI command implementation.
 
 use crate::cli::commands::enums::{ProviderCommand, CLI_HTTP_CLIENT};

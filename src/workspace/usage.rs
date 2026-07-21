@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Workspace usage tracking and analytics
 //!
 //! Provides the implementation and data structures for this module's

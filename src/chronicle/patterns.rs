@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Patterns for Chronicle Redaction Module
 //!
 //! This file contains the configurable patterns used to identify sensitive information

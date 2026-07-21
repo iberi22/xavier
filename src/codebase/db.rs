@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Per-project codebase database manager.
 //!
 //! Creates and manages tables in `.xavier/codebase.db`.

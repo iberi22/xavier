@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Proxy use case for LLM service proxying
 //!
 //! Provides the implementation and data structures for this module's

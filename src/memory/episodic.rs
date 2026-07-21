@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Episodic Memory Layer - Session-based memory with summarization
 //!
 //! Implements the second layer of the Multi-Layer Memory Architecture.

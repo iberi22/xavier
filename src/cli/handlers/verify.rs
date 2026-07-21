@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Verify CLI command handlers
 //!
 //! Implements system health check and memory verification via HTTP API.

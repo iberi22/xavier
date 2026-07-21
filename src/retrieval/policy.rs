@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Navigation Policy - Learned retrieval layer and traversal weight management
 //!
 //! Provides the data structures and logic for maintaining and updating

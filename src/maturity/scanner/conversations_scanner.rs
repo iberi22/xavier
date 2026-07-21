@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Conversations Scanner — Layer 4: Project Intelligence
 //!
 //! Analyzes discussions, issues, and PRs by examining project artifacts:

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! BM25 ranking algorithm for context retrieval
 //!
 //! Provides the implementation and data structures for this module's

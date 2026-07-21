@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Homoglyph detection - Unicode normalization and lookalike detection
 
 use std::collections::HashSet;

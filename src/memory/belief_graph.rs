@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Belief Graph - conceptual graph used by the Xavier reasoning layers.
 
 use aho_corasick::AhoCorasick;

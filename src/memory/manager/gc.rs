@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory Garbage Collector
 //!
 //! Cleans up orphaned vectors, empty documents, and stale entries

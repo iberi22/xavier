@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Session sharing and export/import utilities
 //!
 //! Provides functionality for bundling session documents for transport

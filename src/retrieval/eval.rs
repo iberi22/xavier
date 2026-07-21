@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Context Regeneration — recall@k evaluation harness.
 //!
 //! Measures retrieval quality (recall@k, MRR, precision@k) against a labelled

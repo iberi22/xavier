@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use axum::{extract::State, http::StatusCode, response::Response, Json};
 use chrono::Utc;
 use serde::{Deserialize, Serialize};

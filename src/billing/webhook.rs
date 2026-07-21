@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Stripe webhook handling.
 
 use anyhow::Result;

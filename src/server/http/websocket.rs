@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! WebSocket server for real-time communication
 //!
 //! Provides the implementation and data structures for this module's

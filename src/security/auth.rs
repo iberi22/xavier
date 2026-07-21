@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Authentication Module for Xavier
 //! JWT-based authentication, RBAC, and TOTP support
 

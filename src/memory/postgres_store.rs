@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! PostgreSQL backend for Xavier memory store (supports Neon/pgvector).
 
 use anyhow::{Context, Result};

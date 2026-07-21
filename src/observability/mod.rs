@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Observability Module
 //!
 //! Complete observability system for Xavier: logging, error tracking,

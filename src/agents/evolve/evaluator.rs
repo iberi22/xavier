@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Evaluator Agent - Runs benchmarks to measure improvement
 
 use crate::agents::evolve::config::BenchmarkType;

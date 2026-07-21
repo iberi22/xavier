@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Shared types and schemas for the HTTP API.
 //!
 //! This module defines the request and response structures used across different

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI configuration utilities.
 //!
 //! # Canonical Client Configuration Contract

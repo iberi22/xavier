@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Panel handlers for chat processing and thread management.
 
 use axum::{

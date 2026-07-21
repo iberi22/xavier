@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory manager configuration settings.
 //!
 //! Defines the configuration options for the MemoryManager,

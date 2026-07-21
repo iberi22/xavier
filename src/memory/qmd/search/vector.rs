@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 ﻿//! Vector search ÔÇö cosine similarity search over document embeddings.
 
 use anyhow::Result;

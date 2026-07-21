@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Encoding detection layer - Base64, Hex, URL decode + rescan
 
 use regex::Regex;

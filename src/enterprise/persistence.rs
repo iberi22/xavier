@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! SQLite persistence for enterprise module.
 //!
 //! Provides durable storage for tenants, API keys, audit logs, and rate limit configs.

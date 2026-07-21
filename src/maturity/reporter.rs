@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Reporter — Maturity Report Generation
 //!
 //! Generates the feature-maturity.json report and markdown summaries.

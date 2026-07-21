@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Heuristic detection layer - Character tricks, ALL CAPS, role-switch
 
 use regex::Regex;

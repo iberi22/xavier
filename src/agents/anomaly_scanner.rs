@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use serde::{Deserialize, Serialize};
 
 /// Simplified Autonomous Remediation Agent (Phase 2 Data Commons).

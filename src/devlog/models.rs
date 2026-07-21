@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Data models for devlog entries
 //!
 //! Provides the implementation and data structures for this module's

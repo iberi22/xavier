@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! HTTP API v1 endpoint definitions
 //!
 //! Provides the implementation and data structures for this module's

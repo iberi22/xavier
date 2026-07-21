@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Provider configuration and model routing.
 //!
 //! Defines provider-specific configuration constants, model-to-provider

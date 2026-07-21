@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Codebase module — per-project SQLite databases.
 //!
 //! Each repository gets its own `.xavier/codebase.db` (git + code data)

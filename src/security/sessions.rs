@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Ephemeral Session Management for Frontend Access
 //!
 //! Issues short-lived, temporary session tokens for frontends to securely

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Old Types — Backward-Compatible Type Definitions
 //!
 //! These types are used by the original scanner code and by consumers

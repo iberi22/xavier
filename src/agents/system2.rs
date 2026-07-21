@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! System 2 — Slow, analytical reasoning with multi-step Chain-of-Thought
 //!
 //! System 2 implements deliberate, methodical reasoning compared to System 1's

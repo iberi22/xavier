@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! UI rendering utilities for agent output
 //!
 //! Provides the implementation and data structures for this module's

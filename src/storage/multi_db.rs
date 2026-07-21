@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Multi-DB Manager for deep federated workspace databases.
 //!
 //! Handles initialization, listing, querying, and connecting

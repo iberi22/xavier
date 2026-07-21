@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Scanner Submodules — Multi-Layer Maturity Scanning
 //!
 //! Each module implements one scanning layer. The orchestrator runs them

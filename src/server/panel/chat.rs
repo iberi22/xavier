@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use super::types::{PanelChatRequest, PanelChatResponse};
 use crate::codebase::conversations_db::ThreadSummary;
 use crate::{

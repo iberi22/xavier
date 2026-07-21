@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Skill Registry — Vectorized index of available skills
 //!
 //! Scans skill directories, extracts metadata from YAML frontmatter,

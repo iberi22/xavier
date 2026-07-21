@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Doctor: CLI subcommand to diagnose local-first health.
 
 use crate::cli::handlers::system_scan::scan_system;

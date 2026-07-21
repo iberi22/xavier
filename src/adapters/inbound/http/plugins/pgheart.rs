@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! PgHeart PostgreSQL Monitoring Plugin
 //!
 //! Integrates Xavier with PgHeart for PostgreSQL monitoring and heartbeat.

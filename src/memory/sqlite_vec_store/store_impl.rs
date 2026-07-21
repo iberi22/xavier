@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Store trait implementation for SQLite backend
 //!
 //! Provides the implementation and data structures for this module's

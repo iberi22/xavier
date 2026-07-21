@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use serde::{Deserialize, Serialize};
 use std::process::Command;
 

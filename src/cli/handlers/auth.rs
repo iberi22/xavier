@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Authentication API Handlers for Xavier
 
 use axum::{

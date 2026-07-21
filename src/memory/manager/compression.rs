@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory compression — truncate large documents to save storage.
 
 use anyhow::Result;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::data_commons::maintainer::decrypt_as_maintainer;
 use crate::data_commons::telemetry_db::TelemetryDb;
 use chrono::{DateTime, Utc};

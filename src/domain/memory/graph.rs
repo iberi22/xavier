@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Domain models for Xavier's Belief Graph.
 //!
 //! Provides strict schema definitions for Entities and Relationships

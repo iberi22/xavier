@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Lifecycle hooks for agents.
 //!
 //! Provides functions to emit events when agent tasks start, complete, or fail.

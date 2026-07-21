@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 #[cfg(feature = "tauri")]
 use std::sync::OnceLock;
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI handler for context regeneration (recall measurement + RRF tuning).
 //!
 //! Implements `xavier regen benchmark`, `regen tune`, and `regen history`. The

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI handlers for session management commands
 
 use anyhow::{Context, Result};

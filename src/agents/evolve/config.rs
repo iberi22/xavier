@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Evolve Module Configuration
 
 use serde::{Deserialize, Serialize};

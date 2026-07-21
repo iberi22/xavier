@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory decay and forgetting curve module.
 //!
 //! Implements Ebbinghaus forgetting curve algorithms and a DecayManager

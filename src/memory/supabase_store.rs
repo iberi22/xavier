@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Supabase backend for Xavier memory store (REST API).
 
 use anyhow::{Context, Result};

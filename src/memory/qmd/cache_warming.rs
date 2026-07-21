@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Predictive Cache Warming for QmdMemory
 //!
 //! Tracks document access patterns and pre-warms the search cache

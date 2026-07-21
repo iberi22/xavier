@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Secret handlers for key lending and lease management.
 
 use axum::{

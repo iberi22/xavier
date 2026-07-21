@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::coordination::message_bus::{AgentMessage, MessageBus};
 use std::collections::HashMap;
 

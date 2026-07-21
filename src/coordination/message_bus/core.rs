@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Core message bus implementation.
 //!
 //! Provides the central event-driven message bus used for agent coordination,

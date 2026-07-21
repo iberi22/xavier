@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Logical concern: Validation helpers for Xavier settings.
 //!
 //! This module contains functions to validate and sanitize configuration values.

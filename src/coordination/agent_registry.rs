@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Agent Registry - Track and manage active agents with heartbeats.
 //!
 //! Provides a simple in-memory registry for agents to:

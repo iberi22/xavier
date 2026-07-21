@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Iroh Transport — QUIC-based P2P transport for Xavier Mesh (Phase 2)
 //!
 //! Mirrors the [`super::MeshTransport`] surface (handshake / fetch_manifest /

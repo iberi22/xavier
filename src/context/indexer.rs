@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! In-memory context indexer.
 //!
 //! Provides a simple document store with BM25-based search over stored

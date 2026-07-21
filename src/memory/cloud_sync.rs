@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Cloud Memory Sync — bidirectional LWW sync between local and cloud backends.
 //!
 //! Provides `CloudMemorySync` which orchestrates push/pull/sync-all operations

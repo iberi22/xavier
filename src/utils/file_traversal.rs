@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! File traversal utilities using std::fs only
 //!
 //! Provides a lightweight WalkDir alternative without external dependencies.

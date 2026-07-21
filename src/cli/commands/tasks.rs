@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI task management commands.
 
 use crate::cli::commands::enums::{TasksCommand, CLI_HTTP_CLIENT};

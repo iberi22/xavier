@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! MCP transports — stdio and HTTP+SSE entry points.
 //!
 //! Both transports share a single [`build_mcp_state`] that initializes the

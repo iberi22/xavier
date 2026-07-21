@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Database migrations for Xavier Unified Storage.
 //!
 //! ## Baseline migrations (v1–v5)

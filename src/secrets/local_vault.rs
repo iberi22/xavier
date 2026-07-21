@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Local encrypted secrets vault for Xavier
 //!
 //! Stores system-level secrets (API keys, tokens) in encrypted files

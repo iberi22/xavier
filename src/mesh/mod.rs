@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Xavier Mesh — Distributed P2P Memory Synchronization
 //!
 //! This module implements the foundational layer for connecting Xavier nodes

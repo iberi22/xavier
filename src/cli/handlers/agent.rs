@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Agent handlers for registration, heartbeat, and lifecycle management.
 
 use axum::{

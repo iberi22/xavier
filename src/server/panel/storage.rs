@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use super::types::{Bookmark, GraphData, Widget};
 use crate::{
     codebase::connection_manager::ConnectionManager,

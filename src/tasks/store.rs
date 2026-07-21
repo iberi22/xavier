@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Task Store - Persistence layer for tasks
 //! Can use different backends (SQLite, file, in-memory)
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Entity extraction from memory content.
 //!
 //! Implements pattern-based and NLP-based entity extraction,

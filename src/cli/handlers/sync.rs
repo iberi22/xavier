@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Sync CLI command handlers
 //!
 //! Implements sync status via HTTP API.

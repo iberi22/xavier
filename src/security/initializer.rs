@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Security Initializer for Xavier
 //!
 //! Orchestrates the first boot security setup, including Master Key generation,

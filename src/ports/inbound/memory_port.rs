@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Inbound port for memory operations
 //!
 //! Provides the implementation and data structures for this module's

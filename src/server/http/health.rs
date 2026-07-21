@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Health and build information endpoints.
 //!
 //! This module provides diagnostic endpoints to monitor the server's status,

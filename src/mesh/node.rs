@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Node Identity — Ed25519 keypair and NodeID
 //!
 //! Each Xavier node generates a persistent Ed25519 keypair on first startup.

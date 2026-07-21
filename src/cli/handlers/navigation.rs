@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Navigation API handlers for shell-like interaction (ls, cd, pwd)
 
 use crate::cli::state::CliState;

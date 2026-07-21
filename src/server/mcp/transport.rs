@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! MCP Streamable HTTP (HTTP+SSE) transport
 //!
 //! Exposes the unified JSON-RPC dispatcher over the MCP Streamable HTTP

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Reflector Agent - Analyzes results and generates insights for next experiments
 
 use crate::agents::evolve::results::ResultsLogEntry;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Gap Analyzer - Identifies performance gaps from real usage data
 
 use crate::data_commons::telemetry_db::TelemetryDb;

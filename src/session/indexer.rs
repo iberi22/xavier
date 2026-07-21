@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Session indexer
 //!
 //! Provides the implementation and data structures for this module's

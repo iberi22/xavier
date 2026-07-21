@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Notifier
 //!
 //! Sends notifications about errors, fixes, and system events

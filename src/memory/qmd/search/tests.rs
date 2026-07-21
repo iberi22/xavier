@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Unit tests for search sub-modules.
 
 #[cfg(test)]

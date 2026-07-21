@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Plan definitions and limits for Xavier billing tiers.
 
 use serde::{Deserialize, Serialize};

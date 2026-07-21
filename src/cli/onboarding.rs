@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Environment detection for onboarding suggestions.
 
 use serde::{Deserialize, Serialize};

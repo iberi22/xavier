@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Mesh Telemetry Collector
 //!
 //! Tracks peer uptime, message count, latency, and consensus agreement ratio

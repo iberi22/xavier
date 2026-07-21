@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Workspace handlers for information and MCP tool integration.
 
 use axum::{extract::State, Json};

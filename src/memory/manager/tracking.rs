@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory tracking — access counts, creation times, and relevance scores.
 
 use crate::memory::qmd_memory::MemoryDocument;

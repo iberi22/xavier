@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! System scan CLI command handlers
 //!
 //! Implements system scanning via HTTP API.

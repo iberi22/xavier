@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Code handlers for scanning, searching, and analyzing codebases.
 
 use axum::extract::State;

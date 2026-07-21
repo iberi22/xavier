@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Mesh Command Handlers — CLI implementation for Xavier Mesh
 
 use crate::cli::commands::MeshCommand;

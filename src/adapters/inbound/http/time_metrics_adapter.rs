@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! HTTP adapter for timing and performance metrics
 //!
 //! Provides the implementation and data structures for this module's

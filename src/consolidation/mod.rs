@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Phase 4 consolidation layer.
 //!
 //! This module provides consolidation, decay, importance scoring, reflection,

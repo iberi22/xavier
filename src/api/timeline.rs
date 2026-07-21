@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Timeline API endpoints
 //!
 //! Provides HTTP endpoints for cognitive calendar navigation (Time Travel).

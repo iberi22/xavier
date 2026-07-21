@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Peer Registry — Persistent storage for trusted Xavier nodes
 //!
 //! Stores information about known peers, their public keys, and sync settings.

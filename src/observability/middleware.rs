@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Axum Middleware for Request Logging
 //!
 //! Captures every HTTP request and response, logs them to both:

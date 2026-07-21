@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Manifest tracking for Git-Chunk sync
 
 use crate::sync::chunks::ChunkMetadata as Chunk;

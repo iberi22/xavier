@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Data Transfer Objects for HTTP API communication
 //!
 //! Provides the implementation and data structures for this module's

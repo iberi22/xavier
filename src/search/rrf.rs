@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Reciprocal Rank Fusion for search combination
 //!
 //! Provides the implementation and data structures for this module's

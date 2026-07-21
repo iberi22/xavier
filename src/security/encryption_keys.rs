@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Master Key Management and Key Hierarchy for Xavier
 //!
 //! Handles generation, persistence (keyring + fallback), and derivation of

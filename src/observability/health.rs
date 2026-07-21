@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Health Monitoring
 //!
 //! Native runtime health loop that monitors system resources, database integrity,

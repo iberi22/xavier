@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 #[cfg(test)]
 #[allow(clippy::module_inception)]
 mod tests {

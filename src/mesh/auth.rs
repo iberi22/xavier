@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! SWAL Mesh Node Authentication
 //!
 //! Provides strict authentication mechanism for P2P Mesh nodes using SWAL tokens.

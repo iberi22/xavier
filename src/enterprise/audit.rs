@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Audit logging for compliance and security
 //!
 //! Tracks all operations with timestamps, tenant context, and action details.

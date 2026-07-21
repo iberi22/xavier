@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Scorer — Deterministic Scoring Engine
 //!
 //! Applies the scoring formula to produce a deterministic maturity percentage

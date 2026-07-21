@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Tool alias detection - fuzzy matching against known tool names
 
 use crate::security::detections::{ScanResult, Severity, Threat, ThreatCategory};

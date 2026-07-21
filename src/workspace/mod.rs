@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Workspace management module
 //!
 //! Aggregates and re-exports the sub-modules within this module,

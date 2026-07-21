@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Detection types and severity for Anticipator security scanner
 
 use serde::{Deserialize, Serialize};

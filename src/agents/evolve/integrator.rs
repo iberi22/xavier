@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Integrator Agent - Applies changes and manages git state
 
 use crate::agents::evolve::experiment::Hypothesis;

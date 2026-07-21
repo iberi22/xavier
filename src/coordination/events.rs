@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Event coordination and dispatch
 //!
 //! Provides the implementation and data structures for this module's

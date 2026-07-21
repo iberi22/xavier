@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Type definitions for the Model Context Protocol (MCP).
 //!
 //! This module implements the core data structures for MCP communication,

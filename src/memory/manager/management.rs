@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory manager query and statistics operations
 //!
 //! Methods for retrieving managed memories, computing statistics,

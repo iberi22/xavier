@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Navigation Policy for intelligent memory traversal
 //!
 //! Implements scoring for graph transitions based on multiple signals:

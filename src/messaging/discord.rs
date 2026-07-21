@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Discord messaging integration for Xavier
 
 use crate::middleware::token_bucket::RateLimiter;

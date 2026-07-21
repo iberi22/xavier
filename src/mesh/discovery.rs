@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! DHT peer discovery for Xavier Mesh.
 
 use anyhow::{Context, Result};

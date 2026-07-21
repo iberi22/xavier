@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI handler for `xavier maturity` commands.
 
 use clap::Subcommand;

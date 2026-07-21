@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Goal Drift Detection Layer
 //!
 //! Detects if the agent's reasoning or actions are deviating from its established goals.

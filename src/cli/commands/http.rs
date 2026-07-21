@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI commands for HTTP API calls (memory, recall, stats, session, export)
 //!
 //! These functions interact with the Xavier HTTP server to perform

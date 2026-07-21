@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Health check service for system monitoring
 //!
 //! Provides the implementation and data structures for this module's

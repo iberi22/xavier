@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Server modules for AgentRAG/Xavier
 
 pub mod alerts;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Canary token detection for cross-agent context leakage
 
 use crate::security::detections::{ScanResult, Severity, Threat, ThreatCategory};

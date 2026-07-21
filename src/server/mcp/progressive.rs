@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 #[cfg(test)]
 mod tests {
     use crate::server::mcp::tests::{get_json_body, post_json, test_router, test_state};

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory eviction and auto-management
 //!
 //! Logic for evicting low-quality memories, priority-based eviction,

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! API Key management
 //!
 //! Handles creation, validation, and revocation of API keys for tenant authentication.

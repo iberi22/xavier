@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory CLI command handlers for consolidation and maintenance.
 
 use crate::cli::commands::enums::CLI_HTTP_CLIENT;

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Nightly Consolidation Scheduler for TGD and Memory.
 //!
 //! Manages background execution of memory consolidation and TGD rule generation

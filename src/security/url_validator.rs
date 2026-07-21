@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! URL validation for security scanning
 //!
 //! Provides the implementation and data structures for this module's

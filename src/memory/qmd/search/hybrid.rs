@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 ﻿//! Hybrid search combining keyword (lexical) and vector retrieval.
 //!
 //! Uses reciprocal rank fusion (RRF) to merge keyword and vector results,

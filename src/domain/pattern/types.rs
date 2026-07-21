@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Pattern domain types for Xavier cognitive memory system.
 //!
 //! Patterns represent discovered code patterns, naming conventions, architectural

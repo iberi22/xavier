@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Config drift detection - snapshot runtime config and detect changes
 
 use parking_lot::RwLock;

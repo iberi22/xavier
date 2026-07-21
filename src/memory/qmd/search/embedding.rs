@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Embedding-based search with pronoun resolution and query expansion.
 //!
 //! Generates query embeddings, resolves pronouns against known speakers,

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Tipos Centrales de Data Commons
 //!
 //! Define los tipos de datos compartidos en toda la red Data Commons.

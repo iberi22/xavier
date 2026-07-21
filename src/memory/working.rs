@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Working Memory Layer - Bounded FIFO queue with LRU fallback and access tracking
 //!
 //! Implements the first layer of the Multi-Layer Memory Architecture.

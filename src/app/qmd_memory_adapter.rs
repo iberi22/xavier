@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! QmdMemory adapter that implements MemoryQueryPort.
 //! Wraps QmdMemory (the domain) behind the inbound port interface.
 /// NOTE: HexArch improvement — depends on concrete crate::memory::qmd_memory, should use a port abstraction

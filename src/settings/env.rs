@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Logical concern: Environment variable management for Xavier settings.
 //!
 //! This module handles synchronization between the settings struct and environment variables.

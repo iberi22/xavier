@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Memory Scanner — Layer 3: Evidence from Sessions & Usages
 //!
 //! Scans Xavier's session database, memory store, and source code to

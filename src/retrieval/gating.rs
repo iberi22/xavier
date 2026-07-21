@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Adaptive Retrieval Gating - Multi-layer memory retrieval with weighted fusion
 //!
 //! Implements adaptive gating that scores and fuses results from Working, Episodic,

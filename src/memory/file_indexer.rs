@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! File Indexer - Indexa archivos markdown para memoria
 //!
 //! Lee archivos del Tier 1 (MEMORY.md, memory/*.md),

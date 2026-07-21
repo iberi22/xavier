@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI command enums and subcommand definitions
 //!
 //! This module defines the [`Command`] enum and all related subcommand enums

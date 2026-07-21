@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Xavier - Cognitive Memory System
 #![cfg_attr(feature = "telegram", allow(dead_code))]
 //!

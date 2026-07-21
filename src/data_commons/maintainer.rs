@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::crypto::encryption::{aes_decrypt, aes_encrypt, NonceBytes};
 use rand::rngs::OsRng;
 use std::env;

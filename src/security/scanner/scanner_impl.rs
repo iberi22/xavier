@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Security Scanner - Multi-layer prompt injection detection
 //!
 //! Combines phrase matching, encoding detection, entropy analysis,

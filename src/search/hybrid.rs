@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Hybrid search implementation
 //!
 //! Provides the implementation and data structures for this module's

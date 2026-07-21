@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! SQLite backend with libSQL vector search for Xavier memory store.
 //!
 //! Uses native approximate nearest neighbor search via libSQL

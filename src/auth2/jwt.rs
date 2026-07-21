@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::crypto::encryption::{decrypt_data, encrypt_data, EncryptedBlob, NonceBytes};
 use crate::secrets::vault::HardwareVault;
 use anyhow::{anyhow, Result};

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI code graph query command
 //!
 //! Handles the `xavier code` subcommand which queries Xavier's code graph

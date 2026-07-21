@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Graph-based context retriever
 //!
 //! Provides the implementation and data structures for this module's

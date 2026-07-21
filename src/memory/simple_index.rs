@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Simple keyword-based memory index
 //!
 //! Provides the implementation and data structures for this module's

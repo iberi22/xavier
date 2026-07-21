@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Xavier Data Commons ($SWAL / legacy $XAV naming)
 //!
 //! Sistema descentralizado de compartición de datos técnicos entre nodos Xavier

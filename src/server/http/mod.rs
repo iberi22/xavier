@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! HTTP server implementation for Xavier.
 //!
 //! This module provides the core HTTP server infrastructure, including configuration,

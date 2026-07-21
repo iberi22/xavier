@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Role-Based Access Control (RBAC)
 //!
 //! Defines permissions, roles, and permission checking logic.

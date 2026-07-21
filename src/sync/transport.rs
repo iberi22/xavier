@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Unified Transport — Abstraction for P2P and Cloud mesh sync
 //!
 //! Routes sync requests to one of three backends based on the target peer's

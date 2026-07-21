@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Economy — Stable economy mechanics, bonding curve, and circuit breakers.
 
 pub struct EconomyEngine {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Binary entry point for the Xavier cognitive memory system
 //!
 //! Provides the implementation and data structures for this module's

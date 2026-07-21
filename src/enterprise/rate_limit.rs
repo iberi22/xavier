@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Rate limiting using token bucket algorithm
 //!
 //! Per-tenant, per-API-key, and per-IP rate limiting.

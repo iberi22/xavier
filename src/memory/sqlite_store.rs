@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! SQLite backend for Xavier memory store.
 //!
 //! Provides a persistent, ACID-compliant storage layer using SQLite.

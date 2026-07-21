@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Key Management - KEK, DEK, and Argon2 derivation
 //!
 //! Implements secure key hierarchy for E2E encryption:

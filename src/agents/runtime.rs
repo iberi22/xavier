@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Runtime / Orchestrator
 //!
 //! Coordina System 1 → 2 → 3, maneja timeouts y errores.

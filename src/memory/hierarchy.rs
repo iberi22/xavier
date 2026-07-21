@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::memory::store::MemoryRecord;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

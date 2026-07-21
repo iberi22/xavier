@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Telegram Bot for Xavier Management
 //!
 //! Feature-gated behind the `telegram` cargo feature. Supports long-polling and

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Cloud Node settings handlers
 
 use crate::messaging::DiscordClient;

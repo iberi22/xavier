@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Tasks Module - Backend-agnostic task management
 //!
 //! Architecture:

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Anticipator Security Scanner - 10-layer security scanner for inter-agent messages
 //!
 //! Implements the Anticipator security protocol from https://github.com/calus-ai/anticipator

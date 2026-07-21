@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Middleware and setup for the CLI HTTP server.
 //!
 //! This module implements authentication and rate-limiting middleware used by the

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Session Sync Task - Monitors Xavier session indexing and sync health.
 //!
 //! Runs on a configurable interval (default 5min) and:

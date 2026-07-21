@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Xavier Dashboard - Modern Web UI for Production
 //!
 //! This module provides a production-ready web interface for Xavier.

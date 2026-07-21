@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Navigation Telemetry Metrics for HORMER
 //!
 //! Tracks node visit frequency, path lengths, and provides

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Semantic Memory Layer - Entity Graph and Knowledge Representation
 //!
 //! Implements the semantic memory layer from the Multi-Layer Memory Architecture:

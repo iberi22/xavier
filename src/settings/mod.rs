@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Logical concern: Xavier settings module entry point.
 //!
 //! This module re-exports sub-modules and defines the main interface for settings.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Chronicle CLI interface
 //!
 //! Provides the implementation and data structures for this module's

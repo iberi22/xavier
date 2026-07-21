@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::cli::commands::DataCommonsCommand;
 use anyhow::{bail, Result};
 use std::path::PathBuf;

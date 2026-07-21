@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! HTTP handler for agent lifecycle operations
 //!
 //! Provides the implementation and data structures for this module's

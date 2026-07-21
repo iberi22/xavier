@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI navigation command handlers (ls, cd, pwd)
 
 use crate::cli::commands::enums::CLI_HTTP_CLIENT;

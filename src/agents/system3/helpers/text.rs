@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Text processing helpers for System3
 //!
 //! Provides the implementation and data structures for this module's

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Core memory store trait and shared types for Xavier.
 //!
 //! Defines the MemoryStore trait and all shared data structures

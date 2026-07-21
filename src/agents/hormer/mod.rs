@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! HORMER - Learned Navigation Policy with Simplified GRPO
 //!
 //! Implementación simplificada de Group Relative Policy Optimization (GRPO)

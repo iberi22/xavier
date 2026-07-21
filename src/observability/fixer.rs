@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Fixer
 //!
 //! Generates GitHub Issues and Pull Requests for detected errors.

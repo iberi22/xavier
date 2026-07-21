@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Message bus error types and handling.
 //!
 //! Defines the `MessageBusError` enum covering all possible failures

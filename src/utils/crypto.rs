@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Crypto utilities - Simple byte-to-hex encoding and SHA256 hashing
 //!
 //! Provides lightweight alternatives to the hex crate.

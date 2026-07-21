@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::coordination::message_bus::MessageBus;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;

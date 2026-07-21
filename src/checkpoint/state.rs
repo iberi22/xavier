@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! State checkpoint types and persistence
 //!
 //! Provides the implementation and data structures for this module's

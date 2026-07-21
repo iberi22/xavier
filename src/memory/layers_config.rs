@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory Layers Configuration
 //!
 //! Provides configuration for the multi-layer memory system.

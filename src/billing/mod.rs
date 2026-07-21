@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Billing module for Stripe integration.
 //!
 //! Provides cloud tier billing for Xavier with the following pricing:

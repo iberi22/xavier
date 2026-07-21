@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Audit logging for SQLite vector store
 //!
 //! Provides the implementation and data structures for this module's

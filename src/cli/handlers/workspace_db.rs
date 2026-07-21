@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Workspace DB handlers for Multi-DB Hub operations.
 
 use axum::{

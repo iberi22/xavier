@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Token accounting and savings tracker.
 
 use chrono::{DateTime, Utc};

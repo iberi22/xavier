@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Domain models for memory operations.
 //!
 //! These types define the core domain contract for memory querying, storage,

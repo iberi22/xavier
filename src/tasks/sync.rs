@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Planka Sync Service - Bidirectional sync between internal tasks and Planka
 //! Tasks are stored in Xavier, Planka is just a view/sync target
 

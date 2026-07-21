@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::codebase::connection_manager::ConnectionManager;
 use crate::memory::sqlite_store::TABLE_NOTIFICATIONS;
 use anyhow::Result;

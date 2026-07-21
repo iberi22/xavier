@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! API handlers for memory and workspace operations.
 //!
 //! This module provides endpoints for multi-layer memory retrieval, context export,

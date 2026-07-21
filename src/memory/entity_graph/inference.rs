@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Inference engine for the entity graph.
 //!
 //! Implements rule-based inference to derive new relationships

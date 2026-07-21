@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Terminal User Interface entry point for Xavier
 //!
 //! Provides the implementation and data structures for this module's

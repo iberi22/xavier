@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Private conversations database.
 //!
 //! Stored at `~/.xavier/conversations/{project_id}.db`, this DB holds

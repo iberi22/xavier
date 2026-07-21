@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Unified storage and migration system for Xavier.
 //!
 //! This module provides a struct-based migration framework. A [`Migration`] is

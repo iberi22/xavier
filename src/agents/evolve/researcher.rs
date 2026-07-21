@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Researcher Agent - Scans for new memory techniques and generates hypotheses
 
 use crate::agents::evolve::experiment::{Hypothesis, HypothesisType};

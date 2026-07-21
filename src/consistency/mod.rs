@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Consistency module - Memory coherence and retention regularization
 //!
 //! This module provides retention regularization for detecting conflicts,

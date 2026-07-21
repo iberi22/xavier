@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rusqlite::params;

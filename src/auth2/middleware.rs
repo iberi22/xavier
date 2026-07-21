@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::auth2::jwt::JwtManager;
 use axum::{
     extract::Request,

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Hardware-backed secret vault using the system keyring.
 //!
 //! Provides secure storage for sensitive tokens (XAVIER_TOKEN, API keys)

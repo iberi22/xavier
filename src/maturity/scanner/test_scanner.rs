@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Test Scanner — Layer 2: Dynamic Test Analysis
 //!
 //! Loads test_anchors from the anchors manifest, then quickly checks

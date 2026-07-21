@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! OpenClaw Agent Memory Indexer
 //!
 //! Concurrently chunks, embeds, and stores agent memories from OpenClaw into the MemoryStore.

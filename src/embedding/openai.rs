@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! OpenAI embedding API integration
 //!
 //! Provides the implementation and data structures for this module's

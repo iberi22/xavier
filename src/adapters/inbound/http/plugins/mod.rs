@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Plugin system for Xavier
 //!
 //! Provides a trait-based plugin architecture for integrating external systems

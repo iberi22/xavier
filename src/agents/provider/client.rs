@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! HTTP client abstraction for LLM provider API calls.
 //!
 //! Provides a shared reqwest client with configurable timeouts,

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Tests for the CLI module
 //!
 //! Provides the implementation and data structures for this module's

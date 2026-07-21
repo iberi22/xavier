@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! System3 reasoning engine core
 //!
 //! Provides the implementation and data structures for this module's

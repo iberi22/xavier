@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Health Auto-Repair Engine
 //!
 //! Automatically detects and repairs system health issues:

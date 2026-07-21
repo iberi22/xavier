@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Textual Gradient Descent (TGD) - Auto-improvement for agents
 //!
 //! Analyzes the delta between raw conversation history and structured memory (retrieved documents)

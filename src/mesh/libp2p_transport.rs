@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! libp2p Transport — P2P communication layer for Xavier Mesh
 //!
 //! Provides peer discovery (mDNS/Kademlia) and secure communication

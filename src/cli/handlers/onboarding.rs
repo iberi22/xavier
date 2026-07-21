@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Onboarding handlers for context-aware suggestions.
 
 use crate::cli::onboarding::generate_suggestions;

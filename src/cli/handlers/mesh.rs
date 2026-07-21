@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use axum::{
     extract::{Json, Path, State},
     http::StatusCode,
@@ -678,7 +679,7 @@ pub async fn join_workspace_handler(
         Some(s) => s.to_string(),
         None => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Missing node_id in token payload" })),
     };
-    
+
     let endpoint = match inner_payload.get("endpoint").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
         None => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Missing endpoint in token payload" })),

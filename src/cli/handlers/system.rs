@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! System handlers for health, version, readiness, and build information.
 
 use crate::cli::config::{require_xavier_token, resolve_base_url};

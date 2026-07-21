@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Core MemoryManager struct and constructors
 //!
 //! The [`MemoryManager`] provides autonomous memory lifecycle management:

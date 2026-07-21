@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Codebase connection manager
 //!
 //! Provides the implementation and data structures for this module's

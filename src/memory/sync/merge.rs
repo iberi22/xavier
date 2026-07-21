@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! LWW (Last Writer Wins) merge resolver for memory chunks.
 //!
 //! Conflict resolution rules:

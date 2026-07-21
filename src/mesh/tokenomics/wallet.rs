@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Wallet — XP balance tracking for Xavier Mesh node participation.
 //!
 //! Each node has a wallet that tracks its earned XP (Xavier Points), staked

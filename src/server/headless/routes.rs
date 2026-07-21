@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::domain::memory::MemoryRecord;
 use crate::ports::inbound::MemoryQueryPort;
 use axum::{

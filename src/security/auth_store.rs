@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Persistent Auth Storage for Xavier
 //! Manages users, sessions, and audit logs in a dedicated auth.db
 

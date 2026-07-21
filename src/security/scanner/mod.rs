@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Scanner module - Multi-layer security scanning
 //!
 //! This module provides multi-layer security scanning for prompt injection detection.

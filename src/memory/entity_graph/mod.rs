@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Entity graph for memory relationships
 //!
 //! Provides the implementation and data structures for this module's

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory manager types and enums
 //!
 //! Primitive types used throughout the memory management system:

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Entities - Entity types for semantic memory layer.
 //!
 //! Defines the core entity types and structures for the entity graph

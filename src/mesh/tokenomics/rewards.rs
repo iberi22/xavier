@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! RewardEngine — Calculates and distributes XP rewards for mesh contributions.
 //!
 //! When a node contributes storage, bandwidth, compute, or other resources,

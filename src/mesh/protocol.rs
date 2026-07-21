@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! XMesh-Sync v1 Protocol Types
 //!
 //! This module defines the data structures used in the Xavier Mesh sync protocol.

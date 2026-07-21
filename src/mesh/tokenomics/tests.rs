@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 #[cfg(test)]
 mod tokenomics_tests {
     use crate::mesh::node::NodeId;

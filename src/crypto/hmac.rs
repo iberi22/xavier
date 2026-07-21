@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! HMAC-SHA256 Implementation (RFC 2104)
 
 use sha2::{Digest, Sha256};

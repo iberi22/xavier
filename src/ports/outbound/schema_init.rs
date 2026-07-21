@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Outbound port for schema initialization
 //!
 //! Provides the implementation and data structures for this module's

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI License management commands
 //!
 //! Handles `xavier license status`, `xavier license accept`, `xavier license show`.
@@ -52,14 +53,14 @@ async fn handle_license_status() -> Result<()> {
     }
     println!("╠══════════════════════════════════════════════╣");
     match license_kind {
-        xavier::security::license::LicenseKind::Agpl => {
-            println!("║  AGPL-3.0: Free for everyone.              ║");
-            println!("║  Network service = share modifications.    ║");
+        xavier::security::license::LicenseKind::Mit => {
+            println!("║  MIT: Free for standalone, local-first use.  ║");
+            println!("║  Permissive, open source.                  ║");
             println!("║  Commercial License: see COMMERCIAL_LICENSE.md ║");
         }
-        xavier::security::license::LicenseKind::Commercial => {
-            println!("║  Commercial: proprietary integration OK    ║");
-            println!("║  Private mesh: allowed without disclosure  ║");
+        xavier::security::license::LicenseKind::Mesh => {
+            println!("║  Mesh/Commercial: network/commercial OK    ║");
+            println!("║  Private mesh: allowed under active license║");
             println!("║  Enterprise features: ✅ Unlocked          ║");
         }
     }
@@ -79,7 +80,7 @@ async fn handle_license_accept() -> Result<()> {
     println!();
     println!("Xavier is dual-licensed:");
     println!();
-    println!("  Core Engine: AGPL-3.0");
+    println!("  Core Engine: MIT License");
     println!("  Mesh Features: Xavier Mesh License v1.0");
     println!("  Enterprise: Xavier Commercial License");
     println!();
@@ -91,7 +92,7 @@ async fn handle_license_accept() -> Result<()> {
     println!("  5. XP Tokenomics — earn XP for contributions (no monetary value)");
     println!();
     println!("Commercial terms: see COMMERCIAL_LICENSE.md or contact iberi22");
-    println!("Full terms: LICENSE (AGPL), LICENSE-MESH, COMMERCIAL_LICENSE.md");
+    println!("Full terms: LICENSE (MIT), LICENSE-MESH, COMMERCIAL_LICENSE.md");
     println!();
 
     // In a real interactive CLI we'd ask for confirmation.
@@ -114,30 +115,28 @@ async fn handle_license_accept() -> Result<()> {
 }
 
 async fn handle_license_show() -> Result<()> {
-    let agpl_license = include_str!("../../../LICENSE-AGPL");
+    let full_license = include_str!("../../../LICENSE");
     let mesh_license = include_str!("../../../LICENSE-MESH");
     println!("════════════════════════════════════════════════════════");
     println!("  Xavier Licensing Summary");
     println!("════════════════════════════════════════════════════════");
     println!();
-    println!("1. Core Engine — AGPL-3.0 (LICENSE-AGPL)");
-    println!("   Free for everyone. Network services must share modifications.");
+    println!("1. Core Engine — MIT License (LICENSE)");
+    println!("   Free for standalone, local-first use.");
     println!();
     println!("2. Mesh Features — Xavier Mesh License v1.0 (LICENSE-MESH)");
     println!("   Free for individuals/OSS. Additional terms for P2P participation.");
     println!();
     println!("3. Commercial License (COMMERCIAL_LICENSE.md)");
-    println!("   Required for proprietary integration and closed-source mesh.");
+    println!("   Required for commercial organizations over usage thresholds.");
     println!();
-    println!("═══ AGPL-3.0 License ═══");
-    println!("{}", &agpl_license[..agpl_license.len().min(2000)]);
-    println!();
-    println!("... (full text truncated, see LICENSE-AGPL)");
+    println!("═══ Dual License & MIT terms ═══");
+    println!("{}", &full_license[..full_license.len().min(2000)]);
     println!();
     println!("═══ Xavier Mesh License v1.0 ═══");
     println!("{}", mesh_license);
     println!();
-    println!("For full terms, see LICENSE-AGPL and LICENSE-MESH.");
+    println!("For full terms, see LICENSE and LICENSE-MESH.");
     println!("For commercial terms, see COMMERCIAL_LICENSE.md.");
     Ok(())
 }

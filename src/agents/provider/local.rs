@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Local Model Provider (Ollama integration).
 //!
 //! # Contract

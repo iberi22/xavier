@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! HTTP Transport — Communication layer for Xavier Mesh
 //!
 //! Handles the low-level HTTP requests between Xavier nodes for handshake,

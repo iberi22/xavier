@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Logical concern: Xavier settings type definitions.
 //!
 //! This module contains all the configuration structs and their Debug implementations.
@@ -541,7 +542,7 @@ impl Default for LicenseSettings {
     fn default() -> Self {
         Self {
             mesh_accepted: false,
-            license_type: "AGPL-3.0".to_string(),
+            license_type: "MIT".to_string(),
             commercial_key: None,
         }
     }

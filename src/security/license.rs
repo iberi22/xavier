@@ -1,44 +1,39 @@
-//! Xavier Dual License — AGPL v3 (core) + Commercial (enterprise)
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
+//! Xavier Dual License — MIT (standalone) + Mesh License (network/commercial)
 //!
 //! License architecture (inspired by MongoDB AGPL->SSPL / GitLab CE->EE):
 //!
 //!   ┌─────────────────────────────────────────────────────────┐
-//!   │  Xavier Core (AGPL-3.0)                                  │
-//!   │  - All source code visible, full open source            │
-//!   │  - Network service = must release modifications         │
-//!   │  - Free forever                                         │
-//!   ├─────────────────────────────────────────────────────────┤
-//!   │  Xavier Enterprise (Commercial License)                 │
-//!   │  - Proprietary integration rights                       │
-//!   │  - Private mesh without source disclosure               │
-//!   │  - Enterprise-reserved features (advanced-rrf, etc.)    │
-//!   │  - $100/node/mo or custom                               │
+//!   │  Xavier Core (MIT)                                      │
+//!   │  - Standalone, local-first open source                  │
+//!   │  - Free forever, permissive use                         │
 //!   ├─────────────────────────────────────────────────────────┤
 //!   │  Xavier Mesh License (LICENSE-MESH)                     │
-//!   │  - Additional terms for P2P network participation       │
-//!   │  - XP Tokenomics, Governance, Data Commons              │
-//!   │  - Requires acceptance (free for individuals/OSS)       │
+//!   │  - Activates peer-to-peer, governance, tokenomics,      │
+//!   │    and enterprise features                              │
+//!   │  - Free for individuals and verified open-source        │
+//!   │  - Commercial license required for large organizations  │
 //!   └─────────────────────────────────────────────────────────┘
 //!
-//! The core engine is AGPL-3.0. The Mesh License adds network-participation
-//! terms on top. The Commercial License is for proprietary use.
+//! The core engine is MIT. The Mesh License adds network-participation
+//! and commercial terms on top.
 
 use crate::settings::XavierSettings;
 
 /// License kinds recognized by Xavier
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LicenseKind {
-    /// AGPL-3.0 — core engine, full open source
-    Agpl,
-    /// Commercial — proprietary integration, private mesh, enterprise features
-    Commercial,
+    /// MIT — core engine, permissive open source
+    Mit,
+    /// Mesh — commercial/network participation, governance, enterprise features
+    Mesh,
 }
 
 impl std::fmt::Display for LicenseKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            LicenseKind::Agpl => write!(f, "AGPL-3.0"),
-            LicenseKind::Commercial => write!(f, "Xavier Commercial License"),
+            LicenseKind::Mit => write!(f, "MIT"),
+            LicenseKind::Mesh => write!(f, "Xavier Mesh License"),
         }
     }
 }
@@ -64,8 +59,14 @@ impl std::fmt::Display for MeshStatus {
 /// Detect the current license from settings
 pub fn detect_license(settings: &XavierSettings) -> LicenseKind {
     match settings.license.license_type.as_str() {
-        "Xavier-Commercial-1.0" | "Xavier-Enterprise-1.0" => LicenseKind::Commercial,
-        _ => LicenseKind::Agpl,
+        "Xavier-Mesh-1.0" | "Xavier-Commercial-1.0" | "Xavier-Enterprise-1.0" => LicenseKind::Mesh,
+        _ => {
+            if settings.license.mesh_accepted {
+                LicenseKind::Mesh
+            } else {
+                LicenseKind::Mit
+            }
+        }
     }
 }
 
@@ -84,16 +85,16 @@ pub fn require_mesh_license(settings: &XavierSettings) -> Result<(), String> {
 }
 
 /// Verify that enterprise-reserved features are allowed.
-/// This requires the Commercial License or higher.
+/// This requires the Xavier Mesh/Commercial License.
 pub fn require_commercial_license(settings: &XavierSettings) -> Result<(), String> {
     match detect_license(settings) {
-        LicenseKind::Commercial => Ok(()),
-        LicenseKind::Agpl => {
+        LicenseKind::Mesh => Ok(()),
+        LicenseKind::Mit => {
             // Enterprise features are feature-gated in Cargo.toml behind `enterprise` feature.
-            // If the binary was compiled with enterprise features, the user needs a commercial license.
+            // If the binary was compiled with enterprise features, the user needs a commercial/mesh license.
             if cfg!(feature = "enterprise") {
                 Err(
-                    "Enterprise features require a Xavier Commercial License. ".to_owned()
+                    "Enterprise features require a Xavier Commercial/Mesh License. ".to_owned()
                         + "See COMMERCIAL_LICENSE.md for pricing. Contact iberi22 for inquiries.",
                 )
             } else {
@@ -138,19 +139,18 @@ mod tests {
     use crate::settings::XavierSettings;
 
     #[test]
-    fn test_default_license_is_agpl() {
+    fn test_default_license_is_mit() {
         let settings = XavierSettings::default();
-        assert_eq!(detect_license(&settings), LicenseKind::Agpl);
+        assert_eq!(detect_license(&settings), LicenseKind::Mit);
     }
 
     #[test]
     fn test_accept_mesh_upgrades_license_type() {
         let mut settings = XavierSettings::default();
-        assert_eq!(detect_license(&settings), LicenseKind::Agpl);
+        assert_eq!(detect_license(&settings), LicenseKind::Mit);
         assert!(accept_mesh_license(&mut settings));
         assert_eq!(settings.license.license_type, "Xavier-Mesh-1.0".to_string());
-        // Still AGPL for detection purposes (mesh adds network terms, not commercial)
-        assert_eq!(detect_license(&settings), LicenseKind::Agpl);
+        assert_eq!(detect_license(&settings), LicenseKind::Mesh);
     }
 
     #[test]
@@ -160,14 +160,14 @@ mod tests {
             &mut settings,
             "swal-com-2026-abc123"
         ));
-        assert_eq!(detect_license(&settings), LicenseKind::Commercial);
+        assert_eq!(detect_license(&settings), LicenseKind::Mesh);
     }
 
     #[test]
     fn test_empty_commercial_key_rejected() {
         let mut settings = XavierSettings::default();
         assert!(!accept_commercial_license(&mut settings, ""));
-        assert_eq!(detect_license(&settings), LicenseKind::Agpl);
+        assert_eq!(detect_license(&settings), LicenseKind::Mit);
     }
 
     #[test]
@@ -199,10 +199,10 @@ mod tests {
 
     #[test]
     fn test_license_kind_display() {
-        assert_eq!(LicenseKind::Agpl.to_string(), "AGPL-3.0");
+        assert_eq!(LicenseKind::Mit.to_string(), "MIT");
         assert_eq!(
-            LicenseKind::Commercial.to_string(),
-            "Xavier Commercial License"
+            LicenseKind::Mesh.to_string(),
+            "Xavier Mesh License"
         );
     }
 
@@ -248,24 +248,25 @@ mod tests {
         let reloaded: XavierSettings = serde_json::from_str(&json).expect("deserialize");
 
         assert_eq!(reloaded.license.commercial_key.as_deref(), Some(key));
-        assert_eq!(detect_license(&reloaded), LicenseKind::Commercial);
+        assert_eq!(detect_license(&reloaded), LicenseKind::Mesh);
         // Commercial acceptance also unlocks mesh features.
         assert!(require_mesh_license(&reloaded).is_ok());
     }
 
     /// License downgrade: a Commercial license explicitly downgraded back to
-    /// the AGPL default must be detected as AGPL and lose enterprise gating.
+    /// the MIT default must be detected as MIT and lose enterprise gating.
     #[test]
-    fn test_license_downgrade_from_commercial_to_agpl() {
+    fn test_license_downgrade_from_commercial_to_mit() {
         let mut settings = XavierSettings::default();
         assert!(accept_commercial_license(&mut settings, "key-123"));
-        assert_eq!(detect_license(&settings), LicenseKind::Commercial);
+        assert_eq!(detect_license(&settings), LicenseKind::Mesh);
 
         // Downgrade: clear the commercial markers.
-        settings.license.license_type = "AGPL-3.0".to_string();
+        settings.license.license_type = "MIT".to_string();
         settings.license.commercial_key = None;
+        settings.license.mesh_accepted = false;
 
-        assert_eq!(detect_license(&settings), LicenseKind::Agpl);
+        assert_eq!(detect_license(&settings), LicenseKind::Mit);
         assert!(settings.license.commercial_key.is_none());
     }
 
@@ -296,23 +297,23 @@ mod tests {
         );
     }
 
-    /// The commercial gate must reject AGPL binaries that were compiled with
+    /// The commercial gate must reject MIT binaries that were compiled with
     /// the `enterprise` feature, but pass when enterprise is absent. Since the
     /// test suite is compiled without `enterprise`, we assert the pass branch
-    /// and that an AGPL setting is never silently upgraded to Commercial.
+    /// and that an MIT setting is never silently upgraded to Mesh.
     #[test]
-    fn test_commercial_gate_refuses_agpl_enterprise_contract() {
-        let agpl = XavierSettings::default();
+    fn test_commercial_gate_refuses_mit_enterprise_contract() {
+        let mit = XavierSettings::default();
         // Without the enterprise feature compiled in, the gate is a no-op pass.
-        assert!(require_commercial_license(&agpl).is_ok());
-        // And an AGPL setting is never mis-detected as commercial.
-        assert_eq!(detect_license(&agpl), LicenseKind::Agpl);
+        assert!(require_commercial_license(&mit).is_ok());
+        // And an MIT setting is never mis-detected as mesh.
+        assert_eq!(detect_license(&mit), LicenseKind::Mit);
 
         // A commercial setting flips detection but the gate logic is symmetric:
         // both branches return a stable Ok/Err for the same input.
         let mut commercial = XavierSettings::default();
         assert!(accept_commercial_license(&mut commercial, "k"));
-        assert_eq!(detect_license(&commercial), LicenseKind::Commercial);
+        assert_eq!(detect_license(&commercial), LicenseKind::Mesh);
         assert!(require_commercial_license(&commercial).is_ok());
     }
 
@@ -321,30 +322,30 @@ mod tests {
     /// the status display is correct.
     #[test]
     fn test_cli_status_reports_correct_license_kind() {
-        // Default AGPL.
+        // Default MIT.
         let mut settings = XavierSettings::default();
-        assert_eq!(detect_license(&settings), LicenseKind::Agpl);
+        assert_eq!(detect_license(&settings), LicenseKind::Mit);
 
-        // Mesh acceptance does NOT change the detected core license kind.
+        // Mesh acceptance changes the detected license kind to Mesh.
         accept_mesh_license(&mut settings);
-        assert_eq!(detect_license(&settings), LicenseKind::Agpl);
+        assert_eq!(detect_license(&settings), LicenseKind::Mesh);
 
-        // Commercial acceptance flips the detected kind.
+        // Commercial acceptance also detects as Mesh.
         accept_commercial_license(&mut settings, "swal-x");
-        assert_eq!(detect_license(&settings), LicenseKind::Commercial);
+        assert_eq!(detect_license(&settings), LicenseKind::Mesh);
 
         // Each variant renders a non-empty, distinct string for the status box.
-        let a = LicenseKind::Agpl.to_string();
-        let c = LicenseKind::Commercial.to_string();
-        assert!(!a.is_empty() && !c.is_empty());
-        assert_ne!(a, c);
+        let m = LicenseKind::Mit.to_string();
+        let c = LicenseKind::Mesh.to_string();
+        assert!(!m.is_empty() && !c.is_empty());
+        assert_ne!(m, c);
     }
 
     /// All `LicenseKind` variants must round-trip through JSON (the status
     /// command and persistence rely on stable Display + serialization).
     #[test]
     fn test_license_kind_variants_display_and_identity() {
-        let variants = [LicenseKind::Agpl, LicenseKind::Commercial];
+        let variants = [LicenseKind::Mit, LicenseKind::Mesh];
         for v in variants {
             // Display is stable and non-empty.
             let s = v.to_string();
@@ -353,7 +354,7 @@ mod tests {
             assert_eq!(v, v.clone());
         }
         // The two kinds are distinct (no aliasing).
-        assert_ne!(LicenseKind::Agpl, LicenseKind::Commercial);
+        assert_ne!(LicenseKind::Mit, LicenseKind::Mesh);
         // MeshStatus variants likewise render distinct strings.
         assert_ne!(
             MeshStatus::NotAccepted.to_string(),

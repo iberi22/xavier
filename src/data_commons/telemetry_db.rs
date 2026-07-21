@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use rusqlite::{params, Connection, Result};
 use std::path::Path;
 use tracing::info;

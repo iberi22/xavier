@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! AES-256-GCM Encryption for Xavier E2E
 //!
 //! Provides symmetric encryption using AES-256 in GCM mode (authenticated encryption).

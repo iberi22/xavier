@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Coordination Module - Agent coordination and orchestration
 //!
 //! Provides:

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory Sync — chunk-based LWW sync between Xavier peers.
 //!
 //! This module provides peer-to-peer memory synchronization using

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 pub mod embedding_port;
 pub mod health_check_port;
 pub mod schema_init;

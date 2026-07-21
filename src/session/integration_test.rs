@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Session Module Integration Tests
 //!
 //! Tests for session event handling, event mapping, auto-verification,

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Context regeneration API handlers.
 
 use axum::{extract::Json, http::StatusCode, response::IntoResponse, Extension};

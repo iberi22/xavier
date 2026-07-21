@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Agent-to-Agent (A2A) protocol primitives used by Xavier.
 //!
 //! The module provides:

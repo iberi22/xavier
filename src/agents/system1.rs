@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! System 1 - Retriever Agent
 //!
 //! Recibe queries del usuario, busca en memoria híbrida y retorna contexto relevante.

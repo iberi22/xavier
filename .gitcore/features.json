@@ -383,7 +383,7 @@
       "name": "Dual License (MIT + Mesh License)",
       "category": "governance",
       "status": "stable",
-      "progress_pct": 20,
+      "progress_pct": 100,
       "description": "MIT for standalone use; Mesh License activates governance opt-in, data commons, and network participation rights",
       "steps": [
         "Create src/security/license.rs with LicenseKind enum",
@@ -395,8 +395,8 @@
       "passes": true,
       "verified_by": "build",
       "github_issue": null,
-      "last_tested": "2026-07-18",
-      "notes": "Fully implemented with unit tests, CLI handler, runtime gate.",
+      "last_tested": "2026-07-20",
+      "notes": "Fully implemented with unit tests, CLI handler, runtime gate, and enterprise system verification.",
       "implemented_in": null,
       "tests": [
         "Test default is MIT",

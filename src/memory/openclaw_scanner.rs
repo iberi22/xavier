@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! OpenClaw Agent Memory Scanner
 //!
 //! Scans the OpenClaw agents directory recursively, reading MEMORY.md, SOUL.md,

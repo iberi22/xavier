@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Extraction pipeline for the Belief Graph.
 //!
 //! Provides services for extracting structured entities and relationships

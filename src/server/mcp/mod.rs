@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! MCP (Model Context Protocol) server module
 //!
 //! Aggregates and re-exports the sub-modules within this module,

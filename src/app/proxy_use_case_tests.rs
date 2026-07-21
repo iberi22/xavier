@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 #[cfg(test)]
 mod tests {
     use crate::app::proxy_use_case::ProxyUseCase;

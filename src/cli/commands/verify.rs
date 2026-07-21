@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI verification commands.
 
 use crate::cli::commands::enums::VerifyCommand;

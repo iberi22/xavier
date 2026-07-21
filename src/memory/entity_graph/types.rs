@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Entity graph type definitions.
 //!
 //! Defines the core data structures for the entity graph, including

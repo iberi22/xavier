@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 pub mod db;
 pub mod jwt;
 pub mod middleware;

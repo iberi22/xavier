@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Phrase Matcher - Aho-Corasick based injection phrase detection
 //!
 //! Uses the Aho-Corasick automaton for efficient multi-pattern matching

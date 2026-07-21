@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Job types and scheduling logic
 //!
 //! Provides the implementation and data structures for this module's

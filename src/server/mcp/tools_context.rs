@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Context-related MCP tools
 //!
 //! Provides tools for saving, restoring, and searching optimized context,

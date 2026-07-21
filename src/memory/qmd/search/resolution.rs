@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 ﻿//! Metadata resolution and answer extraction.
 //!
 //! Resolves rich metadata from document path and metadata,

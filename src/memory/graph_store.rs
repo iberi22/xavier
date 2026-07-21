@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! SQLite storage implementation for Xavier's Belief Graph.
 
 use anyhow::Result;

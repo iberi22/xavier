@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Threat categories - Authority escalation, social engineering, false pre-approval
 
 use regex::Regex;

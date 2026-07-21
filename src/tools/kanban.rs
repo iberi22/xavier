@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Kanban Integration - Direct native integration with Planka API
 //! No wrappers - direct HTTP calls to Planka REST API
 

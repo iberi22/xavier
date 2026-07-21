@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI billing command.
 
 use crate::cli::commands::enums::CLI_HTTP_CLIENT;

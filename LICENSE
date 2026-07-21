@@ -1,31 +1,38 @@
-                       GNU AFFERO GENERAL PUBLIC LICENSE
-                          Version 3, 19 November 2007
+Xavier Dual License: MIT + Mesh License v1.0
 
-    Copyright (C) 2026 SouthWest AI Labs (SWAL)
+Xavier is dual-licensed under the MIT License and the Xavier Mesh License v1.0.
 
-    This program is free software: you can redistribute it and/or modify
-    it under the terms of the GNU Affero General Public License as published
-    by the Free Software Foundation, either version 3 of the License, or
-    (at your option) any later version.
+- For standalone, local-first open-source use, you may use Xavier under the terms of the MIT License (see Section A below).
+- For commercial use or when network/P2P capabilities (Mesh, Governance, Data Commons, or Enterprise features) are activated, the Xavier Mesh License v1.0 applies (see LICENSE-MESH or Section B below).
 
-    This program is distributed in the hope that it will be useful,
-    but WITHOUT ANY WARRANTY; without even the implied warranty of
-    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-    GNU Affero General Public License for more details.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION A: MIT LICENSE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-    You should have received a copy of the GNU Affero General Public License
-    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+MIT License
 
-### Commercial License
+Copyright (c) 2026 SouthWest AI Labs (SWAL)
 
-Xavier is also available under a Commercial License for organizations that
-need proprietary integration, private mesh networks without source disclosure,
-or enterprise features (advanced-rrf, enterprise-embeddings, etc.).
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
 
-See COMMERCIAL_LICENSE.md for pricing and terms. Contact iberi22 for inquiries.
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
 
-### Xavier Mesh License
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING, BUT NOT LIMITED TO, THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
-The Mesh, Data Commons, and Governance features are governed by the
-Xavier Mesh License v1.0 (LICENSE-MESH) in addition to the AGPL v3.
-Use of these features requires acceptance of the Mesh License.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+SECTION B: XAVIER MESH LICENSE v1.0
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+For the full terms of the Xavier Mesh License, please refer to the LICENSE-MESH file.

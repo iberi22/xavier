@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Auto-save session events to Xavier memory.
 //!
 //! Fase 1: post-session-save — Fire-and-forget con 3s timeout.

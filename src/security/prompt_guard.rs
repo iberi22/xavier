@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Prompt Guard - Detección de Prompt Injection
 //!
 //! Módulo de seguridad para detectar y prevenir ataques de prompt injection

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Hook System for search pipeline extensibility.
 //!
 //! Provides a way to plug in custom logic at different stages of the search process,

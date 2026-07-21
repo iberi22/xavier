@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! HTTP handlers for memory synchronisation endpoints.
 //!
 //! Exposes peer-to-peer memory sync over the REST API:

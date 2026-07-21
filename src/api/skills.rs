@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Skills API endpoints
 //!
 //! Provides HTTP endpoints for skill dispatch and memory health monitoring.

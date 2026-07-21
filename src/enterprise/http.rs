@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Enterprise HTTP endpoints for multi-tenancy, API keys, audit, and rate limits.
 //!
 //! Only compiled when the `enterprise` feature is enabled.
@@ -23,6 +24,32 @@ use crate::enterprise::{
     rate_limit::{RateLimitConfig, RateLimitKey, RateLimiter},
     tenant::{Plan, Tenant, TenantId, TenantStore},
 };
+
+#[cfg(test)]
+pub static TEST_BYPASS_LICENSE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(true);
+#[cfg(test)]
+pub static TEST_FORCE_LICENSE_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Helper to verify the active license allows enterprise features
+fn verify_enterprise_license() -> Result<(), EnterpriseError> {
+    #[cfg(test)]
+    {
+        if TEST_BYPASS_LICENSE.load(std::sync::atomic::Ordering::Relaxed) {
+            return Ok(());
+        }
+        if TEST_FORCE_LICENSE_ACTIVE.load(std::sync::atomic::Ordering::Relaxed) {
+            return Ok(());
+        }
+    }
+
+    let settings = crate::settings::XavierSettings::current();
+    crate::security::license::require_mesh_license(&settings).map_err(|e| {
+        EnterpriseError::BadRequest {
+            tenant_id: None,
+            message: format!("License verification failed: {}", e),
+        }
+    })
+}
 
 /// Shared enterprise state accessible by all handlers
 pub struct EnterpriseState {
@@ -196,6 +223,8 @@ pub(crate) async fn create_tenant(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
     Json(payload): Json<CreateTenant>,
 ) -> Result<Json<TenantResponse>, EnterpriseError> {
+    verify_enterprise_license()?;
+
     let mut state = state
         .lock()
         .expect("poisoned lock: enterprise_create_tenant");
@@ -228,7 +257,9 @@ pub(crate) async fn create_tenant(
 /// GET /v1/tenants — List all tenants
 pub(crate) async fn list_tenants(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
-) -> Result<Json<Vec<TenantResponse>>, StatusCode> {
+) -> Result<Json<Vec<TenantResponse>>, EnterpriseError> {
+    verify_enterprise_license()?;
+
     let state = state
         .lock()
         .expect("poisoned lock: enterprise_list_tenants");
@@ -247,6 +278,8 @@ pub(crate) async fn get_tenant(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
     Path(id): Path<TenantId>,
 ) -> Result<Json<TenantResponse>, EnterpriseError> {
+    verify_enterprise_license()?;
+
     let state = state.lock().expect("poisoned lock: enterprise_get_tenant");
     state
         .tenant_store
@@ -285,6 +318,8 @@ pub(crate) async fn create_key(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
     Json(payload): Json<CreateKey>,
 ) -> Result<Json<ApiKeyResponse>, EnterpriseError> {
+    verify_enterprise_license()?;
+
     // Validate the tenant exists
     let mut state = state.lock().expect("poisoned lock: enterprise_create_key");
     if !state.tenant_store.exists(&payload.tenant_id) {
@@ -353,7 +388,9 @@ pub(crate) async fn create_key(
 pub(crate) async fn list_keys(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
     Path(id): Path<TenantId>,
-) -> Result<Json<Vec<ApiKey>>, StatusCode> {
+) -> Result<Json<Vec<ApiKey>>, EnterpriseError> {
+    verify_enterprise_license()?;
+
     let state = state.lock().expect("poisoned lock: enterprise_list_keys");
     let keys: Vec<ApiKey> = state
         .api_key_store
@@ -368,7 +405,9 @@ pub(crate) async fn list_keys(
 pub(crate) async fn revoke_key(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
     Path(key_id): Path<String>,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<StatusCode, EnterpriseError> {
+    verify_enterprise_license()?;
+
     let mut state = state.lock().expect("poisoned lock: enterprise_revoke_key");
 
     // Get the key before revocation for tenant context
@@ -376,12 +415,18 @@ pub(crate) async fn revoke_key(
         .api_key_store
         .get(&key_id)
         .map(|k| k.tenant_id)
-        .ok_or(StatusCode::NOT_FOUND)?;
+        .ok_or_else(|| EnterpriseError::NotFound {
+            tenant_id: None,
+            message: "Key not found".to_string(),
+        })?;
 
     state
         .api_key_store
         .revoke(&key_id)
-        .map_err(|_| StatusCode::NOT_FOUND)?;
+        .map_err(|_| EnterpriseError::NotFound {
+            tenant_id: Some(tenant_id),
+            message: "Key not found".to_string(),
+        })?;
 
     // Persist the updated key to database
     if let Some(ref db) = state.db {
@@ -416,7 +461,9 @@ pub(crate) async fn revoke_key(
 pub(crate) async fn query_audit(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
     Query(params): Query<AuditQuery>,
-) -> Result<Json<Vec<AuditEntry>>, StatusCode> {
+) -> Result<Json<Vec<AuditEntry>>, EnterpriseError> {
+    verify_enterprise_license()?;
+
     let state = state.lock().expect("poisoned lock: enterprise_query_audit");
     let mut entries = Vec::new();
 
@@ -460,7 +507,9 @@ pub struct RateLimitsResponse {
 /// GET /v1/rate-limits — Get current rate limit configuration
 pub(crate) async fn get_rate_limits(
     State(_state): State<Arc<Mutex<EnterpriseState>>>,
-) -> Result<Json<RateLimitsResponse>, StatusCode> {
+) -> Result<Json<RateLimitsResponse>, EnterpriseError> {
+    verify_enterprise_license()?;
+
     Ok(Json(RateLimitsResponse {
         tenant_limits: None,
         global_remaining: 0,
@@ -477,7 +526,9 @@ pub struct UpdateRateLimits {
 pub(crate) async fn update_rate_limits(
     State(state): State<Arc<Mutex<EnterpriseState>>>,
     Json(payload): Json<UpdateRateLimits>,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<StatusCode, EnterpriseError> {
+    verify_enterprise_license()?;
+
     let mut state = state
         .lock()
         .expect("poisoned lock: enterprise_update_rate_limits");

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Unit tests for memory manager types and functions.
 
 use crate::memory::manager::types::*;

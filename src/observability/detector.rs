@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Log Detector
 //!
 //! Scheduled task that scans `service_logs` for error patterns.

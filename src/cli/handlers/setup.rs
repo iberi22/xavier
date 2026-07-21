@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::cli::onboarding::SystemScanner;
 use crate::settings::types::{ProviderConfigV2, XavierSettings};
 use anyhow::{Context, Result};

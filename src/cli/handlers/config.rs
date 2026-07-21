@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Provider configuration handlers.
 
 use axum::{extract::State, http::StatusCode, response::Response, Json};

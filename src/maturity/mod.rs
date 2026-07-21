@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Maturity Scanner — Deterministic Feature Completeness Measurement
 //!
 //! Measures Xavier's feature completeness deterministically using:

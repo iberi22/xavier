@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Context Regeneration — RRF weight tuner.
 //!
 //! Consumes `RetrievalMetrics` (from `eval.rs`) and the feedback signal from

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI token generation commands
 //!
 //! Handles the `xavier token` subcommand for generating random tokens

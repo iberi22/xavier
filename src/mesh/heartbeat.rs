@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Periodic heartbeat payloads for Xavier Mesh peers.
 
 use crate::mesh::node::NodeId;

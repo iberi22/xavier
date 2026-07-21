@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! QMD search: lexical, semantic, and hybrid retrieval
 //!
 //! Provides scoring, vector search, hybrid fusion, and embedding-based retrieval

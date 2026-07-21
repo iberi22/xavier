@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Context Regeneration Loop
 //!
 //! Auto-triggers context rebuilds based on session staleness detection:

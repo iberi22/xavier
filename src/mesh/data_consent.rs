@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Data Commons Consent Manager
 //!
 //! Manages per-data-type consent levels for telemetry and data collection.

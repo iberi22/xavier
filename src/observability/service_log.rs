@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Service Log Store
 //!
 //! Persistente log storage in Xavier's `vec-store.sqlite3` database.

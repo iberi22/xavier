@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Error Analyzer
 //!
 //! Takes detected error patterns and uses AgentRuntime to analyze

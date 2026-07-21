@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 use crate::cli::state::CodeGraphState;
 use anyhow::{anyhow, Result};
 use code_graph::types::{CodeEdge, Symbol};

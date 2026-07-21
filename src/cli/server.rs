@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! HTTP server and WebSocket handlers
 
 use anyhow::{anyhow, Result};

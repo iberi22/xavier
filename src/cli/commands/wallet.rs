@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Wallet CLI commands [SKELETON — decisions pending with BELA]
 
 use crate::cli::commands::enums::WalletCommand;

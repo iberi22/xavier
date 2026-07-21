@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Application layer module with use case implementations
 //!
 //! Aggregates and re-exports the sub-modules within this module,

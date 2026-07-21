@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Evolve Module - Autonomous Self-Improving Memory System
 //!
 //! Based on Karpathy's autoresearch loop pattern:

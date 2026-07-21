@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Security handlers for input scanning and threat detection.
 
 use axum::{extract::State, http::StatusCode, response::Response, Json};

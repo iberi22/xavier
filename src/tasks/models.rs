@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Task Management - Core abstraction layer for tasks
 //! Independent of any backend - Planka is just a sync target
 

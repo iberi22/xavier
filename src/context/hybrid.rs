@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Hybrid context retrieval
 //!
 //! Provides the implementation and data structures for this module's

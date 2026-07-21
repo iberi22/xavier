@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Password Recovery System for Xavier
 //! Uses 12-word BIP39 seed phrases in Spanish
 

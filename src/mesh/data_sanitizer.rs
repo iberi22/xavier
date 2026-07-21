@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Data Commons Data Sanitizer
 //!
 //! Provides rule-based sanitization of arbitrary serializable payloads.

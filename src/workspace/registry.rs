@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Workspace registry for project discovery
 //!
 //! Provides the implementation and data structures for this module's

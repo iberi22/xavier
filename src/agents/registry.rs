@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Agent registry for lifecycle management
 //!
 //! Provides the implementation and data structures for this module's

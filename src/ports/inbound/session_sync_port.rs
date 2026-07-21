@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Inbound port for session synchronization
 //!
 //! Provides the implementation and data structures for this module's

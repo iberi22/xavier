@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Integration tests for the message bus.
 //!
 //! Tests message bus functionality including agent registration,

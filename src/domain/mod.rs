@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Domain module for core business logic
 //!
 //! Aggregates and re-exports the sub-modules within this module,

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Cloud Peer Adapter — Supabase REST transport for Xavier Mesh
 //!
 //! Enables synchronization for nodes that are not directly reachable via P2P.

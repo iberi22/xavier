@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! CLI command implementation sub-modules
 //!
 //! This module splits the former monolithic `commands.rs` into focused

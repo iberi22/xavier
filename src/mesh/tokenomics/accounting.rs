@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Resource Accounting and Reputation for Data Commons.
 //!
 //! Tracks resource sharing (storage, bandwidth, compute) between mesh peers

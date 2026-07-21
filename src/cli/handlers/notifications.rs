@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Notification handlers for the CLI server.
 
 use crate::cli::handlers::json_response;

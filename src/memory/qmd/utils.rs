@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Utility functions for QMD storage
 //!
 //! Provides the implementation and data structures for this module's

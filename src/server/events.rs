@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Real-time event types for Xavier WebSocket streaming.
 
 use serde::{Deserialize, Serialize};

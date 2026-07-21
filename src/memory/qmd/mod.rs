@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! QMD (Queryable Memory Document) storage module
 //!
 //! Aggregates and re-exports the sub-modules within this module,

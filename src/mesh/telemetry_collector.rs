@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Data Commons Telemetry Collector
 //!
 //! Collects, stores, and queries telemetry samples from the local Xavier node.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Provider management handlers for hot-switching LLM providers.
 
 use axum::{

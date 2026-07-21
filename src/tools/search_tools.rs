@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Search tool implementations
 //!
 //! Provides the implementation and data structures for this module's

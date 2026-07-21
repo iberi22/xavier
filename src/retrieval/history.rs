@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Cross-cycle tuning history persistence.
 //!
 //! `regen tune` measures retrieval quality and proposes a better RRF config, but

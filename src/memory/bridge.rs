@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Memory bridge between storage backends
 //!
 //! Provides the implementation and data structures for this module's

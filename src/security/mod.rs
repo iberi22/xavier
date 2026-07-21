@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Security Module - Integración de servicios de seguridad
 //!
 //! Este módulo proporciona una capa de seguridad unificada para el sistema Xavier,

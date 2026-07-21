@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! # Code Graph Scanner — Layer 1: Static Code Analysis
 //!
 //! Uses Xavier's code-graph database (JSON dump in .xavier/) to quickly

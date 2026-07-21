@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT OR LICENSE-MESH
 //! Experiment - Represents a single experiment in the evolution loop
 
 use serde::{Deserialize, Serialize};
