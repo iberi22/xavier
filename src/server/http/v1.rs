@@ -52,9 +52,7 @@ pub async fn memory_add(
         .ensure_within_storage_limit(&path, &content, &metadata)
         .await
     {
-        return Json(
-            serde_json::json!({ "status": "error", "message": error.to_string(), "workspace_id": workspace.workspace_id }),
-        );
+        return crate::error::ApiError::validation(error.to_string()).into_ok_response();
     }
     match workspace
         .workspace
@@ -63,24 +61,22 @@ pub async fn memory_add(
     {
         Ok(_) => Json(
             serde_json::json!({ "status": "ok", "message": "Document added to memory", "workspace_id": workspace.workspace_id }),
-        ),
-        Err(error) => Json(
-            serde_json::json!({ "status": "error", "message": format!("failed to add memory: {}", error), "workspace_id": workspace.workspace_id }),
-        ),
+        ).into_response(),
+        Err(error) => crate::error::ApiError::internal(format!("failed to add memory: {}", error)).into_ok_response(),
     }
 }
 
 pub async fn memory_search(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<SearchRequest>,
-) -> Json<serde_json::Value> {
+) -> impl IntoResponse {
     match workspace.workspace.memory.search_filtered(&payload.query, payload.limit, payload.filters.as_ref()).await {
         Ok(docs) => Json(serde_json::json!(SearchResponse {
             status: "ok".to_string(),
             results: docs.into_iter().map(|doc| serde_json::json!({ "id": doc.id, "path": doc.path, "content": doc.content, "metadata": doc.metadata })).collect(),
             query: payload.query,
-        })),
-        Err(error) => Json(serde_json::json!({ "status": "error", "message": format!("memory search failed: {}", error), "workspace_id": workspace.workspace_id })),
+        })).into_response(),
+        Err(error) => crate::error::ApiError::internal(format!("memory search failed: {}", error)).into_ok_response(),
     }
 }
 
@@ -96,6 +92,6 @@ pub async fn memory_hybrid_search(
             query: payload.query,
             mode,
         }).into_response(),
-        Err(error) => Json(serde_json::json!({ "status": "error", "message": error.to_string(), "query": payload.query, "mode": mode })).into_response(),
+        Err(error) => crate::error::ApiError::internal(error.to_string()).into_response(),
     }
 }
