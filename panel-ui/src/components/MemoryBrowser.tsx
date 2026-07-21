@@ -104,8 +104,14 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
         >
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-white/90">Add New Memory</h3>
-            <button type="button" onClick={() => setShowAdd(false)}>
-              <X size={16} className="text-white/40 hover:text-white" />
+            <button
+              type="button"
+              onClick={() => setShowAdd(false)}
+              aria-label="Close add memory form"
+              title="Close add memory form"
+              className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 rounded-md"
+            >
+              <X size={16} className="text-white/40 hover:text-white" aria-hidden="true" />
             </button>
           </div>
           <textarea
@@ -205,9 +211,11 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
-                className="p-2 rounded-xl border border-white/10 text-white/60 disabled:opacity-20 hover:bg-white/5 transition-colors"
+                aria-label="Previous page"
+                title="Previous page"
+                className="p-2 rounded-xl border border-white/10 text-white/60 disabled:opacity-20 hover:bg-white/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
               >
-                <ChevronLeft size={16} />
+                <ChevronLeft size={16} aria-hidden="true" />
               </button>
               <span className="text-sm text-white/40 font-mono">
                 Page {page}
@@ -215,9 +223,11 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
               <button
                 onClick={() => setPage((p) => p + 1)}
                 disabled={memories.length < PAGE_SIZE}
-                className="p-2 rounded-xl border border-white/10 text-white/60 disabled:opacity-20 hover:bg-white/5 transition-colors"
+                aria-label="Next page"
+                title="Next page"
+                className="p-2 rounded-xl border border-white/10 text-white/60 disabled:opacity-20 hover:bg-white/5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
               >
-                <ChevronRight size={16} />
+                <ChevronRight size={16} aria-hidden="true" />
               </button>
             </div>
           )}
