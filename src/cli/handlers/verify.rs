@@ -14,6 +14,9 @@ pub async fn handle_verify_command(cmd: VerifyCommand) -> Result<()> {
         }
         VerifyCommand::Health { format } => verify_health(format).await,
         VerifyCommand::Save { content } => verify_save(content).await,
+        VerifyCommand::Features { .. } => {
+            anyhow::bail!("verify features is handled by the command dispatcher")
+        }
     }
 }
 
