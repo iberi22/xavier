@@ -204,4 +204,128 @@ mod tests_inner {
         assert_eq!(reverse.len(), 1);
         assert_eq!(reverse[0].from_symbol, main);
     }
+
+    #[test]
+    fn test_c_symbol_and_relation_mapping() {
+        use crate::query::{CSymbol, CRelation};
+
+        let c_sym = CSymbol {
+            uuid: "c-uuid-1".to_string(),
+            name: "calculate_area".to_string(),
+            c_kind: "function_definition".to_string(),
+            filepath: "geometry.c".to_string(),
+            start_line: 12,
+            end_line: 25,
+            start_col: 4,
+            end_col: 20,
+            signature_text: Some("double calculate_area(double r)".to_string()),
+            parent_scope: Some("geometry".to_string()),
+            cyclomatic_complexity: Some(4.0),
+        };
+
+        let rust_sym = c_sym.to_rust_symbol();
+        assert_eq!(rust_sym.stable_id, Some("c-uuid-1".to_string()));
+        assert_eq!(rust_sym.name, "calculate_area");
+        assert_eq!(rust_sym.kind, SymbolKind::Function);
+        assert_eq!(rust_sym.lang, Language::C);
+        assert_eq!(rust_sym.file_path, "geometry.c");
+        assert_eq!(rust_sym.start_line, 12);
+        assert_eq!(rust_sym.end_line, 25);
+        assert_eq!(rust_sym.start_col, 4);
+        assert_eq!(rust_sym.end_col, 20);
+        assert_eq!(rust_sym.signature, Some("double calculate_area(double r)".to_string()));
+        assert_eq!(rust_sym.parent, Some("geometry".to_string()));
+        assert_eq!(rust_sym.complexity, Some(4.0));
+
+        let c_rel = CRelation {
+            from_uuid: "c-uuid-1".to_string(),
+            to_uuid: "c-uuid-2".to_string(),
+            rel_type: "PointsTo".to_string(),
+            file_path: "geometry.c".to_string(),
+            line_num: 15,
+            weight: 0.85,
+        };
+
+        let rust_edge = c_rel.to_rust_edge();
+        assert_eq!(rust_edge.from_symbol, "c-uuid-1");
+        assert_eq!(rust_edge.to_symbol, "c-uuid-2");
+        assert_eq!(rust_edge.edge_type, EdgeType::PointsTo);
+        assert_eq!(rust_edge.file_path, "geometry.c");
+        assert_eq!(rust_edge.line, 15);
+        assert_eq!(rust_edge.confidence, 0.85);
+    }
+
+    #[test]
+    fn test_c_query_bridge_and_engine() {
+        use crate::query::{CSymbol, CRelation, CQueryBridge, QueryEngine};
+
+        let c_symbols = vec![
+            CSymbol {
+                uuid: "sym-1".to_string(),
+                name: "init_system".to_string(),
+                c_kind: "function_definition".to_string(),
+                filepath: "main.c".to_string(),
+                start_line: 1,
+                end_line: 10,
+                start_col: 0,
+                end_col: 0,
+                signature_text: Some("void init_system()".to_string()),
+                parent_scope: None,
+                cyclomatic_complexity: Some(2.0),
+            },
+            CSymbol {
+                uuid: "sym-2".to_string(),
+                name: "CONFIG_MAX".to_string(),
+                c_kind: "preproc_def".to_string(),
+                filepath: "config.h".to_string(),
+                start_line: 5,
+                end_line: 5,
+                start_col: 0,
+                end_col: 0,
+                signature_text: None,
+                parent_scope: None,
+                cyclomatic_complexity: None,
+            },
+        ];
+
+        let c_relations = vec![
+            CRelation {
+                from_uuid: "sym-1".to_string(),
+                to_uuid: "sym-2".to_string(),
+                rel_type: "MacroExpansion".to_string(),
+                file_path: "main.c".to_string(),
+                line_num: 3,
+                weight: 1.0,
+            }
+        ];
+
+        let c_bridge = CQueryBridge::new(c_symbols, c_relations);
+        let dummy_db = Arc::new(CodeGraphDB::in_memory().unwrap());
+        let engine = QueryEngine::with_bridge(dummy_db, Box::new(c_bridge));
+
+        // Test search
+        let res = engine.search("init", 10).expect("search");
+        assert_eq!(res.total, 1);
+        assert_eq!(res.symbols[0].stable_id.as_deref(), Some("sym-1"));
+
+        // Test in_file
+        let file_symbols = engine.in_file("main.c").expect("in_file");
+        assert_eq!(file_symbols.len(), 1);
+        assert_eq!(file_symbols[0].name, "init_system");
+
+        // Test dependencies/relations
+        let deps = engine.dependencies("init_system", Some(EdgeType::MacroExpansion), 1, 10).expect("deps");
+        assert_eq!(deps.len(), 1);
+        assert_eq!(deps[0].to_symbol, "sym-2");
+        assert_eq!(deps[0].edge_type, EdgeType::MacroExpansion);
+
+        // Test stats
+        let stats = engine.stats().expect("stats");
+        assert_eq!(stats.total_symbols, 2);
+        assert_eq!(stats.total_files, 2); // main.c and config.h
+
+        // Test hubs
+        let hubs = engine.hubs(1, 10).expect("hubs");
+        assert_eq!(hubs.len(), 2);
+    }
 }

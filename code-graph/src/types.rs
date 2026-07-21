@@ -174,6 +174,12 @@ pub enum EdgeType {
     Instantiates,
     Overrides,
     Decorates,
+    // C-specific and richer relationship types
+    PointsTo,
+    MacroExpansion,
+    Includes,
+    Reads,
+    Writes,
 }
 
 impl EdgeType {
@@ -193,6 +199,11 @@ impl EdgeType {
             EdgeType::Instantiates => "Instantiates",
             EdgeType::Overrides => "Overrides",
             EdgeType::Decorates => "Decorates",
+            EdgeType::PointsTo => "PointsTo",
+            EdgeType::MacroExpansion => "MacroExpansion",
+            EdgeType::Includes => "Includes",
+            EdgeType::Reads => "Reads",
+            EdgeType::Writes => "Writes",
         }
     }
 }
