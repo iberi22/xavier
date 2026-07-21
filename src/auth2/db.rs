@@ -18,6 +18,7 @@ pub struct AuthDb {
 }
 
 impl AuthDb {
+    /// New.
     pub fn new(path: &Path) -> AnyhowResult<Self> {
         let master_key = Self::get_or_create_master_key()?;
         let conn = Connection::open(path).map_err(|e| anyhow!("Failed to open database: {}", e))?;
@@ -88,6 +89,7 @@ impl AuthDb {
     }
 
     // User Operations
+    /// Create user.
     pub fn create_user(&self, user: &User) -> AnyhowResult<()> {
         self.conn.execute(
             "INSERT INTO users (id, email, password_hash, name, role, totp_secret, totp_enabled, recovery_seed_hash, backup_codes, created_at, updated_at)
@@ -109,6 +111,7 @@ impl AuthDb {
         Ok(())
     }
 
+    /// Get user by email.
     pub fn get_user_by_email(&self, email: &str) -> AnyhowResult<Option<User>> {
         let mut stmt = self.conn.prepare("SELECT id, email, password_hash, name, role, totp_secret, totp_enabled, recovery_seed_hash, backup_codes, created_at, updated_at FROM users WHERE email = ?1")?;
         let mut rows = stmt.query(params![email])?;
@@ -132,6 +135,7 @@ impl AuthDb {
         }
     }
 
+    /// Get user by id.
     pub fn get_user_by_id(&self, id: &str) -> AnyhowResult<Option<User>> {
         let mut stmt = self.conn.prepare("SELECT id, email, password_hash, name, role, totp_secret, totp_enabled, recovery_seed_hash, backup_codes, created_at, updated_at FROM users WHERE id = ?1")?;
         let mut rows = stmt.query(params![id])?;
@@ -156,6 +160,7 @@ impl AuthDb {
     }
 
     // Refresh Token Operations
+    /// Store refresh token.
     pub fn store_refresh_token(&self, token: &RefreshToken) -> AnyhowResult<()> {
         self.conn.execute(
             "INSERT INTO refresh_tokens (id, user_id, token_hash, device_info, expires_at, created_at, revoked)
@@ -173,6 +178,7 @@ impl AuthDb {
         Ok(())
     }
 
+    /// Get refresh token by hash.
     pub fn get_refresh_token_by_hash(&self, hash: &str) -> AnyhowResult<Option<RefreshToken>> {
         let mut stmt = self.conn.prepare("SELECT id, user_id, token_hash, device_info, expires_at, created_at, revoked FROM refresh_tokens WHERE token_hash = ?1")?;
         let mut rows = stmt.query(params![hash])?;
@@ -192,6 +198,7 @@ impl AuthDb {
         }
     }
 
+    /// Revoke refresh token.
     pub fn revoke_refresh_token(&self, id: &str) -> AnyhowResult<()> {
         self.conn
             .execute(
@@ -202,6 +209,7 @@ impl AuthDb {
         Ok(())
     }
 
+    /// Revoke all user tokens.
     pub fn revoke_all_user_tokens(&self, user_id: &str) -> AnyhowResult<()> {
         self.conn
             .execute(
@@ -213,6 +221,7 @@ impl AuthDb {
     }
 
     // TOTP Operations
+    /// Update totp secret.
     pub fn update_totp_secret(&self, user_id: &str, secret: &str) -> AnyhowResult<()> {
         self.conn
             .execute(
@@ -223,6 +232,7 @@ impl AuthDb {
         Ok(())
     }
 
+    /// Update backup codes.
     pub fn update_backup_codes(&self, user_id: &str, codes_json: &str) -> AnyhowResult<()> {
         self.conn
             .execute(
@@ -233,6 +243,7 @@ impl AuthDb {
         Ok(())
     }
 
+    /// Enable totp.
     pub fn enable_totp(&self, user_id: &str) -> AnyhowResult<()> {
         self.conn
             .execute(
@@ -243,6 +254,7 @@ impl AuthDb {
         Ok(())
     }
 
+    /// Disable totp.
     pub fn disable_totp(&self, user_id: &str) -> AnyhowResult<()> {
         self.conn.execute(
             "UPDATE users SET totp_enabled = 0, totp_secret = NULL, updated_at = ?2 WHERE id = ?1",
@@ -251,6 +263,7 @@ impl AuthDb {
         Ok(())
     }
 
+    /// Update password.
     pub fn update_password(&self, user_id: &str, password_hash: &str) -> AnyhowResult<()> {
         self.conn
             .execute(
@@ -261,6 +274,7 @@ impl AuthDb {
         Ok(())
     }
 
+    /// List users.
     pub fn list_users(&self) -> AnyhowResult<Vec<User>> {
         let mut stmt = self.conn.prepare(
             "SELECT id, email, password_hash, name, role, totp_secret, totp_enabled, recovery_seed_hash, backup_codes, created_at, updated_at FROM users"
@@ -290,6 +304,7 @@ impl AuthDb {
         Ok(users)
     }
 
+    /// Count users.
     pub fn count_users(&self) -> AnyhowResult<i64> {
         self.conn
             .query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))
@@ -297,6 +312,7 @@ impl AuthDb {
     }
 
     // Audit Log Operations
+    /// Log audit.
     pub fn log_audit(&self, log: &AuditLog) -> AnyhowResult<()> {
         self.conn
             .execute(

@@ -10,6 +10,7 @@ use axum::{
 };
 use xavier::notifications::NOTIFICATIONS;
 
+/// List notifications handler.
 pub async fn list_notifications_handler(State(_state): State<CliState>) -> Response {
     match NOTIFICATIONS.list_notifications().await {
         Ok(notifications) => json_response(
@@ -31,6 +32,7 @@ pub struct CreateSubscriptionPayload {
     pub event_types: Vec<String>,
 }
 
+/// Create subscription handler.
 pub async fn create_subscription_handler(
     State(_state): State<CliState>,
     Json(payload): Json<CreateSubscriptionPayload>,
@@ -44,6 +46,7 @@ pub async fn create_subscription_handler(
     }
 }
 
+/// List subscriptions handler.
 pub async fn list_subscriptions_handler(State(_state): State<CliState>) -> Response {
     match NOTIFICATIONS.list_subscriptions().await {
         Ok(subs) => json_response(StatusCode::OK, serde_json::to_value(subs).unwrap_or_default()),
@@ -54,6 +57,7 @@ pub async fn list_subscriptions_handler(State(_state): State<CliState>) -> Respo
     }
 }
 
+/// Delete subscription handler.
 pub async fn delete_subscription_handler(
     State(_state): State<CliState>,
     Path(id): Path<String>,
@@ -67,6 +71,7 @@ pub async fn delete_subscription_handler(
     }
 }
 
+/// Mark notification read handler.
 pub async fn mark_notification_read_handler(
     State(_state): State<CliState>,
     Path(id): Path<String>,
@@ -80,6 +85,7 @@ pub async fn mark_notification_read_handler(
     }
 }
 
+/// Mark all notifications read handler.
 pub async fn mark_all_notifications_read_handler(State(_state): State<CliState>) -> Response {
     match NOTIFICATIONS.mark_all_as_read().await {
         Ok(_) => json_response(StatusCode::OK, serde_json::json!({ "status": "ok" })),
@@ -90,6 +96,7 @@ pub async fn mark_all_notifications_read_handler(State(_state): State<CliState>)
     }
 }
 
+/// Delete all notifications handler.
 pub async fn delete_all_notifications_handler(State(_state): State<CliState>) -> Response {
     match NOTIFICATIONS.delete_all().await {
         Ok(_) => json_response(StatusCode::OK, serde_json::json!({ "status": "ok" })),

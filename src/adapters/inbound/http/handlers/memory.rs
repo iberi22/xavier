@@ -87,6 +87,7 @@ fn default_limit() -> usize {
     10
 }
 
+/// Search get handler.
 pub async fn search_get_handler(
     headers: HeaderMap,
     State(state): State<AppState>,
@@ -107,6 +108,7 @@ pub async fn search_get_handler(
     search_handler(headers, State(state), Json(payload)).await
 }
 
+/// Search handler.
 pub async fn search_handler(
     headers: HeaderMap,
     State(state): State<AppState>,
@@ -201,6 +203,7 @@ pub async fn search_handler(
     }
 }
 
+/// Add handler.
 pub async fn add_handler(
     headers: HeaderMap,
     State(state): State<AppState>,
@@ -259,6 +262,7 @@ pub async fn add_handler(
     }
 }
 
+/// Update handler.
 pub async fn update_handler(
     headers: HeaderMap,
     State(state): State<AppState>,
@@ -310,6 +314,7 @@ pub async fn update_handler(
     }
 }
 
+/// Delete handler.
 pub async fn delete_handler(
     headers: HeaderMap,
     State(state): State<AppState>,
@@ -336,6 +341,7 @@ pub async fn delete_handler(
     }
 }
 
+/// Stats handler.
 pub async fn stats_handler(State(state): State<AppState>) -> Json<serde_json::Value> {
     // Note: MemoryQueryPort doesn't have stats() yet, might need to add it or use storage directly
     // For now returning placeholder or calling list
@@ -346,6 +352,7 @@ pub async fn stats_handler(State(state): State<AppState>) -> Json<serde_json::Va
     }))
 }
 
+/// Memory query handler.
 pub async fn memory_query_handler(
     State(state): State<AppState>,
     Json(payload): Json<MemoryQueryPayload>,

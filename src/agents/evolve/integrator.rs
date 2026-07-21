@@ -12,6 +12,7 @@ pub struct Integrator {
 }
 
 impl Integrator {
+    /// New.
     pub fn new() -> Self {
         Self {
             memory_path: PathBuf::from("src/memory/"),

@@ -10,6 +10,7 @@ use serde_json::json;
 // Handlers
 // ═════════════════════════════════════════════════════════════════════════════
 
+/// Health.
 pub async fn health() -> impl IntoResponse {
     AxumJson(json!({
         "status": "ok",
@@ -24,6 +25,7 @@ pub struct ContextParams {
     pub limit: Option<usize>,
 }
 
+/// Context.
 pub async fn context(memory: &dyn MemoryQueryPort, params: ContextParams) -> impl IntoResponse {
     let limit = params.limit.unwrap_or(10);
     // Use MemoryQueryPort search
@@ -47,6 +49,7 @@ pub struct SearchRequest {
     pub filters: Option<serde_json::Value>,
 }
 
+/// Memory search.
 pub async fn memory_search(memory: &dyn MemoryQueryPort, req: SearchRequest) -> impl IntoResponse {
     let limit = req.limit.unwrap_or(10);
     // Use MemoryQueryPort search
@@ -63,6 +66,7 @@ pub async fn memory_search(memory: &dyn MemoryQueryPort, req: SearchRequest) -> 
     }
 }
 
+/// Tools.
 pub async fn tools() -> impl IntoResponse {
     AxumJson(json!({
         "tools": [
@@ -89,6 +93,7 @@ pub struct ToolExecuteRequest {
     pub args: serde_json::Value,
 }
 
+/// Execute tool.
 pub async fn execute_tool(name: String, req: ToolExecuteRequest) -> impl IntoResponse {
     // Simple mock execution for now
     AxumJson(json!({
@@ -101,6 +106,7 @@ pub async fn execute_tool(name: String, req: ToolExecuteRequest) -> impl IntoRes
     }))
 }
 
+/// Provider status.
 pub async fn provider_status(active_provider: String) -> impl IntoResponse {
     AxumJson(json!({
         "active": active_provider,

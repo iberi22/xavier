@@ -14,10 +14,12 @@ pub struct ContextMetrics {
 }
 
 impl ContextMetrics {
+    /// New.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Record request.
     pub fn record_request(&self, tokens: usize, cache_hit: bool) {
         self.total_requests.fetch_add(1, Ordering::Relaxed);
         self.total_tokens_used.fetch_add(tokens, Ordering::Relaxed);
@@ -33,6 +35,7 @@ impl ContextMetrics {
         );
     }
 
+    /// Get hit rate.
     pub fn get_hit_rate(&self) -> f64 {
         let total = self.total_requests.load(Ordering::Relaxed);
         let hits = self.cache_hits.load(Ordering::Relaxed);
@@ -44,6 +47,7 @@ impl ContextMetrics {
         }
     }
 
+    /// Report.
     pub fn report(&self) {
         let total = self.total_requests.load(Ordering::Relaxed);
         let hits = self.cache_hits.load(Ordering::Relaxed);

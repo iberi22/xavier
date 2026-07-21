@@ -119,6 +119,7 @@ impl SessionKeyManager {
         Self { key }
     }
 
+    /// Get key.
     pub fn get_key(&self) -> &[u8; AES_KEY_SIZE] {
         &self.key
     }
@@ -127,6 +128,7 @@ impl SessionKeyManager {
 static SESSION_KEY: LazyLock<RwLock<SessionKeyManager>> =
     LazyLock::new(|| RwLock::new(SessionKeyManager::new()));
 
+/// Get node session key.
 pub fn get_node_session_key() -> [u8; AES_KEY_SIZE] {
     *SESSION_KEY.read().unwrap().get_key()
 }

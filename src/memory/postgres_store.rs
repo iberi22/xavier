@@ -23,6 +23,7 @@ pub struct PostgresMemoryStore {
 }
 
 impl PostgresMemoryStore {
+    /// From env.
     pub async fn from_env() -> Result<Self> {
         let settings = XavierSettings::current();
         let url = std::env::var("XAVIER_POSTGRES_URL")
@@ -33,6 +34,7 @@ impl PostgresMemoryStore {
         Self::new(&url).await
     }
 
+    /// New.
     pub async fn new(url: &str) -> Result<Self> {
         let pool = PgPoolOptions::new().max_connections(5).connect(url).await?;
 
@@ -46,6 +48,7 @@ impl PostgresMemoryStore {
         Ok(store)
     }
 
+    /// Health check.
     pub async fn health_check(&self) -> Result<()> {
         tokio::time::timeout(
             std::time::Duration::from_secs(10),

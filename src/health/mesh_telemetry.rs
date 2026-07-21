@@ -22,6 +22,7 @@ pub struct PeerMetrics {
 }
 
 impl PeerMetrics {
+    /// New.
     pub fn new() -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -44,6 +45,7 @@ impl Default for PeerMetrics {
 }
 
 impl PeerMetrics {
+    /// Record latency.
     pub fn record_latency(&mut self, latency_ms: u64) {
         if self.latencies_ms.len() >= WINDOW_SIZE {
             self.latencies_ms.pop_front();
@@ -56,6 +58,7 @@ impl PeerMetrics {
             .as_secs();
     }
 
+    /// Record agreement.
     pub fn record_agreement(&mut self, agreed: bool) {
         if self.agreement_outcomes.len() >= WINDOW_SIZE {
             self.agreement_outcomes.pop_front();
@@ -63,6 +66,7 @@ impl PeerMetrics {
         self.agreement_outcomes.push_back(agreed);
     }
 
+    /// Agreement ratio.
     pub fn agreement_ratio(&self) -> f64 {
         if self.agreement_outcomes.is_empty() {
             return 1.0; // Default to 1.0 if no data
@@ -81,6 +85,7 @@ pub struct MeshTelemetryCollector {
 }
 
 impl MeshTelemetryCollector {
+    /// New.
     pub fn new() -> Self {
         Self {
             peer_metrics: Arc::new(Mutex::new(HashMap::new())),
@@ -88,6 +93,7 @@ impl MeshTelemetryCollector {
         }
     }
 
+    /// Record latency.
     pub fn record_latency(&self, node_id: &NodeId, latency_ms: u64) {
         let mut metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
         metrics
@@ -96,6 +102,7 @@ impl MeshTelemetryCollector {
             .record_latency(latency_ms);
     }
 
+    /// Record agreement.
     pub fn record_agreement(&self, node_id: &NodeId, agreed: bool) {
         let mut metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
         metrics
@@ -104,6 +111,7 @@ impl MeshTelemetryCollector {
             .record_agreement(agreed);
     }
 
+    /// Get peer agreement ratio.
     pub fn get_peer_agreement_ratio(&self, node_id: &NodeId) -> f64 {
         let metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
         metrics
@@ -112,6 +120,7 @@ impl MeshTelemetryCollector {
             .unwrap_or(1.0)
     }
 
+    /// Get overall agreement ratio.
     pub fn get_overall_agreement_ratio(&self) -> f64 {
         let metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
         if metrics.is_empty() {
@@ -121,6 +130,7 @@ impl MeshTelemetryCollector {
         sum / metrics.len() as f64
     }
 
+    /// Get unhealthy peers.
     pub fn get_unhealthy_peers(&self, threshold: f64) -> Vec<NodeId> {
         let metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
         metrics

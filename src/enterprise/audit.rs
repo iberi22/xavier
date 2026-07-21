@@ -31,6 +31,7 @@ pub enum AuditAction {
 }
 
 impl AuditAction {
+    /// As str.
     pub fn as_str(&self) -> &str {
         match self {
             AuditAction::MemorySearch => "memory.search",
@@ -69,6 +70,7 @@ pub struct AuditEntry {
 }
 
 impl AuditEntry {
+    /// New.
     pub fn new(tenant_id: TenantId, action: AuditAction, resource: impl Into<String>) -> Self {
         Self {
             id: Uuid::new_v4().to_string(),
@@ -85,31 +87,37 @@ impl AuditEntry {
         }
     }
 
+    /// With user.
     pub fn with_user(mut self, user_id: Uuid) -> Self {
         self.user_id = Some(user_id);
         self
     }
 
+    /// With resource id.
     pub fn with_resource_id(mut self, id: impl Into<String>) -> Self {
         self.resource_id = Some(id.into());
         self
     }
 
+    /// With details.
     pub fn with_details(mut self, details: impl Into<String>) -> Self {
         self.details = Some(details.into());
         self
     }
 
+    /// With ip.
     pub fn with_ip(mut self, ip: impl Into<String>) -> Self {
         self.ip_address = Some(ip.into());
         self
     }
 
+    /// With user agent.
     pub fn with_user_agent(mut self, ua: impl Into<String>) -> Self {
         self.user_agent = Some(ua.into());
         self
     }
 
+    /// Failed.
     pub fn failed(mut self) -> Self {
         self.success = false;
         self
@@ -123,10 +131,12 @@ pub struct AuditLog {
 }
 
 impl AuditLog {
+    /// New.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// With capacity.
     pub fn with_capacity(max_entries: usize) -> Self {
         Self {
             entries: VecDeque::with_capacity(max_entries),
@@ -250,6 +260,7 @@ pub struct AuditQuery {
 }
 
 impl AuditQuery {
+    /// For tenant.
     pub fn for_tenant(tenant_id: TenantId) -> Self {
         Self {
             tenant_id: Some(tenant_id),
@@ -257,17 +268,20 @@ impl AuditQuery {
         }
     }
 
+    /// With action.
     pub fn with_action(mut self, action: impl Into<String>) -> Self {
         self.action = Some(action.into());
         self
     }
 
+    /// With date range.
     pub fn with_date_range(mut self, start: DateTime<Utc>, end: DateTime<Utc>) -> Self {
         self.start_date = Some(start);
         self.end_date = Some(end);
         self
     }
 
+    /// With limit.
     pub fn with_limit(mut self, limit: usize) -> Self {
         self.limit = Some(limit);
         self

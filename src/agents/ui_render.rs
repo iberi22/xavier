@@ -19,10 +19,12 @@ pub struct UiRenderResult {
 pub struct UiRenderAgent;
 
 impl UiRenderAgent {
+    /// New.
     pub fn new() -> Self {
         Self
     }
 
+    /// Render.
     pub fn render(&self, trace: &AgentRunTrace) -> UiRenderResult {
         let mut components = vec!["Card".to_string(), "TextCallout".to_string()];
         let mut rules = vec!["always_show_summary".to_string()];

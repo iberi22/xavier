@@ -104,22 +104,27 @@ async fn watch_config_changes() -> Result<()> {
 
 impl XavierSettings {
     #[allow(dead_code)]
+    /// Resolve config path.
     pub fn resolve_config_path() -> PathBuf {
         serialization::resolve_config_path()
     }
 
+    /// Resolve data dir.
     pub fn resolve_data_dir() -> PathBuf {
         serialization::resolve_data_dir()
     }
 
+    /// Load.
     pub fn load() -> Result<Option<Self>> {
         serialization::load()
     }
 
+    /// Apply to env.
     pub fn apply_to_env(&self) {
         env::apply_to_env_impl(self);
     }
 
+    /// Current.
     pub fn current() -> Self {
         #[cfg(test)]
         {
@@ -132,6 +137,7 @@ impl XavierSettings {
         }
     }
 
+    /// Reload.
     pub fn reload() -> Result<()> {
         let settings = serialization::current();
         settings.apply_to_env();
@@ -140,10 +146,12 @@ impl XavierSettings {
         Ok(())
     }
 
+    /// Save.
     pub async fn save(&self) -> Result<()> {
         serialization::save(self).await
     }
 
+    /// Client base url.
     pub fn client_base_url(&self) -> String {
         let host = match self.server.host.as_str() {
             "0.0.0.0" | "::" => "127.0.0.1",

@@ -7,6 +7,7 @@ use std::io::{self, Write};
 use std::process::{Command, Stdio};
 use uuid::Uuid;
 
+/// Handle setup.
 pub async fn handle_setup(local: bool) -> Result<()> {
     if local {
         return handle_local_setup().await;

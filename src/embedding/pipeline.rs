@@ -16,6 +16,7 @@ pub struct LocalEmbeddingPipeline {
 }
 
 impl LocalEmbeddingPipeline {
+    /// New.
     pub fn new(
         embedder: Arc<dyn Embedder>,
         store: Arc<dyn MemoryStore>,
@@ -25,6 +26,7 @@ impl LocalEmbeddingPipeline {
         Self::with_consent(embedder, store, max_clearance, consent_given)
     }
 
+    /// With consent.
     pub fn with_consent(
         embedder: Arc<dyn Embedder>,
         store: Arc<dyn MemoryStore>,
@@ -39,6 +41,7 @@ impl LocalEmbeddingPipeline {
         }
     }
 
+    /// From env.
     pub fn from_env(embedder: Arc<dyn Embedder>, store: Arc<dyn MemoryStore>) -> Self {
         // Default to Secret for local embeddings, can be more restrictive
         let max_clearance = ClearanceLevel::Secret;

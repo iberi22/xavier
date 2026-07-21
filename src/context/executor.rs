@@ -16,10 +16,12 @@ impl Default for SkillExecutor {
 }
 
 impl SkillExecutor {
+    /// New.
     pub fn new() -> Self {
         Self
     }
 
+    /// Execute.
     pub async fn execute(&self, skill: &Skill, input: &str) -> Result<String> {
         let max_retries = 2;
         let mut attempt = 0;

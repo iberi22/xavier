@@ -12,6 +12,7 @@ use crate::workspace::WorkspaceContext;
 use axum::{extract::Json, response::IntoResponse, Extension};
 use std::sync::Arc;
 
+/// Memory retrieve.
 pub async fn memory_retrieve(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<MultiLayerRetrieveRequest>,
@@ -202,6 +203,7 @@ fn retrieved_path_for_result(
     }
 }
 
+/// Memory export pack.
 pub async fn memory_export_pack(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<ExportPackRequest>,
@@ -305,6 +307,7 @@ pub async fn memory_export_pack(
     })
 }
 
+/// Memory curate.
 pub async fn memory_curate(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<serde_json::Value>,
@@ -330,6 +333,7 @@ pub async fn memory_curate(
     }
 }
 
+/// Memory manage.
 pub async fn memory_manage(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     match workspace.workspace.memory_manager.auto_manage().await {
         Ok(count) => {
@@ -340,6 +344,7 @@ pub async fn memory_manage(Extension(workspace): Extension<WorkspaceContext>) ->
     }
 }
 
+/// Memory decay.
 pub async fn memory_decay(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     match workspace.workspace.memory_manager.decay_memories().await {
         Ok(result) => {
@@ -352,6 +357,7 @@ pub async fn memory_decay(Extension(workspace): Extension<WorkspaceContext>) -> 
     }
 }
 
+/// Memory consolidate.
 pub async fn memory_consolidate(
     Extension(workspace): Extension<WorkspaceContext>,
 ) -> impl IntoResponse {
@@ -362,6 +368,7 @@ pub async fn memory_consolidate(
     }
 }
 
+/// Memory reflect.
 pub async fn memory_reflect(
     Extension(workspace): Extension<WorkspaceContext>,
 ) -> impl IntoResponse {

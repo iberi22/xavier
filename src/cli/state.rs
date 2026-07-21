@@ -73,10 +73,12 @@ pub struct CliState {
 }
 
 impl CliState {
+    /// Auth store.
     pub fn auth_store(&self) -> Option<Arc<AuthStore>> {
         self.auth_store.clone()
     }
 
+    /// Tgd engine.
     pub async fn tgd_engine(&self) -> Option<xavier::tgd::TgdEngine> {
         let router = self.provider_router.read().await;
         let p_kind = router.active_mode();

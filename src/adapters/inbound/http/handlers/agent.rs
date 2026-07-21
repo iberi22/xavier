@@ -16,6 +16,7 @@ pub struct AgentRegisterPayload {
     pub role: Option<String>,
 }
 
+/// Agent register handler.
 pub async fn agent_register_handler(
     State(state): State<AppState>,
     Json(payload): Json<AgentRegisterPayload>,
@@ -44,6 +45,7 @@ pub async fn agent_register_handler(
     }))
 }
 
+/// Agent heartbeat handler.
 pub async fn agent_heartbeat_handler(
     State(state): State<AppState>,
     axum::extract::Path(agent_id): axum::extract::Path<String>,
@@ -57,6 +59,7 @@ pub async fn agent_heartbeat_handler(
     }))
 }
 
+/// Agent active handler.
 pub async fn agent_active_handler(State(state): State<AppState>) -> Json<serde_json::Value> {
     let active = state.agent_lifecycle.get_active_agents().await;
 
@@ -67,6 +70,7 @@ pub async fn agent_active_handler(State(state): State<AppState>) -> Json<serde_j
     }))
 }
 
+/// Agent unregister handler.
 pub async fn agent_unregister_handler(
     State(state): State<AppState>,
     axum::extract::Path(agent_id): axum::extract::Path<String>,
@@ -87,6 +91,7 @@ pub struct AgentPushContextPayload {
     pub tags: Option<Vec<String>>,
 }
 
+/// Agent push context handler.
 pub async fn agent_push_context_handler(
     State(_state): State<AppState>,
     axum::extract::Path(agent_id): axum::extract::Path<String>,

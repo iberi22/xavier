@@ -15,6 +15,7 @@ pub struct FileMigrationResult {
     pub detail: String,
 }
 
+/// Resolve file store path.
 pub fn resolve_file_store_path(workspace_root: &Path) -> PathBuf {
     let settings = XavierSettings::current();
     let path = PathBuf::from(&settings.memory.file_path);
@@ -25,10 +26,12 @@ pub fn resolve_file_store_path(workspace_root: &Path) -> PathBuf {
     }
 }
 
+/// Durable migration marker path.
 pub fn durable_migration_marker_path(file_store_path: &Path) -> PathBuf {
     file_store_path.with_extension("durable.migrated.json")
 }
 
+/// Migrate file store if needed.
 pub async fn migrate_file_store_if_needed(
     workspace_id: &str,
     file_store_path: &Path,

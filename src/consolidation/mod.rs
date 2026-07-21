@@ -94,6 +94,7 @@ pub struct ReflectionStats {
 }
 
 impl ConsolidationTask {
+    /// Consolidate.
     pub async fn consolidate(
         &self,
         workspace: &WorkspaceContext,
@@ -406,6 +407,7 @@ impl ConsolidationTask {
         Ok(stats)
     }
 
+    /// Reflect.
     pub async fn reflect(&self, workspace: &WorkspaceContext) -> Result<ReflectionStats> {
         let start = std::time::Instant::now();
         let mut stats = ReflectionStats::default();

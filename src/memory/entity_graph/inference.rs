@@ -11,6 +11,7 @@ use chrono::Utc;
 pub struct InferenceEngine;
 
 impl InferenceEngine {
+    /// Run.
     pub fn run(data: &mut GraphData) -> Vec<EntityRelationRecord> {
         let mut inferred = Vec::new();
         let now = Utc::now();

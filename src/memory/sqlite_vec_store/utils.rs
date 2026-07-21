@@ -23,6 +23,7 @@ impl From<SessionTokenRow> for SessionTokenRecord {
     }
 }
 
+/// Search tokens.
 pub fn search_tokens(query: &str) -> Vec<String> {
     static TOKEN_RE: OnceLock<Regex> = OnceLock::new();
     let re = TOKEN_RE.get_or_init(|| {
@@ -46,6 +47,7 @@ pub fn search_tokens(query: &str) -> Vec<String> {
         .collect()
 }
 
+/// Split camel case.
 pub fn split_camel_case(token: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut current = String::new();
@@ -74,6 +76,7 @@ pub fn split_camel_case(token: &str) -> Vec<String> {
     words
 }
 
+/// Code tokens.
 pub fn code_tokens(text: &str) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut expanded = Vec::new();
@@ -95,12 +98,14 @@ pub fn code_tokens(text: &str) -> Vec<String> {
 pub const DEFAULT_RRF_K: usize = 60;
 pub const DEFAULT_QJL_THRESHOLD: usize = 500;
 
+/// Configured qjl threshold.
 pub fn configured_qjl_threshold() -> usize {
     crate::settings::XavierSettings::current()
         .advanced
         .qjl_threshold
 }
 
+/// Configured rrf k.
 pub fn configured_rrf_k() -> usize {
     crate::settings::XavierSettings::current()
         .retrieval
@@ -109,6 +114,7 @@ pub fn configured_rrf_k() -> usize {
         .unwrap_or(DEFAULT_RRF_K)
 }
 
+/// Dynamic rrf k.
 pub fn dynamic_rrf_k(dataset_size: usize) -> usize {
     let base = configured_rrf_k();
     if dataset_size <= 1_000 {
@@ -118,12 +124,14 @@ pub fn dynamic_rrf_k(dataset_size: usize) -> usize {
     base.saturating_add(dataset_size / 1_000)
 }
 
+/// Entity extraction enabled.
 pub fn entity_extraction_enabled() -> bool {
     crate::settings::XavierSettings::current()
         .advanced
         .entity_extraction_enabled
 }
 
+/// Audit chain enabled.
 pub fn audit_chain_enabled() -> bool {
     crate::settings::XavierSettings::current()
         .advanced

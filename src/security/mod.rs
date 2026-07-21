@@ -97,6 +97,7 @@ impl Default for SecurityConfig {
 }
 
 impl SecurityConfig {
+    /// New.
     pub fn new() -> Self {
         Self::default()
     }
@@ -111,14 +112,17 @@ impl Default for SecurityManager {
 }
 
 impl SecurityManager {
+    /// New.
     pub fn new() -> Self {
         Self
     }
 
+    /// Encode.
     pub fn encode(&self, input: &str) -> Result<String> {
         Ok(format!("hex:{}", hex_encode(input.as_bytes())))
     }
 
+    /// Decode.
     pub fn decode(&self, input: &str) -> Result<String> {
         let encoded = input
             .strip_prefix("hex:")
@@ -127,14 +131,17 @@ impl SecurityManager {
         Ok(String::from_utf8(bytes)?)
     }
 
+    /// Hash password.
     pub fn hash_password(&self, password: &str) -> Result<String> {
         password::hash(password, password::DEFAULT_COST)
     }
 
+    /// Verify password.
     pub fn verify_password(&self, password: &str, hash: &str) -> Result<bool> {
         password::verify(password, hash)
     }
 
+    /// Generate token.
     pub fn generate_token(&self, user_id: &str) -> Result<String> {
         let secret = crate::settings::XavierSettings::current()
             .security
@@ -159,6 +166,7 @@ impl SecurityManager {
         ))
     }
 
+    /// Validate token.
     pub fn validate_token(&self, token: &str) -> Result<()> {
         let parts: Vec<&str> = token.split(':').collect();
         if parts.len() != 5 || parts[0] != "xavier.hmac.v1" {
@@ -419,12 +427,14 @@ impl Default for ApprovalStore {
 }
 
 impl ApprovalStore {
+    /// New.
     pub fn new() -> Self {
         Self {
             approvals: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
+    /// Approve.
     pub fn approve(&self, action: &str, target: &str) {
         let key = format!("{}:{}", action, target);
         let now = std::time::SystemTime::now()
@@ -436,6 +446,7 @@ impl ApprovalStore {
         }
     }
 
+    /// Is approved.
     pub fn is_approved(&self, action: &str, target: &str) -> bool {
         let key = format!("{}:{}", action, target);
         if let Ok(approvals) = self.approvals.read() {
@@ -456,6 +467,7 @@ impl ApprovalStore {
         false
     }
 
+    /// Revoke.
     pub fn revoke(&self, action: &str, target: &str) {
         let key = format!("{}:{}", action, target);
         if let Ok(mut approvals) = self.approvals.write() {

@@ -25,6 +25,7 @@ pub struct MemoryDaemon {
 }
 
 impl MemoryDaemon {
+    /// New.
     pub fn new(manager: Arc<MemoryManager>) -> Self {
         Self { manager }
     }

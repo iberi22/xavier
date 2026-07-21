@@ -16,10 +16,12 @@ pub struct HttpHealthAdapter {
 }
 
 impl HttpHealthAdapter {
+    /// New.
     pub fn new(base_url: String, client: reqwest::Client) -> Self {
         Self { base_url, client }
     }
 
+    /// Check health.
     pub async fn check_health(&self) -> anyhow::Result<HealthStatus> {
         let url = format!("{}/health", self.base_url);
 

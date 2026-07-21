@@ -26,6 +26,7 @@ pub struct DoctorReport {
     pub overall: CheckStatus,
 }
 
+/// Handle doctor.
 pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
     let settings = XavierSettings::current();
     let scan = scan_system(false).await;

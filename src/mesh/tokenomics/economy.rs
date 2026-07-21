@@ -14,6 +14,7 @@ impl Default for EconomyEngine {
 }
 
 impl EconomyEngine {
+    /// New.
     pub fn new() -> Self {
         Self {
             reserve_ratio: 0.25,

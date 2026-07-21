@@ -37,6 +37,7 @@ pub enum MemoryKind {
 }
 
 impl MemoryKind {
+    /// Parse.
     pub fn parse(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "episodic" => Some(Self::Episodic),
@@ -67,6 +68,7 @@ impl MemoryKind {
         }
     }
 
+    /// As str.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Episodic => "episodic",
@@ -120,6 +122,7 @@ pub enum RetrievalScope {
 }
 
 impl RetrievalScope {
+    /// To levels.
     pub fn to_levels(&self) -> Vec<MemoryLevel> {
         match self {
             Self::Global => vec![MemoryLevel::Belief, MemoryLevel::Extracted],
@@ -162,6 +165,7 @@ pub enum ClearanceLevel {
     TopSecret,
 }
 
+/// Parse zones from prompt.
 pub fn parse_zones_from_prompt(prompt: &str) -> Vec<ContextZone> {
     let lowered = prompt.to_lowercase();
     let mut zones = Vec::new();
@@ -193,6 +197,7 @@ pub fn parse_zones_from_prompt(prompt: &str) -> Vec<ContextZone> {
 }
 
 impl ContextZone {
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Atomic => "atomic",
@@ -202,6 +207,7 @@ impl ContextZone {
         }
     }
 
+    /// Parse.
     pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "cluster" => Self::Cluster,
@@ -213,6 +219,7 @@ impl ContextZone {
 }
 
 impl ClearanceLevel {
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Unclassified => "unclassified",
@@ -222,6 +229,7 @@ impl ClearanceLevel {
         }
     }
 
+    /// Parse.
     pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "unclassified" => Self::Unclassified,
@@ -233,6 +241,7 @@ impl ClearanceLevel {
 }
 
 impl MemoryLevel {
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Raw => "raw",
@@ -242,6 +251,7 @@ impl MemoryLevel {
         }
     }
 
+    /// Parse.
     pub fn parse(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "processed" => Self::Processed,
@@ -259,6 +269,7 @@ pub struct RelationKind {
 }
 
 impl RelationKind {
+    /// New.
     pub fn new(name: &str) -> Self {
         Self {
             name: name.to_string(),
@@ -268,6 +279,7 @@ impl RelationKind {
 }
 
 impl EvidenceKind {
+    /// Parse.
     pub fn parse(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {
             "source_turn" | "source-turn" | "turn" => Some(Self::SourceTurn),
@@ -283,6 +295,7 @@ impl EvidenceKind {
         }
     }
 
+    /// As str.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::SourceTurn => "source_turn",
@@ -409,6 +422,7 @@ pub struct ResolvedMemoryMetadata {
     pub provenance: MemoryProvenance,
 }
 
+/// Normalize metadata.
 pub fn normalize_metadata(
     path: &str,
     metadata: Value,
@@ -443,6 +457,7 @@ fn infer_zone_from_kind_and_level(kind: MemoryKind, level: Option<MemoryLevel>) 
     }
 }
 
+/// Resolve metadata.
 pub fn resolve_metadata(
     path: &str,
     metadata: &Value,
@@ -514,6 +529,7 @@ pub fn resolve_metadata(
     })
 }
 
+/// Matches filters.
 pub fn matches_filters(
     path: &str,
     metadata: &Value,

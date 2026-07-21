@@ -57,6 +57,7 @@ pub struct SemanticCache {
 }
 
 impl SemanticCache {
+    /// New.
     pub fn new(similarity_threshold: f32) -> Result<Self> {
         let settings = crate::settings::XavierSettings::current();
         let ttl_secs = settings.retrieval.cache_ttl_secs;
@@ -81,6 +82,7 @@ impl SemanticCache {
     }
 
     #[cfg(test)]
+    /// New with embedder.
     pub fn new_with_embedder(similarity_threshold: f32, embedder: Arc<dyn QueryEmbedder>) -> Self {
         Self {
             entries: Arc::new(RwLock::new(Vec::new())),
@@ -90,6 +92,7 @@ impl SemanticCache {
         }
     }
 
+    /// Get.
     pub async fn get(&self, query: &str) -> Result<Option<String>> {
         let query_embedding = self.embedder.embed(query).await?;
         if query_embedding.is_empty() {
@@ -130,6 +133,7 @@ impl SemanticCache {
         Ok(None)
     }
 
+    /// Put.
     pub async fn put(&self, query: &str, response: &str) -> Result<()> {
         let query_embedding = self.embedder.embed(query).await?;
         if query_embedding.is_empty() {
@@ -155,6 +159,7 @@ impl SemanticCache {
         Ok(())
     }
 
+    /// Clear.
     pub async fn clear(&self) {
         self.entries.write().await.clear();
     }

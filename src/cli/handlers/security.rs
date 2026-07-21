@@ -6,6 +6,7 @@ use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
 use crate::cli::types::*;
 
+/// Security scan handler.
 pub async fn security_scan_handler(
     State(_state): State<CliState>,
     axum::Json(_payload): axum::Json<SecurityScanPayload>,
@@ -13,6 +14,7 @@ pub async fn security_scan_handler(
     Json(serde_json::json!({"status":"todo"}))
 }
 
+/// Session create handler.
 pub async fn session_create_handler(State(state): State<CliState>) -> Response {
     // This handler is protected by auth_middleware which ensures the root XAVIER_TOKEN was used.
     let session = state.session_manager.create_session();
@@ -33,6 +35,7 @@ pub struct SecurityApprovePayload {
     pub target: String,
 }
 
+/// Security approve handler.
 pub async fn security_approve_handler(
     State(_state): State<CliState>,
     Json(payload): Json<SecurityApprovePayload>,

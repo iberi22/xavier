@@ -22,6 +22,7 @@ pub struct RsaKeypairManager {
 }
 
 impl RsaKeypairManager {
+    /// New.
     pub fn new(storage_dir: impl AsRef<Path>, encryption_key: [u8; 32]) -> Self {
         Self {
             storage_dir: storage_dir.as_ref().to_path_buf(),
@@ -29,6 +30,7 @@ impl RsaKeypairManager {
         }
     }
 
+    /// Init default.
     pub fn init_default(master_key_mgr: &MasterKeyManager) -> Result<Self> {
         let home = dirs::home_dir().ok_or_else(|| anyhow!("Could not find home directory"))?;
         let storage_dir = home.join(".xavier");

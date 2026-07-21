@@ -6,6 +6,7 @@ use chrono::Utc;
 use reqwest::Client;
 use serde_json::json;
 
+/// Openai chat endpoint.
 pub(crate) fn openai_chat_endpoint(base_url: &str) -> String {
     let trimmed = base_url.trim_end_matches('/');
     if trimmed.ends_with("/chat/completions") {
@@ -17,6 +18,7 @@ pub(crate) fn openai_chat_endpoint(base_url: &str) -> String {
     }
 }
 
+/// Generate openai compatible.
 pub(crate) async fn generate_openai_compatible(
     client: &Client,
     config: &ModelProviderConfig,

@@ -28,6 +28,7 @@ pub enum FusionSource {
 }
 
 impl FusionSource {
+    /// Default weight.
     pub fn default_weight(self) -> f32 {
         use crate::memory::sqlite_vec_store::config::*;
         match self {

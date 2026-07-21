@@ -12,6 +12,7 @@ use crate::cli::types::*;
 use xavier::memory::schema::MemoryLevel;
 use xavier::memory::store::MemoryRecord;
 
+/// Agent register handler.
 pub async fn agent_register_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<AgentRegisterPayload>,
@@ -39,6 +40,7 @@ pub async fn agent_register_handler(
     }))
 }
 
+/// Agent heartbeat handler.
 pub async fn agent_heartbeat_handler(
     State(state): State<CliState>,
     AxumPath(agent_id): AxumPath<String>,
@@ -52,6 +54,7 @@ pub async fn agent_heartbeat_handler(
     }))
 }
 
+/// Agent active handler.
 pub async fn agent_active_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
@@ -72,6 +75,7 @@ pub async fn agent_active_handler(
     }))
 }
 
+/// Agent push context handler.
 pub async fn agent_push_context_handler(
     State(state): State<CliState>,
     AxumPath(agent_id): AxumPath<String>,
@@ -139,6 +143,7 @@ pub async fn agent_push_context_handler(
     }
 }
 
+/// Agent unregister handler.
 pub async fn agent_unregister_handler(
     State(state): State<CliState>,
     AxumPath(agent_id): AxumPath<String>,
@@ -159,6 +164,7 @@ pub async fn agent_unregister_handler(
     }))
 }
 
+/// Agent task complete handler.
 pub async fn agent_task_complete_handler(
     State(state): State<CliState>,
     AxumPath(agent_id): AxumPath<String>,
@@ -190,6 +196,7 @@ pub async fn agent_task_complete_handler(
     }))
 }
 
+/// Agent task failed handler.
 pub async fn agent_task_failed_handler(
     State(state): State<CliState>,
     AxumPath(agent_id): AxumPath<String>,
@@ -211,6 +218,7 @@ pub async fn agent_task_failed_handler(
     }))
 }
 
+/// Agent list handler.
 pub async fn agent_list_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
@@ -225,6 +233,7 @@ pub async fn agent_list_handler(
     }))
 }
 
+/// Agent scan handler.
 pub async fn agent_scan_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
@@ -241,6 +250,7 @@ pub async fn agent_scan_handler(
     }
 }
 
+/// Agent index handler.
 pub async fn agent_index_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
@@ -290,6 +300,7 @@ pub async fn agent_index_handler(
     }
 }
 
+/// Openclaw scan handler.
 pub async fn openclaw_scan_handler() -> impl axum::response::IntoResponse {
     let scanner = crate::memory::openclaw_scanner::OpenClawAgentScanner::new();
     match scanner.scan_all_agents().await {
@@ -305,6 +316,7 @@ pub async fn openclaw_scan_handler() -> impl axum::response::IntoResponse {
     }
 }
 
+/// Openclaw index handler.
 pub async fn openclaw_index_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
@@ -325,6 +337,7 @@ pub async fn openclaw_index_handler(
     }
 }
 
+/// Agent sync handler.
 pub async fn agent_sync_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<serde_json::Value>,

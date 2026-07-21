@@ -18,6 +18,7 @@ fn resolve_state_path() -> PathBuf {
     state_dir.join(".xavier").join("bicameral_governance_state.json")
 }
 
+/// Handle governance.
 pub async fn handle_governance(command: GovernanceCommand) -> anyhow::Result<()> {
     // License check for Governance features
     let settings = xavier::settings::XavierSettings::current();

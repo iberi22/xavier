@@ -56,6 +56,7 @@ impl Default for Orchestrator {
 }
 
 impl Orchestrator {
+    /// New.
     pub fn new() -> Self {
         Self {
             classifier: ContextClassifier::new(),
@@ -68,6 +69,7 @@ impl Orchestrator {
         }
     }
 
+    /// With budgets.
     pub fn with_budgets(budgets: ContextBudgetConfig) -> Self {
         Self {
             classifier: ContextClassifier::new(),
@@ -80,17 +82,20 @@ impl Orchestrator {
         }
     }
 
+    /// With memory.
     pub fn with_memory(mut self, memory: Arc<QmdMemory>, graph: Option<SharedBeliefGraph>) -> Self {
         self.memory = Some(memory);
         self.belief_graph = graph;
         self
     }
 
+    /// With code query.
     pub fn with_code_query(mut self, code_query: Arc<::code_graph::query::QueryEngine>) -> Self {
         self.code_query = Some(code_query);
         self
     }
 
+    /// Session start.
     pub async fn session_start(
         &self,
         session_id: &str,
@@ -101,6 +106,7 @@ impl Orchestrator {
             .await
     }
 
+    /// Precompact.
     pub async fn precompact(
         &self,
         session_id: &str,
@@ -281,6 +287,7 @@ impl Orchestrator {
         }
     }
 
+    /// Execute.
     pub async fn execute(
         &self,
         plan: &ExecutionPlan,
@@ -360,6 +367,7 @@ impl Orchestrator {
         selected
     }
 
+    /// Ranked hits.
     pub fn ranked_hits(
         &self,
         session_id: &str,

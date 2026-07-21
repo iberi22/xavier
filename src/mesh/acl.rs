@@ -30,6 +30,7 @@ pub struct MeshAcl {
 }
 
 impl MeshAcl {
+    /// Load.
     pub fn load() -> Result<Self> {
         let config_dir = if let Ok(val) = std::env::var("XAVIER_CONFIG_DIR") {
             PathBuf::from(val)
@@ -41,6 +42,7 @@ impl MeshAcl {
         Self::load_from(config_dir.join("mesh_acl.json"))
     }
 
+    /// Load from.
     pub fn load_from(storage_path: PathBuf) -> Result<Self> {
         if let Some(parent) = storage_path.parent() {
             std::fs::create_dir_all(parent)?;
@@ -65,6 +67,7 @@ impl MeshAcl {
         })
     }
 
+    /// Save.
     pub fn save(&self) -> Result<()> {
         let entries_map: HashMap<String, &NodeAclEntry> =
             self.entries.iter().map(|(k, v)| (k.0.clone(), v)).collect();
@@ -73,15 +76,18 @@ impl MeshAcl {
         Ok(())
     }
 
+    /// Set entry.
     pub fn set_entry(&mut self, node_id: NodeId, entry: NodeAclEntry) -> Result<()> {
         self.entries.insert(node_id, entry);
         self.save()
     }
 
+    /// Get entry.
     pub fn get_entry(&self, node_id: &NodeId) -> Option<&NodeAclEntry> {
         self.entries.get(node_id)
     }
 
+    /// Remove entry.
     pub fn remove_entry(&mut self, node_id: &NodeId) -> Result<()> {
         if self.entries.remove(node_id).is_some() {
             self.save()?;

@@ -43,6 +43,7 @@ pub struct EvolveConfig {
 }
 
 impl EvolveConfig {
+    /// New.
     pub fn new(tag: String) -> Self {
         let results_file = format!("results/{}.tsv", tag);
         Self {

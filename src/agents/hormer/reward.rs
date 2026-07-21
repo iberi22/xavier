@@ -27,6 +27,7 @@ impl Default for RewardModel {
 }
 
 impl RewardModel {
+    /// New.
     pub fn new(relevance_threshold: f32) -> Self {
         Self {
             relevance_threshold,

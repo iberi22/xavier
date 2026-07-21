@@ -19,6 +19,7 @@ pub struct SessionCheckpointInput {
 }
 
 impl SessionCheckpointInput {
+    /// New.
     pub fn new(
         summary: impl Into<String>,
         file_edits: Vec<String>,
@@ -45,6 +46,7 @@ pub struct SessionCheckpoint {
 }
 
 impl SessionCheckpoint {
+    /// New.
     pub fn new(session_id: impl Into<String>, input: SessionCheckpointInput) -> Result<Self> {
         let session_id = session_id.into();
         validate_session_id(&session_id)?;
@@ -62,6 +64,7 @@ impl SessionCheckpoint {
         Ok(checkpoint)
     }
 
+    /// From session.
     pub fn from_session(
         session_id: impl Into<String>,
         summary: impl Into<String>,
@@ -75,10 +78,12 @@ impl SessionCheckpoint {
         )
     }
 
+    /// To bytes.
     pub fn to_bytes(&self) -> Result<Vec<u8>> {
         serde_json::to_vec(self).context("failed to serialize session checkpoint")
     }
 
+    /// From bytes.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
         let checkpoint: Self =
             serde_json::from_slice(bytes).context("failed to deserialize session checkpoint")?;
@@ -92,10 +97,12 @@ impl SessionCheckpoint {
         Ok(checkpoint)
     }
 
+    /// Size bytes.
     pub fn size_bytes(&self) -> Result<usize> {
         Ok(self.to_bytes()?.len())
     }
 
+    /// Is within budget.
     pub fn is_within_budget(&self) -> Result<bool> {
         Ok(self.size_bytes()? <= MAX_SESSION_CHECKPOINT_BYTES)
     }

@@ -94,6 +94,7 @@ pub struct Minter {
 }
 
 impl Minter {
+    /// New.
     pub fn new(config: FunnelConfig) -> Self {
         Self {
             config,

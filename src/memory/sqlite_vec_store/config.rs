@@ -24,6 +24,7 @@ pub struct VecSqliteStoreConfig {
 }
 
 impl VecSqliteStoreConfig {
+    /// From env.
     pub fn from_env() -> Self {
         let settings = XavierSettings::current();
         let embedding_dimensions = std::env::var("XAVIER_EMBEDDING_DIMENSIONS")
@@ -51,6 +52,7 @@ impl VecSqliteStoreConfig {
         }
     }
 
+    /// Detail.
     pub fn detail(&self) -> String {
         format!(
             "{} ({}d embeddings)",

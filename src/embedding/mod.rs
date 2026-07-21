@@ -100,6 +100,7 @@ pub(crate) enum EmbedderConfig {
 }
 
 impl EmbedderConfig {
+    /// From env.
     pub fn from_env() -> Self {
         let provider_mode = std::env::var("XAVIER_EMBEDDING_PROVIDER_MODE")
             .ok()
@@ -137,10 +138,12 @@ impl EmbedderConfig {
         }
     }
 
+    /// Is configured.
     pub fn is_configured(&self) -> bool {
         !matches!(self, Self::Noop)
     }
 
+    /// Active model name.
     pub fn active_model_name(&self) -> Option<String> {
         match self {
             Self::Fallback(backends) => {
@@ -159,6 +162,7 @@ impl EmbedderConfig {
         }
     }
 
+    /// Build sync.
     pub fn build_sync(self) -> Result<Arc<dyn Embedder>, EmbeddingError> {
         match self {
             Self::Invalid(msg) => Err(EmbeddingError::Config(msg)),
@@ -198,6 +202,7 @@ impl EmbedderConfig {
         }
     }
 
+    /// Build.
     pub async fn build(self) -> Result<Arc<dyn Embedder>, EmbeddingError> {
         self.build_sync()
     }
@@ -355,6 +360,7 @@ impl EmbedderConfig {
     }
 }
 
+/// Build embedder from env.
 pub async fn build_embedder_from_env() -> Result<Arc<dyn Embedder>, EmbeddingError> {
     let embedder = EmbedderConfig::from_env().build().await?;
 

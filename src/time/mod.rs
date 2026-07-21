@@ -103,6 +103,7 @@ impl TimeMetricsStore {
         }).await.map_err(|e: anyhow::Error| e.to_string())
     }
 
+    /// Init schema async.
     pub async fn init_schema_async(&self) -> Result<()> {
         ConnectionManager::global()
             .with_conn(&self.project_id, move |conn| {

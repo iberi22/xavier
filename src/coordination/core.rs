@@ -14,6 +14,7 @@ pub struct CoordinationCore {
 }
 
 impl CoordinationCore {
+    /// New.
     pub fn new(event_bus: XavierEventBus, secrets_engine: Arc<KeyLendingEngine>) -> Self {
         Self {
             event_bus,

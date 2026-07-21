@@ -54,6 +54,7 @@ pub struct DaoGovernanceSystem {
 }
 
 impl DaoGovernanceSystem {
+    /// New.
     pub fn new() -> Self {
         let mut registry = HashMap::new();
         // Base trust scores for the mock DAO

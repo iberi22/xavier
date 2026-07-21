@@ -50,6 +50,7 @@ pub fn map_to_panel_thread(event: SessionEvent) -> Option<PanelThreadEntry> {
 }
 
 impl PanelThreadEntry {
+    /// From session event.
     pub fn from_session_event(event: &SessionEvent) -> Option<Self> {
         let role = match event.event_type {
             SessionEventType::Message => "user",

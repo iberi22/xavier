@@ -25,6 +25,7 @@ pub enum ProviderKind {
 }
 
 impl ProviderKind {
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::OpenAI => "openai",
@@ -40,6 +41,7 @@ impl ProviderKind {
     }
 
     #[allow(clippy::should_implement_trait)]
+    /// From str.
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "openai" => Some(Self::OpenAI),
@@ -55,6 +57,7 @@ impl ProviderKind {
         }
     }
 
+    /// All.
     pub fn all() -> Vec<Self> {
         vec![
             Self::OpenAI,
@@ -81,6 +84,7 @@ pub enum AutoStrategy {
 
 impl AutoStrategy {
     #[allow(clippy::should_implement_trait)]
+    /// From str.
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().replace("-", "").replace("_", "").as_str() {
             "lowestlatency" | "latency" => Some(Self::LowestLatency),
@@ -91,6 +95,7 @@ impl AutoStrategy {
         }
     }
 
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::LowestLatency => "lowest-latency",

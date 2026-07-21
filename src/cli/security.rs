@@ -8,6 +8,7 @@ use xavier::ports::inbound::input_security_port::SecureInputResult;
 use xavier::ports::inbound::InputSecurityPort;
 use xavier::security::SecurityService;
 
+/// Blocked external input response.
 pub fn blocked_external_input_response(
     label: &str,
     result: &SecureInputResult,
@@ -25,6 +26,7 @@ pub fn blocked_external_input_response(
     })
 }
 
+/// Secure external input.
 pub async fn secure_external_input(
     security: &dyn InputSecurityPort,
     label: &str,
@@ -51,6 +53,7 @@ pub async fn secure_external_input(
         .unwrap_or_else(|| result.original_input.clone()))
 }
 
+/// Secure optional request field.
 pub async fn secure_optional_request_field(
     security: &dyn InputSecurityPort,
     _field: &str,
@@ -84,6 +87,7 @@ pub async fn secure_optional_request_field(
     }
 }
 
+/// Secure cli input.
 pub fn secure_cli_input(label: &str, input: &str, max_chars: usize) -> Result<String> {
     let char_count = input.chars().count();
     if char_count > max_chars {

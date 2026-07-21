@@ -23,6 +23,7 @@ pub struct SimpleMemoryDoc {
 }
 
 impl SimpleMemoryDoc {
+    /// New.
     pub fn new(path: String, content: String, metadata: serde_json::Value) -> Self {
         let keywords = extract_keywords(&content);
         Self {
@@ -73,6 +74,7 @@ pub struct SimpleMemoryIndex {
 }
 
 impl SimpleMemoryIndex {
+    /// New.
     pub fn new() -> Self {
         Self {
             docs: Vec::new(),
@@ -80,6 +82,7 @@ impl SimpleMemoryIndex {
         }
     }
 
+    /// Add.
     pub fn add(&mut self, doc: SimpleMemoryDoc) -> usize {
         let idx = self.docs.len();
 
@@ -92,6 +95,7 @@ impl SimpleMemoryIndex {
         idx
     }
 
+    /// Search.
     pub fn search(&self, query: &str, limit: usize) -> Vec<SearchResult> {
         let query_keywords: Vec<String> = extract_keywords(query);
 
@@ -133,6 +137,7 @@ impl SimpleMemoryIndex {
         results
     }
 
+    /// Count.
     pub fn count(&self) -> usize {
         self.docs.len()
     }

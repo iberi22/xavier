@@ -21,6 +21,7 @@ use xavier::memory::schema::MemoryLevel;
 use xavier::memory::store::MemoryRecord;
 use xavier::ports::inbound::input_security_port::SecureInputResult;
 
+/// Embed handler.
 pub async fn embed_handler(
     State(state): State<CliState>,
     Json(body): Json<serde_json::Value>,
@@ -58,6 +59,7 @@ pub async fn embed_handler(
     }
 }
 
+/// Export pack handler.
 pub async fn export_pack_handler(
     State(state): State<CliState>,
     Json(payload): Json<ExportPackPayload>,
@@ -148,6 +150,7 @@ pub async fn export_pack_handler(
     )
 }
 
+/// Search handler.
 pub async fn search_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<SearchPayload>,
@@ -233,6 +236,7 @@ pub async fn search_handler(
     }))
 }
 
+/// Add handler.
 pub async fn add_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<AddPayload>,
@@ -405,6 +409,7 @@ pub async fn add_handler(
     }
 }
 
+/// Update handler.
 pub async fn update_handler(
     State(state): State<CliState>,
     headers: HeaderMap,
@@ -521,6 +526,7 @@ pub async fn update_handler(
     }
 }
 
+/// Delete handler.
 pub async fn delete_handler(
     State(state): State<CliState>,
     headers: HeaderMap,
@@ -676,6 +682,7 @@ pub async fn reindex_handler(State(state): State<CliState>, headers: HeaderMap) 
     }
 }
 
+/// Stats handler.
 pub async fn stats_handler(State(state): State<CliState>) -> impl axum::response::IntoResponse {
     axum::Json(serde_json::json!({
         "status": "ok",
@@ -684,6 +691,7 @@ pub async fn stats_handler(State(state): State<CliState>) -> impl axum::response
     }))
 }
 
+/// Memory query handler.
 pub async fn memory_query_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<MemoryQueryPayload>,
@@ -854,6 +862,7 @@ pub async fn memory_query_handler(
     }))
 }
 
+/// Search memories filtered.
 pub async fn search_memories_filtered(
     query: &str,
     limit: usize,
@@ -940,6 +949,7 @@ pub async fn search_memories_filtered(
     Ok(())
 }
 
+/// Add memory hierarchical.
 pub async fn add_memory_hierarchical(
     content: &str,
     title: Option<&str>,
@@ -1041,6 +1051,7 @@ pub async fn add_memory_hierarchical(
     Ok(())
 }
 
+/// Export handler.
 pub async fn export_handler(
     State(state): State<CliState>,
     Query(params): Query<ExportPayload>,
@@ -1060,6 +1071,7 @@ pub async fn export_handler(
 }
 
 #[allow(clippy::result_large_err)]
+/// Check cli token.
 pub(crate) fn check_cli_token(headers: &HeaderMap) -> Result<(), Response> {
     let expected_token = match resolve_http_token() {
         Ok(token) => token,
@@ -1083,6 +1095,7 @@ pub(crate) fn check_cli_token(headers: &HeaderMap) -> Result<(), Response> {
     }
 }
 
+/// Decay handler.
 pub async fn decay_handler(State(state): State<CliState>, headers: HeaderMap) -> Response {
     if let Err(r) = check_cli_token(&headers) {
         return r;
@@ -1101,6 +1114,7 @@ pub async fn decay_handler(State(state): State<CliState>, headers: HeaderMap) ->
     }
 }
 
+/// Consolidate handler.
 pub async fn consolidate_handler(
     State(state): State<CliState>,
     headers: HeaderMap,
@@ -1132,6 +1146,7 @@ pub async fn consolidate_handler(
     }
 }
 
+/// Evict handler.
 pub async fn evict_handler(
     State(state): State<CliState>,
     headers: HeaderMap,
@@ -1174,6 +1189,7 @@ pub async fn evict_handler(
     }
 }
 
+/// Manage handler.
 pub async fn manage_handler(State(state): State<CliState>, headers: HeaderMap) -> Response {
     if let Err(r) = check_cli_token(&headers) {
         return r;
@@ -1207,6 +1223,7 @@ pub async fn manage_handler(State(state): State<CliState>, headers: HeaderMap) -
     )
 }
 
+/// Memory index self handler.
 pub async fn memory_index_self_handler(
     State(state): State<CliState>,
     headers: HeaderMap,
@@ -1346,6 +1363,7 @@ fn split_markdown_by_sections(content: &str) -> Vec<(String, String)> {
     sections
 }
 
+/// Timeline query handler.
 pub async fn timeline_query_handler(
     State(state): State<CliState>,
     headers: HeaderMap,

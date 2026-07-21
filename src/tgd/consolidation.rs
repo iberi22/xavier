@@ -43,6 +43,7 @@ pub struct TgdConsolidationScheduler {
 }
 
 impl TgdConsolidationScheduler {
+    /// New.
     pub fn new(
         workspace: WorkspaceContext,
         tgd_engine: Option<TgdEngine>,
@@ -57,14 +58,17 @@ impl TgdConsolidationScheduler {
         }
     }
 
+    /// Progress.
     pub fn progress(&self) -> Arc<RwLock<ProgressReport>> {
         Arc::clone(&self.progress)
     }
 
+    /// Cancel.
     pub fn cancel(&self) {
         self.cancellation_token.cancel();
     }
 
+    /// Spawn.
     pub async fn spawn(self: Arc<Self>, cron_expr: String) {
         let scheduler = Arc::clone(&self);
         tokio::spawn(async move {
@@ -112,6 +116,7 @@ impl TgdConsolidationScheduler {
         });
     }
 
+    /// Run once.
     pub async fn run_once(&self) -> anyhow::Result<()> {
         let start = std::time::Instant::now();
         {
@@ -211,6 +216,7 @@ impl TgdConsolidationScheduler {
         Ok(())
     }
 
+    /// Load state.
     pub async fn load_state(&self) -> anyhow::Result<SchedulerState> {
         if !self.state_path.exists() {
             return Ok(SchedulerState::default());

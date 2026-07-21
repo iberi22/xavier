@@ -20,12 +20,14 @@ impl Default for MemoryView {
 }
 
 impl MemoryView {
+    /// New.
     pub fn new() -> Self {
         Self {
             state: TableState::default(),
         }
     }
 
+    /// Next.
     pub fn next(&mut self, items_count: usize) {
         let i = match self.state.selected() {
             Some(i) => {
@@ -40,6 +42,7 @@ impl MemoryView {
         self.state.select(Some(i));
     }
 
+    /// Previous.
     pub fn previous(&mut self, items_count: usize) {
         let i = match self.state.selected() {
             Some(i) => {
@@ -54,6 +57,7 @@ impl MemoryView {
         self.state.select(Some(i));
     }
 
+    /// Render.
     pub fn render(
         &mut self,
         f: &mut Frame,

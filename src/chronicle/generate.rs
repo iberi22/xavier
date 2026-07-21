@@ -31,6 +31,7 @@ impl Default for ChronicleGenerator {
 }
 
 impl ChronicleGenerator {
+    /// New.
     pub fn new() -> Self {
         // Try to prefer MiniMax if available via environment or config
         let model_override = std::env::var("Xavier_CHRONICLE_MODEL").ok().or_else(|| {
@@ -47,6 +48,7 @@ impl ChronicleGenerator {
         }
     }
 
+    /// Generate.
     pub async fn generate(&self, input: ChronicleInput) -> Result<String> {
         info!(date = %input.date, "Generating daily chronicle post");
 

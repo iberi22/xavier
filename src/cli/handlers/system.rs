@@ -6,6 +6,7 @@ use crate::cli::state::CliState;
 use axum::{extract::State, http::StatusCode, response::Response};
 use xavier::server::alerts::SYSTEM_ALERTS;
 
+/// Health handler.
 pub async fn health_handler() -> Response {
     let status = xavier::observability::health::HEALTH.get_status().await;
     json_response(
@@ -14,6 +15,7 @@ pub async fn health_handler() -> Response {
     )
 }
 
+/// System alerts handler.
 pub async fn system_alerts_handler() -> Response {
     json_response(
         StatusCode::OK,
@@ -23,6 +25,7 @@ pub async fn system_alerts_handler() -> Response {
     )
 }
 
+/// Handle health command.
 pub async fn handle_health_command(cloud: bool) -> anyhow::Result<()> {
     let base_url = resolve_base_url();
     let token = require_xavier_token()?;
@@ -87,6 +90,7 @@ fn format_status(status: &xavier::health::BackendStatus) -> String {
 }
 
 #[allow(dead_code)]
+/// System scan handler.
 pub async fn system_scan_handler(State(state): State<CliState>) -> Response {
     let mut providers = Vec::new();
     let detected_providers = vec!["openai", "anthropic", "gemini", "minimax", "local"];
@@ -139,6 +143,7 @@ fn calculate_data_dir_size() -> Option<u64> {
     Some(total_size)
 }
 
+/// Cloud health handler.
 pub async fn cloud_health_handler() -> Response {
     // Use library settings to avoid type mismatch with health check function
     let settings = xavier::settings::XavierSettings::current();
@@ -149,6 +154,7 @@ pub async fn cloud_health_handler() -> Response {
     )
 }
 
+/// Version handler.
 pub async fn version_handler() -> Response {
     let features = if cfg!(feature = "enterprise") {
         vec!["gllm-embeddings", "enterprise"]
@@ -167,6 +173,7 @@ pub async fn version_handler() -> Response {
     )
 }
 
+/// Readiness handler.
 pub async fn readiness_handler(State(state): State<CliState>) -> Response {
     let memory_store = match state.store.health().await {
         Ok(detail) => serde_json::json!({
@@ -216,6 +223,7 @@ pub async fn readiness_handler(State(state): State<CliState>) -> Response {
     )
 }
 
+/// Build handler.
 pub async fn build_handler(State(state): State<CliState>) -> Response {
     json_response(
         StatusCode::OK,

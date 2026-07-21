@@ -17,6 +17,7 @@ pub struct MemoryUseCase {
 }
 
 impl MemoryUseCase {
+    /// New.
     pub fn new(
         inner: Arc<dyn MemoryQueryPort>,
         threat_detector: Option<Arc<dyn ThreatDetectionPort>>,
@@ -28,6 +29,7 @@ impl MemoryUseCase {
         }
     }
 
+    /// With rbac.
     pub fn with_rbac(mut self, guard: Arc<RoleGuard>) -> Self {
         self.rbac_guard = Some(guard);
         self

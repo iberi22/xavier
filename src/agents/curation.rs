@@ -29,6 +29,7 @@ pub struct CurationAgent {
 }
 
 impl CurationAgent {
+    /// New.
     pub fn new() -> Self {
         Self {
             client: ModelProviderClient::from_env(),
@@ -36,11 +37,13 @@ impl CurationAgent {
         }
     }
 
+    /// With memory.
     pub fn with_memory(mut self, memory: Arc<QmdMemory>) -> Self {
         self.memory = Some(memory);
         self
     }
 
+    /// Curate.
     pub async fn curate(&self, content: &str) -> Result<CurationResult> {
         info!(
             "🧠 Curating content: {}...",

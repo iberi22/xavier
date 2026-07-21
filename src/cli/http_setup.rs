@@ -18,6 +18,7 @@ use std::net::SocketAddr;
 use tracing::warn;
 use xavier::coordination::secrets::SecretLease;
 
+/// Auth middleware.
 pub async fn auth_middleware(
     State(state): State<CliState>,
     req: Request<Body>,
@@ -178,6 +179,7 @@ pub struct SessionInfo {
     pub lease: Option<SecretLease>,
 }
 
+/// Rate limit middleware.
 pub async fn rate_limit_middleware(
     State(state): State<CliState>,
     req: Request<Body>,
