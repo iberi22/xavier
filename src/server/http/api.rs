@@ -321,12 +321,12 @@ pub async fn memory_curate(
         {
             Ok(_) => {
                 let _ = workspace.workspace.persist_beliefs().await;
-                Json(serde_json::json!({ "status": "ok", "message": "Curation completed" }))
+                Json(serde_json::json!({ "status": "ok", "message": "Curation completed" })).into_response()
             }
-            Err(e) => Json(serde_json::json!({ "status": "error", "message": e.to_string() })),
+            Err(e) => crate::error::ApiError::internal(e.to_string()).into_ok_response(),
         }
     } else {
-        Json(serde_json::json!({ "status": "error", "message": "Missing 'id' in request body" }))
+        crate::error::ApiError::validation("Missing 'id' in request body").into_ok_response()
     }
 }
 
@@ -334,9 +334,9 @@ pub async fn memory_manage(Extension(workspace): Extension<WorkspaceContext>) ->
     match workspace.workspace.memory_manager.auto_manage().await {
         Ok(count) => {
             let _ = workspace.workspace.persist_beliefs().await;
-            Json(serde_json::json!({ "status": "ok", "actions_executed": count }))
+            Json(serde_json::json!({ "status": "ok", "actions_executed": count })).into_response()
         }
-        Err(e) => Json(serde_json::json!({ "status": "error", "message": e.to_string() })),
+        Err(e) => crate::error::ApiError::internal(e.to_string()).into_ok_response(),
     }
 }
 
@@ -346,9 +346,9 @@ pub async fn memory_decay(Extension(workspace): Extension<WorkspaceContext>) -> 
             let _ = workspace.workspace.persist_beliefs().await;
             Json(
                 serde_json::json!({ "status": "ok", "documents_affected": result.documents_affected, "actions": result.actions.len(), "bytes_freed": result.bytes_freed }),
-            )
+            ).into_response()
         }
-        Err(e) => Json(serde_json::json!({"status": "error", "message": e.to_string() })),
+        Err(e) => crate::error::ApiError::internal(e.to_string()).into_ok_response(),
     }
 }
 
@@ -357,8 +357,8 @@ pub async fn memory_consolidate(
 ) -> impl IntoResponse {
     let task = ConsolidationTask::default();
     match task.consolidate(&workspace, None).await {
-        Ok(stats) => Json(serde_json::json!({ "status": "ok", "stats": stats })),
-        Err(e) => Json(serde_json::json!({"status": "error", "message": e.to_string() })),
+        Ok(stats) => Json(serde_json::json!({ "status": "ok", "stats": stats })).into_response(),
+        Err(e) => crate::error::ApiError::internal(e.to_string()).into_ok_response(),
     }
 }
 
@@ -367,7 +367,7 @@ pub async fn memory_reflect(
 ) -> impl IntoResponse {
     let task = ConsolidationTask::default();
     match task.reflect(&workspace).await {
-        Ok(result) => Json(serde_json::json!({ "status": "ok", "data": result })),
-        Err(e) => Json(serde_json::json!({ "status": "error", "error": e.to_string() })),
+        Ok(result) => Json(serde_json::json!({ "status": "ok", "data": result })).into_response(),
+        Err(e) => crate::error::ApiError::internal(e.to_string()).into_ok_response(),
     }
 }
