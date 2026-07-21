@@ -23,15 +23,23 @@ use tokio::sync::Semaphore;
 use tracing::{debug, error, info, warn};
 
 pub mod call_resolution;
-use call_resolution::{extract_call_names, CallResolver};
 
-pub struct Indexer {
+#[allow(async_fn_in_trait)]
+pub trait IndexEngine: Send + Sync {
+    async fn index_project(&self, root: &Path, incremental: bool) -> Result<IndexStats>;
+    async fn build_call_graph(&self, root: &Path) -> Result<Vec<CodeEdge>>;
+    async fn resolve_dependencies(&self, root: &Path) -> Result<Vec<CodeEdge>>;
+}
+
+pub struct RustKernel {
     db: Arc<CodeGraphDB>,
     max_concurrent: usize,
     plugin_host: Arc<PluginHost>,
 }
 
-impl Indexer {
+pub type Indexer = RustKernel;
+
+impl RustKernel {
     pub fn new(db: Arc<CodeGraphDB>) -> Self {
         Self {
             db,
@@ -213,6 +221,174 @@ impl Indexer {
 
         Ok(files)
     }
+
+    pub async fn analyze_project(&self, root: &Path) -> Result<(Vec<Symbol>, HashMap<String, String>)> {
+        let files = self.collect_files(root)?;
+        let mut symbols = Vec::new();
+        let mut sources = HashMap::new();
+        for file in files {
+            if let Ok(parsed) = parse_file(root, &file, Some(&*self.plugin_host)).await {
+                sources.insert(parsed.file_path.clone(), parsed.source);
+                symbols.extend(parsed.symbols);
+            }
+        }
+        assign_stable_ids(&mut symbols);
+        Ok((symbols, sources))
+    }
+}
+
+impl IndexEngine for RustKernel {
+    async fn index_project(&self, root: &Path, incremental: bool) -> Result<IndexStats> {
+        self.index(root, incremental).await
+    }
+
+    async fn build_call_graph(&self, root: &Path) -> Result<Vec<CodeEdge>> {
+        let (symbols, sources) = self.analyze_project(root).await?;
+        Ok(call_resolution::build_call_graph_edges(&symbols, &symbols, &sources))
+    }
+
+    async fn resolve_dependencies(&self, root: &Path) -> Result<Vec<CodeEdge>> {
+        let (symbols, _sources) = self.analyze_project(root).await?;
+        let mut edges = Vec::new();
+        for symbol in &symbols {
+            let file_node = format!("file:{}", symbol.file_path);
+            if symbol.kind == SymbolKind::Import {
+                edges.push(CodeEdge {
+                    id: None,
+                    from_symbol: file_node,
+                    to_symbol: format!("module:{}", symbol.name),
+                    edge_type: EdgeType::Imports,
+                    file_path: symbol.file_path.clone(),
+                    line: symbol.start_line,
+                    confidence: 0.8,
+                    metadata: None,
+                });
+            }
+        }
+        Ok(edges)
+    }
+}
+
+pub struct CodeGraphCKernel {
+    binary_path: PathBuf,
+}
+
+impl CodeGraphCKernel {
+    pub fn new(binary_path: PathBuf) -> Self {
+        Self { binary_path }
+    }
+}
+
+impl Default for CodeGraphCKernel {
+    fn default() -> Self {
+        Self {
+            binary_path: PathBuf::from("codegraph"),
+        }
+    }
+}
+
+impl IndexEngine for CodeGraphCKernel {
+    async fn index_project(&self, root: &Path, incremental: bool) -> Result<IndexStats> {
+        let mut cmd = tokio::process::Command::new(&self.binary_path);
+        cmd.arg("index")
+            .arg(root);
+        if incremental {
+            cmd.arg("--incremental");
+        }
+
+        let output = cmd.output().await.map_err(|e| {
+            GraphError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Failed to execute codegraph binary: {}", e),
+            ))
+        })?;
+
+        if !output.status.success() {
+            return Err(GraphError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!(
+                    "codegraph binary failed with status {}: {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr)
+                ),
+            )));
+        }
+
+        let stats: IndexStats = serde_json::from_slice(&output.stdout).map_err(|e| {
+            GraphError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to parse codegraph index output: {}", e),
+            ))
+        })?;
+
+        Ok(stats)
+    }
+
+    async fn build_call_graph(&self, root: &Path) -> Result<Vec<CodeEdge>> {
+        let mut cmd = tokio::process::Command::new(&self.binary_path);
+        cmd.arg("call-graph")
+            .arg(root);
+
+        let output = cmd.output().await.map_err(|e| {
+            GraphError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Failed to execute codegraph binary: {}", e),
+            ))
+        })?;
+
+        if !output.status.success() {
+            return Err(GraphError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!(
+                    "codegraph binary failed with status {}: {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr)
+                ),
+            )));
+        }
+
+        let edges: Vec<CodeEdge> = serde_json::from_slice(&output.stdout).map_err(|e| {
+            GraphError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to parse codegraph call-graph output: {}", e),
+            ))
+        })?;
+
+        Ok(edges)
+    }
+
+    async fn resolve_dependencies(&self, root: &Path) -> Result<Vec<CodeEdge>> {
+        let mut cmd = tokio::process::Command::new(&self.binary_path);
+        cmd.arg("dependencies")
+            .arg(root);
+
+        let output = cmd.output().await.map_err(|e| {
+            GraphError::Io(std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                format!("Failed to execute codegraph binary: {}", e),
+            ))
+        })?;
+
+        if !output.status.success() {
+            return Err(GraphError::Io(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!(
+                    "codegraph binary failed with status {}: {}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr)
+                ),
+            )));
+        }
+
+        let edges: Vec<CodeEdge> = serde_json::from_slice(&output.stdout).map_err(|e| {
+            GraphError::Io(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                format!("Failed to parse codegraph dependencies output: {}", e),
+            ))
+        })?;
+
+        Ok(edges)
+    }
 }
 
 struct ParsedFile {
@@ -316,74 +492,10 @@ fn build_edges(
         }
     }
 
-    // Only build edges FROM new symbols
-    let new_callable_symbols: Vec<&Symbol> = new_symbols
-        .iter()
-        .filter(|symbol| matches!(symbol.kind, SymbolKind::Function | SymbolKind::Method))
-        .collect();
-
-    let resolver = CallResolver::new(all_symbols, sources);
-
-    for caller in &new_callable_symbols {
-        let Some(source) = sources.get(&caller.file_path) else {
-            continue;
-        };
-        let caller_id = caller
-            .stable_id
-            .clone()
-            .unwrap_or_else(|| caller.deterministic_id("default"));
-        let body = symbol_source_slice(source, caller);
-        let callee_names = extract_call_names(&body);
-
-        for name in callee_names {
-            let resolved = resolver.resolve(&caller.file_path, &name);
-            for res in resolved {
-                if res.stable_id == caller_id {
-                    continue;
-                }
-                edges.push(CodeEdge {
-                    id: None,
-                    from_symbol: caller_id.clone(),
-                    to_symbol: res.stable_id.clone(),
-                    edge_type: EdgeType::Calls,
-                    file_path: caller.file_path.clone(),
-                    line: caller.start_line,
-                    confidence: res.confidence,
-                    metadata: Some(serde_json::json!({
-                        "callee": name,
-                        "strategy": res.strategy
-                    })),
-                });
-
-                edges.push(CodeEdge {
-                    id: None,
-                    from_symbol: caller_id.clone(),
-                    to_symbol: res.stable_id,
-                    edge_type: EdgeType::References,
-                    file_path: caller.file_path.clone(),
-                    line: caller.start_line,
-                    confidence: res.confidence * 0.8,
-                    metadata: Some(serde_json::json!({
-                        "reference": name,
-                        "strategy": res.strategy
-                    })),
-                });
-            }
-        }
-    }
+    let call_edges = call_resolution::build_call_graph_edges(new_symbols, all_symbols, sources);
+    edges.extend(call_edges);
 
     edges
-}
-
-fn symbol_source_slice(source: &str, symbol: &Symbol) -> String {
-    let start = symbol.start_line.saturating_sub(1) as usize;
-    let end = symbol.end_line as usize;
-    source
-        .lines()
-        .skip(start)
-        .take(end.saturating_sub(start).max(1))
-        .collect::<Vec<_>>()
-        .join("\n")
 }
 
 /// Heuristic check for whether `source` (a symbol body) contains a call to a
@@ -696,5 +808,52 @@ mod tests {
             }),
             "Call edges should include strategy metadata"
         );
+    }
+
+    #[tokio::test]
+    async fn rust_kernel_build_call_graph_and_dependencies() {
+        let dir = TempDir::new().unwrap();
+        std::fs::write(
+            dir.path().join("main.rs"),
+            "mod processor;\nfn main() { processor::process_data(); }",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("processor.rs"), "pub fn process_data() {}").unwrap();
+
+        let db = Arc::new(CodeGraphDB::in_memory().unwrap());
+        let kernel = RustKernel::new(db.clone());
+
+        // Test index_project
+        let stats = kernel.index_project(dir.path(), false).await.unwrap();
+        assert_eq!(stats.total_files, 2);
+
+        // Test build_call_graph
+        let call_graph = kernel.build_call_graph(dir.path()).await.unwrap();
+        assert!(!call_graph.is_empty(), "Should build a call graph with edges");
+        assert!(
+            call_graph.iter().any(|e| e.edge_type == EdgeType::Calls),
+            "Should contain Calls edges"
+        );
+
+        // Test resolve_dependencies
+        std::fs::write(
+            dir.path().join("app.py"),
+            "import os\n",
+        )
+        .unwrap();
+        let deps = kernel.resolve_dependencies(dir.path()).await.unwrap();
+        assert!(
+            deps.iter().any(|e| e.edge_type == EdgeType::Imports),
+            "Should find Imports dependency edges"
+        );
+    }
+
+    #[tokio::test]
+    async fn c_kernel_error_when_binary_missing() {
+        let kernel = CodeGraphCKernel::new(PathBuf::from("nonexistent_codegraph_binary"));
+        let result = kernel.build_call_graph(Path::new(".")).await;
+        assert!(result.is_err());
+        let err_str = result.err().unwrap().to_string();
+        assert!(err_str.contains("Failed to execute codegraph") || err_str.contains("entity not found") || err_str.contains("No such file or directory"));
     }
 }

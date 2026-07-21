@@ -1,4 +1,4 @@
-use crate::types::{Symbol, SymbolKind};
+use crate::types::{CodeEdge, EdgeType, Symbol, SymbolKind};
 use std::collections::HashMap;
 
 /// 6-strategy call resolution cascade.
@@ -213,6 +213,82 @@ pub fn extract_call_names(source: &str) -> Vec<String> {
     names.sort();
     names.dedup();
     names
+}
+
+pub fn symbol_source_slice(source: &str, symbol: &Symbol) -> String {
+    let start = symbol.start_line.saturating_sub(1) as usize;
+    let end = symbol.end_line as usize;
+    source
+        .lines()
+        .skip(start)
+        .take(end.saturating_sub(start).max(1))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+pub fn build_call_graph_edges(
+    new_symbols: &[Symbol],
+    all_symbols: &[Symbol],
+    sources: &HashMap<String, String>,
+) -> Vec<CodeEdge> {
+    let mut edges = Vec::new();
+
+    let new_callable_symbols: Vec<&Symbol> = new_symbols
+        .iter()
+        .filter(|symbol| matches!(symbol.kind, SymbolKind::Function | SymbolKind::Method))
+        .collect();
+
+    let resolver = CallResolver::new(all_symbols, sources);
+
+    for caller in &new_callable_symbols {
+        let Some(source) = sources.get(&caller.file_path) else {
+            continue;
+        };
+        let caller_id = caller
+            .stable_id
+            .clone()
+            .unwrap_or_else(|| caller.deterministic_id("default"));
+        let body = symbol_source_slice(source, caller);
+        let callee_names = extract_call_names(&body);
+
+        for name in callee_names {
+            let resolved = resolver.resolve(&caller.file_path, &name);
+            for res in resolved {
+                if res.stable_id == caller_id {
+                    continue;
+                }
+                edges.push(CodeEdge {
+                    id: None,
+                    from_symbol: caller_id.clone(),
+                    to_symbol: res.stable_id.clone(),
+                    edge_type: EdgeType::Calls,
+                    file_path: caller.file_path.clone(),
+                    line: caller.start_line,
+                    confidence: res.confidence,
+                    metadata: Some(serde_json::json!({
+                        "callee": name,
+                        "strategy": res.strategy
+                    })),
+                });
+
+                edges.push(CodeEdge {
+                    id: None,
+                    from_symbol: caller_id.clone(),
+                    to_symbol: res.stable_id,
+                    edge_type: EdgeType::References,
+                    file_path: caller.file_path.clone(),
+                    line: caller.start_line,
+                    confidence: res.confidence * 0.8,
+                    metadata: Some(serde_json::json!({
+                        "reference": name,
+                        "strategy": res.strategy
+                    })),
+                });
+            }
+        }
+    }
+
+    edges
 }
 
 #[allow(clippy::needless_range_loop)]
