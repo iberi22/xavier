@@ -1,0 +1,15 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: Xavier
+Upstream-Contact: SouthWest AI Labs (SWAL)
+
+Files: src/*.rs
+Copyright: 2026 SouthWest AI Labs (SWAL)
+License: AGPL-3.0-only
+
+Files: tests/*.rs
+Copyright: 2026 SouthWest AI Labs (SWAL)
+License: AGPL-3.0-only
+
+Files: code-graph/src/*.rs code-graph/tests/*.rs
+Copyright: 2026 SouthWest AI Labs (SWAL)
+License: AGPL-3.0-only
