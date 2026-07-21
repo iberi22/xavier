@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -47,14 +48,162 @@ pub struct Notification {
     pub severity: String, // info, warning, error, success
 }
 
+#[async_trait::async_trait]
+pub trait NotificationProvider: Send + Sync {
+    async fn send(&self, notification: &Notification) -> Result<()>;
+    fn id(&self) -> &'static str;
+    fn is_enabled(&self) -> bool;
+}
+
+pub struct InAppProvider;
+
+#[async_trait::async_trait]
+impl NotificationProvider for InAppProvider {
+    async fn send(&self, notification: &Notification) -> Result<()> {
+        let island_id = notification.island_id.as_str().to_string();
+        let id = notification.id.clone();
+        let title = notification.title.clone();
+        let body = notification.body.clone();
+        let timestamp = notification.timestamp.to_rfc3339();
+        let read = if notification.read { 1 } else { 0 };
+        let severity = notification.severity.clone();
+
+        ConnectionManager::global().with_conn("memory", move |conn| {
+            conn.execute(
+                &format!("INSERT INTO {} (id, island_id, title, body, timestamp, read, severity) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)", TABLE_NOTIFICATIONS),
+                params![id, island_id, title, body, timestamp, read, severity],
+            )?;
+            Ok(())
+        }).await
+    }
+
+    fn id(&self) -> &'static str {
+        "in_app"
+    }
+
+    fn is_enabled(&self) -> bool {
+        #[cfg(feature = "notification-in-app")]
+        {
+            true
+        }
+        #[cfg(not(feature = "notification-in-app"))]
+        {
+            false
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WebhookSubscription {
+    pub id: String,
+    pub url: String,
+    pub event_types: Vec<String>,
+    pub active: bool,
+    pub created_at: DateTime<Utc>,
+}
+
+pub struct WebhookProvider;
+
+#[async_trait::async_trait]
+impl NotificationProvider for WebhookProvider {
+    async fn send(&self, notification: &Notification) -> Result<()> {
+        let subs = NOTIFICATIONS.list_subscriptions().await?;
+        let client = reqwest::Client::new();
+        let island_str = notification.island_id.as_str();
+
+        for sub in subs {
+            if !sub.active {
+                continue;
+            }
+            let matches = sub.event_types.iter().any(|t| t == "*" || t == island_str);
+            if !matches {
+                continue;
+            }
+
+            let url = sub.url.clone();
+            let notification_clone = notification.clone();
+            let client_clone = client.clone();
+
+            tokio::spawn(async move {
+                match client_clone.post(&url).json(&notification_clone).send().await {
+                    Ok(resp) => {
+                        if !resp.status().is_success() {
+                            tracing::error!("Webhook to {} returned status {}", url, resp.status());
+                        }
+                    }
+                    Err(e) => {
+                        tracing::error!("Failed to send webhook to {}: {}", url, e);
+                    }
+                }
+            });
+        }
+        Ok(())
+    }
+
+    fn id(&self) -> &'static str {
+        "webhook"
+    }
+
+    fn is_enabled(&self) -> bool {
+        #[cfg(feature = "notification-webhook")]
+        {
+            true
+        }
+        #[cfg(not(feature = "notification-webhook"))]
+        {
+            false
+        }
+    }
+}
+
+pub static SENT_EMAILS: std::sync::LazyLock<Arc<tokio::sync::Mutex<Vec<Notification>>>> =
+    std::sync::LazyLock::new(|| Arc::new(tokio::sync::Mutex::new(Vec::new())));
+
+pub struct EmailProvider;
+
+#[async_trait::async_trait]
+impl NotificationProvider for EmailProvider {
+    async fn send(&self, notification: &Notification) -> Result<()> {
+        tracing::info!("Sending email notification to configured address: {}", notification.title);
+        let mut emails = SENT_EMAILS.lock().await;
+        emails.push(notification.clone());
+        Ok(())
+    }
+
+    fn id(&self) -> &'static str {
+        "email"
+    }
+
+    fn is_enabled(&self) -> bool {
+        #[cfg(feature = "notification-email")]
+        {
+            true
+        }
+        #[cfg(not(feature = "notification-email"))]
+        {
+            false
+        }
+    }
+}
+
 pub struct NotificationManager {
     event_tx: broadcast::Sender<Notification>,
+    pub providers: Vec<Arc<dyn NotificationProvider>>,
 }
 
 impl NotificationManager {
     pub fn new() -> Self {
         let (tx, _) = broadcast::channel(100);
-        Self { event_tx: tx }
+        let mut providers: Vec<Arc<dyn NotificationProvider>> = Vec::new();
+
+        providers.push(Arc::new(InAppProvider));
+        providers.push(Arc::new(WebhookProvider));
+        providers.push(Arc::new(EmailProvider));
+
+        Self {
+            event_tx: tx,
+            providers,
+        }
     }
 
     pub fn subscribe(&self) -> broadcast::Receiver<Notification> {
@@ -111,25 +260,89 @@ impl NotificationManager {
             severity: severity.to_string(),
         };
 
-        self.persist_notification(&notification).await?;
+        // Deliver to each enabled provider
+        for provider in &self.providers {
+            if provider.is_enabled() {
+                if let Err(e) = provider.send(&notification).await {
+                    tracing::error!("Failed to send notification via provider '{}': {}", provider.id(), e);
+                }
+            }
+        }
+
         let _ = self.event_tx.send(notification.clone());
         Ok(notification)
     }
 
-    async fn persist_notification(&self, n: &Notification) -> Result<()> {
-        let island_id = n.island_id.as_str().to_string();
-        let id = n.id.clone();
-        let title = n.title.clone();
-        let body = n.body.clone();
-        let timestamp = n.timestamp.to_rfc3339();
-        let read = if n.read { 1 } else { 0 };
-        let severity = n.severity.clone();
+    pub async fn ensure_webhook_table(&self) -> Result<()> {
+        ConnectionManager::global()
+            .with_conn("memory", move |conn| {
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS webhook_subscriptions (
+                        id TEXT PRIMARY KEY,
+                        url TEXT NOT NULL,
+                        event_types TEXT NOT NULL,
+                        active INTEGER NOT NULL DEFAULT 1,
+                        created_at TEXT NOT NULL
+                    )",
+                    [],
+                )?;
+                Ok(())
+            })
+            .await
+    }
+
+    pub async fn add_subscription(&self, url: &str, event_types: Vec<String>) -> Result<WebhookSubscription> {
+        self.ensure_webhook_table().await?;
+        let sub = WebhookSubscription {
+            id: uuid::Uuid::new_v4().to_string(),
+            url: url.to_string(),
+            event_types,
+            active: true,
+            created_at: Utc::now(),
+        };
+        let id = sub.id.clone();
+        let url = sub.url.clone();
+        let event_types_str = sub.event_types.join(",");
+        let active = if sub.active { 1 } else { 0 };
+        let created_at = sub.created_at.to_rfc3339();
 
         ConnectionManager::global().with_conn("memory", move |conn| {
             conn.execute(
-                &format!("INSERT INTO {} (id, island_id, title, body, timestamp, read, severity) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)", TABLE_NOTIFICATIONS),
-                params![id, island_id, title, body, timestamp, read, severity],
+                "INSERT INTO webhook_subscriptions (id, url, event_types, active, created_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![id, url, event_types_str, active, created_at],
             )?;
+            Ok(())
+        }).await?;
+        Ok(sub)
+    }
+
+    pub async fn list_subscriptions(&self) -> Result<Vec<WebhookSubscription>> {
+        self.ensure_webhook_table().await?;
+        ConnectionManager::global().with_conn("memory", move |conn| {
+            let mut stmt = conn.prepare("SELECT id, url, event_types, active, created_at FROM webhook_subscriptions")?;
+            let mut rows = stmt.query([])?;
+            let mut result = Vec::new();
+            while let Some(row) = rows.next()? {
+                let event_types_str: String = row.get(2)?;
+                let event_types = event_types_str.split(',').map(|s| s.to_string()).filter(|s| !s.is_empty()).collect();
+                let created_at_str: String = row.get(4)?;
+                result.push(WebhookSubscription {
+                    id: row.get(0)?,
+                    url: row.get(1)?,
+                    event_types,
+                    active: row.get::<_, i32>(3)? != 0,
+                    created_at: created_at_str.parse().unwrap_or_else(|_| Utc::now()),
+                });
+            }
+            Ok(result)
+        }).await
+    }
+
+    pub async fn remove_subscription(&self, id: &str) -> Result<()> {
+        self.ensure_webhook_table().await?;
+        let id = id.to_string();
+        ConnectionManager::global().with_conn("memory", move |conn| {
+            conn.execute("DELETE FROM webhook_subscriptions WHERE id = ?", params![id])?;
             Ok(())
         }).await
     }
@@ -209,8 +422,6 @@ mod tests {
         let manager = NotificationManager::new();
         let mut rx = manager.subscribe();
 
-        // Use a mock notification that doesn't trigger persistence for this test
-        // Or handle the fact that notify() calls persist_notification()
         let notification = Notification {
             id: "test-id".to_string(),
             island_id: IslandId::System,

@@ -43,7 +43,10 @@ members = ["code-graph", "panel-ui/src-tauri"]
 # the directory and its files remain in the repo.
 
 [features]
-default = ["cli-interactive"]
+default = ["cli-interactive", "notification-in-app", "notification-webhook", "notification-email"]
+notification-in-app = []
+notification-webhook = []
+notification-email = []
 data-commons = ["post-quantum"]
 post-quantum = ["oqs"]
 cli-interactive = ["ratatui", "crossterm"]
