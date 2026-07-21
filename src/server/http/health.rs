@@ -48,6 +48,7 @@ pub struct BuildInfoResponse {
     pub memory_store: MemoryStoreBuildInfo,
 }
 
+/// Health.
 pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
     let workspace = state.workspace_registry.default_context().await;
     let mut lag_ms = 0;
@@ -74,6 +75,7 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
     }))
 }
 
+/// Readiness.
 pub async fn readiness(State(state): State<AppState>) -> impl IntoResponse {
     let workspace_context = state.workspace_registry.default_context().await;
     let workspace_ready = workspace_context.is_some();
@@ -174,6 +176,7 @@ pub async fn readiness(State(state): State<AppState>) -> impl IntoResponse {
     })
 }
 
+/// Build info.
 pub async fn build_info(State(state): State<AppState>) -> impl IntoResponse {
     let workspace = state.workspace_registry.default_context().await;
     Json(BuildInfoResponse {

@@ -6,6 +6,7 @@ use regex::Regex;
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
+/// Search tokens.
 pub fn search_tokens(query: &str) -> Vec<String> {
     static TOKEN_RE: OnceLock<Regex> = OnceLock::new();
     let re = TOKEN_RE.get_or_init(|| {
@@ -29,6 +30,7 @@ pub fn search_tokens(query: &str) -> Vec<String> {
         .collect()
 }
 
+/// Build fts query.
 pub fn build_fts_query(query: &str) -> Option<String> {
     let mut tokens = search_tokens(query);
     tokens.extend(code_tokens(query));
@@ -55,6 +57,7 @@ pub fn build_fts_query(query: &str) -> Option<String> {
     )
 }
 
+/// Code tokens.
 pub fn code_tokens(text: &str) -> Vec<String> {
     let mut seen = HashSet::new();
     let mut expanded = Vec::new();
@@ -73,6 +76,7 @@ pub fn code_tokens(text: &str) -> Vec<String> {
     expanded
 }
 
+/// Split camel case.
 pub fn split_camel_case(token: &str) -> Vec<String> {
     let mut words = Vec::new();
     let mut current = String::new();

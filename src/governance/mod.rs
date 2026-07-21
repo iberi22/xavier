@@ -99,6 +99,7 @@ pub struct MockBicameralDao {
 }
 
 impl MockBicameralDao {
+    /// New.
     pub fn new(state_path: Option<PathBuf>) -> Self {
         let config = GovernanceConfig::default();
         let engine = GovernanceEngine::new(config);
@@ -112,11 +113,13 @@ impl MockBicameralDao {
         dao
     }
 
+    /// With reputation engine.
     pub fn with_reputation_engine(mut self, engine: std::sync::Arc<std::sync::RwLock<crate::data_commons::reputation::EigenTrustEngine>>) -> Self {
         self.engine = self.engine.with_reputation_engine(engine);
         self
     }
 
+    /// Get state.
     pub fn get_state(&self) -> BicameralDaoState {
         let (proposals, council, active_wallets, blocked_wallets) = self.engine.get_state();
         BicameralDaoState {
@@ -127,6 +130,7 @@ impl MockBicameralDao {
         }
     }
 
+    /// Set state.
     pub fn set_state(&mut self, state: BicameralDaoState) {
         self.engine.set_state(
             state.proposals,
@@ -321,6 +325,7 @@ pub struct OnChainBicameralDao {
 
 #[cfg(feature = "dao-evm")]
 impl OnChainBicameralDao {
+    /// New.
     pub fn new(config: crate::mesh::governance::EvmDaoConfig, state_path: Option<PathBuf>) -> Self {
         Self {
             config,

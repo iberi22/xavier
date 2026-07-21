@@ -31,6 +31,7 @@ impl Default for SecurityService {
 }
 
 impl SecurityService {
+    /// New.
     pub fn new() -> Self {
         Self {
             threat_store: None,
@@ -38,6 +39,7 @@ impl SecurityService {
         }
     }
 
+    /// With store.
     pub fn with_store(store: Arc<SecurityThreatStore>) -> Self {
         Self {
             threat_store: Some(store),
@@ -135,6 +137,7 @@ impl InputSecurityPort for SecurityService {
 }
 
 impl SecurityService {
+    /// Get stats.
     pub async fn get_stats(&self) -> anyhow::Result<HashMap<String, u32>> {
         let stats = tokio::task::spawn_blocking(|| {
             let service = security::get_security_service();

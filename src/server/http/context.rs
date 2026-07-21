@@ -45,6 +45,7 @@ pub struct DeepenRequest {
     pub focus: Vec<String>,
 }
 
+/// V1 context regenerate.
 pub async fn v1_context_regenerate(
     Extension(workspace): Extension<WorkspaceContext>,
     Extension(_state): Extension<crate::AppState>,
@@ -161,6 +162,7 @@ pub async fn v1_context_regenerate(
     .into_response()
 }
 
+/// V1 context deepen.
 pub async fn v1_context_deepen(
     Extension(workspace): Extension<WorkspaceContext>,
     Extension(_state): Extension<crate::AppState>,
@@ -281,6 +283,7 @@ pub async fn v1_context_deepen(
     .into_response()
 }
 
+/// V1 context stats.
 pub async fn v1_context_stats() -> impl IntoResponse {
     let stats = TRACKER.get_stats().await;
     Json(stats).into_response()

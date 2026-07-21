@@ -11,6 +11,7 @@ use rusqlite::{params, Connection};
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
+/// Extract entities.
 pub fn extract_entities(content: &str) -> Vec<ExtractedEntity> {
     static MENTION_RE: OnceLock<Regex> = OnceLock::new();
     static TOPIC_RE: OnceLock<Regex> = OnceLock::new();
@@ -53,10 +54,12 @@ pub fn extract_entities(content: &str) -> Vec<ExtractedEntity> {
     entities
 }
 
+/// Memory node id.
 pub fn memory_node_id(workspace_id: &str, memory_id: &str) -> String {
     format!("mem:{}:{}", workspace_id, memory_id)
 }
 
+/// Entity node id.
 pub fn entity_node_id(workspace_id: &str, entity_type: &str, value: &str) -> String {
     stable_key(
         "entity",
@@ -68,6 +71,7 @@ pub fn entity_node_id(workspace_id: &str, entity_type: &str, value: &str) -> Str
     )
 }
 
+/// Sync memory entities.
 pub fn sync_memory_entities(
     conn: &Connection,
     workspace_id: &str,
@@ -152,6 +156,7 @@ pub fn sync_memory_entities(
     Ok(())
 }
 
+/// Resolve graph seed entities.
 pub fn resolve_graph_seed_entities(
     conn: &Connection,
     workspace_id: &str,
@@ -175,6 +180,7 @@ pub fn resolve_graph_seed_entities(
     Ok(seeds)
 }
 
+/// Traverse recursive.
 pub fn traverse_recursive(
     _conn: &Connection,
     _workspace_id: &str,
@@ -186,6 +192,7 @@ pub fn traverse_recursive(
     Ok(Vec::new())
 }
 
+/// Ensure seed entities.
 pub fn ensure_seed_entities(
     conn: &Connection,
     workspace_id: &str,

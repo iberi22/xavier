@@ -38,6 +38,7 @@ pub struct TelemetryParams {
     pub top: Option<usize>,
 }
 
+/// Ls handler.
 pub async fn ls_handler(
     State(state): State<CliState>,
     Query(params): Query<LsParams>,
@@ -61,6 +62,7 @@ pub async fn ls_handler(
     }
 }
 
+/// Cd handler.
 pub async fn cd_handler(
     State(state): State<CliState>,
     Json(params): Json<CdParams>,
@@ -108,6 +110,7 @@ pub async fn cd_handler(
     }
 }
 
+/// Pwd handler.
 pub async fn pwd_handler() -> impl IntoResponse {
     Json(json!({
         "status": "ok",
@@ -115,6 +118,7 @@ pub async fn pwd_handler() -> impl IntoResponse {
     }))
 }
 
+/// Affected handler.
 pub async fn affected_handler(
     Extension(ctx): Extension<WorkspaceContext>,
     Query(params): Query<AffectedParams>,
@@ -188,6 +192,7 @@ pub async fn affected_handler(
     }))
 }
 
+/// Visualize handler.
 pub async fn visualize_handler(Extension(ctx): Extension<WorkspaceContext>) -> impl IntoResponse {
     let graph_guard = ctx.workspace.belief_graph.read().await;
     let edges = graph_guard.get_edges();
@@ -243,6 +248,7 @@ pub async fn visualize_handler(Extension(ctx): Extension<WorkspaceContext>) -> i
     }))
 }
 
+/// Telemetry handler.
 pub async fn telemetry_handler(
     Extension(ctx): Extension<WorkspaceContext>,
     Query(params): Query<TelemetryParams>,

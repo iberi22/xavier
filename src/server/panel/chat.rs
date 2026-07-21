@@ -7,6 +7,7 @@ use crate::{
 use axum::{response::IntoResponse, Extension, Json};
 use serde_json::json;
 
+/// Process chat.
 pub async fn process_chat(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<PanelChatRequest>,

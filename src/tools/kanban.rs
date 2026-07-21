@@ -623,6 +623,7 @@ pub struct KanbanTool {
     pub parameters: serde_json::Value,
 }
 
+/// Get kanban tools.
 pub fn get_kanban_tools() -> Vec<KanbanTool> {
     vec![
         KanbanTool {

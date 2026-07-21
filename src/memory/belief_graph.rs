@@ -20,6 +20,7 @@ pub enum Confidence {
 }
 
 impl Confidence {
+    /// Score.
     pub fn score(self) -> f32 {
         match self {
             Self::High => 0.9,
@@ -38,6 +39,7 @@ pub struct Belief {
 }
 
 impl Belief {
+    /// New.
     pub fn new(subject: String, predicate: String, object: String, confidence: Confidence) -> Self {
         Self {
             subject,
@@ -58,6 +60,7 @@ pub struct BeliefGraph {
 }
 
 impl BeliefGraph {
+    /// New.
     pub fn new() -> Self {
         Self {
             nodes: RwLock::new(HashMap::new()),
@@ -67,6 +70,7 @@ impl BeliefGraph {
         }
     }
 
+    /// Add node.
     pub fn add_node(&self, concept: String, confidence: f32, language_family: Option<String>) {
         use crate::memory::qmd::NormalizedId;
         use std::str::FromStr;
@@ -100,10 +104,12 @@ impl BeliefGraph {
         info!("Added node: {}", concept_norm);
     }
 
+    /// Add edge.
     pub async fn add_edge(&self, from: String, to: String, relation: String) {
         let _ = self.add_relation(from, to, relation, None, None).await;
     }
 
+    /// Add relation.
     pub async fn add_relation(
         &self,
         source: String,
@@ -190,6 +196,7 @@ impl BeliefGraph {
         Ok(())
     }
 
+    /// Get related.
     pub fn get_related(&self, concept: &str) -> Vec<String> {
         use crate::memory::qmd::NormalizedId;
         use std::str::FromStr;
@@ -205,6 +212,7 @@ impl BeliefGraph {
             .unwrap_or_default()
     }
 
+    /// Get node.
     pub fn get_node(&self, concept: &str) -> Option<BeliefNode> {
         use crate::memory::qmd::NormalizedId;
         use std::str::FromStr;
@@ -220,6 +228,7 @@ impl BeliefGraph {
             .cloned()
     }
 
+    /// List nodes.
     pub fn list_nodes(&self) -> Vec<BeliefNode> {
         self.nodes
             .read()
@@ -229,6 +238,7 @@ impl BeliefGraph {
             .collect()
     }
 
+    /// Get edges.
     pub fn get_edges(&self) -> Vec<BeliefEdge> {
         self.edges
             .read()
@@ -236,14 +246,17 @@ impl BeliefGraph {
             .clone()
     }
 
+    /// Get edges async.
     pub async fn get_edges_async(&self) -> Vec<BeliefEdge> {
         self.get_edges()
     }
 
+    /// Get relations.
     pub fn get_relations(&self) -> Vec<BeliefEdge> {
         self.get_edges()
     }
 
+    /// Replace relations.
     pub fn replace_relations(&self, edges: Vec<BeliefEdge>) {
         use crate::memory::qmd::NormalizedId;
         use std::str::FromStr;
@@ -301,6 +314,7 @@ impl BeliefGraph {
             .expect("belief_graph: edges write lock poisoned") = normalized_edges;
     }
 
+    /// Add belief.
     pub async fn add_belief(&self, belief: Belief, source_memory_id: Option<String>) -> Result<()> {
         let confidence_score = belief.confidence.score();
         let lang_family = source_memory_id
@@ -363,6 +377,7 @@ impl BeliefGraph {
         results
     }
 
+    /// Bfs.
     pub async fn bfs(&self, start: &str) -> Vec<String> {
         use crate::memory::qmd::NormalizedId;
         use std::str::FromStr;
@@ -458,6 +473,7 @@ impl BeliefGraph {
         path
     }
 
+    /// Has supporting beliefs.
     pub async fn has_supporting_beliefs(&self, memory_id: &str) -> bool {
         self.get_edges()
             .iter()

@@ -132,6 +132,7 @@ pub enum EnterpriseError {
 }
 
 impl EnterpriseError {
+    /// Status code.
     pub fn status_code(&self) -> StatusCode {
         match self {
             Self::NotFound { .. } => StatusCode::NOT_FOUND,
@@ -141,6 +142,7 @@ impl EnterpriseError {
         }
     }
 
+    /// Into response inner.
     pub fn into_response_inner(self) -> (StatusCode, Json<serde_json::Value>) {
         let status = self.status_code();
         let msg = self.to_string();

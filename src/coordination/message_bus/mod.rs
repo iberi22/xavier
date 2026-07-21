@@ -52,6 +52,7 @@ pub enum MessagePriority {
 }
 
 impl MessagePriority {
+    /// Value.
     pub fn value(&self) -> u8 {
         match self {
             MessagePriority::Low => 1,

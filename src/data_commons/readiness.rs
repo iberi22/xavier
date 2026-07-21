@@ -43,6 +43,7 @@ impl ReadinessValidator {
         }
     }
 
+    /// Validate.
     pub fn validate(&self) -> ReadinessReport {
         let mut report = ReadinessReport::default();
 

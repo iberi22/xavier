@@ -48,6 +48,7 @@ pub struct PairingCodeResponse {
     pub secret: String,
 }
 
+/// List peers handler.
 pub async fn list_peers_handler() -> impl IntoResponse {
     // License check
     let settings = xavier::settings::XavierSettings::current();
@@ -120,6 +121,7 @@ pub async fn list_peers_handler() -> impl IntoResponse {
     .into_response()
 }
 
+/// Generate pairing code handler.
 pub async fn generate_pairing_code_handler(
     Json(payload): Json<serde_json::Value>,
 ) -> impl IntoResponse {
@@ -163,6 +165,7 @@ pub struct DecodedPairingCodeResponse {
     pub endpoint: String,
 }
 
+/// Decode pairing code handler.
 pub async fn decode_pairing_code_handler(Json(payload): Json<PairRequest>) -> impl IntoResponse {
     // License check
     let settings = xavier::settings::XavierSettings::current();
@@ -188,6 +191,7 @@ pub async fn decode_pairing_code_handler(Json(payload): Json<PairRequest>) -> im
     }
 }
 
+/// Pair peer handler.
 pub async fn pair_peer_handler(Json(payload): Json<PairRequest>) -> impl IntoResponse {
     // License check
     let settings = xavier::settings::XavierSettings::current();
@@ -280,6 +284,7 @@ pub async fn pair_peer_handler(Json(payload): Json<PairRequest>) -> impl IntoRes
         .into_response()
 }
 
+/// Update peer acl handler.
 pub async fn update_peer_acl_handler(
     Path(node_id): Path<String>,
     Json(payload): Json<UpdateAclRequest>,
@@ -336,6 +341,7 @@ pub struct RevokeConsentRequest {
     pub token_id: String,
 }
 
+/// Revoke consent handler.
 pub async fn revoke_consent_handler(
     Json(payload): Json<RevokeConsentRequest>,
 ) -> impl IntoResponse {
@@ -362,6 +368,7 @@ pub async fn revoke_consent_handler(
     }
 }
 
+/// List consents handler.
 pub async fn list_consents_handler() -> impl IntoResponse {
     let settings = xavier::settings::XavierSettings::current();
     if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
@@ -395,6 +402,7 @@ pub struct CreateBridgeRequest {
     pub acl: Vec<String>,
 }
 
+/// Create bridge handler.
 pub async fn create_bridge_handler(
     Json(payload): Json<CreateBridgeRequest>,
 ) -> impl IntoResponse {
@@ -439,6 +447,7 @@ pub async fn create_bridge_handler(
     (StatusCode::CREATED, Json(bridge)).into_response()
 }
 
+/// List bridges handler.
 pub async fn list_bridges_handler() -> impl IntoResponse {
     let settings = xavier::settings::XavierSettings::current();
     if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
@@ -463,6 +472,7 @@ pub async fn list_bridges_handler() -> impl IntoResponse {
     Json(registry.list_bridges()).into_response()
 }
 
+/// Delete bridge handler.
 pub async fn delete_bridge_handler(
     Path(id): Path<String>,
 ) -> impl IntoResponse {
@@ -529,6 +539,7 @@ pub struct QueryWorkspaceRequest {
     pub federated: Option<FederatedSearchRequest>,
 }
 
+/// Share workspace handler.
 pub async fn share_workspace_handler(
     State(_state): State<CliState>,
     Json(payload): Json<ShareWorkspaceRequest>,
@@ -618,6 +629,7 @@ pub async fn share_workspace_handler(
     Json(ShareWorkspaceResponse { token }).into_response()
 }
 
+/// Join workspace handler.
 pub async fn join_workspace_handler(
     State(_state): State<CliState>,
     Json(payload): Json<JoinWorkspaceRequest>,
@@ -678,7 +690,7 @@ pub async fn join_workspace_handler(
         Some(s) => s.to_string(),
         None => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Missing node_id in token payload" })),
     };
-    
+
     let endpoint = match inner_payload.get("endpoint").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
         None => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Missing endpoint in token payload" })),
@@ -818,6 +830,7 @@ pub async fn join_workspace_handler(
     }).into_response()
 }
 
+/// Query workspace handler.
 pub async fn query_workspace_handler(
     State(state): State<CliState>,
     Json(payload): Json<QueryWorkspaceRequest>,
@@ -1117,6 +1130,7 @@ pub async fn query_workspace_handler(
     })).into_response()
 }
 
+/// V1 mesh status handler.
 pub async fn v1_mesh_status_handler() -> impl IntoResponse {
     // License check
     let settings = xavier::settings::XavierSettings::current();
@@ -1131,6 +1145,7 @@ pub async fn v1_mesh_status_handler() -> impl IntoResponse {
     Json(MeshMaturityReport::default()).into_response()
 }
 
+/// Remove peer handler.
 pub async fn remove_peer_handler(Path(node_id): Path<String>) -> impl IntoResponse {
     // License check
     let settings = xavier::settings::XavierSettings::current();

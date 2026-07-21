@@ -20,6 +20,7 @@ pub struct RateLimitConfig {
 }
 
 impl RateLimitConfig {
+    /// From plan rpm.
     pub fn from_plan_rpm(rpm: u32) -> Self {
         Self {
             rpm,
@@ -27,6 +28,7 @@ impl RateLimitConfig {
         }
     }
 
+    /// Custom.
     pub fn custom(rpm: u32, burst: u32) -> Self {
         Self { rpm, burst }
     }
@@ -48,6 +50,7 @@ pub struct RateLimitResult {
 }
 
 impl RateLimitResult {
+    /// Allowed.
     pub fn allowed(remaining: u32, reset_at: u64) -> Self {
         Self {
             allowed: true,
@@ -57,6 +60,7 @@ impl RateLimitResult {
         }
     }
 
+    /// Denied.
     pub fn denied(reset_at: u64, retry_after_ms: u64) -> Self {
         Self {
             allowed: false,
@@ -82,6 +86,7 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
+    /// New.
     pub fn new() -> Self {
         Self {
             limiters: HashMap::new(),
@@ -164,6 +169,7 @@ pub struct RateLimitState {
 }
 
 impl RateLimitState {
+    /// New.
     pub fn new(key: RateLimitKey, config: RateLimitConfig) -> Self {
         Self {
             key,
@@ -173,6 +179,7 @@ impl RateLimitState {
         }
     }
 
+    /// Is expired.
     pub fn is_expired(&self) -> bool {
         std::time::Instant::now() > self.reset_at
     }

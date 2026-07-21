@@ -178,6 +178,7 @@ pub struct MCPHealthResult {
 // ── Helper constructors ─────────────────────────────────────────────
 
 impl MCPToolResult {
+    /// Text.
     pub fn text(text: impl Into<String>, is_error: bool) -> Self {
         MCPToolResult {
             content: vec![MCPContent::Text(MCPTextContent {
@@ -188,6 +189,7 @@ impl MCPToolResult {
         }
     }
 
+    /// Structured.
     pub fn structured(payload: Value, is_error: bool) -> Self {
         MCPToolResult {
             content: vec![MCPContent::Structured(MCPStructuredContent {

@@ -16,6 +16,7 @@ pub struct SelfHarnessCoordinator {
 }
 
 impl SelfHarnessCoordinator {
+    /// New.
     pub fn new(memory: Arc<QmdMemory>) -> Self {
         Self { memory }
     }

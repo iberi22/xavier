@@ -59,6 +59,7 @@ pub async fn code_index_handler(
     }
 }
 
+/// Code dump handler.
 pub async fn code_dump_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<serde_json::Value>,
@@ -79,6 +80,7 @@ pub async fn code_dump_handler(
     }
 }
 
+/// Code load handler.
 pub async fn code_load_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<serde_json::Value>,
@@ -101,6 +103,7 @@ pub async fn code_load_handler(
     }
 }
 
+/// Code scan handler.
 pub async fn code_scan_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<CodeScanPayload>,
@@ -196,6 +199,7 @@ pub async fn code_scan_handler(
     }
 }
 
+/// Code find handler.
 pub async fn code_find_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<CodeFindPayload>,
@@ -326,6 +330,7 @@ pub async fn code_find_handler(
     }))
 }
 
+/// Code stats handler.
 pub async fn code_stats_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
@@ -348,6 +353,7 @@ pub async fn code_stats_handler(
     }
 }
 
+/// Code context handler.
 pub async fn code_context_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<CodeContextPayload>,
@@ -448,6 +454,7 @@ pub async fn code_context_handler(
     }))
 }
 
+/// Code dependencies handler.
 pub async fn code_dependencies_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<CodeGraphQueryPayload>,
@@ -455,6 +462,7 @@ pub async fn code_dependencies_handler(
     code_graph_edges_response(&state, payload, false, false).await
 }
 
+/// Code reverse dependencies handler.
 pub async fn code_reverse_dependencies_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<CodeGraphQueryPayload>,
@@ -462,6 +470,7 @@ pub async fn code_reverse_dependencies_handler(
     code_graph_edges_response(&state, payload, true, false).await
 }
 
+/// Code call chain handler.
 pub async fn code_call_chain_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<CodeGraphQueryPayload>,
@@ -469,6 +478,7 @@ pub async fn code_call_chain_handler(
     code_graph_edges_response(&state, payload, false, true).await
 }
 
+/// Code hubs handler.
 pub async fn code_hubs_handler(State(state): State<CliState>) -> impl axum::response::IntoResponse {
     let code_graph = state.code_graph.read().await;
     match code_graph
@@ -494,6 +504,7 @@ pub async fn code_hubs_handler(State(state): State<CliState>) -> impl axum::resp
     }
 }
 
+/// Code hotspots handler.
 pub async fn code_hotspots_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
@@ -647,6 +658,7 @@ fn truncate_json_items<T: Serialize>(
     (output, truncated, used_tokens)
 }
 
+/// Code graph view handler.
 pub async fn code_graph_view_handler(
     State(state): State<CliState>,
     axum::extract::Query(params): axum::extract::Query<CodeGraphViewParams>,

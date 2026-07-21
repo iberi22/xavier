@@ -17,6 +17,7 @@ pub struct AgentIndexer {
 }
 
 impl AgentIndexer {
+    /// New.
     pub fn new(file_indexer: FileIndexer) -> Self {
         Self {
             scanner: AgentScanner::new(),
@@ -24,6 +25,7 @@ impl AgentIndexer {
         }
     }
 
+    /// Scanner.
     pub fn scanner(&self) -> &AgentScanner {
         &self.scanner
     }

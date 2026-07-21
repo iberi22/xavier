@@ -76,6 +76,7 @@ pub enum ChronicleCommand {
     },
 }
 
+/// Handle chronicle command.
 pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
     match cmd {
         ChronicleCommand::Harvest { since, workspace } => {

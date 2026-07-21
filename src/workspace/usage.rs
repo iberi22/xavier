@@ -69,6 +69,7 @@ pub struct UsageEvent {
 }
 
 impl UsageEvent {
+    /// From request.
     pub fn from_request(method: &str, path: &str) -> Self {
         match (method, path) {
             ("GET", "/v1/account/usage")
@@ -137,16 +138,19 @@ pub struct UsageCounter {
 }
 
 impl UsageCounter {
+    /// New.
     pub fn new() -> Self {
         Self {
             requests: AtomicU64::new(0),
             units: AtomicU64::new(0),
         }
     }
+    /// Add.
     pub fn add(&self, units: u64) {
         self.requests.fetch_add(1, Ordering::Relaxed);
         self.units.fetch_add(units, Ordering::Relaxed);
     }
+    /// Snapshot.
     pub fn snapshot(&self, category: UsageCategory) -> UsageCountersSnapshot {
         UsageCountersSnapshot {
             category,
@@ -162,6 +166,7 @@ pub struct UsageMetrics {
 }
 
 impl UsageMetrics {
+    /// New.
     pub fn new() -> Self {
         let counters = [
             UsageCategory::Read,
@@ -180,15 +185,18 @@ impl UsageMetrics {
             counters,
         }
     }
+    /// Record.
     pub fn record(&self, event: UsageEvent) {
         self.total_units.fetch_add(event.units, Ordering::Relaxed);
         if let Some(counter) = self.counters.get(&event.category) {
             counter.add(event.units);
         }
     }
+    /// Total units.
     pub fn total_units(&self) -> u64 {
         self.total_units.load(Ordering::Relaxed)
     }
+    /// Hydrate.
     pub fn hydrate(&self, total_units: u64, counters: &[UsageCountersSnapshot]) {
         self.total_units.store(total_units, Ordering::Relaxed);
         for snapshot in counters {
@@ -198,6 +206,7 @@ impl UsageMetrics {
             }
         }
     }
+    /// Snapshots.
     pub fn snapshots(&self) -> Vec<UsageCountersSnapshot> {
         let mut counters: Vec<_> = self
             .counters
@@ -228,6 +237,7 @@ pub struct OptimizationMetrics {
 }
 
 impl OptimizationMetrics {
+    /// New.
     pub fn new() -> Self {
         Self {
             router_direct_count: AtomicU64::new(0),
@@ -239,6 +249,7 @@ impl OptimizationMetrics {
             llm_calls_by_model: RwLock::new(HashMap::new()),
         }
     }
+    /// Record.
     pub async fn record(
         &self,
         route_category: RouteCategory,
@@ -270,6 +281,7 @@ impl OptimizationMetrics {
             }
         }
     }
+    /// Hydrate.
     pub async fn hydrate(&self, snapshot: &OptimizationUsageSnapshot) {
         self.router_direct_count
             .store(snapshot.router_direct_count, Ordering::Relaxed);
@@ -288,6 +300,7 @@ impl OptimizationMetrics {
             model_calls.insert(entry.model.clone(), entry.calls);
         }
     }
+    /// Snapshot.
     pub async fn snapshot(&self) -> OptimizationUsageSnapshot {
         let mut llm_calls_by_model = self
             .llm_calls_by_model

@@ -32,6 +32,7 @@ pub struct GraphData {
 }
 
 impl GraphData {
+    /// Resolve entity id.
     pub(super) fn resolve_entity_id(&self, entity_id_or_name: &str) -> Option<String> {
         if self.entities.contains_key(entity_id_or_name) {
             return Some(entity_id_or_name.to_string());
@@ -40,6 +41,7 @@ impl GraphData {
         self.entity_lookup.get(&key).cloned()
     }
 
+    /// Upsert entity.
     pub(super) fn upsert_entity(
         &mut self,
         entity: ExtractedEntity,
@@ -103,6 +105,7 @@ impl GraphData {
         entity_id
     }
 
+    /// Upsert relation.
     pub(super) fn upsert_relation(&mut self, relation: RelationUpsert<'_>) -> EntityRelationRecord {
         let lookup_key =
             relation_lookup_key(relation.source, relation.target, relation.relation_type);
@@ -160,6 +163,7 @@ impl GraphData {
         entry.clone()
     }
 
+    /// Rebuild indexes.
     pub(super) fn rebuild_indexes(&mut self) {
         self.entity_lookup.clear();
         self.outgoing.clear();
@@ -195,6 +199,7 @@ impl GraphData {
         }
     }
 
+    /// Relation neighbors.
     pub(super) fn relation_neighbors(&self, entity_id: &str) -> HashSet<String> {
         let mut neighbors = HashSet::new();
         if let Some(outgoing) = self.outgoing.get(entity_id) {
@@ -206,6 +211,7 @@ impl GraphData {
         neighbors
     }
 
+    /// Relink relation neighbor.
     pub(super) fn relink_relation_neighbor(&mut self, from: &str, to: &str, neighbor: &str) {
         for relation in self.relations.values_mut() {
             if relation.source == from && relation.target == neighbor {
@@ -217,11 +223,13 @@ impl GraphData {
         }
     }
 
+    /// Remove relations for entity.
     pub(super) fn remove_relations_for_entity(&mut self, entity_id: &str) {
         self.relations
             .retain(|_, relation| relation.source != entity_id && relation.target != entity_id);
     }
 
+    /// Apply decay.
     pub(super) fn apply_decay(&mut self, factor: f32, now: DateTime<Utc>) {
         let factor = factor.clamp(0.0, 1.0);
         for relation in self.relations.values_mut() {

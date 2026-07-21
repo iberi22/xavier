@@ -18,6 +18,7 @@ pub struct DiscoveryService {
 }
 
 impl DiscoveryService {
+    /// New.
     pub fn new() -> Self {
         Self {
             listen_addresses: vec!["/ip4/0.0.0.0/tcp/0"
@@ -28,21 +29,25 @@ impl DiscoveryService {
         }
     }
 
+    /// With listen address.
     pub fn with_listen_address(mut self, address: Multiaddr) -> Self {
         self.listen_addresses.push(address);
         self
     }
 
+    /// With bootstrap peer.
     pub fn with_bootstrap_peer(mut self, peer_id: PeerId, address: Multiaddr) -> Self {
         self.bootstrap_peers.push((peer_id, address));
         self
     }
 
+    /// With query timeout.
     pub fn with_query_timeout(mut self, timeout: Duration) -> Self {
         self.query_timeout = timeout;
         self
     }
 
+    /// Start.
     pub async fn start(&self) -> Result<Swarm<kad::Behaviour<MemoryStore>>> {
         let timeout = self.query_timeout;
         let mut swarm = SwarmBuilder::with_new_identity()
@@ -72,6 +77,7 @@ impl DiscoveryService {
         Ok(swarm)
     }
 
+    /// Advertise.
     pub fn advertise(
         &self,
         swarm: &mut Swarm<kad::Behaviour<MemoryStore>>,
@@ -83,6 +89,7 @@ impl DiscoveryService {
             .context("Failed to advertise Xavier Mesh provider")
     }
 
+    /// Advertise default.
     pub fn advertise_default(
         &self,
         swarm: &mut Swarm<kad::Behaviour<MemoryStore>>,
@@ -90,6 +97,7 @@ impl DiscoveryService {
         self.advertise(swarm, DEFAULT_DISCOVERY_KEY)
     }
 
+    /// Discover peers.
     pub fn discover_peers(
         &self,
         swarm: &mut Swarm<kad::Behaviour<MemoryStore>>,
@@ -100,10 +108,12 @@ impl DiscoveryService {
             .get_providers(RecordKey::new(&discovery_key))
     }
 
+    /// Discover default.
     pub fn discover_default(&self, swarm: &mut Swarm<kad::Behaviour<MemoryStore>>) -> QueryId {
         self.discover_peers(swarm, DEFAULT_DISCOVERY_KEY)
     }
 
+    /// Bootstrap.
     pub fn bootstrap(
         &self,
         swarm: &mut Swarm<kad::Behaviour<MemoryStore>>,

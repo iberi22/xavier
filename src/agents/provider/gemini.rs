@@ -6,6 +6,7 @@ use chrono::Utc;
 use reqwest::Client;
 use serde_json::json;
 
+/// Generate gemini legacy.
 pub(crate) async fn generate_gemini_legacy(
     client: &Client,
     config: &ModelProviderConfig,

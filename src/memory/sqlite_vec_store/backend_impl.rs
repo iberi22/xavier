@@ -16,6 +16,7 @@ use super::{fts, graph, search, utils, FusionSource, VecSqliteMemoryStore};
 
 impl VecSqliteMemoryStore {
     #[allow(dead_code)]
+    /// Upsert vector.
     pub(crate) async fn upsert_vector(
         &self,
         memory_id: &str,
@@ -37,6 +38,7 @@ impl VecSqliteMemoryStore {
         }).await
     }
 
+    /// Perform hybrid search.
     pub(crate) async fn perform_hybrid_search(
         &self,
         workspace_id: &str,
@@ -232,6 +234,7 @@ impl VecSqliteMemoryStore {
         Ok(results)
     }
 
+    /// Perform graph hops.
     pub(crate) async fn perform_graph_hops(
         &self,
         workspace_id: &str,

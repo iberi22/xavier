@@ -52,6 +52,7 @@ pub struct SqliteStoreConfig {
 }
 
 impl SqliteStoreConfig {
+    /// From env.
     pub fn from_env() -> Self {
         let settings = XavierSettings::current();
         Self {
@@ -79,10 +80,12 @@ pub struct SqliteMemoryStore {
 }
 
 impl SqliteMemoryStore {
+    /// From env.
     pub async fn from_env() -> Result<Self> {
         Self::new(SqliteStoreConfig::from_env()).await
     }
 
+    /// New.
     pub async fn new(config: SqliteStoreConfig) -> Result<Self> {
         if let Some(parent) = config.path.parent() {
             fs::create_dir_all(parent).await?;
@@ -168,6 +171,7 @@ impl SqliteMemoryStore {
 }
 
 impl SqliteMemoryStore {
+    /// Decrypt record.
     pub(crate) fn decrypt_record(record: &mut MemoryRecord) -> Result<()> {
         if let Some(encrypted_dek) = &record.encrypted_dek {
             let security = crate::security::get_security_service();

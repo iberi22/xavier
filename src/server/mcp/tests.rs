@@ -36,6 +36,7 @@ fn unique_test_path(prefix: &str, suffix: &str) -> PathBuf {
     std::env::temp_dir().join(format!("{prefix}-{unique:016x}-{tid:?}-{suffix}"))
 }
 
+/// Test state.
 pub async fn test_state() -> (AppState, WorkspaceContext) {
     std::env::set_var("XAVIER_TOKEN", "test-token");
     let db_path = unique_test_path("xavier-code-mcp", "code_graph.db");
@@ -90,6 +91,7 @@ pub async fn test_state() -> (AppState, WorkspaceContext) {
     )
 }
 
+/// Test router.
 pub fn test_router(state: AppState, workspace: WorkspaceContext) -> Router {
     Router::new()
         .route("/mcp", post(mcp_post_handler))
@@ -98,6 +100,7 @@ pub fn test_router(state: AppState, workspace: WorkspaceContext) -> Router {
         .with_state(state)
 }
 
+/// Post json.
 pub async fn post_json(app: Router, body: Value) -> axum::response::Response {
     post_json_with_token(app, body, None).await
 }
@@ -156,6 +159,7 @@ async fn post_json_with_token(
     .expect("POST request to MCP endpoint failed")
 }
 
+/// Get json body.
 pub async fn get_json_body(response: axum::response::Response) -> Value {
     let body_bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
         .await

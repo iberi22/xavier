@@ -46,6 +46,7 @@ fn default_limit() -> usize {
     10
 }
 
+/// Code scan handler.
 pub async fn code_scan_handler(
     headers: HeaderMap,
     State(state): State<AppState>,
@@ -127,6 +128,7 @@ pub async fn code_scan_handler(
     }
 }
 
+/// Code find handler.
 pub async fn code_find_handler(
     headers: HeaderMap,
     State(state): State<AppState>,
@@ -186,6 +188,7 @@ pub async fn code_find_handler(
     })))
 }
 
+/// Code stats handler.
 pub async fn code_stats_handler(
     headers: HeaderMap,
     State(state): State<AppState>,
@@ -206,6 +209,7 @@ pub async fn code_stats_handler(
     }
 }
 
+/// Code context handler.
 pub async fn code_context_handler(
     headers: HeaderMap,
     State(state): State<AppState>,

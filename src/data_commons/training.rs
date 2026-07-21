@@ -31,6 +31,7 @@ pub struct TrainingExporter {
 }
 
 impl TrainingExporter {
+    /// New.
     pub fn new(db_path: &Path) -> Self {
         Self {
             db_path: db_path.to_path_buf(),
@@ -38,6 +39,7 @@ impl TrainingExporter {
         }
     }
 
+    /// Generate bundle.
     pub fn generate_bundle(
         &self,
         seed: u64,

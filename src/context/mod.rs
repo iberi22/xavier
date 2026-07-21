@@ -56,6 +56,7 @@ pub struct ContextDocument {
 }
 
 impl ContextDocument {
+    /// New.
     pub fn new(
         id: impl Into<String>,
         session_id: impl Into<String>,
@@ -76,21 +77,25 @@ impl ContextDocument {
         }
     }
 
+    /// With tool calls.
     pub fn with_tool_calls(mut self, tool_calls: Vec<String>) -> Self {
         self.tool_calls = tool_calls;
         self
     }
 
+    /// With metadata.
     pub fn with_metadata(mut self, metadata: serde_json::Value) -> Self {
         self.metadata = metadata;
         self
     }
 
+    /// With created at.
     pub fn with_created_at(mut self, created_at: DateTime<Utc>) -> Self {
         self.created_at = created_at;
         self
     }
 
+    /// With token count.
     pub fn with_token_count(mut self, token_count: usize) -> Self {
         self.token_count = token_count;
         self

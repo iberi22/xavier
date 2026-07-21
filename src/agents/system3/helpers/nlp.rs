@@ -146,6 +146,7 @@ pub(crate) fn detect_question_category(query: &str) -> &'static str {
     "1"
 }
 
+/// Doc category.
 pub(crate) fn doc_category(doc: &RetrievedDocument) -> &str {
     doc.metadata
         .get("category")
@@ -153,6 +154,7 @@ pub(crate) fn doc_category(doc: &RetrievedDocument) -> &str {
         .unwrap_or_default()
 }
 
+/// Doc memory kind.
 pub(crate) fn doc_memory_kind(doc: &RetrievedDocument) -> &str {
     doc.metadata
         .get("evidence_kind")
@@ -166,6 +168,7 @@ pub(crate) fn doc_memory_kind(doc: &RetrievedDocument) -> &str {
         .unwrap_or_default()
 }
 
+/// Doc text for scoring.
 pub(crate) fn doc_text_for_scoring(doc: &RetrievedDocument) -> String {
     let mut parts = vec![doc.path.clone(), doc.content.clone()];
 
@@ -189,6 +192,7 @@ pub(crate) fn doc_text_for_scoring(doc: &RetrievedDocument) -> String {
     parts.join(" ")
 }
 
+/// Doc answer text.
 pub(crate) fn doc_answer_text(doc: &RetrievedDocument) -> String {
     for key in ["normalized_value", "answer_span", "resolved_date"] {
         if let Some(value) = doc.metadata.get(key).and_then(|value| value.as_str()) {
@@ -202,6 +206,7 @@ pub(crate) fn doc_answer_text(doc: &RetrievedDocument) -> String {
     doc.content.trim().to_string()
 }
 
+/// Score sentence for query.
 pub(crate) fn score_sentence_for_query(sentence: &str, terms: &[String]) -> usize {
     if sentence.trim().is_empty() {
         return 0;
@@ -224,6 +229,7 @@ pub(crate) fn score_sentence_for_query(sentence: &str, terms: &[String]) -> usiz
     score
 }
 
+/// Score doc for query.
 pub(crate) fn score_doc_for_query(doc: &RetrievedDocument, terms: &[String]) -> usize {
     let text = doc_text_for_scoring(doc).to_lowercase();
     let mut score = 0usize;
@@ -240,6 +246,7 @@ pub(crate) fn score_doc_for_query(doc: &RetrievedDocument, terms: &[String]) -> 
     score
 }
 
+/// Best relevant sentence.
 pub(crate) fn best_relevant_sentence(
     query: &str,
     docs: &[RetrievedDocument],
@@ -268,6 +275,7 @@ pub(crate) fn best_relevant_sentence(
         .map(|(_, sentence)| sentence)
 }
 
+/// Doc subject.
 pub(crate) fn doc_subject(doc: &RetrievedDocument) -> String {
     doc.metadata
         .get("event_subject")
@@ -289,6 +297,7 @@ pub(crate) fn top_ranked_docs<'a>(
     ranked
 }
 
+/// Best reason answer.
 pub(crate) fn best_reason_answer(query: &str, docs: &[RetrievedDocument]) -> Option<String> {
     let lowered_query = query_lower(query);
     if !lowered_query.contains("why") {
@@ -355,6 +364,7 @@ pub(crate) fn best_reason_answer(query: &str, docs: &[RetrievedDocument]) -> Opt
     None
 }
 
+/// Best shared fact answer.
 pub(crate) fn best_shared_fact_answer(query: &str, docs: &[RetrievedDocument]) -> Option<String> {
     let lowered = query_lower(query);
     if !(lowered.contains("both") || lowered.contains("in common")) {
@@ -418,6 +428,7 @@ pub(crate) fn best_shared_fact_answer(query: &str, docs: &[RetrievedDocument]) -
         Some(format!("They both share {}.", shared_values.join(", ")))
     }
 }
+/// Best description answer.
 pub(crate) fn best_description_answer(query: &str, docs: &[RetrievedDocument]) -> Option<String> {
     let lowered = query_lower(query);
     if !(lowered.contains("look like") || lowered.contains("ideal") || lowered.contains("what")) {
@@ -470,6 +481,7 @@ pub(crate) fn best_description_answer(query: &str, docs: &[RetrievedDocument]) -
     }
 }
 
+/// Extract descriptive phrases.
 pub(crate) fn extract_descriptive_phrases(content: &str) -> Vec<String> {
     let mut phrases = Vec::new();
     let lowered = content.to_lowercase();
@@ -496,6 +508,7 @@ pub(crate) fn extract_descriptive_phrases(content: &str) -> Vec<String> {
     phrases
 }
 
+/// Best category answer.
 pub(crate) fn best_category_answer(
     query: &str,
     docs: &[RetrievedDocument],
@@ -563,6 +576,7 @@ pub(crate) fn best_category_answer(
         .map(|(_, answer)| answer)
 }
 
+/// Best structured fact answer.
 pub(crate) fn best_structured_fact_answer(
     query: &str,
     docs: &[RetrievedDocument],

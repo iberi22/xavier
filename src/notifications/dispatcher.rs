@@ -7,17 +7,20 @@ pub struct NotificationDispatcher {
 }
 
 impl NotificationDispatcher {
+    /// New.
     pub fn new() -> Self {
         Self {
             telegram_tx: None,
         }
     }
 
+    /// With telegram.
     pub fn with_telegram(mut self, tx: mpsc::Sender<Notification>) -> Self {
         self.telegram_tx = Some(tx);
         self
     }
 
+    /// Start.
     pub fn start(self) {
         let mut rx = NOTIFICATIONS.subscribe();
         

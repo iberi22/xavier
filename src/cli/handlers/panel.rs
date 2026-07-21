@@ -11,6 +11,7 @@ use crate::cli::handlers::json_response;
 use crate::cli::state::CliState;
 use xavier::server::panel::{CreateThreadRequest, PanelChatRequest, PanelChatResponse};
 
+/// Panel list threads.
 pub async fn panel_list_threads(State(state): State<CliState>) -> Response {
     match state.panel_store.list_threads(50).await {
         Ok(threads) => {
@@ -31,6 +32,7 @@ pub async fn panel_list_threads(State(state): State<CliState>) -> Response {
     }
 }
 
+/// Panel create thread.
 pub async fn panel_create_thread(
     State(state): State<CliState>,
     Json(payload): Json<CreateThreadRequest>,
@@ -59,6 +61,7 @@ pub async fn panel_create_thread(
     }
 }
 
+/// Panel get thread.
 pub async fn panel_get_thread(
     State(state): State<CliState>,
     AxumPath(thread_id): AxumPath<String>,
@@ -93,6 +96,7 @@ pub async fn panel_get_thread(
     }
 }
 
+/// Panel delete thread.
 pub async fn panel_delete_thread(
     State(_state): State<CliState>,
     AxumPath(_thread_id): AxumPath<String>,
@@ -103,6 +107,7 @@ pub async fn panel_delete_thread(
     )
 }
 
+/// Panel process chat.
 pub async fn panel_process_chat(
     State(state): State<CliState>,
     Json(payload): Json<PanelChatRequest>,
@@ -119,6 +124,7 @@ pub async fn panel_process_chat(
     }
 }
 
+/// Panel process chat inner.
 pub async fn panel_process_chat_inner(
     state: &CliState,
     payload: PanelChatRequest,

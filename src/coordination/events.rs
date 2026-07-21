@@ -53,15 +53,18 @@ pub struct XavierEventBus {
 }
 
 impl XavierEventBus {
+    /// New.
     pub fn new(capacity: usize) -> Self {
         let (sender, _) = broadcast::channel(capacity);
         Self { sender }
     }
 
+    /// Subscribe.
     pub fn subscribe(&self) -> broadcast::Receiver<XavierEvent> {
         self.sender.subscribe()
     }
 
+    /// Publish.
     pub fn publish(
         &self,
         event: XavierEvent,
@@ -76,6 +79,7 @@ pub struct WebhookDispatcher {
 }
 
 impl WebhookDispatcher {
+    /// New.
     pub fn new(endpoints: Vec<String>) -> Self {
         Self {
             client: Client::new(),
@@ -83,6 +87,7 @@ impl WebhookDispatcher {
         }
     }
 
+    /// Start.
     pub fn start(&self, mut receiver: broadcast::Receiver<XavierEvent>) {
         let client = self.client.clone();
         let endpoints = self.endpoints.clone();

@@ -299,6 +299,7 @@ impl Default for DevLogSSG {
 }
 
 impl DevLogSSG {
+    /// New.
     pub fn new() -> Self {
         Self {
             input_dir: PathBuf::from("docs/devlog"),
@@ -306,6 +307,7 @@ impl DevLogSSG {
         }
     }
 
+    /// Build.
     pub fn build(&self) -> Result<()> {
         println!("Building DevLog SSG...");
 

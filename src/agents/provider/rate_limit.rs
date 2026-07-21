@@ -114,6 +114,7 @@ impl RateLimitManager {
             .await
     }
 
+    /// Track request.
     pub async fn track_request(
         &self,
         provider: &str,
@@ -159,6 +160,7 @@ impl RateLimitManager {
         }).await
     }
 
+    /// Get status.
     pub async fn get_status(&self, provider: &str) -> Result<QuotaStatus> {
         let now = Utc::now();
         let hour_ago = now - Duration::hours(1);
@@ -222,6 +224,7 @@ impl RateLimitManager {
         }).await
     }
 
+    /// Get daily summary.
     pub async fn get_daily_summary(&self, provider: &str) -> Result<serde_json::Value> {
         let now = Utc::now();
         let day_ago = now - Duration::days(1);
@@ -278,6 +281,7 @@ impl RateLimitManager {
         }))
     }
 
+    /// Is quota low.
     pub async fn is_quota_low(&self, provider: &str) -> Result<bool> {
         let status = self.get_status(provider).await?;
         if status.weekly_quota == 0 {
@@ -288,6 +292,7 @@ impl RateLimitManager {
         Ok(used_ratio > 0.9)
     }
 
+    /// Report 429.
     pub async fn report_429(&self, provider: &str, cooldown_minutes: i64) -> Result<()> {
         let until = Utc::now() + Duration::minutes(cooldown_minutes);
         let provider = provider.to_string();
@@ -304,6 +309,7 @@ impl RateLimitManager {
             .await
     }
 
+    /// Get all providers.
     pub async fn get_all_providers(&self) -> Result<Vec<String>> {
         ConnectionManager::global()
             .with_conn(&self.project_id, move |conn| {
@@ -320,6 +326,7 @@ impl RateLimitManager {
             .await
     }
 
+    /// Update manual limit.
     pub async fn update_manual_limit(&self, provider: &str, percentage: f32) -> Result<()> {
         let provider = provider.to_string();
         ConnectionManager::global().with_conn(&self.project_id, move |conn| {
@@ -333,6 +340,7 @@ impl RateLimitManager {
         }).await
     }
 
+    /// Update quota.
     pub async fn update_quota(&self, quota: ProviderQuota) -> Result<()> {
         let provider_name = quota.provider.as_str().to_string();
         let api_tier =
@@ -393,6 +401,7 @@ impl RateLimitManager {
             .await
     }
 
+    /// Get all quotas.
     pub async fn get_all_quotas(&self) -> Result<Vec<ProviderQuota>> {
         ConnectionManager::global()
             .with_conn(&self.project_id, move |conn| {
@@ -440,6 +449,7 @@ impl RateLimitManager {
             .await
     }
 
+    /// Init schema async.
     pub async fn init_schema_async(&self) -> Result<()> {
         ConnectionManager::global()
             .with_conn(&self.project_id, move |conn| {
@@ -521,10 +531,12 @@ pub struct TokenQuotaTracker {
 }
 
 impl TokenQuotaTracker {
+    /// New.
     pub fn new(manager: RateLimitManager) -> Self {
         Self { manager }
     }
 
+    /// Increment.
     pub async fn increment(&self, provider: &str, tokens: usize) -> Result<()> {
         self.manager
             .track_request(provider, tokens, 200, 0.0, false)
@@ -538,10 +550,12 @@ pub struct QuotaTracker {
 }
 
 impl QuotaTracker {
+    /// New.
     pub fn new(manager: RateLimitManager) -> Self {
         Self { manager }
     }
 
+    /// Check.
     pub async fn check(&self, provider: &str) -> bool {
         !self.manager.check(provider).await
     }

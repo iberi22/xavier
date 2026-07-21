@@ -121,6 +121,7 @@ impl System1Retriever {
         self.run_with_filters(query, search_type, None).await
     }
 
+    /// Run with filters.
     pub async fn run_with_filters(
         &self,
         query: &str,
@@ -131,6 +132,7 @@ impl System1Retriever {
             .await
     }
 
+    /// Run with filters and budget.
     pub async fn run_with_filters_and_budget(
         &self,
         query: &str,

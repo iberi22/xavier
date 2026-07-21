@@ -7,6 +7,7 @@ use crate::ports::inbound::SecurityScanPort;
 use crate::AppState;
 use serde_json::Value;
 
+/// Get xavier tools.
 pub fn get_xavier_tools() -> Vec<MCPTool> {
     let mut tools = super::tools_core::get_xavier_core_tools();
     tools.extend(super::tools_memory::get_xavier_memory_tools());
@@ -14,6 +15,7 @@ pub fn get_xavier_tools() -> Vec<MCPTool> {
     tools
 }
 
+/// Get xavier resources.
 pub fn get_xavier_resources() -> Vec<MCPResource> {
     vec![
         MCPResource {
@@ -34,6 +36,7 @@ pub fn get_xavier_resources() -> Vec<MCPResource> {
     ]
 }
 
+/// Handle tool call.
 pub async fn handle_tool_call(
     state: AppState,
     workspace: crate::workspace::WorkspaceContext,
@@ -70,6 +73,7 @@ fn should_prescan_tool_argument(tool_name: &str, argument_name: &str) -> bool {
     argument_name != "id"
 }
 
+/// Mcp text result.
 pub fn mcp_text_result(text: impl Into<String>, is_error: bool) -> anyhow::Result<Value> {
     Ok(serde_json::to_value(MCPToolResult {
         content: vec![MCPContent::Text(MCPTextContent {

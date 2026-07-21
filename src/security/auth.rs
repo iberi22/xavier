@@ -21,6 +21,7 @@ pub struct Claims {
 }
 
 impl Claims {
+    /// New.
     pub fn new(user_id: String, email: String, role: UserRole, expires_in: Duration) -> Self {
         let now = Utc::now();
         Self {
@@ -56,6 +57,7 @@ pub struct User {
 }
 
 impl User {
+    /// New.
     pub fn new(email: String, name: String, role: UserRole) -> Self {
         let now = Utc::now().timestamp();
         Self {
@@ -101,6 +103,7 @@ pub fn generate_jwt(user: &User, secret: &[u8]) -> Result<String> {
     .map_err(|e| anyhow!("JWT encoding failed: {}", e))
 }
 
+/// Validate jwt.
 pub fn validate_jwt(token: &str, secret: &[u8]) -> Result<Claims> {
     let token_data = decode::<Claims>(
         token,
@@ -118,16 +121,19 @@ pub struct TotpProvider {
 }
 
 impl TotpProvider {
+    /// New.
     pub fn new(issuer: &str) -> Self {
         Self {
             issuer: issuer.to_string(),
         }
     }
 
+    /// Generate secret.
     pub fn generate_secret(&self) -> String {
         Secret::generate_secret().to_encoded().to_string()
     }
 
+    /// Get qr code.
     pub fn get_qr_code(&self, account_name: &str, secret_base32: &str) -> Result<String> {
         let totp = TOTP::new(
             TotpAlgorithm::SHA1,
@@ -147,6 +153,7 @@ impl TotpProvider {
         Ok(qr.render::<unicode::Dense1x2>().build())
     }
 
+    /// Verify code.
     pub fn verify_code(&self, secret_base32: &str, code: &str) -> bool {
         let secret = match Secret::Encoded(secret_base32.to_string()).to_raw() {
             Ok(s) => s,

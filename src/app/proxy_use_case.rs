@@ -49,6 +49,7 @@ pub struct ProxyUseCase {
 }
 
 impl ProxyUseCase {
+    /// New.
     pub fn new(
         rate_manager: Arc<RateLimitManager>,
         prompt_cache: Arc<Mutex<HashMap<String, Vec<String>>>>,
@@ -74,16 +75,19 @@ impl ProxyUseCase {
         self
     }
 
+    /// With threat detector.
     pub fn with_threat_detector(mut self, threat_detector: Arc<dyn ThreatDetectionPort>) -> Self {
         self.threat_detector = Some(threat_detector);
         self
     }
 
+    /// With event bus.
     pub fn with_event_bus(mut self, event_bus: Arc<crate::coordination::XavierEventBus>) -> Self {
         self.event_bus = Some(event_bus);
         self
     }
 
+    /// With provider router.
     pub fn with_provider_router(
         mut self,
         provider_router: Arc<tokio::sync::RwLock<ProviderRouter>>,
@@ -121,6 +125,7 @@ impl ProxyUseCase {
         }
     }
 
+    /// Handle provider fallback.
     pub(crate) async fn handle_provider_fallback(
         &self,
         old_provider: &str,
@@ -153,6 +158,7 @@ impl ProxyUseCase {
         }
     }
 
+    /// Execute generic.
     pub async fn execute_generic(
         &self,
         req: GenericProxyRequest,
@@ -300,6 +306,7 @@ impl ProxyUseCase {
         })
     }
 
+    /// Execute secured.
     pub async fn execute_secured(
         &self,
         cmd: ProxyChatCommand,

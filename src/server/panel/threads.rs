@@ -5,6 +5,7 @@ use crate::{
 };
 use axum::{extract::Path as AxumPath, http::StatusCode, response::IntoResponse, Extension, Json};
 
+/// List threads.
 pub async fn list_threads(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     match workspace.workspace.conversations_db.list_threads(50).await {
         Ok(threads) => {
@@ -27,6 +28,7 @@ pub async fn list_threads(Extension(workspace): Extension<WorkspaceContext>) -> 
     }
 }
 
+/// Create thread.
 pub async fn create_thread(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<CreateThreadRequest>,
@@ -47,6 +49,7 @@ pub async fn create_thread(
     }
 }
 
+/// Get thread.
 pub async fn get_thread(
     Extension(workspace): Extension<WorkspaceContext>,
     AxumPath(thread_id): AxumPath<String>,
@@ -81,6 +84,7 @@ pub async fn get_thread(
     }
 }
 
+/// Delete thread.
 pub async fn delete_thread(
     Extension(_workspace): Extension<WorkspaceContext>,
     AxumPath(_thread_id): AxumPath<String>,

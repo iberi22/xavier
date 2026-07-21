@@ -58,6 +58,7 @@ pub struct SearchResponse {
     pub search_type: String,
 }
 
+/// Hybrid search.
 pub async fn hybrid_search(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(request): Json<HybridSearchRequest>,

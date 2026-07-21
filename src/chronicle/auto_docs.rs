@@ -69,6 +69,7 @@ pub struct AutoDocsGenerator {
 }
 
 impl AutoDocsGenerator {
+    /// New.
     pub fn new(config: AutoDocsConfig) -> Self {
         Self { config, db: None }
     }

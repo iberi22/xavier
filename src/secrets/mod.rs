@@ -42,26 +42,32 @@ pub struct SecretsManager;
 
 #[allow(deprecated)]
 impl SecretsManager {
+    /// New.
     pub fn new() -> Self {
         Self
     }
 
+    /// Is empty.
     pub fn is_empty(&self) -> bool {
         true
     }
 
+    /// Store.
     pub fn store(&mut self, _key: String, _value: String) -> SecretResult<()> {
         Ok(())
     }
 
+    /// Get.
     pub fn get(&self, key: &str) -> SecretResult<String> {
         Err(SecretError::NotFound(key.to_string()))
     }
 
+    /// Delete.
     pub fn delete(&mut self, _key: &str) -> SecretResult<()> {
         Ok(())
     }
 
+    /// Exists.
     pub fn exists(&self, _key: &str) -> bool {
         false
     }

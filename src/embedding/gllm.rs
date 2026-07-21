@@ -34,6 +34,7 @@ impl fmt::Debug for GllmEmbedder {
 
 impl GllmEmbedder {
     #[cfg(any(feature = "local-gllm", feature = "local-gllm-cuda"))]
+    /// New.
     pub fn new(model: String, dimension: usize) -> Result<Self, EmbeddingError> {
         let inner = ::gllm::FallbackEmbedder::new(&model)
             .map_err(|error| EmbeddingError::Config(error.to_string()))?;
@@ -46,6 +47,7 @@ impl GllmEmbedder {
     }
 
     #[cfg(not(any(feature = "local-gllm", feature = "local-gllm-cuda")))]
+    /// New.
     pub fn new(model: String, _dimension: usize) -> Result<Self, EmbeddingError> {
         Err(EmbeddingError::Config(format!(
             "gllm embedder requested for model {model}, but Xavier was built without the local-gllm feature"
@@ -81,6 +83,7 @@ impl Embedder for GllmEmbedder {
     }
 }
 
+/// Normalize model name.
 pub fn normalize_model_name(raw: &str) -> String {
     match raw.trim() {
         "" => DEFAULT_GLLM_MODEL.to_string(),
@@ -89,6 +92,7 @@ pub fn normalize_model_name(raw: &str) -> String {
     }
 }
 
+/// Dimension for model.
 pub fn dimension_for_model(model: &str) -> usize {
     match model.trim().to_ascii_lowercase().as_str() {
         "all-minilm-l6-v2"

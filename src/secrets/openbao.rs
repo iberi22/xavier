@@ -13,6 +13,7 @@ pub struct OpenBaoSecretStore {
 }
 
 impl OpenBaoSecretStore {
+    /// New.
     pub fn new(address: &str, token: &str) -> Self {
         Self {
             _address: address.to_string(),

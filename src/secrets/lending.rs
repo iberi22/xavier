@@ -62,6 +62,7 @@ pub struct KeyLendingEngine<A: AuditLogger> {
 }
 
 impl<A: AuditLogger> KeyLendingEngine<A> {
+    /// New.
     pub fn new(audit_logger: A) -> Self {
         Self {
             leases: HashMap::new(),
@@ -69,6 +70,7 @@ impl<A: AuditLogger> KeyLendingEngine<A> {
         }
     }
 
+    /// Lend.
     pub fn lend(
         &mut self,
         agent_id: &str,
@@ -92,6 +94,7 @@ impl<A: AuditLogger> KeyLendingEngine<A> {
         Ok(session_token)
     }
 
+    /// Revoke.
     pub fn revoke(&mut self, session_token: &str, reason: &str) -> Result<(), SecretError> {
         if let Some(lease) = self.leases.remove(session_token) {
             self.audit_logger
@@ -105,6 +108,7 @@ impl<A: AuditLogger> KeyLendingEngine<A> {
         }
     }
 
+    /// Resolve.
     pub fn resolve(&self, session_token: &str) -> Result<String, SecretError> {
         if let Some(lease) = self.leases.get(session_token) {
             if SystemTime::now() > lease.expires_at {
@@ -120,6 +124,7 @@ impl<A: AuditLogger> KeyLendingEngine<A> {
         }
     }
 
+    /// Cleanup expired.
     pub fn cleanup_expired(&mut self) {
         let now = SystemTime::now();
         let mut expired_tokens = Vec::new();

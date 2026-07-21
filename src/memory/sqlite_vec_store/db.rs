@@ -9,6 +9,7 @@ use std::path::Path;
 use tokio::fs;
 
 #[allow(dead_code)]
+/// Open pool.
 pub(crate) async fn open_pool(path: &Path) -> Result<()> {
     let project_id = super::project_id_for_path(path);
     ConnectionManager::global().connect_with_path(&project_id, path.to_path_buf())?;
@@ -16,12 +17,14 @@ pub(crate) async fn open_pool(path: &Path) -> Result<()> {
 }
 
 #[allow(dead_code)]
+/// Open connection.
 pub(crate) async fn open_connection(_path: &Path) -> Result<Connection> {
     Err(anyhow::anyhow!(
         "open_connection is deprecated, use ConnectionManager instead"
     ))
 }
 
+/// Ensure dir.
 pub(crate) async fn ensure_dir(path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).await?;

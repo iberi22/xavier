@@ -5,6 +5,7 @@
 use crate::agents::system1::RetrievedDocument;
 use crate::utils::crypto::sha256_hex;
 
+/// Snippet.
 pub(crate) fn snippet(text: &str, max_chars: usize) -> String {
     text.chars()
         .take(max_chars)
@@ -13,10 +14,12 @@ pub(crate) fn snippet(text: &str, max_chars: usize) -> String {
         .to_string()
 }
 
+/// Query fingerprint.
 pub(crate) fn query_fingerprint(query: &str) -> String {
     sha256_hex(query.as_bytes())[..12].to_string()
 }
 
+/// Top non empty contents.
 pub(crate) fn top_non_empty_contents(docs: &[RetrievedDocument], limit: usize) -> Vec<String> {
     docs.iter()
         .filter_map(|doc| {
@@ -27,6 +30,7 @@ pub(crate) fn top_non_empty_contents(docs: &[RetrievedDocument], limit: usize) -
         .collect()
 }
 
+/// Split sentences.
 pub(crate) fn split_sentences(text: &str) -> Vec<String> {
     text.split(['.', '!', '?'])
         .map(str::trim)
@@ -35,6 +39,7 @@ pub(crate) fn split_sentences(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// Trim speaker prefix.
 pub(crate) fn trim_speaker_prefix(text: &str) -> &str {
     text.split_once(':')
         .map(|(_, rest)| rest.trim())
@@ -42,6 +47,7 @@ pub(crate) fn trim_speaker_prefix(text: &str) -> &str {
         .unwrap_or(text.trim())
 }
 
+/// Extract prefixed speaker.
 pub(crate) fn extract_prefixed_speaker(text: &str) -> Option<String> {
     let (speaker, _) = text.split_once(':')?;
     let speaker = speaker.trim();
@@ -55,6 +61,7 @@ pub(crate) fn extract_prefixed_speaker(text: &str) -> Option<String> {
         .map(|_| speaker.to_string())
 }
 
+/// Is low signal conversation sentence.
 pub(crate) fn is_low_signal_conversation_sentence(sentence: &str) -> bool {
     let trimmed = trim_speaker_prefix(sentence).trim();
     if trimmed.is_empty() {
@@ -114,6 +121,7 @@ pub(crate) fn is_low_signal_conversation_sentence(sentence: &str) -> bool {
         .any(|phrase| lowered == *phrase || lowered.starts_with(phrase))
 }
 
+/// Split meaningful sentences.
 pub(crate) fn split_meaningful_sentences(text: &str) -> Vec<String> {
     split_sentences(text)
         .into_iter()
@@ -121,10 +129,12 @@ pub(crate) fn split_meaningful_sentences(text: &str) -> Vec<String> {
         .collect()
 }
 
+/// Query lower.
 pub(crate) fn query_lower(query: &str) -> String {
     query.to_lowercase()
 }
 
+/// Query terms.
 pub(crate) fn query_terms(query: &str) -> Vec<String> {
     query
         .to_lowercase()
@@ -169,6 +179,7 @@ pub(crate) fn query_terms(query: &str) -> Vec<String> {
         .collect()
 }
 
+/// Query phrases.
 pub(crate) fn query_phrases(terms: &[String]) -> Vec<String> {
     if terms.len() < 2 {
         return Vec::new();

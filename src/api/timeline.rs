@@ -39,6 +39,7 @@ pub struct TimelineEventResponse {
     pub agent_id: String,
 }
 
+/// Get time slice.
 pub async fn get_time_slice(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(request): Json<TimeSliceRequest>,
@@ -89,6 +90,7 @@ pub async fn get_time_slice(
 // GET /timeline
 // ---------------------------------------------------------------------------
 
+/// Timeline summary.
 pub async fn timeline_summary(
     Extension(workspace): Extension<WorkspaceContext>,
 ) -> impl IntoResponse {

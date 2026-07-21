@@ -4,6 +4,7 @@ use crate::cli::commands::enums::{TasksCommand, CLI_HTTP_CLIENT};
 use crate::cli::config::{require_xavier_token, resolve_base_url};
 use anyhow::Result;
 
+/// Handle tasks command.
 pub async fn handle_tasks_command(cmd: TasksCommand) -> Result<()> {
     let token = require_xavier_token()?;
     let base_url = resolve_base_url();

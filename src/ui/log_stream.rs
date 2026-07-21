@@ -18,10 +18,12 @@ impl Default for LogStream {
 }
 
 impl LogStream {
+    /// New.
     pub fn new() -> Self {
         Self
     }
 
+    /// Render.
     pub fn render(&mut self, f: &mut Frame, logs: &[String], area: Rect) {
         let items: Vec<ListItem> = logs
             .iter()

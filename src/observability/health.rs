@@ -157,6 +157,7 @@ pub struct HealthMonitor {
 }
 
 impl HealthMonitor {
+    /// New.
     pub fn new(cm: &'static ConnectionManager) -> Self {
         Self {
             current_status: Arc::new(RwLock::new(HealthStatus::default())),
@@ -172,6 +173,7 @@ impl HealthMonitor {
         }
     }
 
+    /// Set tgd progress.
     pub async fn set_tgd_progress(
         &self,
         progress: Arc<RwLock<crate::tgd::consolidation::ProgressReport>>,
@@ -180,20 +182,24 @@ impl HealthMonitor {
         *prg = Some(progress);
     }
 
+    /// Set peer registry.
     pub async fn set_peer_registry(&self, peer_registry: Arc<PeerRegistry>) {
         let mut reg = self.peer_registry.write().await;
         *reg = Some(peer_registry);
     }
 
+    /// Set embedder.
     pub async fn set_embedder(&self, embedder: Arc<dyn Embedder>) {
         let mut emb = self.embedder.write().await;
         *emb = Some(embedder);
     }
 
+    /// Get status.
     pub async fn get_status(&self) -> HealthStatus {
         self.current_status.read().await.clone()
     }
 
+    /// Run checks.
     pub async fn run_checks(&self) -> HealthStatus {
         let mut sys_info = sysinfo::System::new_all();
 
@@ -536,6 +542,7 @@ impl HealthMonitor {
         }
     }
 
+    /// Spawn.
     pub fn spawn(self: Arc<Self>) {
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(Duration::from_secs(60));

@@ -45,6 +45,7 @@ impl Default for LlmClient {
 }
 
 impl LlmClient {
+    /// New.
     pub fn new(model_override: Option<String>, provider_override: Option<String>) -> Self {
         let provider = if let Some(p) = provider_override {
             ModelProviderClient::for_provider(&p, model_override)
@@ -60,6 +61,7 @@ impl LlmClient {
         }
     }
 
+    /// With lease.
     pub fn with_lease(
         mut self,
         token: String,
@@ -73,6 +75,7 @@ impl LlmClient {
         self
     }
 
+    /// With config.
     pub fn with_config(config: crate::agents::provider::ModelProviderConfig) -> Self {
         let provider = ModelProviderClient::new(config);
         let status = provider.status();
@@ -84,6 +87,7 @@ impl LlmClient {
         }
     }
 
+    /// Generate response.
     pub async fn generate_response(
         &self,
         query: &str,
@@ -92,11 +96,13 @@ impl LlmClient {
         self.provider.generate_response(query, context).await
     }
 
+    /// Model label.
     pub fn model_label(&self) -> Option<String> {
         self.model_label.clone()
     }
 
     #[cfg(test)]
+    /// With provider.
     pub(crate) fn with_provider(provider: Arc<dyn ResponseGenerator>) -> Self {
         Self {
             provider,

@@ -29,6 +29,7 @@ pub struct MemoryManager {
 }
 
 impl MemoryManager {
+    /// New.
     pub fn new(
         memory: Arc<QmdMemory>,
         belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,
@@ -44,6 +45,7 @@ impl MemoryManager {
         }
     }
 
+    /// With config.
     pub fn with_config(
         memory: Arc<QmdMemory>,
         belief_graph: Option<crate::memory::belief_graph::SharedBeliefGraph>,

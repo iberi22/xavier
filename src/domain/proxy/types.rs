@@ -14,6 +14,7 @@ pub enum ProviderKind {
 
 impl ProviderKind {
     #[allow(clippy::should_implement_trait)]
+    /// From str.
     pub fn from_str(s: &str) -> Self {
         match s.to_lowercase().as_str() {
             "openai" => Self::OpenAI,
@@ -26,6 +27,7 @@ impl ProviderKind {
         }
     }
 
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::OpenAI => "openai",
@@ -60,6 +62,7 @@ pub enum ApiTier {
 }
 
 impl ApiTier {
+    /// From rpm.
     pub fn from_rpm(rpm: u64) -> Self {
         if rpm == 0 {
             Self::Unknown

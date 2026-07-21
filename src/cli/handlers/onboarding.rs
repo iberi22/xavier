@@ -4,6 +4,7 @@ use crate::cli::onboarding::generate_suggestions;
 use crate::cli::state::CliState;
 use axum::{extract::State, Json};
 
+/// Onboarding suggestions handler.
 pub async fn onboarding_suggestions_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {

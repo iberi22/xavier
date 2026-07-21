@@ -22,6 +22,7 @@ use xavier::domain::proxy::{ProxyChatCommand, ProxyError};
 // System
 // ═════════════════════════════════════════════════════════════════════════════
 
+/// Headless health.
 pub async fn headless_health() -> impl IntoResponse {
     use xavier::observability::health::HealthLevel;
     let status = xavier::observability::health::HEALTH.get_status().await;
@@ -58,6 +59,7 @@ pub async fn headless_health() -> impl IntoResponse {
     }))
 }
 
+/// Headless system scan.
 pub async fn headless_system_scan(State(state): State<CliState>) -> impl IntoResponse {
     let cache = state.system_scan_cache.read().await;
 
@@ -71,6 +73,7 @@ pub async fn headless_system_scan(State(state): State<CliState>) -> impl IntoRes
     (StatusCode::OK, AxumJson(json!(result))).into_response()
 }
 
+/// Headless system info.
 pub async fn headless_system_info() -> impl IntoResponse {
     use crate::cli::handlers::system_scan::gather_system_info;
 
@@ -124,6 +127,7 @@ pub struct Usage {
     pub total_tokens: usize,
 }
 
+/// Headless chat.
 pub async fn headless_chat(
     axum::extract::State(state): axum::extract::State<crate::cli::state::CliState>,
     axum::Extension(session): axum::Extension<crate::cli::http_setup::SessionInfo>,
@@ -315,11 +319,13 @@ async fn collect_provider_status_data(state: &CliState) -> UnifiedProvidersRespo
     }
 }
 
+/// Headless providers.
 pub async fn headless_providers(State(state): State<CliState>) -> impl IntoResponse {
     let data = collect_provider_status_data(&state).await;
     AxumJson(data)
 }
 
+/// Headless provider status.
 pub async fn headless_provider_status(State(state): State<CliState>) -> impl IntoResponse {
     let data = collect_provider_status_data(&state).await;
     AxumJson(data)
@@ -331,6 +337,7 @@ pub struct SwitchRequest {
     pub strategy: Option<String>,
 }
 
+/// Headless switch provider.
 pub async fn headless_switch_provider(Json(req): Json<SwitchRequest>) -> impl IntoResponse {
     AxumJson(json!({
         "success": true,
@@ -345,6 +352,7 @@ pub async fn headless_switch_provider(Json(req): Json<SwitchRequest>) -> impl In
 // Quotas & Usage
 // ═════════════════════════════════════════════════════════════════════════════
 
+/// Headless quota.
 pub async fn headless_quota(State(state): State<CliState>) -> impl IntoResponse {
     match state.rate_manager.get_all_quotas().await {
         Ok(quotas) => AxumJson(json!({ "quotas": quotas })).into_response(),
@@ -356,6 +364,7 @@ pub async fn headless_quota(State(state): State<CliState>) -> impl IntoResponse 
     }
 }
 
+/// Headless usage.
 pub async fn headless_usage(State(state): State<CliState>) -> impl IntoResponse {
     let usage = state.usage_counters.snapshot();
     let providers_used: Vec<String> = usage.by_provider.keys().cloned().collect();
@@ -387,6 +396,7 @@ pub struct SpawnRequest {
     pub task: Option<String>,
 }
 
+/// Headless agents.
 pub async fn headless_agents(State(_state): State<CliState>) -> impl IntoResponse {
     (
         StatusCode::NOT_IMPLEMENTED,
@@ -397,6 +407,7 @@ pub async fn headless_agents(State(_state): State<CliState>) -> impl IntoRespons
     )
 }
 
+/// Headless spawn.
 pub async fn headless_spawn(
     State(_state): State<CliState>,
     Json(_req): Json<SpawnRequest>,
@@ -421,6 +432,7 @@ pub struct MemorySearchRequest {
     pub limit: Option<usize>,
 }
 
+/// Headless memory search.
 pub async fn headless_memory_search(Json(req): Json<MemorySearchRequest>) -> impl IntoResponse {
     AxumJson(json!({
         "query": req.query,
@@ -447,6 +459,7 @@ pub struct MemoryAddRequest {
     pub level: Option<String>,
 }
 
+/// Headless memory add.
 pub async fn headless_memory_add(Json(req): Json<MemoryAddRequest>) -> impl IntoResponse {
     AxumJson(json!({
         "id": ulid::Ulid::new().to_string(),
@@ -456,6 +469,7 @@ pub async fn headless_memory_add(Json(req): Json<MemoryAddRequest>) -> impl Into
     }))
 }
 
+/// Headless memory export.
 pub async fn headless_memory_export() -> impl IntoResponse {
     AxumJson(json!({
         "format": "json",

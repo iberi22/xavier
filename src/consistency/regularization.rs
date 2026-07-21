@@ -101,6 +101,7 @@ pub enum ConflictType {
 }
 
 impl ConflictType {
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::FactualContradiction => "factual_contradiction",
@@ -144,6 +145,7 @@ pub enum DriftType {
 }
 
 impl DriftType {
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::TrustScoreChange => "trust_score_change",
@@ -173,10 +175,12 @@ pub struct RetentionRegularizer {
 }
 
 impl RetentionRegularizer {
+    /// New.
     pub fn new(config: RegularizerConfig) -> Self {
         Self { config }
     }
 
+    /// With defaults.
     pub fn with_defaults() -> Self {
         Self {
             config: RegularizerConfig::default(),
