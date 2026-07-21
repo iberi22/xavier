@@ -17,8 +17,8 @@
           "format": "zip"
         },
         "linux-x86_64": {
-          "url": "https://example.invalid/xavier-plugins/parser-python/0.1.0/linux-x86_64.tar.gz",
-          "checksum": "sha256:fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210",
+          "url": "https://github.com/swal/xavier-plugins/releases/download/v0.1.0/linux-x86_64.tar.gz",
+          "checksum": "sha256:5dcef1bbd52581ce8d45bd08ba400639c5770ba87ce1b4b0a0b12264342a7748",
           "format": "tar.gz"
         },
         "macos-aarch64": {
