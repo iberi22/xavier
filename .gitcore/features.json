@@ -415,7 +415,7 @@
       "name": "Context Regeneration & Perfect Recall",
       "category": "core",
       "status": "stable",
-      "progress_pct": 50,
+      "progress_pct": 100,
       "description": "Continuous context regeneration using real usage data to drive recall@k toward 100% on production benchmarks",
       "steps": [
         "Build benchmark suite from real query logs",
@@ -427,11 +427,11 @@
         "Alert when recall drops below threshold"
       ],
       "passes": true,
-      "verified_by": "design",
+      "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-07-18",
-      "notes": "Ola 5/6: recall harness, turn pack, extractive episodic (#660), WorkingMemory wire (#657). Compress remaining is polish.",
-      "implemented_in": null
+      "last_tested": "2026-07-20",
+      "notes": "Ola 6: complete context regeneration pipeline, Recall@K & MRR evaluation harness, budget auto-tuning optimization loop, and extractive episodic summarization.",
+      "implemented_in": "src/context/pipeline.rs, tests/integration/context_regen_test.rs"
     },
     {
       "id": "feat-openclaw-scanner",
