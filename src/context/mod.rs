@@ -10,6 +10,7 @@ pub mod indexer;
 pub mod manager;
 pub mod monitoring;
 pub mod orchestrator;
+pub mod pipeline;
 pub mod query_processor;
 pub mod regen_loop;
 pub mod skill_dispatcher;
@@ -28,6 +29,7 @@ pub use indexer::ContextIndexer;
 pub use manager::ContextManager;
 pub use monitoring::ContextMetrics;
 pub use orchestrator::{ContextBudgetConfig, ExecutionPlan, HookKind, Orchestrator};
+pub use pipeline::{ContextRegenerationPipeline, RecallMetrics};
 pub use query_processor::QueryProcessor;
 pub use regen_loop::{RegenDecision, RegenerationConfig, RegenerationLoop, SessionRegenStats};
 pub use skill_dispatcher::{
