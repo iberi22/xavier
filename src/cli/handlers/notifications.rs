@@ -23,6 +23,50 @@ pub async fn list_notifications_handler(State(_state): State<CliState>) -> Respo
     }
 }
 
+use serde::Deserialize;
+
+#[derive(Deserialize)]
+pub struct CreateSubscriptionPayload {
+    pub url: String,
+    pub event_types: Vec<String>,
+}
+
+pub async fn create_subscription_handler(
+    State(_state): State<CliState>,
+    Json(payload): Json<CreateSubscriptionPayload>,
+) -> Response {
+    match NOTIFICATIONS.add_subscription(&payload.url, payload.event_types).await {
+        Ok(sub) => json_response(StatusCode::CREATED, serde_json::to_value(sub).unwrap_or_default()),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": e.to_string() }),
+        ),
+    }
+}
+
+pub async fn list_subscriptions_handler(State(_state): State<CliState>) -> Response {
+    match NOTIFICATIONS.list_subscriptions().await {
+        Ok(subs) => json_response(StatusCode::OK, serde_json::to_value(subs).unwrap_or_default()),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": e.to_string() }),
+        ),
+    }
+}
+
+pub async fn delete_subscription_handler(
+    State(_state): State<CliState>,
+    Path(id): Path<String>,
+) -> Response {
+    match NOTIFICATIONS.remove_subscription(&id).await {
+        Ok(_) => json_response(StatusCode::OK, serde_json::json!({ "status": "ok" })),
+        Err(e) => json_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            serde_json::json!({ "error": e.to_string() }),
+        ),
+    }
+}
+
 pub async fn mark_notification_read_handler(
     State(_state): State<CliState>,
     Path(id): Path<String>,

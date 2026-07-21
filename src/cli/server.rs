@@ -897,6 +897,17 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                 crate::cli::handlers::notifications::delete_all_notifications_handler,
             ),
         )
+        .route(
+            "/notifications/subscriptions",
+            get(crate::cli::handlers::notifications::list_subscriptions_handler)
+                .post(crate::cli::handlers::notifications::create_subscription_handler),
+        )
+        .route(
+            "/notifications/subscriptions/{id}",
+            axum::routing::delete(
+                crate::cli::handlers::notifications::delete_subscription_handler,
+            ),
+        )
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(
             state.clone(),
