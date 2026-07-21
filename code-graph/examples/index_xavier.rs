@@ -14,7 +14,7 @@ fn main() {
         let db = std::sync::Arc::new(code_graph::db::CodeGraphDB::new(db_path).unwrap());
         let indexer = code_graph::indexer::Indexer::new(db);
         
-        match indexer.index(path).await {
+        match indexer.index(path, false).await {
             Ok(stats) => {
                 println!("Indexing complete:");
                 println!("  Files: {}", stats.total_files);

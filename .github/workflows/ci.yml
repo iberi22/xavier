@@ -1,0 +1,101 @@
+name: Xavier CI / CD Improvements
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Job 1: Rust Format Check
+  rust-fmt:
+    name: Rust Format
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Check Formatting
+        run: cargo fmt --all -- --check
+
+  # Job 2: Rust Clippy & Check
+  rust-clippy:
+    name: Rust Clippy & Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Cargo Check
+        run: cargo check --workspace --all-targets --features ci-safe --exclude xavier-web --exclude app
+
+      - name: Run Clippy
+        run: cargo clippy --workspace --all-targets --features ci-safe --exclude xavier-web --exclude app -- -D warnings
+
+  # Job 3: Parallel Rust Tests
+  rust-test:
+    name: Parallel Rust Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo Dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run Lib Tests (Parallel)
+        run: cargo test --lib --no-default-features --features ci-safe -- --test-threads=$(nproc)
+
+  # Job 4: Frontend Build & Security Audit (Parallel)
+  frontend-build-audit:
+    name: Frontend Build & Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.12.0
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --config.dangerouslyAllowAllBuilds=true
+
+      - name: Run npm/pnpm Security Audit (High warning, Critical fail)
+        run: |
+          pnpm audit --audit-level=high || echo "Audit found high severity vulnerabilities, please review."
+          pnpm audit --audit-level=critical
+
+      - name: Check, Typecheck & Build Frontend (panel-ui)
+        run: pnpm --filter xavier-panel-ui check
