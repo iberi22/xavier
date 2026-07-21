@@ -259,21 +259,26 @@
       "name": "Notification Persistence and Delivery",
       "category": "core",
       "status": "stable",
-      "progress_pct": 50,
-      "description": "Persistent notification system with event bus, SQLite storage, REST API, and Tauri real-time updates",
+      "progress_pct": 100,
+      "description": "Persistent notification system with 3 delivery channels (email, webhook, in-app), SQLite storage, REST and Webhook Subscriptions APIs, and integration tests",
       "steps": [
         "Create notification struct and event types",
         "Persist notifications to SQLite",
         "Expose REST API (GET, PATCH, DELETE)",
         "Tauri emit_all for real-time UI updates",
-        "4 category islands (System, Memory, Agents, Errors)"
+        "4 category islands (System, Memory, Agents, Errors)",
+        "Implement Contract-First NotificationProvider trait",
+        "Add cargo feature flags for each channel",
+        "Implement Email, Webhook, and In-App delivery channels",
+        "Add SQLite persistence for webhook subscriptions and REST API endpoints",
+        "Add comprehensive integration tests"
       ],
       "passes": true,
-      "verified_by": "code-audit",
+      "verified_by": "automated",
       "github_issue": 4,
-      "last_tested": "2026-07-18",
-      "notes": "MVP complete: broadcast notifier for telegram/observability. Advanced SQLite history UI is nice-to-have backlog, not MVP gate.",
-      "implemented_in": "src/observability/notifier.rs"
+      "last_tested": "2026-07-19",
+      "notes": "Feature complete (100%): 3 delivery channels (Email, Webhook, In-App) fully functioning, SQLite persistence and Webhook Subscriptions REST API implemented, verified by automated integration tests.",
+      "implemented_in": "src/notifications/, src/cli/handlers/notifications.rs, src/cli/server.rs"
     },
     {
       "id": "feat-hormer-navigation",
