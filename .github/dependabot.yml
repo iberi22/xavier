@@ -25,6 +25,20 @@ updates:
           - "minor"
           - "patch"
 
+  # npm/pnpm dependencies
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "06:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "javascript"
+    commit-message:
+      prefix: "chore(deps-npm)"
+
   # GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
