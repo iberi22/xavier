@@ -35,6 +35,11 @@ impl Default for FallbackChain {
 }
 
 impl FallbackChain {
+    /// Check if an explicit override exists for the language.
+    pub fn has_override(&self, lang: &Language) -> bool {
+        self.overrides.contains_key(&lang.as_db_str())
+    }
+
     /// Load overrides from disk, falling back to empty (i.e. all-default) on
     /// any error or missing file. Never returns `Err`.
     pub fn load_or_default() -> Self {
