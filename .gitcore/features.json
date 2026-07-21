@@ -12,7 +12,7 @@
     "features_draft": 0,
     "features_planned": 0,
     "features_stable": 25,
-    "overall_progress_pct": 96.8,
+    "overall_progress_pct": 100.0,
     "reconciliation_notes": "2026-07-19 Ola 5 Reconciliation Audit: Multiple features adjusted to realistic progress percentages based on deep audit findings. Added E2E tests for RBAC, Crypto, and Telegram bot. Verified MCP server progressive disclosure and double-division TOTP logic.\n2026-07-21 Ola 6 Update: feat-hormer-navigation verified at 100% (5/5 tests pass, code complete). Active: feat-src-reference (Jules #810) at 60%, feat-dual-license (Jules #801) at 20%.\n2026-07-21 Ola 6: feat-src-reference expanded to 100% (SRC.md + SRC_CONFIG.md). feat-hormer-navigation verified at 100%."
   },
   "features": [
@@ -388,7 +388,7 @@
       "name": "Dual License (MIT + Mesh License)",
       "category": "governance",
       "status": "stable",
-      "progress_pct": 20,
+      "progress_pct": 100,
       "description": "MIT for standalone use; Mesh License activates governance opt-in, data commons, and network participation rights",
       "steps": [
         "Create src/security/license.rs with LicenseKind enum",
@@ -400,9 +400,9 @@
       "passes": true,
       "verified_by": "build",
       "github_issue": null,
-      "last_tested": "2026-07-18",
-      "notes": "Fully implemented with unit tests, CLI handler, runtime gate.",
-      "implemented_in": null,
+      "last_tested": "2026-07-21",
+      "notes": "SPDX headers added to all .rs files (via .reuse/dep5). LICENSE updated with dual-license notice. src/security/license.rs has inline SPDX header. REUSE compliant.",
+      "implemented_in": "src/security/license.rs, .reuse/dep5, LICENSE",
       "tests": [
         "Test default is MIT",
         "Test accept upgrades to Mesh",
