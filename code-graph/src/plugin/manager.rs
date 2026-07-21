@@ -143,18 +143,34 @@ impl PluginManager {
     /// Resolve the fallback chain for a language (plugin-first if one is
     /// installed, otherwise native → NoOp).
     pub fn chain_for(&self, lang: &Language) -> Vec<FallbackStep> {
-        // A plugin installed for this language always wins over a persisted
-        // fallback config, so resolution is live-state-aware.
-        if self.installed.read().contains_key(lang) {
-            if let Some(desc) = self.installed.read().get(lang) {
-                return vec![
-                    FallbackStep::Plugin(desc.name.clone()),
-                    FallbackStep::Native,
-                    FallbackStep::NoOp,
-                ];
-            }
+        let mut steps = if self.fallback.read().has_override(lang) {
+            self.fallback.read().chain_for(lang)
+        } else if let Some(desc) = self.descriptor_for(lang) {
+            vec![
+                FallbackStep::Plugin(desc.name.clone()),
+                FallbackStep::Native,
+                FallbackStep::NoOp,
+            ]
+        } else {
+            self.fallback.read().chain_for(lang)
+        };
+
+        if let Some(health) = self.health() {
+            steps.retain(|step| {
+                if let FallbackStep::Plugin(name) = step {
+                    let key = format!("{}:{}", name, lang.as_db_str());
+                    !health.is_open(&key) && !health.is_open(name)
+                } else {
+                    true
+                }
+            });
         }
-        self.fallback.read().chain_for(lang)
+
+        if steps.is_empty() {
+            steps = vec![FallbackStep::NoOp];
+        }
+
+        steps
     }
 
     /// Execute a parse request against a named plugin.
@@ -488,5 +504,171 @@ mod tests {
                 .as_deref(),
             Some("/usr/bin/parser-py"),
         );
+    }
+
+    #[tokio::test]
+    async fn test_chain_for_with_registered_plugin_auto_detection() {
+        let manager = PluginManager::new();
+        manager.fallback().write().clear(&Language::Python);
+
+        // Register a plugin
+        manager.register(PluginDescriptor {
+            name: "codegraph".into(),
+            version: "1.4.1".into(),
+            command: "codegraph".into(),
+            languages: vec![Language::Python],
+            extensions: vec![],
+            capabilities: vec!["parse".into()],
+        });
+
+        // Chain should have codegraph first
+        assert_eq!(
+            manager.chain_for(&Language::Python),
+            vec![
+                FallbackStep::Plugin("codegraph".into()),
+                FallbackStep::Native,
+                FallbackStep::NoOp,
+            ],
+        );
+    }
+
+    #[tokio::test]
+    async fn test_chain_for_precedence_of_fallback_json() {
+        let manager = PluginManager::new();
+        // Clear live and persistent to be clean
+        manager.fallback().write().clear(&Language::Python);
+
+        // Explicit override: only use NoOp (essentially disable Python)
+        manager.fallback().write().set(&Language::Python, vec![FallbackStep::NoOp]);
+
+        // Register a plugin
+        manager.register(PluginDescriptor {
+            name: "codegraph".into(),
+            version: "1.4.1".into(),
+            command: "codegraph".into(),
+            languages: vec![Language::Python],
+            extensions: vec![],
+            capabilities: vec!["parse".into()],
+        });
+
+        // fallback.json must take precedence! So it should return [NoOp], not [Plugin("codegraph"), Native, NoOp]
+        assert_eq!(
+            manager.chain_for(&Language::Python),
+            vec![FallbackStep::NoOp],
+        );
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_auto_disables_plugin_for_language() {
+        let manager = PluginManager::new();
+        manager.fallback().write().clear(&Language::Python);
+
+        // Register a plugin
+        manager.register(PluginDescriptor {
+            name: "codegraph".into(),
+            version: "1.4.1".into(),
+            command: "codegraph".into(),
+            languages: vec![Language::Python],
+            extensions: vec![],
+            capabilities: vec!["parse".into()],
+        });
+
+        // Set a health monitor with a short check interval for testing
+        let health = Arc::new(PluginHealthMonitor::new(std::time::Duration::from_millis(100)));
+        *manager.health.write() = Some(Arc::clone(&health));
+
+        // Ensure initially we have the plugin in the chain
+        assert!(manager.chain_for(&Language::Python).contains(&FallbackStep::Plugin("codegraph".into())));
+
+        // Record 3 failures for Python specifically
+        let key = "codegraph:python";
+        for _ in 0..3 {
+            health.record_failure(key, "crashed".into());
+        }
+
+        // Circuit should be Open for this language
+        assert!(health.is_open(key));
+
+        // The chain should now omit the plugin, leaving only [Native, NoOp]
+        assert_eq!(
+            manager.chain_for(&Language::Python),
+            vec![FallbackStep::Native, FallbackStep::NoOp],
+        );
+    }
+
+    #[tokio::test]
+    async fn test_circuit_breaker_auto_resets_after_cooldown() {
+        let manager = PluginManager::new();
+        manager.fallback().write().clear(&Language::Python);
+
+        // Register a plugin
+        manager.register(PluginDescriptor {
+            name: "codegraph".into(),
+            version: "1.4.1".into(),
+            command: "codegraph".into(),
+            languages: vec![Language::Python],
+            extensions: vec![],
+            capabilities: vec!["parse".into()],
+        });
+
+        // Set a health monitor with a 50ms cooldown
+        let health = Arc::new(PluginHealthMonitor::new(std::time::Duration::from_millis(50)));
+        *manager.health.write() = Some(Arc::clone(&health));
+
+        let key = "codegraph:python";
+        for _ in 0..3 {
+            health.record_failure(key, "crashed".into());
+        }
+
+        // Verify it is disabled/omitted
+        assert_eq!(
+            manager.chain_for(&Language::Python),
+            vec![FallbackStep::Native, FallbackStep::NoOp],
+        );
+
+        // Wait for cooldown
+        tokio::time::sleep(std::time::Duration::from_millis(60)).await;
+
+        // Health monitor state for the key should now be HalfOpen, meaning is_open() returns false
+        assert_eq!(health.circuit_state(key), crate::plugin::health::CircuitState::HalfOpen);
+        assert!(!health.is_open(key));
+
+        // It should be re-enabled in the chain
+        assert!(manager.chain_for(&Language::Python).contains(&FallbackStep::Plugin("codegraph".into())));
+
+        // If a success is recorded, it should close the circuit back to Closed
+        health.record_success(key);
+        assert_eq!(health.circuit_state(key), crate::plugin::health::CircuitState::Closed);
+    }
+
+    #[tokio::test]
+    async fn test_parse_source_graceful_degradation_on_broken_plugin() {
+        let manager = PluginManager::new();
+        manager.fallback().write().clear(&Language::Rust);
+
+        // Register a plugin with a broken command
+        manager.register(PluginDescriptor {
+            name: "broken-plugin".into(),
+            version: "1.0.0".into(),
+            command: "non_existent_command_xyz".into(),
+            languages: vec![Language::Rust],
+            extensions: vec![],
+            capabilities: vec!["parse".into()],
+        });
+
+        // Parse some Rust source code
+        let source = "fn foo() {}";
+        let symbols = crate::parser::parse_source(source, &Language::Rust, "test.rs", Some(&manager))
+            .await
+            .expect("should fall back gracefully to native parser and succeed");
+
+        // Native parser should have successfully parsed the function foo
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "foo");
+
+        // The broken plugin should have its failure recorded in the health monitor
+        let health = manager.health().unwrap();
+        let key = "broken-plugin:rust";
+        assert_eq!(health.metrics(key).unwrap().failure_count, 1);
     }
 }

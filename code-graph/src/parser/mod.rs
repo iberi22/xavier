@@ -109,9 +109,11 @@ pub async fn parse_source(
 
                 // Circuit breaker: skip plugin if its health circuit is Open.
                 if let Some(health) = mgr.health() {
-                    if health.is_open(name) {
+                    let key = format!("{}:{}", name, lang.as_db_str());
+                    if health.is_open(&key) || health.is_open(name) {
                         tracing::warn!(
                             plugin = %name,
+                            lang = ?lang,
                             "plugin circuit is OPEN, skipping to next fallback step"
                         );
                         continue;

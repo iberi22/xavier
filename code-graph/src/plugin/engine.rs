@@ -54,71 +54,88 @@ impl PluginEngine for ProcessEngine {
         let engine = self.clone_shim();
 
         Box::pin(async move {
-            let request = PluginRequest {
-                language: lang.clone(),
-                files,
-            };
+            let key = format!("{}:{}", plugin_name, lang.as_db_str());
+            let res = async {
+                let request = PluginRequest {
+                    language: lang.clone(),
+                    files,
+                };
 
-            let input = serde_json::to_string(&request)
-                .map_err(|e| GraphError::Parser(format!("failed to serialize request: {}", e)))?;
+                let input = serde_json::to_string(&request)
+                    .map_err(|e| GraphError::Parser(format!("failed to serialize request: {}", e)))?;
 
-            let mut child = Command::new(&command)
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .spawn()
-                .map_err(|e| {
-                    GraphError::Parser(format!("failed to spawn plugin '{}': {}", command, e))
+                let mut child = Command::new(&command)
+                    .stdin(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .spawn()
+                    .map_err(|e| {
+                        GraphError::Parser(format!("failed to spawn plugin '{}': {}", command, e))
+                    })?;
+
+                let mut stdin = child.stdin.take().unwrap();
+                stdin.write_all(input.as_bytes()).await.map_err(|e| {
+                    GraphError::Parser(format!("failed to write to plugin stdin: {}", e))
+                })?;
+                drop(stdin);
+
+                let mut stdout = Vec::new();
+                child
+                    .stdout
+                    .take()
+                    .unwrap()
+                    .read_to_end(&mut stdout)
+                    .await
+                    .map_err(|e| GraphError::Parser(format!("failed to read plugin stdout: {}", e)))?;
+
+                let mut stderr = String::new();
+                child
+                    .stderr
+                    .take()
+                    .unwrap()
+                    .read_to_string(&mut stderr)
+                    .await
+                    .ok();
+
+                let status = child
+                    .wait()
+                    .await
+                    .map_err(|e| GraphError::Parser(format!("plugin process failed to exit: {}", e)))?;
+
+                if !status.success() {
+                    let err = format!(
+                        "plugin '{}' exited with status {}: {}",
+                        command, status, stderr
+                    );
+                    return Err(GraphError::Parser(err));
+                }
+
+                let response: PluginResponse = serde_json::from_slice(&stdout).map_err(|e| {
+                    let err_msg = format!(
+                        "failed to parse plugin response: {}\nOutput was: {}",
+                        e,
+                        String::from_utf8_lossy(&stdout)
+                    );
+                    GraphError::Parser(err_msg)
                 })?;
 
-            let mut stdin = child.stdin.take().unwrap();
-            stdin.write_all(input.as_bytes()).await.map_err(|e| {
-                GraphError::Parser(format!("failed to write to plugin stdin: {}", e))
-            })?;
-            drop(stdin);
-
-            let mut stdout = Vec::new();
-            child
-                .stdout
-                .take()
-                .unwrap()
-                .read_to_end(&mut stdout)
-                .await
-                .map_err(|e| GraphError::Parser(format!("failed to read plugin stdout: {}", e)))?;
-
-            let mut stderr = String::new();
-            child
-                .stderr
-                .take()
-                .unwrap()
-                .read_to_string(&mut stderr)
-                .await
-                .ok();
-
-            let status = child
-                .wait()
-                .await
-                .map_err(|e| GraphError::Parser(format!("plugin process failed to exit: {}", e)))?;
-
-            if !status.success() {
-                let err = format!(
-                    "plugin '{}' exited with status {}: {}",
-                    command, status, stderr
-                );
-                engine.record_failure(&plugin_name, err.clone());
-                return Err(GraphError::Parser(err));
+                Ok(response.symbols)
             }
+            .await;
 
-            let response: PluginResponse = serde_json::from_slice(&stdout).map_err(|e| {
-                GraphError::Parser(format!(
-                    "failed to parse plugin response: {}\nOutput was: {}",
-                    e,
-                    String::from_utf8_lossy(&stdout)
-                ))
-            })?;
-
-            engine.record_success(&plugin_name);
-            Ok(response.symbols)
+            match res {
+                Ok(symbols) => {
+                    engine.record_success(&plugin_name);
+                    engine.record_success(&key);
+                    Ok(symbols)
+                }
+                Err(e) => {
+                    let err_str = e.to_string();
+                    engine.record_failure(&plugin_name, err_str.clone());
+                    engine.record_failure(&key, err_str);
+                    Err(e)
+                }
+            }
         })
     }
 
