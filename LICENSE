@@ -1,3 +1,17 @@
+SPDX-License-Identifier: AGPL-3.0-only OR LicenseRef-Xavier-Commercial
+
+Xavier — Cognitive Memory Runtime for AI Agents
+Copyright (C) 2026 SouthWest AI Labs (SWAL)
+
+Dual-Licensed:
+  - AGPL-3.0-only (default open-source license for all source files)
+  - Commercial License (for proprietary/enterprise use without AGPL obligations)
+
+Mesh License addendum: LICENSE-MESH (optional, for P2P participation / governance).
+See src/security/license.rs for enforcement details.
+
+---
+
                        GNU AFFERO GENERAL PUBLIC LICENSE
                           Version 3, 19 November 2007
 
@@ -15,6 +29,8 @@
 
     You should have received a copy of the GNU Affero General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+---
 
 ### Commercial License
 
