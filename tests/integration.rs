@@ -18,6 +18,8 @@ mod cli_test;
 mod context_regen_test;
 #[path = "integration/coordination_test.rs"]
 mod coordination_test;
+#[path = "integration/governance_integration_test.rs"]
+mod governance_integration_test;
 #[path = "integration/hierarchical_curation_test.rs"]
 mod hierarchical_curation_test;
 #[path = "integration/http_api.rs"]
