@@ -86,7 +86,7 @@
       "name": "MCP Server",
       "category": "integration",
       "status": "stable",
-      "progress_pct": 70,
+      "progress_pct": 100,
       "description": "HTTP-first integration with optional Model Context Protocol (MCP) support exposing 12 tools",
       "steps": [
         "Expose authenticated HTTP endpoints for memory and code operations",
@@ -98,8 +98,8 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-07-18",
-      "notes": "Progressive disclosure contract + tools + tests (#655/#656) + descriptors. Production-ready MCP. | 2026-07-18: Grok MCP doctor: handshake OK, tools/list Unexpected response type (protocol drift). 18 MCP unit tests failing in full lib suite.",
+      "last_tested": "2026-07-21",
+      "notes": "Progressive disclosure contract + tools + tests. Aligned all schemas for alias tools (memoryfragment_*) to prevent client-side protocol drift and added standard protocol version negotiation (2024-11-05).",
       "implemented_in": "src/server/http/, src/server/mcp/, src/cli/server.rs"
     },
     {

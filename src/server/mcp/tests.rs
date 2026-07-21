@@ -1697,3 +1697,112 @@ async fn memory_context_max_chars_per_doc_and_multi_id() {
         .unwrap();
     assert_eq!(src2_total_chars, 103);
 }
+
+#[tokio::test]
+async fn initialize_protocol_version_negotiation() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    // Standard client requests "2024-11-05" (the official release version)
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-11-05",
+                "capabilities": { "tools": {} },
+                "clientInfo": { "name": "standard-client", "version": "1.0" }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    assert_eq!(body["result"]["protocolVersion"], "2024-11-05");
+
+    // Standard client requests "2024-10-22" (pre-release version)
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "initialize",
+            "params": {
+                "protocolVersion": "2024-10-22",
+                "capabilities": { "tools": {} },
+                "clientInfo": { "name": "standard-client", "version": "1.0" }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    assert_eq!(body["result"]["protocolVersion"], "2024-10-22");
+
+    // Default fallback version
+    let response = post_json(
+        router.clone(),
+        json!({
+            "jsonrpc": "2.0",
+            "id": 3,
+            "method": "initialize",
+            "params": {}
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = get_json_body(response).await;
+    assert_eq!(body["result"]["protocolVersion"], "2024-11-05");
+}
+
+#[tokio::test]
+async fn alias_tools_have_aligned_schemas() {
+    let (state, workspace) = test_state().await;
+    let response = post_json(
+        test_router(state, workspace),
+        json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    let tools = body["result"]["tools"].as_array().expect("tools array");
+
+    let alias_save = tools.iter().find(|t| t["name"] == "memoryfragment_save").unwrap();
+    assert_eq!(alias_save["inputSchema"]["type"], "object");
+    assert!(alias_save["inputSchema"]["properties"].is_object());
+    assert!(alias_save["inputSchema"]["required"].is_array());
+
+    let alias_search = tools.iter().find(|t| t["name"] == "memoryfragment_search").unwrap();
+    assert_eq!(alias_search["inputSchema"]["type"], "object");
+    assert!(alias_search["inputSchema"]["properties"].is_object());
+    assert!(alias_search["inputSchema"]["required"].is_array());
+
+    let alias_recent = tools.iter().find(|t| t["name"] == "memoryfragment_recent").unwrap();
+    assert_eq!(alias_recent["inputSchema"]["type"], "object");
+    assert!(alias_recent["inputSchema"]["properties"].is_object());
+    assert!(alias_recent["inputSchema"]["required"].is_array());
+}
+
+#[tokio::test]
+async fn tool_call_non_object_arguments_fails() {
+    let (state, workspace) = test_state().await;
+    let router = test_router(state, workspace);
+
+    let response = post_json(
+        router,
+        json!({
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "create_memory",
+                "arguments": "not-an-object"
+            }
+        }),
+    )
+    .await;
+    let body = get_json_body(response).await;
+    assert_eq!(body["error"]["code"], super::types::XAVIER_ERROR_VALIDATION);
+    assert!(body["error"]["message"].as_str().unwrap().contains("arguments must be a JSON object"));
+}

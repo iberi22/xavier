@@ -100,7 +100,20 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
         MCPTool {
             name: "memoryfragment_save".to_string(),
             description: "Alias for save_fragment".to_string(),
-            input_schema: json!({ "type": "object" }),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "agent_id": { "type": "string" },
+                    "content": { "type": "string" },
+                    "context": { "type": "string" },
+                    "tags": { "type": "array", "items": { "type": "string" } },
+                    "importance": { "type": "number" },
+                    "repo_url": { "type": "string" },
+                    "file_path": { "type": "string" },
+                    "chunk_id": { "type": "string" }
+                },
+                "required": ["agent_id", "content", "context"]
+            }),
         },
         MCPTool {
             name: "search_fragments".to_string(),
@@ -120,7 +133,17 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
         MCPTool {
             name: "memoryfragment_search".to_string(),
             description: "Alias for search_fragments".to_string(),
-            input_schema: json!({ "type": "object" }),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string" },
+                    "agent_id": { "type": "string" },
+                    "context": { "type": "string" },
+                    "tags": { "type": "array", "items": { "type": "string" } },
+                    "limit": { "type": "number", "default": 10 }
+                },
+                "required": ["query"]
+            }),
         },
         MCPTool {
             name: "get_recent_fragments".to_string(),
@@ -138,7 +161,15 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
         MCPTool {
             name: "memoryfragment_recent".to_string(),
             description: "Alias for get_recent_fragments".to_string(),
-            input_schema: json!({ "type": "object" }),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "agent_id": { "type": "string" },
+                    "context": { "type": "string" },
+                    "limit": { "type": "number", "default": 10 }
+                },
+                "required": ["agent_id"]
+            }),
         },
         MCPTool {
             name: "memoryfragment_get".to_string(),
