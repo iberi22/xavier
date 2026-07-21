@@ -97,6 +97,26 @@ path = "tests/e2e/crypto_e2e.rs"
 name = "telegram_bot_e2e"
 path = "tests/e2e/telegram_bot_e2e.rs"
 
+[[test]]
+name = "mcp_e2e"
+path = "tests/e2e/mcp_e2e.rs"
+
+[[test]]
+name = "notification_e2e"
+path = "tests/e2e/notification_e2e.rs"
+
+[[test]]
+name = "hormer_navigation_e2e"
+path = "tests/e2e/hormer_navigation_e2e.rs"
+
+[[test]]
+name = "governance_e2e"
+path = "tests/e2e/governance_e2e.rs"
+
+[[test]]
+name = "context_regen_e2e"
+path = "tests/e2e/context_regen_e2e.rs"
+
 [dependencies]
 code-graph = { path = "./code-graph" }
 anyhow = "1.0.102"
