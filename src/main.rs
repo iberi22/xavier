@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (C) 2026 SouthWest AI Labs (SWAL)
+//
 //! Binary entry point for the Xavier cognitive memory system
 //!
 //! Provides the implementation and data structures for this module's
