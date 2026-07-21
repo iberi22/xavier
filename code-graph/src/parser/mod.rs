@@ -409,4 +409,31 @@ mod tests {
             .iter()
             .any(|s| s.name == "iostream" && s.kind == SymbolKind::Import));
     }
+
+    #[tokio::test]
+    async fn test_plugin_fallback_to_native() {
+        let manager = PluginManager::new();
+        // Register an invalid plugin that will fail to spawn/execute
+        manager.register(crate::plugin::types::PluginDescriptor {
+            name: "failing-plugin".to_string(),
+            version: "0.1.0".to_string(),
+            command: "non_existent_parser_executable_for_sure".to_string(),
+            languages: vec![Language::Python],
+            extensions: vec!["py".to_string()],
+            capabilities: vec!["parse".to_string()],
+        });
+
+        // Parse a Python file: should fall back to native parser and succeed!
+        let symbols = parse_source(
+            "def hello():\n    pass",
+            &Language::Python,
+            "app.py",
+            Some(&manager),
+        )
+        .await
+        .expect("parse_source must succeed even if plugin fails");
+
+        assert!(!symbols.is_empty(), "Must successfully fall back to native and extract symbols");
+        assert_eq!(symbols[0].name, "hello");
+    }
 }

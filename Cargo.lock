@@ -2972,6 +2972,90 @@ dependencies = [
 ]
 
 [[package]]
+name = "codegraph-parse-c"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "codegraph-types",
+ "serde",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-c",
+]
+
+[[package]]
+name = "codegraph-parse-cpp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "codegraph-types",
+ "serde",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-cpp",
+]
+
+[[package]]
+name = "codegraph-parse-go"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "codegraph-types",
+ "serde",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-go",
+]
+
+[[package]]
+name = "codegraph-parse-java"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "codegraph-types",
+ "serde",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-java",
+]
+
+[[package]]
+name = "codegraph-parse-python"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "codegraph-types",
+ "serde",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-python",
+]
+
+[[package]]
+name = "codegraph-parse-rust"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "codegraph-types",
+ "serde",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-rust",
+]
+
+[[package]]
+name = "codegraph-parse-typescript"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "codegraph-types",
+ "serde",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-typescript",
+]
+
+[[package]]
 name = "codegraph-types"
 version = "0.1.0"
 dependencies = [

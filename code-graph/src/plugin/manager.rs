@@ -32,6 +32,57 @@ pub struct PluginManager {
 }
 
 impl PluginManager {
+    /// Automatically discover parser binaries under `$CODEGRAPH_PLUGINS_DIR` or `~/.xavier/plugins/`
+    pub fn discover_plugins(&self) -> Result<()> {
+        let mut paths = Vec::new();
+        if let Ok(dir) = std::env::var("CODEGRAPH_PLUGINS_DIR") {
+            paths.push(std::path::PathBuf::from(dir));
+        }
+        if let Some(home) = dirs::home_dir() {
+            paths.push(home.join(".xavier").join("plugins"));
+        }
+
+        let standard_parsers = vec![
+            ("codegraph-parse-rust", vec![Language::Rust], vec!["rs".to_string()]),
+            ("codegraph-parse-typescript", vec![Language::TypeScript, Language::JavaScript], vec!["ts".to_string(), "tsx".to_string(), "js".to_string(), "jsx".to_string()]),
+            ("codegraph-parse-python", vec![Language::Python], vec!["py".to_string()]),
+            ("codegraph-parse-go", vec![Language::Go], vec!["go".to_string()]),
+            ("codegraph-parse-java", vec![Language::Java], vec!["java".to_string()]),
+            ("codegraph-parse-c", vec![Language::C], vec!["c".to_string(), "h".to_string()]),
+            ("codegraph-parse-cpp", vec![Language::Cpp], vec!["cpp".to_string(), "cc".to_string(), "cxx".to_string(), "hpp".to_string()]),
+        ];
+
+        for dir in paths {
+            if !dir.exists() || !dir.is_dir() {
+                continue;
+            }
+
+            for entry in walkdir::WalkDir::new(&dir).max_depth(3).into_iter().filter_map(|e| e.ok()) {
+                let path = entry.path();
+                if !path.is_file() {
+                    continue;
+                }
+                let file_name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+                for (bin_name, langs, exts) in &standard_parsers {
+                    let matches_bin = file_name == *bin_name
+                        || (cfg!(windows) && file_name.eq_ignore_ascii_case(&format!("{}.exe", bin_name)));
+                    if matches_bin {
+                        let desc = PluginDescriptor {
+                            name: bin_name.to_string(),
+                            version: "0.1.0".to_string(),
+                            command: path.to_string_lossy().to_string(),
+                            languages: langs.clone(),
+                            extensions: exts.clone(),
+                            capabilities: vec!["parse".to_string()],
+                        };
+                        self.register(desc);
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     /// Build an empty manager with default fallback chains and the standard
     /// subprocess engine.
     pub fn new() -> Self {
@@ -42,14 +93,16 @@ impl PluginManager {
 
         let installed: HashMap<Language, PluginDescriptor> = HashMap::new();
         let fallback = FallbackChain::load_or_default();
-        Self {
+        let this = Self {
             installed: RwLock::new(installed),
             by_name: RwLock::new(HashMap::new()),
             fallback: RwLock::new(fallback),
             engine,
             registry,
             health: RwLock::new(Some(health)),
-        }
+        };
+        let _ = this.discover_plugins();
+        this
     }
 
     /// Build a manager with a custom engine and registry.
@@ -59,14 +112,16 @@ impl PluginManager {
     ) -> Self {
         let installed: HashMap<Language, PluginDescriptor> = HashMap::new();
         let fallback = FallbackChain::load_or_default();
-        Self {
+        let this = Self {
             installed: RwLock::new(installed),
             by_name: RwLock::new(HashMap::new()),
             fallback: RwLock::new(fallback),
             engine,
             registry,
             health: RwLock::new(None),
-        }
+        };
+        let _ = this.discover_plugins();
+        this
     }
 
     /// Register a plugin descriptor. Subsequent fallback-chain lookups for any
@@ -449,5 +504,22 @@ mod tests {
                 .as_deref(),
             Some("/usr/bin/parser-py"),
         );
+    }
+
+    #[test]
+    fn test_automatic_parser_discovery() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let plugin_path = temp_dir.path().join("codegraph-parse-python");
+        std::fs::write(&plugin_path, "dummy content").unwrap();
+
+        std::env::set_var("CODEGRAPH_PLUGINS_DIR", temp_dir.path());
+        let manager = PluginManager::new();
+        std::env::remove_var("CODEGRAPH_PLUGINS_DIR");
+
+        let desc = manager.descriptor_by_name("codegraph-parse-python");
+        assert!(desc.is_some(), "Should automatically discover Python plugin");
+        let desc = desc.unwrap();
+        assert_eq!(desc.languages, vec![Language::Python]);
+        assert_eq!(desc.extensions, vec!["py".to_string()]);
     }
 }

@@ -1,0 +1,16 @@
+[package]
+name = "codegraph-parse-java"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+codegraph-types = { path = "../../../codegraph-types" }
+tree-sitter = "0.26"
+tree-sitter-java = "0.23"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+
+[[bin]]
+name = "codegraph-parse-java"
+path = "src/main.rs"
