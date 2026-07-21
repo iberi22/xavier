@@ -17,6 +17,7 @@ pub mod context;
 pub mod coordination;
 pub mod crypto;
 pub mod data_commons;
+pub mod governance;
 pub mod embedding;
 pub mod enterprise;
 pub mod health;

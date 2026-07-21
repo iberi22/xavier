@@ -218,6 +218,30 @@ impl GovernanceEngine {
         self
     }
 
+    /// Export the internal state of the engine.
+    pub fn get_state(&self) -> (Vec<XipProposal>, Vec<CouncilMember>, HashMap<WalletAddress, u64>, Vec<WalletAddress>) {
+        (
+            self.proposals.clone(),
+            self.council.clone(),
+            self.active_wallets.clone(),
+            self.blocked_wallets.clone(),
+        )
+    }
+
+    /// Import and set the internal state of the engine.
+    pub fn set_state(
+        &mut self,
+        proposals: Vec<XipProposal>,
+        council: Vec<CouncilMember>,
+        active_wallets: HashMap<WalletAddress, u64>,
+        blocked_wallets: Vec<WalletAddress>,
+    ) {
+        self.proposals = proposals;
+        self.council = council;
+        self.active_wallets = active_wallets;
+        self.blocked_wallets = blocked_wallets;
+    }
+
     // ── Helpers de tiempo ─────────────────────────────────
 
     fn now_secs() -> u64 {
