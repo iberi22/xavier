@@ -163,6 +163,7 @@ pub struct AutoImprovementEngine {
 }
 
 impl AutoImprovementEngine {
+    /// New.
     pub fn new() -> Self {
         Self {
             memory: None,
@@ -174,16 +175,19 @@ impl AutoImprovementEngine {
         }
     }
 
+    /// With memory.
     pub fn with_memory(mut self, memory: Arc<QmdMemory>) -> Self {
         self.memory = Some(memory);
         self
     }
 
+    /// With booster.
     pub fn with_booster(mut self, booster: Arc<Mutex<AdaptiveZoneBooster>>) -> Self {
         self.booster = Some(booster);
         self
     }
 
+    /// With autonomous.
     pub fn with_autonomous(mut self, autonomous: bool) -> Self {
         self.autonomous_mode = autonomous;
         self

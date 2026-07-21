@@ -44,34 +44,42 @@ pub enum ApiError {
 }
 
 impl ApiError {
+    /// Internal.
     pub fn internal(message: impl Into<String>) -> Self {
         Self::Internal(message.into())
     }
 
+    /// Not found.
     pub fn not_found(message: impl Into<String>) -> Self {
         Self::NotFound(message.into())
     }
 
+    /// Bad request.
     pub fn bad_request(message: impl Into<String>) -> Self {
         Self::BadRequest(message.into())
     }
 
+    /// Unauthorized.
     pub fn unauthorized(message: impl Into<String>) -> Self {
         Self::Unauthorized(message.into())
     }
 
+    /// Forbidden.
     pub fn forbidden(message: impl Into<String>) -> Self {
         Self::Forbidden(message.into())
     }
 
+    /// Conflict.
     pub fn conflict(message: impl Into<String>) -> Self {
         Self::Conflict(message.into())
     }
 
+    /// Validation.
     pub fn validation(message: impl Into<String>) -> Self {
         Self::Validation(message.into())
     }
 
+    /// Security.
     pub fn security(message: impl Into<String>) -> Self {
         Self::Security(message.into())
     }

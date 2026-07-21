@@ -12,6 +12,7 @@ pub struct PairingCodeData {
     pub expires_at: u64,
 }
 
+/// Generate pairing code.
 pub fn generate_pairing_code(
     node_id: NodeId,
     endpoint: String,
@@ -36,6 +37,7 @@ pub fn generate_pairing_code(
     (crate::crypto::base64_encode(json), secret)
 }
 
+/// Decode pairing code.
 pub fn decode_pairing_code(code: &str) -> Result<PairingCodeData> {
     let decoded = crate::crypto::base64_decode(code)
         .ok_or_else(|| anyhow::anyhow!("Failed to decode base64 pairing code"))?;

@@ -65,6 +65,7 @@ impl LayerWeights {
         }
     }
 
+    /// New.
     pub fn new(working: f32, episodic: f32, semantic: f32) -> Self {
         Self {
             working,
@@ -327,6 +328,7 @@ pub struct AdaptiveGating {
 // ---------------------------------------------------------------------------
 
 impl AdaptiveGating {
+    /// New.
     pub fn new(config: GatingConfig) -> Self {
         Self {
             config,
@@ -336,6 +338,7 @@ impl AdaptiveGating {
         }
     }
 
+    /// With policy.
     pub fn with_policy(
         config: GatingConfig,
         policy: Arc<RwLock<super::policy::NavigationPolicy>>,
@@ -348,16 +351,19 @@ impl AdaptiveGating {
         }
     }
 
+    /// With memory.
     pub fn with_memory(mut self, memory: Arc<crate::memory::qmd_memory::QmdMemory>) -> Self {
         self.memory = Some(memory);
         self
     }
 
+    /// With booster.
     pub fn with_booster(mut self, booster: Arc<AdaptiveZoneBooster>) -> Self {
         self.zone_booster = Some(booster);
         self
     }
 
+    /// With defaults.
     pub fn with_defaults() -> Self {
         let settings = crate::settings::XavierSettings::current();
         let policy = super::policy::NavigationPolicy::new(

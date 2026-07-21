@@ -15,6 +15,7 @@ pub struct TimeMetricsAdapter {
 }
 
 impl TimeMetricsAdapter {
+    /// New.
     pub fn new(store: Arc<TimeMetricsStore>) -> Self {
         Self { store }
     }

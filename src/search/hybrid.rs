@@ -34,6 +34,7 @@ static HYBRID_SEARCH_CACHE: LazyLock<Cache<String, Vec<ScoredResult>>> = LazyLoc
         .build()
 });
 
+/// Invalidate hybrid cache.
 pub async fn invalidate_hybrid_cache() {
     HYBRID_SEARCH_CACHE.invalidate_all();
 }
@@ -76,15 +77,18 @@ impl Default for HybridSearcher {
     }
 }
 
+/// Configured rrf k.
 pub fn configured_rrf_k() -> u32 {
     crate::retrieval::config::configured_rrf_k()
 }
 
 impl HybridSearcher {
+    /// New.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Search.
     pub async fn search(
         &self,
         memory: &QmdMemory,

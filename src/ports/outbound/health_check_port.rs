@@ -5,6 +5,7 @@
 pub struct HealthCheckPort;
 
 impl HealthCheckPort {
+    /// New.
     pub fn new() -> Self {
         Self
     }

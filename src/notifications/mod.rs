@@ -17,6 +17,7 @@ pub enum IslandId {
 }
 
 impl IslandId {
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             IslandId::System => "system",
@@ -27,6 +28,7 @@ impl IslandId {
     }
 
     #[allow(clippy::should_implement_trait)]
+    /// From str.
     pub fn from_str(s: &str) -> Self {
         match s {
             "memory" => IslandId::Memory,
@@ -192,6 +194,7 @@ pub struct NotificationManager {
 }
 
 impl NotificationManager {
+    /// New.
     pub fn new() -> Self {
         let (tx, _) = broadcast::channel(100);
         let mut providers: Vec<Arc<dyn NotificationProvider>> = Vec::new();
@@ -206,6 +209,7 @@ impl NotificationManager {
         }
     }
 
+    /// Subscribe.
     pub fn subscribe(&self) -> broadcast::Receiver<Notification> {
         self.event_tx.subscribe()
     }
@@ -243,6 +247,7 @@ impl NotificationManager {
             .ok();
     }
 
+    /// Notify.
     pub async fn notify(
         &self,
         island_id: IslandId,
@@ -273,6 +278,7 @@ impl NotificationManager {
         Ok(notification)
     }
 
+    /// Ensure webhook table.
     pub async fn ensure_webhook_table(&self) -> Result<()> {
         ConnectionManager::global()
             .with_conn("memory", move |conn| {
@@ -291,6 +297,7 @@ impl NotificationManager {
             .await
     }
 
+    /// Add subscription.
     pub async fn add_subscription(&self, url: &str, event_types: Vec<String>) -> Result<WebhookSubscription> {
         self.ensure_webhook_table().await?;
         let sub = WebhookSubscription {
@@ -316,6 +323,7 @@ impl NotificationManager {
         Ok(sub)
     }
 
+    /// List subscriptions.
     pub async fn list_subscriptions(&self) -> Result<Vec<WebhookSubscription>> {
         self.ensure_webhook_table().await?;
         ConnectionManager::global().with_conn("memory", move |conn| {
@@ -338,6 +346,7 @@ impl NotificationManager {
         }).await
     }
 
+    /// Remove subscription.
     pub async fn remove_subscription(&self, id: &str) -> Result<()> {
         self.ensure_webhook_table().await?;
         let id = id.to_string();
@@ -347,6 +356,7 @@ impl NotificationManager {
         }).await
     }
 
+    /// List notifications.
     pub async fn list_notifications(&self) -> Result<Vec<Notification>> {
         ConnectionManager::global().with_conn("memory", move |conn| {
             let mut stmt = conn.prepare(&format!(
@@ -372,6 +382,7 @@ impl NotificationManager {
         }).await
     }
 
+    /// Mark as read.
     pub async fn mark_as_read(&self, id: &str) -> Result<()> {
         let id = id.to_string();
         ConnectionManager::global()
@@ -385,6 +396,7 @@ impl NotificationManager {
             .await
     }
 
+    /// Mark all as read.
     pub async fn mark_all_as_read(&self) -> Result<()> {
         ConnectionManager::global()
             .with_conn("memory", move |conn| {
@@ -394,6 +406,7 @@ impl NotificationManager {
             .await
     }
 
+    /// Delete all.
     pub async fn delete_all(&self) -> Result<()> {
         ConnectionManager::global()
             .with_conn("memory", move |conn| {

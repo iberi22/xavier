@@ -263,6 +263,7 @@ pub struct MemoryDisplay {
 }
 
 impl MemoryDisplay {
+    /// Preview.
     pub fn preview(&self, max_len: usize) -> String {
         if self.content.len() > max_len {
             format!("{}...", &self.content[..max_len])
@@ -335,6 +336,7 @@ pub struct ApiError {
 }
 
 impl<T> ApiResponse<T> {
+    /// Ok.
     pub fn ok(data: T) -> Self {
         Self {
             success: true,
@@ -343,6 +345,7 @@ impl<T> ApiResponse<T> {
         }
     }
 
+    /// Err.
     pub fn err(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             success: false,
@@ -367,6 +370,7 @@ pub struct PaginatedResponse<T> {
 }
 
 impl<T> PaginatedResponse<T> {
+    /// New.
     pub fn new(items: Vec<T>, total: usize, page: usize, per_page: usize) -> Self {
         Self {
             has_next: page * per_page < total,

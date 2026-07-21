@@ -111,6 +111,7 @@ impl ModelProviderConfig {
             .with_base_url(base_url)
     }
 
+    /// Local from env.
     pub(crate) fn local_from_env() -> Self {
         let settings = crate::settings::XavierSettings::current();
         let api_flavor = std::env::var("XAVIER_API_FLAVOR")
@@ -177,6 +178,7 @@ impl ModelProviderConfig {
         }
     }
 
+    /// Managed local from env.
     pub(crate) fn managed_local_from_env() -> Self {
         let settings = crate::settings::XavierSettings::current();
         let api_flavor = std::env::var("XAVIER_API_FLAVOR")
@@ -214,6 +216,7 @@ impl ModelProviderConfig {
         }
     }
 
+    /// Cloud from env.
     pub(crate) fn cloud_from_env() -> Self {
         let settings = crate::settings::XavierSettings::current();
         let api_flavor = std::env::var("XAVIER_API_FLAVOR")
@@ -255,6 +258,7 @@ impl ModelProviderConfig {
         }
     }
 
+    /// Openai cloud from env.
     pub(crate) fn openai_cloud_from_env() -> Self {
         let settings = crate::settings::XavierSettings::current();
         Self {
@@ -287,6 +291,7 @@ impl ModelProviderConfig {
         }
     }
 
+    /// Groq cloud from env.
     pub(crate) fn groq_cloud_from_env() -> Self {
         let settings = crate::settings::XavierSettings::current();
         Self {
@@ -314,6 +319,7 @@ impl ModelProviderConfig {
         }
     }
 
+    /// Deepseek cloud from env.
     pub(crate) fn deepseek_cloud_from_env() -> Self {
         let settings = crate::settings::XavierSettings::current();
         Self {
@@ -382,6 +388,7 @@ impl ModelProviderConfig {
         }
     }
 
+    /// Minimax cloud from env.
     pub(crate) fn minimax_cloud_from_env() -> Self {
         let settings = crate::settings::XavierSettings::current();
         Self {
@@ -413,6 +420,7 @@ impl ModelProviderConfig {
         }
     }
 
+    /// Gemini cloud from env.
     pub(crate) fn gemini_cloud_from_env() -> Self {
         let settings = crate::settings::XavierSettings::current();
         Self {
@@ -440,6 +448,7 @@ impl ModelProviderConfig {
         }
     }
 
+    /// Zai cloud from env.
     pub(crate) fn zai_cloud_from_env() -> Self {
         let settings = crate::settings::XavierSettings::current();
         Self {
@@ -463,6 +472,7 @@ impl ModelProviderConfig {
         }
     }
 
+    /// Opencode from env.
     pub(crate) fn opencode_from_env() -> Self {
         let settings = crate::settings::XavierSettings::current();
         Self {
@@ -490,6 +500,7 @@ impl ModelProviderConfig {
         }
     }
 
+    /// Disabled.
     pub(crate) fn disabled() -> Self {
         Self {
             provider_mode: ProviderMode::Disabled,

@@ -4,6 +4,7 @@ use crate::cli::commands::enums::CLI_HTTP_CLIENT;
 use crate::cli::config::{require_xavier_token, resolve_base_url};
 use anyhow::Result;
 
+/// Handle billing command.
 pub async fn handle_billing_command() -> Result<()> {
     let token = require_xavier_token()?;
     let base_url = resolve_base_url();

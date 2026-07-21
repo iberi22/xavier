@@ -26,6 +26,7 @@ pub struct JwtManager {
 }
 
 impl JwtManager {
+    /// New.
     pub fn new() -> Result<Self> {
         let (private_key_pem, public_key_pem) = Self::get_or_create_keypair()?;
 
@@ -112,6 +113,7 @@ impl JwtManager {
         Ok((private_pem, public_pem))
     }
 
+    /// Create token.
     pub fn create_token(&self, user_id: &str, email: &str, role: &str) -> Result<String> {
         let iat = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
         let exp = iat + 15 * 60; // 15 minutes
@@ -129,6 +131,7 @@ impl JwtManager {
             .map_err(|e| anyhow!("Failed to create token: {}", e))
     }
 
+    /// Validate token.
     pub fn validate_token(&self, token: &str) -> Result<Claims> {
         let validation = Validation::new(Algorithm::RS256);
         let token_data = decode::<Claims>(token, &self.decoding_key, &validation)

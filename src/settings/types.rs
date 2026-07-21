@@ -591,15 +591,19 @@ pub struct NotificationSettings {
 }
 
 impl XavierSettings {
+    /// Default host.
     pub fn default_host() -> String {
         "0.0.0.0".into()
     }
+    /// Default port.
     pub fn default_port() -> u16 {
         8006
     }
+    /// Default log level.
     pub fn default_log_level() -> String {
         "info".into()
     }
+    /// Default code graph db path.
     pub fn default_code_graph_db_path() -> String {
         "data/code_graph.db".into()
     }

@@ -11,6 +11,7 @@ pub struct HmacSha256 {
 }
 
 impl HmacSha256 {
+    /// New.
     pub fn new(key: &[u8]) -> Self {
         let mut fixed_key = [0u8; BLOCK_SIZE];
         if key.len() > BLOCK_SIZE {
@@ -34,10 +35,12 @@ impl HmacSha256 {
         Self { inner, o_key_pad }
     }
 
+    /// Update.
     pub fn update(&mut self, data: &[u8]) {
         self.inner.update(data);
     }
 
+    /// Finalize.
     pub fn finalize(self) -> [u8; 32] {
         let inner_hash = self.inner.finalize();
         let mut outer = Sha256::new();
@@ -46,12 +49,14 @@ impl HmacSha256 {
         outer.finalize().into()
     }
 
+    /// Verify.
     pub fn verify(key: &[u8], data: &[u8], signature: &[u8]) -> bool {
         let actual = hmac_sha256(key, data);
         actual.ct_eq(signature).into()
     }
 }
 
+/// Hmac sha256.
 pub fn hmac_sha256(key: &[u8], data: &[u8]) -> [u8; 32] {
     let mut hmac = HmacSha256::new(key);
     hmac.update(data);

@@ -38,6 +38,7 @@ pub struct RecoverRequest {
     pub new_password: String,
 }
 
+/// Login handler.
 pub async fn login_handler(
     State(state): State<CliState>,
     connect_info: ConnectInfo<std::net::SocketAddr>,
@@ -103,6 +104,7 @@ pub async fn login_handler(
     issue_tokens(&state, &user, Some(&ip), ua.as_deref()).await
 }
 
+/// Totp verify handler.
 pub async fn totp_verify_handler(
     State(state): State<CliState>,
     headers: HeaderMap,
@@ -165,6 +167,7 @@ pub async fn totp_verify_handler(
     issue_tokens(&state, &user, ip.as_deref(), ua.as_deref()).await
 }
 
+/// Refresh handler.
 pub async fn refresh_handler(
     State(state): State<CliState>,
     Json(payload): Json<RefreshRequest>,
@@ -205,6 +208,7 @@ pub async fn refresh_handler(
     }
 }
 
+/// Recover handler.
 pub async fn recover_handler(
     State(state): State<CliState>,
     headers: HeaderMap,
@@ -277,6 +281,7 @@ pub async fn recover_handler(
     json_response(StatusCode::OK, serde_json::json!({"status": "ok"}))
 }
 
+/// Totp setup handler.
 pub async fn totp_setup_handler(State(state): State<CliState>) -> Response {
     // This should be protected by JWT middleware
     // For now we'll assume we get the user from the state or a placeholder
@@ -337,6 +342,7 @@ async fn issue_tokens(
     )
 }
 
+/// List sessions handler.
 pub async fn list_sessions_handler(
     State(state): State<CliState>,
     axum::Extension(session): axum::Extension<crate::cli::http_setup::SessionInfo>,
@@ -360,6 +366,7 @@ pub async fn list_sessions_handler(
     }
 }
 
+/// Revoke session handler.
 pub async fn revoke_session_handler(
     State(state): State<CliState>,
     Path(token_id): Path<String>,

@@ -19,6 +19,7 @@ pub enum PlanTier {
 }
 
 impl PlanTier {
+    /// From env.
     pub fn from_env(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
             "free" => Self::Free,
@@ -28,6 +29,7 @@ impl PlanTier {
         }
     }
 
+    /// Default storage limit bytes.
     pub fn default_storage_limit_bytes(self) -> Option<u64> {
         match self {
             Self::Community => None,
@@ -37,6 +39,7 @@ impl PlanTier {
         }
     }
 
+    /// Default request limit.
     pub fn default_request_limit(self) -> Option<usize> {
         match self {
             Self::Community => None,
@@ -55,6 +58,7 @@ pub enum EmbeddingProviderMode {
 }
 
 impl EmbeddingProviderMode {
+    /// From env.
     pub fn from_env(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
             "managed" => Self::Managed,
@@ -74,6 +78,7 @@ pub enum SyncPolicy {
 }
 
 impl SyncPolicy {
+    /// From env.
     pub fn from_env(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
             "cloud_mirror" => Self::CloudMirror,
@@ -84,6 +89,7 @@ impl SyncPolicy {
         }
     }
 
+    /// Supported.
     pub fn supported() -> &'static [SyncPolicy] {
         &[
             SyncPolicy::LocalOnly,
@@ -127,6 +133,7 @@ impl fmt::Debug for WorkspaceConfig {
 }
 
 impl WorkspaceConfig {
+    /// From env.
     pub fn from_env() -> Self {
         let settings = XavierSettings::current();
         let plan = PlanTier::from_env(&settings.workspace.default_plan);

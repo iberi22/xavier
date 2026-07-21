@@ -17,6 +17,7 @@ pub struct EphemeralSession {
 }
 
 impl EphemeralSession {
+    /// Is expired.
     pub fn is_expired(&self) -> bool {
         Utc::now() > self.expires_at
     }
@@ -28,6 +29,7 @@ pub struct SessionManager {
 }
 
 impl SessionManager {
+    /// New.
     pub fn new(ttl_minutes: i64) -> Self {
         Self {
             sessions: Arc::new(RwLock::new(HashMap::new())),

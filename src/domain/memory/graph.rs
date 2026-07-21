@@ -22,6 +22,7 @@ pub enum GraphEntityType {
 }
 
 impl GraphEntityType {
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Person => "person",
@@ -35,6 +36,7 @@ impl GraphEntityType {
         }
     }
 
+    /// Parse.
     pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "person" => Some(Self::Person),
@@ -69,6 +71,7 @@ pub enum GraphRelationshipType {
 }
 
 impl GraphRelationshipType {
+    /// As str.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::WorksAt => "works_at",
@@ -86,6 +89,7 @@ impl GraphRelationshipType {
         }
     }
 
+    /// Parse.
     pub fn parse(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "works_at" => Some(Self::WorksAt),
@@ -123,6 +127,7 @@ pub struct GraphEntity {
 }
 
 impl GraphEntity {
+    /// New.
     pub fn new(name: String, entity_type: GraphEntityType) -> Self {
         let now = Utc::now();
         let normalized_name = Self::normalize(&name);
@@ -141,10 +146,12 @@ impl GraphEntity {
         }
     }
 
+    /// Normalize.
     pub fn normalize(name: &str) -> String {
         name.trim().to_lowercase()
     }
 
+    /// Add alias.
     pub fn add_alias(&mut self, alias: String) {
         let normalized = Self::normalize(&alias);
         if normalized != self.normalized_name && !self.aliases.contains(&normalized) {
@@ -153,6 +160,7 @@ impl GraphEntity {
         }
     }
 
+    /// Confirm.
     pub fn confirm(&mut self) {
         self.confirmation_count += 1;
         // Simple trust score update: 0.5 -> 0.7 -> 0.83 -> 0.9 -> ...
@@ -176,6 +184,7 @@ pub struct GraphRelationship {
 }
 
 impl GraphRelationship {
+    /// New.
     pub fn new(source_id: String, target_id: String, relation_type: GraphRelationshipType) -> Self {
         let now = Utc::now();
         Self {
@@ -191,6 +200,7 @@ impl GraphRelationship {
         }
     }
 
+    /// Confirm.
     pub fn confirm(&mut self) {
         self.confirmation_count += 1;
         self.weight = (self.weight + 0.2 * (1.0 - self.weight)).min(1.0);

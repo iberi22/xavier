@@ -91,6 +91,7 @@ pub struct V1ExportParams {
     pub public: Option<bool>,
 }
 
+/// V1 memories export.
 pub async fn v1_memories_export(
     Extension(workspace): Extension<WorkspaceContext>,
     Query(params): Query<V1ExportParams>,
@@ -106,6 +107,7 @@ fn is_primary_memory(metadata: &serde_json::Value) -> bool {
     metadata.get("source_path").is_none()
 }
 
+/// V1 memories add.
 pub async fn v1_memories_add(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<V1AddMemoryRequest>,
@@ -195,6 +197,7 @@ pub async fn v1_memories_add(
 
 // ── Mesh API Handlers ──────────────────────────────────────────────────────
 
+/// V1 mesh identity.
 pub async fn v1_mesh_identity(
     Extension(_workspace): Extension<WorkspaceContext>,
 ) -> impl IntoResponse {
@@ -218,6 +221,7 @@ pub async fn v1_mesh_identity(
     }
 }
 
+/// V1 mesh handshake.
 pub async fn v1_mesh_handshake(
     Extension(_workspace): Extension<WorkspaceContext>,
     Json(payload): Json<MeshHandshake>,
@@ -342,6 +346,7 @@ pub async fn v1_mesh_handshake(
     }
 }
 
+/// V1 mesh manifest.
 pub async fn v1_mesh_manifest(
     Extension(workspace): Extension<WorkspaceContext>,
     Query(payload): Query<std::collections::HashMap<String, String>>,
@@ -485,6 +490,7 @@ pub async fn v1_mesh_manifest(
     }
 }
 
+/// V1 mesh chunks request.
 pub async fn v1_mesh_chunks_request(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<MeshSyncRequest>,
@@ -568,6 +574,7 @@ pub async fn v1_mesh_chunks_request(
     Json(response_chunks).into_response()
 }
 
+/// V1 mesh chunks push.
 pub async fn v1_mesh_chunks_push(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(chunks): Json<std::collections::HashMap<String, Vec<u8>>>,
@@ -619,6 +626,7 @@ pub struct V1SessionShareRequest {
     pub peer_node_id: String,
 }
 
+/// V1 session export.
 pub async fn v1_session_export(
     Extension(workspace): Extension<WorkspaceContext>,
     Path(session_id): Path<String>,
@@ -645,6 +653,7 @@ pub async fn v1_session_export(
     }
 }
 
+/// V1 session import.
 pub async fn v1_session_import(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(bundle): Json<SessionBundle>,
@@ -669,6 +678,7 @@ pub async fn v1_session_import(
     }
 }
 
+/// V1 mesh session share.
 pub async fn v1_mesh_session_share(
     Extension(workspace): Extension<WorkspaceContext>,
     Path(session_id): Path<String>,
@@ -754,6 +764,7 @@ pub async fn v1_mesh_session_share(
     }
 }
 
+/// V1 memories search.
 pub async fn v1_memories_search(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<V1SearchRequest>,
@@ -793,6 +804,7 @@ pub async fn v1_memories_search(
     })
 }
 
+/// V1 memories list.
 pub async fn v1_memories_list(
     Extension(workspace): Extension<WorkspaceContext>,
     Query(params): Query<V1PaginationParams>,
@@ -832,6 +844,7 @@ pub async fn v1_memories_list(
     })
 }
 
+/// V1 memories get.
 pub async fn v1_memories_get(
     Extension(workspace): Extension<WorkspaceContext>,
     Path(id): Path<String>,
@@ -850,6 +863,7 @@ pub async fn v1_memories_get(
     }
 }
 
+/// V1 memories update.
 pub async fn v1_memories_update(
     Extension(workspace): Extension<WorkspaceContext>,
     Path(id): Path<String>,
@@ -930,6 +944,7 @@ pub async fn v1_memories_update(
     }
 }
 
+/// V1 memories delete.
 pub async fn v1_memories_delete(
     Extension(workspace): Extension<WorkspaceContext>,
     Path(id): Path<String>,
@@ -957,6 +972,7 @@ pub struct CloudNodeRequest {
     pub instance_id: String,
 }
 
+/// V1 mesh cloud get.
 pub async fn v1_mesh_cloud_get() -> impl IntoResponse {
     // License check
     let settings = crate::settings::XavierSettings::current();
@@ -971,6 +987,7 @@ pub async fn v1_mesh_cloud_get() -> impl IntoResponse {
     Json(settings.pgheart).into_response()
 }
 
+/// V1 mesh cloud update.
 pub async fn v1_mesh_cloud_update(Json(payload): Json<CloudNodeRequest>) -> impl IntoResponse {
     // License check
     let mut settings = crate::settings::XavierSettings::current();
@@ -1004,6 +1021,7 @@ pub struct DataCommonsOptInRequest {
     pub wallet_address: Option<String>,
 }
 
+/// V1 mesh data commons get.
 pub async fn v1_mesh_data_commons_get() -> impl IntoResponse {
     // License check
     let settings = crate::settings::XavierSettings::current();
@@ -1018,6 +1036,7 @@ pub async fn v1_mesh_data_commons_get() -> impl IntoResponse {
     Json(settings.data_commons).into_response()
 }
 
+/// V1 mesh data commons opt in.
 pub async fn v1_mesh_data_commons_opt_in(
     Json(payload): Json<DataCommonsOptInRequest>,
 ) -> impl IntoResponse {

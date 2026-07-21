@@ -19,6 +19,7 @@ pub struct ContextManager {
 }
 
 impl ContextManager {
+    /// New.
     pub fn new(ttl_seconds: u64, max_size_chars: usize) -> Self {
         Self {
             cache: HashMap::new(),
@@ -27,6 +28,7 @@ impl ContextManager {
         }
     }
 
+    /// Get.
     pub fn get(&mut self, session_id: &str) -> Option<String> {
         if let Some(entry) = self.cache.get(session_id) {
             if entry.expires_at < Instant::now() {
@@ -38,6 +40,7 @@ impl ContextManager {
         None
     }
 
+    /// Put.
     pub fn put(&mut self, session_id: &str, content: String, level: ContextLevel) {
         let sanitized_content = if content.len() > self.max_size_chars {
             content.chars().take(self.max_size_chars).collect()
@@ -55,6 +58,7 @@ impl ContextManager {
         );
     }
 
+    /// Clear expired.
     pub fn clear_expired(&mut self) {
         let now = Instant::now();
         self.cache.retain(|_, v| v.expires_at > now);

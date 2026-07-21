@@ -40,10 +40,12 @@ pub struct EntityGraph {
 pub type SharedEntityGraph = std::sync::Arc<EntityGraph>;
 
 impl EntityGraph {
+    /// New.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Upsert memory.
     pub async fn upsert_memory(
         &self,
         memory_id: &str,
@@ -55,6 +57,7 @@ impl EntityGraph {
             .await
     }
 
+    /// Remove memory.
     pub async fn remove_memory(&self, memory_id: &str) -> Result<()> {
         let mut data = self.inner.write().await;
         if let Some(entities) = data.memory_entities.remove(memory_id) {
@@ -76,16 +79,19 @@ impl EntityGraph {
         Ok(())
     }
 
+    /// Entity.
     pub async fn entity(&self, entity_id_or_name: &str) -> Option<EntityRecord> {
         let data = self.inner.read().await;
         data.resolve_entity_id(entity_id_or_name)
             .and_then(|id| data.entities.get(&id).cloned())
     }
 
+    /// All entities.
     pub async fn all_entities(&self) -> Vec<EntityRecord> {
         self.inner.read().await.entities.values().cloned().collect()
     }
 
+    /// All relations.
     pub async fn all_relations(&self) -> Vec<EntityRelationRecord> {
         self.inner
             .read()
@@ -96,6 +102,7 @@ impl EntityGraph {
             .collect()
     }
 
+    /// Relations for entity.
     pub async fn relations_for_entity(
         &self,
         entity_id_or_name: &str,
@@ -121,6 +128,7 @@ impl EntityGraph {
         })
     }
 
+    /// Entity neighbors.
     pub async fn entity_neighbors(
         &self,
         entity_id_or_name: &str,
@@ -150,11 +158,13 @@ impl EntityGraph {
         })
     }
 
+    /// Export json.
     pub async fn export_json(&self) -> Result<String> {
         let data = self.inner.read().await;
         serde_json::to_string(&*data).map_err(|e| anyhow!("failed to export json: {e}"))
     }
 
+    /// Import json.
     pub async fn import_json(&self, json: &str) -> Result<()> {
         let mut data = self.inner.write().await;
         let imported: GraphData =
@@ -164,11 +174,13 @@ impl EntityGraph {
         Ok(())
     }
 
+    /// Export bincode.
     pub async fn export_bincode(&self) -> Result<Vec<u8>> {
         let data = self.inner.read().await;
         bincode::serialize(&*data).map_err(|e| anyhow!("failed to export bincode: {e}"))
     }
 
+    /// Import bincode.
     pub async fn import_bincode(&self, bytes: &[u8]) -> Result<()> {
         let mut data = self.inner.write().await;
         let imported: GraphData =
@@ -178,12 +190,14 @@ impl EntityGraph {
         Ok(())
     }
 
+    /// Apply decay.
     pub async fn apply_decay(&self, factor: f32) -> Result<()> {
         let mut data = self.inner.write().await;
         data.apply_decay(factor, Utc::now());
         Ok(())
     }
 
+    /// Run inference.
     pub async fn run_inference(&self) -> Result<Vec<EntityRelationRecord>> {
         let mut data = self.inner.write().await;
         let inferred = inference::InferenceEngine::run(&mut data);
@@ -193,6 +207,7 @@ impl EntityGraph {
         Ok(inferred)
     }
 
+    /// Merge entities.
     pub async fn merge_entities(
         &self,
         primary_id: &str,
@@ -260,6 +275,7 @@ impl EntityGraph {
         extraction::extract_entities(text)
     }
 
+    /// Extract relation candidates.
     pub fn extract_relation_candidates(text: &str) -> Vec<RawRelation> {
         extraction::extract_relation_candidates(text)
     }

@@ -64,6 +64,7 @@ pub struct SelfImproveAgent {
 }
 
 impl SelfImproveAgent {
+    /// New.
     pub fn new(config: SelfImproveConfig) -> Self {
         Self {
             config,
@@ -79,6 +80,7 @@ impl SelfImproveAgent {
         }
     }
 
+    /// With tgd.
     pub fn with_tgd(mut self, tgd: crate::tgd::TgdEngine) -> Self {
         self.tgd = Some(tgd);
         self

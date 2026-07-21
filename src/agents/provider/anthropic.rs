@@ -6,6 +6,7 @@ use chrono::Utc;
 use reqwest::Client;
 use serde_json::json;
 
+/// Anthropic messages endpoint.
 pub(crate) fn anthropic_messages_endpoint(base_url: &str) -> String {
     let trimmed = base_url.trim_end_matches('/');
     if trimmed.ends_with("/messages") {
@@ -17,6 +18,7 @@ pub(crate) fn anthropic_messages_endpoint(base_url: &str) -> String {
     }
 }
 
+/// Generate anthropic compatible.
 pub(crate) async fn generate_anthropic_compatible(
     client: &Client,
     config: &ModelProviderConfig,

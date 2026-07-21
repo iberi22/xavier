@@ -11,6 +11,7 @@ use anyhow::Result;
 use tracing::{info, warn};
 
 impl System3Actor {
+    /// Heuristic answer.
     pub(crate) fn heuristic_answer(
         query: &str,
         docs: &[RetrievedDocument],
@@ -129,6 +130,7 @@ pub struct System3Actor {
 }
 
 impl System3Actor {
+    /// New.
     pub fn new(config: ActorConfig) -> Self {
         let llm_client = LlmClient::new(
             config.model_override.clone(),
@@ -137,6 +139,7 @@ impl System3Actor {
         Self { config, llm_client }
     }
 
+    /// With config.
     pub fn with_config(
         config: ActorConfig,
         provider_config: crate::agents::provider::ModelProviderConfig,
@@ -146,10 +149,12 @@ impl System3Actor {
     }
 
     #[cfg(test)]
+    /// With llm client.
     pub(crate) fn with_llm_client(config: ActorConfig, llm_client: LlmClient) -> Self {
         Self { config, llm_client }
     }
 
+    /// Run.
     pub async fn run(
         &self,
         query: &str,
@@ -273,6 +278,7 @@ impl System3Actor {
         })
     }
 
+    /// Simple response.
     pub fn simple_response(
         query: &str,
         docs: &[RetrievedDocument],
@@ -282,6 +288,7 @@ impl System3Actor {
     }
 }
 
+/// Observe.
 pub fn observe(chain: &[ReasoningStep]) -> MetaObservations {
     if chain.is_empty() {
         return MetaObservations::default();

@@ -37,6 +37,7 @@ pub struct FilePublishHook {
 }
 
 impl FilePublishHook {
+    /// New.
     pub fn new(output_dir: impl Into<String>) -> Self {
         Self {
             output_dir: output_dir.into(),

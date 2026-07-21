@@ -42,6 +42,7 @@ pub struct HttpReranker {
 }
 
 impl HttpReranker {
+    /// New.
     pub fn new(endpoint: String, model: String, api_key: Option<String>) -> Self {
         Self {
             endpoint,
@@ -50,6 +51,7 @@ impl HttpReranker {
         }
     }
 
+    /// From env.
     pub fn from_env() -> Option<Self> {
         let enabled = std::env::var("XAVIER_RERANK_ENABLED")
             .map(|v| v.to_lowercase() == "true")
@@ -122,10 +124,12 @@ pub struct RerankHook {
 }
 
 impl RerankHook {
+    /// New.
     pub fn new(reranker: Arc<dyn Reranker>) -> Self {
         Self { reranker }
     }
 
+    /// From env.
     pub fn from_env() -> Option<Self> {
         HttpReranker::from_env().map(|r| Self::new(Arc::new(r)))
     }

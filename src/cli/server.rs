@@ -80,6 +80,7 @@ pub async fn metrics_handler() -> axum::response::Response {
     }
 }
 
+/// Start http server.
 pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     // Initialize Prometheus exporter
     let _ = autometrics::global_metrics_exporter();

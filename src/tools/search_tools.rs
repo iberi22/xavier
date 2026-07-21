@@ -10,6 +10,7 @@ pub struct QmdSearchTools {
 }
 
 impl QmdSearchTools {
+    /// New.
     pub fn new(memory: QmdMemory) -> Self {
         Self { memory }
     }
@@ -44,4 +45,5 @@ impl QmdSearchTools {
     }
 }
 
+/// Semantic search.
 pub fn semantic_search() {}

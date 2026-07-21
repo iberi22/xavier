@@ -14,6 +14,7 @@ pub struct QmdMemoryAdapter {
 }
 
 impl QmdMemoryAdapter {
+    /// New.
     pub fn new(inner: Arc<QmdMemory>) -> Self {
         Self { inner }
     }

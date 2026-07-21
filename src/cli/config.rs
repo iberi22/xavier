@@ -16,10 +16,12 @@ use std::path::PathBuf;
 
 use crate::settings::XavierSettings;
 
+/// Resolve http token.
 pub fn resolve_http_token() -> Result<String> {
     Ok(xavier::security::auth::resolve_xavier_token())
 }
 
+/// Resolve http bind host.
 pub fn resolve_http_bind_host() -> String {
     // If we are in headless mode or the user hasn't specified a host,
     // we default to 127.0.0.1 for security.
@@ -92,20 +94,24 @@ pub fn resolve_mcp_port(flag: Option<u16>) -> u16 {
     .unwrap_or(crate::cli::mcp::DEFAULT_MCP_PORT)
 }
 
+/// Xavier token.
 pub fn xavier_token() -> String {
     xavier::security::auth::resolve_xavier_token()
 }
 
+/// Require xavier token.
 pub fn require_xavier_token() -> Result<String> {
     Ok(xavier::security::auth::resolve_xavier_token())
 }
 
+/// Code graph db path.
 pub fn code_graph_db_path() -> PathBuf {
     std::env::var("XAVIER_CODE_GRAPH_DB_PATH")
         .map(PathBuf::from)
         .unwrap_or_else(|_| XavierSettings::resolve_data_dir().join("code_graph.db"))
 }
 
+/// State panel root.
 pub fn state_panel_root(workspace_dir: &std::path::Path, workspace_id: &str) -> PathBuf {
     std::env::var("XAVIER_PANEL_STORE_DIR")
         .map(PathBuf::from)
@@ -118,6 +124,7 @@ pub fn state_panel_root(workspace_dir: &std::path::Path, workspace_id: &str) -> 
         })
 }
 
+/// Resolve cwd.
 pub fn resolve_cwd() -> String {
     let cwd_file = XavierSettings::resolve_data_dir().join("cwd");
     if let Ok(cwd) = std::fs::read_to_string(&cwd_file) {
@@ -127,6 +134,7 @@ pub fn resolve_cwd() -> String {
     }
 }
 
+/// Save cwd.
 pub fn save_cwd(path: &str) -> Result<()> {
     let cwd_file = XavierSettings::resolve_data_dir().join("cwd");
     if let Some(parent) = cwd_file.parent() {

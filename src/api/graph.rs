@@ -148,6 +148,7 @@ fn default_max_depth() -> usize {
     2
 }
 
+/// Memory graph entity.
 pub async fn memory_graph_entity(
     Extension(workspace): Extension<WorkspaceContext>,
     Path(entity_id): Path<String>,
@@ -186,6 +187,7 @@ pub async fn memory_graph_entity(
     }
 }
 
+/// Memory graph relations.
 pub async fn memory_graph_relations(
     Extension(workspace): Extension<WorkspaceContext>,
     Query(query): Query<GraphRelationsQuery>,
@@ -235,6 +237,7 @@ pub async fn memory_graph_relations(
     }
 }
 
+/// Memory graph list entities.
 pub async fn memory_graph_list_entities(
     Extension(workspace): Extension<WorkspaceContext>,
     Query(query): Query<GraphListQuery>,
@@ -285,6 +288,7 @@ pub async fn memory_graph_list_entities(
     .into_response()
 }
 
+/// Memory graph view.
 pub async fn memory_graph_view(
     Extension(workspace): Extension<WorkspaceContext>,
     Query(query): Query<GraphViewQuery>,

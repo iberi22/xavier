@@ -5,6 +5,7 @@
 use crate::memory::sqlite_vec_store::config::QJL_MAGIC;
 use anyhow::Result;
 
+/// Register sqlite vec extension.
 pub fn register_sqlite_vec_extension() -> Result<()> {
     unsafe {
         #[cfg(target_os = "android")]
@@ -25,10 +26,12 @@ pub fn register_sqlite_vec_extension() -> Result<()> {
     Ok(())
 }
 
+/// Serialize embedding.
 pub fn serialize_embedding(embedding: &[f32]) -> Vec<u8> {
     embedding.iter().flat_map(|v| v.to_le_bytes()).collect()
 }
 
+/// Serialize embedding qjl.
 pub fn serialize_embedding_qjl(embedding: &[f32]) -> Vec<u8> {
     let dims = embedding.len() as u32;
     let max_abs = embedding
@@ -67,6 +70,7 @@ pub fn serialize_embedding_qjl(embedding: &[f32]) -> Vec<u8> {
     bytes
 }
 
+/// Deserialize embedding.
 pub fn deserialize_embedding(data: &[u8]) -> Vec<f32> {
     if data.len() >= 16 && &data[..4] == QJL_MAGIC {
         let dims = u32::from_le_bytes([data[4], data[5], data[6], data[7]]) as usize;

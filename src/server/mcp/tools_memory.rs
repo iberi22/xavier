@@ -20,6 +20,7 @@ const MEMORYFRAGMENT_MAX_PROVENANCE_CHARS: usize = 2048;
 const CONTEXT_DEFAULT_MAX_CHARS: usize = 4000;
 const CONTEXT_ABSOLUTE_MAX_CHARS: usize = 16000;
 
+/// Get xavier memory tools.
 pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
     vec![
         MCPTool {
@@ -259,6 +260,7 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
     ]
 }
 
+/// Handle memory tool.
 pub async fn handle_memory_tool(
     state: AppState,
     workspace: WorkspaceContext,

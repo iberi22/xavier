@@ -454,6 +454,7 @@ async fn detect_env_vars(detailed: bool) -> HashMap<String, EnvVarStatus> {
     vars
 }
 
+/// Gather system info.
 pub fn gather_system_info() -> SystemInfo {
     SystemInfo {
         os: std::env::consts::OS.to_string(),

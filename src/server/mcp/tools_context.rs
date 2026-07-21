@@ -15,6 +15,7 @@ use crate::AppState;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
+/// Get xavier context tools.
 pub fn get_xavier_context_tools() -> Vec<MCPTool> {
     vec![
         MCPTool {
@@ -66,6 +67,7 @@ pub fn get_xavier_context_tools() -> Vec<MCPTool> {
     ]
 }
 
+/// Handle context tool.
 pub async fn handle_context_tool(
     _state: AppState,
     workspace: WorkspaceContext,

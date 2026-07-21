@@ -18,6 +18,7 @@ use tracing::info;
 pub const MCP_PROTOCOL_VERSION: &str = "2026-07-28";
 pub const ERROR_HEADER_MISMATCH: i32 = -32020;
 
+/// Mcp post handler.
 pub async fn mcp_post_handler(
     State(state): State<AppState>,
     Extension(workspace): Extension<WorkspaceContext>,
@@ -136,6 +137,7 @@ fn decode_mcp_header_value(value: &str) -> String {
     value.to_string()
 }
 
+/// Dispatch mcp value.
 pub async fn dispatch_mcp_value(
     state: AppState,
     workspace: WorkspaceContext,

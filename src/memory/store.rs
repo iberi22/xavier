@@ -37,6 +37,7 @@ pub enum MemoryBackend {
 }
 
 impl MemoryBackend {
+    /// From env.
     pub fn from_env(value: &str) -> Self {
         match value.trim().to_ascii_lowercase().as_str() {
             "auto" => Self::Auto,
@@ -50,6 +51,7 @@ impl MemoryBackend {
         }
     }
 
+    /// As str.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Auto => "auto",
@@ -220,6 +222,7 @@ pub(crate) struct DurableStoreFile {
 // ---------------------------------------------------------------------------
 
 impl MemoryRecord {
+    /// From document.
     pub fn from_document(
         workspace_id: &str,
         document: &MemoryDocument,
@@ -301,6 +304,7 @@ impl MemoryRecord {
         }
     }
 
+    /// To document.
     pub fn to_document(&self) -> MemoryDocument {
         let mut metadata = self.metadata.clone();
         if let Some(object) = metadata.as_object_mut() {
@@ -361,6 +365,7 @@ impl MemoryRecord {
         }
     }
 
+    /// Matches query.
     pub fn matches_query(&self, query: &str) -> bool {
         let lowered = query.trim().to_ascii_lowercase();
         lowered.is_empty()
@@ -592,6 +597,7 @@ pub struct FileMemoryStore {
 }
 
 impl FileMemoryStore {
+    /// New.
     pub async fn new(path: impl Into<PathBuf>) -> Result<Self> {
         let path = path.into();
         if let Some(parent) = path.parent() {
@@ -611,6 +617,7 @@ impl FileMemoryStore {
         })
     }
 
+    /// Persist.
     pub async fn persist(&self) -> Result<()> {
         let payload = {
             let state = self.state.read().await;
@@ -872,6 +879,7 @@ pub struct InMemoryMemoryStore {
 }
 
 impl InMemoryMemoryStore {
+    /// New.
     pub fn new() -> Self {
         Self::default()
     }
@@ -1078,6 +1086,7 @@ impl MemoryStore for InMemoryMemoryStore {
 // Shared helper functions
 // ---------------------------------------------------------------------------
 
+/// Revisioned record.
 pub(crate) fn revisioned_record(existing: MemoryRecord, mut next: MemoryRecord) -> MemoryRecord {
     next.id = existing.id;
     next.created_at = existing.created_at;
@@ -1094,6 +1103,7 @@ pub(crate) fn revisioned_record(existing: MemoryRecord, mut next: MemoryRecord) 
     next
 }
 
+/// Filter records.
 pub(crate) fn filter_records(
     records: Vec<MemoryRecord>,
     workspace_id: &str,
@@ -1142,6 +1152,7 @@ pub(crate) fn filter_records(
         .collect())
 }
 
+/// Stable key.
 pub(crate) fn stable_key(kind: &str, parts: &[&str]) -> String {
     let mut digest = Sha256::new();
     digest.update(kind.as_bytes());

@@ -40,6 +40,7 @@ pub fn resolve_panel_project_id(workspace: &WorkspaceContext) -> String {
     "memory".to_string()
 }
 
+/// List bookmarks.
 pub async fn list_bookmarks(
     Extension(workspace): Extension<WorkspaceContext>,
 ) -> impl IntoResponse {
@@ -74,6 +75,7 @@ pub async fn list_bookmarks(
     }
 }
 
+/// Save bookmark.
 pub async fn save_bookmark(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<Bookmark>,
@@ -106,6 +108,7 @@ pub async fn save_bookmark(
     }
 }
 
+/// List widgets.
 pub async fn list_widgets(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     let workspace_id = workspace.workspace.config().id.clone();
     let project_id = resolve_panel_project_id(&workspace);
@@ -141,6 +144,7 @@ pub async fn list_widgets(Extension(workspace): Extension<WorkspaceContext>) -> 
     }
 }
 
+/// Save widget.
 pub async fn save_widget(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<Widget>,
@@ -206,6 +210,7 @@ fn validate_panel_graph_payload(data: &serde_json::Value) -> Result<(), String> 
     Ok(())
 }
 
+/// Get graph.
 pub async fn get_graph(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     let workspace_id = workspace.workspace.config().id.clone();
     let project_id = resolve_panel_project_id(&workspace);
@@ -240,6 +245,7 @@ pub async fn get_graph(Extension(workspace): Extension<WorkspaceContext>) -> imp
     }
 }
 
+/// Save graph.
 pub async fn save_graph(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<GraphData>,

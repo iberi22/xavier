@@ -20,6 +20,7 @@ pub struct WorkingScoringParams<'a> {
     pub half_life_hours: f32,
 }
 
+/// Calculate recency boost factor.
 pub fn calculate_recency_boost_factor(
     updated_at_ms: Option<i64>,
     now: chrono::DateTime<chrono::Utc>,
@@ -41,6 +42,7 @@ pub fn calculate_recency_boost_factor(
     1.0 + (recency_weight * (-age_hours / half_life_hours).exp())
 }
 
+/// Score single working.
 pub fn score_single_working(
     doc: &MemoryDocument,
     params: &WorkingScoringParams<'_>,
@@ -99,6 +101,7 @@ pub fn score_single_working(
     }
 }
 
+/// Score single episodic.
 pub fn score_single_episodic(
     session: &SessionSummary,
     query_lower: &str,
@@ -150,6 +153,7 @@ pub fn score_single_episodic(
     }
 }
 
+/// Score single semantic.
 pub fn score_single_semantic(
     entity: &EntityRecord,
     query_lower: &str,

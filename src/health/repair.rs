@@ -101,6 +101,7 @@ pub struct HealthAutoRepair {
 }
 
 impl HealthAutoRepair {
+    /// New.
     pub fn new() -> Self {
         Self {
             config: RepairConfig::default(),
@@ -111,6 +112,7 @@ impl HealthAutoRepair {
         }
     }
 
+    /// With config.
     pub fn with_config(config: RepairConfig) -> Self {
         Self {
             config,
@@ -121,18 +123,22 @@ impl HealthAutoRepair {
         }
     }
 
+    /// Record embedding failure.
     pub fn record_embedding_failure(&self) {
         self.embedding_failure_count.fetch_add(1, Ordering::SeqCst);
     }
 
+    /// Reset embedding failures.
     pub fn reset_embedding_failures(&self) {
         self.embedding_failure_count.store(0, Ordering::SeqCst);
     }
 
+    /// Embedding failure count.
     pub fn embedding_failure_count(&self) -> u32 {
         self.embedding_failure_count.load(Ordering::SeqCst) as u32
     }
 
+    /// Last report.
     pub async fn last_report(&self) -> Option<RepairReport> {
         self.last_report.lock().unwrap().clone()
     }
@@ -510,18 +516,22 @@ impl HealthAutoRepair {
         });
     }
 
+    /// Stop monitoring.
     pub fn stop_monitoring(&self) {
         self.stop_flag.store(true, Ordering::SeqCst);
     }
 
+    /// Is running.
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
     }
 
+    /// Last repair duration ms.
     pub fn last_repair_duration_ms() -> u64 {
         LAST_REPAIR_DURATION_MS.load(Ordering::SeqCst)
     }
 
+    /// Is initialized.
     pub fn is_initialized() -> bool {
         REPAIR_ENGINE_INITIALIZED.load(Ordering::SeqCst)
     }

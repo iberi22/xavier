@@ -233,6 +233,7 @@ pub async fn collect_health(
     .await
 }
 
+/// Check cloud health.
 pub async fn check_cloud_health(settings: &XavierSettings) -> CloudHealthResponse {
     let mut supabase_status = BackendStatus {
         status: "not configured".to_string(),

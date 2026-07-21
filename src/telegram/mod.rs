@@ -312,6 +312,7 @@ pub struct XavierBot {
 }
 
 impl XavierBot {
+    /// New.
     pub fn new(
         config: TelegramConfig,
         memory: Arc<dyn MemoryQueryPort>,
@@ -332,6 +333,7 @@ impl XavierBot {
         }
     }
 
+    /// Start.
     pub async fn start(&self) {
         if let Some(webhook_url) = &self.config.webhook_url {
             info!("Starting Telegram bot (webhook: {})...", webhook_url);
@@ -431,6 +433,7 @@ impl XavierBot {
             .await;
     }
 
+    /// Handle command.
     pub async fn handle_command(
         bot: Bot,
         msg: Message,
@@ -794,6 +797,7 @@ pub async fn handle_memory_command(args: &str) -> String {
     }
 }
 
+/// Run bot.
 pub async fn run_bot(
     memory: Arc<dyn MemoryQueryPort>,
     agents: Arc<dyn AgentLifecyclePort>,

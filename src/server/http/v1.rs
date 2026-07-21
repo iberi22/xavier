@@ -8,6 +8,7 @@ use crate::workspace::WorkspaceContext;
 use axum::{extract::Json, response::IntoResponse, Extension};
 use tracing::info;
 
+/// Memory add.
 pub async fn memory_add(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<AddMemoryRequest>,
@@ -66,6 +67,7 @@ pub async fn memory_add(
     }
 }
 
+/// Memory search.
 pub async fn memory_search(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<SearchRequest>,
@@ -80,6 +82,7 @@ pub async fn memory_search(
     }
 }
 
+/// Memory hybrid search.
 pub async fn memory_hybrid_search(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<HybridSearchRequest>,

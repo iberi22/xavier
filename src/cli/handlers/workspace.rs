@@ -4,6 +4,7 @@ use axum::{extract::State, Json};
 
 use crate::cli::state::CliState;
 
+/// Workspace info handler.
 pub async fn workspace_info_handler(
     State(state): State<CliState>,
 ) -> impl axum::response::IntoResponse {
@@ -13,6 +14,7 @@ pub async fn workspace_info_handler(
     }))
 }
 
+/// Mcp tools handler.
 pub async fn mcp_tools_handler() -> impl axum::response::IntoResponse {
     Json(serde_json::json!({
         "tools": [

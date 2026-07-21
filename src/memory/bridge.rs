@@ -37,6 +37,7 @@ pub struct BridgeImportStats {
     pub skipped: usize,
 }
 
+/// Import from path.
 pub async fn import_from_path(
     memory: &QmdMemory,
     source: BridgeSource,
@@ -53,6 +54,7 @@ pub async fn import_from_path(
     }
 }
 
+/// Import openclaw markdown dir.
 pub async fn import_openclaw_markdown_dir(
     memory: &QmdMemory,
     root: &Path,
@@ -160,6 +162,7 @@ pub async fn import_openclaw_markdown_dir(
     })
 }
 
+/// Import engram export file.
 pub async fn import_engram_export_file(
     memory: &QmdMemory,
     path: &Path,
@@ -170,6 +173,7 @@ pub async fn import_engram_export_file(
     import_engram_export(memory, &export, options).await
 }
 
+/// Import engram export.
 pub async fn import_engram_export(
     memory: &QmdMemory,
     export: &Value,

@@ -12,10 +12,12 @@ pub struct Researcher {
 }
 
 impl Researcher {
+    /// New.
     pub fn new() -> Self {
         Self { runtime: None }
     }
 
+    /// With runtime.
     pub fn with_runtime(mut self, runtime: AgentRuntime) -> Self {
         self.runtime = Some(runtime);
         self
@@ -154,6 +156,7 @@ pub mod cache;
 <<<<<<< SEARCH
 use sha2::{Digest, Sha256};
 
+/// Hash embedding.
 pub fn hash_embedding(embedding: &[f32]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(embedding.as_bytes());
@@ -162,6 +165,7 @@ pub fn hash_embedding(embedding: &[f32]) -> String {
 =======
 use xxhash_rust::xxhash64;
 
+/// Hash embedding.
 pub fn hash_embedding(embedding: &[f32]) -> u64 {
     xxhash64(embedding.as_bytes(), 0)
 }

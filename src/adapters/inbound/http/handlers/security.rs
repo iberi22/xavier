@@ -11,6 +11,7 @@ pub struct SecurityScanPayload {
     pub input: String,
 }
 
+/// Security scan handler.
 pub async fn security_scan_handler(
     State(state): State<AppState>,
     Json(payload): Json<SecurityScanPayload>,

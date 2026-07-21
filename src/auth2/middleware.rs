@@ -17,6 +17,7 @@ pub struct RateLimiter {
 }
 
 impl RateLimiter {
+    /// New.
     pub fn new(max_requests: usize, window_seconds: u64) -> Self {
         Self {
             requests: RwLock::new(HashMap::new()),
@@ -25,6 +26,7 @@ impl RateLimiter {
         }
     }
 
+    /// Check.
     pub async fn check(&self, ip: String) -> bool {
         let mut requests = self.requests.write().await;
         let now = Instant::now();
@@ -42,6 +44,7 @@ impl RateLimiter {
     }
 }
 
+/// Auth middleware.
 pub async fn auth_middleware(mut req: Request, next: Next) -> Result<Response, StatusCode> {
     // 1. Rate Limiting (100 req/min)
     // In a real app we'd get the real IP, here we'll use a placeholder or header

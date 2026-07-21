@@ -8,6 +8,7 @@ use crate::{workspace::WorkspaceContext, AppState};
 use anyhow::Result;
 use std::io::{self, BufRead, Write};
 
+/// Run stdio loop.
 pub async fn run_stdio_loop(state: AppState, workspace: WorkspaceContext) -> Result<()> {
     validate_stdio_connection()?;
 

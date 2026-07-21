@@ -35,6 +35,7 @@ pub enum ReindexAction {
 }
 
 impl VecSqliteMemoryStore {
+    /// Init schema async.
     pub async fn init_schema_async(&self) -> Result<()> {
         let project_id = self.project_id.clone();
 
@@ -113,6 +114,7 @@ impl VecSqliteMemoryStore {
         Ok(())
     }
 
+    /// Reindex null embeddings background.
     pub async fn reindex_null_embeddings_background(&self) -> Result<()> {
         let embedder = match crate::embedding::build_embedder_from_env().await {
             Ok(emb) => emb,
@@ -255,6 +257,7 @@ impl VecSqliteMemoryStore {
         Ok(())
     }
 
+    /// Check and handle embedding model change.
     pub async fn check_and_handle_embedding_model_change(
         conn: &Connection,
         active_model: &str,

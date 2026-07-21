@@ -11,6 +11,7 @@ use xavier::mesh::{
 };
 use xavier::sync::SyncTransport;
 
+/// Handle mesh command.
 pub async fn handle_mesh_command(cmd: MeshCommand) -> Result<()> {
     // License check for Mesh features
     let settings = xavier::settings::XavierSettings::current();

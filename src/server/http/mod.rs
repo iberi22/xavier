@@ -22,6 +22,7 @@ pub struct HttpConfig {
     pub tls_key_path: Option<String>,
 }
 impl HttpConfig {
+    /// New.
     pub fn new(host: String, port: u16) -> Self {
         Self {
             host,
@@ -31,6 +32,7 @@ impl HttpConfig {
             tls_key_path: None,
         }
     }
+    /// With tls.
     pub fn with_tls(mut self, cert_path: String, key_path: String) -> Self {
         self.tls_enabled = true;
         self.tls_cert_path = Some(cert_path);
@@ -43,15 +45,18 @@ pub struct HttpServer {
     _config: HttpConfig,
 }
 impl HttpServer {
+    /// New.
     pub fn new(config: HttpConfig) -> Self {
         Self { _config: config }
     }
+    /// Serve.
     pub async fn serve(&self) {
         tracing::warn!("HttpServer::serve() is a stub");
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
 }
 
+/// Start signal handler.
 pub async fn start_signal_handler(state: websocket::ShutdownState) {
     tokio::spawn(async move {
         #[cfg(unix)]
@@ -73,6 +78,7 @@ pub async fn start_signal_handler(state: websocket::ShutdownState) {
     });
 }
 
+/// Install panic hook.
 pub fn install_panic_hook() {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {

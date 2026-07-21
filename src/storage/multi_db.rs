@@ -19,6 +19,7 @@ pub struct MultiDbManager {
 }
 
 impl MultiDbManager {
+    /// New.
     pub fn new() -> Self {
         Self {
             databases: Arc::new(RwLock::new(HashMap::new())),

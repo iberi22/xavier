@@ -11,6 +11,7 @@ use crate::memory::qmd_memory::types::MemoryDocument;
 
 // ── Document classification ──────────────────────────────────────────
 
+/// Is locomo document.
 pub fn is_locomo_document(path: &str, metadata: &Value) -> bool {
     path.contains("locomo/")
         || metadata
@@ -19,6 +20,7 @@ pub fn is_locomo_document(path: &str, metadata: &Value) -> bool {
             .is_some_and(|value| value.eq_ignore_ascii_case("locomo"))
 }
 
+/// Cosine similarity.
 pub fn cosine_similarity(left: &[f32], right: &[f32]) -> f32 {
     if left.is_empty() || right.is_empty() || left.len() != right.len() {
         return 0.0;
@@ -41,6 +43,7 @@ pub fn cosine_similarity(left: &[f32], right: &[f32]) -> f32 {
 
 // ── Speaker utilities ────────────────────────────────────────────────
 
+/// Extract speakers.
 pub fn extract_speakers(text: &str) -> Vec<String> {
     let mut speakers = Vec::new();
     let mut seen = std::collections::HashSet::new();
@@ -58,6 +61,7 @@ pub fn extract_speakers(text: &str) -> Vec<String> {
     speakers
 }
 
+/// Is likely speaker.
 pub fn is_likely_speaker(s: &str) -> bool {
     let s = s.trim();
     if s.len() < 2 || s.len() > 20 {
@@ -89,6 +93,7 @@ pub fn is_likely_speaker(s: &str) -> bool {
     true
 }
 
+/// Is female name.
 pub fn is_female_name(name: &str) -> bool {
     let name = name.to_lowercase();
     let female_names = [
@@ -115,6 +120,7 @@ pub fn is_female_name(name: &str) -> bool {
     female_names.contains(&name.as_str())
 }
 
+/// Is male name.
 pub fn is_male_name(name: &str) -> bool {
     let name = name.to_lowercase();
     let male_names = [
@@ -142,6 +148,7 @@ pub fn is_male_name(name: &str) -> bool {
     male_names.contains(&name.as_str())
 }
 
+/// Resolve pronouns.
 pub fn resolve_pronouns(query: &str, speakers: &[String]) -> String {
     let mut resolved = query.to_string();
 
@@ -166,6 +173,7 @@ pub fn resolve_pronouns(query: &str, speakers: &[String]) -> String {
     resolved
 }
 
+/// Extract speaker from query.
 pub fn extract_speaker_from_query(query: &str) -> Option<String> {
     QUERY_SPEAKER_RE.captures(query).and_then(|cap| {
         let name = cap.get(1)?.as_str();
@@ -179,6 +187,7 @@ pub fn extract_speaker_from_query(query: &str) -> Option<String> {
 
 // ── DIA ID utilities ─────────────────────────────────────────────────
 
+/// Normalize dia id.
 pub fn normalize_dia_id(value: &str) -> Option<String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -190,12 +199,14 @@ pub fn normalize_dia_id(value: &str) -> Option<String> {
         .and_then(|captures| format_normalized_dia_id(&captures, 1, 2))
 }
 
+/// Extract normalized dia id from path.
 pub fn extract_normalized_dia_id_from_path(path: &str) -> Option<String> {
     LOCOMO_PATH_DIA_ID_RE
         .captures(path)
         .and_then(|captures| format_normalized_dia_id(&captures, 2, 3))
 }
 
+/// Format normalized dia id.
 pub fn format_normalized_dia_id(
     captures: &regex::Captures,
     prefix_group: usize,
@@ -210,6 +221,7 @@ pub fn format_normalized_dia_id(
     Some(format!("{prefix}:{number}"))
 }
 
+/// Normalize locomo path.
 pub fn normalize_locomo_path(path: &str) -> String {
     LOCOMO_PATH_DIA_ID_RE
         .replace_all(path, |captures: &regex::Captures| {
@@ -235,6 +247,7 @@ pub fn normalize_locomo_path(path: &str) -> String {
 
 // ── Primary speaker extraction ───────────────────────────────────────
 
+/// Extract primary speaker.
 pub fn extract_primary_speaker(content: &str) -> Option<String> {
     content.lines().find_map(|line| {
         line.split_once(':').and_then(|(candidate, _)| {
@@ -254,6 +267,7 @@ pub fn extract_primary_speaker(content: &str) -> Option<String> {
 
 // ── Value extraction utilities ───────────────────────────────────────
 
+/// Capture value.
 pub fn capture_value(content: &str, pattern: &str) -> Option<String> {
     Regex::new(pattern)
         .ok()?
@@ -263,6 +277,7 @@ pub fn capture_value(content: &str, pattern: &str) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+/// Trim fact value.
 pub fn trim_fact_value(value: &str) -> String {
     let mut cleaned = value
         .trim()
@@ -295,6 +310,7 @@ pub fn trim_fact_value(value: &str) -> String {
     cleaned
 }
 
+/// Sentence case phrase.
 pub fn sentence_case_phrase(value: &str) -> String {
     let lower = value.trim().to_lowercase();
     let mut chars = lower.chars();
@@ -304,6 +320,7 @@ pub fn sentence_case_phrase(value: &str) -> String {
     }
 }
 
+/// Title case list.
 pub fn title_case_list(values: &[String]) -> String {
     values
         .iter()
@@ -312,6 +329,7 @@ pub fn title_case_list(values: &[String]) -> String {
         .join(", ")
 }
 
+/// Collect present keywords.
 pub fn collect_present_keywords(lowered: &str, keywords: &[&str]) -> Vec<String> {
     keywords
         .iter()
@@ -320,6 +338,7 @@ pub fn collect_present_keywords(lowered: &str, keywords: &[&str]) -> Vec<String>
         .collect()
 }
 
+/// Extract quoted titles.
 pub fn extract_quoted_titles(content: &str) -> Vec<String> {
     let quote_re = Regex::new(r#""([^"]+)""#).expect("quoted title regex");
     quote_re
@@ -335,6 +354,7 @@ pub fn extract_quoted_titles(content: &str) -> Vec<String> {
 
 // ── Duration / Temporal value extraction ─────────────────────────────
 
+/// Extract duration value.
 pub fn extract_duration_value(content: &str) -> Option<String> {
     let years_ago = Regex::new(r"(?i)\b(\d+)\s+years?\s+ago\b").ok()?;
     if let Some(capture) = years_ago.captures(content) {
@@ -357,6 +377,7 @@ pub fn extract_duration_value(content: &str) -> Option<String> {
     None
 }
 
+/// Infer event action.
 pub fn infer_event_action(content: &str) -> String {
     let lowered = content.to_lowercase();
     if lowered.contains("support group") {
@@ -385,6 +406,7 @@ pub fn infer_event_action(content: &str) -> String {
     }
 }
 
+/// Resolve temporal value.
 pub fn resolve_temporal_value(content: &str, session_time: Option<&str>) -> Option<String> {
     if let Some(explicit) = extract_explicit_date_value(content) {
         return Some(explicit);
@@ -437,6 +459,7 @@ pub fn resolve_temporal_value(content: &str, session_time: Option<&str>) -> Opti
     None
 }
 
+/// Extract explicit date value.
 pub fn extract_explicit_date_value(text: &str) -> Option<String> {
     let patterns = [
         (r"(?i)\b\d{1,2}\s+[A-Za-z]+\s+\d{4}\b", false),
@@ -459,6 +482,7 @@ pub fn extract_explicit_date_value(text: &str) -> Option<String> {
     None
 }
 
+/// Parse session date.
 pub fn parse_session_date(session_time: &str) -> Option<NaiveDate> {
     let date_text = session_time
         .split(" on ")
@@ -474,16 +498,19 @@ pub fn parse_session_date(session_time: &str) -> Option<NaiveDate> {
     None
 }
 
+/// Format date.
 pub fn format_date(date: NaiveDate) -> String {
     date.format("%-d %B %Y").to_string()
 }
 
+/// Clean extracted date.
 pub fn clean_extracted_date(value: &str) -> String {
     value.trim().trim_end_matches(['.', ',', ';']).to_string()
 }
 
 // ── Date / query utilities ───────────────────────────────────────────
 
+/// Infer date granularity.
 pub fn infer_date_granularity(value: &str) -> &'static str {
     if value.chars().all(|ch| ch.is_ascii_digit()) && value.len() == 4 {
         "year"
@@ -494,6 +521,7 @@ pub fn infer_date_granularity(value: &str) -> &'static str {
     }
 }
 
+/// Locomo query terms.
 pub fn locomo_query_terms(normalized_query: &str) -> Vec<&str> {
     normalized_query
         .split_whitespace()
@@ -524,6 +552,7 @@ pub fn locomo_query_terms(normalized_query: &str) -> Vec<&str> {
         .collect()
 }
 
+/// Is temporal query.
 pub fn is_temporal_query(normalized_query: &str) -> bool {
     normalized_query.contains(" when ")
         || normalized_query.starts_with("when ")
@@ -533,6 +562,7 @@ pub fn is_temporal_query(normalized_query: &str) -> bool {
         || normalized_query.contains(" day ")
 }
 
+/// Contains opinion adjectives.
 pub fn contains_opinion_adjectives(content: &str) -> bool {
     let opinion_adjectives = [
         "ideal",
@@ -564,6 +594,7 @@ pub fn contains_opinion_adjectives(content: &str) -> bool {
     opinion_adjectives.iter().any(|adj| lowered.contains(adj))
 }
 
+/// Locomo phrases.
 pub fn locomo_phrases(terms: &[&str]) -> Vec<String> {
     if terms.len() < 2 {
         return Vec::new();
@@ -572,6 +603,7 @@ pub fn locomo_phrases(terms: &[&str]) -> Vec<String> {
     terms.windows(2).map(|window| window.join(" ")).collect()
 }
 
+/// Metadata text lower.
 pub fn metadata_text_lower(doc: &MemoryDocument, key: &str) -> String {
     doc.metadata
         .get(key)
@@ -580,6 +612,7 @@ pub fn metadata_text_lower(doc: &MemoryDocument, key: &str) -> String {
         .to_lowercase()
 }
 
+/// Estimate document bytes.
 pub fn estimate_document_bytes(path: &str, content: &str, metadata: &serde_json::Value) -> u64 {
     path.len() as u64 + content.len() as u64 + metadata.to_string().len() as u64
 }

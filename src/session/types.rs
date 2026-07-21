@@ -28,6 +28,7 @@ pub struct SessionEvent {
 }
 
 impl SessionEvent {
+    /// Content preview.
     pub fn content_preview(&self) -> String {
         self.content
             .as_ref()

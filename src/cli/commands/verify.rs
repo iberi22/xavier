@@ -6,6 +6,7 @@ use crate::cli::handlers::system_scan::{
 };
 use anyhow::Result;
 
+/// Handle verify command.
 pub async fn handle_verify_command(cmd: VerifyCommand) -> Result<()> {
     match cmd {
         VerifyCommand::Scan { format, detailed } => {
