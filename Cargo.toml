@@ -81,6 +81,41 @@ name = "embedding_benchmark"
 path = "benches/embedding_benchmark.rs"
 harness = false
 
+[[bench]]
+name = "hybrid_search"
+path = "benches/hybrid_search.rs"
+harness = false
+
+[[bench]]
+name = "retrieval_hormer"
+path = "benches/retrieval_hormer.rs"
+harness = false
+
+[[bench]]
+name = "entity_graph_benchmark"
+path = "benches/entity_graph_benchmark.rs"
+harness = false
+
+[[bench]]
+name = "api_v1"
+path = "benches/api_v1.rs"
+harness = false
+
+[[bench]]
+name = "minhash_bench"
+path = "benches/minhash_bench.rs"
+harness = false
+
+[[bench]]
+name = "cortex"
+path = "benches/cortex.rs"
+harness = false
+
+[[bench]]
+name = "mcp_benchmark"
+path = "benches/mcp_benchmark.rs"
+harness = false
+
 [[test]]
 name = "auth_full_flow_test"
 path = "tests/integration/auth_full_flow_test.rs"
