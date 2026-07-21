@@ -537,6 +537,15 @@ pub enum VerifyCommand {
         #[arg(short, long, default_value = "xavier verification test content")]
         content: String,
     },
+    /// Scan features.json and calculate real implementation %
+    Features {
+        /// Path to project root (default: current dir, walks up for .gitcore/features.json)
+        #[arg(short, long)]
+        path: Option<String>,
+        /// Output format: table, json
+        #[arg(short, long, default_value = "table")]
+        format: String,
+    },
 }
 
 /// Code graph query subcommands
