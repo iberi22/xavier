@@ -9,7 +9,7 @@
 //! so an operator can pin e.g. Python to plugin-only or disable native parsers.
 //! A missing or malformed file is non-fatal — defaults take over.
 
-use crate::plugin::types::{FallbackResolver, FallbackStep};
+use crate::plugin::types::{FallbackResolver, FallbackStep, PluginDescriptor};
 use crate::types::Language;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -26,6 +26,7 @@ pub struct FallbackConfig {
 /// Resolves which steps to try for a given language, with optional overrides.
 pub struct FallbackChain {
     overrides: HashMap<String, Vec<FallbackStep>>,
+    pub registered: HashMap<Language, PluginDescriptor>,
 }
 
 impl Default for FallbackChain {
@@ -51,16 +52,26 @@ impl FallbackChain {
                 Err(_) => debug!("no fallback.json, using defaults"),
             }
         }
-        Self { overrides }
+        Self {
+            overrides,
+            registered: HashMap::new(),
+        }
     }
 
     /// The chain to use when no plugin is registered for `lang`.
     ///
     /// - If an override exists for this language, use it verbatim.
+    /// - Else if the language has a registered plugin, use `[Plugin(name), Native, NoOp]`.
     /// - Else if the language has a built-in tree-sitter parser, use `[Native, NoOp]`.
     /// - Else (plugin-only / unknown language) use `[NoOp]`.
-    fn default_chain(lang: &Language) -> Vec<FallbackStep> {
-        if crate::parser::has_native_parser(lang) {
+    fn default_chain(&self, lang: &Language) -> Vec<FallbackStep> {
+        if let Some(desc) = self.registered.get(lang) {
+            vec![
+                FallbackStep::Plugin(desc.name.clone()),
+                FallbackStep::Native,
+                FallbackStep::NoOp,
+            ]
+        } else if crate::parser::has_native_parser(lang) {
             vec![FallbackStep::Native, FallbackStep::NoOp]
         } else {
             vec![FallbackStep::NoOp]
@@ -120,7 +131,7 @@ impl FallbackResolver for FallbackChain {
             }
             return steps.clone();
         }
-        Self::default_chain(lang)
+        self.default_chain(lang)
     }
 }
 
@@ -142,6 +153,7 @@ mod tests {
     fn built_in_language_defaults_to_native_then_noop() {
         let chain = FallbackChain {
             overrides: HashMap::new(),
+            registered: HashMap::new(),
         };
         assert_eq!(
             chain.chain_for(&Language::Rust),
@@ -157,6 +169,7 @@ mod tests {
     fn unknown_or_plugin_only_language_defaults_to_noop() {
         let chain = FallbackChain {
             overrides: HashMap::new(),
+            registered: HashMap::new(),
         };
         assert_eq!(
             chain.chain_for(&Language::Unknown),
@@ -175,7 +188,10 @@ mod tests {
             Language::Python.as_db_str(),
             vec![FallbackStep::Plugin("parser-py".into())],
         );
-        let chain = FallbackChain { overrides };
+        let chain = FallbackChain {
+            overrides,
+            registered: HashMap::new(),
+        };
         assert_eq!(
             chain.chain_for(&Language::Python),
             vec![FallbackStep::Plugin("parser-py".into())],
@@ -191,7 +207,10 @@ mod tests {
     fn empty_override_means_noop_only() {
         let mut overrides = HashMap::new();
         overrides.insert(Language::Rust.as_db_str(), vec![]);
-        let chain = FallbackChain { overrides };
+        let chain = FallbackChain {
+            overrides,
+            registered: HashMap::new(),
+        };
         assert_eq!(chain.chain_for(&Language::Rust), vec![FallbackStep::NoOp]);
     }
 
@@ -199,6 +218,7 @@ mod tests {
     fn set_and_clear_round_trip() {
         let mut chain = FallbackChain {
             overrides: HashMap::new(),
+            registered: HashMap::new(),
         };
         chain.set(
             &Language::Go,
@@ -211,6 +231,65 @@ mod tests {
         chain.clear(&Language::Go);
         assert_eq!(
             chain.chain_for(&Language::Go),
+            vec![FallbackStep::Native, FallbackStep::NoOp],
+        );
+    }
+
+    #[test]
+    fn registered_plugin_is_auto_detected() {
+        let mut registered = HashMap::new();
+        registered.insert(
+            Language::Python,
+            PluginDescriptor {
+                name: "parser-py".into(),
+                version: "1.0.0".into(),
+                command: "parser-py".into(),
+                languages: vec![Language::Python],
+                extensions: vec![],
+                capabilities: vec![],
+            },
+        );
+        let chain = FallbackChain {
+            overrides: HashMap::new(),
+            registered,
+        };
+        // Auto-detected chain has registered plugin first.
+        assert_eq!(
+            chain.chain_for(&Language::Python),
+            vec![
+                FallbackStep::Plugin("parser-py".into()),
+                FallbackStep::Native,
+                FallbackStep::NoOp
+            ],
+        );
+    }
+
+    #[test]
+    fn override_takes_precedence_over_registered_plugin() {
+        let mut registered = HashMap::new();
+        registered.insert(
+            Language::Python,
+            PluginDescriptor {
+                name: "parser-py".into(),
+                version: "1.0.0".into(),
+                command: "parser-py".into(),
+                languages: vec![Language::Python],
+                extensions: vec![],
+                capabilities: vec![],
+            },
+        );
+        let mut overrides = HashMap::new();
+        // Pin to native parser only, ignoring the registered plugin.
+        overrides.insert(
+            Language::Python.as_db_str(),
+            vec![FallbackStep::Native, FallbackStep::NoOp],
+        );
+        let chain = FallbackChain {
+            overrides,
+            registered,
+        };
+        assert_eq!(
+            chain.chain_for(&Language::Python),
             vec![FallbackStep::Native, FallbackStep::NoOp],
         );
     }

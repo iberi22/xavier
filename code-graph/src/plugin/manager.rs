@@ -79,15 +79,17 @@ impl PluginManager {
             by_name.insert(name.clone(), descriptor);
         }
         let mut installed = self.installed.write();
+        let mut fallback = self.fallback.write();
         for lang in langs {
             // First-wins: don't silently displace an already-registered plugin.
-            installed.entry(lang).or_insert_with(|| {
+            let desc = installed.entry(lang.clone()).or_insert_with(|| {
                 self.by_name
                     .read()
                     .get(&name)
                     .expect("just inserted")
                     .clone()
             });
+            fallback.registered.entry(lang).or_insert_with(|| desc.clone());
         }
     }
 
@@ -104,18 +106,30 @@ impl PluginManager {
     /// Resolve the fallback chain for a language (plugin-first if one is
     /// installed, otherwise native → NoOp).
     pub fn chain_for(&self, lang: &Language) -> Vec<FallbackStep> {
-        // A plugin installed for this language always wins over a persisted
-        // fallback config, so resolution is live-state-aware.
-        if self.installed.read().contains_key(lang) {
-            if let Some(desc) = self.installed.read().get(lang) {
-                return vec![
-                    FallbackStep::Plugin(desc.name.clone()),
-                    FallbackStep::Native,
-                    FallbackStep::NoOp,
-                ];
+        let chain = self.fallback.read().chain_for(lang);
+        let mut resolved = Vec::new();
+        for step in chain {
+            match &step {
+                FallbackStep::Plugin(name) => {
+                    if let Some(health) = self.health() {
+                        if health.is_open(name) {
+                            tracing::warn!(
+                                plugin = %name,
+                                "plugin circuit is OPEN, skipping to next fallback step"
+                            );
+                            continue;
+                        }
+                    }
+                    resolved.push(step);
+                }
+                _ => resolved.push(step),
             }
         }
-        self.fallback.read().chain_for(lang)
+        if resolved.is_empty() {
+            vec![FallbackStep::NoOp]
+        } else {
+            resolved
+        }
     }
 
     /// Execute a parse request against a named plugin.
@@ -206,10 +220,16 @@ impl PluginManager {
         let mut by_name = self.by_name.write();
         if let Some(desc) = by_name.remove(name) {
             let mut installed = self.installed.write();
+            let mut fallback = self.fallback.write();
             for lang in desc.languages {
                 if let Some(current) = installed.get(&lang) {
                     if current.name == name {
                         installed.remove(&lang);
+                    }
+                }
+                if let Some(current) = fallback.registered.get(&lang) {
+                    if current.name == name {
+                        fallback.registered.remove(&lang);
                     }
                 }
             }
@@ -448,6 +468,44 @@ mod tests {
                 .map(|d| d.command)
                 .as_deref(),
             Some("/usr/bin/parser-py"),
+        );
+    }
+
+    #[test]
+    fn circuit_breaker_disables_plugin_in_chain() {
+        let manager = PluginManager::new();
+        let plugin_name = "parser-py";
+        manager.register(PluginDescriptor {
+            name: plugin_name.into(),
+            version: "1.0.0".into(),
+            command: "parser-py".into(),
+            languages: vec![Language::Python],
+            extensions: vec![],
+            capabilities: vec!["parse".into()],
+        });
+
+        // Initially, the chain has the plugin first.
+        assert_eq!(
+            manager.chain_for(&Language::Python),
+            vec![
+                FallbackStep::Plugin(plugin_name.into()),
+                FallbackStep::Native,
+                FallbackStep::NoOp,
+            ],
+        );
+
+        // Record 3 failures in the health monitor
+        if let Some(health) = manager.health() {
+            for _ in 0..3 {
+                health.record(plugin_name, 100, false, Some("mock error".into()));
+            }
+            assert!(health.is_open(plugin_name));
+        }
+
+        // Now, the chain should automatically disable the plugin and fall back to Native.
+        assert_eq!(
+            manager.chain_for(&Language::Python),
+            vec![FallbackStep::Native, FallbackStep::NoOp],
         );
     }
 }
