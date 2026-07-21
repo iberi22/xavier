@@ -304,8 +304,7 @@ impl IndexEngine for CodeGraphCKernel {
         })?;
 
         if !output.status.success() {
-            return Err(GraphError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(GraphError::Io(std::io::Error::other(
                 format!(
                     "codegraph binary failed with status {}: {}",
                     output.status,
@@ -337,8 +336,7 @@ impl IndexEngine for CodeGraphCKernel {
         })?;
 
         if !output.status.success() {
-            return Err(GraphError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(GraphError::Io(std::io::Error::other(
                 format!(
                     "codegraph binary failed with status {}: {}",
                     output.status,
@@ -370,8 +368,7 @@ impl IndexEngine for CodeGraphCKernel {
         })?;
 
         if !output.status.success() {
-            return Err(GraphError::Io(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            return Err(GraphError::Io(std::io::Error::other(
                 format!(
                     "codegraph binary failed with status {}: {}",
                     output.status,

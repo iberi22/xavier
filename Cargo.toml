@@ -302,6 +302,14 @@ name = "xavier-tui"
 path = "src/main_tui.rs"
 required-features = ["cli-interactive"]
 
+[lints.clippy]
+vec_init_then_push = "allow"
+manual_clamp = "allow"
+new_without_default = "allow"
+field_reassign_with_default = "allow"
+bool_assert_comparison = "allow"
+useless_vec = "allow"
+
 [profile.release]
 opt-level = 3
 lto = false

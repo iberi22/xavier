@@ -651,7 +651,8 @@ impl QueryEngine {
         Ok(results)
     }
 
-    fn resolve_symbol_id(&self, query: &str) -> Result<Option<String>> {
+    /// Resolve a symbol query (name or stable ID) to a stable ID
+    pub fn resolve_symbol_id(&self, query: &str) -> Result<Option<String>> {
         if query.len() == 64 && query.chars().all(|ch| ch.is_ascii_hexdigit()) {
             return Ok(Some(query.to_string()));
         }
@@ -701,16 +702,5 @@ impl QueryEngine {
     /// Resolve a stable ID to a Symbol
     pub fn symbol_by_stable_id(&self, stable_id: &str) -> Result<Option<Symbol>> {
         self.db.symbol_by_stable_id(stable_id)
-    }
-
-    /// Resolve a symbol query (name or stable ID) to a stable ID
-    pub fn resolve_symbol_id(&self, query: &str) -> Result<Option<String>> {
-        if query.len() == 64 && query.chars().all(|ch| ch.is_ascii_hexdigit()) {
-            return Ok(Some(query.to_string()));
-        }
-        if let Some(symbol) = self.db.find_symbols(query, 1)?.symbols.into_iter().next() {
-            return Ok(symbol.stable_id);
-        }
-        Ok(None)
     }
 }

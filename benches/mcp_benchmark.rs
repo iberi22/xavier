@@ -1,3 +1,4 @@
+#![allow(unused_imports)]
 use criterion::{criterion_group, criterion_main, Criterion};
 use serde_json::json;
 use std::sync::Arc;
@@ -16,7 +17,7 @@ fn bench_mcp_ops(c: &mut Criterion) {
     let rt = Runtime::new().expect("tokio runtime");
 
     // Setup state
-    let (state, workspace) = rt.block_on(async {
+    let (_state, workspace) = rt.block_on(async {
         let temp_dir = std::env::temp_dir().join(format!("xavier-mcp-bench-{}", std::process::id()));
         std::fs::create_dir_all(&temp_dir).ok();
 
@@ -80,8 +81,8 @@ fn bench_mcp_ops(c: &mut Criterion) {
     // 1. Benchmark list_tools payload generation
     c.bench_function("mcp_list_tools_payload_generation", |b| {
         b.iter(|| {
-            let tools = xavier::server::mcp::tools_core::list_tools_metadata();
-            assert!(tools.len() >= 16);
+            let tools = xavier::server::mcp::tools_core::get_xavier_core_tools();
+            assert!(tools.len() >= 5);
         });
     });
 

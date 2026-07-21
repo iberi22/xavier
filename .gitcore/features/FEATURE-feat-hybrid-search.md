@@ -28,5 +28,4 @@ The results are then merged using Reciprocal Rank Fusion (RRF), sorted alphabeti
 - Hybrid search integration tests in retrieval modules.
 
 ## Known Issues & Notes
-- Local embedding fallback on AMD GPUs is currently missing/under development.
 - "Fat Search" pattern is implemented via Progressive Memory Disclosure (the `mem_search` tool returns metadata and snippets by default, and `include_content: true` or `memory_context(ids=[...])` is used to page-in the full text).
