@@ -20,6 +20,7 @@ pub mod data_commons;
 pub mod governance;
 pub mod embedding;
 pub mod enterprise;
+pub mod error;
 pub mod health;
 pub mod maturity;
 pub mod memory;

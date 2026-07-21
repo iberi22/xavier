@@ -98,14 +98,7 @@ pub async fn v1_memories_export(
     let public_only = params.public.unwrap_or(false);
     match workspace.workspace.memory.export(public_only).await {
         Ok(docs) => Json(docs).into_response(),
-        Err(e) => (
-            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({
-                "status": "error",
-                "message": e.to_string()
-            })),
-        )
-            .into_response(),
+        Err(e) => crate::error::ApiError::internal(e.to_string()).into_response(),
     }
 }
 
@@ -162,10 +155,7 @@ pub async fn v1_memories_add(
         .ensure_within_storage_limit(&path, &content, &meta)
         .await
     {
-        return Json(serde_json::json!({
-            "status": "error",
-            "message": error.to_string(),
-        }));
+        return crate::error::ApiError::validation(error.to_string()).into_ok_response();
     }
 
     match workspace
@@ -197,12 +187,9 @@ pub async fn v1_memories_add(
                 "status": "ok",
                 "message": "Memory added successfully",
                 "id": id,
-            }))
+            })).into_response()
         }
-        Err(e) => Json(serde_json::json!({
-            "status": "error",
-            "message": e.to_string(),
-        })),
+        Err(e) => crate::error::ApiError::internal(e.to_string()).into_ok_response(),
     }
 }
 
@@ -858,11 +845,8 @@ pub async fn v1_memories_get(
                 user_id: Some(doc.path),
                 metadata: doc.metadata,
             }
-        })),
-        _ => Json(serde_json::json!({
-            "status": "error",
-            "message": "Memory not found"
-        })),
+        })).into_response(),
+        _ => crate::error::ApiError::not_found("Memory not found").into_ok_response(),
     }
 }
 
@@ -872,10 +856,7 @@ pub async fn v1_memories_update(
     Json(payload): Json<V1AddMemoryRequest>,
 ) -> impl IntoResponse {
     let Some(existing) = workspace.workspace.memory.get(&id).await.ok().flatten() else {
-        return Json(serde_json::json!({
-            "status": "error",
-            "message": "Memory not found"
-        }));
+        return crate::error::ApiError::not_found("Memory not found").into_ok_response();
     };
 
     let content = if let Some(text) = payload.text {
@@ -943,15 +924,9 @@ pub async fn v1_memories_update(
             "status": "ok",
             "message": "Memory updated successfully",
             "id": updated_id,
-        })),
-        Ok(None) => Json(serde_json::json!({
-            "status": "error",
-            "message": "Memory not found"
-        })),
-        Err(error) => Json(serde_json::json!({
-            "status": "error",
-            "message": error.to_string()
-        })),
+        })).into_response(),
+        Ok(None) => crate::error::ApiError::not_found("Memory not found").into_ok_response(),
+        Err(error) => crate::error::ApiError::internal(error.to_string()).into_ok_response(),
     }
 }
 
@@ -969,12 +944,9 @@ pub async fn v1_memories_delete(
             Json(serde_json::json!({
                 "status": "ok",
                 "message": "Memory deleted successfully"
-            }))
+            })).into_response()
         }
-        _ => Json(serde_json::json!({
-            "status": "error",
-            "message": "Memory not found"
-        })),
+        _ => crate::error::ApiError::not_found("Memory not found").into_ok_response(),
     }
 }
 
