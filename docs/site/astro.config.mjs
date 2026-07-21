@@ -30,6 +30,10 @@ export default defineConfig({
           autogenerate: { directory: "modules" },
         },
         {
+          label: "Features",
+          autogenerate: { directory: "features" },
+        },
+        {
           label: "API Reference",
           autogenerate: { directory: "reference" },
         },
