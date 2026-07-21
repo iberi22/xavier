@@ -1,6 +1,6 @@
 # FEATURE: MCP Server
 
-**Status:** `stable` | **Score:** 100% | **Last Tested:** 2026-07-18
+**Status:** `stable` | **Score:** 100% | **Last Tested:** 2026-07-21
 
 ## Overview
 Xavier implements an HTTP-first integration server with optional Model Context Protocol (MCP) support. This protocol exposes 12 specialized tools allowing external LLMs or agents to query memory, retrieve documents, execute code searches, and manage contexts efficiently.
@@ -23,5 +23,5 @@ The MCP Server conforms strictly to the Model Context Protocol specifications. I
 - Integration tests validating the progressive disclosure search pipeline.
 
 ## Known Issues & Notes
-- Grok MCP doctor: Handshake is successful, but there is some protocol drift on `tools/list` causing 18 unit tests to fail under the full suite when strictly checking strict protocol boundaries.
+- Protocol drift on `tools/list` resolved by aligning alias tool schemas with non-alias definitions (ensuring standard fields like properties/required are present) and enabling dynamic version negotiation for official release protocol versions (e.g., `"2024-11-05"`).
 - Progressive disclosure reduces token overhead by ~90% for active agents.
