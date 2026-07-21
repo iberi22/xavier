@@ -302,7 +302,7 @@
       "name": "Bicameral Governance DAO",
       "category": "enterprise",
       "status": "stable",
-      "progress_pct": 30,
+      "progress_pct": 100,
       "description": "Bicameral governance system â€” 50% node operators + 50% Xavier Core Council â€” with weighted voting, veto, XIP lifecycle, and on-chain integration",
       "steps": [
         "Bicameral DAO design (users + council)",
@@ -315,11 +315,11 @@
         "UI for proposal browsing and voting"
       ],
       "passes": true,
-      "verified_by": "build",
+      "verified_by": "automated",
       "github_issue": 322,
-      "last_tested": "2026-07-18",
-      "notes": "MVP complete: mock DAO + veto + reputation. On-chain governance is Phase 2 under EPIC #115 (not blocking product 1.0).",
-      "implemented_in": "src/data_commons/governance.rs, src/data_commons/reputation.rs, src/data_commons/types.rs, src/mesh/governance.rs"
+      "last_tested": "2026-07-20",
+      "notes": "Bicameral governance complete: 50% community users with reputation-weighted votes + 50% council members. Supports full XIP lifecycle (Draft -> Discussion -> Voting -> Tally -> Execution) and state persistence under .xavier/. Includes council veto (66%) and community overrule (75%). Gated behind the `dao-evm` feature, we also provide alloy-based on-chain integration.",
+      "implemented_in": "src/data_commons/governance.rs, src/data_commons/reputation.rs, src/data_commons/types.rs, src/mesh/governance.rs, src/governance/mod.rs, src/cli/commands/governance.rs"
     },
     {
       "id": "feat-runtime-health",
