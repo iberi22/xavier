@@ -19,6 +19,7 @@ pub mod crypto;
 pub mod data_commons;
 pub mod embedding;
 pub mod enterprise;
+pub mod error;
 pub mod health;
 pub mod maturity;
 pub mod memory;

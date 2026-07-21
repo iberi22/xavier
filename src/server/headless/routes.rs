@@ -1,7 +1,6 @@
 use crate::domain::memory::MemoryRecord;
 use crate::ports::inbound::MemoryQueryPort;
 use axum::{
-    http::StatusCode,
     response::{IntoResponse, Json as AxumJson},
 };
 use serde::Deserialize;
@@ -37,11 +36,7 @@ pub async fn context(memory: &dyn MemoryQueryPort, params: ContextParams) -> imp
             }))
             .into_response()
         }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            AxumJson(json!({"error": e.to_string()})),
-        )
-            .into_response(),
+        Err(e) => crate::error::ApiError::internal(e.to_string()).into_response(),
     }
 }
 
@@ -64,11 +59,7 @@ pub async fn memory_search(memory: &dyn MemoryQueryPort, req: SearchRequest) -> 
             }))
             .into_response()
         }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            AxumJson(json!({"error": e.to_string()})),
-        )
-            .into_response(),
+        Err(e) => crate::error::ApiError::internal(e.to_string()).into_response(),
     }
 }
 

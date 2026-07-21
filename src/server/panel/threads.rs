@@ -4,7 +4,6 @@ use crate::{
     workspace::WorkspaceContext,
 };
 use axum::{extract::Path as AxumPath, http::StatusCode, response::IntoResponse, Extension, Json};
-use serde_json::json;
 
 pub async fn list_threads(Extension(workspace): Extension<WorkspaceContext>) -> impl IntoResponse {
     match workspace.workspace.conversations_db.list_threads(50).await {
@@ -24,11 +23,7 @@ pub async fn list_threads(Extension(workspace): Extension<WorkspaceContext>) -> 
             }
             Json(summaries).into_response()
         }
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": error.to_string() })),
-        )
-            .into_response(),
+        Err(error) => crate::error::ApiError::internal(error.to_string()).into_response(),
     }
 }
 
@@ -48,11 +43,7 @@ pub async fn create_thread(
         .await
     {
         Ok(thread) => Json(ThreadSummary::from(&thread)).into_response(),
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": error.to_string() })),
-        )
-            .into_response(),
+        Err(error) => crate::error::ApiError::internal(error.to_string()).into_response(),
     }
 }
 
@@ -82,23 +73,11 @@ pub async fn get_thread(
                     })
                     .into_response()
                 }
-                Err(error) => (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(json!({ "error": error.to_string() })),
-                )
-                    .into_response(),
+                Err(error) => crate::error::ApiError::internal(error.to_string()).into_response(),
             }
         }
-        Ok(None) => (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "thread not found" })),
-        )
-            .into_response(),
-        Err(error) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({ "error": error.to_string() })),
-        )
-            .into_response(),
+        Ok(None) => crate::error::ApiError::not_found("thread not found").into_response(),
+        Err(error) => crate::error::ApiError::internal(error.to_string()).into_response(),
     }
 }
 
@@ -108,9 +87,5 @@ pub async fn delete_thread(
 ) -> impl IntoResponse {
     // Note: This logic for deletion should be implemented in ConversationsDb if needed.
     // For now, we only have placeholders.
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        Json(json!({ "error": "thread deletion not implemented" })),
-    )
-        .into_response()
+    crate::error::ApiError::new(StatusCode::NOT_IMPLEMENTED, "NOT_IMPLEMENTED", "thread deletion not implemented").into_response()
 }
