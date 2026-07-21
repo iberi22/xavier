@@ -42,14 +42,53 @@ impl PluginManager {
 
         let installed: HashMap<Language, PluginDescriptor> = HashMap::new();
         let fallback = FallbackChain::load_or_default();
-        Self {
+        let manager = Self {
             installed: RwLock::new(installed),
             by_name: RwLock::new(HashMap::new()),
             fallback: RwLock::new(fallback),
             engine,
             registry,
             health: RwLock::new(Some(health)),
+        };
+
+        if which::which("codegraph").is_ok() {
+            let descriptor = PluginDescriptor {
+                name: "codegraph".to_string(),
+                version: "1.4.1".to_string(),
+                command: "codegraph".to_string(),
+                languages: vec![
+                    Language::Rust,
+                    Language::TypeScript,
+                    Language::Python,
+                    Language::Go,
+                    Language::Java,
+                    Language::C,
+                    Language::Cpp,
+                ],
+                extensions: vec![
+                    "rs".to_string(),
+                    "ts".to_string(),
+                    "tsx".to_string(),
+                    "py".to_string(),
+                    "go".to_string(),
+                    "java".to_string(),
+                    "c".to_string(),
+                    "h".to_string(),
+                    "cpp".to_string(),
+                    "cc".to_string(),
+                    "cxx".to_string(),
+                    "hpp".to_string(),
+                ],
+                capabilities: vec![
+                    "parse".to_string(),
+                    "index".to_string(),
+                    "query".to_string(),
+                ],
+            };
+            manager.register(descriptor);
         }
+
+        manager
     }
 
     /// Build a manager with a custom engine and registry.
