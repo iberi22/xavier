@@ -205,6 +205,14 @@ fn classify_message(object: &serde_json::Map<String, Value>) -> Result<IncomingK
 }
 
 fn validate_tool_call_args(name: &str, arguments: &Value) -> Result<(), MCPError> {
+    if !arguments.is_object() {
+        return Err(MCPError {
+            code: XAVIER_ERROR_VALIDATION,
+            message: "arguments must be a JSON object".to_string(),
+            data: None,
+        });
+    }
+
     let tools = super::server::get_xavier_tools();
     let tool = tools.iter().find(|t| t.name == name);
 
@@ -246,19 +254,34 @@ async fn handle_mcp_request(
     info!(method = %request.method, notification = is_notification, "mcp_request");
 
     let response = match request.method.as_str() {
-        "initialize" => Some(MCPResponse {
-            jsonrpc: "2.0".to_string(),
-            id: request.id.unwrap_or(Value::Null),
-            result: Some(serde_json::json!({
-                "protocolVersion": "2026-07-28",
-                "capabilities": {
-                    "tools": { "listChanged": false },
-                    "resources": { "listChanged": false }
-                },
-                "serverInfo": { "name": "xavier-memory", "version": env!("CARGO_PKG_VERSION") }
-            })),
-            error: None,
-        }),
+        "initialize" => {
+            let client_version = request
+                .params
+                .as_ref()
+                .and_then(|p| p.get("protocolVersion"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("2024-11-05");
+
+            let response_version = if client_version == "2024-11-05" || client_version == "2024-10-22" {
+                client_version
+            } else {
+                "2026-07-28"
+            };
+
+            Some(MCPResponse {
+                jsonrpc: "2.0".to_string(),
+                id: request.id.unwrap_or(Value::Null),
+                result: Some(serde_json::json!({
+                    "protocolVersion": response_version,
+                    "capabilities": {
+                        "tools": { "listChanged": false },
+                        "resources": { "listChanged": false }
+                    },
+                    "serverInfo": { "name": "xavier-memory", "version": env!("CARGO_PKG_VERSION") }
+                })),
+                error: None,
+            })
+        }
         "notifications/initialized" => None,
         "resources/list" => Some(MCPResponse {
             jsonrpc: "2.0".to_string(),
