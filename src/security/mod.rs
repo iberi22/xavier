@@ -347,11 +347,11 @@ impl SecurityService {
 
     /// Get or initialize the KeyManager using hardware-backed master key
     pub fn get_key_manager(&self) -> Result<Arc<crate::crypto::KeyManager>> {
-        if let Some(mgr) = self.key_manager.read().unwrap().as_ref() {
+        if let Some(mgr) = self.key_manager.read().map_err(|e| anyhow!("KeyManager read lock poisoned: {}", e))?.as_ref() {
             return Ok(mgr.clone());
         }
 
-        let mut mgr_write = self.key_manager.write().unwrap();
+        let mut mgr_write = self.key_manager.write().map_err(|e| anyhow!("KeyManager write lock poisoned: {}", e))?;
         if let Some(mgr) = mgr_write.as_ref() {
             return Ok(mgr.clone());
         }
@@ -439,7 +439,7 @@ impl ApprovalStore {
         let key = format!("{}:{}", action, target);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or(std::time::Duration::ZERO)
             .as_secs();
         if let Ok(mut approvals) = self.approvals.write() {
             approvals.insert(key, now);
@@ -453,7 +453,7 @@ impl ApprovalStore {
             if let Some(timestamp) = approvals.get(&key) {
                 let now = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap()
+                    .unwrap_or(std::time::Duration::ZERO)
                     .as_secs();
                 // Approval is valid for 5 minutes
                 if now - *timestamp < 300 {
