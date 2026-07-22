@@ -16,4 +16,7 @@ pub mod wallet;
 
 pub use accounting::{PeerAccount, ResourceAccounting};
 pub use rewards::{ContributionType, RewardEngine, RewardEvent};
-pub use wallet::{InvestmentTier, Transaction, TransactionKind, Wallet, WalletBalance};
+pub use wallet::{
+    Address, InvestmentTier, MultisigProposal, MultisigTransaction, MultisigWallet, Transaction,
+    TransactionKind, TxId, Wallet, WalletBalance, create_multisig, execute_tx, sign_tx, submit_tx,
+};

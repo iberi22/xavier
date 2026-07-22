@@ -338,6 +338,248 @@ impl Wallet {
 }
 
 // ---------------------------------------------------------------------------
+// Multisig Wallet — Multi-signature consensus tracking
+// ---------------------------------------------------------------------------
+
+/// A wallet or contract address.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct Address(pub String);
+
+impl Address {
+    /// Create a new Address from a string.
+    pub fn new(addr: impl Into<String>) -> Self {
+        Address(addr.into())
+    }
+}
+
+impl std::fmt::Display for Address {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl From<String> for Address {
+    fn from(s: String) -> Self {
+        Self(s)
+    }
+}
+
+impl From<&str> for Address {
+    fn from(s: &str) -> Self {
+        Self(s.to_string())
+    }
+}
+
+/// Transaction ID wrapper.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct TxId(pub Uuid);
+
+/// Action proposed for execution on the multisig treasury.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum MultisigProposal {
+    /// Transfer XP from treasury to another address
+    Transfer {
+        /// Target wallet address
+        to: Address,
+        /// Amount of XP to transfer
+        amount: u64,
+        /// Description of transfer purpose
+        description: String,
+    },
+    /// Move XP into staking lockups
+    Stake {
+        /// Amount to stake
+        amount: u64,
+        /// Duration of stake lockup
+        duration_days: u64,
+    },
+    /// Reclaim staked XP
+    Unstake {
+        /// Amount to unstake
+        amount: u64,
+    },
+}
+
+/// A transaction proposal tracking current signatures.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultisigTransaction {
+    /// ID of the transaction
+    pub id: TxId,
+    /// The action proposed
+    pub proposal: MultisigProposal,
+    /// Owners who have signed off on this transaction
+    pub signatures: std::collections::HashSet<Address>,
+    /// Whether the transaction has already been executed
+    pub executed: bool,
+}
+
+/// A Multi-Signature wallet tracking owner consensus and execution.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MultisigWallet {
+    /// Unique address for the multisig wallet
+    pub address: Address,
+    /// List of addresses that own this wallet
+    pub owners: Vec<Address>,
+    /// Minimum threshold of signatures required to execute a transaction
+    pub threshold: u8,
+    /// Underlying standard wallet tracking balance and transactions
+    pub wallet: Wallet,
+    /// History and status of proposed transactions
+    pub transactions: std::collections::HashMap<TxId, MultisigTransaction>,
+}
+
+impl MultisigWallet {
+    /// Create a new MultisigWallet with owners and signature threshold.
+    pub fn new(owners: Vec<Address>, threshold: u8) -> Self {
+        let unique_id = Uuid::new_v4();
+        let address = Address::new(format!("multisig_{}", &unique_id.to_string()[..8]));
+        let node_id = NodeId::parse("xv1-multisig0000000").unwrap();
+        Self {
+            address,
+            owners,
+            threshold,
+            wallet: Wallet::new(node_id),
+            transactions: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Submit a new transaction proposal. The submitter counts as the first signer.
+    pub fn submit_tx(&mut self, tx: MultisigProposal, signer: Address) -> Result<TxId> {
+        submit_tx(self, tx, signer)
+    }
+
+    /// Sign an existing, unexecuted transaction proposal.
+    pub fn sign_tx(&mut self, tx_id: TxId, signer: Address) -> Result<()> {
+        sign_tx(self, tx_id, signer)
+    }
+
+    /// Execute a transaction proposal once the signature threshold has been reached.
+    pub fn execute_tx(&mut self, tx_id: TxId) -> Result<()> {
+        execute_tx(self, tx_id)
+    }
+}
+
+// Global registry of all multisig wallets
+static MULTISIG_REGISTRY: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<Address, MultisigWallet>>> = std::sync::OnceLock::new();
+
+fn get_registry() -> &'static std::sync::Mutex<std::collections::HashMap<Address, MultisigWallet>> {
+    MULTISIG_REGISTRY.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+/// Create a new multisig wallet and register it in the global registry.
+pub fn create_multisig(owners: Vec<Address>, threshold: u8) -> Address {
+    let wallet = MultisigWallet::new(owners, threshold);
+    let address = wallet.address.clone();
+    let mut registry = get_registry().lock().unwrap();
+    registry.insert(address.clone(), wallet);
+    address
+}
+
+/// Retrieve a copy of a multisig wallet from the registry by its address.
+pub fn get_multisig_wallet(address: &Address) -> Option<MultisigWallet> {
+    let registry = get_registry().lock().unwrap();
+    registry.get(address).cloned()
+}
+
+/// Submit a transaction proposal to a multisig wallet.
+pub fn submit_tx(wallet: &mut MultisigWallet, tx: MultisigProposal, signer: Address) -> Result<TxId> {
+    if !wallet.owners.contains(&signer) {
+        bail!("Signer is not an owner of this multisig wallet");
+    }
+    let tx_id = TxId(Uuid::new_v4());
+    let mut signatures = std::collections::HashSet::new();
+    signatures.insert(signer);
+
+    let multisig_tx = MultisigTransaction {
+        id: tx_id,
+        proposal: tx,
+        signatures,
+        executed: false,
+    };
+
+    wallet.transactions.insert(tx_id, multisig_tx);
+
+    // Sync to global registry if registered
+    let mut registry = get_registry().lock().unwrap();
+    if registry.contains_key(&wallet.address) {
+        registry.insert(wallet.address.clone(), wallet.clone());
+    }
+
+    Ok(tx_id)
+}
+
+/// Sign a transaction proposal in a multisig wallet.
+pub fn sign_tx(wallet: &mut MultisigWallet, tx_id: TxId, signer: Address) -> Result<()> {
+    if !wallet.owners.contains(&signer) {
+        bail!("Signer is not an owner of this multisig wallet");
+    }
+    let tx = wallet.transactions.get_mut(&tx_id).context("Transaction not found")?;
+    if tx.executed {
+        bail!("Transaction already executed");
+    }
+    tx.signatures.insert(signer);
+
+    // Sync to global registry if registered
+    let mut registry = get_registry().lock().unwrap();
+    if registry.contains_key(&wallet.address) {
+        registry.insert(wallet.address.clone(), wallet.clone());
+    }
+
+    Ok(())
+}
+
+/// Execute a transaction proposal if the threshold is met.
+pub fn execute_tx(wallet: &mut MultisigWallet, tx_id: TxId) -> Result<()> {
+    let (proposal, sig_count) = {
+        let tx = wallet.transactions.get(&tx_id).context("Transaction not found")?;
+        if tx.executed {
+            bail!("Transaction already executed");
+        }
+        let count = tx.signatures.len();
+        (tx.proposal.clone(), count)
+    };
+
+    if sig_count < wallet.threshold as usize {
+        bail!(
+            "Threshold not reached: have {}, need {}",
+            sig_count,
+            wallet.threshold
+        );
+    }
+
+    // Execute proposal actions on the underlying wallet
+    match &proposal {
+        MultisigProposal::Transfer { to, amount, description } => {
+            wallet.wallet.debit(*amount, TransactionKind::Redemption, description)?;
+
+            // If the target address is in the global registry, credit it
+            let mut registry = get_registry().lock().unwrap();
+            if let Some(target_wallet) = registry.get_mut(to) {
+                target_wallet.wallet.credit(*amount, TransactionKind::Reward, description);
+            }
+        }
+        MultisigProposal::Stake { amount, duration_days } => {
+            wallet.wallet.stake(*amount, *duration_days)?;
+        }
+        MultisigProposal::Unstake { amount } => {
+            wallet.wallet.unstake(*amount)?;
+        }
+    }
+
+    // Mark as executed
+    let tx = wallet.transactions.get_mut(&tx_id).context("Transaction not found")?;
+    tx.executed = true;
+
+    // Sync to global registry if registered
+    let mut registry = get_registry().lock().unwrap();
+    if registry.contains_key(&wallet.address) {
+        registry.insert(wallet.address.clone(), wallet.clone());
+    }
+
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -449,5 +691,113 @@ mod tests {
     fn test_load_invalid_json_fails() {
         let result = Wallet::load("not valid json");
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn multisig_requires_threshold() {
+        let owner1 = Address::new("owner1");
+        let owner2 = Address::new("owner2");
+        let owner3 = Address::new("owner3");
+        let mut wallet = MultisigWallet::new(vec![owner1.clone(), owner2.clone(), owner3.clone()], 2);
+
+        // Fund standard wallet balance
+        wallet.wallet.credit(1000, TransactionKind::Reward, "Initial funding");
+
+        let tx = MultisigProposal::Transfer {
+            to: Address::new("recipient"),
+            amount: 400,
+            description: "Transfer 400 XP".to_string(),
+        };
+
+        // Submit proposal
+        let tx_id = submit_tx(&mut wallet, tx, owner1.clone()).unwrap();
+
+        // Attempting to execute with only 1 signature should fail
+        let res = execute_tx(&mut wallet, tx_id);
+        assert!(res.is_err());
+        assert_eq!(wallet.wallet.balance.xp_balance, 1000);
+    }
+
+    #[test]
+    fn multisig_executes_after_threshold() {
+        let owner1 = Address::new("owner1");
+        let owner2 = Address::new("owner2");
+        let owner3 = Address::new("owner3");
+        let mut wallet = MultisigWallet::new(vec![owner1.clone(), owner2.clone(), owner3.clone()], 2);
+
+        // Fund standard wallet balance
+        wallet.wallet.credit(1000, TransactionKind::Reward, "Initial funding");
+
+        let tx = MultisigProposal::Transfer {
+            to: Address::new("recipient"),
+            amount: 400,
+            description: "Transfer 400 XP".to_string(),
+        };
+
+        // Submit proposal
+        let tx_id = submit_tx(&mut wallet, tx, owner1.clone()).unwrap();
+
+        // Sign with owner2
+        sign_tx(&mut wallet, tx_id, owner2.clone()).unwrap();
+
+        // Executing should now succeed
+        execute_tx(&mut wallet, tx_id).unwrap();
+        assert_eq!(wallet.wallet.balance.xp_balance, 600);
+
+        // Transaction is marked executed
+        let tx_record = wallet.transactions.get(&tx_id).unwrap();
+        assert!(tx_record.executed);
+    }
+
+    #[test]
+    fn non_owner_cannot_submit() {
+        let owner1 = Address::new("owner1");
+        let owner2 = Address::new("owner2");
+        let mut wallet = MultisigWallet::new(vec![owner1.clone(), owner2.clone()], 2);
+
+        let non_owner = Address::new("intruder");
+        let tx = MultisigProposal::Transfer {
+            to: Address::new("recipient"),
+            amount: 100,
+            description: "Unauthorized".to_string(),
+        };
+
+        let res = submit_tx(&mut wallet, tx, non_owner);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_create_multisig_registry_and_transfer() {
+        let owner1 = Address::new("owner1");
+        let owner2 = Address::new("owner2");
+
+        let multisig_addr = create_multisig(vec![owner1.clone(), owner2.clone()], 2);
+        let recipient_addr = create_multisig(vec![owner1.clone()], 1);
+
+        // Get multisig wallet from registry and fund it
+        {
+            let mut registry = get_registry().lock().unwrap();
+            let wallet = registry.get_mut(&multisig_addr).unwrap();
+            wallet.wallet.credit(1000, TransactionKind::Reward, "Fund");
+        }
+
+        // Re-fetch
+        let mut wallet = get_multisig_wallet(&multisig_addr).unwrap();
+        let tx = MultisigProposal::Transfer {
+            to: recipient_addr.clone(),
+            amount: 300,
+            description: "Treasury reward".to_string(),
+        };
+
+        let tx_id = wallet.submit_tx(tx, owner1.clone()).unwrap();
+        wallet.sign_tx(tx_id, owner2.clone()).unwrap();
+        wallet.execute_tx(tx_id).unwrap();
+
+        // Check local
+        assert_eq!(wallet.wallet.balance.xp_balance, 700);
+
+        // Check recipient in registry got funded
+        let recipient_wallet = get_multisig_wallet(&recipient_addr).unwrap();
+        assert_eq!(recipient_wallet.wallet.balance.xp_balance, 300);
     }
 }
