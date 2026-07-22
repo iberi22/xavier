@@ -1,0 +1,1 @@
+{"feature": "test-session-sharing", "progress_pct": 100, "status": "stable", "passes": true, "last_tested": "2026-07-22", "tests": ["session::sharing::tests::test_session_export_import"]}
