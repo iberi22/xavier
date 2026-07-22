@@ -269,37 +269,52 @@ impl ModelProviderClient {
         system_prompt: &str,
         user_prompt: &str,
     ) -> Result<LlmResponse> {
-        use tokio::process::Command;
-
-        let prompt = format!("{}\n\n{}", system_prompt, user_prompt);
-
-        let mut cmd = Command::new("opencode");
-        cmd.arg("run")
-            .arg("--model")
-            .arg(&self.config.model)
-            .arg(prompt);
-
-        if let Some(api_key) = &self.config.api_key {
-            cmd.env("OPENCODE_API_KEY", api_key);
-            cmd.env("ZAI_API_KEY", api_key);
+        #[cfg(test)]
+        {
+            let prompt = format!("{}\n\n{}", system_prompt, user_prompt);
+            Ok(LlmResponse {
+                text: format!(
+                    "Mocked response for model {}: {}",
+                    self.config.model, prompt
+                ),
+                quota: None,
+            })
         }
 
-        let output = cmd.output().await.map_err(|e| {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                anyhow!("'opencode' binary not found in PATH. Please install it via: npm install -g @opencode/cli")
-            } else {
-                anyhow!("failed to execute opencode CLI: {}", e)
+        #[cfg(not(test))]
+        {
+            use tokio::process::Command;
+
+            let prompt = format!("{}\n\n{}", system_prompt, user_prompt);
+
+            let mut cmd = Command::new("opencode");
+            cmd.arg("run")
+                .arg("--model")
+                .arg(&self.config.model)
+                .arg(prompt);
+
+            if let Some(api_key) = &self.config.api_key {
+                cmd.env("OPENCODE_API_KEY", api_key);
+                cmd.env("ZAI_API_KEY", api_key);
             }
-        })?;
 
-        if !output.status.success() {
-            let err = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow!("opencode CLI error: {}", err));
+            let output = cmd.output().await.map_err(|e| {
+                if e.kind() == std::io::ErrorKind::NotFound {
+                    anyhow!("'opencode' binary not found in PATH. Please install it via: npm install -g @opencode/cli")
+                } else {
+                    anyhow!("failed to execute opencode CLI: {}", e)
+                }
+            })?;
+
+            if !output.status.success() {
+                let err = String::from_utf8_lossy(&output.stderr);
+                return Err(anyhow!("opencode CLI error: {}", err));
+            }
+
+            let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+            Ok(LlmResponse { text, quota: None })
         }
-
-        let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-        Ok(LlmResponse { text, quota: None })
     }
 }
 
