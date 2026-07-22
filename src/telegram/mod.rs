@@ -6,6 +6,8 @@
 //! first (`xavier vault set telegram_bot_token ...`) and falls back to the
 //! `TELEGRAM_BOT_TOKEN` environment variable.
 
+#![allow(clippy::field_reassign_with_default)]
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
@@ -23,7 +25,7 @@ pub const RATE_LIMIT_COMMANDS: usize = 10;
 pub const RATE_LIMIT_WINDOW_SECS: u64 = 60;
 
 /// Simple per-user rate limiter: N commands per window.
-struct RateLimiter {
+pub struct RateLimiter {
     max_per_window: usize,
     window: Duration,
     entries: Mutex<HashMap<String, Vec<Instant>>>,
@@ -434,6 +436,7 @@ impl XavierBot {
     }
 
     /// Handle command.
+    #[allow(clippy::too_many_arguments)]
     pub async fn handle_command(
         bot: Bot,
         msg: Message,
@@ -714,7 +717,7 @@ pub async fn handle_memory_command(args: &str) -> String {
                                 .metadata
                                 .get("title")
                                 .and_then(|t| t.as_str())
-                                .or(doc.path.split('/').last())
+                                .or(doc.path.split('/').next_back())
                                 .unwrap_or("Untitled");
                             let preview: String = doc.content.chars().take(100).collect();
                             response.push_str(&format!(
@@ -749,7 +752,7 @@ pub async fn handle_memory_command(args: &str) -> String {
                             .metadata
                             .get("title")
                             .and_then(|t| t.as_str())
-                            .or(doc.path.split('/').last())
+                            .or(doc.path.split('/').next_back())
                             .unwrap_or("Untitled");
                         response.push_str(&format!(
                             "{}\\. \\*{}\\* \\(id: `{}`\\)\n\n",
@@ -798,6 +801,7 @@ pub async fn handle_memory_command(args: &str) -> String {
 }
 
 /// Run bot.
+#[allow(clippy::field_reassign_with_default)]
 pub async fn run_bot(
     memory: Arc<dyn MemoryQueryPort>,
     agents: Arc<dyn AgentLifecyclePort>,
@@ -1060,24 +1064,26 @@ mod tests {
 
     #[tokio::test]
     async fn test_with_retry_succeeds_on_first_try() {
-        let mut calls = 0;
-        let result = with_retry("test-ok", 3, || {
-            calls += 1;
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let calls_clone = calls.clone();
+        let result = with_retry("test-ok", 3, move || {
+            calls_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             let val = 42;
             async move { Ok::<i32, String>(val) }
         })
         .await;
         assert_eq!(result.unwrap(), 42);
-        assert_eq!(calls, 1);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
     }
 
     #[tokio::test]
     async fn test_with_retry_retries_on_failure_then_succeeds() {
-        let mut calls = 0;
-        let result: Result<i32, &str> = with_retry("test-retry", 5, || {
-            calls += 1;
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let calls_clone = calls.clone();
+        let result: Result<i32, &str> = with_retry("test-retry", 5, move || {
+            let current = calls_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
             async move {
-                if calls < 3 {
+                if current < 3 {
                     Err("not yet")
                 } else {
                     Ok(99)
@@ -1086,19 +1092,20 @@ mod tests {
         })
         .await;
         assert_eq!(result.unwrap(), 99);
-        assert_eq!(calls, 3, "should have retried twice then succeeded");
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 3, "should have retried twice then succeeded");
     }
 
     #[tokio::test]
     async fn test_with_retry_exhausts_retries() {
-        let mut calls = 0;
-        let result: Result<i32, &str> = with_retry("test-exhaust", 3, || {
-            calls += 1;
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let calls_clone = calls.clone();
+        let result: Result<i32, &str> = with_retry("test-exhaust", 3, move || {
+            calls_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             async move { Err("always fails") }
         })
         .await;
         assert!(result.is_err());
-        assert_eq!(calls, 3, "should have tried exactly max_retries times");
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 3, "should have tried exactly max_retries times");
     }
 
     #[test]
