@@ -1,6 +1,8 @@
 //! Xavier integration test suite.
 //!
 //! Run with: cargo test --test integration
+#![allow(clippy::bool_assert_comparison)]
+#![allow(clippy::useless_vec)]
 
 #[path = "integration/a2a_test.rs"]
 mod a2a_test;

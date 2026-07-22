@@ -1,3 +1,4 @@
+#![allow(clippy::field_reassign_with_default)]
 use std::collections::HashMap;
 use xavier::data_commons::{
     governance::{GovernanceConfig, GovernanceEngine, DynamicQuorum},
