@@ -1,3 +1,9 @@
+//! Authentication and authorization module.
+//!
+//! Provides JWT-based authentication, password hashing/verification,
+//! refresh token rotation, and RBAC middleware for securing API endpoints.
+//! Includes database-backed session and user stores.
+
 pub mod db;
 pub mod jwt;
 pub mod middleware;

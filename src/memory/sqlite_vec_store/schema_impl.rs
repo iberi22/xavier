@@ -141,8 +141,14 @@ impl VecSqliteMemoryStore {
 
         let mut decrypted_records = Vec::new();
         for mut record in records {
-            if let Err(e) = crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(&mut record) {
-                tracing::warn!("Failed to decrypt record {} during background reindexing: {}", record.id, e);
+            if let Err(e) =
+                crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(&mut record)
+            {
+                tracing::warn!(
+                    "Failed to decrypt record {} during background reindexing: {}",
+                    record.id,
+                    e
+                );
                 continue;
             }
             decrypted_records.push(record);
@@ -153,7 +159,10 @@ impl VecSqliteMemoryStore {
             return Ok(());
         }
 
-        tracing::info!("Starting background reindexing for {} records.", total_records);
+        tracing::info!(
+            "Starting background reindexing for {} records.",
+            total_records
+        );
 
         let batch_size = 10;
         let mut processed_count = 0;
@@ -165,13 +174,16 @@ impl VecSqliteMemoryStore {
                 let content = record.content.clone();
                 let record_id = record.id.clone();
                 tasks.push(async move {
-                    let res: Result<Vec<f32>, crate::embedding::EmbeddingError> = tokio::time::timeout(
-                        std::time::Duration::from_secs(60),
-                        embedder.encode(&content),
-                    )
-                    .await
-                    .map_err(|_| crate::embedding::EmbeddingError::Network("timeout".to_string()))
-                    .and_then(|r| r);
+                    let res: Result<Vec<f32>, crate::embedding::EmbeddingError> =
+                        tokio::time::timeout(
+                            std::time::Duration::from_secs(60),
+                            embedder.encode(&content),
+                        )
+                        .await
+                        .map_err(|_| {
+                            crate::embedding::EmbeddingError::Network("timeout".to_string())
+                        })
+                        .and_then(|r| r);
 
                     match res {
                         Ok(emb) => Ok((record_id, emb)),
@@ -231,12 +243,19 @@ impl VecSqliteMemoryStore {
                                 .await;
 
                             if let Err(e) = update_res {
-                                tracing::error!("Failed to update embedded record {} in database: {}", record_id, e);
+                                tracing::error!(
+                                    "Failed to update embedded record {} in database: {}",
+                                    record_id,
+                                    e
+                                );
                             }
                         }
                     }
                     Err(e) => {
-                        tracing::warn!("Gracefully handled error during background reindexing: {}", e);
+                        tracing::warn!(
+                            "Gracefully handled error during background reindexing: {}",
+                            e
+                        );
                     }
                 }
             }
@@ -523,29 +542,19 @@ mod tests {
         use crate::memory::store::MemoryStore;
         let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
 
+        // Clear any stale embedding env vars from previous tests
+        for key in &[
+            "XAVIER_EMBEDDING_PROVIDER_MODE",
+            "XAVIER_EMBEDDING_URL",
+            "OPENAI_API_KEY",
+            "XAVIER_EMBEDDING_MODEL",
+        ] {
+            std::env::remove_var(key);
+        }
+
         // Setup a mock API server using mockito
         let mut server = mockito::Server::new_async().await;
         let mock_url = server.url();
-
-        // Setup environment variables for cloud OpenAI-compatible embedder
-        std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "cloud");
-        std::env::set_var("XAVIER_EMBEDDING_URL", format!("{}/v1/embeddings", mock_url));
-        std::env::set_var("OPENAI_API_KEY", "test-api-key");
-        std::env::set_var("XAVIER_EMBEDDING_MODEL", "test-model");
-
-        // Mock the embedding API response
-        let _mock = server.mock("POST", "/v1/embeddings")
-            .with_status(200)
-            .with_header("content-type", "application/json")
-            .with_body(r#"{
-                "data": [
-                    {
-                        "embedding": [0.1, 0.2, 0.3]
-                    }
-                ]
-            }"#)
-            .create_async()
-            .await;
 
         // Create a temporary database using VecSqliteMemoryStore
         let temp_dir = tempfile::tempdir().unwrap();
@@ -557,7 +566,7 @@ mod tests {
 
         let store = VecSqliteMemoryStore::new(config).await.unwrap();
 
-        // Insert a record with NULL embedding
+        // Insert a record with NULL embedding (no env vars set yet → no auto-embedding)
         let record = crate::memory::store::MemoryRecord {
             id: "test_mem_1".to_string(),
             workspace_id: "test_ws_1".to_string(),
@@ -572,43 +581,98 @@ mod tests {
 
         store.put(record).await.unwrap();
 
+        // Now set env vars and mock for the reindex step
+        std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "cloud");
+        std::env::set_var(
+            "XAVIER_EMBEDDING_URL",
+            format!("{}/v1/embeddings", mock_url),
+        );
+        std::env::set_var("OPENAI_API_KEY", "test-api-key");
+        std::env::set_var("XAVIER_EMBEDDING_MODEL", "test-model");
+
+        // Mock the embedding API response
+        let _mock = server
+            .mock("POST", "/v1/embeddings")
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(
+                r#"{
+                "data": [
+                    {
+                        "embedding": [0.1, 0.2, 0.3]
+                    }
+                ]
+            }"#,
+            )
+            .create_async()
+            .await;
+
         // Manually update to set embedding = NULL in the DB to simulate model change invalidation
-        ConnectionManager::global().with_conn(&store.project_id, |conn| {
-            conn.execute("UPDATE memory_records SET embedding = NULL", []).unwrap();
-            conn.execute("DELETE FROM memory_embeddings", []).unwrap();
-            Ok(())
-        }).await.unwrap();
+        ConnectionManager::global()
+            .with_conn(&store.project_id, |conn| {
+                conn.execute("UPDATE memory_records SET embedding = NULL", [])
+                    .unwrap();
+                conn.execute("DELETE FROM memory_embeddings", []).unwrap();
+                Ok(())
+            })
+            .await
+            .unwrap();
 
         // Verify that embedding is NULL before background reindexing
-        let is_null = ConnectionManager::global().with_conn(&store.project_id, |conn| {
-            let embedding: Option<Vec<u8>> = conn.query_row(
-                "SELECT embedding FROM memory_records WHERE id = 'test_mem_1'",
-                [],
-                |r| r.get(0)
-            ).unwrap();
-            Ok(embedding.is_none())
-        }).await.unwrap();
+        let is_null = ConnectionManager::global()
+            .with_conn(&store.project_id, |conn| {
+                let embedding: Option<Vec<u8>> = conn
+                    .query_row(
+                        "SELECT embedding FROM memory_records WHERE id = 'test_mem_1'",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                Ok(embedding.is_none())
+            })
+            .await
+            .unwrap();
         assert!(is_null);
 
+        // Re-assert env vars right before reindex
+        std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "cloud");
+        std::env::set_var(
+            "XAVIER_EMBEDDING_URL",
+            format!("{}/v1/embeddings", server.url()),
+        );
+        std::env::set_var("OPENAI_API_KEY", "test-api-key");
+        std::env::set_var("XAVIER_EMBEDDING_MODEL", "test-model");
+
         // Run the background reindexing
-        store.reindex_null_embeddings_background().await.unwrap();
+        let reindex_result = store.reindex_null_embeddings_background().await;
+        if let Err(ref e) = reindex_result {
+            panic!("reindex failed: {}", e);
+        }
+        reindex_result.unwrap();
 
         // Verify that embedding was successfully updated
-        let (updated_embedding, has_vector_row) = ConnectionManager::global().with_conn(&store.project_id, |conn| {
-            let embedding_blob: Option<Vec<u8>> = conn.query_row(
-                "SELECT embedding FROM memory_records WHERE id = 'test_mem_1'",
-                [],
-                |r| r.get(0)
-            ).unwrap();
+        let (updated_embedding, has_vector_row) = ConnectionManager::global()
+            .with_conn(&store.project_id, |conn| {
+                let embedding_blob: Option<Vec<u8>> = conn
+                    .query_row(
+                        "SELECT embedding FROM memory_records WHERE id = 'test_mem_1'",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
 
-            let count: i64 = conn.query_row(
-                "SELECT COUNT(*) FROM memory_embeddings WHERE id = 'test_mem_1'",
-                [],
-                |r| r.get(0)
-            ).unwrap();
+                let count: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM memory_embeddings WHERE id = 'test_mem_1'",
+                        [],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
 
-            Ok((embedding_blob, count > 0))
-        }).await.unwrap();
+                Ok((embedding_blob, count > 0))
+            })
+            .await
+            .unwrap();
 
         assert!(updated_embedding.is_some());
         assert!(has_vector_row);
