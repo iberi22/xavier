@@ -35,7 +35,17 @@ name = "xavier"
 path = "src/lib.rs"
 
 [workspace]
-members = ["code-graph", "panel-ui/src-tauri"]
+members = [
+    "code-graph",
+    "panel-ui/src-tauri",
+    "code-graph/parsers/parser-rust",
+    "code-graph/parsers/parser-ts",
+    "code-graph/parsers/parser-python",
+    "code-graph/parsers/parser-go",
+    "code-graph/parsers/parser-java",
+    "code-graph/parsers/parser-c",
+    "code-graph/parsers/parser-cpp",
+]
 # NOTE: "xavier-core" is excluded from the workspace. It is an incomplete
 # WIP refactor (duplicates src/memory/sqlite_vec_store/) that does not compile
 # and is NOT consumed by any crate (xavier, code-graph, panel-ui). Re-add it

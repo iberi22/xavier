@@ -10292,6 +10292,90 @@ dependencies = [
 ]
 
 [[package]]
+name = "parser-c"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "codegraph-types",
+ "serde",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-c",
+]
+
+[[package]]
+name = "parser-cpp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "codegraph-types",
+ "serde",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-cpp",
+]
+
+[[package]]
+name = "parser-go"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "codegraph-types",
+ "serde",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-go",
+]
+
+[[package]]
+name = "parser-java"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "codegraph-types",
+ "serde",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-java",
+]
+
+[[package]]
+name = "parser-python"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "codegraph-types",
+ "serde",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-python",
+]
+
+[[package]]
+name = "parser-rust"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "codegraph-types",
+ "serde",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-rust",
+]
+
+[[package]]
+name = "parser-ts"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "codegraph-types",
+ "serde",
+ "serde_json",
+ "tree-sitter",
+ "tree-sitter-typescript",
+]
+
+[[package]]
 name = "password-hash"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
