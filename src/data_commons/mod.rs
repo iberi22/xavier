@@ -30,6 +30,7 @@
 pub mod funnel;
 pub mod governance;
 pub mod maintainer;
+pub mod pricing;
 pub mod readiness;
 pub mod reputation;
 pub mod telemetry_db;
