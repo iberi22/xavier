@@ -178,6 +178,7 @@ fn test_opencode_provider_config() {
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)]
 async fn test_opencode_provider_generation() {
     use super::client::ModelProviderClient;
 

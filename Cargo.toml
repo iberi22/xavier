@@ -7,6 +7,7 @@ version = "0.12.0"
 authors = ["BELA <bela@swal.dev>", "Xavier <xavier@swal.dev>"]
 edition = "2021"
 autobins = false
+default-run = "xavier"
 description = "Xavier - Cognitive Memory Runtime for AI Agents (AGPL v3 + Commercial)"
 license = "AGPL-3.0"
 repository = "https://github.com/iberi22/xavier"
@@ -274,7 +275,7 @@ bech32 = "0.9.1"
 bincode = "1.3.3"
 x25519-dalek = { version = "2.0.1", features = ["static_secrets", "reusable_secrets"] }
 sqlite-vec = "0.1.0"
-libp2p = { version = "0.56", optional = true, default-features = false, features = ["noise", "kad", "gossipsub", "mdns", "tcp", "tokio", "serde", "identify", "yamux"] }
+libp2p = { version = "0.56", optional = true, default-features = false, features = ["noise", "kad", "gossipsub", "mdns", "tcp", "tokio", "serde", "identify", "yamux", "relay", "ping", "dns", "macros"] }
 # Iroh provides QUIC-based P2P transport with automatic NAT traversal (the mesh
 # roadmap's "Phase 2"). Feature-gated under `mesh` alongside libp2p so the default
 # build stays lean; the IrohTransport is the preferred P2P backend going forward.
