@@ -148,9 +148,40 @@ fn test_zai_provider_config() {
 
 #[test]
 fn test_opencode_provider_config() {
+    let _guard = env_lock().lock().expect("test assertion");
+
+    // Clear/Mock environment variables to prevent environment leaks/dependencies
+    let old_opencode_model = std::env::var("XAVIER_OPENCODE_MODEL").ok();
+    let old_opencode_model_alt = std::env::var("OPENCODE_MODEL").ok();
+    let old_opencode_key = std::env::var("OPENCODE_API_KEY").ok();
+
+    std::env::remove_var("XAVIER_OPENCODE_MODEL");
+    std::env::remove_var("OPENCODE_MODEL");
+    std::env::remove_var("OPENCODE_API_KEY");
+
     let config = ModelProviderConfig::for_provider("opencode");
     assert_eq!(config.provider_label, "opencode");
     assert_eq!(config.provider_mode, ProviderMode::Local);
     assert_eq!(config.target, ProviderTarget::OpenCodeCLI);
     assert_eq!(config.model, "opencode/deepseek-v4-flash");
+
+    // Restore environment variables
+    if let Some(val) = old_opencode_model {
+        std::env::set_var("XAVIER_OPENCODE_MODEL", val);
+    }
+    if let Some(val) = old_opencode_model_alt {
+        std::env::set_var("OPENCODE_MODEL", val);
+    }
+    if let Some(val) = old_opencode_key {
+        std::env::set_var("OPENCODE_API_KEY", val);
+    }
+}
+
+#[tokio::test]
+async fn test_opencode_provider_generation() {
+    use super::client::ModelProviderClient;
+
+    let client = ModelProviderClient::for_provider("opencode", None);
+    let response = client.generate_text("System", "User").await.unwrap();
+    assert!(response.text.contains("Mocked response for model opencode/deepseek-v4-flash"));
 }

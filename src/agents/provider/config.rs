@@ -475,6 +475,16 @@ impl ModelProviderConfig {
     /// Opencode from env.
     pub(crate) fn opencode_from_env() -> Self {
         let settings = crate::settings::XavierSettings::current();
+        let api_key = std::env::var("OPENCODE_API_KEY").ok();
+        #[cfg(not(test))]
+        let api_key = api_key
+            .or_else(|| {
+                HardwareVault::new("xavier")
+                    .get_secret("OPENCODE_API_KEY")
+                    .ok()
+            })
+            .or_else(|| HardwareVault::new("xavier").get_secret("ZAI_API_KEY").ok());
+
         Self {
             provider_mode: ProviderMode::Local,
             api_flavor: ApiFlavor::OpenAICompatible,
@@ -484,14 +494,7 @@ impl ModelProviderConfig {
                 .ok()
                 .or_else(|| settings.models.opencode_model.clone())
                 .unwrap_or_else(|| "opencode/deepseek-v4-flash".to_string()),
-            api_key: std::env::var("OPENCODE_API_KEY")
-                .ok()
-                .or_else(|| {
-                    HardwareVault::new("xavier")
-                        .get_secret("OPENCODE_API_KEY")
-                        .ok()
-                })
-                .or_else(|| HardwareVault::new("xavier").get_secret("ZAI_API_KEY").ok()),
+            api_key,
             base_url: None,
             target: ProviderTarget::OpenCodeCLI,
             lease_config: None,
