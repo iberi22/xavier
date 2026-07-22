@@ -169,6 +169,46 @@ pub mod tests {
 
     pub static ENV_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
 
+    pub struct TempEnv {
+        saved_vars: std::collections::HashMap<String, String>,
+        _guard: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl TempEnv {
+        pub fn new() -> Self {
+            let guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            let mut saved_vars = std::collections::HashMap::new();
+            for (key, val) in std::env::vars() {
+                let lower = key.to_ascii_uppercase();
+                if lower.starts_with("XAVIER_") || lower.starts_with("PGHEART_") || lower == "STRIPE_SECRET_KEY" {
+                    saved_vars.insert(key, val);
+                }
+            }
+            Self {
+                saved_vars,
+                _guard: guard,
+            }
+        }
+    }
+
+    impl Drop for TempEnv {
+        fn drop(&mut self) {
+            // Remove any current XAVIER_ or PGHEART_ variables that are set but weren't originally saved
+            for (key, _) in std::env::vars() {
+                let lower = key.to_ascii_uppercase();
+                if (lower.starts_with("XAVIER_") || lower.starts_with("PGHEART_") || lower == "STRIPE_SECRET_KEY")
+                    && !self.saved_vars.contains_key(&key)
+                {
+                    std::env::remove_var(&key);
+                }
+            }
+            // Restore saved ones
+            for (key, val) in &self.saved_vars {
+                std::env::set_var(key, val);
+            }
+        }
+    }
+
     #[test]
     fn test_default_settings() {
         let settings = XavierSettings::default();
@@ -190,7 +230,7 @@ pub mod tests {
 
     #[test]
     fn test_load_config_json() {
-        let _guard = ENV_LOCK.lock().expect("test assertion");
+        let _env = TempEnv::new();
 
         // Ensure we load from the actual config/xavier.config.json
         std::env::remove_var("XAVIER_CONFIG_PATH");
@@ -222,7 +262,7 @@ pub mod tests {
 
     #[test]
     fn test_apply_to_env_sets_vars() {
-        let _guard = ENV_LOCK.lock().expect("test assertion");
+        let _env = TempEnv::new();
 
         // Clean env
         for (key, _) in std::env::vars() {
@@ -246,18 +286,11 @@ pub mod tests {
             std::env::var("XAVIER_ENTERPRISE_DB_PATH").unwrap(),
             "data/enterprise.db"
         );
-
-        // Clean up
-        for (key, _) in std::env::vars() {
-            if key.starts_with("XAVIER_") {
-                std::env::remove_var(&key);
-            }
-        }
     }
 
     #[test]
     fn test_apply_to_env_respects_existing_vars() {
-        let _guard = ENV_LOCK.lock().expect("test assertion");
+        let _env = TempEnv::new();
 
         // Set an override
         std::env::set_var("XAVIER_PORT", "9999");
@@ -272,31 +305,25 @@ pub mod tests {
         assert_eq!(std::env::var("XAVIER_RRF_K").unwrap(), "100");
         // Missing vars should be set
         assert_eq!(std::env::var("XAVIER_HOST").unwrap(), "0.0.0.0");
-
-        // Clean up
-        std::env::remove_var("XAVIER_HOST");
-        std::env::remove_var("XAVIER_PORT");
-        std::env::remove_var("XAVIER_RRF_K");
     }
 
     #[test]
     fn test_config_file_missing_returns_none() {
+        let _env = TempEnv::new();
+
         let path = std::env::temp_dir().join("nonexistent_xavier_config.json");
         // Ensure it doesn't exist
         let _ = std::fs::remove_file(&path);
-
-        let _old_path = XavierSettings::resolve_config_path();
 
         // Temporarily redirect config path
         std::env::set_var("XAVIER_CONFIG_PATH", path.to_str().unwrap());
         let result = XavierSettings::load().unwrap();
         assert!(result.is_none());
-        std::env::remove_var("XAVIER_CONFIG_PATH");
     }
 
     #[test]
     fn test_current_falls_back_to_defaults() {
-        let _guard = ENV_LOCK.lock().expect("test assertion");
+        let _env = TempEnv::new();
 
         // Remove XAVIER_TOKEN if present
         std::env::remove_var("XAVIER_TOKEN");
@@ -308,7 +335,6 @@ pub mod tests {
         assert_eq!(settings.server.host, "0.0.0.0");
         assert_eq!(settings.server.port, 8006);
         assert!(settings.auth_token.is_none());
-        std::env::remove_var("XAVIER_CONFIG_PATH");
     }
 
     #[test]
@@ -337,7 +363,7 @@ pub mod tests {
 
     #[test]
     fn test_apply_to_env_all_new_sections() {
-        let _guard = ENV_LOCK.lock().expect("test assertion");
+        let _env = TempEnv::new();
 
         // Clean all XAVIER_ vars
         for (key, _) in std::env::vars() {
@@ -390,18 +416,24 @@ pub mod tests {
             std::env::var("XAVIER_ENTERPRISE_DB_PATH").unwrap(),
             "data/enterprise.db"
         );
-
-        // Clean up
-        for (key, _) in std::env::vars() {
-            if key.starts_with("XAVIER_") {
-                std::env::remove_var(&key);
-            }
-        }
     }
 
     #[test]
     fn test_reload_updates_global_settings() {
-        let _guard = ENV_LOCK.lock().expect("test assertion");
+        let _env = TempEnv::new();
+
+        // Save initial GLOBAL_SETTINGS
+        let original_global = GLOBAL_SETTINGS.read().clone();
+
+        // Ensure we restore it on drop
+        struct GlobalSettingsRestore(XavierSettings);
+        impl Drop for GlobalSettingsRestore {
+            fn drop(&mut self) {
+                let mut lock = GLOBAL_SETTINGS.write();
+                *lock = self.0.clone();
+            }
+        }
+        let _restore = GlobalSettingsRestore(original_global);
 
         // Temporarily point to a test config file
         let temp_dir = std::env::temp_dir();
@@ -430,7 +462,6 @@ pub mod tests {
         assert_eq!(GLOBAL_SETTINGS.read().server.port, 9999);
 
         // Clean up
-        std::env::remove_var("XAVIER_CONFIG_PATH");
         let _ = std::fs::remove_file(&test_config_path);
     }
 }
