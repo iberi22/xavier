@@ -41,7 +41,7 @@ pub mod cloud_node;
 pub mod crypto_gating;
 pub mod data_consent;
 pub mod data_sanitizer;
-#[cfg(feature = "mesh-legacy")]
+#[cfg(feature = "mesh")]
 pub mod discovery;
 pub mod governance;
 #[cfg(feature = "mesh")]
@@ -59,9 +59,8 @@ pub mod telemetry;
 pub mod telemetry_collector;
 pub mod tokenomics;
 pub mod transport;
-// Legacy libp2p transport — broken against libp2p 0.56 and superseded by Iroh.
-// Gated behind mesh-legacy so it doesn't break the default mesh build.
-#[cfg(feature = "mesh-legacy")]
+// Modernized libp2p transport (v0.56) with NAT traversal, reconnection backoff and metrics.
+#[cfg(feature = "mesh")]
 pub mod libp2p_transport;
 
 pub use acl::{MeshAcl, NodeAclEntry, NamespaceAclEntry};
@@ -69,7 +68,7 @@ pub use acl::{MeshAcl, NodeAclEntry, NamespaceAclEntry};
 pub use auto_update::{AutoUpdateService, UpdateStatus};
 pub use data_consent::{ConsentLevel, DataConsentManager, ConsentRecord, ActiveConsent};
 pub use data_sanitizer::{DataSanitizer, SanitizationAction, SanitizationRule};
-#[cfg(feature = "mesh-legacy")]
+#[cfg(feature = "mesh")]
 pub use discovery::DiscoveryService;
 #[cfg(feature = "mesh")]
 pub use heartbeat::{HeartbeatPayload, HeartbeatReceipt, HeartbeatService};
