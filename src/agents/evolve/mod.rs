@@ -283,7 +283,7 @@ impl EvolveModule {
     }
 
     /// Run a single experiment (deprecated in favor of run_evolution_cycle)
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Deprecado en favor de run_evolution_cycle")]
     async fn run_single_experiment(&self) -> Result<ExperimentResult> {
         // 0. Analyze gaps to guide research
         let res = self.run_evolution_cycle().await?;
@@ -291,7 +291,7 @@ impl EvolveModule {
     }
 
     /// Check if metric is an improvement (lower is better for val_bpb)
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Reservado para pipeline futuro")]
     async fn is_improvement(&self, metric: f32) -> bool {
         let state = self.state.read().await;
         match state.best_metric {
@@ -308,7 +308,7 @@ impl EvolveModule {
     }
 
     /// Check if improvement is significant enough for a PR (e.g. > 2%)
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Reservado para pipeline futuro")]
     async fn is_significant_improvement(&self, metric: f32) -> bool {
         let state = self.state.read().await;
         match state.best_metric {
@@ -320,7 +320,7 @@ impl EvolveModule {
         }
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Reservado para pipeline futuro")]
     async fn create_improvement_pr(&self, hypothesis: &Hypothesis, _metric: f32) {
         info!("Significant improvement detected, creating PR...");
 

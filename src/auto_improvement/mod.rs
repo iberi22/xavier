@@ -397,7 +397,8 @@ impl AutoImprovementEngine {
 
         // P99 latency
         let p99 = if latencies.len() > 1 {
-            latencies.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            latencies
+                .sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let idx = ((latencies.len() as f64) * 0.99).ceil() as usize - 1;
             latencies[idx.min(latencies.len() - 1)]
         } else {
@@ -832,7 +833,7 @@ fn config_overrides_for(metric: &str, experiment_name: &str) -> HashMap<String, 
 // ---------------------------------------------------------------------------
 
 /// A unique temp directory for a single benchmark run's output.
-#[allow(dead_code)] // only invoked under the `bench-runners` feature
+#[cfg_attr(not(feature = "bench-runners"), allow(dead_code))]
 fn unique_benchmark_dir() -> PathBuf {
     std::env::temp_dir().join(format!(
         "xavier-autoimprove-internal-memory-{}",
@@ -880,7 +881,7 @@ fn run_benchmark_script(script: &str, args: &[&str]) -> Result<()> {
 /// `accuracy` as the recall estimate; precision is approximated as `accuracy`
 /// (the benchmark is binary success/failure per case, so recall≈precision). No
 /// per-query latency is recorded by the Python script, so latency is left at 0.
-#[allow(dead_code)] // only invoked under the `bench-runners` feature
+#[cfg_attr(not(feature = "bench-runners"), allow(dead_code))]
 fn parse_internal_memory_summary(output_dir: &Path) -> Result<ExternalBenchmarkMetrics> {
     let path = output_dir.join("summary.json");
     let payload = std::fs::read_to_string(&path)

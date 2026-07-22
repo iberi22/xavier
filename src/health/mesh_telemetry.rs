@@ -80,7 +80,7 @@ impl PeerMetrics {
 #[derive(Debug)]
 pub struct MeshTelemetryCollector {
     peer_metrics: Arc<Mutex<HashMap<NodeId, PeerMetrics>>>,
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Reservado para telemetria mesh futura")]
     started_at: Instant,
 }
 

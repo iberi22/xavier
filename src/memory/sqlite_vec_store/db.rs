@@ -8,20 +8,12 @@ use rusqlite::Connection;
 use std::path::Path;
 use tokio::fs;
 
-#[allow(dead_code)]
+#[expect(dead_code, reason = "Utility para abrir pool desde fuera del modulo")]
 /// Open pool.
 pub(crate) async fn open_pool(path: &Path) -> Result<()> {
     let project_id = super::project_id_for_path(path);
     ConnectionManager::global().connect_with_path(&project_id, path.to_path_buf())?;
     Ok(())
-}
-
-#[allow(dead_code)]
-/// Open connection.
-pub(crate) async fn open_connection(_path: &Path) -> Result<Connection> {
-    Err(anyhow::anyhow!(
-        "open_connection is deprecated, use ConnectionManager instead"
-    ))
 }
 
 /// Ensure dir.
