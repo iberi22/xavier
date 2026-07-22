@@ -69,17 +69,38 @@ pub struct AddMemoryRequest {
     pub relation: Option<RelationKind>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchHit {
+    pub id: Option<String>,
+    pub path: String,
+    pub content: String,
+    pub metadata: serde_json::Value,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SearchResponse {
     pub status: String,
-    pub results: Vec<serde_json::Value>,
+    pub results: Vec<SearchHit>,
     pub query: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HybridSearchHit {
+    pub id: String,
+    pub path: String,
+    pub content: String,
+    pub metadata: serde_json::Value,
+    pub score: f32,
+    pub vector_score: f32,
+    pub lexical_score: f32,
+    pub kg_score: f32,
+    pub bm25: Option<f32>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HybridSearchResponse {
     pub status: String,
-    pub results: Vec<serde_json::Value>,
+    pub results: Vec<HybridSearchHit>,
     pub query: String,
     pub mode: HybridSearchMode,
 }

@@ -1,0 +1,1 @@
+{"feature": "perf-typed-responses", "progress_pct": 100, "status": "stable", "passes": true, "last_tested": "2026-07-21", "tests": ["adapters::inbound::http::handlers::agent::tests::*", "adapters::inbound::http::routes::tests::*"]}

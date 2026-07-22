@@ -55,14 +55,23 @@ pub async fn memory_add(
     {
         return crate::error::ApiError::validation(error.to_string()).into_ok_response();
     }
+    #[derive(Debug, serde::Serialize)]
+    pub struct AddMemoryResponse {
+        pub status: &'static str,
+        pub message: &'static str,
+        pub workspace_id: String,
+    }
+
     match workspace
         .workspace
         .ingest_typed(path, content, metadata, Some(typed), content_vector, false)
         .await
     {
-        Ok(_) => Json(
-            serde_json::json!({ "status": "ok", "message": "Document added to memory", "workspace_id": workspace.workspace_id }),
-        ).into_response(),
+        Ok(_) => Json(AddMemoryResponse {
+            status: "ok",
+            message: "Document added to memory",
+            workspace_id: workspace.workspace_id,
+        }).into_response(),
         Err(error) => crate::error::ApiError::internal(format!("failed to add memory: {}", error)).into_ok_response(),
     }
 }
@@ -73,11 +82,16 @@ pub async fn memory_search(
     Json(payload): Json<SearchRequest>,
 ) -> impl IntoResponse {
     match workspace.workspace.memory.search_filtered(&payload.query, payload.limit, payload.filters.as_ref()).await {
-        Ok(docs) => Json(serde_json::json!(SearchResponse {
+        Ok(docs) => Json(SearchResponse {
             status: "ok".to_string(),
-            results: docs.into_iter().map(|doc| serde_json::json!({ "id": doc.id, "path": doc.path, "content": doc.content, "metadata": doc.metadata })).collect(),
+            results: docs.into_iter().map(|doc| SearchHit {
+                id: doc.id,
+                path: doc.path,
+                content: doc.content,
+                metadata: doc.metadata,
+            }).collect(),
             query: payload.query,
-        })).into_response(),
+        }).into_response(),
         Err(error) => crate::error::ApiError::internal(format!("memory search failed: {}", error)).into_ok_response(),
     }
 }
@@ -91,7 +105,17 @@ pub async fn memory_hybrid_search(
     match workspace.workspace.durable_store().hybrid_search(&workspace.workspace_id, &payload.query, mode, payload.filters.as_ref(), payload.limit).await {
         Ok(results) => Json(HybridSearchResponse {
             status: "ok".to_string(),
-            results: results.into_iter().map(|result| serde_json::json!({ "id": result.record.id, "path": result.record.path, "content": result.record.content, "metadata": result.record.metadata, "score": result.score, "vector_score": result.vector_score, "lexical_score": result.lexical_score, "kg_score": result.kg_score, "bm25": result.bm25 })).collect(),
+            results: results.into_iter().map(|result| HybridSearchHit {
+                id: result.record.id,
+                path: result.record.path,
+                content: result.record.content,
+                metadata: result.record.metadata,
+                score: result.score,
+                vector_score: result.vector_score,
+                lexical_score: result.lexical_score,
+                kg_score: result.kg_score,
+                bm25: result.bm25,
+            }).collect(),
             query: payload.query,
             mode,
         }).into_response(),
