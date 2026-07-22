@@ -6,6 +6,7 @@ use axum::{
     extract::Json,
     routing::{get, post},
     Router,
+    response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -102,86 +103,161 @@ pub fn create_router_with_agent_registry(agent_registry: Arc<dyn AgentLifecycleP
     router.with_state(agent_registry)
 }
 
-async fn cloud_health_handler() -> Json<serde_json::Value> {
+#[derive(Debug, Serialize)]
+pub struct RouteHealthSystem {
+    pub cpu_usage_pct: f64,
+    pub memory_used_mb: u64,
+    pub memory_total_mb: u64,
+    pub disk_usage_pct: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RouteHealthDatabase {
+    pub size_mb: f64,
+    pub needs_vacuum: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RouteHealthCheck {
+    pub name: String,
+    pub status: String,
+    pub detail: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RouteHealthResponse {
+    pub status: String,
+    pub service: &'static str,
+    pub version: String,
+    pub uptime_secs: u64,
+    pub system: RouteHealthSystem,
+    pub database: RouteHealthDatabase,
+    pub mesh: String,
+    pub checks: Vec<RouteHealthCheck>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RouteReadinessResponse {
+    pub status: &'static str,
+    pub service: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RouteBuildResponse {
+    pub service: &'static str,
+    pub version: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SessionEventDetection {
+    pub is_injection: bool,
+    pub confidence: f32,
+    pub attack_type: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SessionEventResponse {
+    pub status: &'static str,
+    pub session_id: String,
+    pub mapped: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub detection: Option<SessionEventDetection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content_sanitized: Option<bool>,
+}
+
+async fn cloud_health_handler() -> impl axum::response::IntoResponse {
     let settings = XavierSettings::current();
     let health = crate::health::check_cloud_health(&settings).await;
-    Json(serde_json::to_value(health).unwrap_or_default())
+    Json(health)
 }
 
-async fn health_handler() -> Json<serde_json::Value> {
+async fn health_handler() -> impl axum::response::IntoResponse {
     let health = crate::health::collect_health_sync();
-    Json(serde_json::json!({
-        "status": health.status,
-        "service": "xavier",
-        "version": health.version,
-        "uptime_secs": health.uptime_secs,
-        "system": {
-            "cpu_usage_pct": health.system.cpu_usage_pct,
-            "memory_used_mb": health.system.memory_used_mb,
-            "memory_total_mb": health.system.memory_total_mb,
-            "disk_usage_pct": health.system.disk_usage_pct,
+    Json(RouteHealthResponse {
+        status: health.status,
+        service: "xavier",
+        version: health.version,
+        uptime_secs: health.uptime_secs,
+        system: RouteHealthSystem {
+            cpu_usage_pct: health.system.cpu_usage_pct,
+            memory_used_mb: health.system.memory_used_mb,
+            memory_total_mb: health.system.memory_total_mb,
+            disk_usage_pct: health.system.disk_usage_pct,
         },
-        "database": {
-            "size_mb": health.database.size_mb,
-            "needs_vacuum": health.database.needs_vacuum,
+        database: RouteHealthDatabase {
+            size_mb: health.database.size_mb,
+            needs_vacuum: health.database.needs_vacuum,
         },
-        "mesh": health.mesh.connectivity,
-        "checks": health.checks.iter().map(|c| serde_json::json!({
-            "name": c.name,
-            "status": format!("{:?}", c.status),
-            "detail": c.detail,
-        })).collect::<Vec<_>>()
-    }))
+        mesh: health.mesh.connectivity,
+        checks: health.checks.iter().map(|c| RouteHealthCheck {
+            name: c.name.clone(),
+            status: format!("{:?}", c.status),
+            detail: c.detail.clone(),
+        }).collect(),
+    })
 }
 
-async fn readiness_handler() -> Json<serde_json::Value> {
-    Json(serde_json::json!({
-        "status": "ok",
-        "service": "xavier",
-    }))
+async fn readiness_handler() -> impl axum::response::IntoResponse {
+    Json(RouteReadinessResponse {
+        status: "ok",
+        service: "xavier",
+    })
 }
 
-async fn build_handler() -> Json<serde_json::Value> {
-    Json(serde_json::json!({
-        "service": "xavier",
-        "version": env!("CARGO_PKG_VERSION"),
-    }))
+async fn build_handler() -> impl axum::response::IntoResponse {
+    Json(RouteBuildResponse {
+        service: "xavier",
+        version: env!("CARGO_PKG_VERSION"),
+    })
 }
 
 /// Session event handler.
-pub async fn session_event_handler(Json(event): Json<SessionEvent>) -> Json<serde_json::Value> {
+pub async fn session_event_handler(Json(event): Json<SessionEvent>) -> impl axum::response::IntoResponse {
     let Some(entry) = PanelThreadEntry::from_session_event(&event) else {
-        return Json(serde_json::json!({
-            "status": "ok",
-            "session_id": event.session_id,
-            "mapped": false,
-        }));
+        return Json(SessionEventResponse {
+            status: "ok",
+            session_id: event.session_id,
+            mapped: false,
+            blocked: None,
+            reason: None,
+            detection: None,
+            content_sanitized: None,
+        }).into_response();
     };
 
     let security = SecurityService::new();
     let result = security.process_input(&entry.content);
 
     if !result.allowed {
-        return Json(serde_json::json!({
-            "status": "blocked",
-            "blocked": true,
-            "reason": "security_policy_violation",
-            "session_id": event.session_id,
-            "mapped": false,
-            "detection": {
-                "is_injection": result.detection.is_injection,
-                "confidence": result.detection.confidence,
-                "attack_type": format!("{:?}", result.detection.attack_type),
-            },
-        }));
+        return Json(SessionEventResponse {
+            status: "blocked",
+            session_id: event.session_id,
+            mapped: false,
+            blocked: Some(true),
+            reason: Some("security_policy_violation"),
+            detection: Some(SessionEventDetection {
+                is_injection: result.detection.is_injection,
+                confidence: result.detection.confidence,
+                attack_type: format!("{:?}", result.detection.attack_type),
+            }),
+            content_sanitized: None,
+        }).into_response();
     }
 
-    Json(serde_json::json!({
-        "status": "ok",
-        "session_id": event.session_id,
-        "mapped": true,
-        "content_sanitized": result.sanitized_input.is_some(),
-    }))
+    Json(SessionEventResponse {
+        status: "ok",
+        session_id: event.session_id,
+        mapped: true,
+        blocked: None,
+        reason: None,
+        detection: None,
+        content_sanitized: Some(result.sanitized_input.is_some()),
+    }).into_response()
 }
 
 // ─── Verification Endpoints ─────────────────────────────────────────────────

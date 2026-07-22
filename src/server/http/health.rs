@@ -48,6 +48,16 @@ pub struct BuildInfoResponse {
     pub memory_store: MemoryStoreBuildInfo,
 }
 
+#[derive(Debug, Serialize)]
+pub struct HealthEndpointResponse {
+    pub status: String,
+    pub service: &'static str,
+    pub version: &'static str,
+    pub lag_ms: u64,
+    pub hormer: serde_json::Value,
+    pub health: crate::health::HealthResponse,
+}
+
 /// Health.
 pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
     let workspace = state.workspace_registry.default_context().await;
@@ -65,14 +75,14 @@ pub async fn health(State(state): State<AppState>) -> impl IntoResponse {
 
     let xavier_health = crate::health::collect_health_sync();
 
-    Json(serde_json::json!({
-        "status": xavier_health.status,
-        "service": "xavier",
-        "version": env!("CARGO_PKG_VERSION"),
-        "lag_ms": lag_ms,
-        "hormer": hormer_metrics,
-        "health": xavier_health
-    }))
+    Json(HealthEndpointResponse {
+        status: xavier_health.status.clone(),
+        service: "xavier",
+        version: env!("CARGO_PKG_VERSION"),
+        lag_ms,
+        hormer: hormer_metrics,
+        health: xavier_health,
+    })
 }
 
 /// Readiness.
