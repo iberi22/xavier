@@ -211,9 +211,9 @@
       "passes": true,
       "verified_by": "repo-audit",
       "github_issue": null,
-      "last_tested": "2026-07-21",
+      "last_tested": "2026-07-22",
       "notes": "Starlight docs site deployed via GitHub Pages.",
-      "implemented_in": "docs/site/, .github/workflows/docs.yml",
+      "implemented_in": "docs/site/",
       "tests": [
         "docs_site exists on disk"
       ]
@@ -422,7 +422,7 @@
       "verified_by": "design",
       "github_issue": null,
       "last_tested": "2026-07-18",
-      "notes": "AutoImprovementEngine Phase 1 complete with recall@k harness.",
+      "notes": "AutoImprovementEngine Phase 1 with recall@k harness. CLI: xavier improve.",
       "implemented_in": "src/auto_improvement/",
       "tests": [
         "test_analyze_gaps_identifies_low_recall",
@@ -501,7 +501,7 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": 336,
-      "last_tested": "2026-06-25",
+      "last_tested": "2026-07-22",
       "notes": "Implemented and merged via PR #342 (commit c6923009). Uses tokio::fs async I/O. AgentMemory struct with all required fields. Issue #336 closed.",
       "implemented_in": "src/memory/openclaw_scanner.rs, src/memory/openclaw_indexer.rs",
       "tests": [
@@ -526,7 +526,7 @@
       "passes": true,
       "verified_by": "build",
       "github_issue": 339,
-      "last_tested": "2026-06-25",
+      "last_tested": "2026-07-22",
       "notes": "Implemented via PRs #342, #345, #346. Status and Sync subcommands added 2026-06-25. Issue #339 closed. cargo check passes, tests: 943 pass, 10 pre-existing failures.",
       "implemented_in": "src/cli/commands/enums.rs, src/cli/handlers/agent_cli.rs, src/cli/server.rs, src/cli/handlers/agent.rs",
       "tests": [
@@ -549,9 +549,9 @@
       "passes": true,
       "verified_by": "integration-tests",
       "github_issue": 522,
-      "last_tested": "2026-07-18",
+      "last_tested": "2026-07-22",
       "notes": "Local embedding via gllm, Ollama auto-detection, fallback chain.",
-      "implemented_in": "src/app/proxy_use_case.rs, src/agents/provider/, src/cli/handlers/, src/observability/, src/server/mcp/tools_core.rs, src/telegram/mod.rs, docker/, docs/USER_GUIDE_LOCAL.md, scripts/smoke_test_local.*, tests/e2e_chat_local.rs, panel-ui/",
+      "implemented_in": "src/embedding/",
       "tests": [
         "embedding::tests::test_local_fallback"
       ]
