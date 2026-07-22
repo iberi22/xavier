@@ -31,11 +31,13 @@ pub mod system_scan_cli;
 pub mod tasks;
 pub mod tokens;
 pub mod usage;
+pub mod plugins;
 pub mod verify;
 pub mod workspace;
 pub mod workspace_db;
 
 pub use agent::*;
+pub use plugins::*;
 pub use workspace_db::*;
 pub use agent_cli::*;
 pub use auth::*;

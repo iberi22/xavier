@@ -54,6 +54,8 @@ hyper-util = "0.1"
 # Async mutex for shared state
 parking_lot = "0.12"
 
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "blocking"] }
+
 # Plugin types
 codegraph-types = { path = "../codegraph-types" }
 dirs = "6"

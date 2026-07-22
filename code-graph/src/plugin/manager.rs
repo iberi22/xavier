@@ -304,6 +304,52 @@ impl Default for PluginManager {
 // Default Registry (fixture / env-backed index)
 // ============================================================================
 
+#[allow(dead_code)]
+const LIVE_INDEX_URL: &str = "https://raw.githubusercontent.com/swal/xavier-plugins/main/plugins.json";
+
+#[allow(dead_code)]
+fn fetch_live_registry() -> Result<Vec<PluginDescriptor>> {
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct LivePlugin {
+        name: String,
+        description: String,
+        version: String,
+        languages: Vec<String>,
+        url: String,
+        checksum: String,
+    }
+
+    #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+    struct PluginRegistry {
+        version: u32,
+        plugins: Vec<LivePlugin>,
+    }
+
+    impl PluginRegistry {
+        fn into_descriptors(&self) -> Vec<PluginDescriptor> {
+            self.plugins
+                .iter()
+                .map(|p| PluginDescriptor {
+                    name: p.name.clone(),
+                    version: p.version.clone(),
+                    command: p.name.clone(),
+                    languages: p
+                        .languages
+                        .iter()
+                        .map(|l| crate::types::Language::from_db_str(l))
+                        .collect(),
+                    extensions: vec![],
+                    capabilities: vec!["parse".to_string()],
+                })
+                .collect()
+        }
+    }
+
+    let resp = reqwest::blocking::get(LIVE_INDEX_URL).map_err(|e: reqwest::Error| GraphError::Parser(e.to_string()))?;
+    let registry: PluginRegistry = resp.json().map_err(|e: reqwest::Error| GraphError::Parser(e.to_string()))?;
+    Ok(registry.into_descriptors())
+}
+
 /// Loads a registry index from disk.
 ///
 /// Resolution order:
