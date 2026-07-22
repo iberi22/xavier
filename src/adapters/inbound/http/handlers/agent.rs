@@ -4,8 +4,8 @@
 //! responsibilities within the Xavier cognitive memory system.
 use crate::adapters::inbound::http::AppState;
 use crate::coordination::agent_registry::AgentMetadata;
-use axum::{extract::State, Json};
-use serde::Deserialize;
+use axum::{extract::State, Json, response::IntoResponse};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
 pub struct AgentRegisterPayload {
@@ -16,11 +16,19 @@ pub struct AgentRegisterPayload {
     pub role: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct AgentRegisterResponse {
+    pub status: &'static str,
+    pub agent_id: String,
+    pub session_id: String,
+    pub message: &'static str,
+}
+
 /// Agent register handler.
 pub async fn agent_register_handler(
     State(state): State<AppState>,
     Json(payload): Json<AgentRegisterPayload>,
-) -> Json<serde_json::Value> {
+) -> impl IntoResponse {
     let metadata = AgentMetadata {
         name: payload.name,
         capabilities: payload.capabilities.unwrap_or_default(),
@@ -37,51 +45,72 @@ pub async fn agent_register_handler(
         )
         .await;
 
-    Json(serde_json::json!({
-        "status": if success { "ok" } else { "error" },
-        "agent_id": payload.agent_id,
-        "session_id": payload.session_id,
-        "message": if success { "Agent registered successfully" } else { "Registration failed" },
-    }))
+    Json(AgentRegisterResponse {
+        status: if success { "ok" } else { "error" },
+        agent_id: payload.agent_id,
+        session_id: payload.session_id,
+        message: if success { "Agent registered successfully" } else { "Registration failed" },
+    })
+}
+
+#[derive(Debug, Serialize)]
+pub struct AgentHeartbeatResponse {
+    pub status: &'static str,
+    pub agent_id: String,
+    pub message: &'static str,
 }
 
 /// Agent heartbeat handler.
 pub async fn agent_heartbeat_handler(
     State(state): State<AppState>,
     axum::extract::Path(agent_id): axum::extract::Path<String>,
-) -> Json<serde_json::Value> {
+) -> impl IntoResponse {
     let success = state.agent_lifecycle.heartbeat(&agent_id).await;
 
-    Json(serde_json::json!({
-        "status": if success { "ok" } else { "error" },
-        "agent_id": agent_id,
-        "message": if success { "Heartbeat recorded" } else { "Agent not found" },
-    }))
+    Json(AgentHeartbeatResponse {
+        status: if success { "ok" } else { "error" },
+        agent_id,
+        message: if success { "Heartbeat recorded" } else { "Agent not found" },
+    })
+}
+
+#[derive(Debug, Serialize)]
+pub struct AgentActiveResponse {
+    pub status: &'static str,
+    pub active_agents: usize,
+    pub agents: Vec<crate::coordination::agent_registry::AgentEntry>,
 }
 
 /// Agent active handler.
-pub async fn agent_active_handler(State(state): State<AppState>) -> Json<serde_json::Value> {
+pub async fn agent_active_handler(State(state): State<AppState>) -> impl IntoResponse {
     let active = state.agent_lifecycle.get_active_agents().await;
 
-    Json(serde_json::json!({
-        "status": "ok",
-        "active_agents": active.len(),
-        "agents": active,
-    }))
+    Json(AgentActiveResponse {
+        status: "ok",
+        active_agents: active.len(),
+        agents: active,
+    })
+}
+
+#[derive(Debug, Serialize)]
+pub struct AgentUnregisterResponse {
+    pub status: &'static str,
+    pub agent_id: String,
+    pub message: &'static str,
 }
 
 /// Agent unregister handler.
 pub async fn agent_unregister_handler(
     State(state): State<AppState>,
     axum::extract::Path(agent_id): axum::extract::Path<String>,
-) -> Json<serde_json::Value> {
+) -> impl IntoResponse {
     let success = state.agent_lifecycle.unregister(&agent_id).await;
 
-    Json(serde_json::json!({
-        "status": if success { "ok" } else { "error" },
-        "agent_id": agent_id,
-        "message": if success { "Agent unregistered" } else { "Agent not found" },
-    }))
+    Json(AgentUnregisterResponse {
+        status: if success { "ok" } else { "error" },
+        agent_id,
+        message: if success { "Agent unregistered" } else { "Agent not found" },
+    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -91,21 +120,29 @@ pub struct AgentPushContextPayload {
     pub tags: Option<Vec<String>>,
 }
 
+#[derive(Debug, Serialize)]
+pub struct AgentPushContextResponse {
+    pub status: &'static str,
+    pub agent_id: String,
+    pub message: &'static str,
+    pub importance: f32,
+}
+
 /// Agent push context handler.
 pub async fn agent_push_context_handler(
     State(_state): State<AppState>,
     axum::extract::Path(agent_id): axum::extract::Path<String>,
     Json(payload): Json<AgentPushContextPayload>,
-) -> Json<serde_json::Value> {
+) -> impl IntoResponse {
     // In a real implementation, this would use a port to add context to the memory store
     // tied to the agent's session.
     let importance = payload.importance.unwrap_or(0.5);
 
     // Placeholder logic for now, similar to what might be in cli.rs
-    Json(serde_json::json!({
-        "status": "ok",
-        "agent_id": agent_id,
-        "message": "Context pushed (placeholder)",
-        "importance": importance,
-    }))
+    Json(AgentPushContextResponse {
+        status: "ok",
+        agent_id,
+        message: "Context pushed (placeholder)",
+        importance,
+    })
 }
