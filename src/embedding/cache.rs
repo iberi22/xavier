@@ -513,13 +513,16 @@ mod tests {
 
         // Insert into first cache
         let _ = cache1.get_or_embed(&*embedder, "test").await.unwrap();
+        cache1.inner.run_pending_tasks().await;
         assert_eq!(cache1.entry_count(), 1);
 
         // Second cache has different model name, should miss and not share memory
         // Note: they don't share the sqlite DB either as :memory: is unique per connection
         // but the content_hash ensures different keys anyway.
+        cache2.inner.run_pending_tasks().await;
         assert_eq!(cache2.entry_count(), 0);
         let _ = cache2.get_or_embed(&*embedder, "test").await.unwrap();
+        cache2.inner.run_pending_tasks().await;
         assert_eq!(cache2.entry_count(), 1);
     }
 

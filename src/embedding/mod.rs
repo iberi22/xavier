@@ -245,18 +245,26 @@ impl EmbedderConfig {
 
             let handle = tokio::runtime::Handle::try_current();
             let models_opt = match handle {
-                Ok(h) => tokio::task::block_in_place(|| {
-                    h.block_on(async { probe_ollama_async(&probe_url).await })
-                }),
-                Err(_) => {
-                    if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
-                        .enable_all()
-                        .build()
-                    {
-                        rt.block_on(async { probe_ollama_async(&probe_url).await })
-                    } else {
-                        None
-                    }
+                Ok(h) if h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread => {
+                    tokio::task::block_in_place(|| {
+                        h.block_on(async { probe_ollama_async(&probe_url).await })
+                    })
+                }
+                _ => {
+                    let probe_url_clone = probe_url.clone();
+                    std::thread::spawn(move || {
+                        if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                        {
+                            rt.block_on(async { probe_ollama_async(&probe_url_clone).await })
+                        } else {
+                            None
+                        }
+                    })
+                    .join()
+                    .ok()
+                    .flatten()
                 }
             };
 
@@ -731,7 +739,10 @@ mod tests {
     async fn test_auto_triggers_probe_ollama_reachable_with_embeddinggemma() {
         let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
 
+        std::env::set_var("XAVIER_CONFIG_PATH", "nonexistent_config_file_for_test.json");
         std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
         std::env::remove_var("OPENAI_API_KEY");
 
         // Start a mockito server
@@ -765,6 +776,7 @@ mod tests {
         assert!(matches!(config, EmbedderConfig::Fallback(_)));
 
         std::env::remove_var("_XAVIER_TEST_OLLAMA_PROBE_URL");
+        std::env::remove_var("XAVIER_CONFIG_PATH");
     }
 
     #[tokio::test]
@@ -772,7 +784,10 @@ mod tests {
     async fn test_auto_triggers_probe_ollama_reachable_without_embeddinggemma() {
         let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
 
+        std::env::set_var("XAVIER_CONFIG_PATH", "nonexistent_config_file_for_test.json");
         std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
         std::env::remove_var("OPENAI_API_KEY");
 
         // Start a mockito server
@@ -806,13 +821,17 @@ mod tests {
         assert!(matches!(config, EmbedderConfig::Fallback(_)));
 
         std::env::remove_var("_XAVIER_TEST_OLLAMA_PROBE_URL");
+        std::env::remove_var("XAVIER_CONFIG_PATH");
     }
 
     #[tokio::test]
     async fn test_auto_triggers_probe_ollama_unreachable() {
         let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
 
+        std::env::set_var("XAVIER_CONFIG_PATH", "nonexistent_config_file_for_test.json");
         std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
         std::env::remove_var("OPENAI_API_KEY");
 
         // Use an invalid/unreachable URL
@@ -826,5 +845,6 @@ mod tests {
         assert!(matches!(config, EmbedderConfig::Noop));
 
         std::env::remove_var("_XAVIER_TEST_OLLAMA_PROBE_URL");
+        std::env::remove_var("XAVIER_CONFIG_PATH");
     }
 }
