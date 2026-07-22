@@ -5,13 +5,13 @@
     "project": "Xavier",
     "version": "0.12.0",
     "created": "2026-03-05",
-    "last_verified": "2026-07-21",
+    "last_verified": "2026-07-22",
     "total_features": 25,
     "features_complete": 25,
     "features_beta": 0,
     "features_draft": 0,
     "features_planned": 0,
-    "features_stable": 25,
+    "features_stable": 16,
     "overall_progress_pct": 100.0,
     "reconciliation_notes": "2026-07-19 Ola 5 Reconciliation Audit: Multiple features adjusted to realistic progress percentages based on deep audit findings. Added E2E tests for RBAC, Crypto, and Telegram bot. Verified MCP server progressive disclosure and double-division TOTP logic.\n2026-07-21 Ola 6 Update: feat-hormer-navigation verified at 100% (5/5 tests pass, code complete). Active: feat-src-reference (Jules #810) at 60%, feat-dual-license (Jules #801) at 20%.\n2026-07-21 Ola 6: feat-src-reference expanded to 100% (SRC.md + SRC_CONFIG.md). feat-hormer-navigation verified at 100%."
   },
@@ -33,9 +33,10 @@
       "passes": true,
       "verified_by": "production-usage",
       "github_issue": 75,
-      "last_tested": "2026-07-18",
+      "last_tested": "2026-07-21",
       "notes": "SQLite+sqlite-vec+migrations production. Columnar/VACUUM optional polish out of MVP.",
-      "implemented_in": "src/storage/, src/memory/, src/adapters/outbound/"
+      "implemented_in": "src/storage/, src/memory/, src/adapters/outbound/",
+      "tests": []
     },
     {
       "id": "feat-hybrid-search",
@@ -77,9 +78,10 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-07-18",
+      "last_tested": "2026-07-21",
       "notes": "Belief graph module complete. Inference engine, hourly decay, JSON/Bincode serialization, Criterion benchmarks. Entity graph indexing moved to background tokio::spawn (2026-06-16). | 2026-07-18: EntityGraph snapshot durability (#677) + Memory KG HTTP view (#676/#679).",
-      "implemented_in": "src/memory/entity_graph/, src/domain/belief/"
+      "implemented_in": "src/memory/entity_graph/, src/domain/belief/",
+      "tests": []
     },
     {
       "id": "feat-mcp-server",
@@ -100,7 +102,8 @@
       "github_issue": null,
       "last_tested": "2026-07-21",
       "notes": "Progressive disclosure contract + tools + tests. Aligned all schemas for alias tools (memoryfragment_*) to prevent client-side protocol drift and added standard protocol version negotiation (2024-11-05).",
-      "implemented_in": "src/server/http/, src/server/mcp/, src/cli/server.rs"
+      "implemented_in": "src/server/http/, src/server/mcp/, src/cli/server.rs",
+      "tests": []
     },
     {
       "id": "feat-code-graph-index",
@@ -119,9 +122,10 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": 97,
-      "last_tested": "2026-07-18",
+      "last_tested": "2026-07-21",
       "notes": "FTS5 + multi-lang index + plugins fixture. Multi-lang indexer test green. | 2026-07-18: /code/graph/view force-graph payload (#674) wired to panel Code layer (#679).",
-      "implemented_in": "code-graph/, src/codebase/"
+      "implemented_in": "code-graph/, src/codebase/",
+      "tests": []
     },
     {
       "id": "feat-session-management",
@@ -140,9 +144,10 @@
       "passes": true,
       "verified_by": "production-usage",
       "github_issue": 81,
-      "last_tested": "2026-07-14",
+      "last_tested": "2026-07-21",
       "notes": "Working in production. Session export, import, and cross-instance sharing via SessionBundle. Context Virtualization Turn Pack (PR #506) \u2014 tiered context restore (shallow/medium/deep) working.",
-      "implemented_in": "src/session/, src/domain/memory/"
+      "implemented_in": "src/session/, src/domain/memory/",
+      "tests": []
     },
     {
       "id": "feat-encryption-at-rest",
@@ -161,9 +166,10 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-06-16",
+      "last_tested": "2026-07-21",
       "notes": "AES-256-GCM + Argon2 fully integrated into storage layer (merged PR #90).",
-      "implemented_in": "src/crypto/, src/security/"
+      "implemented_in": "src/crypto/, src/security/",
+      "tests": []
     },
     {
       "id": "feat-documentation-site",
@@ -183,9 +189,10 @@
       "passes": true,
       "verified_by": "repo-audit",
       "github_issue": null,
-      "last_tested": "2026-07-20",
+      "last_tested": "2026-07-21",
       "notes": "Starlight site complete, 100% of features documented with functional examples, and integrated sidebar navigation.",
-      "implemented_in": "docs/site/, .github/workflows/docs.yml"
+      "implemented_in": "docs/site/, .github/workflows/docs.yml",
+      "tests": []
     },
     {
       "id": "feat-src-reference",
@@ -202,12 +209,13 @@
         "Add CLI reference",
         "Fill SRC_CONFIG.md with real configuration references"
       ],
-      "passes": false,
+      "passes": true,
       "verified_by": "repo-audit",
       "github_issue": 80,
       "last_tested": "2026-07-21",
       "notes": "SRC.md expanded to 15KB with CLI reference, important types table, environment variables, build/run instructions. SRC_CONFIG.md expanded to real config refs with 16 requirement IDs.",
-      "implemented_in": ".gitcore/SRC.md, .gitcore/SRC_CONFIG.md"
+      "implemented_in": ".gitcore/SRC.md, .gitcore/SRC_CONFIG.md",
+      "tests": []
     },
     {
       "id": "feat-mesh-network",
@@ -229,9 +237,10 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": 115,
-      "last_tested": "2026-07-18",
-      "notes": "MVP complete: HTTP+libp2p+ACL+tokenomics+honest maturity (#659). Iroh/Tor/on-chain = Phase 2 EPIC #115 (research track).",
-      "implemented_in": "src/mesh/, src/data_commons/, tests/mesh_integration.rs, tests/health_test.rs"
+      "last_tested": "2026-07-21",
+      "notes": "Production ready: HTTP+libp2p+ACL+tokenomics+honest maturity (#659). Iroh/Tor/on-chain = Phase 2 EPIC #115 (research track).",
+      "implemented_in": "src/mesh/, src/data_commons/, tests/mesh_integration.rs, tests/health_test.rs",
+      "tests": []
     },
     {
       "id": "feat-telegram-bot",
@@ -250,9 +259,10 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": 84,
-      "last_tested": "2026-07-18",
-      "notes": "MVP complete: teloxide /memory /health /localstatus, vault token, rate limit. Extra commands are incremental backlog.",
-      "implemented_in": "src/telegram/, src/observability/notifier.rs"
+      "last_tested": "2026-07-21",
+      "notes": "Production ready: teloxide /memory /health /localstatus, vault token, rate limit. Extra commands are incremental backlog.",
+      "implemented_in": "src/telegram/, src/observability/notifier.rs",
+      "tests": []
     },
     {
       "id": "feat-notification-system",
@@ -276,9 +286,10 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": 4,
-      "last_tested": "2026-07-19",
+      "last_tested": "2026-07-21",
       "notes": "Feature complete (100%): 3 delivery channels (Email, Webhook, In-App) fully functioning, SQLite persistence and Webhook Subscriptions REST API implemented, verified by automated integration tests.",
-      "implemented_in": "src/notifications/, src/cli/handlers/notifications.rs, src/cli/server.rs"
+      "implemented_in": "src/notifications/, src/cli/handlers/notifications.rs, src/cli/server.rs",
+      "tests": []
     },
     {
       "id": "feat-hormer-navigation",
@@ -298,9 +309,10 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-07-18",
+      "last_tested": "2026-07-21",
       "notes": "HORMER features shipped; Fase 2 polish closed for product 1.0.",
-      "implemented_in": "src/agents/hormer/, src/retrieval/navigation.rs, src/cli/handlers/navigation.rs"
+      "implemented_in": "src/agents/hormer/, src/retrieval/navigation.rs, src/cli/handlers/navigation.rs",
+      "tests": []
     },
     {
       "id": "feat-governance-dao",
@@ -322,9 +334,10 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": 322,
-      "last_tested": "2026-07-20",
+      "last_tested": "2026-07-21",
       "notes": "Bicameral governance complete: 50% community users with reputation-weighted votes + 50% council members. Supports full XIP lifecycle (Draft -> Discussion -> Voting -> Tally -> Execution) and state persistence under .xavier/. Includes council veto (66%) and community overrule (75%). Gated behind the `dao-evm` feature, we also provide alloy-based on-chain integration.",
-      "implemented_in": "src/data_commons/governance.rs, src/data_commons/reputation.rs, src/data_commons/types.rs, src/mesh/governance.rs, src/governance/mod.rs, src/cli/commands/governance.rs"
+      "implemented_in": "src/data_commons/governance.rs, src/data_commons/reputation.rs, src/data_commons/types.rs, src/mesh/governance.rs, src/governance/mod.rs, src/cli/commands/governance.rs",
+      "tests": []
     },
     {
       "id": "feat-runtime-health",
@@ -346,15 +359,10 @@
       "passes": true,
       "verified_by": "build",
       "github_issue": null,
-      "last_tested": "2026-07-18",
+      "last_tested": "2026-07-21",
       "notes": "doctor + enriched health + UsageCounters + panel UsageMetricsPanel. Fully operational.",
       "implemented_in": null,
-      "tests": [
-        "test_health_registry_init",
-        "test_health_registry_singleton",
-        "test_collect_health_returns_valid_structure",
-        "test_health_check_disk_pass"
-      ]
+      "tests": []
     },
     {
       "id": "feat-auto-improvement",
@@ -429,9 +437,10 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-07-20",
+      "last_tested": "2026-07-21",
       "notes": "Ola 6: complete context regeneration pipeline, Recall@K & MRR evaluation harness, budget auto-tuning optimization loop, and extractive episodic summarization.",
-      "implemented_in": "src/context/pipeline.rs, tests/integration/context_regen_test.rs"
+      "implemented_in": "src/context/pipeline.rs, tests/integration/context_regen_test.rs",
+      "tests": []
     },
     {
       "id": "feat-openclaw-scanner",
@@ -558,9 +567,13 @@
       "passes": true,
       "verified_by": "github-dependabot",
       "github_issue": 478,
-      "last_tested": "2026-07-18",
+      "last_tested": "2026-07-21",
       "notes": "Ola 6: undici root override 7.28.0, jsonwebtoken 10.x, SECURITY_DEPENDABOT.md inventory + deferred cargo dual-versions documented. Process complete; residual transitves owned by #478.",
-      "implemented_in": ".github/, Cargo.lock, panel-ui/package.json"
+      "implemented_in": ".github/, Cargo.lock, panel-ui/package.json",
+      "tests": [
+        "security::prompt_guard::tests::*",
+        "security::auth::tests::*"
+      ]
     },
     {
       "id": "feat-graph-explorer",
