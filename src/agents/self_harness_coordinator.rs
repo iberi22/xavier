@@ -11,7 +11,7 @@ use crate::memory::qmd_memory::QmdMemory;
 /// generates proposals (`openclaw-harness-optimizer`),
 /// and stores improved agent harnesses.
 pub struct SelfHarnessCoordinator {
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Reservado para futuro coordinator loop")]
     memory: Arc<QmdMemory>,
 }
 

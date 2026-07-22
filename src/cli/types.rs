@@ -5,7 +5,7 @@
 
 use serde::Deserialize;
 use std::collections::HashMap;
-use xavier::memory::schema::{ContextZone, MemoryQueryFilters, FederatedSearchRequest};
+use xavier::memory::schema::{ContextZone, FederatedSearchRequest, MemoryQueryFilters};
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct SearchPayload {
@@ -95,7 +95,7 @@ pub(crate) struct UpdateMemoryRequest {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct SecurityScanPayload {
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Usado solo via serde deserialization")]
     pub input: String,
 }
 

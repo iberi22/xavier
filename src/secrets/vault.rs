@@ -15,7 +15,7 @@ use keyring::Entry;
 
 /// Global fallback vault storage, lazily initialized
 struct VaultBackend {
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Identificador del servicio para keyring")]
     service_name: String,
     storage_dir: std::path::PathBuf,
     vault_key: [u8; 32],

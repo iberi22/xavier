@@ -91,7 +91,7 @@ pub async fn headless_system_info() -> impl IntoResponse {
 // Chat
 // ═════════════════════════════════════════════════════════════════════════════
 
-#[allow(dead_code)]
+#[expect(dead_code, reason = "Usado via serde deserialization")]
 #[derive(Debug, Deserialize)]
 pub struct ChatRequest {
     pub model: Option<String>,
@@ -386,7 +386,7 @@ pub async fn headless_usage(State(state): State<CliState>) -> impl IntoResponse 
 // Agents
 // ═════════════════════════════════════════════════════════════════════════════
 
-#[allow(dead_code)]
+#[expect(dead_code, reason = "Usado via serde deserialization")]
 #[derive(Debug, Deserialize)]
 pub struct SpawnRequest {
     pub count: usize,
@@ -425,7 +425,7 @@ pub async fn headless_spawn(
 // Memory
 // ═════════════════════════════════════════════════════════════════════════════
 
-#[allow(dead_code)]
+#[expect(dead_code, reason = "Usado via serde deserialization")]
 #[derive(Debug, Deserialize)]
 pub struct MemorySearchRequest {
     pub query: String,
@@ -450,7 +450,7 @@ pub async fn headless_memory_search(Json(req): Json<MemorySearchRequest>) -> imp
     }))
 }
 
-#[allow(dead_code)]
+#[expect(dead_code, reason = "Usado via serde deserialization")]
 #[derive(Debug, Deserialize)]
 pub struct MemoryAddRequest {
     pub content: String,

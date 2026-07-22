@@ -44,8 +44,7 @@ pub struct VecSqliteMemoryStore {
 /// Must stay in sync with [`VecSqliteMemoryStore::new`] so panel / vacuum /
 /// other callers hit the same pool (and migrations) as memory operations.
 pub fn project_id_for_path(path: &std::path::Path) -> String {
-    let digest =
-        crate::crypto::hex_encode(Sha256::digest(path.to_string_lossy().as_bytes()));
+    let digest = crate::crypto::hex_encode(Sha256::digest(path.to_string_lossy().as_bytes()));
     format!("vec_store_{}", &digest[..12])
 }
 
@@ -100,7 +99,7 @@ impl VecSqliteMemoryStore {
         utils::configured_qjl_threshold()
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Helper para construir row key usado desde traits")]
     /// Row key.
     pub(crate) fn row_key(workspace_id: &str, memory_id: &str) -> String {
         stable_key("sqlite_mem", &[workspace_id, memory_id])
@@ -209,7 +208,7 @@ impl VecSqliteMemoryStore {
         })
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Metodo de store usado via MemoryStore trait")]
     /// Load record by id.
     pub(crate) async fn load_record_by_id(
         &self,
@@ -235,7 +234,7 @@ impl VecSqliteMemoryStore {
         }).await
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Metodo de store usado via MemoryStore trait")]
     /// Sync memory entities.
     pub(crate) async fn sync_memory_entities(
         &self,
@@ -251,7 +250,7 @@ impl VecSqliteMemoryStore {
             .await
     }
 
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Metodo de store usado via MemoryStore trait")]
     /// Resolve graph seed entities.
     pub(crate) async fn resolve_graph_seed_entities(
         &self,

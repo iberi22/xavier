@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 use super::{fts, graph, search, utils, FusionSource, VecSqliteMemoryStore};
 
 impl VecSqliteMemoryStore {
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "Metodo de backend usado via Backend trait")]
     /// Upsert vector.
     pub(crate) async fn upsert_vector(
         &self,

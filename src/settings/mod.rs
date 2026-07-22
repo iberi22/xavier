@@ -5,9 +5,9 @@
 use anyhow::Result;
 use parking_lot::RwLock;
 use std::path::PathBuf;
-use std::sync::{Arc, LazyLock};
 #[cfg(not(test))]
 use std::sync::Once;
+use std::sync::{Arc, LazyLock};
 
 pub mod defaults;
 pub mod env;
@@ -80,9 +80,10 @@ async fn watch_config_changes() -> Result<()> {
                 );
 
                 if is_write_event {
-                    let matches_path = event.paths.iter().any(|p| {
-                        p.file_name().and_then(|n| n.to_str()) == Some(&config_file_name)
-                    });
+                    let matches_path = event
+                        .paths
+                        .iter()
+                        .any(|p| p.file_name().and_then(|n| n.to_str()) == Some(&config_file_name));
 
                     if matches_path {
                         tracing::info!("xavier.config.json changed. Reloading settings...");
@@ -103,7 +104,7 @@ async fn watch_config_changes() -> Result<()> {
 }
 
 impl XavierSettings {
-    #[allow(dead_code)]
+    #[cfg_attr(not(test), allow(dead_code))]
     /// Resolve config path.
     pub fn resolve_config_path() -> PathBuf {
         serialization::resolve_config_path()
@@ -180,7 +181,10 @@ pub mod tests {
             let mut saved_vars = std::collections::HashMap::new();
             for (key, val) in std::env::vars() {
                 let lower = key.to_ascii_uppercase();
-                if lower.starts_with("XAVIER_") || lower.starts_with("PGHEART_") || lower == "STRIPE_SECRET_KEY" {
+                if lower.starts_with("XAVIER_")
+                    || lower.starts_with("PGHEART_")
+                    || lower == "STRIPE_SECRET_KEY"
+                {
                     saved_vars.insert(key, val);
                 }
             }
@@ -196,7 +200,9 @@ pub mod tests {
             // Remove any current XAVIER_ or PGHEART_ variables that are set but weren't originally saved
             for (key, _) in std::env::vars() {
                 let lower = key.to_ascii_uppercase();
-                if (lower.starts_with("XAVIER_") || lower.starts_with("PGHEART_") || lower == "STRIPE_SECRET_KEY")
+                if (lower.starts_with("XAVIER_")
+                    || lower.starts_with("PGHEART_")
+                    || lower == "STRIPE_SECRET_KEY")
                     && !self.saved_vars.contains_key(&key)
                 {
                     std::env::remove_var(&key);
