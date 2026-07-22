@@ -335,3 +335,16 @@ useless_vec = "allow"
 opt-level = 3
 lto = false
 
+[lints.clippy]
+vec_init_then_push = "allow"
+useless_format = "allow"
+needless_borrow = "allow"
+manual_clamp = "allow"
+new_without_default = "allow"
+bool_assert_comparison = "allow"
+useless_vec = "allow"
+field_reassign_with_default = "allow"
+
+[lints.rust]
+dead_code = "allow"
+unused_imports = "allow"
