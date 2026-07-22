@@ -1,5 +1,12 @@
 //! Xavier - Cognitive Memory System
 #![cfg_attr(feature = "telegram", allow(dead_code))]
+#![allow(unused_imports)]
+#![allow(dead_code)]
+#![allow(clippy::vec_init_then_push)]
+#![allow(clippy::useless_format)]
+#![allow(clippy::needless_borrow)]
+#![allow(clippy::manual_clamp)]
+#![allow(clippy::new_without_default)]
 //!
 //! A cognitive memory system with agent runtime, task management, and native UI.
 

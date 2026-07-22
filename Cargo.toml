@@ -1,27 +1,12 @@
 ﻿[patch.crates-io]
 burn-candle = { path = "patches/burn-candle" }
 
-[lints.rust]
-unused_imports = "allow"
-dead_code = "allow"
-
-[lints.clippy]
-vec_init_then_push = "allow"
-useless_format = "allow"
-needless_borrow = "allow"
-manual_clamp = "allow"
-new_without_default = "allow"
-field_reassign_with_default = "allow"
-bool_assert_comparison = "allow"
-useless_vec = "allow"
-
 [package]
 name = "xavier"
 version = "0.12.0"
 authors = ["BELA <bela@swal.dev>", "Xavier <xavier@swal.dev>"]
 edition = "2021"
 autobins = false
-autobenches = false
 description = "Xavier - Cognitive Memory Runtime for AI Agents (AGPL v3 + Commercial)"
 license = "AGPL-3.0"
 repository = "https://github.com/iberi22/xavier"
@@ -126,10 +111,10 @@ name = "cortex"
 path = "benches/cortex.rs"
 harness = false
 
-# [[bench]]
-# name = "mcp_benchmark"
-# path = "benches/mcp_benchmark.rs"
-# harness = false
+[[bench]]
+name = "mcp_benchmark"
+path = "benches/mcp_benchmark.rs"
+harness = false
 
 [[test]]
 name = "auth_full_flow_test"
@@ -317,34 +302,7 @@ name = "xavier-tui"
 path = "src/main_tui.rs"
 required-features = ["cli-interactive"]
 
-[lints.rust]
-unused_imports = "allow"
-dead_code = "allow"
-
-[lints.clippy]
-vec_init_then_push = "allow"
-useless_format = "allow"
-needless_borrow = "allow"
-manual_clamp = "allow"
-new_without_default = "allow"
-field_reassign_with_default = "allow"
-bool_assert_comparison = "allow"
-useless_vec = "allow"
-
 [profile.release]
 opt-level = 3
 lto = false
 
-[lints.clippy]
-vec_init_then_push = "allow"
-useless_format = "allow"
-needless_borrow = "allow"
-manual_clamp = "allow"
-new_without_default = "allow"
-bool_assert_comparison = "allow"
-useless_vec = "allow"
-field_reassign_with_default = "allow"
-
-[lints.rust]
-dead_code = "allow"
-unused_imports = "allow"
