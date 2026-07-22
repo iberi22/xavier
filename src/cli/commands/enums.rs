@@ -293,6 +293,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: AgentCommand,
     },
+    /// Manage Xavier plugins
+    Plugin {
+        #[command(subcommand)]
+        cmd: PluginCommand,
+    },
     /// Show system health status
     Health {
         /// Show cloud backends status
@@ -933,4 +938,15 @@ pub enum WalletCommand {
         #[arg(short, long, default_value_t = 10)]
         limit: usize,
     },
+}
+
+/// Xavier plugin subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum PluginCommand {
+    /// Install a plugin
+    Install {
+        name: String,
+    },
+    /// List plugins
+    List,
 }

@@ -8,6 +8,138 @@ use crate::data_commons::types::{
 };
 use crate::data_commons::governance::{GovernanceEngine, GovernanceConfig};
 
+/// Result of quadratic voting tallying
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TallyResult {
+    pub yes: u64,
+    pub no: u64,
+    pub abstain: u64,
+    pub quorum_reached: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum VoteType {
+    Yes,
+    No,
+    Abstain,
+}
+
+#[derive(Debug, Clone)]
+pub struct QuadraticVote {
+    pub voter: String,
+    pub vote_type: VoteType,
+    pub credits: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct QuadraticProposal {
+    pub id: String,
+    pub votes: Vec<QuadraticVote>,
+    pub quorum: u64,
+}
+
+#[derive(Debug, Default)]
+pub struct QuadraticState {
+    pub proposals: HashMap<String, QuadraticProposal>,
+    pub voter_balances: HashMap<String, u64>,
+}
+
+static QUADRATIC_STATE: std::sync::OnceLock<std::sync::Mutex<QuadraticState>> = std::sync::OnceLock::new();
+
+/// Get or initialize the global quadratic state
+fn get_quadratic_state() -> &'static std::sync::Mutex<QuadraticState> {
+    QUADRATIC_STATE.get_or_init(|| std::sync::Mutex::new(QuadraticState::default()))
+}
+
+/// Helper to set up a quadratic proposal in the global state
+pub fn setup_quadratic_proposal(proposal_id: &str, quorum: u64) {
+    let mut state = get_quadratic_state().lock().unwrap();
+    state.proposals.insert(
+        proposal_id.to_string(),
+        QuadraticProposal {
+            id: proposal_id.to_string(),
+            votes: Vec::new(),
+            quorum,
+        },
+    );
+}
+
+/// Helper to set a voter's token balance in the global state
+pub fn set_quadratic_balance(voter: &str, balance: u64) {
+    let mut state = get_quadratic_state().lock().unwrap();
+    state.voter_balances.insert(voter.to_string(), balance);
+}
+
+/// Helper to cast a quadratic vote in the global state
+pub fn cast_quadratic_vote(proposal_id: &str, voter: &str, vote_type: VoteType, credits: u64) -> Result<(), String> {
+    let mut state = get_quadratic_state().lock().unwrap();
+    let proposal = state.proposals.get_mut(proposal_id)
+        .ok_or_else(|| "Proposal not found".to_string())?;
+
+    if proposal.votes.iter().any(|v| v.voter == voter) {
+        return Err("Voter has already voted".to_string());
+    }
+
+    proposal.votes.push(QuadraticVote {
+        voter: voter.to_string(),
+        vote_type,
+        credits,
+    });
+    Ok(())
+}
+
+/// Clear the global quadratic state (useful for test isolation)
+pub fn clear_quadratic_state() {
+    let mut state = get_quadratic_state().lock().unwrap();
+    state.proposals.clear();
+    state.voter_balances.clear();
+}
+
+/// Tallies votes for a given proposal using Quadratic Voting.
+/// Each vote of weight `credits` costs `credits^2` tokens.
+/// If a voter's balance is lower than `credits^2`, returns an error.
+pub fn tally_votes(proposal_id: &str) -> Result<TallyResult, String> {
+    let state = get_quadratic_state().lock().unwrap();
+    let proposal = state.proposals.get(proposal_id)
+        .ok_or_else(|| "Proposal not found".to_string())?;
+
+    let mut yes = 0u64;
+    let mut no = 0u64;
+    let mut abstain = 0u64;
+
+    for vote in &proposal.votes {
+        let cost = vote.credits.checked_mul(vote.credits)
+            .ok_or_else(|| "Credit calculation overflow".to_string())?;
+
+        let balance = state.voter_balances.get(&vote.voter).cloned().unwrap_or(0);
+        if balance < cost {
+            return Err(format!("Voter {} has insufficient balance (has {}, needs {})", vote.voter, balance, cost));
+        }
+
+        match vote.vote_type {
+            VoteType::Yes => {
+                yes += vote.credits;
+            }
+            VoteType::No => {
+                no += vote.credits;
+            }
+            VoteType::Abstain => {
+                abstain += vote.credits;
+            }
+        }
+    }
+
+    let total_votes = yes + no + abstain;
+    let quorum_reached = total_votes >= proposal.quorum;
+
+    Ok(TallyResult {
+        yes,
+        no,
+        abstain,
+        quorum_reached,
+    })
+}
+
 /// Bicameral DAO interface (Contract-First approach).
 #[async_trait]
 pub trait BicameralDao: Send + Sync {
@@ -457,4 +589,68 @@ impl BicameralDao for OnChainBicameralDao {
     }
 }
 
-pub mod dao;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    static TEST_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn tally_quadratic_voting() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        clear_quadratic_state();
+
+        let prop_id = "prop_1";
+        setup_quadratic_proposal(prop_id, 10);
+
+        set_quadratic_balance("voter_yes", 100); // 10^2 = 100
+        set_quadratic_balance("voter_no", 25);   // 5^2 = 25
+        set_quadratic_balance("voter_abs", 9);   // 3^2 = 9
+
+        cast_quadratic_vote(prop_id, "voter_yes", VoteType::Yes, 10).unwrap();
+        cast_quadratic_vote(prop_id, "voter_no", VoteType::No, 5).unwrap();
+        cast_quadratic_vote(prop_id, "voter_abs", VoteType::Abstain, 3).unwrap();
+
+        let result = tally_votes(prop_id).unwrap();
+
+        assert_eq!(result.yes, 10);
+        assert_eq!(result.no, 5);
+        assert_eq!(result.abstain, 3);
+        assert!(result.quorum_reached);
+    }
+
+    #[test]
+    fn tally_fails_without_quorum() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        clear_quadratic_state();
+
+        let prop_id = "prop_2";
+        setup_quadratic_proposal(prop_id, 50);
+
+        set_quadratic_balance("voter_yes", 100);
+        cast_quadratic_vote(prop_id, "voter_yes", VoteType::Yes, 10).unwrap();
+
+        let result = tally_votes(prop_id).unwrap();
+
+        assert_eq!(result.yes, 10);
+        assert_eq!(result.no, 0);
+        assert_eq!(result.abstain, 0);
+        assert!(!result.quorum_reached);
+    }
+
+    #[test]
+    fn tally_fails_insufficient_balance() {
+        let _guard = TEST_MUTEX.lock().unwrap();
+        clear_quadratic_state();
+
+        let prop_id = "prop_3";
+        setup_quadratic_proposal(prop_id, 5);
+
+        set_quadratic_balance("voter_poor", 24);
+        cast_quadratic_vote(prop_id, "voter_poor", VoteType::Yes, 5).unwrap();
+
+        let result = tally_votes(prop_id);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("insufficient balance"));
+    }
+}
