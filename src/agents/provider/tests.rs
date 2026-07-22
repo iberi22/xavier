@@ -181,7 +181,24 @@ fn test_opencode_provider_config() {
 async fn test_opencode_provider_generation() {
     use super::client::ModelProviderClient;
 
+    // Lock env to prevent parallel test pollution (OPENCODE_MODEL may be set in user env)
+    let _guard = env_lock().lock().expect("test assertion");
+
+    let old_model = std::env::var("XAVIER_OPENCODE_MODEL").ok();
+    let old_model_alt = std::env::var("OPENCODE_MODEL").ok();
+    std::env::remove_var("XAVIER_OPENCODE_MODEL");
+    std::env::remove_var("OPENCODE_MODEL");
+
     let client = ModelProviderClient::for_provider("opencode", None);
     let response = client.generate_text("System", "User").await.unwrap();
-    assert!(response.text.contains("Mocked response for model opencode/deepseek-v4-flash"));
+    assert!(response
+        .text
+        .contains("Mocked response for model opencode/deepseek-v4-flash"));
+
+    if let Some(val) = old_model {
+        std::env::set_var("XAVIER_OPENCODE_MODEL", val);
+    }
+    if let Some(val) = old_model_alt {
+        std::env::set_var("OPENCODE_MODEL", val);
+    }
 }
