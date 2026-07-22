@@ -1,3 +1,8 @@
+//! Notification system for Xavier.
+//!
+//! Provides multi-channel notification delivery (telegram, email, in-app)
+//! with template rendering, scheduling, and delivery status tracking.
+
 use crate::codebase::connection_manager::ConnectionManager;
 use crate::memory::sqlite_store::TABLE_NOTIFICATIONS;
 use anyhow::Result;

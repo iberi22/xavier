@@ -1,3 +1,8 @@
+//! Governance DAO module for the SWAL mesh network.
+//!
+//! Implements on-chain governance with quadratic voting, proposal lifecycle,
+//! vote tallying, and council management for decentralized decision-making.
+
 use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
