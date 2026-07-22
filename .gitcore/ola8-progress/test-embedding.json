@@ -1,0 +1,13 @@
+{
+  "feature": "test-embedding",
+  "progress_pct": 100,
+  "status": "stable",
+  "passes": true,
+  "last_tested": "2026-07-22",
+  "tests": [
+    "embedding::cache::tests::test_cache_miss_when_model_changes",
+    "embedding::tests::test_auto_triggers_probe_ollama_reachable_with_embeddinggemma",
+    "embedding::tests::test_auto_triggers_probe_ollama_reachable_without_embeddinggemma",
+    "embedding::tests::test_auto_triggers_probe_ollama_unreachable"
+  ]
+}
