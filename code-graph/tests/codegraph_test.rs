@@ -8,8 +8,11 @@ use std::io::Write;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
+static PATH_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[tokio::test]
 async fn test_codegraph_plugin_auto_detection_and_execution() {
+    let _guard = PATH_MUTEX.lock().unwrap();
     // 1. Create a temp directory for the mock codegraph executable
     let temp_dir = tempfile::tempdir().unwrap();
     let bin_path = temp_dir.path().join("codegraph");
@@ -93,4 +96,78 @@ echo '{"symbols": [{"name": "test_func", "kind": "Function", "lang": "Rust", "fi
     assert_eq!(sym.start_line, 1);
     assert_eq!(sym.end_line, 2);
     assert_eq!(sym.complexity, Some(1.0));
+}
+
+#[tokio::test]
+async fn test_parser_rust_plugin_execution() {
+    let _guard = PATH_MUTEX.lock().unwrap();
+    // 1. Ensure parser-rust is compiled in debug mode
+    let mut target_dir = env::current_dir().unwrap();
+    if !target_dir.join("target/debug").exists() {
+        // We might be running inside code-graph/ directory
+        if target_dir.ends_with("code-graph") {
+            target_dir = target_dir.parent().unwrap().to_path_buf();
+        }
+    }
+    let debug_dir = target_dir.join("target/debug");
+    let mut exe_name = "parser-rust".to_string();
+    #[cfg(windows)]
+    {
+        exe_name.push_str(".exe");
+    }
+    // Avoid unused_mut warning when not windows
+    let _ = &mut exe_name;
+    let exe_path = debug_dir.join(&exe_name);
+
+    if !exe_path.exists() {
+        // Compile parser-rust dynamically
+        let status = std::process::Command::new("cargo")
+            .args(["build", "-p", "parser-rust"])
+            .current_dir(&target_dir)
+            .status()
+            .expect("failed to run cargo build");
+        assert!(status.success(), "Failed to build parser-rust dependency");
+    }
+
+    // 2. Prepend target/debug to PATH so PluginManager can discover parser-rust
+    let original_path = env::var_os("PATH").unwrap_or_default();
+    let mut new_paths = vec![debug_dir];
+    new_paths.extend(env::split_paths(&original_path));
+    let new_path_os = env::join_paths(new_paths).unwrap();
+    env::set_var("PATH", &new_path_os);
+
+    // 3. Initialize PluginManager
+    let manager = PluginManager::new();
+
+    // 4. Verify that "parser-rust" is registered
+    let desc = manager.descriptor_for(&Language::Rust);
+    assert!(desc.is_some(), "parser-rust plugin should be registered for Rust");
+    let desc = desc.unwrap();
+    assert_eq!(desc.name, "parser-rust");
+    assert_eq!(desc.command, "parser-rust");
+
+    // 5. Run the actual parse execution via the parser-rust plugin process
+    let files = vec![FileToParse {
+        path: "src/lib.rs".to_string(),
+        source: r#"
+            pub fn add(left: usize, right: usize) -> usize {
+                left + right
+            }
+        "#.to_string(),
+    }];
+
+    let symbols = manager
+        .parse_with_plugin("parser-rust", Language::Rust, files)
+        .await
+        .expect("should execute parser-rust parse successfully");
+
+    // Restore original PATH
+    env::set_var("PATH", original_path);
+
+    // 6. Verify parsed symbols
+    assert!(!symbols.is_empty(), "should parse symbols");
+    let add_sym = symbols.iter().find(|s| s.name == "add").expect("should find 'add' function");
+    assert_eq!(add_sym.kind, SymbolKind::Function);
+    assert_eq!(add_sym.lang, Language::Rust);
+    assert_eq!(add_sym.file_path, "src/lib.rs");
 }

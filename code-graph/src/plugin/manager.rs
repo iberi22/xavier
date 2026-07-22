@@ -88,6 +88,31 @@ impl PluginManager {
             manager.register(descriptor);
         }
 
+        // Auto-detect and register separate language parsers if found in PATH
+        let parsers_info = [
+            ("parser-rust", vec![Language::Rust], vec!["rs"]),
+            ("parser-ts", vec![Language::TypeScript, Language::JavaScript], vec!["ts", "tsx", "js", "jsx"]),
+            ("parser-python", vec![Language::Python], vec!["py"]),
+            ("parser-go", vec![Language::Go], vec!["go"]),
+            ("parser-java", vec![Language::Java], vec!["java"]),
+            ("parser-c", vec![Language::C], vec!["c", "h"]),
+            ("parser-cpp", vec![Language::Cpp], vec!["cpp", "cc", "cxx", "hpp"]),
+        ];
+
+        for (name, langs, exts) in parsers_info {
+            if which::which(name).is_ok() {
+                let descriptor = PluginDescriptor {
+                    name: name.to_string(),
+                    version: "0.1.0".to_string(),
+                    command: name.to_string(),
+                    languages: langs,
+                    extensions: exts.into_iter().map(|s| s.to_string()).collect(),
+                    capabilities: vec!["parse".to_string()],
+                };
+                manager.register(descriptor);
+            }
+        }
+
         manager
     }
 
