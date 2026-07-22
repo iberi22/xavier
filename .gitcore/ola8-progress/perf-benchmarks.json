@@ -1,0 +1,11 @@
+{
+  "feature": "perf-benchmarks",
+  "progress_pct": 100,
+  "status": "stable",
+  "passes": true,
+  "last_tested": "2026-07-21",
+  "tests": [
+    "benches/hybrid_search.rs",
+    "benches/cortex.rs"
+  ]
+}
