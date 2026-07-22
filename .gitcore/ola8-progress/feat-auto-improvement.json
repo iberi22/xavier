@@ -1,0 +1,53 @@
+{
+  "feature": "feat-auto-improvement",
+  "progress_pct": 100,
+  "status": "stable",
+  "passes": true,
+  "last_tested": "2026-07-21",
+  "tests": [
+    "auto_improvement::tests::test_analyze_gaps_identifies_low_recall",
+    "auto_improvement::tests::test_analyze_gaps_skips_when_above_target",
+    "auto_improvement::tests::test_analyze_gaps_detects_regression",
+    "auto_improvement::tests::test_generate_experiments_deduplicates",
+    "auto_improvement::tests::test_engine_cycle_no_memory",
+    "auto_improvement::tests::test_benchmark_history",
+    "auto_improvement::tests::test_autonomous_mode_accepts_experiments",
+    "auto_improvement::tests::test_config_overrides_for_recall_are_concrete",
+    "auto_improvement::tests::test_config_overrides_for_unknown_metric_is_empty",
+    "auto_improvement::tests::test_generate_experiments_emits_overrides",
+    "auto_improvement::tests::test_cycle_does_not_panic_with_default_settings",
+    "auto_improvement::tests::test_external_benchmark_falls_back_without_feature",
+    "auto_improvement::tests::test_parse_internal_memory_summary_reads_accuracy",
+    "auto_improvement::tests::test_parse_internal_memory_summary_rejects_missing_accuracy",
+    "auto_improvement::tests::test_last_accepted_config_empty_history_returns_none",
+    "auto_improvement::tests::test_history_save_load_roundtrip",
+    "auto_improvement::tests::test_history_append_keeps_newest_first",
+    "auto_improvement::tests::test_merge_overrides_applies_rrf_k",
+    "auto_improvement::tests::test_min_improvement_gate_rejects_noise",
+    "auto_improvement::tests::test_threshold_builder_accepts_strict_improvement",
+    "auto_improvement::tests::test_threshold_builder_rejects_high_threshold"
+  ],
+  "path_verification": {
+    "engine_module": "src/auto_improvement/mod.rs",
+    "cli_module": "src/cli/commands/improve.rs",
+    "feature_definition": ".gitcore/features/FEATURE-feat-auto-improvement.md"
+  },
+  "research_findings": {
+    "citations": [
+      "smartcore: Rust Machine Learning Library, 2026",
+      "criterion.rs: Statistics-driven Microbenchmarking Framework for Rust, 2026",
+      "Information Retrieval Evaluation best practices (Recall@K / MRR), 2026",
+      "Closed-Loop DevOps and Continuous Optimization Patterns, 2026"
+    ],
+    "rust_auto_ml_pipeline_patterns_2026": "Modern closed-loop auto-ML pipelines in Rust focus heavily on resource efficiency, type-safe hyperparameter specification, and isolated execution states. Systems utilize transaction-rollback or virtual workspaces to test configurations without contaminating production data. Serialized progress and states allow deterministic replay and configuration hot-reloading.",
+    "closed_loop_benchmark_regression_testing": "Closed-loop performance regression gates require statistical significance constraints (e.g. Mann-Whitney U test or Wilcoxon signed-rank) to filter out baseline drift. In addition, multi-metric balancing ensures that optimizing for latency doesn't degrade accuracy (Recall@K).",
+    "recall_k_evaluation_harness_best_practices": "Harnesses for Recall@K and MRR should maintain independent golden test cases representing production query patterns. Dynamic recall-threshold gating is combined with budget auto-tuning where retrieval limits scale adaptively based on target latency constraints.",
+    "cargo_bench_criterion_auto_benchmarking": "Criterion's statistics engine is used to automatically capture execution estimates (via standard JSON exports) and perform automated drift detection in CI/CD, enabling systems to reject proposed adjustments that do not show a statistically significant improvement."
+  },
+  "phase_2_requirements": {
+    "hyperparameter_search_strategies": "Incorporate automated Bayesian Optimization (e.g., Tree-structured Parzen Estimator) or genetic algorithms to traverse hyperparameter grids efficiently rather than relying purely on static grid searches.",
+    "statistical_significance_validation": "Replace simple threshold and epsilon checks with statistical significance testing (t-test or Wilcoxon) over multiple benchmark iterations to prevent accepting noise-driven improvements.",
+    "real_time_drift_remediation": "Integrate the AutoImprovementEngine with the scheduler daemon so that upon drift detection, the RRF weight tuner automatically triggers and attempts self-healing without requiring operator intervention.",
+    "multi_dimensional_pareto_front": "Maintain a Pareto front balancing Recall@K, Precision@K, and Latency (p99) to let operators choose between 'maximum accuracy' or 'minimum latency' profiles."
+  }
+}

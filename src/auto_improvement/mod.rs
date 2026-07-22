@@ -397,7 +397,7 @@ impl AutoImprovementEngine {
 
         // P99 latency
         let p99 = if latencies.len() > 1 {
-            latencies.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+            latencies.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
             let idx = ((latencies.len() as f64) * 0.99).ceil() as usize - 1;
             latencies[idx.min(latencies.len() - 1)]
         } else {
