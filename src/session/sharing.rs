@@ -77,15 +77,18 @@ mod tests {
     use super::*;
     use crate::memory::qmd_memory::QmdMemory;
     use crate::memory::schema::{MemoryKind, MemoryNamespace, TypedMemoryPayload};
+    use crate::memory::store::InMemoryMemoryStore;
     use tokio::sync::RwLock;
 
-    #[tokio::test]
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_session_export_import() {
         let docs = Arc::new(RwLock::new(vec![]));
         let memory = Arc::new(QmdMemory::new_with_workspace(
             docs,
             "test-workspace".to_string(),
         ));
+        let store = Arc::new(InMemoryMemoryStore::new());
+        memory.set_store(store).await;
 
         // Add some session documents
         let session_id = "test-session-123";
@@ -129,6 +132,8 @@ mod tests {
             docs2,
             "other-workspace".to_string(),
         ));
+        let store2 = Arc::new(InMemoryMemoryStore::new());
+        memory2.set_store(store2).await;
 
         import_session(&memory2, bundle).await.unwrap();
 
