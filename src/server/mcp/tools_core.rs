@@ -16,6 +16,13 @@ use crate::AppState;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
+/// List tools metadata (needed by benchmarks).
+pub fn list_tools_metadata() -> Vec<MCPTool> {
+    let mut tools = get_xavier_core_tools();
+    tools.extend(super::tools_memory::get_xavier_memory_tools());
+    tools
+}
+
 /// Get xavier core tools.
 pub fn get_xavier_core_tools() -> Vec<MCPTool> {
     vec![
