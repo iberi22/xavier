@@ -170,34 +170,55 @@ mod tests {
     async fn creates_and_fetches_threads_via_http() {
         let (state, workspace) = test_state().await;
         let app = test_router(state, workspace);
-        let create_request = Request::builder()
-            .method("POST")
-            .uri("/panel/api/threads")
-            .header("content-type", "application/json")
-            .body(Body::from(r#"{"title":"Panel Thread"}"#))
-            .expect("test assertion");
 
-        let create_response = app
-            .clone()
-            .oneshot(create_request)
+        // Bind TcpListener to an ephemeral (random) port
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
             .await
-            .expect("test assertion");
-        let create_body = to_bytes(create_response.into_body(), usize::MAX)
-            .await
-            .expect("test assertion");
-        let summary: ThreadSummary = serde_json::from_slice(&create_body).expect("test assertion");
+            .expect("failed to bind ephemeral port");
+        let addr = listener.local_addr().expect("failed to get local address");
+        let port = addr.port();
 
-        let get_request = Request::builder()
-            .method("GET")
-            .uri(format!("/panel/api/threads/{}", summary.id))
-            .body(Body::empty())
-            .expect("test assertion");
-        let get_response = app.oneshot(get_request).await.expect("test assertion");
-        let get_body = to_bytes(get_response.into_body(), usize::MAX)
+        // Spawn axum server on background task
+        let server_handle = tokio::spawn(async move {
+            axum::serve(listener, app).await.expect("failed to run axum serve");
+        });
+
+        // Build a client to make actual HTTP requests
+        let client = reqwest::Client::new();
+
+        // POST request to create a thread
+        let create_url = format!("http://127.0.0.1:{}/panel/api/threads", port);
+        let create_response = client
+            .post(&create_url)
+            .json(&serde_json::json!({ "title": "Panel Thread" }))
+            .send()
             .await
-            .expect("test assertion");
-        let detail: ThreadDetail = serde_json::from_slice(&get_body).expect("test assertion");
+            .expect("failed to send POST request");
+
+        assert_eq!(create_response.status(), reqwest::StatusCode::OK);
+        let summary: ThreadSummary = create_response
+            .json()
+            .await
+            .expect("failed to parse thread summary");
+
+        // GET request to fetch the created thread
+        let get_url = format!("http://127.0.0.1:{}/panel/api/threads/{}", port, summary.id);
+        let get_response = client
+            .get(&get_url)
+            .send()
+            .await
+            .expect("failed to send GET request");
+
+        assert_eq!(get_response.status(), reqwest::StatusCode::OK);
+        let detail: ThreadDetail = get_response
+            .json()
+            .await
+            .expect("failed to parse thread detail");
+
         assert_eq!(detail.thread.id, summary.id);
+
+        // Clean up background server task
+        server_handle.abort();
     }
 
     #[tokio::test]
