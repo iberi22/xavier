@@ -1,0 +1,20 @@
+{
+  "feature": "test-settings",
+  "progress_pct": 100,
+  "status": "stable",
+  "passes": true,
+  "last_tested": "2026-07-22",
+  "tests": [
+    "settings::tests::test_default_settings",
+    "settings::tests::test_load_config_json",
+    "settings::tests::test_apply_to_env_sets_vars",
+    "settings::tests::test_apply_to_env_respects_existing_vars",
+    "settings::tests::test_config_file_missing_returns_none",
+    "settings::tests::test_current_falls_back_to_defaults",
+    "settings::tests::test_non_empty_helper",
+    "settings::tests::test_client_base_url",
+    "settings::tests::test_resolve_data_dir",
+    "settings::tests::test_apply_to_env_all_new_sections",
+    "settings::tests::test_reload_updates_global_settings"
+  ]
+}
