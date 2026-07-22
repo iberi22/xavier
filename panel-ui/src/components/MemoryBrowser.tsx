@@ -104,14 +104,23 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
         >
           <div className="flex items-center justify-between">
             <h3 className="font-semibold text-white/90">Add New Memory</h3>
-            <button type="button" onClick={() => setShowAdd(false)}>
-              <X size={16} className="text-white/40 hover:text-white" />
+            <button
+              type="button"
+              onClick={() => setShowAdd(false)}
+              aria-label="Close add memory form"
+            >
+              <X
+                size={16}
+                className="text-white/40 hover:text-white"
+                aria-hidden="true"
+              />
             </button>
           </div>
           <textarea
             value={newContent}
             onChange={(e) => setNewContent(e.target.value)}
             placeholder="Memory content..."
+            aria-label="Memory content"
             rows={3}
             className="w-full px-3 py-2 rounded-xl border border-white/10 bg-black/50 text-white text-sm resize-none focus:outline-none focus:border-[#39ff14] transition-colors"
           />
@@ -119,6 +128,7 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
             <select
               value={newKind}
               onChange={(e) => setNewKind(e.target.value)}
+              aria-label="Memory kind"
               className="px-3 py-2 rounded-xl border border-white/10 bg-black/50 text-white text-sm focus:outline-none focus:border-[#39ff14] appearance-none cursor-pointer"
             >
               {KIND_OPTIONS.slice(1).map((k) => (
@@ -144,6 +154,7 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
           <Search
             size={16}
             className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40"
+            aria-hidden="true"
           />
           <input
             type="text"
@@ -153,17 +164,19 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
               setPage(1);
             }}
             placeholder="Search memories..."
+            aria-label="Search memories"
             className="w-full pl-9 pr-4 py-2 rounded-xl border border-white/10 bg-black/30 text-white text-sm focus:outline-none focus:border-[#39ff14] transition-colors"
           />
         </div>
         <div className="flex items-center gap-2">
-          <Filter size={16} className="text-white/40" />
+          <Filter size={16} className="text-white/40" aria-hidden="true" />
           <select
             value={kind}
             onChange={(e) => {
               setKind(e.target.value);
               setPage(1);
             }}
+            aria-label="Filter by kind"
             className="px-3 py-2 rounded-xl border border-white/10 bg-black/30 text-white text-sm focus:outline-none focus:border-[#39ff14] appearance-none cursor-pointer min-w-[120px]"
           >
             <option value="" className="bg-stone-900">
@@ -205,9 +218,10 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
+                aria-label="Previous page"
                 className="p-2 rounded-xl border border-white/10 text-white/60 disabled:opacity-20 hover:bg-white/5 transition-colors"
               >
-                <ChevronLeft size={16} />
+                <ChevronLeft size={16} aria-hidden="true" />
               </button>
               <span className="text-sm text-white/40 font-mono">
                 Page {page}
@@ -215,9 +229,10 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
               <button
                 onClick={() => setPage((p) => p + 1)}
                 disabled={memories.length < PAGE_SIZE}
+                aria-label="Next page"
                 className="p-2 rounded-xl border border-white/10 text-white/60 disabled:opacity-20 hover:bg-white/5 transition-colors"
               >
-                <ChevronRight size={16} />
+                <ChevronRight size={16} aria-hidden="true" />
               </button>
             </div>
           )}
