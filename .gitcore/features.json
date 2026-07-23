@@ -6,8 +6,8 @@
     "version": "0.12.0",
     "created": "2026-03-05",
     "last_verified": "2026-07-22",
-    "total_features": 25,
-    "features_complete": 25,
+    "total_features": 26,
+    "features_complete": 26,
     "features_beta": 0,
     "features_draft": 0,
     "features_planned": 0,
@@ -659,6 +659,32 @@
         "storage::migrations::tests::legacy_entities_missing_workspace_id_survives_v1_closure",
         "entity_graph unit suite",
         "panel-ui graphAdapters + roadmapGraph tests"
+      ]
+    },
+    {
+      "id": "feat-adaptive-search",
+      "name": "Adaptive Hybrid Search Pipeline",
+      "category": "search",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Adaptive Hybrid Search Pipeline dynamically adjusting BM25 and vector retrieval weights based on query classification",
+      "steps": [
+        "Extend HybridSearchMode with Adaptive variant",
+        "Implement inline query fallback heuristics",
+        "Add get_query_weights helper with classifier module optional compilation support",
+        "Implement query_with_adaptive_search in hybrid.rs",
+        "Integrate adaptive search into the pipeline",
+        "Add extensive unit and integration tests"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": null,
+      "last_tested": "2026-07-22",
+      "notes": "Adaptive hybrid search fully completed and verified using automated test suites.",
+      "implemented_in": "src/memory/qmd/search/",
+      "tests": [
+        "memory::qmd::search::tests::test_adaptive_query_classification",
+        "memory::qmd::search::tests::test_query_with_adaptive_search_e2e"
       ]
     }
   ],

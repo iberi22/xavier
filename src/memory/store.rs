@@ -145,6 +145,7 @@ pub enum HybridSearchMode {
     Vector,
     #[default]
     Both,
+    Adaptive,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

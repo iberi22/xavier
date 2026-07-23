@@ -8,6 +8,7 @@ authors = ["BELA <bela@swal.dev>", "Xavier <xavier@swal.dev>"]
 edition = "2021"
 autobins = false
 default-run = "xavier"
+build = "build.rs"
 description = "Xavier - Cognitive Memory Runtime for AI Agents (AGPL v3 + Commercial)"
 license = "AGPL-3.0"
 repository = "https://github.com/iberi22/xavier"

@@ -21,14 +21,18 @@ pub mod resolution;
 pub mod scoring;
 pub mod vector;
 
+#[cfg(has_classifier_module)]
+pub mod classifier;
+
 #[cfg(test)]
 pub mod tests;
 
 // Re-export all public functions from sub-modules for backward compatibility.
 pub use embedding::{query_with_embedding, query_with_embedding_filtered};
 pub use hybrid::{
-    bm25_search, merge_ranked_candidates, multi_hop_context, query_filtered,
-    query_with_hybrid_search, search_hybrid_optimized,
+    bm25_search, classify_query_inline, get_query_weights, merge_ranked_candidates,
+    multi_hop_context, query_filtered, query_with_adaptive_search, query_with_hybrid_search,
+    search_hybrid_optimized, QueryClassWeights,
 };
 pub use resolution::{extract_answer, resolved_doc_metadata};
 pub use scoring::{

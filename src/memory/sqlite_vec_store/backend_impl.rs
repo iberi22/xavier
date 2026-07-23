@@ -50,8 +50,8 @@ impl VecSqliteMemoryStore {
     ) -> Result<Vec<HybridSearchResult>> {
         let trimmed_query = query.trim().to_string();
         let candidate_limit = Self::candidate_limit(limit);
-        let include_vector = matches!(mode, HybridSearchMode::Vector | HybridSearchMode::Both);
-        let include_text = matches!(mode, HybridSearchMode::Text | HybridSearchMode::Both);
+        let include_vector = matches!(mode, HybridSearchMode::Vector | HybridSearchMode::Both | HybridSearchMode::Adaptive);
+        let include_text = matches!(mode, HybridSearchMode::Text | HybridSearchMode::Both | HybridSearchMode::Adaptive);
 
         let workspace_id_c = workspace_id.to_string();
         let filters_c = filters.cloned();

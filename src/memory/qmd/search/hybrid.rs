@@ -123,6 +123,84 @@ pub fn merge_ranked_candidates(
     }
 }
 
+/// Adaptive hybrid search combining lexical and vector retrieval with dynamic query-based weights.
+pub async fn query_with_adaptive_search(
+    memory: &QmdMemory,
+    query_text: &str,
+    query_vector: Vec<f32>,
+    limit: usize,
+) -> Result<Vec<MemoryDocument>> {
+    let weights = get_query_weights(query_text);
+
+    // Log selected weights for debugging/verification
+    tracing::info!(
+        "Adaptive hybrid search: query='{}' classified with keyword_weight={} and semantic_weight={}",
+        query_text, weights.keyword, weights.semantic
+    );
+
+    let mut scores: HashMap<String, (f32, MemoryDocument)> = HashMap::new();
+
+    // Perform lexical search if keyword weight is non-zero
+    if weights.keyword > 0.0 {
+        let keyword_hits = memory
+            .search_with_cache_filtered(query_text, limit, None)
+            .await?;
+        for (rank, doc) in keyword_hits.documents.into_iter().enumerate() {
+            let key = doc
+                .id
+                .clone()
+                .unwrap_or_else(|| format!("path:{}", doc.path));
+            let rrf_score = 1.0 / (RRF_K + rank as f32 + 1.0);
+            scores.insert(key, (rrf_score * weights.keyword, doc));
+        }
+    }
+
+    // Perform vector search if semantic weight is non-zero
+    if weights.semantic > 0.0 && !query_vector.is_empty() {
+        let vector_hits = vsearch(memory, query_vector, limit).await?;
+        for (rank, doc) in vector_hits.into_iter().enumerate() {
+            let key = doc
+                .id
+                .clone()
+                .unwrap_or_else(|| format!("path:{}", doc.path));
+            let rrf_score = 1.0 / (RRF_K + rank as f32 + 1.0);
+            if let Some((existing, _)) = scores.get_mut(&key) {
+                *existing += rrf_score * weights.semantic;
+            } else {
+                scores.insert(key, (rrf_score * weights.semantic, doc));
+            }
+        }
+    }
+
+    let mut fused: Vec<(f32, MemoryDocument)> = scores.into_values().collect();
+    fused.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.1.path.cmp(&b.1.path))
+    });
+
+    Ok(fused
+        .into_iter()
+        .map(|(score, mut doc)| {
+            doc.score = score;
+            doc
+        })
+        .take(limit)
+        .collect())
+}
+
+/// Dynamic helper to resolve weights using either the external classifier or inline fallback heuristics.
+pub fn get_query_weights(query_text: &str) -> QueryClassWeights {
+    #[cfg(has_classifier_module)]
+    {
+        super::classifier::classify_query(query_text)
+    }
+    #[cfg(not(has_classifier_module))]
+    {
+        classify_query_inline(query_text)
+    }
+}
+
 /// Hybrid search combining keyword BM25 and vector cosine similarity via RRF.
 pub async fn query_with_hybrid_search(
     memory: &QmdMemory,
@@ -353,4 +431,93 @@ pub async fn multi_hop_context(
     }
 
     expanded
+}
+
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct QueryClassWeights {
+    pub keyword: f32,
+    pub semantic: f32,
+}
+
+/// Fallback inline query classifier based on heuristics.
+pub fn classify_query_inline(query: &str) -> QueryClassWeights {
+    let query_trimmed = query.trim();
+    if query_trimmed.is_empty() {
+        return QueryClassWeights {
+            keyword: 0.5,
+            semantic: 0.5,
+        };
+    }
+
+    let mut code_signals = 0;
+    let mut semantic_signals = 0;
+
+    // 1. Símbolos de código y patrones de operadores
+    if query_trimmed.contains("::") || query_trimmed.contains("->") || query_trimmed.contains("()") {
+        code_signals += 3;
+    }
+
+    for c in ['{', '}', '[', ']', '<', '>', '=', '+', '*', '!', '&', '|', '_', '/', '\\'] {
+        if query_trimmed.contains(c) {
+            code_signals += 1;
+        }
+    }
+
+    // 2. Acrónimos técnicos y términos específicos (por ejemplo FTS5, SQLite, vec)
+    let technical_terms = [
+        "fts", "fts5", "sqlite", "vec", "api", "cli", "gllm", "mcp", "p2p", "dag", "ttl", "rrf", "db", "sql", "json"
+    ];
+    let words: Vec<&str> = query_trimmed.split_whitespace().collect();
+    for word in &words {
+        let clean_word = word.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()).to_string();
+        if technical_terms.contains(&clean_word.as_str()) {
+            code_signals += 2;
+        }
+
+        // Acrónimos completamente en mayúsculas (por ejemplo, FTS5 o SQL)
+        if word.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit()) && word.len() >= 3 {
+            code_signals += 1;
+        }
+
+        // Caso mixto no-inicial (por ejemplo SQLite, SQLiteVec, WebAssembly)
+        let has_upper = word.chars().any(|c| c.is_ascii_uppercase());
+        let has_lower = word.chars().any(|c| c.is_ascii_lowercase());
+        if has_upper && has_lower && !word.starts_with(|c: char| c.is_ascii_uppercase()) {
+            code_signals += 1;
+        }
+    }
+
+    // 3. Términos conceptuales (general/semantic search)
+    let conceptual_terms = [
+        "arquitectura", "memoria", "agente", "agentes", "architecture", "memory", "agent", "agents",
+        "concept", "theory", "how", "why", "explain", "design", "general", "abstract", "overview"
+    ];
+    for word in &words {
+        let clean_word = word.to_lowercase().trim_matches(|c: char| !c.is_alphanumeric()).to_string();
+        if conceptual_terms.contains(&clean_word.as_str()) {
+            semantic_signals += 2;
+        }
+    }
+
+    // Retorna pesos basados en las señales detectadas
+    if code_signals > semantic_signals {
+        // BM25-weighted mode: coincide con coincidencia exacta dominante
+        QueryClassWeights {
+            keyword: 0.8,
+            semantic: 0.2,
+        }
+    } else if semantic_signals > code_signals {
+        // Vector-weighted mode: coincide con similitud semántica dominante
+        QueryClassWeights {
+            keyword: 0.2,
+            semantic: 0.8,
+        }
+    } else {
+        // Balanced hybrid mode
+        QueryClassWeights {
+            keyword: 0.5,
+            semantic: 0.5,
+        }
+    }
 }
