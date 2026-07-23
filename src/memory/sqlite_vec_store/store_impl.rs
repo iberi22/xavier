@@ -411,7 +411,7 @@ impl MemoryStore for VecSqliteMemoryStore {
         filters: Option<&MemoryQueryFilters>,
         limit: usize,
     ) -> Result<Vec<HybridSearchResult>> {
-        self.perform_hybrid_search(workspace_id, query, mode, filters, limit, None)
+        self.perform_hybrid_search(workspace_id, query, mode, filters, limit, None, None)
             .await
     }
 

@@ -660,6 +660,32 @@
         "entity_graph unit suite",
         "panel-ui graphAdapters + roadmapGraph tests"
       ]
+    },
+    {
+      "id": "feat-mmr-diversify",
+      "name": "Maximum Marginal Relevance for Result Diversification",
+      "category": "core",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Deduplication and result diversification using Maximum Marginal Relevance (MMR) over hybrid search multi-source results",
+      "steps": [
+        "Implement MMR algorithm and cosine similarity comparison",
+        "Integrate MMR in perform_hybrid_search",
+        "Add empty-embedding passthrough guard",
+        "Optimize MMR selection by skipping for results sets > 50"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": null,
+      "last_tested": "2026-07-28",
+      "notes": "Implemented pure mmr_diversify function and successfully integrated it in SQLite vector store hybrid search.",
+      "implemented_in": "src/memory/sqlite_vec_store/mmr.rs, src/memory/sqlite_vec_store/backend_impl.rs",
+      "tests": [
+        "memory::sqlite_vec_store::mmr::tests::test_cosine_similarity",
+        "memory::sqlite_vec_store::mmr::tests::test_mmr_diversify_passthrough_on_empty_embeddings",
+        "memory::sqlite_vec_store::mmr::tests::test_mmr_diversify_lambda_one_is_ranking",
+        "memory::sqlite_vec_store::mmr::tests::test_mmr_diversify_duplicates_penalized"
+      ]
     }
   ],
   "verification_commands": {

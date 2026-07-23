@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use rusqlite::params;
 use std::collections::{HashMap, HashSet};
 
-use super::{fts, graph, search, utils, FusionSource, VecSqliteMemoryStore};
+use super::{fts, graph, search, utils, FusionSource, VecSqliteMemoryStore, mmr::{MmrConfig, mmr_diversify}};
 
 impl VecSqliteMemoryStore {
     #[expect(dead_code, reason = "Metodo de backend usado via Backend trait")]
@@ -47,6 +47,7 @@ impl VecSqliteMemoryStore {
         filters: Option<&MemoryQueryFilters>,
         limit: usize,
         embedding: Option<Vec<f32>>,
+        mmr: Option<MmrConfig>,
     ) -> Result<Vec<HybridSearchResult>> {
         let trimmed_query = query.trim().to_string();
         let candidate_limit = Self::candidate_limit(limit);
@@ -230,7 +231,23 @@ impl VecSqliteMemoryStore {
             );
         }
 
-        results.truncate(limit);
+        let mmr_config = mmr.unwrap_or_else(|| MmrConfig {
+            mmr_enabled: true,
+            lambda: 0.5,
+            k: limit,
+        });
+
+        if mmr_config.mmr_enabled {
+            if results.len() > 50 {
+                results.truncate(limit);
+            } else {
+                let target_k = if mmr_config.k == 0 { limit } else { mmr_config.k };
+                results = mmr_diversify(results, mmr_config.lambda, target_k);
+            }
+        } else {
+            results.truncate(limit);
+        }
+
         Ok(results)
     }
 

@@ -21,6 +21,7 @@ pub mod config;
 pub mod db;
 pub mod fts;
 pub mod graph;
+pub mod mmr;
 pub mod schema_impl;
 pub mod search;
 pub mod store_impl;
@@ -29,6 +30,7 @@ pub mod utils;
 pub mod vector;
 
 pub use config::*;
+pub use mmr::{MmrConfig, mmr_diversify};
 pub use types::*;
 
 /// Vector-enabled SQLite memory store using libSQL for HNSW-like similarity search.
@@ -284,6 +286,7 @@ impl VecSqliteMemoryStore {
             filters,
             limit,
             Some(embedding),
+            None,
         )
         .await
     }
