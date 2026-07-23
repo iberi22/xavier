@@ -36,6 +36,21 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  /**
+   * ⚡ Bolt Performance Optimization
+   *
+   * 💡 What: Added debouncing to the search input in MemoryBrowser.
+   * 🎯 Why: Typing in the search input was causing an API call on every keystroke.
+   * 📊 Impact: Reduces unnecessary API calls and server load by waiting 300ms after the user stops typing before triggering a search.
+   */
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(query);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [query]);
+
   // Add memory form
   const [showAdd, setShowAdd] = useState(false);
   const [newContent, setNewContent] = useState("");
@@ -59,8 +74,8 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
   );
 
   useEffect(() => {
-    doSearch(query, kind, page);
-  }, [query, kind, page, doSearch]);
+    doSearch(debouncedQuery, kind, page);
+  }, [debouncedQuery, kind, page, doSearch]);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,7 +85,7 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
       await api.addMemory(newContent.trim(), newKind);
       setNewContent("");
       setShowAdd(false);
-      doSearch(query, kind, page);
+      doSearch(debouncedQuery, kind, page);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add memory");
     } finally {
