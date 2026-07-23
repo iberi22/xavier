@@ -6,6 +6,184 @@ use regex::Regex;
 use std::collections::HashSet;
 use std::sync::OnceLock;
 
+/// Match mode for FTS.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FtsMatchMode {
+    All,
+    Any,
+}
+
+/// Helper trait to handle single and tuple arguments for build_fts_query.
+pub trait IntoFtsQueryArgs {
+    fn into_args(self) -> (String, FtsMatchMode);
+}
+
+impl IntoFtsQueryArgs for &str {
+    fn into_args(self) -> (String, FtsMatchMode) {
+        let q = self.to_string();
+        let mode = if q.contains(" OR ") {
+            FtsMatchMode::Any
+        } else {
+            FtsMatchMode::All
+        };
+        (q, mode)
+    }
+}
+
+impl IntoFtsQueryArgs for &String {
+    fn into_args(self) -> (String, FtsMatchMode) {
+        let q = self.to_string();
+        let mode = if q.contains(" OR ") {
+            FtsMatchMode::Any
+        } else {
+            FtsMatchMode::All
+        };
+        (q, mode)
+    }
+}
+
+impl IntoFtsQueryArgs for String {
+    fn into_args(self) -> (String, FtsMatchMode) {
+        let q = self;
+        let mode = if q.contains(" OR ") {
+            FtsMatchMode::Any
+        } else {
+            FtsMatchMode::All
+        };
+        (q, mode)
+    }
+}
+
+impl IntoFtsQueryArgs for (&str, FtsMatchMode) {
+    fn into_args(self) -> (String, FtsMatchMode) {
+        (self.0.to_string(), self.1)
+    }
+}
+
+impl IntoFtsQueryArgs for (&String, FtsMatchMode) {
+    fn into_args(self) -> (String, FtsMatchMode) {
+        (self.0.to_string(), self.1)
+    }
+}
+
+impl IntoFtsQueryArgs for (String, FtsMatchMode) {
+    fn into_args(self) -> (String, FtsMatchMode) {
+        (self.0, self.1)
+    }
+}
+
+/// Escapes a single word/term for SQLite FTS5.
+fn sanitize_word(word: &str) -> String {
+    if word.is_empty() {
+        return String::new();
+    }
+
+    // Check for prefix wildcard at the end
+    let (base, is_prefix) = if word.ends_with('*') && word.len() > 1 {
+        (&word[..word.len() - 1], true)
+    } else {
+        (word, false)
+    };
+
+    // Double any double quotes inside the term
+    let escaped = base.replace('"', "\"\"");
+
+    // Wrap the base term in double quotes
+    let mut quoted = format!("\"{}\"", escaped);
+
+    if is_prefix {
+        quoted.push('*');
+    }
+
+    quoted
+}
+
+/// Helper function to sanitize a sub-query.
+fn sanitize_subquery(query: &str, mode: FtsMatchMode) -> String {
+    let mut words = Vec::new();
+    for word in query.split_whitespace() {
+        if word.is_empty() {
+            continue;
+        }
+
+        // Check if the word itself is an operator keyword (AND, OR, NOT, NEAR).
+        // If it is, we escape/quote it to prevent FTS5 syntax errors from misuse.
+        let is_op = matches!(word, "AND" | "OR" | "NOT") || word.starts_with("NEAR");
+
+        let escaped = if is_op {
+            format!("\"{}\"", word.replace('"', "\"\""))
+        } else {
+            sanitize_word(word)
+        };
+
+        if !escaped.is_empty() {
+            words.push(escaped);
+        }
+    }
+
+    if words.is_empty() {
+        return String::new();
+    }
+
+    let joiner = match mode {
+        FtsMatchMode::All => " AND ",
+        FtsMatchMode::Any => " OR ",
+    };
+    words.join(joiner)
+}
+
+/// Safely sanitizes an FTS query string to prevent SQLite syntax errors while preserving intent.
+pub fn sanitize_fts(query: &str, mode: FtsMatchMode) -> String {
+    if query.trim().is_empty() {
+        return String::new();
+    }
+
+    // Parse with explicit operators (e.g. " OR ", " AND ") if present.
+    // This allows the query to preserve user-provided boolean logic safely.
+    let result = if query.contains(" OR ") {
+        let parts: Vec<String> = query
+            .split(" OR ")
+            .map(|part| sanitize_subquery(part, mode))
+            .filter(|s| !s.is_empty())
+            .collect();
+        parts.join(" OR ")
+    } else if query.contains(" AND ") {
+        let parts: Vec<String> = query
+            .split(" AND ")
+            .map(|part| sanitize_subquery(part, mode))
+            .filter(|s| !s.is_empty())
+            .collect();
+        parts.join(" AND ")
+    } else {
+        sanitize_subquery(query, mode)
+    };
+
+    if result.is_empty() && !query.trim().is_empty() {
+        return safe_fallback(query, mode);
+    }
+
+    result
+}
+
+/// Absolute fallback that extracts only completely safe characters.
+fn safe_fallback(query: &str, mode: FtsMatchMode) -> String {
+    let mut words = Vec::new();
+    for word in query.split_whitespace() {
+        let clean: String = word
+            .chars()
+            .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/'))
+            .collect();
+        if !clean.is_empty() {
+            words.push(format!("\"{}\"", clean));
+        }
+    }
+    let joiner = match mode {
+        FtsMatchMode::All => " AND ",
+        FtsMatchMode::Any => " OR ",
+    };
+    words.join(joiner)
+}
+
 /// Search tokens.
 pub fn search_tokens(query: &str) -> Vec<String> {
     static TOKEN_RE: OnceLock<Regex> = OnceLock::new();
@@ -31,30 +209,14 @@ pub fn search_tokens(query: &str) -> Vec<String> {
 }
 
 /// Build fts query.
-pub fn build_fts_query(query: &str) -> Option<String> {
-    let mut tokens = search_tokens(query);
-    tokens.extend(code_tokens(query));
-    if tokens.is_empty() {
-        return None;
+pub fn build_fts_query<T: IntoFtsQueryArgs>(args: T) -> Option<String> {
+    let (query, mode) = args.into_args();
+    let sanitized = sanitize_fts(&query, mode);
+    if sanitized.is_empty() {
+        None
+    } else {
+        Some(sanitized)
     }
-
-    Some(
-        tokens
-            .into_iter()
-            .filter_map(|token| {
-                let escaped = token
-                    .chars()
-                    .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '_' | '-' | '.' | '/'))
-                    .collect::<String>();
-                if escaped.is_empty() {
-                    None
-                } else {
-                    Some(format!("{escaped}*"))
-                }
-            })
-            .collect::<Vec<_>>()
-            .join(" OR "),
-    )
 }
 
 /// Code tokens.
@@ -103,4 +265,78 @@ pub fn split_camel_case(token: &str) -> Vec<String> {
         words.push(current);
     }
     words
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_enum_exists() {
+        let mode = FtsMatchMode::All;
+        assert_eq!(mode, FtsMatchMode::All);
+    }
+
+    #[test]
+    fn test_sanitize_fts_basic() {
+        let q = "rust python";
+        assert_eq!(sanitize_fts(q, FtsMatchMode::All), "\"rust\" AND \"python\"");
+        assert_eq!(sanitize_fts(q, FtsMatchMode::Any), "\"rust\" OR \"python\"");
+    }
+
+    #[test]
+    fn test_sanitize_fts_explicit_or() {
+        let q = "rust OR python";
+        assert_eq!(sanitize_fts(q, FtsMatchMode::All), "\"rust\" OR \"python\"");
+        assert_eq!(sanitize_fts(q, FtsMatchMode::Any), "\"rust\" OR \"python\"");
+    }
+
+    #[test]
+    fn test_sanitize_fts_explicit_and() {
+        let q = "rust AND python";
+        assert_eq!(sanitize_fts(q, FtsMatchMode::All), "\"rust\" AND \"python\"");
+        assert_eq!(sanitize_fts(q, FtsMatchMode::Any), "\"rust\" AND \"python\"");
+    }
+
+    #[test]
+    fn test_sanitize_fts_special_chars() {
+        let q = "error: expected fn";
+        let sanitized = sanitize_fts(q, FtsMatchMode::All);
+        assert_eq!(sanitized, "\"error:\" AND \"expected\" AND \"fn\"");
+
+        let q2 = "^ * () + - ~ : ->";
+        let sanitized2 = sanitize_fts(q2, FtsMatchMode::All);
+        assert_eq!(
+            sanitized2,
+            "\"^\" AND \"*\" AND \"()\" AND \"+\" AND \"-\" AND \"~\" AND \":\" AND \"->\""
+        );
+    }
+
+    #[test]
+    fn test_sanitize_fts_prefix() {
+        let q = "rust* python";
+        assert_eq!(sanitize_fts(q, FtsMatchMode::All), "\"rust\"* AND \"python\"");
+    }
+
+    #[test]
+    fn test_build_fts_query_overloading() {
+        let q = "rust python";
+        assert_eq!(build_fts_query(q), Some("\"rust\" AND \"python\"".to_string()));
+        assert_eq!(
+            build_fts_query((q, FtsMatchMode::Any)),
+            Some("\"rust\" OR \"python\"".to_string())
+        );
+
+        let explicit_or_q = "rust OR python";
+        assert_eq!(
+            build_fts_query(explicit_or_q),
+            Some("\"rust\" OR \"python\"".to_string())
+        );
+    }
+
+    #[test]
+    fn test_double_quotes_escaping() {
+        let q = "some\"word";
+        assert_eq!(sanitize_fts(q, FtsMatchMode::All), "\"some\"\"word\"");
+    }
 }

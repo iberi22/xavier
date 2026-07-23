@@ -1,13 +1,13 @@
 {
   "protocol": "3.8.0",
-  "_comment": "Feature tracking \u2014 product 1.0 MVP 100% stable (Ola 6). Phase-2 mesh R&D on #115.",
+  "_comment": "Feature tracking — product 1.0 MVP 100% stable (Ola 6). Phase-2 mesh R&D on #115.",
   "metadata": {
     "project": "Xavier",
     "version": "0.12.0",
     "created": "2026-03-05",
     "last_verified": "2026-07-22",
-    "total_features": 25,
-    "features_complete": 25,
+    "total_features": 26,
+    "features_complete": 26,
     "features_beta": 0,
     "features_draft": 0,
     "features_planned": 0,
@@ -161,7 +161,7 @@
       "verified_by": "production-usage",
       "github_issue": 81,
       "last_tested": "2026-07-21",
-      "notes": "Working in production. Session export, import, and cross-instance sharing via SessionBundle. Context Virtualization Turn Pack (PR #506) \u2014 tiered context restore (shallow/medium/deep) working.",
+      "notes": "Working in production. Session export, import, and cross-instance sharing via SessionBundle. Context Virtualization Turn Pack (PR #506) — tiered context restore (shallow/medium/deep) working.",
       "implemented_in": "src/session/, src/domain/memory/",
       "tests": [
         "session::tests::test_session_create",
@@ -224,7 +224,7 @@
       "category": "documentation",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Source Code Reference (SRC) \u00e2\u20ac\u201d comprehensive documentation per GitCore protocol",
+      "description": "Source Code Reference (SRC) â€” comprehensive documentation per GitCore protocol",
       "steps": [
         "Document directory structure",
         "Document core modules (a2a, agents, memory, server, tasks)",
@@ -355,11 +355,11 @@
       "category": "enterprise",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Bicameral governance system \u00e2\u20ac\u201d 50% node operators + 50% Xavier Core Council \u00e2\u20ac\u201d with weighted voting, veto, XIP lifecycle, and on-chain integration",
+      "description": "Bicameral governance system â€” 50% node operators + 50% Xavier Core Council â€” with weighted voting, veto, XIP lifecycle, and on-chain integration",
       "steps": [
         "Bicameral DAO design (users + council)",
         "Weighted voting by reputation + activity",
-        "XIP lifecycle (proposal \u00e2\u2020\u2019 discussion \u00e2\u2020\u2019 vote \u00e2\u2020\u2019 execution)",
+        "XIP lifecycle (proposal â†’ discussion â†’ vote â†’ execution)",
         "Veto mechanism (66% council for security)",
         "Community overrule (75% override veto)",
         "On-chain integration (Solana/Ethereum)",
@@ -409,7 +409,7 @@
       "category": "enterprise",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Closed-loop auto-improvement: benchmark \u00e2\u2020\u2019 gap analysis \u00e2\u2020\u2019 generate experiment \u00e2\u2020\u2019 validate \u00e2\u2020\u2019 merge \u00e2\u2020\u2019 re-measure",
+      "description": "Closed-loop auto-improvement: benchmark â†’ gap analysis â†’ generate experiment â†’ validate â†’ merge â†’ re-measure",
       "steps": [
         "Benchmark runner",
         "Gap analysis",
@@ -492,8 +492,8 @@
       "description": "Scans clawd/agents/ directories for OpenClaw agent memory files (MEMORY.md, SOUL.md, USER.md, daily logs)",
       "steps": [
         "Implement OpenClawAgentScanner struct",
-        "scan_all_agents() \u00e2\u20ac\u201d recursive directory scan",
-        "scan_agent(name) \u00e2\u20ac\u201d single agent scan",
+        "scan_all_agents() â€” recursive directory scan",
+        "scan_agent(name) â€” single agent scan",
         "Detect MEMORY.md, TOOLS.md, SOUL.md, USER.md, daily logs",
         "Integration with OpenClawAgentIndexer for embedding",
         "Wire into CloudMemorySync for Supabase push"
@@ -539,12 +539,12 @@
       "category": "local-first",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Chat del panel responde usando un LLM local (Ollama) con fallback a cloud y degradaci\u00f3n elegante a memoria cuando ning\u00fan provider responde.",
+      "description": "Chat del panel responde usando un LLM local (Ollama) con fallback a cloud y degradación elegante a memoria cuando ningún provider responde.",
       "steps": [
-        "Ola 1 estabilizacion \u2014 DONE",
-        "Ola 2 fallback chain + local provider \u2014 DONE",
-        "Ola 3 observabilidad + panel LLM + UsageCounters \u2014 DONE",
-        "Ola 4 headless memory-fallback + Ollama hot-swap API/UI + metrics UI + docs \u2014 DONE"
+        "Ola 1 estabilizacion — DONE",
+        "Ola 2 fallback chain + local provider — DONE",
+        "Ola 3 observabilidad + panel LLM + UsageCounters — DONE",
+        "Ola 4 headless memory-fallback + Ollama hot-swap API/UI + metrics UI + docs — DONE"
       ],
       "passes": true,
       "verified_by": "integration-tests",
@@ -575,7 +575,7 @@
       "verified_by": "code-audit",
       "github_issue": 496,
       "last_tested": "2026-07-18",
-      "notes": "Ola 5/6 progressive stack complete + measure_token_savings.py + search count() without all_documents. Parent #496 closable when measured run \u226590% in env.",
+      "notes": "Ola 5/6 progressive stack complete + measure_token_savings.py + search count() without all_documents. Parent #496 closable when measured run ≥90% in env.",
       "implemented_in": "src/server/mcp/tools_memory.rs, src/context/token_estimate.rs, src/memory/episodic.rs, docs/TOKEN_SAVINGS_ANALYSIS.md",
       "tests": [
         "cost::tests::test_token_tracking"
@@ -659,6 +659,37 @@
         "storage::migrations::tests::legacy_entities_missing_workspace_id_survives_v1_closure",
         "entity_graph unit suite",
         "panel-ui graphAdapters + roadmapGraph tests"
+      ]
+    },
+    {
+      "id": "feat-fts-sanitize",
+      "name": "FTS5 Query Sanitization (Engram-style)",
+      "category": "search",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Engram-style FTS5 query sanitization with safe double-quotes escaping, prefix wildcards, and All/Any match modes",
+      "steps": [
+        "Define FtsMatchMode (All/Any) and IntoFtsQueryArgs trait",
+        "Implement sanitize_fts with prefix wildcard support and special characters escaping",
+        "Implement fallback mechanism for zero syntax error guarantee",
+        "Update build_fts_query with flexible overloading matching modes",
+        "Write full unit test suite for special characters and operators"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": null,
+      "last_tested": "2026-07-22",
+      "notes": "Engram-style FTS5 query sanitization complete and fully integrated with existing SQLite vector store.",
+      "implemented_in": "src/memory/sqlite_vec_store/fts.rs",
+      "tests": [
+        "memory::sqlite_vec_store::fts::tests::test_enum_exists",
+        "memory::sqlite_vec_store::fts::tests::test_sanitize_fts_basic",
+        "memory::sqlite_vec_store::fts::tests::test_sanitize_fts_explicit_or",
+        "memory::sqlite_vec_store::fts::tests::test_sanitize_fts_explicit_and",
+        "memory::sqlite_vec_store::fts::tests::test_sanitize_fts_special_chars",
+        "memory::sqlite_vec_store::fts::tests::test_sanitize_fts_prefix",
+        "memory::sqlite_vec_store::fts::tests::test_build_fts_query_overloading",
+        "memory::sqlite_vec_store::fts::tests::test_double_quotes_escaping"
       ]
     }
   ],
