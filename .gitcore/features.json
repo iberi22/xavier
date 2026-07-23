@@ -6,14 +6,14 @@
     "version": "0.12.0",
     "created": "2026-03-05",
     "last_verified": "2026-07-22",
-    "total_features": 25,
+    "total_features": 35,
     "features_complete": 25,
     "features_beta": 0,
     "features_draft": 0,
-    "features_planned": 0,
+    "features_planned": 10,
     "features_stable": 16,
-    "overall_progress_pct": 100.0,
-    "reconciliation_notes": "2026-07-19 Ola 5 Reconciliation Audit: Multiple features adjusted to realistic progress percentages based on deep audit findings. Added E2E tests for RBAC, Crypto, and Telegram bot. Verified MCP server progressive disclosure and double-division TOTP logic.\n2026-07-21 Ola 6 Update: feat-hormer-navigation verified at 100% (5/5 tests pass, code complete). Active: feat-src-reference (Jules #810) at 60%, feat-dual-license (Jules #801) at 20%.\n2026-07-21 Ola 6: feat-src-reference expanded to 100% (SRC.md + SRC_CONFIG.md). feat-hormer-navigation verified at 100%."
+    "overall_progress_pct": 71.4,
+    "reconciliation_notes": "2026-07-19 Ola 5 Reconciliation Audit: Multiple features adjusted to realistic progress percentages based on deep audit findings. Added E2E tests for RBAC, Crypto, and Telegram bot. Verified MCP server progressive disclosure and double-division TOTP logic.\n2026-07-21 Ola 6 Update: feat-hormer-navigation verified at 100% (5/5 tests pass, code complete). Active: feat-src-reference (Jules #810) at 60%, feat-dual-license (Jules #801) at 20%.\n2026-07-21 Ola 6: feat-src-reference expanded to 100% (SRC.md + SRC_CONFIG.md). feat-hormer-navigation verified at 100%.\n2026-07-22 Ola 8 Update: Added 10 new planned features for Ola 8 Wave 1 at 0% progress."
   },
   "features": [
     {
@@ -660,6 +660,216 @@
         "entity_graph unit suite",
         "panel-ui graphAdapters + roadmapGraph tests"
       ]
+    },
+    {
+      "id": "feat-bm25-field-weights",
+      "name": "BM25 Field Weight Optimization",
+      "category": "search",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Optimize BM25 keyword matching by assigning different weights to title, content, path, and code token fields",
+      "steps": [
+        "Introduce configurable weights for FTS5 fields",
+        "Calculate weighted BM25 scores in SQLite search backend",
+        "Enable dynamic query-time weight overrides",
+        "Validate field weight effects on retrieval metrics"
+      ],
+      "passes": null,
+      "verified_by": null,
+      "github_issue": null,
+      "last_tested": null,
+      "notes": "Planned for Ola 8 search relevance tuning.",
+      "implemented_in": "src/memory/sqlite_vec_store/, src/search/",
+      "tests": []
+    },
+    {
+      "id": "feat-fts5-auto-triggers",
+      "name": "FTS5 Database-Level Auto-Triggers",
+      "category": "core",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Automate Full-Text Search FTS5 synchronization through SQLite database-level triggers",
+      "steps": [
+        "Create database triggers on insert, update, delete",
+        "Synchronize memory_records with memory_fts automatically",
+        "Eliminate application-level sync code",
+        "Verify triggers function correctly under high write loads"
+      ],
+      "passes": null,
+      "verified_by": null,
+      "github_issue": null,
+      "last_tested": null,
+      "notes": "Planned for database-level FTS5 automation.",
+      "implemented_in": "src/memory/sqlite_vec_store/",
+      "tests": []
+    },
+    {
+      "id": "feat-rrf-k-dynamic",
+      "name": "Dynamic Reciprocal Rank Fusion K Parameter Optimization",
+      "category": "search",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Optimize Reciprocal Rank Fusion (RRF) by dynamically adjusting the K parameter based on corpus size and query characteristics",
+      "steps": [
+        "Expose configurable RRF K parameter",
+        "Dynamically scale K parameter according to DB corpus size",
+        "Optimize rank fusion accuracy for small vs large search spaces",
+        "Add unit and integration tests for RRF K tuning"
+      ],
+      "passes": null,
+      "verified_by": null,
+      "github_issue": null,
+      "last_tested": null,
+      "notes": "Planned for RRF K param tuning in hybrid search.",
+      "implemented_in": "src/memory/sqlite_vec_store/, src/search/",
+      "tests": []
+    },
+    {
+      "id": "feat-query-classifier",
+      "name": "Adaptive Query Classification",
+      "category": "search",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Classify incoming user queries dynamically to adjust search modality weights (lexical vs vector vs graph)",
+      "steps": [
+        "Implement rule-based query classifier",
+        "Detect exact code requests vs conceptual queries",
+        "Assign specialized weights based on query class",
+        "Integrate query classifier with the hybrid search pipeline"
+      ],
+      "passes": null,
+      "verified_by": null,
+      "github_issue": null,
+      "last_tested": null,
+      "notes": "Planned for query intent classification.",
+      "implemented_in": "src/search/, src/memory/qmd/",
+      "tests": []
+    },
+    {
+      "id": "feat-adaptive-search",
+      "name": "Adaptive Multi-Modality Search",
+      "category": "search",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Adaptive search executing dynamic lexical, vector, and entity graph retrieval strategies",
+      "steps": [
+        "Implement dynamic routing based on query classification",
+        "Combine weighted scores using optimized parameters",
+        "Gracefully degrade when specific databases/backends are offline",
+        "Benchmark adaptive search retrieval accuracy"
+      ],
+      "passes": null,
+      "verified_by": null,
+      "github_issue": null,
+      "last_tested": null,
+      "notes": "Planned for adaptive retrieval pipeline integration.",
+      "implemented_in": "src/search/",
+      "tests": []
+    },
+    {
+      "id": "feat-mmr-diversify",
+      "name": "Maximum Marginal Relevance (MMR) Diversification",
+      "category": "search",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Implement Maximum Marginal Relevance to diversify and deduplicate vector search results",
+      "steps": [
+        "Implement cosine-similarity-based distance calculation",
+        "Implement MMR reranking logic over vector search candidates",
+        "Verify score-relevance and diversity balance",
+        "Expose MMR lambda parameter in search query options"
+      ],
+      "passes": null,
+      "verified_by": null,
+      "github_issue": null,
+      "last_tested": null,
+      "notes": "Planned for search result diversification.",
+      "implemented_in": "src/memory/sqlite_vec_store/, src/search/",
+      "tests": []
+    },
+    {
+      "id": "feat-engram-bridge",
+      "name": "Engram Memory Bridge",
+      "category": "integration",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Memory bridge support for import/export of Engram memory records",
+      "steps": [
+        "Support BridgeSource::EngramExport",
+        "Parse and map Engram session, observations, and prompts",
+        "Verify bridge imports using tempdir structures",
+        "Add export capability returning validated formats"
+      ],
+      "passes": null,
+      "verified_by": null,
+      "github_issue": null,
+      "last_tested": null,
+      "notes": "Planned for engram bridge integration.",
+      "implemented_in": "src/memory/bridge.rs",
+      "tests": []
+    },
+    {
+      "id": "feat-benchmark-v7",
+      "name": "Memory Showdown v7 Benchmarks",
+      "category": "documentation",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Implement Memory Showdown v7 benchmarking suite to evaluate and compare search strategies",
+      "steps": [
+        "Implement standalone python benchmark evaluation script",
+        "Measure MRR, Precision@K, and diversity via pairwise cosine distance",
+        "Support live endpoint query mode and math simulation fallback",
+        "Generate comprehensive comparison reports with visual metrics"
+      ],
+      "passes": null,
+      "verified_by": null,
+      "github_issue": null,
+      "last_tested": "2026-07-22",
+      "notes": "Planned for v7 memory benchmarking.",
+      "implemented_in": "scripts/benchmarks/",
+      "tests": []
+    },
+    {
+      "id": "feat-context-scanner-v2",
+      "name": "Context Scanner v2",
+      "category": "core",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Enhanced context scanner with incremental scanning and intelligent workspace parsing",
+      "steps": [
+        "Support deep incremental file system scanning",
+        "Identify critical changes in file structure",
+        "Integrate with the context virtualization layer",
+        "Measure scanning performance and overhead"
+      ],
+      "passes": null,
+      "verified_by": null,
+      "github_issue": null,
+      "last_tested": null,
+      "notes": "Planned for context scanner improvements.",
+      "implemented_in": "src/context/",
+      "tests": []
+    },
+    {
+      "id": "feat-docs-update",
+      "name": "Ola 8 Documentation Updates",
+      "category": "documentation",
+      "status": "planned",
+      "progress_pct": 0,
+      "description": "Update system manuals, architecture, and deployment documentation for Ola 8 releases",
+      "steps": [
+        "Document Ola 8 search optimizations and FTS5 triggers",
+        "Update the configuration reference list",
+        "Add memory showdown v7 evaluation results to the site",
+        "Maintain REUSE compliance with updated copyright notices"
+      ],
+      "passes": null,
+      "verified_by": null,
+      "github_issue": null,
+      "last_tested": null,
+      "notes": "Planned for Ola 8 documentation update.",
+      "implemented_in": "docs/",
+      "tests": []
     }
   ],
   "verification_commands": {
