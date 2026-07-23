@@ -56,6 +56,9 @@ impl VecSqliteMemoryStore {
                 // Run automatic vector migration
                 Self::migrate_embeddings_on_startup(conn)?;
 
+                // Run FTS5 auto-sync triggers registration
+                Self::create_fts_triggers(conn)?;
+
                 Ok(())
             })
             .await?;

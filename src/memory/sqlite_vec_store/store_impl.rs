@@ -776,3 +776,157 @@ impl MemoryStore for VecSqliteMemoryStore {
             .await
     }
 }
+
+impl VecSqliteMemoryStore {
+    /// Creates FTS5 auto-sync triggers for memory_records and memory_fts.
+    pub fn create_fts_triggers(conn: &rusqlite::Connection) -> Result<()> {
+        conn.execute_batch(
+            "CREATE TRIGGER IF NOT EXISTS memory_fts_insert AFTER INSERT ON memory_records
+             BEGIN
+                 INSERT INTO memory_fts(id, path, content, code_tokens)
+                 VALUES (NEW.id, NEW.path, NEW.content, '');
+             END;
+
+             CREATE TRIGGER IF NOT EXISTS memory_fts_delete AFTER DELETE ON memory_records
+             BEGIN
+                 DELETE FROM memory_fts WHERE id = OLD.id;
+             END;
+
+             CREATE TRIGGER IF NOT EXISTS memory_fts_update AFTER UPDATE ON memory_records
+             BEGIN
+                 DELETE FROM memory_fts WHERE id = OLD.id;
+                 INSERT INTO memory_fts(id, path, content, code_tokens)
+                 VALUES (NEW.id, NEW.path, NEW.content, '');
+             END;"
+        )?;
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::memory::sqlite_vec_store::VecSqliteMemoryStore;
+
+    #[tokio::test]
+    async fn test_fts5_auto_sync_triggers() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("test_triggers.db");
+        let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig {
+            path: db_path,
+            embedding_dimensions: 3,
+        };
+
+        let store = VecSqliteMemoryStore::new(config).await.unwrap();
+
+        // 1. Verify INSERT trigger: Inserting directly into memory_records (bypassing manual sync)
+        // should automatically populate memory_fts.
+        let record_id = "trigger_test_id".to_string();
+        let record = crate::memory::store::MemoryRecord {
+            id: record_id.clone(),
+            workspace_id: "test_ws_1".to_string(),
+            path: "test/trigger-test-path".to_string(),
+            content: "This is a unique trigger-test content".to_string(),
+            metadata: serde_json::json!({}),
+            embedding: vec![],
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            ..Default::default()
+        };
+
+        ConnectionManager::global()
+            .with_conn(&store.project_id, {
+                let r = record.clone();
+                move |conn| {
+                    conn.execute(
+                        "INSERT INTO memory_records (id, workspace_id, path, content, metadata, created_at, updated_at, revision)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, 1)",
+                        params![
+                            r.id,
+                            r.workspace_id,
+                            r.path,
+                            r.content,
+                            "{}",
+                            r.created_at.to_rfc3339(),
+                            r.updated_at.to_rfc3339()
+                        ],
+                    )?;
+                    Ok(())
+                }
+            })
+            .await
+            .unwrap();
+
+        // Check if FTS5 table has been populated by the trigger
+        let fts_count: i64 = ConnectionManager::global()
+            .with_conn(&store.project_id, |conn| {
+                let count: i64 = conn.query_row(
+                    "SELECT COUNT(*) FROM memory_fts WHERE content LIKE '%trigger-test%'",
+                    [],
+                    |row| row.get(0),
+                )?;
+                Ok(count)
+            })
+            .await
+            .unwrap();
+        assert_eq!(fts_count, 1, "INSERT trigger should auto-sync to memory_fts");
+
+        // 2. Verify UPDATE trigger: Updating content directly in memory_records
+        // should automatically update memory_fts.
+        ConnectionManager::global()
+            .with_conn(&store.project_id, {
+                let r_id = record_id.clone();
+                move |conn| {
+                    conn.execute(
+                        "UPDATE memory_records SET content = 'Updated trigger-test content' WHERE id = ?",
+                        params![r_id],
+                    )?;
+                    Ok(())
+                }
+            })
+            .await
+            .unwrap();
+
+        let fts_updated_count: i64 = ConnectionManager::global()
+            .with_conn(&store.project_id, |conn| {
+                let count: i64 = conn.query_row(
+                    "SELECT COUNT(*) FROM memory_fts WHERE content LIKE '%Updated%'",
+                    [],
+                    |row| row.get(0),
+                )?;
+                Ok(count)
+            })
+            .await
+            .unwrap();
+        assert_eq!(fts_updated_count, 1, "UPDATE trigger should auto-sync to memory_fts");
+
+        // 3. Verify DELETE trigger: Deleting directly from memory_records
+        // should automatically delete from memory_fts.
+        ConnectionManager::global()
+            .with_conn(&store.project_id, {
+                let r_id = record_id.clone();
+                move |conn| {
+                    conn.execute(
+                        "DELETE FROM memory_records WHERE id = ?",
+                        params![r_id],
+                    )?;
+                    Ok(())
+                }
+            })
+            .await
+            .unwrap();
+
+        let fts_remaining_count: i64 = ConnectionManager::global()
+            .with_conn(&store.project_id, |conn| {
+                let count: i64 = conn.query_row(
+                    "SELECT COUNT(*) FROM memory_fts",
+                    [],
+                    |row| row.get(0),
+                )?;
+                Ok(count)
+            })
+            .await
+            .unwrap();
+        assert_eq!(fts_remaining_count, 0, "DELETE trigger should auto-remove from memory_fts");
+    }
+}

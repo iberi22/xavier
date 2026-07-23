@@ -6,8 +6,8 @@
     "version": "0.12.0",
     "created": "2026-03-05",
     "last_verified": "2026-07-22",
-    "total_features": 25,
-    "features_complete": 25,
+    "total_features": 26,
+    "features_complete": 26,
     "features_beta": 0,
     "features_draft": 0,
     "features_planned": 0,
@@ -659,6 +659,30 @@
         "storage::migrations::tests::legacy_entities_missing_workspace_id_survives_v1_closure",
         "entity_graph unit suite",
         "panel-ui graphAdapters + roadmapGraph tests"
+      ]
+    },
+    {
+      "id": "feat-fts5-auto-triggers",
+      "name": "FTS5 Auto-Sync via SQL Triggers",
+      "category": "core",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "FTS5 Virtual Table Automatic Synchronization via SQLite Triggers on Insert, Update, and Delete operations",
+      "steps": [
+        "Implement AFTER INSERT SQL trigger",
+        "Implement AFTER DELETE SQL trigger",
+        "Implement AFTER UPDATE SQL trigger",
+        "Integrate trigger creation in schema initialization",
+        "Verify trigger-based synchronization correctness"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": null,
+      "last_tested": "2026-07-22",
+      "notes": "Automated trigger-based FTS5 synchronization completely operational and tested.",
+      "implemented_in": "src/memory/sqlite_vec_store/store_impl.rs, src/memory/sqlite_vec_store/schema_impl.rs",
+      "tests": [
+        "memory::sqlite_vec_store::store_impl::tests::test_fts5_auto_sync_triggers"
       ]
     }
   ],
