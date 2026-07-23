@@ -24,14 +24,21 @@ const sanitizeSvg = (svgString: string): string => {
 
     // Recursively check and remove elements/attributes
     const removeDangerousNodes = (element: Element) => {
+      const tagName = element.tagName.toLowerCase();
       // Remove any script elements
-      if (element.tagName.toLowerCase() === "script") {
+      if (tagName === "script") {
          element.remove();
          return;
       }
 
       // Remove foreignObject as it can contain unconstrained HTML
-      if (element.tagName.toLowerCase() === "foreignobject") {
+      if (tagName === "foreignobject") {
+         element.remove();
+         return;
+      }
+
+      // Remove animation tags which can be used to bypass attribute checks
+      if (["animate", "set", "animatemotion", "animatetransform", "mpath", "animatecolor"].includes(tagName)) {
          element.remove();
          return;
       }
@@ -39,7 +46,8 @@ const sanitizeSvg = (svgString: string): string => {
       const attributes = Array.from(element.attributes);
       attributes.forEach((attr) => {
         const name = attr.name.toLowerCase();
-        const value = attr.value.toLowerCase().trim();
+        // Strip control characters to prevent bypasses like java\x09script:
+        const value = attr.value.toLowerCase().replace(/[\x00-\x20\x7F-\x9F]/g, "");
 
         // Remove event handlers
         if (name.startsWith("on")) {
