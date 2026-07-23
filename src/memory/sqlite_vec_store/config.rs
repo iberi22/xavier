@@ -10,6 +10,16 @@ use std::sync::OnceLock;
 pub const DB_FILENAME: &str = "xavier_memory_vec.db";
 pub const DEFAULT_EMBEDDING_DIMENSIONS: usize = 768;
 pub const DEFAULT_RRF_K: usize = 60;
+
+/// Returns the optimal RRF K parameter based on dataset size
+pub fn optimal_rrf_k(dataset_size: usize) -> usize {
+    match dataset_size {
+        0..=100 => 10,
+        101..=500 => 30,
+        _ => 60,
+    }
+}
+
 pub const DEFAULT_VECTOR_WEIGHT: f32 = 0.40;
 pub const DEFAULT_FTS_WEIGHT: f32 = 0.35;
 pub const DEFAULT_KG_WEIGHT: f32 = 0.25;
@@ -82,6 +92,28 @@ mod tests {
             assert!(DEFAULT_KG_WEIGHT < 1.0);
         }
         assert_eq!(QJL_MAGIC, b"QJL2");
+    }
+
+    #[test]
+    fn test_optimal_rrf_k() {
+        // Range 0..=100
+        assert_eq!(optimal_rrf_k(0), 10);
+        assert_eq!(optimal_rrf_k(50), 10);
+        assert_eq!(optimal_rrf_k(100), 10);
+
+        // Range 101..=500
+        assert_eq!(optimal_rrf_k(101), 30);
+        assert_eq!(optimal_rrf_k(200), 30);
+        assert_eq!(optimal_rrf_k(500), 30);
+
+        // Range 501..=5000
+        assert_eq!(optimal_rrf_k(501), 60);
+        assert_eq!(optimal_rrf_k(2000), 60);
+        assert_eq!(optimal_rrf_k(5000), 60);
+
+        // Range 5001+
+        assert_eq!(optimal_rrf_k(5001), 60);
+        assert_eq!(optimal_rrf_k(10000), 60);
     }
 
     #[test]

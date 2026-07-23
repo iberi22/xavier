@@ -70,7 +70,7 @@ impl VecSqliteMemoryStore {
                     |row| row.get::<_, i64>(0)
                 ).unwrap_or(0).max(0) as usize
             };
-            let rrf_k = Self::dynamic_rrf_k(dataset_size);
+            let rrf_k = super::optimal_rrf_k(dataset_size);
 
             if include_vector {
                 if let Some(emb) = &embedding {

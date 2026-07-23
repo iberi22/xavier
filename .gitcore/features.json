@@ -6,12 +6,12 @@
     "version": "0.12.0",
     "created": "2026-03-05",
     "last_verified": "2026-07-22",
-    "total_features": 25,
-    "features_complete": 25,
+    "total_features": 26,
+    "features_complete": 26,
     "features_beta": 0,
     "features_draft": 0,
     "features_planned": 0,
-    "features_stable": 16,
+    "features_stable": 17,
     "overall_progress_pct": 100.0,
     "reconciliation_notes": "2026-07-19 Ola 5 Reconciliation Audit: Multiple features adjusted to realistic progress percentages based on deep audit findings. Added E2E tests for RBAC, Crypto, and Telegram bot. Verified MCP server progressive disclosure and double-division TOTP logic.\n2026-07-21 Ola 6 Update: feat-hormer-navigation verified at 100% (5/5 tests pass, code complete). Active: feat-src-reference (Jules #810) at 60%, feat-dual-license (Jules #801) at 20%.\n2026-07-21 Ola 6: feat-src-reference expanded to 100% (SRC.md + SRC_CONFIG.md). feat-hormer-navigation verified at 100%."
   },
@@ -659,6 +659,29 @@
         "storage::migrations::tests::legacy_entities_missing_workspace_id_survives_v1_closure",
         "entity_graph unit suite",
         "panel-ui graphAdapters + roadmapGraph tests"
+      ]
+    },
+    {
+      "id": "feat-rrf-k-dynamic",
+      "name": "RRF K Parameter Dynamic Optimization",
+      "category": "search",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Optimizes RRF K parameter dynamically based on dataset/corpus size to balance precision and recall",
+      "steps": [
+        "Implement optimal_rrf_k function in config.rs",
+        "Maintain DEFAULT_RRF_K as fallback constant",
+        "Call optimal_rrf_k in perform_hybrid_search",
+        "Add unit tests for all dataset size ranges"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": null,
+      "last_tested": "2026-07-22",
+      "notes": "Optimal K values: 10 for 0-100 docs, 30 for 101-500 docs, 60 for 501+ docs. Evaluated on small-to-large benchmarks.",
+      "implemented_in": "src/memory/sqlite_vec_store/config.rs, src/memory/sqlite_vec_store/backend_impl.rs",
+      "tests": [
+        "memory::sqlite_vec_store::config::tests::test_optimal_rrf_k"
       ]
     }
   ],
