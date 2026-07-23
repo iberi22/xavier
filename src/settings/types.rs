@@ -47,6 +47,8 @@ pub struct XavierSettings {
     pub data_commons: DataCommonsSettings,
     #[serde(default)]
     pub license: LicenseSettings,
+    #[serde(default)]
+    pub engram: EngramSettings,
     #[serde(skip)]
     pub auth_token: Option<String>,
 }
@@ -73,9 +75,17 @@ impl fmt::Debug for XavierSettings {
             .field("advanced", &self.advanced)
             .field("pgheart", &self.pgheart)
             .field("data_commons", &self.data_commons)
+            .field("engram", &self.engram)
             .field("auth_token", &"[REDACTED]")
             .finish()
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EngramSettings {
+    pub enabled: bool,
+    pub url: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]

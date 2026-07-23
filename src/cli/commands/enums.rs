@@ -293,6 +293,11 @@ pub enum Command {
         #[command(subcommand)]
         cmd: AgentCommand,
     },
+    /// Manage Engram integration and memory synchronization
+    Engram {
+        #[command(subcommand)]
+        cmd: EngramCommand,
+    },
     /// Manage Xavier plugins
     Plugin {
         #[command(subcommand)]
@@ -949,4 +954,11 @@ pub enum PluginCommand {
     },
     /// List plugins
     List,
+}
+
+/// Engram integration subcommands
+#[derive(Subcommand, Debug, Clone)]
+pub enum EngramCommand {
+    /// Synchronize observations from Engram to Xavier
+    Sync,
 }

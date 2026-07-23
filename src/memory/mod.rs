@@ -7,6 +7,7 @@ pub mod agent_scanner;
 pub mod belief_graph;
 pub mod bridge;
 pub mod checkpoint_summary;
+pub mod engram_bridge;
 pub mod cloud_sync;
 pub mod decay;
 pub mod embedder;

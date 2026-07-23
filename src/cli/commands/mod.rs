@@ -223,6 +223,43 @@ impl Cli {
             Command::Agent { cmd } => {
                 crate::cli::handlers::agent_cli::handle_agent_command(cmd.clone()).await
             }
+            Command::Engram { cmd } => {
+                match cmd {
+                    EngramCommand::Sync => {
+                        println!("🔄 Syncing observations from Engram to Xavier...");
+                        let bridge = xavier::memory::engram_bridge::EngramBridge::new();
+                        if !bridge.enabled {
+                            println!("⚠️ Engram bridge is disabled in configuration.");
+                            println!("   Enable it by setting engram.enabled = true in config or XAVIER_ENGRAM_ENABLED=true in environment.");
+                            return Ok(());
+                        }
+
+                        match xavier::memory::sqlite_vec_store::VecSqliteMemoryStore::from_env().await {
+                            Ok(store) => {
+                                let workspace_id = std::env::var("XAVIER_DEFAULT_WORKSPACE_ID")
+                                    .unwrap_or_else(|_| "default".to_string());
+                                match bridge.pull_from_engram(&store, &workspace_id).await {
+                                    Ok(imported) => {
+                                        println!("✅ Synchronization successful! Mapped and imported {} observations.", imported.len());
+                                        for record in &imported {
+                                            println!("   - [{}] {}", record.id, record.path);
+                                        }
+                                        Ok(())
+                                    }
+                                    Err(e) => {
+                                        println!("❌ Synchronization failed: {:?}", e);
+                                        Ok(())
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                println!("❌ Failed to initialize local SQLite memory store: {:?}", e);
+                                Ok(())
+                            }
+                        }
+                    }
+                }
+            }
             Command::Plugin { cmd } => match cmd {
                 PluginCommand::Install { name } => {
                     crate::cli::handlers::plugins::install_plugin(name.clone()).await

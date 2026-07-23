@@ -17,6 +17,15 @@ impl Default for ServerSettings {
     }
 }
 
+impl Default for EngramSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            url: "localhost:7437".to_string(),
+        }
+    }
+}
+
 impl Default for WorkspaceSettings {
     fn default() -> Self {
         Self {

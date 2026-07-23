@@ -288,6 +288,17 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
         },
     );
 
+    // Engram settings
+    set_if_absent(
+        "XAVIER_ENGRAM_ENABLED",
+        if settings.engram.enabled {
+            "true"
+        } else {
+            "false"
+        },
+    );
+    set_if_absent("XAVIER_ENGRAM_URL", &settings.engram.url);
+
     // Router settings
     set_optional_if_absent(
         "XAVIER_ROUTER_POLICY_PATH",

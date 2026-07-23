@@ -190,6 +190,14 @@ pub fn current() -> XavierSettings {
             .ok()
             .and_then(|v| v.parse().ok());
     }
+    if let Ok(enabled_str) = std::env::var("XAVIER_ENGRAM_ENABLED") {
+        if let Ok(v) = enabled_str.parse() {
+            settings.engram.enabled = v;
+        }
+    }
+    if let Ok(url) = std::env::var("XAVIER_ENGRAM_URL") {
+        settings.engram.url = url;
+    }
     settings
 }
 

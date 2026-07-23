@@ -1,0 +1,15 @@
+{
+  "feature": "feat-engram-bridge",
+  "progress_pct": 100,
+  "status": "stable",
+  "passes": true,
+  "last_tested": "2026-07-23",
+  "tests": [
+    "memory::engram_bridge::tests::test_engram_bridge_disabled_by_default",
+    "memory::engram_bridge::tests::test_circular_sync_prevention",
+    "memory::engram_bridge::tests::test_rate_limiting",
+    "memory::engram_bridge::tests::test_parse_engram_observation",
+    "memory::engram_bridge::tests::test_search_engram_success",
+    "memory::engram_bridge::tests::test_pull_from_engram_success"
+  ]
+}

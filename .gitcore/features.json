@@ -17,6 +17,35 @@
   },
   "features": [
     {
+      "id": "feat-engram-bridge",
+      "name": "Engram-Xavier Bidirectional Memory Bridge",
+      "category": "core",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Bidirectional memory synchronization between Xavier and Engram with fallback search, CLI save process execution, pull sync, rate limiting, and circular sync protection.",
+      "steps": [
+        "Create src/memory/engram_bridge.rs with EngramBridge struct",
+        "Implement push_to_engram and search_engram",
+        "Implement pull_from_engram and helper parsers",
+        "Add engram configuration to settings types and defaults",
+        "Add manual synchronization CLI command xavier engram sync"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": null,
+      "last_tested": "2026-07-23",
+      "notes": "Complete bidirectional synchronization bridge between Xavier and Engram.",
+      "implemented_in": "src/memory/engram_bridge.rs, src/settings/, src/cli/commands/",
+      "tests": [
+        "memory::engram_bridge::tests::test_engram_bridge_disabled_by_default",
+        "memory::engram_bridge::tests::test_circular_sync_prevention",
+        "memory::engram_bridge::tests::test_rate_limiting",
+        "memory::engram_bridge::tests::test_parse_engram_observation",
+        "memory::engram_bridge::tests::test_search_engram_success",
+        "memory::engram_bridge::tests::test_pull_from_engram_success"
+      ]
+    },
+    {
       "id": "feat-unified-storage",
       "name": "Unified SQLite Storage",
       "category": "core",
