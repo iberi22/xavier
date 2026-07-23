@@ -15,6 +15,7 @@
 //! | embedding.rs | Embedding computation |
 //! | tests.rs | Integration tests |
 
+pub mod classifier;
 pub mod embedding;
 pub mod hybrid;
 pub mod resolution;
@@ -25,6 +26,7 @@ pub mod vector;
 pub mod tests;
 
 // Re-export all public functions from sub-modules for backward compatibility.
+pub use classifier::{classify_query, weights_for, QueryClass, QueryClassWeights};
 pub use embedding::{query_with_embedding, query_with_embedding_filtered};
 pub use hybrid::{
     bm25_search, merge_ranked_candidates, multi_hop_context, query_filtered,

@@ -6,8 +6,8 @@
     "version": "0.12.0",
     "created": "2026-03-05",
     "last_verified": "2026-07-22",
-    "total_features": 25,
-    "features_complete": 25,
+    "total_features": 26,
+    "features_complete": 26,
     "features_beta": 0,
     "features_draft": 0,
     "features_planned": 0,
@@ -659,6 +659,33 @@
         "storage::migrations::tests::legacy_entities_missing_workspace_id_survives_v1_closure",
         "entity_graph unit suite",
         "panel-ui graphAdapters + roadmapGraph tests"
+      ]
+    },
+    {
+      "id": "feat-query-classifier",
+      "name": "Query Classification Module",
+      "category": "search",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Deterministic rule-based query classifier that applies adaptive retrieval weights across BM25, Vector, and KG based on query patterns without ML dependencies.",
+      "steps": [
+        "Define QueryClass and QueryClassWeights",
+        "Implement deterministic string pattern and symbol matching heuristics in classify_query",
+        "Implement weights_for returning optimal BM25, Vector, and KG weights per class",
+        "Integrate into search module mod.rs and export types",
+        "Verify with complete unit tests covering all query types"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": null,
+      "last_tested": "2026-07-22",
+      "notes": "Rule-based, 100% local, zero-dependency classification to optimize retrieval weights.",
+      "implemented_in": "src/memory/qmd/search/classifier.rs, src/memory/qmd/search/mod.rs",
+      "tests": [
+        "memory::qmd::search::classifier::tests::test_classify_exact_code",
+        "memory::qmd::search::classifier::tests::test_classify_conceptual",
+        "memory::qmd::search::classifier::tests::test_classify_mixed",
+        "memory::qmd::search::classifier::tests::test_weights_for"
       ]
     }
   ],
