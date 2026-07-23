@@ -660,6 +660,30 @@
         "entity_graph unit suite",
         "panel-ui graphAdapters + roadmapGraph tests"
       ]
+    },
+    {
+      "id": "feat-benchmark-v7",
+      "name": "Memory Showdown v7 with New Features",
+      "category": "core",
+      "status": "stable",
+      "progress_pct": 100,
+      "description": "Complete memory evaluation suite supporting 5 retrieval scenarios and 4 metric categories with JSON and Markdown outputs",
+      "steps": [
+        "Create showdown_v7.py complete evaluation script",
+        "Implement BM25-only, Vector-only, Hybrid, Adaptive, and MMR retrieval modes",
+        "Implement Precision@K, MRR, diversity score, and modality contribution metrics",
+        "Add automated query classification routing",
+        "Generate JSON and Markdown report outputs with comparative v6 baselines"
+      ],
+      "passes": true,
+      "verified_by": "automated",
+      "github_issue": null,
+      "last_tested": "2026-07-23",
+      "notes": "Completed 100% without RS conflict.",
+      "implemented_in": "scripts/benchmarks/showdown_v7.py",
+      "tests": [
+        "python3 scripts/benchmarks/showdown_v7.py"
+      ]
     }
   ],
   "verification_commands": {

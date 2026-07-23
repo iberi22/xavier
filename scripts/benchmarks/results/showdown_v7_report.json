@@ -1,0 +1,530 @@
+{
+  "timestamp": "2026-07-23T04:35:39.705563",
+  "mode": "simulation",
+  "dataset_path": "/app/scripts/benchmarks/datasets/internal_swal_openclaw_memory.json",
+  "total_cases_evaluated": 5,
+  "scenarios_metrics": {
+    "hybrid": {
+      "p_at_1": 0.6,
+      "p_at_3": 0.2,
+      "p_at_5": 0.12,
+      "mrr": 0.6,
+      "diversity": 0.9293,
+      "contribution_bm25": 1.0,
+      "contribution_vector": 1.0,
+      "latency_ms": 0.0206
+    },
+    "bm25_only": {
+      "p_at_1": 0.6,
+      "p_at_3": 0.2,
+      "p_at_5": 0.12,
+      "mrr": 0.6,
+      "diversity": 0.9293,
+      "contribution_bm25": 1.0,
+      "contribution_vector": 1.0,
+      "latency_ms": 0.0546
+    },
+    "vector_only": {
+      "p_at_1": 0.6,
+      "p_at_3": 0.2,
+      "p_at_5": 0.12,
+      "mrr": 0.6,
+      "diversity": 0.9293,
+      "contribution_bm25": 1.0,
+      "contribution_vector": 1.0,
+      "latency_ms": 0.0653
+    },
+    "adaptive": {
+      "p_at_1": 0.6,
+      "p_at_3": 0.2,
+      "p_at_5": 0.12,
+      "mrr": 0.6,
+      "diversity": 0.9293,
+      "contribution_bm25": 1.0,
+      "contribution_vector": 1.0,
+      "latency_ms": 0.0004
+    },
+    "mmr": {
+      "p_at_1": 0.6,
+      "p_at_3": 0.2,
+      "p_at_5": 0.12,
+      "mrr": 0.6,
+      "diversity": 0.9293,
+      "contribution_bm25": 1.0,
+      "contribution_vector": 1.0,
+      "latency_ms": 0.1301
+    }
+  },
+  "v6_comparison": {
+    "hybrid": {
+      "v6_precision_at_1": 0.8,
+      "v7_precision_at_1": 0.6,
+      "v6_mrr": 0.82,
+      "v7_mrr": 0.6,
+      "v6_latency_ms": 5.2,
+      "v7_latency_ms": 0.0206,
+      "v6_diversity_score": "N/A",
+      "v7_diversity_score": 0.9293
+    },
+    "features": {
+      "adaptive_search": {
+        "v6": "Unsupported",
+        "v7": "Supported (Auto-classification)"
+      },
+      "mmr_reranking": {
+        "v6": "Unsupported",
+        "v7": "Supported (Cosine diversity optimization)"
+      },
+      "diversity_tracking": {
+        "v6": "Unsupported",
+        "v7": "Supported (Pairwise metric)"
+      },
+      "query_classification": {
+        "v6": "Unsupported",
+        "v7": "Supported (Keyword vs Semantic vs Mixed)"
+      }
+    }
+  },
+  "detailed_results": [
+    {
+      "case_id": "repo-file-recall",
+      "query": "Where is the typed memory schema stored?",
+      "expected_path": "repo/xavier",
+      "query_classification": "factual/keyword",
+      "scenarios": {
+        "hybrid": {
+          "top_results": [
+            "repo/xavier",
+            "session/openclaw-handoff",
+            "decision/memory-core",
+            "task/multilingual-recall"
+          ],
+          "precision_at_1": 1.0,
+          "precision_at_3": 0.3333333333333333,
+          "precision_at_5": 0.2,
+          "mrr": 1.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.07
+        },
+        "bm25_only": {
+          "top_results": [
+            "repo/xavier",
+            "session/openclaw-handoff",
+            "decision/memory-core",
+            "task/multilingual-recall"
+          ],
+          "precision_at_1": 1.0,
+          "precision_at_3": 0.3333333333333333,
+          "precision_at_5": 0.2,
+          "mrr": 1.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.1
+        },
+        "vector_only": {
+          "top_results": [
+            "repo/xavier",
+            "session/openclaw-handoff",
+            "decision/memory-core",
+            "task/multilingual-recall"
+          ],
+          "precision_at_1": 1.0,
+          "precision_at_3": 0.3333333333333333,
+          "precision_at_5": 0.2,
+          "mrr": 1.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.09
+        },
+        "adaptive": {
+          "top_results": [
+            "repo/xavier",
+            "session/openclaw-handoff",
+            "decision/memory-core",
+            "task/multilingual-recall"
+          ],
+          "precision_at_1": 1.0,
+          "precision_at_3": 0.3333333333333333,
+          "precision_at_5": 0.2,
+          "mrr": 1.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.0
+        },
+        "mmr": {
+          "top_results": [
+            "repo/xavier",
+            "decision/memory-core",
+            "task/multilingual-recall",
+            "session/openclaw-handoff"
+          ],
+          "precision_at_1": 1.0,
+          "precision_at_3": 0.3333333333333333,
+          "precision_at_5": 0.2,
+          "mrr": 1.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.15
+        }
+      }
+    },
+    {
+      "case_id": "repo-provenance-filter",
+      "query": "Where is the typed memory schema stored?",
+      "expected_path": "repo/xavier",
+      "query_classification": "factual/keyword",
+      "scenarios": {
+        "hybrid": {
+          "top_results": [
+            "repo/xavier",
+            "session/openclaw-handoff",
+            "decision/memory-core",
+            "task/multilingual-recall"
+          ],
+          "precision_at_1": 1.0,
+          "precision_at_3": 0.3333333333333333,
+          "precision_at_5": 0.2,
+          "mrr": 1.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.01
+        },
+        "bm25_only": {
+          "top_results": [
+            "repo/xavier",
+            "session/openclaw-handoff",
+            "decision/memory-core",
+            "task/multilingual-recall"
+          ],
+          "precision_at_1": 1.0,
+          "precision_at_3": 0.3333333333333333,
+          "precision_at_5": 0.2,
+          "mrr": 1.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.05
+        },
+        "vector_only": {
+          "top_results": [
+            "repo/xavier",
+            "session/openclaw-handoff",
+            "decision/memory-core",
+            "task/multilingual-recall"
+          ],
+          "precision_at_1": 1.0,
+          "precision_at_3": 0.3333333333333333,
+          "precision_at_5": 0.2,
+          "mrr": 1.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.07
+        },
+        "adaptive": {
+          "top_results": [
+            "repo/xavier",
+            "session/openclaw-handoff",
+            "decision/memory-core",
+            "task/multilingual-recall"
+          ],
+          "precision_at_1": 1.0,
+          "precision_at_3": 0.3333333333333333,
+          "precision_at_5": 0.2,
+          "mrr": 1.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.0
+        },
+        "mmr": {
+          "top_results": [
+            "repo/xavier",
+            "decision/memory-core",
+            "task/multilingual-recall",
+            "session/openclaw-handoff"
+          ],
+          "precision_at_1": 1.0,
+          "precision_at_3": 0.3333333333333333,
+          "precision_at_5": 0.2,
+          "mrr": 1.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.12
+        }
+      }
+    },
+    {
+      "case_id": "decision-query",
+      "query": "What was the decision about System3?",
+      "expected_path": null,
+      "query_classification": "semantic/conceptual",
+      "scenarios": {
+        "hybrid": {
+          "top_results": [
+            "decision/memory-core",
+            "repo/xavier",
+            "session/openclaw-handoff",
+            "task/multilingual-recall"
+          ],
+          "precision_at_1": 0.0,
+          "precision_at_3": 0.0,
+          "precision_at_5": 0.0,
+          "mrr": 0.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.01
+        },
+        "bm25_only": {
+          "top_results": [
+            "decision/memory-core",
+            "repo/xavier",
+            "session/openclaw-handoff",
+            "task/multilingual-recall"
+          ],
+          "precision_at_1": 0.0,
+          "precision_at_3": 0.0,
+          "precision_at_5": 0.0,
+          "mrr": 0.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.03
+        },
+        "vector_only": {
+          "top_results": [
+            "decision/memory-core",
+            "repo/xavier",
+            "session/openclaw-handoff",
+            "task/multilingual-recall"
+          ],
+          "precision_at_1": 0.0,
+          "precision_at_3": 0.0,
+          "precision_at_5": 0.0,
+          "mrr": 0.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.06
+        },
+        "adaptive": {
+          "top_results": [
+            "decision/memory-core",
+            "repo/xavier",
+            "session/openclaw-handoff",
+            "task/multilingual-recall"
+          ],
+          "precision_at_1": 0.0,
+          "precision_at_3": 0.0,
+          "precision_at_5": 0.0,
+          "mrr": 0.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.0
+        },
+        "mmr": {
+          "top_results": [
+            "decision/memory-core",
+            "session/openclaw-handoff",
+            "task/multilingual-recall",
+            "repo/xavier"
+          ],
+          "precision_at_1": 0.0,
+          "precision_at_3": 0.0,
+          "precision_at_5": 0.0,
+          "mrr": 0.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.12
+        }
+      }
+    },
+    {
+      "case_id": "session-handoff",
+      "query": "Which agent imported the YouTube publishing backlog?",
+      "expected_path": null,
+      "query_classification": "factual/keyword",
+      "scenarios": {
+        "hybrid": {
+          "top_results": [
+            "session/openclaw-handoff",
+            "repo/xavier",
+            "decision/memory-core",
+            "task/multilingual-recall"
+          ],
+          "precision_at_1": 0.0,
+          "precision_at_3": 0.0,
+          "precision_at_5": 0.0,
+          "mrr": 0.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.01
+        },
+        "bm25_only": {
+          "top_results": [
+            "session/openclaw-handoff",
+            "repo/xavier",
+            "decision/memory-core",
+            "task/multilingual-recall"
+          ],
+          "precision_at_1": 0.0,
+          "precision_at_3": 0.0,
+          "precision_at_5": 0.0,
+          "mrr": 0.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.05
+        },
+        "vector_only": {
+          "top_results": [
+            "session/openclaw-handoff",
+            "repo/xavier",
+            "decision/memory-core",
+            "task/multilingual-recall"
+          ],
+          "precision_at_1": 0.0,
+          "precision_at_3": 0.0,
+          "precision_at_5": 0.0,
+          "mrr": 0.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.06
+        },
+        "adaptive": {
+          "top_results": [
+            "session/openclaw-handoff",
+            "repo/xavier",
+            "decision/memory-core",
+            "task/multilingual-recall"
+          ],
+          "precision_at_1": 0.0,
+          "precision_at_3": 0.0,
+          "precision_at_5": 0.0,
+          "mrr": 0.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.0
+        },
+        "mmr": {
+          "top_results": [
+            "session/openclaw-handoff",
+            "task/multilingual-recall",
+            "decision/memory-core",
+            "repo/xavier"
+          ],
+          "precision_at_1": 0.0,
+          "precision_at_3": 0.0,
+          "precision_at_5": 0.0,
+          "mrr": 0.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.12
+        }
+      }
+    },
+    {
+      "case_id": "multilingual-recall",
+      "query": "\u00bfQu\u00e9 tarea menciona OpenClaw y Engram?",
+      "expected_path": "task/multilingual-recall",
+      "query_classification": "semantic/conceptual",
+      "scenarios": {
+        "hybrid": {
+          "top_results": [
+            "task/multilingual-recall",
+            "repo/xavier",
+            "decision/memory-core",
+            "session/openclaw-handoff"
+          ],
+          "precision_at_1": 1.0,
+          "precision_at_3": 0.3333333333333333,
+          "precision_at_5": 0.2,
+          "mrr": 1.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.01
+        },
+        "bm25_only": {
+          "top_results": [
+            "task/multilingual-recall",
+            "repo/xavier",
+            "decision/memory-core",
+            "session/openclaw-handoff"
+          ],
+          "precision_at_1": 1.0,
+          "precision_at_3": 0.3333333333333333,
+          "precision_at_5": 0.2,
+          "mrr": 1.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.04
+        },
+        "vector_only": {
+          "top_results": [
+            "task/multilingual-recall",
+            "repo/xavier",
+            "decision/memory-core",
+            "session/openclaw-handoff"
+          ],
+          "precision_at_1": 1.0,
+          "precision_at_3": 0.3333333333333333,
+          "precision_at_5": 0.2,
+          "mrr": 1.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.05
+        },
+        "adaptive": {
+          "top_results": [
+            "task/multilingual-recall",
+            "repo/xavier",
+            "decision/memory-core",
+            "session/openclaw-handoff"
+          ],
+          "precision_at_1": 1.0,
+          "precision_at_3": 0.3333333333333333,
+          "precision_at_5": 0.2,
+          "mrr": 1.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.0
+        },
+        "mmr": {
+          "top_results": [
+            "task/multilingual-recall",
+            "repo/xavier",
+            "decision/memory-core",
+            "session/openclaw-handoff"
+          ],
+          "precision_at_1": 1.0,
+          "precision_at_3": 0.3333333333333333,
+          "precision_at_5": 0.2,
+          "mrr": 1.0,
+          "diversity": 0.9293,
+          "bm25_overlap": 1.0,
+          "vector_overlap": 1.0,
+          "latency_ms": 0.15
+        }
+      }
+    }
+  ]
+}
