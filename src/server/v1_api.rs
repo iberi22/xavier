@@ -34,6 +34,12 @@ pub struct V1Message {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct V1AddParams {
+    #[serde(default)]
+    pub mode: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct V1AddMemoryRequest {
     pub messages: Option<Vec<V1Message>>,
     pub text: Option<String>,
@@ -43,6 +49,8 @@ pub struct V1AddMemoryRequest {
     pub evidence_kind: Option<EvidenceKind>,
     pub namespace: Option<MemoryNamespace>,
     pub provenance: Option<MemoryProvenance>,
+    #[serde(default)]
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -128,6 +136,7 @@ fn is_primary_memory(metadata: &serde_json::Value) -> bool {
 /// V1 memories add.
 pub async fn v1_memories_add(
     Extension(workspace): Extension<WorkspaceContext>,
+    Query(params): Query<V1AddParams>,
     Json(payload): Json<V1AddMemoryRequest>,
 ) -> impl IntoResponse {
     info!(
@@ -152,6 +161,14 @@ pub async fn v1_memories_add(
         .clone()
         .unwrap_or_else(|| "default".to_string());
     let mut meta = payload.metadata.unwrap_or(serde_json::json!({}));
+    let is_dedup = params.mode.as_deref() == Some("dedup") || payload.mode.as_deref() == Some("dedup");
+    if is_dedup {
+        if let Some(obj) = meta.as_object_mut() {
+            obj.insert("dedup".to_string(), serde_json::json!(true));
+        } else {
+            meta = serde_json::json!({ "dedup": true });
+        }
+    }
     let mut namespace = payload.namespace;
     if let Some(uid) = payload.user_id {
         meta["user_id"] = serde_json::json!(uid);
