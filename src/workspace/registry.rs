@@ -65,6 +65,21 @@ impl WorkspaceRegistry {
         Ok(())
     }
 
+    /// Insert an already Arc-wrapped workspace.
+    pub async fn insert_arc(&self, workspace: Arc<WorkspaceState>) -> Result<()> {
+        let workspace_id = workspace.config().id.clone();
+        let token = workspace.config().token.clone();
+        self.token_map
+            .write()
+            .await
+            .insert(token, workspace_id.clone());
+        self.workspaces
+            .write()
+            .await
+            .insert(workspace_id, workspace);
+        Ok(())
+    }
+
     /// Authenticate.
     pub async fn authenticate(&self, token: &str) -> Option<WorkspaceContext> {
         if let Some(workspace_id) = self.token_map.read().await.get(token).cloned() {
