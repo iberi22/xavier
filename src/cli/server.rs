@@ -960,7 +960,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     );
     let workspace_ctx = WorkspaceContext {
         workspace_id: state.workspace_id.clone(),
-        workspace: workspace_state,
+        workspace: workspace_state.clone(),
     };
 
     let app = Router::new()
@@ -1137,11 +1137,45 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     // identical JSON-RPC tool surface for remote agents. Non-fatal: a bind
     // failure (e.g. port in use) is logged without taking down the main server.
     let mcp_port = crate::cli::config::resolve_mcp_port(mcp_port);
-    if mcp_port > 0 {
-        info!("Starting MCP HTTP+SSE server on port {}", mcp_port);
+    let expected_token = xavier::security::auth::resolve_xavier_token();
+    if expected_token.is_empty() {
+        tracing::warn!("MCP HTTP+SSE server startup skipped: resolve_xavier_token() returned empty");
+    } else if mcp_port > 0 {
+        let workspace_registry = Arc::new(xavier::workspace::WorkspaceRegistry::new());
+        let _ = workspace_registry.insert_arc(workspace_state.clone()).await;
+
+        let mcp_app_state = xavier::AppState {
+            workspace_registry,
+            code_indexer: Arc::clone(&code_indexer),
+            code_query: Arc::clone(&code_query),
+            code_db: Arc::clone(&code_db),
+            indexer: xavier::memory::file_indexer::FileIndexer::new(
+                xavier::memory::file_indexer::FileIndexerConfig::default(),
+                Some(code_indexer.clone()),
+            ),
+            agent_indexer: xavier::memory::agent_indexer::AgentIndexer::new(
+                xavier::memory::file_indexer::FileIndexer::new(
+                    xavier::memory::file_indexer::FileIndexerConfig::default(),
+                    Some(code_indexer.clone()),
+                ),
+            ),
+            security_service: Arc::clone(&security_service),
+            code_graph_dump_path: None,
+        };
+
+        let bind_host = resolve_http_bind_host();
+        let mcp_bind_addr = format!("{}:{}", bind_host, mcp_port);
+        info!("Starting MCP HTTP+SSE server on {}", mcp_bind_addr);
+        let mcp_workspace_ctx = workspace_ctx.clone();
         tokio::spawn(async move {
-            if let Err(error) = crate::cli::mcp::start_mcp_http(mcp_port).await {
-                tracing::error!("MCP HTTP+SSE server on port {} failed: {}", mcp_port, error);
+            if let Err(error) = xavier::server::mcp::transport::start_mcp_http_server(
+                mcp_app_state,
+                mcp_workspace_ctx,
+                mcp_bind_addr.clone(),
+            )
+            .await
+            {
+                tracing::error!("MCP HTTP+SSE server on {} failed: {}", mcp_bind_addr, error);
             }
         });
     } else {
