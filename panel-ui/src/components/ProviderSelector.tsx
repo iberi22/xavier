@@ -25,11 +25,15 @@ export function ProviderSelector({
 
   return (
     <div className="relative w-full max-w-sm">
-      <label className="text-[10px] uppercase text-white/50 tracking-widest mb-2 block">
+      <label className="text-[10px] uppercase text-white/50 tracking-widest mb-2 block" id="provider-selector-label">
         Primary Provider
       </label>
       <button
         onClick={() => setIsOpen(!isOpen)}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-labelledby="provider-selector-label"
+        aria-controls="provider-listbox"
         className="w-full flex items-center justify-between bg-[#050505]/80 border border-white/10 hover:border-[#39ff14]/50 p-4 rounded-xl transition-all group"
       >
         <div className="flex items-center gap-3">
@@ -46,6 +50,9 @@ export function ProviderSelector({
       <AnimatePresence>
         {isOpen && (
           <motion.div
+            id="provider-listbox"
+            role="listbox"
+            aria-labelledby="provider-selector-label"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
@@ -54,6 +61,8 @@ export function ProviderSelector({
             {providers.map((p) => (
               <button
                 key={p.name}
+                role="option"
+                aria-selected={activeProvider === p.name}
                 onClick={() => {
                   onSwitch(p.name);
                   setIsOpen(false);
