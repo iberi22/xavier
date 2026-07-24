@@ -59,6 +59,8 @@ pub struct AddPayload {
     #[serde(default)]
     pub metadata: serde_json::Value,
     pub project: Option<String>,
+    #[serde(default)]
+    pub dedup: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -69,6 +71,8 @@ pub struct UpdatePayload {
     #[serde(default)]
     pub metadata: serde_json::Value,
     pub project: Option<String>,
+    #[serde(default)]
+    pub dedup: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -216,6 +220,12 @@ pub async fn add_handler(
     let sanitized_path = sanitize_unicode(&payload.path);
 
     let mut metadata = payload.metadata.clone();
+    // Inject dedup mode and project into metadata
+    if let Some(ref mut obj) = metadata.as_object_mut() {
+        if let Some(dedup) = &payload.dedup {
+            obj.insert("_dedup_mode".to_string(), serde_json::json!(dedup));
+        }
+    }
     if let Some(project) = payload.project {
         if let Some(obj) = metadata.as_object_mut() {
             obj.insert("project".to_string(), serde_json::json!(project));
@@ -274,6 +284,12 @@ pub async fn update_handler(
     let sanitized_path = sanitize_unicode(&payload.path);
 
     let mut metadata = payload.metadata.clone();
+    // Inject dedup mode and project into metadata
+    if let Some(ref mut obj) = metadata.as_object_mut() {
+        if let Some(dedup) = &payload.dedup {
+            obj.insert("_dedup_mode".to_string(), serde_json::json!(dedup));
+        }
+    }
     if let Some(project) = payload.project {
         if let Some(obj) = metadata.as_object_mut() {
             obj.insert("project".to_string(), serde_json::json!(project));
