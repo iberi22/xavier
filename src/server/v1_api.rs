@@ -78,12 +78,30 @@ pub struct V1SearchRequest {
     pub limit: Option<usize>,
     pub filters: Option<MemoryQueryFilters>,
     pub active_zones: Option<Vec<ContextZone>>,
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone)]
 pub struct V1MemorySearchResponse {
     pub status: String,
     pub results: Vec<V1MemoryResponse>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct V1MemorySnippetResult {
+    pub id: String,
+    pub snippet: String,
+    pub score: f32,
+    pub path: String,
+    pub kind: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct V1MemorySearchSnippetResponse {
+    pub count: usize,
+    pub results: Vec<V1MemorySnippetResult>,
+    pub workspace_id: String,
+    pub mode: String,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -780,7 +798,7 @@ pub async fn v1_memories_search(
         filters.zones = Some(zones);
     }
 
-    let results = query_with_embedding_filtered(
+    let documents = query_with_embedding_filtered(
         &workspace.workspace.memory,
         &payload.query,
         limit,
@@ -790,18 +808,52 @@ pub async fn v1_memories_search(
     .unwrap_or_default()
     .into_iter()
     .filter(|doc| is_primary_memory(&doc.metadata))
-    .map(|doc| V1MemoryResponse {
-        id: doc.id.unwrap_or_default(),
-        memory: doc.content,
-        user_id: Some(doc.path),
-        metadata: doc.metadata,
-    })
-    .collect();
+    .collect::<Vec<_>>();
 
-    Json(V1MemorySearchResponse {
-        status: "ok".to_string(),
-        results,
-    })
+    if payload.mode.as_deref() == Some("snippet") {
+        let results = documents
+            .into_iter()
+            .map(|doc| {
+                let snippet: String = doc.content.chars().take(100).collect();
+                let kind = doc
+                    .metadata
+                    .get("kind")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("generic")
+                    .to_string();
+                V1MemorySnippetResult {
+                    id: doc.id.unwrap_or_default(),
+                    snippet,
+                    score: doc.score,
+                    path: doc.path,
+                    kind,
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let count = results.len();
+        axum::response::IntoResponse::into_response(Json(V1MemorySearchSnippetResponse {
+            count,
+            results,
+            workspace_id: workspace.workspace_id.clone(),
+            mode: "snippet".to_string(),
+        }))
+    } else {
+        let results = documents
+            .into_iter()
+            .map(|doc| V1MemoryResponse {
+                id: doc.id.unwrap_or_default(),
+                memory: doc.content,
+                user_id: Some(doc.path),
+                metadata: doc.metadata,
+            })
+            .collect();
+
+        axum::response::IntoResponse::into_response(Json(V1MemorySearchResponse {
+            status: "ok".to_string(),
+            results,
+        }))
+    }
 }
 
 /// V1 memories list.
@@ -1478,5 +1530,119 @@ mod tests {
             results[0]["metadata"]["provenance"]["source_app"],
             "openclaw"
         );
+    }
+
+    #[tokio::test]
+    async fn test_v1_memories_search_snippet_mode() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace);
+
+        // Add a long memory
+        let long_content = "This is a very long memory that will exceed one hundred characters in total. We expect the snippet to be a maximum of 100 characters in length and truncated gracefully from the beginning of the text.";
+        let add_req = Request::builder()
+            .method("POST")
+            .uri("/v1/memories")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "text": long_content,
+                    "user_id": "belal",
+                    "kind": "decision",
+                })
+                .to_string(),
+            ))
+            .expect("failed to build add request");
+        let resp = app
+            .clone()
+            .oneshot(add_req)
+            .await
+            .expect("failed to execute add request");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // 1. Search in snippet mode
+        let snippet_req = Request::builder()
+            .method("POST")
+            .uri("/v1/memories/search")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "query": "long memory",
+                    "mode": "snippet",
+                    "limit": 5,
+                })
+                .to_string(),
+            ))
+            .expect("failed to build snippet search request");
+        let resp = app
+            .clone()
+            .oneshot(snippet_req)
+            .await
+            .expect("failed to execute snippet search request");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("failed to read body");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&body).expect("failed to parse JSON");
+
+        assert_eq!(payload["mode"], "snippet");
+        assert!(payload["workspace_id"].as_str().expect("workspace_id should be string").starts_with("test-"));
+        assert_eq!(payload["count"].as_u64(), Some(1));
+
+        let results = payload["results"]
+            .as_array()
+            .expect("results should be array");
+        assert_eq!(results.len(), 1);
+
+        let item = &results[0];
+        assert!(item.get("id").is_some());
+        assert_eq!(item["path"], "belal");
+        assert_eq!(item["kind"], "decision");
+        assert!(item.get("score").is_some());
+
+        let snippet = item["snippet"].as_str().expect("snippet should be string");
+        assert!(snippet.len() <= 100);
+        assert!(long_content.starts_with(snippet));
+        assert!(item.get("content").is_none());
+        assert!(item.get("embedding").is_none());
+        assert!(item.get("memory").is_none());
+
+        // 2. Search in standard mode (backward compatible)
+        let standard_req = Request::builder()
+            .method("POST")
+            .uri("/v1/memories/search")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "query": "long memory",
+                    "limit": 5,
+                })
+                .to_string(),
+            ))
+            .expect("failed to build standard search request");
+        let resp = app
+            .oneshot(standard_req)
+            .await
+            .expect("failed to execute standard search request");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("failed to read body");
+        let payload: serde_json::Value =
+            serde_json::from_slice(&body).expect("failed to parse JSON");
+
+        assert_eq!(payload["status"], "ok");
+        assert!(payload.get("mode").is_none());
+
+        let results = payload["results"]
+            .as_array()
+            .expect("results should be array");
+        assert_eq!(results.len(), 1);
+
+        let item = &results[0];
+        assert_eq!(item["memory"], long_content);
+        assert!(item.get("snippet").is_none());
     }
 }

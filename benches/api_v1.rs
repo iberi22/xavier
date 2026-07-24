@@ -90,6 +90,7 @@ fn bench_v1_api(c: &mut Criterion) {
                     limit: Some(5),
                     filters: None,
                     active_zones: None,
+                    mode: None,
                 };
                 v1_memories_search(Extension(context.clone()), Json(payload)).await
             })
