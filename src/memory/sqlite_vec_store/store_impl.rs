@@ -20,6 +20,26 @@ use crate::memory::store::{
 
 use super::{graph, vector, VecSqliteMemoryStore};
 
+/// Compute cosine similarity between two f32 vectors.
+/// Used for semantic deduplication.
+pub fn cosine_similarity(v1: &[f32], v2: &[f32]) -> f32 {
+    if v1.is_empty() || v2.is_empty() || v1.len() != v2.len() {
+        return 0.0;
+    }
+    let mut dot_product = 0.0;
+    let mut norm_a = 0.0;
+    let mut norm_b = 0.0;
+    for i in 0..v1.len() {
+        dot_product += v1[i] * v2[i];
+        norm_a += v1[i] * v1[i];
+        norm_b += v2[i] * v2[i];
+    }
+    if norm_a == 0.0 || norm_b == 0.0 {
+        return 0.0;
+    }
+    dot_product / (norm_a.sqrt() * norm_b.sqrt())
+}
+
 #[async_trait]
 impl MemoryStore for VecSqliteMemoryStore {
     fn backend(&self) -> MemoryBackend {
@@ -50,6 +70,129 @@ impl MemoryStore for VecSqliteMemoryStore {
             if let Ok(client) = crate::memory::embedder::EmbeddingClient::from_env_async().await {
                 if let Ok(vector) = client.embed(&record.content).await {
                     record.embedding = vector;
+                }
+            }
+        }
+
+        // Extract and check "dedup" flag from metadata. Remove it so it doesn't persist.
+        let mut is_dedup = false;
+        if let serde_json::Value::Object(ref mut map) = record.metadata {
+            if let Some(val) = map.remove("dedup") {
+                is_dedup = val.as_bool().unwrap_or(false);
+            }
+        }
+
+        if is_dedup && !record.embedding.is_empty() {
+            let record_c = record.clone();
+            let project_id_c = self.project_id.clone();
+
+            let query_res = ConnectionManager::global().with_conn(&project_id_c, move |conn| {
+                let mut best_cand: Option<(MemoryRecord, f32)> = None;
+
+                // 1. Try sqlite-vec cosine distance query (vector_distance equivalent)
+                if let Ok(emb_json) = serde_json::to_string(&record_c.embedding) {
+                    let sql = r#"
+                        SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
+                               m.created_at, m.updated_at, m.revision, m.primary_flag,
+                               m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
+                               m.encrypted_dek, m.content_iv, m.metadata_iv,
+                               CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
+                        FROM memory_embeddings e
+                        JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
+                        WHERE e.workspace_id = ?2 AND (m.path = ?3 OR m.path LIKE ?3 || '%')
+                        ORDER BY distance ASC
+                        LIMIT 1
+                    "#;
+                    match conn.prepare(sql) {
+                        Ok(mut stmt) => {
+                            match stmt.query(params![emb_json, record_c.workspace_id, record_c.path]) {
+                                Ok(mut rows) => {
+                                    if let Ok(Some(row)) = rows.next() {
+                                        let distance = match row.get::<_, rusqlite::types::Value>(18) {
+                                            Ok(rusqlite::types::Value::Real(v)) => v as f32,
+                                            Ok(rusqlite::types::Value::Integer(v)) => v as f32,
+                                            _ => 1.0,
+                                        };
+                                        let similarity = 1.0 - distance;
+                                        if let Ok(rec) = Self::deserialize_record(row) {
+                                            best_cand = Some((rec, similarity));
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!("v1_api: stmt.query 1 error: {:?}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("v1_api: conn.prepare 1 error: {:?}", e);
+                        }
+                    }
+                }
+
+                // 2. Fallback to manual Rust cosine similarity search over records with same path/prefix
+                if best_cand.is_none() {
+                    let sql = "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE workspace_id = ? AND (path = ? OR path LIKE ? || '%')";
+                    match conn.prepare(sql) {
+                        Ok(mut stmt) => {
+                            match stmt.query(params![record_c.workspace_id, record_c.path, record_c.path]) {
+                                Ok(mut rows) => {
+                                    let mut best_sim = -1.0f32;
+                                    let mut best_rec = None;
+                                    while let Ok(Some(row)) = rows.next() {
+                                        match Self::deserialize_record(row) {
+                                            Ok(rec) => {
+                                                let sim = cosine_similarity(&record_c.embedding, &rec.embedding);
+                                                if sim > best_sim {
+                                                    best_sim = sim;
+                                                    best_rec = Some(rec);
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!("v1_api: deserialize 2 error: {:?}", e);
+                                            }
+                                        }
+                                    }
+                                    if let Some(rec) = best_rec {
+                                        best_cand = Some((rec, best_sim));
+                                    }
+                                }
+                                Err(e) => {
+                                    tracing::warn!("v1_api: stmt.query 2 error: {:?}", e);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("v1_api: conn.prepare 2 error: {:?}", e);
+                        }
+                    }
+                }
+
+                Ok(best_cand)
+            }).await;
+
+            if let Ok(Some((mut existing_record, similarity))) = query_res {
+                if similarity > 0.90 {
+                    tracing::info!(
+                        "Semantic dedup (similarity {} > 0.90): Updating existing memory {} with new content",
+                        similarity,
+                        existing_record.id
+                    );
+                    // Decrypt existing record first if it's encrypted so revisioned_record merges correctly
+                    let _ = crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(&mut existing_record);
+                    record = crate::memory::store::revisioned_record(existing_record, record);
+                } else if similarity >= 0.70 {
+                    tracing::info!(
+                        "Semantic dedup (similarity {} >= 0.70): Similarity is between 0.70 and 0.90, appending as new memory {}",
+                        similarity,
+                        record.id
+                    );
+                } else {
+                    tracing::info!(
+                        "Semantic dedup (similarity {} < 0.70): Similarity is below 0.70, inserting as new memory {}",
+                        similarity,
+                        record.id
+                    );
                 }
             }
         }
