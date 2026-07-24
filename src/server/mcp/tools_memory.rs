@@ -257,6 +257,19 @@ pub fn get_xavier_memory_tools() -> Vec<MCPTool> {
                 }
             }),
         },
+        MCPTool {
+            name: "memory_prune".to_string(),
+            description: "Prune stale or duplicate memories by kind, age, or path prefix".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "kind": { "type": "string", "description": "Delete all memories of a specific kind" },
+                    "older_than_days": { "type": "integer", "description": "Delete memories not accessed in N days (0 to disable)", "default": 0 },
+                    "path_prefix": { "type": "string", "description": "Delete memories with path starting with prefix" },
+                    "dry_run": { "type": "boolean", "description": "Preview count without deleting (MANDATORY: default true)", "default": true }
+                }
+            }),
+        },
     ]
 }
 
@@ -909,6 +922,85 @@ pub async fn handle_memory_tool(
                 })?)
             }
         }
+        "memory_prune" => {
+            let kind = arguments
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| s.to_string());
+            let path_prefix = arguments
+                .get("path_prefix")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| s.to_string());
+            let older_than_days = arguments
+                .get("older_than_days")
+                .and_then(|v| v.as_i64())
+                .unwrap_or(0);
+            let dry_run = arguments
+                .get("dry_run")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true);
+
+            if kind.is_none() && path_prefix.is_none() && older_than_days <= 0 {
+                return Err(anyhow::anyhow!("At least one filter required"));
+            }
+
+            // Retrieve all documents
+            let docs = workspace.workspace.memory.all_documents().await;
+            let mut matched_docs = Vec::new();
+
+            let now = chrono::Utc::now();
+            for doc in docs {
+                // 1. Filter by kind
+                if let Some(ref k) = kind {
+                    let doc_kind = doc.metadata.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                    if !doc_kind.eq_ignore_ascii_case(k) {
+                        continue;
+                    }
+                }
+
+                // 2. Filter by path_prefix
+                if let Some(ref prefix) = path_prefix {
+                    if !doc.path.starts_with(prefix) {
+                        continue;
+                    }
+                }
+
+                // 3. Filter by older_than_days
+                if older_than_days > 0 {
+                    let last_accessed = get_doc_last_accessed(&doc);
+                    let threshold = now - chrono::Duration::days(older_than_days);
+                    if last_accessed >= threshold {
+                        continue;
+                    }
+                }
+
+                matched_docs.push(doc);
+            }
+
+            let matched = matched_docs.len();
+            let mut deleted = 0;
+
+            if !dry_run {
+                for doc in matched_docs {
+                    let id = doc.id.clone().unwrap_or_else(|| doc.path.clone());
+                    if let Ok(Some(_)) = workspace.workspace.memory.delete(&id).await {
+                        deleted += 1;
+                    }
+                }
+            }
+
+            let payload = json!({
+                "matched": matched,
+                "deleted": deleted,
+                "dry_run": dry_run,
+            });
+
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                payload, false,
+            ))?)
+        }
         _ => Err(anyhow::anyhow!("Tool not implemented: {}", name)),
     }
 }
@@ -1033,4 +1125,24 @@ async fn secure_mcp_external_input(
         return Ok(Err(super::server::mcp_text_result(serde_json::json!({ "status": "blocked", "blocked": true, "reason": "security_policy_violation", "message": format!("{label} blocked by security policy"), "detection": { "is_injection": result.is_injection, "confidence": result.detection_confidence, "attack_type": result.attack_type } }).to_string(), true)?));
     }
     Ok(Ok(result.sanitized_input.unwrap_or(result.original_input)))
+}
+
+/// Helper to extract the last accessed time for a `MemoryDocument`.
+fn get_doc_last_accessed(doc: &crate::memory::qmd_memory::MemoryDocument) -> chrono::DateTime<chrono::Utc> {
+    if let Some(last_accessed_val) = doc.metadata.get("last_accessed_at").and_then(|v| v.as_str()) {
+        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(last_accessed_val) {
+            return parsed.with_timezone(&chrono::Utc);
+        }
+    }
+    if let Some(updated_at_val) = doc.metadata.get("updated_at").and_then(|v| v.as_str()) {
+        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(updated_at_val) {
+            return parsed.with_timezone(&chrono::Utc);
+        }
+    }
+    if let Some(created_at_val) = doc.metadata.get("created_at").and_then(|v| v.as_str()) {
+        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(created_at_val) {
+            return parsed.with_timezone(&chrono::Utc);
+        }
+    }
+    chrono::Utc::now()
 }
