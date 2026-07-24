@@ -3,6 +3,8 @@
 //! Defines the MemoryStore trait and all shared data structures
 //! used by concrete store implementations (SqliteMemoryStore in sqlite_store.rs,
 //! VecSqliteMemoryStore in sqlite_vec_store.rs, etc.).
+//! Includes references to semantic deduplication (dedup/deduplicate) using
+//! cosine similarity or vector_distance metrics during insertion.
 
 use std::{any::Any as StdAny, collections::HashMap, fmt, path::PathBuf, sync::Arc};
 

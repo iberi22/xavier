@@ -407,4 +407,66 @@ mod tests {
         let results = index.search("Next.js Supabase", 5);
         assert!(!results.is_empty());
     }
+
+    #[tokio::test]
+    async fn test_semantic_deduplication() {
+        let unique_id = ulid::Ulid::new().to_string();
+        let db_path = std::env::temp_dir().join(format!("xavier-test-vec-store-{}.sqlite3", unique_id));
+        let _ = std::fs::remove_file(&db_path);
+
+        let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig {
+            path: db_path.clone(),
+            embedding_dimensions: 128,
+        };
+        let store = crate::memory::sqlite_vec_store::VecSqliteMemoryStore::new(config).await.unwrap();
+
+        // 1. Store first memory
+        let rec1 = MemoryRecord {
+            id: "mem1".to_string(),
+            workspace_id: "ws1".to_string(),
+            path: "user123".to_string(),
+            content: "The swift brown fox jumps over the lazy dog".to_string(),
+            embedding: vec![0.1; 128], // Mock embedding
+            revision: 1,
+            ..Default::default()
+        };
+        store.put(rec1.clone()).await.unwrap();
+
+        // 2. Store identical content (highly similar) with "dedup" flag in metadata
+        let rec2 = MemoryRecord {
+            id: "mem2".to_string(),
+            workspace_id: "ws1".to_string(),
+            path: "user123".to_string(),
+            content: "The swift brown fox jumps over the lazy dog".to_string(),
+            embedding: vec![0.1; 128], // Exact same embedding -> similarity = 1.0 > 0.90
+            metadata: serde_json::json!({ "dedup": true }),
+            ..Default::default()
+        };
+        store.put(rec2.clone()).await.unwrap();
+
+        // The count of memories should still be 1 (not 2) due to deduplication
+        let list1 = store.list("ws1").await.unwrap();
+        assert_eq!(list1.len(), 1);
+        assert_eq!(list1[0].id, "mem1"); // ID should be kept
+        assert_eq!(list1[0].revision, 2); // Revision bumped
+
+        // 3. Store completely different content under dedup
+        let rec3 = MemoryRecord {
+            id: "mem3".to_string(),
+            workspace_id: "ws1".to_string(),
+            path: "user123".to_string(),
+            content: "A completely different sentence about something else".to_string(),
+            embedding: vec![-0.1; 128], // Opposite/different embedding -> low similarity
+            metadata: serde_json::json!({ "dedup": true }),
+            ..Default::default()
+        };
+        store.put(rec3.clone()).await.unwrap();
+
+        // The count should now be 2
+        let list2 = store.list("ws1").await.unwrap();
+        assert_eq!(list2.len(), 2);
+
+        // Clean up
+        let _ = std::fs::remove_file(&db_path);
+    }
 }
