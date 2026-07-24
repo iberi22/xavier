@@ -105,6 +105,27 @@ pub struct V1MemorySearchSnippetResponse {
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct V1PruneRequest {
+    pub kind: Option<String>,
+    pub older_than_days: Option<i64>,
+    pub path_prefix: Option<String>,
+    #[serde(default = "default_dry_run")]
+    pub dry_run: Option<bool>,
+}
+
+fn default_dry_run() -> Option<bool> {
+    Some(true)
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct V1PruneResponse {
+    pub status: String,
+    pub matched: usize,
+    pub deleted: usize,
+    pub dry_run: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct V1ExportParams {
     pub public: Option<bool>,
 }
@@ -915,6 +936,93 @@ pub async fn v1_memories_get(
     }
 }
 
+/// Helper to extract the last accessed time for a `MemoryDocument`.
+fn get_doc_last_accessed(doc: &crate::memory::qmd_memory::MemoryDocument) -> chrono::DateTime<chrono::Utc> {
+    if let Some(last_accessed_val) = doc.metadata.get("last_accessed_at").and_then(|v| v.as_str()) {
+        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(last_accessed_val) {
+            return parsed.with_timezone(&chrono::Utc);
+        }
+    }
+    if let Some(updated_at_val) = doc.metadata.get("updated_at").and_then(|v| v.as_str()) {
+        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(updated_at_val) {
+            return parsed.with_timezone(&chrono::Utc);
+        }
+    }
+    if let Some(created_at_val) = doc.metadata.get("created_at").and_then(|v| v.as_str()) {
+        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(created_at_val) {
+            return parsed.with_timezone(&chrono::Utc);
+        }
+    }
+    chrono::Utc::now()
+}
+
+/// V1 memories prune.
+pub async fn v1_memories_prune(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Json(payload): Json<V1PruneRequest>,
+) -> impl IntoResponse {
+    let kind = payload.kind.filter(|s| !s.trim().is_empty());
+    let path_prefix = payload.path_prefix.filter(|s| !s.trim().is_empty());
+    let older_than_days = payload.older_than_days.unwrap_or(0);
+    let dry_run = payload.dry_run.unwrap_or(true);
+
+    if kind.is_none() && path_prefix.is_none() && older_than_days <= 0 {
+        return crate::error::ApiError::validation("At least one filter required").into_response();
+    }
+
+    // Retrieve all documents
+    let docs = workspace.workspace.memory.all_documents().await;
+    let mut matched_docs = Vec::new();
+
+    let now = chrono::Utc::now();
+    for doc in docs {
+        // 1. Filter by kind
+        if let Some(ref k) = kind {
+            let doc_kind = doc.metadata.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+            if !doc_kind.eq_ignore_ascii_case(k) {
+                continue;
+            }
+        }
+
+        // 2. Filter by path_prefix
+        if let Some(ref prefix) = path_prefix {
+            if !doc.path.starts_with(prefix) {
+                continue;
+            }
+        }
+
+        // 3. Filter by older_than_days
+        if older_than_days > 0 {
+            let last_accessed = get_doc_last_accessed(&doc);
+            let threshold = now - chrono::Duration::days(older_than_days);
+            if last_accessed >= threshold {
+                continue;
+            }
+        }
+
+        matched_docs.push(doc);
+    }
+
+    let matched = matched_docs.len();
+    let mut deleted = 0;
+
+    if !dry_run {
+        for doc in matched_docs {
+            let id = doc.id.clone().unwrap_or_else(|| doc.path.clone());
+            if let Ok(Some(_)) = workspace.workspace.memory.delete(&id).await {
+                deleted += 1;
+            }
+        }
+    }
+
+    Json(V1PruneResponse {
+        status: "ok".to_string(),
+        matched,
+        deleted,
+        dry_run,
+    }).into_response()
+}
+
 /// V1 memories update.
 pub async fn v1_memories_update(
     Extension(workspace): Extension<WorkspaceContext>,
@@ -1214,6 +1322,7 @@ mod tests {
                     .delete(v1_memories_delete),
             )
             .route("/v1/memories/search", post(v1_memories_search))
+            .route("/v1/memories/prune", post(v1_memories_prune))
             .layer(Extension(workspace))
             .with_state(state)
     }
@@ -1644,5 +1753,184 @@ mod tests {
         let item = &results[0];
         assert_eq!(item["memory"], long_content);
         assert!(item.get("snippet").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_v1_memories_prune() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace);
+
+        // 1. Try pruning with empty filters -> should return validation error (400)
+        let prune_req_empty = Request::builder()
+            .method("POST")
+            .uri("/v1/memories/prune")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "dry_run": true
+                })
+                .to_string(),
+            ))
+            .expect("failed to build prune empty request");
+        let resp = app.clone().oneshot(prune_req_empty).await.expect("execute request");
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+        // 2. Add test memories
+        // Memory 1: kind=decision, path="test/decision/1"
+        let add_req_1 = Request::builder()
+            .method("POST")
+            .uri("/v1/memories")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "text": "Decision: use hybrid search",
+                    "user_id": "test/decision/1",
+                    "kind": "decision",
+                    "metadata": {
+                        "kind": "decision"
+                    }
+                })
+                .to_string(),
+            ))
+            .expect("add request");
+        let resp = app.clone().oneshot(add_req_1).await.expect("execute request");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Memory 2: kind=fact, path="test/fact/1"
+        let add_req_2 = Request::builder()
+            .method("POST")
+            .uri("/v1/memories")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "text": "Fact: Paris is capital",
+                    "user_id": "test/fact/1",
+                    "kind": "fact",
+                    "metadata": {
+                        "kind": "fact"
+                    }
+                })
+                .to_string(),
+            ))
+            .expect("add request");
+        let resp = app.clone().oneshot(add_req_2).await.expect("execute request");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Memory 3: kind=fact, path="other/fact/1"
+        let add_req_3 = Request::builder()
+            .method("POST")
+            .uri("/v1/memories")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "text": "Fact: Berlin is cold",
+                    "user_id": "other/fact/1",
+                    "kind": "fact",
+                    "metadata": {
+                        "kind": "fact",
+                        "last_accessed_at": (chrono::Utc::now() - chrono::Duration::days(10)).to_rfc3339()
+                    }
+                })
+                .to_string(),
+            ))
+            .expect("add request");
+        let resp = app.clone().oneshot(add_req_3).await.expect("execute request");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // 3. Dry-run prune by kind "decision" (dry_run defaults to true)
+        let prune_dry = Request::builder()
+            .method("POST")
+            .uri("/v1/memories/prune")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "kind": "decision"
+                })
+                .to_string(),
+            ))
+            .expect("prune request");
+        let resp = app.clone().oneshot(prune_dry).await.expect("execute request");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let payload: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
+        assert_eq!(payload["status"], "ok");
+        assert_eq!(payload["matched"], 1);
+        assert_eq!(payload["deleted"], 0);
+        assert_eq!(payload["dry_run"], true);
+
+        // 4. Actual prune by kind "decision" with dry_run = false
+        let prune_actual = Request::builder()
+            .method("POST")
+            .uri("/v1/memories/prune")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "kind": "decision",
+                    "dry_run": false
+                })
+                .to_string(),
+            ))
+            .expect("prune request");
+        let resp = app.clone().oneshot(prune_actual).await.expect("execute request");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let payload: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
+        assert_eq!(payload["status"], "ok");
+        assert_eq!(payload["matched"], 1);
+        assert_eq!(payload["deleted"], 1);
+        assert_eq!(payload["dry_run"], false);
+
+        // Verify "test/decision/1" is gone
+        let list_req = Request::builder()
+            .method("GET")
+            .uri("/v1/memories")
+            .body(Body::empty())
+            .expect("list request");
+        let resp = app.clone().oneshot(list_req).await.expect("execute request");
+        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let payload: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
+        let memories = payload["memories"].as_array().expect("array");
+        // Remaining should be the 2 facts
+        assert_eq!(memories.len(), 2);
+
+        // 5. Prune by path_prefix "test/" with dry_run = false
+        let prune_prefix = Request::builder()
+            .method("POST")
+            .uri("/v1/memories/prune")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "path_prefix": "test/",
+                    "dry_run": false
+                })
+                .to_string(),
+            ))
+            .expect("prune request");
+        let resp = app.clone().oneshot(prune_prefix).await.expect("execute request");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let payload: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
+        assert_eq!(payload["matched"], 1); // "test/fact/1"
+        assert_eq!(payload["deleted"], 1);
+
+        // 6. Prune by older_than_days = 5 with dry_run = false
+        let prune_age = Request::builder()
+            .method("POST")
+            .uri("/v1/memories/prune")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "older_than_days": 5,
+                    "dry_run": false
+                })
+                .to_string(),
+            ))
+            .expect("prune request");
+        let resp = app.clone().oneshot(prune_age).await.expect("execute request");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let payload: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
+        assert_eq!(payload["matched"], 1); // "other/fact/1" (last accessed 10 days ago)
+        assert_eq!(payload["deleted"], 1);
     }
 }
