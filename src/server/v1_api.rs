@@ -1539,6 +1539,7 @@ mod tests {
                 embedding_provider_mode: crate::workspace::EmbeddingProviderMode::BringYourOwn,
                 managed_google_embeddings: false,
                 sync_policy: crate::workspace::SyncPolicy::CloudMirror,
+                dedup: crate::settings::types::DedupSettings::default(),
             },
             RuntimeConfig::default(),
             unique_test_path(&format!("xavier-v1-panel-{}", unique_id), "threads"),

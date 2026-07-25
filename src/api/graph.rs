@@ -459,6 +459,7 @@ mod tests {
             embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
             managed_google_embeddings: false,
             sync_policy: SyncPolicy::LocalOnly,
+            dedup: crate::settings::types::DedupSettings::default(),
         };
         let workspace = WorkspaceState::new(config, RuntimeConfig::default(), root)
             .await

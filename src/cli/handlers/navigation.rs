@@ -463,6 +463,7 @@ mod tests {
             embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
             managed_google_embeddings: false,
             sync_policy: SyncPolicy::LocalOnly,
+            dedup: xavier::settings::types::DedupSettings::default(),
         };
 
         let workspace_state = Arc::new(

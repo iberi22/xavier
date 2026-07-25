@@ -170,6 +170,22 @@ pub struct WorkspaceSettings {
     pub sync_policy: String,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DedupScope {
+    PathExact,
+    Namespace,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DedupSettings {
+    pub enabled: bool,
+    pub threshold: f32,
+    pub scope: DedupScope,
+    pub max_revisions: usize,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct MemorySettings {
@@ -183,6 +199,7 @@ pub struct MemorySettings {
     pub supabase_url: Option<String>,
     pub supabase_key: Option<String>,
     pub postgres_url: Option<String>,
+    pub dedup: DedupSettings,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

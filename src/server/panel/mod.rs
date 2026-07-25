@@ -66,6 +66,7 @@ mod tests {
                 embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
                 managed_google_embeddings: false,
                 sync_policy: SyncPolicy::CloudMirror,
+                dedup: crate::settings::types::DedupSettings::default(),
             },
             RuntimeConfig::default(),
             std::env::temp_dir().join(format!("xavier-panel-store-{}", Ulid::new())),

@@ -32,6 +32,23 @@ impl Default for WorkspaceSettings {
     }
 }
 
+impl Default for DedupScope {
+    fn default() -> Self {
+        Self::PathExact
+    }
+}
+
+impl Default for DedupSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            threshold: 0.92,
+            scope: DedupScope::PathExact,
+            max_revisions: 5,
+        }
+    }
+}
+
 impl Default for MemorySettings {
     fn default() -> Self {
         let data_dir = XavierSettings::resolve_data_dir();
@@ -57,6 +74,7 @@ impl Default for MemorySettings {
             supabase_url: None,
             supabase_key: None,
             postgres_url: None,
+            dedup: DedupSettings::default(),
         }
     }
 }
