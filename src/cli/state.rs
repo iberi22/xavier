@@ -70,6 +70,7 @@ pub struct CliState {
     pub system_scan_cache:
         Arc<tokio::sync::RwLock<Option<crate::cli::handlers::system_scan::SystemScanResult>>>,
     pub multi_db: xavier::storage::multi_db::MultiDbManager,
+    pub maloca: Arc<xavier::maloca::MalocaStore>,
 }
 
 impl CliState {
