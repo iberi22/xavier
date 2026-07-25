@@ -32,11 +32,15 @@ pub fn router() -> Router {
         .route("/inbox/{id}/complete", post(handlers::complete))
         .route("/rewards", get(handlers::rewards))
         .route("/mesh", get(handlers::mesh))
+        .route("/nodes", get(handlers::list_nodes))
         .route("/params", get(handlers::params))
         .route(
             "/proposals",
             get(handlers::list_proposals).post(handlers::create_proposal),
         )
+        .route("/proposals/{id}/vote", post(handlers::cast_vote))
+        .route("/votes", get(handlers::list_votes))
+        .route("/decisions", get(handlers::list_decisions))
         .route(
             "/manager-actions",
             get(handlers::list_manager_actions).post(handlers::manager_action),

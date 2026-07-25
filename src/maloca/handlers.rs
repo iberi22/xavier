@@ -2,10 +2,11 @@
 
 use super::store::MalocaStore;
 use super::types::*;
-use axum::extract::Path;
+use axum::extract::{Path, Query};
 use axum::http::StatusCode;
 use axum::Extension;
 use axum::Json;
+use serde::Deserialize;
 use std::sync::Arc;
 
 pub async fn pack(Extension(store): Extension<Arc<MalocaStore>>) -> Json<MalocaPack> {
@@ -73,6 +74,10 @@ pub async fn mesh(Extension(store): Extension<Arc<MalocaStore>>) -> Json<MeshSna
     Json(store.mesh())
 }
 
+pub async fn list_nodes(Extension(store): Extension<Arc<MalocaStore>>) -> Json<Vec<NodeRecord>> {
+    Json(store.list_nodes())
+}
+
 pub async fn params(Extension(store): Extension<Arc<MalocaStore>>) -> Json<Vec<NetworkParam>> {
     Json(store.params())
 }
@@ -89,6 +94,42 @@ pub async fn create_proposal(
         return Err(StatusCode::BAD_REQUEST);
     }
     Ok(Json(store.create_proposal(body)))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct VotesQuery {
+    pub proposal_id: Option<String>,
+}
+
+pub async fn list_votes(
+    Extension(store): Extension<Arc<MalocaStore>>,
+    Query(q): Query<VotesQuery>,
+) -> Json<Vec<Vote>> {
+    Json(store.list_votes(q.proposal_id.as_deref()))
+}
+
+pub async fn cast_vote(
+    Extension(store): Extension<Arc<MalocaStore>>,
+    Path(id): Path<String>,
+    Json(body): Json<CastVoteBody>,
+) -> Result<Json<Vote>, (StatusCode, String)> {
+    store.cast_vote(&id, body).map(Json).map_err(|e| {
+        let msg = e.to_string();
+        let status = if msg.contains("not found") {
+            StatusCode::NOT_FOUND
+        } else if msg.contains("vote_karma_min") || msg.contains("not active") {
+            StatusCode::FORBIDDEN
+        } else {
+            StatusCode::BAD_REQUEST
+        };
+        (status, msg)
+    })
+}
+
+pub async fn list_decisions(
+    Extension(store): Extension<Arc<MalocaStore>>,
+) -> Json<Vec<DecisionEvent>> {
+    Json(store.list_decisions())
 }
 
 pub async fn list_manager_actions(

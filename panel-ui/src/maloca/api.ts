@@ -1,11 +1,15 @@
 import type {
+  DecisionEvent,
   MalocaPack,
   ManagerAction,
   MeshSnapshot,
   MeshTicketOffer,
   NetworkParam,
+  NodeRecord,
   Proposal,
   SupportTicket,
+  Vote,
+  VoteChoice,
 } from "./types";
 
 const getApiUrl = (path: string) => {
@@ -22,7 +26,14 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   });
-  if (!r.ok) throw new Error(`${r.status} ${path}`);
+  if (!r.ok) {
+    const detail = await r.text().catch(() => "");
+    throw new Error(
+      detail.trim()
+        ? `${r.status} ${path}: ${detail.trim()}`
+        : `${r.status} ${path}`,
+    );
+  }
   return r.json() as Promise<T>;
 }
 
@@ -44,6 +55,7 @@ export const malocaApi = {
   complete: (id: string) =>
     json<unknown>(`/maloca/inbox/${id}/complete`, { method: "POST" }),
   mesh: () => json<MeshSnapshot>("/maloca/mesh"),
+  listNodes: () => json<NodeRecord[]>("/maloca/nodes"),
   params: () => json<NetworkParam[]>("/maloca/params"),
   listProposals: () => json<Proposal[]>("/maloca/proposals"),
   createProposal: (body: {
@@ -56,6 +68,18 @@ export const malocaApi = {
       method: "POST",
       body: JSON.stringify(body),
     }),
+  listVotes: (proposalId?: string) =>
+    json<Vote[]>(
+      proposalId
+        ? `/maloca/votes?proposal_id=${encodeURIComponent(proposalId)}`
+        : "/maloca/votes",
+    ),
+  castVote: (proposalId: string, body: { node_id: string; choice: VoteChoice }) =>
+    json<Vote>(`/maloca/proposals/${proposalId}/vote`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  listDecisions: () => json<DecisionEvent[]>("/maloca/decisions"),
   listManagerActions: () => json<ManagerAction[]>("/maloca/manager-actions"),
   managerAction: (body: {
     type: ManagerAction["type"];
