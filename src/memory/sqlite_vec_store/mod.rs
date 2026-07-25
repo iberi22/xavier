@@ -37,6 +37,7 @@ pub struct VecSqliteMemoryStore {
     pub(crate) project_id: String,
     pub(crate) config: VecSqliteStoreConfig,
     pub(crate) event_tx: Option<broadcast::Sender<crate::server::events::RealtimeEvent>>,
+    pub(crate) dedup_config: std::sync::Arc<tokio::sync::RwLock<crate::settings::types::DedupSettings>>,
 }
 
 /// ConnectionManager project_id for a vec-store file path.
@@ -51,7 +52,10 @@ pub fn project_id_for_path(path: &std::path::Path) -> String {
 impl VecSqliteMemoryStore {
     /// From env.
     pub async fn from_env() -> Result<Self> {
-        Self::new(VecSqliteStoreConfig::from_env()).await
+        let store = Self::new(VecSqliteStoreConfig::from_env()).await?;
+        let settings = crate::settings::XavierSettings::current();
+        *store.dedup_config.write().await = settings.memory.dedup.clone();
+        Ok(store)
     }
 
     /// Set event tx.
@@ -81,6 +85,7 @@ impl VecSqliteMemoryStore {
             project_id,
             config,
             event_tx: None,
+            dedup_config: std::sync::Arc::new(tokio::sync::RwLock::new(crate::settings::types::DedupSettings::default())),
         };
 
         // Initialize schema

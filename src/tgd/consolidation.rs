@@ -253,6 +253,7 @@ pub async fn run_nightly_tgd() -> anyhow::Result<()> {
             embedding_provider_mode: crate::workspace::EmbeddingProviderMode::BringYourOwn,
             managed_google_embeddings: false,
             sync_policy: crate::workspace::SyncPolicy::CloudMirror,
+            dedup: crate::settings::types::DedupSettings::default(),
         },
         crate::agents::RuntimeConfig::default(),
         root.join(".xavier"),

@@ -464,6 +464,7 @@ pub trait MemoryStore: Send + Sync {
     fn backend(&self) -> MemoryBackend;
     fn as_any(&self) -> &dyn StdAny;
     async fn health(&self) -> Result<String>;
+    async fn set_dedup_settings(&self, _settings: crate::settings::types::DedupSettings) {}
     async fn put(&self, record: MemoryRecord) -> Result<()>;
     async fn get(&self, workspace_id: &str, id_or_path: &str) -> Result<Option<MemoryRecord>>;
     async fn update(&self, record: MemoryRecord) -> Result<()>;

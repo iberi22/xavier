@@ -183,6 +183,7 @@ impl WorkspaceState {
                 (store, false, "supabase backend".to_string())
             }
         };
+        store.set_dedup_settings(config.dedup.clone()).await;
         let durable_state = store.load_workspace_state(&config.id).await?;
         let docs = Arc::new(RwLock::new(
             durable_state
@@ -1011,6 +1012,7 @@ impl WorkspaceState {
                 embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
                 managed_google_embeddings: false,
                 sync_policy: SyncPolicy::LocalOnly,
+                dedup: crate::settings::types::DedupSettings::default(),
             },
             memory,
             runtime,

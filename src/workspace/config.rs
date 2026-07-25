@@ -3,7 +3,7 @@
 //! Provides the implementation and data structures for this module's
 //! responsibilities within the Xavier cognitive memory system.
 use crate::memory::store::MemoryBackend;
-use crate::settings::XavierSettings;
+use crate::settings::{XavierSettings, types::DedupSettings};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -113,6 +113,7 @@ pub struct WorkspaceConfig {
     pub embedding_provider_mode: EmbeddingProviderMode,
     pub managed_google_embeddings: bool,
     pub sync_policy: SyncPolicy,
+    pub dedup: DedupSettings,
 }
 
 impl fmt::Debug for WorkspaceConfig {
@@ -128,6 +129,7 @@ impl fmt::Debug for WorkspaceConfig {
             .field("embedding_provider_mode", &self.embedding_provider_mode)
             .field("managed_google_embeddings", &self.managed_google_embeddings)
             .field("sync_policy", &self.sync_policy)
+            .field("dedup", &self.dedup)
             .finish()
     }
 }
@@ -168,6 +170,7 @@ impl WorkspaceConfig {
             ),
             managed_google_embeddings: settings.workspace.managed_google_embeddings,
             sync_policy: SyncPolicy::from_env(&settings.workspace.sync_policy),
+            dedup: settings.memory.dedup.clone(),
         }
     }
 }

@@ -421,6 +421,14 @@ mod tests {
         };
         let store = crate::memory::sqlite_vec_store::VecSqliteMemoryStore::new(config).await.unwrap();
 
+        // Configure active dedup settings to be enabled for this test
+        store.set_dedup_settings(crate::settings::types::DedupSettings {
+            enabled: true,
+            threshold: 0.90,
+            scope: crate::settings::types::DedupScope::PathExact,
+            max_revisions: 5,
+        }).await;
+
         // 1. Store first memory
         let rec1 = MemoryRecord {
             id: "mem1".to_string(),
@@ -466,6 +474,179 @@ mod tests {
         // The count should now be 2
         let list2 = store.list("ws1").await.unwrap();
         assert_eq!(list2.len(), 2);
+
+        // Clean up
+        let _ = std::fs::remove_file(&db_path);
+    }
+
+    #[tokio::test]
+    async fn test_custom_dedup_policies() {
+        let unique_id = ulid::Ulid::new().to_string();
+        let db_path = std::env::temp_dir().join(format!("xavier-test-dedup-config-{}.sqlite3", unique_id));
+        let _ = std::fs::remove_file(&db_path);
+
+        let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig {
+            path: db_path.clone(),
+            embedding_dimensions: 128,
+        };
+        let store = crate::memory::sqlite_vec_store::VecSqliteMemoryStore::new(config).await.unwrap();
+
+        // Policy: disabled
+        store.set_dedup_settings(crate::settings::types::DedupSettings {
+            enabled: false,
+            threshold: 0.92,
+            scope: crate::settings::types::DedupScope::PathExact,
+            max_revisions: 5,
+        }).await;
+
+        let rec1 = MemoryRecord {
+            id: "dis1".to_string(),
+            workspace_id: "ws_dedup".to_string(),
+            path: "test_path".to_string(),
+            content: "The original content".to_string(),
+            embedding: vec![0.2; 128],
+            revision: 1,
+            ..Default::default()
+        };
+        store.put(rec1).await.unwrap();
+
+        let rec2 = MemoryRecord {
+            id: "dis2".to_string(),
+            workspace_id: "ws_dedup".to_string(),
+            path: "test_path".to_string(),
+            content: "The original content".to_string(),
+            embedding: vec![0.2; 128],
+            metadata: serde_json::json!({ "dedup": true }),
+            ..Default::default()
+        };
+        store.put(rec2).await.unwrap();
+
+        // Since it's disabled, count must be 2 (no deduplication)
+        let list = store.list("ws_dedup").await.unwrap();
+        assert_eq!(list.len(), 2);
+
+        // Policy: enabled, scope: PathExact, threshold: 0.95
+        store.set_dedup_settings(crate::settings::types::DedupSettings {
+            enabled: true,
+            threshold: 0.95,
+            scope: crate::settings::types::DedupScope::PathExact,
+            max_revisions: 2,
+        }).await;
+
+        // Reset store by using different workspace ID
+        let rec3 = MemoryRecord {
+            id: "p1".to_string(),
+            workspace_id: "ws_pathexact".to_string(),
+            path: "my_path".to_string(),
+            content: "Fox jumps".to_string(),
+            embedding: vec![0.3; 128],
+            revision: 1,
+            ..Default::default()
+        };
+        store.put(rec3).await.unwrap();
+
+        // 1. Threshold test: highly similar but below 0.95 (e.g. 0.94)
+        let rec4 = MemoryRecord {
+            id: "p2".to_string(),
+            workspace_id: "ws_pathexact".to_string(),
+            path: "my_path".to_string(),
+            content: "Fox jumps".to_string(),
+            // Alter a few values so similarity is around 0.94
+            embedding: {
+                let mut emb = vec![0.3; 128];
+                emb[0] = 0.1;
+                emb[1] = 0.1;
+                emb[2] = 0.1;
+                emb
+            },
+            metadata: serde_json::json!({ "dedup": true }),
+            ..Default::default()
+        };
+        store.put(rec4).await.unwrap();
+
+        // Similarity is below 0.95 threshold, so it must not deduplicate (appended as new)
+        let list = store.list("ws_pathexact").await.unwrap();
+        assert_eq!(list.len(), 2);
+
+        // 2. Exact match (similarity = 1.0 > 0.95)
+        let rec5 = MemoryRecord {
+            id: "p3".to_string(),
+            workspace_id: "ws_pathexact".to_string(),
+            path: "my_path".to_string(),
+            content: "Fox jumps".to_string(),
+            embedding: vec![0.3; 128],
+            metadata: serde_json::json!({ "dedup": true }),
+            ..Default::default()
+        };
+        store.put(rec5).await.unwrap();
+
+        // Must deduplicate with p1 (same path "my_path")
+        let item = store.get("ws_pathexact", "p1").await.unwrap().unwrap();
+        assert_eq!(item.revision, 2);
+
+        // Put more versions to test max_revisions = 2
+        let rec6 = MemoryRecord {
+            id: "p4".to_string(),
+            workspace_id: "ws_pathexact".to_string(),
+            path: "my_path".to_string(),
+            content: "Fox jumps".to_string(),
+            embedding: vec![0.3; 128],
+            metadata: serde_json::json!({ "dedup": true }),
+            ..Default::default()
+        };
+        store.put(rec6).await.unwrap();
+
+        let item = store.get("ws_pathexact", "p1").await.unwrap().unwrap();
+        assert_eq!(item.revision, 3);
+        assert_eq!(item.revisions.len(), 2); // strictly capped to max_revisions = 2
+
+        // Policy: enabled, scope: Namespace, threshold: 0.90
+        store.set_dedup_settings(crate::settings::types::DedupSettings {
+            enabled: true,
+            threshold: 0.90,
+            scope: crate::settings::types::DedupScope::Namespace,
+            max_revisions: 5,
+        }).await;
+
+        // Namespace match: different paths but identical namespaces
+        let rec7 = MemoryRecord {
+            id: "n1".to_string(),
+            workspace_id: "ws_ns".to_string(),
+            path: "path_a".to_string(),
+            content: "Database content".to_string(),
+            embedding: vec![0.5; 128],
+            metadata: serde_json::json!({
+                "namespace": {
+                    "project": "xavier",
+                    "scope": "test"
+                }
+            }),
+            ..Default::default()
+        };
+        store.put(rec7).await.unwrap();
+
+        let rec8 = MemoryRecord {
+            id: "n2".to_string(),
+            workspace_id: "ws_ns".to_string(),
+            path: "path_b".to_string(), // different path!
+            content: "Database content".to_string(),
+            embedding: vec![0.5; 128], // highly similar (similarity = 1.0 > 0.90)
+            metadata: serde_json::json!({
+                "dedup": true,
+                "namespace": {
+                    "project": "xavier",
+                    "scope": "test"
+                }
+            }),
+            ..Default::default()
+        };
+        store.put(rec8).await.unwrap();
+
+        // Since scope is Namespace and namespaces match, different paths MUST deduplicate!
+        let list = store.list("ws_ns").await.unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, "n1"); // Kept original ID n1
+        assert_eq!(list[0].revision, 2);
 
         // Clean up
         let _ = std::fs::remove_file(&db_path);

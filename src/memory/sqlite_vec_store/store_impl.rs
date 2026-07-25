@@ -50,6 +50,11 @@ impl MemoryStore for VecSqliteMemoryStore {
         self
     }
 
+    async fn set_dedup_settings(&self, settings: crate::settings::types::DedupSettings) {
+        let mut lock = self.dedup_config.write().await;
+        *lock = settings;
+    }
+
     async fn health(&self) -> Result<String> {
         let detail = self.config.detail();
         ConnectionManager::global()
@@ -82,30 +87,94 @@ impl MemoryStore for VecSqliteMemoryStore {
             }
         }
 
-        if is_dedup && !record.embedding.is_empty() {
+        let dedup_settings = {
+            let lock = self.dedup_config.read().await;
+            lock.clone()
+        };
+
+        if dedup_settings.enabled && is_dedup && !record.embedding.is_empty() {
             let record_c = record.clone();
             let project_id_c = self.project_id.clone();
+            let dedup_settings_c = dedup_settings.clone();
+
+            let record_ns = match crate::memory::schema::resolve_metadata(&record_c.path, &record_c.metadata, &record_c.workspace_id, None) {
+                Ok(res) => res.namespace,
+                Err(_) => crate::memory::schema::MemoryNamespace::default(),
+            };
+
+            let namespaces_match = |ns1: &crate::memory::schema::MemoryNamespace, ns2: &crate::memory::schema::MemoryNamespace| -> bool {
+                ns1.org_id == ns2.org_id &&
+                ns1.user_id == ns2.user_id &&
+                ns1.agent_id == ns2.agent_id &&
+                ns1.session_id == ns2.session_id &&
+                ns1.project == ns2.project &&
+                ns1.scope == ns2.scope
+            };
 
             let query_res = ConnectionManager::global().with_conn(&project_id_c, move |conn| {
                 let mut best_cand: Option<(MemoryRecord, f32)> = None;
 
                 // 1. Try sqlite-vec cosine distance query (vector_distance equivalent)
                 if let Ok(emb_json) = serde_json::to_string(&record_c.embedding) {
-                    let sql = r#"
-                        SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
-                               m.created_at, m.updated_at, m.revision, m.primary_flag,
-                               m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
-                               m.encrypted_dek, m.content_iv, m.metadata_iv,
-                               CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
-                        FROM memory_embeddings e
-                        JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
-                        WHERE e.workspace_id = ?2 AND (m.path = ?3 OR m.path LIKE ?3 || '%')
-                        ORDER BY distance ASC
-                        LIMIT 1
-                    "#;
-                    match conn.prepare(sql) {
+                    let (sql, query_params) = match dedup_settings_c.scope {
+                        crate::settings::types::DedupScope::PathExact => {
+                            (
+                                r#"
+                                SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
+                                       m.created_at, m.updated_at, m.revision, m.primary_flag,
+                                       m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
+                                       m.encrypted_dek, m.content_iv, m.metadata_iv,
+                                       CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
+                                FROM memory_embeddings e
+                                JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
+                                WHERE e.workspace_id = ?2 AND m.path = ?3
+                                ORDER BY distance ASC
+                                LIMIT 1
+                                "#.to_string(),
+                                vec![
+                                    rusqlite::types::Value::Text(emb_json),
+                                    rusqlite::types::Value::Text(record_c.workspace_id.clone()),
+                                    rusqlite::types::Value::Text(record_c.path.clone()),
+                                ]
+                            )
+                        }
+                        crate::settings::types::DedupScope::Namespace => {
+                            (
+                                r#"
+                                SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
+                                       m.created_at, m.updated_at, m.revision, m.primary_flag,
+                                       m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
+                                       m.encrypted_dek, m.content_iv, m.metadata_iv,
+                                       CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
+                                FROM memory_embeddings e
+                                JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
+                                WHERE e.workspace_id = ?2
+                                  AND json_extract(m.metadata, '$.namespace.org_id') IS ?3
+                                  AND json_extract(m.metadata, '$.namespace.user_id') IS ?4
+                                  AND json_extract(m.metadata, '$.namespace.agent_id') IS ?5
+                                  AND json_extract(m.metadata, '$.namespace.session_id') IS ?6
+                                  AND json_extract(m.metadata, '$.namespace.project') IS ?7
+                                  AND json_extract(m.metadata, '$.namespace.scope') IS ?8
+                                ORDER BY distance ASC
+                                LIMIT 1
+                                "#.to_string(),
+                                vec![
+                                    rusqlite::types::Value::Text(emb_json),
+                                    rusqlite::types::Value::Text(record_c.workspace_id.clone()),
+                                    record_ns.org_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.user_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.agent_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.session_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.project.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.scope.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                ]
+                            )
+                        }
+                    };
+
+                    match conn.prepare(&sql) {
                         Ok(mut stmt) => {
-                            match stmt.query(params![emb_json, record_c.workspace_id, record_c.path]) {
+                            match stmt.query(rusqlite::params_from_iter(&query_params)) {
                                 Ok(mut rows) => {
                                     if let Ok(Some(row)) = rows.next() {
                                         let distance = match row.get::<_, rusqlite::types::Value>(18) {
@@ -130,22 +199,59 @@ impl MemoryStore for VecSqliteMemoryStore {
                     }
                 }
 
-                // 2. Fallback to manual Rust cosine similarity search over records with same path/prefix
+                // 2. Fallback to manual Rust cosine similarity search
                 if best_cand.is_none() {
-                    let sql = "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE workspace_id = ? AND (path = ? OR path LIKE ? || '%')";
-                    match conn.prepare(sql) {
+                    let (sql, query_params) = match dedup_settings_c.scope {
+                        crate::settings::types::DedupScope::PathExact => {
+                            (
+                                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE workspace_id = ? AND path = ?".to_string(),
+                                vec![
+                                    rusqlite::types::Value::Text(record_c.workspace_id.clone()),
+                                    rusqlite::types::Value::Text(record_c.path.clone()),
+                                ]
+                            )
+                        }
+                        crate::settings::types::DedupScope::Namespace => {
+                            (
+                                "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE workspace_id = ? AND json_extract(metadata, '$.namespace.org_id') IS ? AND json_extract(metadata, '$.namespace.user_id') IS ? AND json_extract(metadata, '$.namespace.agent_id') IS ? AND json_extract(metadata, '$.namespace.session_id') IS ? AND json_extract(metadata, '$.namespace.project') IS ? AND json_extract(metadata, '$.namespace.scope') IS ?".to_string(),
+                                vec![
+                                    rusqlite::types::Value::Text(record_c.workspace_id.clone()),
+                                    record_ns.org_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.user_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.agent_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.session_id.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.project.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                    record_ns.scope.as_ref().map(|s| rusqlite::types::Value::Text(s.clone())).unwrap_or(rusqlite::types::Value::Null),
+                                ]
+                            )
+                        }
+                    };
+
+                    match conn.prepare(&sql) {
                         Ok(mut stmt) => {
-                            match stmt.query(params![record_c.workspace_id, record_c.path, record_c.path]) {
+                            match stmt.query(rusqlite::params_from_iter(&query_params)) {
                                 Ok(mut rows) => {
                                     let mut best_sim = -1.0f32;
                                     let mut best_rec = None;
                                     while let Ok(Some(row)) = rows.next() {
                                         match Self::deserialize_record(row) {
                                             Ok(rec) => {
-                                                let sim = cosine_similarity(&record_c.embedding, &rec.embedding);
-                                                if sim > best_sim {
-                                                    best_sim = sim;
-                                                    best_rec = Some(rec);
+                                                let is_match = match dedup_settings_c.scope {
+                                                    crate::settings::types::DedupScope::PathExact => rec.path == record_c.path,
+                                                    crate::settings::types::DedupScope::Namespace => {
+                                                        let rec_meta = match crate::memory::schema::resolve_metadata(&rec.path, &rec.metadata, &rec.workspace_id, None) {
+                                                            Ok(m) => m,
+                                                            Err(_) => continue,
+                                                        };
+                                                        namespaces_match(&record_ns, &rec_meta.namespace)
+                                                    }
+                                                };
+                                                if is_match {
+                                                    let sim = cosine_similarity(&record_c.embedding, &rec.embedding);
+                                                    if sim > best_sim {
+                                                        best_sim = sim;
+                                                        best_rec = Some(rec);
+                                                    }
                                                 }
                                             }
                                             Err(e) => {
@@ -172,25 +278,25 @@ impl MemoryStore for VecSqliteMemoryStore {
             }).await;
 
             if let Ok(Some((mut existing_record, similarity))) = query_res {
-                if similarity > 0.90 {
+                if similarity > dedup_settings.threshold {
                     tracing::info!(
-                        "Semantic dedup (similarity {} > 0.90): Updating existing memory {} with new content",
+                        "Semantic dedup (similarity {} > {}): Updating existing memory {} with new content",
                         similarity,
+                        dedup_settings.threshold,
                         existing_record.id
                     );
                     // Decrypt existing record first if it's encrypted so revisioned_record merges correctly
                     let _ = crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(&mut existing_record);
                     record = crate::memory::store::revisioned_record(existing_record, record);
-                } else if similarity >= 0.70 {
-                    tracing::info!(
-                        "Semantic dedup (similarity {} >= 0.70): Similarity is between 0.70 and 0.90, appending as new memory {}",
-                        similarity,
-                        record.id
-                    );
+                    if record.revisions.len() > dedup_settings.max_revisions {
+                        let excess = record.revisions.len() - dedup_settings.max_revisions;
+                        record.revisions.drain(0..excess);
+                    }
                 } else {
                     tracing::info!(
-                        "Semantic dedup (similarity {} < 0.70): Similarity is below 0.70, inserting as new memory {}",
+                        "Semantic dedup (similarity {} <= {}): Similarity is below threshold, inserting as new memory {}",
                         similarity,
+                        dedup_settings.threshold,
                         record.id
                     );
                 }
