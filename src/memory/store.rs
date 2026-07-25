@@ -1106,6 +1106,10 @@ pub(crate) fn revisioned_record(existing: MemoryRecord, mut next: MemoryRecord) 
         content: next.content.clone(),
         metadata: next.metadata.clone(),
     });
+    // Truncate to keep only the last 3 revisions, preventing storage inflation from complete content copies
+    if next.revisions.len() > 3 {
+        next.revisions.drain(0..next.revisions.len() - 3);
+    }
     next
 }
 

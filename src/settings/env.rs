@@ -93,6 +93,7 @@ pub fn apply_to_env_impl(settings: &XavierSettings) {
     set_if_absent("XAVIER_MEMORY_FILE_PATH", &settings.memory.file_path);
     set_if_absent("XAVIER_MEMORY_SQLITE_PATH", &settings.memory.sqlite_path);
     set_if_absent("XAVIER_MEMORY_VEC_PATH", &settings.memory.vec_path);
+    set_if_absent("XAVIER_DEDUP_NAMESPACES", &settings.memory.dedup_namespaces.join(","));
     set_optional_if_absent("XAVIER_SUPABASE_URL", settings.memory.supabase_url.clone());
     set_optional_if_absent("XAVIER_SUPABASE_KEY", settings.memory.supabase_key.clone());
     set_optional_if_absent("XAVIER_POSTGRES_URL", settings.memory.postgres_url.clone());

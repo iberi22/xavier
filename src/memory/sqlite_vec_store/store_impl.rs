@@ -8,6 +8,10 @@ use rusqlite::params;
 use sha2::{Digest, Sha256};
 use std::any::Any;
 
+tokio::task_local! {
+    pub static DEDUP_ACTION: std::cell::Cell<Option<&'static str>>;
+}
+
 use crate::checkpoint::Checkpoint;
 use crate::codebase::connection_manager::ConnectionManager;
 use crate::domain::memory::belief::BeliefEdge;
@@ -82,6 +86,35 @@ impl MemoryStore for VecSqliteMemoryStore {
             }
         }
 
+        let mut resolved_action = "inserted";
+
+        if is_dedup {
+            let mut has_policy = false;
+            if let Ok(resolved) = crate::memory::schema::resolve_metadata(&record.path, &record.metadata, &record.workspace_id, None) {
+                let settings = crate::settings::XavierSettings::current();
+                let dedup_ns = &settings.memory.dedup_namespaces;
+                for ns in dedup_ns {
+                    if Some(ns.as_str()) == resolved.namespace.workspace_id.as_deref()
+                        || Some(ns.as_str()) == resolved.namespace.project.as_deref()
+                        || Some(ns.as_str()) == resolved.namespace.user_id.as_deref()
+                    {
+                        has_policy = true;
+                        break;
+                    }
+                }
+            }
+
+            if !has_policy {
+                tracing::info!("Semantic dedup requested but ignored: no policy configured for this namespace");
+                is_dedup = false;
+                resolved_action = "dedup_skipped";
+            } else if record.embedding.is_empty() {
+                tracing::warn!("Semantic dedup requested and policy exists, but no embedding is configured");
+                is_dedup = false;
+                resolved_action = "dedup_skipped";
+            }
+        }
+
         if is_dedup && !record.embedding.is_empty() {
             let record_c = record.clone();
             let project_id_c = self.project_id.clone();
@@ -91,18 +124,34 @@ impl MemoryStore for VecSqliteMemoryStore {
 
                 // 1. Try sqlite-vec cosine distance query (vector_distance equivalent)
                 if let Ok(emb_json) = serde_json::to_string(&record_c.embedding) {
-                    let sql = r#"
-                        SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
-                               m.created_at, m.updated_at, m.revision, m.primary_flag,
-                               m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
-                               m.encrypted_dek, m.content_iv, m.metadata_iv,
-                               CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
-                        FROM memory_embeddings e
-                        JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
-                        WHERE e.workspace_id = ?2 AND (m.path = ?3 OR m.path LIKE ?3 || '%')
-                        ORDER BY distance ASC
-                        LIMIT 1
-                    "#;
+                    let path_is_default = record_c.path == "default";
+                    let sql = if path_is_default {
+                        r#"
+                            SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
+                                   m.created_at, m.updated_at, m.revision, m.primary_flag,
+                                   m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
+                                   m.encrypted_dek, m.content_iv, m.metadata_iv,
+                                   CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
+                            FROM memory_embeddings e
+                            JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
+                            WHERE e.workspace_id = ?2 AND m.path = ?3
+                            ORDER BY distance ASC
+                            LIMIT 1
+                        "#
+                    } else {
+                        r#"
+                            SELECT m.id, m.workspace_id, m.path, m.content, m.metadata, m.embedding,
+                                   m.created_at, m.updated_at, m.revision, m.primary_flag,
+                                   m.parent_id, m.cluster_id, m.level, m.relation, m.revisions,
+                                   m.encrypted_dek, m.content_iv, m.metadata_iv,
+                                   CAST(vec_distance_cosine(e.embedding, vec_f32(?1)) AS REAL) AS distance
+                            FROM memory_embeddings e
+                            JOIN memory_records m ON m.id = e.id AND m.workspace_id = ?2
+                            WHERE e.workspace_id = ?2 AND (m.path = ?3 OR m.path LIKE ?3 || '%')
+                            ORDER BY distance ASC
+                            LIMIT 1
+                        "#
+                    };
                     match conn.prepare(sql) {
                         Ok(mut stmt) => {
                             match stmt.query(params![emb_json, record_c.workspace_id, record_c.path]) {
@@ -132,10 +181,20 @@ impl MemoryStore for VecSqliteMemoryStore {
 
                 // 2. Fallback to manual Rust cosine similarity search over records with same path/prefix
                 if best_cand.is_none() {
-                    let sql = "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE workspace_id = ? AND (path = ? OR path LIKE ? || '%')";
+                    let path_is_default = record_c.path == "default";
+                    let sql = if path_is_default {
+                        "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE workspace_id = ? AND path = ?"
+                    } else {
+                        "SELECT id, workspace_id, path, content, metadata, embedding, created_at, updated_at, revision, primary_flag, parent_id, cluster_id, level, relation, revisions, encrypted_dek, content_iv, metadata_iv FROM memory_records WHERE workspace_id = ? AND (path = ? OR path LIKE ? || '%')"
+                    };
                     match conn.prepare(sql) {
                         Ok(mut stmt) => {
-                            match stmt.query(params![record_c.workspace_id, record_c.path, record_c.path]) {
+                            let params_vec = if path_is_default {
+                                params![record_c.workspace_id, record_c.path]
+                            } else {
+                                params![record_c.workspace_id, record_c.path, record_c.path]
+                            };
+                            match stmt.query(params_vec) {
                                 Ok(mut rows) => {
                                     let mut best_sim = -1.0f32;
                                     let mut best_rec = None;
@@ -181,21 +240,24 @@ impl MemoryStore for VecSqliteMemoryStore {
                     // Decrypt existing record first if it's encrypted so revisioned_record merges correctly
                     let _ = crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(&mut existing_record);
                     record = crate::memory::store::revisioned_record(existing_record, record);
-                } else if similarity >= 0.70 {
-                    tracing::info!(
-                        "Semantic dedup (similarity {} >= 0.70): Similarity is between 0.70 and 0.90, appending as new memory {}",
-                        similarity,
-                        record.id
-                    );
+                    resolved_action = "merged";
                 } else {
                     tracing::info!(
-                        "Semantic dedup (similarity {} < 0.70): Similarity is below 0.70, inserting as new memory {}",
+                        "Semantic dedup (similarity {} <= 0.90): Similarity is below 0.90, inserting as new memory {}",
                         similarity,
                         record.id
                     );
+                    resolved_action = "dedup_skipped";
                 }
+            } else {
+                resolved_action = "dedup_skipped";
             }
         }
+
+        // Set the thread-local/task-local action
+        let _ = DEDUP_ACTION.try_with(|cell| {
+            cell.set(Some(resolved_action));
+        });
 
         let security = crate::security::get_security_service();
         if security.get_config().encryption_at_rest_enabled {

@@ -175,6 +175,8 @@ fn is_primary_memory(metadata: &serde_json::Value) -> bool {
     metadata.get("source_path").is_none()
 }
 
+use crate::memory::sqlite_vec_store::store_impl::DEDUP_ACTION;
+
 /// V1 memories add.
 pub async fn v1_memories_add(
     Extension(workspace): Extension<WorkspaceContext>,
@@ -237,39 +239,43 @@ pub async fn v1_memories_add(
         return crate::error::ApiError::validation(error.to_string()).into_ok_response();
     }
 
-    match workspace
-        .workspace
-        .memory
-        .add_document_typed(
-            path,
-            content,
-            meta,
-            Some(TypedMemoryPayload {
-                kind: payload.kind,
-                evidence_kind: payload.evidence_kind,
-                namespace,
-                provenance: payload.provenance,
-                ..Default::default()
-            }),
-        )
-        .await
-    {
-        Ok(id) => {
-            if let Err(error) = workspace
-                .workspace
-                .index_memory_entities(&id, &content_for_graph, &meta_for_graph)
-                .await
-            {
-                tracing::warn!(%error, memory_id = %id, "failed to index entity graph from v1 add");
+    DEDUP_ACTION.scope(std::cell::Cell::new(None), async {
+        match workspace
+            .workspace
+            .memory
+            .add_document_typed(
+                path,
+                content,
+                meta,
+                Some(TypedMemoryPayload {
+                    kind: payload.kind,
+                    evidence_kind: payload.evidence_kind,
+                    namespace,
+                    provenance: payload.provenance,
+                    ..Default::default()
+                }),
+            )
+            .await
+        {
+            Ok(id) => {
+                if let Err(error) = workspace
+                    .workspace
+                    .index_memory_entities(&id, &content_for_graph, &meta_for_graph)
+                    .await
+                {
+                    tracing::warn!(%error, memory_id = %id, "failed to index entity graph from v1 add");
+                }
+                let action = DEDUP_ACTION.with(|cell| cell.get()).unwrap_or("inserted");
+                Json(serde_json::json!({
+                    "status": "ok",
+                    "message": "Memory added successfully",
+                    "id": id,
+                    "action": action,
+                })).into_response()
             }
-            Json(serde_json::json!({
-                "status": "ok",
-                "message": "Memory added successfully",
-                "id": id,
-            })).into_response()
+            Err(e) => crate::error::ApiError::internal(e.to_string()).into_ok_response(),
         }
-        Err(e) => crate::error::ApiError::internal(e.to_string()).into_ok_response(),
-    }
+    }).await
 }
 
 // ── Mesh API Handlers ──────────────────────────────────────────────────────

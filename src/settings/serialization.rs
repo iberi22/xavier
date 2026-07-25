@@ -130,6 +130,13 @@ pub fn current() -> XavierSettings {
     if let Ok(vec_path) = std::env::var("XAVIER_MEMORY_VEC_PATH") {
         settings.memory.vec_path = vec_path;
     }
+    if let Ok(dedup_env) = std::env::var("XAVIER_DEDUP_NAMESPACES") {
+        settings.memory.dedup_namespaces = dedup_env
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+    }
     if let Ok(dimensions) = std::env::var("XAVIER_EMBEDDING_DIMENSIONS") {
         if let Ok(v) = dimensions.parse() {
             settings.memory.embedding_dimensions = v;

@@ -447,6 +447,7 @@ async fn xtsp_persist() {
 #[tokio::test]
 async fn xtsp_dedup() {
     let _guard = TEST_MUTEX.lock().await;
+    std::env::set_var("XAVIER_DEDUP_NAMESPACES", "test-user-dedup");
     let (state, workspace, _server) = test_state().await;
     let app = v1_router(state.clone(), workspace.clone());
 
@@ -469,7 +470,13 @@ async fn xtsp_dedup() {
         assert_eq!(add_res.status(), StatusCode::OK);
         let add_body = read_v1_json_body(add_res).await;
         println!("DEDUP DEBUG: Write {} status: {:?}", i, add_body);
+        if i == 0 {
+            assert_eq!(add_body["action"].as_str(), Some("dedup_skipped"));
+        } else {
+            assert_eq!(add_body["action"].as_str(), Some("merged"));
+        }
     }
+    std::env::remove_var("XAVIER_DEDUP_NAMESPACES");
 
     // Re-sync/initialize the memory cache from the persistent store
     workspace.workspace.memory.init().await.unwrap();

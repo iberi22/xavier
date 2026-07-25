@@ -411,6 +411,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_semantic_deduplication() {
+        std::env::set_var("XAVIER_DEDUP_NAMESPACES", "ws1");
         let unique_id = ulid::Ulid::new().to_string();
         let db_path = std::env::temp_dir().join(format!("xavier-test-vec-store-{}.sqlite3", unique_id));
         let _ = std::fs::remove_file(&db_path);
@@ -468,6 +469,7 @@ mod tests {
         assert_eq!(list2.len(), 2);
 
         // Clean up
+        std::env::remove_var("XAVIER_DEDUP_NAMESPACES");
         let _ = std::fs::remove_file(&db_path);
     }
 }

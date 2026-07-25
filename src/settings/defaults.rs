@@ -57,6 +57,7 @@ impl Default for MemorySettings {
             supabase_url: None,
             supabase_key: None,
             postgres_url: None,
+            dedup_namespaces: Vec::new(),
         }
     }
 }

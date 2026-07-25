@@ -183,6 +183,8 @@ pub struct MemorySettings {
     pub supabase_url: Option<String>,
     pub supabase_key: Option<String>,
     pub postgres_url: Option<String>,
+    #[serde(default)]
+    pub dedup_namespaces: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
