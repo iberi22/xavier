@@ -29,6 +29,7 @@ pub mod embedding;
 pub mod enterprise;
 pub mod error;
 pub mod health;
+pub mod maloca;
 pub mod maturity;
 pub mod memory;
 pub mod mesh;
