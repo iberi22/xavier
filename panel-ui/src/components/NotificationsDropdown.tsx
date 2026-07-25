@@ -41,7 +41,7 @@ const ISLANDS: Island[] = [
   {
     id: "system",
     label: "System",
-    icon: <Activity className="w-3 h-3" />,
+    icon: <Activity className="w-3 h-3" aria-hidden="true" />,
     color: "text-cyan-400",
     bgColor: "bg-cyan-500/10",
     borderColor: "border-cyan-500/20",
@@ -49,7 +49,7 @@ const ISLANDS: Island[] = [
   {
     id: "memory",
     label: "Memory",
-    icon: <Brain className="w-3 h-3" />,
+    icon: <Brain className="w-3 h-3" aria-hidden="true" />,
     color: "text-[#39ff14]",
     bgColor: "bg-[#39ff14]/5",
     borderColor: "border-[#39ff14]/15",
@@ -57,7 +57,7 @@ const ISLANDS: Island[] = [
   {
     id: "agents",
     label: "Agents",
-    icon: <Bot className="w-3 h-3" />,
+    icon: <Bot className="w-3 h-3" aria-hidden="true" />,
     color: "text-purple-400",
     bgColor: "bg-purple-500/10",
     borderColor: "border-purple-500/20",
@@ -65,7 +65,7 @@ const ISLANDS: Island[] = [
   {
     id: "errors",
     label: "Errors",
-    icon: <AlertTriangle className="w-3 h-3" />,
+    icon: <AlertTriangle className="w-3 h-3" aria-hidden="true" />,
     color: "text-red-400",
     bgColor: "bg-red-500/10",
     borderColor: "border-red-500/20",
@@ -139,9 +139,10 @@ function NotificationItem({
       {!notif.read && (
         <button
           onClick={() => onRead(notif.id)}
-          className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-white/20 hover:text-white/50"
+          aria-label="Dismiss notification"
+          className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-white/20 hover:text-white/50 focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 rounded-sm"
         >
-          <X className="w-3 h-3" />
+          <X className="w-3 h-3" aria-hidden="true" />
         </button>
       )}
     </motion.div>
@@ -269,17 +270,19 @@ export default function NotificationsDropdown({
             {unreadCount > 0 && (
               <button
                 onClick={markAllRead}
-                className="flex items-center gap-1 px-2 py-1 text-[9px] text-white/30 hover:text-white/60 hover:bg-white/5 rounded-lg transition-all"
+                aria-label="Mark all notifications as read"
+                className="flex items-center gap-1 px-2 py-1 text-[9px] text-white/30 hover:text-white/60 hover:bg-white/5 rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
               >
-                <CheckCheck className="w-3 h-3" />
+                <CheckCheck className="w-3 h-3" aria-hidden="true" />
                 All read
               </button>
             )}
             <button
               onClick={onClose}
-              className="p-1 text-white/20 hover:text-white/50 hover:bg-white/5 rounded-lg transition-all"
+              aria-label="Close notifications"
+              className="p-1 text-white/20 hover:text-white/50 hover:bg-white/5 rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-3.5 h-3.5" aria-hidden="true" />
             </button>
           </div>
         </div>
@@ -288,20 +291,22 @@ export default function NotificationsDropdown({
         <div className="flex gap-1 px-3 py-2 border-b border-white/[0.04] overflow-x-auto">
           <button
             onClick={() => setActiveIsland("all")}
-            className={`flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-[9px] uppercase tracking-widest transition-all ${
+            aria-pressed={activeIsland === "all"}
+            className={`flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-[9px] uppercase tracking-widest transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
               activeIsland === "all"
                 ? "bg-white/10 text-white/80"
                 : "text-white/30 hover:text-white/60 hover:bg-white/5"
             }`}
           >
-            <RefreshCw className="w-2.5 h-2.5" />
+            <RefreshCw className="w-2.5 h-2.5" aria-hidden="true" />
             All
           </button>
           {ISLANDS.map((island) => (
             <button
               key={island.id}
               onClick={() => setActiveIsland(island.id)}
-              className={`flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-[9px] uppercase tracking-widest transition-all relative ${
+              aria-pressed={activeIsland === island.id}
+              className={`flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-[9px] uppercase tracking-widest transition-all relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
                 activeIsland === island.id
                   ? `${island.bgColor} ${island.color} border ${island.borderColor}`
                   : "text-white/30 hover:text-white/60 hover:bg-white/5"
