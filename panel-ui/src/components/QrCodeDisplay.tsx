@@ -40,6 +40,8 @@ const sanitizeSvg = (svgString: string): string => {
       attributes.forEach((attr) => {
         const name = attr.name.toLowerCase();
         const value = attr.value.toLowerCase().trim();
+        // Strip control characters and whitespaces that can bypass naive startsWith checks
+        const strippedValue = value.replace(/[\u0000-\u0020]/g, "");
 
         // Remove event handlers
         if (name.startsWith("on")) {
@@ -47,7 +49,7 @@ const sanitizeSvg = (svgString: string): string => {
         }
 
         // Remove javascript: URIs in any attribute (like href or xlink:href)
-        if (value.startsWith("javascript:")) {
+        if (strippedValue.startsWith("javascript:")) {
            element.removeAttribute(attr.name);
         }
       });

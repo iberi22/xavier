@@ -17,3 +17,7 @@
 **Vulnerability:** A custom SVG sanitizer was implemented for `<QrCodeDisplay>` but it missed some important vectors like `href="javascript:alert(1)"` and `<foreignObject>` unconstrained HTML.
 **Learning:** Writing a secure custom SVG sanitizer is hard and error-prone. One must also prevent `javascript:` URIs anywhere, and disallow `<foreignObject>` completely, on top of stripping `<script>` and `on*` events.
 **Prevention:** In the sanitizer using `DOMParser`, recursively remove `foreignObject` nodes and check if any attribute value starts with `javascript:` to drop it.
+## 2025-02-14 - [javascript: URI XSS Bypass via Control Characters]
+**Vulnerability:** XSS vulnerability in `QrCodeDisplay`'s SVG sanitizer. The check `attr.value.toLowerCase().trim().startsWith("javascript:")` failed to detect `javascript:` URIs containing tab or other control characters (e.g. `href="java\tscript:alert(1)"`), which browsers will still parse and execute as valid JavaScript URIs.
+**Learning:** Naive substring or string-start validation is insufficient for sanitizing URIs in HTML or SVG attributes due to how DOM parsers ignore certain invisible characters.
+**Prevention:** Always strip out all control characters and whitespaces (`/[\u0000-\u0020]/g`) from attribute values before attempting to validate protocols or check for `javascript:` prefixes.
