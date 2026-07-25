@@ -54,7 +54,7 @@ impl MemoryManager {
                         // Fallback to basic truncation if LLM fails
                         format!(
                             "{}...[truncated from {} chars]",
-                            &doc.content[..threshold.saturating_sub(20)],
+                            crate::memory::snippet::clip_chars(&doc.content, threshold.saturating_sub(20)),
                             size
                         )
                     }

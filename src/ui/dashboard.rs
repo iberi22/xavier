@@ -266,7 +266,7 @@ impl MemoryDisplay {
     /// Preview.
     pub fn preview(&self, max_len: usize) -> String {
         if self.content.len() > max_len {
-            format!("{}...", &self.content[..max_len])
+            format!("{}...", crate::memory::snippet::clip_chars(&self.content, max_len))
         } else {
             self.content.clone()
         }
