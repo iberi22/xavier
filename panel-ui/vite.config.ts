@@ -38,6 +38,10 @@ export default defineConfig(({ command }) => {
           target: xavierTarget,
           changeOrigin: true,
         },
+        "/maloca": {
+          target: xavierTarget,
+          changeOrigin: true,
+        },
         "/panel/api": {
           target: xavierTarget,
           changeOrigin: true,

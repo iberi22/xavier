@@ -14,6 +14,7 @@ import {
   Users,
   Wifi,
   Zap,
+  Home,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
@@ -324,6 +325,23 @@ export default function TopStatusBar({
           transition={spring}
           className={`flex gap-2 pointer-events-auto ${isModalOpen ? "absolute right-2 lg:right-4 top-1/2 -translate-y-1/2 flex-col items-end z-[60]" : "absolute right-4 md:right-6 top-6 flex-row items-start"}`}
         >
+          {/* Maloca ops workspace */}
+          <motion.button
+            layout
+            transition={spring}
+            type="button"
+            onClick={() => {
+              window.location.hash = "#/maloca";
+            }}
+            className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2.5 py-1 flex items-center gap-1.5 h-7 shrink-0 hover:border-emerald-400/30 hover:bg-emerald-500/5 transition-colors"
+            title="Abrir Maloca (ops workspace)"
+          >
+            <Home className="w-3 h-3 text-emerald-300/80" />
+            <span className="font-mono text-[9px] text-emerald-200/80 uppercase tracking-wide hidden sm:inline-block">
+              Maloca
+            </span>
+          </motion.button>
+
           {/* Security & Proxy */}
           {modules.security && (
             <motion.div
