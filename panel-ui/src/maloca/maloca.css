@@ -1,0 +1,190 @@
+/* Soft Maloca palette — tokens come from maloca.ui.json via CSS variables */
+
+.maloca-root {
+  font-family: var(--maloca-font);
+  color: var(--maloca-text);
+  background:
+    radial-gradient(ellipse at 20% 0%, var(--maloca-accent-soft) 0%, transparent 55%),
+    linear-gradient(165deg, var(--maloca-bg) 0%, var(--maloca-bg-muted) 100%);
+  min-height: 100%;
+  overflow: auto;
+}
+
+.maloca-shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: calc(var(--maloca-space) * 1.25);
+  display: flex;
+  flex-direction: column;
+  gap: var(--maloca-space);
+}
+
+.maloca-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.maloca-brand {
+  font-size: 2rem;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  color: var(--maloca-text);
+  line-height: 1.1;
+}
+
+.maloca-subtitle {
+  color: var(--maloca-text-muted);
+  font-size: 0.9rem;
+  margin-top: 4px;
+}
+
+.maloca-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px;
+  background: color-mix(in srgb, var(--maloca-bg-elevated) 85%, transparent);
+  border: 1px solid var(--maloca-border);
+  border-radius: var(--maloca-radius);
+}
+
+.maloca-nav button {
+  border: none;
+  background: transparent;
+  color: var(--maloca-text-muted);
+  padding: 8px 12px;
+  border-radius: calc(var(--maloca-radius) - 4px);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.maloca-nav button[data-active="true"] {
+  background: var(--maloca-accent-soft);
+  color: var(--maloca-text);
+}
+
+.maloca-nav button:hover {
+  color: var(--maloca-text);
+}
+
+.maloca-panel {
+  background: color-mix(in srgb, var(--maloca-bg-elevated) 92%, transparent);
+  border: 1px solid var(--maloca-border);
+  border-radius: var(--maloca-radius);
+  padding: var(--maloca-space);
+  animation: maloca-fade 0.35s ease;
+}
+
+@keyframes maloca-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.maloca-card {
+  border: 1px solid var(--maloca-border);
+  border-radius: calc(var(--maloca-radius) - 2px);
+  padding: 12px 14px;
+  background: var(--maloca-bg-elevated);
+}
+
+.maloca-btn {
+  border: 1px solid var(--maloca-border);
+  background: var(--maloca-bg-muted);
+  color: var(--maloca-text);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.maloca-btn:hover {
+  border-color: var(--maloca-accent);
+}
+
+.maloca-btn-primary {
+  background: var(--maloca-accent);
+  border-color: var(--maloca-accent);
+  color: #f8faf8;
+}
+
+.maloca-badge {
+  display: inline-block;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--maloca-bg-muted);
+  color: var(--maloca-text-muted);
+}
+
+.maloca-badge-locked {
+  background: var(--maloca-warning-bg);
+  color: var(--maloca-warning);
+}
+
+.maloca-input,
+.maloca-select,
+.maloca-textarea {
+  width: 100%;
+  border: 1px solid var(--maloca-border);
+  background: var(--maloca-bg-elevated);
+  color: var(--maloca-text);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.875rem;
+  font-family: inherit;
+}
+
+.maloca-muted {
+  color: var(--maloca-text-muted);
+  font-size: 0.875rem;
+}
+
+.maloca-mono {
+  font-family: var(--maloca-font-mono);
+  font-size: 0.75rem;
+}
+
+.maloca-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.maloca-table th,
+.maloca-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-top: 1px solid var(--maloca-border);
+}
+
+.maloca-table th {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--maloca-text-muted);
+  letter-spacing: 0.05em;
+}
+
+.maloca-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.maloca-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
