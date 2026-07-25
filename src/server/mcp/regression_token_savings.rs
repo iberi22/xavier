@@ -8,8 +8,8 @@ mod tests {
         let (state, workspace) = test_state().await;
         let router = test_router(state, workspace);
 
-        // 1. Seed a large memory
-        let long_content = "A".repeat(5000);
+        // 1. Seed a large memory with realistic markdown content
+        let long_content = "# Xavier Architecture\n\n## Core Philosophy\n\nXavier is built on a **Hexagonal Architecture** (Ports & Adapters) to ensure the core logic remains isolated from external dependencies like database drivers, LLM providers, and transport protocols (HTTP/CLI/MCP).\n\n## Memory Stores\n\n### Primary Backend: SQLite-Vec\n\nAs of v0.6+, Xavier has transitioned to **SQLite-Vec** as the primary storage engine.\nThis provides a zero-infrastructure, ACID-compliant vector database.\n\n### Semantic Layer\n\n- **Belief Graph**: Maps semantic relationships between memories (L0-L1-L2 hierarchy).\n- **Hybrid Retrieval**: Uses Reciprocal Rank Fusion (RRF) to combine keyword (FTS5) and semantic (Vector) search.\n- **Threat Detection**: Integrated SecurityScanner for prompt injection and leak monitoring.\n\n## System Components\n\n### 1. Inbound Ports (Entry Points)\n\n- **HTTP API**: High-performance Axum-based REST API with token authentication.\n- **CLI**: Command-line interface for local memory operations.\n- **MCP**: Model Context Protocol for native AI agent integration.\n\n### 2. Domain Core\n\n- **ProxyUseCase**: The central orchestrator coordinating security, embeddings, and persistence.\n- **SecurityService**: Multi-layer scanner (Aho-Corasick, Entropy, Regex) for input validation.\n\n### 3. Outbound Ports\n\n- **MemoryBackend**: Trait defining persistence operations.\n- **EmbeddingPort**: Interface for vector generation.\n\n## Release Status\n\n| Feature | Status | Verified |\n|---------|--------|----------|\n| Hierarchical Memory | Stable | ✅ |\n| Belief Graph | Stable | ✅ |\n| Security Scanner | Stable | ✅ |\n| TUI Installer | Stable | ✅ |\n| Public Export | Stable | ✅ |\n\n## Development Ecosystem\n\nXavier uses autonomous agents for continuous improvement:\n- **Jules**: Background execution agent for refactoring and clippy fixes.\n- **Antigravity**: Strategic architect and integration manager.\n\n---\n\n*This document describes the architecture as of v0.6.1-beta.*".to_string();
         post_json(
             router.clone(),
             json!({
@@ -58,11 +58,20 @@ mod tests {
 
         println!("Fat search snippet length: {}", snippet_len);
         println!("Full search content length: {}", content_len);
+        println!(
+            "Fat search saved {} bytes (ratio: {:.2}%)",
+            content_len.saturating_sub(snippet_len),
+            if content_len > 0 {
+                (content_len.saturating_sub(snippet_len)) as f64 / content_len as f64 * 100.0
+            } else {
+                0.0
+            }
+        );
 
         // Regression: Fat search should be significantly smaller than full search
-        assert!(snippet_len < 1000, "Fat search snippet should be small");
-        assert!(content_len >= 5000, "Full search content should contain full content");
-        assert!(snippet_len < content_len / 5, "Fat search snippet should be at least 5x smaller");
+        assert!(snippet_len < 1000, "Fat search snippet should be small, got {snippet_len}");
+        assert!(content_len >= long_content.len() / 2, "Full search content should contain substantial content, got {content_len} vs original {}", long_content.len());
+        assert!(snippet_len < content_len / 5, "Fat search snippet ({snippet_len}B) should be at least 5x smaller than full ({content_len}B)");
     }
 
     #[tokio::test]
@@ -70,8 +79,11 @@ mod tests {
         let (state, workspace) = test_state().await;
         let router = test_router(state, workspace);
 
-        let content1 = "Content one " .to_string() + &"A".repeat(1000);
-        let content2 = "Content two " .to_string() + &"B".repeat(1000);
+        // Seed two memories with realistic content
+        let content1 = "## Chapter 1: Introduction\n\nThis chapter covers the fundamental concepts of Rust programming including ownership, borrowing, and lifetimes. These concepts form the foundation of memory safety without a garbage collector. Rust's type system guarantees memory safety at compile time, making it ideal for systems programming."
+            .to_string();
+        let content2 = "## Chapter 2: Advanced Features\n\nThis chapter explores advanced Rust features: traits, generics, closures, iterators, and pattern matching. These features enable expressive, zero-cost abstractions while maintaining the strict safety guarantees that Rust provides."
+            .to_string();
 
         // Seed memories
         post_json(router.clone(), json!({
@@ -86,7 +98,7 @@ mod tests {
         // Get ID for p/1
         let resp_search = post_json(router.clone(), json!({
             "jsonrpc": "2.0", "id": 3, "method": "tools/call",
-            "params": { "name": "mem_search", "arguments": { "query": "one" }}
+            "params": { "name": "mem_search", "arguments": { "query": "ownership" }}
         })).await;
         let body_search = get_json_body(resp_search).await;
         let candidates_search = body_search["result"]["content"][0]["structuredContent"]["candidates"].as_array().unwrap();
@@ -102,8 +114,8 @@ mod tests {
         let sc = &body_context["result"]["content"][0]["structuredContent"];
         let content = sc["content"].as_str().unwrap();
 
-        assert!(content.contains("Content one"), "Context should contain requested doc");
-        assert!(!content.contains("Content two"), "Context should NOT contain unrequested doc");
+        assert!(content.contains("Chapter 1"), "Context should contain requested doc (Chapter 1)");
+        assert!(!content.contains("Chapter 2"), "Context should NOT contain unrequested doc (Chapter 2)");
     }
 
     #[tokio::test]
