@@ -2,6 +2,7 @@
 //!
 //! Manager actions never add vote weight — they only flip proposal status
 //! and append an audit trail (see NODE_MESH_MANAGER.md).
+//! Votes require karma >= vote_karma_min + active node; history anchors to lab_genesis.
 
 use super::params::network_parameters;
 use super::types::*;
@@ -13,6 +14,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use uuid::Uuid;
 
+const GENESIS_NODE_ID: &str = "lab_genesis";
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct PersistedState {
     support: Vec<SupportTicket>,
@@ -21,6 +24,12 @@ struct PersistedState {
     rewards: Vec<RewardReceipt>,
     proposals: Vec<Proposal>,
     manager_actions: Vec<ManagerAction>,
+    #[serde(default)]
+    votes: Vec<Vote>,
+    #[serde(default)]
+    decisions: Vec<DecisionEvent>,
+    #[serde(default)]
+    nodes: Vec<NodeRecord>,
     backlog: serde_json::Value,
 }
 
@@ -32,7 +41,7 @@ pub struct MalocaStore {
 impl MalocaStore {
     pub fn open(state_dir: &Path) -> Arc<Self> {
         let path = state_dir.join("maloca").join("store.json");
-        let state = if path.exists() {
+        let mut state = if path.exists() {
             std::fs::read_to_string(&path)
                 .ok()
                 .and_then(|raw| serde_json::from_str(&raw).ok())
@@ -40,6 +49,23 @@ impl MalocaStore {
         } else {
             default_state()
         };
+        if state.nodes.is_empty() {
+            state.nodes = default_nodes();
+        }
+        if state.decisions.is_empty() && !state.proposals.is_empty() {
+            // Bootstrap history for seed / migrated stores.
+            for p in &state.proposals {
+                state.decisions.push(DecisionEvent {
+                    id: format!("d-{}", short_id()),
+                    kind: DecisionKind::ProposalCreated,
+                    proposal_id: Some(p.id.clone()),
+                    actor_node_id: GENESIS_NODE_ID.into(),
+                    genesis_node_id: GENESIS_NODE_ID.into(),
+                    payload: serde_json::json!({ "title": p.title, "type": p.proposal_type }),
+                    created_at: p.created_at.clone(),
+                });
+            }
+        }
         Arc::new(Self {
             inner: RwLock::new(state),
             path,
@@ -55,6 +81,36 @@ impl MalocaStore {
         }
     }
 
+    fn vote_karma_min(state: &PersistedState) -> i64 {
+        let _ = state;
+        network_parameters()
+            .into_iter()
+            .find(|p| p.key == "vote_karma_min")
+            .and_then(|p| p.default.parse().ok())
+            .unwrap_or(500)
+    }
+
+    fn append_decision(
+        state: &mut PersistedState,
+        kind: DecisionKind,
+        proposal_id: Option<String>,
+        actor_node_id: &str,
+        payload: serde_json::Value,
+    ) {
+        state.decisions.insert(
+            0,
+            DecisionEvent {
+                id: format!("d-{}", short_id()),
+                kind,
+                proposal_id,
+                actor_node_id: actor_node_id.into(),
+                genesis_node_id: GENESIS_NODE_ID.into(),
+                payload,
+                created_at: Utc::now().to_rfc3339(),
+            },
+        );
+    }
+
     pub fn pack(&self) -> MalocaPack {
         let g = self.inner.read();
         MalocaPack {
@@ -64,7 +120,7 @@ impl MalocaStore {
             features_total: 0,
             features_draft: 0,
             gaps_zero_symbol_modules: vec![],
-            decisions_count: g.proposals.len() as u64,
+            decisions_count: g.decisions.len() as u64,
             support_open: g
                 .support
                 .iter()
@@ -131,12 +187,18 @@ impl MalocaStore {
             .find(|o| o.id == id)
             .ok_or_else(|| anyhow::anyhow!("inbox offer not found"))?;
         offer.microtask.status = "completed".into();
+        let claimed_by = offer.claimed_by.clone();
         let receipt = RewardReceipt {
             ticket_id: id.to_string(),
             xp: offer.microtask.reward_hint as i64,
             karma_delta: 1,
             recorded_at: Utc::now().to_rfc3339(),
         };
+        if let Some(node_id) = claimed_by {
+            if let Some(node) = g.nodes.iter_mut().find(|n| n.node_id == node_id) {
+                node.karma = node.karma.saturating_add(receipt.karma_delta);
+            }
+        }
         g.rewards.insert(0, receipt.clone());
         self.persist(&g);
         Ok(receipt)
@@ -146,24 +208,29 @@ impl MalocaStore {
         self.inner.read().rewards.clone()
     }
 
+    pub fn list_nodes(&self) -> Vec<NodeRecord> {
+        self.inner.read().nodes.clone()
+    }
+
     pub fn mesh(&self) -> MeshSnapshot {
+        let g = self.inner.read();
         MeshSnapshot {
-            genesis_node_id: "lab_genesis".into(),
+            mode: "mock".into(),
+            genesis_node_id: GENESIS_NODE_ID.into(),
             parent_nodes_enabled: false,
             manager_adds_vote_weight: false,
             wallet_multi_node_anchor: true,
-            nodes: vec![
-                MeshNodeInfo {
-                    node_id: "lab_genesis".into(),
-                    role: "genesis".into(),
-                    note: "Fundador SWAL; gerente ACL inicial".into(),
-                },
-                MeshNodeInfo {
-                    node_id: "local".into(),
-                    role: "peer".into(),
-                    note: "Nodo local dogfood".into(),
-                },
-            ],
+            nodes: g
+                .nodes
+                .iter()
+                .map(|n| MeshNodeInfo {
+                    node_id: n.node_id.clone(),
+                    role: n.role.clone(),
+                    note: n.note.clone(),
+                    karma: n.karma,
+                    active: n.active,
+                })
+                .collect(),
             meshes: vec![
                 MeshInfo {
                     id: "public_service_mesh".into(),
@@ -205,9 +272,103 @@ impl MalocaStore {
             locked_param: locked,
         };
         let mut g = self.inner.write();
+        Self::append_decision(
+            &mut g,
+            DecisionKind::ProposalCreated,
+            Some(proposal.id.clone()),
+            GENESIS_NODE_ID,
+            serde_json::json!({
+                "title": proposal.title,
+                "type": proposal.proposal_type,
+            }),
+        );
         g.proposals.insert(0, proposal.clone());
         self.persist(&g);
         proposal
+    }
+
+    pub fn list_votes(&self, proposal_id: Option<&str>) -> Vec<Vote> {
+        let g = self.inner.read();
+        match proposal_id {
+            Some(pid) => g
+                .votes
+                .iter()
+                .filter(|v| v.proposal_id == pid)
+                .cloned()
+                .collect(),
+            None => g.votes.clone(),
+        }
+    }
+
+    pub fn list_decisions(&self) -> Vec<DecisionEvent> {
+        self.inner.read().decisions.clone()
+    }
+
+    /// Cast a vote. Requires active node with karma >= vote_karma_min.
+    /// Manager role never adds extra weight (weight stub = 1.0).
+    pub fn cast_vote(&self, proposal_id: &str, body: CastVoteBody) -> Result<Vote> {
+        let mut g = self.inner.write();
+        let min_karma = Self::vote_karma_min(&g);
+
+        let node = g
+            .nodes
+            .iter()
+            .find(|n| n.node_id == body.node_id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("node not found"))?;
+
+        if !node.active {
+            bail!("node is not active");
+        }
+        if node.karma < min_karma {
+            bail!(
+                "karma {} below vote_karma_min {} (node {})",
+                node.karma,
+                min_karma,
+                node.node_id
+            );
+        }
+
+        let proposal = g
+            .proposals
+            .iter()
+            .find(|p| p.id == proposal_id)
+            .ok_or_else(|| anyhow::anyhow!("proposal not found"))?;
+
+        if proposal.status == ProposalStatus::Closed {
+            bail!("proposal is closed");
+        }
+
+        if g.votes
+            .iter()
+            .any(|v| v.proposal_id == proposal_id && v.node_id == body.node_id)
+        {
+            bail!("node already voted on this proposal");
+        }
+
+        let vote = Vote {
+            id: format!("v-{}", short_id()),
+            proposal_id: proposal_id.to_string(),
+            node_id: body.node_id.clone(),
+            choice: body.choice.clone(),
+            weight: 1.0,
+            created_at: Utc::now().to_rfc3339(),
+        };
+
+        Self::append_decision(
+            &mut g,
+            DecisionKind::Voted,
+            Some(proposal_id.to_string()),
+            &body.node_id,
+            serde_json::json!({
+                "choice": vote.choice,
+                "weight": vote.weight,
+                "karma": node.karma,
+            }),
+        );
+        g.votes.insert(0, vote.clone());
+        self.persist(&g);
+        Ok(vote)
     }
 
     pub fn list_manager_actions(&self) -> Vec<ManagerAction> {
@@ -238,18 +399,31 @@ impl MalocaStore {
             // Allowed: reconsideration still does not unlock — only status flip.
         }
 
-        proposal.status = match body.action_type {
-            ManagerActionType::RequestReconsideration => ProposalStatus::Reconsidering,
-            ManagerActionType::RequestScenarioAnalysis => ProposalStatus::Analyzing,
+        let kind = match body.action_type {
+            ManagerActionType::RequestReconsideration => {
+                proposal.status = ProposalStatus::Reconsidering;
+                DecisionKind::ManagerRequestReconsideration
+            }
+            ManagerActionType::RequestScenarioAnalysis => {
+                proposal.status = ProposalStatus::Analyzing;
+                DecisionKind::ManagerRequestScenarioAnalysis
+            }
         };
 
         let action = ManagerAction {
             id: format!("m-{}", short_id()),
             action_type: body.action_type,
-            proposal_id: body.proposal_id,
-            reason: body.reason,
+            proposal_id: body.proposal_id.clone(),
+            reason: body.reason.clone(),
             created_at: Utc::now().to_rfc3339(),
         };
+        Self::append_decision(
+            &mut g,
+            kind,
+            Some(body.proposal_id),
+            GENESIS_NODE_ID,
+            serde_json::json!({ "reason": body.reason, "adds_vote_weight": false }),
+        );
         g.manager_actions.insert(0, action.clone());
         self.persist(&g);
         Ok(action)
@@ -260,8 +434,36 @@ fn short_id() -> String {
     Uuid::new_v4().to_string()[..8].to_string()
 }
 
+fn default_nodes() -> Vec<NodeRecord> {
+    vec![
+        NodeRecord {
+            node_id: GENESIS_NODE_ID.into(),
+            role: "genesis".into(),
+            karma: 1000,
+            active: true,
+            note: "Fundador SWAL; gerente ACL inicial".into(),
+        },
+        NodeRecord {
+            node_id: "local".into(),
+            role: "peer".into(),
+            karma: 50,
+            active: true,
+            note: "Nodo local dogfood (karma bajo — rechazo de voto)".into(),
+        },
+    ]
+}
+
 fn default_state() -> PersistedState {
     let now = Utc::now().to_rfc3339();
+    let seed = Proposal {
+        id: "p-genesis-params".into(),
+        proposal_type: "network_parameter".into(),
+        title: "Inscribir NetworkParameters (Lab)".into(),
+        body: "Defaults lab_genesis + locked_until_quorum. Lectura pública.".into(),
+        status: ProposalStatus::Open,
+        created_at: now.clone(),
+        locked_param: Some(true),
+    };
     PersistedState {
         support: vec![],
         reviews: vec![],
@@ -283,16 +485,22 @@ fn default_state() -> PersistedState {
             claimed_by: None,
         }],
         rewards: vec![],
-        proposals: vec![Proposal {
-            id: "p-genesis-params".into(),
-            proposal_type: "network_parameter".into(),
-            title: "Inscribir NetworkParameters (Lab)".into(),
-            body: "Defaults lab_genesis + locked_until_quorum. Lectura pública.".into(),
-            status: ProposalStatus::Open,
-            created_at: now,
-            locked_param: Some(true),
-        }],
+        proposals: vec![seed.clone()],
         manager_actions: vec![],
+        votes: vec![],
+        decisions: vec![DecisionEvent {
+            id: "d-genesis-seed".into(),
+            kind: DecisionKind::ProposalCreated,
+            proposal_id: Some(seed.id.clone()),
+            actor_node_id: GENESIS_NODE_ID.into(),
+            genesis_node_id: GENESIS_NODE_ID.into(),
+            payload: serde_json::json!({
+                "title": seed.title,
+                "type": seed.proposal_type,
+            }),
+            created_at: now,
+        }],
+        nodes: default_nodes(),
         backlog: serde_json::json!({
             "source": "xavier/src/maloca",
             "items": [
@@ -306,14 +514,22 @@ fn default_state() -> PersistedState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::maloca::types::{ManagerActionBody, ManagerActionType};
+    use crate::maloca::types::{
+        CastVoteBody, ManagerActionBody, ManagerActionType, VoteChoice,
+    };
+
+    fn temp_store() -> (PathBuf, Arc<MalocaStore>) {
+        let dir = std::env::temp_dir().join(format!("maloca-test-{}", short_id()));
+        let store = MalocaStore::open(&dir);
+        (dir, store)
+    }
 
     #[test]
     fn manager_action_does_not_claim_vote_weight() {
-        let dir = std::env::temp_dir().join(format!("maloca-test-{}", short_id()));
-        let store = MalocaStore::open(&dir);
+        let (dir, store) = temp_store();
         let mesh = store.mesh();
         assert!(!mesh.manager_adds_vote_weight);
+        assert_eq!(mesh.mode, "mock");
         let params = store.params();
         let vote_weight = params
             .iter()
@@ -335,6 +551,68 @@ mod tests {
             .find(|p| p.id == "p-genesis-params")
             .unwrap();
         assert_eq!(p.status, ProposalStatus::Reconsidering);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn vote_rejects_low_karma_node() {
+        let (dir, store) = temp_store();
+        let err = store
+            .cast_vote(
+                "p-genesis-params",
+                CastVoteBody {
+                    node_id: "local".into(),
+                    choice: VoteChoice::Yes,
+                },
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("vote_karma_min"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn vote_accepts_lab_genesis_and_anchors_decision() {
+        let (dir, store) = temp_store();
+        let vote = store
+            .cast_vote(
+                "p-genesis-params",
+                CastVoteBody {
+                    node_id: GENESIS_NODE_ID.into(),
+                    choice: VoteChoice::Yes,
+                },
+            )
+            .unwrap();
+        assert_eq!(vote.node_id, GENESIS_NODE_ID);
+        assert_eq!(vote.weight, 1.0);
+
+        let decisions = store.list_decisions();
+        let voted = decisions
+            .iter()
+            .find(|d| d.kind == DecisionKind::Voted)
+            .expect("voted event");
+        assert_eq!(voted.genesis_node_id, GENESIS_NODE_ID);
+        assert_eq!(voted.actor_node_id, GENESIS_NODE_ID);
+        assert!(store.pack().decisions_count >= 2);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn manager_decision_event_has_no_vote_weight() {
+        let (dir, store) = temp_store();
+        store
+            .manager_action(ManagerActionBody {
+                action_type: ManagerActionType::RequestScenarioAnalysis,
+                proposal_id: "p-genesis-params".into(),
+                reason: "sim".into(),
+            })
+            .unwrap();
+        let ev = store
+            .list_decisions()
+            .into_iter()
+            .find(|d| d.kind == DecisionKind::ManagerRequestScenarioAnalysis)
+            .expect("manager event");
+        assert_eq!(ev.genesis_node_id, GENESIS_NODE_ID);
+        assert_eq!(ev.payload["adds_vote_weight"], false);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
