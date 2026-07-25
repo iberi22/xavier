@@ -440,6 +440,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         )),
         system_scan_cache: Arc::new(tokio::sync::RwLock::new(None)),
         multi_db,
+        maloca: xavier::maloca::MalocaStore::open(&state_dir),
     };
 
     info!(
@@ -1001,7 +1002,12 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
 
     let agent_indexer_cron = state.agent_indexer.clone();
     let memory_port_cron = state.memory.clone();
-    let app = app.with_state(state.clone());
+    // Maloca ops API — public local dogfood (matches @swal/maloca-client; no token).
+    let maloca_store = state.maloca.clone();
+
+    let app = app
+        .with_state(state.clone())
+        .merge(xavier::maloca::nested_router(maloca_store));
 
     #[cfg(feature = "enterprise")]
     let app = {
