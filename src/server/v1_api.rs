@@ -89,10 +89,12 @@ pub struct V1SearchRequest {
     pub mode: Option<String>,
 }
 
-#[derive(Debug, Serialize, Clone)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct V1MemorySearchResponse {
     pub status: String,
     pub results: Vec<V1MemoryResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -102,6 +104,8 @@ pub struct V1MemorySnippetResult {
     pub score: f32,
     pub path: String,
     pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -110,6 +114,23 @@ pub struct V1MemorySearchSnippetResponse {
     pub results: Vec<V1MemorySnippetResult>,
     pub workspace_id: String,
     pub mode: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<bool>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct V1MemoryIdResult {
+    pub id: String,
+    pub score: f32,
+    pub path: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct V1MemorySearchIdsResponse {
+    pub status: String,
+    pub results: Vec<V1MemoryIdResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub truncated: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -820,6 +841,37 @@ pub async fn v1_mesh_session_share(
     }
 }
 
+/// Helper function to enforce an 8KB hard cap on JSON response payloads.
+/// If the serialized response exceeds 8192 bytes, we set `truncated: true`
+/// and iteratively truncate the search results array until the payload size is within limits.
+fn apply_hard_cap_and_truncate<T>(
+    mut response: T,
+    get_results_len: impl Fn(&T) -> usize,
+    truncate_results: impl Fn(&mut T, usize),
+    set_truncated: impl Fn(&mut T, bool),
+) -> T
+where
+    T: serde::Serialize,
+{
+    let mut serialized = serde_json::to_vec(&response).unwrap_or_default();
+    if serialized.len() <= 8192 {
+        return response;
+    }
+
+    set_truncated(&mut response, true);
+
+    let mut len = get_results_len(&response);
+    while len > 0 {
+        len -= 1;
+        truncate_results(&mut response, len);
+        serialized = serde_json::to_vec(&response).unwrap_or_default();
+        if serialized.len() <= 8192 {
+            break;
+        }
+    }
+    response
+}
+
 /// V1 memories search.
 pub async fn v1_memories_search(
     Extension(workspace): Extension<WorkspaceContext>,
@@ -848,11 +900,44 @@ pub async fn v1_memories_search(
     .filter(|doc| is_primary_memory(&doc.metadata))
     .collect::<Vec<_>>();
 
-    if payload.mode.as_deref() == Some("snippet") {
+    let mode = payload.mode.as_deref().unwrap_or("full");
+
+    if mode == "ids" {
+        let results = documents
+            .into_iter()
+            .map(|doc| V1MemoryIdResult {
+                id: doc.id.unwrap_or_default(),
+                score: doc.score,
+                path: doc.path,
+            })
+            .collect::<Vec<_>>();
+
+        let response = V1MemorySearchIdsResponse {
+            status: "ok".to_string(),
+            results,
+            truncated: None,
+        };
+        let response = apply_hard_cap_and_truncate(
+            response,
+            |r| r.results.len(),
+            |r, len| r.results.truncate(len),
+            |r, t| r.truncated = Some(t),
+        );
+        axum::response::IntoResponse::into_response(Json(response))
+    } else if mode == "snippet" {
+        let budget = crate::memory::snippet::SnippetBudget {
+            title: 100,
+            snippet: 100,
+        };
         let results = documents
             .into_iter()
             .map(|doc| {
-                let snippet: String = doc.content.chars().take(100).collect();
+                let excerpt = crate::memory::snippet::extract(
+                    &doc.content,
+                    &doc.metadata,
+                    &payload.query,
+                    budget,
+                );
                 let kind = doc
                     .metadata
                     .get("kind")
@@ -861,22 +946,35 @@ pub async fn v1_memories_search(
                     .to_string();
                 V1MemorySnippetResult {
                     id: doc.id.unwrap_or_default(),
-                    snippet,
+                    snippet: excerpt.snippet,
                     score: doc.score,
                     path: doc.path,
                     kind,
+                    title: Some(excerpt.title),
                 }
             })
             .collect::<Vec<_>>();
 
         let count = results.len();
-        axum::response::IntoResponse::into_response(Json(V1MemorySearchSnippetResponse {
+        let response = V1MemorySearchSnippetResponse {
             count,
             results,
             workspace_id: workspace.workspace_id.clone(),
             mode: "snippet".to_string(),
-        }))
+            truncated: None,
+        };
+        let response = apply_hard_cap_and_truncate(
+            response,
+            |r| r.results.len(),
+            |r, len| {
+                r.results.truncate(len);
+                r.count = len;
+            },
+            |r, t| r.truncated = Some(t),
+        );
+        axum::response::IntoResponse::into_response(Json(response))
     } else {
+        // mode="full" (default / backward compatible)
         let results = documents
             .into_iter()
             .map(|doc| V1MemoryResponse {
@@ -885,12 +983,20 @@ pub async fn v1_memories_search(
                 user_id: Some(doc.path),
                 metadata: doc.metadata,
             })
-            .collect();
+            .collect::<Vec<_>>();
 
-        axum::response::IntoResponse::into_response(Json(V1MemorySearchResponse {
+        let response = V1MemorySearchResponse {
             status: "ok".to_string(),
             results,
-        }))
+            truncated: None,
+        };
+        let response = apply_hard_cap_and_truncate(
+            response,
+            |r| r.results.len(),
+            |r, len| r.results.truncate(len),
+            |r, t| r.truncated = Some(t),
+        );
+        axum::response::IntoResponse::into_response(Json(response))
     }
 }
 
@@ -934,21 +1040,158 @@ pub async fn v1_memories_list(
     })
 }
 
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct V1GetParams {
+    pub range: Option<String>,
+    pub sections: Option<String>,
+}
+
+fn split_markdown_by_sections(content: &str) -> Vec<(String, String)> {
+    let mut sections = Vec::new();
+    let mut current_title = "Introduction".to_string();
+    let mut current_content = String::new();
+
+    for line in content.lines() {
+        if line.starts_with('#') {
+            if !current_content.trim().is_empty() {
+                sections.push((current_title.clone(), current_content.clone()));
+            }
+            current_title = line.trim_start_matches('#').trim().to_string();
+            current_content = line.to_string();
+            current_content.push('\n');
+        } else {
+            current_content.push_str(line);
+            current_content.push('\n');
+        }
+    }
+
+    if !current_content.trim().is_empty() {
+        sections.push((current_title, current_content));
+    }
+
+    if sections.is_empty() && !content.trim().is_empty() {
+        sections.push(("General".to_string(), content.to_string()));
+    }
+
+    sections
+}
+
+fn split_markdown_by_sections_with_levels(content: &str) -> Vec<(String, String, usize)> {
+    let mut sections = Vec::new();
+    let mut current_title = "Introduction".to_string();
+    let mut current_content = String::new();
+    let mut current_level = 1;
+
+    for line in content.lines() {
+        if line.starts_with('#') {
+            if !current_content.trim().is_empty() {
+                sections.push((current_title.clone(), current_content.clone(), current_level));
+            }
+            let mut level = 0;
+            for c in line.chars() {
+                if c == '#' {
+                    level += 1;
+                } else {
+                    break;
+                }
+            }
+            current_level = level.max(1);
+            current_title = line.trim_start_matches('#').trim().to_string();
+            current_content = line.to_string();
+            current_content.push('\n');
+        } else {
+            current_content.push_str(line);
+            current_content.push('\n');
+        }
+    }
+
+    if !current_content.trim().is_empty() {
+        sections.push((current_title, current_content, current_level));
+    }
+
+    if sections.is_empty() && !content.trim().is_empty() {
+        sections.push(("General".to_string(), content.to_string(), 1));
+    }
+
+    sections
+}
+
 /// V1 memories get.
 pub async fn v1_memories_get(
     Extension(workspace): Extension<WorkspaceContext>,
     Path(id): Path<String>,
+    Query(params): Query<V1GetParams>,
 ) -> impl IntoResponse {
     match workspace.workspace.memory.get(&id).await {
-        Ok(Some(doc)) if is_primary_memory(&doc.metadata) => Json(serde_json::json!({
-            "status": "ok",
-            "memory": V1MemoryResponse {
-                id: doc.id.unwrap_or_default(),
-                memory: doc.content,
-                user_id: Some(doc.path),
-                metadata: doc.metadata,
+        Ok(Some(doc)) if is_primary_memory(&doc.metadata) => {
+            let mut final_content = doc.content.clone();
+            if let Some(ref s) = params.sections {
+                let sections_list = split_markdown_by_sections(&final_content);
+                let mut joined_content = String::new();
+                for idx_str in s.split(',') {
+                    if let Ok(idx) = idx_str.trim().parse::<usize>() {
+                        if idx > 0 && idx <= sections_list.len() {
+                            joined_content.push_str(&sections_list[idx - 1].1);
+                        }
+                    }
+                }
+                final_content = joined_content;
             }
-        })).into_response(),
+
+            if let Some(ref r) = params.range {
+                let content_chars: Vec<char> = final_content.chars().collect();
+                let total_chars = content_chars.len();
+                let mut parts = r.split('-');
+                let start = parts.next().and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
+                let end = parts.next().and_then(|s| s.parse::<usize>().ok()).unwrap_or(total_chars);
+                let start = start.min(total_chars);
+                let end = end.min(total_chars).max(start);
+                final_content = content_chars[start..end].iter().collect();
+            }
+
+            Json(serde_json::json!({
+                "status": "ok",
+                "memory": V1MemoryResponse {
+                    id: doc.id.unwrap_or_default(),
+                    memory: final_content,
+                    user_id: Some(doc.path),
+                    metadata: doc.metadata,
+                }
+            })).into_response()
+        }
+        _ => crate::error::ApiError::not_found("Memory not found").into_ok_response(),
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct V1OutlineItem {
+    pub title: String,
+    pub level: usize,
+    pub index: usize,
+}
+
+/// V1 memories outline.
+pub async fn v1_memories_outline(
+    Extension(workspace): Extension<WorkspaceContext>,
+    Path(id): Path<String>,
+) -> impl IntoResponse {
+    match workspace.workspace.memory.get(&id).await {
+        Ok(Some(doc)) if is_primary_memory(&doc.metadata) => {
+            let sections = split_markdown_by_sections_with_levels(&doc.content);
+            let outline: Vec<V1OutlineItem> = sections
+                .into_iter()
+                .enumerate()
+                .map(|(i, (title, _, level))| V1OutlineItem {
+                    title,
+                    level,
+                    index: i + 1,
+                })
+                .collect();
+            Json(serde_json::json!({
+                "status": "ok",
+                "outline": outline,
+            })).into_response()
+        }
         _ => crate::error::ApiError::not_found("Memory not found").into_ok_response(),
     }
 }
@@ -1337,6 +1580,10 @@ mod tests {
                 get(v1_memories_get)
                     .put(v1_memories_update)
                     .delete(v1_memories_delete),
+            )
+            .route(
+                "/v1/memories/{id}/outline",
+                get(v1_memories_outline),
             )
             .route("/v1/memories/search", post(v1_memories_search))
             .route("/v1/memories/prune", post(v1_memories_prune))
@@ -1949,5 +2196,190 @@ mod tests {
         let payload: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
         assert_eq!(payload["matched"], 1); // "other/fact/1" (last accessed 10 days ago)
         assert_eq!(payload["deleted"], 1);
+    }
+
+    #[tokio::test]
+    async fn test_v1_memories_search_modes_and_hard_cap() {
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace);
+
+        // Add some test memories
+        // Memory 1: Simple markdown document
+        let content_1 = "# Chapter 1: Introduction\nThis is the intro section of the memory.\n# Chapter 2: Summary\nAnd this is the summary section.";
+        let add_req = Request::builder()
+            .method("POST")
+            .uri("/v1/memories")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "text": content_1,
+                    "user_id": "user123",
+                    "metadata": {"title": "Test Chapter Book"}
+                })
+                .to_string(),
+            ))
+            .expect("failed to build add request");
+        let resp = app.clone().oneshot(add_req).await.expect("execute request");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Get the memories list to obtain the memory ID
+        let list_req = Request::builder()
+            .method("GET")
+            .uri("/v1/memories?limit=10")
+            .body(Body::empty())
+            .expect("failed to build list request");
+        let resp = app.clone().oneshot(list_req).await.expect("execute request");
+        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let list_resp: V1MemoryListResponse = serde_json::from_slice(&body).expect("parse JSON");
+        assert_eq!(list_resp.memories.len(), 1);
+        let memory_id = list_resp.memories[0].id.clone();
+
+        // 1. Test GET /v1/memories/{id}?sections=1
+        let get_sec_req = Request::builder()
+            .method("GET")
+            .uri(format!("/v1/memories/{}?sections=1", memory_id))
+            .body(Body::empty())
+            .expect("get request");
+        let resp = app.clone().oneshot(get_sec_req).await.expect("execute request");
+        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let val: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
+        let content = val["memory"]["memory"].as_str().expect("string");
+        assert!(content.contains("Chapter 1: Introduction"));
+        assert!(!content.contains("Chapter 2: Summary"));
+
+        // 2. Test GET /v1/memories/{id}?sections=2
+        let get_sec_req_2 = Request::builder()
+            .method("GET")
+            .uri(format!("/v1/memories/{}?sections=2", memory_id))
+            .body(Body::empty())
+            .expect("get request");
+        let resp = app.clone().oneshot(get_sec_req_2).await.expect("execute request");
+        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let val: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
+        let content = val["memory"]["memory"].as_str().expect("string");
+        assert!(!content.contains("Chapter 1: Introduction"));
+        assert!(content.contains("Chapter 2: Summary"));
+
+        // 3. Test GET /v1/memories/{id}?range=2-15
+        let get_range_req = Request::builder()
+            .method("GET")
+            .uri(format!("/v1/memories/{}?range=2-15", memory_id))
+            .body(Body::empty())
+            .expect("get request");
+        let resp = app.clone().oneshot(get_range_req).await.expect("execute request");
+        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let val: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
+        let content = val["memory"]["memory"].as_str().expect("string");
+        assert_eq!(content, "Chapter 1: In");
+
+        // 4. Test GET /v1/memories/{id}/outline
+        let outline_req = Request::builder()
+            .method("GET")
+            .uri(format!("/v1/memories/{id}/outline", id = memory_id))
+            .body(Body::empty())
+            .expect("outline request");
+        let resp = app.clone().oneshot(outline_req).await.expect("execute request");
+        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let val: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
+        assert_eq!(val["status"], "ok");
+        let outline = val["outline"].as_array().expect("array");
+        assert_eq!(outline.len(), 2);
+        assert_eq!(outline[0]["title"], "Chapter 1: Introduction");
+        assert_eq!(outline[0]["level"], 1);
+        assert_eq!(outline[0]["index"], 1);
+        assert_eq!(outline[1]["title"], "Chapter 2: Summary");
+        assert_eq!(outline[1]["level"], 1);
+        assert_eq!(outline[1]["index"], 2);
+
+        // 5. Test search mode=ids
+        let search_ids_req = Request::builder()
+            .method("POST")
+            .uri("/v1/memories/search")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "query": "Introduction",
+                    "mode": "ids"
+                })
+                .to_string(),
+            ))
+            .expect("search request");
+        let resp = app.clone().oneshot(search_ids_req).await.expect("execute request");
+        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let val: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
+        assert_eq!(val["status"], "ok");
+        let results = val["results"].as_array().expect("array");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["id"], memory_id);
+        assert!(results[0].get("score").is_some());
+        assert_eq!(results[0]["path"], "user123");
+        assert!(results[0].get("memory").is_none());
+        assert!(results[0].get("metadata").is_none());
+
+        // 6. Test search mode=snippet (extract with title)
+        let search_snippet_req = Request::builder()
+            .method("POST")
+            .uri("/v1/memories/search")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "query": "summary section",
+                    "mode": "snippet"
+                })
+                .to_string(),
+            ))
+            .expect("search request");
+        let resp = app.clone().oneshot(search_snippet_req).await.expect("execute request");
+        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let val: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
+        assert_eq!(val["mode"], "snippet");
+        let results = val["results"].as_array().expect("array");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0]["id"], memory_id);
+        assert_eq!(results[0]["title"], "Test Chapter Book");
+        assert!(results[0]["snippet"].as_str().expect("string").contains("summary section"));
+
+        // 7. Add several large memories to test the 8KB hard cap truncation
+        let large_content = "X".repeat(2000); // 2KB content each, easily exceeding 8KB when combined
+        for i in 0..6 {
+            let add_req = Request::builder()
+                .method("POST")
+                .uri("/v1/memories")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "text": format!("Memory Large #{} content: {}", i, large_content),
+                        "user_id": format!("large_user_{}", i),
+                        "metadata": {"title": format!("Large Title #{}", i)}
+                    })
+                    .to_string(),
+                ))
+                .expect("failed to build add request");
+            let resp = app.clone().oneshot(add_req).await.expect("execute request");
+            assert_eq!(resp.status(), StatusCode::OK);
+        }
+
+        // Search mode=full, should return truncated: true and keep total response <= 8KB
+        let search_large_req = Request::builder()
+            .method("POST")
+            .uri("/v1/memories/search")
+            .header("content-type", "application/json")
+            .body(Body::from(
+                serde_json::json!({
+                    "query": "Memory Large",
+                    "limit": 10
+                })
+                .to_string(),
+            ))
+            .expect("search request");
+        let resp = app.oneshot(search_large_req).await.expect("execute request");
+        let body_len = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let val_large: serde_json::Value = serde_json::from_slice(&body_len).expect("parse JSON");
+        assert_eq!(val_large["status"], "ok");
+        assert_eq!(val_large["truncated"], true);
+        assert!(body_len.len() <= 8192);
+        let results_large = val_large["results"].as_array().expect("array");
+        assert!(results_large.len() > 0);
+        assert!(results_large.len() < 7);
     }
 }

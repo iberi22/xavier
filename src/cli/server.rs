@@ -462,6 +462,14 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/memory/timeline/query", post(timeline_query_handler))
         .route("/v1/memories", post(add_handler).get(stats_handler))
         .route("/v1/memories/search", post(search_handler))
+        .route(
+            "/v1/memories/{id}",
+            get(xavier::server::v1_api::v1_memories_get),
+        )
+        .route(
+            "/v1/memories/{id}/outline",
+            get(xavier::server::v1_api::v1_memories_outline),
+        )
         .route("/agents", get(agent_list_handler))
         .route("/workspace/default", get(workspace_info_handler))
         .route("/v1/workspaces/db", post(create_workspace_db_handler).get(list_workspace_dbs_handler))
