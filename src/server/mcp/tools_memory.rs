@@ -311,7 +311,7 @@ pub async fn handle_memory_tool(
             let candidates: Vec<Value> = results
                 .into_iter()
                 .map(|doc| {
-                    let snippet: String = doc.content.chars().take(100).collect();
+                    let snippet: String = crate::memory::snippet::clip_chars(&doc.content, 100).to_string();
                     let kind = doc
                         .metadata
                         .get("kind")
@@ -848,7 +848,7 @@ pub async fn handle_memory_tool(
 
                     let doc_content = if is_this_doc_truncated {
                         let mut truncated: String =
-                            record.content.chars().take(max_chars_per_doc).collect();
+                            crate::memory::snippet::clip_chars(&record.content, max_chars_per_doc).to_string();
                         truncated.push_str("\n[... doc truncated ...]");
                         truncated
                     } else {
@@ -872,7 +872,7 @@ pub async fn handle_memory_tool(
                         id: record.id.clone().unwrap_or_default(),
                         path: record.path.clone(),
                         score: 0.0,
-                        snippet: record.content.chars().take(200).collect(),
+                        snippet: crate::memory::snippet::clip_chars(&record.content, 200).to_string(),
                         provenance: MCPProvenance {
                             source: "search_filtered".to_string(),
                             retrieved_at: chrono::Utc::now().to_rfc3339(),
@@ -895,7 +895,7 @@ pub async fn handle_memory_tool(
                         total_chars, max_chars
                     ));
                     // Truncate at character boundary
-                    let mut truncated_text: String = context.chars().take(max_chars).collect();
+                    let mut truncated_text: String = crate::memory::snippet::clip_chars(&context, max_chars).to_string();
                     truncated_text.push_str("\n[... truncated ...]");
                     context = truncated_text;
                 } else if any_doc_truncated {

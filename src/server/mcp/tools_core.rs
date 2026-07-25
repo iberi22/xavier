@@ -209,7 +209,7 @@ pub async fn handle_core_tool(
                     id: record.id.clone(),
                     path: record.path.clone(),
                     score: 0.0, // context retrieval doesn't have a score
-                    snippet: record.content.chars().take(200).collect(),
+                    snippet: crate::memory::snippet::clip_chars(&record.content, 200).to_string(),
                     provenance: MCPProvenance {
                         source: "memory_store".to_string(),
                         retrieved_at: chrono::Utc::now().to_rfc3339(),
