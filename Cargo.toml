@@ -163,6 +163,10 @@ path = "tests/e2e/governance_e2e.rs"
 name = "context_regen_e2e"
 path = "tests/e2e/context_regen_e2e.rs"
 
+[[test]]
+name = "xtsp"
+path = "tests/xtsp/mod.rs"
+
 [dependencies]
 code-graph = { path = "./code-graph" }
 anyhow = "1.0.102"
