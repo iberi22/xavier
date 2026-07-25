@@ -15,6 +15,7 @@ import InputArea from "./components/InputArea";
 import { OnboardingFlow } from "./components/Onboarding/OnboardingFlow";
 import ParticleBackground from "./components/ParticleBackground";
 import TopStatusBar from "./components/TopStatusBar";
+import { MalocaView } from "./maloca";
 import { initialBookmarks } from "./data";
 import type {
   BackendGraphData,
@@ -426,6 +427,17 @@ export default function App() {
   if (hash === "#/2fa/setup") return <TwoFactorSetup />;
   if (hash === "#/2fa/backup") return <BackupCodesPage />;
   if (hash === "#/master-key") return <MasterKeyPage />;
+
+  if (hash === "#/maloca" || hash.startsWith("#/maloca/")) {
+    return (
+      <MalocaView
+        onClose={() => {
+          window.location.hash = "";
+        }}
+      />
+    );
+  }
+
 
   if (showOnboarding) {
     return <OnboardingFlow onComplete={() => setShowOnboarding(false)} />;
