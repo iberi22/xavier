@@ -168,6 +168,8 @@ pub struct ManagerActionBody {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MeshSnapshot {
+    /// `"mock"` until edge-mesh bridge (P2P real = fuera de ola).
+    pub mode: String,
     pub genesis_node_id: String,
     pub parent_nodes_enabled: bool,
     pub manager_adds_vote_weight: bool,
@@ -180,6 +182,66 @@ pub struct MeshSnapshot {
 pub struct MeshNodeInfo {
     pub node_id: String,
     pub role: String,
+    pub note: String,
+    pub karma: i64,
+    pub active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum VoteChoice {
+    Yes,
+    No,
+    Abstain,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Vote {
+    pub id: String,
+    pub proposal_id: String,
+    pub node_id: String,
+    pub choice: VoteChoice,
+    /// Stub weight for this slice (1.0); full 50/25/25 formula later.
+    pub weight: f64,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CastVoteBody {
+    #[serde(default = "default_node_id")]
+    pub node_id: String,
+    pub choice: VoteChoice,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DecisionKind {
+    ProposalCreated,
+    Voted,
+    ManagerRequestReconsideration,
+    ManagerRequestScenarioAnalysis,
+    Closed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DecisionEvent {
+    pub id: String,
+    pub kind: DecisionKind,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proposal_id: Option<String>,
+    pub actor_node_id: String,
+    /// Always `lab_genesis` — history anchored to genesis.
+    pub genesis_node_id: String,
+    pub payload: serde_json::Value,
+    pub created_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeRecord {
+    pub node_id: String,
+    pub role: String,
+    pub karma: i64,
+    pub active: bool,
     pub note: String,
 }
 
