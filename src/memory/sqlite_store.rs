@@ -166,6 +166,7 @@ impl SqliteMemoryStore {
             content_iv: row.get(16)?,
             metadata_iv: row.get(17)?,
             score: 0.0,
+            deleted_at: None,
         })
     }
 }

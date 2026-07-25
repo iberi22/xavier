@@ -586,6 +586,7 @@ mod tests {
             content_iv: None,
             metadata_iv: None,
             score: 0.0,
+            deleted_at: None,
         }
     }
 

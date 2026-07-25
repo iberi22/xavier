@@ -265,6 +265,7 @@ mod tests {
             encrypted_dek: None,
             metadata_iv: None,
             score: 0.0,
+            deleted_at: None,
         };
 
         let result = usecase.add(record).await;

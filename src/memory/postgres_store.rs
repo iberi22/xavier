@@ -166,6 +166,7 @@ impl PostgresMemoryStore {
             content_iv: row.try_get("content_iv")?,
             metadata_iv: row.try_get("metadata_iv")?,
             score: 0.0,
+            deleted_at: None,
         })
     }
 }

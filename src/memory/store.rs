@@ -111,6 +111,8 @@ pub struct MemoryRecord {
     pub metadata_iv: Option<Vec<u8>>,
     #[serde(default)]
     pub score: f32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deleted_at: Option<DateTime<Utc>>,
 }
 
 impl Default for MemoryRecord {
@@ -136,6 +138,7 @@ impl Default for MemoryRecord {
             content_iv: None,
             metadata_iv: None,
             score: 0.0,
+            deleted_at: None,
         }
     }
 }
@@ -295,6 +298,7 @@ impl MemoryRecord {
                 v.as_str()
                     .and_then(|s| crate::utils::crypto::hex_decode(s).ok())
             }),
+            deleted_at: None,
             score: document.score,
             revisions: vec![MemoryRevision {
                 revision,
