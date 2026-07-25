@@ -428,6 +428,15 @@ impl MalocaStore {
         self.persist(&g);
         Ok(action)
     }
+
+    #[cfg(test)]
+    fn set_node_active(&self, node_id: &str, active: bool) {
+        let mut g = self.inner.write();
+        if let Some(n) = g.nodes.iter_mut().find(|n| n.node_id == node_id) {
+            n.active = active;
+        }
+        self.persist(&g);
+    }
 }
 
 fn short_id() -> String {
@@ -613,6 +622,132 @@ mod tests {
             .expect("manager event");
         assert_eq!(ev.genesis_node_id, GENESIS_NODE_ID);
         assert_eq!(ev.payload["adds_vote_weight"], false);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn create_proposal_appends_decision_anchored_to_genesis() {
+        let (dir, store) = temp_store();
+        let before = store.pack().decisions_count;
+        let p = store.create_proposal(CreateProposalBody {
+            proposal_type: "feature_request".into(),
+            title: "Ship vote UI".into(),
+            body: "panel dogfood".into(),
+            locked_param: None,
+        });
+        assert_eq!(store.pack().decisions_count, before + 1);
+        let ev = store
+            .list_decisions()
+            .into_iter()
+            .find(|d| d.proposal_id.as_deref() == Some(p.id.as_str()))
+            .expect("proposal_created");
+        assert_eq!(ev.kind, DecisionKind::ProposalCreated);
+        assert_eq!(ev.genesis_node_id, GENESIS_NODE_ID);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn duplicate_vote_from_same_node_rejected() {
+        let (dir, store) = temp_store();
+        store
+            .cast_vote(
+                "p-genesis-params",
+                CastVoteBody {
+                    node_id: GENESIS_NODE_ID.into(),
+                    choice: VoteChoice::Yes,
+                },
+            )
+            .unwrap();
+        let err = store
+            .cast_vote(
+                "p-genesis-params",
+                CastVoteBody {
+                    node_id: GENESIS_NODE_ID.into(),
+                    choice: VoteChoice::No,
+                },
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("already voted"));
+        assert_eq!(store.list_votes(Some("p-genesis-params")).len(), 1);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn inactive_node_cannot_vote() {
+        let (dir, store) = temp_store();
+        store.set_node_active(GENESIS_NODE_ID, false);
+        let err = store
+            .cast_vote(
+                "p-genesis-params",
+                CastVoteBody {
+                    node_id: GENESIS_NODE_ID.into(),
+                    choice: VoteChoice::Yes,
+                },
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("not active"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn mesh_is_mock_and_lists_karma() {
+        let (dir, store) = temp_store();
+        let mesh = store.mesh();
+        assert_eq!(mesh.mode, "mock");
+        assert_eq!(mesh.genesis_node_id, GENESIS_NODE_ID);
+        let genesis = mesh
+            .nodes
+            .iter()
+            .find(|n| n.node_id == GENESIS_NODE_ID)
+            .expect("genesis");
+        assert!(genesis.karma >= 500);
+        let local = mesh.nodes.iter().find(|n| n.node_id == "local").expect("local");
+        assert!(local.karma < 500);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn complete_inbox_awards_karma_to_claimer() {
+        let (dir, store) = temp_store();
+        let before = store
+            .list_nodes()
+            .into_iter()
+            .find(|n| n.node_id == "local")
+            .unwrap()
+            .karma;
+        store.claim("offer-seed-1", "local").unwrap();
+        store.complete("offer-seed-1").unwrap();
+        let after = store
+            .list_nodes()
+            .into_iter()
+            .find(|n| n.node_id == "local")
+            .unwrap()
+            .karma;
+        assert_eq!(after, before + 1);
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn list_votes_filters_by_proposal() {
+        let (dir, store) = temp_store();
+        let other = store.create_proposal(CreateProposalBody {
+            proposal_type: "general".into(),
+            title: "Other".into(),
+            body: String::new(),
+            locked_param: None,
+        });
+        store
+            .cast_vote(
+                "p-genesis-params",
+                CastVoteBody {
+                    node_id: GENESIS_NODE_ID.into(),
+                    choice: VoteChoice::Abstain,
+                },
+            )
+            .unwrap();
+        assert_eq!(store.list_votes(Some("p-genesis-params")).len(), 1);
+        assert!(store.list_votes(Some(&other.id)).is_empty());
+        assert_eq!(store.list_votes(None).len(), 1);
         let _ = std::fs::remove_dir_all(dir);
     }
 }
