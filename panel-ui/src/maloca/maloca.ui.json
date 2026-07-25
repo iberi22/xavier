@@ -31,6 +31,7 @@
       { "id": "support", "label": "Soporte", "enabled": true },
       { "id": "nodes", "label": "Nodos", "enabled": true },
       { "id": "params", "label": "Params", "enabled": true },
+      { "id": "decisions", "label": "Decisiones", "enabled": true },
       { "id": "docs", "label": "Docs", "enabled": true }
     ]
   },

@@ -65,12 +65,55 @@ export type NetworkParam = {
 };
 
 export type MeshSnapshot = {
+  mode: string;
   genesis_node_id: string;
   parent_nodes_enabled: boolean;
   manager_adds_vote_weight: boolean;
   wallet_multi_node_anchor: boolean;
-  nodes: { node_id: string; role: string; note: string }[];
+  nodes: {
+    node_id: string;
+    role: string;
+    note: string;
+    karma: number;
+    active: boolean;
+  }[];
   meshes: { id: string; kind: string; description: string }[];
+};
+
+export type VoteChoice = "yes" | "no" | "abstain";
+
+export type Vote = {
+  id: string;
+  proposal_id: string;
+  node_id: string;
+  choice: VoteChoice;
+  weight: number;
+  created_at: string;
+};
+
+export type DecisionKind =
+  | "proposal_created"
+  | "voted"
+  | "manager_request_reconsideration"
+  | "manager_request_scenario_analysis"
+  | "closed";
+
+export type DecisionEvent = {
+  id: string;
+  kind: DecisionKind;
+  proposal_id?: string | null;
+  actor_node_id: string;
+  genesis_node_id: string;
+  payload: unknown;
+  created_at: string;
+};
+
+export type NodeRecord = {
+  node_id: string;
+  role: string;
+  karma: number;
+  active: boolean;
+  note: string;
 };
 
 export type MalocaSectionId =
@@ -81,6 +124,7 @@ export type MalocaSectionId =
   | "support"
   | "nodes"
   | "params"
+  | "decisions"
   | "docs";
 
 export type MalocaTheme = {
