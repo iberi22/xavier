@@ -1309,6 +1309,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                         revision: 1,
                         primary: true,
                         score: 0.0,
+                        deleted_at: None,
                         parent_id: None,
                         cluster_id: None,
                         level: Default::default(),

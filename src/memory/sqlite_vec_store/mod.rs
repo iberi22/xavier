@@ -145,6 +145,7 @@ impl VecSqliteMemoryStore {
             content_iv: row.get(16).ok(),
             metadata_iv: row.get(17).ok(),
             score: 0.0,
+            deleted_at: None,
         })
     }
 
