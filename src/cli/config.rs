@@ -106,9 +106,7 @@ pub fn require_xavier_token() -> Result<String> {
 
 /// Code graph db path.
 pub fn code_graph_db_path() -> PathBuf {
-    std::env::var("XAVIER_CODE_GRAPH_DB_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| XavierSettings::resolve_data_dir().join("code_graph.db"))
+    xavier::codebase::codegraph_paths::code_graph_db_path_for(std::path::Path::new("."))
 }
 
 /// State panel root.

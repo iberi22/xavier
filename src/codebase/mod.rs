@@ -7,6 +7,7 @@ use anyhow::{anyhow, Result};
 use regex::Regex;
 use std::sync::LazyLock;
 
+pub mod codegraph_paths;
 pub mod connection_manager;
 pub mod conversations_db;
 pub mod db;
