@@ -30,6 +30,7 @@ pub mod schema;
 pub mod semantic;
 pub mod semantic_cache;
 pub mod simple_index;
+pub mod snippet;
 pub mod sqlite_store;
 pub mod sqlite_vec_store;
 pub mod store;
