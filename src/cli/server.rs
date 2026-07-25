@@ -461,7 +461,8 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/memory/manage", post(manage_handler))
         .route("/memory/timeline/query", post(timeline_query_handler))
         .route("/v1/memories", post(add_handler).get(stats_handler))
-        .route("/v1/memories/search", post(search_handler))
+        .route("/v1/memories/search", post(xavier::server::v1_api::v1_memories_search))
+        .route("/v1/memories/prune", post(xavier::server::v1_api::v1_memories_prune))
         .route(
             "/v1/memories/{id}",
             get(xavier::server::v1_api::v1_memories_get),
