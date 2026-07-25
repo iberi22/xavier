@@ -369,7 +369,7 @@ fn extract_tasks(body: &Value) -> Vec<Value> {
 }
 
 fn truncate(value: &str, max_chars: usize) -> String {
-    value.chars().take(max_chars).collect()
+    crate::memory::snippet::clip_chars(value, max_chars).to_string()
 }
 
 fn urlencoding(s: &str) -> String {

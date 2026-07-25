@@ -245,8 +245,9 @@ pub async fn handle_context_tool(
 
             let mut output = String::new();
             for (i, doc) in results.iter().enumerate() {
-                let snippet = if doc.content.len() > 200 {
-                    format!("{}...", &doc.content[..200])
+                let snippet_str = crate::memory::snippet::clip_chars(&doc.content, 200);
+                let snippet = if snippet_str.len() < doc.content.len() {
+                    format!("{}...", snippet_str)
                 } else {
                     doc.content.clone()
                 };

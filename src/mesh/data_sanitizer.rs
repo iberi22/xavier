@@ -197,10 +197,10 @@ impl Default for DataSanitizer {
 /// Mask a string by keeping only the first `prefix_visible` characters visible
 /// and replacing the rest with asterisks.
 fn mask_string(s: &str, prefix_visible: usize) -> Value {
-    if s.len() <= prefix_visible {
+    if s.chars().count() <= prefix_visible {
         return Value::String(s.to_string());
     }
-    let visible: String = s.chars().take(prefix_visible).collect();
+    let visible = crate::memory::snippet::clip_chars(s, prefix_visible);
     let masked = format!("{}***", visible);
     Value::String(masked)
 }

@@ -129,7 +129,7 @@ fn render_evidence_block(evidence: &[Evidence]) -> String {
                     .map(|item| {
                         serde_json::json!({
                             "title": item.source_id,
-                            "description": item.content.chars().take(180).collect::<String>(),
+                            "description": crate::memory::snippet::clip_chars(&item.content, 180).to_string(),
                             "meta": format!("relevance {:.2}", item.relevance)
                         })
                     })
@@ -153,7 +153,7 @@ fn render_documents_block(documents: &[RetrievedDocument]) -> String {
                     .map(|doc| {
                         serde_json::json!({
                             "title": doc.path,
-                            "content": doc.content.chars().take(260).collect::<String>()
+                            "content": crate::memory::snippet::clip_chars(&doc.content, 260).to_string()
                         })
                     })
                     .collect::<Vec<_>>()

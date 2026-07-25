@@ -40,8 +40,9 @@ pub async fn recall_memories(query: &str, limit: usize) -> Result<()> {
                     let content = item["content"].as_str().unwrap_or("(no content)");
                     let kind = item["metadata"]["kind"].as_str().unwrap_or("unknown");
                     let score = item["score"].as_f64().unwrap_or(0.0);
-                    let preview = if content.len() > 120 {
-                        format!("{}...", &content[..120])
+                    let clipped = crate::memory::snippet::clip_chars(content, 120);
+                    let preview = if clipped.len() < content.len() {
+                        format!("{}...", clipped)
                     } else {
                         content.to_string()
                     };
@@ -67,8 +68,9 @@ pub async fn recall_memories(query: &str, limit: usize) -> Result<()> {
                                 .get("score")
                                 .and_then(|v| v.as_f64())
                                 .unwrap_or(1.0);
-                            let preview = if content.len() > 120 {
-                                format!("{}...", &content[..120])
+                            let clipped = crate::memory::snippet::clip_chars(content, 120);
+                            let preview = if clipped.len() < content.len() {
+                                format!("{}...", clipped)
                             } else {
                                 content.to_string()
                             };

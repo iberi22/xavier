@@ -343,7 +343,7 @@ impl SecurityScanner {
                 severity: 0.5,
                 context: Some(format!(
                     "Content: {}",
-                    &region.content[..region.content.len().min(30)]
+                    crate::memory::snippet::clip_chars(&region.content, 30)
                 )),
             });
         }

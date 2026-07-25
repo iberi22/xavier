@@ -355,4 +355,12 @@ We will show that Rust eliminates whole classes of bugs."#;
         assert_eq!(excerpt.snippet.len(), 25);
         assert!(excerpt.snippet.contains("safe memory"));
     }
+
+    #[test]
+    fn test_spanish_and_emoji_safe_clipping() {
+        let text = "El pingüino y el árbol de navidad están en España 🐧🎄🇪🇸";
+        for max in 0..=text.chars().count() + 5 {
+            let _clipped = clip_chars(text, max);
+        }
+    }
 }

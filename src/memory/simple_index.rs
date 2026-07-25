@@ -122,7 +122,7 @@ impl SimpleMemoryIndex {
                 SearchResult {
                     id: doc.id.clone(),
                     path: doc.path.clone(),
-                    summary: doc.content.chars().take(200).collect(),
+                    summary: crate::memory::snippet::clip_chars(&doc.content, 200).to_string(),
                     score,
                 }
             })

@@ -564,7 +564,7 @@ impl XavierBot {
                                         .and_then(|t| t.as_str())
                                         .unwrap_or("Untitled");
                                     let content_preview =
-                                        doc.content.chars().take(100).collect::<String>();
+                                        crate::memory::snippet::clip_chars(&doc.content, 100).to_string();
                                     response.push_str(&format!(
                                         "{}\\. *{}*\n_{}_\n\n",
                                         i + 1,
@@ -716,7 +716,7 @@ pub async fn handle_memory_command(args: &str) -> String {
                                 .and_then(|t| t.as_str())
                                 .or(doc.path.split('/').last())
                                 .unwrap_or("Untitled");
-                            let preview: String = doc.content.chars().take(100).collect();
+                            let preview: String = crate::memory::snippet::clip_chars(&doc.content, 100).to_string();
                             response.push_str(&format!(
                                 "{}\\. *{}*\n_{}_\n\n",
                                 i + 1,

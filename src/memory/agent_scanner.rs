@@ -166,7 +166,7 @@ impl AgentScanner {
                             content: format!(
                                 "Found fragment in {}: {}",
                                 key,
-                                value.chars().take(2000).collect::<String>()
+                                crate::memory::snippet::clip_chars(&value, 2000)
                             ),
                         });
                     }
@@ -203,7 +203,7 @@ impl AgentScanner {
             // Attempt generic parsing
             let messages = vec![AgentMessage {
                 role: "raw_json_extract".to_string(),
-                content: content.chars().take(3000).collect::<String>(), // Limit size
+                content: crate::memory::snippet::clip_chars(&content, 3000).to_string(), // Limit size
             }];
 
             Ok(Some(AgentSession {

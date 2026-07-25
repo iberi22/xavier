@@ -191,14 +191,15 @@ pub async fn session_compact_handler(
     if let Some(oldest) = all_docs.first() {
         compacted_content.push_str(&format!(
             "[EARLIEST] {}\n",
-            &oldest.content[..oldest.content.len().min(200)]
+            xavier::memory::snippet::clip_chars(&oldest.content, 200)
         ));
     }
 
     compacted_content.push_str("\n=== KEPT RECENT ENTRIES ===\n");
     for doc in &compact_docs {
-        let truncate_content = if doc.content.len() > 500 {
-            format!("{}... [truncated]", &doc.content[..500])
+        let clipped = xavier::memory::snippet::clip_chars(&doc.content, 500);
+        let truncate_content = if clipped.len() < doc.content.len() {
+            format!("{}... [truncated]", clipped)
         } else {
             doc.content.clone()
         };

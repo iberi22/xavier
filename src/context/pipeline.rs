@@ -367,8 +367,8 @@ impl ContextRegenerationPipeline {
             summary_lines.push("\n[Conversational Flow Preview]".to_string());
             let preview_docs = &sorted_docs[sorted_docs.len() - 2..];
             for doc in preview_docs {
-                let preview: String = doc.content.chars().take(100).collect();
-                summary_lines.push(format!("- {}: {}{}", doc.role, preview, if doc.content.len() > 100 { "..." } else { "" }));
+                let preview: String = crate::memory::snippet::clip_chars(&doc.content, 100).to_string();
+                summary_lines.push(format!("- {}: {}{}", doc.role, preview, if doc.content.chars().count() > 100 { "..." } else { "" }));
             }
         }
 

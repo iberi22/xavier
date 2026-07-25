@@ -172,7 +172,7 @@ fn truncate(value: &str, max_chars: usize) -> String {
         return ".".repeat(max_chars);
     }
 
-    let head: String = value.chars().take(max_chars - 3).collect();
+    let head: String = crate::memory::snippet::clip_chars(value, max_chars - 3).to_string();
     format!("{head}...")
 }
 

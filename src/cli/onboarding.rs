@@ -222,7 +222,7 @@ pub fn detect_gpu_and_vram() -> (Option<String>, Option<f32>) {
                 }
                 if let Some(pos) = line.find("VRAM (Total): ") {
                     let ram_str = line[pos + 14..].trim();
-                    let num_str: String = ram_str.chars().take_while(|c| c.is_numeric()).collect();
+                    let num_str = ram_str.split(|c: char| !c.is_numeric()).next().unwrap_or("");
                     if let Ok(num) = num_str.parse::<f32>() {
                         if ram_str.contains("GB") {
                             vram_gb = Some(num);

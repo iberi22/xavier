@@ -852,7 +852,7 @@ pub async fn v1_memories_search(
         let results = documents
             .into_iter()
             .map(|doc| {
-                let snippet: String = doc.content.chars().take(100).collect();
+                let snippet: String = crate::memory::snippet::clip_chars(&doc.content, 100).to_string();
                 let kind = doc
                     .metadata
                     .get("kind")
@@ -1553,7 +1553,7 @@ mod tests {
                     "DEBUG doc: id={:?}, path={}, content={}..",
                     d.id,
                     d.path,
-                    &d.content[..std::cmp::min(50, d.content.len())]
+                    crate::memory::snippet::clip_chars(&d.content, 50)
                 );
             }
         }

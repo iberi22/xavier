@@ -114,14 +114,13 @@ fn truncate_compact_json(value: &serde_json::Value, max_chars: usize) -> String 
 }
 
 fn truncate(value: &str, max_chars: usize) -> String {
-    let mut chars = value.chars();
-    let truncated: String = chars.by_ref().take(max_chars).collect();
-    if chars.next().is_some() && max_chars > 1 {
+    let char_count = value.chars().count();
+    if char_count > max_chars && max_chars > 1 {
         format!(
             "{}…",
-            truncated.chars().take(max_chars - 1).collect::<String>()
+            crate::memory::snippet::clip_chars(value, max_chars - 1)
         )
     } else {
-        truncated
+        crate::memory::snippet::clip_chars(value, max_chars).to_string()
     }
 }

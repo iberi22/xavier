@@ -165,9 +165,9 @@ impl ContextBuilder {
             preview.push_str(&format!("{}: {}\n", msg.role, msg.content));
         }
 
-        let truncated: String = preview.chars().take(max_chars).collect();
+        let truncated: String = crate::memory::snippet::clip_chars(&preview, max_chars).to_string();
         context.push_str(&truncated);
-        if preview.len() > max_chars {
+        if preview.chars().count() > max_chars {
             context.push_str("...");
         }
         context.push_str("\n\n");

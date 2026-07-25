@@ -42,8 +42,8 @@ impl ContextManager {
 
     /// Put.
     pub fn put(&mut self, session_id: &str, content: String, level: ContextLevel) {
-        let sanitized_content = if content.len() > self.max_size_chars {
-            content.chars().take(self.max_size_chars).collect()
+        let sanitized_content = if content.chars().count() > self.max_size_chars {
+            crate::memory::snippet::clip_chars(&content, self.max_size_chars).to_string()
         } else {
             content
         };

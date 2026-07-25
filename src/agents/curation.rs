@@ -47,7 +47,7 @@ impl CurationAgent {
     pub async fn curate(&self, content: &str) -> Result<CurationResult> {
         info!(
             "🧠 Curating content: {}...",
-            content.chars().take(50).collect::<String>()
+            crate::memory::snippet::clip_chars(content, 50)
         );
 
         let prompt = format!(

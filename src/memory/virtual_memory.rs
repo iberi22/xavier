@@ -314,7 +314,7 @@ pub struct MemoryReference {
 /// Create a summary (for token reduction)
 fn create_summary(content: &str) -> String {
     // Take first 400 chars as summary
-    let truncated = content.chars().take(400).collect::<String>();
+    let truncated = crate::memory::snippet::clip_chars(content, 400).to_string();
     if truncated.len() < content.len() {
         format!("{}...[truncated]", truncated)
     } else {
