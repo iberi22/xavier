@@ -99,6 +99,10 @@ pub async fn test_state() -> (AppState, WorkspaceContext, mockito::ServerGuard) 
             embedding_provider_mode: xavier::workspace::EmbeddingProviderMode::BringYourOwn,
             managed_google_embeddings: false,
             sync_policy: xavier::workspace::SyncPolicy::CloudMirror,
+            dedup: xavier::settings::types::DedupSettings {
+                enabled: true,
+                ..xavier::settings::types::DedupSettings::default()
+            },
         },
         xavier::agents::RuntimeConfig::default(),
         unique_test_path("xavier-mcp-store", "threads"),
@@ -449,6 +453,8 @@ async fn xtsp_dedup() {
     let _guard = TEST_MUTEX.lock().await;
     let (state, workspace, _server) = test_state().await;
     let app = v1_router(state.clone(), workspace.clone());
+
+
 
     let text = "Identical content for dedup verification.";
     let user_id = "test-user-dedup";

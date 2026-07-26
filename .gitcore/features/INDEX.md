@@ -1,6 +1,6 @@
 # Features Index
 
-This index registers and details all 25 core and enterprise features of the Xavier Local-First platform. Each feature's architecture, scope, sub-features, implementation status, and testing boundaries are documented in their respective detail files.
+This index registers and details all 26 core and enterprise features of the Xavier Local-First platform. Each feature's architecture, scope, sub-features, implementation status, and testing boundaries are documented in their respective detail files.
 
 ## Active Features
 
@@ -29,6 +29,7 @@ This index registers and details all 25 core and enterprise features of the Xavi
 [Code-Graph Plugin System & Registry](FEATURE-feat-plugin-system.md)
 [Dependency Security Hygiene](FEATURE-feat-security-hygiene.md)
 [Multi-layer Graph Explorer](FEATURE-feat-graph-explorer.md)
+[Codegraph → Maturity/Docs Bridge](FEATURE-feat-codegraph-maturity-bridge.md)
 
 ## Legend
 - **Stable / Complete:** All feature components are fully tested and functional under production workloads.

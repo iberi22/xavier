@@ -157,9 +157,32 @@ xavier billing
 
 Scan and index a codebase path.
 
+On first scan of a workspace, Xavier may ask to install the optional Colby
+CodeGraph sidecar (consent-first). Decline or failure → Xavier native graph
+continues. Consent is stored in `.xavier/codegraph-sidecar.json`.
+
+Flags:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--reprompt-codegraph` | off | Ask again even if previously declined/skipped. |
+
+Env:
+
+| Variable | Values | Description |
+|---|---|---|
+| `XAVIER_CODEGRAPH_INSTALL` | `ask` · `yes` · `no` · `auto` | Consent policy (default `ask`). |
+| `XAVIER_CODEGRAPH_REPROMPT` | `1` | Same as `--reprompt-codegraph`. |
+| `XAVIER_CODE_GRAPH_NATIVE_ONLY` | `1` | Skip Colby entirely. |
+| `XAVIER_CODEGRAPH_BIN` | path | Existing Colby launcher. |
+
 ```bash
 xavier code scan .
+XAVIER_CODEGRAPH_INSTALL=yes xavier code scan .   # CI / non-interactive install
+xavier code scan . --reprompt-codegraph
 ```
+
+See `.sidecars/README.md` and `docs/ADR/008-codegraph-sidecar-consent.md`.
 
 ### `xavier code find <query>`
 

@@ -47,6 +47,7 @@ async fn test_state() -> (AppState, WorkspaceContext) {
             embedding_provider_mode: xavier::workspace::EmbeddingProviderMode::BringYourOwn,
             managed_google_embeddings: false,
             sync_policy: xavier::workspace::SyncPolicy::CloudMirror,
+            dedup: xavier::settings::types::DedupSettings::default(),
         },
         RuntimeConfig::default(),
         unique_test_path("xavier-e2e-mcp-store", "threads"),

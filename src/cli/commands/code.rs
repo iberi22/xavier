@@ -5,8 +5,12 @@
 
 use crate::cli::commands::enums::{CodeCommand, CLI_HTTP_CLIENT};
 use crate::cli::config::{require_xavier_token, resolve_base_url};
+use xavier::codebase::codegraph_sidecar::{
+    ensure_codegraph_sidecar, EnsureOptions, InstallMode,
+};
 
 use anyhow::Result;
+use std::path::PathBuf;
 
 /// Dispatch a [`CodeCommand`] by making the appropriate HTTP request to the Xavier server.
 pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
@@ -15,11 +19,32 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
     let client = CLI_HTTP_CLIENT.clone();
 
     let response = match cmd {
-        CodeCommand::Scan { path } => {
+        CodeCommand::Scan {
+            path,
+            reprompt_codegraph,
+        } => {
+            // Consent-first Colby sidecar (TTY on CLI). Soft-fails to native.
+            let workspace = PathBuf::from(&path);
+            let workspace = std::path::absolute(&workspace).unwrap_or(workspace);
+            let mut opts = EnsureOptions::default();
+            opts.reprompt = reprompt_codegraph || opts.reprompt;
+            if reprompt_codegraph {
+                // Force ask path when flag set and mode was "no"
+                if opts.install_mode == InstallMode::No {
+                    opts.install_mode = InstallMode::Ask;
+                }
+            }
+            let outcome = ensure_codegraph_sidecar(&workspace, opts);
+            eprintln!("[codegraph] {}", outcome.message);
+
             client
                 .post(format!("{}/code/scan", base_url))
                 .header("X-Xavier-Token", &token)
-                .json(&serde_json::json!({ "path": path }))
+                .json(&serde_json::json!({
+                    "path": path,
+                    "codegraph_available": outcome.available,
+                    "codegraph_bin": outcome.bin_path.as_ref().map(|p| p.display().to_string()),
+                }))
                 .send()
                 .await?
         }

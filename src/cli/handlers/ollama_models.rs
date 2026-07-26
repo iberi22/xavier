@@ -306,6 +306,9 @@ mod tests {
             )),
             multi_db: xavier::storage::multi_db::MultiDbManager::new(),
             system_scan_cache: Arc::new(tokio::sync::RwLock::new(None)),
+            maloca: xavier::maloca::MalocaStore::open(
+                &std::env::temp_dir().join("xavier-maloca-test-ollama"),
+            ),
         }
     }
 
