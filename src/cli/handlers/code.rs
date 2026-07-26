@@ -50,6 +50,21 @@ pub async fn code_index_handler(
             if let Some(bin) = sidecar.bin_path.as_ref() {
                 maybe_sync_colby_project(std::path::Path::new(base_path), bin);
             }
+
+            // Automatically trigger soft dump after successful index
+            let (dump_msg, dump_path_str, dump_success) = match perform_dump(&code_graph, base_path).await {
+                Ok(dump_path) => (
+                    format!(" (Dumped to {})", dump_path.display()),
+                    Some(dump_path.to_string_lossy().into_owned()),
+                    true,
+                ),
+                Err(e) => (
+                    format!(" (Dump failed: {})", e),
+                    None,
+                    false,
+                ),
+            };
+
             Json(serde_json::json!({
                 "status": "ok",
                 "indexed_files": stats.total_files,
@@ -60,8 +75,10 @@ pub async fn code_index_handler(
                 "languages": stats.languages,
                 "codegraph_sidecar": sidecar.message,
                 "codegraph_available": sidecar.available,
-                "message": format!("Indexed {} files, {} symbols, {} imports across {:?}",
-                    stats.total_files, stats.total_symbols, stats.total_imports, stats.languages),
+                "codegraph_dump_path": dump_path_str,
+                "codegraph_dump_success": dump_success,
+                "message": format!("Indexed {} files, {} symbols, {} imports across {:?}{}",
+                    stats.total_files, stats.total_symbols, stats.total_imports, stats.languages, dump_msg),
             }))
         }
         Err(error) => Json(serde_json::json!({
@@ -196,10 +213,18 @@ pub async fn code_scan_handler(
                 maybe_sync_colby_project(std::path::Path::new(&path), bin);
             }
 
-            // Automatically trigger dump after successful scan
-            let dump_msg = match perform_dump(&code_graph, &path).await {
-                Ok(dump_path) => format!(" (Dumped to {})", dump_path.display()),
-                Err(e) => format!(" (Dump failed: {})", e),
+            // Automatically trigger soft dump after successful scan
+            let (dump_msg, dump_path_str, dump_success) = match perform_dump(&code_graph, &path).await {
+                Ok(dump_path) => (
+                    format!(" (Dumped to {})", dump_path.display()),
+                    Some(dump_path.to_string_lossy().into_owned()),
+                    true,
+                ),
+                Err(e) => (
+                    format!(" (Dump failed: {})", e),
+                    None,
+                    false,
+                ),
             };
 
             axum::Json(serde_json::json!({
@@ -212,6 +237,8 @@ pub async fn code_scan_handler(
                 "languages": stats.languages,
                 "codegraph_sidecar": sidecar.message,
                 "codegraph_available": sidecar.available,
+                "codegraph_dump_path": dump_path_str,
+                "codegraph_dump_success": dump_success,
                 "message": format!("Scan complete. {}{}", stats.to_string(), dump_msg),
             }))
         }
