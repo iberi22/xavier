@@ -118,40 +118,45 @@ export default function BookmarksView({
                     <>
                       <button
                         onClick={cancelEdit}
-                        className="p-1.5 rounded-lg bg-white/5 text-white/30 hover:text-red-400 hover:bg-red-400/10 transition-all"
+                        className="p-1.5 rounded-lg bg-white/5 text-white/30 hover:text-red-400 hover:bg-red-400/10 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
                         title="Cancel"
+                        aria-label="Cancel"
                       >
-                        <X className="w-4 h-4" />
+                        <X className="w-4 h-4" aria-hidden="true" />
                       </button>
                       <button
                         onClick={() => saveEdit(b)}
-                        className="p-1.5 rounded-lg bg-[#39ff14]/20 text-[#39ff14] hover:bg-[#39ff14]/30 transition-all"
+                        className="p-1.5 rounded-lg bg-[#39ff14]/20 text-[#39ff14] hover:bg-[#39ff14]/30 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
                         title="Save Changes"
+                        aria-label="Save Changes"
                       >
-                        <Check className="w-4 h-4" />
+                        <Check className="w-4 h-4" aria-hidden="true" />
                       </button>
                     </>
                   ) : (
                     <>
                       <button
                         onClick={() => onPinArtifact(b)}
-                        className="p-1.5 rounded-lg bg-white/5 text-white/30 hover:text-[#39ff14] hover:bg-[#39ff14]/10 transition-all"
+                        className="p-1.5 rounded-lg bg-white/5 text-white/30 hover:text-[#39ff14] hover:bg-[#39ff14]/10 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
                         title="Pin to Canvas"
+                        aria-label="Pin to Canvas"
                       >
-                        <Plus className="w-4 h-4" />
+                        <Plus className="w-4 h-4" aria-hidden="true" />
                       </button>
                       <button
                         onClick={() => startEdit(b)}
-                        className="p-1.5 rounded-lg bg-white/5 text-white/30 hover:text-white transition-all"
+                        className="p-1.5 rounded-lg bg-white/5 text-white/30 hover:text-white transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
                         title="Edit Properties"
+                        aria-label="Edit Properties"
                       >
-                        <PenSquare className="w-4 h-4" />
+                        <PenSquare className="w-4 h-4" aria-hidden="true" />
                       </button>
                       <button
-                        className="p-1.5 rounded-lg bg-white/5 text-white/30 hover:text-white transition-all"
+                        className="p-1.5 rounded-lg bg-white/5 text-white/30 hover:text-white transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
                         title="Share Artifact"
+                        aria-label="Share Artifact"
                       >
-                        <Share2 className="w-4 h-4" />
+                        <Share2 className="w-4 h-4" aria-hidden="true" />
                       </button>
                     </>
                   )}
