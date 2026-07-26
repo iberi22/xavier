@@ -7,6 +7,9 @@ use std::path::PathBuf;
 use tracing::{info, warn};
 
 use crate::cli::code_dump::{perform_dump, perform_load};
+use xavier::codebase::codegraph_sidecar::{
+    ensure_codegraph_sidecar_soft, maybe_sync_colby_project, EnsureOutcome,
+};
 // TODO: Re-implement code_find_symbols and filter_symbols_by_query via code_graph::query::QueryEngine
 use crate::cli::security::secure_optional_request_field;
 use crate::cli::state::CliState;
@@ -15,6 +18,10 @@ use crate::cli::utils::estimate_tokens;
 use code_graph::types::{CodeEdge, EdgeType, Symbol, SymbolKind};
 
 use xavier::ports::inbound::input_security_port::SecureInputResult;
+
+fn ensure_sidecar_for_workspace(workspace: &std::path::Path) -> EnsureOutcome {
+    ensure_codegraph_sidecar_soft(workspace)
+}
 
 /// Auto-index `src/` directory into the code graph.
 ///
@@ -31,23 +38,32 @@ pub async fn code_index_handler(
         .unwrap_or("src");
     info!("Code index request: path={}", base_path);
 
+    let sidecar = ensure_sidecar_for_workspace(&state.workspace_dir);
+
     let code_graph = state.code_graph.read().await;
     match code_graph
         .indexer
         .index(std::path::Path::new(base_path), true)
         .await
     {
-        Ok(stats) => Json(serde_json::json!({
-            "status": "ok",
-            "indexed_files": stats.total_files,
-            "indexed_symbols": stats.total_symbols,
-            "indexed_imports": stats.total_imports,
-            "duration_ms": stats.duration_ms,
-            "paths": [base_path],
-            "languages": stats.languages,
-            "message": format!("Indexed {} files, {} symbols, {} imports across {:?}",
-                stats.total_files, stats.total_symbols, stats.total_imports, stats.languages),
-        })),
+        Ok(stats) => {
+            if let Some(bin) = sidecar.bin_path.as_ref() {
+                maybe_sync_colby_project(std::path::Path::new(base_path), bin);
+            }
+            Json(serde_json::json!({
+                "status": "ok",
+                "indexed_files": stats.total_files,
+                "indexed_symbols": stats.total_symbols,
+                "indexed_imports": stats.total_imports,
+                "duration_ms": stats.duration_ms,
+                "paths": [base_path],
+                "languages": stats.languages,
+                "codegraph_sidecar": sidecar.message,
+                "codegraph_available": sidecar.available,
+                "message": format!("Indexed {} files, {} symbols, {} imports across {:?}",
+                    stats.total_files, stats.total_symbols, stats.total_imports, stats.languages),
+            }))
+        }
         Err(error) => Json(serde_json::json!({
             "status": "error",
             "message": error.to_string(),
@@ -55,6 +71,8 @@ pub async fn code_index_handler(
             "indexed_symbols": 0,
             "indexed_imports": 0,
             "paths": [base_path],
+            "codegraph_sidecar": sidecar.message,
+            "codegraph_available": sidecar.available,
         })),
     }
 }
@@ -164,6 +182,9 @@ pub async fn code_scan_handler(
     let path = requested_path;
     info!("Code scan request: path={}", path);
 
+    // Consent-first Colby sidecar (server usually non-TTY → skip/honour env). Soft-fail.
+    let sidecar = ensure_sidecar_for_workspace(&state.workspace_dir);
+
     let code_graph = state.code_graph.read().await;
     match code_graph
         .indexer
@@ -171,6 +192,10 @@ pub async fn code_scan_handler(
         .await
     {
         Ok(stats) => {
+            if let Some(bin) = sidecar.bin_path.as_ref() {
+                maybe_sync_colby_project(std::path::Path::new(&path), bin);
+            }
+
             // Automatically trigger dump after successful scan
             let dump_msg = match perform_dump(&code_graph, &path).await {
                 Ok(dump_path) => format!(" (Dumped to {})", dump_path.display()),
@@ -185,6 +210,8 @@ pub async fn code_scan_handler(
                 "duration_ms": stats.duration_ms,
                 "paths": [path],
                 "languages": stats.languages,
+                "codegraph_sidecar": sidecar.message,
+                "codegraph_available": sidecar.available,
                 "message": format!("Scan complete. {}{}", stats.to_string(), dump_msg),
             }))
         }
@@ -195,6 +222,8 @@ pub async fn code_scan_handler(
             "indexed_symbols": 0,
             "indexed_imports": 0,
             "paths": [path],
+            "codegraph_sidecar": sidecar.message,
+            "codegraph_available": sidecar.available,
         })),
     }
 }

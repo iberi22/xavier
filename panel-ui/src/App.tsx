@@ -438,7 +438,6 @@ export default function App() {
     );
   }
 
-
   if (showOnboarding) {
     return <OnboardingFlow onComplete={() => setShowOnboarding(false)} />;
   }

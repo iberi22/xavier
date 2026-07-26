@@ -254,6 +254,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         workspace_dir.display()
     );
 
+    // Consent-first Colby sidecar (usually non-TTY on boot → skip/honour env). Soft-fail.
+    let sidecar = xavier::codebase::codegraph_sidecar::ensure_codegraph_sidecar_soft(&workspace_dir);
+    info!("codegraph sidecar: {}", sidecar.message);
+
     let panel_root = state_panel_root(&workspace_dir, &workspace_id);
     let panel_store = Arc::new(ConversationsDb::open("default").await?);
     panel_store.create_schema().await?;
@@ -974,6 +978,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         workspace: workspace_state.clone(),
     };
 
+    // Maloca ops API — public local dogfood (matches @swal/maloca-client; no token).
+    let maloca_store = state.maloca.clone();
+
     let app = Router::new()
         .nest("/auth", auth_routes::<CliState>(&state.state_dir.to_string_lossy()))
         .route("/health", get(health_handler))
@@ -1002,9 +1009,6 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
 
     let agent_indexer_cron = state.agent_indexer.clone();
     let memory_port_cron = state.memory.clone();
-    // Maloca ops API — public local dogfood (matches @swal/maloca-client; no token).
-    let maloca_store = state.maloca.clone();
-
     let app = app
         .with_state(state.clone())
         .merge(xavier::maloca::nested_router(maloca_store));

@@ -53,6 +53,7 @@ opens a Pull Request. Jules reads this `AGENTS.md` first, so:
 - **Persist**: document your decision/finding in the PR description so it can be back-filled.
 
 - **Progressive Memory Disclosure**: To save tokens, **ALWAYS** use `mem_search` (Fat Search) first to identify relevant memories via metadata and snippets. Only use `memory_context` or `get_memory` (Page-In) for the specific IDs or paths you need to see in full.
+- **Skill canónico:** `.agents/skills/xavier-memory-protocol/SKILL.md` (índice en `.agents/skills/README.md`).
 
 ## Best Practices & Performance
 - **Golden Rule (Tokio + Rayon)**: When combining both, never call Rayon's `.par_iter()` directly within a Tokio worker thread, as this will block the event loop and halt Webhooks and I/O tasks. Always wrap Rayon-based computation inside `tokio::task::spawn_blocking`. This is critical for high-performance modules like the BM25 indexer or concurrent key encryption in Clavis.

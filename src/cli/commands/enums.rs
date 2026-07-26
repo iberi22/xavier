@@ -557,7 +557,13 @@ pub enum VerifyCommand {
 #[derive(Subcommand, Debug, Clone)]
 pub enum CodeCommand {
     /// Scan and index a codebase path
-    Scan { path: String },
+    Scan {
+        path: String,
+        /// Re-prompt for Colby CodeGraph sidecar install (ignores prior consent).
+        /// Also: `XAVIER_CODEGRAPH_REPROMPT=1`.
+        #[arg(long)]
+        reprompt_codegraph: bool,
+    },
     /// Find symbols by name
     Find {
         query: String,

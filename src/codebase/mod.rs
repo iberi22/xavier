@@ -9,6 +9,8 @@ use std::sync::LazyLock;
 
 pub mod connection_manager;
 pub mod conversations_db;
+pub mod codegraph_sidecar;
+pub mod codegraph_paths;
 pub mod db;
 
 /// Validation regex for project_id: only alphanumeric, hyphens, and underscores.

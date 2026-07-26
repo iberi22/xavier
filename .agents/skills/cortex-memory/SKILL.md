@@ -1,11 +1,18 @@
 ---
 name: xavier-memory
-description: Use Xavier cognitive memory as an MCP-backed durable knowledge layer for persistent research, architecture context, and reusable agent memory. Use when the host requires MCP transport and the task needs Xavier tools such as `create_memory`, `search_memory`, `get_memory`, `list_projects`, or `get_project_context`.
+description: >-
+  Legacy MCP-only Xavier memory helpers (create_memory, search_memory, get_memory).
+  Prefer the canonical skill `xavier-memory-protocol` for the mandatory
+  Fat Search → Page-In → Persist loop over HTTP or MCP. Use this skill only
+  when the host requires MCP transport details for those tools.
 ---
 
-# Xavier Memory MCP Skill
+# Xavier Memory MCP Skill (legado)
 
-Use Xavier through MCP when the host tool expects MCP transport. For local scripts and operational automation, prefer the HTTP skill under `skills/xavier-http-curl`.
+> **Canonical protocol:** `.agents/skills/xavier-memory-protocol/SKILL.md`
+> Cortex is deprecated. This folder name is historical; follow `xavier-memory-protocol` first.
+
+Use Xavier through MCP when the host tool expects MCP transport. For the mandatory agent memory loop (HTTP + MCP), use **`xavier-memory-protocol`**.
 
 ## Endpoint
 
