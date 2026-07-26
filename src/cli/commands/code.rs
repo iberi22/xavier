@@ -18,6 +18,11 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
     let base_url = resolve_base_url();
     let client = CLI_HTTP_CLIENT.clone();
 
+    let mut scanned_path = None;
+    if let CodeCommand::Scan { path, .. } = &cmd {
+        scanned_path = Some(path.clone());
+    }
+
     let response = match cmd {
         CodeCommand::Scan {
             path,
@@ -151,9 +156,43 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
     let body: serde_json::Value = response.json().await.unwrap_or_default();
     if status.is_success() {
         println!("{}", serde_json::to_string_pretty(&body)?);
+        if let Some(path) = scanned_path {
+            if let Err(err) = soft_dump(&client, &base_url, &token, &path).await {
+                eprintln!("[warn] Soft-dump failed: {}", err);
+            }
+        }
     } else {
         println!("Code graph request failed ({}):", status);
         println!("{}", serde_json::to_string_pretty(&body)?);
     }
+    Ok(())
+}
+
+async fn soft_dump(
+    client: &reqwest::Client,
+    base_url: &str,
+    token: &str,
+    path: &str,
+) -> Result<()> {
+    let response = client
+        .post(format!("{}/code/dump", base_url))
+        .header("X-Xavier-Token", token)
+        .json(&serde_json::json!({ "path": path }))
+        .send()
+        .await?;
+
+    let status = response.status();
+    let body: serde_json::Value = response.json().await.unwrap_or_default();
+
+    if !status.is_success() {
+        let err_msg = body
+            .get("message")
+            .and_then(|m| m.as_str())
+            .unwrap_or("Unknown error");
+        anyhow::bail!("Dump request failed ({}): {}", status, err_msg);
+    }
+
+    let resolved_path = xavier::codebase::codegraph_paths::codegraph_dump_path_for(std::path::Path::new(path));
+    println!("Portable code graph dumped to {}", resolved_path.display());
     Ok(())
 }

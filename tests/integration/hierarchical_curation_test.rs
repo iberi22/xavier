@@ -21,6 +21,7 @@ async fn test_hierarchical_curation_and_retrieval() {
         embedding_provider_mode: EmbeddingProviderMode::BringYourOwn,
         managed_google_embeddings: false,
         sync_policy: SyncPolicy::LocalOnly,
+        dedup: Default::default(),
     };
 
     let workspace = WorkspaceState::new(config, RuntimeConfig::default(), temp_dir)
