@@ -73,15 +73,16 @@ export default function BookmarksView({
         </div>
       </div>
 
-      <div className="flex gap-2 mb-6 overflow-x-auto shrink-0 pb-2 scrollbar-none">
+      <div className="flex gap-2 mb-6 overflow-x-auto shrink-0 pb-2 scrollbar-none" aria-label="Bookmark categories">
         {categories.map((cat) => (
           <button
             key={cat}
+            aria-pressed={activeCategory === cat}
             onClick={() => setActiveCategory(cat)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium transition-all whitespace-nowrap
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium transition-all whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50
               ${activeCategory === cat ? "bg-[#39ff14] text-[#050505] shadow-[0_0_15px_rgba(57,255,20,0.3)]" : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white"}`}
           >
-            {cat !== "All" && <Folder className="w-3.5 h-3.5" />}
+            {cat !== "All" && <Folder className="w-3.5 h-3.5" aria-hidden="true" />}
             {cat}
           </button>
         ))}
@@ -118,40 +119,45 @@ export default function BookmarksView({
                     <>
                       <button
                         onClick={cancelEdit}
-                        className="p-1.5 rounded-lg bg-white/5 text-white/30 hover:text-red-400 hover:bg-red-400/10 transition-all"
+                        className="p-1.5 rounded-lg bg-white/5 text-white/30 hover:text-red-400 hover:bg-red-400/10 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
                         title="Cancel"
+                        aria-label="Cancel editing"
                       >
-                        <X className="w-4 h-4" />
+                        <X className="w-4 h-4" aria-hidden="true" />
                       </button>
                       <button
                         onClick={() => saveEdit(b)}
-                        className="p-1.5 rounded-lg bg-[#39ff14]/20 text-[#39ff14] hover:bg-[#39ff14]/30 transition-all"
+                        className="p-1.5 rounded-lg bg-[#39ff14]/20 text-[#39ff14] hover:bg-[#39ff14]/30 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
                         title="Save Changes"
+                        aria-label="Save changes"
                       >
-                        <Check className="w-4 h-4" />
+                        <Check className="w-4 h-4" aria-hidden="true" />
                       </button>
                     </>
                   ) : (
                     <>
                       <button
                         onClick={() => onPinArtifact(b)}
-                        className="p-1.5 rounded-lg bg-white/5 text-white/30 hover:text-[#39ff14] hover:bg-[#39ff14]/10 transition-all"
+                        className="p-1.5 rounded-lg bg-white/5 text-white/30 hover:text-[#39ff14] hover:bg-[#39ff14]/10 transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
                         title="Pin to Canvas"
+                        aria-label="Pin to Canvas"
                       >
-                        <Plus className="w-4 h-4" />
+                        <Plus className="w-4 h-4" aria-hidden="true" />
                       </button>
                       <button
                         onClick={() => startEdit(b)}
-                        className="p-1.5 rounded-lg bg-white/5 text-white/30 hover:text-white transition-all"
+                        className="p-1.5 rounded-lg bg-white/5 text-white/30 hover:text-white transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
                         title="Edit Properties"
+                        aria-label="Edit Properties"
                       >
-                        <PenSquare className="w-4 h-4" />
+                        <PenSquare className="w-4 h-4" aria-hidden="true" />
                       </button>
                       <button
-                        className="p-1.5 rounded-lg bg-white/5 text-white/30 hover:text-white transition-all"
+                        className="p-1.5 rounded-lg bg-white/5 text-white/30 hover:text-white transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
                         title="Share Artifact"
+                        aria-label="Share Artifact"
                       >
-                        <Share2 className="w-4 h-4" />
+                        <Share2 className="w-4 h-4" aria-hidden="true" />
                       </button>
                     </>
                   )}
