@@ -69,7 +69,10 @@ pub async fn build_mcp_state() -> Result<(AppState, xavier::workspace::Workspace
             ),
         ),
         security_service,
-        code_graph_dump_path: None,
+        code_graph_dump_path: Some({
+            let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            xavier::codebase::codegraph_paths::codegraph_dump_path_for(&cwd)
+        }),
     };
 
     let workspace = WorkspaceState::new(

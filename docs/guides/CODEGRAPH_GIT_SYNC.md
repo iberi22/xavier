@@ -82,3 +82,6 @@ El hook hace soft-fail: un error de sync no bloquea el commit.
 - El dump soft de grafos muy grandes (`total_symbols` ≫ 10k) puede tardar.
 - `--memory` requiere servidor HTTP alcanzable + `XAVIER_TOKEN`; falla en soft
   (no aborta el sync del grafo).
+- Sync **omite** el soft-dump cuando `total_symbols > 25000` (umbral
+  `DUMP_SOFT_SKIP_SYMBOLS`); usa `xavier code dump .` explícitamente.
+- `POST /code/sync` usa el `workspace_dir` del servidor (no `cwd` del proceso).

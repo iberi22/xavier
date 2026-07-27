@@ -231,11 +231,10 @@ pub fn require_xavier_token() -> Result<String> {
     Ok(xavier::security::auth::resolve_xavier_token())
 }
 
-/// Code graph db path.
+/// Code graph db path (canonical — same as HTTP server / doctor / sync).
 pub fn code_graph_db_path() -> PathBuf {
-    std::env::var("XAVIER_CODE_GRAPH_DB_PATH")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| XavierSettings::resolve_data_dir().join("code_graph.db"))
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    xavier::codebase::codegraph_paths::code_graph_db_path_for(&cwd)
 }
 
 /// State panel root.

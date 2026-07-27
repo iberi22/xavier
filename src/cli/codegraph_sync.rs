@@ -16,10 +16,9 @@ use std::process::Command;
 use std::sync::Arc;
 use tracing::info;
 
-use crate::cli::code_dump::perform_dump;
+use crate::cli::code_dump::{perform_dump, DUMP_SOFT_SKIP_SYMBOLS};
 use crate::cli::config::code_graph_db_path;
 use crate::cli::state::CodeGraphState;
-use xavier::codebase::codegraph_paths::codegraph_dump_path_for;
 
 pub const SYNC_CHECKPOINT_FILE: &str = "codegraph-sync-commit";
 
@@ -49,6 +48,10 @@ pub struct GitSyncResult {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub memory_upserts: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dump_error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dump_skipped: Option<String>,
 }
 
 /// Run git-driven sync against the workspace CodeGraph DB (local, no HTTP).
@@ -121,11 +124,38 @@ pub async fn sync_codegraph_with_state(
         ("git_delta".to_string(), base, changes, stats)
     };
 
-    let dump_path = match perform_dump(state, repo_root.to_str().unwrap_or(".")).await {
-        Ok(p) => Some(p),
-        Err(e) => {
-            tracing::warn!("Soft-dump CodeGraph falló: {}", e);
-            None
+    // Soft-dump: skip huge graphs by default (HTTP sync was hanging ~minutes on
+    // pretty JSON of 60k symbols). Dump still available via `xavier code dump`.
+    let (dump_path, dump_error, dump_skipped, status) = if stats.total_symbols > DUMP_SOFT_SKIP_SYMBOLS
+    {
+        let reason = format!(
+            "omitido: {} símbolos > umbral {} (usa `xavier code dump`)",
+            stats.total_symbols, DUMP_SOFT_SKIP_SYMBOLS
+        );
+        tracing::info!("{}", reason);
+        (None, None, Some(reason), "ok".to_string())
+    } else {
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(45),
+            perform_dump(state, repo_root.to_str().unwrap_or(".")),
+        )
+        .await
+        {
+            Ok(Ok(p)) => (Some(p), None, None, "ok".to_string()),
+            Ok(Err(e)) => {
+                tracing::warn!("Soft-dump CodeGraph falló: {}", e);
+                (
+                    None,
+                    Some(e.to_string()),
+                    None,
+                    "degraded".to_string(),
+                )
+            }
+            Err(_) => {
+                let msg = "Soft-dump CodeGraph timeout (45s)".to_string();
+                tracing::warn!("{}", msg);
+                (None, Some(msg), None, "degraded".to_string())
+            }
         }
     };
     write_checkpoint(&repo_root, &head)?;
@@ -144,7 +174,7 @@ pub async fn sync_codegraph_with_state(
     };
 
     Ok(GitSyncResult {
-        status: "ok".to_string(),
+        status,
         mode,
         base: base_label,
         head,
@@ -154,12 +184,12 @@ pub async fn sync_codegraph_with_state(
         indexed_symbols: stats.total_symbols,
         indexed_imports: stats.total_imports,
         duration_ms: stats.duration_ms,
-        dump_path: dump_path
-            .map(|p| p.display().to_string())
-            .or_else(|| Some(codegraph_dump_path_for(&repo_root).display().to_string())),
+        dump_path: dump_path.map(|p| p.display().to_string()),
         checkpoint: checkpoint_path(&repo_root).display().to_string(),
         message: format_sync_message(&stats, empty_graph),
         memory_upserts,
+        dump_error,
+        dump_skipped,
     })
 }
 

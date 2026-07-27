@@ -17,6 +17,15 @@ pub static CLI_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .expect("failed to build HTTP client")
 });
 
+/// Longer timeout for code-graph operations (scan/index/dump can exceed 30s).
+pub static CODE_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(600))
+        .user_agent(concat!("xavier-cli/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .expect("failed to build code HTTP client")
+});
+
 /// Top-level CLI commands for Xavier.
 ///
 /// Each variant maps to a distinct subcommand exposed to the user.

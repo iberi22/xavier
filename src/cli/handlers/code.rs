@@ -447,8 +447,21 @@ pub async fn code_sync_handler(
         .get("memory")
         .and_then(|v| v.as_bool())
         .unwrap_or(false);
+
+    // Prefer a real git root: service cwd (systemd WorkingDirectory) is often
+    // the repo, while workspace_dir may be a parent path without `.git`.
+    let sync_workspace = {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| state.workspace_dir.clone());
+        crate::cli::codegraph_sync::find_git_root(&cwd)
+            .or_else(|| crate::cli::codegraph_sync::find_git_root(&state.workspace_dir))
+            .or_else(|| {
+                crate::cli::codegraph_sync::find_git_root(&state.workspace_dir.join("xavier"))
+            })
+            .unwrap_or(cwd)
+    };
+
     let opts = crate::cli::codegraph_sync::GitSyncOptions {
-        workspace: state.workspace_dir.clone(),
+        workspace: sync_workspace,
         base,
         staged,
         with_memory,
@@ -457,13 +470,16 @@ pub async fn code_sync_handler(
     let code_graph = state.code_graph.read().await;
     match crate::cli::codegraph_sync::sync_codegraph_with_state(
         &code_graph,
-        &std::env::current_dir().unwrap_or_else(|_| state.workspace_dir.clone()),
+        &opts.workspace,
         &opts,
     )
     .await
     {
-        Ok(result) => axum::Json(serde_json::to_value(result).unwrap_or_else(|_| {
-            serde_json::json!({"status": "ok"})
+        Ok(result) => axum::Json(serde_json::to_value(&result).unwrap_or_else(|_| {
+            serde_json::json!({
+                "status": "error",
+                "message": "failed to serialize sync result"
+            })
         })),
         Err(error) => axum::Json(serde_json::json!({
             "status": "error",
