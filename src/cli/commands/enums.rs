@@ -17,6 +17,15 @@ pub static CLI_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
         .expect("failed to build HTTP client")
 });
 
+/// Longer timeout for code-graph operations (scan/index/dump can exceed 30s).
+pub static CODE_HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
+    reqwest::Client::builder()
+        .timeout(Duration::from_secs(600))
+        .user_agent(concat!("xavier-cli/", env!("CARGO_PKG_VERSION")))
+        .build()
+        .expect("failed to build code HTTP client")
+});
+
 /// Top-level CLI commands for Xavier.
 ///
 /// Each variant maps to a distinct subcommand exposed to the user.
@@ -42,6 +51,9 @@ pub enum Command {
         cluster: Vec<String>,
         #[arg(long)]
         level: Vec<String>,
+        /// Allow offline local fallback even when the server returns 401/403
+        #[arg(long)]
+        offline_ok: bool,
     },
     /// Add a memory
     Add {
@@ -62,6 +74,9 @@ pub enum Command {
         query: String,
         #[arg(short, long, default_value_t = 10)]
         limit: usize,
+        /// Allow offline local fallback even when the server returns 401/403
+        #[arg(long)]
+        offline_ok: bool,
     },
     /// Export structured context pack (.xcp) for LLMs
     ExportPack {
@@ -73,7 +88,11 @@ pub enum Command {
         out: PathBuf,
     },
     /// Show statistics
-    Stats,
+    Stats {
+        /// Allow offline local fallback even when the server returns 401/403
+        #[arg(long)]
+        offline_ok: bool,
+    },
     /// Re-index all memories missing embeddings
     Reindex,
     /// Query Xavier code graph
@@ -615,6 +634,21 @@ pub enum CodeCommand {
     Load {
         /// Optional path to the codebase (defaults to '.')
         path: Option<String>,
+    },
+    /// Sync CodeGraph from git deltas (incremental; no full tree walk)
+    Sync {
+        /// Use git diff against the last sync checkpoint (or --base)
+        #[arg(long)]
+        git: bool,
+        /// Base commit-ish (default: `.xavier/codegraph-sync-commit`, else HEAD~1)
+        #[arg(long)]
+        base: Option<String>,
+        /// Diff staged changes (`git diff --cached`) instead of commit range
+        #[arg(long)]
+        staged: bool,
+        /// Upsert short symbol summaries into Xavier memory (`code/{repo}/{stable_id}`)
+        #[arg(long, default_value_t = false)]
+        memory: bool,
     },
 }
 

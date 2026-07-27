@@ -502,6 +502,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/code/stats", get(code_stats_handler))
         .route("/code/dump", post(code_dump_handler))
         .route("/code/load", post(code_load_handler))
+        .route("/code/sync", post(code_sync_handler))
         .route("/code/dependencies", post(code_dependencies_handler))
         .route(
             "/code/reverse-dependencies",
@@ -1180,7 +1181,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                 ),
             ),
             security_service: Arc::clone(&security_service),
-            code_graph_dump_path: None,
+            code_graph_dump_path: Some(
+                xavier::codebase::codegraph_paths::codegraph_dump_path_for(&state.workspace_dir),
+            ),
         };
 
         let bind_host = resolve_http_bind_host();

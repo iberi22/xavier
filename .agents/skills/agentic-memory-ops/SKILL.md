@@ -5,7 +5,9 @@ description: "High-level protocols for autonomous memory management, context eng
 
 # Agentic Memory Operations (2026)
 
-> **Base protocol first:** `.agents/skills/xavier-memory-protocol/SKILL.md` (Fat Search → Page-In → Persist). This skill covers advanced RAG/context strategies on top of that loop.
+> **Canonical base protocol (required):** [`.agents/skills/xavier-memory-protocol/SKILL.md`](../xavier-memory-protocol/SKILL.md)
+> Fat Search → Page-In → Persist over MCP (`mem_search` / `memory_context` / `create_memory`) or HTTP (`POST /memory/search` → page-in → `POST /memory/add`).
+> This skill covers advanced RAG/context strategies **on top of** that loop. Index: [`.agents/skills/README.md`](../README.md).
 
 This skill provides the protocols and strategies for managing Xavier's memory in complex agentic workflows. It shifts the focus from simple retrieval to autonomous context engineering and hierarchical reasoning.
 

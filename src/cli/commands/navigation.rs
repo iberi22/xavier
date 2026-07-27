@@ -1,10 +1,23 @@
 //! CLI navigation command handlers (ls, cd, pwd)
 
 use crate::cli::commands::enums::CLI_HTTP_CLIENT;
-use crate::cli::config::{require_xavier_token, resolve_base_url, resolve_cwd, save_cwd};
+use crate::cli::config::{
+    auth_failed_error, auth_failed_message, is_auth_failure, require_xavier_token, resolve_base_url,
+    resolve_cwd, save_cwd,
+};
 use crate::memory::graph_traversal::AffectedNode;
 use crate::memory::qmd::types::NavEntry;
 use anyhow::Result;
+
+fn nav_auth_or_fail(status: reqwest::StatusCode, body: &str, op: &str) -> Result<()> {
+    if is_auth_failure(status) {
+        eprintln!("{}", auth_failed_message(status.as_u16()));
+        Err(auth_failed_error(status.as_u16()))
+    } else {
+        println!("{op} failed: {body}");
+        Err(anyhow::anyhow!("{op} failed with HTTP {}", status.as_u16()))
+    }
+}
 
 /// Handle ls.
 pub async fn handle_ls(path: Option<String>) -> Result<()> {
@@ -44,10 +57,12 @@ pub async fn handle_ls(path: Option<String>) -> Result<()> {
                 println!("  {} {}", prefix, entry.name);
             }
         }
+        Ok(())
     } else {
-        println!("ls failed: {}", response.text().await?);
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        nav_auth_or_fail(status, &text, "ls")
     }
-    Ok(())
 }
 
 /// Handle visualize.
@@ -68,8 +83,9 @@ pub async fn handle_visualize(
         .await?;
 
     if !response.status().is_success() {
-        println!("visualize failed: {}", response.text().await?);
-        return Ok(());
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        return nav_auth_or_fail(status, &text, "visualize");
     }
 
     let body: serde_json::Value = response.json().await?;
@@ -475,12 +491,15 @@ pub async fn handle_cd(path: String) -> Result<()> {
     if response.status().is_success() {
         save_cwd(&normalized_target)?;
         println!("Current directory changed to: {}", normalized_target);
+        Ok(())
     } else if response.status() == 404 {
         println!("cd failed: Path not found: {}", normalized_target);
+        Err(anyhow::anyhow!("cd path not found: {normalized_target}"))
     } else {
-        println!("cd failed: {}", response.text().await?);
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        nav_auth_or_fail(status, &text, "cd")
     }
-    Ok(())
 }
 
 /// Handle pwd.
@@ -565,10 +584,12 @@ pub async fn handle_telemetry(kind: Option<String>) -> Result<()> {
                 }
             }
         }
+        Ok(())
     } else {
-        println!("telemetry failed: {}", response.text().await?);
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        nav_auth_or_fail(status, &text, "telemetry")
     }
-    Ok(())
 }
 
 /// Handle affected.
@@ -626,8 +647,10 @@ pub async fn handle_affected(
                 }
             }
         }
+        Ok(())
     } else {
-        println!("affected failed: {}", response.text().await?);
+        let status = response.status();
+        let text = response.text().await.unwrap_or_default();
+        nav_auth_or_fail(status, &text, "affected")
     }
-    Ok(())
 }

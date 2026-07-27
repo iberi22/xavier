@@ -17,6 +17,7 @@ pub mod auth2;
 pub mod auto_improvement;
 pub mod checkpoint;
 pub mod chronicle;
+pub mod clavis;
 pub mod codebase;
 pub mod consistency;
 pub mod consolidation;

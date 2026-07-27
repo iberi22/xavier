@@ -6,7 +6,7 @@
 //! ## Channels
 //!
 //! - **Telegram** → immediate notifications to the configured bot
-//! - **tracing!** → logs to stdout + file (always on)
+//! - **tracing!** → logs to stderr + file (always on)
 //! - **(Future)** Webhook, email, Discord
 
 use serde::{Deserialize, Serialize};

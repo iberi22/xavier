@@ -71,19 +71,30 @@ Xavier includes an interactive **TUI setup wizard** (built with `ratatui` and `c
 
 ### Install Commands
 
+**From source (recommended):**
+```bash
+cargo install --path . --locked
+# or: ./install.sh   # prints the same steps and checks for cargo
+```
+
 **Windows (PowerShell as Administrator):**
 ```powershell
 irm https://raw.githubusercontent.com/iberi22/xavier/main/install.ps1 | iex
 ```
 
-**Linux/macOS:**
+**Linux/macOS helper:** `install.sh` in this repo documents `cargo install` and points at the MCP/HTTP docs. Prefer cloning the repo and installing from source rather than piping remote scripts blindly.
+
+### Start HTTP + optional remote MCP
+
 ```bash
-curl -fsSL https://raw.githubusercontent.com/iberi22/xavier/main/install.sh | bash
+xavier http                 # REST :8006; MCP JSON-RPC :8100 by default
+xavier http --mcp-port 0    # REST only
+xavier mcp                  # MCP stdio for Cursor/Claude (see docs/guides/MCP_INTEGRATION.md)
 ```
 
 ### Background Execution
 * **Linux**: Sets up a persistent `systemd` daemon.
-* **Windows**: Configures a robust Scheduled Task that launches `xavier serve` on user logon with automatic retries.
+* **Windows**: Configures a robust Scheduled Task that launches `xavier serve` / `xavier http` on user logon with automatic retries.
 
 ---
 
@@ -93,7 +104,7 @@ curl -fsSL https://raw.githubusercontent.com/iberi22/xavier/main/install.sh | ba
 - **Embedded BERT & SQLite-vec** — Zero-touch, high-speed local embedding generation (` MiniLM-L6-v2`) writing directly to a vector-enabled SQLite backend.
 - **Multi-layered Security Shield** — Proactive scanner analyzing direct, indirect, and semantic threats (prompt injection, path traversal, API key leaks).
 - **Interactive Human Curation Dashboard** — Beautiful HTML review dashboard (`review.html`) featuring file diff views, status management, and RAG node links.
-- **Model Context Protocol (MCP)** — Native stdio-based integration (`search`, `add`, `stats`) for direct Claude/Cursor connectivity.
+- **Model Context Protocol (MCP)** — Stdio (`xavier mcp`) and optional HTTP JSON-RPC (`xavier http --mcp-port`, default `:8100`) for Cursor/Claude.
 
 ---
 
@@ -129,8 +140,10 @@ Runtime configurations live in `config/xavier.config.json`. Sensitive credential
 
 For agents indexing the repository, use these entry paths:
 * [Agent Rules (AGENTS.md)](AGENTS.md) — Mandatory guidelines for memory formatting.
+* [Xavier Memory Protocol](.agents/skills/xavier-memory-protocol/SKILL.md) — Canonical Fat Search → Page-In → Persist.
 * [Feature Status (FEATURE_STATUS.md)](docs/FEATURE_STATUS.md) — Checked-off verified surface.
 * [CLI Reference (docs/guides/CLI_REFERENCE.md)](docs/guides/CLI_REFERENCE.md) — Comprehensive command arguments.
+* [MCP Integration (docs/guides/MCP_INTEGRATION.md)](docs/guides/MCP_INTEGRATION.md) — Cursor/Claude MCP setup.
 * [API Reference (docs/site/.../api.md)](docs/site/src/content/docs/reference/api.md) — HTTP payload specifications.
 * [Architecture Guide (docs/ARCHITECTURE.md)](docs/ARCHITECTURE.md) — Hexagonal domain layout.
 

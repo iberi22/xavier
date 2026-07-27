@@ -25,6 +25,54 @@ use tracing::{debug, error, info, warn};
 pub mod call_resolution;
 use call_resolution::{extract_call_names, CallResolver};
 
+/// Kind of path-level change for [`Indexer::apply_paths`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PathChangeKind {
+    Added,
+    Modified,
+    Deleted,
+    /// `from` is the previous relative path; [`PathChange::path`] is the new path.
+    Renamed { from: String },
+}
+
+/// Explicit file delta for git-driven (or caller-driven) incremental updates.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PathChange {
+    /// Relative path within the index root (new path for renames).
+    pub path: String,
+    pub kind: PathChangeKind,
+}
+
+impl PathChange {
+    pub fn added(path: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            kind: PathChangeKind::Added,
+        }
+    }
+
+    pub fn modified(path: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            kind: PathChangeKind::Modified,
+        }
+    }
+
+    pub fn deleted(path: impl Into<String>) -> Self {
+        Self {
+            path: path.into(),
+            kind: PathChangeKind::Deleted,
+        }
+    }
+
+    pub fn renamed(from: impl Into<String>, to: impl Into<String>) -> Self {
+        Self {
+            path: to.into(),
+            kind: PathChangeKind::Renamed { from: from.into() },
+        }
+    }
+}
+
 pub struct Indexer {
     db: Arc<CodeGraphDB>,
     max_concurrent: usize,
@@ -102,6 +150,156 @@ impl Indexer {
 
         info!("Found {} files to index", files_to_index.len());
 
+        let mut stats = self
+            .parse_and_persist(root, files_to_index, files_to_mtime, incremental)
+            .await?;
+        stats.duration_ms = start.elapsed().as_millis() as u64;
+
+        info!(
+            "Indexed {} files, {} symbols in {}ms",
+            stats.total_files, stats.total_symbols, stats.duration_ms
+        );
+
+        Ok(stats)
+    }
+
+    /// Apply an explicit path-list delta (add / update / delete / rename).
+    ///
+    /// Unlike [`Indexer::index`] (mtime walk), this always reindexes the given
+    /// paths. Used by `xavier code sync --git`.
+    ///
+    /// Edge repair:
+    /// 1. Collect stable_ids for files about to be deleted/reparsed.
+    /// 2. Delete **incident** edges (from or to those ids).
+    /// 3. Reparse one-hop caller files that previously pointed at those ids.
+    /// 4. After persist, prune dangling edges to missing symbol ids.
+    ///
+    /// Structural `stable_id` (v2) excludes `start_line`, so intra-file moves
+    /// keep identity; renames still change path and therefore the id.
+    pub async fn apply_paths(&self, root: &Path, changes: &[PathChange]) -> Result<IndexStats> {
+        let start = Instant::now();
+        if changes.is_empty() {
+            let mut stats = self.db.stats()?;
+            stats.duration_ms = start.elapsed().as_millis() as u64;
+            return Ok(stats);
+        }
+
+        let mut delete_paths: Vec<String> = Vec::new();
+        let mut index_rel_paths: Vec<String> = Vec::new();
+
+        for change in changes {
+            let path = normalize_rel_path(&change.path);
+            match &change.kind {
+                PathChangeKind::Added | PathChangeKind::Modified => {
+                    delete_paths.push(path.clone());
+                    index_rel_paths.push(path);
+                }
+                PathChangeKind::Deleted => {
+                    delete_paths.push(path);
+                }
+                PathChangeKind::Renamed { from } => {
+                    delete_paths.push(normalize_rel_path(from));
+                    delete_paths.push(path.clone());
+                    index_rel_paths.push(path);
+                }
+            }
+        }
+
+        delete_paths.sort();
+        delete_paths.dedup();
+        index_rel_paths.sort();
+        index_rel_paths.dedup();
+
+        // Incident-edge cleanup + one-hop caller reparsing.
+        let old_stable_ids = self.db.stable_ids_for_files(&delete_paths)?;
+        let mut caller_files = self.db.files_with_edges_to(&old_stable_ids)?;
+        caller_files.retain(|p| !delete_paths.contains(p) && !index_rel_paths.contains(p));
+        for caller in &caller_files {
+            delete_paths.push(caller.clone());
+            index_rel_paths.push(caller.clone());
+        }
+        delete_paths.sort();
+        delete_paths.dedup();
+        index_rel_paths.sort();
+        index_rel_paths.dedup();
+
+        if !old_stable_ids.is_empty() {
+            let removed = self
+                .db
+                .delete_edges_referencing_symbols(&old_stable_ids)?;
+            if removed > 0 {
+                debug!(
+                    "Removed {} incident edges targeting reindexed symbols",
+                    removed
+                );
+            }
+        }
+
+        self.db.batch_delete_file_data(&delete_paths)?;
+
+        let mut files_to_index = Vec::new();
+        let mut files_to_mtime = HashMap::new();
+        for rel in &index_rel_paths {
+            let abs = root.join(rel);
+            if !abs.is_file() {
+                continue;
+            }
+            let ext = abs.extension().and_then(|e| e.to_str()).unwrap_or("");
+            if Language::from_extension_with_plugins(ext, self.plugin_host.discovery())
+                == Language::Unknown
+            {
+                continue;
+            }
+            let (rel_norm, mtime) = get_file_info(root, &abs);
+            files_to_mtime.insert(rel_norm, mtime);
+            files_to_index.push(abs);
+        }
+
+        info!(
+            "apply_paths: {} deletes, {} files to parse ({} caller rebuilds)",
+            delete_paths.len(),
+            files_to_index.len(),
+            caller_files.len()
+        );
+
+        if files_to_index.is_empty() {
+            let pruned = self.db.prune_dangling_edges().unwrap_or(0);
+            if pruned > 0 {
+                debug!("Pruned {} dangling edges after path deletes", pruned);
+            }
+            let mut stats = self.db.stats()?;
+            stats.duration_ms = start.elapsed().as_millis() as u64;
+            return Ok(stats);
+        }
+
+        let mut stats = self
+            .parse_and_persist(root, files_to_index, files_to_mtime, true)
+            .await?;
+        let pruned = self.db.prune_dangling_edges().unwrap_or(0);
+        if pruned > 0 {
+            debug!("Pruned {} dangling edges after apply_paths", pruned);
+        }
+        stats.duration_ms = start.elapsed().as_millis() as u64;
+        Ok(stats)
+    }
+
+    /// Alias for [`Indexer::apply_paths`].
+    pub async fn apply_file_delta(
+        &self,
+        root: &Path,
+        changes: &[PathChange],
+    ) -> Result<IndexStats> {
+        self.apply_paths(root, changes).await
+    }
+
+    /// Shared parse → edges → persist pipeline used by full and path-list index.
+    async fn parse_and_persist(
+        &self,
+        root: &Path,
+        files_to_index: Vec<PathBuf>,
+        files_to_mtime: HashMap<String, i64>,
+        incremental: bool,
+    ) -> Result<IndexStats> {
         let semaphore = Arc::new(Semaphore::new(self.max_concurrent));
         let mut handles = Vec::new();
 
@@ -131,7 +329,6 @@ impl Indexer {
 
         assign_stable_ids(&mut new_symbols);
 
-        // Load all symbols to build edges correctly (new symbols can point to old ones)
         let all_symbols = if incremental && !new_symbols.is_empty() {
             let mut all = self.db.get_all_symbols()?;
             all.extend(new_symbols.clone());
@@ -142,9 +339,10 @@ impl Indexer {
 
         let edges = build_edges(&new_symbols, &all_symbols, &sources);
         let edges_len = edges.len();
+        let new_symbols_len = new_symbols.len();
 
         let db = Arc::clone(&self.db);
-        let mut stats = tokio::task::spawn_blocking(move || {
+        let stats = tokio::task::spawn_blocking(move || {
             db.insert_symbols(&new_symbols)?;
             db.insert_edges(&edges)?;
             db.batch_upsert_file_metadata(files_to_mtime)?;
@@ -152,11 +350,10 @@ impl Indexer {
         })
         .await
         .map_err(|e| GraphError::Io(std::io::Error::other(e)))??;
-        stats.duration_ms = start.elapsed().as_millis() as u64;
 
         info!(
-            "Indexed {} files, {} symbols, {} edges in {}ms",
-            stats.total_files, stats.total_symbols, edges_len, stats.duration_ms
+            "Indexed batch: {} symbols, {} edges (db totals: {} files / {} symbols)",
+            new_symbols_len, edges_len, stats.total_files, stats.total_symbols
         );
 
         Ok(stats)
@@ -462,6 +659,12 @@ fn get_file_info(root: &Path, file_path: &Path) -> (String, i64) {
     (relative_path, mtime)
 }
 
+fn normalize_rel_path(path: &str) -> String {
+    path.replace('\\', "/")
+        .trim_start_matches("./")
+        .to_string()
+}
+
 fn build_excludes(patterns: &[&str]) -> Option<GlobSet> {
     let mut builder = GlobSetBuilder::new();
     let mut added = false;
@@ -696,5 +899,136 @@ mod tests {
             }),
             "Call edges should include strategy metadata"
         );
+    }
+
+    #[tokio::test]
+    async fn apply_paths_adds_updates_and_deletes() {
+        let dir = TempDir::new().expect("temp dir");
+        let a = dir.path().join("a.rs");
+        let b = dir.path().join("b.rs");
+        std::fs::write(&a, "fn alpha() {}\n").expect("write a");
+        std::fs::write(&b, "fn beta() {}\n").expect("write b");
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db.clone());
+
+        let stats = indexer
+            .apply_paths(
+                dir.path(),
+                &[PathChange::added("a.rs"), PathChange::added("b.rs")],
+            )
+            .await
+            .expect("add");
+        assert_eq!(stats.total_files, 2);
+        assert!(stats.total_symbols >= 2);
+
+        std::fs::write(&a, "fn alpha() {}\nfn alpha_extra() {}\n").expect("update a");
+        let stats2 = indexer
+            .apply_paths(dir.path(), &[PathChange::modified("a.rs")])
+            .await
+            .expect("modify");
+        assert_eq!(stats2.total_files, 2);
+        let symbols = db.get_all_symbols().expect("symbols");
+        assert!(
+            symbols.iter().any(|s| s.name == "alpha_extra"),
+            "expected reparsed symbol alpha_extra"
+        );
+        assert!(
+            symbols.iter().any(|s| s.name == "beta"),
+            "untouched file should remain"
+        );
+
+        std::fs::remove_file(&b).expect("remove b");
+        let stats3 = indexer
+            .apply_paths(dir.path(), &[PathChange::deleted("b.rs")])
+            .await
+            .expect("delete");
+        assert_eq!(stats3.total_files, 1);
+        let symbols = db.get_all_symbols().expect("symbols");
+        assert!(symbols.iter().all(|s| s.file_path == "a.rs"));
+    }
+
+    #[tokio::test]
+    async fn apply_paths_keeps_structural_id_when_symbol_moves() {
+        let dir = TempDir::new().expect("temp dir");
+        std::fs::write(dir.path().join("m.rs"), "fn helper() {}\n").expect("write");
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db.clone());
+        indexer
+            .apply_paths(dir.path(), &[PathChange::added("m.rs")])
+            .await
+            .expect("add");
+        let before = db.find_by_file("m.rs").expect("syms");
+        let helper = before
+            .iter()
+            .find(|s| s.name == "helper")
+            .expect("helper");
+        let id_before = helper.stable_id.clone().expect("id");
+
+        std::fs::write(
+            dir.path().join("m.rs"),
+            "// pad\n// pad\nfn helper() {}\n",
+        )
+        .expect("move");
+        indexer
+            .apply_paths(dir.path(), &[PathChange::modified("m.rs")])
+            .await
+            .expect("modify");
+        let after = db.find_by_file("m.rs").expect("syms");
+        let helper2 = after
+            .iter()
+            .find(|s| s.name == "helper")
+            .expect("helper after");
+        assert_eq!(
+            helper2.stable_id.as_deref(),
+            Some(id_before.as_str()),
+            "structural stable_id must survive line moves"
+        );
+        assert!(helper2.start_line > 1);
+    }
+
+    #[tokio::test]
+    async fn apply_paths_handles_rename_and_clears_incoming() {
+        let dir = TempDir::new().expect("temp dir");
+        std::fs::write(dir.path().join("lib.rs"), "pub fn helper() {}\n").expect("lib");
+        std::fs::write(
+            dir.path().join("main.rs"),
+            "fn main() { helper(); }\n",
+        )
+        .expect("main");
+
+        let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
+        let indexer = Indexer::new(db.clone());
+        indexer
+            .index(dir.path(), false)
+            .await
+            .expect("initial index");
+
+        let before_ids = db
+            .stable_ids_for_files(&["lib.rs".to_string()])
+            .expect("ids");
+        assert!(!before_ids.is_empty());
+
+        std::fs::rename(dir.path().join("lib.rs"), dir.path().join("util.rs")).expect("rename");
+        indexer
+            .apply_paths(
+                dir.path(),
+                &[PathChange::renamed("lib.rs", "util.rs")],
+            )
+            .await
+            .expect("rename apply");
+
+        let symbols = db.get_all_symbols().expect("symbols");
+        assert!(symbols.iter().any(|s| s.file_path == "util.rs"));
+        assert!(!symbols.iter().any(|s| s.file_path == "lib.rs"));
+
+        for id in before_ids {
+            let to = db.find_edges_to(&id, None, 10).unwrap_or_default();
+            assert!(
+                to.is_empty(),
+                "stale incoming edges to old stable_id should be cleared"
+            );
+        }
     }
 }

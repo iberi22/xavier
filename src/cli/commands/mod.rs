@@ -74,12 +74,20 @@ impl Cli {
                 max_results,
                 cluster,
                 level,
+                offline_ok,
             } => {
                 let base_url = resolve_base_url();
                 println!("Searching memories via HTTP API on {}", base_url);
                 // Prefer --max-results / -n flag over positional limit
                 let lim = max_results.clone().or(limit.clone()).unwrap_or(10);
-                search_memories_filtered(query, lim, cluster.clone(), level.clone()).await
+                search_memories_filtered(
+                    query,
+                    lim,
+                    cluster.clone(),
+                    level.clone(),
+                    *offline_ok,
+                )
+                .await
             }
             Command::Usage { cmd } => usage::handle_usage_command(cmd.clone()).await,
             Command::Add {
@@ -101,15 +109,19 @@ impl Cli {
                 )
                 .await
             }
-            Command::Recall { query, limit } => http::recall_memories(query, *limit).await,
+            Command::Recall {
+                query,
+                limit,
+                offline_ok,
+            } => http::recall_memories(query, *limit, *offline_ok).await,
             Command::ExportPack {
                 topic,
                 max_level,
                 out,
             } => http::export_context_pack(topic, *max_level, out).await,
-            Command::Stats => {
+            Command::Stats { offline_ok } => {
                 println!("Fetching Xavier statistics...");
-                http::show_stats().await
+                http::show_stats(*offline_ok).await
             }
             Command::Reindex => {
                 println!("Re-indexing memories missing embeddings...");

@@ -216,13 +216,18 @@ pub struct Symbol {
 }
 
 impl Symbol {
+    /// Structural identity: project + path + name + kind + parent + signature.
+    ///
+    /// Does **not** include `start_line`, so moving a symbol within a file keeps
+    /// the same id (edges and memory chunks remain stable across edits).
     pub fn deterministic_id(&self, project_id: &str) -> String {
         stable_symbol_id(
             project_id,
             &self.file_path,
             &self.name,
             &format!("{:?}", self.kind),
-            self.start_line,
+            self.parent.as_deref(),
+            self.signature.as_deref(),
         )
     }
 
@@ -263,14 +268,25 @@ pub struct ComplexityHotspot {
     pub risk_score: f32,
 }
 
+/// Content-addressed structural symbol id (v2).
+///
+/// Hash input: `project|file|name|kind|parent|signature` (normalized whitespace
+/// in signature). Line numbers are intentionally excluded so git-driven moves
+/// do not invalidate graph edges.
 pub fn stable_symbol_id(
     project_id: &str,
     file_path: &str,
     name: &str,
     kind: &str,
-    start_line: u32,
+    parent: Option<&str>,
+    signature: Option<&str>,
 ) -> String {
+    let parent = parent.unwrap_or("");
+    let signature = signature
+        .map(normalize_signature)
+        .unwrap_or_default();
     let mut hasher = Sha256::new();
+    hasher.update(b"v2|");
     hasher.update(project_id.as_bytes());
     hasher.update(b"|");
     hasher.update(file_path.as_bytes());
@@ -279,8 +295,60 @@ pub fn stable_symbol_id(
     hasher.update(b"|");
     hasher.update(kind.as_bytes());
     hasher.update(b"|");
-    hasher.update(start_line.to_le_bytes());
+    hasher.update(parent.as_bytes());
+    hasher.update(b"|");
+    hasher.update(signature.as_bytes());
     format!("{:x}", hasher.finalize())
+}
+
+fn normalize_signature(sig: &str) -> String {
+    sig.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[cfg(test)]
+mod stable_id_tests {
+    use super::*;
+
+    #[test]
+    fn structural_id_stable_across_line_moves() {
+        let mut a = Symbol {
+            name: "helper".into(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "lib.rs".into(),
+            start_line: 1,
+            end_line: 3,
+            signature: Some("fn helper()".into()),
+            parent: None,
+            ..Default::default()
+        };
+        let id1 = a.deterministic_id("default");
+        a.start_line = 40;
+        a.end_line = 42;
+        let id2 = a.deterministic_id("default");
+        assert_eq!(id1, id2, "moving a symbol must keep structural stable_id");
+    }
+
+    #[test]
+    fn parent_and_signature_disambiguate() {
+        let base = Symbol {
+            name: "run".into(),
+            kind: SymbolKind::Method,
+            lang: Language::Rust,
+            file_path: "svc.rs".into(),
+            signature: Some("fn run(&self)".into()),
+            parent: Some("Service".into()),
+            ..Default::default()
+        };
+        let other = Symbol {
+            parent: Some("Other".into()),
+            ..base.clone()
+        };
+        assert_ne!(
+            base.deterministic_id("default"),
+            other.deterministic_id("default")
+        );
+    }
 }
 
 /// Reference to a symbol (caller/callee)

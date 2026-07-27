@@ -338,7 +338,8 @@ pub async fn handle_core_tool(
         "health_check" => {
             let health = crate::health::collect_health_sync();
             let tools_count = get_xavier_core_tools().len()
-                + super::tools_memory::get_xavier_memory_tools().len();
+                + super::tools_memory::get_xavier_memory_tools().len()
+                + super::tools_context::get_xavier_context_tools().len();
 
             let result = MCPHealthResult {
                 status: health.status.clone(),
@@ -386,25 +387,50 @@ pub async fn handle_core_tool(
             let dump_path = _state
                 .code_graph_dump_path
                 .clone()
-                .unwrap_or_else(|| std::path::PathBuf::from(".xavier/codegraph.json"));
+                .unwrap_or_else(|| {
+                    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                    crate::codebase::codegraph_paths::codegraph_dump_path_for(&cwd)
+                });
 
-            if !tokio::fs::try_exists(&dump_path).await.unwrap_or(false) {
-                return Err(anyhow::anyhow!(
-                    "Code graph dump not found at {}. Run 'xavier code scan' to generate it.",
-                    dump_path.display()
-                ));
+            if tokio::fs::try_exists(&dump_path).await.unwrap_or(false) {
+                let json_content = tokio::fs::read_to_string(&dump_path).await?;
+                let dump: Value = serde_json::from_str(&json_content)?;
+                return Ok(serde_json::to_value(MCPToolResult {
+                    content: vec![MCPContent::Text(MCPTextContent {
+                        content_type: "text".to_string(),
+                        text: serde_json::to_string(&dump)?,
+                    })],
+                    is_error: Some(false),
+                })?);
             }
 
-            let json_content = tokio::fs::read_to_string(&dump_path).await?;
-            let dump: Value = serde_json::from_str(&json_content)?;
-
-            Ok(serde_json::to_value(MCPToolResult {
-                content: vec![MCPContent::Text(MCPTextContent {
-                    content_type: "text".to_string(),
-                    text: serde_json::to_string(&dump)?,
-                })],
-                is_error: Some(false),
-            })?)
+            // Live fallback when dump is missing/stale — avoid false "not found".
+            let stats = _state.code_db.stats().unwrap_or(code_graph::types::IndexStats {
+                total_files: 0,
+                total_symbols: 0,
+                total_imports: 0,
+                languages: vec![],
+                duration_ms: 0,
+            });
+            let hubs = _state.code_query.hubs(0, 20).unwrap_or_default();
+            let summary = json!({
+                "source": "live_db",
+                "dump_path": dump_path.display().to_string(),
+                "dump_present": false,
+                "hint": "Run `xavier code dump .` or `xavier code scan .` to refresh the portable dump",
+                "stats": {
+                    "total_files": stats.total_files,
+                    "total_symbols": stats.total_symbols,
+                    "total_imports": stats.total_imports,
+                },
+                "hubs": hubs.iter().take(10).map(|h| json!({
+                    "name": h.symbol.name,
+                    "file": h.symbol.file_path,
+                    "incoming": h.incoming,
+                    "outgoing": h.outgoing,
+                })).collect::<Vec<_>>(),
+            });
+            Ok(serde_json::to_value(MCPToolResult::structured(summary, false))?)
         }
         _ => Err(anyhow::anyhow!("Unknown core tool: {}", name)),
     }

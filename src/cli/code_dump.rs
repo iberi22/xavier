@@ -1,5 +1,7 @@
 use crate::cli::state::CodeGraphState;
 use anyhow::{anyhow, Result};
+use code_graph::db::CodeGraphDB;
+use code_graph::query::QueryEngine;
 use code_graph::types::{CodeEdge, Symbol};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -25,13 +27,32 @@ pub struct CodeGraphDump {
     pub hubs: Vec<code_graph::types::HubNode>,
 }
 
-/// Perform a dump of the code graph to .xavier/codegraph.json
+/// Soft-dump threshold: above this, sync skips dump by default (avoids long stalls).
+pub const DUMP_SOFT_SKIP_SYMBOLS: u64 = 25_000;
+
+/// Perform a dump of the code graph to `.xavier/codegraph.json`.
+///
+/// Heavy work runs in `spawn_blocking` so HTTP handlers stay responsive.
+/// Uses compact JSON (not pretty) for large graphs.
 pub async fn perform_dump(state: &CodeGraphState, scanned_path: &str) -> Result<PathBuf> {
-    let stats = state.db.stats()?;
-    let symbols = state.db.get_all_symbols()?;
-    let edges = state.db.get_all_edges()?;
-    let hotspots = state.query.hotspots(0.0, 1000)?;
-    let hubs = state.query.hubs(0, 1000)?;
+    let db = Arc::clone(&state.db);
+    let query = Arc::clone(&state.query);
+    let scanned = scanned_path.to_string();
+    tokio::task::spawn_blocking(move || perform_dump_blocking(db, query, &scanned))
+        .await
+        .map_err(|e| anyhow!("CodeGraph dump task join error: {}", e))?
+}
+
+fn perform_dump_blocking(
+    db: Arc<CodeGraphDB>,
+    query: Arc<QueryEngine>,
+    scanned_path: &str,
+) -> Result<PathBuf> {
+    let stats = db.stats()?;
+    let symbols = db.get_all_symbols()?;
+    let edges = db.get_all_edges()?;
+    let hotspots = query.hotspots(0.0, 100)?;
+    let hubs = query.hubs(0, 100)?;
 
     let repo_root = find_repo_root(scanned_path);
     let xavier_dir = repo_root.join(".xavier");
@@ -61,7 +82,8 @@ pub async fn perform_dump(state: &CodeGraphState, scanned_path: &str) -> Result<
         hubs,
     };
 
-    let json = serde_json::to_string_pretty(&dump)?;
+    // Compact JSON — pretty-print of 60k+ symbols stalls for minutes.
+    let json = serde_json::to_string(&dump)?;
     std::fs::write(&dump_path, json)?;
 
     info!(
@@ -86,7 +108,7 @@ pub async fn perform_load(repo_path: &str) -> Result<CodeGraphState> {
         ));
     }
 
-    let json = std::fs::read_to_string(&dump_path)?;
+    let json = tokio::fs::read_to_string(&dump_path).await?;
     let dump: CodeGraphDump = serde_json::from_str(&json)?;
 
     let db = Arc::new(code_graph::db::CodeGraphDB::in_memory()?);
@@ -119,6 +141,5 @@ fn find_repo_root(start_path: &str) -> PathBuf {
         }
     }
 
-    // Fallback to current directory if no .git found
     std::path::absolute(".").unwrap_or_else(|_| PathBuf::from("."))
 }

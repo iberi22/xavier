@@ -904,6 +904,8 @@ async fn list_tools_includes_new_memory_and_health_tools() {
         "memory_save",
         "memory_search",
         "memory_context",
+        "mem_context",
+        "mem_search",
         "health_check",
     ] {
         assert!(
@@ -934,7 +936,7 @@ async fn memory_save_and_search_roundtrip() {
     let text = body["result"]["content"][0]["text"].as_str().unwrap();
     assert!(text.contains("Memory saved. id="), "got: {text}");
 
-    // memory_search scoped to the same namespace
+    // memory_search scoped to the same namespace (structured fat-index like mem_search)
     let response = post_json(
         router.clone(),
         json!({
@@ -946,8 +948,16 @@ async fn memory_save_and_search_roundtrip() {
     )
     .await;
     let body = get_json_body(response).await;
-    let search_text = body["result"]["content"][0]["text"].as_str().unwrap();
-    assert!(search_text.contains("cortical stack persists"));
+    let content0 = &body["result"]["content"][0];
+    let blob = if content0["type"] == "structuredContent" {
+        content0["structuredContent"].to_string()
+    } else {
+        content0["text"].as_str().unwrap_or("").to_string()
+    };
+    assert!(
+        blob.contains("cortical stack persists"),
+        "expected snippet in structured candidates, got: {blob}"
+    );
 }
 
 #[tokio::test]

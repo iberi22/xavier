@@ -11,20 +11,16 @@ use std::path::{Path, PathBuf};
 
 /// Returns the path to the code-graph SQLite database for `workspace`.
 ///
-/// When `workspace` is `.` or matches the current directory, resolves the
-/// canonical path via settings and env var (same logic as
-/// `cli::config::code_graph_db_path`). Otherwise places the DB at
-/// `workspace/.xavier/code_graph.db`.
+/// Prefer `XAVIER_CODE_GRAPH_DB_PATH` when set. For the current workspace (`.` /
+/// cwd), use `XavierSettings::resolve_data_dir()/code_graph.db` — the same path
+/// as the HTTP server / CLI. External workspaces use `workspace/.xavier/code_graph.db`.
 pub fn code_graph_db_path_for(workspace: &Path) -> PathBuf {
+    if let Ok(override_path) = std::env::var("XAVIER_CODE_GRAPH_DB_PATH") {
+        return PathBuf::from(override_path);
+    }
     let cwd = std::env::current_dir().unwrap_or_default();
     if workspace == Path::new(".") || workspace == cwd {
-        // Resolve via settings + env override (mirrors cli/config.rs logic)
-        std::env::var("XAVIER_CODE_GRAPH_DB_PATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| {
-                let settings = crate::settings::XavierSettings::current();
-                PathBuf::from(settings.server.code_graph_db_path)
-            })
+        crate::settings::XavierSettings::resolve_data_dir().join("code_graph.db")
     } else {
         workspace.join(".xavier").join("code_graph.db")
     }
