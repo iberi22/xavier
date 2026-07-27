@@ -129,9 +129,19 @@ pub struct ProviderRouter {
     fallback_chain: Vec<ProviderKind>,
     current_provider: ProviderKind,
     switch_history: Vec<ProviderSwitchEvent>,
+    local_endpoints: Vec<String>,
+    current_local_endpoint_idx: usize,
 }
 
 impl ProviderRouter {
+    fn update_local_env(&self) {
+        if self.current_provider == ProviderKind::Local {
+            if let Some(endpoint) = self.current_local_endpoint() {
+                std::env::set_var("XAVIER_LOCAL_LLM_URL", endpoint);
+            }
+        }
+    }
+
     /// Checks if Ollama is reachable on the default local port.
     pub async fn is_ollama_reachable() -> bool {
         let client = Client::builder()
@@ -175,7 +185,7 @@ impl ProviderRouter {
 
     /// Creates a new ProviderRouter with the given initial provider.
     pub fn new(initial: ProviderKind) -> Self {
-        Self {
+        let router = Self {
             active: ActiveProvider::Manual(initial),
             fallback_chain: Vec::new(),
             current_provider: initial,
@@ -185,7 +195,37 @@ impl ProviderRouter {
                 reason: "Initialization".to_string(),
                 timestamp: Utc::now(),
             }],
+            local_endpoints: Vec::new(),
+            current_local_endpoint_idx: 0,
+        };
+        router.update_local_env();
+        router
+    }
+
+    /// Sets the ordered local endpoints for `ProviderKind::Local`.
+    pub fn set_local_endpoints(&mut self, endpoints: Vec<String>) {
+        self.local_endpoints = endpoints;
+        self.current_local_endpoint_idx = 0;
+        self.update_local_env();
+    }
+
+    /// Returns the active local endpoint, if any are configured and the current provider is Local.
+    pub fn current_local_endpoint(&self) -> Option<String> {
+        if self.current_provider == ProviderKind::Local && !self.local_endpoints.is_empty() {
+            Some(self.local_endpoints[self.current_local_endpoint_idx].clone())
+        } else {
+            None
         }
+    }
+
+    /// Returns the list of configured local endpoints.
+    pub fn local_endpoints(&self) -> &[String] {
+        &self.local_endpoints
+    }
+
+    /// Returns the index of the currently active local endpoint.
+    pub fn current_local_endpoint_idx(&self) -> usize {
+        self.current_local_endpoint_idx
     }
 
     /// Switches the active provider manually.
@@ -199,6 +239,10 @@ impl ProviderRouter {
         self.current_provider = provider;
         self.active = ActiveProvider::Manual(provider);
         self.switch_history.push(event);
+        if provider == ProviderKind::Local {
+            self.current_local_endpoint_idx = 0;
+        }
+        self.update_local_env();
         Ok(())
     }
 
@@ -219,6 +263,21 @@ impl ProviderRouter {
 
     /// Handles a provider failure by switching to the next available fallback.
     pub fn on_provider_failure(&mut self) -> Option<ProviderKind> {
+        // If current provider is Local, try next local endpoint first.
+        if self.current_provider == ProviderKind::Local
+            && !self.local_endpoints.is_empty()
+            && self.current_local_endpoint_idx + 1 < self.local_endpoints.len()
+        {
+            self.current_local_endpoint_idx += 1;
+            let next_endpoint = &self.local_endpoints[self.current_local_endpoint_idx];
+            self.perform_switch(
+                ProviderKind::Local,
+                format!("Failure fallback (Next local endpoint: {})", next_endpoint),
+            );
+            self.update_local_env();
+            return Some(ProviderKind::Local);
+        }
+
         let (chain, is_transition) = match &self.active {
             ActiveProvider::Manual(_) | ActiveProvider::Auto { .. } => {
                 if self.fallback_chain.is_empty() {
@@ -242,6 +301,9 @@ impl ProviderRouter {
 
         if next_idx < chain.len() {
             let next = chain[next_idx];
+            if next == ProviderKind::Local {
+                self.current_local_endpoint_idx = 0;
+            }
             if is_transition {
                 self.active = ActiveProvider::Fallback(chain);
                 self.perform_switch(
@@ -251,6 +313,7 @@ impl ProviderRouter {
             } else {
                 self.perform_switch(next, "Failure fallback (Chain)".to_string());
             }
+            self.update_local_env();
             Some(next)
         } else {
             None
@@ -292,9 +355,13 @@ impl ProviderRouter {
     pub fn use_fallback_mode(&mut self) {
         self.active = ActiveProvider::Fallback(self.fallback_chain.clone());
         if let Some(&first) = self.fallback_chain.first() {
+            if first == ProviderKind::Local {
+                self.current_local_endpoint_idx = 0;
+            }
             if first != self.current_provider {
                 self.perform_switch(first, "Switch to fallback mode".to_string());
             }
+            self.update_local_env();
         }
     }
 
@@ -447,5 +514,108 @@ mod tests {
                 strategy: AutoStrategy::LowestCost
             }
         );
+    }
+
+    #[test]
+    fn test_local_endpoints_initialization_and_getters() {
+        let orig_env = std::env::var("XAVIER_LOCAL_LLM_URL").ok();
+
+        let mut router = ProviderRouter::new(ProviderKind::Local);
+        router.set_local_endpoints(vec![
+            "http://local-1".to_string(),
+            "http://local-2".to_string(),
+        ]);
+
+        assert_eq!(router.local_endpoints(), &["http://local-1", "http://local-2"]);
+        assert_eq!(router.current_local_endpoint_idx(), 0);
+        assert_eq!(router.current_local_endpoint(), Some("http://local-1".to_string()));
+        assert_eq!(std::env::var("XAVIER_LOCAL_LLM_URL").unwrap(), "http://local-1");
+
+        if let Some(val) = orig_env {
+            std::env::set_var("XAVIER_LOCAL_LLM_URL", val);
+        } else {
+            std::env::remove_var("XAVIER_LOCAL_LLM_URL");
+        }
+    }
+
+    #[test]
+    fn test_local_endpoints_fallback_cycling() {
+        let orig_env = std::env::var("XAVIER_LOCAL_LLM_URL").ok();
+        std::env::remove_var("XAVIER_LOCAL_LLM_URL");
+
+        let mut router = ProviderRouter::new(ProviderKind::OpenAI);
+        router.set_fallback_chain(vec![
+            ProviderKind::OpenAI,
+            ProviderKind::Local,
+            ProviderKind::Anthropic,
+        ]);
+        router.set_local_endpoints(vec![
+            "http://local-1".to_string(),
+            "http://local-2".to_string(),
+        ]);
+
+        // OpenAI fails -> fallback to Local (first endpoint)
+        let next = router.on_provider_failure();
+        assert_eq!(next, Some(ProviderKind::Local));
+        assert_eq!(router.current_provider(), ProviderKind::Local);
+        assert_eq!(router.current_local_endpoint_idx(), 0);
+        assert_eq!(router.current_local_endpoint(), Some("http://local-1".to_string()));
+        assert_eq!(std::env::var("XAVIER_LOCAL_LLM_URL").unwrap(), "http://local-1");
+
+        // Local fails -> fallback to Local (second endpoint)
+        let next = router.on_provider_failure();
+        assert_eq!(next, Some(ProviderKind::Local));
+        assert_eq!(router.current_provider(), ProviderKind::Local);
+        assert_eq!(router.current_local_endpoint_idx(), 1);
+        assert_eq!(router.current_local_endpoint(), Some("http://local-2".to_string()));
+        assert_eq!(std::env::var("XAVIER_LOCAL_LLM_URL").unwrap(), "http://local-2");
+
+        // Local fails (no more endpoints) -> fallback to Anthropic
+        let next = router.on_provider_failure();
+        assert_eq!(next, Some(ProviderKind::Anthropic));
+        assert_eq!(router.current_provider(), ProviderKind::Anthropic);
+        assert_eq!(router.current_local_endpoint(), None);
+
+        if let Some(val) = orig_env {
+            std::env::set_var("XAVIER_LOCAL_LLM_URL", val);
+        } else {
+            std::env::remove_var("XAVIER_LOCAL_LLM_URL");
+        }
+    }
+
+    #[test]
+    fn test_local_endpoints_manual_switch_resets_index() {
+        let orig_env = std::env::var("XAVIER_LOCAL_LLM_URL").ok();
+
+        let mut router = ProviderRouter::new(ProviderKind::OpenAI);
+        router.set_local_endpoints(vec![
+            "http://local-1".to_string(),
+            "http://local-2".to_string(),
+        ]);
+
+        // Manually switch to Local
+        router.switch_to(ProviderKind::Local).unwrap();
+        assert_eq!(router.current_local_endpoint_idx(), 0);
+        assert_eq!(router.current_local_endpoint(), Some("http://local-1".to_string()));
+
+        // Advance to index 1 manually by triggering failure
+        let next = router.on_provider_failure();
+        assert_eq!(next, Some(ProviderKind::Local));
+        assert_eq!(router.current_local_endpoint_idx(), 1);
+
+        // Switch to OpenAI
+        router.switch_to(ProviderKind::OpenAI).unwrap();
+        // Index is reset upon switching manually to Local, switch_to to OpenAI won't immediately reset it,
+        // but let's see. When we switch manually back to Local, it should reset to 0.
+
+        // Switch back to Local
+        router.switch_to(ProviderKind::Local).unwrap();
+        assert_eq!(router.current_local_endpoint_idx(), 0);
+
+        if let Some(val) = orig_env {
+            std::env::set_var("XAVIER_LOCAL_LLM_URL", val);
+        } else {
+            std::env::remove_var("XAVIER_LOCAL_LLM_URL");
+        }
     }
 }
