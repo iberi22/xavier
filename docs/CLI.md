@@ -184,6 +184,36 @@ xavier code scan . --reprompt-codegraph
 
 See `.sidecars/README.md` and `docs/ADR/008-codegraph-sidecar-consent.md`.
 
+### `xavier code sync --git`
+
+Incremental CodeGraph update from git deltas (no full tree walk):
+
+```
+git diff → affected paths → AST reparse → symbols/edges patch → dump JSON
+```
+
+Flags:
+
+| Flag | Default | Description |
+|---|---|---|
+| `--git` | required | Enable git-driven sync. |
+| `--base <commit>` | checkpoint / `HEAD~1` | Diff base commit-ish. |
+| `--staged` | off | Diff staged changes (`git diff --cached`). |
+
+Checkpoint: `.xavier/codegraph-sync-commit` (updated to `HEAD` after sync).
+If the CodeGraph DB is empty, performs one full scan of the repo root first.
+
+Runs **locally** against `data/code_graph.db` (no HTTP server required). Soft-dumps `.xavier/codegraph.json`.
+
+```bash
+xavier code sync --git
+xavier code sync --git --base HEAD~5
+xavier code sync --git --staged
+```
+
+Optional post-commit hook (not installed by default):
+`scripts/hooks/post-commit-codegraph.sh` — see `docs/guides/CODEGRAPH_GIT_SYNC.md`.
+
 ### `xavier code find <query>`
 
 Find symbols by name.

@@ -95,6 +95,9 @@ impl CodeGraphDB {
         info!("Opening database at {:?}", path);
 
         let conn = Connection::open(path).map_err(|e| GraphError::Database(e.to_string()))?;
+        // Allow concurrent access with `xavier http` / local CLI sync.
+        let _ = conn.busy_timeout(std::time::Duration::from_secs(15));
+        let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL;");
 
         let db = Self {
             conn: Mutex::new(conn),
@@ -314,7 +317,7 @@ impl CodeGraphDB {
                 INSERT INTO symbols_fts (name, stable_id, file_path)
                 SELECT s.name, s.stable_id, s.file_path FROM symbols s
                 LEFT JOIN symbols_fts f ON s.stable_id = f.stable_id
-                WHERE f.stable_id IS NULL;
+                WHERE 0;
                 "#,
             )
             .map_err(|e| GraphError::Database(e.to_string()))?;
@@ -1141,6 +1144,134 @@ impl CodeGraphDB {
             .map_err(|e| GraphError::Database(e.to_string()))?;
 
         Ok(())
+    }
+
+    /// Collect stable_ids for symbols that currently live in `file_paths`.
+    pub fn stable_ids_for_files(&self, file_paths: &[String]) -> Result<Vec<String>> {
+        if file_paths.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let mut ids = Vec::new();
+        let mut stmt = conn
+            .prepare("SELECT stable_id FROM symbols WHERE file_path = ?1 AND stable_id != ''")
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        for path in file_paths {
+            let rows = stmt
+                .query_map(params![path], |row| row.get::<_, String>(0))
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+            for id in rows.flatten() {
+                ids.push(id);
+            }
+        }
+
+        Ok(ids)
+    }
+
+    /// Files that currently have outgoing edges targeting any of `stable_ids`.
+    ///
+    /// Used as a best-effort pass to reparse callers when a callee's stable_id
+    /// changes after a reindex (stable_id includes start_line today).
+    pub fn files_with_edges_to(&self, stable_ids: &[String]) -> Result<Vec<String>> {
+        if stable_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let mut files = std::collections::HashSet::new();
+        let mut stmt = conn
+            .prepare("SELECT DISTINCT file_path FROM edges WHERE to_symbol = ?1")
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        for id in stable_ids {
+            let rows = stmt
+                .query_map(params![id], |row| row.get::<_, String>(0))
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+            for path in rows.flatten() {
+                if !path.is_empty() {
+                    files.insert(path);
+                }
+            }
+        }
+
+        Ok(files.into_iter().collect())
+    }
+
+    /// Delete edges whose `to_symbol` **or** `from_symbol` matches any of the
+    /// given stable_ids (full incident-edge cleanup when symbols are replaced).
+    pub fn delete_edges_referencing_symbols(&self, stable_ids: &[String]) -> Result<usize> {
+        if stable_ids.is_empty() {
+            return Ok(0);
+        }
+
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let tx = conn
+            .transaction()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let mut deleted = 0usize;
+        {
+            let mut stmt = tx
+                .prepare("DELETE FROM edges WHERE to_symbol = ?1 OR from_symbol = ?1")
+                .map_err(|e| GraphError::Database(e.to_string()))?;
+            for id in stable_ids {
+                deleted += stmt
+                    .execute(params![id])
+                    .map_err(|e| GraphError::Database(e.to_string()))?;
+            }
+        }
+
+        tx.commit()
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        Ok(deleted)
+    }
+
+    /// Delete edges whose `to_symbol` matches any of the given stable_ids.
+    ///
+    /// Prefer [`Self::delete_edges_referencing_symbols`] for full incident cleanup.
+    pub fn delete_edges_to_symbols(&self, stable_ids: &[String]) -> Result<usize> {
+        self.delete_edges_referencing_symbols(stable_ids)
+    }
+
+    /// Remove edges pointing at symbol ids that no longer exist in `symbols`.
+    /// Pseudo-nodes (`file:…`, `module:…`) are kept.
+    pub fn prune_dangling_edges(&self) -> Result<usize> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let deleted = conn
+            .execute(
+                r#"
+                DELETE FROM edges
+                WHERE
+                  (from_symbol NOT LIKE 'file:%' AND from_symbol NOT LIKE 'module:%'
+                    AND from_symbol NOT IN (SELECT stable_id FROM symbols))
+                  OR
+                  (to_symbol NOT LIKE 'file:%' AND to_symbol NOT LIKE 'module:%'
+                    AND to_symbol NOT IN (SELECT stable_id FROM symbols))
+                "#,
+                [],
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        Ok(deleted)
     }
 
     /// Delete all data associated with multiple file paths in a single transaction
