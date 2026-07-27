@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -29,47 +30,93 @@ ENV_FILE = REPO_ROOT / ".env"
 OUT_DIR = Path(__file__).resolve().parent / "mcp" / "GENERATED"
 OUT_DIR.mkdir(parents=True, exist_ok=True)
 
-XAVIER_EXE = r"C:\Users\belal\bin\xavier.exe"
-DATA_DIR = str(REPO_ROOT / "data").replace("\\", r"\\")
-TOKEN_SECRET = "swal-secret-2026"
+DATA_DIR = str(REPO_ROOT / "data")
+
+
+def _parse_dotenv(path: Path) -> dict[str, str]:
+    values: dict[str, str] = {}
+    if not path.exists():
+        return values
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        values[key.strip()] = val.strip().strip('"').strip("'")
+    return values
+
+
+def read_dotenv_key(key: str) -> str | None:
+    """Prefer process env, then repo .env. Returns None if unset."""
+    env_val = os.environ.get(key)
+    if env_val is not None and env_val != "":
+        return env_val
+    return _parse_dotenv(ENV_FILE).get(key) or None
+
+
+def resolve_xavier_exe() -> str:
+    """Locate the xavier binary on PATH, ~/.local/bin, or repo release build."""
+    which = shutil.which("xavier")
+    if which:
+        return which
+    local = Path.home() / ".local" / "bin" / "xavier"
+    if local.is_file() and os.access(local, os.X_OK):
+        return str(local)
+    for candidate in (
+        REPO_ROOT / "target" / "release" / "xavier",
+        REPO_ROOT / "target_local" / "release" / "xavier",
+    ):
+        if candidate.is_file() and os.access(candidate, os.X_OK):
+            return str(candidate)
+    return "xavier"
+
+
+XAVIER_EXE = resolve_xavier_exe()
 
 
 def read_token() -> str:
+    token = read_dotenv_key("XAVIER_TOKEN")
+    if token:
+        return token
     if not ENV_FILE.exists():
         print(f"ERROR: no existe {ENV_FILE}", file=sys.stderr)
         sys.exit(1)
-    for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if line.startswith("XAVIER_TOKEN=") and not line.startswith("#"):
-            return line.split("=", 1)[1].strip()
-    print("ERROR: XAVIER_TOKEN no encontrado en .env", file=sys.stderr)
+    print("ERROR: XAVIER_TOKEN no encontrado en env/.env", file=sys.stderr)
     sys.exit(1)
 
 
 def env_block(token: str) -> dict:
-    return {
+    block = {
         "XAVIER_TOKEN": token,
-        "XAVIER_TOKEN_SECRET": TOKEN_SECRET,
         "XAVIER_DATA_DIR": DATA_DIR,
-        "XAVIER_EMBEDDING_PROVIDER_MODE": os.environ.get("XAVIER_EMBEDDING_PROVIDER_MODE", "cloud"),
+        "XAVIER_EMBEDDING_PROVIDER_MODE": os.environ.get(
+            "XAVIER_EMBEDDING_PROVIDER_MODE",
+            read_dotenv_key("XAVIER_EMBEDDING_PROVIDER_MODE") or "cloud",
+        ),
     }
+    # Optional: omit when unset (do not hardcode a default secret).
+    token_secret = read_dotenv_key("XAVIER_TOKEN_SECRET")
+    if token_secret:
+        block["XAVIER_TOKEN_SECRET"] = token_secret
+    return block
 
 
 def gen_opencode(token: str) -> Path:
     """opencode lee opencode.json con clave 'mcp' (NO 'mcpServers').
     Usa type 'remote' apuntando al MCP HTTP del server (puerto 8100) — mas rapido que
-    stdio local (evita lanzar un proceso xavier.exe pesado por llamada).
+    stdio local (evita lanzar un proceso xavier pesado por llamada).
     """
     mcp_port = os.environ.get("XAVIER_MCP_PORT", "8100")
+    origin = f"http://127.0.0.1:{mcp_port}"
     cfg = {
         "$schema": "https://opencode.ai/config.json",
         "mcp": {
             "xavier-memory": {
                 "type": "remote",
-                "url": f"http://localhost:{mcp_port}/mcp",
+                "url": f"http://127.0.0.1:{mcp_port}/mcp",
                 "headers": {
                     "X-Xavier-Token": token,
-                    "Origin": "localhost",
+                    "Origin": origin,
                 },
                 "enabled": True,
             }
@@ -132,7 +179,7 @@ def gen_codex(token: str) -> Path:
 Codex CLI no soporta servidores MCP nativos, asi que interactuas con Xavier via HTTP curl.
 
 ## Configuracion
-- Xavier URL: http://localhost:8006
+- Xavier URL: http://127.0.0.1:8006
 - Token (header X-Xavier-Token): {token}
 
 ## Protocolo
@@ -140,7 +187,7 @@ Codex CLI no soporta servidores MCP nativos, asi que interactuas con Xavier via 
 ### 1. Recall (ANTES de trabajar)
 ```bash
 curl -s -X POST -H "X-Xavier-Token: {token}" -H "Content-Type: application/json" \\
-  http://localhost:8006/memory/search \\
+  http://127.0.0.1:8006/memory/search \\
   -d '{{"query":"<tu pregunta>","limit":5,"filters":{{"path_prefix":"<tu-proyecto>/"}}}}'
 ```
 Lee los resultados y usalos.
@@ -148,7 +195,7 @@ Lee los resultados y usalos.
 ### 2. Persist (DESPUES)
 ```bash
 curl -s -X POST -H "X-Xavier-Token: {token}" -H "Content-Type: application/json" \\
-  http://localhost:8006/memory/add \\
+  http://127.0.0.1:8006/memory/add \\
   -d '{{"path":"<tipo>/<slug>","content":"<hecho autosuficiente>","metadata":{{"kind":"decision"}}}}'
 ```
 

@@ -7,38 +7,42 @@ description: >-
   when the host requires MCP transport details for those tools.
 ---
 
-# Xavier Memory MCP Skill (legado)
+# Xavier Memory MCP Skill (legacy)
 
-> **Canonical protocol:** `.agents/skills/xavier-memory-protocol/SKILL.md`
-> Cortex is deprecated. This folder name is historical; follow `xavier-memory-protocol` first.
+> **Status: LEGACY.** Folder name `cortex-memory` is historical — Cortex the product is removed.
+> **Canonical protocol:** [`.agents/skills/xavier-memory-protocol/SKILL.md`](../xavier-memory-protocol/SKILL.md)
+> Index: [`.agents/skills/README.md`](../README.md)
 
-Use Xavier through MCP when the host tool expects MCP transport. For the mandatory agent memory loop (HTTP + MCP), use **`xavier-memory-protocol`**.
+For the mandatory agent memory loop (MCP + HTTP), always follow **`xavier-memory-protocol`** (`mem_search` → `memory_context`/`get_memory` → `create_memory`). This skill only documents MCP transport quirks.
 
 ## Endpoint
 
-Use `http://localhost:8003/mcp` with `streamable-http` transport.
+- **stdio (Cursor/Claude):** `xavier mcp` via `scripts/mcp/xavier-mcp-cursor.sh`
+- **MCP JSON-RPC HTTP:** `http://localhost:8100` (from `xavier http --mcp-port 8100`)
+- **Legacy REST MCP bridge:** `http://localhost:8006/mcp` (older clients)
 
 ## Preconditions
 
-- Xavier should be running locally.
-- `GET /health` should respond before blaming the MCP host.
+- Xavier should be running locally (`curl http://localhost:8006/health`).
+- `XAVIER_TOKEN` must match between `.env` and the MCP host env.
 - Use GitHub Issues for task state and Xavier for durable knowledge.
 
 ## Current MCP tools
 
-- `create_memory`
-- `search_memory`
-- `get_memory`
-- `list_projects`
-- `get_project_context`
-- `sync_gitcore`
-- `core_memory_append` (MemGPT style Working Memory mutation)
-- `archival_search` (MemGPT style Episodic/Semantic lookup)
+Canonical names (use these):
+
+- `mem_search`, `memory_context`, `get_memory`, `create_memory`
+
+Also present (aliases / extras):
+
+- `search_memory`, `memory_search`, `memory_save` (deprecated aliases — see canonical skill)
+- `list_projects`, `get_project_context`, `sync_gitcore`
+- `core_memory_append`, `archival_search` (MemGPT-style helpers)
 
 ## Working rules
 
-- **Search before storing new knowledge:** Always use `search_memory` or `archival_search` to pull past context before assuming something is missing.
-- **Dynamic Context Paging:** You act as a cognitive OS. If your pre-digested context is insufficient, explicitly page in memory using `archival_search`, and explicitly page out/append insights using `core_memory_append` to evolve the state in real-time.
-- **Stable References:** Use stable `path` values and meaningful metadata.
-- **No Ephemera:** Do not store secrets or ephemeral scratch notes. Only store procedural improvements (Harness optimizations) or deep context.
-- If the tool list appears different, inspect `src/server/mcp_server.rs` and update this skill instead of guessing.
+- **Search before storing:** Prefer `mem_search` (or `archival_search` when using that surface).
+- **Page-In on demand:** Use `memory_context` / `get_memory` only for selected ids/paths.
+- **Stable references:** Use stable `path` values and meaningful metadata.
+- **No ephemera:** Do not store secrets or scratch notes.
+- If the tool list differs, inspect `src/server/mcp/` and update this skill instead of guessing.
