@@ -3,20 +3,46 @@
 //! Handles the `xavier code` subcommand which queries Xavier's code graph
 //! for symbol discovery, dependency analysis, and complexity metrics.
 
-use crate::cli::commands::enums::{CodeCommand, CLI_HTTP_CLIENT};
+use crate::cli::codegraph_sync::{sync_codegraph_from_git, GitSyncOptions};
+use crate::cli::commands::enums::{CodeCommand, CODE_HTTP_CLIENT};
 use crate::cli::config::{require_xavier_token, resolve_base_url};
 use xavier::codebase::codegraph_sidecar::{
     ensure_codegraph_sidecar, EnsureOptions, InstallMode,
 };
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::path::PathBuf;
 
 /// Dispatch a [`CodeCommand`] by making the appropriate HTTP request to the Xavier server.
 pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
+    // Git sync runs locally against the CodeGraph DB (no HTTP server required).
+    if let CodeCommand::Sync {
+        git,
+        base,
+        staged,
+        memory,
+    } = &cmd
+    {
+        if !*git {
+            bail!(
+                "Usa --git: xavier code sync --git [--base <commit>] [--staged] [--memory]"
+            );
+        }
+        let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let result = sync_codegraph_from_git(GitSyncOptions {
+            workspace,
+            base: base.clone(),
+            staged: *staged,
+            with_memory: *memory,
+        })
+        .await?;
+        println!("{}", serde_json::to_string_pretty(&result)?);
+        return Ok(());
+    }
+
     let token = require_xavier_token()?;
     let base_url = resolve_base_url();
-    let client = CLI_HTTP_CLIENT.clone();
+    let client = CODE_HTTP_CLIENT.clone();
 
     let mut scanned_path = None;
     if let CodeCommand::Scan { path, .. } = &cmd {
@@ -150,22 +176,34 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
                 .send()
                 .await?
         }
+        CodeCommand::Sync { .. } => unreachable!("Sync handled above"),
     };
 
     let status = response.status();
     let body: serde_json::Value = response.json().await.unwrap_or_default();
     if status.is_success() {
+        let remote_status = body.get("status").and_then(|v| v.as_str()).unwrap_or("ok");
+        if remote_status == "error" {
+            eprintln!("{}", serde_json::to_string_pretty(&body)?);
+            bail!(
+                "Code graph request returned status=error: {}",
+                body.get("message")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+            );
+        }
         println!("{}", serde_json::to_string_pretty(&body)?);
         if let Some(path) = scanned_path {
             if let Err(err) = soft_dump(&client, &base_url, &token, &path).await {
                 eprintln!("[warn] Soft-dump failed: {}", err);
             }
         }
+        Ok(())
     } else {
-        println!("Code graph request failed ({}):", status);
-        println!("{}", serde_json::to_string_pretty(&body)?);
+        eprintln!("Code graph request failed ({}):", status);
+        eprintln!("{}", serde_json::to_string_pretty(&body)?);
+        bail!("Code graph HTTP {} — see response body above", status);
     }
-    Ok(())
 }
 
 async fn soft_dump(
@@ -192,7 +230,8 @@ async fn soft_dump(
         anyhow::bail!("Dump request failed ({}): {}", status, err_msg);
     }
 
-    let resolved_path = xavier::codebase::codegraph_paths::codegraph_dump_path_for(std::path::Path::new(path));
+    let resolved_path =
+        xavier::codebase::codegraph_paths::codegraph_dump_path_for(std::path::Path::new(path));
     println!("Portable code graph dumped to {}", resolved_path.display());
     Ok(())
 }

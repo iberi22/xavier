@@ -392,19 +392,98 @@ pub async fn code_stats_handler(
 ) -> impl axum::response::IntoResponse {
     let code_graph = state.code_graph.read().await;
     match code_graph.db.stats() {
-        Ok(stats) => axum::Json(serde_json::json!({
-            "status": "ok",
-            "total_files": stats.total_files,
-            "total_symbols": stats.total_symbols,
-            "total_imports": stats.total_imports,
-            "languages": stats.languages,
-        })),
+        Ok(stats) => {
+            let empty = stats.total_symbols == 0;
+            axum::Json(serde_json::json!({
+                "status": "ok",
+                "total_files": stats.total_files,
+                "total_symbols": stats.total_symbols,
+                "total_imports": stats.total_imports,
+                "languages": stats.languages,
+                "degraded": empty,
+                "warning": if empty {
+                    Some("CodeGraph vacío (total_symbols=0). Ejecuta `xavier code scan .` o `xavier code sync --git`.")
+                } else {
+                    None
+                },
+            }))
+        }
         Err(error) => axum::Json(serde_json::json!({
             "status": "error",
             "message": error.to_string(),
             "total_files": 0,
             "total_symbols": 0,
             "total_imports": 0,
+            "degraded": true,
+        })),
+    }
+}
+
+/// Git-driven CodeGraph sync handler (`POST /code/sync`).
+pub async fn code_sync_handler(
+    State(state): State<CliState>,
+    axum::Json(payload): axum::Json<serde_json::Value>,
+) -> impl axum::response::IntoResponse {
+    let git = payload
+        .get("git")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    if !git {
+        return axum::Json(serde_json::json!({
+            "status": "error",
+            "message": "Usa git=true (xavier code sync --git)",
+        }));
+    }
+    let base = payload
+        .get("base")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+    let staged = payload
+        .get("staged")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    let with_memory = payload
+        .get("memory")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    // Prefer a real git root: service cwd (systemd WorkingDirectory) is often
+    // the repo, while workspace_dir may be a parent path without `.git`.
+    let sync_workspace = {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| state.workspace_dir.clone());
+        crate::cli::codegraph_sync::find_git_root(&cwd)
+            .or_else(|| crate::cli::codegraph_sync::find_git_root(&state.workspace_dir))
+            .or_else(|| {
+                crate::cli::codegraph_sync::find_git_root(&state.workspace_dir.join("xavier"))
+            })
+            .unwrap_or(cwd)
+    };
+
+    let opts = crate::cli::codegraph_sync::GitSyncOptions {
+        workspace: sync_workspace,
+        base,
+        staged,
+        with_memory,
+    };
+
+    let code_graph = state.code_graph.read().await;
+    match crate::cli::codegraph_sync::sync_codegraph_with_state(
+        &code_graph,
+        &opts.workspace,
+        &opts,
+    )
+    .await
+    {
+        Ok(result) => axum::Json(serde_json::to_value(&result).unwrap_or_else(|_| {
+            serde_json::json!({
+                "status": "error",
+                "message": "failed to serialize sync result"
+            })
+        })),
+        Err(error) => axum::Json(serde_json::json!({
+            "status": "error",
+            "message": error.to_string(),
         })),
     }
 }

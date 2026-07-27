@@ -164,10 +164,26 @@ pub async fn readiness(State(state): State<AppState>) -> impl IntoResponse {
             detail: "default workspace is not available".to_string(),
         },
     };
-    let code_graph = ReadinessComponent {
-        configured: false,
-        ready: true,
-        detail: "code graph not available in CLI mode".to_string(),
+    let code_graph = match state.code_db.stats() {
+        Ok(stats) if stats.total_symbols > 0 => ReadinessComponent {
+            configured: true,
+            ready: true,
+            detail: format!(
+                "{} symbols / {} files in CodeGraph",
+                stats.total_symbols, stats.total_files
+            ),
+        },
+        Ok(_) => ReadinessComponent {
+            configured: true,
+            ready: false,
+            detail: "CodeGraph empty — run `xavier code scan .` or `xavier code sync --git`"
+                .to_string(),
+        },
+        Err(error) => ReadinessComponent {
+            configured: true,
+            ready: false,
+            detail: format!("CodeGraph stats unavailable: {}", error),
+        },
     };
     let ready = workspace.ready
         && memory_store.ready

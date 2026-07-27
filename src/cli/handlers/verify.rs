@@ -22,6 +22,8 @@ pub async fn handle_verify_command(cmd: VerifyCommand) -> Result<()> {
 
 /// Run full system health check
 async fn verify_health(format: String) -> Result<()> {
+    use crate::cli::config::{auth_failed_error, auth_failed_message, is_auth_failure};
+
     let base_url = resolve_base_url();
     let token = require_xavier_token()?;
     let client = crate::cli::commands::enums::CLI_HTTP_CLIENT.clone();
@@ -34,6 +36,12 @@ async fn verify_health(format: String) -> Result<()> {
         .send()
         .await?;
 
+    if is_auth_failure(resp.status()) {
+        let status = resp.status().as_u16();
+        eprintln!("{}", auth_failed_message(status));
+        return Err(auth_failed_error(status));
+    }
+
     match format.as_str() {
         "json" => {
             let data: serde_json::Value = if resp.status().is_success() {
@@ -43,6 +51,11 @@ async fn verify_health(format: String) -> Result<()> {
             };
             let pretty = serde_json::to_string_pretty(&data)?;
             println!("{}", pretty);
+            if data["status"].as_str() == Some("error") {
+                Err(anyhow::anyhow!("verify health failed"))
+            } else {
+                Ok(())
+            }
         }
         "markdown" => {
             let data: serde_json::Value = if resp.status().is_success() {
@@ -63,6 +76,11 @@ async fn verify_health(format: String) -> Result<()> {
             println!("- Version: {}", version);
             println!("- Uptime: {}s", uptime);
             println!("- Memory: {} MB", mem);
+            if status == "unreachable" || status == "error" {
+                Err(anyhow::anyhow!("verify health unreachable"))
+            } else {
+                Ok(())
+            }
         }
         _ => {
             if resp.status().is_success() {
@@ -101,17 +119,19 @@ async fn verify_health(format: String) -> Result<()> {
                     }
                 }
                 println!("{}", "=".repeat(47));
+                Ok(())
             } else {
                 println!("[X] Health check failed: {}", resp.text().await?);
+                Err(anyhow::anyhow!("verify health failed"))
             }
         }
     }
-
-    Ok(())
 }
 
 /// Verify memory save/retrieve round-trip
 async fn verify_save(content: String) -> Result<()> {
+    use crate::cli::config::{auth_failed_error, auth_failed_message, is_auth_failure};
+
     let base_url = resolve_base_url();
     let token = require_xavier_token()?;
     let client = crate::cli::commands::enums::CLI_HTTP_CLIENT.clone();
@@ -134,6 +154,12 @@ async fn verify_save(content: String) -> Result<()> {
         .await?;
 
     let elapsed = start.elapsed();
+
+    if is_auth_failure(save_resp.status()) {
+        let status = save_resp.status().as_u16();
+        eprintln!("{}", auth_failed_message(status));
+        return Err(auth_failed_error(status));
+    }
 
     if save_resp.status().is_success() {
         let result: serde_json::Value = save_resp.json().await.unwrap_or_default();
@@ -162,15 +188,16 @@ async fn verify_save(content: String) -> Result<()> {
 
         if save_ok && retrieve_ok {
             println!("[OK] Verification passed!");
+            Ok(())
         } else {
             println!("[X] Verification failed!");
+            Err(anyhow::anyhow!("verify save round-trip failed"))
         }
     } else {
         println!(
             "[X] Verification request failed: {}",
             save_resp.text().await?
         );
+        Err(anyhow::anyhow!("verify save request failed"))
     }
-
-    Ok(())
 }
