@@ -338,7 +338,8 @@ pub async fn handle_core_tool(
         "health_check" => {
             let health = crate::health::collect_health_sync();
             let tools_count = get_xavier_core_tools().len()
-                + super::tools_memory::get_xavier_memory_tools().len();
+                + super::tools_memory::get_xavier_memory_tools().len()
+                + super::tools_context::get_xavier_context_tools().len();
 
             let result = MCPHealthResult {
                 status: health.status.clone(),

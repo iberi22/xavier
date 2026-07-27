@@ -1,26 +1,45 @@
 # Xavier 1.0 MCP Contract
 
-**Last Updated:** 2026-05-20
+**Last Updated:** 2026-07-27
 **Protocol Version:** 2025-03-26
 **Server Name:** `xavier-memory`
 
 ## Overview
 
-Xavier exposes a unified MCP (Model Context Protocol) interface over two transports:
+Xavier exposes a unified MCP (Model Context Protocol) interface. Prefer the **JSON-RPC MCP** transport — do not confuse it with the legacy REST listing under the main HTTP API.
 
-- **HTTP:** `POST /mcp` on the main HTTP server (default :8006)
-- **STDIO:** `xavier mcp` CLI command
+| Transport | How to start | Endpoint / port |
+|-----------|--------------|-----------------|
+| **JSON-RPC MCP (canonical)** | `xavier mcp` or `xavier http --mcp-port 8100` | HTTP+SSE on **:8100** (`POST /mcp`, `GET /mcp`) |
+| **STDIO MCP** | `xavier mcp` (stdio mode for clients) | Line-delimited JSON-RPC |
+| **Legacy REST (deprecated)** | Main HTTP API | `GET /mcp/tools` on **:8006** — `deprecated: true`; prefer JSON-RPC on :8100 |
 
-Both transports use the same `dispatch_mcp_value` dispatcher and expose the identical tool set.
+Both JSON-RPC transports use the same `dispatch_mcp_value` dispatcher and expose the identical tool set (~27 tools including aliases for compatibility).
 
 ### Transport Details
 
-| Feature | HTTP | STDIO |
-|---------|------|-------|
-| Endpoint | `POST http://localhost:8006/mcp` | `xavier mcp` |
+| Feature | JSON-RPC MCP (:8100) | STDIO |
+|---------|----------------------|-------|
+| Endpoint | `POST http://localhost:8100/mcp` | `xavier mcp` |
 | JSON-RPC Batch | ✅ Yes | Line-delimited JSON |
 | Session Header | `mcp-session-id` | N/A |
 | Auth | `X-Xavier-Token` header | Inherits from env |
+
+## Canonical agent loop
+
+Progressive disclosure (required for agents):
+
+1. **`mem_search`** — Fat index: structured candidates `{id,path,score,snippet,kind}` (no full body by default)
+2. **`memory_context`** / **`get_memory`** — Page-in full or bounded content by ids (or query)
+3. **`create_memory`** — Persist new durable knowledge
+
+Aliases (compat, same handlers):
+
+| Alias | Prefer instead |
+|-------|----------------|
+| `search_memory` | `mem_search` |
+| `memory_search` | `mem_search` (now same structured fat-index path) |
+| `mem_context` | `memory_context` |
 
 ## MCP Protocol Handshake
 
@@ -52,9 +71,18 @@ When the client has completed initialization, send as a notification (no `id` fi
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
 | `create_memory` | Create a new memory document | `path`, `content` |
-| `search_memory` | Search memory documents | `query` |
+| `mem_search` | Fat index search (progressive disclosure step 1) | `query` |
+| `memory_context` | Page-in by ids or query (step 2) | `query` **or** `ids` |
 | `get_memory` | Get a specific memory by ID | `id` |
 | `stats` | Get Xavier memory statistics | _(none)_ |
+
+### Deprecated / alias search tools
+
+| Tool | Notes |
+|------|-------|
+| `search_memory` | Deprecated — use `mem_search` |
+| `memory_search` | Deprecated — same structured handler as `mem_search` |
+| `mem_context` | Alias of `memory_context` |
 
 ### Project Tools
 
@@ -68,6 +96,7 @@ When the client has completed initialization, send as a notification (no `id` fi
 | Tool | Description | Required Params |
 |------|-------------|-----------------|
 | `sync_gitcore` | Sync docs from a GitCore project | `project_path` |
+| `health_check` | Structured health + `toolsCount` (core + memory + context) | _(none)_ |
 
 ### Gestalt MemoryFragment Tools
 
@@ -117,7 +146,7 @@ If a security violation is detected, the tool returns an MCP error `-32000` with
 }
 ```
 
-## Example: search_memory
+## Example: mem_search
 
 ```json
 {
@@ -125,7 +154,7 @@ If a security violation is detected, the tool returns an MCP error `-32000` with
   "id": 2,
   "method": "tools/call",
   "params": {
-    "name": "search_memory",
+    "name": "mem_search",
     "arguments": {
       "query": "architecture patterns",
       "limit": 5,
