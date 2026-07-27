@@ -224,20 +224,40 @@ impl ProxyUseCase {
 
         // Handle Secret Injection
         if let Some(token) = &req.lease_token {
-            let lease = secrets_engine
-                .get_lease(token)
-                .await
-                .ok_or_else(|| ProxyError::SecretError("Lease token not found".to_string()))?;
+            let secret;
+            let agent_id;
 
-            if lease.is_expired() {
-                return Err(ProxyError::SecretError("Lease token expired".to_string()));
+            if token.starts_with("clavis:") {
+                let clavis_id = &token["clavis:".len()..];
+                let clavis_engine = crate::clavis::get_global_engine();
+                secret = clavis_engine
+                    .get_key_value(clavis_id)
+                    .await
+                    .ok_or_else(|| ProxyError::SecretError(format!("Clavis key not found: {}", clavis_id)))?;
+                agent_id = "clavis_system".to_string();
+            } else {
+                let lease = secrets_engine
+                    .get_lease(token)
+                    .await
+                    .ok_or_else(|| ProxyError::SecretError("Lease token not found".to_string()))?;
+
+                if lease.is_expired() {
+                    return Err(ProxyError::SecretError("Lease token expired".to_string()));
+                }
+
+                agent_id = lease.agent_id.clone();
+
+                let clavis_engine = crate::clavis::get_global_engine();
+                secret = if let Some(rotated_val) = clavis_engine.get_key_value_by_name(&lease.secret_name).await {
+                    rotated_val
+                } else {
+                    lease.secret_value.ok_or_else(|| {
+                        ProxyError::SecretError(
+                            "Secret value missing from lease (redacted or not set)".to_string(),
+                        )
+                    })?
+                };
             }
-
-            let secret = lease.secret_value.ok_or_else(|| {
-                ProxyError::SecretError(
-                    "Secret value missing from lease (redacted or not set)".to_string(),
-                )
-            })?;
 
             match req
                 .secret_injection_strategy
@@ -248,7 +268,7 @@ impl ProxyUseCase {
                         request_builder.header("Authorization", format!("Bearer {}", secret));
                 }
                 SecretInjectionStrategy::XApiKey => {
-                    request_builder = request_builder.header("X-API-Key", secret);
+                    request_builder = request_builder.header("X-API-Key", &secret);
                 }
                 SecretInjectionStrategy::GitHubToken => {
                     request_builder =
@@ -267,7 +287,7 @@ impl ProxyUseCase {
             }
 
             // Log de cada request proxy (audit trail)
-            secrets_engine.log_proxy_use(&lease.agent_id, token, &req.url);
+            secrets_engine.log_proxy_use(&agent_id, token, &req.url);
 
             // Track usage for this lease
             let _ = self
@@ -448,13 +468,39 @@ impl ProxyUseCase {
 
         // Handle Secret Injection via lease token
         if let Some(token) = &cmd.lease_token {
-            let lease = secrets_engine
-                .get_lease(token)
-                .await
-                .ok_or_else(|| ProxyError::SecretError("Lease token not found".to_string()))?;
+            let secret;
+            let agent_id;
 
-            if lease.is_expired() {
-                return Err(ProxyError::SecretError("Lease token expired".to_string()));
+            if token.starts_with("clavis:") {
+                let clavis_id = &token["clavis:".len()..];
+                let clavis_engine = crate::clavis::get_global_engine();
+                secret = clavis_engine
+                    .get_key_value(clavis_id)
+                    .await
+                    .ok_or_else(|| ProxyError::SecretError(format!("Clavis key not found: {}", clavis_id)))?;
+                agent_id = "clavis_system".to_string();
+            } else {
+                let lease = secrets_engine
+                    .get_lease(token)
+                    .await
+                    .ok_or_else(|| ProxyError::SecretError("Lease token not found".to_string()))?;
+
+                if lease.is_expired() {
+                    return Err(ProxyError::SecretError("Lease token expired".to_string()));
+                }
+
+                agent_id = lease.agent_id.clone();
+
+                let clavis_engine = crate::clavis::get_global_engine();
+                secret = if let Some(rotated_val) = clavis_engine.get_key_value_by_name(&lease.secret_name).await {
+                    rotated_val
+                } else {
+                    lease.secret_value.ok_or_else(|| {
+                        ProxyError::SecretError(
+                            "Secret value missing from lease (redacted or not set)".to_string(),
+                        )
+                    })?
+                };
             }
 
             // Rate-limiting by lease_token: máx 100 requests/min por lease
@@ -468,7 +514,7 @@ impl ProxyUseCase {
             }
 
             // Log de cada request proxy (audit trail)
-            secrets_engine.log_proxy_use(&lease.agent_id, token, "/v1/chat/completions");
+            secrets_engine.log_proxy_use(&agent_id, token, "/v1/chat/completions");
 
             // Track usage for this lease
             let _ = self
@@ -476,13 +522,7 @@ impl ProxyUseCase {
                 .track_request(&format!("lease:{}", token), 0, 200, 0.0, false)
                 .await;
 
-            if let Some(secret) = lease.secret_value {
-                config = config.with_api_key(Some(secret));
-            } else if !is_ephemeral {
-                return Err(ProxyError::SecretError(
-                    "Secret value missing from lease (redacted and not ephemeral)".to_string(),
-                ));
-            }
+            config = config.with_api_key(Some(secret));
         }
 
         // Ensure we are using secured keys from vault if available

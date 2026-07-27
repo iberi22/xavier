@@ -129,3 +129,124 @@ async fn test_system3_restoration_logic() -> Result<()> {
     println!("✅ System3 Restoration logic verified via unit tests in agents::system3::tests.");
     Ok(())
 }
+
+#[tokio::test]
+async fn test_clavis_proxy_integration() -> Result<()> {
+    // 1. Start mockito server
+    let mut server = mockito::Server::new_async().await;
+    let mock = server
+        .mock("POST", "/test-endpoint")
+        .match_header("Authorization", "Bearer my-secret-key-12345")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body("{\"success\": true}")
+        .create_async()
+        .await;
+
+    // 2. Setup Clavis Key and register
+    let clavis_engine = xavier::clavis::get_global_engine();
+    let key_id = "openai_test_id";
+    let key_name = "openai_test_name";
+    let initial_val = "my-secret-key-12345";
+    
+    clavis_engine.register_key(key_id, key_name, initial_val, 3600).await;
+
+    // 3. Create KeyLendingEngine and Lease
+    let temp_dir = tempfile::tempdir()?;
+    std::env::set_var("XAVIER_DATA_DIR", temp_dir.path());
+    let audit_logger = Box::new(QmdAuditLogger::new());
+    audit_logger.init_schema_async().await?;
+    let event_bus = XavierEventBus::new(10);
+    let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger, Some(event_bus)));
+
+    // Create a normal lease with secret_name "openai_test_name"
+    let lease = secrets_engine
+        .lend(key_name, None, "agent-1", 3600)
+        .await?;
+    let lease_token = lease.token.clone();
+
+    // 4. Execute Proxy Request using normal lease token
+    let rate_manager = Arc::new(xavier::agents::rate_limit::RateLimitManager::new());
+    let prompt_cache = Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()));
+    let proxy = xavier::app::proxy_use_case::ProxyUseCase::new(rate_manager.clone(), prompt_cache.clone());
+
+    let req = xavier::domain::proxy::GenericProxyRequest {
+        url: format!("{}{}", server.url(), "/test-endpoint"),
+        method: "POST".to_string(),
+        headers: std::collections::HashMap::new(),
+        body: None,
+        lease_token: Some(lease_token),
+        secret_injection_strategy: Some(xavier::domain::proxy::SecretInjectionStrategy::BearerToken),
+    };
+
+    let res = proxy.execute_generic(req, secrets_engine.clone()).await?;
+    assert_eq!(res.status, 200);
+    mock.assert_async().await;
+
+    // 5. Test direct clavis: prefix token lookup
+    let mock_clavis_direct = server
+        .mock("POST", "/test-endpoint")
+        .match_header("Authorization", "Bearer my-secret-key-12345")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body("{\"success\": true}")
+        .create_async()
+        .await;
+
+    let req_direct = xavier::domain::proxy::GenericProxyRequest {
+        url: format!("{}{}", server.url(), "/test-endpoint"),
+        method: "POST".to_string(),
+        headers: std::collections::HashMap::new(),
+        body: None,
+        lease_token: Some(format!("clavis:{}", key_id)),
+        secret_injection_strategy: Some(xavier::domain::proxy::SecretInjectionStrategy::BearerToken),
+    };
+
+    let res_direct = proxy.execute_generic(req_direct, secrets_engine.clone()).await?;
+    assert_eq!(res_direct.status, 200);
+    mock_clavis_direct.assert_async().await;
+
+    // Verify Log Masking when active
+    let log_msg_initial = "My secret is: my-secret-key-12345";
+    let masked_initial = xavier::clavis::mask_log_message(log_msg_initial);
+    assert_eq!(masked_initial, "My secret is: my-s...2345");
+
+    // 6. Test key rotation & dynamic proxy injection
+    // Update key value
+    clavis_engine.set_key_value(key_id, "rotated-secret-key-67890").await;
+
+    let mock_rotated = server
+        .mock("POST", "/test-endpoint")
+        .match_header("Authorization", "Bearer rotated-secret-key-67890")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body("{\"success\": true}")
+        .create_async()
+        .await;
+
+    let req_rotated = xavier::domain::proxy::GenericProxyRequest {
+        url: format!("{}{}", server.url(), "/test-endpoint"),
+        method: "POST".to_string(),
+        headers: std::collections::HashMap::new(),
+        body: None,
+        lease_token: Some(format!("clavis:{}", key_id)),
+        secret_injection_strategy: Some(xavier::domain::proxy::SecretInjectionStrategy::BearerToken),
+    };
+
+    let res_rotated = proxy.execute_generic(req_rotated, secrets_engine.clone()).await?;
+    assert_eq!(res_rotated.status, 200);
+    mock_rotated.assert_async().await;
+
+    // 7. Verify Log Masking after rotation (old is unregistered, new is registered)
+    let log_msg_old = "My secret is: my-secret-key-12345";
+    let log_msg_new = "My secret is: rotated-secret-key-67890";
+
+    let masked_old = xavier::clavis::mask_log_message(log_msg_old);
+    let masked_new = xavier::clavis::mask_log_message(log_msg_new);
+
+    assert_eq!(masked_old, "My secret is: my-secret-key-12345"); // unregistered old key value
+    assert_eq!(masked_new, "My secret is: rota...7890"); // active new key value
+
+    println!("✅ Clavis Proxy Integration Test PASSED.");
+    Ok(())
+}
