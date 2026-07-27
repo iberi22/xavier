@@ -10,11 +10,138 @@
 //!
 //! `XAVIER_URL` is the canonical configuration variable. All CLI commands (`add`,
 //! `search`, `stats`, etc.) resolve the server URL through this module.
+//!
+//! # HTTP client honesty
+//!
+//! Callers must distinguish [`CliHttpOutcome`] kinds: auth failures (401/403) are
+//! never reported as "server offline" unless `--offline-ok` is explicit.
 
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use std::path::PathBuf;
 
 use crate::settings::XavierSettings;
+
+/// Classified outcome of a CLI → Xavier HTTP call (before parsing the body).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CliHttpOutcome {
+    /// Token rejected by the server (HTTP 401 or 403).
+    AuthFailed { status: u16 },
+    /// TCP/connect failure (server down, refused, DNS, etc.).
+    ConnectionRefused { detail: String },
+    /// HTTP response that is neither success nor auth failure.
+    HttpError { status: u16, body: String },
+}
+
+/// Actionable message printed on AUTH_FAILED (and used in `anyhow` errors).
+pub fn auth_failed_message(status: u16) -> String {
+    format!(
+        "AUTH_FAILED (HTTP {status}): Xavier token rejected. \
+Restart `xavier http` after sourcing `.env`, or align the systemd EnvironmentFile \
+with the CLI token so both use the same XAVIER_TOKEN."
+    )
+}
+
+/// True when the status is 401 Unauthorized or 403 Forbidden.
+pub fn is_auth_failure(status: reqwest::StatusCode) -> bool {
+    status.as_u16() == 401 || status.as_u16() == 403
+}
+
+/// Classify a successful `reqwest` response that is not `2xx`.
+pub fn classify_error_response(status: reqwest::StatusCode, body: String) -> CliHttpOutcome {
+    if is_auth_failure(status) {
+        CliHttpOutcome::AuthFailed {
+            status: status.as_u16(),
+        }
+    } else {
+        CliHttpOutcome::HttpError {
+            status: status.as_u16(),
+            body,
+        }
+    }
+}
+
+/// Classify a `reqwest` transport error (no HTTP status).
+pub fn classify_transport_error(err: &reqwest::Error) -> CliHttpOutcome {
+    let detail = err.to_string();
+    if err.is_connect()
+        || err.is_timeout()
+        || detail.to_ascii_lowercase().contains("connection refused")
+        || detail.to_ascii_lowercase().contains("dns error")
+        || detail.to_ascii_lowercase().contains("name or service not known")
+    {
+        CliHttpOutcome::ConnectionRefused { detail }
+    } else {
+        // Treat ambiguous transport failures as connection problems for offline fallback.
+        CliHttpOutcome::ConnectionRefused { detail }
+    }
+}
+
+/// Fail closed on auth unless `offline_ok` allows an explicit offline path.
+pub fn auth_failed_error(status: u16) -> anyhow::Error {
+    anyhow!("{}", auth_failed_message(status))
+}
+
+/// Reject Windows-style absolute paths for `XAVIER_DATA_DIR` on Unix hosts.
+pub fn validate_data_dir_path(path: &str) -> Result<(), String> {
+    let trimmed = path.trim();
+    if trimmed.is_empty() {
+        return Ok(());
+    }
+
+    #[cfg(unix)]
+    {
+        let bytes = trimmed.as_bytes();
+        // Drive-letter paths: `E:\...`, `E:/...`, `C:...`
+        if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+            return Err(format!(
+                "XAVIER_DATA_DIR looks like a Windows path ('{trimmed}'). \
+On Linux/Unix use a POSIX path, e.g. /home/you/proyectosSWAL/xavier/data"
+            ));
+        }
+        // UNC / extended Windows prefixes
+        if trimmed.starts_with("\\\\") || trimmed.starts_with("//?/") || trimmed.starts_with("\\\\?\\")
+        {
+            return Err(format!(
+                "XAVIER_DATA_DIR looks like a Windows UNC path ('{trimmed}'). \
+On Linux/Unix use a POSIX path under /home or the repo `data/` directory"
+            ));
+        }
+    }
+
+    let _ = trimmed;
+    Ok(())
+}
+
+/// Validate `XAVIER_DATA_DIR` from the environment when set.
+pub fn validate_xavier_data_dir_env() -> Result<()> {
+    if let Ok(path) = std::env::var("XAVIER_DATA_DIR") {
+        if let Err(msg) = validate_data_dir_path(&path) {
+            return Err(anyhow!("{msg}"));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod data_dir_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_windows_drive_letter_on_unix() {
+        #[cfg(unix)]
+        {
+            assert!(validate_data_dir_path(r"E:\scripts-python\xavier\data").is_err());
+            assert!(validate_data_dir_path("C:/Users/belal/xavier/data").is_err());
+        }
+    }
+
+    #[test]
+    fn accepts_posix_paths() {
+        assert!(validate_data_dir_path("/home/belal/proyectosSWAL/xavier/data").is_ok());
+        assert!(validate_data_dir_path("data").is_ok());
+        assert!(validate_data_dir_path("").is_ok());
+    }
+}
 
 /// Resolve http token.
 pub fn resolve_http_token() -> Result<String> {
