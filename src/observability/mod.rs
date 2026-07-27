@@ -134,7 +134,7 @@ pub fn resolve_log_dir(log_dir: &std::path::Path) -> std::path::PathBuf {
 }
 
 /// Initialize the tracing subscriber with:
-/// - stdout (human-readable, colored, with level + target)
+/// - stderr (human-readable, with level + target) — never stdout, so MCP stdio stays pure JSON-RPC
 /// - file (JSON-structured, rotativo diario)
 /// - env-filter configurable via `XAVIER_LOG` env var or default "info"
 /// - retention of old log files configured via `XAVIER_LOG_RETENTION_DAYS` (default 30 days)
@@ -169,11 +169,12 @@ pub fn init_logger(log_dir: &std::path::Path, level: &str) {
                 .with_line_number(true)
                 .with_writer(non_blocking),
         )
-        // Stdout layer: human-readable
+        // Console layer on stderr only — stdout must stay clean for MCP stdio JSON-RPC
         .with(
             fmt::Layer::new()
                 .with_target(true)
                 .with_level(true)
+                .with_writer(std::io::stderr)
                 .compact(),
         )
         .init();

@@ -1,7 +1,7 @@
 //! # Axum Middleware for Request Logging
 //!
 //! Captures every HTTP request and response, logs them to both:
-//! - `tracing!` (stdout + file via tracing-subscriber)
+//! - `tracing!` (stderr + file via tracing-subscriber)
 //! - `ServiceLogStore` (persistent SQLite) when there's a server error
 //!
 //! ## Usage
