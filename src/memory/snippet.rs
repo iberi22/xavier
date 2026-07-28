@@ -355,4 +355,55 @@ We will show that Rust eliminates whole classes of bugs."#;
         assert_eq!(excerpt.snippet.len(), 25);
         assert!(excerpt.snippet.contains("safe memory"));
     }
+
+    #[test]
+    fn snippet_skips_frontmatter() {
+        let content = r#"---
+title: "A Hidden Frontmatter"
+author: "Jules"
+---
+This is actual body content starting here. It is important to verify that the extracted snippet completely skips frontmatter lines."#;
+        let budget = SnippetBudget {
+            title: 20,
+            snippet: 50,
+        };
+        let excerpt = extract(content, &json!({}), "content", budget);
+        assert!(!excerpt.snippet.contains("---"));
+        assert!(!excerpt.snippet.contains("title:"));
+        assert!(!excerpt.snippet.contains("author:"));
+        assert!(excerpt.snippet.contains("actual body content"));
+    }
+
+    #[test]
+    fn snippet_centers_on_query() {
+        let content = "First part of the text that has quite a few words. Middle section containing the target-query which is extremely specific. Last section with more trailing words.";
+        let budget = SnippetBudget {
+            title: 20,
+            snippet: 40,
+        };
+        let excerpt = extract(content, &json!({}), "target-query", budget);
+        assert!(excerpt.snippet.contains("target-query"));
+        // Since it centers around "target-query", it should not start with "First part of"
+        assert!(!excerpt.snippet.starts_with("First part"));
+    }
+
+    #[test]
+    fn clip_never_panics() {
+        let inputs = vec![
+            "".to_string(),
+            "hello".to_string(),
+            "🐙 emoji testing".to_string(),
+            "你好世界".to_string(),
+            "a\u{0308}b".to_string(), // combining diaeresis
+            "👨‍👩‍👧‍👦 complex emoji family".to_string(),
+            "a".repeat(100),
+        ];
+        for input in inputs {
+            for max in 0..=120 {
+                let clipped = clip_chars(&input, max);
+                // Ensure it's a valid substring of input and does not panic
+                assert!(input.starts_with(clipped));
+            }
+        }
+    }
 }
