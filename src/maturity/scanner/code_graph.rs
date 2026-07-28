@@ -19,13 +19,30 @@ pub fn resolve_code_graph_db_path(codebase_root: &str) -> PathBuf {
 }
 
 /// Attempt to open the CodeGraphDB if the file exists.
+/// Resolves paths in order: canonical db path helper, codebase_root/.xavier/code_graph.db, codebase_root/data/code_graph.db
 pub fn try_open_code_graph_db(codebase_root: &str) -> Option<CodeGraphDB> {
     let db_path = resolve_code_graph_db_path(codebase_root);
     if db_path.exists() {
-        CodeGraphDB::new(&db_path).ok()
-    } else {
-        None
+        if let Ok(db) = CodeGraphDB::new(&db_path) {
+            return Some(db);
+        }
     }
+
+    let xavier_db_path = Path::new(codebase_root).join(".xavier").join("code_graph.db");
+    if xavier_db_path.exists() {
+        if let Ok(db) = CodeGraphDB::new(&xavier_db_path) {
+            return Some(db);
+        }
+    }
+
+    let data_db_path = Path::new(codebase_root).join("data").join("code_graph.db");
+    if data_db_path.exists() {
+        if let Ok(db) = CodeGraphDB::new(&data_db_path) {
+            return Some(db);
+        }
+    }
+
+    None
 }
 
 /// Results for one feature's static symbols.
@@ -95,13 +112,17 @@ fn load_anchored_symbols(codebase_root: &str) -> HashMap<String, Vec<String>> {
 }
 
 /// Try to load code graph DB and scan for symbols.
+/// Falls back through:
+/// 1. SQLite database (if usable, i.e., file exists and total_symbols > 0)
+/// 2. Portable JSON dump (if codegraph.json exists and parsed symbols > 0)
+///
+/// If both fail, returns None (caller will then fallback to grep_fallback).
 fn try_code_graph_db(
     root: &str,
     feature_symbols: &HashMap<String, Vec<String>>,
 ) -> Option<CodeGraphScanResult> {
-    let start = Instant::now();
-
-    // First try the real SQLite database directly
+    // Stage 1: Try the real SQLite database directly
+    let db_start = Instant::now();
     if let Some(db) = try_open_code_graph_db(root) {
         if let Ok(stats) = db.stats() {
             if stats.total_symbols > 0 {
@@ -134,7 +155,7 @@ fn try_code_graph_db(
 
                 let total_symbols: usize = feature_symbols.values().map(|v| v.len()).sum();
                 let total_found: usize = feature_scans.values().map(|s| s.found.len()).sum();
-                let timing_ms = start.elapsed().as_millis() as u64;
+                let timing_ms = db_start.elapsed().as_millis() as u64;
 
                 return Some(CodeGraphScanResult {
                     feature_scans,
@@ -147,7 +168,8 @@ fn try_code_graph_db(
         }
     }
 
-    // Fallback to JSON dump if SQLite is missing or empty
+    // Stage 2: Fallback to JSON dump if SQLite is missing or empty
+    let json_start = Instant::now();
     let json_path = Path::new(root).join(".xavier/codegraph.json");
 
     let content = std::fs::read_to_string(&json_path)
@@ -193,7 +215,7 @@ fn try_code_graph_db(
 
     let total_symbols: usize = feature_symbols.values().map(|v| v.len()).sum();
     let total_found: usize = feature_scans.values().map(|s| s.found.len()).sum();
-    let timing_ms = start.elapsed().as_millis() as u64;
+    let timing_ms = json_start.elapsed().as_millis() as u64;
 
     Some(CodeGraphScanResult {
         feature_scans,
@@ -381,6 +403,102 @@ mod tests {
         let feat_scan = scan_res.feature_scans.get("feat-test").unwrap();
         assert!(feat_scan.found.contains("test_symbol"));
         assert!(feat_scan.missing.is_empty());
+    }
+
+    #[test]
+    fn test_try_code_graph_db_fallback_to_json_dump() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let xavier_path = temp_dir.path().join(".xavier");
+        std::fs::create_dir_all(&xavier_path).unwrap();
+
+        // No SQLite DB exists, but let's create a non-empty JSON dump
+        let json_path = xavier_path.join("codegraph.json");
+        let dump_data = serde_json::json!({
+            "symbols": [
+                {
+                    "name": "test_symbol_json",
+                    "kind": "Function"
+                }
+            ],
+            "edges": [],
+            "hotspots": [],
+            "hubs": []
+        });
+        std::fs::write(&json_path, serde_json::to_string(&dump_data).unwrap()).unwrap();
+
+        let mut feature_symbols = HashMap::new();
+        feature_symbols.insert("feat-test".to_string(), vec!["test_symbol_json".to_string()]);
+
+        let result = try_code_graph_db(&temp_dir.path().to_string_lossy(), &feature_symbols);
+        assert!(result.is_some());
+        let scan_res = result.unwrap();
+        assert_eq!(scan_res.total_symbols, 1);
+        assert_eq!(scan_res.total_found, 1);
+        assert!(scan_res.feature_scans.get("feat-test").unwrap().found.contains("test_symbol_json"));
+    }
+
+    #[test]
+    fn test_try_code_graph_db_empty_json_falls_back() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let xavier_path = temp_dir.path().join(".xavier");
+        std::fs::create_dir_all(&xavier_path).unwrap();
+
+        // Create an empty JSON dump (0 symbols)
+        let json_path = xavier_path.join("codegraph.json");
+        let dump_data = serde_json::json!({
+            "symbols": [],
+            "edges": [],
+            "hotspots": [],
+            "hubs": []
+        });
+        std::fs::write(&json_path, serde_json::to_string(&dump_data).unwrap()).unwrap();
+
+        let mut feature_symbols = HashMap::new();
+        feature_symbols.insert("feat-test".to_string(), vec!["test_symbol_json".to_string()]);
+
+        let result = try_code_graph_db(&temp_dir.path().to_string_lossy(), &feature_symbols);
+        // It must return None so that the caller can fall back to grep
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn test_scan_code_graph_missing_all_graceful_grep() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        // Create an anchor file so that we have feature symbols to look for
+        let xavier_path = temp_dir.path().join(".xavier");
+        std::fs::create_dir_all(&xavier_path).unwrap();
+
+        let anchor_path = xavier_path.join("maturity-anchors.json");
+        let anchor_data = serde_json::json!({
+            "features": [
+                {
+                    "id": "feat-cool",
+                    "subcomponents": [
+                        {
+                            "static_checks": [
+                                {
+                                    "symbol": "cool_fn_symbol"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        });
+        std::fs::write(&anchor_path, serde_json::to_string(&anchor_data).unwrap()).unwrap();
+
+        // Now create a Rust source file containing that symbol under temp_dir
+        let src_dir = temp_dir.path().join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let rust_file = src_dir.join("main.rs");
+        std::fs::write(&rust_file, "fn cool_fn_symbol() {}").unwrap();
+
+        // Scan code graph with completely missing DB and dump
+        let scan_res = scan_code_graph(&temp_dir.path().to_string_lossy());
+        // Since DB and dump are missing, it should gracefully fall back to grep and find the symbol
+        assert_eq!(scan_res.total_symbols, 1);
+        assert_eq!(scan_res.total_found, 1);
+        assert!(scan_res.feature_scans.get("feat-cool").unwrap().found.contains("cool_fn_symbol"));
     }
 }
 
