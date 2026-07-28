@@ -160,6 +160,10 @@ name = "governance_e2e"
 path = "tests/e2e/governance_e2e.rs"
 
 [[test]]
+name = "decentralized_login_e2e"
+path = "tests/e2e/decentralized_login_e2e.rs"
+
+[[test]]
 name = "context_regen_e2e"
 path = "tests/e2e/context_regen_e2e.rs"
 

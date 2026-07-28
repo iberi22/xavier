@@ -1,7 +1,7 @@
 # FEATURE: Decentralized Login / Node Identity (SWAL)
 
-**Status:** `stable` | **Score:** **95%** (shippable F0–F3 code; ops/UI residual) | **Last Tested:** 2026-07-28  
-**Plan:** `login_descentralizado_swal_mesh_a7f3c2e1` · Canónico: `.gitcore/docs/DECENTRALIZED_LOGIN.md` · Avances: `.gitcore/docs/DECENTRALIZED_LOGIN_PROGRESS.md`
+**Status:** `stable` | **Score:** **95%** (E2E+unit validados 2026-07-28) | **Last Tested:** 2026-07-28  
+**Plan:** `login_descentralizado_swal_mesh_a7f3c2e1` · Issues: `.gitcore/issues/login/` · Evidence: `TEST_EVIDENCE.md`
 
 ## Overview
 
@@ -59,12 +59,18 @@ Pro=nodo · never Stripe · mesh=data plane · Polygon=ledger (solo hashes).
 | DL-F3-02 | ✅ ADR ML-KEM **no-go día-1** |
 | DL-F3-03 | ✅ PQ path mesh auth / hybrid attach |
 
-## Tests
+## Tests (validados 2026-07-28)
 
-- `cargo test -p xavier --lib node_identity::`
-- `cargo test -p xavier --lib polygon_anchor::`
-- `cargo test -p xavier --lib mesh::challenge::` / `namespace` / `pro_gate`
-- `@swal/node` device-key + heartbeat-loop + pro-gate (maloca package)
+| Suite | Pass |
+|-------|------|
+| `decentralized_login_e2e` | **5/5** |
+| `node_fase0_persist` | **2/2** |
+| `--lib node_identity` | **16/16** |
+| `--lib polygon_anchor` | **8/8** |
+| challenge / namespace / pro_gate | **10/10** |
+| `@swal/node` (maloca) | **12/12** |
+
+Issues + %: `.gitcore/issues/login/PROGRESS.md` · Evidence: `TEST_EVIDENCE.md` · Session: `.gitcore/docs/SESSION_LOGIN_2026-07-28.md`
 
 ## Paths
 
@@ -72,4 +78,5 @@ Pro=nodo · never Stripe · mesh=data plane · Polygon=ledger (solo hashes).
 - `src/polygon_anchor/`
 - `src/mesh/{challenge,namespace,pro_gate}.rs`
 - `src/cli/commands/node.rs`
+- `tests/e2e/decentralized_login_e2e.rs`
 - `docs/POLYGON_ANCHORS.md`

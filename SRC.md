@@ -105,10 +105,16 @@ Never commit real secrets.
 | PLANNING | `.gitcore/planning/PLANNING.md` |
 | TASK | `.gitcore/planning/TASK.md` |
 | features | `.gitcore/features.json` |
+| Feature login | `.gitcore/features/FEATURE-feat-decentralized-login.md` (95%) |
+| Issues login | `.gitcore/issues/login/PROGRESS.md` |
+| Test evidence | `.gitcore/issues/login/TEST_EVIDENCE.md` |
+| Session login | `.gitcore/docs/SESSION_LOGIN_2026-07-28.md` |
 | SRS index | `docs/SRS/index.md` |
+| SRS REQ-008 | `docs/SRS/REQUIREMENTS.md` |
+| E2E login | `tests/e2e/decentralized_login_e2e.rs` |
 | SWAL roadmap | monorepo `docs/SWAL/README.md` |
 
 ---
 
-*Document version: 3.8.0 · Part of GitCore Protocol*
+*Document version: 3.8.0 · Part of GitCore Protocol · Updated 2026-07-28 (login session)*
 
