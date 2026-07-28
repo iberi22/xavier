@@ -65,6 +65,13 @@ xavier/
 | *(from .env.example)* | | |
 | `XAVIER_URL` | Xavier HTTP (default http://127.0.0.1:8006) | for agentic memory |
 | `XAVIER_TOKEN` | Auth token | when server enforces auth |
+| `XAVIER_DATA_DIR` | Vault + identity + anchor receipts | node identity |
+| `XAVIER_NODE_DEVICE_KEY` | Optional device key (WebAuthn PRF hook) | optional |
+| `SWAL_POLYGON_RPC_URL` | RPC Polygon (Amoy/mainnet) | anchors live |
+| `SWAL_ANCHOR_CONTRACT` | Registry address post-deploy | anchors live |
+| `SWAL_ANCHOR_KEY` | Signer key (never commit) | anchors live |
+| `SWAL_ANCHOR_DRY_RUN` | `1` default — no broadcast | anchors |
+| `SWAL_ANCHOR_BROADCAST` | `1` + `--features dao-evm` → live tx | anchors |
 
 Never commit real secrets.
 
@@ -72,11 +79,23 @@ Never commit real secrets.
 
 | Concern | Approach |
 |---------|----------|
-| Pro features | Active SWAL node |
-| Multi-instance | `instance_id` isolation |
+| Pro features | Active SWAL node (`pro_gate` + heartbeat) |
+| Multi-instance | `instance_id` · namespaces `swal/{app}/{instance}` |
 | Memory | Xavier HTTP/MCP |
-| Mesh | edge-mesh namespaces `swal/{app}/{instance}` |
+| Mesh | edge-mesh data plane (no L1) |
+| Identity / login | `src/node_identity/` + `src/polygon_anchor/` — **95%** · `.gitcore/docs/DECENTRALIZED_LOGIN_PROGRESS.md` |
 | Payments Pro | **No Stripe** |
+
+### Login / identidad (2026-07-28)
+
+| Module | Path | Notes |
+|--------|------|-------|
+| Node identity | `src/node_identity/` | BIP39, Shamir, vault, hybrid_pack |
+| Polygon anchors | `src/polygon_anchor/` | dry-run default; broadcast `dao-evm` |
+| Mesh auth | `src/mesh/{challenge,namespace,pro_gate}.rs` | Fase 1 |
+| CLI | `src/cli/commands/node.rs` | `create\|recover\|status\|anchor\|anchor-pack` |
+
+**Siguiente:** ops Amoy deploy · Fase 4 research · UI Maloca WebAuthn.
 
 ## 7. Cross-references
 

@@ -123,5 +123,35 @@ GitHub Actions desactivados por defecto en era privada SWAL; tests locales prefe
 
 ---
 
-*Add domain-specific REQ-008+ below. Keep numbering stable.*
+## REQ-008: Decentralized login / node identity (SWAL)
+
+- **Category:** Identity / Security  
+- **Priority:** High  
+- **SRS Estado:** `implemented` (~95% — residual ops/UI)  
+- **Files:** `src/node_identity/`, `src/polygon_anchor/`, `src/mesh/{challenge,namespace,pro_gate}.rs`, `src/cli/commands/node.rs`  
+- **Feature:** `feat-decentralized-login` · Docs: `.gitcore/docs/DECENTRALIZED_LOGIN.md`
+
+### Descripción
+Login local sin cuenta central: BIP39-24 + Shamir 2-of-3 + vault; challenge mesh; anclas Polygon (solo hashes); firmas híbridas Ed25519+ML-DSA commitment. Pro = nodo activo, nunca Stripe. Mesh ≠ blockchain.
+
+### Criterios de aceptación
+- [x] Crear/recuperar nodo vía CLI sin servidor de cuentas
+- [x] Seed nunca en logs / mesh / on-chain
+- [x] Challenge-response Ed25519 + commitment ML-DSA
+- [x] Anchor dry-run / live-prepared / broadcast (`dao-evm`)
+- [ ] Deploy Amoy + smoke live (ops)
+- [ ] UI Maloca `obtainDeviceKeyViaWebAuthn` (producto)
+
+### Trazabilidad fases
+| Fase | % | REQ map |
+|------|---|---------|
+| F0 | 95% | vault/BIP39/Shamir/device_key |
+| F1 | 95% | mesh challenge / Pro gate |
+| F2 | 90% | Polygon anchors |
+| F3 | 100% | hybrid packs |
+| F4 | research | ADR-SWAL-BIO-ZKP (fuera del 95%) |
+
+---
+
+*Add domain-specific REQ-009+ below. Keep numbering stable. Updated 2026-07-28.*
 

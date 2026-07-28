@@ -230,6 +230,12 @@ pub enum Command {
         cmd: MeshCommand,
     },
 
+    /// SWAL node identity — create / recover / status / Polygon anchors (login F0–F2)
+    Node {
+        #[command(subcommand)]
+        cmd: NodeCommand,
+    },
+
     /// Export memories to JSON
     Export {
         /// Export only public memories (exclude is_private: true)
@@ -703,6 +709,79 @@ pub enum VaultCommand {
     Get { key: String },
     /// Delete a secret from the hardware vault
     Delete { key: String },
+}
+
+/// SWAL decentralized login / node identity CLI (F0 vault + F2 anchors).
+#[derive(Subcommand, Debug, Clone)]
+pub enum NodeCommand {
+    /// Create BIP39-24 identity, Shamir 2-of-3 shares, sealed vault
+    Create {
+        #[arg(long)]
+        pin: Option<String>,
+        #[arg(long)]
+        passphrase: Option<String>,
+        /// 64-hex device key (WebAuthn PRF / OS keystore)
+        #[arg(long)]
+        device_key_hex: Option<String>,
+        #[arg(long, default_value_t = false)]
+        force: bool,
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+        /// Write Shamir shares JSON to this path (0600)
+        #[arg(long)]
+        shares_out: Option<PathBuf>,
+    },
+    /// Recover from ≥2 Shamir shares + ordered check-code challenge
+    Recover {
+        #[arg(long)]
+        pin: Option<String>,
+        #[arg(long)]
+        passphrase: Option<String>,
+        #[arg(long)]
+        device_key_hex: Option<String>,
+        #[arg(long)]
+        shares_file: PathBuf,
+        #[arg(long, default_value = "asc")]
+        challenge_mode: String,
+        #[arg(long)]
+        response: String,
+        #[arg(long, default_value_t = false)]
+        force: bool,
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+    },
+    /// Show public identity / vault presence
+    Status {
+        #[arg(long)]
+        pin: Option<String>,
+        #[arg(long)]
+        device_key_hex: Option<String>,
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+        /// Unlock vault with PIN to verify (never prints seed)
+        #[arg(long, default_value_t = false)]
+        unlock: bool,
+    },
+    /// Anchor public identity content_hash on Polygon (dry-run by default)
+    Anchor {
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+    },
+    /// Anchor sealed-pack content_hash only (ciphertext stays off-chain)
+    AnchorPack {
+        #[arg(long)]
+        ciphertext_hex: Option<String>,
+        #[arg(long)]
+        cipher_file: Option<PathBuf>,
+        #[arg(long, default_value = "{}")]
+        meta: String,
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+        #[arg(long)]
+        data_dir: Option<PathBuf>,
+    },
 }
 
 /// Mesh network management subcommands

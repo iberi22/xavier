@@ -119,7 +119,16 @@ RBAC, multi-tenancy, audit logging, and compliance reporting.
 - Submodules: `qmd/`, `sqlite_vec_store/`, `file_indexer/`, `telemetry/`, `graph_traversal/`
 
 #### `src/mesh` — P2P Networking
-Ed25519 identity, peer discovery, memory sync protocol, consensus.
+Ed25519 identity, peer discovery, memory sync, challenge/namespace/pro_gate (login F1). Mesh = data plane (ledger = Polygon).
+
+#### `src/node_identity` — Decentralized Login (F0 / F3)
+BIP39-24, Shamir 2-of-3, vault Argon2id+AES-GCM, check-codes, derive Ed25519+ML-DSA commitment, `hybrid_pack`.
+- **CLI:** `xavier node create|recover|status|anchor|anchor-pack`
+- **Feature:** `feat-decentralized-login` **95%** · `.gitcore/docs/DECENTRALIZED_LOGIN_PROGRESS.md`
+
+#### `src/polygon_anchor` — Polygon Hash Anchors (F2)
+ABI registry, dry-run default, live-prepared, broadcast behind `dao-evm`. Deploy contract = ops.
+- **Env:** `SWAL_POLYGON_*`, `SWAL_ANCHOR_*` · Docs: `docs/POLYGON_ANCHORS.md`
 
 #### `src/observability` — Monitoring & Logging
 Prometheus metrics, structured tracing (tracing-subscriber), health checks, UsageCounters.
@@ -326,4 +335,4 @@ XAVIER_CONFIG_PATH=./config/prod.json cargo run --release -- http 8006
 - `src/bin/cortex.rs` — Specialized cognitive reasoning entry point
 
 ---
-*Maintained manually per GitCore Protocol v3 — Last updated: 2026-07-21*
+*Maintained manually per GitCore Protocol v3 — Last updated: 2026-07-28 (feat-decentralized-login 95%)*
