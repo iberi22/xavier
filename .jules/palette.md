@@ -1,6 +1,3 @@
-## 2026-07-20 - Accessible Form Controls with Neon Focus
-**Learning:** Icon-only controls and form inputs require explicit aria-labels and htmlFor bindings, paired with focus-visible styles that match the app's neon accent (`focus-visible:ring-[#39ff14]/50`) for keyboard accessibility.
-**Action:** Ensure all future custom form controls map standard ARIA attributes while incorporating the design system's specific focus rings.
-## 2026-07-28 - Memory Browser Accessibility Labels
-**Learning:** React fragments and generic HTML interactive elements (like icon-only `<button>`, `<input>`, and `<select>`) in Xavier's UI components often lack screen-reader accessible names by default.
-**Action:** Consistently enforce the addition of explicit `aria-label` attributes to interactive elements and `aria-hidden="true"` to purely decorative icons (like Lucide React icons) to ensure comprehensive assistive technology support.
+## 2023-10-24 - Status Bar Configuration Button Hidden from Keyboard Users
+**Learning:** Utility classes like `opacity-0` with `group-hover:opacity-100` hide interactive elements from keyboard users completely, making them impossible to discover via tab navigation, even if they are focusable.
+**Action:** Always pair `opacity-0` hover-revealed buttons with `focus-visible:opacity-100` and focus rings (e.g. `focus-visible:ring-2`) to ensure keyboard users can discover and interact with them.

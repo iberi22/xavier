@@ -269,8 +269,10 @@ export default function TopStatusBar({
             {/* Gear Button */}
             <button
               onClick={() => setShowConfig(!showConfig)}
-              className="absolute -right-7 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-white/30 hover:text-[#39ff14] p-1.5 outline-none"
+              className="absolute -right-7 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity text-white/30 hover:text-[#39ff14] p-1.5 outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 rounded-full"
               title="Configure Status Bar"
+              aria-label="Configure Status Bar"
+              aria-expanded={showConfig}
             >
               <Settings className="w-3.5 h-3.5 hover:animate-[spin_4s_linear_infinite]" />
             </button>
@@ -299,7 +301,8 @@ export default function TopStatusBar({
                     <button
                       key={key}
                       onClick={() => toggleModule(key as keyof typeof modules)}
-                      className="flex items-center justify-between px-2 py-1.5 hover:bg-white/5 rounded-lg transition-colors group/btn outline-none"
+                      className="flex items-center justify-between px-2 py-1.5 hover:bg-white/5 rounded-lg transition-colors group/btn outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
+                      aria-pressed={modules[key as keyof typeof modules]}
                     >
                       <span className="text-xs text-white/80 font-mono">
                         {label}
