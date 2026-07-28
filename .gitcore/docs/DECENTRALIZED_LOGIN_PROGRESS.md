@@ -50,6 +50,14 @@ Se implementó y documentó el protocolo de **login / identidad descentralizada*
 | `edge-mesh` | `F-019`…`F-022` | `complete` 100% |
 | `edge-mesh` | `F-023` | `pending` ~5% (research) |
 
+
+### 2026-07-28 — Cierre de sesión (E2E + issues)
+
+- E2E `decentralized_login_e2e` **5/5 PASS**
+- Issues DL-01…06 con % validados en `.gitcore/issues/login/`
+- SRS REQ-008 + SRC actualizados; feature **95%** `verified_by=unit+e2e`
+- Xavier `main` rebaseado sobre origin (#1080) · commits `d29dd9c9` + `659651f9`
+
 ### 2026-07-28 — Leftovers F0–F3 (hardening)
 
 | Entrega | Detalle |
