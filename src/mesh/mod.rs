@@ -35,6 +35,7 @@
 
 pub mod acl;
 pub mod auth;
+pub mod challenge;
 #[cfg(feature = "mesh")]
 pub mod auto_update;
 pub mod cloud_node;
@@ -49,8 +50,10 @@ pub mod heartbeat;
 #[cfg(feature = "mesh")]
 pub mod iroh_transport;
 pub mod maturity;
+pub mod namespace;
 pub mod node;
 pub mod pairing;
+pub mod pro_gate;
 pub mod pairing_registry;
 pub mod peer;
 pub mod protocol;

@@ -1,19 +1,19 @@
 {
   "protocol": "3.8.0",
-  "_comment": "Feature tracking \u2014 product 1.0 MVP 100% stable (Ola 6). Phase-2 mesh R&D on #115.",
+  "_comment": "Feature tracking — product 1.0 MVP 100% stable (Ola 6). Phase-2 mesh R&D on #115.",
   "metadata": {
     "project": "Xavier",
     "version": "0.12.0",
     "created": "2026-03-05",
-    "last_verified": "2026-07-22",
-    "total_features": 26,
-    "features_complete": 25,
+    "last_verified": "2026-07-28",
+    "total_features": 27,
+    "features_complete": 26,
     "features_beta": 0,
     "features_draft": 0,
     "features_planned": 1,
-    "features_stable": 16,
+    "features_stable": 26,
     "overall_progress_pct": 96.3,
-    "reconciliation_notes": "2026-07-19 Ola 5 Reconciliation Audit: Multiple features adjusted to realistic progress percentages based on deep audit findings. Added E2E tests for RBAC, Crypto, and Telegram bot. Verified MCP server progressive disclosure and double-division TOTP logic.\n2026-07-21 Ola 6 Update: feat-hormer-navigation verified at 100% (5/5 tests pass, code complete). Active: feat-src-reference (Jules #810) at 60%, feat-dual-license (Jules #801) at 20%.\n2026-07-21 Ola 6: feat-src-reference expanded to 100% (SRC.md + SRC_CONFIG.md). feat-hormer-navigation verified at 100%."
+    "reconciliation_notes": "2026-07-19 Ola 5 Reconciliation Audit: Multiple features adjusted to realistic progress percentages based on deep audit findings. Added E2E tests for RBAC, Crypto, and Telegram bot. Verified MCP server progressive disclosure and double-division TOTP logic.\n2026-07-21 Ola 6 Update: feat-hormer-navigation verified at 100% (5/5 tests pass, code complete). Active: feat-src-reference (Jules #810) at 60%, feat-dual-license (Jules #801) at 20%.\n2026-07-21 Ola 6: feat-src-reference expanded to 100% (SRC.md + SRC_CONFIG.md). feat-hormer-navigation verified at 100%.\n2026-07-28: feat-decentralized-login added at 95% honest (F0–F3 shippable code; Amoy ops + Maloca UI residual). F4 research separate."
   },
   "features": [
     {
@@ -161,7 +161,7 @@
       "verified_by": "production-usage",
       "github_issue": 81,
       "last_tested": "2026-07-21",
-      "notes": "Working in production. Session export, import, and cross-instance sharing via SessionBundle. Context Virtualization Turn Pack (PR #506) \u2014 tiered context restore (shallow/medium/deep) working.",
+      "notes": "Working in production. Session export, import, and cross-instance sharing via SessionBundle. Context Virtualization Turn Pack (PR #506) — tiered context restore (shallow/medium/deep) working.",
       "implemented_in": "src/session/, src/domain/memory/",
       "tests": [
         "session::tests::test_session_create",
@@ -224,7 +224,7 @@
       "category": "documentation",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Source Code Reference (SRC) \u00e2\u20ac\u201d comprehensive documentation per GitCore protocol",
+      "description": "Source Code Reference (SRC) â€” comprehensive documentation per GitCore protocol",
       "steps": [
         "Document directory structure",
         "Document core modules (a2a, agents, memory, server, tasks)",
@@ -355,11 +355,11 @@
       "category": "enterprise",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Bicameral governance system \u00e2\u20ac\u201d 50% node operators + 50% Xavier Core Council \u00e2\u20ac\u201d with weighted voting, veto, XIP lifecycle, and on-chain integration",
+      "description": "Bicameral governance system â€” 50% node operators + 50% Xavier Core Council â€” with weighted voting, veto, XIP lifecycle, and on-chain integration",
       "steps": [
         "Bicameral DAO design (users + council)",
         "Weighted voting by reputation + activity",
-        "XIP lifecycle (proposal \u00e2\u2020\u2019 discussion \u00e2\u2020\u2019 vote \u00e2\u2020\u2019 execution)",
+        "XIP lifecycle (proposal â†’ discussion â†’ vote â†’ execution)",
         "Veto mechanism (66% council for security)",
         "Community overrule (75% override veto)",
         "On-chain integration (Solana/Ethereum)",
@@ -409,7 +409,7 @@
       "category": "enterprise",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Closed-loop auto-improvement: benchmark \u00e2\u2020\u2019 gap analysis \u00e2\u2020\u2019 generate experiment \u00e2\u2020\u2019 validate \u00e2\u2020\u2019 merge \u00e2\u2020\u2019 re-measure",
+      "description": "Closed-loop auto-improvement: benchmark â†’ gap analysis â†’ generate experiment â†’ validate â†’ merge â†’ re-measure",
       "steps": [
         "Benchmark runner",
         "Gap analysis",
@@ -492,8 +492,8 @@
       "description": "Scans clawd/agents/ directories for OpenClaw agent memory files (MEMORY.md, SOUL.md, USER.md, daily logs)",
       "steps": [
         "Implement OpenClawAgentScanner struct",
-        "scan_all_agents() \u00e2\u20ac\u201d recursive directory scan",
-        "scan_agent(name) \u00e2\u20ac\u201d single agent scan",
+        "scan_all_agents() â€” recursive directory scan",
+        "scan_agent(name) â€” single agent scan",
         "Detect MEMORY.md, TOOLS.md, SOUL.md, USER.md, daily logs",
         "Integration with OpenClawAgentIndexer for embedding",
         "Wire into CloudMemorySync for Supabase push"
@@ -539,12 +539,12 @@
       "category": "local-first",
       "status": "stable",
       "progress_pct": 100,
-      "description": "Chat del panel responde usando un LLM local (Ollama) con fallback a cloud y degradaci\u00f3n elegante a memoria cuando ning\u00fan provider responde.",
+      "description": "Chat del panel responde usando un LLM local (Ollama) con fallback a cloud y degradación elegante a memoria cuando ningún provider responde.",
       "steps": [
-        "Ola 1 estabilizacion \u2014 DONE",
-        "Ola 2 fallback chain + local provider \u2014 DONE",
-        "Ola 3 observabilidad + panel LLM + UsageCounters \u2014 DONE",
-        "Ola 4 headless memory-fallback + Ollama hot-swap API/UI + metrics UI + docs \u2014 DONE"
+        "Ola 1 estabilizacion — DONE",
+        "Ola 2 fallback chain + local provider — DONE",
+        "Ola 3 observabilidad + panel LLM + UsageCounters — DONE",
+        "Ola 4 headless memory-fallback + Ollama hot-swap API/UI + metrics UI + docs — DONE"
       ],
       "passes": true,
       "verified_by": "integration-tests",
@@ -575,7 +575,7 @@
       "verified_by": "code-audit",
       "github_issue": 496,
       "last_tested": "2026-07-18",
-      "notes": "Ola 5/6 progressive stack complete + measure_token_savings.py + search count() without all_documents. Parent #496 closable when measured run \u226590% in env.",
+      "notes": "Ola 5/6 progressive stack complete + measure_token_savings.py + search count() without all_documents. Parent #496 closable when measured run ≥90% in env.",
       "implemented_in": "src/server/mcp/tools_memory.rs, src/context/token_estimate.rs, src/memory/episodic.rs, docs/TOKEN_SAVINGS_ANALYSIS.md",
       "tests": [
         "cost::tests::test_token_tracking"
@@ -682,6 +682,39 @@
       "notes": "Ola 9 Jules wave (14 issues). See .gitcore/features/details/feat-codegraph-maturity-bridge.json. Issue 14 reconciles to 100%.",
       "implemented_in": "src/cli/code_dump.rs, src/maturity/scanner/code_graph.rs, src/chronicle/auto_docs.rs",
       "tests": []
+    },
+    {
+      "id": "feat-decentralized-login",
+      "name": "Decentralized Login / Node Identity (SWAL)",
+      "category": "identity",
+      "status": "stable",
+      "progress_pct": 95,
+      "description": "SWAL decentralized login: BIP39/Shamir vault, mesh challenge, Polygon hash anchors, hybrid PQ pack signatures. F4 bio/ZKP research tracked separately.",
+      "steps": [
+        "F0 BIP39-24 + Shamir 2-of-3 vault + device_key CLI/API (95%)",
+        "F1 mesh challenge + namespace + ACL bridge + Pro heartbeat (95%)",
+        "F2 Polygon ABI + live-prepared + dao-evm broadcast + deploy script (90%; Amoy live ops pending)",
+        "F3 hybrid Ed25519+ML-DSA packs + ML-KEM eval ADR (100%)",
+        "F4 research ADR separate (5%, non-blocking)"
+      ],
+      "passes": true,
+      "verified_by": "unit-tests",
+      "last_tested": "2026-07-28",
+      "notes": "Honest overall 95%. Residual: Maloca WebAuthn UI, Amoy contract deploy with funded key. SLIP39 OOS. Never Stripe. Mesh≠chain.",
+      "implemented_in": "src/node_identity/, src/polygon_anchor/, src/mesh/{challenge,namespace,pro_gate}.rs, src/cli/commands/node.rs",
+      "tests": [
+        "node_identity::",
+        "polygon_anchor::",
+        "mesh::challenge::",
+        "mesh::namespace::",
+        "mesh::pro_gate::"
+      ],
+      "docs": [
+        ".gitcore/docs/DECENTRALIZED_LOGIN.md",
+        ".gitcore/docs/DECENTRALIZED_LOGIN_PROGRESS.md",
+        ".gitcore/features/FEATURE-feat-decentralized-login.md",
+        "docs/POLYGON_ANCHORS.md"
+      ]
     }
   ],
   "verification_commands": {
