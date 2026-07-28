@@ -6,7 +6,7 @@ use code_graph::types::{CodeEdge, Symbol};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tracing::info;
+use tracing::{info, warn};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CodeGraphMeta {
@@ -29,6 +29,17 @@ pub struct CodeGraphDump {
 
 /// Soft-dump threshold: above this, sync skips dump by default (avoids long stalls).
 pub const DUMP_SOFT_SKIP_SYMBOLS: u64 = 25_000;
+
+/// Soft wrapper over perform_dump that never panics and logs warnings on error.
+pub async fn soft_perform_dump(state: &CodeGraphState, scanned_path: &str) -> Option<PathBuf> {
+    match perform_dump(state, scanned_path).await {
+        Ok(path) => Some(path),
+        Err(e) => {
+            warn!("Soft CodeGraph dump failed: {}", e);
+            None
+        }
+    }
+}
 
 /// Perform a dump of the code graph to `.xavier/codegraph.json`.
 ///
@@ -142,4 +153,30 @@ fn find_repo_root(start_path: &str) -> PathBuf {
     }
 
     std::path::absolute(".").unwrap_or_else(|_| PathBuf::from("."))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_soft_perform_dump_never_panics() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let git_dir = temp_dir.path().join(".git");
+        std::fs::create_dir(&git_dir).expect("failed to create .git");
+
+        // Create .xavier as a file (not a directory) so creating or writing inside it fails
+        let xavier_file = temp_dir.path().join(".xavier");
+        std::fs::write(&xavier_file, "not a directory").expect("failed to write .xavier file");
+
+        // Build an in-memory CodeGraphDB that is valid
+        let db = Arc::new(CodeGraphDB::in_memory().unwrap());
+        let indexer = Arc::new(code_graph::indexer::Indexer::new(Arc::clone(&db)));
+        let query = Arc::new(QueryEngine::new(Arc::clone(&db)));
+        let state = CodeGraphState { db, indexer, query };
+
+        // Test that calling soft_perform_dump with a path inside temp_dir returns None instead of panicking
+        let result = soft_perform_dump(&state, temp_dir.path().to_str().unwrap()).await;
+        assert!(result.is_none());
+    }
 }
