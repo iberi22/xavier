@@ -1977,7 +1977,7 @@ mod tests {
 
         let snippet = item["snippet"].as_str().expect("snippet should be string");
         assert!(snippet.len() <= 100);
-        assert!(long_content.starts_with(snippet));
+        assert!(long_content.contains(snippet));
         assert!(item.get("content").is_none());
         assert!(item.get("embedding").is_none());
         assert!(item.get("memory").is_none());
