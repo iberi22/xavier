@@ -127,9 +127,9 @@ GitHub Actions desactivados por defecto en era privada SWAL; tests locales prefe
 
 - **Category:** Identity / Security  
 - **Priority:** High  
-- **SRS Estado:** `implemented` (~95% — residual ops/UI)  
+- **SRS Estado:** `implemented` (**95%** — E2E+unit verdes; residual ops Amoy + UI Maloca)  
 - **Files:** `src/node_identity/`, `src/polygon_anchor/`, `src/mesh/{challenge,namespace,pro_gate}.rs`, `src/cli/commands/node.rs`  
-- **Feature:** `feat-decentralized-login` · Docs: `.gitcore/docs/DECENTRALIZED_LOGIN.md`
+- **Feature:** `feat-decentralized-login` · Issues: `.gitcore/issues/login/` · Evidence: `TEST_EVIDENCE.md`
 
 ### Descripción
 Login local sin cuenta central: BIP39-24 + Shamir 2-of-3 + vault; challenge mesh; anclas Polygon (solo hashes); firmas híbridas Ed25519+ML-DSA commitment. Pro = nodo activo, nunca Stripe. Mesh ≠ blockchain.
@@ -139,17 +139,20 @@ Login local sin cuenta central: BIP39-24 + Shamir 2-of-3 + vault; challenge mesh
 - [x] Seed nunca en logs / mesh / on-chain
 - [x] Challenge-response Ed25519 + commitment ML-DSA
 - [x] Anchor dry-run / live-prepared / broadcast (`dao-evm`)
+- [x] E2E pipeline `decentralized_login_e2e` (5/5 PASS, 2026-07-28)
 - [ ] Deploy Amoy + smoke live (ops)
 - [ ] UI Maloca `obtainDeviceKeyViaWebAuthn` (producto)
 
-### Trazabilidad fases
-| Fase | % | REQ map |
-|------|---|---------|
-| F0 | 95% | vault/BIP39/Shamir/device_key |
-| F1 | 95% | mesh challenge / Pro gate |
-| F2 | 90% | Polygon anchors |
-| F3 | 100% | hybrid packs |
-| F4 | research | ADR-SWAL-BIO-ZKP (fuera del 95%) |
+### Trazabilidad fases ↔ issues ↔ % validados
+
+| Fase | Issue | % | Tests |
+|------|-------|---|-------|
+| F0 | DL-01 | 95% | node_identity 16 + persist 2 + E2E F0 |
+| F1 | DL-02 | 95% | challenge/ns/pro_gate 10 + E2E F1 |
+| F2 | DL-03 | 90% | polygon_anchor 8 + E2E F2 |
+| F3 | DL-04 | 100% | hybrid_pack + E2E F3 |
+| F4 | DL-05 | 5% | ADR research |
+| Apps | DL-06 | 90% | `@swal/node` 12 |
 
 ---
 

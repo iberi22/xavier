@@ -1,16 +1,16 @@
 # xavier — Software Requirements Specification (SRS)
 
 > **Protocol:** GitCore 3.8.0  
-> **Updated:** 2026-07-17  
-> **Status target:** 100% structure complete · content kept in sync with code
+> **Updated:** 2026-07-28  
+> **Status target:** structure complete · REQ-008 login validated 95%
 
 ## Estado actual
 
 | Métrica | Valor |
 |---------|-------|
-| Requisitos totales | 7+ |
+| Requisitos totales | 8+ (REQ-001…008) |
 | Structure complete | ✅ 100% |
-| Content status | draft (structure complete) |
+| Content status | REQ-008 `implemented` ~95% (E2E+unit) |
 | Synced ratio (drift) | n/a (local) |
 
 ## Documents (mandatory)
@@ -19,6 +19,16 @@
 |-----|---------|
 | [REQUIREMENTS.md](./REQUIREMENTS.md) | REQ-IDs, acceptance criteria, file traces |
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | Component map, constraints, SWAL alignment |
+
+## Login / identidad (REQ-008)
+
+| Recurso | Path |
+|---------|------|
+| Feature | `.gitcore/features/FEATURE-feat-decentralized-login.md` (**95%**) |
+| Issues + % | `.gitcore/issues/login/PROGRESS.md` |
+| Test evidence | `.gitcore/issues/login/TEST_EVIDENCE.md` |
+| E2E | `tests/e2e/decentralized_login_e2e.rs` (5 PASS) |
+| Session | `.gitcore/docs/SESSION_LOGIN_2026-07-28.md` |
 
 ## Optional (domain)
 
