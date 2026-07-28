@@ -54,6 +54,18 @@ As of v0.6+, Xavier has transitioned to **SQLite-Vec** as the primary storage en
 | **TUI Installer** | Stable | ✅ (6-step wizard) |
 | **Public Export** | Stable | ✅ (NDJSON manifest) |
 
+### XTSP (Ola 9 — Token-Saving Protocol)
+
+| Feature | Status | Verified? |
+|---------|--------|-----------|
+| **Snippet search** (`mode=ids|snippet|full`) | Stable | ✅ (8KB cap, page-in) |
+| **Semantic dedup** (per-workspace) | Stable | ✅ (opt-in default) |
+| **Soft-delete prune** (tombstone + audit) | Stable | ✅ (memory_prune tool) |
+| **MCP Streamable HTTP** (port 8100) | Stable | ✅ (12 tools) |
+| **Clavis key masking** | Stable | ✅ (auto-rotation support) |
+| **GPU sidecar** (`xavier gpud`) | Experimental | ✅ (3 endpoints, no mesh) |
+| **Provider router local URIs** | Stable | ✅ |
+
 ## Development Ecosystem
 
 Xavier uses autonomous agents for continuous improvement:

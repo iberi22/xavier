@@ -18,6 +18,25 @@ This matrix is the operational truth for the repository as of v0.6.1-beta stabil
 || Workspace/storage isolation | Stable | Canonical env vars documented. `XAVIER_WORKSPACE_DIR` / `XAVIER_DATA_DIR` fully isolate runtime. `seed_workspace()` documented as intentional. Tests prove temp workspace isolation. |
 || Public docs consistency | Stable | README, MCP_CONTRACT.md, ARCHITECTURE.md, FEATURE_STATUS.md, smoke scripts all aligned with v1.0 surface. |
 
+
+## XTSP (Token-Saving Protocol) — Ola 9
+
+| Feature | Status | Notes |
+|---|--------|-------|
+| Snippet search via `mode` parameter | Stable | `POST /v1/memories/search` accepts `mode=ids|snippet|full`. Hard cap 8KB. Page-in support. |
+| Semantic dedup on `memory_add` | Stable | Configurable per-workspace via `dedup` policy. Default: disabled (opt-in). |
+| Soft-delete prune with audit | Stable | Tombstone-based pruning. `memory_prune` tool removes soft-deleted records with audit trail. |
+| MCP Streamable HTTP (port 8100) | Stable | Native MCP server with Streamable HTTP transport. Tools: `create_memory`, `search_memory`, `memory_prune`. |
+| Clavis key masking | Stable | API keys masked in logs. Auto-rotation support. |
+| GPU sidecar (`xavier gpud`) | Experimental | 3 endpoints (health, detect, serve). No mesh, no discovery, no plugin system. |
+| Provider router local URIs | Stable | Local model URIs resolved correctly in provider router. |
+
+## XTSP Integration Tests
+
+All 7 XTSP end-to-end tests pass:
+- `xtsp_fat_search`, `xtsp_page_in`, `xtsp_dedup`, `xtsp_full_flow`, `xtsp_persist`, `xtsp_prune`, `xtsp_token_savings`
+
+See `tests/xtsp/` for the complete integration test suite.
 ## What Was Verified
 
 ### Confirmed working
