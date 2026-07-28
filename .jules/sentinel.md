@@ -17,3 +17,7 @@
 **Vulnerability:** A custom SVG sanitizer was implemented for `<QrCodeDisplay>` but it missed some important vectors like `href="javascript:alert(1)"` and `<foreignObject>` unconstrained HTML.
 **Learning:** Writing a secure custom SVG sanitizer is hard and error-prone. One must also prevent `javascript:` URIs anywhere, and disallow `<foreignObject>` completely, on top of stripping `<script>` and `on*` events.
 **Prevention:** In the sanitizer using `DOMParser`, recursively remove `foreignObject` nodes and check if any attribute value starts with `javascript:` to drop it.
+## 2026-07-23 - Fix XSS bypass in panel-ui QrCodeDisplay
+**Vulnerability:** The `<QrCodeDisplay>` component used `.trim()` to remove whitespaces before checking if an attribute value starts with `javascript:`. This misses embedded control characters and spaces like tabs or newlines inside the `javascript:` payload itself.
+**Learning:** Standard `.trim()` fails to remove embedded tabs or newlines inside the string, allowing XSS bypasses in SVG sanitization.
+**Prevention:** Attribute values parsed by `DOMParser` must be stripped of all control characters and whitespaces (using `replace(/[\u0000-\u0020]/g, '')`) before validating against malicious schemes like `javascript:`.
