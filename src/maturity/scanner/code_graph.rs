@@ -7,9 +7,26 @@
 //! Timing target: < 100ms with code graph, < 5s without.
 
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Instant;
+
+use code_graph::db::CodeGraphDB;
+
+/// Helper to resolve the `.xavier/code_graph.db` path.
+pub fn resolve_code_graph_db_path(codebase_root: &str) -> PathBuf {
+    crate::codebase::codegraph_paths::code_graph_db_path_for(Path::new(codebase_root))
+}
+
+/// Attempt to open the CodeGraphDB if the file exists.
+pub fn try_open_code_graph_db(codebase_root: &str) -> Option<CodeGraphDB> {
+    let db_path = resolve_code_graph_db_path(codebase_root);
+    if db_path.exists() {
+        CodeGraphDB::new(&db_path).ok()
+    } else {
+        None
+    }
+}
 
 /// Results for one feature's static symbols.
 #[derive(Debug, Clone)]
@@ -234,4 +251,40 @@ pub fn scan_code_graph(codebase_root: &str) -> CodeGraphScanResult {
 
     // Fallback to grep
     grep_fallback(codebase_root, &feature_symbols)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_resolve_code_graph_db_path() {
+        let path = resolve_code_graph_db_path(".");
+        assert!(!path.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn test_try_open_code_graph_db_nonexistent() {
+        let db = try_open_code_graph_db("/nonexistent/directory/path");
+        assert!(db.is_none());
+    }
+
+    #[test]
+    fn test_try_open_code_graph_db_with_mock_file() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join(".xavier");
+        std::fs::create_dir_all(&db_path).unwrap();
+
+        // Before creating, opening should return None
+        let db = try_open_code_graph_db(&temp_dir.path().to_string_lossy());
+        assert!(db.is_none());
+
+        // Create a real database
+        let real_db_path = db_path.join("code_graph.db");
+        let _ = CodeGraphDB::create_new(&real_db_path).unwrap();
+
+        // After creating, opening should return Some
+        let db = try_open_code_graph_db(&temp_dir.path().to_string_lossy());
+        assert!(db.is_some());
+    }
 }
