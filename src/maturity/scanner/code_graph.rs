@@ -100,6 +100,54 @@ fn try_code_graph_db(
     feature_symbols: &HashMap<String, Vec<String>>,
 ) -> Option<CodeGraphScanResult> {
     let start = Instant::now();
+
+    // First try the real SQLite database directly
+    if let Some(db) = try_open_code_graph_db(root) {
+        if let Ok(stats) = db.stats() {
+            if stats.total_symbols > 0 {
+                let mut feature_scans: HashMap<String, SymbolScan> = HashMap::new();
+                let mut errors = Vec::new();
+
+                for (feat_id, symbols) in feature_symbols {
+                    let mut found = HashSet::new();
+                    let mut missing = HashSet::new();
+
+                    for sym in symbols {
+                        match db.find_symbols(sym, 5) {
+                            Ok(results) => {
+                                let exists = results.symbols.iter().any(|s| s.name == *sym);
+                                if exists {
+                                    found.insert(sym.clone());
+                                } else {
+                                    missing.insert(sym.clone());
+                                }
+                            }
+                            Err(e) => {
+                                errors.push(format!("Database error querying {sym}: {e}"));
+                                missing.insert(sym.clone());
+                            }
+                        }
+                    }
+
+                    feature_scans.insert(feat_id.clone(), SymbolScan { found, missing });
+                }
+
+                let total_symbols: usize = feature_symbols.values().map(|v| v.len()).sum();
+                let total_found: usize = feature_scans.values().map(|s| s.found.len()).sum();
+                let timing_ms = start.elapsed().as_millis() as u64;
+
+                return Some(CodeGraphScanResult {
+                    feature_scans,
+                    total_symbols,
+                    total_found,
+                    errors,
+                    timing_ms,
+                });
+            }
+        }
+    }
+
+    // Fallback to JSON dump if SQLite is missing or empty
     let json_path = Path::new(root).join(".xavier/codegraph.json");
 
     let content = std::fs::read_to_string(&json_path)
@@ -287,4 +335,59 @@ mod tests {
         let db = try_open_code_graph_db(&temp_dir.path().to_string_lossy());
         assert!(db.is_some());
     }
+
+    #[test]
+    fn test_try_code_graph_db_with_sqlite() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let xavier_path = temp_dir.path().join(".xavier");
+        std::fs::create_dir_all(&xavier_path).unwrap();
+
+        // Create a real database
+        let db_file_path = xavier_path.join("code_graph.db");
+        let db = CodeGraphDB::create_new(&db_file_path).unwrap();
+
+        let mut feature_symbols = HashMap::new();
+        feature_symbols.insert("feat-test".to_string(), vec!["test_symbol".to_string()]);
+
+        // Scenario 1: Empty database must not find any symbols and should return None
+        // since there's no JSON fallback either.
+        let result = try_code_graph_db(&temp_dir.path().to_string_lossy(), &feature_symbols);
+        assert!(result.is_none());
+
+        // Scenario 2: DB with symbols should scan and find/miss symbols correctly.
+        let symbol = code_graph::Symbol {
+            id: None,
+            stable_id: None,
+            name: "test_symbol".to_string(),
+            kind: code_graph::SymbolKind::Function,
+            lang: code_graph::Language::Rust,
+            file_path: "src/test.rs".to_string(),
+            start_line: 1,
+            end_line: 5,
+            start_col: 0,
+            end_col: 10,
+            signature: Some("fn test_symbol()".to_string()),
+            parent: None,
+            complexity: Some(1.0),
+        };
+        db.insert_symbol(&symbol).unwrap();
+
+        let result = try_code_code_graph_db_with_sqlite_helper(&temp_dir.path().to_string_lossy(), &feature_symbols);
+        assert!(result.is_some());
+        let scan_res = result.unwrap();
+        assert_eq!(scan_res.total_symbols, 1);
+        assert_eq!(scan_res.total_found, 1);
+
+        let feat_scan = scan_res.feature_scans.get("feat-test").unwrap();
+        assert!(feat_scan.found.contains("test_symbol"));
+        assert!(feat_scan.missing.is_empty());
+    }
+}
+
+// Helper to avoid test name colliding/referencing itself incorrectly
+fn try_code_code_graph_db_with_sqlite_helper(
+    root: &str,
+    feature_symbols: &HashMap<String, Vec<String>>,
+) -> Option<CodeGraphScanResult> {
+    try_code_graph_db(root, feature_symbols)
 }
