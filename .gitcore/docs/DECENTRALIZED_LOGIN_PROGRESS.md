@@ -4,7 +4,7 @@
 |-------|--------|
 | **Feature** | `feat-decentralized-login` / FEAT-SWAL-DECENTRALIZED-LOGIN |
 | **Estado shippable** | **100% DONE (F0–F3)** · `stable` / `passes: true` |
-| **Última actualización** | 2026-07-28 |
+| **Última actualización** | 2026-07-29 |
 | **Canónico fases** | [DECENTRALIZED_LOGIN.md](./DECENTRALIZED_LOGIN.md) |
 | **Siguiente fase** | Ver §3 abajo |
 
@@ -22,6 +22,21 @@ Se implementó y documentó el protocolo de **login / identidad descentralizada*
 ---
 
 ## 2. Avances por fecha
+
+### 2026-07-29 — F4 spike + UI Maloca + baseline revalidado
+
+| Entrega | Detalle |
+|---------|---------|
+| **Baseline revalidado** | `decentralized_login_e2e` 5/5 · `node_fase0_persist` 2/2 · `--lib node_identity` 16/16 · `--lib polygon_anchor` 8/8 |
+| **F4 spike fuzzy extractor** | `docs/SWAL/spikes/fuzzy-extractor/` 8/8 tests · Monte Carlo N=1000/config — TAR≥99% @ ruido 5–10% solo con claves 28–36 bits (helper local fuerza-brutable) · FAR 0/1000 todas las configs |
+| **zk-SABER evaluado** | No es lattice-based: Groth16/BN254, no-PQ, on-chain, prototipo sin auditar |
+| **Veredicto ADR** | **NO-GO hot-path día 1** · watch-list con condiciones de re-apertura — [ADR-SWAL-BIO-ZKP-RESEARCH.md](./ADR-SWAL-BIO-ZKP-RESEARCH.md) |
+| **UI Maloca WebAuthn** | DL-06 residual UI **cerrado**: `registerDeviceCredential()` + helpers base64url en `@swal/node`, `OnboardingPage.svelte` (flujos Crear/Recuperar), ruta `/onboarding` + nav; suite 18/18 · maloca `3ead022` (**pusheado**) |
+| **Ops Amoy** | foundry v1.7.1 instalado (`~/.foundry/bin`); deploy + smoke broadcast esperan `SWAL_ANCHOR_KEY` del usuario |
+
+**Tracking:** DL-05 5%→**70%** · F-023 (edge-mesh) 5→**70%** (`0299e7e`) · F2 sigue 90% (ops) · overall feature sigue **95%** (F4 no cuenta en el shippable).
+
+**Commits:** xavier `6747f59e` (local) · maloca `3ead022` (pushed) · edge-mesh `0299e7e` · docs/SWAL `629924f`.
 
 ### 2026-07-28 — Cierre shippable F0–F3
 
@@ -100,15 +115,15 @@ El feature **shippable ya está cerrado**. Lo que sigue **no** es “Fase 3 del 
 | 2 | Onboarding recovery UX (shares + check-codes) en panel |
 | 3 | Más apps adoptando `applyHeartbeat` vía `@swal/node` |
 
-### C — Fase 4 research (DL-F4) — **siguiente fase de roadmap de login**
+### C — Fase 4 research (DL-F4) — spike + veredicto hechos 2026-07-29 (**NO-GO hot-path día 1**, watch-list)
 
-Track: [ADR-SWAL-BIO-ZKP-RESEARCH.md](./ADR-SWAL-BIO-ZKP-RESEARCH.md) · `F-023`
+Track: [ADR-SWAL-BIO-ZKP-RESEARCH.md](./ADR-SWAL-BIO-ZKP-RESEARCH.md) · `F-023` (70%)
 
 | ID | Entregable |
 |----|------------|
-| DL-F4-01 | Spike fuzzy extractor (helper **local** only) |
-| DL-F4-02 | Evaluación crítica zk-SABER vs necesidad SWAL |
-| DL-F4-03 | ADR go/no-go con TAR/FAR + threat model |
+| DL-F4-01 | ✅ Spike fuzzy extractor (helper **local** only) — medido 2026-07-29 |
+| DL-F4-02 | ✅ Evaluación crítica zk-SABER vs necesidad SWAL — no lattice-based |
+| DL-F4-03 | ✅ ADR go/no-go con TAR/FAR + threat model — **NO-GO** medido |
 
 **Regla:** nunca templates biométricos en Xavier/mesh. No bloquea Pro.
 
