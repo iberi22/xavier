@@ -179,4 +179,25 @@ mod tests {
         let result = soft_perform_dump(&state, temp_dir.path().to_str().unwrap()).await;
         assert!(result.is_none());
     }
+
+    #[tokio::test]
+    async fn test_perform_dump_fails_when_unwritable() {
+        let temp_dir = tempfile::tempdir().expect("failed to create temp dir");
+        let git_dir = temp_dir.path().join(".git");
+        std::fs::create_dir(&git_dir).expect("failed to create .git");
+
+        // Create .xavier as a file (not a directory) so creating or writing inside it fails
+        let xavier_file = temp_dir.path().join(".xavier");
+        std::fs::write(&xavier_file, "not a directory").expect("failed to write .xavier file");
+
+        // Build an in-memory CodeGraphDB that is valid
+        let db = Arc::new(CodeGraphDB::in_memory().unwrap());
+        let indexer = Arc::new(code_graph::indexer::Indexer::new(Arc::clone(&db)));
+        let query = Arc::new(QueryEngine::new(Arc::clone(&db)));
+        let state = CodeGraphState { db, indexer, query };
+
+        // Test that calling perform_dump directly returns an Err
+        let result = perform_dump(&state, temp_dir.path().to_str().unwrap()).await;
+        assert!(result.is_err());
+    }
 }
