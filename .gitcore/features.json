@@ -5,15 +5,15 @@
     "project": "Xavier",
     "version": "0.12.0",
     "created": "2026-03-05",
-    "last_verified": "2026-07-28",
+    "last_verified": "2026-07-29",
     "total_features": 27,
-    "features_complete": 26,
+    "features_complete": 27,
     "features_beta": 0,
     "features_draft": 0,
-    "features_planned": 1,
-    "features_stable": 26,
-    "overall_progress_pct": 96.3,
-    "reconciliation_notes": "2026-07-19 Ola 5 Reconciliation Audit: Multiple features adjusted to realistic progress percentages based on deep audit findings. Added E2E tests for RBAC, Crypto, and Telegram bot. Verified MCP server progressive disclosure and double-division TOTP logic.\n2026-07-21 Ola 6 Update: feat-hormer-navigation verified at 100% (5/5 tests pass, code complete). Active: feat-src-reference (Jules #810) at 60%, feat-dual-license (Jules #801) at 20%.\n2026-07-21 Ola 6: feat-src-reference expanded to 100% (SRC.md + SRC_CONFIG.md). feat-hormer-navigation verified at 100%.\n2026-07-28: feat-decentralized-login added at 95% honest (F0–F3 shippable code; Amoy ops + Maloca UI residual). F4 research separate.\n2026-07-28 session close: E2E decentralized_login 5/5; issues login DL-01..06 documented with validated %."
+    "features_planned": 0,
+    "features_stable": 27,
+    "overall_progress_pct": 99.8,
+    "reconciliation_notes": "2026-07-19 Ola 5 Reconciliation Audit: Multiple features adjusted to realistic progress percentages based on deep audit findings. Added E2E tests for RBAC, Crypto, and Telegram bot. Verified MCP server progressive disclosure and double-division TOTP logic.\n2026-07-21 Ola 6 Update: feat-hormer-navigation verified at 100% (5/5 tests pass, code complete). Active: feat-src-reference (Jules #810) at 60%, feat-dual-license (Jules #801) at 20%.\n2026-07-21 Ola 6: feat-src-reference expanded to 100% (SRC.md + SRC_CONFIG.md). feat-hormer-navigation verified at 100%.\n2026-07-28: feat-decentralized-login added at 95% honest (F0–F3 shippable code; Amoy ops + Maloca UI residual). F4 research separate.\n2026-07-28 session close: E2E decentralized_login 5/5; issues login DL-01..06 documented with validated %.\n2026-07-29 Ola 9 Update: feat-codegraph-maturity-bridge reconciled to 100% stable and fully verified with automated tests."
   },
   "features": [
     {
@@ -665,8 +665,8 @@
       "id": "feat-codegraph-maturity-bridge",
       "name": "Codegraph → Maturity/Docs Bridge",
       "category": "infra",
-      "status": "planned",
-      "progress_pct": 5,
+      "status": "stable",
+      "progress_pct": 100,
       "description": "Auto-dump .xavier/codegraph.json after index; maturity Layer1 prefers SQLite then dump then grep; align chronicle auto-docs/harvest with code_graph_db_path()",
       "steps": [
         "Shared codegraph path helper",
@@ -675,13 +675,19 @@
         "Chronicle auto-docs/harvest path alignment",
         "Unit/smoke tests + docs + features.json reconcile"
       ],
-      "passes": false,
-      "verified_by": null,
+      "passes": true,
+      "verified_by": "automated",
       "github_issue": null,
-      "last_tested": null,
+      "last_tested": "2026-07-29",
       "notes": "Ola 9 Jules wave (14 issues). See .gitcore/features/details/feat-codegraph-maturity-bridge.json. Issue 14 reconciles to 100%.",
       "implemented_in": "src/cli/code_dump.rs, src/maturity/scanner/code_graph.rs, src/chronicle/auto_docs.rs",
-      "tests": []
+      "tests": [
+        "maturity::scanner::code_graph::tests::test_scan_code_graph_empty_dump_falls_back_to_grep",
+        "maturity::scanner::code_graph::tests::test_scan_code_graph_empty_sqlite_falls_back_to_grep",
+        "cli::code_dump::tests::test_soft_perform_dump_never_panics",
+        "integration::codegraph_dump_test",
+        "chronicle::auto_docs::tests::test_render_module_doc_basic"
+      ]
     },
     {
       "id": "feat-decentralized-login",
