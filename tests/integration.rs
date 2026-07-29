@@ -16,6 +16,8 @@ mod checkpoint_test;
 mod cli;
 #[path = "integration/cli_test.rs"]
 mod cli_test;
+#[path = "integration/codegraph_dump_test.rs"]
+mod codegraph_dump_test;
 #[path = "integration/context_regen_test.rs"]
 mod context_regen_test;
 #[path = "integration/coordination_test.rs"]

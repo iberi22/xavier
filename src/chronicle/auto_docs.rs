@@ -28,7 +28,7 @@ pub struct AutoDocsConfig {
 impl Default for AutoDocsConfig {
     fn default() -> Self {
         Self {
-            code_graph_db: PathBuf::from(".xavier/code_graph.db"),
+            code_graph_db: crate::codebase::codegraph_paths::code_graph_db_path_for(Path::new(".")),
             source_root: PathBuf::from("src"),
             output_dir: PathBuf::from("docs/auto-docs"),
             module_filter: None,
@@ -708,7 +708,7 @@ pub mod search;
     #[test]
     fn test_auto_docs_config_default() {
         let config = AutoDocsConfig::default();
-        assert_eq!(config.code_graph_db, PathBuf::from(".xavier/code_graph.db"));
+        assert_eq!(config.code_graph_db, crate::codebase::codegraph_paths::code_graph_db_path_for(Path::new(".")));
         assert_eq!(config.source_root, PathBuf::from("src"));
         assert_eq!(config.output_dir, PathBuf::from("docs/auto-docs"));
         assert!(config.module_filter.is_none());

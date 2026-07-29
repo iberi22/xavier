@@ -66,12 +66,14 @@ fn perform_dump_blocking(
     let hubs = query.hubs(0, 100)?;
 
     let repo_root = find_repo_root(scanned_path);
-    let xavier_dir = repo_root.join(".xavier");
-    if !xavier_dir.exists() {
-        std::fs::create_dir_all(&xavier_dir)?;
+    let dump_path = xavier::codebase::codegraph_paths::codegraph_dump_path_for(&repo_root);
+    if let Some(parent) = dump_path.parent() {
+        let parent_path: &Path = parent;
+        if !parent_path.exists() {
+            std::fs::create_dir_all(parent_path)?;
+        }
     }
 
-    let dump_path = xavier_dir.join("codegraph.json");
     let repo_name = repo_root
         .file_name()
         .and_then(|n| n.to_str())
