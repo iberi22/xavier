@@ -84,7 +84,7 @@ pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
             let since = parse_since_arg(since.as_deref())?;
             let memory = load_memory_from_env().await?;
             let code_db = Arc::new(code_graph::db::CodeGraphDB::new(
-                &resolve_code_graph_db_path(),
+                &resolve_code_graph_db_path(Some(&workspace_path)),
             )?);
             let harvester = Harvester::new(workspace_path, memory, code_db);
             let output_path = harvester.run(since).await?;
@@ -205,7 +205,7 @@ pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
             };
 
             let config = AutoDocsConfig {
-                code_graph_db: resolve_code_graph_db_path(),
+                code_graph_db: resolve_code_graph_db_path(None),
                 output_dir: PathBuf::from(output),
                 module_filter: module,
                 ..Default::default()
@@ -299,9 +299,13 @@ fn chronicle_dir(workspace_path: &Path) -> PathBuf {
     workspace_path.join(".chronicle")
 }
 
-fn resolve_code_graph_db_path() -> PathBuf {
-    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    crate::codebase::codegraph_paths::code_graph_db_path_for(&cwd)
+fn resolve_code_graph_db_path(workspace: Option<&Path>) -> PathBuf {
+    if let Some(ws) = workspace {
+        crate::codebase::codegraph_paths::code_graph_db_path_for(ws)
+    } else {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        crate::codebase::codegraph_paths::code_graph_db_path_for(&cwd)
+    }
 }
 
 async fn load_memory_from_env() -> Result<Arc<QmdMemory>> {
