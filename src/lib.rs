@@ -10,6 +10,9 @@
 //!
 //! A cognitive memory system with agent runtime, task management, and native UI.
 
+extern crate self as xavier;
+extern crate self as xavier_lib;
+
 pub mod a2a;
 pub mod agents;
 pub mod api;
@@ -19,6 +22,7 @@ pub mod checkpoint;
 pub mod chronicle;
 pub mod clavis;
 pub mod codebase;
+pub mod cli;
 pub mod consistency;
 pub mod consolidation;
 pub mod context;
