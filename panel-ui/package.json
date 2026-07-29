@@ -27,7 +27,8 @@
     "react-force-graph-2d": "1.29.1",
     "recharts": "^3.8.1",
     "tailwindcss": "4.3.0",
-    "zustand": "^4.5.7"
+    "zustand": "^4.5.7",
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
     "@astrojs/node": "^10.0.5",
@@ -53,7 +54,11 @@
   "pnpm": {
     "overrides": {
       "undici": "^7.28.0",
-      "esbuild": "^0.28.1"
+      "esbuild": "^0.28.1",
+      "sharp": "^0.35.3"
     }
+  },
+  "overrides": {
+    "sharp": "^0.35.3"
   }
 }
