@@ -139,7 +139,8 @@ function NotificationItem({
       {!notif.read && (
         <button
           onClick={() => onRead(notif.id)}
-          className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity p-0.5 text-white/20 hover:text-white/50"
+          aria-label="Mark notification as read"
+          className="flex-shrink-0 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity p-0.5 text-white/20 hover:text-white/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 rounded-md"
         >
           <X className="w-3 h-3" />
         </button>
@@ -269,7 +270,7 @@ export default function NotificationsDropdown({
             {unreadCount > 0 && (
               <button
                 onClick={markAllRead}
-                className="flex items-center gap-1 px-2 py-1 text-[9px] text-white/30 hover:text-white/60 hover:bg-white/5 rounded-lg transition-all"
+                className="flex items-center gap-1 px-2 py-1 text-[9px] text-white/30 hover:text-white/60 hover:bg-white/5 rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
               >
                 <CheckCheck className="w-3 h-3" />
                 All read
@@ -277,7 +278,8 @@ export default function NotificationsDropdown({
             )}
             <button
               onClick={onClose}
-              className="p-1 text-white/20 hover:text-white/50 hover:bg-white/5 rounded-lg transition-all"
+              aria-label="Close notifications dropdown"
+              className="p-1 text-white/20 hover:text-white/50 hover:bg-white/5 rounded-lg transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -285,10 +287,16 @@ export default function NotificationsDropdown({
         </div>
 
         {/* Island filter tabs */}
-        <div className="flex gap-1 px-3 py-2 border-b border-white/[0.04] overflow-x-auto">
+        <div
+          className="flex gap-1 px-3 py-2 border-b border-white/[0.04] overflow-x-auto"
+          role="tablist"
+          aria-label="Filter notifications"
+        >
           <button
+            role="tab"
+            aria-selected={activeIsland === "all"}
             onClick={() => setActiveIsland("all")}
-            className={`flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-[9px] uppercase tracking-widest transition-all ${
+            className={`flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-[9px] uppercase tracking-widest transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
               activeIsland === "all"
                 ? "bg-white/10 text-white/80"
                 : "text-white/30 hover:text-white/60 hover:bg-white/5"
@@ -300,8 +308,10 @@ export default function NotificationsDropdown({
           {ISLANDS.map((island) => (
             <button
               key={island.id}
+              role="tab"
+              aria-selected={activeIsland === island.id}
               onClick={() => setActiveIsland(island.id)}
-              className={`flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-[9px] uppercase tracking-widest transition-all relative ${
+              className={`flex-shrink-0 flex items-center gap-1 px-2 py-1 rounded-md text-[9px] uppercase tracking-widest transition-all relative focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
                 activeIsland === island.id
                   ? `${island.bgColor} ${island.color} border ${island.borderColor}`
                   : "text-white/30 hover:text-white/60 hover:bg-white/5"
