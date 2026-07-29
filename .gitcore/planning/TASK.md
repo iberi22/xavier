@@ -1,7 +1,22 @@
 # TASK.md
 
 Gestión de Tareas: Xavier
-Última actualización: 2026-04-14
+Última actualización: 2026-07-29
+
+## 🔐 Sesión gitcore 2026-07-29 — feat-decentralized-login
+
+| ID | Tarea | Estado | Commit / nota |
+|----|-------|--------|----------------|
+| — | Baseline tests revalidado | ✅ done | e2e 5/5 · node_fase0_persist 2/2 · node_identity 16/16 · polygon_anchor 8/8 |
+| DL-05 | F4 spike fuzzy extractor + ADR go/no-go | ✅ done (70%) | xavier `6747f59e` · veredicto **NO-GO hot-path día 1** (watch-list) |
+| DL-06 | UI WebAuthn Maloca (residual UI) | ✅ done | maloca `3ead022` (**pusheado**) · suite `@swal/node` 18/18 |
+| DL-03 | Ops Amoy (deploy + smoke broadcast) | ⬜ pending | foundry v1.7.1 instalado (`~/.foundry/bin`); espera key fondeada del usuario (`SWAL_ANCHOR_KEY`) |
+| — | Push xavier `main` | ⬜ pending | +4 commits locales (coordina el usuario) |
+| — | Sync docs → docs/SWAL | ⬜ pending | tras el push |
+
+**Siguiente acción:** deploy Amoy cuando el usuario provea `SWAL_ANCHOR_KEY` → smoke broadcast → F2 100%.
+
+---
 
 ## 🎯 Resumen Ejecutivo y Estado Actual
 

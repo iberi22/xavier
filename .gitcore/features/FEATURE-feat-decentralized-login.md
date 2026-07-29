@@ -1,6 +1,6 @@
 # FEATURE: Decentralized Login / Node Identity (SWAL)
 
-**Status:** `stable` | **Score:** **95%** (E2E+unit validados 2026-07-28) | **Last Tested:** 2026-07-28  
+**Status:** `stable` | **Score:** **95%** (E2E+unit revalidados 2026-07-29) | **Last Tested:** 2026-07-29  
 **Plan:** `login_descentralizado_swal_mesh_a7f3c2e1` · Issues: `.gitcore/issues/login/` · Evidence: `TEST_EVIDENCE.md`
 
 ## Overview
@@ -14,12 +14,12 @@ Pro=nodo · never Stripe · mesh=data plane · Polygon=ledger (solo hashes).
 
 | Fase | % | Notas honestas |
 |------|---|----------------|
-| **F0** vault BIP39/Shamir/CLI | **95%** | Crypto+CLI+persist+brick+device_key CLI/API. UI Maloca onboarding pendiente |
+| **F0** vault BIP39/Shamir/CLI | **95%** | Crypto+CLI+persist+brick+device_key CLI/API. UI Maloca onboarding **cerrada** (maloca `3ead022`, pushed) |
 | **F1** mesh challenge/Pro | **95%** | Challenge+namespace+pro_gate+bridge vault. Más apps pueden adoptar heartbeat |
-| **F2** Polygon anchors | **90%** | ABI+dry-run+live-prepared+broadcast `dao-evm`+script deploy. **Sin address Amoy live** (ops) |
+| **F2** Polygon anchors | **90%** | ABI+dry-run+live-prepared+broadcast `dao-evm`+script deploy. **Sin address Amoy live** (ops; foundry listo, espera `SWAL_ANCHOR_KEY`) |
 | **F3** hybrid PQ packs | **100%** | `hybrid_pack` + edge-mesh hybrid-pack; ML-KEM ADR no-go |
-| **F4** bio/ZKP | **5%** | Solo ADR research — **no cuenta** en el 95% shippable |
-| **Overall feature** | **95%** | Unit tests green; residual = ops deploy + UI passkey |
+| **F4** bio/ZKP | **70%** | Spike fuzzy extractor + ADR go/no-go medido (**NO-GO hot-path día 1**, watch-list) — **no cuenta** en el 95% shippable |
+| **Overall feature** | **95%** | Unit tests green (revalidado 2026-07-29); residual = ops deploy Amoy únicamente |
 
 ## Fase 0 — 95%
 
@@ -31,7 +31,7 @@ Pro=nodo · never Stripe · mesh=data plane · Polygon=ledger (solo hashes).
 | DL-F0-04 | ✅ Check-codes ordenados |
 | DL-F0-05 | ✅ Ed25519 + ML-DSA commitment |
 | UX brick | ✅ CLI warning |
-| UI Maloca | ⬜ producto |
+| UI Maloca | ✅ producto (maloca `3ead022`) |
 
 ## Fase 1 — 95%
 
@@ -70,7 +70,9 @@ Pro=nodo · never Stripe · mesh=data plane · Polygon=ledger (solo hashes).
 | challenge / namespace / pro_gate | **10/10** |
 | `@swal/node` (maloca) | **12/12** |
 
-Issues + %: `.gitcore/issues/login/PROGRESS.md` · Evidence: `TEST_EVIDENCE.md` · Session: `.gitcore/docs/SESSION_LOGIN_2026-07-28.md`
+**Baseline revalidado 2026-07-29:** mismos números — e2e 5/5 · `node_fase0_persist` 2/2 · `node_identity` 16/16 · `polygon_anchor` 8/8 (maloca `@swal/node` suite ahora 18/18 con UI WebAuthn).
+
+Issues + %: `.gitcore/issues/login/PROGRESS.md` · Evidence: `TEST_EVIDENCE.md` · Session: `.gitcore/docs/SESSION_LOGIN_2026-07-28.md` · `.gitcore/docs/SESSION_LOGIN_2026-07-29.md`
 
 ## Paths
 

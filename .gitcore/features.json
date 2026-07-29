@@ -695,12 +695,12 @@
         "F1 mesh challenge + namespace + ACL bridge + Pro heartbeat (95%)",
         "F2 Polygon ABI + live-prepared + dao-evm broadcast + deploy script (90%; Amoy live ops pending)",
         "F3 hybrid Ed25519+ML-DSA packs + ML-KEM eval ADR (100%)",
-        "F4 research ADR separate (5%, non-blocking)"
+        "F4 research ADR + fuzzy-extractor spike + go/no-go medido (70%, non-blocking; NO-GO hot-path día 1, watch-list)"
       ],
       "passes": true,
       "verified_by": "unit+e2e",
-      "last_tested": "2026-07-28",
-      "notes": "95% overall validated 2026-07-28: E2E 5/5 + unit 41 Xavier + 12 @swal/node. Residual: Amoy deploy ops, Maloca WebAuthn UI. F4 research separate. Issues: .gitcore/issues/login/",
+      "last_tested": "2026-07-29",
+      "notes": "95% overall; baseline revalidado 2026-07-29 (e2e 5/5, node_fase0_persist 2/2, node_identity 16/16, polygon_anchor 8/8). Maloca WebAuthn UI cerrada (maloca 3ead022, pushed). F4 spike medido: NO-GO hot-path día 1, watch-list; DL-05 70% — F4 no cuenta en el shippable. Residual: deploy Amoy ops (SWAL_ANCHOR_KEY). Issues: .gitcore/issues/login/",
       "implemented_in": "src/node_identity/, src/polygon_anchor/, src/mesh/{challenge,namespace,pro_gate}.rs, src/cli/commands/node.rs",
       "tests": [
         "decentralized_login_e2e",
