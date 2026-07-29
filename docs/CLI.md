@@ -161,6 +161,8 @@ On first scan of a workspace, Xavier may ask to install the optional Colby
 CodeGraph sidecar (consent-first). Decline or failure → Xavier native graph
 continues. Consent is stored in `.xavier/codegraph-sidecar.json`.
 
+Every successful index or scan operation automatically triggers an asynchronous, soft-fail dump of the full code graph to `.xavier/codegraph.json` (unless the graph contains more than 25,000 symbols). This portable JSON dump is used for lightweight offline parsing, while downstream assessors (such as Layer 1 Maturity Scanning) and document harvesters prioritize direct, fast querying against the live SQLite index (`.xavier/code_graph.db`).
+
 Flags:
 
 | Flag | Default | Description |

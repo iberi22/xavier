@@ -1,0 +1,43 @@
+{
+  "id": "feat-codegraph-maturity-bridge",
+  "name": "Codegraph → Maturity/Docs Bridge",
+  "status": "stable",
+  "progress_pct": 100,
+  "description": "Auto-dump .xavier/codegraph.json after index; maturity Layer1 prefers SQLite then dump then grep; align chronicle auto-docs/harvest with code_graph_db_path()",
+  "implemented_in": [
+    "src/cli/code_dump.rs",
+    "src/maturity/scanner/code_graph.rs",
+    "src/chronicle/auto_docs.rs",
+    "src/codebase/codegraph_paths.rs"
+  ],
+  "sub_features": [
+    {
+      "id": "cg-path-helper",
+      "name": "Shared codegraph path helper",
+      "status": "completed",
+      "progress_pct": 100,
+      "implemented_in": "src/codebase/codegraph_paths.rs"
+    },
+    {
+      "id": "cg-auto-dump",
+      "name": "Soft auto-dump after CLI and HTTP scan/index",
+      "status": "completed",
+      "progress_pct": 100,
+      "implemented_in": "src/cli/handlers/code.rs"
+    },
+    {
+      "id": "cg-maturity-chain",
+      "name": "Maturity SQLite → JSON → grep chain",
+      "status": "completed",
+      "progress_pct": 100,
+      "implemented_in": "src/maturity/scanner/code_graph.rs"
+    },
+    {
+      "id": "cg-chronicle-align",
+      "name": "Chronicle auto-docs/harvest path alignment",
+      "status": "completed",
+      "progress_pct": 100,
+      "implemented_in": "src/chronicle/auto_docs.rs"
+    }
+  ]
+}
