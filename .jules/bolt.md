@@ -4,3 +4,6 @@
 ## 2026-06-12 - ChatHistory JSON.parse re-render bottleneck
 **Learning:** In list rendering components like `ChatHistory`, inline dynamic object parsing like `JSON.parse(msg.metadata)` within the array `.map()` causes an O(N) performance bottleneck. Whenever a new element is appended, the parent component re-renders, causing every old string to be parsed from scratch.
 **Action:** Always extract complex list items that do heavy parsing or computations into a standalone component wrapped in `React.memo()`. This ensures that when new items are appended, the old items are skipped by reconciliation, making list appends O(1) instead of O(N).
+## 2026-06-12 - BookmarksView O(N) list editing bottleneck
+**Learning:** In React list views like `BookmarksView`, storing the `editingId` (and form state like `editTitle`, `editCategory`) in the parent component causes the entire list to re-render whenever the user types into an input field for a single item. This creates an O(N) re-render bottleneck that degrades performance on large lists.
+**Action:** Extract list items that contain their own interactive or editing state into standalone components wrapped in `React.memo()`. Keep the local editing state inside the item component itself rather than the parent. This restricts the re-render solely to the item being edited (O(1)).
