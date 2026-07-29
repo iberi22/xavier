@@ -500,6 +500,110 @@ mod tests {
         assert_eq!(scan_res.total_found, 1);
         assert!(scan_res.feature_scans.get("feat-cool").unwrap().found.contains("cool_fn_symbol"));
     }
+
+    #[test]
+    fn test_scan_code_graph_empty_dump_falls_back_to_grep() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let xavier_path = temp_dir.path().join(".xavier");
+        std::fs::create_dir_all(&xavier_path).unwrap();
+
+        let anchor_path = xavier_path.join("maturity-anchors.json");
+        let anchor_data = serde_json::json!({
+            "features": [
+                {
+                    "id": "feat-cool",
+                    "subcomponents": [
+                        {
+                            "static_checks": [
+                                {
+                                    "symbol": "cool_fn_symbol"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        });
+        std::fs::write(&anchor_path, serde_json::to_string(&anchor_data).unwrap()).unwrap();
+
+        // Create an empty json dump
+        let json_path = xavier_path.join("codegraph.json");
+        let dump_data = serde_json::json!({
+            "symbols": [],
+            "edges": [],
+            "hotspots": [],
+            "hubs": []
+        });
+        std::fs::write(&json_path, serde_json::to_string(&dump_data).unwrap()).unwrap();
+
+        // Now create a Rust source file containing that symbol under temp_dir
+        let src_dir = temp_dir.path().join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let rust_file = src_dir.join("main.rs");
+        std::fs::write(&rust_file, "fn cool_fn_symbol() {}").unwrap();
+
+        // Scan code graph with empty dump
+        let scan_res = scan_code_graph(&temp_dir.path().to_string_lossy());
+        // Since DB is missing and dump is empty, it should gracefully fall back to grep and find the symbol
+        assert_eq!(scan_res.total_symbols, 1);
+        assert_eq!(scan_res.total_found, 1);
+        assert!(scan_res
+            .feature_scans
+            .get("feat-cool")
+            .unwrap()
+            .found
+            .contains("cool_fn_symbol"));
+    }
+
+    #[test]
+    fn test_scan_code_graph_empty_sqlite_falls_back_to_grep() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let xavier_path = temp_dir.path().join(".xavier");
+        std::fs::create_dir_all(&xavier_path).unwrap();
+
+        let anchor_path = xavier_path.join("maturity-anchors.json");
+        let anchor_data = serde_json::json!({
+            "features": [
+                {
+                    "id": "feat-cool",
+                    "subcomponents": [
+                        {
+                            "static_checks": [
+                                {
+                                    "symbol": "cool_fn_symbol"
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        });
+        std::fs::write(&anchor_path, serde_json::to_string(&anchor_data).unwrap()).unwrap();
+
+        // Create an empty SQLite DB
+        let db_file_path = xavier_path.join("code_graph.db");
+        let _db = CodeGraphDB::create_new(&db_file_path).unwrap();
+
+        // Ensure codegraph.json is missing
+
+        // Now create a Rust source file containing that symbol under temp_dir
+        let src_dir = temp_dir.path().join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let rust_file = src_dir.join("main.rs");
+        std::fs::write(&rust_file, "fn cool_fn_symbol() {}").unwrap();
+
+        // Scan code graph with empty SQLite DB
+        let scan_res = scan_code_graph(&temp_dir.path().to_string_lossy());
+        // Since DB is empty and dump is missing, it should gracefully fall back to grep and find the symbol
+        assert_eq!(scan_res.total_symbols, 1);
+        assert_eq!(scan_res.total_found, 1);
+        assert!(scan_res
+            .feature_scans
+            .get("feat-cool")
+            .unwrap()
+            .found
+            .contains("cool_fn_symbol"));
+    }
 }
 
 // Helper to avoid test name colliding/referencing itself incorrectly
