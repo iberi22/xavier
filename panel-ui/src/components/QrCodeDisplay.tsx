@@ -39,7 +39,7 @@ const sanitizeSvg = (svgString: string): string => {
       const attributes = Array.from(element.attributes);
       attributes.forEach((attr) => {
         const name = attr.name.toLowerCase();
-        const value = attr.value.toLowerCase().trim();
+        const value = attr.value.toLowerCase().replace(/[\u0000-\u0020]/g, "");
 
         // Remove event handlers
         if (name.startsWith("on")) {

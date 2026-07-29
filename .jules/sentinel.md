@@ -17,3 +17,8 @@
 **Vulnerability:** A custom SVG sanitizer was implemented for `<QrCodeDisplay>` but it missed some important vectors like `href="javascript:alert(1)"` and `<foreignObject>` unconstrained HTML.
 **Learning:** Writing a secure custom SVG sanitizer is hard and error-prone. One must also prevent `javascript:` URIs anywhere, and disallow `<foreignObject>` completely, on top of stripping `<script>` and `on*` events.
 **Prevention:** In the sanitizer using `DOMParser`, recursively remove `foreignObject` nodes and check if any attribute value starts with `javascript:` to drop it.
+
+## 2026-07-22 - Fix XSS bypass with whitespace characters in SVG sanitization
+**Vulnerability:** The `<QrCodeDisplay>` custom SVG sanitizer was using standard `.trim()` which only removes spaces from the ends of strings, allowing an attacker to inject embedded tabs, newlines, or control characters inside the `javascript:` URI (e.g., `java\nscript:alert(1)`) to bypass the filter and execute XSS.
+**Learning:** Standard `.trim()` is insufficient for security validations involving URLs or URIs where browsers ignore certain whitespaces and control characters during parsing. `DOMParser` validation can still be bypassed if these internal control characters are not stripped.
+**Prevention:** Always remove all whitespace and control characters across the entire string (e.g., using `.replace(/[\u0000-\u0020]/g, '')`) before checking for disallowed schemes like `javascript:`.
