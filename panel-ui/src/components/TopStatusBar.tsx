@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import {
   Activity,
   Bell,
@@ -18,6 +19,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import { getApiUrl } from "../api/client";
 import MessagingConfigModal from "./MessagingConfigModal";
 import NotificationsDropdown from "./NotificationsDropdown";
 import OperationModeBadge from "./OperationModeBadge";
@@ -36,11 +38,20 @@ interface TopStatusBarProps {
 // Declare the vite define constant
 declare const __APP_VERSION__: string;
 
+async function getAuthToken(): Promise<string> {
+  try {
+    return await invoke<string>("get_xavier_token");
+  } catch {
+    return localStorage.getItem("XAVIER_TOKEN") || "";
+  }
+}
+
 export default function TopStatusBar({
   isModalOpen = false,
 }: TopStatusBarProps) {
   const [time, setTime] = useState(new Date());
   const [memoryCount, setMemoryCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(0);
   const [metrics, setMetrics] = useState({
     cpu_percent: 0,
     ram_used_gb: 0,
@@ -77,13 +88,19 @@ export default function TopStatusBar({
       .catch(console.error);
 
     const fetchMetrics = async () => {
+      // 1. Fetch realtime metrics from Tauri
       try {
         const met = await invoke("get_realtime_metrics");
         setMetrics(met as any);
+      } catch (err) {
+        console.debug("Error fetching realtime metrics:", err);
+      }
 
-        const token = await invoke("get_xavier_token");
-        const res = await fetch("http://127.0.0.1:8006/v1/memories?limit=1", {
-          headers: { "X-Xavier-Token": token as string },
+      // 2. Fetch memory count from REST API
+      try {
+        const token = await getAuthToken();
+        const res = await fetch(getApiUrl("/v1/memories?limit=1"), {
+          headers: { "X-Xavier-Token": token },
         });
         if (res.ok) {
           const data = await res.json();
@@ -92,7 +109,29 @@ export default function TopStatusBar({
           }
         }
       } catch (err) {
-        console.error("Error fetching metrics:", err);
+        console.debug("Error fetching memories count:", err);
+      }
+
+      // 3. Fetch notifications unread count from REST API
+      try {
+        const token = await getAuthToken();
+        const res = await fetch(getApiUrl("/notifications"), {
+          headers: { "X-Xavier-Token": token },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) {
+            const unread = data.filter((n: any) => !n.read).length;
+            setUnreadCount(unread);
+          } else {
+            setUnreadCount(0);
+          }
+        } else {
+          setUnreadCount(0);
+        }
+      } catch (err) {
+        console.debug("Error fetching notifications unread count:", err);
+        setUnreadCount(0);
       }
     };
 
@@ -100,9 +139,15 @@ export default function TopStatusBar({
     const metricsInterval = setInterval(fetchMetrics, 3000);
     const timeInterval = setInterval(() => setTime(new Date()), 1000);
 
+    // Listen for real-time notifications via Tauri
+    const unlistenPromise = listen<any>("new-notification", () => {
+      fetchMetrics();
+    });
+
     return () => {
       clearInterval(metricsInterval);
       clearInterval(timeInterval);
+      unlistenPromise.then((unlisten) => unlisten());
     };
   }, []);
 
@@ -113,9 +158,6 @@ export default function TopStatusBar({
     setMessagingTab(platform);
     setShowMessaging(true);
   };
-
-  // Unread notification count (mock — 3 unread from dropdown mock data)
-  const MOCK_UNREAD = 3;
 
   return (
     <>
@@ -414,13 +456,13 @@ export default function TopStatusBar({
                 transition={spring}
                 onClick={() => setShowNotifications((prev) => !prev)}
                 className="bg-[#0a0a0a]/80 backdrop-blur-md border border-white/10 shadow-lg rounded-full px-2 hover:bg-white/5 hover:border-white/20 transition-all flex items-center justify-center h-7 w-7 shrink-0"
-                title={`${memoryCount} Memories | ${MOCK_UNREAD} Unread`}
+                title={`${memoryCount} Memories | ${unreadCount} Unread`}
               >
                 <div className="relative flex items-center justify-center">
                   <Bell className="w-3.5 h-3.5 text-white/60" />
-                  {MOCK_UNREAD > 0 && (
+                  {unreadCount > 0 && (
                     <div className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[7px] font-bold px-1 rounded-full border border-[#0a0a0a] min-w-[13px] text-center shadow-[0_0_5px_rgba(239,68,68,0.4)]">
-                      {MOCK_UNREAD > 9 ? "9+" : MOCK_UNREAD}
+                      {unreadCount > 9 ? "9+" : unreadCount}
                     </div>
                   )}
                 </div>
