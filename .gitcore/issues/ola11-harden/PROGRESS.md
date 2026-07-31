@@ -1,26 +1,26 @@
 # Ola 11 — Harden Residuals — Progress
 
-Updated: 2026-07-31 (issues created, jules NOT applied)
+Updated: 2026-07-31 — **CLOSED** (orchestrator on `main` via #1142)
 
 | Local | GH | Status | PR |
 |------|-----|--------|-----|
-| EPIC | #1128 | open | — |
-| 01 | #1129 | ready (no jules) | — |
-| 02 | #1130 | ready (no jules) | — |
-| 03 | #1131 | ready (no jules) | — |
-| 04 | #1132 | ready (no jules) | — |
-| 05 | #1133 | ready (no jules) | — |
-| 06 | #1134 | ready (no jules) | — |
-| 07 | #1135 | ready (no jules) | — |
-| 08 | #1136 | ready (no jules) | — |
-| 09 | #1137 | ready (no jules) | — |
-| 10 | #1138 | ready (no jules) | — |
-| 11 | #1139 | ready (no jules) | — |
-| 12 | #1140 | last / no jules | — |
+| EPIC | #1128 | **closed** | #1142 |
+| 01 | #1129 | **done** | #1142 |
+| 02 | #1130 | **done** | #1142 |
+| 03 | #1131 | **done** | #1142 |
+| 04 | #1132 | **done** | #1142 |
+| 05 | #1133 | **done** | #1142 |
+| 06 | #1134 | **done** | #1142 |
+| 07 | #1135 | **done** | #1142 |
+| 08 | #1136 | **done** | #1142 |
+| 09 | #1137 | **done** | #1142 |
+| 10 | #1138 | **done** | #1142 |
+| 11 | #1139 | **done** | #1142 |
+| 12 | #1140 | **done** | #1142 |
 
-Harness: `python3 .gitcore/issues/ola11-harden/verify_islands.py`
+Devlog: `docs/devlog/2026-07-31-ola11-harden-close.md`  
+Verification: 8 targeted `--lib` tests green (offline, health, settings, reindex, dedup, headless code_scan).
 
-Dispatch when greenlit:
-```bash
-for n in 1129 1130 1131 1132 1133 1134 1135 1136 1137 1138 1139; do gh issue edit $n --add-label jules; done
-```
+## Intentionally open after this wave
+
+- Mesh EPIC [#115](https://github.com/iberi22/xavier/issues/115) — Phase-2 R&D (not ship residuals)
