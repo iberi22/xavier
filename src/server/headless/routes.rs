@@ -151,6 +151,16 @@ pub struct ToolExecuteRequest {
 
 /// Execute tool.
 pub async fn execute_tool(name: String, req: ToolExecuteRequest) -> impl IntoResponse {
+    if name.starts_with("code_") {
+        return (
+            axum::http::StatusCode::NOT_IMPLEMENTED,
+            AxumJson(serde_json::json!({
+                "error": format!("Tool '{}' is not implemented in headless mode", name),
+                "code": 501
+            })),
+        ).into_response();
+    }
+
     // Simple mock execution for now
     AxumJson(HeadlessToolExecuteResponse {
         result: HeadlessToolExecutionResult {
@@ -159,7 +169,7 @@ pub async fn execute_tool(name: String, req: ToolExecuteRequest) -> impl IntoRes
             status: "executed",
         },
         execution_time_ms: 5,
-    })
+    }).into_response()
 }
 
 /// Provider status.
@@ -173,4 +183,28 @@ pub async fn provider_status(active_provider: String) -> impl IntoResponse {
             reset_at: None,
         }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::response::IntoResponse;
+
+    #[tokio::test]
+    async fn test_execute_tool_code_scan_returns_501() {
+        let req = ToolExecuteRequest {
+            args: serde_json::json!({ "path": "." }),
+        };
+        let response = execute_tool("code_scan".to_string(), req).await.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::NOT_IMPLEMENTED);
+    }
+
+    #[tokio::test]
+    async fn test_execute_tool_other_returns_200() {
+        let req = ToolExecuteRequest {
+            args: serde_json::json!({ "query": "test" }),
+        };
+        let response = execute_tool("memory_search".to_string(), req).await.into_response();
+        assert_eq!(response.status(), axum::http::StatusCode::OK);
+    }
 }
