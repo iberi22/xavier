@@ -43,9 +43,6 @@
             <Component Id="XavierTuiExe" Guid="*">
                 <File Id="XavierTuiExe" Source="..\target\release\xavier-tui.exe" />
             </Component>
-            <Component Id="XavierGuiExe" Guid="*">
-                <File Id="XavierGuiExe" Source="..\target\release\xavier-gui.exe" />
-            </Component>
             <Component Id="DefaultConfig" Guid="*">
                 <File Id="DefaultConfig" Source="..\config\xavier.config.json" />
             </Component>
@@ -63,9 +60,9 @@
         <DirectoryRef Id="ApplicationProgramsFolder">
             <Component Id="ApplicationShortcut" Guid="*">
                 <Shortcut Id="ApplicationStartMenuShortcut"
-                          Name="Xavier GUI"
-                          Description="Xavier Cognitive Memory Runtime GUI"
-                          Target="[INSTALLFOLDER]xavier-gui.exe"
+                          Name="Xavier"
+                          Description="Xavier Cognitive Memory Runtime (CLI)"
+                          Target="[INSTALLFOLDER]xavier.exe"
                           WorkingDirectory="INSTALLFOLDER"/>
                 <RemoveFolder Id="CleanUpShortCut" On="uninstall"/>
                 <RegistryValue Root="HKCU" Key="Software\$(var.ProductManufacturer)\$(var.ProductName)" Name="installed" Type="integer" Value="1" KeyPath="yes"/>

@@ -25,7 +25,7 @@ impl Default for WorkspaceSettings {
             storage_limit_bytes: None,
             request_limit: None,
             request_unit_limit: None,
-            embedding_provider_mode: "bring_your_own".to_string(),
+            embedding_provider_mode: "local".to_string(),
             managed_google_embeddings: false,
             sync_policy: "local_only".to_string(),
         }

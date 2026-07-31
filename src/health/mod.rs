@@ -1008,72 +1008,59 @@ mod tests {
         );
     }
 
+    fn prioritize_status(checks: &[HealthCheck]) -> &'static str {
+        let critical_failure = checks.iter().any(|c| {
+            matches!(c.status, CheckStatus::Fail)
+                && (c.name == "disk_space"
+                    || c.name == "memory"
+                    || c.name == "database_integrity"
+                    || c.name == "sqlite_integrity")
+        });
+        if critical_failure {
+            "unhealthy"
+        } else if checks.iter().any(|c| matches!(c.status, CheckStatus::Fail)) {
+            "degraded"
+        } else if checks.iter().any(|c| matches!(c.status, CheckStatus::Warn)) {
+            "warn"
+        } else {
+            "healthy"
+        }
+    }
+
     #[tokio::test]
     async fn test_overall_status_prioritization() {
-        let settings = XavierSettings::default();
+        // Hermetic: do not require the host collect_health() baseline to be perfectly healthy.
+        let mut checks = vec![HealthCheck {
+            name: "disk_space".into(),
+            status: CheckStatus::Pass,
+            detail: "ok".into(),
+            timestamp_secs: 0,
+        }];
+        assert_eq!(prioritize_status(&checks), "healthy");
 
-        // 1. All Pass -> healthy
-        let health = collect_health(&settings, None).await;
-        assert_eq!(health.status, "healthy");
-
-        // 2. Embedding Fail -> degraded
-        // We can't easily mock the internal checks here because collect_health_impl
-        // gathers system metrics. But we can verify the logic by checking the
-        // response from a real call in the test environment.
-        let mut health = collect_health(&settings, None).await;
-        health.checks.push(HealthCheck {
+        checks.push(HealthCheck {
             name: "embedding".into(),
             status: CheckStatus::Fail,
             detail: "forced failure".into(),
             timestamp_secs: 0,
         });
+        assert_eq!(prioritize_status(&checks), "degraded");
 
-        // Re-run the logic manually to verify prioritization
-        let critical_failure = health.checks.iter().any(|c| {
-            matches!(c.status, CheckStatus::Fail)
-                && (c.name == "disk_space"
-                    || c.name == "memory"
-                    || c.name == "database_integrity"
-                    || c.name == "sqlite_integrity")
-        });
-        let status = if critical_failure {
-            "unhealthy"
-        } else if health
-            .checks
-            .iter()
-            .any(|c| matches!(c.status, CheckStatus::Fail))
-        {
-            "degraded"
-        } else {
-            "healthy"
-        };
-        assert_eq!(status, "degraded");
-
-        // 3. Database Fail -> unhealthy
-        health.checks.push(HealthCheck {
+        checks.push(HealthCheck {
             name: "database_integrity".into(),
             status: CheckStatus::Fail,
             detail: "forced failure".into(),
             timestamp_secs: 0,
         });
-        let critical_failure = health.checks.iter().any(|c| {
-            matches!(c.status, CheckStatus::Fail)
-                && (c.name == "disk_space"
-                    || c.name == "memory"
-                    || c.name == "database_integrity"
-                    || c.name == "sqlite_integrity")
-        });
-        let status = if critical_failure {
-            "unhealthy"
-        } else if health
-            .checks
-            .iter()
-            .any(|c| matches!(c.status, CheckStatus::Fail))
-        {
-            "degraded"
-        } else {
-            "healthy"
-        };
-        assert_eq!(status, "unhealthy");
+        assert_eq!(prioritize_status(&checks), "unhealthy");
+
+        // Warn without Fail → warn
+        let warn_only = vec![HealthCheck {
+            name: "embedding".into(),
+            status: CheckStatus::Warn,
+            detail: "slow".into(),
+            timestamp_secs: 0,
+        }];
+        assert_eq!(prioritize_status(&warn_only), "warn");
     }
 }

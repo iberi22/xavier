@@ -13,7 +13,7 @@
     "storage_limit_bytes": 1073741824,
     "request_limit": null,
     "request_unit_limit": null,
-    "embedding_provider_mode": "bring_your_own",
+    "embedding_provider_mode": "local",
     "managed_google_embeddings": false,
     "sync_policy": "local_only"
   },
@@ -48,8 +48,8 @@
     "api_flavor": "openai-compatible",
     "local_llm_url": "http://localhost:11434/v1",
     "local_llm_model": "qwen3-coder",
-    "embedding_url": "https://openrouter.ai/api/v1/embeddings",
-    "embedding_model": "text-embedding-3-small",
+    "embedding_url": "http://localhost:11434/v1",
+    "embedding_model": "embeddinggemma",
     "router_retrieved_model": "",
     "router_complex_model": "",
     "router_fast_model": "",
@@ -102,8 +102,8 @@
     "timeout_ms": 5000
   },
   "embedding": {
-    "endpoint": "https://openrouter.ai/api/v1/embeddings",
-    "embedder": "openai-compatible",
+    "endpoint": "http://localhost:11434/api/embeddings",
+    "embedder": "local",
     "gllm_model": "embeddinggemma",
     "api_flavor": "openai-compatible",
     "api_key": null,

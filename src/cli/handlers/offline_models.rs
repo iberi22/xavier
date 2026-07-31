@@ -365,13 +365,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_offline_status() {
+        let _guard = TEST_LOCK.lock().await;
+
+        // Hermetic: do not assume a global engine is running on the host.
+        let port = 64322;
+        std::env::set_var("XAVIER_LOCAL_LLM_URL", format!("http://127.0.0.1:{}", port));
+
         let resp = get_offline_status_handler().await;
         assert_eq!(resp.status(), StatusCode::OK);
         let body_bytes = axum::body::to_bytes(resp.into_body(), 2048).await.unwrap();
         let status: LocalEngineStatus = serde_json::from_slice(&body_bytes).unwrap();
-        
-        // Assert that the fields exist and have correct types by virtue of deserializing successfully
-        assert_eq!(status.engine_status, "running");
-        assert!(status.port > 0);
+
+        assert_eq!(status.port, port);
+        assert!(
+            status.engine_status == "stopped" || status.engine_status == "running",
+            "unexpected engine_status={}",
+            status.engine_status
+        );
+        assert_eq!(status.engine_status, "stopped");
+
+        std::env::remove_var("XAVIER_LOCAL_LLM_URL");
     }
 }
