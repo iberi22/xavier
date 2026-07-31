@@ -733,6 +733,12 @@ mod tests {
             .expect("test assertion")
             .expect("test assertion");
         assert!(stored.embedding.is_empty());
+
+        // Cleanup: restore env vars so other tests (e.g. reindex_null_embeddings) are not affected
+        unsafe {
+            env::set_var("XAVIER_EMBEDDING_URL", "http://localhost:11434/v1/embeddings");
+            env::remove_var("XAVIER_EMBEDDER");
+        }
     }
 
     #[tokio::test]
