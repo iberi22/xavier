@@ -1,5 +1,6 @@
 import type React from "react";
 import { useState } from "react";
+// HTTP auth client — works in browser /panel and Tauri (no invoke required).
 import { authClient } from "../../api/authClient";
 
 interface AuthStepProps {

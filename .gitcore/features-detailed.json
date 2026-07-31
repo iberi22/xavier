@@ -1,7 +1,7 @@
 {
   "last_verified": "2026-07-31",
   "overall_progress_pct": 100,
-  "notes": "Ola 6 product-1.0 closeout. All MVP features 100% stable. Phase-2 mesh R&D tracked on #115 only. | 2026-07-31 Ola 10 close: stabilize & ship (tests, MCP code tools, packaging docs, panel UX). Residual: headless code_* real wiring, 5 host --lib flakes, NixOS docker unit.",
+  "notes": "Ola 6 product-1.0 closeout. All MVP features 100% stable. Phase-2 mesh R&D tracked on #115 only. | 2026-07-31 Ola 10 close: stabilize & ship (tests, MCP code tools, packaging docs, panel UX). Residual: headless code_* real wiring, 5 host --lib flakes, NixOS docker unit. | 2026-07-31 Ola 11 Harden Residuals closed.",
   "feat-local-first": {
     "id": "feat-local-first",
     "progress_pct": 100,
@@ -164,6 +164,12 @@
           1120
         ],
         "notes": "Headless code_* still 501"
+      },
+      {
+        "id": "ola11-harden",
+        "name": "Ola 11 Harden Residuals",
+        "status": "completed",
+        "progress_pct": 100
       }
     ]
   },
@@ -237,6 +243,12 @@
           1126,
           1122
         ]
+      },
+      {
+        "id": "ola11-harden",
+        "name": "Ola 11 Harden Residuals",
+        "status": "completed",
+        "progress_pct": 100
       }
     ]
   },
@@ -299,6 +311,12 @@
         "prs": [
           1123
         ]
+      },
+      {
+        "id": "ola11-harden",
+        "name": "Ola 11 Harden Residuals",
+        "status": "completed",
+        "progress_pct": 100
       }
     ]
   },

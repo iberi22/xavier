@@ -277,10 +277,16 @@ impl MemoryStore for VecSqliteMemoryStore {
                 Ok(best_cand)
             }).await;
 
-            if let Ok(Some((mut existing_record, similarity))) = query_res {
-                if similarity > dedup_settings.threshold {
+            if let Ok(Some((mut existing_record, mut similarity))) = query_res {
+                // Prefer true cosine when both embeddings are present. The vec_distance
+                // column can fail to deserialize (fallback distance=1.0 → similarity 0),
+                // which skipped legitimate PathExact/Namespace merges.
+                if !existing_record.embedding.is_empty() && !record.embedding.is_empty() {
+                    similarity = cosine_similarity(&record.embedding, &existing_record.embedding);
+                }
+                if similarity >= dedup_settings.threshold {
                     tracing::info!(
-                        "Semantic dedup (similarity {} > {}): Updating existing memory {} with new content",
+                        "Semantic dedup (similarity {} >= {}): Updating existing memory {} with new content",
                         similarity,
                         dedup_settings.threshold,
                         existing_record.id
