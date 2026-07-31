@@ -95,6 +95,58 @@ pub fn get_xavier_core_tools() -> Vec<MCPTool> {
                 .to_string(),
             input_schema: json!({"type": "object", "properties": {}}),
         },
+        MCPTool {
+            name: "codegraph_explore".to_string(),
+            description: "Search the code graph for symbols matching a query".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query (e.g. part of symbol name)"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Maximum symbols to return (default: 20, max: 100)",
+                        "default": 20
+                    }
+                },
+                "required": ["query"]
+            }),
+        },
+        MCPTool {
+            name: "trace_path".to_string(),
+            description: "Trace the dependency path or call chain of a given symbol".to_string(),
+            input_schema: json!({
+                "type": "object",
+                "properties": {
+                    "symbol": {
+                        "type": "string",
+                        "description": "Symbol stable ID or symbol name to trace from"
+                    },
+                    "max_depth": {
+                        "type": "number",
+                        "description": "Maximum trace depth (default: 3, max: 8)",
+                        "default": 3
+                    },
+                    "reverse": {
+                        "type": "boolean",
+                        "description": "If true, trace callers / reverse dependencies; if false, trace callees / forward dependencies",
+                        "default": false
+                    },
+                    "edge_type": {
+                        "type": "string",
+                        "description": "Filter by edge type (e.g., 'Calls', 'References', 'Imports', etc)"
+                    },
+                    "limit": {
+                        "type": "number",
+                        "description": "Maximum edges to return (default: 100, max: 1000)",
+                        "default": 100
+                    }
+                },
+                "required": ["symbol"]
+            }),
+        },
     ]
 }
 
@@ -108,6 +160,8 @@ pub fn is_core_tool(name: &str) -> bool {
             | "health_check"
             | "get_code_graph"
             | "xavier_local_status"
+            | "codegraph_explore"
+            | "trace_path"
     )
 }
 
@@ -431,6 +485,86 @@ pub async fn handle_core_tool(
                 })).collect::<Vec<_>>(),
             });
             Ok(serde_json::to_value(MCPToolResult::structured(summary, false))?)
+        }
+        "codegraph_explore" => {
+            let query = arguments
+                .get("query")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing query"))?;
+            let limit = arguments
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(20)
+                .clamp(1, 100) as usize;
+
+            let result = _state.code_query.search(query, limit)?;
+            let returned = result.symbols.len();
+            let val = json!({
+                "returned": returned,
+                "symbols": result.symbols,
+            });
+
+            Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
+        }
+        "trace_path" => {
+            let symbol = arguments
+                .get("symbol")
+                .and_then(|v| v.as_str())
+                .ok_or_else(|| anyhow::anyhow!("Missing symbol"))?;
+            let max_depth = arguments
+                .get("max_depth")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(3)
+                .clamp(1, 8) as usize;
+            let reverse = arguments
+                .get("reverse")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            let limit = arguments
+                .get("limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(100)
+                .clamp(1, 1000) as usize;
+
+            let edge_type_str = arguments
+                .get("edge_type")
+                .and_then(|v| v.as_str());
+
+            let edge_type_filter = match edge_type_str {
+                Some(s) => match s.to_lowercase().as_str() {
+                    "calls" => Some(code_graph::types::EdgeType::Calls),
+                    "defines" => Some(code_graph::types::EdgeType::Defines),
+                    "uses" => Some(code_graph::types::EdgeType::Uses),
+                    "imports" => Some(code_graph::types::EdgeType::Imports),
+                    "exports" => Some(code_graph::types::EdgeType::Exports),
+                    "contains" => Some(code_graph::types::EdgeType::Contains),
+                    "references" => Some(code_graph::types::EdgeType::References),
+                    "extends" => Some(code_graph::types::EdgeType::Extends),
+                    "implements" => Some(code_graph::types::EdgeType::Implements),
+                    "typeof" => Some(code_graph::types::EdgeType::TypeOf),
+                    "returns" => Some(code_graph::types::EdgeType::Returns),
+                    "instantiates" => Some(code_graph::types::EdgeType::Instantiates),
+                    "overrides" => Some(code_graph::types::EdgeType::Overrides),
+                    "decorates" => Some(code_graph::types::EdgeType::Decorates),
+                    _ => None,
+                },
+                None => None,
+            };
+
+            let edges = if reverse {
+                _state.code_query.reverse_dependencies(symbol, edge_type_filter, max_depth, limit)?
+            } else {
+                _state.code_query.dependencies(symbol, edge_type_filter, max_depth, limit)?
+            };
+
+            let direction = if reverse { "callers" } else { "dependencies" };
+            let val = json!({
+                "symbol": symbol,
+                "direction": direction,
+                "edges": edges,
+            });
+
+            Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
         }
         _ => Err(anyhow::anyhow!("Unknown core tool: {}", name)),
     }

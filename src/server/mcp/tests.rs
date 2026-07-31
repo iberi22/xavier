@@ -1307,7 +1307,6 @@ async fn test_get_code_graph_success() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn code_graph_explore_returns_real_data_not_mock() {
     let (state, workspace) = test_state().await;
 
@@ -1372,7 +1371,6 @@ async fn code_graph_explore_returns_real_data_not_mock() {
 }
 
 #[tokio::test]
-#[ignore]
 async fn code_graph_trace_path_returns_real_callers() {
     let (state, workspace) = test_state().await;
 
