@@ -5,62 +5,75 @@
     {
       "local": "01",
       "title": "Headless code_* real handlers",
-      "jules": true
+      "jules": true,
+      "github": 1129
     },
     {
       "local": "02",
       "title": "Fix offline_models test_get_offline_status",
-      "jules": true
+      "jules": true,
+      "github": 1130
     },
     {
       "local": "03",
       "title": "Fix health prioritization test",
-      "jules": true
+      "jules": true,
+      "github": 1131
     },
     {
       "local": "04",
       "title": "Fix reindex null embeddings test",
-      "jules": true
+      "jules": true,
+      "github": 1132
     },
     {
       "local": "05",
       "title": "Fix PathExact dedup policies",
-      "jules": true
+      "jules": true,
+      "github": 1133
     },
     {
       "local": "06",
       "title": "Align embedding_provider_mode local-first",
-      "jules": true
+      "jules": true,
+      "github": 1134
     },
     {
       "local": "07",
       "title": "Panel missing-assets HTML stub",
-      "jules": true
+      "jules": true,
+      "github": 1135
     },
     {
       "local": "08",
       "title": "Onboarding auth without mandatory Tauri",
-      "jules": true
+      "jules": true,
+      "github": 1136
     },
     {
       "local": "09",
       "title": "Docs NixOS Docker",
-      "jules": true
+      "jules": true,
+      "github": 1137
     },
     {
       "local": "10",
       "title": "WiX remove xavier-gui",
-      "jules": true
+      "jules": true,
+      "github": 1138
     },
     {
       "local": "11",
       "title": "Docs local CI agent-priv",
-      "jules": true
+      "jules": true,
+      "github": 1139
     },
     {
       "local": "12",
       "title": "EPIC close features+devlog",
-      "jules": false
+      "jules": false,
+      "github": 1140
     }
-  ]
+  ],
+  "epic": 1128
 }
