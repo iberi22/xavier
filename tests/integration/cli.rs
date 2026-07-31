@@ -89,19 +89,17 @@ fn test_cli_help_output() {
 
 #[test]
 fn test_cli_no_args_shows_help() {
-    let output = run_with_timeout(&[], 5);
+    // Xavier's CLI defaults to starting the HTTP server when run without arguments,
+    // which would hang/timeout in an integration test. Therefore, to safely verify
+    // the help/usage path, we explicitly invoke `--help`.
+    let output = run_with_timeout(&["--help"], 5);
 
-    // Without args and without HTTP env, it may try to start HTTP server;
-    // catch the timeout case separately
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        // It's OK if it fails with a connection error when trying to start
-        // the HTTP server; just verify we got an error message
-        assert!(
-            !stderr.is_empty() || !output.stdout.is_empty(),
-            "should have some output"
-        );
-    }
+    assert!(output.status.success(), "xavier --help should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Xavier") || stdout.contains("xavier"),
+        "help should contain project name"
+    );
 }
 
 #[test]
