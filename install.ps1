@@ -74,6 +74,15 @@ if (-not $node) {
     Write-Ok "Node found: $(node --version)"
 }
 
+# Check pnpm (optional, for panel-ui)
+$pnpm = (Get-Command pnpm -ErrorAction SilentlyContinue)
+if (-not $pnpm) {
+    Write-Warn "pnpm not found. Panel UI build requires pnpm."
+    Write-Info "Install from: https://pnpm.io/installation (optional, but recommended for building panel-ui)"
+} else {
+    Write-Ok "pnpm found: $(pnpm --version)"
+}
+
 # Check cmake (required for libsql-ffi)
 $cmake = (Get-Command cmake -ErrorAction SilentlyContinue)
 if (-not $cmake) {
@@ -155,6 +164,54 @@ if (-not $SkipBuild) {
         Write-Err "Cannot continue without binary. Run without --SkipBuild to compile from source."
         exit 1
     }
+}
+
+# ─── Panel UI Build ───────────────────────────────────────────────────────
+Write-Host ""
+Write-Host "=== Panel UI Build ===" -ForegroundColor Yellow
+
+$node = (Get-Command node -ErrorAction SilentlyContinue)
+$pnpm = (Get-Command pnpm -ErrorAction SilentlyContinue)
+
+if ($node -and $pnpm) {
+    Write-Info "Building Panel UI..."
+    Push-Location "$InstallDir\repo\panel-ui"
+    try {
+        Write-Info "Installing dependencies (pnpm install)..."
+        pnpm install
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn "pnpm install failed. Skipping Panel UI build."
+        } else {
+            Write-Info "Running panel build (pnpm run build)..."
+            pnpm run build
+            if ($LASTEXITCODE -ne 0) {
+                Write-Warn "pnpm run build failed. Skipping Panel UI build."
+            } else {
+                Write-Ok "Panel UI build successful."
+
+                # Copy build next to install prefix
+                $panelDest = Join-Path $InstallDir "panel-ui\build"
+                if (Test-Path $panelDest) {
+                    Remove-Item $panelDest -Recurse -Force
+                }
+                New-Item -ItemType Directory -Path $panelDest -Force | Out-Null
+                Copy-Item "build\*" $panelDest -Recurse -Force
+                Write-Ok "Panel assets copied to $panelDest"
+            }
+        }
+    } catch {
+        Write-Warn "Failed to build or copy Panel UI: $_"
+    } finally {
+        Pop-Location
+    }
+} else {
+    Write-Warn "Hard Skip: Node.js and/or pnpm not found. Skipping Panel UI compilation."
+    Write-Info "To build the Panel UI manually, please install Node.js and pnpm, then run:"
+    Write-Info "  cd $InstallDir\repo\panel-ui"
+    Write-Info "  pnpm install"
+    Write-Info "  pnpm run build"
+    Write-Info "And copy the 'build' folder to:"
+    Write-Info "  $InstallDir\panel-ui\build"
 }
 
 # ─── Configuration ─────────────────────────────────────────────────────────
