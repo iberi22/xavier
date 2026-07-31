@@ -12,7 +12,7 @@ Este directorio contiene el registro de las decisiones arquitectónicas signific
 | [004](./004-cortex-plugin.md) | Cortex Enterprise Cloud Plugin | PROPOSED | 2026-04-25 |
 | [005](./005-multi-crate-migration.md) | Multi-Crate Workspace Migration | PROPOSED | 2026-04-26 |
 | [006](./006-vector-store-local-sqlite-vec.md) | 100% Local Vector Store with SQLite-Vec | ACCEPTED | 2026-05-10 |
-| [007](./007-internal-benchmark-framework.md) | Unified internal benchmark framework | ACCEPTED | 2026-07 |
+| [007](./007-codegraph-native-vs-colby.md) | Code Graph Native-Only Canonical Engine (Colby Sidecar Disabled/Stubbed) | ACCEPTED | 2026-08-01 |
 | [008](./008-codegraph-sidecar-consent.md) | Colby CodeGraph sidecar consent + native fallback | ACCEPTED | 2026-07-25 |
 | [009](./009-codegraph-maturity-bridge.md) | Codegraph → Maturity/Docs Bridge | ACCEPTED | 2026-07-25 |
 
