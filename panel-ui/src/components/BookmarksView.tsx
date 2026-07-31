@@ -51,11 +51,13 @@ export default function BookmarksView({
         {categories.map((cat) => (
           <button
             key={cat}
+            type="button"
             onClick={() => setActiveCategory(cat)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium transition-all whitespace-nowrap
+            aria-pressed={activeCategory === cat}
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-medium transition-all whitespace-nowrap focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 focus-visible:outline-none
               ${activeCategory === cat ? "bg-[#39ff14] text-[#050505] shadow-[0_0_15px_rgba(57,255,20,0.3)]" : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white"}`}
           >
-            {cat !== "All" && <Folder className="w-3.5 h-3.5" />}
+            {cat !== "All" && <Folder className="w-3.5 h-3.5" aria-hidden="true" />}
             {cat}
           </button>
         ))}
