@@ -1,0 +1,66 @@
+{
+  "wave": "ola11-harden",
+  "title": "Ola 11 \u2014 Harden Residuals",
+  "issues": [
+    {
+      "local": "01",
+      "title": "Headless code_* real handlers",
+      "jules": true
+    },
+    {
+      "local": "02",
+      "title": "Fix offline_models test_get_offline_status",
+      "jules": true
+    },
+    {
+      "local": "03",
+      "title": "Fix health prioritization test",
+      "jules": true
+    },
+    {
+      "local": "04",
+      "title": "Fix reindex null embeddings test",
+      "jules": true
+    },
+    {
+      "local": "05",
+      "title": "Fix PathExact dedup policies",
+      "jules": true
+    },
+    {
+      "local": "06",
+      "title": "Align embedding_provider_mode local-first",
+      "jules": true
+    },
+    {
+      "local": "07",
+      "title": "Panel missing-assets HTML stub",
+      "jules": true
+    },
+    {
+      "local": "08",
+      "title": "Onboarding auth without mandatory Tauri",
+      "jules": true
+    },
+    {
+      "local": "09",
+      "title": "Docs NixOS Docker",
+      "jules": true
+    },
+    {
+      "local": "10",
+      "title": "WiX remove xavier-gui",
+      "jules": true
+    },
+    {
+      "local": "11",
+      "title": "Docs local CI agent-priv",
+      "jules": true
+    },
+    {
+      "local": "12",
+      "title": "EPIC close features+devlog",
+      "jules": false
+    }
+  ]
+}
