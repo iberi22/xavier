@@ -157,9 +157,9 @@ xavier billing
 
 Scan and index a codebase path.
 
-On first scan of a workspace, Xavier may ask to install the optional Colby
-CodeGraph sidecar (consent-first). Decline or failure → Xavier native graph
-continues. Consent is stored in `.xavier/codegraph-sidecar.json`.
+> **Note:** The native AST-backed tree-sitter parser/indexer is the canonical code graph engine. Although previous designs referenced an external "Colby" sidecar, this sidecar is currently **mock-disabled / stubbed out** and is not active in this release (the runtime sidecar loader is a stub). All Colby configuration parameters and prompts are stubbed out to bypass the installer and always use the native indexer directly.
+
+On first scan of a workspace, Xavier does not ask to install the optional Colby CodeGraph sidecar since it is currently disabled. It always executes the native tree-sitter graph indexer directly.
 
 Every successful index or scan operation automatically triggers an asynchronous, soft-fail dump of the full code graph to `.xavier/codegraph.json` (unless the graph contains more than 25,000 symbols). This portable JSON dump is used for lightweight offline parsing, while downstream assessors (such as Layer 1 Maturity Scanning) and document harvesters prioritize direct, fast querying against the live SQLite index (`.xavier/code_graph.db`).
 
@@ -167,24 +167,22 @@ Flags:
 
 | Flag | Default | Description |
 |---|---|---|
-| `--reprompt-codegraph` | off | Ask again even if previously declined/skipped. |
+| `--reprompt-codegraph` | off | *(Stub/Ignored)* Ask again even if previously declined/skipped. |
 
 Env:
 
 | Variable | Values | Description |
 |---|---|---|
-| `XAVIER_CODEGRAPH_INSTALL` | `ask` · `yes` · `no` · `auto` | Consent policy (default `ask`). |
-| `XAVIER_CODEGRAPH_REPROMPT` | `1` | Same as `--reprompt-codegraph`. |
-| `XAVIER_CODE_GRAPH_NATIVE_ONLY` | `1` | Skip Colby entirely. |
-| `XAVIER_CODEGRAPH_BIN` | path | Existing Colby launcher. |
+| `XAVIER_CODEGRAPH_INSTALL` | `ask` · `yes` · `no` · `auto` | *(Stub/Ignored)* Consent policy. |
+| `XAVIER_CODEGRAPH_REPROMPT` | `1` | *(Stub/Ignored)* Same as `--reprompt-codegraph`. |
+| `XAVIER_CODE_GRAPH_NATIVE_ONLY` | `1` | *(Stub/Always Active)* Always runs native-only code-graph parsing. |
+| `XAVIER_CODEGRAPH_BIN` | path | *(Stub/Ignored)* Path to Colby launcher. |
 
 ```bash
 xavier code scan .
-XAVIER_CODEGRAPH_INSTALL=yes xavier code scan .   # CI / non-interactive install
-xavier code scan . --reprompt-codegraph
 ```
 
-See `.sidecars/README.md` and `docs/ADR/008-codegraph-sidecar-consent.md`.
+See `docs/ADR/007-codegraph-native-vs-colby.md`.
 
 ### `xavier code sync --git`
 
