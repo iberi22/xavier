@@ -1,17 +1,45 @@
 {
-  "last_verified": "2026-07-19",
+  "last_verified": "2026-07-31",
   "overall_progress_pct": 100,
-  "notes": "Ola 6 product-1.0 closeout. All MVP features 100% stable. Phase-2 mesh R&D tracked on #115 only.",
+  "notes": "Ola 6 product-1.0 closeout. All MVP features 100% stable. Phase-2 mesh R&D tracked on #115 only. | 2026-07-31 Ola 10 close: stabilize & ship (tests, MCP code tools, packaging docs, panel UX). Residual: headless code_* real wiring, 5 host --lib flakes, NixOS docker unit.",
   "feat-local-first": {
     "id": "feat-local-first",
     "progress_pct": 100,
     "status": "stable",
     "github_issue": 522,
     "sub_features": [
-      { "id": "ola1", "name": "Stabilization", "status": "completed", "progress_pct": 100 },
-      { "id": "ola2", "name": "Fallback chain + local provider", "status": "completed", "progress_pct": 100 },
-      { "id": "ola3", "name": "Observability + panel LLM + UsageCounters", "status": "completed", "progress_pct": 100, "prs": [607] },
-      { "id": "ola4", "name": "Hot-swap + headless fallback + metrics UI", "status": "completed", "progress_pct": 100, "prs": [615, 619, 622] }
+      {
+        "id": "ola1",
+        "name": "Stabilization",
+        "status": "completed",
+        "progress_pct": 100
+      },
+      {
+        "id": "ola2",
+        "name": "Fallback chain + local provider",
+        "status": "completed",
+        "progress_pct": 100
+      },
+      {
+        "id": "ola3",
+        "name": "Observability + panel LLM + UsageCounters",
+        "status": "completed",
+        "progress_pct": 100,
+        "prs": [
+          607
+        ]
+      },
+      {
+        "id": "ola4",
+        "name": "Hot-swap + headless fallback + metrics UI",
+        "status": "completed",
+        "progress_pct": 100,
+        "prs": [
+          615,
+          619,
+          622
+        ]
+      }
     ]
   },
   "feat-token-savings": {
@@ -20,18 +48,86 @@
     "status": "stable",
     "github_issue": 496,
     "sub_features": [
-      { "id": "ts-p0-mem-search-default", "status": "completed", "progress_pct": 100 },
-      { "id": "ts-p0-mem-search-structured", "status": "completed", "progress_pct": 100 },
-      { "id": "ts-p0-memory-context-ids", "status": "completed", "progress_pct": 100 },
-      { "id": "ts-p0-memory-context-per-doc-budget", "status": "completed", "progress_pct": 100, "prs": [656] },
-      { "id": "ts-p1-unified-estimate-tokens", "status": "completed", "progress_pct": 100, "prs": [661] },
-      { "id": "ts-p2-working-memory-wire", "status": "completed", "progress_pct": 100, "prs": [657] },
-      { "id": "ts-p3-episodic-summaries", "status": "completed", "progress_pct": 100, "prs": [660] },
-      { "id": "ts-p5-honest-docs", "status": "completed", "progress_pct": 100, "prs": [654] },
-      { "id": "ts-p6-progressive-tests", "status": "completed", "progress_pct": 100, "prs": [655] },
-      { "id": "ts-p7-tool-descriptors", "status": "completed", "progress_pct": 100 },
-      { "id": "ts-p8-measurement-script", "status": "completed", "progress_pct": 100, "evidence": "scripts/measure_token_savings.py" },
-      { "id": "ts-p9-hotpath-count", "status": "completed", "progress_pct": 100, "evidence": "search.rs uses memory.count()" }
+      {
+        "id": "ts-p0-mem-search-default",
+        "status": "completed",
+        "progress_pct": 100
+      },
+      {
+        "id": "ts-p0-mem-search-structured",
+        "status": "completed",
+        "progress_pct": 100
+      },
+      {
+        "id": "ts-p0-memory-context-ids",
+        "status": "completed",
+        "progress_pct": 100
+      },
+      {
+        "id": "ts-p0-memory-context-per-doc-budget",
+        "status": "completed",
+        "progress_pct": 100,
+        "prs": [
+          656
+        ]
+      },
+      {
+        "id": "ts-p1-unified-estimate-tokens",
+        "status": "completed",
+        "progress_pct": 100,
+        "prs": [
+          661
+        ]
+      },
+      {
+        "id": "ts-p2-working-memory-wire",
+        "status": "completed",
+        "progress_pct": 100,
+        "prs": [
+          657
+        ]
+      },
+      {
+        "id": "ts-p3-episodic-summaries",
+        "status": "completed",
+        "progress_pct": 100,
+        "prs": [
+          660
+        ]
+      },
+      {
+        "id": "ts-p5-honest-docs",
+        "status": "completed",
+        "progress_pct": 100,
+        "prs": [
+          654
+        ]
+      },
+      {
+        "id": "ts-p6-progressive-tests",
+        "status": "completed",
+        "progress_pct": 100,
+        "prs": [
+          655
+        ]
+      },
+      {
+        "id": "ts-p7-tool-descriptors",
+        "status": "completed",
+        "progress_pct": 100
+      },
+      {
+        "id": "ts-p8-measurement-script",
+        "status": "completed",
+        "progress_pct": 100,
+        "evidence": "scripts/measure_token_savings.py"
+      },
+      {
+        "id": "ts-p9-hotpath-count",
+        "status": "completed",
+        "progress_pct": 100,
+        "evidence": "search.rs uses memory.count()"
+      }
     ]
   },
   "feat-code-graph-index": {
@@ -39,9 +135,36 @@
     "progress_pct": 100,
     "status": "stable",
     "sub_features": [
-      { "id": "cg-ast-multi-lang", "status": "completed", "progress_pct": 100 },
-      { "id": "cg-http-api", "status": "completed", "progress_pct": 100 },
-      { "id": "cg-fts5", "status": "completed", "progress_pct": 100, "prs": [653] }
+      {
+        "id": "cg-ast-multi-lang",
+        "status": "completed",
+        "progress_pct": 100
+      },
+      {
+        "id": "cg-http-api",
+        "status": "completed",
+        "progress_pct": 100
+      },
+      {
+        "id": "cg-fts5",
+        "status": "completed",
+        "progress_pct": 100,
+        "prs": [
+          653
+        ]
+      },
+      {
+        "id": "ola10-ship",
+        "name": "Ola 10 Stabilize & Ship",
+        "status": "completed",
+        "progress_pct": 95,
+        "prs": [
+          1124,
+          1121,
+          1120
+        ],
+        "notes": "Headless code_* still 501"
+      }
     ]
   },
   "feat-plugin-system": {
@@ -49,10 +172,30 @@
     "progress_pct": 100,
     "status": "stable",
     "sub_features": [
-      { "id": "pl-host-manager", "status": "completed", "progress_pct": 100 },
-      { "id": "pl-fixture-index", "status": "completed", "progress_pct": 100 },
-      { "id": "pl-default-registry", "status": "completed", "progress_pct": 100, "evidence": "DefaultRegistry loads fixture" },
-      { "id": "pl-parser-python", "status": "completed", "progress_pct": 100, "prs": [652] }
+      {
+        "id": "pl-host-manager",
+        "status": "completed",
+        "progress_pct": 100
+      },
+      {
+        "id": "pl-fixture-index",
+        "status": "completed",
+        "progress_pct": 100
+      },
+      {
+        "id": "pl-default-registry",
+        "status": "completed",
+        "progress_pct": 100,
+        "evidence": "DefaultRegistry loads fixture"
+      },
+      {
+        "id": "pl-parser-python",
+        "status": "completed",
+        "progress_pct": 100,
+        "prs": [
+          652
+        ]
+      }
     ]
   },
   "feat-security-hygiene": {
@@ -61,10 +204,40 @@
     "status": "stable",
     "github_issue": 478,
     "sub_features": [
-      { "id": "sec-inventory", "status": "completed", "progress_pct": 100, "evidence": "docs/SECURITY_DEPENDABOT.md" },
-      { "id": "sec-npm", "status": "completed", "progress_pct": 100, "evidence": "undici 7.28.0 root override" },
-      { "id": "sec-cargo-jwt", "status": "completed", "progress_pct": 100, "evidence": "jsonwebtoken 10.x" },
-      { "id": "sec-cargo-deferred", "status": "completed", "progress_pct": 100, "evidence": "dual-version transitves documented deferred" }
+      {
+        "id": "sec-inventory",
+        "status": "completed",
+        "progress_pct": 100,
+        "evidence": "docs/SECURITY_DEPENDABOT.md"
+      },
+      {
+        "id": "sec-npm",
+        "status": "completed",
+        "progress_pct": 100,
+        "evidence": "undici 7.28.0 root override"
+      },
+      {
+        "id": "sec-cargo-jwt",
+        "status": "completed",
+        "progress_pct": 100,
+        "evidence": "jsonwebtoken 10.x"
+      },
+      {
+        "id": "sec-cargo-deferred",
+        "status": "completed",
+        "progress_pct": 100,
+        "evidence": "dual-version transitves documented deferred"
+      },
+      {
+        "id": "ola10-ship",
+        "name": "Ola 10 Stabilize & Ship",
+        "status": "completed",
+        "progress_pct": 100,
+        "prs": [
+          1126,
+          1122
+        ]
+      }
     ]
   },
   "feat-mesh-network": {
@@ -73,9 +246,25 @@
     "status": "stable",
     "github_issue": 115,
     "sub_features": [
-      { "id": "mesh-mvp-http-libp2p-acl", "status": "completed", "progress_pct": 100 },
-      { "id": "mesh-maturity-status", "status": "completed", "progress_pct": 100, "prs": [659] },
-      { "id": "mesh-phase2-iroh-tor-onchain", "status": "planned", "progress_pct": 0, "note": "EPIC #115 research track — not product 1.0 gate" }
+      {
+        "id": "mesh-mvp-http-libp2p-acl",
+        "status": "completed",
+        "progress_pct": 100
+      },
+      {
+        "id": "mesh-maturity-status",
+        "status": "completed",
+        "progress_pct": 100,
+        "prs": [
+          659
+        ]
+      },
+      {
+        "id": "mesh-phase2-iroh-tor-onchain",
+        "status": "planned",
+        "progress_pct": 0,
+        "note": "EPIC #115 research track — not product 1.0 gate"
+      }
     ]
   },
   "feat-mcp-server": {
@@ -83,9 +272,34 @@
     "progress_pct": 100,
     "status": "stable",
     "sub_features": [
-      { "id": "mcp-tools-core", "status": "completed", "progress_pct": 100 },
-      { "id": "mcp-progressive", "status": "completed", "progress_pct": 100, "prs": [655, 656] },
-      { "id": "mcp-auth", "status": "completed", "progress_pct": 100 }
+      {
+        "id": "mcp-tools-core",
+        "status": "completed",
+        "progress_pct": 100
+      },
+      {
+        "id": "mcp-progressive",
+        "status": "completed",
+        "progress_pct": 100,
+        "prs": [
+          655,
+          656
+        ]
+      },
+      {
+        "id": "mcp-auth",
+        "status": "completed",
+        "progress_pct": 100
+      },
+      {
+        "id": "ola10-ship",
+        "name": "Ola 10 Stabilize & Ship",
+        "status": "completed",
+        "progress_pct": 100,
+        "prs": [
+          1123
+        ]
+      }
     ]
   },
   "feat-context-regeneration": {
@@ -93,10 +307,32 @@
     "progress_pct": 100,
     "status": "stable",
     "sub_features": [
-      { "id": "ctx-recall-harness", "status": "completed", "progress_pct": 100 },
-      { "id": "ctx-turn-pack", "status": "completed", "progress_pct": 100 },
-      { "id": "ctx-episodic-real", "status": "completed", "progress_pct": 100, "prs": [660] },
-      { "id": "ctx-working-wire", "status": "completed", "progress_pct": 100, "prs": [657] }
+      {
+        "id": "ctx-recall-harness",
+        "status": "completed",
+        "progress_pct": 100
+      },
+      {
+        "id": "ctx-turn-pack",
+        "status": "completed",
+        "progress_pct": 100
+      },
+      {
+        "id": "ctx-episodic-real",
+        "status": "completed",
+        "progress_pct": 100,
+        "prs": [
+          660
+        ]
+      },
+      {
+        "id": "ctx-working-wire",
+        "status": "completed",
+        "progress_pct": 100,
+        "prs": [
+          657
+        ]
+      }
     ]
   }
 }
