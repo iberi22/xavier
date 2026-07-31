@@ -227,16 +227,42 @@ impl VecSqliteMemoryStore {
                                         params![
                                             embedding_blob,
                                             chrono::Utc::now().to_rfc3339(),
-                                            record_id_for_db
+                                            record_id_for_db.as_str()
                                         ],
                                     )?;
 
-                                    // Update memory_embeddings
-                                    let embedding_json = serde_json::to_string(&embedding_c).unwrap_or_default();
+                                    // Update memory_embeddings (delete + insert is reliable for vec0)
                                     conn.execute(
-                                        "INSERT OR REPLACE INTO memory_embeddings(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
-                                        params![record_id_for_db, workspace_id, embedding_json],
+                                        "DELETE FROM memory_embeddings WHERE id = ?1",
+                                        params![record_id_for_db.as_str()],
                                     )?;
+                                    let embedding_json =
+                                        serde_json::to_string(&embedding_c).unwrap_or_default();
+                                    let inserted = conn.execute(
+                                        "INSERT INTO memory_embeddings(id, workspace_id, embedding) VALUES (?1, ?2, vec_f32(?3))",
+                                        params![
+                                            record_id_for_db.as_str(),
+                                            workspace_id.as_str(),
+                                            embedding_json
+                                        ],
+                                    )?;
+                                    if inserted == 0 {
+                                        anyhow::bail!(
+                                            "memory_embeddings insert affected 0 rows for {}",
+                                            record_id_for_db
+                                        );
+                                    }
+                                    let vec_rows: i64 = conn.query_row(
+                                        "SELECT COUNT(*) FROM memory_embeddings WHERE id = ?1",
+                                        params![record_id_for_db.as_str()],
+                                        |r| r.get(0),
+                                    )?;
+                                    if vec_rows == 0 {
+                                        anyhow::bail!(
+                                            "memory_embeddings missing row after insert for {}",
+                                            record_id_for_db
+                                        );
+                                    }
 
                                     Ok(())
                                 })
