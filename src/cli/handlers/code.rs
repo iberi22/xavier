@@ -354,10 +354,13 @@ pub async fn code_find_handler(
     );
 
     let code_graph = state.code_graph.read().await;
-    let symbols = match code_graph.query.search(&query, limit) {
-        Ok(result) => result.symbols,
-        Err(_) => Vec::new(),
-    };
+    let symbols = code_find_symbols(
+        &code_graph.query,
+        &query,
+        kind.as_deref(),
+        pattern.as_deref(),
+        limit,
+    );
 
     let results: Vec<_> = symbols
         .into_iter()
@@ -752,6 +755,107 @@ async fn code_graph_edges_response(
             "message": error.to_string(),
         })),
     }
+}
+
+fn code_find_symbols(
+    code_query: &code_graph::query::QueryEngine,
+    query: &str,
+    kind: Option<&str>,
+    pattern: Option<&str>,
+    limit: usize,
+) -> Vec<code_graph::types::Symbol> {
+    let limit = limit.max(1).min(100);
+    let broad_limit = if query.trim().is_empty() { limit } else { 10_000 };
+
+    let (mut symbols, is_listing) = if let Some(pattern) = pattern.filter(|p| !p.trim().is_empty()) {
+        if is_supported_code_pattern(pattern) {
+            (code_query.search_by_pattern(pattern, broad_limit).unwrap_or_default(), true)
+        } else {
+            (search_code_symbols_with_fallback(code_query, pattern, broad_limit), false)
+        }
+    } else if let Some(kind) = kind.filter(|k| !k.trim().is_empty()) {
+        match kind.to_ascii_lowercase().as_str() {
+            "function" | "fn" => (code_query.functions(broad_limit).unwrap_or_default(), true),
+            "struct" => (code_query.structs(broad_limit).unwrap_or_default(), true),
+            "class" => (code_query.classes(broad_limit).unwrap_or_default(), true),
+            "enum" => (code_query.enums(broad_limit).unwrap_or_default(), true),
+            _ => (search_code_symbols_with_fallback(code_query, query, broad_limit), false),
+        }
+    } else {
+        (search_code_symbols_with_fallback(code_query, query, broad_limit), false)
+    };
+
+    if is_listing {
+        filter_symbols_by_query(&mut symbols, query);
+    }
+
+    symbols.truncate(limit);
+    symbols
+}
+
+fn is_supported_code_pattern(pattern: &str) -> bool {
+    matches!(
+        pattern,
+        "function_call" | "function_definition" | "struct_definition" | "struct" | "class_definition" | "class" | "enum_definition" | "enum" | "module_definition" | "module" | "import" | "use_statement"
+    )
+}
+
+fn search_code_symbols_with_fallback(
+    code_query: &code_graph::query::QueryEngine,
+    query: &str,
+    limit: usize,
+) -> Vec<code_graph::types::Symbol> {
+    let query = query.trim();
+    let mut symbols = code_query.search(query, limit).map(|result| result.symbols).unwrap_or_default();
+
+    if symbols.is_empty() {
+        if let Some(token) = best_symbol_query_token(query) {
+            if token != query {
+                symbols = code_query.search(token, limit).map(|result| result.symbols).unwrap_or_default();
+            }
+        }
+    }
+    symbols
+}
+
+fn best_symbol_query_token(query: &str) -> Option<&str> {
+    query
+        .split(|ch: char| !(ch == '_' || ch.is_ascii_alphanumeric()))
+        .filter(|token| !token.is_empty())
+        .filter(|token| {
+            !matches!(
+                token.to_ascii_lowercase().as_str(),
+                "fn" | "function" | "struct" | "class" | "enum" | "async" | "pub"
+            )
+        })
+        .max_by_key(|token| token.len())
+}
+
+fn filter_symbols_by_query(symbols: &mut Vec<code_graph::types::Symbol>, query: &str) {
+    let query = query.trim().to_ascii_lowercase();
+    if query.is_empty() { return; }
+
+    let query_words: Vec<&str> = query.split_whitespace().filter(|w| w.len() >= 3).collect();
+
+    symbols.retain(|symbol| {
+        let name = symbol.name.to_ascii_lowercase();
+        let sig = symbol.signature.as_deref().unwrap_or_default().to_ascii_lowercase();
+        let path = symbol.file_path.to_ascii_lowercase();
+
+        // Standard substring contains
+        if name.contains(&query) || sig.contains(&query) || path.contains(&query) {
+            return true;
+        }
+
+        // Fuzzy/multi-word contains
+        if !query_words.is_empty() {
+            return query_words.iter().any(|word| {
+                name.contains(word) || sig.contains(word) || path.contains(word)
+            });
+        }
+
+        false
+    });
 }
 
 fn parse_code_edge_type(
@@ -1154,6 +1258,104 @@ mod tests {
     use super::*;
     use code_graph::db::CodeGraphDB;
     use code_graph::types::{CodeEdge, EdgeType, Language, Symbol, SymbolKind};
+
+    #[test]
+    fn test_filter_symbols_by_query_strict_filtering_bug_fixed_fixed() {
+        let mut symbols = vec![
+            Symbol {
+                id: None,
+                stable_id: None,
+                name: "CacheStore".to_string(),
+                kind: SymbolKind::Struct,
+                lang: Language::Rust,
+                file_path: "src/cache.rs".to_string(),
+                start_line: 1,
+                end_line: 10,
+                start_col: 0,
+                end_col: 0,
+                signature: Some("struct CacheStore".to_string()),
+                parent: None,
+                complexity: None,
+            }
+        ];
+
+        // The query "cache store" now matches because it is split into words "cache" and "store"
+        filter_symbols_by_query(&mut symbols, "cache store");
+        assert_eq!(symbols.len(), 1);
+    }
+
+    #[test]
+    fn test_filter_symbols_by_query_case_insensitive() {
+        let mut symbols = vec![
+            Symbol {
+                id: None,
+                stable_id: None,
+                name: "CacheStore".to_string(),
+                kind: SymbolKind::Struct,
+                lang: Language::Rust,
+                file_path: "src/cache.rs".to_string(),
+                start_line: 1,
+                end_line: 10,
+                start_col: 0,
+                end_col: 0,
+                signature: Some("struct CacheStore".to_string()),
+                parent: None,
+                complexity: None,
+            }
+        ];
+
+        filter_symbols_by_query(&mut symbols, "cache");
+        assert_eq!(symbols.len(), 1);
+    }
+
+    #[test]
+    fn test_code_find_symbols_kind_filtering() {
+        let db = std::sync::Arc::new(CodeGraphDB::in_memory().unwrap());
+        let s1 = Symbol {
+            id: Some(1),
+            stable_id: Some("stable-1".to_string()),
+            name: "func_one".to_string(),
+            kind: SymbolKind::Function,
+            lang: Language::Rust,
+            file_path: "src/one.rs".to_string(),
+            start_line: 10,
+            end_line: 20,
+            start_col: 1,
+            end_col: 1,
+            signature: None,
+            parent: None,
+            complexity: Some(1.5),
+        };
+        let s2 = Symbol {
+            id: Some(2),
+            stable_id: Some("stable-2".to_string()),
+            name: "struct_two".to_string(),
+            kind: SymbolKind::Struct,
+            lang: Language::Rust,
+            file_path: "src/two.rs".to_string(),
+            start_line: 30,
+            end_line: 40,
+            start_col: 1,
+            end_col: 1,
+            signature: None,
+            parent: None,
+            complexity: Some(2.5),
+        };
+        db.insert_symbol(&s1).unwrap();
+        db.insert_symbol(&s2).unwrap();
+
+        let query_engine = code_graph::query::QueryEngine::new(db);
+
+        // Filter by kind "function"
+        let res = code_find_symbols(&query_engine, "func", Some("function"), None, 10);
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].name, "func_one");
+
+        // Filter by kind "struct"
+        let res = code_find_symbols(&query_engine, "struct", Some("struct"), None, 10);
+        assert_eq!(res.len(), 1);
+        assert_eq!(res[0].name, "struct_two");
+    }
 
     #[test]
     fn test_map_edges_to_graph() {
