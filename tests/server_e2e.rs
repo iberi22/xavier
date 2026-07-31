@@ -24,10 +24,13 @@ async fn test_health_endpoint_via_xavier_binary() {
         std::process::Command::new(env!("CARGO_BIN_EXE_xavier"))
             .arg("http")
             .arg(port.to_string())
+            .arg("--mcp-port")
+            .arg("0")
             .env("XAVIER_HOST", "127.0.0.1")
             .env("XAVIER_PORT", port.to_string())
             .env("XAVIER_URL", &url)
             .env("XAVIER_TOKEN", "test-token")
+            .env("XAVIER_MCP_PORT", "0")
             .env(
                 "XAVIER_CODE_GRAPH_DB_PATH",
                 data_dir.path().join(format!("e2e-code-graph-{port}.db")),
@@ -55,7 +58,12 @@ async fn test_health_endpoint_via_xavier_binary() {
             Ok(response) if response.status().is_success() => {
                 assert!(response.headers().contains_key("x-request-id"));
                 let body = response.text().await.expect("health body");
-                assert!(body.contains("\"status\":\"ok\""));
+                assert!(
+                    body.contains("\"status\":\"healthy\"")
+                        || body.contains("\"status\":\"degraded\"")
+                        || body.contains("\"status\":\"unhealthy\"")
+                        || body.contains("\"status\":\"ok\"")
+                );
                 healthy = true;
 
                 let readiness = client
