@@ -5,7 +5,7 @@
     "project": "Xavier",
     "version": "0.12.0",
     "created": "2026-03-05",
-    "last_verified": "2026-07-29",
+    "last_verified": "2026-07-31",
     "total_features": 27,
     "features_complete": 27,
     "features_beta": 0,
@@ -13,7 +13,7 @@
     "features_planned": 0,
     "features_stable": 27,
     "overall_progress_pct": 99.8,
-    "reconciliation_notes": "2026-07-19 Ola 5 Reconciliation Audit: Multiple features adjusted to realistic progress percentages based on deep audit findings. Added E2E tests for RBAC, Crypto, and Telegram bot. Verified MCP server progressive disclosure and double-division TOTP logic.\n2026-07-21 Ola 6 Update: feat-hormer-navigation verified at 100% (5/5 tests pass, code complete). Active: feat-src-reference (Jules #810) at 60%, feat-dual-license (Jules #801) at 20%.\n2026-07-21 Ola 6: feat-src-reference expanded to 100% (SRC.md + SRC_CONFIG.md). feat-hormer-navigation verified at 100%.\n2026-07-28: feat-decentralized-login added at 95% honest (F0–F3 shippable code; Amoy ops + Maloca UI residual). F4 research separate.\n2026-07-28 session close: E2E decentralized_login 5/5; issues login DL-01..06 documented with validated %.\n2026-07-29 Ola 9 Update: feat-codegraph-maturity-bridge reconciled to 100% stable and fully verified with automated tests."
+    "reconciliation_notes": "2026-07-19 Ola 5 Reconciliation Audit: Multiple features adjusted to realistic progress percentages based on deep audit findings. Added E2E tests for RBAC, Crypto, and Telegram bot. Verified MCP server progressive disclosure and double-division TOTP logic.\n2026-07-21 Ola 6 Update: feat-hormer-navigation verified at 100% (5/5 tests pass, code complete). Active: feat-src-reference (Jules #810) at 60%, feat-dual-license (Jules #801) at 20%.\n2026-07-21 Ola 6: feat-src-reference expanded to 100% (SRC.md + SRC_CONFIG.md). feat-hormer-navigation verified at 100%.\n2026-07-28: feat-decentralized-login added at 95% honest (F0–F3 shippable code; Amoy ops + Maloca UI residual). F4 research separate.\n2026-07-28 session close: E2E decentralized_login 5/5; issues login DL-01..06 documented with validated %.\n2026-07-29 Ola 9 Update: feat-codegraph-maturity-bridge reconciled to 100% stable and fully verified with automated tests.\n2026-07-31 Ola 10 Stabilize & Ship: Jules issues #1099–#1111 merged (PRs #1113–#1126). MCP codegraph_explore+trace_path live; CLI kind/pattern filters; auth UserResponse strips password_hash; notifications integration harness fixed; dead hexagonal code handlers removed; headless code_* returns honest 501 (real wiring deferred → Ola 11). GHA budget exhausted — merges after manual diff review + local cargo check/targeted tests."
   },
   "features": [
     {
@@ -110,12 +110,14 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-07-21",
-      "notes": "Progressive disclosure contract + tools + tests. Aligned all schemas for alias tools (memoryfragment_*) to prevent client-side protocol drift and added standard protocol version negotiation (2024-11-05).",
+      "last_tested": "2026-07-31",
+      "notes": "Progressive disclosure contract + tools + tests. Aligned all schemas for alias tools (memoryfragment_*) to prevent client-side protocol drift and added standard protocol version negotiation (2024-11-05). | Ola10 #1107/#1123: codegraph_explore + trace_path registered; ignored tests enabled and pass.",
       "implemented_in": "src/server/http/, src/server/mcp/, src/cli/server.rs",
       "tests": [
         "server::mcp::tests::test_tools_list",
-        "server::mcp::tests::test_memory_context"
+        "server::mcp::tests::test_memory_context",
+        "server::mcp::tests::code_graph_explore_returns_real_data_not_mock",
+        "server::mcp::tests::code_graph_trace_path_returns_real_callers"
       ]
     },
     {
@@ -135,12 +137,13 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": 97,
-      "last_tested": "2026-07-21",
-      "notes": "FTS5 + multi-lang index + plugins fixture. Multi-lang indexer test green. | 2026-07-18: /code/graph/view force-graph payload (#674) wired to panel Code layer (#679).",
+      "last_tested": "2026-07-31",
+      "notes": "FTS5 + multi-lang index + plugins fixture. Multi-lang indexer test green. | 2026-07-18: /code/graph/view force-graph payload (#674) wired to panel Code layer (#679). | Ola10 #1105/#1124 CLI kind/pattern; #1106/#1121 removed unmounted adapters; #1108/#1120 headless code_* → 501 (not fake success).",
       "implemented_in": "code-graph/, src/codebase/",
       "tests": [
         "code_graph::tests::test_index_file",
-        "code_graph::tests::test_symbol_search"
+        "code_graph::tests::test_symbol_search",
+        "cli::handlers::code::tests::test_code_find_symbols_kind_filtering"
       ]
     },
     {
@@ -317,11 +320,12 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": 4,
-      "last_tested": "2026-07-21",
-      "notes": "Feature complete (100%): 3 delivery channels (Email, Webhook, In-App) fully functioning, SQLite persistence and Webhook Subscriptions REST API implemented, verified by automated integration tests.",
+      "last_tested": "2026-07-31",
+      "notes": "Feature complete (100%): 3 delivery channels (Email, Webhook, In-App) fully functioning, SQLite persistence and Webhook Subscriptions REST API implemented, verified by automated integration tests. | Ola10 #1099/#1125: providers enabled for integration via cfg(test)/XAVIER_TEST; 3/3 notifications_test pass.",
       "implemented_in": "src/notifications/, src/cli/handlers/notifications.rs, src/cli/server.rs",
       "tests": [
-        "observability::notifier::tests::test_notification_persist"
+        "observability::notifier::tests::test_notification_persist",
+        "notifications_test::test_notification_delivery_and_persistence"
       ]
     },
     {
@@ -526,8 +530,8 @@
       "passes": true,
       "verified_by": "build",
       "github_issue": 339,
-      "last_tested": "2026-07-22",
-      "notes": "Implemented via PRs #342, #345, #346. Status and Sync subcommands added 2026-06-25. Issue #339 closed. cargo check passes, tests: 943 pass, 10 pre-existing failures.",
+      "last_tested": "2026-07-31",
+      "notes": "Implemented via PRs #342, #345, #346. Status and Sync subcommands added 2026-06-25. Issue #339 closed. cargo check passes, tests: 943 pass, 10 pre-existing failures. | Ola10 #1102/#1119 CLI no-args help timeout fixed.",
       "implemented_in": "src/cli/commands/enums.rs, src/cli/handlers/agent_cli.rs, src/cli/server.rs, src/cli/handlers/agent.rs",
       "tests": [
         "cli::handlers::tests::test_agent_commands"
@@ -623,8 +627,8 @@
       "passes": true,
       "verified_by": "github-dependabot",
       "github_issue": 478,
-      "last_tested": "2026-07-21",
-      "notes": "Ola 6: undici root override 7.28.0, jsonwebtoken 10.x, SECURITY_DEPENDABOT.md inventory + deferred cargo dual-versions documented. Process complete; residual transitves owned by #478.",
+      "last_tested": "2026-07-31",
+      "notes": "Ola 6: undici root override 7.28.0, jsonwebtoken 10.x, SECURITY_DEPENDABOT.md inventory + deferred cargo dual-versions documented. Process complete; residual transitves owned by #478. | Ola10 #1100/#1126 UserResponse omits password_hash; #1101/#1122 security_test token secret isolation.",
       "implemented_in": ".github/, Cargo.lock, panel-ui/package.json",
       "tests": [
         "security::prompt_guard::tests::test_patterns",
