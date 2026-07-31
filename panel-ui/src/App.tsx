@@ -15,8 +15,8 @@ import InputArea from "./components/InputArea";
 import { OnboardingFlow } from "./components/Onboarding/OnboardingFlow";
 import ParticleBackground from "./components/ParticleBackground";
 import TopStatusBar from "./components/TopStatusBar";
-import { MalocaView } from "./maloca";
 import { initialBookmarks } from "./data";
+import { MalocaView } from "./maloca";
 import type {
   BackendGraphData,
   Bookmark,
