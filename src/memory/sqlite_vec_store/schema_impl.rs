@@ -569,11 +569,15 @@ mod tests {
         let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
 
         // Clear any stale embedding env vars from previous tests
+        // NOTE: XAVIER_EMBEDDER must be cleared too — other tests (e.g. qmd offline)
+        // set it to "disabled" which causes build_embedder_from_env() to return NoopEmbedder
         for key in &[
             "XAVIER_EMBEDDING_PROVIDER_MODE",
             "XAVIER_EMBEDDING_URL",
             "OPENAI_API_KEY",
             "XAVIER_EMBEDDING_MODEL",
+            "XAVIER_EMBEDDER",
+            "XAVIER_EMBEDDING_LOCAL_URL",
         ] {
             std::env::remove_var(key);
         }
