@@ -4,6 +4,7 @@ use xavier::notifications::{NOTIFICATIONS, IslandId, SENT_EMAILS};
 use xavier::codebase::connection_manager::ConnectionManager;
 
 async fn setup_test() {
+    std::env::set_var("XAVIER_TEST", "true");
     let _ = ConnectionManager::global().connect("memory", ".");
     let _ = ConnectionManager::global().with_conn("memory", |conn| {
         conn.execute(

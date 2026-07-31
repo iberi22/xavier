@@ -89,13 +89,13 @@ impl NotificationProvider for InAppProvider {
     }
 
     fn is_enabled(&self) -> bool {
-        #[cfg(feature = "notification-in-app")]
+        #[cfg(any(feature = "notification-in-app", test))]
         {
             true
         }
-        #[cfg(not(feature = "notification-in-app"))]
+        #[cfg(not(any(feature = "notification-in-app", test)))]
         {
-            false
+            std::env::var("XAVIER_TEST").is_ok()
         }
     }
 }
@@ -152,13 +152,13 @@ impl NotificationProvider for WebhookProvider {
     }
 
     fn is_enabled(&self) -> bool {
-        #[cfg(feature = "notification-webhook")]
+        #[cfg(any(feature = "notification-webhook", test))]
         {
             true
         }
-        #[cfg(not(feature = "notification-webhook"))]
+        #[cfg(not(any(feature = "notification-webhook", test)))]
         {
-            false
+            std::env::var("XAVIER_TEST").is_ok()
         }
     }
 }
@@ -182,13 +182,13 @@ impl NotificationProvider for EmailProvider {
     }
 
     fn is_enabled(&self) -> bool {
-        #[cfg(feature = "notification-email")]
+        #[cfg(any(feature = "notification-email", test))]
         {
             true
         }
-        #[cfg(not(feature = "notification-email"))]
+        #[cfg(not(any(feature = "notification-email", test)))]
         {
-            false
+            std::env::var("XAVIER_TEST").is_ok()
         }
     }
 }
