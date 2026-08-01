@@ -39,6 +39,7 @@ fn bench_mcp_ops(c: &mut Criterion) {
                 embedding_provider_mode: xavier::workspace::EmbeddingProviderMode::BringYourOwn,
                 managed_google_embeddings: false,
                 sync_policy: xavier::workspace::SyncPolicy::LocalOnly,
+                dedup: Default::default(),
             },
             RuntimeConfig::default(),
             temp_dir.join("threads"),
