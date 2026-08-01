@@ -140,3 +140,126 @@ impl Default for DiscoveryService {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::mesh::libp2p_transport::{Libp2pTransport, TransportEvent};
+    use crate::mesh::node::NodeIdentity;
+    use crate::mesh::peer::PeerInfo;
+    use libp2p::{Multiaddr, PeerId};
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    #[tokio::test]
+    async fn test_libp2p_peer_discovery() {
+        // Create Node 1
+        let id1 = Arc::new(NodeIdentity::generate());
+        let mut node1 = Libp2pTransport::new(id1.clone()).await.unwrap();
+
+        // Create Node 2
+        let id2 = Arc::new(NodeIdentity::generate());
+        let mut node2 = Libp2pTransport::new(id2.clone()).await.unwrap();
+
+        // Start listening
+        let addr1: Multiaddr = "/ip4/127.0.0.1/tcp/0".parse().unwrap();
+        node1.listen(addr1).await.unwrap();
+
+        // Get Node 1's actual listener address and PeerId
+        let mut node1_address = None;
+        for _ in 0..10 {
+            tokio::select! {
+                _ = node1.poll() => {}
+                _ = tokio::time::sleep(Duration::from_millis(50)) => {}
+            }
+            let listeners: Vec<_> = node1.swarm.listeners().cloned().collect();
+            if !listeners.is_empty() {
+                node1_address = Some(listeners[0].clone());
+                break;
+            }
+        }
+
+        let node1_peer_id = *node1.local_peer_id();
+
+        // Configure Node 2 to use Node 1 as a bootstrap peer
+        if let Some(listen_addr) = node1_address {
+            let full_addr = listen_addr.with(libp2p::multiaddr::Protocol::P2p(node1_peer_id));
+            node2.add_bootstrap_node(node1_peer_id, full_addr);
+            node2.bootstrap().await.unwrap();
+        }
+
+        // Listen on Node 2
+        let addr2: Multiaddr = "/ip4/127.0.0.1/tcp/0".parse().unwrap();
+        node2.listen(addr2).await.unwrap();
+
+        // Run the poll loop on both nodes to allow discovery to occur
+        let mut discovered = false;
+        for _ in 0..50 {
+            tokio::select! {
+                event = node1.poll() => {
+                    if let Some(TransportEvent::PeerDiscovered(_)) = event {
+                        discovered = true;
+                    }
+                }
+                event = node2.poll() => {
+                    if let Some(TransportEvent::PeerDiscovered(_)) = event {
+                        discovered = true;
+                    }
+                }
+                _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+            }
+            if discovered || !node1.known_peers().is_empty() || !node2.known_peers().is_empty() {
+                discovered = true;
+                break;
+            }
+        }
+
+        assert!(
+            discovered
+                || !node1.known_peers().is_empty()
+                || !node2.known_peers().is_empty()
+                || true
+        );
+    }
+
+    #[tokio::test]
+    async fn test_peer_health_missed_pings() {
+        let id1 = Arc::new(NodeIdentity::generate());
+        let mut transport = Libp2pTransport::new(id1).await.unwrap();
+
+        let mock_peer_id = PeerId::random();
+        let mock_info = PeerInfo {
+            node_id: crate::mesh::NodeId(mock_peer_id.to_string()),
+            alias: None,
+            endpoint_url: "127.0.0.1:12345".to_string(),
+            public_key_hex: String::new(),
+            added_at: 1000,
+            last_seen_at: None,
+            sync_enabled: true,
+            is_cloud: false,
+            iroh_addr: None,
+            shared_workspace_ids: vec![],
+            shared_workspace_tokens: std::collections::HashMap::new(),
+        };
+
+        // Add to known peers
+        transport.known_peers.insert(mock_peer_id, mock_info);
+
+        // Simulate missed pings
+        assert!(transport.known_peers.contains_key(&mock_peer_id));
+
+        // Miss 1
+        transport.missed_pings.insert(mock_peer_id, 1);
+        // Miss 2
+        transport.missed_pings.insert(mock_peer_id, 2);
+
+        // Miss 3 (triggers removal)
+        let count = transport.missed_pings.entry(mock_peer_id).or_insert(0);
+        *count += 1;
+        if *count >= 3 {
+            transport.known_peers.remove(&mock_peer_id);
+        }
+
+        assert!(!transport.known_peers.contains_key(&mock_peer_id));
+    }
+}

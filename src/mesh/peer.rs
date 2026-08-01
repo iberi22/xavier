@@ -36,6 +36,19 @@ pub struct PeerInfo {
     pub shared_workspace_tokens: HashMap<String, String>,
 }
 
+impl PeerInfo {
+    /// Check if peer is healthy based on last seen timestamp (unhealthy after 3 missed pings / 90 seconds)
+    pub fn is_healthy(&self) -> bool {
+        match self.last_seen_at {
+            Some(last_seen) => {
+                let now = chrono::Utc::now().timestamp();
+                (now - last_seen) < 90
+            }
+            None => false,
+        }
+    }
+}
+
 /// A persistent, file-backed registry of trusted peers.
 pub struct PeerRegistry {
     peers: HashMap<NodeId, PeerInfo>,
@@ -111,6 +124,32 @@ impl PeerRegistry {
     /// Get information about a specific peer.
     pub fn get_peer(&self, node_id: &NodeId) -> Option<&PeerInfo> {
         self.peers.get(node_id)
+    }
+
+    /// Get all peers that are currently unhealthy (not seen in the last 90 seconds)
+    pub fn get_unhealthy_peers(&self) -> Vec<&PeerInfo> {
+        let now = chrono::Utc::now().timestamp();
+        self.peers
+            .values()
+            .filter(|p| match p.last_seen_at {
+                Some(last_seen) => (now - last_seen) >= 90,
+                None => true,
+            })
+            .collect()
+    }
+
+    /// Remove all peers that are unhealthy (not seen in the last 90 seconds)
+    pub fn remove_unhealthy_peers(&mut self) -> Result<()> {
+        let unhealthy_ids: Vec<NodeId> = self
+            .get_unhealthy_peers()
+            .into_iter()
+            .map(|p| p.node_id.clone())
+            .collect();
+
+        for id in unhealthy_ids {
+            self.remove_peer(&id)?;
+        }
+        Ok(())
     }
 }
 
