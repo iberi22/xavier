@@ -7,3 +7,6 @@
 
 ## 2026-07-31 - Bookmarks a11y reapplied on BookmarkItem
 **Learning:** After Bolt extracted `BookmarkItem`, Palette PRs #1093/#1097 conflicted on `BookmarksView.tsx`. Re-apply aria-labels/focus rings on category chips (`BookmarksView`) and item controls (`BookmarkItem`).
+## 2024-03-24 - Missing ARIA Labels on Icon-Only UI Elements
+**Learning:** In custom toolbars and dropdowns (like `TopStatusBar.tsx` and `NotificationsDropdown.tsx`), icon-only buttons often rely on `title` attributes for tooltips but lack explicit `aria-label`s. Screen readers may not consistently read `title` attributes on interactive elements, making them functionally invisible or confusing to visually impaired users.
+**Action:** Always provide an explicit `aria-label` for icon-only buttons, even if a `title` attribute is present, and ensure the child icon components (like Lucide React icons) have `aria-hidden="true"` so they aren't redundantly announced.

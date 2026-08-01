@@ -238,27 +238,30 @@ export default function TopStatusBar({
               <button
                 onClick={() => openMessaging("discord")}
                 title="Discord — Click to configure"
+                aria-label="Configure Discord"
                 className="relative group p-0.5 rounded-full hover:bg-indigo-500/10 transition-colors"
               >
-                <MessageCircle className="w-3 h-3 text-indigo-400/40 group-hover:text-indigo-400 transition-colors" />
+                <MessageCircle className="w-3 h-3 text-indigo-400/40 group-hover:text-indigo-400 transition-colors" aria-hidden="true" />
               </button>
 
               {/* Slack */}
               <button
                 onClick={() => openMessaging("slack")}
                 title="Slack — Click to configure"
+                aria-label="Configure Slack"
                 className="relative group p-0.5 rounded-full hover:bg-amber-500/10 transition-colors"
               >
-                <Hash className="w-3 h-3 text-amber-400/40 group-hover:text-amber-400 transition-colors" />
+                <Hash className="w-3 h-3 text-amber-400/40 group-hover:text-amber-400 transition-colors" aria-hidden="true" />
               </button>
 
               {/* Teams */}
               <button
                 onClick={() => openMessaging("teams")}
                 title="MS Teams — Click to configure"
+                aria-label="Configure MS Teams"
                 className="relative group p-0.5 rounded-full hover:bg-purple-500/10 transition-colors"
               >
-                <Users className="w-3 h-3 text-purple-400/40 group-hover:text-purple-400 transition-colors" />
+                <Users className="w-3 h-3 text-purple-400/40 group-hover:text-purple-400 transition-colors" aria-hidden="true" />
               </button>
 
               {/* Telegram — may be configured */}
@@ -269,13 +272,19 @@ export default function TopStatusBar({
                     ? "Telegram (Active)"
                     : "Telegram — Click to configure"
                 }
+                aria-label={
+                  config.has_telegram
+                    ? "Telegram (Active)"
+                    : "Configure Telegram"
+                }
                 className="relative group p-0.5 rounded-full hover:bg-blue-500/10 transition-colors"
               >
                 <Send
                   className={`w-3 h-3 transition-colors ${config.has_telegram ? "text-blue-400" : "text-blue-400/40 group-hover:text-blue-400"}`}
+                  aria-hidden="true"
                 />
                 {config.has_telegram && (
-                  <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-blue-400 msg-active-dot shadow-[0_0_4px_rgba(96,165,250,0.6)]" />
+                  <div className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-blue-400 msg-active-dot shadow-[0_0_4px_rgba(96,165,250,0.6)]" aria-hidden="true" />
                 )}
               </button>
 
@@ -283,9 +292,10 @@ export default function TopStatusBar({
               <button
                 onClick={() => openMessaging("whatsapp")}
                 title="WhatsApp — Click to configure"
+                aria-label="Configure WhatsApp"
                 className="relative group p-0.5 rounded-full hover:bg-green-500/10 transition-colors"
               >
-                <MessageSquare className="w-3 h-3 text-green-400/40 group-hover:text-green-400 transition-colors" />
+                <MessageSquare className="w-3 h-3 text-green-400/40 group-hover:text-green-400 transition-colors" aria-hidden="true" />
               </button>
             </motion.div>
           )}
@@ -313,8 +323,9 @@ export default function TopStatusBar({
               onClick={() => setShowConfig(!showConfig)}
               className="absolute -right-7 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-white/30 hover:text-[#39ff14] p-1.5 outline-none"
               title="Configure Status Bar"
+              aria-label="Configure Status Bar"
             >
-              <Settings className="w-3.5 h-3.5 hover:animate-[spin_4s_linear_infinite]" />
+              <Settings className="w-3.5 h-3.5 hover:animate-[spin_4s_linear_infinite]" aria-hidden="true" />
             </button>
 
             {/* Config Popover */}
