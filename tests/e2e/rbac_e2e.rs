@@ -1,6 +1,4 @@
-use xavier::security::auth::{
-    generate_jwt, validate_jwt, Permission, User, UserRole,
-};
+use xavier::security::auth::{generate_jwt, validate_jwt, Permission, User, UserRole};
 
 #[test]
 fn test_user_roles_initialization() {

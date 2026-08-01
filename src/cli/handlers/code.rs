@@ -52,18 +52,15 @@ pub async fn code_index_handler(
             }
 
             // Automatically trigger soft dump after successful index
-            let (dump_msg, dump_path_str, dump_success) = match perform_dump(&code_graph, base_path).await {
-                Ok(dump_path) => (
-                    format!(" (Dumped to {})", dump_path.display()),
-                    Some(dump_path.to_string_lossy().into_owned()),
-                    true,
-                ),
-                Err(e) => (
-                    format!(" (Dump failed: {})", e),
-                    None,
-                    false,
-                ),
-            };
+            let (dump_msg, dump_path_str, dump_success) =
+                match perform_dump(&code_graph, base_path).await {
+                    Ok(dump_path) => (
+                        format!(" (Dumped to {})", dump_path.display()),
+                        Some(dump_path.to_string_lossy().into_owned()),
+                        true,
+                    ),
+                    Err(e) => (format!(" (Dump failed: {})", e), None, false),
+                };
 
             Json(serde_json::json!({
                 "status": "ok",
@@ -214,18 +211,15 @@ pub async fn code_scan_handler(
             }
 
             // Automatically trigger soft dump after successful scan
-            let (dump_msg, dump_path_str, dump_success) = match perform_dump(&code_graph, &path).await {
-                Ok(dump_path) => (
-                    format!(" (Dumped to {})", dump_path.display()),
-                    Some(dump_path.to_string_lossy().into_owned()),
-                    true,
-                ),
-                Err(e) => (
-                    format!(" (Dump failed: {})", e),
-                    None,
-                    false,
-                ),
-            };
+            let (dump_msg, dump_path_str, dump_success) =
+                match perform_dump(&code_graph, &path).await {
+                    Ok(dump_path) => (
+                        format!(" (Dumped to {})", dump_path.display()),
+                        Some(dump_path.to_string_lossy().into_owned()),
+                        true,
+                    ),
+                    Err(e) => (format!(" (Dump failed: {})", e), None, false),
+                };
 
             axum::Json(serde_json::json!({
                 "status": "ok",
@@ -427,10 +421,7 @@ pub async fn code_sync_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<serde_json::Value>,
 ) -> impl axum::response::IntoResponse {
-    let git = payload
-        .get("git")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(true);
+    let git = payload.get("git").and_then(|v| v.as_bool()).unwrap_or(true);
     if !git {
         return axum::Json(serde_json::json!({
             "status": "error",
@@ -471,12 +462,8 @@ pub async fn code_sync_handler(
     };
 
     let code_graph = state.code_graph.read().await;
-    match crate::cli::codegraph_sync::sync_codegraph_with_state(
-        &code_graph,
-        &opts.workspace,
-        &opts,
-    )
-    .await
+    match crate::cli::codegraph_sync::sync_codegraph_with_state(&code_graph, &opts.workspace, &opts)
+        .await
     {
         Ok(result) => axum::Json(serde_json::to_value(&result).unwrap_or_else(|_| {
             serde_json::json!({
@@ -765,13 +752,26 @@ fn code_find_symbols(
     limit: usize,
 ) -> Vec<code_graph::types::Symbol> {
     let limit = limit.max(1).min(100);
-    let broad_limit = if query.trim().is_empty() { limit } else { 10_000 };
+    let broad_limit = if query.trim().is_empty() {
+        limit
+    } else {
+        10_000
+    };
 
-    let (mut symbols, is_listing) = if let Some(pattern) = pattern.filter(|p| !p.trim().is_empty()) {
+    let (mut symbols, is_listing) = if let Some(pattern) = pattern.filter(|p| !p.trim().is_empty())
+    {
         if is_supported_code_pattern(pattern) {
-            (code_query.search_by_pattern(pattern, broad_limit).unwrap_or_default(), true)
+            (
+                code_query
+                    .search_by_pattern(pattern, broad_limit)
+                    .unwrap_or_default(),
+                true,
+            )
         } else {
-            (search_code_symbols_with_fallback(code_query, pattern, broad_limit), false)
+            (
+                search_code_symbols_with_fallback(code_query, pattern, broad_limit),
+                false,
+            )
         }
     } else if let Some(kind) = kind.filter(|k| !k.trim().is_empty()) {
         match kind.to_ascii_lowercase().as_str() {
@@ -779,10 +779,16 @@ fn code_find_symbols(
             "struct" => (code_query.structs(broad_limit).unwrap_or_default(), true),
             "class" => (code_query.classes(broad_limit).unwrap_or_default(), true),
             "enum" => (code_query.enums(broad_limit).unwrap_or_default(), true),
-            _ => (search_code_symbols_with_fallback(code_query, query, broad_limit), false),
+            _ => (
+                search_code_symbols_with_fallback(code_query, query, broad_limit),
+                false,
+            ),
         }
     } else {
-        (search_code_symbols_with_fallback(code_query, query, broad_limit), false)
+        (
+            search_code_symbols_with_fallback(code_query, query, broad_limit),
+            false,
+        )
     };
 
     if is_listing {
@@ -796,7 +802,18 @@ fn code_find_symbols(
 fn is_supported_code_pattern(pattern: &str) -> bool {
     matches!(
         pattern,
-        "function_call" | "function_definition" | "struct_definition" | "struct" | "class_definition" | "class" | "enum_definition" | "enum" | "module_definition" | "module" | "import" | "use_statement"
+        "function_call"
+            | "function_definition"
+            | "struct_definition"
+            | "struct"
+            | "class_definition"
+            | "class"
+            | "enum_definition"
+            | "enum"
+            | "module_definition"
+            | "module"
+            | "import"
+            | "use_statement"
     )
 }
 
@@ -806,12 +823,18 @@ fn search_code_symbols_with_fallback(
     limit: usize,
 ) -> Vec<code_graph::types::Symbol> {
     let query = query.trim();
-    let mut symbols = code_query.search(query, limit).map(|result| result.symbols).unwrap_or_default();
+    let mut symbols = code_query
+        .search(query, limit)
+        .map(|result| result.symbols)
+        .unwrap_or_default();
 
     if symbols.is_empty() {
         if let Some(token) = best_symbol_query_token(query) {
             if token != query {
-                symbols = code_query.search(token, limit).map(|result| result.symbols).unwrap_or_default();
+                symbols = code_query
+                    .search(token, limit)
+                    .map(|result| result.symbols)
+                    .unwrap_or_default();
             }
         }
     }
@@ -833,13 +856,19 @@ fn best_symbol_query_token(query: &str) -> Option<&str> {
 
 fn filter_symbols_by_query(symbols: &mut Vec<code_graph::types::Symbol>, query: &str) {
     let query = query.trim().to_ascii_lowercase();
-    if query.is_empty() { return; }
+    if query.is_empty() {
+        return;
+    }
 
     let query_words: Vec<&str> = query.split_whitespace().filter(|w| w.len() >= 3).collect();
 
     symbols.retain(|symbol| {
         let name = symbol.name.to_ascii_lowercase();
-        let sig = symbol.signature.as_deref().unwrap_or_default().to_ascii_lowercase();
+        let sig = symbol
+            .signature
+            .as_deref()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
         let path = symbol.file_path.to_ascii_lowercase();
 
         // Standard substring contains
@@ -849,9 +878,9 @@ fn filter_symbols_by_query(symbols: &mut Vec<code_graph::types::Symbol>, query: 
 
         // Fuzzy/multi-word contains
         if !query_words.is_empty() {
-            return query_words.iter().any(|word| {
-                name.contains(word) || sig.contains(word) || path.contains(word)
-            });
+            return query_words
+                .iter()
+                .any(|word| name.contains(word) || sig.contains(word) || path.contains(word));
         }
 
         false
@@ -1108,9 +1137,9 @@ fn map_edges_to_graph(
                 || from.starts_with("module:")
                 || to.starts_with("file:")
                 || to.starts_with("module:"))
-            {
-                continue;
-            }
+        {
+            continue;
+        }
 
         let edge_key = (
             from.clone(),
@@ -1261,23 +1290,21 @@ mod tests {
 
     #[test]
     fn test_filter_symbols_by_query_strict_filtering_bug_fixed_fixed() {
-        let mut symbols = vec![
-            Symbol {
-                id: None,
-                stable_id: None,
-                name: "CacheStore".to_string(),
-                kind: SymbolKind::Struct,
-                lang: Language::Rust,
-                file_path: "src/cache.rs".to_string(),
-                start_line: 1,
-                end_line: 10,
-                start_col: 0,
-                end_col: 0,
-                signature: Some("struct CacheStore".to_string()),
-                parent: None,
-                complexity: None,
-            }
-        ];
+        let mut symbols = vec![Symbol {
+            id: None,
+            stable_id: None,
+            name: "CacheStore".to_string(),
+            kind: SymbolKind::Struct,
+            lang: Language::Rust,
+            file_path: "src/cache.rs".to_string(),
+            start_line: 1,
+            end_line: 10,
+            start_col: 0,
+            end_col: 0,
+            signature: Some("struct CacheStore".to_string()),
+            parent: None,
+            complexity: None,
+        }];
 
         // The query "cache store" now matches because it is split into words "cache" and "store"
         filter_symbols_by_query(&mut symbols, "cache store");
@@ -1286,23 +1313,21 @@ mod tests {
 
     #[test]
     fn test_filter_symbols_by_query_case_insensitive() {
-        let mut symbols = vec![
-            Symbol {
-                id: None,
-                stable_id: None,
-                name: "CacheStore".to_string(),
-                kind: SymbolKind::Struct,
-                lang: Language::Rust,
-                file_path: "src/cache.rs".to_string(),
-                start_line: 1,
-                end_line: 10,
-                start_col: 0,
-                end_col: 0,
-                signature: Some("struct CacheStore".to_string()),
-                parent: None,
-                complexity: None,
-            }
-        ];
+        let mut symbols = vec![Symbol {
+            id: None,
+            stable_id: None,
+            name: "CacheStore".to_string(),
+            kind: SymbolKind::Struct,
+            lang: Language::Rust,
+            file_path: "src/cache.rs".to_string(),
+            start_line: 1,
+            end_line: 10,
+            start_col: 0,
+            end_col: 0,
+            signature: Some("struct CacheStore".to_string()),
+            parent: None,
+            complexity: None,
+        }];
 
         filter_symbols_by_query(&mut symbols, "cache");
         assert_eq!(symbols.len(), 1);

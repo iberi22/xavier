@@ -32,7 +32,9 @@ pub enum PathChangeKind {
     Modified,
     Deleted,
     /// `from` is the previous relative path; [`PathChange::path`] is the new path.
-    Renamed { from: String },
+    Renamed {
+        from: String,
+    },
 }
 
 /// Explicit file delta for git-driven (or caller-driven) incremental updates.
@@ -224,9 +226,7 @@ impl Indexer {
         index_rel_paths.dedup();
 
         if !old_stable_ids.is_empty() {
-            let removed = self
-                .db
-                .delete_edges_referencing_symbols(&old_stable_ids)?;
+            let removed = self.db.delete_edges_referencing_symbols(&old_stable_ids)?;
             if removed > 0 {
                 debug!(
                     "Removed {} incident edges targeting reindexed symbols",
@@ -660,9 +660,7 @@ fn get_file_info(root: &Path, file_path: &Path) -> (String, i64) {
 }
 
 fn normalize_rel_path(path: &str) -> String {
-    path.replace('\\', "/")
-        .trim_start_matches("./")
-        .to_string()
+    path.replace('\\', "/").trim_start_matches("./").to_string()
 }
 
 fn build_excludes(patterns: &[&str]) -> Option<GlobSet> {
@@ -960,17 +958,10 @@ mod tests {
             .await
             .expect("add");
         let before = db.find_by_file("m.rs").expect("syms");
-        let helper = before
-            .iter()
-            .find(|s| s.name == "helper")
-            .expect("helper");
+        let helper = before.iter().find(|s| s.name == "helper").expect("helper");
         let id_before = helper.stable_id.clone().expect("id");
 
-        std::fs::write(
-            dir.path().join("m.rs"),
-            "// pad\n// pad\nfn helper() {}\n",
-        )
-        .expect("move");
+        std::fs::write(dir.path().join("m.rs"), "// pad\n// pad\nfn helper() {}\n").expect("move");
         indexer
             .apply_paths(dir.path(), &[PathChange::modified("m.rs")])
             .await
@@ -992,11 +983,7 @@ mod tests {
     async fn apply_paths_handles_rename_and_clears_incoming() {
         let dir = TempDir::new().expect("temp dir");
         std::fs::write(dir.path().join("lib.rs"), "pub fn helper() {}\n").expect("lib");
-        std::fs::write(
-            dir.path().join("main.rs"),
-            "fn main() { helper(); }\n",
-        )
-        .expect("main");
+        std::fs::write(dir.path().join("main.rs"), "fn main() { helper(); }\n").expect("main");
 
         let db = Arc::new(CodeGraphDB::in_memory().expect("db"));
         let indexer = Indexer::new(db.clone());
@@ -1012,10 +999,7 @@ mod tests {
 
         std::fs::rename(dir.path().join("lib.rs"), dir.path().join("util.rs")).expect("rename");
         indexer
-            .apply_paths(
-                dir.path(),
-                &[PathChange::renamed("lib.rs", "util.rs")],
-            )
+            .apply_paths(dir.path(), &[PathChange::renamed("lib.rs", "util.rs")])
             .await
             .expect("rename apply");
 

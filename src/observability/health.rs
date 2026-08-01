@@ -439,7 +439,9 @@ impl HealthMonitor {
         let mut reachable = false;
         let mut status = HealthLevel::Healthy;
 
-        if config.provider_mode == crate::agents::provider::types::ProviderMode::Local || config.provider_mode == crate::agents::provider::types::ProviderMode::ManagedLocal {
+        if config.provider_mode == crate::agents::provider::types::ProviderMode::Local
+            || config.provider_mode == crate::agents::provider::types::ProviderMode::ManagedLocal
+        {
             if let Some(url) = &config.get_resolved_base_url() {
                 // Ollama version endpoint or just the base
                 let check_url = if url.contains("11434") {

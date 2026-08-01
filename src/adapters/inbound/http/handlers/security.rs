@@ -47,7 +47,8 @@ pub async fn security_scan_handler(
             return Json(SecurityScanErrorResponse {
                 status: "error",
                 message: format!("Security scan error: {}", e),
-            }).into_response();
+            })
+            .into_response();
         }
     };
 
@@ -61,5 +62,6 @@ pub async fn security_scan_handler(
         },
         sanitized_input: result.sanitized_input,
         original_input: result.original_input,
-    }).into_response()
+    })
+    .into_response()
 }

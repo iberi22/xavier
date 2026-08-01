@@ -34,11 +34,8 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
     let mut checks = Vec::new();
 
     // 0. XAVIER_DATA_DIR path sanity (Unix must not use Windows drive letters)
-    let data_dir_raw = std::env::var("XAVIER_DATA_DIR").unwrap_or_else(|_| {
-        XavierSettings::resolve_data_dir()
-            .display()
-            .to_string()
-    });
+    let data_dir_raw = std::env::var("XAVIER_DATA_DIR")
+        .unwrap_or_else(|_| XavierSettings::resolve_data_dir().display().to_string());
     let data_dir_check = match crate::cli::config::validate_data_dir_path(&data_dir_raw) {
         Ok(()) => DoctorCheck {
             name: "XAVIER_DATA_DIR Path".to_string(),
@@ -77,7 +74,8 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         .ok()
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| settings.workspace.embedding_provider_mode.clone());
-    let embeddings_are_local = embeddings_use_local_ollama(&embedding_mode, &embedding_url, &expected_embed);
+    let embeddings_are_local =
+        embeddings_use_local_ollama(&embedding_mode, &embedding_url, &expected_embed);
 
     // 1. Ollama Reachability (local LLM / local embeddings only — warn if unused)
     let ollama_reachable = scan.ollama.running;
@@ -85,8 +83,8 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         .ok()
         .filter(|s| !s.trim().is_empty())
         .unwrap_or_else(|| settings.models.provider.clone());
-    let provider_is_local = provider.eq_ignore_ascii_case("local")
-        || provider.eq_ignore_ascii_case("ollama");
+    let provider_is_local =
+        provider.eq_ignore_ascii_case("local") || provider.eq_ignore_ascii_case("ollama");
 
     checks.push(DoctorCheck {
         name: "Ollama Reachability".to_string(),
@@ -100,9 +98,7 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
             CheckStatus::Warn
         },
         detail: if !provider_is_local && !embeddings_are_local {
-            format!(
-                "Ollama not required (LLM provider='{provider}', embeddings via cloud/BYO)"
-            )
+            format!("Ollama not required (LLM provider='{provider}', embeddings via cloud/BYO)")
         } else if ollama_reachable {
             format!(
                 "Ollama is running at {} (version: {})",
@@ -168,9 +164,7 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         checks.push(DoctorCheck {
             name: "LLM Model Installed".to_string(),
             status: CheckStatus::Ok,
-            detail: format!(
-                "Skipped Ollama LLM model check (provider='{provider}' is not local)"
-            ),
+            detail: format!("Skipped Ollama LLM model check (provider='{provider}' is not local)"),
             hint: None,
         });
     }
@@ -215,8 +209,18 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         let has_key = std::env::var("XAVIER_EMBEDDING_API_KEY")
             .ok()
             .filter(|s| !s.trim().is_empty())
-            .or_else(|| std::env::var("OPENAI_API_KEY").ok().filter(|s| !s.trim().is_empty()))
-            .or_else(|| settings.embedding.api_key.clone().filter(|s| !s.trim().is_empty()))
+            .or_else(|| {
+                std::env::var("OPENAI_API_KEY")
+                    .ok()
+                    .filter(|s| !s.trim().is_empty())
+            })
+            .or_else(|| {
+                settings
+                    .embedding
+                    .api_key
+                    .clone()
+                    .filter(|s| !s.trim().is_empty())
+            })
             .is_some();
 
         checks.push(DoctorCheck {
@@ -375,9 +379,7 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
         checks.push(DoctorCheck {
             name: "Local LLM URL Reachability".to_string(),
             status: CheckStatus::Ok,
-            detail: format!(
-                "Skipped local LLM URL probe (provider='{provider}' is not local)"
-            ),
+            detail: format!("Skipped local LLM URL probe (provider='{provider}' is not local)"),
             hint: None,
         });
     }

@@ -9,8 +9,8 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
-use tokio::sync::broadcast;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -132,7 +132,12 @@ impl NotificationProvider for WebhookProvider {
             let client_clone = client.clone();
 
             tokio::spawn(async move {
-                match client_clone.post(&url).json(&notification_clone).send().await {
+                match client_clone
+                    .post(&url)
+                    .json(&notification_clone)
+                    .send()
+                    .await
+                {
                     Ok(resp) => {
                         if !resp.status().is_success() {
                             tracing::error!("Webhook to {} returned status {}", url, resp.status());
@@ -171,7 +176,10 @@ pub struct EmailProvider;
 #[async_trait::async_trait]
 impl NotificationProvider for EmailProvider {
     async fn send(&self, notification: &Notification) -> Result<()> {
-        tracing::info!("Sending email notification to configured address: {}", notification.title);
+        tracing::info!(
+            "Sending email notification to configured address: {}",
+            notification.title
+        );
         let mut emails = SENT_EMAILS.lock().await;
         emails.push(notification.clone());
         Ok(())
@@ -274,7 +282,11 @@ impl NotificationManager {
         for provider in &self.providers {
             if provider.is_enabled() {
                 if let Err(e) = provider.send(&notification).await {
-                    tracing::error!("Failed to send notification via provider '{}': {}", provider.id(), e);
+                    tracing::error!(
+                        "Failed to send notification via provider '{}': {}",
+                        provider.id(),
+                        e
+                    );
                 }
             }
         }
@@ -303,7 +315,11 @@ impl NotificationManager {
     }
 
     /// Add subscription.
-    pub async fn add_subscription(&self, url: &str, event_types: Vec<String>) -> Result<WebhookSubscription> {
+    pub async fn add_subscription(
+        &self,
+        url: &str,
+        event_types: Vec<String>,
+    ) -> Result<WebhookSubscription> {
         self.ensure_webhook_table().await?;
         let sub = WebhookSubscription {
             id: uuid::Uuid::new_v4().to_string(),
@@ -331,34 +347,47 @@ impl NotificationManager {
     /// List subscriptions.
     pub async fn list_subscriptions(&self) -> Result<Vec<WebhookSubscription>> {
         self.ensure_webhook_table().await?;
-        ConnectionManager::global().with_conn("memory", move |conn| {
-            let mut stmt = conn.prepare("SELECT id, url, event_types, active, created_at FROM webhook_subscriptions")?;
-            let mut rows = stmt.query([])?;
-            let mut result = Vec::new();
-            while let Some(row) = rows.next()? {
-                let event_types_str: String = row.get(2)?;
-                let event_types = event_types_str.split(',').map(|s| s.to_string()).filter(|s| !s.is_empty()).collect();
-                let created_at_str: String = row.get(4)?;
-                result.push(WebhookSubscription {
-                    id: row.get(0)?,
-                    url: row.get(1)?,
-                    event_types,
-                    active: row.get::<_, i32>(3)? != 0,
-                    created_at: created_at_str.parse().unwrap_or_else(|_| Utc::now()),
-                });
-            }
-            Ok(result)
-        }).await
+        ConnectionManager::global()
+            .with_conn("memory", move |conn| {
+                let mut stmt = conn.prepare(
+                    "SELECT id, url, event_types, active, created_at FROM webhook_subscriptions",
+                )?;
+                let mut rows = stmt.query([])?;
+                let mut result = Vec::new();
+                while let Some(row) = rows.next()? {
+                    let event_types_str: String = row.get(2)?;
+                    let event_types = event_types_str
+                        .split(',')
+                        .map(|s| s.to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    let created_at_str: String = row.get(4)?;
+                    result.push(WebhookSubscription {
+                        id: row.get(0)?,
+                        url: row.get(1)?,
+                        event_types,
+                        active: row.get::<_, i32>(3)? != 0,
+                        created_at: created_at_str.parse().unwrap_or_else(|_| Utc::now()),
+                    });
+                }
+                Ok(result)
+            })
+            .await
     }
 
     /// Remove subscription.
     pub async fn remove_subscription(&self, id: &str) -> Result<()> {
         self.ensure_webhook_table().await?;
         let id = id.to_string();
-        ConnectionManager::global().with_conn("memory", move |conn| {
-            conn.execute("DELETE FROM webhook_subscriptions WHERE id = ?", params![id])?;
-            Ok(())
-        }).await
+        ConnectionManager::global()
+            .with_conn("memory", move |conn| {
+                conn.execute(
+                    "DELETE FROM webhook_subscriptions WHERE id = ?",
+                    params![id],
+                )?;
+                Ok(())
+            })
+            .await
     }
 
     /// List notifications.

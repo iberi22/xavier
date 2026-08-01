@@ -73,9 +73,9 @@ impl PriceOracle {
             datasets: HashMap::new(),
             base_price_per_unit: 0.01,
             decay_half_life: 86400, // 1 day decay
-            demand_multiplier: 0.1,  // each query adds 10% premium
+            demand_multiplier: 0.1, // each query adds 10% premium
             last_update_time: current_time,
-            update_interval: 3600,   // 1 hour periodic update
+            update_interval: 3600, // 1 hour periodic update
         }
     }
 
@@ -125,8 +125,14 @@ impl PriceOracle {
     /// - Freshness: age-based exponential decay.
     /// - Demand: premium added for popular datasets.
     /// - Quality level: constant multiplier for verified or premium states.
-    pub fn get_price(&self, dataset_id: &str, quality_level: QualityLevel) -> Result<TokenAmount, String> {
-        let metadata = self.datasets.get(dataset_id)
+    pub fn get_price(
+        &self,
+        dataset_id: &str,
+        quality_level: QualityLevel,
+    ) -> Result<TokenAmount, String> {
+        let metadata = self
+            .datasets
+            .get(dataset_id)
             .ok_or_else(|| format!("Dataset '{}' not found", dataset_id))?;
 
         // 1. Size base pricing
@@ -299,7 +305,9 @@ mod tests {
         oracle.register_dataset(dataset_id.clone(), 1000, 1000);
 
         let raw_price = oracle.get_price(&dataset_id, QualityLevel::Raw).unwrap();
-        let verified_price = oracle.get_price(&dataset_id, QualityLevel::Verified).unwrap();
+        let verified_price = oracle
+            .get_price(&dataset_id, QualityLevel::Verified)
+            .unwrap();
         let gold_price = oracle.get_price(&dataset_id, QualityLevel::Gold).unwrap();
 
         assert_eq!(raw_price, TokenAmount(10));
@@ -368,24 +376,45 @@ mod tests {
     fn test_calculate_price_scenarios() {
         // Free tier is always 0
         assert_eq!(calculate_price(100, PricingTier::Free, 0.5), TokenAmount(0));
-        assert_eq!(calculate_price(100, PricingTier::Free, -0.5), TokenAmount(0));
+        assert_eq!(
+            calculate_price(100, PricingTier::Free, -0.5),
+            TokenAmount(0)
+        );
 
         // Colaborador: base rate 0.10. size 100 -> base 10.0
         // Rep 0.0 -> factor 1.0 -> 10 tokens
-        assert_eq!(calculate_price(100, PricingTier::Colaborador, 0.0), TokenAmount(10));
+        assert_eq!(
+            calculate_price(100, PricingTier::Colaborador, 0.0),
+            TokenAmount(10)
+        );
         // Rep 1.0 -> factor 2.0 -> 20 tokens
-        assert_eq!(calculate_price(100, PricingTier::Colaborador, 1.0), TokenAmount(20));
+        assert_eq!(
+            calculate_price(100, PricingTier::Colaborador, 1.0),
+            TokenAmount(20)
+        );
         // Rep -0.5 -> max(0, -0.5) = 0 -> factor 1.0 -> 10 tokens
-        assert_eq!(calculate_price(100, PricingTier::Colaborador, -0.5), TokenAmount(10));
+        assert_eq!(
+            calculate_price(100, PricingTier::Colaborador, -0.5),
+            TokenAmount(10)
+        );
 
         // Colaborador+: base rate 0.25. size 100 -> base 25.0
         // Rep 0.0 -> factor 1.0 -> 25 tokens
-        assert_eq!(calculate_price(100, PricingTier::ColaboradorPlus, 0.0), TokenAmount(25));
+        assert_eq!(
+            calculate_price(100, PricingTier::ColaboradorPlus, 0.0),
+            TokenAmount(25)
+        );
         // Rep 1.0 -> factor 1.0 + 1.0 * 1.5 = 2.5 -> 25.0 * 2.5 = 62.5 -> rounds to 63 tokens
-        assert_eq!(calculate_price(100, PricingTier::ColaboradorPlus, 1.0), TokenAmount(63));
+        assert_eq!(
+            calculate_price(100, PricingTier::ColaboradorPlus, 1.0),
+            TokenAmount(63)
+        );
 
         // Size 0 yields 0 tokens
-        assert_eq!(calculate_price(0, PricingTier::Colaborador, 1.0), TokenAmount(0));
+        assert_eq!(
+            calculate_price(0, PricingTier::Colaborador, 1.0),
+            TokenAmount(0)
+        );
     }
 
     #[test]

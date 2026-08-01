@@ -3,6 +3,7 @@
 //! Validates end-to-end without network / Stripe / mesh L1:
 //! create vault → persist → recover shares → mesh challenge → hybrid pack → Polygon dry-run anchor.
 
+use std::time::Duration;
 use xavier::crypto::hex_encode;
 use xavier::mesh::challenge::{
     create_signed_nonce_challenge, sign_nonce_challenge, verify_nonce_response,
@@ -17,7 +18,6 @@ use xavier::node_identity::{
 use xavier::polygon_anchor::{
     anchor_node_identity, anchor_sealed_pack, AnchorRegistry, MockAnchorTransport,
 };
-use std::time::Duration;
 
 #[test]
 fn e2e_f0_create_persist_recover_identity() {
@@ -146,7 +146,10 @@ fn e2e_f3_hybrid_pack_sign_verify() {
     sig.verify_ed25519(meta).unwrap();
     assert!(sig.is_hybrid_ready());
     let expected = hex_encode(&bundle.keys.ml_dsa_commitment);
-    assert_eq!(sig.ml_dsa_commitment_hex.as_deref(), Some(expected.as_str()));
+    assert_eq!(
+        sig.ml_dsa_commitment_hex.as_deref(),
+        Some(expected.as_str())
+    );
 }
 
 #[test]

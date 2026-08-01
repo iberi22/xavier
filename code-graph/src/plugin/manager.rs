@@ -91,12 +91,20 @@ impl PluginManager {
         // Auto-detect and register separate language parsers if found in PATH
         let parsers_info = [
             ("parser-rust", vec![Language::Rust], vec!["rs"]),
-            ("parser-ts", vec![Language::TypeScript, Language::JavaScript], vec!["ts", "tsx", "js", "jsx"]),
+            (
+                "parser-ts",
+                vec![Language::TypeScript, Language::JavaScript],
+                vec!["ts", "tsx", "js", "jsx"],
+            ),
             ("parser-python", vec![Language::Python], vec!["py"]),
             ("parser-go", vec![Language::Go], vec!["go"]),
             ("parser-java", vec![Language::Java], vec!["java"]),
             ("parser-c", vec![Language::C], vec!["c", "h"]),
-            ("parser-cpp", vec![Language::Cpp], vec!["cpp", "cc", "cxx", "hpp"]),
+            (
+                "parser-cpp",
+                vec![Language::Cpp],
+                vec!["cpp", "cc", "cxx", "hpp"],
+            ),
         ];
 
         for (name, langs, exts) in parsers_info {
@@ -330,7 +338,8 @@ impl Default for PluginManager {
 // ============================================================================
 
 #[allow(dead_code)]
-const LIVE_INDEX_URL: &str = "https://raw.githubusercontent.com/swal/xavier-plugins/main/plugins.json";
+const LIVE_INDEX_URL: &str =
+    "https://raw.githubusercontent.com/swal/xavier-plugins/main/plugins.json";
 
 #[allow(dead_code)]
 fn fetch_live_registry() -> Result<Vec<PluginDescriptor>> {
@@ -370,8 +379,11 @@ fn fetch_live_registry() -> Result<Vec<PluginDescriptor>> {
         }
     }
 
-    let resp = reqwest::blocking::get(LIVE_INDEX_URL).map_err(|e: reqwest::Error| GraphError::Parser(e.to_string()))?;
-    let registry: PluginRegistry = resp.json().map_err(|e: reqwest::Error| GraphError::Parser(e.to_string()))?;
+    let resp = reqwest::blocking::get(LIVE_INDEX_URL)
+        .map_err(|e: reqwest::Error| GraphError::Parser(e.to_string()))?;
+    let registry: PluginRegistry = resp
+        .json()
+        .map_err(|e: reqwest::Error| GraphError::Parser(e.to_string()))?;
     Ok(registry.into_descriptors())
 }
 

@@ -138,8 +138,7 @@ async fn cmd_create(
     let device_key = parse_device_key(device_key_hex.as_deref())?;
 
     eprintln!("Generating BIP39-24 node identity (offline, no Stripe, no central login)…");
-    let bundle =
-        NodeBootstrap::create(passphrase.as_deref(), &pin, device_key.as_ref())?;
+    let bundle = NodeBootstrap::create(passphrase.as_deref(), &pin, device_key.as_ref())?;
     let pub_id = PublicNodeIdentity::from_keys(&bundle.keys);
 
     store.save_vault(&bundle.vault)?;
@@ -221,8 +220,7 @@ async fn cmd_recover(
     }
 
     let entropy = ShamirSplit::combine(&shares)?;
-    let phrase =
-        xavier::node_identity::SeedPhrase::from_entropy(&entropy, passphrase.as_deref())?;
+    let phrase = xavier::node_identity::SeedPhrase::from_entropy(&entropy, passphrase.as_deref())?;
     let codes = CheckCodes::from_seed_bytes(&phrase.seed_bytes);
 
     let mode = match challenge_mode.as_deref() {
@@ -413,7 +411,9 @@ fn parse_triplets(raw: &str) -> Result<[u16; 6]> {
     }
     let mut out = [0u16; 6];
     for (i, p) in parts.iter().enumerate() {
-        let v: u16 = p.parse().with_context(|| format!("invalid triplet '{p}'"))?;
+        let v: u16 = p
+            .parse()
+            .with_context(|| format!("invalid triplet '{p}'"))?;
         if v > 999 {
             bail!("triplet out of range: {v}");
         }

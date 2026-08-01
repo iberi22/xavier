@@ -64,9 +64,7 @@ pub async fn create_workspace_db_handler(
 
 /// GET /v1/workspaces/db
 /// Lists all registered independent SQLite DBs
-pub async fn list_workspace_dbs_handler(
-    State(state): State<CliState>,
-) -> Json<ListDbsResponse> {
+pub async fn list_workspace_dbs_handler(State(state): State<CliState>) -> Json<ListDbsResponse> {
     let databases = state.multi_db.list_databases().await;
     Json(ListDbsResponse { databases })
 }
@@ -80,7 +78,10 @@ pub async fn delete_workspace_db_handler(
     match state.multi_db.delete_database(&db_id).await {
         Ok(true) => Ok(Json(DeleteDbResponse {
             success: true,
-            message: format!("Database '{}' deleted successfully from registry and disk", db_id),
+            message: format!(
+                "Database '{}' deleted successfully from registry and disk",
+                db_id
+            ),
         })),
         Ok(false) => Err((
             StatusCode::NOT_FOUND,

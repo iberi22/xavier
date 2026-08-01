@@ -35,10 +35,11 @@
 
 pub mod acl;
 pub mod auth;
-pub mod challenge;
 #[cfg(feature = "mesh")]
 pub mod auto_update;
+pub mod challenge;
 pub mod cloud_node;
+pub mod context_bridge;
 pub mod crypto_gating;
 pub mod data_consent;
 pub mod data_sanitizer;
@@ -53,11 +54,10 @@ pub mod maturity;
 pub mod namespace;
 pub mod node;
 pub mod pairing;
-pub mod pro_gate;
 pub mod pairing_registry;
 pub mod peer;
+pub mod pro_gate;
 pub mod protocol;
-pub mod context_bridge;
 pub mod telemetry;
 pub mod telemetry_collector;
 pub mod tokenomics;
@@ -66,10 +66,11 @@ pub mod transport;
 #[cfg(feature = "mesh")]
 pub mod libp2p_transport;
 
-pub use acl::{MeshAcl, NodeAclEntry, NamespaceAclEntry};
+pub use acl::{MeshAcl, NamespaceAclEntry, NodeAclEntry};
 #[cfg(feature = "mesh")]
 pub use auto_update::{AutoUpdateService, UpdateStatus};
-pub use data_consent::{ConsentLevel, DataConsentManager, ConsentRecord, ActiveConsent};
+pub use context_bridge::{BridgeKind, BridgeRegistry, ContextBridge};
+pub use data_consent::{ActiveConsent, ConsentLevel, ConsentRecord, DataConsentManager};
 pub use data_sanitizer::{DataSanitizer, SanitizationAction, SanitizationRule};
 #[cfg(feature = "mesh")]
 pub use discovery::DiscoveryService;
@@ -79,7 +80,6 @@ pub use maturity::MeshMaturityReport;
 pub use node::{NodeId, NodeIdentity};
 pub use peer::{PeerInfo, PeerRegistry};
 pub use protocol::{MeshHandshake, MeshManifest, MeshSyncRequest};
-pub use context_bridge::{BridgeKind, ContextBridge, BridgeRegistry};
 pub use telemetry_collector::{
     RetentionPolicy, TelemetryAggregate, TelemetryCollector, TelemetrySample,
 };

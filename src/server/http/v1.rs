@@ -71,8 +71,10 @@ pub async fn memory_add(
             status: "ok",
             message: "Document added to memory",
             workspace_id: workspace.workspace_id,
-        }).into_response(),
-        Err(error) => crate::error::ApiError::internal(format!("failed to add memory: {}", error)).into_ok_response(),
+        })
+        .into_response(),
+        Err(error) => crate::error::ApiError::internal(format!("failed to add memory: {}", error))
+            .into_ok_response(),
     }
 }
 
@@ -81,18 +83,28 @@ pub async fn memory_search(
     Extension(workspace): Extension<WorkspaceContext>,
     Json(payload): Json<SearchRequest>,
 ) -> impl IntoResponse {
-    match workspace.workspace.memory.search_filtered(&payload.query, payload.limit, payload.filters.as_ref()).await {
+    match workspace
+        .workspace
+        .memory
+        .search_filtered(&payload.query, payload.limit, payload.filters.as_ref())
+        .await
+    {
         Ok(docs) => Json(SearchResponse {
             status: "ok".to_string(),
-            results: docs.into_iter().map(|doc| SearchHit {
-                id: doc.id,
-                path: doc.path,
-                content: doc.content,
-                metadata: doc.metadata,
-            }).collect(),
+            results: docs
+                .into_iter()
+                .map(|doc| SearchHit {
+                    id: doc.id,
+                    path: doc.path,
+                    content: doc.content,
+                    metadata: doc.metadata,
+                })
+                .collect(),
             query: payload.query,
-        }).into_response(),
-        Err(error) => crate::error::ApiError::internal(format!("memory search failed: {}", error)).into_ok_response(),
+        })
+        .into_response(),
+        Err(error) => crate::error::ApiError::internal(format!("memory search failed: {}", error))
+            .into_ok_response(),
     }
 }
 
@@ -102,23 +114,38 @@ pub async fn memory_hybrid_search(
     Json(payload): Json<HybridSearchRequest>,
 ) -> impl IntoResponse {
     let mode = payload.search_type.unwrap_or_default();
-    match workspace.workspace.durable_store().hybrid_search(&workspace.workspace_id, &payload.query, mode, payload.filters.as_ref(), payload.limit).await {
+    match workspace
+        .workspace
+        .durable_store()
+        .hybrid_search(
+            &workspace.workspace_id,
+            &payload.query,
+            mode,
+            payload.filters.as_ref(),
+            payload.limit,
+        )
+        .await
+    {
         Ok(results) => Json(HybridSearchResponse {
             status: "ok".to_string(),
-            results: results.into_iter().map(|result| HybridSearchHit {
-                id: result.record.id,
-                path: result.record.path,
-                content: result.record.content,
-                metadata: result.record.metadata,
-                score: result.score,
-                vector_score: result.vector_score,
-                lexical_score: result.lexical_score,
-                kg_score: result.kg_score,
-                bm25: result.bm25,
-            }).collect(),
+            results: results
+                .into_iter()
+                .map(|result| HybridSearchHit {
+                    id: result.record.id,
+                    path: result.record.path,
+                    content: result.record.content,
+                    metadata: result.record.metadata,
+                    score: result.score,
+                    vector_score: result.vector_score,
+                    lexical_score: result.lexical_score,
+                    kg_score: result.kg_score,
+                    bm25: result.bm25,
+                })
+                .collect(),
             query: payload.query,
             mode,
-        }).into_response(),
+        })
+        .into_response(),
         Err(error) => crate::error::ApiError::internal(error.to_string()).into_response(),
     }
 }

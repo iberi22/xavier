@@ -189,8 +189,7 @@ impl Harvester {
                         // (git2 DiffStats only exposes aggregate; we use per-delta patches)
                         let num_deltas = diff.deltas().len();
                         for idx in 0..num_deltas {
-                            if let Some(patch) = git2::Patch::from_diff(&diff, idx).ok().flatten()
-                            {
+                            if let Some(patch) = git2::Patch::from_diff(&diff, idx).ok().flatten() {
                                 let (_, ins, del) = patch.line_stats().unwrap_or((0, 0, 0));
                                 if let Some(delta) = diff.get_delta(idx) {
                                     if let Some(path) =
@@ -225,11 +224,13 @@ impl Harvester {
                         if let Ok(name) = entry.name() {
                             let path = format!("{}{}", root, name);
                             files.push(path.clone());
-                            aggregated_changes.entry(path.clone()).or_insert(FileChange {
-                                change_type: ChangeType::Added,
-                                insertions: 0,
-                                deletions: 0,
-                            });
+                            aggregated_changes
+                                .entry(path.clone())
+                                .or_insert(FileChange {
+                                    change_type: ChangeType::Added,
+                                    insertions: 0,
+                                    deletions: 0,
+                                });
                         }
                         git2::TreeWalkResult::Ok
                     })?;

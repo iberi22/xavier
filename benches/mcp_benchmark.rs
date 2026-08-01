@@ -15,12 +15,14 @@ fn bench_mcp_ops(c: &mut Criterion) {
 
     // Setup state
     let (_state, workspace) = rt.block_on(async {
-        let temp_dir = std::env::temp_dir().join(format!("xavier-mcp-bench-{}", std::process::id()));
+        let temp_dir =
+            std::env::temp_dir().join(format!("xavier-mcp-bench-{}", std::process::id()));
         std::fs::create_dir_all(&temp_dir).ok();
 
         let db_path = temp_dir.join("code_graph.db");
         let code_db = Arc::new(
-            code_graph::db::CodeGraphDB::new(&db_path).expect("CodeGraphDB creation failed for bench"),
+            code_graph::db::CodeGraphDB::new(&db_path)
+                .expect("CodeGraphDB creation failed for bench"),
         );
         let code_indexer = Arc::new(code_graph::indexer::Indexer::new(Arc::clone(&code_db)));
         let code_query = Arc::new(code_graph::query::QueryEngine::new(Arc::clone(&code_db)));
@@ -51,11 +53,18 @@ fn bench_mcp_ops(c: &mut Criterion) {
 
         // Seed some mock memories
         for i in 0..10 {
-            let _ = context.workspace.memory.add_document(
-                format!("bench/mcp/doc/{}", i),
-                format!("This is MCP benchmark document number {} containing some test content.", i),
-                serde_json::json!({"index": i})
-            ).await;
+            let _ = context
+                .workspace
+                .memory
+                .add_document(
+                    format!("bench/mcp/doc/{}", i),
+                    format!(
+                        "This is MCP benchmark document number {} containing some test content.",
+                        i
+                    ),
+                    serde_json::json!({"index": i}),
+                )
+                .await;
         }
 
         let state = AppState {
@@ -87,7 +96,12 @@ fn bench_mcp_ops(c: &mut Criterion) {
     c.bench_function("mcp_memory_search_execution", |b| {
         b.iter(|| {
             rt.block_on(async {
-                let results = workspace.workspace.memory.search("MCP benchmark document", 5).await.unwrap_or_default();
+                let results = workspace
+                    .workspace
+                    .memory
+                    .search("MCP benchmark document", 5)
+                    .await
+                    .unwrap_or_default();
                 assert!(!results.is_empty());
             });
         });

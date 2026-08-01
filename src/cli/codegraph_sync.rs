@@ -126,38 +126,33 @@ pub async fn sync_codegraph_with_state(
 
     // Soft-dump: skip huge graphs by default (HTTP sync was hanging ~minutes on
     // pretty JSON of 60k symbols). Dump still available via `xavier code dump`.
-    let (dump_path, dump_error, dump_skipped, status) = if stats.total_symbols > DUMP_SOFT_SKIP_SYMBOLS
-    {
-        let reason = format!(
-            "omitido: {} símbolos > umbral {} (usa `xavier code dump`)",
-            stats.total_symbols, DUMP_SOFT_SKIP_SYMBOLS
-        );
-        tracing::info!("{}", reason);
-        (None, None, Some(reason), "ok".to_string())
-    } else {
-        match tokio::time::timeout(
-            std::time::Duration::from_secs(45),
-            perform_dump(state, repo_root.to_str().unwrap_or(".")),
-        )
-        .await
-        {
-            Ok(Ok(p)) => (Some(p), None, None, "ok".to_string()),
-            Ok(Err(e)) => {
-                tracing::warn!("Soft-dump CodeGraph falló: {}", e);
-                (
-                    None,
-                    Some(e.to_string()),
-                    None,
-                    "degraded".to_string(),
-                )
+    let (dump_path, dump_error, dump_skipped, status) =
+        if stats.total_symbols > DUMP_SOFT_SKIP_SYMBOLS {
+            let reason = format!(
+                "omitido: {} símbolos > umbral {} (usa `xavier code dump`)",
+                stats.total_symbols, DUMP_SOFT_SKIP_SYMBOLS
+            );
+            tracing::info!("{}", reason);
+            (None, None, Some(reason), "ok".to_string())
+        } else {
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(45),
+                perform_dump(state, repo_root.to_str().unwrap_or(".")),
+            )
+            .await
+            {
+                Ok(Ok(p)) => (Some(p), None, None, "ok".to_string()),
+                Ok(Err(e)) => {
+                    tracing::warn!("Soft-dump CodeGraph falló: {}", e);
+                    (None, Some(e.to_string()), None, "degraded".to_string())
+                }
+                Err(_) => {
+                    let msg = "Soft-dump CodeGraph timeout (45s)".to_string();
+                    tracing::warn!("{}", msg);
+                    (None, Some(msg), None, "degraded".to_string())
+                }
             }
-            Err(_) => {
-                let msg = "Soft-dump CodeGraph timeout (45s)".to_string();
-                tracing::warn!("{}", msg);
-                (None, Some(msg), None, "degraded".to_string())
-            }
-        }
-    };
+        };
     write_checkpoint(&repo_root, &head)?;
 
     let change_labels: Vec<String> = changes.iter().map(format_change).collect();
@@ -230,7 +225,10 @@ async fn upsert_symbol_memories(
     let mut upserts = 0usize;
     for path in paths {
         let symbols = state.db.find_by_file(&path).unwrap_or_default();
-        for sym in symbols.into_iter().take(MEMORY_SYMBOL_CAP.saturating_sub(upserts)) {
+        for sym in symbols
+            .into_iter()
+            .take(MEMORY_SYMBOL_CAP.saturating_sub(upserts))
+        {
             let stable = sym
                 .stable_id
                 .clone()
@@ -396,7 +394,9 @@ pub fn git_name_status(repo_root: &Path, base: &str, staged: bool) -> Result<Vec
             .into_iter()
             .filter(|c| should_index_path(&c.path))
             .filter(|c| match &c.kind {
-                PathChangeKind::Renamed { from } => should_index_path(from) || should_index_path(&c.path),
+                PathChangeKind::Renamed { from } => {
+                    should_index_path(from) || should_index_path(&c.path)
+                }
                 _ => true,
             })
             .collect()
@@ -412,7 +412,8 @@ fn should_index_path(path: &str) -> bool {
         return false;
     }
     // Skip common non-source noise; Indexer still filters by language extension.
-    if p.starts_with("target/") || p.starts_with("target_local/") || p.starts_with("node_modules/") {
+    if p.starts_with("target/") || p.starts_with("target_local/") || p.starts_with("node_modules/")
+    {
         return false;
     }
     true

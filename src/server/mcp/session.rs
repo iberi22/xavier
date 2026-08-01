@@ -264,11 +264,12 @@ async fn handle_mcp_request(
                 .and_then(|v| v.as_str())
                 .unwrap_or("2024-11-05");
 
-            let response_version = if client_version == "2024-11-05" || client_version == "2024-10-22" {
-                client_version
-            } else {
-                "2026-07-28"
-            };
+            let response_version =
+                if client_version == "2024-11-05" || client_version == "2024-10-22" {
+                    client_version
+                } else {
+                    "2026-07-28"
+                };
 
             Some(MCPResponse {
                 jsonrpc: "2.0".to_string(),

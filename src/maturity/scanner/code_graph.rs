@@ -28,7 +28,9 @@ pub fn try_open_code_graph_db(codebase_root: &str) -> Option<CodeGraphDB> {
         }
     }
 
-    let xavier_db_path = Path::new(codebase_root).join(".xavier").join("code_graph.db");
+    let xavier_db_path = Path::new(codebase_root)
+        .join(".xavier")
+        .join("code_graph.db");
     if xavier_db_path.exists() {
         if let Ok(db) = CodeGraphDB::new(&xavier_db_path) {
             return Some(db);
@@ -175,10 +177,7 @@ fn try_code_graph_db(
     let content = std::fs::read_to_string(&json_path)
         .map_err(|_| -> std::io::Error {
             // Code dump would recurse — skip
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "no code graph",
-            )
+            std::io::Error::new(std::io::ErrorKind::NotFound, "no code graph")
         })
         .ok()?;
 
@@ -394,7 +393,10 @@ mod tests {
         };
         db.insert_symbol(&symbol).unwrap();
 
-        let result = try_code_code_graph_db_with_sqlite_helper(&temp_dir.path().to_string_lossy(), &feature_symbols);
+        let result = try_code_code_graph_db_with_sqlite_helper(
+            &temp_dir.path().to_string_lossy(),
+            &feature_symbols,
+        );
         assert!(result.is_some());
         let scan_res = result.unwrap();
         assert_eq!(scan_res.total_symbols, 1);
@@ -427,14 +429,22 @@ mod tests {
         std::fs::write(&json_path, serde_json::to_string(&dump_data).unwrap()).unwrap();
 
         let mut feature_symbols = HashMap::new();
-        feature_symbols.insert("feat-test".to_string(), vec!["test_symbol_json".to_string()]);
+        feature_symbols.insert(
+            "feat-test".to_string(),
+            vec!["test_symbol_json".to_string()],
+        );
 
         let result = try_code_graph_db(&temp_dir.path().to_string_lossy(), &feature_symbols);
         assert!(result.is_some());
         let scan_res = result.unwrap();
         assert_eq!(scan_res.total_symbols, 1);
         assert_eq!(scan_res.total_found, 1);
-        assert!(scan_res.feature_scans.get("feat-test").unwrap().found.contains("test_symbol_json"));
+        assert!(scan_res
+            .feature_scans
+            .get("feat-test")
+            .unwrap()
+            .found
+            .contains("test_symbol_json"));
     }
 
     #[test]
@@ -454,7 +464,10 @@ mod tests {
         std::fs::write(&json_path, serde_json::to_string(&dump_data).unwrap()).unwrap();
 
         let mut feature_symbols = HashMap::new();
-        feature_symbols.insert("feat-test".to_string(), vec!["test_symbol_json".to_string()]);
+        feature_symbols.insert(
+            "feat-test".to_string(),
+            vec!["test_symbol_json".to_string()],
+        );
 
         let result = try_code_graph_db(&temp_dir.path().to_string_lossy(), &feature_symbols);
         // It must return None so that the caller can fall back to grep
@@ -498,7 +511,12 @@ mod tests {
         // Since DB and dump are missing, it should gracefully fall back to grep and find the symbol
         assert_eq!(scan_res.total_symbols, 1);
         assert_eq!(scan_res.total_found, 1);
-        assert!(scan_res.feature_scans.get("feat-cool").unwrap().found.contains("cool_fn_symbol"));
+        assert!(scan_res
+            .feature_scans
+            .get("feat-cool")
+            .unwrap()
+            .found
+            .contains("cool_fn_symbol"));
     }
 
     #[test]

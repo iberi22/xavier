@@ -1,8 +1,6 @@
 use crate::domain::memory::MemoryRecord;
 use crate::ports::inbound::MemoryQueryPort;
-use axum::{
-    response::{IntoResponse, Json as AxumJson},
-};
+use axum::response::{IntoResponse, Json as AxumJson};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize)]
@@ -126,21 +124,63 @@ pub async fn memory_search(memory: &dyn MemoryQueryPort, req: SearchRequest) -> 
 pub async fn tools() -> impl IntoResponse {
     AxumJson(HeadlessToolsResponse {
         tools: vec![
-            HeadlessToolInfo { name: "memory_search", description: "Search memory with semantic + lexical hybrid search" },
-            HeadlessToolInfo { name: "memory_add", description: "Add a new memory entry with metadata and zone tagging" },
-            HeadlessToolInfo { name: "memory_delete", description: "Delete a memory entry by path" },
-            HeadlessToolInfo { name: "memory_stats", description: "Get memory statistics and counts" },
-            HeadlessToolInfo { name: "memory_export", description: "Export all memories as JSON" },
-            HeadlessToolInfo { name: "code_scan", description: "Scan a codebase and index symbols into the code graph" },
-            HeadlessToolInfo { name: "code_find", description: "Find code symbols by name, kind, or file path" },
-            HeadlessToolInfo { name: "code_context", description: "Get surrounding context for a code symbol" },
-            HeadlessToolInfo { name: "code_stats", description: "Get code graph statistics" },
-            HeadlessToolInfo { name: "agent_register", description: "Register a new AI agent" },
-            HeadlessToolInfo { name: "agent_list", description: "List active agents" },
-            HeadlessToolInfo { name: "agent_heartbeat", description: "Send heartbeat for an agent" },
-            HeadlessToolInfo { name: "agent_push_context", description: "Push context document to an agent" },
-            HeadlessToolInfo { name: "agent_unregister", description: "Unregister an agent" },
-        ]
+            HeadlessToolInfo {
+                name: "memory_search",
+                description: "Search memory with semantic + lexical hybrid search",
+            },
+            HeadlessToolInfo {
+                name: "memory_add",
+                description: "Add a new memory entry with metadata and zone tagging",
+            },
+            HeadlessToolInfo {
+                name: "memory_delete",
+                description: "Delete a memory entry by path",
+            },
+            HeadlessToolInfo {
+                name: "memory_stats",
+                description: "Get memory statistics and counts",
+            },
+            HeadlessToolInfo {
+                name: "memory_export",
+                description: "Export all memories as JSON",
+            },
+            HeadlessToolInfo {
+                name: "code_scan",
+                description: "Scan a codebase and index symbols into the code graph",
+            },
+            HeadlessToolInfo {
+                name: "code_find",
+                description: "Find code symbols by name, kind, or file path",
+            },
+            HeadlessToolInfo {
+                name: "code_context",
+                description: "Get surrounding context for a code symbol",
+            },
+            HeadlessToolInfo {
+                name: "code_stats",
+                description: "Get code graph statistics",
+            },
+            HeadlessToolInfo {
+                name: "agent_register",
+                description: "Register a new AI agent",
+            },
+            HeadlessToolInfo {
+                name: "agent_list",
+                description: "List active agents",
+            },
+            HeadlessToolInfo {
+                name: "agent_heartbeat",
+                description: "Send heartbeat for an agent",
+            },
+            HeadlessToolInfo {
+                name: "agent_push_context",
+                description: "Push context document to an agent",
+            },
+            HeadlessToolInfo {
+                name: "agent_unregister",
+                description: "Unregister an agent",
+            },
+        ],
     })
 }
 
@@ -149,7 +189,9 @@ pub struct ToolExecuteRequest {
     pub args: serde_json::Value,
 }
 
-fn open_code_graph_db(workspace: &std::path::Path) -> Result<std::sync::Arc<code_graph::db::CodeGraphDB>, String> {
+fn open_code_graph_db(
+    workspace: &std::path::Path,
+) -> Result<std::sync::Arc<code_graph::db::CodeGraphDB>, String> {
     let db_path = crate::codebase::codegraph_paths::code_graph_db_path_for(workspace);
     if let Some(parent) = db_path.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -161,10 +203,7 @@ fn open_code_graph_db(workspace: &std::path::Path) -> Result<std::sync::Arc<code
 }
 
 async fn execute_code_tool(name: &str, args: &serde_json::Value) -> axum::response::Response {
-    let path_str = args
-        .get("path")
-        .and_then(|v| v.as_str())
-        .unwrap_or(".");
+    let path_str = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
     let workspace = std::path::PathBuf::from(path_str);
     let db = match open_code_graph_db(&workspace) {
         Ok(db) => db,
@@ -206,10 +245,7 @@ async fn execute_code_tool(name: &str, args: &serde_json::Value) -> axum::respon
             }
         }
         "code_find" => {
-            let query = args
-                .get("query")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("");
             let limit = args
                 .get("limit")
                 .and_then(|v| v.as_u64())
@@ -258,10 +294,7 @@ async fn execute_code_tool(name: &str, args: &serde_json::Value) -> axum::respon
             }
         }
         "code_context" => {
-            let query = args
-                .get("query")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("");
             let limit = args
                 .get("limit")
                 .and_then(|v| v.as_u64())
@@ -325,7 +358,7 @@ pub async fn provider_status(active_provider: String) -> impl IntoResponse {
         quota: HeadlessProviderQuota {
             remaining_percentage: 0.85,
             reset_at: None,
-        }
+        },
     })
 }
 
@@ -349,7 +382,9 @@ mod tests {
         let req = ToolExecuteRequest {
             args: serde_json::json!({ "path": dir.path().to_string_lossy() }),
         };
-        let response = execute_tool("code_scan".to_string(), req).await.into_response();
+        let response = execute_tool("code_scan".to_string(), req)
+            .await
+            .into_response();
         assert_eq!(response.status(), axum::http::StatusCode::OK);
         let bytes = axum::body::to_bytes(response.into_body(), 64 * 1024)
             .await
@@ -366,7 +401,9 @@ mod tests {
         let req = ToolExecuteRequest {
             args: serde_json::json!({ "query": "test" }),
         };
-        let response = execute_tool("memory_search".to_string(), req).await.into_response();
+        let response = execute_tool("memory_search".to_string(), req)
+            .await
+            .into_response();
         assert_eq!(response.status(), axum::http::StatusCode::OK);
     }
 }

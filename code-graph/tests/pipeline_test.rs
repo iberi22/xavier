@@ -27,9 +27,15 @@ async fn test_c_parser_pipeline() {
 
     // Verify symbols returned in DB
     let symbols = db.get_all_symbols().unwrap();
-    assert!(symbols.iter().any(|s| s.name == "calculate_area" && s.kind == SymbolKind::Function));
-    assert!(symbols.iter().any(|s| s.name == "Point" && s.kind == SymbolKind::Struct));
-    assert!(symbols.iter().any(|s| s.name == "LIMIT" && s.kind == SymbolKind::Constant));
+    assert!(symbols
+        .iter()
+        .any(|s| s.name == "calculate_area" && s.kind == SymbolKind::Function));
+    assert!(symbols
+        .iter()
+        .any(|s| s.name == "Point" && s.kind == SymbolKind::Struct));
+    assert!(symbols
+        .iter()
+        .any(|s| s.name == "LIMIT" && s.kind == SymbolKind::Constant));
 
     // Verify query runs on indexed symbols
     let query_engine = QueryEngine::new(db.clone());
@@ -57,8 +63,12 @@ async fn test_rust_parser_pipeline() {
 
     // Verify symbols returned in DB
     let symbols = db.get_all_symbols().unwrap();
-    assert!(symbols.iter().any(|s| s.name == "start_server" && s.kind == SymbolKind::Function));
-    assert!(symbols.iter().any(|s| s.name == "Config" && s.kind == SymbolKind::Struct));
+    assert!(symbols
+        .iter()
+        .any(|s| s.name == "start_server" && s.kind == SymbolKind::Function));
+    assert!(symbols
+        .iter()
+        .any(|s| s.name == "Config" && s.kind == SymbolKind::Struct));
 
     // Verify query runs on indexed symbols
     let query_engine = QueryEngine::new(db.clone());
@@ -86,9 +96,15 @@ async fn test_python_parser_pipeline() {
 
     // Verify symbols returned in DB
     let symbols = db.get_all_symbols().unwrap();
-    assert!(symbols.iter().any(|s| s.name == "Calculator" && s.kind == SymbolKind::Class));
-    assert!(symbols.iter().any(|s| s.name == "add" && s.kind == SymbolKind::Method));
-    assert!(symbols.iter().any(|s| s.name == "calculate_pi" && s.kind == SymbolKind::Function));
+    assert!(symbols
+        .iter()
+        .any(|s| s.name == "Calculator" && s.kind == SymbolKind::Class));
+    assert!(symbols
+        .iter()
+        .any(|s| s.name == "add" && s.kind == SymbolKind::Method));
+    assert!(symbols
+        .iter()
+        .any(|s| s.name == "calculate_pi" && s.kind == SymbolKind::Function));
 
     // Verify query runs on indexed symbols
     let query_engine = QueryEngine::new(db.clone());
@@ -133,6 +149,10 @@ async fn test_plugin_fallback() {
 
     // 4. Assert that symbols are successfully returned by the native fallback parser
     assert!(!symbols.is_empty());
-    assert!(symbols.iter().any(|s| s.name == "start_server" && s.kind == SymbolKind::Function));
-    assert!(symbols.iter().any(|s| s.name == "Config" && s.kind == SymbolKind::Struct));
+    assert!(symbols
+        .iter()
+        .any(|s| s.name == "start_server" && s.kind == SymbolKind::Function));
+    assert!(symbols
+        .iter()
+        .any(|s| s.name == "Config" && s.kind == SymbolKind::Struct));
 }

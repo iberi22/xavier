@@ -203,7 +203,8 @@ pub async fn v1_memories_add(
         .clone()
         .unwrap_or_else(|| "default".to_string());
     let mut meta = payload.metadata.unwrap_or(serde_json::json!({}));
-    let is_dedup = params.mode.as_deref() == Some("dedup") || payload.mode.as_deref() == Some("dedup");
+    let is_dedup =
+        params.mode.as_deref() == Some("dedup") || payload.mode.as_deref() == Some("dedup");
     if is_dedup {
         if let Some(obj) = meta.as_object_mut() {
             obj.insert("dedup".to_string(), serde_json::json!(true));
@@ -266,7 +267,8 @@ pub async fn v1_memories_add(
                 "status": "ok",
                 "message": "Memory added successfully",
                 "id": id,
-            })).into_response()
+            }))
+            .into_response()
         }
         Err(e) => crate::error::ApiError::internal(e.to_string()).into_ok_response(),
     }
@@ -1085,7 +1087,11 @@ fn split_markdown_by_sections_with_levels(content: &str) -> Vec<(String, String,
     for line in content.lines() {
         if line.starts_with('#') {
             if !current_content.trim().is_empty() {
-                sections.push((current_title.clone(), current_content.clone(), current_level));
+                sections.push((
+                    current_title.clone(),
+                    current_content.clone(),
+                    current_level,
+                ));
             }
             let mut level = 0;
             for c in line.chars() {
@@ -1142,8 +1148,14 @@ pub async fn v1_memories_get(
                 let content_chars: Vec<char> = final_content.chars().collect();
                 let total_chars = content_chars.len();
                 let mut parts = r.split('-');
-                let start = parts.next().and_then(|s| s.parse::<usize>().ok()).unwrap_or(0);
-                let end = parts.next().and_then(|s| s.parse::<usize>().ok()).unwrap_or(total_chars);
+                let start = parts
+                    .next()
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .unwrap_or(0);
+                let end = parts
+                    .next()
+                    .and_then(|s| s.parse::<usize>().ok())
+                    .unwrap_or(total_chars);
                 let start = start.min(total_chars);
                 let end = end.min(total_chars).max(start);
                 final_content = content_chars[start..end].iter().collect();
@@ -1157,7 +1169,8 @@ pub async fn v1_memories_get(
                     user_id: Some(doc.path),
                     metadata: doc.metadata,
                 }
-            })).into_response()
+            }))
+            .into_response()
         }
         _ => crate::error::ApiError::not_found("Memory not found").into_ok_response(),
     }
@@ -1190,15 +1203,22 @@ pub async fn v1_memories_outline(
             Json(serde_json::json!({
                 "status": "ok",
                 "outline": outline,
-            })).into_response()
+            }))
+            .into_response()
         }
         _ => crate::error::ApiError::not_found("Memory not found").into_ok_response(),
     }
 }
 
 /// Helper to extract the last accessed time for a `MemoryDocument`.
-fn get_doc_last_accessed(doc: &crate::memory::qmd_memory::MemoryDocument) -> chrono::DateTime<chrono::Utc> {
-    if let Some(last_accessed_val) = doc.metadata.get("last_accessed_at").and_then(|v| v.as_str()) {
+fn get_doc_last_accessed(
+    doc: &crate::memory::qmd_memory::MemoryDocument,
+) -> chrono::DateTime<chrono::Utc> {
+    if let Some(last_accessed_val) = doc
+        .metadata
+        .get("last_accessed_at")
+        .and_then(|v| v.as_str())
+    {
         if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(last_accessed_val) {
             return parsed.with_timezone(&chrono::Utc);
         }
@@ -1238,7 +1258,11 @@ pub async fn v1_memories_prune(
     for doc in docs {
         // 1. Filter by kind
         if let Some(ref k) = kind {
-            let doc_kind = doc.metadata.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+            let doc_kind = doc
+                .metadata
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             if !doc_kind.eq_ignore_ascii_case(k) {
                 continue;
             }
@@ -1280,7 +1304,8 @@ pub async fn v1_memories_prune(
         matched,
         deleted,
         dry_run,
-    }).into_response()
+    })
+    .into_response()
 }
 
 /// V1 memories update.
@@ -1358,7 +1383,8 @@ pub async fn v1_memories_update(
             "status": "ok",
             "message": "Memory updated successfully",
             "id": updated_id,
-        })).into_response(),
+        }))
+        .into_response(),
         Ok(None) => crate::error::ApiError::not_found("Memory not found").into_ok_response(),
         Err(error) => crate::error::ApiError::internal(error.to_string()).into_ok_response(),
     }
@@ -1379,7 +1405,8 @@ pub async fn v1_memories_delete(
             Json(serde_json::json!({
                 "status": "ok",
                 "message": "Memory deleted successfully"
-            })).into_response()
+            }))
+            .into_response()
         }
         _ => crate::error::ApiError::not_found("Memory not found").into_ok_response(),
     }
@@ -1582,10 +1609,7 @@ mod tests {
                     .put(v1_memories_update)
                     .delete(v1_memories_delete),
             )
-            .route(
-                "/v1/memories/{id}/outline",
-                get(v1_memories_outline),
-            )
+            .route("/v1/memories/{id}/outline", get(v1_memories_outline))
             .route("/v1/memories/search", post(v1_memories_search))
             .route("/v1/memories/prune", post(v1_memories_prune))
             .layer(Extension(workspace))
@@ -1961,7 +1985,10 @@ mod tests {
             serde_json::from_slice(&body).expect("failed to parse JSON");
 
         assert_eq!(payload["mode"], "snippet");
-        assert!(payload["workspace_id"].as_str().expect("workspace_id should be string").starts_with("test-"));
+        assert!(payload["workspace_id"]
+            .as_str()
+            .expect("workspace_id should be string")
+            .starts_with("test-"));
         assert_eq!(payload["count"].as_u64(), Some(1));
 
         let results = payload["results"]
@@ -2039,7 +2066,11 @@ mod tests {
                 .to_string(),
             ))
             .expect("failed to build prune empty request");
-        let resp = app.clone().oneshot(prune_req_empty).await.expect("execute request");
+        let resp = app
+            .clone()
+            .oneshot(prune_req_empty)
+            .await
+            .expect("execute request");
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
 
         // 2. Add test memories
@@ -2060,7 +2091,11 @@ mod tests {
                 .to_string(),
             ))
             .expect("add request");
-        let resp = app.clone().oneshot(add_req_1).await.expect("execute request");
+        let resp = app
+            .clone()
+            .oneshot(add_req_1)
+            .await
+            .expect("execute request");
         assert_eq!(resp.status(), StatusCode::OK);
 
         // Memory 2: kind=fact, path="test/fact/1"
@@ -2080,7 +2115,11 @@ mod tests {
                 .to_string(),
             ))
             .expect("add request");
-        let resp = app.clone().oneshot(add_req_2).await.expect("execute request");
+        let resp = app
+            .clone()
+            .oneshot(add_req_2)
+            .await
+            .expect("execute request");
         assert_eq!(resp.status(), StatusCode::OK);
 
         // Memory 3: kind=fact, path="other/fact/1"
@@ -2101,7 +2140,11 @@ mod tests {
                 .to_string(),
             ))
             .expect("add request");
-        let resp = app.clone().oneshot(add_req_3).await.expect("execute request");
+        let resp = app
+            .clone()
+            .oneshot(add_req_3)
+            .await
+            .expect("execute request");
         assert_eq!(resp.status(), StatusCode::OK);
 
         // 3. Dry-run prune by kind "decision" (dry_run defaults to true)
@@ -2116,9 +2159,15 @@ mod tests {
                 .to_string(),
             ))
             .expect("prune request");
-        let resp = app.clone().oneshot(prune_dry).await.expect("execute request");
+        let resp = app
+            .clone()
+            .oneshot(prune_dry)
+            .await
+            .expect("execute request");
         assert_eq!(resp.status(), StatusCode::OK);
-        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
         let payload: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
         assert_eq!(payload["status"], "ok");
         assert_eq!(payload["matched"], 1);
@@ -2138,9 +2187,15 @@ mod tests {
                 .to_string(),
             ))
             .expect("prune request");
-        let resp = app.clone().oneshot(prune_actual).await.expect("execute request");
+        let resp = app
+            .clone()
+            .oneshot(prune_actual)
+            .await
+            .expect("execute request");
         assert_eq!(resp.status(), StatusCode::OK);
-        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
         let payload: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
         assert_eq!(payload["status"], "ok");
         assert_eq!(payload["matched"], 1);
@@ -2153,8 +2208,14 @@ mod tests {
             .uri("/v1/memories")
             .body(Body::empty())
             .expect("list request");
-        let resp = app.clone().oneshot(list_req).await.expect("execute request");
-        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let resp = app
+            .clone()
+            .oneshot(list_req)
+            .await
+            .expect("execute request");
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
         let payload: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
         let memories = payload["memories"].as_array().expect("array");
         // Remaining should be the 2 facts
@@ -2173,9 +2234,15 @@ mod tests {
                 .to_string(),
             ))
             .expect("prune request");
-        let resp = app.clone().oneshot(prune_prefix).await.expect("execute request");
+        let resp = app
+            .clone()
+            .oneshot(prune_prefix)
+            .await
+            .expect("execute request");
         assert_eq!(resp.status(), StatusCode::OK);
-        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
         let payload: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
         assert_eq!(payload["matched"], 1); // "test/fact/1"
         assert_eq!(payload["deleted"], 1);
@@ -2193,9 +2260,15 @@ mod tests {
                 .to_string(),
             ))
             .expect("prune request");
-        let resp = app.clone().oneshot(prune_age).await.expect("execute request");
+        let resp = app
+            .clone()
+            .oneshot(prune_age)
+            .await
+            .expect("execute request");
         assert_eq!(resp.status(), StatusCode::OK);
-        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
         let payload: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
         assert_eq!(payload["matched"], 1); // "other/fact/1" (last accessed 10 days ago)
         assert_eq!(payload["deleted"], 1);
@@ -2231,8 +2304,14 @@ mod tests {
             .uri("/v1/memories?limit=10")
             .body(Body::empty())
             .expect("failed to build list request");
-        let resp = app.clone().oneshot(list_req).await.expect("execute request");
-        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let resp = app
+            .clone()
+            .oneshot(list_req)
+            .await
+            .expect("execute request");
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
         let list_resp: V1MemoryListResponse = serde_json::from_slice(&body).expect("parse JSON");
         assert_eq!(list_resp.memories.len(), 1);
         let memory_id = list_resp.memories[0].id.clone();
@@ -2243,8 +2322,14 @@ mod tests {
             .uri(format!("/v1/memories/{}?sections=1", memory_id))
             .body(Body::empty())
             .expect("get request");
-        let resp = app.clone().oneshot(get_sec_req).await.expect("execute request");
-        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let resp = app
+            .clone()
+            .oneshot(get_sec_req)
+            .await
+            .expect("execute request");
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
         let val: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
         let content = val["memory"]["memory"].as_str().expect("string");
         assert!(content.contains("Chapter 1: Introduction"));
@@ -2256,8 +2341,14 @@ mod tests {
             .uri(format!("/v1/memories/{}?sections=2", memory_id))
             .body(Body::empty())
             .expect("get request");
-        let resp = app.clone().oneshot(get_sec_req_2).await.expect("execute request");
-        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let resp = app
+            .clone()
+            .oneshot(get_sec_req_2)
+            .await
+            .expect("execute request");
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
         let val: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
         let content = val["memory"]["memory"].as_str().expect("string");
         assert!(!content.contains("Chapter 1: Introduction"));
@@ -2269,8 +2360,14 @@ mod tests {
             .uri(format!("/v1/memories/{}?range=2-15", memory_id))
             .body(Body::empty())
             .expect("get request");
-        let resp = app.clone().oneshot(get_range_req).await.expect("execute request");
-        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let resp = app
+            .clone()
+            .oneshot(get_range_req)
+            .await
+            .expect("execute request");
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
         let val: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
         let content = val["memory"]["memory"].as_str().expect("string");
         assert_eq!(content, "Chapter 1: In");
@@ -2281,8 +2378,14 @@ mod tests {
             .uri(format!("/v1/memories/{id}/outline", id = memory_id))
             .body(Body::empty())
             .expect("outline request");
-        let resp = app.clone().oneshot(outline_req).await.expect("execute request");
-        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let resp = app
+            .clone()
+            .oneshot(outline_req)
+            .await
+            .expect("execute request");
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
         let val: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
         assert_eq!(val["status"], "ok");
         let outline = val["outline"].as_array().expect("array");
@@ -2307,8 +2410,14 @@ mod tests {
                 .to_string(),
             ))
             .expect("search request");
-        let resp = app.clone().oneshot(search_ids_req).await.expect("execute request");
-        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let resp = app
+            .clone()
+            .oneshot(search_ids_req)
+            .await
+            .expect("execute request");
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
         let val: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
         assert_eq!(val["status"], "ok");
         let results = val["results"].as_array().expect("array");
@@ -2332,15 +2441,24 @@ mod tests {
                 .to_string(),
             ))
             .expect("search request");
-        let resp = app.clone().oneshot(search_snippet_req).await.expect("execute request");
-        let body = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let resp = app
+            .clone()
+            .oneshot(search_snippet_req)
+            .await
+            .expect("execute request");
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
         let val: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
         assert_eq!(val["mode"], "snippet");
         let results = val["results"].as_array().expect("array");
         assert_eq!(results.len(), 1);
         assert_eq!(results[0]["id"], memory_id);
         assert_eq!(results[0]["title"], "Test Chapter Book");
-        assert!(results[0]["snippet"].as_str().expect("string").contains("summary section"));
+        assert!(results[0]["snippet"]
+            .as_str()
+            .expect("string")
+            .contains("summary section"));
 
         // 7. Add several large memories to test the 8KB hard cap truncation
         let large_content = "X".repeat(2000); // 2KB content each, easily exceeding 8KB when combined
@@ -2375,8 +2493,13 @@ mod tests {
                 .to_string(),
             ))
             .expect("search request");
-        let resp = app.oneshot(search_large_req).await.expect("execute request");
-        let body_len = to_bytes(resp.into_body(), usize::MAX).await.expect("read body");
+        let resp = app
+            .oneshot(search_large_req)
+            .await
+            .expect("execute request");
+        let body_len = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
         let val_large: serde_json::Value = serde_json::from_slice(&body_len).expect("parse JSON");
         assert_eq!(val_large["status"], "ok");
         assert_eq!(val_large["truncated"], true);

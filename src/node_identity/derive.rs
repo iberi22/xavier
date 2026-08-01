@@ -26,7 +26,10 @@ impl std::fmt::Debug for DerivedNodeKeys {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("DerivedNodeKeys")
             .field("node_id", &self.node_id)
-            .field("ed25519_public", &crate::crypto::hex_encode(&self.ed25519_public))
+            .field(
+                "ed25519_public",
+                &crate::crypto::hex_encode(&self.ed25519_public),
+            )
             .field("ed25519_secret", &"[REDACTED]")
             .field(
                 "ml_dsa_commitment",

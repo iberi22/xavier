@@ -283,10 +283,8 @@ pub fn scan_features(root: Option<&Path>) -> Result<FeatureScanReport> {
     let content = std::fs::read_to_string(&features_path)
         .with_context(|| format!("Failed to read {}", features_path.display()))?;
 
-    let parsed: FeaturesFile =
-        serde_json::from_str(&content).with_context(|| {
-            format!("Invalid JSON in {}", features_path.display())
-        })?;
+    let parsed: FeaturesFile = serde_json::from_str(&content)
+        .with_context(|| format!("Invalid JSON in {}", features_path.display()))?;
 
     let root_dir = features_path
         .parent()
@@ -318,15 +316,27 @@ pub fn scan_features(root: Option<&Path>) -> Result<FeatureScanReport> {
         features_with_gap: results.iter().filter(|r| r.gap >= 5.0).count(),
         features_stale: results
             .iter()
-            .filter(|r| r.checks.iter().any(|c| c.check.contains("recent") && !c.passed))
+            .filter(|r| {
+                r.checks
+                    .iter()
+                    .any(|c| c.check.contains("recent") && !c.passed)
+            })
             .count(),
         features_no_tests: results
             .iter()
-            .filter(|r| r.checks.iter().any(|c| c.check.contains("tests") && !c.passed))
+            .filter(|r| {
+                r.checks
+                    .iter()
+                    .any(|c| c.check.contains("tests") && !c.passed)
+            })
             .count(),
         features_mvp: results
             .iter()
-            .filter(|r| r.checks.iter().any(|c| c.check.contains("caveats") && !c.passed))
+            .filter(|r| {
+                r.checks
+                    .iter()
+                    .any(|c| c.check.contains("caveats") && !c.passed)
+            })
             .count(),
     };
 
@@ -351,9 +361,7 @@ pub fn format_report_table(report: &FeatureScanReport) -> String {
     ));
     out.push_str(&format!(
         "Claimed: {:.1}%  |  Real: {:.1}%  |  Avg Gap: {:.1}%\n",
-        report.summary.total_claimed,
-        report.summary.total_real,
-        report.summary.avg_gap
+        report.summary.total_claimed, report.summary.total_real, report.summary.avg_gap
     ));
     out.push_str(&format!(
         "✅ OK: {}  |  ⚠️ Gap: {}  |  🕰 Stale: {}  |  🧪 No tests: {}  |  🏗 MVP: {}\n",
@@ -444,10 +452,7 @@ mod tests {
         let tmp = tempdir().unwrap();
         let deep = tmp.path().join("a").join("b").join("c");
         fs::create_dir_all(&deep).unwrap();
-        create_test_features_json(
-            tmp.path(),
-            r#"{"protocol":"3.8.0","features":[]}"#,
-        );
+        create_test_features_json(tmp.path(), r#"{"protocol":"3.8.0","features":[]}"#);
         let found = find_features_json(&deep).unwrap();
         assert!(found.ends_with(".gitcore/features.json"));
     }

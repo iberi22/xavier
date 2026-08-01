@@ -1,9 +1,9 @@
 //! Workspace handlers for information and MCP tool integration.
 
-use axum::{extract::State, response::IntoResponse, Extension, Json};
 use axum::http::StatusCode;
-use xavier::workspace::WorkspaceContext;
+use axum::{extract::State, response::IntoResponse, Extension, Json};
 use std::sync::Arc;
+use xavier::workspace::WorkspaceContext;
 
 use crate::cli::state::CliState;
 

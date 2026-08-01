@@ -123,7 +123,11 @@ impl DecayManager {
 /// Helper function to retrieve the last accessed time of a MemoryRecord.
 /// Falls back to updated_at or created_at if last_accessed_at is not present in metadata.
 pub fn get_last_accessed(record: &MemoryRecord) -> DateTime<Utc> {
-    if let Some(last_accessed_val) = record.metadata.get("last_accessed_at").and_then(|v| v.as_str()) {
+    if let Some(last_accessed_val) = record
+        .metadata
+        .get("last_accessed_at")
+        .and_then(|v| v.as_str())
+    {
         if let Ok(parsed) = DateTime::parse_from_rfc3339(last_accessed_val) {
             return parsed.with_timezone(&Utc);
         }
@@ -135,10 +139,16 @@ pub fn get_last_accessed(record: &MemoryRecord) -> DateTime<Utc> {
 /// Helper function to update/touch the last accessed time of a MemoryRecord.
 pub fn touch_memory(record: &mut MemoryRecord, now: DateTime<Utc>) {
     if let serde_json::Value::Object(ref mut map) = record.metadata {
-        map.insert("last_accessed_at".to_string(), serde_json::json!(now.to_rfc3339()));
+        map.insert(
+            "last_accessed_at".to_string(),
+            serde_json::json!(now.to_rfc3339()),
+        );
     } else {
         let mut map = serde_json::Map::new();
-        map.insert("last_accessed_at".to_string(), serde_json::json!(now.to_rfc3339()));
+        map.insert(
+            "last_accessed_at".to_string(),
+            serde_json::json!(now.to_rfc3339()),
+        );
         record.metadata = serde_json::Value::Object(map);
     }
 }
@@ -360,7 +370,10 @@ mod tests {
             default_initial_score: 1.0,
         });
 
-        let report = manager.decay_workspace_memories(&store, workspace_id).await.unwrap();
+        let report = manager
+            .decay_workspace_memories(&store, workspace_id)
+            .await
+            .unwrap();
 
         assert_eq!(report.total_processed, 3);
         assert_eq!(report.decayed_count, 1); // Only record2 decayed

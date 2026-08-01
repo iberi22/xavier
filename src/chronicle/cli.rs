@@ -90,7 +90,11 @@ pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
             let output_path = harvester.run(since).await?;
             println!("Chronicle harvest written to {}", output_path.display());
         }
-        ChronicleCommand::Generate { since, output, ingest } => {
+        ChronicleCommand::Generate {
+            since,
+            output,
+            ingest,
+        } => {
             let memory = if ingest {
                 println!("Pre-initializing memory store for ingestion...");
                 Some(load_memory_from_env().await?)
@@ -126,20 +130,27 @@ pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
             if let Some(memory) = memory {
                 println!("Ingesting Daily Chronicle into memory store...");
                 let path = format!("chronicle/daily-chronicles/{}", harvest.date);
-                
+
                 let hash = {
-                    use sha2::{Sha256, Digest};
+                    use sha2::{Digest, Sha256};
                     let mut hasher = Sha256::new();
                     hasher.update(markdown.as_bytes());
                     format!("{:x}", hasher.finalize())
                 };
-                
+
                 // Check if already exists in store and if hash matches
                 let mut skip = false;
                 if let Ok(Some(existing)) = memory.get(&path).await {
-                    if let Some(existing_hash) = existing.metadata.get("content_hash").and_then(|v| v.as_str()) {
+                    if let Some(existing_hash) = existing
+                        .metadata
+                        .get("content_hash")
+                        .and_then(|v| v.as_str())
+                    {
                         if existing_hash == hash {
-                            println!("  - Daily Chronicle for {} is unchanged, skipping ingest", harvest.date);
+                            println!(
+                                "  - Daily Chronicle for {} is unchanged, skipping ingest",
+                                harvest.date
+                            );
                             skip = true;
                         }
                     }
@@ -153,7 +164,7 @@ pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
                         "generated_at": chrono::Utc::now().to_rfc3339(),
                         "source": "chronicle_generate"
                     });
-                    
+
                     match memory.add_document(path.clone(), markdown, metadata).await {
                         Ok(_) => println!("  ✓ Ingested {}", path),
                         Err(e) => eprintln!("  ✗ Failed to ingest {}: {}", path, e),
@@ -195,7 +206,11 @@ pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
             DevLogSSG::new().build()?;
             println!("DevLog static blog built successfully in public/devlog/");
         }
-        ChronicleCommand::AutoDocs { module, output, ingest } => {
+        ChronicleCommand::AutoDocs {
+            module,
+            output,
+            ingest,
+        } => {
             // Pre-initialize memory early if ingest is true before rusqlite starts
             let memory = if ingest {
                 println!("Pre-initializing memory store for ingestion...");
@@ -221,26 +236,30 @@ pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
                 println!("Ingesting auto-documentation into memory store...");
                 for doc in &docs {
                     let path = format!("chronicle/auto-docs/{}", doc.module);
-                    
+
                     // Let's add content hash check to skip unchanged docs
                     let hash = {
-                        use sha2::{Sha256, Digest};
+                        use sha2::{Digest, Sha256};
                         let mut hasher = Sha256::new();
                         hasher.update(doc.markdown.as_bytes());
                         format!("{:x}", hasher.finalize())
                     };
-                    
+
                     // Check if already exists in store and if hash matches
                     let mut skip = false;
                     if let Ok(Some(existing)) = memory.get(&path).await {
-                        if let Some(existing_hash) = existing.metadata.get("content_hash").and_then(|v| v.as_str()) {
+                        if let Some(existing_hash) = existing
+                            .metadata
+                            .get("content_hash")
+                            .and_then(|v| v.as_str())
+                        {
                             if existing_hash == hash {
                                 println!("  - Module {} is unchanged, skipping ingest", doc.module);
                                 skip = true;
                             }
                         }
                     }
-                    
+
                     if !skip {
                         let metadata = serde_json::json!({
                             "type": "auto-doc",
@@ -252,8 +271,11 @@ pub async fn handle_chronicle_command(cmd: ChronicleCommand) -> Result<()> {
                             "complexity_hotspots": doc.stats.complexity_hotspots.len(),
                             "source": "auto_docs"
                         });
-                        
-                        match memory.add_document(path.clone(), doc.markdown.clone(), metadata).await {
+
+                        match memory
+                            .add_document(path.clone(), doc.markdown.clone(), metadata)
+                            .await
+                        {
                             Ok(_) => println!("  ✓ Ingested {}", path),
                             Err(e) => eprintln!("  ✗ Failed to ingest {}: {}", path, e),
                         }
@@ -464,7 +486,11 @@ mod tests {
         let cli = TestCli::parse_from(args);
 
         match cli.cmd {
-            ChronicleCommand::Generate { since, output, ingest } => {
+            ChronicleCommand::Generate {
+                since,
+                output,
+                ingest,
+            } => {
                 assert_eq!(since, Some("2026-05-01".to_string()));
                 assert_eq!(output, Some("post.md".to_string()));
                 assert!(!ingest);

@@ -235,7 +235,7 @@ mod tests {
     #[cfg(feature = "mesh")]
     async fn transport_reconnects_on_disconnect() {
         use crate::mesh::libp2p_transport::Libp2pTransport;
-        use libp2p::{PeerId, Multiaddr};
+        use libp2p::{Multiaddr, PeerId};
 
         let identity = Arc::new(NodeIdentity::generate());
         let mut transport = Libp2pTransport::new(identity).await.unwrap();
@@ -288,10 +288,14 @@ mod tests {
         transport.record_received_bytes(1000);
         assert_eq!(transport.throughput(), (500, 1000));
 
-        transport.active_connections.store(3, std::sync::atomic::Ordering::SeqCst);
+        transport
+            .active_connections
+            .store(3, std::sync::atomic::Ordering::SeqCst);
         assert_eq!(transport.active_connections(), 3);
 
-        transport.latency_ms.store(42, std::sync::atomic::Ordering::SeqCst);
+        transport
+            .latency_ms
+            .store(42, std::sync::atomic::Ordering::SeqCst);
         assert_eq!(transport.latency_ms(), 42);
     }
 }

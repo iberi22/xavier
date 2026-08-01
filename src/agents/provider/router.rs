@@ -173,9 +173,7 @@ impl ProviderRouter {
         }
 
         // 2. Add Local as last resort if Ollama is reachable
-        if Self::is_ollama_reachable().await
-            && !chain.contains(&ProviderKind::Local)
-        {
+        if Self::is_ollama_reachable().await && !chain.contains(&ProviderKind::Local) {
             chain.push(ProviderKind::Local);
         }
 
@@ -526,10 +524,19 @@ mod tests {
             "http://local-2".to_string(),
         ]);
 
-        assert_eq!(router.local_endpoints(), &["http://local-1", "http://local-2"]);
+        assert_eq!(
+            router.local_endpoints(),
+            &["http://local-1", "http://local-2"]
+        );
         assert_eq!(router.current_local_endpoint_idx(), 0);
-        assert_eq!(router.current_local_endpoint(), Some("http://local-1".to_string()));
-        assert_eq!(std::env::var("XAVIER_LOCAL_LLM_URL").unwrap(), "http://local-1");
+        assert_eq!(
+            router.current_local_endpoint(),
+            Some("http://local-1".to_string())
+        );
+        assert_eq!(
+            std::env::var("XAVIER_LOCAL_LLM_URL").unwrap(),
+            "http://local-1"
+        );
 
         if let Some(val) = orig_env {
             std::env::set_var("XAVIER_LOCAL_LLM_URL", val);
@@ -559,16 +566,28 @@ mod tests {
         assert_eq!(next, Some(ProviderKind::Local));
         assert_eq!(router.current_provider(), ProviderKind::Local);
         assert_eq!(router.current_local_endpoint_idx(), 0);
-        assert_eq!(router.current_local_endpoint(), Some("http://local-1".to_string()));
-        assert_eq!(std::env::var("XAVIER_LOCAL_LLM_URL").unwrap(), "http://local-1");
+        assert_eq!(
+            router.current_local_endpoint(),
+            Some("http://local-1".to_string())
+        );
+        assert_eq!(
+            std::env::var("XAVIER_LOCAL_LLM_URL").unwrap(),
+            "http://local-1"
+        );
 
         // Local fails -> fallback to Local (second endpoint)
         let next = router.on_provider_failure();
         assert_eq!(next, Some(ProviderKind::Local));
         assert_eq!(router.current_provider(), ProviderKind::Local);
         assert_eq!(router.current_local_endpoint_idx(), 1);
-        assert_eq!(router.current_local_endpoint(), Some("http://local-2".to_string()));
-        assert_eq!(std::env::var("XAVIER_LOCAL_LLM_URL").unwrap(), "http://local-2");
+        assert_eq!(
+            router.current_local_endpoint(),
+            Some("http://local-2".to_string())
+        );
+        assert_eq!(
+            std::env::var("XAVIER_LOCAL_LLM_URL").unwrap(),
+            "http://local-2"
+        );
 
         // Local fails (no more endpoints) -> fallback to Anthropic
         let next = router.on_provider_failure();
@@ -596,7 +615,10 @@ mod tests {
         // Manually switch to Local
         router.switch_to(ProviderKind::Local).unwrap();
         assert_eq!(router.current_local_endpoint_idx(), 0);
-        assert_eq!(router.current_local_endpoint(), Some("http://local-1".to_string()));
+        assert_eq!(
+            router.current_local_endpoint(),
+            Some("http://local-1".to_string())
+        );
 
         // Advance to index 1 manually by triggering failure
         let next = router.on_provider_failure();

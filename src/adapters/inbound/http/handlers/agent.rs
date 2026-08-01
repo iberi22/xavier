@@ -4,7 +4,7 @@
 //! responsibilities within the Xavier cognitive memory system.
 use crate::adapters::inbound::http::AppState;
 use crate::coordination::agent_registry::AgentMetadata;
-use axum::{extract::State, Json, response::IntoResponse};
+use axum::{extract::State, response::IntoResponse, Json};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Deserialize)]
@@ -49,7 +49,11 @@ pub async fn agent_register_handler(
         status: if success { "ok" } else { "error" },
         agent_id: payload.agent_id,
         session_id: payload.session_id,
-        message: if success { "Agent registered successfully" } else { "Registration failed" },
+        message: if success {
+            "Agent registered successfully"
+        } else {
+            "Registration failed"
+        },
     })
 }
 
@@ -70,7 +74,11 @@ pub async fn agent_heartbeat_handler(
     Json(AgentHeartbeatResponse {
         status: if success { "ok" } else { "error" },
         agent_id,
-        message: if success { "Heartbeat recorded" } else { "Agent not found" },
+        message: if success {
+            "Heartbeat recorded"
+        } else {
+            "Agent not found"
+        },
     })
 }
 
@@ -109,7 +117,11 @@ pub async fn agent_unregister_handler(
     Json(AgentUnregisterResponse {
         status: if success { "ok" } else { "error" },
         agent_id,
-        message: if success { "Agent unregistered" } else { "Agent not found" },
+        message: if success {
+            "Agent unregistered"
+        } else {
+            "Agent not found"
+        },
     })
 }
 

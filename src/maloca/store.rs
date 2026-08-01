@@ -121,16 +121,8 @@ impl MalocaStore {
             features_draft: 0,
             gaps_zero_symbol_modules: vec![],
             decisions_count: g.decisions.len() as u64,
-            support_open: g
-                .support
-                .iter()
-                .filter(|t| t.status == "open")
-                .count() as u64,
-            inbox_open: g
-                .inbox
-                .iter()
-                .filter(|o| o.claimed_by.is_none())
-                .count() as u64,
+            support_open: g.support.iter().filter(|t| t.status == "open").count() as u64,
+            inbox_open: g.inbox.iter().filter(|o| o.claimed_by.is_none()).count() as u64,
         }
     }
 
@@ -523,9 +515,7 @@ fn default_state() -> PersistedState {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::maloca::types::{
-        CastVoteBody, ManagerActionBody, ManagerActionType, VoteChoice,
-    };
+    use crate::maloca::types::{CastVoteBody, ManagerActionBody, ManagerActionType, VoteChoice};
 
     fn temp_store() -> (PathBuf, Arc<MalocaStore>) {
         let dir = std::env::temp_dir().join(format!("maloca-test-{}", short_id()));
@@ -701,7 +691,11 @@ mod tests {
             .find(|n| n.node_id == GENESIS_NODE_ID)
             .expect("genesis");
         assert!(genesis.karma >= 500);
-        let local = mesh.nodes.iter().find(|n| n.node_id == "local").expect("local");
+        let local = mesh
+            .nodes
+            .iter()
+            .find(|n| n.node_id == "local")
+            .expect("local");
         assert!(local.karma < 500);
         let _ = std::fs::remove_dir_all(dir);
     }

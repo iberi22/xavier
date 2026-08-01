@@ -91,5 +91,10 @@ pub async fn delete_thread(
 ) -> impl IntoResponse {
     // Note: This logic for deletion should be implemented in ConversationsDb if needed.
     // For now, we only have placeholders.
-    crate::error::ApiError::new(StatusCode::NOT_IMPLEMENTED, "NOT_IMPLEMENTED", "thread deletion not implemented").into_response()
+    crate::error::ApiError::new(
+        StatusCode::NOT_IMPLEMENTED,
+        "NOT_IMPLEMENTED",
+        "thread deletion not implemented",
+    )
+    .into_response()
 }

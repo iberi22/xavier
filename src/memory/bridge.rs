@@ -570,8 +570,11 @@ Use token auth for local workflows.
             }]
         });
 
-        std::fs::write(&file_path, serde_json::to_string(&export_json).expect("test assertion"))
-            .expect("test assertion");
+        std::fs::write(
+            &file_path,
+            serde_json::to_string(&export_json).expect("test assertion"),
+        )
+        .expect("test assertion");
 
         let memory = QmdMemory::new_with_workspace(Arc::new(RwLock::new(Vec::new())), "ws-1");
 
@@ -604,16 +607,27 @@ Use token auth for local workflows.
         let exported = memory.export(false).await.expect("test assertion");
         assert_eq!(exported.len(), 3);
 
-        let session_doc = exported.iter().find(|d| d.path == "bridge/engram/sessions/session-1").expect("test assertion");
+        let session_doc = exported
+            .iter()
+            .find(|d| d.path == "bridge/engram/sessions/session-1")
+            .expect("test assertion");
         assert!(session_doc.content.contains("Engram session session-1"));
         assert!(session_doc.content.contains("Implemented typed memory"));
 
-        let obs_doc = exported.iter().find(|d| d.path == "bridge/engram/observations/7").expect("test assertion");
+        let obs_doc = exported
+            .iter()
+            .find(|d| d.path == "bridge/engram/observations/7")
+            .expect("test assertion");
         assert_eq!(obs_doc.metadata["engram_type"], "decision");
         assert!(obs_doc.content.contains("Typed memory schema"));
-        assert!(obs_doc.content.contains("Use canonical kinds and provenance."));
+        assert!(obs_doc
+            .content
+            .contains("Use canonical kinds and provenance."));
 
-        let prompt_doc = exported.iter().find(|d| d.path == "bridge/engram/prompts/3").expect("test assertion");
+        let prompt_doc = exported
+            .iter()
+            .find(|d| d.path == "bridge/engram/prompts/3")
+            .expect("test assertion");
         assert_eq!(prompt_doc.content, "Implement typed memory");
     }
 }

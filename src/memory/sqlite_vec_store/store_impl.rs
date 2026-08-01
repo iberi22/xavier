@@ -40,6 +40,15 @@ pub fn cosine_similarity(v1: &[f32], v2: &[f32]) -> f32 {
     dot_product / (norm_a.sqrt() * norm_b.sqrt())
 }
 
+/// Check if the new string contains the old string.
+/// Returns true if `new` is a superset of `old` (including if they are identical, or if `old` is empty).
+pub fn is_superset(new: &str, old: &str) -> bool {
+    if old.is_empty() {
+        return true;
+    }
+    new.contains(old)
+}
+
 #[async_trait]
 impl MemoryStore for VecSqliteMemoryStore {
     fn backend(&self) -> MemoryBackend {
@@ -97,18 +106,25 @@ impl MemoryStore for VecSqliteMemoryStore {
             let project_id_c = self.project_id.clone();
             let dedup_settings_c = dedup_settings.clone();
 
-            let record_ns = match crate::memory::schema::resolve_metadata(&record_c.path, &record_c.metadata, &record_c.workspace_id, None) {
+            let record_ns = match crate::memory::schema::resolve_metadata(
+                &record_c.path,
+                &record_c.metadata,
+                &record_c.workspace_id,
+                None,
+            ) {
                 Ok(res) => res.namespace,
                 Err(_) => crate::memory::schema::MemoryNamespace::default(),
             };
 
-            let namespaces_match = |ns1: &crate::memory::schema::MemoryNamespace, ns2: &crate::memory::schema::MemoryNamespace| -> bool {
-                ns1.org_id == ns2.org_id &&
-                ns1.user_id == ns2.user_id &&
-                ns1.agent_id == ns2.agent_id &&
-                ns1.session_id == ns2.session_id &&
-                ns1.project == ns2.project &&
-                ns1.scope == ns2.scope
+            let namespaces_match = |ns1: &crate::memory::schema::MemoryNamespace,
+                                    ns2: &crate::memory::schema::MemoryNamespace|
+             -> bool {
+                ns1.org_id == ns2.org_id
+                    && ns1.user_id == ns2.user_id
+                    && ns1.agent_id == ns2.agent_id
+                    && ns1.session_id == ns2.session_id
+                    && ns1.project == ns2.project
+                    && ns1.scope == ns2.scope
             };
 
             let query_res = ConnectionManager::global().with_conn(&project_id_c, move |conn| {
@@ -292,11 +308,33 @@ impl MemoryStore for VecSqliteMemoryStore {
                         existing_record.id
                     );
                     // Decrypt existing record first if it's encrypted so revisioned_record merges correctly
-                    let _ = crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(&mut existing_record);
-                    record = crate::memory::store::revisioned_record(existing_record, record);
-                    if record.revisions.len() > dedup_settings.max_revisions {
-                        let excess = record.revisions.len() - dedup_settings.max_revisions;
-                        record.revisions.drain(0..excess);
+                    let _ = crate::memory::sqlite_store::SqliteMemoryStore::decrypt_record(
+                        &mut existing_record,
+                    );
+
+                    if is_superset(&record.content, &existing_record.content) {
+                        // REPLACE in place, no revision
+                        let existing_revisions = existing_record.revisions.clone();
+                        let existing_revision_num = existing_record.revision;
+
+                        record.id = existing_record.id.clone();
+                        record.created_at = existing_record.created_at;
+                        record.updated_at = chrono::Utc::now();
+                        record.revision = existing_revision_num + 1;
+                        record.revisions = existing_revisions; // No new revision pushed!
+                    } else {
+                        // Push 1 revision, enforce max_revisions (default 5)
+                        record = crate::memory::store::revisioned_record(existing_record, record);
+
+                        let max_revs = if dedup_settings.max_revisions > 0 {
+                            dedup_settings.max_revisions
+                        } else {
+                            5
+                        };
+                        if record.revisions.len() > max_revs {
+                            let excess = record.revisions.len() - max_revs;
+                            record.revisions.drain(0..excess);
+                        }
                     }
                 } else {
                     tracing::info!(

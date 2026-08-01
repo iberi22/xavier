@@ -14,8 +14,9 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use futures_util::StreamExt;
 use libp2p::{
-    gossipsub, kad, mdns, ping, relay, identify,
-    swarm::{NetworkBehaviour, SwarmEvent}, Swarm, SwarmBuilder, PeerId, Multiaddr, Transport,
+    gossipsub, identify, kad, mdns, ping, relay,
+    swarm::{NetworkBehaviour, SwarmEvent},
+    Multiaddr, PeerId, Swarm, SwarmBuilder, Transport,
 };
 use sha2::Digest;
 use std::collections::HashMap;
@@ -59,10 +60,13 @@ pub struct Libp2pTransport {
     pub bytes_received: std::sync::atomic::AtomicU64,
 
     // Peer address tracking for reconnection
-    pub peer_addresses: std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<PeerId, Multiaddr>>>,
+    pub peer_addresses:
+        std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<PeerId, Multiaddr>>>,
 
     // Reconnection tracking
-    pub reconnect_attempts: std::sync::Arc<parking_lot::Mutex<std::collections::HashMap<PeerId, (u32, std::time::Instant)>>>,
+    pub reconnect_attempts: std::sync::Arc<
+        parking_lot::Mutex<std::collections::HashMap<PeerId, (u32, std::time::Instant)>>,
+    >,
     pub dial_queue_tx: mpsc::Sender<(PeerId, Multiaddr)>,
     pub dial_queue_rx: mpsc::Receiver<(PeerId, Multiaddr)>,
 }
@@ -95,7 +99,8 @@ impl Libp2pTransport {
         let gossipsub = gossipsub::Behaviour::new(
             gossipsub::MessageAuthenticity::Signed(local_key.clone()),
             gossipsub_config,
-        ).map_err(|e| anyhow::anyhow!(e))?;
+        )
+        .map_err(|e| anyhow::anyhow!(e))?;
 
         // Identify
         let identify = identify::Behaviour::new(identify::Config::new(
@@ -127,7 +132,8 @@ impl Libp2pTransport {
             .multiplex(libp2p::yamux::Config::default())
             .boxed();
 
-        let swarm_config = libp2p::swarm::Config::with_tokio_executor().with_idle_connection_timeout(Duration::from_secs(60));
+        let swarm_config = libp2p::swarm::Config::with_tokio_executor()
+            .with_idle_connection_timeout(Duration::from_secs(60));
 
         let swarm = SwarmBuilder::with_existing_identity(local_key)
             .with_tokio()
@@ -150,8 +156,12 @@ impl Libp2pTransport {
             latency_ms: std::sync::atomic::AtomicU64::new(0),
             bytes_sent: std::sync::atomic::AtomicU64::new(0),
             bytes_received: std::sync::atomic::AtomicU64::new(0),
-            peer_addresses: std::sync::Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new())),
-            reconnect_attempts: std::sync::Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new())),
+            peer_addresses: std::sync::Arc::new(parking_lot::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
+            reconnect_attempts: std::sync::Arc::new(parking_lot::Mutex::new(
+                std::collections::HashMap::new(),
+            )),
             dial_queue_tx,
             dial_queue_rx,
         })
@@ -192,7 +202,10 @@ impl Libp2pTransport {
 
     /// Publish a message to a GossipSub topic.
     pub async fn publish(&mut self, topic: &gossipsub::TopicHash, data: Vec<u8>) -> Result<()> {
-        self.swarm.behaviour_mut().gossipsub.publish(topic.clone(), data)?;
+        self.swarm
+            .behaviour_mut()
+            .gossipsub
+            .publish(topic.clone(), data)?;
         Ok(())
     }
 
@@ -295,7 +308,8 @@ impl Libp2pTransport {
 
     /// Retrieve number of active connections.
     pub fn active_connections(&self) -> usize {
-        self.active_connections.load(std::sync::atomic::Ordering::SeqCst)
+        self.active_connections
+            .load(std::sync::atomic::Ordering::SeqCst)
     }
 
     /// Retrieve recorded ping latency (RTT) in milliseconds.
@@ -307,18 +321,21 @@ impl Libp2pTransport {
     pub fn throughput(&self) -> (u64, u64) {
         (
             self.bytes_sent.load(std::sync::atomic::Ordering::SeqCst),
-            self.bytes_received.load(std::sync::atomic::Ordering::SeqCst),
+            self.bytes_received
+                .load(std::sync::atomic::Ordering::SeqCst),
         )
     }
 
     /// Record bytes sent.
     pub fn record_sent_bytes(&self, bytes: u64) {
-        self.bytes_sent.fetch_add(bytes, std::sync::atomic::Ordering::SeqCst);
+        self.bytes_sent
+            .fetch_add(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Record bytes received.
     pub fn record_received_bytes(&self, bytes: u64) {
-        self.bytes_received.fetch_add(bytes, std::sync::atomic::Ordering::SeqCst);
+        self.bytes_received
+            .fetch_add(bytes, std::sync::atomic::Ordering::SeqCst);
     }
 
     /// Get a snapshot of currently known peers.

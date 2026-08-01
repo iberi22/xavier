@@ -212,7 +212,10 @@ impl DataConsentManager {
         let revocations_path = get_token_revocations_path();
         let revocations: std::collections::HashSet<String> = if revocations_path.exists() {
             let rev_content = std::fs::read_to_string(&revocations_path)?;
-            serde_json::from_str::<Vec<String>>(&rev_content).unwrap_or_default().into_iter().collect()
+            serde_json::from_str::<Vec<String>>(&rev_content)
+                .unwrap_or_default()
+                .into_iter()
+                .collect()
         } else {
             std::collections::HashSet::new()
         };

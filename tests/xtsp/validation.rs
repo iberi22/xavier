@@ -11,12 +11,12 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tower::ServiceExt;
 
-use xavier::AppState;
-use xavier::workspace::WorkspaceContext;
 use xavier::server::v1_api::{
-    v1_memories_add, v1_memories_delete, v1_memories_get, v1_memories_list,
-    v1_memories_prune, v1_memories_search, v1_memories_update,
+    v1_memories_add, v1_memories_delete, v1_memories_get, v1_memories_list, v1_memories_prune,
+    v1_memories_search, v1_memories_update,
 };
+use xavier::workspace::WorkspaceContext;
+use xavier::AppState;
 
 static TEST_MUTEX: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
@@ -36,10 +36,16 @@ pub async fn test_state() -> (AppState, WorkspaceContext, mockito::ServerGuard) 
     let mock_url = server.url();
 
     let vec_db_path = unique_test_path("xavier-vec-store", "memories_vec.db");
-    std::env::set_var("XAVIER_MEMORY_VEC_PATH", vec_db_path.to_string_lossy().to_string());
+    std::env::set_var(
+        "XAVIER_MEMORY_VEC_PATH",
+        vec_db_path.to_string_lossy().to_string(),
+    );
     std::env::set_var("XAVIER_EMBEDDING_DIMENSIONS", "1536");
     std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "cloud");
-    std::env::set_var("XAVIER_EMBEDDING_URL", format!("{}/v1/embeddings", mock_url));
+    std::env::set_var(
+        "XAVIER_EMBEDDING_URL",
+        format!("{}/v1/embeddings", mock_url),
+    );
     std::env::set_var("OPENAI_API_KEY", "sk-mock-key");
     std::env::set_var("XAVIER_EMBEDDING_MODEL", "text-embedding-3-small");
 
@@ -366,7 +372,9 @@ async fn xtsp_page_in() {
 
     let search_body = get_json_body(search_res).await;
     let candidates_val = &search_body["result"]["content"][0]["structuredContent"]["candidates"];
-    let candidates = candidates_val.as_array().expect("candidates should be array");
+    let candidates = candidates_val
+        .as_array()
+        .expect("candidates should be array");
     assert!(!candidates.is_empty(), "candidates should not be empty");
 
     let candidate = &candidates[0];
@@ -395,7 +403,9 @@ async fn xtsp_page_in() {
 
     let context_body = get_json_body(context_res).await;
     let context_data = &context_body["result"]["content"][0]["structuredContent"];
-    let content = context_data["content"].as_str().expect("content should be string");
+    let content = context_data["content"]
+        .as_str()
+        .expect("content should be string");
     assert!(
         content.contains("The XTSP protocol standardizes fat index search"),
         "context should contain original content"
@@ -443,8 +453,12 @@ async fn xtsp_persist() {
     .await;
     assert_eq!(search_res.status(), StatusCode::OK);
     let search_body = read_v1_json_body(search_res).await;
-    let results = search_body["results"].as_array().expect("results should be array");
-    let found = results.iter().any(|item| item["id"].as_str().unwrap() == id && item["memory"].as_str().unwrap() == text);
+    let results = search_body["results"]
+        .as_array()
+        .expect("results should be array");
+    let found = results
+        .iter()
+        .any(|item| item["id"].as_str().unwrap() == id && item["memory"].as_str().unwrap() == text);
     assert!(found, "stored memory should be retrievable by search");
 }
 
@@ -453,8 +467,6 @@ async fn xtsp_dedup() {
     let _guard = TEST_MUTEX.lock().await;
     let (state, workspace, _server) = test_state().await;
     let app = v1_router(state.clone(), workspace.clone());
-
-
 
     let text = "Identical content for dedup verification.";
     let user_id = "test-user-dedup";
@@ -484,18 +496,29 @@ async fn xtsp_dedup() {
     let docs = workspace.workspace.memory.all_documents().await;
     println!("DEDUP DEBUG: Direct memory document count: {}", docs.len());
     for (i, doc) in docs.iter().enumerate() {
-        println!("DEDUP DEBUG: Direct doc {}: id={:?}, path={}, content_vector_len={:?}",
-            i, doc.id, doc.path, doc.content_vector.as_ref().map(|v| v.len()));
+        println!(
+            "DEDUP DEBUG: Direct doc {}: id={:?}, path={}, content_vector_len={:?}",
+            i,
+            doc.id,
+            doc.path,
+            doc.content_vector.as_ref().map(|v| v.len())
+        );
     }
 
     // List all memories
     let list_res = get_v1(app.clone(), "/v1/memories?limit=100").await;
     assert_eq!(list_res.status(), StatusCode::OK);
     let list_body = read_v1_json_body(list_res).await;
-    let memories = list_body["memories"].as_array().expect("memories should be array");
+    let memories = list_body["memories"]
+        .as_array()
+        .expect("memories should be array");
 
     // Should only have exactly 1 memory
-    assert_eq!(memories.len(), 1, "There should be exactly one memory after 3 identical writes");
+    assert_eq!(
+        memories.len(),
+        1,
+        "There should be exactly one memory after 3 identical writes"
+    );
     assert_eq!(memories[0]["memory"].as_str().unwrap(), text);
 }
 
@@ -607,7 +630,9 @@ async fn xtsp_full_flow() {
     .await;
     assert_eq!(search_res.status(), StatusCode::OK);
     let search_body = read_v1_json_body(search_res).await;
-    let search_results = search_body["results"].as_array().expect("results should be array");
+    let search_results = search_body["results"]
+        .as_array()
+        .expect("results should be array");
     assert!(!search_results.is_empty());
     let search_item = &search_results[0];
     let found_id = search_item["id"].as_str().expect("id should be string");
@@ -618,7 +643,9 @@ async fn xtsp_full_flow() {
     let get_res = get_v1(app.clone(), &format!("/v1/memories/{}", found_id)).await;
     assert_eq!(get_res.status(), StatusCode::OK);
     let get_body = read_v1_json_body(get_res).await;
-    let paged_text = get_body["memory"]["memory"].as_str().expect("memory should be string");
+    let paged_text = get_body["memory"]["memory"]
+        .as_str()
+        .expect("memory should be string");
     assert_eq!(paged_text, original_text);
 
     // 3. Modify -> 4. Persist (PUT update)
@@ -638,7 +665,9 @@ async fn xtsp_full_flow() {
     let get_verify_res = get_v1(app.clone(), &format!("/v1/memories/{}", found_id)).await;
     assert_eq!(get_verify_res.status(), StatusCode::OK);
     let get_verify_body = read_v1_json_body(get_verify_res).await;
-    let final_text = get_verify_body["memory"]["memory"].as_str().expect("memory should be string");
+    let final_text = get_verify_body["memory"]["memory"]
+        .as_str()
+        .expect("memory should be string");
     assert_eq!(final_text, modified_text);
 }
 
@@ -656,7 +685,8 @@ async fn xtsp_token_savings() {
 
     large_markdown.push_str("## 1. Core Architecture Overview\n\n");
     large_markdown.push_str("At the core of Xavier is a Hexagonal Architecture (Ports and Adapters design pattern), separating the core domain workflows from transport protocols, external persistence adapters, and cryptographic providers. This separation of concerns ensures that the core codebase remains highly maintainable and easily testable without mock-heavy or slow integration pipelines.\n\n");
-    large_markdown.push_str("The architecture is organized into distinct, well-defined layers:\n\n");
+    large_markdown
+        .push_str("The architecture is organized into distinct, well-defined layers:\n\n");
     large_markdown.push_str("- **L0: Semantic Vector Cache**: Extremely fast local memory backed by memory-mapped SQLite-Vec extensions.\n");
     large_markdown.push_str("- **L1: Knowledge Graph (Belief System)**: Maps named entities and complex conceptual relations using a lightweight in-memory directed acyclic graph.\n");
     large_markdown.push_str("- **L2: Episodic Store**: Keeps chronological, context-aware session transcripts synchronized periodically.\n\n");
@@ -672,11 +702,15 @@ async fn xtsp_token_savings() {
     large_markdown.push_str("}\n");
     large_markdown.push_str("```\n\n");
 
-    large_markdown.push_str("## 3. High-Throughput Token Staking and Node Activation Mechanics\n\n");
+    large_markdown
+        .push_str("## 3. High-Throughput Token Staking and Node Activation Mechanics\n\n");
     large_markdown.push_str("Integrating central Web2 billing providers like Stripe is strictly prohibited under the project guidelines; all network locking, node activation, and incentives rely solely on utility token staking ($SWAL) or node-level mesh treasury ownership. Nodes operating within the Xavier Mesh network are required to register themselves by staking a minimum threshold of tokens to guarantee high performance, low-latency execution, and honest security reporting.\n\n");
 
     for i in 1..=2 {
-        large_markdown.push_str(&format!("### Subsection 3.{} - Distributed Ledger Staking Phase {}\n\n", i, i));
+        large_markdown.push_str(&format!(
+            "### Subsection 3.{} - Distributed Ledger Staking Phase {}\n\n",
+            i, i
+        ));
         large_markdown.push_str("Distributed state consistency is maintained across all network participants via a lightweight consensus loop. ");
         large_markdown.push_str("When a node joins, it executes a pair of handshake protocols to prove its local capacity and stake integrity. ");
         large_markdown.push_str("Staking transactions are recorded in the local mesh treasury using multi-signature wallets to prevent double-spending or single-point-of-failure vulnerabilities. ");
@@ -694,7 +728,9 @@ async fn xtsp_token_savings() {
 
     large_markdown.push_str("## 5. Security & Threat Modeling\n\n");
     large_markdown.push_str("Security is enforced at every layer of the incoming data stream. The SecurityService runs multi-layered scanning engines to detect prompt injection vectors, high-entropy API key leaks, and unauthorized mesh command injections. ");
-    large_markdown.push_str("If a potential threat is detected, the request is immediately quarantined and logged. ");
+    large_markdown.push_str(
+        "If a potential threat is detected, the request is immediately quarantined and logged. ",
+    );
     large_markdown.push_str("This robust security policy ensures that the node is protected against malicious agents and adversarial attacks while maintaining low overhead and zero-copy performance metrics.\n\n");
 
     large_markdown.push_str("## 6. Long-Term Roadmap and Future Milestones\n\n");
@@ -702,10 +738,15 @@ async fn xtsp_token_savings() {
     large_markdown.push_str("The decentralized marketplace allows nodes to dynamically trade datasets, share compute capacity, and participate in governance DAO proposals on-chain.\n\n");
 
     for section in 1..=1 {
-        large_markdown.push_str(&format!("## Section Appendix {} - Detailed Technical Implementation Notes\n\n", section));
+        large_markdown.push_str(&format!(
+            "## Section Appendix {} - Detailed Technical Implementation Notes\n\n",
+            section
+        ));
         large_markdown.push_str("This appendix contains supplementary information detailing the dynamic Reciprocal Rank Fusion parameters. ");
         large_markdown.push_str("To balance performance and accuracy, Xavier adjusts the RRF K value based on the underlying dataset size. ");
-        large_markdown.push_str("For tiny datasets under 100 entries, K is optimized to 10 to ensure swift recall. ");
+        large_markdown.push_str(
+            "For tiny datasets under 100 entries, K is optimized to 10 to ensure swift recall. ",
+        );
         large_markdown.push_str("For medium datasets (up to 500 entries), K is scaled to 30. ");
         large_markdown.push_str("Large corpora utilize K=60. ");
         large_markdown.push_str("This adaptive scaling mechanism minimizes memory overhead while preserving the high precision of search queries.\n\n");
@@ -769,8 +810,14 @@ async fn xtsp_token_savings() {
 
     println!("Full response string: {}", full_response_str);
     println!("Snippet response string: {}", snippet_response_str);
-    println!("Full response size (honest token estimation): {}", full_response_size);
-    println!("Snippet response size (honest token estimation): {}", snippet_response_size);
+    println!(
+        "Full response size (honest token estimation): {}",
+        full_response_size
+    );
+    println!(
+        "Snippet response size (honest token estimation): {}",
+        snippet_response_size
+    );
 
     assert!(
         snippet_response_size < 0.15 * full_response_size,

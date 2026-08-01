@@ -116,15 +116,9 @@ mod tests {
             triplets: [100, 50, 200, 10, 900, 300],
         };
         let asc = OrderedChallenge::new(OrderMode::Asc, &codes);
-        assert_eq!(
-            asc.expected_response(&codes),
-            [10, 50, 100, 200, 300, 900]
-        );
+        assert_eq!(asc.expected_response(&codes), [10, 50, 100, 200, 300, 900]);
         let desc = OrderedChallenge::new(OrderMode::Desc, &codes);
-        assert_eq!(
-            desc.expected_response(&codes),
-            [900, 300, 200, 100, 50, 10]
-        );
+        assert_eq!(desc.expected_response(&codes), [900, 300, 200, 100, 50, 10]);
         assert!(asc.verify(&asc.expected_response(&codes), &codes));
         assert!(!asc.verify(&desc.expected_response(&codes), &codes));
     }

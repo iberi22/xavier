@@ -851,7 +851,8 @@ pub async fn handle_memory_tool(
 
                     let doc_content = if is_this_doc_truncated {
                         let mut truncated: String =
-                            crate::memory::snippet::clip_chars(&record.content, max_chars_per_doc).to_string();
+                            crate::memory::snippet::clip_chars(&record.content, max_chars_per_doc)
+                                .to_string();
                         truncated.push_str("\n[... doc truncated ...]");
                         truncated
                     } else {
@@ -875,7 +876,8 @@ pub async fn handle_memory_tool(
                         id: record.id.clone().unwrap_or_default(),
                         path: record.path.clone(),
                         score: 0.0,
-                        snippet: crate::memory::snippet::clip_chars(&record.content, 200).to_string(),
+                        snippet: crate::memory::snippet::clip_chars(&record.content, 200)
+                            .to_string(),
                         provenance: MCPProvenance {
                             source: "search_filtered".to_string(),
                             retrieved_at: chrono::Utc::now().to_rfc3339(),
@@ -898,7 +900,8 @@ pub async fn handle_memory_tool(
                         total_chars, max_chars
                     ));
                     // Truncate at character boundary
-                    let mut truncated_text: String = crate::memory::snippet::clip_chars(&context, max_chars).to_string();
+                    let mut truncated_text: String =
+                        crate::memory::snippet::clip_chars(&context, max_chars).to_string();
                     truncated_text.push_str("\n[... truncated ...]");
                     context = truncated_text;
                 } else if any_doc_truncated {
@@ -957,7 +960,11 @@ pub async fn handle_memory_tool(
             for doc in docs {
                 // 1. Filter by kind
                 if let Some(ref k) = kind {
-                    let doc_kind = doc.metadata.get("kind").and_then(|v| v.as_str()).unwrap_or("");
+                    let doc_kind = doc
+                        .metadata
+                        .get("kind")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
                     if !doc_kind.eq_ignore_ascii_case(k) {
                         continue;
                     }
@@ -1131,8 +1138,14 @@ async fn secure_mcp_external_input(
 }
 
 /// Helper to extract the last accessed time for a `MemoryDocument`.
-fn get_doc_last_accessed(doc: &crate::memory::qmd_memory::MemoryDocument) -> chrono::DateTime<chrono::Utc> {
-    if let Some(last_accessed_val) = doc.metadata.get("last_accessed_at").and_then(|v| v.as_str()) {
+fn get_doc_last_accessed(
+    doc: &crate::memory::qmd_memory::MemoryDocument,
+) -> chrono::DateTime<chrono::Utc> {
+    if let Some(last_accessed_val) = doc
+        .metadata
+        .get("last_accessed_at")
+        .and_then(|v| v.as_str())
+    {
         if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(last_accessed_val) {
             return parsed.with_timezone(&chrono::Utc);
         }

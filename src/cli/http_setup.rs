@@ -153,7 +153,9 @@ pub async fn auth_middleware(
 
     // 5. Check JWT Tokens
     if let Ok(secret) = std::env::var("XAVIER_JWT_SECRET") {
-        if let Ok(claims) = xavier::security::auth::validate_jwt(provided_token_str, secret.as_bytes()) {
+        if let Ok(claims) =
+            xavier::security::auth::validate_jwt(provided_token_str, secret.as_bytes())
+        {
             let mut req = req;
             req.extensions_mut().insert(SessionInfo {
                 is_ephemeral: false,

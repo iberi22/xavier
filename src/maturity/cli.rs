@@ -190,10 +190,7 @@ pub fn run_maturity_scan(codebase_root: &str, anchors_path: &Path) -> Result<Mat
 }
 
 /// Run the deep maturity scan (v2) and return the result.
-pub fn run_deep_maturity_scan(
-    codebase_root: &str,
-    anchors_path: &Path,
-) -> Result<MaturityResult> {
+pub fn run_deep_maturity_scan(codebase_root: &str, anchors_path: &Path) -> Result<MaturityResult> {
     let scanner = MaturityScanner::new(anchors_path, codebase_root)?.with_deep_scan();
     Ok(scanner.scan())
 }

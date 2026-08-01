@@ -38,10 +38,7 @@ pub fn panel_ui_root() -> PathBuf {
             candidates.push(cwd.join("panel-ui"));
         }
 
-        candidates.push(
-            Path::new(env!("CARGO_MANIFEST_DIR"))
-                .join(PANEL_BUILD_DIR),
-        );
+        candidates.push(Path::new(env!("CARGO_MANIFEST_DIR")).join(PANEL_BUILD_DIR));
 
         for candidate in candidates {
             if candidate.join("index.html").is_file() {

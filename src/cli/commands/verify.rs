@@ -4,9 +4,11 @@ use crate::cli::commands::enums::VerifyCommand;
 use crate::cli::handlers::system_scan::{
     format_as_json, format_as_markdown, format_as_table, scan_system,
 };
-use xavier_lib::verification::feature_scanner::{format_report_json, format_report_table, scan_features};
 use anyhow::Result;
 use std::path::Path;
+use xavier_lib::verification::feature_scanner::{
+    format_report_json, format_report_table, scan_features,
+};
 
 /// Handle verify command.
 pub async fn handle_verify_command(cmd: VerifyCommand) -> Result<()> {

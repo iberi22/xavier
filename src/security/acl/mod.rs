@@ -2,8 +2,8 @@ pub mod hierarchy;
 
 pub use hierarchy::{AclRole, RoleHierarchy};
 
-use std::collections::{HashMap, HashSet};
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
 /// Permissions defined for access control.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

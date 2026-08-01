@@ -26,12 +26,8 @@ impl ShamirSplit {
         if !(2..=n).contains(&k) || n > 254 {
             anyhow::bail!("invalid Shamir parameters k={k} n={n}");
         }
-        let mut shares: Vec<ShamirShare> = (1..=n)
-            .map(|x| ShamirShare {
-                x,
-                ys: [0u8; 32],
-            })
-            .collect();
+        let mut shares: Vec<ShamirShare> =
+            (1..=n).map(|x| ShamirShare { x, ys: [0u8; 32] }).collect();
 
         for (byte_idx, &secret_byte) in secret.iter().enumerate() {
             let mut coeffs = vec![secret_byte];

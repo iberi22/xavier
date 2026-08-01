@@ -412,22 +412,27 @@ mod tests {
     #[tokio::test]
     async fn test_semantic_deduplication() {
         let unique_id = ulid::Ulid::new().to_string();
-        let db_path = std::env::temp_dir().join(format!("xavier-test-vec-store-{}.sqlite3", unique_id));
+        let db_path =
+            std::env::temp_dir().join(format!("xavier-test-vec-store-{}.sqlite3", unique_id));
         let _ = std::fs::remove_file(&db_path);
 
         let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig {
             path: db_path.clone(),
             embedding_dimensions: 128,
         };
-        let store = crate::memory::sqlite_vec_store::VecSqliteMemoryStore::new(config).await.unwrap();
+        let store = crate::memory::sqlite_vec_store::VecSqliteMemoryStore::new(config)
+            .await
+            .unwrap();
 
         // Configure active dedup settings to be enabled for this test
-        store.set_dedup_settings(crate::settings::types::DedupSettings {
-            enabled: true,
-            threshold: 0.90,
-            scope: crate::settings::types::DedupScope::PathExact,
-            max_revisions: 5,
-        }).await;
+        store
+            .set_dedup_settings(crate::settings::types::DedupSettings {
+                enabled: true,
+                threshold: 0.90,
+                scope: crate::settings::types::DedupScope::PathExact,
+                max_revisions: 5,
+            })
+            .await;
 
         // 1. Store first memory
         let rec1 = MemoryRecord {
@@ -482,22 +487,27 @@ mod tests {
     #[tokio::test]
     async fn test_custom_dedup_policies() {
         let unique_id = ulid::Ulid::new().to_string();
-        let db_path = std::env::temp_dir().join(format!("xavier-test-dedup-config-{}.sqlite3", unique_id));
+        let db_path =
+            std::env::temp_dir().join(format!("xavier-test-dedup-config-{}.sqlite3", unique_id));
         let _ = std::fs::remove_file(&db_path);
 
         let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig {
             path: db_path.clone(),
             embedding_dimensions: 128,
         };
-        let store = crate::memory::sqlite_vec_store::VecSqliteMemoryStore::new(config).await.unwrap();
+        let store = crate::memory::sqlite_vec_store::VecSqliteMemoryStore::new(config)
+            .await
+            .unwrap();
 
         // Policy: disabled
-        store.set_dedup_settings(crate::settings::types::DedupSettings {
-            enabled: false,
-            threshold: 0.92,
-            scope: crate::settings::types::DedupScope::PathExact,
-            max_revisions: 5,
-        }).await;
+        store
+            .set_dedup_settings(crate::settings::types::DedupSettings {
+                enabled: false,
+                threshold: 0.92,
+                scope: crate::settings::types::DedupScope::PathExact,
+                max_revisions: 5,
+            })
+            .await;
 
         let rec1 = MemoryRecord {
             id: "dis1".to_string(),
@@ -526,12 +536,14 @@ mod tests {
         assert_eq!(list.len(), 2);
 
         // Policy: enabled, scope: PathExact, threshold: 0.95
-        store.set_dedup_settings(crate::settings::types::DedupSettings {
-            enabled: true,
-            threshold: 0.95,
-            scope: crate::settings::types::DedupScope::PathExact,
-            max_revisions: 2,
-        }).await;
+        store
+            .set_dedup_settings(crate::settings::types::DedupSettings {
+                enabled: true,
+                threshold: 0.95,
+                scope: crate::settings::types::DedupScope::PathExact,
+                max_revisions: 2,
+            })
+            .await;
 
         // Reset store by using different workspace ID
         let rec3 = MemoryRecord {
@@ -586,7 +598,10 @@ mod tests {
             after_exact.len(),
             2,
             "exact-match put must merge, not append; ids={:?}",
-            after_exact.iter().map(|r| (&r.id, r.revision)).collect::<Vec<_>>()
+            after_exact
+                .iter()
+                .map(|r| (&r.id, r.revision))
+                .collect::<Vec<_>>()
         );
         let item = after_exact
             .iter()
@@ -617,19 +632,25 @@ mod tests {
             .iter()
             .max_by_key(|r| r.revision)
             .expect("at least one record");
-        assert!(item.revision >= 3, "expected further revision bump, got {}", item.revision);
+        assert!(
+            item.revision >= 3,
+            "expected further revision bump, got {}",
+            item.revision
+        );
         assert!(
             item.revisions.len() <= 2,
             "revisions must be capped to max_revisions=2, got {}",
             item.revisions.len()
         );
         // Policy: enabled, scope: Namespace, threshold: 0.90
-        store.set_dedup_settings(crate::settings::types::DedupSettings {
-            enabled: true,
-            threshold: 0.90,
-            scope: crate::settings::types::DedupScope::Namespace,
-            max_revisions: 5,
-        }).await;
+        store
+            .set_dedup_settings(crate::settings::types::DedupSettings {
+                enabled: true,
+                threshold: 0.90,
+                scope: crate::settings::types::DedupScope::Namespace,
+                max_revisions: 5,
+            })
+            .await;
 
         // Namespace match: different paths but identical namespaces
         let rec7 = MemoryRecord {

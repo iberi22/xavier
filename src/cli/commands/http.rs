@@ -84,7 +84,13 @@ pub async fn recall_memories(query: &str, limit: usize, offline_ok: bool) -> Res
                                 } else {
                                     content.to_string()
                                 };
-                                println!("{:>3}. [{:>12}] σ={:.3}  {}", i + 1, kind, score, preview);
+                                println!(
+                                    "{:>3}. [{:>12}] σ={:.3}  {}",
+                                    i + 1,
+                                    kind,
+                                    score,
+                                    preview
+                                );
                             }
                             Ok(())
                         }
@@ -126,7 +132,13 @@ pub async fn recall_memories(query: &str, limit: usize, offline_ok: bool) -> Res
                                 } else {
                                     content.to_string()
                                 };
-                                println!("{:>3}. [{:>12}] σ={:.3}  {}", i + 1, kind, score, preview);
+                                println!(
+                                    "{:>3}. [{:>12}] σ={:.3}  {}",
+                                    i + 1,
+                                    kind,
+                                    score,
+                                    preview
+                                );
                             }
                             Ok(())
                         }
@@ -223,7 +235,10 @@ where
                 match load_spawn_memory().await {
                     Ok(memory) => offline_fn(memory).await,
                     Err(e) => {
-                        println!("❌ Failed to initialize local offline database store: {}", e);
+                        println!(
+                            "❌ Failed to initialize local offline database store: {}",
+                            e
+                        );
                         Err(anyhow::anyhow!(
                             "offline fallback failed after AUTH_FAILED: {e}"
                         ))
@@ -242,7 +257,10 @@ where
             match load_spawn_memory().await {
                 Ok(memory) => offline_fn(memory).await,
                 Err(e) => {
-                    println!("❌ Failed to initialize local offline database store: {}", e);
+                    println!(
+                        "❌ Failed to initialize local offline database store: {}",
+                        e
+                    );
                     Err(anyhow::anyhow!(
                         "offline fallback failed after CONNECTION_REFUSED: {e}"
                     ))
@@ -257,7 +275,10 @@ where
             match load_spawn_memory().await {
                 Ok(memory) => offline_fn(memory).await,
                 Err(e) => {
-                    println!("❌ Failed to initialize local offline database store: {}", e);
+                    println!(
+                        "❌ Failed to initialize local offline database store: {}",
+                        e
+                    );
                     Err(anyhow::anyhow!(
                         "offline fallback failed after HTTP {status}: {e}"
                     ))

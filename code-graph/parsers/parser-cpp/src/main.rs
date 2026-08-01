@@ -1,5 +1,5 @@
+use codegraph_types::{Language, PluginRequest, PluginResponse, Symbol, SymbolKind};
 use std::io::{self, Read};
-use codegraph_types::{PluginRequest, PluginResponse, Symbol, Language, SymbolKind};
 use tree_sitter::{Node, Parser};
 
 pub struct CppParser {
@@ -43,15 +43,7 @@ impl CppParser {
                     } else {
                         SymbolKind::Function
                     };
-                    self.push_symbol(
-                        symbols,
-                        node,
-                        source,
-                        file_path,
-                        name,
-                        kind,
-                        parent.clone(),
-                    );
+                    self.push_symbol(symbols, node, source, file_path, name, kind, parent.clone());
                 }
             }
             "class_specifier" | "struct_specifier" => {

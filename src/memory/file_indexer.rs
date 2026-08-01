@@ -133,11 +133,16 @@ impl FileIndexer {
 
         // Load cached index to check for unchanged files (mtime/size)
         let cached_index = self.load_index().await.ok().flatten();
-        let cached_files: std::collections::HashMap<String, IndexedFile> = if let Some(cache) = cached_index {
-            cache.files.into_iter().map(|f| (f.path.clone(), f)).collect()
-        } else {
-            std::collections::HashMap::new()
-        };
+        let cached_files: std::collections::HashMap<String, IndexedFile> =
+            if let Some(cache) = cached_index {
+                cache
+                    .files
+                    .into_iter()
+                    .map(|f| (f.path.clone(), f))
+                    .collect()
+            } else {
+                std::collections::HashMap::new()
+            };
 
         let mut result = IndexResult {
             total_files: 0,
@@ -408,9 +413,12 @@ mod tests {
 
         // Create test files
         let test_file1 = root_path.join("file1.md");
-        fs::write(&test_file1, "# File 1\nThis is a test file for index caching.\n")
-            .await
-            .unwrap();
+        fs::write(
+            &test_file1,
+            "# File 1\nThis is a test file for index caching.\n",
+        )
+        .await
+        .unwrap();
 
         let test_file2 = root_path.join("file2.md");
         fs::write(&test_file2, "# File 2\nAnother markdown file.\n")
@@ -443,11 +451,27 @@ mod tests {
         assert_eq!(result2.total_files, 2);
 
         // Find file1.md in both index results and compare contents/last_modified.
-        let f1_first = result1.files.iter().find(|f| f.path.contains("file1.md")).unwrap();
-        let f1_second = result2.files.iter().find(|f| f.path.contains("file1.md")).unwrap();
+        let f1_first = result1
+            .files
+            .iter()
+            .find(|f| f.path.contains("file1.md"))
+            .unwrap();
+        let f1_second = result2
+            .files
+            .iter()
+            .find(|f| f.path.contains("file1.md"))
+            .unwrap();
 
-        let f2_first = result1.files.iter().find(|f| f.path.contains("file2.md")).unwrap();
-        let f2_second = result2.files.iter().find(|f| f.path.contains("file2.md")).unwrap();
+        let f2_first = result1
+            .files
+            .iter()
+            .find(|f| f.path.contains("file2.md"))
+            .unwrap();
+        let f2_second = result2
+            .files
+            .iter()
+            .find(|f| f.path.contains("file2.md"))
+            .unwrap();
 
         // Since file1.md was modified:
         assert_ne!(f1_first.content, f1_second.content);

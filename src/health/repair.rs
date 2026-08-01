@@ -352,9 +352,7 @@ impl HealthAutoRepair {
         }
 
         let client = match reqwest::Client::builder()
-            .timeout(Duration::from_secs(
-                self.config.reconnect_timeout_secs,
-            ))
+            .timeout(Duration::from_secs(self.config.reconnect_timeout_secs))
             .build()
         {
             Ok(c) => c,

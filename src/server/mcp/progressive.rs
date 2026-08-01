@@ -9,7 +9,7 @@ mod tests {
         let router = test_router(state, workspace);
 
         // 1. Seed a large memory document
-        let document_body = "PROD_SPEC_999: " .to_string() + &"X".repeat(4000) + " END_SPEC";
+        let document_body = "PROD_SPEC_999: ".to_string() + &"X".repeat(4000) + " END_SPEC";
         let create_resp = post_json(
             router.clone(),
             json!({
@@ -47,12 +47,18 @@ mod tests {
         assert_eq!(search_resp_default.status(), axum::http::StatusCode::OK);
 
         let body_default = get_json_body(search_resp_default).await;
-        assert!(body_default["result"].is_object(), "Search result should be an object");
+        assert!(
+            body_default["result"].is_object(),
+            "Search result should be an object"
+        );
 
         let content_array_default = body_default["result"]["content"]
             .as_array()
             .expect("content should be an array");
-        assert!(!content_array_default.is_empty(), "Should return at least one search result");
+        assert!(
+            !content_array_default.is_empty(),
+            "Should return at least one search result"
+        );
 
         let structured_default = &content_array_default[0]["structuredContent"];
         let candidates_default = structured_default["candidates"]
@@ -62,10 +68,30 @@ mod tests {
 
         let candidate_default = &candidates_default[0];
         // Assert no full content is included by default (progressive disclosure)
-        assert!(!candidate_default["id"].as_str().unwrap_or("").is_empty(), "Search result should contain the ID");
-        assert_eq!(candidate_default["path"].as_str().unwrap_or(""), "specs/prod-999.txt", "Search result should contain the path");
-        assert!(candidate_default["snippet"].as_str().unwrap_or("").contains("PROD_SPEC_999"), "Search result should contain snippet");
-        assert!(candidate_default["content"].is_null() || candidate_default["content"].as_str().unwrap_or("").is_empty(), "Search result must NOT contain the full body");
+        assert!(
+            !candidate_default["id"].as_str().unwrap_or("").is_empty(),
+            "Search result should contain the ID"
+        );
+        assert_eq!(
+            candidate_default["path"].as_str().unwrap_or(""),
+            "specs/prod-999.txt",
+            "Search result should contain the path"
+        );
+        assert!(
+            candidate_default["snippet"]
+                .as_str()
+                .unwrap_or("")
+                .contains("PROD_SPEC_999"),
+            "Search result should contain snippet"
+        );
+        assert!(
+            candidate_default["content"].is_null()
+                || candidate_default["content"]
+                    .as_str()
+                    .unwrap_or("")
+                    .is_empty(),
+            "Search result must NOT contain the full body"
+        );
 
         // 3. Perform a search using `mem_search` with include_content = true
         let search_resp_full = post_json(
@@ -98,9 +124,24 @@ mod tests {
         let candidate_full = &candidates_full[0];
 
         // Assert full content is disclosed when requested
-        assert!(candidate_full["content"].as_str().unwrap_or("").contains("PROD_SPEC_999"), "Full search result must contain the content prefix");
-        assert!(candidate_full["content"].as_str().unwrap_or("").contains("END_SPEC"), "Full search result must contain the full body ending");
-        assert!(candidate_full["content"].as_str().unwrap_or("").len() > 4000, "Disclosed full search response should be large");
+        assert!(
+            candidate_full["content"]
+                .as_str()
+                .unwrap_or("")
+                .contains("PROD_SPEC_999"),
+            "Full search result must contain the content prefix"
+        );
+        assert!(
+            candidate_full["content"]
+                .as_str()
+                .unwrap_or("")
+                .contains("END_SPEC"),
+            "Full search result must contain the full body ending"
+        );
+        assert!(
+            candidate_full["content"].as_str().unwrap_or("").len() > 4000,
+            "Disclosed full search response should be large"
+        );
     }
 
     #[tokio::test]
@@ -165,7 +206,9 @@ mod tests {
         )
         .await;
         let body_rust = get_json_body(search_rust_resp).await;
-        let candidates_rust = body_rust["result"]["content"][0]["structuredContent"]["candidates"].as_array().unwrap();
+        let candidates_rust = body_rust["result"]["content"][0]["structuredContent"]["candidates"]
+            .as_array()
+            .unwrap();
         let id_rust = candidates_rust[0]["id"].as_str().unwrap();
 
         let search_python_resp = post_json(
@@ -184,11 +227,17 @@ mod tests {
         )
         .await;
         let body_python = get_json_body(search_python_resp).await;
-        let candidates_python = body_python["result"]["content"][0]["structuredContent"]["candidates"].as_array().unwrap();
+        let candidates_python = body_python["result"]["content"][0]["structuredContent"]
+            ["candidates"]
+            .as_array()
+            .unwrap();
         let id_python = candidates_python[0]["id"].as_str().unwrap();
 
         // Ensure we retrieved two different valid IDs
-        assert_ne!(id_rust, id_python, "The two documents should have unique IDs");
+        assert_ne!(
+            id_rust, id_python,
+            "The two documents should have unique IDs"
+        );
 
         // 3. Request memory_context passing ONLY the Rust ID
         let context_resp_rust = post_json(
@@ -213,13 +262,31 @@ mod tests {
         let content_rust_out = sc_rust["content"].as_str().unwrap();
 
         // Assert the returned context block has only the requested doc
-        assert!(content_rust_out.contains("Rust is a systems"), "Context should contain requested Rust document");
-        assert!(!content_rust_out.contains("Python is an interpreted"), "Context must NOT contain Python document");
-        assert_eq!(sc_rust["totalRecords"].as_u64().unwrap(), 1, "Only 1 record should be in context");
+        assert!(
+            content_rust_out.contains("Rust is a systems"),
+            "Context should contain requested Rust document"
+        );
+        assert!(
+            !content_rust_out.contains("Python is an interpreted"),
+            "Context must NOT contain Python document"
+        );
+        assert_eq!(
+            sc_rust["totalRecords"].as_u64().unwrap(),
+            1,
+            "Only 1 record should be in context"
+        );
 
         let sources_rust = sc_rust["sources"].as_array().unwrap();
-        assert_eq!(sources_rust.len(), 1, "There should be exactly one source record");
-        assert_eq!(sources_rust[0]["id"].as_str().unwrap(), id_rust, "The source record ID must match the requested Rust ID");
+        assert_eq!(
+            sources_rust.len(),
+            1,
+            "There should be exactly one source record"
+        );
+        assert_eq!(
+            sources_rust[0]["id"].as_str().unwrap(),
+            id_rust,
+            "The source record ID must match the requested Rust ID"
+        );
 
         // 4. Request memory_context passing ONLY the Python ID
         let context_resp_python = post_json(
@@ -244,12 +311,30 @@ mod tests {
         let content_python_out = sc_python["content"].as_str().unwrap();
 
         // Assert the returned context block has only the requested doc
-        assert!(content_python_out.contains("Python is an interpreted"), "Context should contain requested Python document");
-        assert!(!content_python_out.contains("Rust is a systems"), "Context must NOT contain Rust document");
-        assert_eq!(sc_python["totalRecords"].as_u64().unwrap(), 1, "Only 1 record should be in context");
+        assert!(
+            content_python_out.contains("Python is an interpreted"),
+            "Context should contain requested Python document"
+        );
+        assert!(
+            !content_python_out.contains("Rust is a systems"),
+            "Context must NOT contain Rust document"
+        );
+        assert_eq!(
+            sc_python["totalRecords"].as_u64().unwrap(),
+            1,
+            "Only 1 record should be in context"
+        );
 
         let sources_python = sc_python["sources"].as_array().unwrap();
-        assert_eq!(sources_python.len(), 1, "There should be exactly one source record");
-        assert_eq!(sources_python[0]["id"].as_str().unwrap(), id_python, "The source record ID must match the requested Python ID");
+        assert_eq!(
+            sources_python.len(),
+            1,
+            "There should be exactly one source record"
+        );
+        assert_eq!(
+            sources_python[0]["id"].as_str().unwrap(),
+            id_python,
+            "The source record ID must match the requested Python ID"
+        );
     }
 }

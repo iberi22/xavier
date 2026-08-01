@@ -6,9 +6,7 @@
 use crate::cli::codegraph_sync::{sync_codegraph_from_git, GitSyncOptions};
 use crate::cli::commands::enums::{CodeCommand, CODE_HTTP_CLIENT};
 use crate::cli::config::{require_xavier_token, resolve_base_url};
-use xavier::codebase::codegraph_sidecar::{
-    ensure_codegraph_sidecar, EnsureOptions, InstallMode,
-};
+use xavier::codebase::codegraph_sidecar::{ensure_codegraph_sidecar, EnsureOptions, InstallMode};
 
 use anyhow::{bail, Result};
 use std::path::PathBuf;
@@ -24,9 +22,7 @@ pub async fn handle_code_command(cmd: CodeCommand) -> Result<()> {
     } = &cmd
     {
         if !*git {
-            bail!(
-                "Usa --git: xavier code sync --git [--base <commit>] [--staged] [--memory]"
-            );
+            bail!("Usa --git: xavier code sync --git [--base <commit>] [--staged] [--memory]");
         }
         let workspace = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
         let result = sync_codegraph_from_git(GitSyncOptions {

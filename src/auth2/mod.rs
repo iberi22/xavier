@@ -158,8 +158,11 @@ where
     let auth_db_lock = match state.auth_db() {
         Some(db) => db,
         None => std::sync::Arc::new(parking_lot::Mutex::new(
-            AuthDb::new(std::path::Path::new(&format!("{}/.xavier/auth.db", base_path)))
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            AuthDb::new(std::path::Path::new(&format!(
+                "{}/.xavier/auth.db",
+                base_path
+            )))
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
         )),
     };
     let auth_db = auth_db_lock.lock();
@@ -238,8 +241,11 @@ where
     let auth_db_lock = match state.auth_db() {
         Some(db) => db,
         None => std::sync::Arc::new(parking_lot::Mutex::new(
-            AuthDb::new(std::path::Path::new(&format!("{}/.xavier/auth.db", base_path)))
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            AuthDb::new(std::path::Path::new(&format!(
+                "{}/.xavier/auth.db",
+                base_path
+            )))
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
         )),
     };
     let auth_db = auth_db_lock.lock();
@@ -327,8 +333,11 @@ where
     let auth_db_lock = match state.auth_db() {
         Some(db) => db,
         None => std::sync::Arc::new(parking_lot::Mutex::new(
-            AuthDb::new(std::path::Path::new(&format!("{}/.xavier/auth.db", base_path)))
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            AuthDb::new(std::path::Path::new(&format!(
+                "{}/.xavier/auth.db",
+                base_path
+            )))
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
         )),
     };
     let auth_db = auth_db_lock.lock();
@@ -371,8 +380,11 @@ where
     let auth_db_lock = match state.auth_db() {
         Some(db) => db,
         None => std::sync::Arc::new(parking_lot::Mutex::new(
-            AuthDb::new(std::path::Path::new(&format!("{}/.xavier/auth.db", base_path)))
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            AuthDb::new(std::path::Path::new(&format!(
+                "{}/.xavier/auth.db",
+                base_path
+            )))
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
         )),
     };
     let auth_db = auth_db_lock.lock();
@@ -420,8 +432,11 @@ where
     let auth_db_lock = match state.auth_db() {
         Some(db) => db,
         None => std::sync::Arc::new(parking_lot::Mutex::new(
-            AuthDb::new(std::path::Path::new(&format!("{}/.xavier/auth.db", base_path)))
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            AuthDb::new(std::path::Path::new(&format!(
+                "{}/.xavier/auth.db",
+                base_path
+            )))
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
         )),
     };
     let auth_db = auth_db_lock.lock();
@@ -523,8 +538,11 @@ where
     let auth_db_lock = match state.auth_db() {
         Some(db) => db,
         None => std::sync::Arc::new(parking_lot::Mutex::new(
-            AuthDb::new(std::path::Path::new(&format!("{}/.xavier/auth.db", base_path)))
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            AuthDb::new(std::path::Path::new(&format!(
+                "{}/.xavier/auth.db",
+                base_path
+            )))
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
         )),
     };
     let auth_db = auth_db_lock.lock();
@@ -594,8 +612,11 @@ where
     let auth_db_lock = match state.auth_db() {
         Some(db) => db,
         None => std::sync::Arc::new(parking_lot::Mutex::new(
-            AuthDb::new(std::path::Path::new(&format!("{}/.xavier/auth.db", base_path)))
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            AuthDb::new(std::path::Path::new(&format!(
+                "{}/.xavier/auth.db",
+                base_path
+            )))
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
         )),
     };
     let auth_db = auth_db_lock.lock();
@@ -660,8 +681,11 @@ where
     let auth_db_lock = match state.auth_db() {
         Some(db) => db,
         None => std::sync::Arc::new(parking_lot::Mutex::new(
-            AuthDb::new(std::path::Path::new(&format!("{}/.xavier/auth.db", base_path)))
-                .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
+            AuthDb::new(std::path::Path::new(&format!(
+                "{}/.xavier/auth.db",
+                base_path
+            )))
+            .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
         )),
     };
     let auth_db = auth_db_lock.lock();

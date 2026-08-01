@@ -199,7 +199,10 @@ pub async fn session_compact_handler(
     compacted_content.push_str("\n=== KEPT RECENT ENTRIES ===\n");
     for doc in &compact_docs {
         let truncate_content = if doc.content.len() > 500 {
-            format!("{}... [truncated]", crate::memory::snippet::clip_chars(&doc.content, 500))
+            format!(
+                "{}... [truncated]",
+                crate::memory::snippet::clip_chars(&doc.content, 500)
+            )
         } else {
             doc.content.clone()
         };

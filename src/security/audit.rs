@@ -78,7 +78,11 @@ impl AuditLogger {
             user_id: user_id.to_string(),
             role: role.to_string(),
             permission: permission.to_string(),
-            result: if result { "ALLOW".to_string() } else { "DENY".to_string() },
+            result: if result {
+                "ALLOW".to_string()
+            } else {
+                "DENY".to_string()
+            },
             timestamp: Utc::now(),
         };
 

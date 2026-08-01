@@ -1,17 +1,17 @@
 //! Persistent Auth Storage for Xavier
 //! Manages users, sessions, and audit logs in a dedicated auth.db
 
-use std::path::Path;
-use anyhow::{Result, anyhow};
-use std::sync::Mutex;
-use rusqlite::{Connection, params};
-use serde::{Deserialize, Serialize};
-use chrono::Utc;
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce,
 };
-use rand::{RngCore, thread_rng};
+use anyhow::{anyhow, Result};
+use chrono::Utc;
+use rand::{thread_rng, RngCore};
+use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
+use std::path::Path;
+use std::sync::Mutex;
 
 use crate::security::auth::User;
 
@@ -23,14 +23,16 @@ pub struct AuthStore {
 
 impl AuthStore {
     fn get_conn(&self) -> Result<std::sync::MutexGuard<'_, Connection>> {
-        self.conn.lock().map_err(|e| anyhow!("Database lock poisoned: {}", e))
+        self.conn
+            .lock()
+            .map_err(|e| anyhow!("Database lock poisoned: {}", e))
     }
 
     /// Get user by id.
     pub fn get_user_by_id(&self, user_id: &str) -> Result<Option<User>> {
         let conn = self.get_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT id, email, name, role, created_at, updated_at FROM users WHERE id = ?"
+            "SELECT id, email, name, role, created_at, updated_at FROM users WHERE id = ?",
         )?;
 
         let mut rows = stmt.query(params![user_id])?;
@@ -54,14 +56,17 @@ impl AuthStore {
     pub fn update_password(&self, user_id: &str, new_hash: &str) -> Result<()> {
         self.get_conn()?.execute(
             "UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?",
-            params![new_hash, Utc::now().timestamp(), user_id]
+            params![new_hash, Utc::now().timestamp(), user_id],
         )?;
         Ok(())
     }
 
     pub fn open<P: AsRef<Path>>(path: P, encryption_key: [u8; 32]) -> Result<Self> {
         let conn = Connection::open(path)?;
-        let mut store = Self { conn: Mutex::new(conn), encryption_key };
+        let mut store = Self {
+            conn: Mutex::new(conn),
+            encryption_key,
+        };
         store.init_schema()?;
         Ok(store)
     }
@@ -96,7 +101,7 @@ impl AuthStore {
                 metadata TEXT
             );
             CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp);
-            CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);"
+            CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);",
         )?;
         Ok(())
     }
@@ -167,7 +172,7 @@ impl AuthStore {
                 let decrypted = self.decrypt(&bytes)?;
                 Ok(Some(String::from_utf8(decrypted)?))
             }
-            None => Ok(None)
+            None => Ok(None),
         }
     }
 
@@ -192,7 +197,7 @@ impl AuthStore {
                 let decrypted = self.decrypt(&bytes)?;
                 Ok(Some(String::from_utf8(decrypted)?))
             }
-            None => Ok(None)
+            None => Ok(None),
         }
     }
 
@@ -209,7 +214,7 @@ impl AuthStore {
     pub fn verify_refresh_token(&self, token: &str) -> Result<Option<String>> {
         let conn = self.get_conn()?;
         let mut stmt = conn.prepare(
-            "SELECT user_id FROM refresh_tokens WHERE token = ? AND revoked = 0 AND expires_at > ?"
+            "SELECT user_id FROM refresh_tokens WHERE token = ? AND revoked = 0 AND expires_at > ?",
         )?;
         let now = Utc::now().timestamp();
         let mut rows = stmt.query(params![token, now])?;
@@ -270,7 +275,14 @@ impl AuthStore {
     }
 
     /// Log event.
-    pub fn log_event(&self, user_id: Option<&str>, event_type: &str, ip: Option<&str>, ua: Option<&str>, metadata: Option<&str>) -> Result<()> {
+    pub fn log_event(
+        &self,
+        user_id: Option<&str>,
+        event_type: &str,
+        ip: Option<&str>,
+        ua: Option<&str>,
+        metadata: Option<&str>,
+    ) -> Result<()> {
         let id = ulid::Ulid::new().to_string();
         let timestamp = Utc::now().timestamp();
         self.get_conn()?.execute(
@@ -289,7 +301,8 @@ impl AuthStore {
         thread_rng().fill_bytes(&mut nonce);
         let nonce = Nonce::from_slice(&nonce);
 
-        let ciphertext = cipher.encrypt(nonce, data)
+        let ciphertext = cipher
+            .encrypt(nonce, data)
             .map_err(|e| anyhow!("encryption failed: {}", e))?;
 
         let mut result = nonce.to_vec();
@@ -308,7 +321,8 @@ impl AuthStore {
         let (nonce_bytes, ciphertext) = data.split_at(12);
         let nonce = Nonce::from_slice(nonce_bytes);
 
-        let plaintext = cipher.decrypt(nonce, ciphertext)
+        let plaintext = cipher
+            .decrypt(nonce, ciphertext)
             .map_err(|e| anyhow!("decryption failed: {}", e))?;
 
         Ok(plaintext)

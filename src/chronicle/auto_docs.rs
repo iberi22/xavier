@@ -431,7 +431,9 @@ impl AutoDocsGenerator {
         // Full symbol listing
         md.push_str("## 📝 Full Symbol Listing\n\n");
         if symbols.is_empty() {
-            md.push_str("_No symbols indexed. Run `xavier code scan .` first to index your workspace._\n\n");
+            md.push_str(
+                "_No symbols indexed. Run `xavier code scan .` first to index your workspace._\n\n",
+            );
         } else {
             md.push_str("| Name | Kind | File | Complexity |\n");
             md.push_str("|------|------|------|-----------|\n");
@@ -708,7 +710,10 @@ pub mod search;
     #[test]
     fn test_auto_docs_config_default() {
         let config = AutoDocsConfig::default();
-        assert_eq!(config.code_graph_db, crate::codebase::codegraph_paths::code_graph_db_path_for(Path::new(".")));
+        assert_eq!(
+            config.code_graph_db,
+            crate::codebase::codegraph_paths::code_graph_db_path_for(Path::new("."))
+        );
         assert_eq!(config.source_root, PathBuf::from("src"));
         assert_eq!(config.output_dir, PathBuf::from("docs/auto-docs"));
         assert!(config.module_filter.is_none());

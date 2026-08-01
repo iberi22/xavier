@@ -1,7 +1,7 @@
-use std::path::Path;
-use std::sync::OnceLock;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::path::Path;
+use std::sync::OnceLock;
 use walkdir::WalkDir;
 
 /// Represents a local model discovered on the system.
@@ -74,10 +74,22 @@ mod tests {
 
     #[test]
     fn test_extract_quantization() {
-        assert_eq!(extract_quantization("llama-3-8b-Instruct-Q4_K_M.gguf").as_deref(), Some("Q4_K_M"));
-        assert_eq!(extract_quantization("Llama3.Q8_0.gguf").as_deref(), Some("Q8_0"));
-        assert_eq!(extract_quantization("mistral-7b-v0.1.Q2_K.gguf").as_deref(), Some("Q2_K"));
-        assert_eq!(extract_quantization("phi3-mini-fp16.gguf").as_deref(), Some("FP16"));
+        assert_eq!(
+            extract_quantization("llama-3-8b-Instruct-Q4_K_M.gguf").as_deref(),
+            Some("Q4_K_M")
+        );
+        assert_eq!(
+            extract_quantization("Llama3.Q8_0.gguf").as_deref(),
+            Some("Q8_0")
+        );
+        assert_eq!(
+            extract_quantization("mistral-7b-v0.1.Q2_K.gguf").as_deref(),
+            Some("Q2_K")
+        );
+        assert_eq!(
+            extract_quantization("phi3-mini-fp16.gguf").as_deref(),
+            Some("FP16")
+        );
         assert_eq!(extract_quantization("no-quantization.gguf"), None);
     }
 
@@ -114,12 +126,18 @@ mod tests {
 
         assert_eq!(scanned.len(), 2);
 
-        let model1 = scanned.iter().find(|m| m.name == "llama-q4_k_m.gguf").unwrap();
+        let model1 = scanned
+            .iter()
+            .find(|m| m.name == "llama-q4_k_m.gguf")
+            .unwrap();
         assert_eq!(model1.size_bytes, 18);
         assert_eq!(model1.quantization.as_deref(), Some("Q4_K_M"));
         assert_eq!(model1.path, file_path_1.to_string_lossy().to_string());
 
-        let model2 = scanned.iter().find(|m| m.name == "phi-3.Q8_0.GGUF").unwrap();
+        let model2 = scanned
+            .iter()
+            .find(|m| m.name == "phi-3.Q8_0.GGUF")
+            .unwrap();
         assert_eq!(model2.size_bytes, 28);
         assert_eq!(model2.quantization.as_deref(), Some("Q8_0"));
         assert_eq!(model2.path, file_path_2.to_string_lossy().to_string());
