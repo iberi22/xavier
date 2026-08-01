@@ -764,6 +764,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
             get(xavier::server::v1_api::v1_mesh_identity),
         )
         .route(
+            "/v1/mesh/health",
+            get(xavier::server::v1_api::v1_mesh_health),
+        )
+        .route(
             "/v1/mesh/handshake",
             post(xavier::server::v1_api::v1_mesh_handshake),
         )
