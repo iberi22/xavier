@@ -3,7 +3,9 @@
 //! Este módulo proporciona una capa de seguridad unificada para el sistema Xavier,
 //! incluyendo detección de prompt injection, sanitización de inputs y filtrado de outputs.
 
+pub mod acl;
 pub mod anticipator;
+pub mod audit;
 pub mod auth;
 pub mod auth_store;
 pub mod detections;
