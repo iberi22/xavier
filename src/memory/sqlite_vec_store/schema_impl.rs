@@ -104,8 +104,13 @@ impl VecSqliteMemoryStore {
             if n > 0 {
                 let store_clone = self.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = store_clone.reindex_null_embeddings_background().await {
-                        tracing::error!("Background reindexing failed: {}", e);
+                    match store_clone.reindex_null_embeddings_background().await {
+                        Ok(count) => {
+                            tracing::info!("Background reindexing processed {} records successfully.", count);
+                        }
+                        Err(e) => {
+                            tracing::error!("Background reindexing failed: {}", e);
+                        }
                     }
                 });
             }
@@ -115,7 +120,7 @@ impl VecSqliteMemoryStore {
     }
 
     /// Reindex null embeddings background.
-    pub async fn reindex_null_embeddings_background(&self) -> Result<()> {
+    pub async fn reindex_null_embeddings_background(&self) -> Result<usize> {
         let embedder = match crate::embedding::build_embedder_from_env().await {
             Ok(emb) => emb,
             Err(e) => {
@@ -156,7 +161,7 @@ impl VecSqliteMemoryStore {
 
         let total_records = decrypted_records.len();
         if total_records == 0 {
-            return Ok(());
+            return Ok(0);
         }
 
         tracing::info!(
@@ -166,6 +171,8 @@ impl VecSqliteMemoryStore {
 
         let batch_size = 10;
         let mut processed_count = 0;
+        let mut success_count = 0;
+        let mut fail_count = 0;
 
         for chunk in decrypted_records.chunks(batch_size) {
             let mut tasks = Vec::new();
@@ -187,7 +194,7 @@ impl VecSqliteMemoryStore {
 
                     match res {
                         Ok(emb) => Ok((record_id, emb)),
-                        Err(e) => Err(format!("Embedding failed for record {}: {}", record_id, e)),
+                        Err(e) => Err((record_id, format!("{}", e))),
                     }
                 });
             }
@@ -274,14 +281,22 @@ impl VecSqliteMemoryStore {
                                     record_id,
                                     e
                                 );
+                                fail_count += 1;
+                            } else {
+                                success_count += 1;
                             }
+                        } else {
+                            tracing::error!("Record {} not found in chunk", record_id);
+                            fail_count += 1;
                         }
                     }
-                    Err(e) => {
-                        tracing::warn!(
-                            "Gracefully handled error during background reindexing: {}",
-                            e
+                    Err((record_id, err_details)) => {
+                        tracing::error!(
+                            "Failed to generate embedding for record {}: {}",
+                            record_id,
+                            err_details
                         );
+                        fail_count += 1;
                     }
                 }
             }
@@ -298,8 +313,20 @@ impl VecSqliteMemoryStore {
             }
         }
 
-        tracing::info!("Background reindexing completed successfully.");
-        Ok(())
+        if fail_count > 0 {
+            tracing::warn!(
+                "Background reindexing completed with errors. Success: {}, Failed: {}",
+                success_count,
+                fail_count
+            );
+        } else {
+            tracing::info!(
+                "Background reindexing completed successfully. Reindexed {} records.",
+                success_count
+            );
+        }
+
+        Ok(success_count)
     }
 
     /// Check and handle embedding model change.
@@ -678,7 +705,8 @@ mod tests {
         if let Err(ref e) = reindex_result {
             panic!("reindex failed: {}", e);
         }
-        reindex_result.unwrap();
+        let success_count = reindex_result.unwrap();
+        assert_eq!(success_count, 1, "Expected exactly 1 record to be successfully reindexed");
 
         // Verify that embedding was successfully updated
         let (updated_embedding, has_vector_row) = ConnectionManager::global()
@@ -712,6 +740,84 @@ mod tests {
         assert_eq!(floats, vec![0.1f32, 0.2f32, 0.3f32]);
 
         // Cleanup env vars
+        std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
+        std::env::remove_var("XAVIER_EMBEDDING_URL");
+        std::env::remove_var("OPENAI_API_KEY");
+        std::env::remove_var("XAVIER_EMBEDDING_MODEL");
+    }
+
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn test_reindex_null_embeddings_background_with_errors() {
+        use crate::memory::store::MemoryStore;
+        let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
+
+        for key in &[
+            "XAVIER_EMBEDDING_PROVIDER_MODE",
+            "XAVIER_EMBEDDING_URL",
+            "OPENAI_API_KEY",
+            "XAVIER_EMBEDDING_MODEL",
+            "XAVIER_EMBEDDER",
+            "XAVIER_EMBEDDING_LOCAL_URL",
+        ] {
+            std::env::remove_var(key);
+        }
+
+        let mut server = mockito::Server::new_async().await;
+        let mock_url = server.url();
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("test_reindex_err.db");
+        let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig {
+            path: db_path,
+            embedding_dimensions: 3,
+        };
+
+        let store = VecSqliteMemoryStore::new(config).await.unwrap();
+
+        let record = crate::memory::store::MemoryRecord {
+            id: "test_mem_err_1".to_string(),
+            workspace_id: "test_ws_1".to_string(),
+            path: "test/path".to_string(),
+            content: "Hello world".to_string(),
+            metadata: serde_json::json!({}),
+            embedding: vec![],
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            ..Default::default()
+        };
+
+        store.put(record).await.unwrap();
+
+        std::env::set_var("XAVIER_EMBEDDING_PROVIDER_MODE", "cloud");
+        std::env::set_var(
+            "XAVIER_EMBEDDING_URL",
+            format!("{}/v1/embeddings", mock_url),
+        );
+        std::env::set_var("OPENAI_API_KEY", "test-api-key");
+        std::env::set_var("XAVIER_EMBEDDING_MODEL", "test-model");
+
+        // Mock a 500 error from embedding endpoint to trigger failure
+        let _mock = server
+            .mock("POST", "/v1/embeddings")
+            .with_status(500)
+            .create_async()
+            .await;
+
+        ConnectionManager::global()
+            .with_conn(&store.project_id, |conn| {
+                conn.execute("UPDATE memory_records SET embedding = NULL", [])
+                    .unwrap();
+                conn.execute("DELETE FROM memory_embeddings", []).unwrap();
+                Ok(())
+            })
+            .await
+            .unwrap();
+
+        let reindex_result = store.reindex_null_embeddings_background().await;
+        let success_count = reindex_result.unwrap();
+        assert_eq!(success_count, 0, "Expected 0 records to be successfully reindexed on API error");
+
         std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
         std::env::remove_var("XAVIER_EMBEDDING_URL");
         std::env::remove_var("OPENAI_API_KEY");
