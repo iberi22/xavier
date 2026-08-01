@@ -300,6 +300,37 @@ pub async fn v1_mesh_identity(
     }
 }
 
+/// V1 mesh health dashboard.
+pub async fn v1_mesh_health(
+    Extension(_workspace): Extension<WorkspaceContext>,
+) -> impl IntoResponse {
+    // License check
+    let settings = crate::settings::XavierSettings::current();
+    if let Err(e) = crate::security::license::require_mesh_license(&settings) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
+
+    let registry = match PeerRegistry::load() {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({ "error": e.to_string() })),
+            )
+                .into_response();
+        }
+    };
+
+    let telemetry = crate::health::mesh_telemetry();
+    let dashboard = crate::mesh::dashboard::aggregate_dashboard(&registry, telemetry.as_deref());
+
+    Json(dashboard).into_response()
+}
+
 /// V1 mesh handshake.
 pub async fn v1_mesh_handshake(
     Extension(_workspace): Extension<WorkspaceContext>,
@@ -1612,6 +1643,7 @@ mod tests {
             .route("/v1/memories/{id}/outline", get(v1_memories_outline))
             .route("/v1/memories/search", post(v1_memories_search))
             .route("/v1/memories/prune", post(v1_memories_prune))
+            .route("/v1/mesh/health", get(v1_mesh_health))
             .layer(Extension(workspace))
             .with_state(state)
     }
@@ -2507,5 +2539,54 @@ mod tests {
         let results_large = val_large["results"].as_array().expect("array");
         assert!(results_large.len() > 0);
         assert!(results_large.len() < 7);
+    }
+
+    #[tokio::test]
+    async fn test_v1_mesh_health() {
+        let temp_dir = std::env::temp_dir();
+        let test_config_path = temp_dir.join("test_xavier_config_mesh_health.json");
+
+        let mut settings = crate::settings::XavierSettings::default();
+        settings.license.mesh_accepted = true;
+
+        let raw = serde_json::to_string_pretty(&settings).unwrap();
+        std::fs::write(&test_config_path, raw).unwrap();
+
+        std::env::set_var("XAVIER_CONFIG_PATH", test_config_path.to_str().unwrap());
+
+        // Restore on drop
+        struct EnvGuard {
+            path: std::path::PathBuf,
+        }
+        impl Drop for EnvGuard {
+            fn drop(&mut self) {
+                std::env::remove_var("XAVIER_CONFIG_PATH");
+                let _ = std::fs::remove_file(&self.path);
+            }
+        }
+        let _guard = EnvGuard {
+            path: test_config_path.clone(),
+        };
+
+        let (state, workspace) = test_state().await;
+        let app = test_router(state, workspace);
+
+        let req = Request::builder()
+            .method("GET")
+            .uri("/v1/mesh/health")
+            .body(Body::empty())
+            .expect("failed to build request");
+
+        let resp = app.oneshot(req).await.expect("execute request");
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let body = to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("read body");
+        let val: serde_json::Value = serde_json::from_slice(&body).expect("parse JSON");
+
+        assert!(val.get("peers").is_some());
+        assert!(val.get("maturity").is_some());
+        assert!(val.get("bandwidth").is_some());
     }
 }

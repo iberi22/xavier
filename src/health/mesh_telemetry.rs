@@ -152,6 +152,33 @@ impl MeshTelemetryCollector {
         }
     }
 
+    /// Get peer latency.
+    pub fn get_peer_latency(&self, node_id: &NodeId) -> f64 {
+        let metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
+        metrics
+            .get(node_id)
+            .and_then(|m| m.latencies_ms.iter().last().copied())
+            .map(|l| l as f64)
+            .unwrap_or(0.0)
+    }
+
+    /// Get peer message count.
+    pub fn get_peer_message_count(&self, node_id: &NodeId) -> u64 {
+        let metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
+        metrics.get(node_id).map(|m| m.message_count).unwrap_or(0)
+    }
+
+    /// Get total message count.
+    pub fn get_total_message_count(&self) -> u64 {
+        let metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
+        metrics.values().map(|m| m.message_count).sum()
+    }
+
+    /// Get telemetry collector uptime duration.
+    pub fn uptime(&self) -> std::time::Duration {
+        self.started_at.elapsed()
+    }
+
     /// Number of known peers.
     pub fn peer_count(&self) -> u32 {
         let metrics = self.peer_metrics.lock().expect("metrics lock poisoned");
