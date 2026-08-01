@@ -717,4 +717,128 @@ mod tests {
         std::env::remove_var("OPENAI_API_KEY");
         std::env::remove_var("XAVIER_EMBEDDING_MODEL");
     }
+
+    #[tokio::test]
+    async fn test_is_superset() {
+        use crate::memory::sqlite_vec_store::store_impl::is_superset;
+        assert!(is_superset("hello world", "hello"));
+        assert!(is_superset("hello", "hello"));
+        assert!(is_superset("hello", ""));
+        assert!(is_superset("", ""));
+        assert!(!is_superset("hello", "world"));
+        assert!(!is_superset("", "hello"));
+        assert!(!is_superset("abc", "bcd"));
+    }
+
+    #[tokio::test]
+    async fn test_superset_merges_revisions() {
+        use crate::memory::store::MemoryStore;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("test_superset.db");
+        let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig {
+            path: db_path,
+            embedding_dimensions: 3,
+        };
+        let store = VecSqliteMemoryStore::new(config).await.unwrap();
+
+        store.set_dedup_settings(crate::settings::types::DedupSettings {
+            enabled: true,
+            threshold: 0.90,
+            scope: crate::settings::types::DedupScope::PathExact,
+            max_revisions: 5,
+        }).await;
+
+        // Put initial record with 1 initial revision
+        let rec = crate::memory::store::MemoryRecord {
+            id: "test_rec".to_string(),
+            workspace_id: "test_ws".to_string(),
+            path: "test/path".to_string(),
+            content: "Initial content".to_string(),
+            embedding: vec![0.1, 0.2, 0.3],
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            revisions: vec![crate::memory::store::MemoryRevision {
+                revision: 1,
+                recorded_at: chrono::Utc::now(),
+                path: "test/path".to_string(),
+                content: "Initial content".to_string(),
+                metadata: serde_json::json!({}),
+            }],
+            ..Default::default()
+        };
+        store.put(rec.clone()).await.unwrap();
+
+        // Perform 10 superset merges
+        let mut current_content = "Initial content".to_string();
+        for i in 1..=10 {
+            current_content = format!("{} and more {}", current_content, i);
+            let merge_rec = crate::memory::store::MemoryRecord {
+                id: format!("merge_{}", i),
+                workspace_id: "test_ws".to_string(),
+                path: "test/path".to_string(),
+                content: current_content.clone(),
+                embedding: vec![0.1, 0.2, 0.3],
+                metadata: serde_json::json!({ "dedup": true }),
+                ..Default::default()
+            };
+            store.put(merge_rec).await.unwrap();
+        }
+
+        // Fetch and assert revisions count remains 1
+        let fetched = store.get("test_ws", "test/path").await.unwrap().unwrap();
+        assert_eq!(fetched.revisions.len(), 1, "Revisions count must remain exactly 1");
+        assert_eq!(fetched.content, current_content);
+    }
+
+    #[tokio::test]
+    async fn test_different_merges_revisions_cap() {
+        use crate::memory::store::MemoryStore;
+        let temp_dir = tempfile::tempdir().unwrap();
+        let db_path = temp_dir.path().join("test_different.db");
+        let config = crate::memory::sqlite_vec_store::VecSqliteStoreConfig {
+            path: db_path,
+            embedding_dimensions: 3,
+        };
+        let store = VecSqliteMemoryStore::new(config).await.unwrap();
+
+        store.set_dedup_settings(crate::settings::types::DedupSettings {
+            enabled: true,
+            threshold: 0.90,
+            scope: crate::settings::types::DedupScope::PathExact,
+            max_revisions: 5,
+        }).await;
+
+        // Put initial record
+        let rec = crate::memory::store::MemoryRecord {
+            id: "test_rec".to_string(),
+            workspace_id: "test_ws".to_string(),
+            path: "test/path".to_string(),
+            content: "Initial content".to_string(),
+            embedding: vec![0.1, 0.2, 0.3],
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            ..Default::default()
+        };
+        store.put(rec).await.unwrap();
+
+        // Perform 10 different merges
+        for i in 1..=10 {
+            let merge_rec = crate::memory::store::MemoryRecord {
+                id: format!("merge_{}", i),
+                workspace_id: "test_ws".to_string(),
+                path: "test/path".to_string(),
+                content: format!("Completely different content {}", i),
+                embedding: vec![0.1, 0.2, 0.3],
+                metadata: serde_json::json!({ "dedup": true }),
+                ..Default::default()
+            };
+            store.put(merge_rec).await.unwrap();
+        }
+
+        // Fetch and assert revisions count is capped at 5
+        let fetched = store.get("test_ws", "test/path").await.unwrap().unwrap();
+        assert_eq!(fetched.revisions.len(), 5, "Revisions count must be capped at max_revisions = 5");
+        // Verify we kept the latest revisions (e.g., different content 10 should be the latest)
+        assert_eq!(fetched.revisions.last().unwrap().content, "Completely different content 10");
+    }
 }
