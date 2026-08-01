@@ -127,7 +127,7 @@ pub async fn revoke_lease_by_path(
 /// Generic proxy.
 pub async fn generic_proxy(
     State(state): State<CliState>,
-    axum::Extension(session): axum::Extension<SessionInfo>,
+    axum::Extension(_session): axum::Extension<SessionInfo>,
     Json(req): Json<GenericProxyRequest>,
 ) -> Response {
     match state
