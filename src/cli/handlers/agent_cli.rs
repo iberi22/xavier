@@ -76,7 +76,7 @@ async fn handle_agent_scan(agent_filter: Option<String>, as_json: bool) -> Resul
     Ok(())
 }
 
-async fn handle_agent_index(agent_filter: Option<String>, as_json: bool) -> Result<()> {
+async fn handle_agent_index(_agent_filter: Option<String>, as_json: bool) -> Result<()> {
     let base_url = resolve_base_url();
     let token = require_xavier_token()?;
     let client = CLI_HTTP_CLIENT.clone();

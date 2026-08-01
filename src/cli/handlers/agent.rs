@@ -345,7 +345,7 @@ pub async fn agent_sync_handler(
     axum::Json(payload): axum::Json<serde_json::Value>,
 ) -> impl axum::response::IntoResponse {
     // Reuse tasks sync logic for now or implement direct cloud sync trigger
-    let mode = payload["mode"].as_str().unwrap_or("bidirectional");
+    let _mode = payload["mode"].as_str().unwrap_or("bidirectional");
 
     match state.store.sync_all(&state.workspace_id).await {
         Ok(stats) => axum::Json(serde_json::json!({
