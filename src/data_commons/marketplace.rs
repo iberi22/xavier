@@ -26,6 +26,10 @@ pub struct DatasetMetadata {
     pub publisher: String,
     /// Actual rows/records contained in the dataset
     pub rows: Vec<serde_json::Value>,
+    /// Pricing tier of the dataset
+    pub tier: crate::data_commons::pricing::PricingTier,
+    /// Publisher's reputation score
+    pub reputation: f64,
 }
 
 /// A single page of filtered results returned from a dataset query
@@ -61,7 +65,14 @@ impl DataMarketplace {
     /// # Arguments
     ///
     /// * `metadata` - The metadata and rows of the dataset to list.
-    pub fn list_dataset(&mut self, metadata: DatasetMetadata) -> DatasetId {
+    pub fn list_dataset(&mut self, mut metadata: DatasetMetadata) -> DatasetId {
+        // Wire pricing: calculate the price dynamically using size, tier, and reputation
+        metadata.price = crate::data_commons::pricing::calculate_price(
+            metadata.rows.len() as u64,
+            metadata.tier,
+            metadata.reputation,
+        ).0;
+
         let mut hasher = Sha256::new();
         hasher.update(metadata.name.as_bytes());
         hasher.update(metadata.publisher.as_bytes());
@@ -150,19 +161,28 @@ mod tests {
 
     #[test]
     fn dataset_list_and_query() {
+        use crate::data_commons::pricing::PricingTier;
         let mut marketplace = DataMarketplace::new();
+
+        let mut rows = vec![
+            serde_json::json!({ "node_id": "xv1-node1", "cpu_usage": 45.2, "status": "active" }),
+            serde_json::json!({ "node_id": "xv1-node2", "cpu_usage": 12.8, "status": "idle" }),
+            serde_json::json!({ "node_id": "xv1-node3", "cpu_usage": 98.1, "status": "overloaded" }),
+        ];
+        // Pad to exactly 500 rows to get exactly 50 price under Colaborador tier (500 * 0.1 = 50)
+        for _ in 0..497 {
+            rows.push(serde_json::json!({ "node_id": "xv1-node-dummy", "cpu_usage": 10.0, "status": "idle" }));
+        }
 
         let metadata = DatasetMetadata {
             name: "Xavier Core Telemetry".to_string(),
             description: "Anonymized network metrics and core logs".to_string(),
             category: "Telemetry".to_string(),
-            price: 50,
+            price: 0, // Calculated dynamically
             publisher: "xv1_publisher_wallet_address_xyz_1234567890abcdef".to_string(),
-            rows: vec![
-                serde_json::json!({ "node_id": "xv1-node1", "cpu_usage": 45.2, "status": "active" }),
-                serde_json::json!({ "node_id": "xv1-node2", "cpu_usage": 12.8, "status": "idle" }),
-                serde_json::json!({ "node_id": "xv1-node3", "cpu_usage": 98.1, "status": "overloaded" }),
-            ],
+            rows,
+            tier: PricingTier::Colaborador,
+            reputation: 0.0,
         };
 
         let id = marketplace.list_dataset(metadata);
@@ -178,7 +198,7 @@ mod tests {
         // Query with empty query (returns all)
         let query_all = marketplace.query_dataset(&id, "", 100);
         assert!(query_all.is_ok());
-        assert_eq!(query_all.unwrap().records.len(), 3);
+        assert_eq!(query_all.unwrap().records.len(), 500);
 
         // Insufficient payment query
         let failed_query = marketplace.query_dataset(&id, "", 40);
@@ -188,17 +208,26 @@ mod tests {
 
     #[test]
     fn dataset_revoked_after_query() {
+        use crate::data_commons::pricing::PricingTier;
         let mut marketplace = DataMarketplace::new();
+
+        let mut rows = vec![
+            serde_json::json!({ "rtt_ms": 12, "bandwidth_mbps": 450 }),
+        ];
+        // Pad to exactly 100 rows to get exactly 10 price under Colaborador tier (100 * 0.1 = 10)
+        for _ in 0..99 {
+            rows.push(serde_json::json!({ "rtt_ms": 10, "bandwidth_mbps": 100 }));
+        }
 
         let metadata = DatasetMetadata {
             name: "Xavier Network Benchmarks".to_string(),
             description: "Latency and throughput stats".to_string(),
             category: "Benchmark".to_string(),
-            price: 10,
+            price: 0, // Calculated dynamically
             publisher: "xv1_another_publisher_wallet_address_xyz_123456789".to_string(),
-            rows: vec![
-                serde_json::json!({ "rtt_ms": 12, "bandwidth_mbps": 450 }),
-            ],
+            rows,
+            tier: PricingTier::Colaborador,
+            reputation: 0.0,
         };
 
         let id = marketplace.list_dataset(metadata);
