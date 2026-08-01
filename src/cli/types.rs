@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use xavier::memory::schema::{ContextZone, FederatedSearchRequest, MemoryQueryFilters};
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct SearchPayload {
+pub struct SearchPayload {
     pub query: String,
     #[serde(default = "default_limit")]
     pub limit: usize,
@@ -19,13 +19,13 @@ pub(crate) struct SearchPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodeScanPayload {
+pub struct CodeScanPayload {
     #[serde(default)]
     pub path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodeFindPayload {
+pub struct CodeFindPayload {
     pub query: String,
     #[serde(default = "default_limit")]
     pub limit: usize,
@@ -36,7 +36,7 @@ pub(crate) struct CodeFindPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodeContextPayload {
+pub struct CodeContextPayload {
     #[serde(default)]
     pub query: String,
     #[serde(default = "default_limit")]
@@ -48,7 +48,7 @@ pub(crate) struct CodeContextPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CodeGraphQueryPayload {
+pub struct CodeGraphQueryPayload {
     pub query: String,
     #[serde(default = "default_graph_depth")]
     pub depth: usize,
@@ -61,7 +61,7 @@ pub(crate) struct CodeGraphQueryPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct AddPayload {
+pub struct AddPayload {
     pub content: String,
     #[serde(default)]
     pub path: Option<String>,
@@ -78,13 +78,13 @@ pub(crate) struct AddPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct DeleteMemoryRequest {
+pub struct DeleteMemoryRequest {
     pub id: Option<String>,
     pub path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct UpdateMemoryRequest {
+pub struct UpdateMemoryRequest {
     pub id: String,
     pub content: String,
     #[serde(default)]
@@ -94,13 +94,13 @@ pub(crate) struct UpdateMemoryRequest {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct SecurityScanPayload {
-    #[expect(dead_code, reason = "Usado solo via serde deserialization")]
+pub struct SecurityScanPayload {
+    #[allow(dead_code)] // Usado solo via serde deserialization
     pub input: String,
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub(crate) struct MemoryQueryPayload {
+pub struct MemoryQueryPayload {
     pub query: String,
     pub limit: Option<usize>,
     #[serde(default, rename = "filters")]
@@ -110,7 +110,7 @@ pub(crate) struct MemoryQueryPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct EvictPayload {
+pub struct EvictPayload {
     #[serde(default)]
     pub priority: Option<String>,
     #[serde(default)]
@@ -118,7 +118,7 @@ pub(crate) struct EvictPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct TimelineQueryPayload {
+pub struct TimelineQueryPayload {
     pub query: String,
     #[serde(default)]
     pub start_date: Option<chrono::DateTime<chrono::Utc>>,
@@ -131,7 +131,7 @@ pub(crate) struct TimelineQueryPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct SessionCompactPayload {
+pub struct SessionCompactPayload {
     pub session_id: String,
     #[serde(default)]
     pub current_tokens: Option<usize>,
@@ -140,7 +140,7 @@ pub(crate) struct SessionCompactPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct AgentRegisterPayload {
+pub struct AgentRegisterPayload {
     pub agent_id: String,
     pub session_id: Option<String>,
     pub name: Option<String>,
@@ -150,18 +150,18 @@ pub(crate) struct AgentRegisterPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct AgentPushContextPayload {
+pub struct AgentPushContextPayload {
     pub context: String,
     pub metadata: Option<serde_json::Value>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ExportPayload {
+pub struct ExportPayload {
     pub public: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ConsolidatePayload {
+pub struct ConsolidatePayload {
     #[serde(default)]
     pub nightly: bool,
 }

@@ -282,7 +282,7 @@ pub async fn recover_handler(
 }
 
 /// Totp setup handler.
-pub async fn totp_setup_handler(State(state): State<CliState>) -> Response {
+pub async fn totp_setup_handler(State(_state): State<CliState>) -> Response {
     // This should be protected by JWT middleware
     // For now we'll assume we get the user from the state or a placeholder
     // In a real impl, we'd extract it from the token
