@@ -42,7 +42,11 @@ fn recover_from_shares_file_same_identity() {
         })).collect::<Vec<_>>(),
     });
     let shares_path = dir.path().join("shares.json");
-    std::fs::write(&shares_path, serde_json::to_string_pretty(&shares_json).unwrap()).unwrap();
+    std::fs::write(
+        &shares_path,
+        serde_json::to_string_pretty(&shares_json).unwrap(),
+    )
+    .unwrap();
 
     let raw: serde_json::Value =
         serde_json::from_str(&std::fs::read_to_string(&shares_path).unwrap()).unwrap();

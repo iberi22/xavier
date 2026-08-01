@@ -32,6 +32,8 @@ mod http_api;
 mod internal_benchmark_test;
 #[path = "integration/memory_test.rs"]
 mod memory_test;
+#[path = "integration/notifications_test.rs"]
+mod notifications_test;
 #[path = "integration/scheduler_test.rs"]
 mod scheduler_test;
 #[path = "integration/security_hardening_test.rs"]
@@ -44,8 +46,6 @@ mod server_test;
 mod sevier_stress_test;
 #[path = "integration/tasks_test.rs"]
 mod tasks_test;
-#[path = "integration/notifications_test.rs"]
-mod notifications_test;
 
 mod integration {
     use reqwest::Client;

@@ -51,7 +51,10 @@ async fn test_hormer_navigation_e2e_flow() {
         .await;
 
     assert!(!results.is_empty(), "Should return matching documents");
-    assert_eq!(results[0].id, "doc_alpha", "Highest relevant doc should match the query");
+    assert_eq!(
+        results[0].id, "doc_alpha",
+        "Highest relevant doc should match the query"
+    );
 
     // 4. Update the policy based on interaction (HORMER adaptive feedback loop)
     // We simulate positive interaction with "working" layer results
@@ -77,7 +80,10 @@ async fn test_hormer_navigation_e2e_flow() {
         updated_weights.working, initial_weights.working,
         "The working weight should have evolved based on interaction"
     );
-    assert!(updated_weights.is_valid(), "Updated weights must remain normalized and valid");
+    assert!(
+        updated_weights.is_valid(),
+        "Updated weights must remain normalized and valid"
+    );
 
     // 6. Perform a second retrieval query using the updated policy
     let results_after = gating

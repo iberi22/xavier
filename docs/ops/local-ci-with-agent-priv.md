@@ -35,11 +35,17 @@ bash ~/.hermes/skills/devops/agent-privilege-notify/scripts/agent-priv.sh reques
 bash ~/.hermes/skills/swal-ci-container/scripts/swal-ci.sh run ~/proyectosSWAL/xavier
 ```
 
-Host-native fallback (no container) can still run:
+Host-native fallback (no container) can be executed using the automated local CI script:
 
 ```bash
-CARGO_TARGET_DIR=target_local cargo check -p xavier
-CARGO_TARGET_DIR=target_local cargo test -p xavier --lib
+# Run the complete local CI suite (cargo check, clippy, fmt, test)
+./scripts/ci-local.sh
+
+# Run only the quick/fast check loop
+./scripts/ci-local.sh --quick
+
+# Auto-format and auto-fix clippy issues before running checks
+./scripts/ci-local.sh --fix
 ```
 
 ## Safety

@@ -2,9 +2,9 @@
 //!
 //! Provides shared test helpers for SEVIER endpoint tests.
 
-use std::sync::Arc;
 use parking_lot::Mutex;
 use rusqlite::Connection;
+use std::sync::Arc;
 
 use xavier::adapters::inbound::http::dto::TimeMetricDto;
 use xavier::time::TimeMetricsStore;

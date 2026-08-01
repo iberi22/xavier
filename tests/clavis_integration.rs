@@ -148,8 +148,10 @@ async fn test_clavis_proxy_integration() -> Result<()> {
     let key_id = "openai_test_id";
     let key_name = "openai_test_name";
     let initial_val = "my-secret-key-12345";
-    
-    clavis_engine.register_key(key_id, key_name, initial_val, 3600).await;
+
+    clavis_engine
+        .register_key(key_id, key_name, initial_val, 3600)
+        .await;
 
     // 3. Create KeyLendingEngine and Lease
     let temp_dir = tempfile::tempdir()?;
@@ -160,15 +162,14 @@ async fn test_clavis_proxy_integration() -> Result<()> {
     let secrets_engine = Arc::new(KeyLendingEngine::new(audit_logger, Some(event_bus)));
 
     // Create a normal lease with secret_name "openai_test_name"
-    let lease = secrets_engine
-        .lend(key_name, None, "agent-1", 3600)
-        .await?;
+    let lease = secrets_engine.lend(key_name, None, "agent-1", 3600).await?;
     let lease_token = lease.token.clone();
 
     // 4. Execute Proxy Request using normal lease token
     let rate_manager = Arc::new(xavier::agents::rate_limit::RateLimitManager::new());
     let prompt_cache = Arc::new(parking_lot::Mutex::new(std::collections::HashMap::new()));
-    let proxy = xavier::app::proxy_use_case::ProxyUseCase::new(rate_manager.clone(), prompt_cache.clone());
+    let proxy =
+        xavier::app::proxy_use_case::ProxyUseCase::new(rate_manager.clone(), prompt_cache.clone());
 
     let req = xavier::domain::proxy::GenericProxyRequest {
         url: format!("{}{}", server.url(), "/test-endpoint"),
@@ -176,7 +177,9 @@ async fn test_clavis_proxy_integration() -> Result<()> {
         headers: std::collections::HashMap::new(),
         body: None,
         lease_token: Some(lease_token),
-        secret_injection_strategy: Some(xavier::domain::proxy::SecretInjectionStrategy::BearerToken),
+        secret_injection_strategy: Some(
+            xavier::domain::proxy::SecretInjectionStrategy::BearerToken,
+        ),
     };
 
     let res = proxy.execute_generic(req, secrets_engine.clone()).await?;
@@ -199,10 +202,14 @@ async fn test_clavis_proxy_integration() -> Result<()> {
         headers: std::collections::HashMap::new(),
         body: None,
         lease_token: Some(format!("clavis:{}", key_id)),
-        secret_injection_strategy: Some(xavier::domain::proxy::SecretInjectionStrategy::BearerToken),
+        secret_injection_strategy: Some(
+            xavier::domain::proxy::SecretInjectionStrategy::BearerToken,
+        ),
     };
 
-    let res_direct = proxy.execute_generic(req_direct, secrets_engine.clone()).await?;
+    let res_direct = proxy
+        .execute_generic(req_direct, secrets_engine.clone())
+        .await?;
     assert_eq!(res_direct.status, 200);
     mock_clavis_direct.assert_async().await;
 
@@ -213,7 +220,9 @@ async fn test_clavis_proxy_integration() -> Result<()> {
 
     // 6. Test key rotation & dynamic proxy injection
     // Update key value
-    clavis_engine.set_key_value(key_id, "rotated-secret-key-67890").await;
+    clavis_engine
+        .set_key_value(key_id, "rotated-secret-key-67890")
+        .await;
 
     let mock_rotated = server
         .mock("POST", "/test-endpoint")
@@ -230,10 +239,14 @@ async fn test_clavis_proxy_integration() -> Result<()> {
         headers: std::collections::HashMap::new(),
         body: None,
         lease_token: Some(format!("clavis:{}", key_id)),
-        secret_injection_strategy: Some(xavier::domain::proxy::SecretInjectionStrategy::BearerToken),
+        secret_injection_strategy: Some(
+            xavier::domain::proxy::SecretInjectionStrategy::BearerToken,
+        ),
     };
 
-    let res_rotated = proxy.execute_generic(req_rotated, secrets_engine.clone()).await?;
+    let res_rotated = proxy
+        .execute_generic(req_rotated, secrets_engine.clone())
+        .await?;
     assert_eq!(res_rotated.status, 200);
     mock_rotated.assert_async().await;
 

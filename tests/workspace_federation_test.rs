@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use tempfile::tempdir;
-use xavier::mesh::{PeerInfo, PeerRegistry, NodeId};
+use xavier::mesh::{NodeId, PeerInfo, PeerRegistry};
 
 // Import our handlers from the binary crate if possible, or define mock tests.
 // Since CLI handlers are in the main binary target of `xavier`, let's check if they can be verified directly.
@@ -28,8 +28,10 @@ fn test_peer_registry_with_workspace_federation_fields() {
         shared_workspace_tokens: HashMap::new(),
     };
 
-    peer.shared_workspace_ids.push("workspace-alpha".to_string());
-    peer.shared_workspace_tokens.insert("workspace-alpha".to_string(), "mock-token-xyz".to_string());
+    peer.shared_workspace_ids
+        .push("workspace-alpha".to_string());
+    peer.shared_workspace_tokens
+        .insert("workspace-alpha".to_string(), "mock-token-xyz".to_string());
 
     registry.add_peer(peer).unwrap();
     assert_eq!(registry.list_peers().len(), 1);
@@ -40,7 +42,13 @@ fn test_peer_registry_with_workspace_federation_fields() {
 
     assert_eq!(loaded_peer.shared_workspace_ids.len(), 1);
     assert_eq!(loaded_peer.shared_workspace_ids[0], "workspace-alpha");
-    assert_eq!(loaded_peer.shared_workspace_tokens.get("workspace-alpha").unwrap(), "mock-token-xyz");
+    assert_eq!(
+        loaded_peer
+            .shared_workspace_tokens
+            .get("workspace-alpha")
+            .unwrap(),
+        "mock-token-xyz"
+    );
 }
 
 #[tokio::test]
@@ -85,15 +93,23 @@ fn test_federated_search_request_serde() {
     }
     "#;
 
-    let req: xavier::memory::schema::FederatedSearchRequest = serde_json::from_str(json_str).unwrap();
-    assert_eq!(req.local_dbs, vec!["local1".to_string(), "local2".to_string()]);
-    assert_eq!(req.peer_nodes, vec!["node_a".to_string(), "node_b".to_string()]);
+    let req: xavier::memory::schema::FederatedSearchRequest =
+        serde_json::from_str(json_str).unwrap();
+    assert_eq!(
+        req.local_dbs,
+        vec!["local1".to_string(), "local2".to_string()]
+    );
+    assert_eq!(
+        req.peer_nodes,
+        vec!["node_a".to_string(), "node_b".to_string()]
+    );
     assert!(req.propagate_to_mesh);
     assert_eq!(req.max_hops, 3);
 
     // Test default serialization/deserialization with missing fields
     let json_empty = "{}";
-    let req_empty: xavier::memory::schema::FederatedSearchRequest = serde_json::from_str(json_empty).unwrap();
+    let req_empty: xavier::memory::schema::FederatedSearchRequest =
+        serde_json::from_str(json_empty).unwrap();
     assert!(req_empty.local_dbs.is_empty());
     assert!(req_empty.peer_nodes.is_empty());
     assert!(!req_empty.propagate_to_mesh);
@@ -182,25 +198,26 @@ async fn test_workspace_sharing_with_namespace_acl_filtering() {
     assert_eq!(allowed_namespaces.as_ref().unwrap()[0], "docs/publico");
 
     // 4. Perform the segment-wise filtering logic
-    let filtered_memories: Vec<&xavier::memory::store::MemoryRecord> = if let Some(ref namespaces) = allowed_namespaces {
-        memories
-            .iter()
-            .filter(|r| {
-                namespaces.iter().any(|pattern| {
-                    let record_clean = r.path.trim_end_matches('/');
-                    let pattern_clean = pattern.trim_end_matches('/');
-                    if record_clean == pattern_clean {
-                        true
-                    } else {
-                        let prefix = format!("{}/", pattern_clean);
-                        record_clean.starts_with(&prefix)
-                    }
+    let filtered_memories: Vec<&xavier::memory::store::MemoryRecord> =
+        if let Some(ref namespaces) = allowed_namespaces {
+            memories
+                .iter()
+                .filter(|r| {
+                    namespaces.iter().any(|pattern| {
+                        let record_clean = r.path.trim_end_matches('/');
+                        let pattern_clean = pattern.trim_end_matches('/');
+                        if record_clean == pattern_clean {
+                            true
+                        } else {
+                            let prefix = format!("{}/", pattern_clean);
+                            record_clean.starts_with(&prefix)
+                        }
+                    })
                 })
-            })
-            .collect()
-    } else {
-        memories.iter().collect()
-    };
+                .collect()
+        } else {
+            memories.iter().collect()
+        };
 
     // 5. Assert that only the records matching the allowed namespace are returned
     assert_eq!(filtered_memories.len(), 1);
@@ -216,18 +233,26 @@ fn test_namespace_acl_entry_and_consent_record_serde() {
     };
 
     let serialized = serde_json::to_string(&entry).unwrap();
-    let deserialized: xavier::mesh::acl::NamespaceAclEntry = serde_json::from_str(&serialized).unwrap();
+    let deserialized: xavier::mesh::acl::NamespaceAclEntry =
+        serde_json::from_str(&serialized).unwrap();
     assert_eq!(deserialized.namespace_pattern, "docs/publico");
     assert_eq!(deserialized.permissions.len(), 1);
-    assert_eq!(deserialized.permissions[0], xavier::enterprise::rbac::Permission::Read);
+    assert_eq!(
+        deserialized.permissions[0],
+        xavier::enterprise::rbac::Permission::Read
+    );
 
     let consent = xavier::mesh::data_consent::ConsentRecord {
         namespace_filter: Some(vec!["docs/publico".to_string()]),
     };
 
     let consent_serialized = serde_json::to_string(&consent).unwrap();
-    let consent_deserialized: xavier::mesh::data_consent::ConsentRecord = serde_json::from_str(&consent_serialized).unwrap();
-    assert_eq!(consent_deserialized.namespace_filter.unwrap()[0], "docs/publico");
+    let consent_deserialized: xavier::mesh::data_consent::ConsentRecord =
+        serde_json::from_str(&consent_serialized).unwrap();
+    assert_eq!(
+        consent_deserialized.namespace_filter.unwrap()[0],
+        "docs/publico"
+    );
 }
 
 #[tokio::test]
@@ -278,7 +303,10 @@ async fn test_data_consent_token_revocation() {
         use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(payload_str.as_bytes());
-        format!("hash-{}", &xavier::crypto::hex_encode(hasher.finalize())[..16])
+        format!(
+            "hash-{}",
+            &xavier::crypto::hex_encode(hasher.finalize())[..16]
+        )
     };
 
     // Assert fallback initially not revoked
@@ -289,5 +317,4 @@ async fn test_data_consent_token_revocation() {
 
     // Assert fallback now revoked
     assert!(xavier::mesh::DataConsentManager::is_token_revoked(&fallback_token_id).unwrap());
-
 }

@@ -1,10 +1,10 @@
 #[cfg(feature = "telegram")]
 mod telegram_tests {
-    use xavier::telegram::{
-        handle_memory_command, load_bot_token, MemoryCommand, TelegramConfig,
-        RATE_LIMIT_COMMANDS, RATE_LIMIT_WINDOW_SECS, TELEGRAM_TOKEN_VAULT_KEY,
-    };
     use std::env;
+    use xavier::telegram::{
+        handle_memory_command, load_bot_token, MemoryCommand, TelegramConfig, RATE_LIMIT_COMMANDS,
+        RATE_LIMIT_WINDOW_SECS, TELEGRAM_TOKEN_VAULT_KEY,
+    };
 
     #[test]
     fn test_telegram_config_defaults() {
@@ -25,14 +25,18 @@ mod telegram_tests {
         // 2. Search command
         let cmd = MemoryCommand::parse("search rust memory database")
             .expect("Failed to parse search command");
-        assert_eq!(cmd, MemoryCommand::Search("rust memory database".to_string()));
+        assert_eq!(
+            cmd,
+            MemoryCommand::Search("rust memory database".to_string())
+        );
 
         // 3. List command
         let cmd = MemoryCommand::parse("list").expect("Failed to parse list command");
         assert_eq!(cmd, MemoryCommand::List);
 
         // 4. Delete command
-        let cmd = MemoryCommand::parse("delete doc_id_123").expect("Failed to parse delete command");
+        let cmd =
+            MemoryCommand::parse("delete doc_id_123").expect("Failed to parse delete command");
         assert_eq!(cmd, MemoryCommand::Delete("doc_id_123".to_string()));
 
         // 5. Invalid command
