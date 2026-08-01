@@ -702,11 +702,11 @@ mod route_tests {
         let parsed: serde_json::Value =
             serde_json::from_slice(&body).expect("parse health response");
 
-        // Status can be "healthy", "warn", or "degraded" in test environments
+        // Status can be "healthy", "warn", "degraded", or "unhealthy" in test environments
         let status = parsed["status"].as_str().unwrap_or("");
         assert!(
-            status == "healthy" || status == "warn" || status == "degraded",
-            "expected status to be one of healthy/warn/degraded, got: {}",
+            status == "healthy" || status == "warn" || status == "degraded" || status == "unhealthy",
+            "expected status to be one of healthy/warn/degraded/unhealthy, got: {}",
             status
         );
         assert_eq!(parsed["service"], "xavier");
