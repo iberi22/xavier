@@ -777,7 +777,8 @@ pub async fn memory_query_handler(
             }
         }
         results_list
-    }.await;
+    }
+    .await;
     // 2. Parallel fan-out to remote workspaces via the Mesh P2P API
     let mut remote_futures = Vec::new();
     if max_hops > 0 {
@@ -808,7 +809,8 @@ pub async fn memory_query_handler(
                         let ws_id = ws_id.clone();
                         let peer_node_id = peer.node_id.0.clone();
                         remote_futures.push(async move {
-                            let res = client.post(&url)
+                            let res = client
+                                .post(&url)
                                 .json(&query_payload)
                                 .timeout(std::time::Duration::from_secs(5))
                                 .send()
@@ -818,17 +820,33 @@ pub async fn memory_query_handler(
                                 Ok(resp) => {
                                     if resp.status().is_success() {
                                         if let Ok(body) = resp.json::<serde_json::Value>().await {
-                                            if let Some(results_arr) = body.get("results").and_then(|v| v.as_array()) {
+                                            if let Some(results_arr) =
+                                                body.get("results").and_then(|v| v.as_array())
+                                            {
                                                 let mut remote_docs = Vec::new();
                                                 for r in results_arr {
                                                     let mut r_clone = r.clone();
                                                     if let Some(obj) = r_clone.as_object_mut() {
-                                                        obj.insert("source".to_string(), serde_json::json!(format!("remote:{}::{}", peer_node_id, ws_id)));
+                                                        obj.insert(
+                                                            "source".to_string(),
+                                                            serde_json::json!(format!(
+                                                                "remote:{}::{}",
+                                                                peer_node_id, ws_id
+                                                            )),
+                                                        );
                                                         if obj.get("source_node_id").is_none() {
-                                                            obj.insert("source_node_id".to_string(), serde_json::json!(peer_node_id.clone()));
+                                                            obj.insert(
+                                                                "source_node_id".to_string(),
+                                                                serde_json::json!(
+                                                                    peer_node_id.clone()
+                                                                ),
+                                                            );
                                                         }
                                                         if obj.get("source_db_id").is_none() {
-                                                            obj.insert("source_db_id".to_string(), serde_json::json!(ws_id.clone()));
+                                                            obj.insert(
+                                                                "source_db_id".to_string(),
+                                                                serde_json::json!(ws_id.clone()),
+                                                            );
                                                         }
                                                     }
                                                     remote_docs.push(r_clone);
@@ -839,7 +857,12 @@ pub async fn memory_query_handler(
                                     }
                                 }
                                 Err(e) => {
-                                    tracing::warn!("Failed to query remote workspace {} on peer {}: {}", ws_id, peer_node_id, e);
+                                    tracing::warn!(
+                                        "Failed to query remote workspace {} on peer {}: {}",
+                                        ws_id,
+                                        peer_node_id,
+                                        e
+                                    );
                                 }
                             }
                             None
@@ -1132,9 +1155,7 @@ async fn offline_add_memory(
                 .await
             {
                 Ok(id) => {
-                    println!(
-                        "✅ Memory added successfully offline to local SQLite-Vec database!"
-                    );
+                    println!("✅ Memory added successfully offline to local SQLite-Vec database!");
                     println!("Document ID: {id}");
                     Ok(())
                 }

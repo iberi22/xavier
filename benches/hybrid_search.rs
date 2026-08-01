@@ -176,13 +176,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
                     let q = black_box(*query);
                     let emb = black_box(embedding.to_vec());
                     let res = store
-                        .hybrid_search_with_embedding(
-                            black_box(workspace_id),
-                            q,
-                            emb,
-                            None,
-                            3,
-                        )
+                        .hybrid_search_with_embedding(black_box(workspace_id), q, emb, None, 3)
                         .await;
                     black_box(res).ok();
                 }
@@ -197,13 +191,7 @@ fn bench_hybrid_search(c: &mut Criterion) {
                     let q = black_box(*query);
                     let emb = black_box(embedding.to_vec());
                     let res = store
-                        .hybrid_search_with_embedding(
-                            black_box(workspace_id),
-                            q,
-                            emb,
-                            None,
-                            3,
-                        )
+                        .hybrid_search_with_embedding(black_box(workspace_id), q, emb, None, 3)
                         .await;
                     black_box(res).ok();
                 }
@@ -237,7 +225,10 @@ fn bench_memory_store_operations(c: &mut Criterion) {
                 id,
                 workspace_id: workspace_id.to_string(),
                 path,
-                content: format!("This is benchmark document number {} for standard put operations.", index),
+                content: format!(
+                    "This is benchmark document number {} for standard put operations.",
+                    index
+                ),
                 metadata: serde_json::json!({"index": index}),
                 embedding: vec![1.0, 0.0, 0.0],
                 score: 0.0,
@@ -267,36 +258,40 @@ fn bench_memory_store_operations(c: &mut Criterion) {
     // Seed a specific record to benchmark retrieval
     let target_id = stable_key("memory", &[workspace_id, "memory/bench/target-doc"]);
     runtime.block_on(async {
-        store.put(MemoryRecord {
-            id: target_id.clone(),
-            workspace_id: workspace_id.to_string(),
-            path: "memory/bench/target-doc".to_string(),
-            content: "This is a target document for benchmarking retrieve and get operations.".to_string(),
-            metadata: serde_json::json!({}),
-            embedding: vec![1.0, 0.0, 0.0],
-            score: 0.0,
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-            revision: 1,
-            primary: true,
-            parent_id: None,
-            cluster_id: None,
-            level: Default::default(),
-            relation: None,
-            clearance: Default::default(),
-            revisions: Vec::new(),
-            content_iv: None,
-            encrypted_dek: None,
-            metadata_iv: None,
-        })
-        .await
-        .expect("seed target");
+        store
+            .put(MemoryRecord {
+                id: target_id.clone(),
+                workspace_id: workspace_id.to_string(),
+                path: "memory/bench/target-doc".to_string(),
+                content: "This is a target document for benchmarking retrieve and get operations."
+                    .to_string(),
+                metadata: serde_json::json!({}),
+                embedding: vec![1.0, 0.0, 0.0],
+                score: 0.0,
+                created_at: chrono::Utc::now(),
+                updated_at: chrono::Utc::now(),
+                revision: 1,
+                primary: true,
+                parent_id: None,
+                cluster_id: None,
+                level: Default::default(),
+                relation: None,
+                clearance: Default::default(),
+                revisions: Vec::new(),
+                content_iv: None,
+                encrypted_dek: None,
+                metadata_iv: None,
+            })
+            .await
+            .expect("seed target");
     });
 
     c.bench_function("memory_store_get_record", |b| {
         b.iter(|| {
             runtime.block_on(async {
-                let res = store.get(black_box(workspace_id), black_box(&target_id)).await;
+                let res = store
+                    .get(black_box(workspace_id), black_box(&target_id))
+                    .await;
                 black_box(res).ok();
             });
         });
@@ -344,5 +339,9 @@ fn bench_memory_store_operations(c: &mut Criterion) {
     });
 }
 
-criterion_group!(hybrid_search_benches, bench_hybrid_search, bench_memory_store_operations);
+criterion_group!(
+    hybrid_search_benches,
+    bench_hybrid_search,
+    bench_memory_store_operations
+);
 criterion_main!(hybrid_search_benches);

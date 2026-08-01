@@ -2,8 +2,8 @@
 
 use crate::cli::commands::enums::CLI_HTTP_CLIENT;
 use crate::cli::config::{
-    auth_failed_error, auth_failed_message, is_auth_failure, require_xavier_token, resolve_base_url,
-    resolve_cwd, save_cwd,
+    auth_failed_error, auth_failed_message, is_auth_failure, require_xavier_token,
+    resolve_base_url, resolve_cwd, save_cwd,
 };
 use crate::memory::graph_traversal::AffectedNode;
 use crate::memory::qmd::types::NavEntry;

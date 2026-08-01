@@ -67,7 +67,9 @@ pub fn classify_transport_error(err: &reqwest::Error) -> CliHttpOutcome {
         || err.is_timeout()
         || detail.to_ascii_lowercase().contains("connection refused")
         || detail.to_ascii_lowercase().contains("dns error")
-        || detail.to_ascii_lowercase().contains("name or service not known")
+        || detail
+            .to_ascii_lowercase()
+            .contains("name or service not known")
     {
         CliHttpOutcome::ConnectionRefused { detail }
     } else {
@@ -99,7 +101,9 @@ On Linux/Unix use a POSIX path, e.g. /home/you/proyectosSWAL/xavier/data"
             ));
         }
         // UNC / extended Windows prefixes
-        if trimmed.starts_with("\\\\") || trimmed.starts_with("//?/") || trimmed.starts_with("\\\\?\\")
+        if trimmed.starts_with("\\\\")
+            || trimmed.starts_with("//?/")
+            || trimmed.starts_with("\\\\?\\")
         {
             return Err(format!(
                 "XAVIER_DATA_DIR looks like a Windows UNC path ('{trimmed}'). \

@@ -130,7 +130,8 @@ impl NodeStore {
             },
         )
         .map_err(VaultError::Other)?;
-        let keys = DerivedNodeKeys::from_seed_bytes(&phrase.seed_bytes).map_err(VaultError::Other)?;
+        let keys =
+            DerivedNodeKeys::from_seed_bytes(&phrase.seed_bytes).map_err(VaultError::Other)?;
         let codes = CheckCodes::from_seed_bytes(&phrase.seed_bytes);
         Ok((opened, keys, codes))
     }
@@ -172,7 +173,11 @@ mod tests {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mode = fs::metadata(&store.paths.vault).unwrap().permissions().mode() & 0o777;
+            let mode = fs::metadata(&store.paths.vault)
+                .unwrap()
+                .permissions()
+                .mode()
+                & 0o777;
             assert_eq!(mode, 0o600);
         }
     }

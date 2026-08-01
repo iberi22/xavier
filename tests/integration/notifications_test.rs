@@ -1,14 +1,15 @@
 use serde_json::Value;
 use tokio::net::TcpListener;
-use xavier::notifications::{NOTIFICATIONS, IslandId, SENT_EMAILS};
 use xavier::codebase::connection_manager::ConnectionManager;
+use xavier::notifications::{IslandId, NOTIFICATIONS, SENT_EMAILS};
 
 async fn setup_test() {
     std::env::set_var("XAVIER_TEST", "true");
     let _ = ConnectionManager::global().connect("memory", ".");
-    let _ = ConnectionManager::global().with_conn("memory", |conn| {
-        conn.execute(
-            "CREATE TABLE IF NOT EXISTS notifications (
+    let _ = ConnectionManager::global()
+        .with_conn("memory", |conn| {
+            conn.execute(
+                "CREATE TABLE IF NOT EXISTS notifications (
                 id TEXT PRIMARY KEY,
                 island_id TEXT NOT NULL,
                 title TEXT NOT NULL,
@@ -17,10 +18,11 @@ async fn setup_test() {
                 read INTEGER NOT NULL DEFAULT 0,
                 severity TEXT NOT NULL
             )",
-            [],
-        )?;
-        Ok(())
-    }).await;
+                [],
+            )?;
+            Ok(())
+        })
+        .await;
 }
 
 #[tokio::test]
@@ -31,7 +33,12 @@ async fn test_notification_delivery_and_persistence() {
 
     // Trigger a notification
     let notification = NOTIFICATIONS
-        .notify(IslandId::System, "Integration Test Title", "Integration Test Body", "info")
+        .notify(
+            IslandId::System,
+            "Integration Test Title",
+            "Integration Test Body",
+            "info",
+        )
         .await
         .expect("send notification");
 
@@ -40,18 +47,33 @@ async fn test_notification_delivery_and_persistence() {
     assert_eq!(notification.severity, "info");
 
     // Check persistence
-    let list = NOTIFICATIONS.list_notifications().await.expect("list notifications");
+    let list = NOTIFICATIONS
+        .list_notifications()
+        .await
+        .expect("list notifications");
     assert!(!list.is_empty());
-    let persisted = list.iter().find(|n| n.id == notification.id).expect("find persisted");
+    let persisted = list
+        .iter()
+        .find(|n| n.id == notification.id)
+        .expect("find persisted");
     assert_eq!(persisted.title, "Integration Test Title");
     assert_eq!(persisted.body, "Integration Test Body");
     assert_eq!(persisted.severity, "info");
     assert_eq!(persisted.read, false);
 
     // Mark as read
-    NOTIFICATIONS.mark_as_read(&notification.id).await.expect("mark as read");
-    let list_after = NOTIFICATIONS.list_notifications().await.expect("list notifications after");
-    let persisted_after = list_after.iter().find(|n| n.id == notification.id).expect("find persisted after");
+    NOTIFICATIONS
+        .mark_as_read(&notification.id)
+        .await
+        .expect("mark as read");
+    let list_after = NOTIFICATIONS
+        .list_notifications()
+        .await
+        .expect("list notifications after");
+    let persisted_after = list_after
+        .iter()
+        .find(|n| n.id == notification.id)
+        .expect("find persisted after");
     assert_eq!(persisted_after.read, true);
 }
 
@@ -66,14 +88,22 @@ async fn test_email_notification_delivery() {
 
     // Trigger a notification
     let _ = NOTIFICATIONS
-        .notify(IslandId::Agents, "Email Test Title", "Email Test Body", "success")
+        .notify(
+            IslandId::Agents,
+            "Email Test Title",
+            "Email Test Body",
+            "success",
+        )
         .await
         .expect("send notification");
 
     // Check email delivery
     let emails = SENT_EMAILS.lock().await;
     assert!(!emails.is_empty());
-    let sent_email = emails.iter().find(|e| e.title == "Email Test Title").expect("find sent email");
+    let sent_email = emails
+        .iter()
+        .find(|e| e.title == "Email Test Title")
+        .expect("find sent email");
     assert_eq!(sent_email.body, "Email Test Body");
 }
 
@@ -81,7 +111,10 @@ async fn test_email_notification_delivery() {
 async fn test_webhook_subscription_management_and_delivery() {
     setup_test().await;
     // Clear subscriptions
-    let subs = NOTIFICATIONS.list_subscriptions().await.expect("list subscriptions");
+    let subs = NOTIFICATIONS
+        .list_subscriptions()
+        .await
+        .expect("list subscriptions");
     for sub in subs {
         let _ = NOTIFICATIONS.remove_subscription(&sub.id).await;
     }
@@ -109,7 +142,9 @@ async fn test_webhook_subscription_management_and_delivery() {
     );
 
     let server_handle = tokio::spawn(async move {
-        axum::serve(listener, axum_app).await.expect("serve mock webhook receiver");
+        axum::serve(listener, axum_app)
+            .await
+            .expect("serve mock webhook receiver");
     });
 
     // Add subscription
@@ -123,12 +158,20 @@ async fn test_webhook_subscription_management_and_delivery() {
     assert_eq!(subscription.active, true);
 
     // Get list of subscriptions
-    let list = NOTIFICATIONS.list_subscriptions().await.expect("list subscriptions after add");
+    let list = NOTIFICATIONS
+        .list_subscriptions()
+        .await
+        .expect("list subscriptions after add");
     assert!(list.iter().any(|s| s.id == subscription.id));
 
     // Trigger a non-matching notification (System)
     let _ = NOTIFICATIONS
-        .notify(IslandId::System, "Should not deliver", "Because event type doesn't match", "info")
+        .notify(
+            IslandId::System,
+            "Should not deliver",
+            "Because event type doesn't match",
+            "info",
+        )
         .await
         .expect("notify system");
 
@@ -141,7 +184,12 @@ async fn test_webhook_subscription_management_and_delivery() {
 
     // Trigger a matching notification (Errors)
     let _ = NOTIFICATIONS
-        .notify(IslandId::Errors, "Critical Webhook Test", "Webhook matches errors", "error")
+        .notify(
+            IslandId::Errors,
+            "Critical Webhook Test",
+            "Webhook matches errors",
+            "error",
+        )
         .await
         .expect("notify errors");
 
@@ -161,8 +209,14 @@ async fn test_webhook_subscription_management_and_delivery() {
     assert_eq!(payload["body"], "Webhook matches errors");
 
     // Remove subscription
-    NOTIFICATIONS.remove_subscription(&subscription.id).await.expect("remove subscription");
-    let list_after = NOTIFICATIONS.list_subscriptions().await.expect("list subscriptions after remove");
+    NOTIFICATIONS
+        .remove_subscription(&subscription.id)
+        .await
+        .expect("remove subscription");
+    let list_after = NOTIFICATIONS
+        .list_subscriptions()
+        .await
+        .expect("list subscriptions after remove");
     assert!(!list_after.iter().any(|s| s.id == subscription.id));
 
     server_handle.abort();

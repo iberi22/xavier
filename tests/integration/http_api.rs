@@ -561,11 +561,11 @@ async fn test_multi_step_workflow() {
 
 #[tokio::test]
 async fn test_router_path_extraction() {
-    use axum::{routing::get, Router, extract::Path};
-    use tower::util::ServiceExt;
     use axum::body::Body;
-    use http_body_util::BodyExt;
     use axum::http::{Request, StatusCode};
+    use axum::{extract::Path, routing::get, Router};
+    use http_body_util::BodyExt;
+    use tower::util::ServiceExt;
 
     async fn test_handler(Path(id): Path<String>) -> String {
         format!("Extracted: {id}")
@@ -598,12 +598,12 @@ async fn test_router_path_extraction() {
 
 #[tokio::test]
 async fn test_api_error_response_conformance() {
-    use axum::{routing::get, Router};
-    use axum::response::IntoResponse;
-    use tower::util::ServiceExt;
     use axum::body::Body;
-    use http_body_util::BodyExt;
     use axum::http::{Request, StatusCode};
+    use axum::response::IntoResponse;
+    use axum::{routing::get, Router};
+    use http_body_util::BodyExt;
+    use tower::util::ServiceExt;
     use xavier::error::ApiError;
 
     async fn error_trigger() -> impl IntoResponse {
@@ -631,7 +631,8 @@ async fn test_api_error_response_conformance() {
         .expect("collect body failed")
         .to_bytes();
 
-    let body_json: serde_json::Value = serde_json::from_slice(&body).expect("invalid json response");
+    let body_json: serde_json::Value =
+        serde_json::from_slice(&body).expect("invalid json response");
 
     assert_eq!(body_json["status"], "error");
     assert_eq!(body_json["code"], "VALIDATION_ERROR");
@@ -641,12 +642,12 @@ async fn test_api_error_response_conformance() {
 
 #[tokio::test]
 async fn test_api_error_ok_response_conformance() {
-    use axum::{routing::get, Router};
-    use axum::response::IntoResponse;
-    use tower::util::ServiceExt;
     use axum::body::Body;
-    use http_body_util::BodyExt;
     use axum::http::{Request, StatusCode};
+    use axum::response::IntoResponse;
+    use axum::{routing::get, Router};
+    use http_body_util::BodyExt;
+    use tower::util::ServiceExt;
     use xavier::error::ApiError;
 
     async fn error_trigger_ok() -> impl IntoResponse {
@@ -674,7 +675,8 @@ async fn test_api_error_ok_response_conformance() {
         .expect("collect body failed")
         .to_bytes();
 
-    let body_json: serde_json::Value = serde_json::from_slice(&body).expect("invalid json response");
+    let body_json: serde_json::Value =
+        serde_json::from_slice(&body).expect("invalid json response");
 
     assert_eq!(body_json["status"], "error");
     assert_eq!(body_json["code"], "NOT_FOUND");

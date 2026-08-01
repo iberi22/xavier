@@ -1,5 +1,5 @@
+use codegraph_types::{Language, PluginRequest, PluginResponse, Symbol, SymbolKind};
 use std::io::{self, Read};
-use codegraph_types::{PluginRequest, PluginResponse, Symbol, Language, SymbolKind};
 use tree_sitter::{Node, Parser};
 
 pub struct PythonParser {
@@ -94,15 +94,7 @@ impl PythonParser {
     ) -> Option<String> {
         let name_node = node.child_by_field_name("name")?;
         let name = name_node.utf8_text(source.as_bytes()).ok()?.to_string();
-        self.push_symbol(
-            symbols,
-            node,
-            source,
-            file_path,
-            name.clone(),
-            kind,
-            parent,
-        );
+        self.push_symbol(symbols, node, source, file_path, name.clone(), kind, parent);
         Some(name)
     }
 

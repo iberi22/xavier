@@ -59,7 +59,7 @@ impl ClavisLogMasker {
     pub fn mask_message(&self, message: &str) -> String {
         let mut masked = message.to_string();
         let secrets = self.secrets.read().unwrap();
-        
+
         // Sort secrets by length descending to replace longer secrets first
         let mut sorted_secrets: Vec<String> = secrets.iter().cloned().collect();
         sorted_secrets.sort_by_key(|s| std::cmp::Reverse(s.len()));
@@ -84,7 +84,9 @@ static LOG_MASKER: OnceLock<Arc<ClavisLogMasker>> = OnceLock::new();
 
 /// Retrieve the global log masker instance.
 pub fn get_global_masker() -> Arc<ClavisLogMasker> {
-    LOG_MASKER.get_or_init(|| Arc::new(ClavisLogMasker::new())).clone()
+    LOG_MASKER
+        .get_or_init(|| Arc::new(ClavisLogMasker::new()))
+        .clone()
 }
 
 /// Register a raw secret to the global log masker.
@@ -176,8 +178,14 @@ impl ClavisEngine {
     }
 
     /// Register a key with a custom generator callback for rotation.
-    pub async fn register_key_with_generator<F>(&self, id: &str, name: &str, initial_value: &str, ttl_secs: u64, generator: F)
-    where
+    pub async fn register_key_with_generator<F>(
+        &self,
+        id: &str,
+        name: &str,
+        initial_value: &str,
+        ttl_secs: u64,
+        generator: F,
+    ) where
         F: Fn(&str) -> String + Send + Sync + 'static,
     {
         let key = ClavisKey {
@@ -189,7 +197,7 @@ impl ClavisEngine {
             rotation_count: 0,
         };
         register_secret(initial_value);
-        
+
         {
             let mut keys = self.keys.write().unwrap();
             keys.insert(id.to_string(), key);
@@ -240,7 +248,7 @@ impl ClavisEngine {
     pub async fn check_and_rotate_keys(&self) -> Vec<(String, String)> {
         let now = Utc::now();
         let mut rotated = Vec::new();
-        
+
         // Find keys that need rotation
         let keys_to_rotate: Vec<(String, String, u64)> = {
             let keys = self.keys.read().unwrap();
@@ -268,7 +276,11 @@ impl ClavisEngine {
                 Some(gen) => gen(&name),
                 None => {
                     // Default secure UUID-based generator
-                    format!("clavis_{}_{}", name, Uuid::new_v4().to_string().replace("-", ""))
+                    format!(
+                        "clavis_{}_{}",
+                        name,
+                        Uuid::new_v4().to_string().replace("-", "")
+                    )
                 }
             };
 
@@ -291,11 +303,16 @@ static CLAVIS_ENGINE: OnceLock<Arc<ClavisEngine>> = OnceLock::new();
 
 /// Retrieve the global clavis auto-rotation engine instance.
 pub fn get_global_engine() -> Arc<ClavisEngine> {
-    CLAVIS_ENGINE.get_or_init(|| Arc::new(ClavisEngine::new())).clone()
+    CLAVIS_ENGINE
+        .get_or_init(|| Arc::new(ClavisEngine::new()))
+        .clone()
 }
 
 /// Spawn a tokio background task that periodically checks and rotates keys.
-pub fn start_auto_rotation_task(engine: Arc<ClavisEngine>, interval_ms: u64) -> tokio::task::JoinHandle<()> {
+pub fn start_auto_rotation_task(
+    engine: Arc<ClavisEngine>,
+    interval_ms: u64,
+) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(std::time::Duration::from_millis(interval_ms));
         loop {
@@ -303,7 +320,11 @@ pub fn start_auto_rotation_task(engine: Arc<ClavisEngine>, interval_ms: u64) -> 
             let rotated_keys = engine.check_and_rotate_keys().await;
             for (id, new_val) in rotated_keys {
                 let masked = mask_key(&new_val);
-                tracing::info!("Auto-rotated Clavis key '{}'. New masked value: {}", id, masked);
+                tracing::info!(
+                    "Auto-rotated Clavis key '{}'. New masked value: {}",
+                    id,
+                    masked
+                );
             }
         }
     })
@@ -339,7 +360,10 @@ mod tests {
         masker.register_secret(secret2);
 
         // Test masking multiple secrets in a single message
-        let log_msg = format!("Sending request with API key: {} or backup key: {}", secret1, secret2);
+        let log_msg = format!(
+            "Sending request with API key: {} or backup key: {}",
+            secret1, secret2
+        );
         let masked = masker.mask_message(&log_msg);
 
         assert!(!masked.contains(secret1));
@@ -366,7 +390,10 @@ mod tests {
 
         // Verify initial registration and value
         assert_eq!(engine.get_key_value(key_id).await.unwrap(), initial_val);
-        assert_eq!(engine.get_key_value_by_name(key_name).await.unwrap(), initial_val);
+        assert_eq!(
+            engine.get_key_value_by_name(key_name).await.unwrap(),
+            initial_val
+        );
 
         // Register secret in global log masker
         let log_msg = format!("My secret is: {}", initial_val);
@@ -403,9 +430,11 @@ mod tests {
         let initial_val = "custom-initial-val-98765";
 
         // Custom generator simply appends suffix
-        engine.register_key_with_generator(key_id, key_name, initial_val, 1, |name| {
-            format!("{}-custom-rotated", name)
-        }).await;
+        engine
+            .register_key_with_generator(key_id, key_name, initial_val, 1, |name| {
+                format!("{}-custom-rotated", name)
+            })
+            .await;
 
         // Wait for TTL expiration
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;

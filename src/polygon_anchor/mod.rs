@@ -63,10 +63,8 @@ pub fn canonical_identity_bytes(
     ed25519_public_hex: &str,
     ml_dsa_commitment_hex: &str,
 ) -> Vec<u8> {
-    format!(
-        "swal-identity-anchor-v1|{node_id}|{ed25519_public_hex}|{ml_dsa_commitment_hex}"
-    )
-    .into_bytes()
+    format!("swal-identity-anchor-v1|{node_id}|{ed25519_public_hex}|{ml_dsa_commitment_hex}")
+        .into_bytes()
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {
@@ -184,8 +182,7 @@ impl EnvAnchorTransport {
         let force_dry = std::env::var("SWAL_ANCHOR_DRY_RUN")
             .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
             .unwrap_or(false);
-        let dry_run =
-            force_dry || rpc_url.is_none() || !has_anchor_key || contract.is_none();
+        let dry_run = force_dry || rpc_url.is_none() || !has_anchor_key || contract.is_none();
         Self {
             rpc_url,
             chain_id,
@@ -244,12 +241,8 @@ impl AnchorTransport for EnvAnchorTransport {
             #[cfg(feature = "dao-evm")]
             {
                 let rt = tokio::runtime::Handle::try_current();
-                let fut = broadcast::broadcast_from_env(
-                    content_hash_hex,
-                    chain,
-                    contract,
-                    self.kind,
-                );
+                let fut =
+                    broadcast::broadcast_from_env(content_hash_hex, chain, contract, self.kind);
                 let hash = match rt {
                     Ok(handle) => tokio::task::block_in_place(|| handle.block_on(fut))?,
                     Err(_) => {
@@ -327,12 +320,9 @@ impl AnchorRegistry {
             use std::os::unix::fs::PermissionsExt;
             let _ = fs::set_permissions(&self.root, fs::Permissions::from_mode(0o700));
         }
-        let path = self
-            .root
-            .join(format!("{}.json", receipt.content_hash_hex));
+        let path = self.root.join(format!("{}.json", receipt.content_hash_hex));
         let json = serde_json::to_string_pretty(receipt)?;
-        fs::write(&path, json.as_bytes())
-            .with_context(|| format!("write {}", path.display()))?;
+        fs::write(&path, json.as_bytes()).with_context(|| format!("write {}", path.display()))?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -343,8 +333,7 @@ impl AnchorRegistry {
 
     pub fn load(&self, content_hash_hex: &str) -> Result<AnchorReceipt> {
         let path = self.root.join(format!("{content_hash_hex}.json"));
-        let raw = fs::read_to_string(&path)
-            .with_context(|| format!("read {}", path.display()))?;
+        let raw = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
         Ok(serde_json::from_str(&raw)?)
     }
 }

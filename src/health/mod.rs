@@ -803,7 +803,6 @@ mod tests {
             health.status == "healthy" || health.status == "warn" || health.status == "degraded"
         );
         // uptime can be 0 in test environments where no real clock has elapsed
-
     }
 
     #[tokio::test(flavor = "multi_thread")]

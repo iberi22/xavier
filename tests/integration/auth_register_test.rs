@@ -27,7 +27,10 @@ async fn start_test_server(state_dir_path: &std::path::Path) -> (u16, ChildGuard
             .env("XAVIER_TOKEN", "test-token")
             .env("XAVIER_HEADLESS", "true")
             .env("XAVIER_STATE_DIR", state_dir_path.to_str().unwrap())
-            .env("XAVIER_JWT_SECRET", "super-secret-jwt-key-2026-very-secure-indeed")
+            .env(
+                "XAVIER_JWT_SECRET",
+                "super-secret-jwt-key-2026-very-secure-indeed",
+            )
             .env(
                 "XAVIER_CODE_GRAPH_DB_PATH",
                 state_dir_path.join(format!("test-code-{port}.db")),
@@ -90,11 +93,20 @@ async fn test_auth_register_flow() {
         status
     );
 
-    let body: Value = resp.json().await.expect("failed to parse registration response JSON");
+    let body: Value = resp
+        .json()
+        .await
+        .expect("failed to parse registration response JSON");
 
     // Check fields in the top-level structure
-    assert!(body.get("seed_phrase").is_some(), "seed_phrase must be returned");
-    assert!(body["seed_phrase"].is_string(), "seed_phrase must be a string");
+    assert!(
+        body.get("seed_phrase").is_some(),
+        "seed_phrase must be returned"
+    );
+    assert!(
+        body["seed_phrase"].is_string(),
+        "seed_phrase must be a string"
+    );
 
     let seed_phrase = body["seed_phrase"].as_str().unwrap();
     let words_count = seed_phrase.split_whitespace().count();
@@ -108,13 +120,28 @@ async fn test_auth_register_flow() {
     assert!(user_val.get("id").is_some(), "user id must be present");
 
     // CRITICAL: Ensure password_hash is NOT leaked
-    assert!(body.get("password_hash").is_none(), "password_hash must NOT be in root response");
-    assert!(user_val.get("password_hash").is_none(), "password_hash must NOT be in user object");
+    assert!(
+        body.get("password_hash").is_none(),
+        "password_hash must NOT be in root response"
+    );
+    assert!(
+        user_val.get("password_hash").is_none(),
+        "password_hash must NOT be in user object"
+    );
 
     // Also verify other sensitive credentials are NOT leaked
-    assert!(user_val.get("totp_secret").is_none(), "totp_secret must NOT be leaked");
-    assert!(user_val.get("recovery_seed_hash").is_none(), "recovery_seed_hash must NOT be leaked");
-    assert!(user_val.get("backup_codes").is_none(), "backup_codes must NOT be leaked");
+    assert!(
+        user_val.get("totp_secret").is_none(),
+        "totp_secret must NOT be leaked"
+    );
+    assert!(
+        user_val.get("recovery_seed_hash").is_none(),
+        "recovery_seed_hash must NOT be leaked"
+    );
+    assert!(
+        user_val.get("backup_codes").is_none(),
+        "backup_codes must NOT be leaked"
+    );
 
     // 2. POST /auth/register with duplicate email -> 409 Conflict
     let duplicate_payload = json!({
@@ -130,7 +157,11 @@ async fn test_auth_register_flow() {
         .await
         .expect("failed to send duplicate register request");
 
-    assert_eq!(resp_dup.status(), StatusCode::CONFLICT, "expected 409 Conflict for duplicate email");
+    assert_eq!(
+        resp_dup.status(),
+        StatusCode::CONFLICT,
+        "expected 409 Conflict for duplicate email"
+    );
 
     // 3. POST /auth/register with missing fields -> 4xx validation error
     let invalid_payloads = vec![
@@ -146,7 +177,7 @@ async fn test_auth_register_flow() {
             "email": "invalid-no-name@example.com",
             "password": "password"
         }),
-        json!({})
+        json!({}),
     ];
 
     for payload in invalid_payloads {

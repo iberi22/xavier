@@ -5,11 +5,11 @@
 
 pub mod anthropic;
 pub mod client;
-pub mod hardware;
 pub mod config;
 pub mod gemini;
-pub mod local;
+pub mod hardware;
 pub mod llama_cpp;
+pub mod local;
 pub mod minimax;
 pub mod model_manager;
 pub mod openai;
@@ -20,8 +20,8 @@ pub mod types;
 
 pub use client::ModelProviderClient;
 pub use config::ModelProviderConfig;
-pub use llama_cpp::{ManagedLlamaServer, get_global_llama_server, get_managed_server_port};
-pub use model_manager::{LocalModel, scan_local_models};
+pub use llama_cpp::{get_global_llama_server, get_managed_server_port, ManagedLlamaServer};
+pub use model_manager::{scan_local_models, LocalModel};
 pub use rate_limit::{QuotaStatus, RateLimitManager};
 pub use traits::LlmProvider;
 pub use types::{ApiFlavor, ModelProviderStatus, ProviderMode, LLM_TIMEOUT};

@@ -118,9 +118,7 @@ impl ResourceAccounting {
 
     /// Get or create a peer's account.
     pub fn get_account_mut(&mut self, node_id: &NodeId) -> &mut PeerAccount {
-        self.accounts
-            .entry(node_id.clone())
-            .or_default()
+        self.accounts.entry(node_id.clone()).or_default()
     }
 
     /// Record a resource contribution and update reputation.

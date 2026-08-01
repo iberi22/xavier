@@ -1,5 +1,5 @@
+use codegraph_types::{Language, PluginRequest, PluginResponse, Symbol, SymbolKind};
 use std::io::{self, Read};
-use codegraph_types::{PluginRequest, PluginResponse, Symbol, Language, SymbolKind};
 use tree_sitter::{Node, Parser, Tree};
 
 pub struct RustParser {

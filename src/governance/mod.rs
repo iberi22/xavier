@@ -8,10 +8,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use crate::data_commons::governance::{GovernanceConfig, GovernanceEngine};
 use crate::data_commons::types::{
-    XipProposal, BicameralResult, WalletAddress, SystemParams, CouncilMember, CouncilRole
+    BicameralResult, CouncilMember, CouncilRole, SystemParams, WalletAddress, XipProposal,
 };
-use crate::data_commons::governance::{GovernanceEngine, GovernanceConfig};
 
 /// Result of quadratic voting tallying
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -49,7 +49,8 @@ pub struct QuadraticState {
     pub voter_balances: HashMap<String, u64>,
 }
 
-static QUADRATIC_STATE: std::sync::OnceLock<std::sync::Mutex<QuadraticState>> = std::sync::OnceLock::new();
+static QUADRATIC_STATE: std::sync::OnceLock<std::sync::Mutex<QuadraticState>> =
+    std::sync::OnceLock::new();
 
 /// Get or initialize the global quadratic state
 fn get_quadratic_state() -> &'static std::sync::Mutex<QuadraticState> {
@@ -76,9 +77,16 @@ pub fn set_quadratic_balance(voter: &str, balance: u64) {
 }
 
 /// Helper to cast a quadratic vote in the global state
-pub fn cast_quadratic_vote(proposal_id: &str, voter: &str, vote_type: VoteType, credits: u64) -> Result<(), String> {
+pub fn cast_quadratic_vote(
+    proposal_id: &str,
+    voter: &str,
+    vote_type: VoteType,
+    credits: u64,
+) -> Result<(), String> {
     let mut state = get_quadratic_state().lock().unwrap();
-    let proposal = state.proposals.get_mut(proposal_id)
+    let proposal = state
+        .proposals
+        .get_mut(proposal_id)
         .ok_or_else(|| "Proposal not found".to_string())?;
 
     if proposal.votes.iter().any(|v| v.voter == voter) {
@@ -105,7 +113,9 @@ pub fn clear_quadratic_state() {
 /// If a voter's balance is lower than `credits^2`, returns an error.
 pub fn tally_votes(proposal_id: &str) -> Result<TallyResult, String> {
     let state = get_quadratic_state().lock().unwrap();
-    let proposal = state.proposals.get(proposal_id)
+    let proposal = state
+        .proposals
+        .get(proposal_id)
         .ok_or_else(|| "Proposal not found".to_string())?;
 
     let mut yes = 0u64;
@@ -113,12 +123,17 @@ pub fn tally_votes(proposal_id: &str) -> Result<TallyResult, String> {
     let mut abstain = 0u64;
 
     for vote in &proposal.votes {
-        let cost = vote.credits.checked_mul(vote.credits)
+        let cost = vote
+            .credits
+            .checked_mul(vote.credits)
             .ok_or_else(|| "Credit calculation overflow".to_string())?;
 
         let balance = state.voter_balances.get(&vote.voter).cloned().unwrap_or(0);
         if balance < cost {
-            return Err(format!("Voter {} has insufficient balance (has {}, needs {})", vote.voter, balance, cost));
+            return Err(format!(
+                "Voter {} has insufficient balance (has {}, needs {})",
+                vote.voter, balance, cost
+            ));
         }
 
         match vote.vote_type {
@@ -174,11 +189,7 @@ pub trait BicameralDao: Send + Sync {
     ) -> Result<(), String>;
 
     /// Cast a council veto
-    async fn council_veto(
-        &mut self,
-        proposal_id: &str,
-        reason: String,
-    ) -> Result<(), String>;
+    async fn council_veto(&mut self, proposal_id: &str, reason: String) -> Result<(), String>;
 
     /// Appeal a council veto by community overrule
     async fn community_appeal(&mut self, proposal_id: &str) -> Result<(), String>;
@@ -251,7 +262,12 @@ impl MockBicameralDao {
     }
 
     /// With reputation engine.
-    pub fn with_reputation_engine(mut self, engine: std::sync::Arc<std::sync::RwLock<crate::data_commons::reputation::EigenTrustEngine>>) -> Self {
+    pub fn with_reputation_engine(
+        mut self,
+        engine: std::sync::Arc<
+            std::sync::RwLock<crate::data_commons::reputation::EigenTrustEngine>,
+        >,
+    ) -> Self {
         self.engine = self.engine.with_reputation_engine(engine);
         self
     }
@@ -324,12 +340,10 @@ impl BicameralDao for MockBicameralDao {
         // Automatically register activity to make author eligible to submit
         let _ = self.register_activity(author.clone()).await;
 
-        let prop = self.engine.create_proposal(
-            title.to_string(),
-            description.to_string(),
-            changes,
-            author,
-        ).map_err(|e| e.to_string())?;
+        let prop = self
+            .engine
+            .create_proposal(title.to_string(), description.to_string(), changes, author)
+            .map_err(|e| e.to_string())?;
 
         let _ = self.save_state();
         Ok(prop)
@@ -341,13 +355,9 @@ impl BicameralDao for MockBicameralDao {
         voter: WalletAddress,
         approve: bool,
     ) -> Result<(), String> {
-        self.engine.user_vote(
-            proposal_id,
-            &voter,
-            approve,
-            vec![],
-            vec![],
-        ).map_err(|e| e.to_string())?;
+        self.engine
+            .user_vote(proposal_id, &voter, approve, vec![], vec![])
+            .map_err(|e| e.to_string())?;
 
         let _ = self.save_state();
         Ok(())
@@ -359,32 +369,27 @@ impl BicameralDao for MockBicameralDao {
         member_id: &str,
         approve: bool,
     ) -> Result<(), String> {
-        self.engine.council_vote(
-            proposal_id,
-            member_id,
-            approve,
-        ).map_err(|e| e.to_string())?;
+        self.engine
+            .council_vote(proposal_id, member_id, approve)
+            .map_err(|e| e.to_string())?;
 
         let _ = self.save_state();
         Ok(())
     }
 
-    async fn council_veto(
-        &mut self,
-        proposal_id: &str,
-        reason: String,
-    ) -> Result<(), String> {
-        self.engine.council_veto(
-            proposal_id,
-            reason,
-        ).map_err(|e| e.to_string())?;
+    async fn council_veto(&mut self, proposal_id: &str, reason: String) -> Result<(), String> {
+        self.engine
+            .council_veto(proposal_id, reason)
+            .map_err(|e| e.to_string())?;
 
         let _ = self.save_state();
         Ok(())
     }
 
     async fn community_appeal(&mut self, proposal_id: &str) -> Result<(), String> {
-        self.engine.community_appeal(proposal_id).map_err(|e| e.to_string())?;
+        self.engine
+            .community_appeal(proposal_id)
+            .map_err(|e| e.to_string())?;
         let _ = self.save_state();
         Ok(())
     }
@@ -393,7 +398,10 @@ impl BicameralDao for MockBicameralDao {
         // Before tallying, handle auto transitions of expired phases if any.
         self.engine.auto_transition_expired();
 
-        let result = self.engine.tally_votes(proposal_id).map_err(|e| e.to_string())?;
+        let result = self
+            .engine
+            .tally_votes(proposal_id)
+            .map_err(|e| e.to_string())?;
         let _ = self.save_state();
         Ok(result)
     }
@@ -403,7 +411,9 @@ impl BicameralDao for MockBicameralDao {
         proposal_id: &str,
         params: &mut SystemParams,
     ) -> Result<(), String> {
-        self.engine.execute_proposal(proposal_id, params).map_err(|e| e.to_string())?;
+        self.engine
+            .execute_proposal(proposal_id, params)
+            .map_err(|e| e.to_string())?;
         let _ = self.save_state();
         Ok(())
     }
@@ -431,7 +441,9 @@ impl BicameralDao for MockBicameralDao {
         wallet: WalletAddress,
     ) -> Result<(), String> {
         let _ = self.register_activity(wallet.clone()).await;
-        self.engine.support_proposal(proposal_id, &wallet).map_err(|e| e.to_string())?;
+        self.engine
+            .support_proposal(proposal_id, &wallet)
+            .map_err(|e| e.to_string())?;
         let _ = self.save_state();
         Ok(())
     }
@@ -442,7 +454,10 @@ impl BicameralDao for MockBicameralDao {
     }
 
     async fn get_proposal(&self, id: &str) -> Result<XipProposal, String> {
-        self.engine.get_proposal(id).cloned().ok_or_else(|| "Proposal not found".to_string())
+        self.engine
+            .get_proposal(id)
+            .cloned()
+            .ok_or_else(|| "Proposal not found".to_string())
     }
 
     async fn list_council_members(&self) -> Result<Vec<CouncilMember>, String> {
@@ -482,24 +497,34 @@ impl BicameralDao for OnChainBicameralDao {
         author: WalletAddress,
     ) -> Result<XipProposal, String> {
         // Submit locally first
-        let prop = self.mock.submit_proposal(title, description, changes, author).await?;
+        let prop = self
+            .mock
+            .submit_proposal(title, description, changes, author)
+            .await?;
 
         // Submit to EVM chain via alloy
         // Here we simulate the call using the wallet & provider configured
         use alloy::{
             network::{Ethereum, EthereumWallet},
-            signers::local::PrivateKeySigner,
             providers::ProviderBuilder,
+            signers::local::PrivateKeySigner,
         };
 
-        let signer: PrivateKeySigner = self.config.private_key.parse()
+        let signer: PrivateKeySigner = self
+            .config
+            .private_key
+            .parse()
             .map_err(|e| format!("Failed to parse private key: {:?}", e))?;
         let wallet = EthereumWallet::from(signer);
         let _provider = ProviderBuilder::new()
             .network::<Ethereum>()
             .wallet(wallet)
-            .connect_http(self.config.rpc_url.parse::<url::Url>()
-                .map_err(|e| format!("Invalid RPC URL: {:?}", e))?);
+            .connect_http(
+                self.config
+                    .rpc_url
+                    .parse::<url::Url>()
+                    .map_err(|e| format!("Invalid RPC URL: {:?}", e))?,
+            );
 
         tracing::info!("On-chain submission of XIP proposal {} succeeded", prop.id);
 
@@ -512,7 +537,9 @@ impl BicameralDao for OnChainBicameralDao {
         voter: WalletAddress,
         approve: bool,
     ) -> Result<(), String> {
-        self.mock.cast_user_vote(proposal_id, voter, approve).await?;
+        self.mock
+            .cast_user_vote(proposal_id, voter, approve)
+            .await?;
         tracing::info!("On-chain user vote cast for proposal {}", proposal_id);
         Ok(())
     }
@@ -523,16 +550,14 @@ impl BicameralDao for OnChainBicameralDao {
         member_id: &str,
         approve: bool,
     ) -> Result<(), String> {
-        self.mock.cast_council_vote(proposal_id, member_id, approve).await?;
+        self.mock
+            .cast_council_vote(proposal_id, member_id, approve)
+            .await?;
         tracing::info!("On-chain council vote cast for proposal {}", proposal_id);
         Ok(())
     }
 
-    async fn council_veto(
-        &mut self,
-        proposal_id: &str,
-        reason: String,
-    ) -> Result<(), String> {
+    async fn council_veto(&mut self, proposal_id: &str, reason: String) -> Result<(), String> {
         self.mock.council_veto(proposal_id, reason).await?;
         tracing::info!("On-chain council veto cast for proposal {}", proposal_id);
         Ok(())
@@ -540,7 +565,10 @@ impl BicameralDao for OnChainBicameralDao {
 
     async fn community_appeal(&mut self, proposal_id: &str) -> Result<(), String> {
         self.mock.community_appeal(proposal_id).await?;
-        tracing::info!("On-chain community appeal cast for proposal {}", proposal_id);
+        tracing::info!(
+            "On-chain community appeal cast for proposal {}",
+            proposal_id
+        );
         Ok(())
     }
 
@@ -609,8 +637,8 @@ mod tests {
         setup_quadratic_proposal(prop_id, 10);
 
         set_quadratic_balance("voter_yes", 100); // 10^2 = 100
-        set_quadratic_balance("voter_no", 25);   // 5^2 = 25
-        set_quadratic_balance("voter_abs", 9);   // 3^2 = 9
+        set_quadratic_balance("voter_no", 25); // 5^2 = 25
+        set_quadratic_balance("voter_abs", 9); // 3^2 = 9
 
         cast_quadratic_vote(prop_id, "voter_yes", VoteType::Yes, 10).unwrap();
         cast_quadratic_vote(prop_id, "voter_no", VoteType::No, 5).unwrap();

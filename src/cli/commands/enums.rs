@@ -1063,9 +1063,7 @@ pub enum WalletCommand {
 #[derive(Subcommand, Debug, Clone)]
 pub enum PluginCommand {
     /// Install a plugin
-    Install {
-        name: String,
-    },
+    Install { name: String },
     /// List plugins
     List,
 }

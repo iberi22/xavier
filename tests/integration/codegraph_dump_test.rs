@@ -52,10 +52,16 @@ async fn test_scan_and_dump_workflow_produces_valid_json() {
 
     // Verify symbols are inserted into the database
     let stats = db.stats().expect("failed to query db stats");
-    assert!(stats.total_symbols >= 1, "Expected at least 1 symbol in the DB, got {}", stats.total_symbols);
+    assert!(
+        stats.total_symbols >= 1,
+        "Expected at least 1 symbol in the DB, got {}",
+        stats.total_symbols
+    );
 
     // 6. Call perform_dump
-    let path_str = temp_path.to_str().expect("failed to convert path to string");
+    let path_str = temp_path
+        .to_str()
+        .expect("failed to convert path to string");
     let dump_path = perform_dump(&state, path_str)
         .await
         .expect("perform_dump failed");
@@ -63,12 +69,16 @@ async fn test_scan_and_dump_workflow_produces_valid_json() {
     // Verify correct dump path
     let expected_dump_path = temp_path.join(".xavier").join("codegraph.json");
     assert_eq!(dump_path, expected_dump_path);
-    assert!(dump_path.exists(), "Dump file does not exist at {}", dump_path.display());
+    assert!(
+        dump_path.exists(),
+        "Dump file does not exist at {}",
+        dump_path.display()
+    );
 
     // 7. Parse the output codegraph.json
     let dump_content = fs::read_to_string(&dump_path).expect("failed to read dump file");
-    let dump_json: serde_json::Value = serde_json::from_str(&dump_content)
-        .expect("codegraph.json is not a valid JSON document");
+    let dump_json: serde_json::Value =
+        serde_json::from_str(&dump_content).expect("codegraph.json is not a valid JSON document");
 
     // Assert that the symbols array is present and contains our function
     let symbols = dump_json
@@ -76,12 +86,19 @@ async fn test_scan_and_dump_workflow_produces_valid_json() {
         .and_then(|s| s.as_array())
         .expect("No 'symbols' array in codegraph.json");
 
-    assert!(symbols.len() >= 1, "Expected symbols array to have length >= 1");
+    assert!(
+        symbols.len() >= 1,
+        "Expected symbols array to have length >= 1"
+    );
     let contains_func = symbols.iter().any(|sym| {
         sym.get("name")
             .and_then(|n| n.as_str())
             .map(|n| n == "my_cool_test_func")
             .unwrap_or(false)
     });
-    assert!(contains_func, "Dumped symbols do not contain 'my_cool_test_func'. Dump: {}", dump_content);
+    assert!(
+        contains_func,
+        "Dumped symbols do not contain 'my_cool_test_func'. Dump: {}",
+        dump_content
+    );
 }

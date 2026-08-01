@@ -77,8 +77,7 @@ impl SealedVault {
         plaintext.extend_from_slice(&plen.to_be_bytes());
         plaintext.extend_from_slice(passphrase.as_bytes());
 
-        let cipher = Aes256Gcm::new_from_slice(&key)
-            .map_err(|e| anyhow!("AES key init: {e}"))?;
+        let cipher = Aes256Gcm::new_from_slice(&key).map_err(|e| anyhow!("AES key init: {e}"))?;
         let ct = cipher
             .encrypt(Nonce::from_slice(&nonce), plaintext.as_ref())
             .map_err(|e| anyhow!("encrypt failed: {e}"))?;
@@ -121,17 +120,16 @@ impl SealedVault {
         if pt.len() != 34 + plen {
             return Err(VaultError::Corrupt("passphrase length mismatch".into()));
         }
-        let passphrase = String::from_utf8(pt[34..].to_vec())
-            .map_err(|e| VaultError::Corrupt(e.to_string()))?;
-        Ok(OpenedVault { entropy, passphrase })
+        let passphrase =
+            String::from_utf8(pt[34..].to_vec()).map_err(|e| VaultError::Corrupt(e.to_string()))?;
+        Ok(OpenedVault {
+            entropy,
+            passphrase,
+        })
     }
 }
 
-fn derive_vault_key(
-    pin: &str,
-    salt: &[u8; 16],
-    device_key: Option<&[u8; 32]>,
-) -> Result<[u8; 32]> {
+fn derive_vault_key(pin: &str, salt: &[u8; 16], device_key: Option<&[u8; 32]>) -> Result<[u8; 32]> {
     let params = Params::new(ARGON2_M_KIB, ARGON2_T, ARGON2_P, Some(32))
         .map_err(|e| anyhow!("argon2 params: {e}"))?;
     let argon = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);

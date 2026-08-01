@@ -6,8 +6,8 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
+use xavier::data_commons::types::{CouncilRole, SystemParams, WalletAddress};
 use xavier::governance::{BicameralDao, MockBicameralDao};
-use xavier::data_commons::types::{WalletAddress, CouncilRole, SystemParams};
 
 fn resolve_state_path() -> PathBuf {
     let state_dir_str = std::env::var("XAVIER_STATE_DIR")
@@ -15,7 +15,9 @@ fn resolve_state_path() -> PathBuf {
         .or_else(|_| std::env::var("HOME"))
         .unwrap_or_else(|_| ".".to_string());
     let state_dir = PathBuf::from(&state_dir_str);
-    state_dir.join(".xavier").join("bicameral_governance_state.json")
+    state_dir
+        .join(".xavier")
+        .join("bicameral_governance_state.json")
 }
 
 /// Handle governance.
@@ -26,9 +28,14 @@ pub async fn handle_governance(command: GovernanceCommand) -> anyhow::Result<()>
 
     match command {
         GovernanceCommand::List => list_proposals().await,
-        GovernanceCommand::Create { title, description } => create_proposal(title, description).await,
+        GovernanceCommand::Create { title, description } => {
+            create_proposal(title, description).await
+        }
         GovernanceCommand::Status { proposal_id } => show_proposal_status(proposal_id).await,
-        GovernanceCommand::Vote { proposal_id, approve } => cast_vote(proposal_id, approve).await,
+        GovernanceCommand::Vote {
+            proposal_id,
+            approve,
+        } => cast_vote(proposal_id, approve).await,
         GovernanceCommand::Council => list_council_members().await,
     }
 }
@@ -73,14 +80,17 @@ async fn create_proposal(title: String, description: String) -> Result<()> {
     let mut dao = MockBicameralDao::new(Some(state_path));
 
     // Define a valid 65-character author wallet address
-    let author = WalletAddress("xv1_author_0123456789abcdef0123456789abcd0123456789abcdef012345".to_string());
+    let author = WalletAddress(
+        "xv1_author_0123456789abcdef0123456789abcd0123456789abcdef012345".to_string(),
+    );
 
     // Setup some default changes to the system params as proposed changes
     let mut changes = HashMap::new();
     changes.insert("reference_price".to_string(), "12".to_string());
     changes.insert("burn_rate".to_string(), "85".to_string());
 
-    let proposal = dao.submit_proposal(&title, &description, changes, author)
+    let proposal = dao
+        .submit_proposal(&title, &description, changes, author)
         .await
         .map_err(|e| anyhow::anyhow!(e))?;
 
@@ -100,7 +110,8 @@ async fn show_proposal_status(proposal_id: String) -> Result<()> {
     let state_path = resolve_state_path();
     let dao = MockBicameralDao::new(Some(state_path));
 
-    let proposal = dao.get_proposal(&proposal_id)
+    let proposal = dao
+        .get_proposal(&proposal_id)
         .await
         .map_err(|e| anyhow::anyhow!(e))?;
 
@@ -126,7 +137,10 @@ async fn show_proposal_status(proposal_id: String) -> Result<()> {
         println!("  No user votes cast yet.");
     } else {
         for (wallet, vote) in &proposal.weighted_user_votes {
-            println!("  - {}: approve={}, weight={}", wallet.0, vote.approve, vote.weight);
+            println!(
+                "  - {}: approve={}, weight={}",
+                wallet.0, vote.approve, vote.weight
+            );
         }
     }
 
@@ -147,26 +161,34 @@ async fn cast_vote(proposal_id: String, approve: bool) -> Result<()> {
     let mut dao = MockBicameralDao::new(Some(state_path));
 
     // Retrieve proposal first to check its current phase
-    let mut proposal = dao.get_proposal(&proposal_id)
+    let mut proposal = dao
+        .get_proposal(&proposal_id)
         .await
         .map_err(|e| anyhow::anyhow!(e))?;
 
     println!("Current state of proposal: {}", proposal.xip_state.label());
 
     // If it is in Draft or Discussion state, we need to gather support
-    if matches!(proposal.xip_state, types::XipState::Draft { .. } | types::XipState::Discussion { .. }) {
+    if matches!(
+        proposal.xip_state,
+        types::XipState::Draft { .. } | types::XipState::Discussion { .. }
+    ) {
         println!("Proposal is in discussion/draft. Adding supports to push it to voting...");
 
         // Add enough supports (5 supports are needed by default to reach Voting phase)
         for i in 0..5 {
-            let supporter_wallet = WalletAddress(format!("xv1_supporter_wallet_for_governance_testing_phase_00000000000_{}", i));
+            let supporter_wallet = WalletAddress(format!(
+                "xv1_supporter_wallet_for_governance_testing_phase_00000000000_{}",
+                i
+            ));
             if let Err(e) = dao.support_proposal(&proposal_id, supporter_wallet).await {
                 println!("Note on support: {}", e);
             }
         }
 
         // Reload proposal to see if state moved to Voting
-        proposal = dao.get_proposal(&proposal_id)
+        proposal = dao
+            .get_proposal(&proposal_id)
             .await
             .map_err(|e| anyhow::anyhow!(e))?;
         println!("New state after supports: {}", proposal.xip_state.label());
@@ -177,24 +199,47 @@ async fn cast_vote(proposal_id: String, approve: bool) -> Result<()> {
         println!("Casting bicameral votes...");
 
         // 1. Cast community user votes
-        let user_voter = WalletAddress("xv1_community_voter_0123456789abcdef0123456789abcd0123456789abcde".to_string());
-        dao.register_activity(user_voter.clone()).await.map_err(|e| anyhow::anyhow!(e))?;
-        dao.cast_user_vote(&proposal_id, user_voter, approve).await.map_err(|e| anyhow::anyhow!(e))?;
+        let user_voter = WalletAddress(
+            "xv1_community_voter_0123456789abcdef0123456789abcd0123456789abcde".to_string(),
+        );
+        dao.register_activity(user_voter.clone())
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        dao.cast_user_vote(&proposal_id, user_voter, approve)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
         println!("  - Cast community user vote: approve={}", approve);
 
         // 2. Setup/cast council votes
         // Ensure we have council members registered
-        let council = dao.list_council_members().await.map_err(|e| anyhow::anyhow!(e))?;
+        let council = dao
+            .list_council_members()
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
         let member_id = if council.is_empty() {
-            let council_wallet = WalletAddress("xv1_council_member_0123456789abcdef0123456789abcd0123456789abcde".to_string());
-            let m = dao.add_council_member(council_wallet, CouncilRole::CoreMaintainer, vec!["security".to_string()]).await.map_err(|e| anyhow::anyhow!(e))?;
+            let council_wallet = WalletAddress(
+                "xv1_council_member_0123456789abcdef0123456789abcd0123456789abcde".to_string(),
+            );
+            let m = dao
+                .add_council_member(
+                    council_wallet,
+                    CouncilRole::CoreMaintainer,
+                    vec!["security".to_string()],
+                )
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
             m.id
         } else {
             council[0].id.clone()
         };
 
-        dao.cast_council_vote(&proposal_id, &member_id, approve).await.map_err(|e| anyhow::anyhow!(e))?;
-        println!("  - Cast council member ({}) vote: approve={}", member_id, approve);
+        dao.cast_council_vote(&proposal_id, &member_id, approve)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        println!(
+            "  - Cast council member ({}) vote: approve={}",
+            member_id, approve
+        );
 
         // 3. Since both chambers have voted, we can auto-tally and execute to show a full working proposal cycle!
         println!("\nTallying votes for proposal...");
@@ -203,7 +248,10 @@ async fn cast_vote(proposal_id: String, approve: bool) -> Result<()> {
         match dao.tally_votes(&proposal_id).await {
             Ok(result) => {
                 println!("  Quorum met (users): {}", result.user_quorum_met);
-                println!("  Quorum met (council): {}", result.council_votes_for + result.council_votes_against > 0);
+                println!(
+                    "  Quorum met (council): {}",
+                    result.council_votes_for + result.council_votes_against > 0
+                );
                 println!("  Passed both chambers: {}", result.passed);
 
                 if result.passed {
@@ -217,7 +265,9 @@ async fn cast_vote(proposal_id: String, approve: bool) -> Result<()> {
                         println!("  New burn rate: {}%", params.burn_rate);
                     }
                 } else {
-                    println!("  ❌ Proposal rejected (consensus was not reached in both chambers).");
+                    println!(
+                        "  ❌ Proposal rejected (consensus was not reached in both chambers)."
+                    );
                 }
             }
             Err(e) => {
@@ -225,7 +275,10 @@ async fn cast_vote(proposal_id: String, approve: bool) -> Result<()> {
             }
         }
     } else {
-        println!("Proposal is in state: {}. Cannot cast votes right now.", proposal.xip_state.label());
+        println!(
+            "Proposal is in state: {}. Cannot cast votes right now.",
+            proposal.xip_state.label()
+        );
     }
 
     Ok(())
@@ -237,16 +290,24 @@ async fn list_council_members() -> Result<()> {
     let state_path = resolve_state_path();
     let mut dao = MockBicameralDao::new(Some(state_path));
 
-    let members = dao.list_council_members().await.map_err(|e| anyhow::anyhow!(e))?;
+    let members = dao
+        .list_council_members()
+        .await
+        .map_err(|e| anyhow::anyhow!(e))?;
 
     // Add a few default mock members if the council is empty for CLI visibility
     if members.is_empty() {
-        let default_wallet = WalletAddress("xv1_core_maintainer_alpha_0123456789abcdef0123456789abcd0123456789abcde".to_string());
-        let m = dao.add_council_member(
-            default_wallet,
-            CouncilRole::CoreMaintainer,
-            vec!["Security".into(), "Architecture".into()],
-        ).await.map_err(|e| anyhow::anyhow!(e))?;
+        let default_wallet = WalletAddress(
+            "xv1_core_maintainer_alpha_0123456789abcdef0123456789abcd0123456789abcde".to_string(),
+        );
+        let m = dao
+            .add_council_member(
+                default_wallet,
+                CouncilRole::CoreMaintainer,
+                vec!["Security".into(), "Architecture".into()],
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
 
         println!("\nNo active members found. Added default council member:");
         println!("ID:             {}", m.id);

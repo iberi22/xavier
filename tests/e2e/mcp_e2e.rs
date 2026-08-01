@@ -84,7 +84,9 @@ async fn test_state() -> (AppState, WorkspaceContext) {
 fn test_router(state: AppState, workspace: WorkspaceContext) -> Router {
     Router::new()
         .route("/mcp", post(xavier::server::mcp::session::mcp_post_handler))
-        .layer(axum::middleware::from_fn(xavier::server::mcp::auth::mcp_auth_middleware))
+        .layer(axum::middleware::from_fn(
+            xavier::server::mcp::auth::mcp_auth_middleware,
+        ))
         .layer(axum::Extension(workspace))
         .with_state(state)
 }

@@ -460,7 +460,9 @@ impl MultisigWallet {
 }
 
 // Global registry of all multisig wallets
-static MULTISIG_REGISTRY: std::sync::OnceLock<std::sync::Mutex<std::collections::HashMap<Address, MultisigWallet>>> = std::sync::OnceLock::new();
+static MULTISIG_REGISTRY: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<Address, MultisigWallet>>,
+> = std::sync::OnceLock::new();
 
 fn get_registry() -> &'static std::sync::Mutex<std::collections::HashMap<Address, MultisigWallet>> {
     MULTISIG_REGISTRY.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
@@ -482,7 +484,11 @@ pub fn get_multisig_wallet(address: &Address) -> Option<MultisigWallet> {
 }
 
 /// Submit a transaction proposal to a multisig wallet.
-pub fn submit_tx(wallet: &mut MultisigWallet, tx: MultisigProposal, signer: Address) -> Result<TxId> {
+pub fn submit_tx(
+    wallet: &mut MultisigWallet,
+    tx: MultisigProposal,
+    signer: Address,
+) -> Result<TxId> {
     if !wallet.owners.contains(&signer) {
         bail!("Signer is not an owner of this multisig wallet");
     }
@@ -513,7 +519,10 @@ pub fn sign_tx(wallet: &mut MultisigWallet, tx_id: TxId, signer: Address) -> Res
     if !wallet.owners.contains(&signer) {
         bail!("Signer is not an owner of this multisig wallet");
     }
-    let tx = wallet.transactions.get_mut(&tx_id).context("Transaction not found")?;
+    let tx = wallet
+        .transactions
+        .get_mut(&tx_id)
+        .context("Transaction not found")?;
     if tx.executed {
         bail!("Transaction already executed");
     }
@@ -531,7 +540,10 @@ pub fn sign_tx(wallet: &mut MultisigWallet, tx_id: TxId, signer: Address) -> Res
 /// Execute a transaction proposal if the threshold is met.
 pub fn execute_tx(wallet: &mut MultisigWallet, tx_id: TxId) -> Result<()> {
     let (proposal, sig_count) = {
-        let tx = wallet.transactions.get(&tx_id).context("Transaction not found")?;
+        let tx = wallet
+            .transactions
+            .get(&tx_id)
+            .context("Transaction not found")?;
         if tx.executed {
             bail!("Transaction already executed");
         }
@@ -549,16 +561,27 @@ pub fn execute_tx(wallet: &mut MultisigWallet, tx_id: TxId) -> Result<()> {
 
     // Execute proposal actions on the underlying wallet
     match &proposal {
-        MultisigProposal::Transfer { to, amount, description } => {
-            wallet.wallet.debit(*amount, TransactionKind::Redemption, description)?;
+        MultisigProposal::Transfer {
+            to,
+            amount,
+            description,
+        } => {
+            wallet
+                .wallet
+                .debit(*amount, TransactionKind::Redemption, description)?;
 
             // If the target address is in the global registry, credit it
             let mut registry = get_registry().lock().unwrap();
             if let Some(target_wallet) = registry.get_mut(to) {
-                target_wallet.wallet.credit(*amount, TransactionKind::Reward, description);
+                target_wallet
+                    .wallet
+                    .credit(*amount, TransactionKind::Reward, description);
             }
         }
-        MultisigProposal::Stake { amount, duration_days } => {
+        MultisigProposal::Stake {
+            amount,
+            duration_days,
+        } => {
             wallet.wallet.stake(*amount, *duration_days)?;
         }
         MultisigProposal::Unstake { amount } => {
@@ -567,7 +590,10 @@ pub fn execute_tx(wallet: &mut MultisigWallet, tx_id: TxId) -> Result<()> {
     }
 
     // Mark as executed
-    let tx = wallet.transactions.get_mut(&tx_id).context("Transaction not found")?;
+    let tx = wallet
+        .transactions
+        .get_mut(&tx_id)
+        .context("Transaction not found")?;
     tx.executed = true;
 
     // Sync to global registry if registered
@@ -698,10 +724,13 @@ mod tests {
         let owner1 = Address::new("owner1");
         let owner2 = Address::new("owner2");
         let owner3 = Address::new("owner3");
-        let mut wallet = MultisigWallet::new(vec![owner1.clone(), owner2.clone(), owner3.clone()], 2);
+        let mut wallet =
+            MultisigWallet::new(vec![owner1.clone(), owner2.clone(), owner3.clone()], 2);
 
         // Fund standard wallet balance
-        wallet.wallet.credit(1000, TransactionKind::Reward, "Initial funding");
+        wallet
+            .wallet
+            .credit(1000, TransactionKind::Reward, "Initial funding");
 
         let tx = MultisigProposal::Transfer {
             to: Address::new("recipient"),
@@ -723,10 +752,13 @@ mod tests {
         let owner1 = Address::new("owner1");
         let owner2 = Address::new("owner2");
         let owner3 = Address::new("owner3");
-        let mut wallet = MultisigWallet::new(vec![owner1.clone(), owner2.clone(), owner3.clone()], 2);
+        let mut wallet =
+            MultisigWallet::new(vec![owner1.clone(), owner2.clone(), owner3.clone()], 2);
 
         // Fund standard wallet balance
-        wallet.wallet.credit(1000, TransactionKind::Reward, "Initial funding");
+        wallet
+            .wallet
+            .credit(1000, TransactionKind::Reward, "Initial funding");
 
         let tx = MultisigProposal::Transfer {
             to: Address::new("recipient"),

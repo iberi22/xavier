@@ -3,7 +3,6 @@
 //! Only metadata hashes — never seeds or payloads (ADR-SWAL-MESH-GOV).
 
 use super::abi::{AnchorKind, PreparedAnchorCall};
-use anyhow::{bail, Context, Result};
 use alloy::{
     network::{Ethereum, EthereumWallet},
     primitives::{Address, B256},
@@ -11,6 +10,7 @@ use alloy::{
     signers::local::PrivateKeySigner,
     sol,
 };
+use anyhow::{bail, Context, Result};
 
 sol!(
     #[sol(rpc)]
@@ -45,7 +45,11 @@ pub async fn broadcast_prepared_anchor(
     let provider = ProviderBuilder::new()
         .network::<Ethereum>()
         .wallet(wallet)
-        .connect_http(rpc_url.parse::<url::Url>().context("SWAL_POLYGON_RPC_URL")?);
+        .connect_http(
+            rpc_url
+                .parse::<url::Url>()
+                .context("SWAL_POLYGON_RPC_URL")?,
+        );
 
     let to: Address = prepared
         .to

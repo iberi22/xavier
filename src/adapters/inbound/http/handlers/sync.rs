@@ -173,7 +173,8 @@ pub async fn sync_push_handler(Json(req): Json<SyncPeerRequest>) -> impl IntoRes
             status: "error",
             message: "memory sync not initialized".to_string(),
             peer_url: None,
-        }).into_response();
+        })
+        .into_response();
     };
 
     let workspace_id = req
@@ -184,13 +185,18 @@ pub async fn sync_push_handler(Json(req): Json<SyncPeerRequest>) -> impl IntoRes
     match sync.push_to(&req.peer_url, &workspace_id, since).await {
         Ok(session) => {
             set_last_session(session.clone());
-            Json(SyncSuccessResponse { status: "ok", session }).into_response()
+            Json(SyncSuccessResponse {
+                status: "ok",
+                session,
+            })
+            .into_response()
         }
         Err(e) => Json(SyncErrorResponse {
             status: "error",
             message: e.to_string(),
             peer_url: Some(req.peer_url),
-        }).into_response(),
+        })
+        .into_response(),
     }
 }
 
@@ -201,7 +207,8 @@ pub async fn sync_pull_handler(Json(req): Json<SyncPeerRequest>) -> impl IntoRes
             status: "error",
             message: "memory sync not initialized".to_string(),
             peer_url: None,
-        }).into_response();
+        })
+        .into_response();
     };
 
     let workspace_id = req
@@ -212,13 +219,18 @@ pub async fn sync_pull_handler(Json(req): Json<SyncPeerRequest>) -> impl IntoRes
     match sync.pull_from(&req.peer_url, &workspace_id, since).await {
         Ok(session) => {
             set_last_session(session.clone());
-            Json(SyncSuccessResponse { status: "ok", session }).into_response()
+            Json(SyncSuccessResponse {
+                status: "ok",
+                session,
+            })
+            .into_response()
         }
         Err(e) => Json(SyncErrorResponse {
             status: "error",
             message: e.to_string(),
             peer_url: Some(req.peer_url),
-        }).into_response(),
+        })
+        .into_response(),
     }
 }
 
@@ -240,7 +252,8 @@ pub async fn sync_resolve_handler(
             status: "error",
             message: "resolution must be 'local' or 'remote'",
             conflict_id,
-        }).into_response();
+        })
+        .into_response();
     }
 
     let mut applied = false;
@@ -282,7 +295,8 @@ pub async fn sync_resolve_handler(
         conflict_id,
         resolution,
         applied,
-    }).into_response()
+    })
+    .into_response()
 }
 
 // ---------------------------------------------------------------------------

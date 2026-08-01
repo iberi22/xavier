@@ -10,9 +10,8 @@ use tokio::sync::RwLock;
 use tracing::{info, warn};
 
 use crate::context::{
-    ContextBuilder, ContextBuilderConfig, ContextDocument, ContextIndexer,
+    ContextBudgetConfig, ContextBuilder, ContextBuilderConfig, ContextDocument, ContextIndexer,
     Orchestrator, RegenDecision, RegenerationConfig, RegenerationLoop,
-    ContextBudgetConfig,
 };
 use crate::memory::working::{MemoryItem, WorkingMemory};
 
@@ -71,7 +70,8 @@ impl ContextRegenerationPipeline {
         };
 
         Self {
-            regen_loop: RegenerationLoop::with_config(regen_config).with_orchestrator(Arc::clone(&orchestrator)),
+            regen_loop: RegenerationLoop::with_config(regen_config)
+                .with_orchestrator(Arc::clone(&orchestrator)),
             orchestrator,
             indexer: Arc::new(RwLock::new(ContextIndexer::new())),
             working_memory: Arc::new(RwLock::new(WorkingMemory::with_config(wm_config))),
@@ -146,24 +146,28 @@ impl ContextRegenerationPipeline {
         // Build the retrieval plan using current active budgets
         let active_budgets = *self.budgets.read().await;
         let temp_orchestrator = Orchestrator::with_budgets(active_budgets);
-        let plan = temp_orchestrator.precompact(session_id, prompt, &session_docs).await;
+        let plan = temp_orchestrator
+            .precompact(session_id, prompt, &session_docs)
+            .await;
 
         // Execute the plan
-        let selected_docs = temp_orchestrator.execute(&plan, &session_docs, session_id).await;
+        let selected_docs = temp_orchestrator
+            .execute(&plan, &session_docs, session_id)
+            .await;
 
         // Extract skills list
         let skills = Vec::new();
 
         // Build tiered and compressed context using ContextBuilder
-        let final_context = self.builder.build(
-            plan.level,
-            &session_docs,
-            &selected_docs,
-            &skills,
-        );
+        let final_context = self
+            .builder
+            .build(plan.level, &session_docs, &selected_docs, &skills);
 
         // Update regeneration statistics in RegenerationLoop
-        let _ = self.regen_loop.trigger_rebuild(session_id, &session_docs).await?;
+        let _ = self
+            .regen_loop
+            .trigger_rebuild(session_id, &session_docs)
+            .await?;
 
         Ok(final_context)
     }
@@ -262,7 +266,9 @@ impl ContextRegenerationPipeline {
         ground_truth: &HashMap<String, Vec<String>>,
         target_recall: f64,
     ) -> Result<bool, String> {
-        let mut metrics = self.evaluate_recall(session_id, queries, ground_truth, 5).await;
+        let mut metrics = self
+            .evaluate_recall(session_id, queries, ground_truth, 5)
+            .await;
         if metrics.recall_at_k >= target_recall {
             info!(
                 recall = %metrics.recall_at_k,
@@ -298,7 +304,9 @@ impl ContextRegenerationPipeline {
             }
 
             // Re-evaluate
-            metrics = self.evaluate_recall(session_id, queries, ground_truth, 5).await;
+            metrics = self
+                .evaluate_recall(session_id, queries, ground_truth, 5)
+                .await;
         }
 
         let success = metrics.recall_at_k >= target_recall;
@@ -343,11 +351,20 @@ impl ContextRegenerationPipeline {
                 }
 
                 let lower = trimmed.to_lowercase();
-                if lower.contains("decision:") || lower.contains("decide") || lower.contains("architecture:") {
+                if lower.contains("decision:")
+                    || lower.contains("decide")
+                    || lower.contains("architecture:")
+                {
                     critical_decisions.push(format!("- [{}] Decision: {}", role_label, trimmed));
-                } else if lower.contains("error:") || lower.contains("critical") || lower.contains("panic") {
+                } else if lower.contains("error:")
+                    || lower.contains("critical")
+                    || lower.contains("panic")
+                {
                     critical_decisions.push(format!("- [{}] Incident: {}", role_label, trimmed));
-                } else if trimmed.ends_with('?') || lower.contains("how to") || lower.contains("why") {
+                } else if trimmed.ends_with('?')
+                    || lower.contains("how to")
+                    || lower.contains("why")
+                {
                     key_questions.push(format!("- [{}] Query: {}", role_label, trimmed));
                 }
             }
@@ -368,7 +385,12 @@ impl ContextRegenerationPipeline {
             let preview_docs = &sorted_docs[sorted_docs.len() - 2..];
             for doc in preview_docs {
                 let preview: String = doc.content.chars().take(100).collect();
-                summary_lines.push(format!("- {}: {}{}", doc.role, preview, if doc.content.len() > 100 { "..." } else { "" }));
+                summary_lines.push(format!(
+                    "- {}: {}{}",
+                    doc.role,
+                    preview,
+                    if doc.content.len() > 100 { "..." } else { "" }
+                ));
             }
         }
 
@@ -402,7 +424,12 @@ mod tests {
 
         let docs = vec![
             ContextDocument::new("1", "s-1", "user", "How to fix the memory leak?"),
-            ContextDocument::new("2", "s-1", "assistant", "Decision: We will use a bounded FIFO cache to avoid memory leak."),
+            ContextDocument::new(
+                "2",
+                "s-1",
+                "assistant",
+                "Decision: We will use a bounded FIFO cache to avoid memory leak.",
+            ),
         ];
 
         let summary = pipeline.summarize_episodic(&docs);

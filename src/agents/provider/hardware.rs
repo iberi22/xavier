@@ -73,10 +73,7 @@ pub async fn detect_gpu() -> GpuInfo {
 
 fn detect_nvidia_via_smi() -> Option<u64> {
     let output = Command::new("nvidia-smi")
-        .args([
-            "--query-gpu=memory.total",
-            "--format=csv,noheader",
-        ])
+        .args(["--query-gpu=memory.total", "--format=csv,noheader"])
         .output()
         .ok()?;
 
@@ -246,7 +243,10 @@ mod tests {
         assert_eq!(parse_nvidia_smi_output(sample), Some(8192 * 1024 * 1024));
 
         let sample_no_unit = "16128\n";
-        assert_eq!(parse_nvidia_smi_output(sample_no_unit), Some(16128 * 1024 * 1024));
+        assert_eq!(
+            parse_nvidia_smi_output(sample_no_unit),
+            Some(16128 * 1024 * 1024)
+        );
     }
 
     #[test]

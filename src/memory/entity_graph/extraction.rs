@@ -180,8 +180,10 @@ pub(super) fn extract_relation_candidates(text: &str) -> Vec<RawRelation> {
             let Some(target) = cap.name("target").map(|m| m.as_str().trim()) else {
                 continue;
             };
-            let source = best_match(source, &normalized_entities).unwrap_or_else(|| source.to_string());
-            let target = best_match(target, &normalized_entities).unwrap_or_else(|| target.to_string());
+            let source =
+                best_match(source, &normalized_entities).unwrap_or_else(|| source.to_string());
+            let target =
+                best_match(target, &normalized_entities).unwrap_or_else(|| target.to_string());
             relations.push(RawRelation {
                 source,
                 target,
@@ -213,7 +215,10 @@ pub(super) fn extract_entities_without_relations(text: &str) -> Vec<String> {
 }
 
 /// Best match.
-pub(super) fn best_match(candidate: &str, normalized_entities: &std::collections::HashMap<String, String>) -> Option<String> {
+pub(super) fn best_match(
+    candidate: &str,
+    normalized_entities: &std::collections::HashMap<String, String>,
+) -> Option<String> {
     let normalized = normalize_name(candidate);
     normalized_entities.get(&normalized).cloned()
 }

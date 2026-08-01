@@ -181,7 +181,9 @@ mod tests {
 
         // Spawn axum server on background task
         let server_handle = tokio::spawn(async move {
-            axum::serve(listener, app).await.expect("failed to run axum serve");
+            axum::serve(listener, app)
+                .await
+                .expect("failed to run axum serve");
         });
 
         // Build a client to make actual HTTP requests

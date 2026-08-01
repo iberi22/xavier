@@ -677,7 +677,10 @@ mod tests {
             }
         }
         graph.apply_decay(-0.2).await.unwrap();
-        assert_eq!(graph.all_relations().await[0].weight, before_negative_weight);
+        assert_eq!(
+            graph.all_relations().await[0].weight,
+            before_negative_weight
+        );
     }
 
     #[test]
@@ -703,7 +706,11 @@ mod tests {
             }
         }
 
-        assert!(large_text.len() >= 60 * 1024, "Text should be at least 60KB, got {} bytes", large_text.len());
+        assert!(
+            large_text.len() >= 60 * 1024,
+            "Text should be at least 60KB, got {} bytes",
+            large_text.len()
+        );
 
         let start = Instant::now();
         let entities = EntityGraph::extract_entities(&large_text);
@@ -723,8 +730,16 @@ mod tests {
         );
 
         // Verify that extraction completes very quickly (under 2000ms in debug mode, typically <20ms in release) and doesn't saturate or hang
-        assert!(duration_entities.as_millis() < 2000, "Entity extraction took too long: {:?}", duration_entities);
-        assert!(duration_relations.as_millis() < 2000, "Relation extraction took too long: {:?}", duration_relations);
+        assert!(
+            duration_entities.as_millis() < 2000,
+            "Entity extraction took too long: {:?}",
+            duration_entities
+        );
+        assert!(
+            duration_relations.as_millis() < 2000,
+            "Relation extraction took too long: {:?}",
+            duration_relations
+        );
 
         // Ensure we successfully parsed the expected entities
         assert!(entities.iter().any(|e| e.name == "BELA"));
@@ -770,7 +785,13 @@ mod tests {
                 let memory_id = format!("mem-{}", i);
 
                 // Concurrent Upsert
-                let content = format!("User{} works at Company{} and knows User{} who lives in City{}.", i, i, i + 1, i);
+                let content = format!(
+                    "User{} works at Company{} and knows User{} who lives in City{}.",
+                    i,
+                    i,
+                    i + 1,
+                    i
+                );
                 g.upsert_memory(&memory_id, &content, None).await.unwrap();
 
                 // Concurrent Export
@@ -797,13 +818,22 @@ mod tests {
         // Wait for all concurrent tasks to finish to ensure no deadlocks or lock poisoning
         for task in tasks {
             let res = task.await;
-            assert!(res.is_ok(), "Concurrent graph operation task failed/panicked");
+            assert!(
+                res.is_ok(),
+                "Concurrent graph operation task failed/panicked"
+            );
         }
 
         // Verify the final graph can be exported and imported perfectly
-        let final_json = graph.export_json().await.expect("Can export after concurrent access");
+        let final_json = graph
+            .export_json()
+            .await
+            .expect("Can export after concurrent access");
         let new_graph = EntityGraph::new();
-        new_graph.import_json(&final_json).await.expect("Can import the exported concurrent graph state");
+        new_graph
+            .import_json(&final_json)
+            .await
+            .expect("Can import the exported concurrent graph state");
 
         println!(
             "Concurrent stress test complete. Entities in graph: {}, Relations: {}",
@@ -827,7 +857,12 @@ mod tests {
                 let memory_id = format!("heavy-mem-{}", i);
 
                 // Perform writes
-                let content = format!("Node{} links to Node{} and relates to Node{}.", i, i + 1, i + 2);
+                let content = format!(
+                    "Node{} links to Node{} and relates to Node{}.",
+                    i,
+                    i + 1,
+                    i + 2
+                );
                 let _ = g.upsert_memory(&memory_id, &content, None).await.unwrap();
 
                 // Perform reads & queries
@@ -836,7 +871,9 @@ mod tests {
 
                 if i % 3 == 0 {
                     let _ = g.entity(&format!("Node{}", i)).await;
-                    let _ = g.entity_neighbors(&format!("Node{}", i), 2, None, GraphDirection::Both).await;
+                    let _ = g
+                        .entity_neighbors(&format!("Node{}", i), 2, None, GraphDirection::Both)
+                        .await;
                 }
 
                 // Apply decay and inference under load

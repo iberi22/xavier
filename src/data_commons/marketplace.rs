@@ -4,8 +4,8 @@
 //! Allows nodes to list datasets, query them with valid payment, and revoke access.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 
 /// Unique identifier for a dataset
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -71,7 +71,8 @@ impl DataMarketplace {
             metadata.rows.len() as u64,
             metadata.tier,
             metadata.reputation,
-        ).0;
+        )
+        .0;
 
         let mut hasher = Sha256::new();
         hasher.update(metadata.name.as_bytes());
@@ -100,7 +101,9 @@ impl DataMarketplace {
         query: &str,
         payment: u64,
     ) -> Result<DataPage, String> {
-        let (metadata, active) = self.datasets.get(id)
+        let (metadata, active) = self
+            .datasets
+            .get(id)
             .ok_or_else(|| "Dataset not found".to_string())?;
 
         if !active {
@@ -122,7 +125,9 @@ impl DataMarketplace {
                 if query.is_empty() {
                     true
                 } else {
-                    let row_str = serde_json::to_string(row).unwrap_or_default().to_lowercase();
+                    let row_str = serde_json::to_string(row)
+                        .unwrap_or_default()
+                        .to_lowercase();
                     row_str.contains(&query.to_lowercase())
                 }
             })
@@ -143,7 +148,9 @@ impl DataMarketplace {
     ///
     /// * `id` - The ID of the dataset to revoke.
     pub fn revoke_dataset(&mut self, id: &DatasetId) -> Result<(), String> {
-        let entry = self.datasets.get_mut(id)
+        let entry = self
+            .datasets
+            .get_mut(id)
             .ok_or_else(|| "Dataset not found".to_string())?;
 
         if !entry.1 {
@@ -211,9 +218,7 @@ mod tests {
         use crate::data_commons::pricing::PricingTier;
         let mut marketplace = DataMarketplace::new();
 
-        let mut rows = vec![
-            serde_json::json!({ "rtt_ms": 12, "bandwidth_mbps": 450 }),
-        ];
+        let mut rows = vec![serde_json::json!({ "rtt_ms": 12, "bandwidth_mbps": 450 })];
         // Pad to exactly 100 rows to get exactly 10 price under Colaborador tier (100 * 0.1 = 10)
         for _ in 0..99 {
             rows.push(serde_json::json!({ "rtt_ms": 10, "bandwidth_mbps": 100 }));

@@ -4,9 +4,9 @@
 //! responsibilities within the Xavier cognitive memory system.
 use axum::{
     extract::Json,
+    response::IntoResponse,
     routing::{get, post},
     Router,
-    response::IntoResponse,
 };
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -194,11 +194,15 @@ async fn health_handler() -> impl axum::response::IntoResponse {
             needs_vacuum: health.database.needs_vacuum,
         },
         mesh: health.mesh.connectivity,
-        checks: health.checks.iter().map(|c| RouteHealthCheck {
-            name: c.name.clone(),
-            status: format!("{:?}", c.status),
-            detail: c.detail.clone(),
-        }).collect(),
+        checks: health
+            .checks
+            .iter()
+            .map(|c| RouteHealthCheck {
+                name: c.name.clone(),
+                status: format!("{:?}", c.status),
+                detail: c.detail.clone(),
+            })
+            .collect(),
     })
 }
 
@@ -217,7 +221,9 @@ async fn build_handler() -> impl axum::response::IntoResponse {
 }
 
 /// Session event handler.
-pub async fn session_event_handler(Json(event): Json<SessionEvent>) -> impl axum::response::IntoResponse {
+pub async fn session_event_handler(
+    Json(event): Json<SessionEvent>,
+) -> impl axum::response::IntoResponse {
     let Some(entry) = PanelThreadEntry::from_session_event(&event) else {
         return Json(SessionEventResponse {
             status: "ok",
@@ -227,7 +233,8 @@ pub async fn session_event_handler(Json(event): Json<SessionEvent>) -> impl axum
             reason: None,
             detection: None,
             content_sanitized: None,
-        }).into_response();
+        })
+        .into_response();
     };
 
     let security = SecurityService::new();
@@ -246,7 +253,8 @@ pub async fn session_event_handler(Json(event): Json<SessionEvent>) -> impl axum
                 attack_type: format!("{:?}", result.detection.attack_type),
             }),
             content_sanitized: None,
-        }).into_response();
+        })
+        .into_response();
     }
 
     Json(SessionEventResponse {
@@ -257,7 +265,8 @@ pub async fn session_event_handler(Json(event): Json<SessionEvent>) -> impl axum
         reason: None,
         detection: None,
         content_sanitized: Some(result.sanitized_input.is_some()),
-    }).into_response()
+    })
+    .into_response()
 }
 
 // ─── Verification Endpoints ─────────────────────────────────────────────────

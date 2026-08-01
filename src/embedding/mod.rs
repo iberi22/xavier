@@ -739,7 +739,10 @@ mod tests {
     async fn test_auto_triggers_probe_ollama_reachable_with_embeddinggemma() {
         let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
 
-        std::env::set_var("XAVIER_CONFIG_PATH", "nonexistent_config_file_for_test.json");
+        std::env::set_var(
+            "XAVIER_CONFIG_PATH",
+            "nonexistent_config_file_for_test.json",
+        );
         std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
         std::env::remove_var("XAVIER_EMBEDDING_MODEL");
         std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
@@ -784,7 +787,10 @@ mod tests {
     async fn test_auto_triggers_probe_ollama_reachable_without_embeddinggemma() {
         let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
 
-        std::env::set_var("XAVIER_CONFIG_PATH", "nonexistent_config_file_for_test.json");
+        std::env::set_var(
+            "XAVIER_CONFIG_PATH",
+            "nonexistent_config_file_for_test.json",
+        );
         std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
         std::env::remove_var("XAVIER_EMBEDDING_MODEL");
         std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");
@@ -828,7 +834,10 @@ mod tests {
     async fn test_auto_triggers_probe_ollama_unreachable() {
         let _guard = crate::settings::tests::ENV_LOCK.lock().unwrap();
 
-        std::env::set_var("XAVIER_CONFIG_PATH", "nonexistent_config_file_for_test.json");
+        std::env::set_var(
+            "XAVIER_CONFIG_PATH",
+            "nonexistent_config_file_for_test.json",
+        );
         std::env::remove_var("XAVIER_EMBEDDING_LOCAL_URL");
         std::env::remove_var("XAVIER_EMBEDDING_MODEL");
         std::env::remove_var("XAVIER_EMBEDDING_PROVIDER_MODE");

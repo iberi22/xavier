@@ -3,7 +3,7 @@ use axum::{
     extract::Path,
     http::{Method, Request, StatusCode},
     response::{IntoResponse, Response},
-    routing::{get, post, delete},
+    routing::{delete, get, post},
     Json, Router,
 };
 use serde_json::{json, Value};
@@ -13,7 +13,7 @@ use tower::util::ServiceExt;
 
 use xavier::{
     codebase::connection_manager::ConnectionManager,
-    notifications::{NOTIFICATIONS, IslandId},
+    notifications::{IslandId, NOTIFICATIONS},
     storage::migrations,
 };
 
@@ -74,9 +74,18 @@ async fn delete_all_notifications_handler() -> Response {
 fn build_router() -> Router {
     Router::new()
         .route("/notifications", get(list_notifications_handler))
-        .route("/notifications/{id}/read", post(mark_notification_read_handler))
-        .route("/notifications/read-all", post(mark_all_notifications_read_handler))
-        .route("/notifications/all", delete(delete_all_notifications_handler))
+        .route(
+            "/notifications/{id}/read",
+            post(mark_notification_read_handler),
+        )
+        .route(
+            "/notifications/read-all",
+            post(mark_all_notifications_read_handler),
+        )
+        .route(
+            "/notifications/all",
+            delete(delete_all_notifications_handler),
+        )
 }
 
 async fn get_json_body(response: Response) -> Value {

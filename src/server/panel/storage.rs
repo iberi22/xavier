@@ -18,7 +18,11 @@ pub fn resolve_panel_project_id(workspace: &WorkspaceContext) -> String {
     let backend = workspace.workspace.durable_store_backend();
 
     if cfg!(test) {
-        let base_id = if backend == "vec" { "vec_store" } else { "memory" };
+        let base_id = if backend == "vec" {
+            "vec_store"
+        } else {
+            "memory"
+        };
         return format!("{}_test_{}", base_id, workspace.workspace_id);
     }
 

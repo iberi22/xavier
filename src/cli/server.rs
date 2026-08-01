@@ -95,7 +95,12 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     settings.apply_to_env();
 
     // Validate opencode CLI if active
-    if settings.models.provider.trim().eq_ignore_ascii_case("opencode") {
+    if settings
+        .models
+        .provider
+        .trim()
+        .eq_ignore_ascii_case("opencode")
+    {
         use std::process::Command;
         let opencode_exists = if cfg!(windows) {
             Command::new("where")
@@ -164,7 +169,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
 
     let auth_db_file_path = xavier_dir.join("auth.db");
 
-    let auth2_db = Arc::new(parking_lot::Mutex::new(xavier::auth2::db::AuthDb::new(&auth_db_file_path)?));
+    let auth2_db = Arc::new(parking_lot::Mutex::new(xavier::auth2::db::AuthDb::new(
+        &auth_db_file_path,
+    )?));
 
     time_store.init_schema_async().await?;
     audit_logger.init_schema_async().await?;
@@ -255,7 +262,8 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     );
 
     // Consent-first Colby sidecar (usually non-TTY on boot → skip/honour env). Soft-fail.
-    let sidecar = xavier::codebase::codegraph_sidecar::ensure_codegraph_sidecar_soft(&workspace_dir);
+    let sidecar =
+        xavier::codebase::codegraph_sidecar::ensure_codegraph_sidecar_soft(&workspace_dir);
     info!("codegraph sidecar: {}", sidecar.message);
 
     let panel_root = state_panel_root(&workspace_dir, &workspace_id);
@@ -368,7 +376,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let configured_providers =
         xavier::agents::provider::config::ModelProviderConfig::get_all_configured()
             .iter()
-            .filter_map(|c| xavier::agents::provider::router::ProviderKind::from_str(&c.provider_label))
+            .filter_map(|c| {
+                xavier::agents::provider::router::ProviderKind::from_str(&c.provider_label)
+            })
             .collect::<Vec<_>>();
 
     let fallback_chain = xavier::agents::provider::router::ProviderRouter::build_default_chain(
@@ -466,8 +476,14 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/memory/manage", post(manage_handler))
         .route("/memory/timeline/query", post(timeline_query_handler))
         .route("/v1/memories", post(add_handler).get(stats_handler))
-        .route("/v1/memories/search", post(xavier::server::v1_api::v1_memories_search))
-        .route("/v1/memories/prune", post(xavier::server::v1_api::v1_memories_prune))
+        .route(
+            "/v1/memories/search",
+            post(xavier::server::v1_api::v1_memories_search),
+        )
+        .route(
+            "/v1/memories/prune",
+            post(xavier::server::v1_api::v1_memories_prune),
+        )
         .route(
             "/v1/memories/{id}",
             get(xavier::server::v1_api::v1_memories_get),
@@ -478,8 +494,14 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         )
         .route("/agents", get(agent_list_handler))
         .route("/workspace/default", get(workspace_info_handler))
-        .route("/v1/workspaces/db", post(create_workspace_db_handler).get(list_workspace_dbs_handler))
-        .route("/v1/workspaces/db/{id}", delete(delete_workspace_db_handler))
+        .route(
+            "/v1/workspaces/db",
+            post(create_workspace_db_handler).get(list_workspace_dbs_handler),
+        )
+        .route(
+            "/v1/workspaces/db/{id}",
+            delete(delete_workspace_db_handler),
+        )
         .route(
             "/v1/onboarding/suggestions",
             get(onboarding_suggestions_handler),
@@ -836,7 +858,8 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         )
         .route(
             "/v1/mesh/bridges",
-            post(crate::cli::handlers::mesh::create_bridge_handler).get(crate::cli::handlers::mesh::list_bridges_handler),
+            post(crate::cli::handlers::mesh::create_bridge_handler)
+                .get(crate::cli::handlers::mesh::list_bridges_handler),
         )
         .route(
             "/v1/mesh/bridges/{id}",
@@ -921,9 +944,7 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         )
         .route(
             "/notifications/subscriptions/{id}",
-            axum::routing::delete(
-                crate::cli::handlers::notifications::delete_subscription_handler,
-            ),
+            axum::routing::delete(crate::cli::handlers::notifications::delete_subscription_handler),
         )
         .layer(DefaultBodyLimit::max(10 * 1024 * 1024))
         .layer(middleware::from_fn_with_state(
@@ -983,7 +1004,10 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let maloca_store = state.maloca.clone();
 
     let app = Router::new()
-        .nest("/auth", auth_routes::<CliState>(&state.state_dir.to_string_lossy()))
+        .nest(
+            "/auth",
+            auth_routes::<CliState>(&state.state_dir.to_string_lossy()),
+        )
         .route("/health", get(health_handler))
         .route("/metrics", get(metrics_handler))
         .route("/health/cloud", get(cloud_health_handler))
@@ -1160,7 +1184,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
     let mcp_port = crate::cli::config::resolve_mcp_port(mcp_port);
     let expected_token = xavier::security::auth::resolve_xavier_token();
     if expected_token.is_empty() {
-        tracing::warn!("MCP HTTP+SSE server startup skipped: resolve_xavier_token() returned empty");
+        tracing::warn!(
+            "MCP HTTP+SSE server startup skipped: resolve_xavier_token() returned empty"
+        );
     } else if mcp_port > 0 {
         let workspace_registry = Arc::new(xavier::workspace::WorkspaceRegistry::new());
         let _ = workspace_registry.insert_arc(workspace_state.clone()).await;
@@ -1181,9 +1207,9 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
                 ),
             ),
             security_service: Arc::clone(&security_service),
-            code_graph_dump_path: Some(
-                xavier::codebase::codegraph_paths::codegraph_dump_path_for(&state.workspace_dir),
-            ),
+            code_graph_dump_path: Some(xavier::codebase::codegraph_paths::codegraph_dump_path_for(
+                &state.workspace_dir,
+            )),
         };
 
         let bind_host = resolve_http_bind_host();

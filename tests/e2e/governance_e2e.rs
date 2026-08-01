@@ -1,8 +1,8 @@
 #![allow(clippy::field_reassign_with_default)]
 use std::collections::HashMap;
 use xavier::data_commons::{
-    governance::{GovernanceConfig, GovernanceEngine, DynamicQuorum},
-    types::{ProposalStatus, WalletAddress, CouncilRole, SystemParams},
+    governance::{DynamicQuorum, GovernanceConfig, GovernanceEngine},
+    types::{CouncilRole, ProposalStatus, SystemParams, WalletAddress},
 };
 
 #[test]
@@ -67,7 +67,9 @@ fn test_governance_dao_complete_lifecycle_e2e() {
             .expect("Failed to support proposal");
     }
 
-    let updated_prop = engine.get_proposal(&proposal.id).expect("Proposal not found");
+    let updated_prop = engine
+        .get_proposal(&proposal.id)
+        .expect("Proposal not found");
     assert_eq!(updated_prop.status, ProposalStatus::Voting);
 
     // 5. Cast user votes (100% YES)

@@ -349,11 +349,19 @@ impl SecurityService {
 
     /// Get or initialize the KeyManager using hardware-backed master key
     pub fn get_key_manager(&self) -> Result<Arc<crate::crypto::KeyManager>> {
-        if let Some(mgr) = self.key_manager.read().map_err(|e| anyhow!("KeyManager read lock poisoned: {}", e))?.as_ref() {
+        if let Some(mgr) = self
+            .key_manager
+            .read()
+            .map_err(|e| anyhow!("KeyManager read lock poisoned: {}", e))?
+            .as_ref()
+        {
             return Ok(mgr.clone());
         }
 
-        let mut mgr_write = self.key_manager.write().map_err(|e| anyhow!("KeyManager write lock poisoned: {}", e))?;
+        let mut mgr_write = self
+            .key_manager
+            .write()
+            .map_err(|e| anyhow!("KeyManager write lock poisoned: {}", e))?;
         if let Some(mgr) = mgr_write.as_ref() {
             return Ok(mgr.clone());
         }

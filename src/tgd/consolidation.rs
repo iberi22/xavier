@@ -26,8 +26,7 @@ pub struct ProgressReport {
     pub status: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SchedulerState {
     pub last_run_at: Option<DateTime<Utc>>,
     pub last_duration_ms: u64,
@@ -86,7 +85,6 @@ impl TgdConsolidationScheduler {
             };
 
             while let Some(next) = schedule.upcoming(Utc).next() {
-
                 let now = Utc::now();
                 if next > now {
                     let sleep_duration = next

@@ -141,7 +141,10 @@ async fn test_parser_rust_plugin_execution() {
 
     // 4. Verify that "parser-rust" is registered
     let desc = manager.descriptor_for(&Language::Rust);
-    assert!(desc.is_some(), "parser-rust plugin should be registered for Rust");
+    assert!(
+        desc.is_some(),
+        "parser-rust plugin should be registered for Rust"
+    );
     let desc = desc.unwrap();
     assert_eq!(desc.name, "parser-rust");
     assert_eq!(desc.command, "parser-rust");
@@ -153,7 +156,8 @@ async fn test_parser_rust_plugin_execution() {
             pub fn add(left: usize, right: usize) -> usize {
                 left + right
             }
-        "#.to_string(),
+        "#
+        .to_string(),
     }];
 
     let symbols = manager
@@ -166,7 +170,10 @@ async fn test_parser_rust_plugin_execution() {
 
     // 6. Verify parsed symbols
     assert!(!symbols.is_empty(), "should parse symbols");
-    let add_sym = symbols.iter().find(|s| s.name == "add").expect("should find 'add' function");
+    let add_sym = symbols
+        .iter()
+        .find(|s| s.name == "add")
+        .expect("should find 'add' function");
     assert_eq!(add_sym.kind, SymbolKind::Function);
     assert_eq!(add_sym.lang, Language::Rust);
     assert_eq!(add_sym.file_path, "src/lib.rs");

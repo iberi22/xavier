@@ -37,7 +37,9 @@ pub(crate) async fn generate_openai_compatible(
         .header("Content-Type", "application/json");
 
     let api_key_to_use =
-        if config.provider_mode == ProviderMode::Local || config.provider_mode == ProviderMode::ManagedLocal {
+        if config.provider_mode == ProviderMode::Local
+            || config.provider_mode == ProviderMode::ManagedLocal
+        {
             std::env::var("OLLAMA_API_KEY")
                 .ok()
                 .or_else(|| std::env::var("XAVIER_LOCAL_LLM_API_KEY").ok())

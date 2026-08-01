@@ -1,10 +1,10 @@
+use crate::cli::server::json_response;
+use crate::cli::state::CliState;
 use axum::{
     extract::{Json, Path, State},
     http::StatusCode,
     response::IntoResponse,
 };
-use crate::cli::state::CliState;
-use crate::cli::server::json_response;
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use xavier::enterprise::rbac::Role;
@@ -323,7 +323,9 @@ pub async fn update_peer_acl_handler(
                 .as_ref()
                 .map(|entry| entry.public_key_hex.clone())
                 .unwrap_or_default(),
-            namespace_acl: existing.as_ref().and_then(|entry| entry.namespace_acl.clone()),
+            namespace_acl: existing
+                .as_ref()
+                .and_then(|entry| entry.namespace_acl.clone()),
         },
     ) {
         return (
@@ -403,9 +405,7 @@ pub struct CreateBridgeRequest {
 }
 
 /// Create bridge handler.
-pub async fn create_bridge_handler(
-    Json(payload): Json<CreateBridgeRequest>,
-) -> impl IntoResponse {
+pub async fn create_bridge_handler(Json(payload): Json<CreateBridgeRequest>) -> impl IntoResponse {
     let settings = xavier::settings::XavierSettings::current();
     if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
         return (
@@ -473,9 +473,7 @@ pub async fn list_bridges_handler() -> impl IntoResponse {
 }
 
 /// Delete bridge handler.
-pub async fn delete_bridge_handler(
-    Path(id): Path<String>,
-) -> impl IntoResponse {
+pub async fn delete_bridge_handler(Path(id): Path<String>) -> impl IntoResponse {
     let settings = xavier::settings::XavierSettings::current();
     if let Err(e) = xavier::security::license::require_mesh_license(&settings) {
         return (
@@ -621,7 +619,9 @@ pub async fn share_workspace_handler(
     if let Err(e) = xavier::mesh::DataConsentManager::register_active_consent(consent_entry) {
         return (
             StatusCode::INTERNAL_SERVER_ERROR,
-            Json(serde_json::json!({ "error": format!("Failed to register active consent: {}", e) })),
+            Json(
+                serde_json::json!({ "error": format!("Failed to register active consent: {}", e) }),
+            ),
         )
             .into_response();
     }
@@ -668,46 +668,93 @@ pub async fn join_workspace_handler(
 
     let payload_str = match token_data.get("payload").and_then(|v| v.as_str()) {
         Some(s) => s,
-        None => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Missing payload in token" })),
+        None => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": "Missing payload in token" }),
+            )
+        }
     };
 
     let signature_hex = match token_data.get("signature").and_then(|v| v.as_str()) {
         Some(s) => s,
-        None => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Missing signature in token" })),
+        None => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": "Missing signature in token" }),
+            )
+        }
     };
 
     let signature_bytes = match xavier::crypto::hex_decode(signature_hex) {
         Ok(b) => b,
-        Err(_) => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Invalid signature hex format" })),
+        Err(_) => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": "Invalid signature hex format" }),
+            )
+        }
     };
 
     let inner_payload: serde_json::Value = match serde_json::from_str(payload_str) {
         Ok(v) => v,
-        Err(_) => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Invalid inner payload JSON" })),
+        Err(_) => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": "Invalid inner payload JSON" }),
+            )
+        }
     };
 
     let node_id_str = match inner_payload.get("node_id").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
-        None => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Missing node_id in token payload" })),
+        None => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": "Missing node_id in token payload" }),
+            )
+        }
     };
 
     let endpoint = match inner_payload.get("endpoint").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
-        None => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Missing endpoint in token payload" })),
+        None => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": "Missing endpoint in token payload" }),
+            )
+        }
     };
 
     let public_key_hex = match inner_payload.get("public_key_hex").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
-        None => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Missing public_key_hex in token payload" })),
+        None => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": "Missing public_key_hex in token payload" }),
+            )
+        }
     };
 
     let public_key_bytes = match xavier::crypto::hex_decode(&public_key_hex) {
         Ok(b) => b,
-        Err(_) => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Invalid public key hex format" })),
+        Err(_) => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": "Invalid public key hex format" }),
+            )
+        }
     };
 
-    if !xavier::mesh::node::NodeIdentity::verify(&public_key_bytes, payload_str.as_bytes(), &signature_bytes) {
-        return json_response(StatusCode::UNAUTHORIZED, serde_json::json!({ "error": "Invalid token signature (forgery detected)" }));
+    if !xavier::mesh::node::NodeIdentity::verify(
+        &public_key_bytes,
+        payload_str.as_bytes(),
+        &signature_bytes,
+    ) {
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            serde_json::json!({ "error": "Invalid token signature (forgery detected)" }),
+        );
     }
 
     // Determine token_id or use fallback hash of payload_str
@@ -719,7 +766,10 @@ pub async fn join_workspace_handler(
             use sha2::{Digest, Sha256};
             let mut hasher = Sha256::new();
             hasher.update(payload_str.as_bytes());
-            format!("hash-{}", &xavier::crypto::hex_encode(hasher.finalize())[..16])
+            format!(
+                "hash-{}",
+                &xavier::crypto::hex_encode(hasher.finalize())[..16]
+            )
         });
 
     match xavier::mesh::DataConsentManager::is_token_revoked(&token_id) {
@@ -742,13 +792,24 @@ pub async fn join_workspace_handler(
 
     let workspace_id = match inner_payload.get("workspace_id").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
-        None => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Missing workspace_id in token payload" })),
+        None => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": "Missing workspace_id in token payload" }),
+            )
+        }
     };
 
-    let expires_at = inner_payload.get("expires_at").and_then(|v| v.as_u64()).unwrap_or(0);
+    let expires_at = inner_payload
+        .get("expires_at")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     let now = chrono::Utc::now().timestamp() as u64;
     if expires_at < now {
-        return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Token has expired" }));
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({ "error": "Token has expired" }),
+        );
     }
 
     let mut registry = match PeerRegistry::load() {
@@ -783,7 +844,8 @@ pub async fn join_workspace_handler(
     if !peer.shared_workspace_ids.contains(&workspace_id) {
         peer.shared_workspace_ids.push(workspace_id.clone());
     }
-    peer.shared_workspace_tokens.insert(workspace_id.clone(), payload.token.clone());
+    peer.shared_workspace_tokens
+        .insert(workspace_id.clone(), payload.token.clone());
 
     if let Err(e) = registry.add_peer(peer) {
         return (
@@ -827,7 +889,8 @@ pub async fn join_workspace_handler(
         status: "success".to_string(),
         node_id: node_id_str,
         workspace_id,
-    }).into_response()
+    })
+    .into_response()
 }
 
 /// Query workspace handler.
@@ -859,36 +922,73 @@ pub async fn query_workspace_handler(
 
     let payload_str = match token_data.get("payload").and_then(|v| v.as_str()) {
         Some(s) => s,
-        None => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Missing payload in token" })),
+        None => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": "Missing payload in token" }),
+            )
+        }
     };
 
     let signature_hex = match token_data.get("signature").and_then(|v| v.as_str()) {
         Some(s) => s,
-        None => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Missing signature in token" })),
+        None => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": "Missing signature in token" }),
+            )
+        }
     };
 
     let signature_bytes = match xavier::crypto::hex_decode(signature_hex) {
         Ok(b) => b,
-        Err(_) => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Invalid signature hex format" })),
+        Err(_) => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": "Invalid signature hex format" }),
+            )
+        }
     };
 
     let inner_payload: serde_json::Value = match serde_json::from_str(payload_str) {
         Ok(v) => v,
-        Err(_) => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Invalid inner payload JSON" })),
+        Err(_) => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": "Invalid inner payload JSON" }),
+            )
+        }
     };
 
     let public_key_hex = match inner_payload.get("public_key_hex").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
-        None => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Missing public_key_hex in token payload" })),
+        None => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": "Missing public_key_hex in token payload" }),
+            )
+        }
     };
 
     let public_key_bytes = match xavier::crypto::hex_decode(&public_key_hex) {
         Ok(b) => b,
-        Err(_) => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Invalid public key hex format" })),
+        Err(_) => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": "Invalid public key hex format" }),
+            )
+        }
     };
 
-    if !xavier::mesh::node::NodeIdentity::verify(&public_key_bytes, payload_str.as_bytes(), &signature_bytes) {
-        return json_response(StatusCode::UNAUTHORIZED, serde_json::json!({ "error": "Invalid token signature (forgery detected)" }));
+    if !xavier::mesh::node::NodeIdentity::verify(
+        &public_key_bytes,
+        payload_str.as_bytes(),
+        &signature_bytes,
+    ) {
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            serde_json::json!({ "error": "Invalid token signature (forgery detected)" }),
+        );
     }
 
     // Determine token_id or use fallback hash of payload_str
@@ -900,7 +1000,10 @@ pub async fn query_workspace_handler(
             use sha2::{Digest, Sha256};
             let mut hasher = Sha256::new();
             hasher.update(payload_str.as_bytes());
-            format!("hash-{}", &xavier::crypto::hex_encode(hasher.finalize())[..16])
+            format!(
+                "hash-{}",
+                &xavier::crypto::hex_encode(hasher.finalize())[..16]
+            )
         });
 
     match xavier::mesh::DataConsentManager::is_token_revoked(&token_id) {
@@ -921,17 +1024,32 @@ pub async fn query_workspace_handler(
         _ => {}
     }
 
-    let sender_node_id = inner_payload.get("node_id").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+    let sender_node_id = inner_payload
+        .get("node_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unknown")
+        .to_string();
 
     let workspace_id = match inner_payload.get("workspace_id").and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
-        None => return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Missing workspace_id in token payload" })),
+        None => {
+            return json_response(
+                StatusCode::BAD_REQUEST,
+                serde_json::json!({ "error": "Missing workspace_id in token payload" }),
+            )
+        }
     };
 
-    let expires_at = inner_payload.get("expires_at").and_then(|v| v.as_u64()).unwrap_or(0);
+    let expires_at = inner_payload
+        .get("expires_at")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
     let now = chrono::Utc::now().timestamp() as u64;
     if expires_at < now {
-        return json_response(StatusCode::BAD_REQUEST, serde_json::json!({ "error": "Token has expired" }));
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            serde_json::json!({ "error": "Token has expired" }),
+        );
     }
 
     // Security check on query input
@@ -939,14 +1057,16 @@ pub async fn query_workspace_handler(
         .security
         .process_input(&payload.query)
         .await
-        .unwrap_or_else(|_| xavier::ports::inbound::input_security_port::SecureInputResult {
-            allowed: false,
-            sanitized_input: None,
-            original_input: payload.query.clone(),
-            detection_confidence: 1.0,
-            is_injection: true,
-            attack_type: "unknown".to_string(),
-        });
+        .unwrap_or_else(
+            |_| xavier::ports::inbound::input_security_port::SecureInputResult {
+                allowed: false,
+                sanitized_input: None,
+                original_input: payload.query.clone(),
+                detection_confidence: 1.0,
+                is_injection: true,
+                attack_type: "unknown".to_string(),
+            },
+        );
 
     if !sec_result.allowed {
         return (
@@ -954,7 +1074,8 @@ pub async fn query_workspace_handler(
             Json(serde_json::json!({
                 "error": "security_policy_violation",
             })),
-        ).into_response();
+        )
+            .into_response();
     }
 
     let effective_query = sec_result.effective_input();
@@ -974,26 +1095,27 @@ pub async fn query_workspace_handler(
         .get("namespaces")
         .and_then(|v| serde_json::from_value(v.clone()).ok());
 
-    let filtered_memories: Vec<&xavier::memory::store::MemoryRecord> = if let Some(ref namespaces) = allowed_namespaces {
-        durable_state
-            .memories
-            .iter()
-            .filter(|r| {
-                namespaces.iter().any(|pattern| {
-                    let record_clean = r.path.trim_end_matches('/');
-                    let pattern_clean = pattern.trim_end_matches('/');
-                    if record_clean == pattern_clean {
-                        true
-                    } else {
-                        let prefix = format!("{}/", pattern_clean);
-                        record_clean.starts_with(&prefix)
-                    }
+    let filtered_memories: Vec<&xavier::memory::store::MemoryRecord> =
+        if let Some(ref namespaces) = allowed_namespaces {
+            durable_state
+                .memories
+                .iter()
+                .filter(|r| {
+                    namespaces.iter().any(|pattern| {
+                        let record_clean = r.path.trim_end_matches('/');
+                        let pattern_clean = pattern.trim_end_matches('/');
+                        if record_clean == pattern_clean {
+                            true
+                        } else {
+                            let prefix = format!("{}/", pattern_clean);
+                            record_clean.starts_with(&prefix)
+                        }
+                    })
                 })
-            })
-            .collect()
-    } else {
-        durable_state.memories.iter().collect()
-    };
+                .collect()
+        } else {
+            durable_state.memories.iter().collect()
+        };
 
     let docs = std::sync::Arc::new(tokio::sync::RwLock::new(
         filtered_memories
@@ -1002,9 +1124,13 @@ pub async fn query_workspace_handler(
             .collect::<Vec<_>>(),
     ));
 
-    let memory = xavier::memory::qmd_memory::QmdMemory::new_with_workspace(docs, workspace_id.clone());
+    let memory =
+        xavier::memory::qmd_memory::QmdMemory::new_with_workspace(docs, workspace_id.clone());
 
-    let results = match memory.search(effective_query, payload.limit.unwrap_or(10)).await {
+    let results = match memory
+        .search(effective_query, payload.limit.unwrap_or(10))
+        .await
+    {
         Ok(r) => r,
         Err(e) => {
             return (
@@ -1074,7 +1200,8 @@ pub async fn query_workspace_handler(
                         let peer_ws_id = peer_ws_id.clone();
                         let peer_node_id = peer.node_id.0.clone();
                         remote_futures.push(async move {
-                            let res = client.post(&url)
+                            let res = client
+                                .post(&url)
                                 .json(&query_payload)
                                 .timeout(std::time::Duration::from_secs(5))
                                 .send()
@@ -1084,17 +1211,35 @@ pub async fn query_workspace_handler(
                                 Ok(resp) => {
                                     if resp.status().is_success() {
                                         if let Ok(body) = resp.json::<serde_json::Value>().await {
-                                            if let Some(results_arr) = body.get("results").and_then(|v| v.as_array()) {
+                                            if let Some(results_arr) =
+                                                body.get("results").and_then(|v| v.as_array())
+                                            {
                                                 let mut remote_docs = Vec::new();
                                                 for r in results_arr {
                                                     let mut r_clone = r.clone();
                                                     if let Some(obj) = r_clone.as_object_mut() {
-                                                        obj.insert("source".to_string(), serde_json::json!(format!("remote:{}::{}", peer_node_id, peer_ws_id)));
+                                                        obj.insert(
+                                                            "source".to_string(),
+                                                            serde_json::json!(format!(
+                                                                "remote:{}::{}",
+                                                                peer_node_id, peer_ws_id
+                                                            )),
+                                                        );
                                                         if obj.get("source_node_id").is_none() {
-                                                            obj.insert("source_node_id".to_string(), serde_json::json!(peer_node_id.clone()));
+                                                            obj.insert(
+                                                                "source_node_id".to_string(),
+                                                                serde_json::json!(
+                                                                    peer_node_id.clone()
+                                                                ),
+                                                            );
                                                         }
                                                         if obj.get("source_db_id").is_none() {
-                                                            obj.insert("source_db_id".to_string(), serde_json::json!(peer_ws_id.clone()));
+                                                            obj.insert(
+                                                                "source_db_id".to_string(),
+                                                                serde_json::json!(
+                                                                    peer_ws_id.clone()
+                                                                ),
+                                                            );
                                                         }
                                                     }
                                                     remote_docs.push(r_clone);
@@ -1105,7 +1250,12 @@ pub async fn query_workspace_handler(
                                     }
                                 }
                                 Err(e) => {
-                                    tracing::warn!("Failed to query remote workspace {} on peer {}: {}", peer_ws_id, peer_node_id, e);
+                                    tracing::warn!(
+                                        "Failed to query remote workspace {} on peer {}: {}",
+                                        peer_ws_id,
+                                        peer_node_id,
+                                        e
+                                    );
                                 }
                             }
                             None
@@ -1127,7 +1277,8 @@ pub async fn query_workspace_handler(
         "count": search_results.len(),
         "results": search_results,
         "workspace_id": workspace_id,
-    })).into_response()
+    }))
+    .into_response()
 }
 
 /// V1 mesh status handler.

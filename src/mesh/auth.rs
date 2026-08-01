@@ -4,9 +4,9 @@
 //! Authenticated connections are validated against Ed25519 signatures, expiration times,
 //! and valid token payload structure. Unauthenticated or forged attempts are rejected/dropped.
 
+use crate::mesh::node::NodeIdentity;
 use serde::{Deserialize, Serialize};
 use std::time::SystemTime;
-use crate::mesh::node::NodeIdentity;
 
 /// A SWAL Token wrapper used for node authentication.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -39,7 +39,11 @@ pub struct SwalTokenPayload {
 
 impl SwalToken {
     /// Create a new SWAL token by signing a payload with the node identity.
-    pub fn create(identity: &NodeIdentity, expires_at: u64, workspace_id: Option<String>) -> anyhow::Result<Self> {
+    pub fn create(
+        identity: &NodeIdentity,
+        expires_at: u64,
+        workspace_id: Option<String>,
+    ) -> anyhow::Result<Self> {
         let payload = SwalTokenPayload {
             node_id: identity.node_id.as_str().to_string(),
             public_key_hex: crate::crypto::hex_encode(&identity.public_key),
@@ -59,7 +63,9 @@ impl SwalToken {
         let container_bytes = serde_json::to_vec(&container)?;
         let base64_token = crate::crypto::base64_encode(container_bytes);
 
-        Ok(Self { token: base64_token })
+        Ok(Self {
+            token: base64_token,
+        })
     }
 
     /// Verifies and authenticates the SWAL token.
@@ -81,7 +87,11 @@ impl SwalToken {
             .map_err(|e| anyhow::anyhow!("Invalid public key hex format: {}", e))?;
 
         // 1. Verify cryptographic signature
-        if !NodeIdentity::verify(&public_key_bytes, container.payload.as_bytes(), &signature_bytes) {
+        if !NodeIdentity::verify(
+            &public_key_bytes,
+            container.payload.as_bytes(),
+            &signature_bytes,
+        ) {
             anyhow::bail!("Invalid token signature (forgery detected)");
         }
 
@@ -98,9 +108,9 @@ impl SwalToken {
     }
 }
 
-use std::sync::{RwLock, OnceLock};
 use std::collections::{HashMap, HashSet};
-use std::time::{Instant, Duration};
+use std::sync::{OnceLock, RwLock};
+use std::time::{Duration, Instant};
 
 /// Key representation for an Access Control List permission entry.
 #[derive(Debug, Hash, PartialEq, Eq, Clone)]
@@ -289,8 +299,7 @@ mod tests {
             .as_secs();
         let expires_at = now - 60; // 1 minute in the past
 
-        let token = SwalToken::create(&identity, expires_at, None)
-            .expect("Should generate token");
+        let token = SwalToken::create(&identity, expires_at, None).expect("Should generate token");
 
         let result = token.verify();
         assert!(result.is_err(), "Expired token must be rejected");
@@ -306,8 +315,8 @@ mod tests {
             .as_secs();
         let expires_at = now + 3600;
 
-        let mut token = SwalToken::create(&identity, expires_at, None)
-            .expect("Should generate token");
+        let mut token =
+            SwalToken::create(&identity, expires_at, None).expect("Should generate token");
 
         // Manually decode, alter the signature or payload, and re-encode to forge it
         let decoded_bytes = crate::crypto::base64_decode(&token.token).unwrap();
@@ -374,12 +383,18 @@ mod tests {
         }
 
         // Should still return true (cached)
-        assert!(acl.check_permission(node, action, resource), "Should return true from cache before TTL expiration");
+        assert!(
+            acl.check_permission(node, action, resource),
+            "Should return true from cache before TTL expiration"
+        );
 
         // Wait for TTL to expire
         std::thread::sleep(Duration::from_millis(150));
 
         // Should now return false
-        assert!(!acl.check_permission(node, action, resource), "Should return false after cache TTL expires");
+        assert!(
+            !acl.check_permission(node, action, resource),
+            "Should return false after cache TTL expires"
+        );
     }
 }

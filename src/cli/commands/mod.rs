@@ -81,14 +81,8 @@ impl Cli {
                 println!("Searching memories via HTTP API on {}", base_url);
                 // Prefer --max-results / -n flag over positional limit
                 let lim = max_results.clone().or(limit.clone()).unwrap_or(10);
-                search_memories_filtered(
-                    query,
-                    lim,
-                    cluster.clone(),
-                    level.clone(),
-                    *offline_ok,
-                )
-                .await
+                search_memories_filtered(query, lim, cluster.clone(), level.clone(), *offline_ok)
+                    .await
             }
             Command::Usage { cmd } => usage::handle_usage_command(cmd.clone()).await,
             Command::Add {
@@ -241,9 +235,7 @@ impl Cli {
                 PluginCommand::Install { name } => {
                     crate::cli::handlers::plugins::install_plugin(name.clone()).await
                 }
-                PluginCommand::List => {
-                    crate::cli::handlers::plugins::list_plugins().await
-                }
+                PluginCommand::List => crate::cli::handlers::plugins::list_plugins().await,
             },
             Command::Scan { cmd: _ } => {
                 crate::cli::handlers::system_scan_cli::handle_scan_command().await

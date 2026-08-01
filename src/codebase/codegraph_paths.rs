@@ -62,9 +62,6 @@ mod tests {
     #[test]
     fn test_codegraph_dump_path_is_not_db_path() {
         let ws = Path::new("/tmp/test-workspace");
-        assert_ne!(
-            code_graph_db_path_for(ws),
-            codegraph_dump_path_for(ws),
-        );
+        assert_ne!(code_graph_db_path_for(ws), codegraph_dump_path_for(ws),);
     }
 }

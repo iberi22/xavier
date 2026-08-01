@@ -1,10 +1,11 @@
 //! Plugin installation and management CLI command handlers
 
-use anyhow::{Result, ensure};
+use anyhow::{ensure, Result};
 use std::path::PathBuf;
 use xavier_lib::utils::crypto::sha256_hex;
 
-const LIVE_INDEX_URL: &str = "https://raw.githubusercontent.com/swal/xavier-plugins/main/plugins.json";
+const LIVE_INDEX_URL: &str =
+    "https://raw.githubusercontent.com/swal/xavier-plugins/main/plugins.json";
 
 fn xavier_home() -> PathBuf {
     let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("."));
@@ -61,7 +62,8 @@ impl DefaultRegistry {
     }
 
     fn load_embedded() -> Result<Self> {
-        let embedded_json = include_str!("../../../code-graph/fixtures/xavier-plugins/plugins.json");
+        let embedded_json =
+            include_str!("../../../code-graph/fixtures/xavier-plugins/plugins.json");
 
         #[derive(serde::Deserialize)]
         struct FixtureRegistry {
@@ -84,13 +86,17 @@ impl DefaultRegistry {
         let fix: FixtureRegistry = serde_json::from_str(embedded_json)?;
         let mut plugins = Vec::new();
         for p in fix.plugins {
-            let languages: Vec<String> = p.languages.iter().map(|l| {
-                if let Some(s) = l.as_str() {
-                    s.to_string()
-                } else {
-                    l.to_string()
-                }
-            }).collect();
+            let languages: Vec<String> = p
+                .languages
+                .iter()
+                .map(|l| {
+                    if let Some(s) = l.as_str() {
+                        s.to_string()
+                    } else {
+                        l.to_string()
+                    }
+                })
+                .collect();
 
             let mut url = String::new();
             let mut checksum = String::new();
@@ -171,7 +177,12 @@ pub async fn install_plugin(name: String) -> Result<()> {
         && plugin.checksum != "fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210"
         && bytes != b"mock-plugin-content"
     {
-        ensure!(digest == plugin.checksum, "Checksum mismatch: expected {}, got {}", plugin.checksum, digest);
+        ensure!(
+            digest == plugin.checksum,
+            "Checksum mismatch: expected {}, got {}",
+            plugin.checksum,
+            digest
+        );
     }
 
     // Install to ~/.xavier/plugins/

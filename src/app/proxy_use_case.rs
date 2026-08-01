@@ -233,7 +233,9 @@ impl ProxyUseCase {
                 secret = clavis_engine
                     .get_key_value(clavis_id)
                     .await
-                    .ok_or_else(|| ProxyError::SecretError(format!("Clavis key not found: {}", clavis_id)))?;
+                    .ok_or_else(|| {
+                        ProxyError::SecretError(format!("Clavis key not found: {}", clavis_id))
+                    })?;
                 agent_id = "clavis_system".to_string();
             } else {
                 let lease = secrets_engine
@@ -248,7 +250,10 @@ impl ProxyUseCase {
                 agent_id = lease.agent_id.clone();
 
                 let clavis_engine = crate::clavis::get_global_engine();
-                secret = if let Some(rotated_val) = clavis_engine.get_key_value_by_name(&lease.secret_name).await {
+                secret = if let Some(rotated_val) = clavis_engine
+                    .get_key_value_by_name(&lease.secret_name)
+                    .await
+                {
                     rotated_val
                 } else {
                     lease.secret_value.ok_or_else(|| {
@@ -378,7 +383,10 @@ impl ProxyUseCase {
                 Ok(status) => {
                     let now = chrono::Utc::now();
                     if status.rate_limited_until.is_none_or(|until| until < now) {
-                        if provider == "local" || provider == "ollama" || provider == "managed-local" {
+                        if provider == "local"
+                            || provider == "ollama"
+                            || provider == "managed-local"
+                        {
                             let reachability = ModelProviderConfig::for_provider(provider)
                                 .is_reachable()
                                 .await;
@@ -477,7 +485,9 @@ impl ProxyUseCase {
                 secret = clavis_engine
                     .get_key_value(clavis_id)
                     .await
-                    .ok_or_else(|| ProxyError::SecretError(format!("Clavis key not found: {}", clavis_id)))?;
+                    .ok_or_else(|| {
+                        ProxyError::SecretError(format!("Clavis key not found: {}", clavis_id))
+                    })?;
                 agent_id = "clavis_system".to_string();
             } else {
                 let lease = secrets_engine
@@ -492,7 +502,10 @@ impl ProxyUseCase {
                 agent_id = lease.agent_id.clone();
 
                 let clavis_engine = crate::clavis::get_global_engine();
-                secret = if let Some(rotated_val) = clavis_engine.get_key_value_by_name(&lease.secret_name).await {
+                secret = if let Some(rotated_val) = clavis_engine
+                    .get_key_value_by_name(&lease.secret_name)
+                    .await
+                {
                     rotated_val
                 } else {
                     lease.secret_value.ok_or_else(|| {

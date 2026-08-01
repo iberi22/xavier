@@ -37,8 +37,14 @@ pub async fn create_subscription_handler(
     State(_state): State<CliState>,
     Json(payload): Json<CreateSubscriptionPayload>,
 ) -> Response {
-    match NOTIFICATIONS.add_subscription(&payload.url, payload.event_types).await {
-        Ok(sub) => json_response(StatusCode::CREATED, serde_json::to_value(sub).unwrap_or_default()),
+    match NOTIFICATIONS
+        .add_subscription(&payload.url, payload.event_types)
+        .await
+    {
+        Ok(sub) => json_response(
+            StatusCode::CREATED,
+            serde_json::to_value(sub).unwrap_or_default(),
+        ),
         Err(e) => json_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             serde_json::json!({ "error": e.to_string() }),
@@ -49,7 +55,10 @@ pub async fn create_subscription_handler(
 /// List subscriptions handler.
 pub async fn list_subscriptions_handler(State(_state): State<CliState>) -> Response {
     match NOTIFICATIONS.list_subscriptions().await {
-        Ok(subs) => json_response(StatusCode::OK, serde_json::to_value(subs).unwrap_or_default()),
+        Ok(subs) => json_response(
+            StatusCode::OK,
+            serde_json::to_value(subs).unwrap_or_default(),
+        ),
         Err(e) => json_response(
             StatusCode::INTERNAL_SERVER_ERROR,
             serde_json::json!({ "error": e.to_string() }),

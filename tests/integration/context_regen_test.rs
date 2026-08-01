@@ -9,9 +9,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
-use xavier::context::{
-    ContextDocument, ContextRegenerationPipeline, Orchestrator, RegenDecision,
-};
+use xavier::context::{ContextDocument, ContextRegenerationPipeline, Orchestrator, RegenDecision};
 
 #[tokio::test]
 async fn test_full_context_regeneration_pipeline_workflow() {
@@ -107,14 +105,25 @@ async fn test_full_context_regeneration_pipeline_workflow() {
 
     // 5. Setup a ground truth map with matching keywords to verify Recall@K and MRR
     let mut ground_truth = HashMap::new();
-    ground_truth.insert("design pattern RwLock".to_string(), vec!["doc-1".to_string(), "doc-2".to_string()]);
-    ground_truth.insert("decay crash clamping".to_string(), vec!["doc-4".to_string(), "doc-6".to_string()]);
+    ground_truth.insert(
+        "design pattern RwLock".to_string(),
+        vec!["doc-1".to_string(), "doc-2".to_string()],
+    );
+    ground_truth.insert(
+        "decay crash clamping".to_string(),
+        vec!["doc-4".to_string(), "doc-6".to_string()],
+    );
 
-    let queries = vec!["design pattern RwLock".to_string(), "decay crash clamping".to_string()];
+    let queries = vec![
+        "design pattern RwLock".to_string(),
+        "decay crash clamping".to_string(),
+    ];
 
     // Evaluate initial metrics. Since budget is 1, only 1 correct document can be selected per query.
     // Thus the average recall should be exactly 0.5.
-    let initial_metrics = pipeline.evaluate_recall(session_id, &queries, &ground_truth, 2).await;
+    let initial_metrics = pipeline
+        .evaluate_recall(session_id, &queries, &ground_truth, 2)
+        .await;
     assert_eq!(initial_metrics.total_queries, 2);
     assert_eq!(initial_metrics.recall_at_k, 0.5);
 
@@ -136,14 +145,21 @@ async fn test_full_context_regeneration_pipeline_workflow() {
     assert!(budgets.precompact_min_docs > 1);
 
     // Re-evaluate to verify perfect recall
-    let final_metrics = pipeline.evaluate_recall(session_id, &queries, &ground_truth, 5).await;
+    let final_metrics = pipeline
+        .evaluate_recall(session_id, &queries, &ground_truth, 5)
+        .await;
     assert_eq!(final_metrics.recall_at_k, 1.0);
     assert_eq!(final_metrics.mrr, 1.0);
 
     // 7. Verify extractive episodic dialogue summarizer (ctx-episodic-real)
     let docs_all = vec![
         ContextDocument::new("1", "s-1", "user", "How to fix the memory leak?"),
-        ContextDocument::new("2", "s-1", "assistant", "Decision: We will use a bounded FIFO cache to avoid memory leak."),
+        ContextDocument::new(
+            "2",
+            "s-1",
+            "assistant",
+            "Decision: We will use a bounded FIFO cache to avoid memory leak.",
+        ),
     ];
     let summary = pipeline.summarize_episodic(&docs_all);
     assert!(summary.contains("Extractive Dialogue Episodic Summary"));

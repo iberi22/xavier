@@ -324,7 +324,8 @@ pub async fn memory_curate(
         {
             Ok(_) => {
                 let _ = workspace.workspace.persist_beliefs().await;
-                Json(serde_json::json!({ "status": "ok", "message": "Curation completed" })).into_response()
+                Json(serde_json::json!({ "status": "ok", "message": "Curation completed" }))
+                    .into_response()
             }
             Err(e) => crate::error::ApiError::internal(e.to_string()).into_ok_response(),
         }

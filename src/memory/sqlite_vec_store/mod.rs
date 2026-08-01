@@ -37,7 +37,8 @@ pub struct VecSqliteMemoryStore {
     pub(crate) project_id: String,
     pub(crate) config: VecSqliteStoreConfig,
     pub(crate) event_tx: Option<broadcast::Sender<crate::server::events::RealtimeEvent>>,
-    pub(crate) dedup_config: std::sync::Arc<tokio::sync::RwLock<crate::settings::types::DedupSettings>>,
+    pub(crate) dedup_config:
+        std::sync::Arc<tokio::sync::RwLock<crate::settings::types::DedupSettings>>,
 }
 
 /// ConnectionManager project_id for a vec-store file path.
@@ -85,7 +86,9 @@ impl VecSqliteMemoryStore {
             project_id,
             config,
             event_tx: None,
-            dedup_config: std::sync::Arc::new(tokio::sync::RwLock::new(crate::settings::types::DedupSettings::default())),
+            dedup_config: std::sync::Arc::new(tokio::sync::RwLock::new(
+                crate::settings::types::DedupSettings::default(),
+            )),
         };
 
         // Initialize schema

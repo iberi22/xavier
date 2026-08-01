@@ -227,13 +227,16 @@ impl SecurityScanner {
 
         // Also check with leetspeak/accent normalization
         let normalized = crate::security::prompt_guard::strip_accents(
-            &crate::security::prompt_guard::normalize_leetspeak(&input.to_lowercase())
+            &crate::security::prompt_guard::normalize_leetspeak(&input.to_lowercase()),
         );
         if normalized != input.to_lowercase() {
             let matches_norm = self.phrase_matcher.find_matches(&normalized);
             for m in matches_norm {
                 // To avoid duplicate findings if already matched in original
-                if !triggered.iter().any(|t| t.layer == DetectionLayer::PhraseMatch && t.matched == m.phrase) {
+                if !triggered
+                    .iter()
+                    .any(|t| t.layer == DetectionLayer::PhraseMatch && t.matched == m.phrase)
+                {
                     triggered.push(TriggeredDetection {
                         layer: DetectionLayer::PhraseMatch,
                         matched: m.phrase,
@@ -261,10 +264,13 @@ impl SecurityScanner {
 
                 if let Some(decoded) = self.try_decode(encoded) {
                     let decoded_normalized = crate::security::prompt_guard::strip_accents(
-                        &crate::security::prompt_guard::normalize_leetspeak(&decoded.to_lowercase())
+                        &crate::security::prompt_guard::normalize_leetspeak(
+                            &decoded.to_lowercase(),
+                        ),
                     );
                     if self.phrase_matcher.contains_injection(&decoded)
-                        || self.phrase_matcher.contains_injection(&decoded_normalized) {
+                        || self.phrase_matcher.contains_injection(&decoded_normalized)
+                    {
                         triggered.push(TriggeredDetection {
                             layer: DetectionLayer::EncodedContent,
                             matched: format!("{encoding} encoded injection"),

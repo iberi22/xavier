@@ -447,7 +447,8 @@ mod tests {
         let engine_clone = engine.clone();
         let mut receiver = event_bus.subscribe();
         let handle = tokio::spawn(async move {
-            if let Ok(XavierEvent::AgentTaskCompleted { agent_id: id, .. }) = receiver.recv().await {
+            if let Ok(XavierEvent::AgentTaskCompleted { agent_id: id, .. }) = receiver.recv().await
+            {
                 if id == agent_id {
                     engine_clone.revoke_for_agent(&id, "Task Completed").await;
                 }

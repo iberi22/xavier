@@ -438,13 +438,10 @@ pub async fn handle_core_tool(
             Ok(serde_json::to_value(MCPToolResult::structured(val, false))?)
         }
         "get_code_graph" => {
-            let dump_path = _state
-                .code_graph_dump_path
-                .clone()
-                .unwrap_or_else(|| {
-                    let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
-                    crate::codebase::codegraph_paths::codegraph_dump_path_for(&cwd)
-                });
+            let dump_path = _state.code_graph_dump_path.clone().unwrap_or_else(|| {
+                let cwd = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+                crate::codebase::codegraph_paths::codegraph_dump_path_for(&cwd)
+            });
 
             if tokio::fs::try_exists(&dump_path).await.unwrap_or(false) {
                 let json_content = tokio::fs::read_to_string(&dump_path).await?;
@@ -459,13 +456,16 @@ pub async fn handle_core_tool(
             }
 
             // Live fallback when dump is missing/stale — avoid false "not found".
-            let stats = _state.code_db.stats().unwrap_or(code_graph::types::IndexStats {
-                total_files: 0,
-                total_symbols: 0,
-                total_imports: 0,
-                languages: vec![],
-                duration_ms: 0,
-            });
+            let stats = _state
+                .code_db
+                .stats()
+                .unwrap_or(code_graph::types::IndexStats {
+                    total_files: 0,
+                    total_symbols: 0,
+                    total_imports: 0,
+                    languages: vec![],
+                    duration_ms: 0,
+                });
             let hubs = _state.code_query.hubs(0, 20).unwrap_or_default();
             let summary = json!({
                 "source": "live_db",
@@ -484,7 +484,9 @@ pub async fn handle_core_tool(
                     "outgoing": h.outgoing,
                 })).collect::<Vec<_>>(),
             });
-            Ok(serde_json::to_value(MCPToolResult::structured(summary, false))?)
+            Ok(serde_json::to_value(MCPToolResult::structured(
+                summary, false,
+            ))?)
         }
         "codegraph_explore" => {
             let query = arguments
@@ -526,9 +528,7 @@ pub async fn handle_core_tool(
                 .unwrap_or(100)
                 .clamp(1, 1000) as usize;
 
-            let edge_type_str = arguments
-                .get("edge_type")
-                .and_then(|v| v.as_str());
+            let edge_type_str = arguments.get("edge_type").and_then(|v| v.as_str());
 
             let edge_type_filter = match edge_type_str {
                 Some(s) => match s.to_lowercase().as_str() {
@@ -552,9 +552,16 @@ pub async fn handle_core_tool(
             };
 
             let edges = if reverse {
-                _state.code_query.reverse_dependencies(symbol, edge_type_filter, max_depth, limit)?
+                _state.code_query.reverse_dependencies(
+                    symbol,
+                    edge_type_filter,
+                    max_depth,
+                    limit,
+                )?
             } else {
-                _state.code_query.dependencies(symbol, edge_type_filter, max_depth, limit)?
+                _state
+                    .code_query
+                    .dependencies(symbol, edge_type_filter, max_depth, limit)?
             };
 
             let direction = if reverse { "callers" } else { "dependencies" };

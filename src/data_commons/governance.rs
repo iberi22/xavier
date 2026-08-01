@@ -220,7 +220,14 @@ impl GovernanceEngine {
     }
 
     /// Export the internal state of the engine.
-    pub fn get_state(&self) -> (Vec<XipProposal>, Vec<CouncilMember>, HashMap<WalletAddress, u64>, Vec<WalletAddress>) {
+    pub fn get_state(
+        &self,
+    ) -> (
+        Vec<XipProposal>,
+        Vec<CouncilMember>,
+        HashMap<WalletAddress, u64>,
+        Vec<WalletAddress>,
+    ) {
         (
             self.proposals.clone(),
             self.council.clone(),

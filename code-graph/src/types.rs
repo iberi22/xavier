@@ -282,9 +282,7 @@ pub fn stable_symbol_id(
     signature: Option<&str>,
 ) -> String {
     let parent = parent.unwrap_or("");
-    let signature = signature
-        .map(normalize_signature)
-        .unwrap_or_default();
+    let signature = signature.map(normalize_signature).unwrap_or_default();
     let mut hasher = Sha256::new();
     hasher.update(b"v2|");
     hasher.update(project_id.as_bytes());

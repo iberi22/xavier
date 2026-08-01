@@ -104,7 +104,11 @@ impl ApiError {
     /// Retrieve the standard code string and status code.
     pub fn details(&self) -> (StatusCode, &'static str, String) {
         match self {
-            Self::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL_ERROR", msg.clone()),
+            Self::Internal(msg) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL_ERROR",
+                msg.clone(),
+            ),
             Self::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", msg.clone()),
             Self::BadRequest(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg.clone()),
             Self::Unauthorized(msg) => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", msg.clone()),
@@ -112,7 +116,9 @@ impl ApiError {
             Self::Conflict(msg) => (StatusCode::CONFLICT, "CONFLICT", msg.clone()),
             Self::Validation(msg) => (StatusCode::BAD_REQUEST, "VALIDATION_ERROR", msg.clone()),
             Self::Security(msg) => (StatusCode::FORBIDDEN, "SECURITY_VIOLATION", msg.clone()),
-            Self::NotImplemented(msg) => (StatusCode::NOT_IMPLEMENTED, "NOT_IMPLEMENTED", msg.clone()),
+            Self::NotImplemented(msg) => {
+                (StatusCode::NOT_IMPLEMENTED, "NOT_IMPLEMENTED", msg.clone())
+            }
         }
     }
 

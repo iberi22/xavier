@@ -588,12 +588,15 @@ impl QmdMemory {
                         {
                             for child in children {
                                 if let Some(ref cid) = child.id {
-                                    if cid != doc_id && !seen_ids.contains(cid) && matches_filters(
-                                        &child.path,
-                                        &child.metadata,
-                                        &self.workspace_id,
-                                        filters,
-                                    ) {
+                                    if cid != doc_id
+                                        && !seen_ids.contains(cid)
+                                        && matches_filters(
+                                            &child.path,
+                                            &child.metadata,
+                                            &self.workspace_id,
+                                            filters,
+                                        )
+                                    {
                                         seen_ids.insert(cid.clone());
                                         next_ids.push(cid.clone());
                                         all_docs.push(child);
@@ -736,7 +739,10 @@ mod tests {
 
         // Cleanup: restore env vars so other tests (e.g. reindex_null_embeddings) are not affected
         unsafe {
-            env::set_var("XAVIER_EMBEDDING_URL", "http://localhost:11434/v1/embeddings");
+            env::set_var(
+                "XAVIER_EMBEDDING_URL",
+                "http://localhost:11434/v1/embeddings",
+            );
             env::remove_var("XAVIER_EMBEDDER");
         }
     }
