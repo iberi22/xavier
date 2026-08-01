@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "postbuild": "node -e \"const fs = require('fs'); fs.rmSync('dist', { recursive: true, force: true }); fs.cpSync('build', 'dist', { recursive: true });\"",
     "check": "pnpm run biome:check && pnpm run typecheck && pnpm run build",
     "biome:check": "biome check src/App.tsx src/main.tsx playwright.config.ts tests/generative-ui.spec.ts",
     "biome:write": "biome check --write src/App.tsx src/main.tsx playwright.config.ts tests/generative-ui.spec.ts",
