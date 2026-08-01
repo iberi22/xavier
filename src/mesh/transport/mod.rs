@@ -2,6 +2,9 @@
 //!
 //! Handles low-level HTTP requests between Xavier nodes (Phase 1).
 
+#[cfg(feature = "mesh")]
+pub mod libp2p;
+
 use crate::mesh::node::NodeIdentity;
 use crate::mesh::peer::PeerInfo;
 use crate::mesh::protocol::{
@@ -235,7 +238,7 @@ mod tests {
     #[cfg(feature = "mesh")]
     async fn transport_reconnects_on_disconnect() {
         use crate::mesh::libp2p_transport::Libp2pTransport;
-        use libp2p::{PeerId, Multiaddr};
+        use ::libp2p::{PeerId, Multiaddr};
 
         let identity = Arc::new(NodeIdentity::generate());
         let mut transport = Libp2pTransport::new(identity).await.unwrap();
