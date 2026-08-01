@@ -41,6 +41,7 @@ pub mod challenge;
 pub mod cloud_node;
 pub mod context_bridge;
 pub mod crypto_gating;
+pub mod dashboard;
 pub mod data_consent;
 pub mod data_sanitizer;
 #[cfg(feature = "mesh")]
@@ -70,6 +71,7 @@ pub use acl::{MeshAcl, NamespaceAclEntry, NodeAclEntry};
 #[cfg(feature = "mesh")]
 pub use auto_update::{AutoUpdateService, UpdateStatus};
 pub use context_bridge::{BridgeKind, BridgeRegistry, ContextBridge};
+pub use dashboard::{aggregate_dashboard, MeshBandwidth, MeshDashboardResponse, MeshPeerHealth};
 pub use data_consent::{ActiveConsent, ConsentLevel, ConsentRecord, DataConsentManager};
 pub use data_sanitizer::{DataSanitizer, SanitizationAction, SanitizationRule};
 #[cfg(feature = "mesh")]
