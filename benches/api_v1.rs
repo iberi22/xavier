@@ -4,8 +4,8 @@ use std::sync::Arc;
 use tokio::runtime::Runtime;
 use xavier::agents::RuntimeConfig;
 use xavier::server::v1_api::{
-    v1_memories_add, v1_memories_list, v1_memories_search, V1AddMemoryRequest, V1PaginationParams,
-    V1SearchRequest,
+    v1_memories_add, v1_memories_list, v1_memories_search, V1AddMemoryRequest, V1AddParams,
+    V1PaginationParams, V1SearchRequest,
 };
 use xavier::workspace::{WorkspaceConfig, WorkspaceContext, WorkspaceState};
 
@@ -28,6 +28,7 @@ fn bench_v1_api(c: &mut Criterion) {
                 embedding_provider_mode: xavier::workspace::EmbeddingProviderMode::BringYourOwn,
                 managed_google_embeddings: false,
                 sync_policy: xavier::workspace::SyncPolicy::LocalOnly,
+                dedup: Default::default(),
             },
             RuntimeConfig::default(),
             temp_dir.join("threads"),
@@ -63,9 +64,15 @@ fn bench_v1_api(c: &mut Criterion) {
                     kind: None,
                     evidence_kind: None,
                     namespace: None,
+                    mode: None,
                     provenance: None,
                 };
-                v1_memories_add(Extension(context.clone()), Json(payload)).await
+                v1_memories_add(
+                    Extension(context.clone()),
+                    Query(V1AddParams { mode: None }),
+                    Json(payload),
+                )
+                .await
             })
         });
     });
