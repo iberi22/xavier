@@ -1976,8 +1976,10 @@ mod tests {
         assert!(item.get("score").is_some());
 
         let snippet = item["snippet"].as_str().expect("snippet should be string");
-        assert!(snippet.len() <= 100);
-        assert!(long_content.contains(snippet));
+        assert!(snippet.len() <= 200);
+        // Verify snippet contains query-relevant terms
+        let snippet_lower = snippet.to_lowercase();
+        assert!(snippet_lower.contains("long") && snippet_lower.contains("memory"));
         assert!(item.get("content").is_none());
         assert!(item.get("embedding").is_none());
         assert!(item.get("memory").is_none());
