@@ -60,6 +60,7 @@ pub mod protocol;
 pub mod context_bridge;
 pub mod telemetry;
 pub mod telemetry_collector;
+pub mod dashboard;
 pub mod tokenomics;
 pub mod transport;
 // Modernized libp2p transport (v0.56) with NAT traversal, reconnection backoff and metrics.
@@ -69,6 +70,7 @@ pub mod libp2p_transport;
 pub use acl::{MeshAcl, NodeAclEntry, NamespaceAclEntry};
 #[cfg(feature = "mesh")]
 pub use auto_update::{AutoUpdateService, UpdateStatus};
+pub use dashboard::{aggregate_dashboard, MeshBandwidth, MeshDashboardResponse, MeshPeerHealth};
 pub use data_consent::{ConsentLevel, DataConsentManager, ConsentRecord, ActiveConsent};
 pub use data_sanitizer::{DataSanitizer, SanitizationAction, SanitizationRule};
 #[cfg(feature = "mesh")]
