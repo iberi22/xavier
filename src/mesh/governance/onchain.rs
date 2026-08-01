@@ -42,7 +42,12 @@ impl OnchainDaoClient {
     }
 
     /// Submits a proposal to the XavierDAO contract.
-    pub async fn propose(&self, cluster_id: &str, title: &str, description: &str) -> anyhow::Result<()> {
+    pub async fn propose(
+        &self,
+        cluster_id: &str,
+        title: &str,
+        description: &str,
+    ) -> anyhow::Result<()> {
         let signer: PrivateKeySigner = self.config.private_key.parse()?;
         let wallet = EthereumWallet::from(signer);
         let provider = ProviderBuilder::new()
@@ -121,7 +126,10 @@ impl OnchainDaoClient {
         let len = bytes.len().min(32);
         cluster_id_bytes[..len].copy_from_slice(&bytes[..len]);
 
-        let status = contract.getProposalStatus(cluster_id_bytes.into()).call().await?;
+        let status = contract
+            .getProposalStatus(cluster_id_bytes.into())
+            .call()
+            .await?;
         Ok((status.approved, status.upvotes, status.downvotes))
     }
 }
