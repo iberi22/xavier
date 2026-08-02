@@ -7,3 +7,6 @@
 
 ## 2026-07-31 - Bookmarks a11y reapplied on BookmarkItem
 **Learning:** After Bolt extracted `BookmarkItem`, Palette PRs #1093/#1097 conflicted on `BookmarksView.tsx`. Re-apply aria-labels/focus rings on category chips (`BookmarksView`) and item controls (`BookmarkItem`).
+## 2026-08-02 - [WAI-ARIA Switch Roles for Custom Toggles]
+**Learning:** When building custom toggle switch components (e.g. using a styled button with a sliding indicator instead of a native checkbox), they require `role="switch"` and `aria-checked` attributes to be properly announced by screen readers as toggleable switches rather than generic buttons.
+**Action:** Always verify that any custom toggle UI implements the WAI-ARIA switch pattern and includes appropriate focus-visible styles (e.g., `focus-visible:outline-none focus-visible:ring-2`) so keyboard users can navigate to and operate them clearly.
