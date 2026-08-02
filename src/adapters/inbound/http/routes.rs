@@ -705,7 +705,10 @@ mod route_tests {
         // Status can be "healthy", "warn", "degraded", or "unhealthy" in test environments
         let status = parsed["status"].as_str().unwrap_or("");
         assert!(
-            status == "healthy" || status == "warn" || status == "degraded" || status == "unhealthy",
+            status == "healthy"
+                || status == "warn"
+                || status == "degraded"
+                || status == "unhealthy",
             "expected status to be one of healthy/warn/degraded/unhealthy, got: {}",
             status
         );
