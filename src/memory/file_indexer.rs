@@ -437,6 +437,10 @@ mod tests {
         let result1 = indexer.index_all().await.unwrap();
         assert_eq!(result1.total_files, 2);
 
+        // Coarse filesystems (1s mtime) can keep the same timestamp if we rewrite
+        // within the same second; wait so the cache invalidation path is exercised.
+        tokio::time::sleep(std::time::Duration::from_millis(1100)).await;
+
         // Let's modify file1.md (changes both size and mtime)
         fs::write(
             &test_file1,
