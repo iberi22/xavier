@@ -248,9 +248,11 @@ export function OfflineModelManager({ token }: OfflineModelManagerProps) {
             </div>
             <button
               type="button"
+              role="switch"
+              aria-checked={autoStart}
               onClick={handleToggleAutoStart}
               disabled={savingConfig}
-              className={`relative w-10 h-6 rounded-full transition-all duration-300 focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
+              className={`relative w-10 h-6 rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
                 autoStart ? "bg-[#39ff14]" : "bg-white/10"
               }`}
               aria-label="Toggle auto start"

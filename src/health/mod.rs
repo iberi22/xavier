@@ -800,7 +800,9 @@ mod tests {
         let health = collect_health(&settings, None).await;
         assert!(!health.version.is_empty());
         assert!(
-            health.status == "healthy" || health.status == "warn" || health.status == "degraded"
+            health.status == "healthy"
+                || health.status == "warn"
+                || health.status == "degraded"
                 || health.status == "unhealthy"
         );
         // uptime can be 0 in test environments where no real clock has elapsed

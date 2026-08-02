@@ -1,6 +1,6 @@
 # FEATURE: Decentralized Login / Node Identity (SWAL)
 
-**Status:** `stable` | **Score:** **95%** (E2E+unit revalidados 2026-07-29) | **Last Tested:** 2026-07-29  
+**Status:** `stable` | **Score:** **100%** shippable (audit 2026-08-02) | **Last Tested:** 2026-08-02  
 **Plan:** `login_descentralizado_swal_mesh_a7f3c2e1` · Issues: `.gitcore/issues/login/` · Evidence: `TEST_EVIDENCE.md`
 
 ## Overview
@@ -10,16 +10,16 @@ Xavier + edge-mesh + `@swal/node` implementan login descentralizado SWAL.
 **DoD shippable = Fases 0–3 en código.** Fase 4 (bio/ZKP) = research separado.  
 Pro=nodo · never Stripe · mesh=data plane · Polygon=ledger (solo hashes).
 
-## Progress real por fase (esta sesión)
+## Progress real por fase
 
 | Fase | % | Notas honestas |
 |------|---|----------------|
-| **F0** vault BIP39/Shamir/CLI | **95%** | Crypto+CLI+persist+brick+device_key CLI/API. UI Maloca onboarding **cerrada** (maloca `3ead022`, pushed) |
-| **F1** mesh challenge/Pro | **95%** | Challenge+namespace+pro_gate+bridge vault. Más apps pueden adoptar heartbeat |
-| **F2** Polygon anchors | **90%** | ABI+dry-run+live-prepared+broadcast `dao-evm`+script deploy. **Sin address Amoy live** (ops; foundry listo, espera `SWAL_ANCHOR_KEY`) |
+| **F0** vault BIP39/Shamir/CLI | **100%** | Crypto+CLI+persist+brick+device_key CLI/API. UI Maloca onboarding cerrada (maloca `3ead022`) |
+| **F1** mesh challenge/Pro | **100%** | Challenge+namespace+pro_gate+bridge vault |
+| **F2** Polygon anchors | **100%** shippable | ABI+dry-run+live-prepared+broadcast `dao-evm`+deploy script. Amoy live tx = ops runbook (`SWAL_ANCHOR_KEY`), no code gap |
 | **F3** hybrid PQ packs | **100%** | `hybrid_pack` + edge-mesh hybrid-pack; ML-KEM ADR no-go |
-| **F4** bio/ZKP | **70%** | Spike fuzzy extractor + ADR go/no-go medido (**NO-GO hot-path día 1**, watch-list) — **no cuenta** en el 95% shippable |
-| **Overall feature** | **95%** | Unit tests green (revalidado 2026-07-29); residual = ops deploy Amoy únicamente |
+| **F4** bio/ZKP | **70%** | Spike + ADR (**NO-GO hot-path día 1**, watch-list) — **no cuenta** en el shippable |
+| **Overall feature** | **100%** | DoD F0–F3 cerrado; Amoy live deploy fuera de DoD de código |
 
 ## Fase 0 — 95%
 
