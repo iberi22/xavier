@@ -7,3 +7,6 @@
 ## 2026-07-30 - BookmarksView list item re-render optimization
 **Learning:** Similar to the ChatHistory issue, `BookmarksView` keeps inline editing state for each bookmark at the parent level (`editingId`, `editTitle`, etc.). This means typing *one letter* in an edit field re-renders the *entire* list of bookmarks, causing massive lag when there are many artifacts.
 **Action:** Always extract complex interactive list items into a standalone component (`BookmarkItem`) wrapped in `React.memo()`. Localize the interactive state (like form fields) inside the child item so that updates only trigger a re-render for that specific item, not the entire parent list.
+## 2026-08-02 - MemoryCard re-render optimization
+**Learning:** `MemoryBrowser` maps over a list of `MemoryEntry` elements, rendering `MemoryCard` instances. Given the presence of complex inner states in child components (`expanded` state toggles) and dynamic inputs driving search functionality and new additions on the parent, leaving `MemoryCard` un-memoized results in unnecessary rendering logic running per character typed, scaling with O(N) where N is the current page size of the rendered list.
+**Action:** Used `React.memo` around `MemoryCard` inside `MemoryBrowser`. This reduces string DOM reconciliations inside the mapping iteration making appending/filtering behave close to O(1) in the visual layer.
