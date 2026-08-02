@@ -859,6 +859,18 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_count_rows_invalid_table() {
+        let db = CodebaseDb::open_in_memory().await.unwrap();
+        db.create_schema().await.unwrap();
+
+        let count = count_rows(&db, "invalid_table_name").await;
+        assert_eq!(count, 0);
+
+        let count = count_rows(&db, "symbols; DROP TABLE symbols;").await;
+        assert_eq!(count, 0);
+    }
+
+    #[tokio::test]
     async fn test_batch_inserts() {
         let db = CodebaseDb::open_in_memory().await.unwrap();
         db.create_schema().await.unwrap();
@@ -949,6 +961,24 @@ mod tests {
     }
 
     async fn count_rows(db: &CodebaseDb, table: &str) -> i64 {
+        let allowed_tables = [
+            "repo_meta",
+            "git_commits",
+            "git_files",
+            "git_blame",
+            "symbols",
+            "symbol_relations",
+            "imports",
+            "code_patterns",
+            "code_chunks",
+            "code_embeddings",
+            "code_fts",
+        ];
+
+        if !allowed_tables.contains(&table) {
+            return 0;
+        }
+
         let table = table.to_string();
         ConnectionManager::global()
             .with_conn(&db.project_id, move |conn| {
