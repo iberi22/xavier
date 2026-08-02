@@ -141,13 +141,16 @@ export function CloudRelayConfig({ token }: { token: string }) {
             </div>
             <button
               type="button"
+              role="switch"
+              aria-checked={cloudSettings.auto_heartbeat}
+              aria-label="Toggle Auto Heartbeat"
               onClick={() =>
                 setCloudSettings({
                   ...cloudSettings,
                   auto_heartbeat: !cloudSettings.auto_heartbeat,
                 })
               }
-              className={`relative w-10 h-5 rounded-full transition-all duration-300 ${
+              className={`relative w-10 h-5 rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
                 cloudSettings.auto_heartbeat
                   ? "bg-[#39ff14] shadow-[0_0_10px_rgba(57,255,20,0.3)]"
                   : "bg-white/10"
