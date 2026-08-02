@@ -2,3 +2,9 @@
 # will have compiled files and executables
 /target/
 /gen/schemas
+
+# Compile-time sidecar stubs created by build.rs when the real binary is absent.
+# Windows release sidecars may still be committed; do not commit Linux/macOS stubs.
+/binaries/xavier-*-unknown-linux-gnu
+/binaries/xavier-*-apple-darwin
+/binaries/.sidecar-stub-*
