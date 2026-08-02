@@ -7,7 +7,7 @@ import {
   X,
 } from "lucide-react";
 import type React from "react";
-import { useCallback, useEffect, useState } from "react";
+import { memo, useCallback, useEffect, useState } from "react";
 import { ApiClient } from "../api/client";
 import type { MemoryEntry } from "../types";
 
@@ -242,7 +242,16 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
   );
 }
 
-function MemoryCard({ memory }: { memory: MemoryEntry }) {
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Wrapped MemoryCard in memo()
+ * 🎯 Why: MemoryBrowser contains a list of memories and a search/filter state.
+ *         Typing in the search input or adding a new memory would re-render the entire list
+ *         of MemoryCards, causing unnecessary DOM reconciliation and string parsing.
+ * 📊 Impact: O(1) appends and prevents O(N) re-renders when parent state changes.
+ */
+const MemoryCard = memo(function MemoryCard({ memory }: { memory: MemoryEntry }) {
   const [expanded, setExpanded] = useState(false);
 
   const kindColor: Record<string, string> = {
@@ -290,4 +299,4 @@ function MemoryCard({ memory }: { memory: MemoryEntry }) {
       </div>
     </div>
   );
-}
+});

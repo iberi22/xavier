@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp, LayoutTemplate, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { malocaApi } from "./api";
 import "./maloca.css";
 import type {
@@ -36,9 +36,7 @@ export default function MalocaView({ onClose, isManager = true }: Props) {
     softAccent,
   } = useMalocaUi();
 
-  const [tab, setTab] = useState<MalocaSectionId>(
-    sections[0]?.id ?? "council",
-  );
+  const [tab, setTab] = useState<MalocaSectionId>(sections[0]?.id ?? "council");
   const [error, setError] = useState<string | null>(null);
   const [voteError, setVoteError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -56,7 +54,6 @@ export default function MalocaView({ onClose, isManager = true }: Props) {
   const [decisions, setDecisions] = useState<DecisionEvent[]>([]);
   const [voteNodeId, setVoteNodeId] = useState("lab_genesis");
 
-  const [reason, setReason] = useState("");
   const [propForm, setPropForm] = useState({
     type: "feature_request",
     title: "",
@@ -162,12 +159,19 @@ export default function MalocaView({ onClose, isManager = true }: Props) {
               className="maloca-btn"
               onClick={() => setEditLayout((v) => !v)}
             >
-              <LayoutTemplate size={14} style={{ display: "inline", marginRight: 6 }} />
+              <LayoutTemplate
+                size={14}
+                style={{ display: "inline", marginRight: 6 }}
+              />
               {editLayout ? "Runtime" : "Edit layout"}
             </button>
             {editLayout && (
               <>
-                <button type="button" className="maloca-btn" onClick={softAccent}>
+                <button
+                  type="button"
+                  className="maloca-btn"
+                  onClick={softAccent}
+                >
                   Soften accent
                 </button>
                 <button type="button" className="maloca-btn" onClick={resetUi}>
@@ -181,14 +185,20 @@ export default function MalocaView({ onClose, isManager = true }: Props) {
         <p className="maloca-muted">{config.copy.managerNote}</p>
 
         {error && (
-          <div className="maloca-card" style={{ borderColor: "var(--maloca-danger)" }}>
+          <div
+            className="maloca-card"
+            style={{ borderColor: "var(--maloca-danger)" }}
+          >
             <span className="maloca-muted">Xavier /maloca: {error}</span>
           </div>
         )}
 
         <nav className="maloca-nav" aria-label="Maloca sections">
           {sections.map((s) => (
-            <div key={s.id} style={{ display: "flex", alignItems: "center", gap: 2 }}>
+            <div
+              key={s.id}
+              style={{ display: "flex", alignItems: "center", gap: 2 }}
+            >
               {editLayout && (
                 <>
                   <button
@@ -232,8 +242,6 @@ export default function MalocaView({ onClose, isManager = true }: Props) {
               voteKarmaMin={voteKarmaMin}
               voteError={voteError}
               isManager={isManager}
-              reason={reason}
-              setReason={setReason}
               onVote={async (proposalId, choice) => {
                 setVoteError(null);
                 try {
@@ -250,13 +258,12 @@ export default function MalocaView({ onClose, isManager = true }: Props) {
                   );
                 }
               }}
-              onAction={async (type, proposalId) => {
+              onAction={async (type, proposalId, itemReason) => {
                 await malocaApi.managerAction({
                   type,
                   proposalId,
-                  reason: reason || type,
+                  reason: itemReason || type,
                 });
-                setReason("");
                 await refresh();
               }}
             />
@@ -308,7 +315,10 @@ export default function MalocaView({ onClose, isManager = true }: Props) {
           )}
           {tab === "nodes" && <NodesPanel mesh={mesh} />}
           {tab === "params" && (
-            <ParamsPanel params={params} lockedKeys={config.editMode.lockedKeys} />
+            <ParamsPanel
+              params={params}
+              lockedKeys={config.editMode.lockedKeys}
+            />
           )}
           {tab === "decisions" && <DecisionsPanel decisions={decisions} />}
           {tab === "docs" && <DocsPanel />}
@@ -317,6 +327,132 @@ export default function MalocaView({ onClose, isManager = true }: Props) {
     </div>
   );
 }
+
+/**
+ * ⚡ Bolt Performance Optimization
+ * Extract ProposalItem wrapped in React.memo() to prevent entire proposal list
+ * from re-rendering when typing in reason input or changing selected vote node.
+ */
+const ProposalItem = React.memo(function ProposalItem({
+  p,
+  propVotes,
+  eligible,
+  isManager,
+  onVote,
+  onAction,
+}: {
+  p: Proposal;
+  propVotes: Vote[];
+  eligible: boolean;
+  isManager: boolean;
+  onVote: (id: string, choice: VoteChoice) => Promise<void>;
+  onAction: (
+    actionType: ManagerAction["type"],
+    propId: string,
+    reason: string,
+  ) => Promise<void>;
+}) {
+  const [reason, setReason] = useState("");
+  return (
+    <article className="maloca-card">
+      <div
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <strong>{p.title}</strong>
+        <span className="maloca-badge">{p.status}</span>
+        {p.locked_param && (
+          <span className="maloca-badge maloca-badge-locked">
+            LOCKED_UNTIL_QUORUM
+          </span>
+        )}
+      </div>
+      <p className="maloca-muted" style={{ marginTop: 8 }}>
+        {p.body}
+      </p>
+      <p className="maloca-mono" style={{ marginTop: 4, opacity: 0.7 }}>
+        {p.type} · {p.id}
+      </p>
+      {propVotes.length > 0 && (
+        <p className="maloca-mono" style={{ marginTop: 6, opacity: 0.8 }}>
+          Votos:{" "}
+          {propVotes
+            .map((v) => `${v.node_id}=${v.choice}(w${v.weight})`)
+            .join(" · ")}
+        </p>
+      )}
+      {p.status !== "closed" && (
+        <div className="maloca-toolbar" style={{ marginTop: 10 }}>
+          {(["yes", "no", "abstain"] as VoteChoice[]).map((choice) => (
+            <button
+              key={choice}
+              type="button"
+              className="maloca-btn maloca-btn-primary"
+              disabled={!eligible}
+              onClick={() => void onVote(p.id, choice)}
+            >
+              Votar {choice}
+            </button>
+          ))}
+        </div>
+      )}
+      {isManager && p.status === "open" && (
+        <div className="maloca-toolbar" style={{ marginTop: 10 }}>
+          <input
+            className="maloca-input"
+            style={{ flex: 1, minWidth: 160 }}
+            placeholder="Motivo gerente…"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+          <button
+            type="button"
+            className="maloca-btn"
+            onClick={() => {
+              void onAction("request_reconsideration", p.id, reason);
+              setReason("");
+            }}
+          >
+            Reconsiderar
+          </button>
+          <button
+            type="button"
+            className="maloca-btn"
+            onClick={() => {
+              void onAction("request_scenario_analysis", p.id, reason);
+              setReason("");
+            }}
+          >
+            Analizar escenarios
+          </button>
+        </div>
+      )}
+    </article>
+  );
+});
+
+/**
+ * ⚡ Bolt Performance Optimization
+ * Extract MeshNodeItem wrapped in React.memo() to prevent entire node list
+ * from re-rendering when typing in form or switching tabs.
+ */
+const MeshNodeItem = React.memo(function MeshNodeItem({
+  n,
+}: {
+  n: NodeRecord;
+}) {
+  return (
+    <li className="maloca-muted">
+      <span className="maloca-mono">{n.node_id}</span> — {n.role}: {n.note} ·
+      karma {n.karma}
+      {n.active ? "" : " · inactive"}
+    </li>
+  );
+});
 
 function CouncilPanel({
   proposals,
@@ -328,8 +464,6 @@ function CouncilPanel({
   voteKarmaMin,
   voteError,
   isManager,
-  reason,
-  setReason,
   onVote,
   onAction,
 }: {
@@ -342,17 +476,15 @@ function CouncilPanel({
   voteKarmaMin: number;
   voteError: string | null;
   isManager: boolean;
-  reason: string;
-  setReason: (v: string) => void;
   onVote: (proposalId: string, choice: VoteChoice) => Promise<void>;
   onAction: (
     type: ManagerAction["type"],
     proposalId: string,
+    reason: string,
   ) => Promise<void>;
 }) {
   const selected = nodes.find((n) => n.node_id === voteNodeId);
-  const eligible =
-    !!selected?.active && (selected?.karma ?? 0) >= voteKarmaMin;
+  const eligible = !!selected?.active && (selected?.karma ?? 0) >= voteKarmaMin;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -385,76 +517,25 @@ function CouncilPanel({
         )}
       </div>
       {voteError && (
-        <div className="maloca-card" style={{ borderColor: "var(--maloca-warning)" }}>
+        <div
+          className="maloca-card"
+          style={{ borderColor: "var(--maloca-warning)" }}
+        >
           <span className="maloca-muted">{voteError}</span>
         </div>
       )}
       {proposals.map((p) => {
         const propVotes = votes.filter((v) => v.proposal_id === p.id);
         return (
-          <article key={p.id} className="maloca-card">
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
-              <strong>{p.title}</strong>
-              <span className="maloca-badge">{p.status}</span>
-              {p.locked_param && (
-                <span className="maloca-badge maloca-badge-locked">LOCKED_UNTIL_QUORUM</span>
-              )}
-            </div>
-            <p className="maloca-muted" style={{ marginTop: 8 }}>
-              {p.body}
-            </p>
-            <p className="maloca-mono" style={{ marginTop: 4, opacity: 0.7 }}>
-              {p.type} · {p.id}
-            </p>
-            {propVotes.length > 0 && (
-              <p className="maloca-mono" style={{ marginTop: 6, opacity: 0.8 }}>
-                Votos:{" "}
-                {propVotes
-                  .map((v) => `${v.node_id}=${v.choice}(w${v.weight})`)
-                  .join(" · ")}
-              </p>
-            )}
-            {p.status !== "closed" && (
-              <div className="maloca-toolbar" style={{ marginTop: 10 }}>
-                {(["yes", "no", "abstain"] as VoteChoice[]).map((choice) => (
-                  <button
-                    key={choice}
-                    type="button"
-                    className="maloca-btn maloca-btn-primary"
-                    disabled={!eligible}
-                    onClick={() => void onVote(p.id, choice)}
-                  >
-                    Votar {choice}
-                  </button>
-                ))}
-              </div>
-            )}
-            {isManager && p.status === "open" && (
-              <div className="maloca-toolbar" style={{ marginTop: 10 }}>
-                <input
-                  className="maloca-input"
-                  style={{ flex: 1, minWidth: 160 }}
-                  placeholder="Motivo gerente…"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
-                />
-                <button
-                  type="button"
-                  className="maloca-btn"
-                  onClick={() => void onAction("request_reconsideration", p.id)}
-                >
-                  Reconsiderar
-                </button>
-                <button
-                  type="button"
-                  className="maloca-btn"
-                  onClick={() => void onAction("request_scenario_analysis", p.id)}
-                >
-                  Analizar escenarios
-                </button>
-              </div>
-            )}
-          </article>
+          <ProposalItem
+            key={p.id}
+            p={p}
+            propVotes={propVotes}
+            eligible={eligible}
+            isManager={isManager}
+            onVote={onVote}
+            onAction={onAction}
+          />
         );
       })}
       {!proposals.length && <p className="maloca-muted">Sin propuestas.</p>}
@@ -526,7 +607,15 @@ function ProposalsPanel({
           Publicar
         </button>
       </form>
-      <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
+      <ul
+        style={{
+          listStyle: "none",
+          padding: 0,
+          margin: 0,
+          display: "grid",
+          gap: 8,
+        }}
+      >
         {proposals.map((p) => (
           <li key={p.id} className="maloca-card">
             <span>{p.title}</span>{" "}
@@ -548,7 +637,13 @@ function BacklogPanel({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       {pack && (
-        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))" }}>
+        <div
+          style={{
+            display: "grid",
+            gap: 10,
+            gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))",
+          }}
+        >
           <Stat label="Features" value={pack.features_total} />
           <Stat label="Support open" value={pack.support_open} />
           <Stat label="Inbox open" value={pack.inbox_open} />
@@ -577,7 +672,10 @@ function BacklogPanel({
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div className="maloca-card">
-      <p className="maloca-muted" style={{ fontSize: 10, textTransform: "uppercase", margin: 0 }}>
+      <p
+        className="maloca-muted"
+        style={{ fontSize: 10, textTransform: "uppercase", margin: 0 }}
+      >
         {label}
       </p>
       <p style={{ fontSize: "1.25rem", margin: "4px 0 0" }}>{value}</p>
@@ -595,7 +693,15 @@ function InboxPanel({
   onComplete: (id: string) => Promise<void>;
 }) {
   return (
-    <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 10 }}>
+    <ul
+      style={{
+        listStyle: "none",
+        padding: 0,
+        margin: 0,
+        display: "grid",
+        gap: 10,
+      }}
+    >
       {inbox.map((offer) => (
         <li key={offer.id} className="maloca-card">
           <p style={{ margin: 0 }}>{offer.microtask.title}</p>
@@ -605,7 +711,11 @@ function InboxPanel({
             {offer.claimed_by ? ` · claimed:${offer.claimed_by}` : ""}
           </p>
           <div className="maloca-toolbar" style={{ marginTop: 8 }}>
-            <button type="button" className="maloca-btn" onClick={() => void onClaim(offer.id)}>
+            <button
+              type="button"
+              className="maloca-btn"
+              onClick={() => void onClaim(offer.id)}
+            >
               Claim
             </button>
             <button
@@ -618,9 +728,7 @@ function InboxPanel({
           </div>
         </li>
       ))}
-      {!inbox.length && (
-        <li className="maloca-muted">Sin offers en inbox.</li>
-      )}
+      {!inbox.length && <li className="maloca-muted">Sin offers en inbox.</li>}
     </ul>
   );
 }
@@ -664,10 +772,19 @@ function SupportPanel({
           Crear
         </button>
       </form>
-      <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
+      <ul
+        style={{
+          listStyle: "none",
+          padding: 0,
+          margin: 0,
+          display: "grid",
+          gap: 8,
+        }}
+      >
         {tickets.map((t) => (
           <li key={t.id} className="maloca-card">
-            <span>{t.title}</span> <span className="maloca-badge">{t.status}</span>
+            <span>{t.title}</span>{" "}
+            <span className="maloca-badge">{t.status}</span>
             <p className="maloca-muted">{t.body}</p>
           </li>
         ))}
@@ -682,22 +799,20 @@ function NodesPanel({ mesh }: { mesh: MeshSnapshot | null }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <p className="maloca-muted">
-        Mesh <span className="maloca-badge">{mesh.mode}</span> — P2P real fuera de
-        ola. Modelo plano: <strong>sin nodos padre</strong>. Wallet ancla N nodos.
-        Gerente ACL sin peso de voto (
-        <code className="maloca-mono">manager_adds_vote_weight=
-        {String(mesh.manager_adds_vote_weight)}</code>
+        Mesh <span className="maloca-badge">{mesh.mode}</span> — P2P real fuera
+        de ola. Modelo plano: <strong>sin nodos padre</strong>. Wallet ancla N
+        nodos. Gerente ACL sin peso de voto (
+        <code className="maloca-mono">
+          manager_adds_vote_weight=
+          {String(mesh.manager_adds_vote_weight)}
+        </code>
         ).
       </p>
       <div className="maloca-card">
         <h3 style={{ margin: "0 0 8px", fontSize: "0.95rem" }}>Nodos</h3>
         <ul style={{ margin: 0, paddingLeft: 18 }}>
           {mesh.nodes.map((n) => (
-            <li key={n.node_id} className="maloca-muted">
-              <span className="maloca-mono">{n.node_id}</span> — {n.role}: {n.note}{" "}
-              · karma {n.karma}
-              {n.active ? "" : " · inactive"}
-            </li>
+            <MeshNodeItem key={n.node_id} n={n} />
           ))}
         </ul>
       </div>
@@ -726,20 +841,38 @@ function DecisionsPanel({ decisions }: { decisions: DecisionEvent[] }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <p className="maloca-muted">
-        Historial anclado a{" "}
-        <code className="maloca-mono">lab_genesis</code>. Append-only.
+        Historial anclado a <code className="maloca-mono">lab_genesis</code>.
+        Append-only.
       </p>
-      <ul style={{ listStyle: "none", padding: 0, margin: 0, display: "grid", gap: 8 }}>
+      <ul
+        style={{
+          listStyle: "none",
+          padding: 0,
+          margin: 0,
+          display: "grid",
+          gap: 8,
+        }}
+      >
         {decisions.map((d) => (
           <li key={d.id} className="maloca-card">
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+            <div
+              style={{
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+                alignItems: "center",
+              }}
+            >
               <span className="maloca-badge">{d.kind}</span>
               <span className="maloca-mono" style={{ fontSize: 12 }}>
                 actor={d.actor_node_id} · genesis={d.genesis_node_id}
               </span>
             </div>
             {d.proposal_id && (
-              <p className="maloca-mono" style={{ margin: "6px 0 0", opacity: 0.75 }}>
+              <p
+                className="maloca-mono"
+                style={{ margin: "6px 0 0", opacity: 0.75 }}
+              >
                 proposal {d.proposal_id}
               </p>
             )}
@@ -754,12 +887,17 @@ function DecisionsPanel({ decisions }: { decisions: DecisionEvent[] }) {
             >
               {JSON.stringify(d.payload)}
             </pre>
-            <p className="maloca-muted" style={{ margin: "6px 0 0", fontSize: 11 }}>
+            <p
+              className="maloca-muted"
+              style={{ margin: "6px 0 0", fontSize: 11 }}
+            >
               {d.created_at}
             </p>
           </li>
         ))}
-        {!decisions.length && <li className="maloca-muted">Sin decisiones aún.</li>}
+        {!decisions.length && (
+          <li className="maloca-muted">Sin decisiones aún.</li>
+        )}
       </ul>
     </div>
   );
@@ -775,8 +913,8 @@ function ParamsPanel({
   return (
     <div>
       <p className="maloca-muted" style={{ marginBottom: 12 }}>
-        Inscritos por <code className="maloca-mono">lab_genesis</code>. Los LOCKED
-        no se desbloquean desde UI/JSON de agentes.
+        Inscritos por <code className="maloca-mono">lab_genesis</code>. Los
+        LOCKED no se desbloquean desde UI/JSON de agentes.
       </p>
       <div className="maloca-card" style={{ padding: 0, overflow: "auto" }}>
         <table className="maloca-table">
@@ -798,7 +936,9 @@ function ParamsPanel({
                   <td className="maloca-mono">{p.default}</td>
                   <td>
                     {agentLocked ? (
-                      <span className="maloca-badge maloca-badge-locked">LOCKED</span>
+                      <span className="maloca-badge maloca-badge-locked">
+                        LOCKED
+                      </span>
                     ) : (
                       <span className="maloca-badge">open</span>
                     )}
@@ -816,19 +956,24 @@ function ParamsPanel({
 
 function DocsPanel() {
   return (
-    <div className="maloca-muted" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+    <div
+      className="maloca-muted"
+      style={{ display: "flex", flexDirection: "column", gap: 8 }}
+    >
       <p>
         Host primario: <strong>Xavier panel MalocaView</strong> + API{" "}
         <code className="maloca-mono">/maloca/*</code>.
       </p>
       <p>
-        Shell consumidor: <code className="maloca-mono">swal-backoffice</code> vía{" "}
-        <code className="maloca-mono">@swal/maloca-client</code>.
+        Shell consumidor: <code className="maloca-mono">swal-backoffice</code>{" "}
+        vía <code className="maloca-mono">@swal/maloca-client</code>.
       </p>
       <p>PWA Maloca = fase posterior. Synapse permanece frozen. Sin Solana.</p>
       <ul style={{ margin: 0 }}>
         <li>
-          <code className="maloca-mono">docs/SWAL/MALOCA_SUPPORT_WORKSPACE.md</code>
+          <code className="maloca-mono">
+            docs/SWAL/MALOCA_SUPPORT_WORKSPACE.md
+          </code>
         </li>
         <li>
           <code className="maloca-mono">docs/SWAL/NODE_MESH_MANAGER.md</code>
@@ -837,7 +982,9 @@ function DocsPanel() {
           <code className="maloca-mono">docs/SWAL/NETWORK_PARAMETERS.md</code>
         </li>
         <li>
-          <code className="maloca-mono">docs/SWAL/MALOCA_UI_JSON_CANVAS.md</code>
+          <code className="maloca-mono">
+            docs/SWAL/MALOCA_UI_JSON_CANVAS.md
+          </code>
         </li>
       </ul>
     </div>

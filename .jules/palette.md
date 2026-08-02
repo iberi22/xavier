@@ -10,3 +10,7 @@
 ## 2024-03-24 - Missing ARIA Labels on Icon-Only UI Elements
 **Learning:** In custom toolbars and dropdowns (like `TopStatusBar.tsx` and `NotificationsDropdown.tsx`), icon-only buttons often rely on `title` attributes for tooltips but lack explicit `aria-label`s. Screen readers may not consistently read `title` attributes on interactive elements, making them functionally invisible or confusing to visually impaired users.
 **Action:** Always provide an explicit `aria-label` for icon-only buttons, even if a `title` attribute is present, and ensure the child icon components (like Lucide React icons) have `aria-hidden="true"` so they aren't redundantly announced.
+
+## 2026-08-02 - [WAI-ARIA Switch Roles for Custom Toggles]
+**Learning:** When building custom toggle switch components (e.g. using a styled button with a sliding indicator instead of a native checkbox), they require `role="switch"` and `aria-checked` attributes to be properly announced by screen readers as toggleable switches rather than generic buttons.
+**Action:** Always verify that any custom toggle UI implements the WAI-ARIA switch pattern and includes appropriate focus-visible styles (e.g. `focus-visible:outline-none focus-visible:ring-2`) so keyboard users can navigate to and operate them clearly.

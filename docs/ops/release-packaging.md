@@ -83,6 +83,8 @@ The React frontend under `panel-ui/` can be bundled as a native Tauri desktop ap
 ### The Sidecar Binary Convention
 Tauri requires embedded binaries to match the host platform's target triple (e.g., `xavier-x86_64-unknown-linux-gnu` or `xavier-x86_64-apple-darwin`). These sidecar binaries must be placed in `panel-ui/src-tauri/binaries/` prior to compiling the Tauri app.
 
+`panel-ui/src-tauri/build.rs` creates a **compile-time stub** when the host-triple sidecar is missing so `cargo check -p app` does not fail on a fresh checkout. That stub is **not** a shippable binary — release packaging must overwrite it with a real `xavier` build (steps below). CI core checks already use `--exclude app` (GTK/WebKit deps); desktop packaging is a separate path.
+
 ### Packaging steps
 You can run the automated script from the repository root:
 ```bash
