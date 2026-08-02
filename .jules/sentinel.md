@@ -25,3 +25,8 @@
 **Vulnerability:** SQL queries in `src/enterprise/persistence.rs` and `src/notifications/mod.rs` were built using string interpolation (`format!`), which can lead to SQL Injection if variables become non-constant.
 **Learning:** String interpolation for SQL queries should always be avoided, even for seemingly safe values like constants or integers (`usize`), as they can be refactored later into dynamic inputs without developers noticing the interpolation risk.
 **Prevention:** Always use parameterized SQL queries (e.g. `rusqlite`'s `params![]`) for variable values (like `LIMIT ?`), and use string literals directly for static queries instead of injecting constants via `format!`. Use `LIMIT -1` as a parameter when the limit is 0 to signify 'no limit' in SQLite.
+
+## 2026-12-06 - [SQL Injection via Dynamic Table Names in count_rows]
+**Vulnerability:** The internal `count_rows` helper function in `src/codebase/db.rs` was formatting a raw string argument directly into a SQL query using `format!("SELECT COUNT(*) FROM {}", table)`. While not currently exposed to user input, this creates a latent SQL injection risk if the function were ever reused in a broader context.
+**Learning:** Even internal helper methods should employ strict allowlists for structural SQL components (like table names) when parameterization isn't possible, rather than relying on callers to always pass safe literal strings.
+**Prevention:** Validate dynamically formatted SQL structural parameters against a predefined array/allowlist of known, safe values before executing the query.
