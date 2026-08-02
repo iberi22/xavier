@@ -21,3 +21,7 @@
 **Vulnerability:** XSS bypass in SVG sanitization where malicious actors could inject javascript schemes by embedding control characters (like tabs or newlines) that bypass basic `.trim()` sanitization logic.
 **Learning:** Standard `.trim()` only removes whitespace from the ends of strings. It fails to remove embedded control characters or whitespaces within attribute values, which browsers will often ignore when parsing URIs, thereby executing malicious code.
 **Prevention:** Always strip all control characters and whitespaces across the entire string (e.g., `replace(/[\u0000-\u0020]/g, '')`) before validating attribute values against restricted schemes.
+## 2025-02-23 - Prevent SQL Injection via `format!`
+**Vulnerability:** SQL queries in `src/enterprise/persistence.rs` and `src/notifications/mod.rs` were built using string interpolation (`format!`), which can lead to SQL Injection if variables become non-constant.
+**Learning:** String interpolation for SQL queries should always be avoided, even for seemingly safe values like constants or integers (`usize`), as they can be refactored later into dynamic inputs without developers noticing the interpolation risk.
+**Prevention:** Always use parameterized SQL queries (e.g. `rusqlite`'s `params![]`) for variable values (like `LIMIT ?`), and use string literals directly for static queries instead of injecting constants via `format!`. Use `LIMIT -1` as a parameter when the limit is 0 to signify 'no limit' in SQLite.
