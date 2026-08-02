@@ -1228,8 +1228,12 @@ function ToggleRow({
         <p className="text-xs text-white/40">{description}</p>
       </div>
       <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={`Toggle ${label}`}
         onClick={() => setChecked(!checked)}
-        className={`relative w-12 h-7 rounded-full transition-all duration-300 ${checked ? "bg-[#39ff14] shadow-[0_0_15px_rgba(57,255,20,0.4)]" : "bg-white/10"}`}
+        className={`relative w-12 h-7 rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${checked ? "bg-[#39ff14] shadow-[0_0_15px_rgba(57,255,20,0.4)]" : "bg-white/10"}`}
       >
         <div
           className={`absolute top-1 left-1 w-5 h-5 rounded-full bg-white transition-transform duration-300 ${checked ? "translate-x-5" : "translate-x-0 opacity-60"}`}

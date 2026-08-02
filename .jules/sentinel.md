@@ -21,3 +21,7 @@
 **Vulnerability:** XSS bypass in SVG sanitization where malicious actors could inject javascript schemes by embedding control characters (like tabs or newlines) that bypass basic `.trim()` sanitization logic.
 **Learning:** Standard `.trim()` only removes whitespace from the ends of strings. It fails to remove embedded control characters or whitespaces within attribute values, which browsers will often ignore when parsing URIs, thereby executing malicious code.
 **Prevention:** Always strip all control characters and whitespaces across the entire string (e.g., `replace(/[\u0000-\u0020]/g, '')`) before validating attribute values against restricted schemes.
+## 2026-12-06 - [SQL Injection via Dynamic Table Names in count_rows]
+**Vulnerability:** The internal `count_rows` helper function in `src/codebase/db.rs` was formatting a raw string argument directly into a SQL query using `format!("SELECT COUNT(*) FROM {}", table)`. While not currently exposed to user input, this creates a latent SQL injection risk if the function were ever reused in a broader context.
+**Learning:** Even internal helper methods should employ strict allowlists for structural SQL components (like table names) when parameterization isn't possible, rather than relying on callers to always pass safe literal strings.
+**Prevention:** Validate dynamically formatted SQL structural parameters against a predefined array/allowlist of known, safe values before executing the query.
