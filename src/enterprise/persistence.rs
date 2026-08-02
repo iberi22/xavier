@@ -365,49 +365,33 @@ impl EnterpriseDb {
         tenant_id: Option<&TenantId>,
         limit: usize,
     ) -> Result<Vec<AuditEntry>> {
-        let (sql, has_tenant_filter) = if tenant_id.is_some() {
-            (
-                "SELECT id, timestamp, tenant_id, user_id, action, resource, resource_id,
-                        success, details, ip_address, user_agent
-                 FROM enterprise_audit_log
-                 WHERE tenant_id = ?1
-                 ORDER BY timestamp DESC",
-                true,
-            )
+        let sql = if tenant_id.is_some() {
+            "SELECT id, timestamp, tenant_id, user_id, action, resource, resource_id,
+                    success, details, ip_address, user_agent
+             FROM enterprise_audit_log
+             WHERE tenant_id = ?1
+             ORDER BY timestamp DESC
+             LIMIT ?2"
         } else {
-            (
-                "SELECT id, timestamp, tenant_id, user_id, action, resource, resource_id,
-                        success, details, ip_address, user_agent
-                 FROM enterprise_audit_log
-                 ORDER BY timestamp DESC",
-                false,
-            )
-        };
-
-        let sql = if limit > 0 {
-            format!("{} LIMIT {}", sql, limit)
-        } else {
-            sql.to_string()
+            "SELECT id, timestamp, tenant_id, user_id, action, resource, resource_id,
+                    success, details, ip_address, user_agent
+             FROM enterprise_audit_log
+             ORDER BY timestamp DESC
+             LIMIT ?1"
         };
 
         let conn = self
             .conn
             .lock()
             .expect("poisoned lock in load_audit_entries");
-        let mut stmt = conn.prepare(&sql)?;
+        let mut stmt = conn.prepare(sql)?;
+        let limit_param = if limit > 0 { limit as i64 } else { -1 };
 
-        if has_tenant_filter {
-            let rows = stmt.query_map(
-                params![tenant_id
-                    .expect(
-                        "load_audit_entries: tenant_id must be set when has_tenant_filter is true"
-                    )
-                    .to_string()],
-                row_to_audit_entry,
-            )?;
+        if let Some(tid) = tenant_id {
+            let rows = stmt.query_map(params![tid.to_string(), limit_param], row_to_audit_entry)?;
             Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
         } else {
-            let rows = stmt.query_map([], row_to_audit_entry)?;
+            let rows = stmt.query_map(params![limit_param], row_to_audit_entry)?;
             Ok(rows.collect::<std::result::Result<Vec<_>, _>>()?)
         }
     }
