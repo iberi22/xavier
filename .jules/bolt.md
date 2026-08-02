@@ -13,3 +13,7 @@
 ## 2026-08-01 - MalocaView list rendering bottlenecks
 **Learning:** `MalocaView` was doing inline `.map()` for lists of `proposals` and `nodes` directly inside parent components like `CouncilPanel` and `NodesPanel`. Updating local states like text input for a single item would cause a full re-render of large lists, leading to UI lag.
 **Action:** As learned from `BookmarksView`, always extract large lists containing complex interactive items into separate `React.memo()` wrapped components (e.g., `ProposalItem`, `MeshNodeItem`). Pass minimal callbacks down and keep item-specific state local to the item component.
+
+## 2026-08-02 - MemoryCard re-render optimization
+**Learning:** `MemoryBrowser` maps over a list of `MemoryEntry` elements, rendering `MemoryCard` instances. Given the presence of complex inner states in child components (`expanded` state toggles) and dynamic inputs driving search functionality and new additions on the parent, leaving `MemoryCard` un-memoized results in unnecessary rendering logic running per character typed, scaling with O(N) where N is the current page size of the rendered list.
+**Action:** Used `React.memo` around `MemoryCard` inside `MemoryBrowser`. This reduces string DOM reconciliations inside the mapping iteration making appending/filtering behave close to O(1) in the visual layer.
