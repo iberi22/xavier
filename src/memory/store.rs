@@ -475,6 +475,12 @@ pub trait MemoryStore: Send + Sync {
     fn as_any(&self) -> &dyn StdAny;
     async fn health(&self) -> Result<String>;
     async fn set_dedup_settings(&self, _settings: crate::settings::types::DedupSettings) {}
+    async fn compact(&self) -> Result<()> {
+        Ok(())
+    }
+    async fn db_size(&self) -> Result<Option<u64>> {
+        Ok(None)
+    }
     async fn put(&self, record: MemoryRecord) -> Result<()>;
     async fn get(&self, workspace_id: &str, id_or_path: &str) -> Result<Option<MemoryRecord>>;
     async fn update(&self, record: MemoryRecord) -> Result<()>;
