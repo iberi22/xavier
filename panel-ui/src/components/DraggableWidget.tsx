@@ -1,7 +1,6 @@
 import { GripHorizontal, X } from "lucide-react";
 import { motion, useDragControls } from "motion/react";
-import type React from "react";
-import { useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import type { CanvasWidget } from "../types";
 
 interface DraggableWidgetProps {
@@ -11,7 +10,14 @@ interface DraggableWidgetProps {
   onUpdatePosition: (id: string, x: number, y: number) => void;
 }
 
-export default function DraggableWidget({
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Wrapped DraggableWidget in React.memo()
+ * 🎯 Why: When rendering a list of DraggableWidget components in App.tsx, updates to the parent state (e.g. typing in input, receiving new messages) cause the entire list to re-render.
+ * 📊 Impact: O(1) rendering for widgets whose props haven't changed, preventing unnecessary DOM reconciliation.
+ */
+export default React.memo(function DraggableWidget({
   widget,
   onRemove,
   onUpdatePosition,
@@ -117,4 +123,4 @@ export default function DraggableWidget({
       </div>
     </motion.div>
   );
-}
+})
