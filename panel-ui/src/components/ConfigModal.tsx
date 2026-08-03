@@ -22,7 +22,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import type React from "react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { ApiClient } from "../api/client";
 import {
   canvasToForceData,
@@ -1260,11 +1260,12 @@ function SliderInput({
 }) {
   const [value, setValue] = useState(defaultValue);
   const percentage = ((value - min) / (max - min)) * 100;
+  const inputId = useId();
 
   return (
     <div className="p-4 rounded-xl bg-[#050505]/50 border border-[#0d2a13]/80">
       <div className="flex items-center justify-between mb-4">
-        <label className="text-[10px] uppercase text-white/50 tracking-widest">
+        <label htmlFor={inputId} className="text-[10px] uppercase text-white/50 tracking-widest">
           {label}
         </label>
         <span className="text-[#39ff14] text-xs font-mono neon-text">
@@ -1273,6 +1274,7 @@ function SliderInput({
       </div>
       <div className="relative pt-1">
         <input
+          id={inputId}
           type="range"
           min={min}
           max={max}
@@ -1307,12 +1309,14 @@ function TextInput({
   type?: string;
   defaultValue: string;
 }) {
+  const inputId = useId();
   return (
     <div>
-      <label className="text-[10px] uppercase text-white/50 tracking-widest mb-2 block">
+      <label htmlFor={inputId} className="text-[10px] uppercase text-white/50 tracking-widest mb-2 block">
         {label}
       </label>
       <input
+        id={inputId}
         type={type}
         defaultValue={defaultValue}
         className="w-full bg-[#050505]/80 border border-[#1a1a1a] focus:border-[#39ff14] focus:shadow-[0_0_15px_rgba(57,255,20,0.2)] text-white/90 text-sm px-4 py-3 rounded-xl outline-none transition-all"
@@ -1330,13 +1334,15 @@ function SelectInput({
   options: string[];
   defaultValue: string;
 }) {
+  const inputId = useId();
   return (
     <div>
-      <label className="text-[10px] uppercase text-white/50 tracking-widest mb-2 block">
+      <label htmlFor={inputId} className="text-[10px] uppercase text-white/50 tracking-widest mb-2 block">
         {label}
       </label>
       <div className="relative">
         <select
+          id={inputId}
           defaultValue={defaultValue}
           className="w-full bg-[#050505]/80 border border-[#1a1a1a] focus:border-[#39ff14] focus:shadow-[0_0_15px_rgba(57,255,20,0.2)] text-white/90 text-sm px-4 py-3 rounded-xl outline-none transition-all appearance-none cursor-pointer"
         >
