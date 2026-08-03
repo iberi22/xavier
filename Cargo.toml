@@ -168,6 +168,10 @@ name = "context_regen_e2e"
 path = "tests/e2e/context_regen_e2e.rs"
 
 [[test]]
+name = "multi_node_sync"
+path = "tests/e2e/multi_node_sync.rs"
+
+[[test]]
 name = "xtsp"
 path = "tests/xtsp/mod.rs"
 
