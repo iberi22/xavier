@@ -237,8 +237,8 @@ impl Cli {
                 }
                 PluginCommand::List => crate::cli::handlers::plugins::list_plugins().await,
             },
-            Command::Scan { cmd: _ } => {
-                crate::cli::handlers::system_scan_cli::handle_scan_command().await
+            Command::Scan { cmd } => {
+                crate::cli::handlers::system_scan_cli::handle_scan_command(cmd.clone()).await
             }
             Command::License { cmd } => {
                 crate::cli::commands::license::handle_license_command(cmd.clone()).await
