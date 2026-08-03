@@ -91,6 +91,7 @@ export default function DataCommonsConfigUI({ token }: { token: string }) {
               </p>
             </div>
             <button
+              aria-label="Enable Data Telemetry"
               onClick={() => setConfig({ ...config, enabled: !config.enabled })}
               className={`relative w-12 h-7 rounded-full transition-all duration-300 ${
                 config.enabled
@@ -116,6 +117,7 @@ export default function DataCommonsConfigUI({ token }: { token: string }) {
               </p>
             </div>
             <button
+              aria-label="GDPR / Legal Consent"
               onClick={() =>
                 setConfig({ ...config, consent_given: !config.consent_given })
               }
@@ -139,10 +141,11 @@ export default function DataCommonsConfigUI({ token }: { token: string }) {
             <h4 className="text-sm font-medium text-white/90 mb-1">
               Solana Wallet Address (Optional)
             </h4>
-            <p className="text-xs text-white/40 mb-3">
+            <label htmlFor="wallet-address" className="text-xs text-white/40 mb-3 block">
               Link your wallet to receive airdrops for your data contribution.
-            </p>
+            </label>
             <input
+              id="wallet-address"
               type="text"
               value={config.wallet_address || ""}
               onChange={(e) =>
