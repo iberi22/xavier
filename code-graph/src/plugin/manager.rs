@@ -360,7 +360,7 @@ fn fetch_live_registry() -> Result<Vec<PluginDescriptor>> {
     }
 
     impl PluginRegistry {
-        fn into_descriptors(&self) -> Vec<PluginDescriptor> {
+        fn to_descriptors(&self) -> Vec<PluginDescriptor> {
             self.plugins
                 .iter()
                 .map(|p| PluginDescriptor {
@@ -384,7 +384,7 @@ fn fetch_live_registry() -> Result<Vec<PluginDescriptor>> {
     let registry: PluginRegistry = resp
         .json()
         .map_err(|e: reqwest::Error| GraphError::Parser(e.to_string()))?;
-    Ok(registry.into_descriptors())
+    Ok(registry.to_descriptors())
 }
 
 /// Loads a registry index from disk.
