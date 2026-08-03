@@ -213,6 +213,11 @@ impl GovernanceEngine {
         }
     }
 
+    /// Sets the governance config.
+    pub fn set_config(&mut self, config: GovernanceConfig) {
+        self.config = config;
+    }
+
     /// Attach an EigenTrust reputation engine for weighted voting.
     pub fn with_reputation_engine(mut self, engine: Arc<RwLock<EigenTrustEngine>>) -> Self {
         self.reputation_engine = Some(engine);
