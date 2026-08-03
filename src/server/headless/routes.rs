@@ -246,19 +246,25 @@ async fn execute_code_tool(name: &str, args: &serde_json::Value) -> axum::respon
         }
         "code_find" => {
             let query = args.get("query").and_then(|v| v.as_str()).unwrap_or("");
+            let name_arg = args.get("name").and_then(|v| v.as_str());
             let limit = args
                 .get("limit")
                 .and_then(|v| v.as_u64())
                 .unwrap_or(20)
                 .clamp(1, 100) as usize;
             let engine = code_graph::query::QueryEngine::new(db);
-            match engine.search(query, limit) {
-                Ok(result) => AxumJson(serde_json::json!({
+            let result_symbols = if let Some(n) = name_arg {
+                engine.find_by_name(n, limit)
+            } else {
+                engine.search(query, limit).map(|res| res.symbols)
+            };
+            match result_symbols {
+                Ok(symbols) => AxumJson(serde_json::json!({
                     "status": "ok",
                     "tool": name,
-                    "query": query,
-                    "count": result.symbols.len(),
-                    "symbols": result.symbols,
+                    "query": name_arg.unwrap_or(query),
+                    "count": symbols.len(),
+                    "symbols": symbols,
                 }))
                 .into_response(),
                 Err(e) => (
@@ -300,16 +306,48 @@ async fn execute_code_tool(name: &str, args: &serde_json::Value) -> axum::respon
                 .and_then(|v| v.as_u64())
                 .unwrap_or(10)
                 .clamp(1, 50) as usize;
-            let engine = code_graph::query::QueryEngine::new(db);
+            let engine = code_graph::query::QueryEngine::new(db.clone());
             match engine.search(query, limit) {
-                Ok(result) => AxumJson(serde_json::json!({
-                    "status": "ok",
-                    "tool": name,
-                    "query": query,
-                    "count": result.symbols.len(),
-                    "symbols": result.symbols,
-                }))
-                .into_response(),
+                Ok(result) => {
+                    let mut symbols_with_refs = Vec::new();
+                    for symbol in result.symbols {
+                        let mut references = Vec::new();
+                        if let Some(ref stable_id) = symbol.stable_id {
+                            if let Ok(edges) = db.find_edges_to(stable_id, None, 100) {
+                                for edge in edges {
+                                    references.push(serde_json::json!({
+                                        "from_symbol": edge.from_symbol,
+                                        "edge_type": format!("{:?}", edge.edge_type),
+                                        "path": edge.file_path,
+                                        "line": edge.line,
+                                        "confidence": edge.confidence,
+                                        "metadata": edge.metadata,
+                                    }));
+                                }
+                            }
+                        }
+                        symbols_with_refs.push(serde_json::json!({
+                            "symbol": symbol.name,
+                            "symbol_type": format!("{:?}", symbol.kind),
+                            "language": format!("{:?}", symbol.lang),
+                            "path": symbol.file_path,
+                            "line": symbol.start_line,
+                            "end_line": symbol.end_line,
+                            "signature": symbol.signature,
+                            "stable_id": symbol.stable_id,
+                            "complexity": symbol.complexity,
+                            "references": references,
+                        }));
+                    }
+                    AxumJson(serde_json::json!({
+                        "status": "ok",
+                        "tool": name,
+                        "query": query,
+                        "count": symbols_with_refs.len(),
+                        "symbols": symbols_with_refs,
+                    }))
+                    .into_response()
+                }
                 Err(e) => (
                     axum::http::StatusCode::INTERNAL_SERVER_ERROR,
                     AxumJson(serde_json::json!({

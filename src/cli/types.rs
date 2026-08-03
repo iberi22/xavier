@@ -26,7 +26,10 @@ pub struct CodeScanPayload {
 
 #[derive(Debug, Deserialize)]
 pub struct CodeFindPayload {
+    #[serde(default)]
     pub query: String,
+    #[serde(default)]
+    pub name: Option<String>,
     #[serde(default = "default_limit")]
     pub limit: usize,
     #[serde(default)]
