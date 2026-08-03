@@ -462,6 +462,18 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         state.workspace_id
     );
 
+    // Initialize and wire up the Memory Sync singleton
+    let node_id = if let Ok(identity) = xavier::mesh::NodeIdentity::load_or_create() {
+        identity.node_id.0
+    } else {
+        "local".to_string()
+    };
+    let sync_service = Arc::new(xavier::memory::sync::PeerMemorySync::new(
+        state.store.clone(),
+        node_id,
+    ));
+    xavier::adapters::inbound::http::handlers::sync::init_memory_sync(sync_service);
+
     let protected_routes = Router::new()
         .route("/memory/search", post(search_handler))
         .route("/memory/update", post(update_handler))
@@ -1024,6 +1036,39 @@ pub async fn start_http_server(port: u16, mcp_port: Option<u16>) -> Result<()> {
         .route("/ready", get(readiness_handler))
         .route("/readiness", get(readiness_handler))
         .route("/v1/health/ready", get(readiness_handler))
+        // ── Memory Sync endpoints ──────────────────────────────────────────
+        .route(
+            "/v1/memory/manifest",
+            get(crate::cli::handlers::memory::memory_manifest_handler),
+        )
+        .route(
+            "/v1/memory/push",
+            post(crate::cli::handlers::memory::memory_push_handler),
+        )
+        .route(
+            "/v1/memory/pull",
+            post(crate::cli::handlers::memory::memory_pull_handler),
+        )
+        .route(
+            "/v1/memory/pull-since/{workspace_id}/{since}",
+            get(crate::cli::handlers::memory::memory_pull_since_handler),
+        )
+        .route(
+            "/api/v1/memory/sync/push",
+            post(xavier::adapters::inbound::http::handlers::sync::sync_push_handler),
+        )
+        .route(
+            "/api/v1/memory/sync/pull",
+            post(xavier::adapters::inbound::http::handlers::sync::sync_pull_handler),
+        )
+        .route(
+            "/api/v1/memory/sync/status",
+            get(xavier::adapters::inbound::http::handlers::sync::sync_status_handler),
+        )
+        .route(
+            "/api/v1/memory/sync/resolve/{conflict_id}",
+            post(xavier::adapters::inbound::http::handlers::sync::sync_resolve_handler),
+        )
         // Panel UI: Vite production build uses absolute `/assets/*` paths.
         // Serve index + assets at both `/` and `/panel` so portable installs and
         // bookmarked `/panel` URLs both work.
