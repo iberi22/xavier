@@ -12,9 +12,19 @@ sol!(
     #[sol(rpc)]
     contract XavierDAO {
         function createProposal(bytes32 clusterId, string calldata title, string calldata description) external;
-        function castVote(bytes32 clusterId, bool approve) external;
+        function castVote(bytes32 clusterId, bool approve, uint256 votingPower, bool isCouncil) external;
         function executeProposal(bytes32 clusterId) external;
-        function getProposalStatus(bytes32 clusterId) external view returns (bool approved, uint64 upvotes, uint64 downvotes);
+        function getProposalStatus(bytes32 clusterId) external view returns (
+            bool approved,
+            uint256 userVotesYes,
+            uint256 userVotesNo,
+            uint256 councilVotesYes,
+            uint256 councilVotesNo,
+            bool vetoed,
+            bool executed
+        );
+        function vetoProposal(bytes32 clusterId, string calldata reason) external;
+        function overruleVeto(bytes32 clusterId) external;
     }
 );
 
@@ -71,8 +81,8 @@ impl OnchainDaoClient {
         Ok(())
     }
 
-    /// Casts a vote on-chain.
-    pub async fn vote(&self, cluster_id: &str, approve: bool) -> anyhow::Result<()> {
+    /// Casts a vote on-chain with XP voting power / council flag.
+    pub async fn vote(&self, cluster_id: &str, approve: bool, voting_power: u64, is_council: bool) -> anyhow::Result<()> {
         let signer: PrivateKeySigner = self.config.private_key.parse()?;
         let wallet = EthereumWallet::from(signer);
         let provider = ProviderBuilder::new()
@@ -87,7 +97,54 @@ impl OnchainDaoClient {
         let len = bytes.len().min(32);
         cluster_id_bytes[..len].copy_from_slice(&bytes[..len]);
 
-        let tx = contract.castVote(cluster_id_bytes.into(), approve);
+        let tx = contract.castVote(
+            cluster_id_bytes.into(),
+            approve,
+            alloy::primitives::U256::from(voting_power),
+            is_council,
+        );
+        let _receipt = tx.send().await?;
+        Ok(())
+    }
+
+    /// Vetoes a proposal on-chain.
+    pub async fn veto(&self, cluster_id: &str, reason: &str) -> anyhow::Result<()> {
+        let signer: PrivateKeySigner = self.config.private_key.parse()?;
+        let wallet = EthereumWallet::from(signer);
+        let provider = ProviderBuilder::new()
+            .network::<Ethereum>()
+            .wallet(wallet)
+            .connect_http(self.config.rpc_url.parse::<url::Url>()?);
+
+        let contract = XavierDAO::new(self.config.contract_address, provider);
+
+        let mut cluster_id_bytes = [0u8; 32];
+        let bytes = cluster_id.as_bytes();
+        let len = bytes.len().min(32);
+        cluster_id_bytes[..len].copy_from_slice(&bytes[..len]);
+
+        let tx = contract.vetoProposal(cluster_id_bytes.into(), reason.to_string());
+        let _receipt = tx.send().await?;
+        Ok(())
+    }
+
+    /// Community overrules a veto on-chain.
+    pub async fn overrule(&self, cluster_id: &str) -> anyhow::Result<()> {
+        let signer: PrivateKeySigner = self.config.private_key.parse()?;
+        let wallet = EthereumWallet::from(signer);
+        let provider = ProviderBuilder::new()
+            .network::<Ethereum>()
+            .wallet(wallet)
+            .connect_http(self.config.rpc_url.parse::<url::Url>()?);
+
+        let contract = XavierDAO::new(self.config.contract_address, provider);
+
+        let mut cluster_id_bytes = [0u8; 32];
+        let bytes = cluster_id.as_bytes();
+        let len = bytes.len().min(32);
+        cluster_id_bytes[..len].copy_from_slice(&bytes[..len]);
+
+        let tx = contract.overruleVeto(cluster_id_bytes.into());
         let _receipt = tx.send().await?;
         Ok(())
     }
@@ -114,7 +171,7 @@ impl OnchainDaoClient {
     }
 
     /// Gets the proposal status from on-chain.
-    pub async fn get_proposal_status(&self, cluster_id: &str) -> anyhow::Result<(bool, u64, u64)> {
+    pub async fn get_proposal_status(&self, cluster_id: &str) -> anyhow::Result<(bool, u64, u64, u64, u64, bool, bool)> {
         let provider = ProviderBuilder::new()
             .network::<Ethereum>()
             .connect_http(self.config.rpc_url.parse::<url::Url>()?);
@@ -130,6 +187,14 @@ impl OnchainDaoClient {
             .getProposalStatus(cluster_id_bytes.into())
             .call()
             .await?;
-        Ok((status.approved, status.upvotes, status.downvotes))
+        Ok((
+            status.approved,
+            status.userVotesYes.to::<u64>(),
+            status.userVotesNo.to::<u64>(),
+            status.councilVotesYes.to::<u64>(),
+            status.councilVotesNo.to::<u64>(),
+            status.vetoed,
+            status.executed,
+        ))
     }
 }
