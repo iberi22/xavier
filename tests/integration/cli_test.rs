@@ -76,3 +76,85 @@ fn test_cli_verify_scan_markdown() {
         "verify scan --format markdown should produce markdown headings"
     );
 }
+
+// ─── Maturity Scan Command Tests ───────────────────────────────────────────
+
+#[test]
+fn test_cli_maturity_scan_local() {
+    let output = run(&["maturity", "scan"]);
+    assert!(output.status.success(), "xavier maturity scan should succeed");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Xavier Maturity Report") || stdout.contains("Overall:"),
+        "maturity scan should print maturity report. got: {stdout}"
+    );
+    assert!(
+        stdout.contains("Written to"),
+        "maturity scan should print that the report was written. got: {stdout}"
+    );
+}
+
+#[test]
+fn test_cli_maturity_scan_json() {
+    let output = run(&["maturity", "scan", "--json"]);
+    assert!(output.status.success(), "xavier maturity scan --json should succeed");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json_start = stdout.find('{').expect("JSON start brace not found");
+    let json_str = &stdout[json_start..];
+    let parsed: serde_json::Value =
+        serde_json::from_str(json_str).expect("maturity scan output should be valid JSON");
+
+    assert!(
+        parsed.get("features").is_some(),
+        "JSON should contain features key"
+    );
+    assert!(
+        parsed.get("summary").is_some(),
+        "JSON should contain summary key"
+    );
+}
+
+// ─── Security Scan Command Tests ───────────────────────────────────────────
+
+#[test]
+fn test_cli_scan_security_table() {
+    let output = run(&["scan", "security"]);
+    assert!(output.status.success(), "xavier scan security should succeed");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("XAVIER SECURITY AUDIT REPORT"),
+        "scan security should contain security audit report headers. got: {stdout}"
+    );
+    assert!(
+        stdout.contains("CRITICAL FILES & DIRECTORIES PERMISSIONS"),
+        "scan security should contain file permission audit section. got: {stdout}"
+    );
+    assert!(
+        stdout.contains("SYSTEM CREDENTIALS & API TOKENS AUDIT"),
+        "scan security should contain credentials audit section. got: {stdout}"
+    );
+}
+
+#[test]
+fn test_cli_scan_security_json() {
+    let output = run(&["scan", "security", "--format", "json"]);
+    assert!(output.status.success(), "xavier scan security --format json should succeed");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let json_start = stdout.find('{').expect("JSON start brace not found");
+    let json_str = &stdout[json_start..];
+    let parsed: serde_json::Value =
+        serde_json::from_str(json_str).expect("scan security output should be valid JSON");
+
+    assert!(
+        parsed.get("files").is_some(),
+        "JSON should contain files key"
+    );
+    assert!(
+        parsed.get("tokens").is_some(),
+        "JSON should contain tokens key"
+    );
+}
