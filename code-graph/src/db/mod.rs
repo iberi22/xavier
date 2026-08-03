@@ -327,6 +327,16 @@ impl CodeGraphDB {
     }
 
     fn ensure_column(&self, table: &str, column: &str, definition: &str) -> Result<()> {
+        let allowed_tables = ["symbols"];
+        let allowed_columns = ["stable_id", "signature", "parent", "complexity"];
+
+        if !allowed_tables.contains(&table) {
+            return Err(GraphError::Database(format!("Invalid table name: {}", table)));
+        }
+        if !allowed_columns.contains(&column) {
+            return Err(GraphError::Database(format!("Invalid column name: {}", column)));
+        }
+
         let conn = self
             .conn
             .lock()
