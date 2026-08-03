@@ -14,3 +14,7 @@
 ## 2026-08-02 - [WAI-ARIA Switch Roles for Custom Toggles]
 **Learning:** When building custom toggle switch components (e.g. using a styled button with a sliding indicator instead of a native checkbox), they require `role="switch"` and `aria-checked` attributes to be properly announced by screen readers as toggleable switches rather than generic buttons.
 **Action:** Always verify that any custom toggle UI implements the WAI-ARIA switch pattern and includes appropriate focus-visible styles (e.g. `focus-visible:outline-none focus-visible:ring-2`) so keyboard users can navigate to and operate them clearly.
+
+## 2024-05-18 - Form controls lacking IDs in reusable component wrappers
+**Learning:** Reusable form components (like Input, Select, Slider wrappers) frequently lack proper `<label htmlFor="...">` and `<input id="...">` bindings because they are instantiated multiple times. This breaks screen reader associations and clickable label hit areas.
+**Action:** Always verify reusable UI components generate and apply unique IDs (e.g. using React's `useId()` hook) to maintain accessible label bindings across multiple instantiations.
