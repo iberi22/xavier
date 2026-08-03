@@ -629,6 +629,47 @@ impl CodeGraphDB {
         })
     }
 
+    /// Find symbols by exact name match
+    pub fn find_by_name(&self, name: &str, limit: usize) -> Result<Vec<Symbol>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| GraphError::Database(format!("lock poisoned: {}", e)))?;
+
+        let mut stmt = conn
+            .prepare(
+                r#"SELECT id, stable_id, name, kind, lang, file_path, start_line, end_line, start_col, end_col, signature, parent, complexity
+                   FROM symbols
+                   WHERE name = ?1
+                   LIMIT ?2"#,
+            )
+            .map_err(|e| GraphError::Database(e.to_string()))?;
+
+        let symbols = stmt
+            .query_map(params![name, limit as isize], |row| {
+                Ok(Symbol {
+                    id: Some(row.get(0)?),
+                    stable_id: Some(row.get(1)?),
+                    name: row.get(2)?,
+                    kind: parse_symbol_kind(&row.get::<_, String>(3)?),
+                    lang: parse_language(&row.get::<_, String>(4)?),
+                    file_path: row.get(5)?,
+                    start_line: row.get(6)?,
+                    end_line: row.get(7)?,
+                    start_col: row.get(8)?,
+                    end_col: row.get(9)?,
+                    signature: row.get(10)?,
+                    parent: row.get(11)?,
+                    complexity: row.get(12)?,
+                })
+            })
+            .map_err(|e| GraphError::Database(e.to_string()))?
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(symbols)
+    }
+
     /// Find symbols in a specific file
     pub fn find_by_file(&self, file_path: &str) -> Result<Vec<Symbol>> {
         let conn = self

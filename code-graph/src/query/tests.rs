@@ -94,6 +94,21 @@ mod tests_inner {
     }
 
     #[test]
+    fn test_find_by_name() {
+        let db = setup_test_db();
+        let query = QueryEngine::new(Arc::new(db));
+
+        // Test exact find_by_name match
+        let results = query.find_by_name("process_data", 10).expect("test assertion");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "process_data");
+
+        // Test exact find_by_name match with no result
+        let results = query.find_by_name("process", 10).expect("test assertion");
+        assert!(results.is_empty());
+    }
+
+    #[test]
     fn test_fuzzy_search() {
         let db = setup_test_db();
 
