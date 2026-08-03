@@ -26,6 +26,7 @@ pub struct DaoGovernanceSystem {
     pub required_approval_threshold: f64, // 0.0 to 1.0 (e.g., 0.8 = 80% approval)
     pub minimum_quorum: u64,              // Minimum total votes required
     pub maintainer_registry: HashMap<String, u64>, // Maps NodeID/Wallet to their Trust Score
+    pub wallets: HashMap<String, crate::mesh::tokenomics::wallet::Wallet>, // Maps NodeID/Wallet to Wallet
     /// Optional EVM on-chain config. When Some, votes go on-chain via alloy.
     #[cfg(feature = "dao-evm")]
     pub evm_config: Option<EvmDaoConfig>,
@@ -45,6 +46,7 @@ impl DaoGovernanceSystem {
             required_approval_threshold: 0.80, // 80% consensus required
             minimum_quorum: 5,                 // At least 5 maintainers must vote
             maintainer_registry: registry,
+            wallets: HashMap::new(),
             #[cfg(feature = "dao-evm")]
             evm_config: None,
         }
@@ -99,24 +101,31 @@ impl DaoGovernanceSystem {
         client.propose(cluster_id, title, description).await
     }
 
-    /// Simulates a vote cast via GitHub Reaction (👍 or 👎).
-    pub async fn cast_vote(&mut self, cluster_id: &str, approve: bool) -> Result<(), String> {
+    /// Casts a vote weighted by the voter's tokenomics XP wallet balance.
+    pub async fn cast_vote(&mut self, cluster_id: &str, voter: &str, approve: bool, is_council: bool) -> Result<(), String> {
+        let voting_power = if let Some(wallet) = self.wallets.get(voter) {
+            wallet.get_effective_balance()
+        } else {
+            1
+        };
+
         {
             let proposal = self
                 .active_proposals
                 .get_mut(cluster_id)
                 .ok_or_else(|| "Proposal not found".to_string())?;
 
+            let weight = if is_council { 1 } else { voting_power };
             if approve {
-                proposal.upvotes += 1;
+                proposal.upvotes += weight;
             } else {
-                proposal.downvotes += 1;
+                proposal.downvotes += weight;
             }
         }
 
         #[cfg(feature = "dao-evm")]
         if let Some(_) = &self.evm_config {
-            let _ = self.cast_vote_evm(cluster_id, approve).await;
+            let _ = self.cast_vote_evm(cluster_id, approve, voting_power, is_council).await;
         }
 
         self.evaluate_consensus(cluster_id);
@@ -135,10 +144,11 @@ impl DaoGovernanceSystem {
 
         for (cluster_id, proposal) in self.active_proposals.iter_mut() {
             match client.get_proposal_status(cluster_id).await {
-                Ok((approved, upvotes, downvotes)) => {
+                Ok((approved, upvotes_yes, upvotes_no, council_yes, council_no, _vetoed, _executed)) => {
                     proposal.is_approved_for_pr = approved;
-                    proposal.upvotes = upvotes;
-                    proposal.downvotes = downvotes;
+                    // Aggregate upvotes and downvotes from user & council
+                    proposal.upvotes = upvotes_yes + council_yes;
+                    proposal.downvotes = upvotes_no + council_no;
                 }
                 Err(e) => {
                     tracing::error!("Failed to sync proposal {} from chain: {:?}", cluster_id, e)
@@ -150,13 +160,13 @@ impl DaoGovernanceSystem {
     }
 
     #[cfg(feature = "dao-evm")]
-    async fn cast_vote_evm(&self, cluster_id: &str, approve: bool) -> anyhow::Result<()> {
+    async fn cast_vote_evm(&self, cluster_id: &str, approve: bool, voting_power: u64, is_council: bool) -> anyhow::Result<()> {
         let config = self
             .evm_config
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("EVM config missing"))?;
         let client = OnchainDaoClient::new(config.clone());
-        client.vote(cluster_id, approve).await
+        client.vote(cluster_id, approve, voting_power, is_council).await
     }
 
     /// Executes an approved proposal on-chain.
@@ -225,14 +235,15 @@ mod tests {
         .await;
 
         // Cast 4 upvotes (not enough quorum)
-        for _ in 0..4 {
-            dao.cast_vote("CLUSTER_P2P", true).await.unwrap();
+        for i in 0..4 {
+            let voter = format!("voter_{}", i);
+            dao.cast_vote("CLUSTER_P2P", &voter, true, false).await.unwrap();
         }
         let prop = dao.active_proposals.get("CLUSTER_P2P").unwrap();
         assert!(!prop.is_approved_for_pr); // Quorum is 5
 
         // Cast 1 downvote (total 5 votes: 4 up, 1 down = 80%)
-        dao.cast_vote("CLUSTER_P2P", false).await.unwrap();
+        dao.cast_vote("CLUSTER_P2P", "voter_4", false, false).await.unwrap();
 
         let prop = dao.active_proposals.get("CLUSTER_P2P").unwrap();
         assert!(prop.is_approved_for_pr); // Reached 80% with 5 votes!
@@ -247,11 +258,11 @@ mod tests {
             .await;
 
         // Cast 3 upvotes and 3 downvotes (50%, below 80% threshold)
-        for _ in 0..3 {
-            dao.cast_vote("CLUSTER_UI", true).await.unwrap();
-        }
-        for _ in 0..3 {
-            dao.cast_vote("CLUSTER_UI", false).await.unwrap();
+        for i in 0..3 {
+            let voter_y = format!("voter_y_{}", i);
+            let voter_n = format!("voter_n_{}", i);
+            dao.cast_vote("CLUSTER_UI", &voter_y, true, false).await.unwrap();
+            dao.cast_vote("CLUSTER_UI", &voter_n, false, false).await.unwrap();
         }
 
         let prop = dao.active_proposals.get("CLUSTER_UI").unwrap();
@@ -323,10 +334,37 @@ mod tests {
         let err1 = client.propose("EVM_1", "Test", "Desc").await;
         assert!(err1.is_err());
 
-        let err2 = client.vote("EVM_1", true).await;
+        let err2 = client.vote("EVM_1", true, 100, false).await;
         assert!(err2.is_err());
 
         let err3 = client.get_proposal_status("EVM_1").await;
         assert!(err3.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_dao_governance_wallet_integration() {
+        use crate::mesh::tokenomics::wallet::{Wallet, TransactionKind};
+        use crate::mesh::node::NodeId;
+
+        let mut dao = DaoGovernanceSystem::new();
+        dao.submit_proposal(
+            "CLUSTER_BOUNTY",
+            "Bounty Proposal",
+            "Proposal description",
+        )
+        .await;
+
+        let node_id = NodeId::parse("xv1-testnode0000000").unwrap();
+        let mut wallet = Wallet::new(node_id);
+        wallet.credit(500, TransactionKind::Reward, "Initial reward");
+
+        // Insert wallet in the DAO's wallet map for this voter
+        dao.wallets.insert("DEV_XP_VOTER".to_string(), wallet);
+
+        // Cast vote
+        dao.cast_vote("CLUSTER_BOUNTY", "DEV_XP_VOTER", true, false).await.unwrap();
+
+        let prop = dao.active_proposals.get("CLUSTER_BOUNTY").unwrap();
+        assert_eq!(prop.upvotes, 500); // voting power resolved from XP wallet balance!
     }
 }

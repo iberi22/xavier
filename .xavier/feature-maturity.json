@@ -551,7 +551,7 @@
         {
           "name": "Governance DAO (on-chain)",
           "weight": 20,
-          "maturity": 25,
+          "maturity": 60,
           "static_pass_rate": 0,
           "test_pass_rate": 100,
           "gate_check": true,
