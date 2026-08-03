@@ -254,14 +254,20 @@ pub async fn code_find_handler(
     State(state): State<CliState>,
     axum::Json(payload): axum::Json<CodeFindPayload>,
 ) -> impl axum::response::IntoResponse {
+    let query_to_process = if payload.query.is_empty() {
+        payload.name.as_deref().unwrap_or("").to_string()
+    } else {
+        payload.query.clone()
+    };
+
     let sec_result = state
         .security
-        .process_input(&payload.query)
+        .process_input(&query_to_process)
         .await
         .unwrap_or_else(|_| SecureInputResult {
             allowed: false,
             sanitized_input: None,
-            original_input: payload.query.clone(),
+            original_input: query_to_process.clone(),
             detection_confidence: 1.0,
             is_injection: true,
             attack_type: "unknown".to_string(),
@@ -289,6 +295,34 @@ pub async fn code_find_handler(
         .as_deref()
         .unwrap_or(&sec_result.original_input)
         .to_string();
+
+    let name = match secure_optional_request_field(
+        state.security.as_ref(),
+        "code/find name",
+        payload.name.as_deref(),
+    )
+    .await
+    {
+        Ok(name) => name,
+        Err(sec_result) => {
+            info!(
+                "code/find blocked by security: name rejected (confidence={})",
+                sec_result.detection_confidence
+            );
+            return axum::Json(serde_json::json!({
+                "status": "blocked",
+                "reason": "security_policy_violation",
+                "blocked": true,
+                "field": "name",
+                "detection": {
+                    "is_injection": sec_result.is_injection,
+                    "confidence": sec_result.detection_confidence,
+                    "attack_type": sec_result.attack_type,
+                }
+            }));
+        }
+    };
+
     let pattern = match secure_optional_request_field(
         state.security.as_ref(),
         "code/find pattern",
@@ -343,14 +377,15 @@ pub async fn code_find_handler(
     };
     let limit = payload.limit.clamp(1, 100);
     info!(
-        "Code find request: query={}, limit={}, kind={:?}, pattern={:?}",
-        query, limit, kind, pattern
+        "Code find request: query={}, limit={}, kind={:?}, pattern={:?}, name={:?}",
+        query, limit, kind, pattern, name
     );
 
     let code_graph = state.code_graph.read().await;
     let symbols = code_find_symbols(
         &code_graph.query,
         &query,
+        name.as_deref(),
         kind.as_deref(),
         pattern.as_deref(),
         limit,
@@ -550,6 +585,23 @@ pub async fn code_context_handler(
 
     for symbol in symbols {
         let signature = symbol.signature.clone().unwrap_or_default();
+
+        let mut references = Vec::new();
+        if let Some(ref stable_id) = symbol.stable_id {
+            if let Ok(edges) = code_graph.db.find_edges_to(stable_id, None, 100) {
+                for edge in edges {
+                    references.push(serde_json::json!({
+                        "from_symbol": edge.from_symbol,
+                        "edge_type": format!("{:?}", edge.edge_type),
+                        "path": edge.file_path,
+                        "line": edge.line,
+                        "confidence": edge.confidence,
+                        "metadata": edge.metadata,
+                    }));
+                }
+            }
+        }
+
         let compact = serde_json::json!({
             "symbol": symbol.name,
             "symbol_type": format!("{:?}", symbol.kind),
@@ -560,6 +612,7 @@ pub async fn code_context_handler(
             "signature": signature,
             "stable_id": symbol.stable_id,
             "complexity": symbol.complexity,
+            "references": references,
         });
         let estimated = estimate_tokens(&compact.to_string());
         if used_tokens + estimated > budget_tokens && !context.is_empty() {
@@ -747,11 +800,17 @@ async fn code_graph_edges_response(
 fn code_find_symbols(
     code_query: &code_graph::query::QueryEngine,
     query: &str,
+    name: Option<&str>,
     kind: Option<&str>,
     pattern: Option<&str>,
     limit: usize,
 ) -> Vec<code_graph::types::Symbol> {
     let limit = limit.max(1).min(100);
+
+    if let Some(n) = name {
+        return code_query.find_by_name(n, limit).unwrap_or_default();
+    }
+
     let broad_limit = if query.trim().is_empty() {
         limit
     } else {
@@ -1372,12 +1431,12 @@ mod tests {
         let query_engine = code_graph::query::QueryEngine::new(db);
 
         // Filter by kind "function"
-        let res = code_find_symbols(&query_engine, "func", Some("function"), None, 10);
+        let res = code_find_symbols(&query_engine, "func", None, Some("function"), None, 10);
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].name, "func_one");
 
         // Filter by kind "struct"
-        let res = code_find_symbols(&query_engine, "struct", Some("struct"), None, 10);
+        let res = code_find_symbols(&query_engine, "struct", None, Some("struct"), None, 10);
         assert_eq!(res.len(), 1);
         assert_eq!(res[0].name, "struct_two");
     }
