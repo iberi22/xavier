@@ -118,6 +118,11 @@ impl QueryEngine {
         Ok(result)
     }
 
+    /// Find symbols by exact name match
+    pub fn find_by_name(&self, name: &str, limit: usize) -> Result<Vec<Symbol>> {
+        self.db.find_by_name(name, limit)
+    }
+
     /// Find all functions
     pub fn functions(&self, limit: usize) -> Result<Vec<Symbol>> {
         self.db.find_by_kind(SymbolKind::Function, limit)

@@ -102,3 +102,77 @@ async fn test_scan_and_dump_workflow_produces_valid_json() {
         dump_content
     );
 }
+
+#[tokio::test]
+async fn test_exact_name_filtering_and_code_context_with_references() {
+    // 1. Create a temp directory
+    let _temp_dir = tempdir().expect("failed to create temp dir");
+
+    // 2. Initialize in-memory CodeGraphDB and state
+    let db = Arc::new(CodeGraphDB::in_memory().expect("failed to create CodeGraphDB"));
+    let indexer = Arc::new(Indexer::new(Arc::clone(&db)));
+    let query = Arc::new(QueryEngine::new(Arc::clone(&db)));
+    let state = CodeGraphState {
+        db: Arc::clone(&db),
+        indexer,
+        query,
+    };
+
+    // 3. Insert some mock symbols
+    let sym1 = code_graph::types::Symbol {
+        id: None,
+        stable_id: Some("id1".to_string()),
+        name: "useXavierMemory".to_string(),
+        kind: code_graph::types::SymbolKind::Function,
+        lang: code_graph::types::Language::TypeScript,
+        file_path: "src/useXavierMemory.ts".to_string(),
+        start_line: 1,
+        end_line: 10,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("export function useXavierMemory()".to_string()),
+        parent: None,
+        complexity: Some(1.2),
+    };
+    db.insert_symbol(&sym1).expect("insert sym1");
+
+    let sym2 = code_graph::types::Symbol {
+        id: None,
+        stable_id: Some("id2".to_string()),
+        name: "useXavierMemoryHelper".to_string(),
+        kind: code_graph::types::SymbolKind::Function,
+        lang: code_graph::types::Language::TypeScript,
+        file_path: "src/helper.ts".to_string(),
+        start_line: 1,
+        end_line: 5,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("export function useXavierMemoryHelper()".to_string()),
+        parent: None,
+        complexity: Some(1.0),
+    };
+    db.insert_symbol(&sym2).expect("insert sym2");
+
+    // 4. Insert an edge (reference) pointing to useXavierMemory
+    let edge1 = code_graph::types::CodeEdge {
+        id: None,
+        from_symbol: "id2".to_string(),
+        to_symbol: "id1".to_string(),
+        edge_type: code_graph::types::EdgeType::Calls,
+        file_path: "src/helper.ts".to_string(),
+        line: 3,
+        confidence: 0.95,
+        metadata: None,
+    };
+    db.insert_edge(&edge1).expect("insert edge1");
+
+    // 5. Test exact name query filtering on QueryEngine
+    let exact_matches = state.query.find_by_name("useXavierMemory", 10).expect("query find_by_name");
+    assert_eq!(exact_matches.len(), 1);
+    assert_eq!(exact_matches[0].name, "useXavierMemory");
+
+    // 6. Test find_edges_to (references)
+    let references = db.find_edges_to("id1", None, 10).expect("find_edges_to");
+    assert_eq!(references.len(), 1);
+    assert_eq!(references[0].from_symbol, "id2");
+}
