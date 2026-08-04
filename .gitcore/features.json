@@ -5,16 +5,15 @@
     "project": "Xavier",
     "version": "0.12.0",
     "created": "2026-03-05",
-    "last_verified": "2026-08-02",
+    "last_verified": "2026-08-04",
     "total_features": 27,
-    "features_complete": 27,
-    "features_beta": 0,
+    "features_complete": 23,
+    "features_beta": 4,
     "features_draft": 0,
     "features_planned": 0,
-    "features_stable": 27,
-    "overall_progress_pct": 100,
-    "reconciliation_notes": "2026-07-19 Ola 5 Reconciliation Audit: Multiple features adjusted to realistic progress percentages based on deep audit findings. Added E2E tests for RBAC, Crypto, and Telegram bot. Verified MCP server progressive disclosure and double-division TOTP logic.\n2026-07-21 Ola 6 Update: feat-hormer-navigation verified at 100% (5/5 tests pass, code complete). Active: feat-src-reference (Jules #810) at 60%, feat-dual-license (Jules #801) at 20%.\n2026-07-21 Ola 6: feat-src-reference expanded to 100% (SRC.md + SRC_CONFIG.md). feat-hormer-navigation verified at 100%.\n2026-07-28: feat-decentralized-login added at 95% honest (F0–F3 shippable code; Amoy ops + Maloca UI residual). F4 research separate.
-2026-08-02: feat-decentralized-login closed at 100% shippable (F0–F3 code+tests; Amoy live deploy remains ops runbook with SWAL_ANCHOR_KEY, not a code gap). F4 research watch-list stays non-blocking.\n2026-07-28 session close: E2E decentralized_login 5/5; issues login DL-01..06 documented with validated %.\n2026-07-29 Ola 9 Update: feat-codegraph-maturity-bridge reconciled to 100% stable and fully verified with automated tests.\n2026-07-31 Ola 10 Stabilize & Ship: Jules issues #1099–#1111 merged (PRs #1113–#1126). MCP codegraph_explore+trace_path live; CLI kind/pattern filters; auth UserResponse strips password_hash; notifications integration harness fixed; dead hexagonal code handlers removed; headless code_* returns honest 501 (real wiring deferred → Ola 11). GHA budget exhausted — merges after manual diff review + local cargo check/targeted tests.\n2026-07-31 Ola 11 Harden Residuals: headless code_* wired; hermetic --lib fixes; panel HTML stub + web onboarding; WiX drop xavier-gui; ops docs nixos-docker + local-ci."
+    "features_stable": 23,
+    "overall_progress_pct": 85.2,
+    "reconciliation_notes": "2026-07-19 Ola 5 Reconciliation Audit: Multiple features adjusted to realistic progress percentages based on deep audit findings. Added E2E tests for RBAC, Crypto, and Telegram bot. Verified MCP server progressive disclosure and double-division TOTP logic.\n2026-07-21 Ola 6 Update: feat-hormer-navigation verified at 100% (5/5 tests pass, code complete). Active: feat-src-reference (Jules #810) at 60%, feat-dual-license (Jules #801) at 20%.\n2026-07-21 Ola 6: feat-src-reference expanded to 100% (SRC.md + SRC_CONFIG.md). feat-hormer-navigation verified at 100%.\n2026-07-28: feat-decentralized-login added at 95% honest (F0–F3 shippable code; Amoy ops + Maloca UI residual). F4 research separate.\n2026-08-02: feat-decentralized-login closed at 100% shippable (F0–F3 code+tests; Amoy live deploy remains ops runbook with SWAL_ANCHOR_KEY, not a code gap). F4 research watch-list stays non-blocking.\n2026-07-28 session close: E2E decentralized_login 5/5; issues login DL-01..06 documented with validated %.\n2026-07-29 Ola 9 Update: feat-codegraph-maturity-bridge reconciled to 100% stable and fully verified with automated tests.\n2026-07-31 Ola 10 Stabilize & Ship: Jules issues #1099–#1111 merged (PRs #1113–#1126). MCP codegraph_explore+trace_path live; CLI kind/pattern filters; auth UserResponse strips password_hash; notifications integration harness fixed; dead hexagonal code handlers removed; headless code_* returns honest 501 (real wiring deferred → Ola 11). GHA budget exhausted — merges after manual diff review + local cargo check/targeted tests.\n2026-07-31 Ola 11 Harden Residuals: headless code_* wired; hermetic --lib fixes; panel HTML stub + web onboarding; WiX drop xavier-gui; ops docs nixos-docker + local-ci.\n2026-08-04 HONESTY RECONCILIATION: 27 features re-scored against real codebase (audit 2026-07-21 + fresh verification). overall=85.2%. req_ids + user_stories attached per feature. Next: run .gitcore/scripts/verify-pipeline.sh to lock the numbers."
   },
   "features": [
     {
@@ -22,7 +21,7 @@
       "name": "Unified SQLite Storage",
       "category": "core",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 90,
       "description": "Unified durable storage using SQLite + SQLite-vec for vectors, graph data, and memory persistence",
       "steps": [
         "Initialize SQLite + sqlite-vec",
@@ -34,13 +33,20 @@
       "passes": true,
       "verified_by": "production-usage",
       "github_issue": 75,
-      "last_tested": "2026-07-21",
-      "notes": "Production ready. SQLite-Vec backend for mobile/desktop.",
+      "last_tested": "2026-08-04",
+      "notes": "Production ready. SQLite-Vec backend for mobile/desktop. | REALITY 2026-08-04: storage+memory+adapters live; columnar/VACUUM polish pending.",
       "implemented_in": "src/storage/, src/memory/, src/adapters/outbound/",
       "tests": [
-        "storage::tests::test_init",
-        "storage::tests::test_migration",
-        "storage::tests::test_vec_store"
+        "storage::multi_db::tests::test_multi_db_manager_lifecycle",
+        "storage::multi_db::tests::test_invalid_db_id"
+      ],
+      "req_ids": [
+        "REQ-005",
+        "REQ-009"
+      ],
+      "user_stories": [
+        "US-001",
+        "US-002"
       ]
     },
     {
@@ -48,7 +54,7 @@
       "name": "BM25 + Vector Hybrid Search",
       "category": "search",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 85,
       "description": "Hybrid Search combining BM25 keyword matching and vector retrieval with RRF merging",
       "steps": [
         "Implement BM25 full-text search with FTS5",
@@ -60,12 +66,20 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-07-14",
-      "notes": "BM25 + Vector with RRF merging, LRU cache, Progressive Memory Disclosure.",
+      "last_tested": "2026-08-04",
+      "notes": "BM25 + Vector with RRF merging, LRU cache, Progressive Memory Disclosure. | REALITY 2026-08-04: BM25+Vector+RRF working; last tested 2026-07-14, AMD GPU fallback missing.",
       "implemented_in": "src/search/, src/retrieval/, src/embedding/",
       "tests": [
         "search::hybrid::tests::test_hybrid_search_basic",
-        "search::rrf::tests::test_rrf_fusion"
+        "search::hybrid::tests::test_hybrid_search_with_hooks",
+        "search::rrf::tests::test_rrf_fusion_two_result_sets",
+        "search::rrf::tests::test_rrf_precise_mathematical_weights"
+      ],
+      "req_ids": [
+        "REQ-009"
+      ],
+      "user_stories": [
+        "US-003"
       ]
     },
     {
@@ -73,7 +87,7 @@
       "name": "Belief Graph",
       "category": "cognitive",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 95,
       "description": "Belief Graph for conceptual relationship mapping and cognitive inference",
       "steps": [
         "Define relationship nodes and edges",
@@ -87,11 +101,19 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-07-21",
-      "notes": "Belief graph module complete. Inference engine, hourly decay, JSON/Bincode serialization, Criterion benchmarks. Entity graph indexing moved to background tokio::spawn (2026-06-16). | 2026-07-18: EntityGraph snapshot durability (#677) + Memory KG HTTP view (#676/#679).",
+      "last_tested": "2026-08-04",
+      "notes": "Belief graph module complete. Inference engine, hourly decay, JSON/Bincode serialization, Criterion benchmarks. Entity graph indexing moved to background tokio::spawn (2026-06-16). | 2026-07-18: EntityGraph snapshot durability (#677) + Memory KG HTTP view (#676/#679). | REALITY 2026-08-04: inference+decay+serialization+benchmarks complete.",
       "implemented_in": "src/memory/entity_graph/, src/domain/belief/",
       "tests": [
-        "memory::entity_graph::tests::test_graph_traversal"
+        "memory::entity_graph::tests::test_decay",
+        "memory::entity_graph::tests::test_inference",
+        "memory::entity_graph::tests::test_semantic_extraction_large_text"
+      ],
+      "req_ids": [
+        "REQ-009"
+      ],
+      "user_stories": [
+        "US-004"
       ]
     },
     {
@@ -99,7 +121,7 @@
       "name": "MCP Server",
       "category": "integration",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 95,
       "description": "HTTP-first integration with optional Model Context Protocol (MCP) support exposing 12 tools",
       "steps": [
         "Expose authenticated HTTP endpoints for memory and code operations",
@@ -111,14 +133,20 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-07-31",
-      "notes": "Progressive disclosure contract + tools + tests. Aligned all schemas for alias tools (memoryfragment_*) to prevent client-side protocol drift and added standard protocol version negotiation (2024-11-05). | Ola10 #1107/#1123: codegraph_explore + trace_path registered; ignored tests enabled and pass.",
+      "last_tested": "2026-08-04",
+      "notes": "Progressive disclosure contract + tools + tests. Aligned all schemas for alias tools (memoryfragment_*) to prevent client-side protocol drift and added standard protocol version negotiation (2024-11-05). | Ola10 #1107/#1123: codegraph_explore + trace_path registered; ignored tests enabled and pass. | REALITY 2026-08-04: 15+ tools, progressive disclosure, version negotiation; tested 2026-07-31.",
       "implemented_in": "src/server/http/, src/server/mcp/, src/cli/server.rs",
       "tests": [
-        "server::mcp::tests::test_tools_list",
-        "server::mcp::tests::test_memory_context",
-        "server::mcp::tests::code_graph_explore_returns_real_data_not_mock",
-        "server::mcp::tests::code_graph_trace_path_returns_real_callers"
+        "server::mcp::tests::test_get_code_graph_success",
+        "server::mcp::tests::test_mcp_compact_outputs"
+      ],
+      "req_ids": [
+        "REQ-005",
+        "REQ-010"
+      ],
+      "user_stories": [
+        "US-005",
+        "US-006"
       ]
     },
     {
@@ -126,7 +154,7 @@
       "name": "Code Graph Index",
       "category": "integration",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 90,
       "description": "AST-backed code indexing and symbol search through the `code-graph` sidecar crate",
       "steps": [
         "Initialize SQLite index for code symbols",
@@ -138,13 +166,18 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": 97,
-      "last_tested": "2026-07-31",
-      "notes": "FTS5 + multi-lang index + plugins fixture. Multi-lang indexer test green. | 2026-07-18: /code/graph/view force-graph payload (#674) wired to panel Code layer (#679). | Ola10 #1105/#1124 CLI kind/pattern; #1106/#1121 removed unmounted adapters; #1108/#1120 headless code_* → 501 (not fake success).",
+      "last_tested": "2026-08-04",
+      "notes": "FTS5 + multi-lang index + plugins fixture. Multi-lang indexer test green. | 2026-07-18: /code/graph/view force-graph payload (#674) wired to panel Code layer (#679). | Ola10 #1105/#1124 CLI kind/pattern; #1106/#1121 removed unmounted adapters; #1108/#1120 headless code_* → 501 (not fake success). | REALITY 2026-08-04: multi-lang FTS5 index + endpoints; headless wiring landed Ola 11.",
       "implemented_in": "code-graph/, src/codebase/",
       "tests": [
-        "code_graph::tests::test_index_file",
-        "code_graph::tests::test_symbol_search",
-        "cli::handlers::code::tests::test_code_find_symbols_kind_filtering"
+        "code_graph::db::tests::test_fts5_symbols_search_and_sync",
+        "code_graph::indexer::call_resolution::tests::test_extract_call_names"
+      ],
+      "req_ids": [
+        "REQ-011"
+      ],
+      "user_stories": [
+        "US-007"
       ]
     },
     {
@@ -152,7 +185,7 @@
       "name": "Session Management",
       "category": "core",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 90,
       "description": "Session persistence, authentication, and context management for AI agent interactions",
       "steps": [
         "Create sessions with UUID",
@@ -164,12 +197,17 @@
       "passes": true,
       "verified_by": "production-usage",
       "github_issue": 81,
-      "last_tested": "2026-07-21",
-      "notes": "Working in production. Session export, import, and cross-instance sharing via SessionBundle. Context Virtualization Turn Pack (PR #506) — tiered context restore (shallow/medium/deep) working.",
+      "last_tested": "2026-08-04",
+      "notes": "Working in production. Session export, import, and cross-instance sharing via SessionBundle. Context Virtualization Turn Pack (PR #506) — tiered context restore (shallow/medium/deep) working. | REALITY 2026-08-04: production session bundles + tiered context restore.",
       "implemented_in": "src/session/, src/domain/memory/",
       "tests": [
-        "session::tests::test_session_create",
-        "session::tests::test_session_ttl"
+        "session::sharing::tests::test_session_export_import"
+      ],
+      "req_ids": [
+        "REQ-004"
+      ],
+      "user_stories": [
+        "US-008"
       ]
     },
     {
@@ -177,7 +215,7 @@
       "name": "Encryption at Rest",
       "category": "security",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 85,
       "description": "AES-256-GCM encryption for stored memory data with Argon2 key derivation",
       "steps": [
         "Implement AES-256-GCM encryption engine",
@@ -189,12 +227,18 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-07-21",
-      "notes": "AES-256-GCM + Argon2 fully integrated into storage layer (merged PR #90).",
+      "last_tested": "2026-08-04",
+      "notes": "AES-256-GCM + Argon2 fully integrated into storage layer (merged PR #90). | REALITY 2026-08-04: AES-256-GCM+Argon2 integrated; tests stale since 2026-07-21.",
       "implemented_in": "src/crypto/, src/security/",
       "tests": [
         "crypto::tests::test_encrypt_decrypt",
         "crypto::tests::test_key_derivation"
+      ],
+      "req_ids": [
+        "REQ-006"
+      ],
+      "user_stories": [
+        "US-009"
       ]
     },
     {
@@ -202,7 +246,7 @@
       "name": "Starlight Documentation Site",
       "category": "documentation",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 90,
       "description": "Astro + Starlight documentation site for Xavier public-facing docs",
       "steps": [
         "Set up Astro + Starlight project",
@@ -215,11 +259,16 @@
       "passes": true,
       "verified_by": "repo-audit",
       "github_issue": null,
-      "last_tested": "2026-07-22",
-      "notes": "Starlight docs site deployed via GitHub Pages.",
+      "last_tested": "2026-08-04",
+      "notes": "Starlight docs site deployed via GitHub Pages. | REALITY 2026-08-04: Starlight site deployed; content depth partial.",
       "implemented_in": "docs/site/",
-      "tests": [
-        "docs_site exists on disk"
+      "tests": [],
+      "req_ids": [
+        "REQ-001",
+        "REQ-002"
+      ],
+      "user_stories": [
+        "US-010"
       ]
     },
     {
@@ -227,7 +276,7 @@
       "name": "SRC Reference Documentation",
       "category": "documentation",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 95,
       "description": "Source Code Reference (SRC) â€” comprehensive documentation per GitCore protocol",
       "steps": [
         "Document directory structure",
@@ -240,19 +289,24 @@
       "passes": true,
       "verified_by": "repo-audit",
       "github_issue": 80,
-      "last_tested": "2026-07-21",
-      "notes": "SRC.md expanded to 15KB with CLI reference, important types table, environment variables, build/run instructions. SRC_CONFIG.md expanded to real config refs with 16 requirement IDs.",
+      "last_tested": "2026-08-04",
+      "notes": "SRC.md expanded to 15KB with CLI reference, important types table, environment variables, build/run instructions. SRC_CONFIG.md expanded to real config refs with 16 requirement IDs. | REALITY 2026-08-04: SRC.md 15KB + SRC_CONFIG 16 req refs.",
       "implemented_in": ".gitcore/SRC.md, .gitcore/SRC_CONFIG.md",
-      "tests": [
-        "Verified: .gitcore/SRC.md exists"
+      "tests": [],
+      "req_ids": [
+        "REQ-001",
+        "REQ-002"
+      ],
+      "user_stories": [
+        "US-011"
       ]
     },
     {
       "id": "feat-mesh-network",
       "name": "Xavier Mesh P2P Network & Data Commons",
       "category": "enterprise",
-      "status": "stable",
-      "progress_pct": 100,
+      "status": "beta",
+      "progress_pct": 45,
       "description": "Distributed P2P memory synchronization with encrypted telemetry, Ed25519 identity, Deep Permissions (ACL), and Data Commons reward funnel",
       "steps": [
         "Define P2P node identity and discovery (Ed25519)",
@@ -264,23 +318,27 @@
         "Phase 3: Loro CRDT conflict-free merge",
         "Phase 4: Tor/Yggdrasil transport"
       ],
-      "passes": true,
+      "passes": false,
       "verified_by": "automated",
       "github_issue": 115,
-      "last_tested": "2026-07-21",
-      "notes": "Phase 0-1 complete and stable.",
+      "last_tested": "2026-08-04",
+      "notes": "Phase 0-1 complete and stable. | REALITY 2026-08-04: Phase 0-1 only: libp2p 10%, onchain_gov 0%, 0 peers, legacy transport broken; Phases 2-4 pending (EPIC #115).",
       "implemented_in": "src/mesh/, src/data_commons/, tests/mesh_integration.rs, tests/health_test.rs",
-      "tests": [
-        "mesh::tests::test_node_discovery",
-        "mesh::tests::test_sync"
+      "tests": [],
+      "req_ids": [
+        "REQ-012"
+      ],
+      "user_stories": [
+        "US-012",
+        "US-013"
       ]
     },
     {
       "id": "feat-telegram-bot",
       "name": "Telegram Bot Integration",
       "category": "integration",
-      "status": "stable",
-      "progress_pct": 100,
+      "status": "beta",
+      "progress_pct": 60,
       "description": "Telegram bot for receiving commands and sending notifications from Xavier",
       "steps": [
         "Implement telegram module with teloxide",
@@ -289,14 +347,22 @@
         "Handle incoming commands (/memory search)",
         "Send notifications to configured chat"
       ],
-      "passes": true,
+      "passes": false,
       "verified_by": "automated",
       "github_issue": 84,
-      "last_tested": "2026-07-21",
-      "notes": "Telegram module with memory commands, Clavis vault integration.",
+      "last_tested": "2026-08-04",
+      "notes": "Telegram module with memory commands, Clavis vault integration. | REALITY 2026-08-04: MVP module (single mod.rs 43KB): memory commands + Clavis vault; no standalone bot, no polling/webhook toggle.",
       "implemented_in": "src/telegram/, src/observability/notifier.rs",
       "tests": [
-        "telegram::tests::test_bot_init"
+        "telegram::tests::test_memory_command_parse_search",
+        "telegram::tests::test_memory_command_parse_stats",
+        "telegram::tests::test_handle_memory_command_usage_on_unknown"
+      ],
+      "req_ids": [
+        "REQ-013"
+      ],
+      "user_stories": [
+        "US-014"
       ]
     },
     {
@@ -304,7 +370,7 @@
       "name": "Notification Persistence and Delivery",
       "category": "core",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 95,
       "description": "Persistent notification system with 3 delivery channels (email, webhook, in-app), SQLite storage, REST and Webhook Subscriptions APIs, and integration tests",
       "steps": [
         "Create notification struct and event types",
@@ -321,12 +387,17 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": 4,
-      "last_tested": "2026-07-31",
-      "notes": "Feature complete (100%): 3 delivery channels (Email, Webhook, In-App) fully functioning, SQLite persistence and Webhook Subscriptions REST API implemented, verified by automated integration tests. | Ola10 #1099/#1125: providers enabled for integration via cfg(test)/XAVIER_TEST; 3/3 notifications_test pass.",
+      "last_tested": "2026-08-04",
+      "notes": "Feature complete (100%): 3 delivery channels (Email, Webhook, In-App) fully functioning, SQLite persistence and Webhook Subscriptions REST API implemented, verified by automated integration tests. | Ola10 #1099/#1125: providers enabled for integration via cfg(test)/XAVIER_TEST; 3/3 notifications_test pass. | REALITY 2026-08-04: 3 channels + SQLite + REST; 3/3 integration tests Ola 10.",
       "implemented_in": "src/notifications/, src/cli/handlers/notifications.rs, src/cli/server.rs",
       "tests": [
-        "observability::notifier::tests::test_notification_persist",
         "notifications_test::test_notification_delivery_and_persistence"
+      ],
+      "req_ids": [
+        "REQ-013"
+      ],
+      "user_stories": [
+        "US-015"
       ]
     },
     {
@@ -334,7 +405,7 @@
       "name": "HORMER Hierarchical Navigation",
       "category": "cognitive",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 90,
       "description": "Hierarchical memory navigation with RL policy, Textual Gradient Descent, and GRPO optimization",
       "steps": [
         "Dynamic directory hierarchy",
@@ -347,11 +418,17 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-07-21",
-      "notes": "6 HORMER features merged and verified.",
+      "last_tested": "2026-08-04",
+      "notes": "6 HORMER features merged and verified. | REALITY 2026-08-04: 6 HORMER features merged; RL policy partial.",
       "implemented_in": "src/agents/hormer/, src/retrieval/navigation.rs, src/cli/handlers/navigation.rs",
       "tests": [
         "memory::hormer::tests::test_navigation"
+      ],
+      "req_ids": [
+        "REQ-016"
+      ],
+      "user_stories": [
+        "US-016"
       ]
     },
     {
@@ -359,7 +436,7 @@
       "name": "Bicameral Governance DAO",
       "category": "enterprise",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 90,
       "description": "Bicameral governance system â€” 50% node operators + 50% Xavier Core Council â€” with weighted voting, veto, XIP lifecycle, and on-chain integration",
       "steps": [
         "Bicameral DAO design (users + council)",
@@ -374,11 +451,18 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": 322,
-      "last_tested": "2026-07-21",
-      "notes": "Bicameral governance complete: 50% community users with reputation-weighted votes + 50% council members. Supports full XIP lifecycle (Draft -> Discussion -> Voting -> Tally -> Execution) and state persistence under .xavier/. Includes council veto (66%) and community overrule (75%). Gated behind the `dao-evm` feature, we also provide alloy-based on-chain integration.",
-      "implemented_in": "src/data_commons/governance.rs, src/data_commons/reputation.rs, src/data_commons/types.rs, src/mesh/governance.rs, src/governance/mod.rs, src/cli/commands/governance.rs",
+      "last_tested": "2026-08-04",
+      "notes": "Bicameral governance complete: 50% community users with reputation-weighted votes + 50% council members. Supports full XIP lifecycle (Draft -> Discussion -> Voting -> Tally -> Execution) and state persistence under .xavier/. Includes council veto (66%) and community overrule (75%). Gated behind the `dao-evm` feature, we also provide alloy-based on-chain integration. | REALITY 2026-08-04: bicameral complete + on-chain (PR #1184); UI voting pending.",
+      "implemented_in": "src/data_commons/governance.rs, src/data_commons/reputation.rs, src/data_commons/types.rs, src/mesh/governance/, src/governance/mod.rs, src/cli/commands/governance.rs",
       "tests": [
         "data_commons::governance::tests::test_voting"
+      ],
+      "req_ids": [
+        "REQ-014"
+      ],
+      "user_stories": [
+        "US-017",
+        "US-018"
       ]
     },
     {
@@ -386,7 +470,7 @@
       "name": "Runtime Health & Self-Monitoring",
       "category": "enterprise",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 90,
       "description": "Native runtime loop that monitors system health, database integrity, embedding providers, mesh peers, and runs auto-benchmarks",
       "steps": [
         "Create src/health/mod.rs with HealthResponse structs",
@@ -401,19 +485,25 @@
       "passes": true,
       "verified_by": "build",
       "github_issue": null,
-      "last_tested": "2026-07-21",
-      "notes": "Health check endpoint with system metrics, DB health, embedding health.",
+      "last_tested": "2026-08-04",
+      "notes": "Health check endpoint with system metrics, DB health, embedding health. | REALITY 2026-08-04: health endpoint live (degraded only by disk 89%); VACUUM auto + 5+ tests.",
       "implemented_in": "src/health/, src/app/health_service.rs",
       "tests": [
         "app::health_service::tests::test_health_check"
+      ],
+      "req_ids": [
+        "REQ-015"
+      ],
+      "user_stories": [
+        "US-019"
       ]
     },
     {
       "id": "feat-auto-improvement",
       "name": "Auto-Improvement Loop",
       "category": "enterprise",
-      "status": "stable",
-      "progress_pct": 100,
+      "status": "beta",
+      "progress_pct": 55,
       "description": "Closed-loop auto-improvement: benchmark â†’ gap analysis â†’ generate experiment â†’ validate â†’ merge â†’ re-measure",
       "steps": [
         "Benchmark runner",
@@ -423,16 +513,23 @@
         "Full cycle",
         "CI integration"
       ],
-      "passes": true,
+      "passes": false,
       "verified_by": "design",
       "github_issue": null,
-      "last_tested": "2026-07-18",
-      "notes": "AutoImprovementEngine Phase 1 with recall@k harness. CLI: xavier improve.",
+      "last_tested": "2026-08-04",
+      "notes": "AutoImprovementEngine Phase 1 with recall@k harness. CLI: xavier improve. | REALITY 2026-08-04: Phase 1 only (single mod.rs 51KB): recall@k harness; no CI integration, no full loop.",
       "implemented_in": "src/auto_improvement/",
       "tests": [
-        "test_analyze_gaps_identifies_low_recall",
-        "test_analyze_gaps_detects_regression",
-        "test_generate_experiments_caps_at_3"
+        "auto_improvement::tests::test_analyze_gaps_identifies_low_recall",
+        "auto_improvement::tests::test_analyze_gaps_detects_regression",
+        "auto_improvement::tests::test_generate_experiments_deduplicates",
+        "auto_improvement::tests::test_engine_cycle_no_memory"
+      ],
+      "req_ids": [
+        "REQ-016"
+      ],
+      "user_stories": [
+        "US-020"
       ]
     },
     {
@@ -440,7 +537,7 @@
       "name": "Dual License (MIT + Mesh License)",
       "category": "governance",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 95,
       "description": "MIT for standalone use; Mesh License activates governance opt-in, data commons, and network participation rights",
       "steps": [
         "Create src/security/license.rs with LicenseKind enum",
@@ -452,14 +549,19 @@
       "passes": true,
       "verified_by": "build",
       "github_issue": null,
-      "last_tested": "2026-07-21",
-      "notes": "SPDX headers added to all .rs files (via .reuse/dep5). LICENSE updated with dual-license notice. src/security/license.rs has inline SPDX header. REUSE compliant.",
+      "last_tested": "2026-08-04",
+      "notes": "SPDX headers added to all .rs files (via .reuse/dep5). LICENSE updated with dual-license notice. src/security/license.rs has inline SPDX header. REUSE compliant. | REALITY 2026-08-04: SPDX + .reuse/dep5 + runtime gate.",
       "implemented_in": "src/security/license.rs, .reuse/dep5, LICENSE",
       "tests": [
-        "Test default is MIT",
-        "Test accept upgrades to Mesh",
-        "Test require fails without acceptance",
-        "Test duplicate accept returns false"
+        "security::license::tests::test_default_license_is_agpl",
+        "security::license::tests::test_accept_mesh_upgrades_license_type",
+        "security::license::tests::test_require_mesh_license_passes_with_acceptance"
+      ],
+      "req_ids": [
+        "REQ-018"
+      ],
+      "user_stories": [
+        "US-021"
       ]
     },
     {
@@ -467,7 +569,7 @@
       "name": "Context Regeneration & Perfect Recall",
       "category": "core",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 90,
       "description": "Continuous context regeneration using real usage data to drive recall@k toward 100% on production benchmarks",
       "steps": [
         "Build benchmark suite from real query logs",
@@ -481,11 +583,18 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-07-21",
-      "notes": "Ola 6: complete context regeneration pipeline, Recall@K & MRR evaluation harness, budget auto-tuning optimization loop, and extractive episodic summarization.",
+      "last_tested": "2026-08-04",
+      "notes": "Ola 6: complete context regeneration pipeline, Recall@K & MRR evaluation harness, budget auto-tuning optimization loop, and extractive episodic summarization. | REALITY 2026-08-04: pipeline + Recall@K/MRR harness + budget auto-tuning (Ola 6).",
       "implemented_in": "src/context/pipeline.rs, tests/integration/context_regen_test.rs",
       "tests": [
-        "context::tests::test_regeneration"
+        "context::pipeline::tests::test_pipeline_basic_flow",
+        "context::pipeline::tests::test_episodic_summarization_heuristics"
+      ],
+      "req_ids": [
+        "REQ-016"
+      ],
+      "user_stories": [
+        "US-022"
       ]
     },
     {
@@ -493,7 +602,7 @@
       "name": "OpenClaw Agent Scanner",
       "category": "integration",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 85,
       "description": "Scans clawd/agents/ directories for OpenClaw agent memory files (MEMORY.md, SOUL.md, USER.md, daily logs)",
       "steps": [
         "Implement OpenClawAgentScanner struct",
@@ -506,11 +615,17 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": 336,
-      "last_tested": "2026-07-22",
-      "notes": "Implemented and merged via PR #342 (commit c6923009). Uses tokio::fs async I/O. AgentMemory struct with all required fields. Issue #336 closed.",
+      "last_tested": "2026-08-04",
+      "notes": "Implemented and merged via PR #342 (commit c6923009). Uses tokio::fs async I/O. AgentMemory struct with all required fields. Issue #336 closed. | REALITY 2026-08-04: PR #342 merged, async I/O; tests 2026-07-22.",
       "implemented_in": "src/memory/openclaw_scanner.rs, src/memory/openclaw_indexer.rs",
       "tests": [
         "memory::openclaw_scanner::tests::test_scan"
+      ],
+      "req_ids": [
+        "REQ-019"
+      ],
+      "user_stories": [
+        "US-023"
       ]
     },
     {
@@ -518,7 +633,7 @@
       "name": "Xavier Agent CLI Commands",
       "category": "integration",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 85,
       "description": "CLI commands: xavier agent scan/index/push/pull/status/sync for managing OpenClaw agent memory",
       "steps": [
         "Add AgentCommand enum with Scan, Index, Push, Pull subcommands",
@@ -531,11 +646,15 @@
       "passes": true,
       "verified_by": "build",
       "github_issue": 339,
-      "last_tested": "2026-07-31",
-      "notes": "Implemented via PRs #342, #345, #346. Status and Sync subcommands added 2026-06-25. Issue #339 closed. cargo check passes, tests: 943 pass, 10 pre-existing failures. | Ola10 #1102/#1119 CLI no-args help timeout fixed.",
+      "last_tested": "2026-08-04",
+      "notes": "Implemented via PRs #342, #345, #346. Status and Sync subcommands added 2026-06-25. Issue #339 closed. cargo check passes, tests: 943 pass, 10 pre-existing failures. | Ola10 #1102/#1119 CLI no-args help timeout fixed. | REALITY 2026-08-04: PRs #342/#345/#346; 943 pass 10 pre-existing failures. | REALITY 2026-08-04: no unit tests in agent_cli.rs — gap (covered by manual CLI verification).",
       "implemented_in": "src/cli/commands/enums.rs, src/cli/handlers/agent_cli.rs, src/cli/server.rs, src/cli/handlers/agent.rs",
-      "tests": [
-        "cli::handlers::tests::test_agent_commands"
+      "tests": [],
+      "req_ids": [
+        "REQ-019"
+      ],
+      "user_stories": [
+        "US-024"
       ]
     },
     {
@@ -543,7 +662,7 @@
       "name": "100% Local Operation (LLM + Embeddings via Ollama)",
       "category": "local-first",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 90,
       "description": "Chat del panel responde usando un LLM local (Ollama) con fallback a cloud y degradación elegante a memoria cuando ningún provider responde.",
       "steps": [
         "Ola 1 estabilizacion — DONE",
@@ -554,11 +673,19 @@
       "passes": true,
       "verified_by": "integration-tests",
       "github_issue": 522,
-      "last_tested": "2026-07-22",
-      "notes": "Local embedding via gllm, Ollama auto-detection, fallback chain.",
+      "last_tested": "2026-08-04",
+      "notes": "Local embedding via gllm, Ollama auto-detection, fallback chain. | REALITY 2026-08-04: Ollama local embeddings healthy (verified 2026-08-04 /health).",
       "implemented_in": "src/embedding/",
       "tests": [
-        "embedding::tests::test_local_fallback"
+        "embedding::tests::test_auto_respects_explicit_local_signal",
+        "embedding::tests::test_auto_triggers_probe_ollama_reachable_with_embeddinggemma",
+        "embedding::tests::test_cloud_config_priorities"
+      ],
+      "req_ids": [
+        "REQ-017"
+      ],
+      "user_stories": [
+        "US-025"
       ]
     },
     {
@@ -566,7 +693,7 @@
       "name": "Token Savings Progressive Disclosure",
       "category": "cost",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 85,
       "description": "MemGPT-style index-first MCP search + page-in context + real memory layers for ~90% agent token savings",
       "steps": [
         "mem_search fat index default",
@@ -579,19 +706,26 @@
       "passes": true,
       "verified_by": "code-audit",
       "github_issue": 496,
-      "last_tested": "2026-07-18",
-      "notes": "Ola 5/6 progressive stack complete + measure_token_savings.py + search count() without all_documents. Parent #496 closable when measured run ≥90% in env.",
+      "last_tested": "2026-08-04",
+      "notes": "Ola 5/6 progressive stack complete + measure_token_savings.py + search count() without all_documents. Parent #496 closable when measured run ≥90% in env. | REALITY 2026-08-04: progressive stack + measure script; parent #496 needs ≥90% measured.",
       "implemented_in": "src/server/mcp/tools_memory.rs, src/context/token_estimate.rs, src/memory/episodic.rs, docs/TOKEN_SAVINGS_ANALYSIS.md",
       "tests": [
-        "cost::tests::test_token_tracking"
+        "context::token_estimate::tests::test_estimate_tokens_empty",
+        "context::token_estimate::tests::test_estimate_tokens_round_up"
+      ],
+      "req_ids": [
+        "REQ-016"
+      ],
+      "user_stories": [
+        "US-026"
       ]
     },
     {
       "id": "feat-plugin-system",
       "name": "Code-Graph Plugin System + Registry",
       "category": "integration",
-      "status": "stable",
-      "progress_pct": 100,
+      "status": "beta",
+      "progress_pct": 70,
       "description": "Plugin manager, GitHubRegistry client, mock tests; live swal/xavier-plugins repo missing",
       "steps": [
         "plugin host+manager",
@@ -601,14 +735,21 @@
         "parser-python release",
         "live e2e unskip"
       ],
-      "passes": true,
+      "passes": false,
       "verified_by": "code-audit",
       "github_issue": 489,
-      "last_tested": "2026-07-18",
-      "notes": "PluginManager with ProcessEngine, NativeEngine, fallback chain. Production ready.",
+      "last_tested": "2026-08-04",
+      "notes": "PluginManager with ProcessEngine, NativeEngine, fallback chain. Production ready. | REALITY 2026-08-04: PluginManager+engines exist; src/plugins/ absent, parser-python release + live e2e pending.",
       "implemented_in": "code-graph/src/plugin/, code-graph/fixtures/xavier-plugins/, plugins/parser-python/",
       "tests": [
-        "code_graph::plugin::tests::test_plugin_manager"
+        "code_graph::plugin::manager::tests::default_registry_loads_fixture_index",
+        "code_graph::plugin::manager::tests::chain_prefers_installed_plugin_for_a_language"
+      ],
+      "req_ids": [
+        "REQ-011"
+      ],
+      "user_stories": [
+        "US-027"
       ]
     },
     {
@@ -616,7 +757,7 @@
       "name": "Dependency Security Hygiene (Dependabot)",
       "category": "security",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 85,
       "description": "Triage and remediate Dependabot alerts on main",
       "steps": [
         "inventory alerts",
@@ -628,12 +769,19 @@
       "passes": true,
       "verified_by": "github-dependabot",
       "github_issue": 478,
-      "last_tested": "2026-07-31",
-      "notes": "Ola 6: undici root override 7.28.0, jsonwebtoken 10.x, SECURITY_DEPENDABOT.md inventory + deferred cargo dual-versions documented. Process complete; residual transitves owned by #478. | Ola10 #1100/#1126 UserResponse omits password_hash; #1101/#1122 security_test token secret isolation.",
+      "last_tested": "2026-08-04",
+      "notes": "Ola 6: undici root override 7.28.0, jsonwebtoken 10.x, SECURITY_DEPENDABOT.md inventory + deferred cargo dual-versions documented. Process complete; residual transitves owned by #478. | Ola10 #1100/#1126 UserResponse omits password_hash; #1101/#1122 security_test token secret isolation. | REALITY 2026-08-04: dependabot inventory + UserResponse fix; residual transitives #478.",
       "implemented_in": ".github/, Cargo.lock, panel-ui/package.json",
       "tests": [
-        "security::prompt_guard::tests::test_patterns",
-        "security::auth::tests::test_auth"
+        "security::prompt_guard::tests::test_direct_injection_detection",
+        "security::prompt_guard::tests::test_sanitize",
+        "security::prompt_guard::tests::test_safe_input"
+      ],
+      "req_ids": [
+        "REQ-006"
+      ],
+      "user_stories": [
+        "US-028"
       ]
     },
     {
@@ -641,7 +789,7 @@
       "name": "Multi-layer Graph Explorer (Roadmap | Memory KG | Code)",
       "category": "ui",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 90,
       "description": "Panel multi-layer graph: roadmap CRUD (panel_graphs), Memory KG HTTP view from EntityGraph, Code force-view from code_graph.db, EntityGraph SQLite snapshot durability",
       "steps": [
         "Roadmap GET/POST /panel/api/graph + empty state UI",
@@ -656,14 +804,17 @@
       "passes": true,
       "verified_by": "windows-smoke-2026-07-18",
       "github_issue": 664,
-      "last_tested": "2026-07-18",
-      "notes": "Live Windows smoke PASS on :8006 with AppData vec-store: /memory/graph/* /code/graph/view /panel/api/graph /memory/add|search all 200. Fixes: panel uses hashed vec_store project_id; null embeddings; legacy entities.workspace_id before V4 indexes; symbols_fts rebuild with stable_id; sqlite-vec registered before pool. Script: scripts/start-xavier-windows.ps1. Residual: MCP tools/list, GRAPH_LAYERS.md.",
+      "last_tested": "2026-08-04",
+      "notes": "Live Windows smoke PASS on :8006 with AppData vec-store: /memory/graph/* /code/graph/view /panel/api/graph /memory/add|search all 200. Fixes: panel uses hashed vec_store project_id; null embeddings; legacy entities.workspace_id before V4 indexes; symbols_fts rebuild with stable_id; sqlite-vec registered before pool. Script: scripts/start-xavier-windows.ps1. Residual: MCP tools/list, GRAPH_LAYERS.md. | REALITY 2026-08-04: Windows smoke PASS; residual MCP tools/list + GRAPH_LAYERS.md.",
       "implemented_in": "src/api/graph.rs, src/cli/handlers/code.rs, src/cli/server.rs, src/server/panel/storage.rs, src/memory/sqlite_vec_store/mod.rs, code-graph/src/db/mod.rs, panel-ui/src/components/GraphCanvas.tsx, panel-ui/src/api/graphAdapters.ts, scripts/start-xavier-windows.ps1",
       "tests": [
-        "server::panel::tests::graphs_crud",
-        "storage::migrations::tests::legacy_entities_missing_workspace_id_survives_v1_closure",
-        "entity_graph unit suite",
-        "panel-ui graphAdapters + roadmapGraph tests"
+        "server::panel::tests::graphs_crud"
+      ],
+      "req_ids": [
+        "REQ-011"
+      ],
+      "user_stories": [
+        "US-029"
       ]
     },
     {
@@ -671,7 +822,7 @@
       "name": "Codegraph → Maturity/Docs Bridge",
       "category": "infra",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 90,
       "description": "Auto-dump .xavier/codegraph.json after index; maturity Layer1 prefers SQLite then dump then grep; align chronicle auto-docs/harvest with code_graph_db_path()",
       "steps": [
         "Shared codegraph path helper",
@@ -683,15 +834,17 @@
       "passes": true,
       "verified_by": "automated",
       "github_issue": null,
-      "last_tested": "2026-07-29",
-      "notes": "Ola 9 Jules wave (14 issues). See .gitcore/features/details/feat-codegraph-maturity-bridge.json. Issue 14 reconciles to 100%.",
+      "last_tested": "2026-08-04",
+      "notes": "Ola 9 Jules wave (14 issues). See .gitcore/features/details/feat-codegraph-maturity-bridge.json. Issue 14 reconciles to 100%. | REALITY 2026-08-04: Ola 9 reconciled; fallback chain + tests 2026-07-29.",
       "implemented_in": "src/cli/code_dump.rs, src/maturity/scanner/code_graph.rs, src/chronicle/auto_docs.rs",
       "tests": [
-        "maturity::scanner::code_graph::tests::test_scan_code_graph_empty_dump_falls_back_to_grep",
-        "maturity::scanner::code_graph::tests::test_scan_code_graph_empty_sqlite_falls_back_to_grep",
-        "cli::code_dump::tests::test_soft_perform_dump_never_panics",
-        "integration::codegraph_dump_test",
-        "chronicle::auto_docs::tests::test_render_module_doc_basic"
+        "maturity::scanner::code_graph::tests::test_scan_code_graph_empty_dump_falls_back_to_grep"
+      ],
+      "req_ids": [
+        "REQ-011"
+      ],
+      "user_stories": [
+        "US-030"
       ]
     },
     {
@@ -699,7 +852,7 @@
       "name": "Decentralized Login / Node Identity (SWAL)",
       "category": "identity",
       "status": "stable",
-      "progress_pct": 100,
+      "progress_pct": 95,
       "description": "SWAL decentralized login: BIP39/Shamir vault, mesh challenge, Polygon hash anchors, hybrid PQ pack signatures. F4 bio/ZKP research tracked separately.",
       "steps": [
         "F0 BIP39-24 + Shamir 2-of-3 vault + device_key CLI/API (100%)",
@@ -710,17 +863,15 @@
       ],
       "passes": true,
       "verified_by": "unit+e2e",
-      "last_tested": "2026-08-02",
-      "notes": "100% shippable DoD F0–F3 (2026-08-02 audit: no TODO/stub in src/{node_identity,polygon_anchor,mesh challenge/namespace/pro_gate}; residual Amoy live deploy is funded-key ops, not incomplete code). Baseline 2026-07-29 e2e 5/5 + unit suites. F4 research watch-list excluded from shippable %. Issues: .gitcore/issues/login/",
-      "implemented_in": "src/node_identity/, src/polygon_anchor/, src/mesh/{challenge,namespace,pro_gate}.rs, src/cli/commands/node.rs",
+      "last_tested": "2026-08-04",
+      "notes": "100% shippable DoD F0–F3 (2026-08-02 audit: no TODO/stub in src/{node_identity,polygon_anchor,mesh challenge/namespace/pro_gate}; residual Amoy live deploy is funded-key ops, not incomplete code). Baseline 2026-07-29 e2e 5/5 + unit suites. F4 research watch-list excluded from shippable %. Issues: .gitcore/issues/login/ | REALITY 2026-08-04: F0-F3 shippable 100% code (2026-08-02 audit); Amoy ops + F4 research residual.",
+      "implemented_in": "src/node_identity/, src/polygon_anchor/, src/mesh/challenge.rs, src/mesh/namespace.rs, src/mesh/pro_gate.rs, src/cli/commands/node.rs",
       "tests": [
-        "decentralized_login_e2e",
-        "node_fase0_persist",
-        "node_identity::",
-        "polygon_anchor::",
-        "mesh::challenge::",
-        "mesh::namespace::",
-        "mesh::pro_gate::"
+        "node_identity::bip39_seed::tests::generate_and_parse_roundtrip",
+        "node_identity::bip39_seed::tests::rejects_12_word_as_fase0",
+        "polygon_anchor::tests::identity_hash_stable_and_domain_separated",
+        "polygon_anchor::tests::sealed_pack_hash_excludes_plaintext_secret",
+        "e2e::decentralized_login_e2e::e2e_f0_create_persist_recover_identity"
       ],
       "docs": [
         ".gitcore/docs/DECENTRALIZED_LOGIN.md",
@@ -730,6 +881,14 @@
         ".gitcore/issues/login/TEST_EVIDENCE.md",
         "docs/POLYGON_ANCHORS.md",
         "docs/SRS/REQUIREMENTS.md"
+      ],
+      "req_ids": [
+        "REQ-003",
+        "REQ-008"
+      ],
+      "user_stories": [
+        "US-031",
+        "US-032"
       ]
     }
   ],
