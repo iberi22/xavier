@@ -393,10 +393,9 @@ impl NotificationManager {
     /// List notifications.
     pub async fn list_notifications(&self) -> Result<Vec<Notification>> {
         ConnectionManager::global().with_conn("memory", move |conn| {
-            let mut stmt = conn.prepare(&format!(
-                "SELECT id, island_id, title, body, timestamp, read, severity FROM {} ORDER BY timestamp DESC LIMIT 100",
-                TABLE_NOTIFICATIONS
-            ))?;
+            let mut stmt = conn.prepare(
+                "SELECT id, island_id, title, body, timestamp, read, severity FROM notifications ORDER BY timestamp DESC LIMIT 100",
+            )?;
             let mut rows = stmt.query([])?;
             let mut result = Vec::new();
             while let Some(row) = rows.next()? {
