@@ -47,7 +47,7 @@ fn ensure_sidecar_placeholder() {
 
     // Minimal placeholder so tauri-build existence checks pass on cargo check/clippy.
     // Release packaging must overwrite this with a real `xavier` binary.
-    let _ = fs::write(&path, b"#!/bin/sh\necho 'xavier sidecar stub — replace with real binary' >&2\nexit 1\n");
+    let _ = fs::write(&path, b"#!/bin/sh\necho 'xavier sidecar stub - replace with real binary' >&2\nexit 1\n");
 
     #[cfg(unix)]
     {

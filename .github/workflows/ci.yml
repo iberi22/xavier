@@ -49,10 +49,10 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Run Cargo Check
-        run: cargo check --workspace --all-targets --features ci-safe --exclude xavier-web --exclude app
+        run: cargo check --workspace --all-targets --features ci-safe --exclude app
 
       - name: Run Clippy
-        run: cargo clippy --workspace --all-targets --features ci-safe --exclude xavier-web --exclude app -- -D warnings
+        run: cargo clippy --workspace --all-targets --features ci-safe --exclude app -- -D warnings
 
   # Job 3: Parallel Rust Tests
   rust-test:
