@@ -167,7 +167,10 @@ async fn test_exact_name_filtering_and_code_context_with_references() {
     db.insert_edge(&edge1).expect("insert edge1");
 
     // 5. Test exact name query filtering on QueryEngine
-    let exact_matches = state.query.find_by_name("useXavierMemory", 10).expect("query find_by_name");
+    let exact_matches = state
+        .query
+        .find_by_name("useXavierMemory", 10)
+        .expect("query find_by_name");
     assert_eq!(exact_matches.len(), 1);
     assert_eq!(exact_matches[0].name, "useXavierMemory");
 

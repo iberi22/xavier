@@ -507,7 +507,9 @@ impl BicameralDao for OnChainBicameralDao {
 
         // Submit to EVM chain via alloy
         let client = OnchainDaoClient::new(self.config.clone());
-        client.propose(&prop.id, title, description).await
+        client
+            .propose(&prop.id, title, description)
+            .await
             .map_err(|e| format!("Failed on-chain propose: {:?}", e))?;
 
         tracing::info!("On-chain submission of XIP proposal {} succeeded", prop.id);
@@ -530,7 +532,9 @@ impl BicameralDao for OnChainBicameralDao {
         let voting_power = 100;
 
         let client = OnchainDaoClient::new(self.config.clone());
-        client.vote(proposal_id, approve, voting_power, false).await
+        client
+            .vote(proposal_id, approve, voting_power, false)
+            .await
             .map_err(|e| format!("Failed on-chain user vote: {:?}", e))?;
 
         tracing::info!("On-chain user vote cast for proposal {}", proposal_id);
@@ -548,7 +552,9 @@ impl BicameralDao for OnChainBicameralDao {
             .await?;
 
         let client = OnchainDaoClient::new(self.config.clone());
-        client.vote(proposal_id, approve, 1, true).await
+        client
+            .vote(proposal_id, approve, 1, true)
+            .await
             .map_err(|e| format!("Failed on-chain council vote: {:?}", e))?;
 
         tracing::info!("On-chain council vote cast for proposal {}", proposal_id);
@@ -559,7 +565,9 @@ impl BicameralDao for OnChainBicameralDao {
         self.mock.council_veto(proposal_id, reason.clone()).await?;
 
         let client = OnchainDaoClient::new(self.config.clone());
-        client.veto(proposal_id, &reason).await
+        client
+            .veto(proposal_id, &reason)
+            .await
             .map_err(|e| format!("Failed on-chain veto: {:?}", e))?;
 
         tracing::info!("On-chain council veto cast for proposal {}", proposal_id);
@@ -570,7 +578,9 @@ impl BicameralDao for OnChainBicameralDao {
         self.mock.community_appeal(proposal_id).await?;
 
         let client = OnchainDaoClient::new(self.config.clone());
-        client.overrule(proposal_id).await
+        client
+            .overrule(proposal_id)
+            .await
             .map_err(|e| format!("Failed on-chain overrule: {:?}", e))?;
 
         tracing::info!(
@@ -584,7 +594,9 @@ impl BicameralDao for OnChainBicameralDao {
         let mut local_res = self.mock.tally_votes(proposal_id).await?;
 
         let client = OnchainDaoClient::new(self.config.clone());
-        if let Ok((approved, user_yes, user_no, council_yes, council_no, vetoed, executed)) = client.get_proposal_status(proposal_id).await {
+        if let Ok((approved, user_yes, user_no, council_yes, council_no, vetoed, executed)) =
+            client.get_proposal_status(proposal_id).await
+        {
             local_res.passed = approved;
             local_res.user_votes_for = user_yes;
             local_res.user_votes_against = user_no;
@@ -606,7 +618,9 @@ impl BicameralDao for OnChainBicameralDao {
         self.mock.execute_proposal(proposal_id, params).await?;
 
         let client = OnchainDaoClient::new(self.config.clone());
-        client.execute(proposal_id).await
+        client
+            .execute(proposal_id)
+            .await
             .map_err(|e| format!("Failed on-chain execution: {:?}", e))?;
 
         tracing::info!("On-chain execution of proposal {} succeeded", proposal_id);
@@ -732,19 +746,27 @@ mod tests {
             dynamic_quorum: None,
         });
 
-        let author = WalletAddress("xv1_author_0123456789abcdef0123456789abcd0123456789abcdef012345".to_string());
+        let author = WalletAddress(
+            "xv1_author_0123456789abcdef0123456789abcd0123456789abcdef012345".to_string(),
+        );
         dao.register_activity(author.clone()).await.unwrap();
 
         let mut changes = HashMap::new();
         changes.insert("reference_price".to_string(), "150".to_string());
 
         // 1. Submit proposal
-        let prop = dao.submit_proposal("Upgrade Price", "Raising ref price", changes, author).await.unwrap();
+        let prop = dao
+            .submit_proposal("Upgrade Price", "Raising ref price", changes, author)
+            .await
+            .unwrap();
         assert_eq!(prop.xip_state.label(), "Draft");
 
         // 2. Add supporters to move to Voting phase (min_supports = 3)
         for i in 0..3 {
-            let supporter = WalletAddress(format!("xv1_supporter_{}_000000000000000000000000000000000000000000000000", i));
+            let supporter = WalletAddress(format!(
+                "xv1_supporter_{}_000000000000000000000000000000000000000000000000",
+                i
+            ));
             dao.register_activity(supporter.clone()).await.unwrap();
             dao.support_proposal(&prop.id, supporter).await.unwrap();
         }
@@ -754,16 +776,25 @@ mod tests {
         assert_eq!(prop_voting.xip_state.label(), "Voting");
 
         // 3. User & Council cast votes (both YES)
-        let voter_u = WalletAddress("xv1_user_voter_000000000000000000000000000000000000000000000000".to_string());
+        let voter_u = WalletAddress(
+            "xv1_user_voter_000000000000000000000000000000000000000000000000".to_string(),
+        );
         dao.register_activity(voter_u.clone()).await.unwrap();
         dao.cast_user_vote(&prop.id, voter_u, true).await.unwrap();
 
-        let council_m = dao.add_council_member(
-            WalletAddress("xv1_council_m_000000000000000000000000000000000000000000000000".to_string()),
-            CouncilRole::CoreMaintainer,
-            vec!["core".to_string()],
-        ).await.unwrap();
-        dao.cast_council_vote(&prop.id, &council_m.id, true).await.unwrap();
+        let council_m = dao
+            .add_council_member(
+                WalletAddress(
+                    "xv1_council_m_000000000000000000000000000000000000000000000000".to_string(),
+                ),
+                CouncilRole::CoreMaintainer,
+                vec!["core".to_string()],
+            )
+            .await
+            .unwrap();
+        dao.cast_council_vote(&prop.id, &council_m.id, true)
+            .await
+            .unwrap();
 
         // 4. Tally votes & Execute (happy path)
         let tally_res = dao.tally_votes(&prop.id).await.unwrap();
@@ -793,33 +824,52 @@ mod tests {
             dynamic_quorum: None,
         });
 
-        let author = WalletAddress("xv1_author_0123456789abcdef0123456789abcd0123456789abcdef012345".to_string());
+        let author = WalletAddress(
+            "xv1_author_0123456789abcdef0123456789abcd0123456789abcdef012345".to_string(),
+        );
         dao.register_activity(author.clone()).await.unwrap();
 
         let mut changes = HashMap::new();
         changes.insert("reference_price".to_string(), "200".to_string());
 
-        let prop = dao.submit_proposal("Upgrade Price 2", "Raising ref price 2", changes, author).await.unwrap();
+        let prop = dao
+            .submit_proposal("Upgrade Price 2", "Raising ref price 2", changes, author)
+            .await
+            .unwrap();
 
         for i in 0..3 {
-            let supporter = WalletAddress(format!("xv1_supporter2_{}_000000000000000000000000000000000000000000000000", i));
+            let supporter = WalletAddress(format!(
+                "xv1_supporter2_{}_000000000000000000000000000000000000000000000000",
+                i
+            ));
             dao.register_activity(supporter.clone()).await.unwrap();
             dao.support_proposal(&prop.id, supporter).await.unwrap();
         }
 
-        let voter_u = WalletAddress("xv1_user_voter2_00000000000000000000000000000000000000000000000".to_string());
+        let voter_u = WalletAddress(
+            "xv1_user_voter2_00000000000000000000000000000000000000000000000".to_string(),
+        );
         dao.register_activity(voter_u.clone()).await.unwrap();
         dao.cast_user_vote(&prop.id, voter_u, true).await.unwrap();
 
-        let council_m = dao.add_council_member(
-            WalletAddress("xv1_council_m2_00000000000000000000000000000000000000000000000".to_string()),
-            CouncilRole::CoreMaintainer,
-            vec!["core".to_string()],
-        ).await.unwrap();
-        dao.cast_council_vote(&prop.id, &council_m.id, false).await.unwrap();
+        let council_m = dao
+            .add_council_member(
+                WalletAddress(
+                    "xv1_council_m2_00000000000000000000000000000000000000000000000".to_string(),
+                ),
+                CouncilRole::CoreMaintainer,
+                vec!["core".to_string()],
+            )
+            .await
+            .unwrap();
+        dao.cast_council_vote(&prop.id, &council_m.id, false)
+            .await
+            .unwrap();
 
         // Place veto
-        dao.council_veto(&prop.id, "Security issues".to_string()).await.unwrap();
+        dao.council_veto(&prop.id, "Security issues".to_string())
+            .await
+            .unwrap();
         let prop_vetoed = dao.get_proposal(&prop.id).await.unwrap();
         assert!(prop_vetoed.council_veto);
 

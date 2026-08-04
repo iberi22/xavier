@@ -200,11 +200,19 @@ async fn test_multi_node_e2e_sync() {
     // ───────────────────────────────────────────────────────────────────────
 
     // Add memory on A
-    add_memory(&node_a, "episodic/tech/blueprints", "Secret blueprints of the warp drive").await;
+    add_memory(
+        &node_a,
+        "episodic/tech/blueprints",
+        "Secret blueprints of the warp drive",
+    )
+    .await;
 
     // Verify B does not have it initially
     let mut search_b = search_memory(&node_b, "warp drive").await;
-    assert!(search_b.is_empty(), "Node B should not have A's blueprints before sync");
+    assert!(
+        search_b.is_empty(),
+        "Node B should not have A's blueprints before sync"
+    );
 
     // Trigger sync push on A towards B
     let push_res = trigger_sync_push(&node_a, &node_b.url()).await;
@@ -215,9 +223,15 @@ async fn test_multi_node_e2e_sync() {
 
     // Verify B now has the record
     search_b = search_memory(&node_b, "warp drive").await;
-    assert!(!search_b.is_empty(), "Node B should have A's blueprints after sync push");
     assert!(
-        search_b[0]["content"].as_str().unwrap().contains("Secret blueprints"),
+        !search_b.is_empty(),
+        "Node B should have A's blueprints after sync push"
+    );
+    assert!(
+        search_b[0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("Secret blueprints"),
         "Content should match"
     );
 
@@ -227,13 +241,23 @@ async fn test_multi_node_e2e_sync() {
 
     // Create a conflict: add same path on both nodes
     // Node A's version
-    add_memory(&node_a, "episodic/tech/fusion", "Nuclear energy (A version)").await;
+    add_memory(
+        &node_a,
+        "episodic/tech/fusion",
+        "Nuclear energy (A version)",
+    )
+    .await;
 
     // Sleep briefly to ensure distinct timestamps
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     // Node B's version (newer)
-    add_memory(&node_b, "episodic/tech/fusion", "Clean nuclear fusion (B version)").await;
+    add_memory(
+        &node_b,
+        "episodic/tech/fusion",
+        "Clean nuclear fusion (B version)",
+    )
+    .await;
 
     // Trigger pull on A from B (or push B -> A, which is the same as triggering pull on A from B)
     let pull_res = trigger_sync_pull(&node_a, &node_b.url()).await;
@@ -245,7 +269,10 @@ async fn test_multi_node_e2e_sync() {
     let search_a = search_memory(&node_a, "nuclear").await;
     assert!(!search_a.is_empty(), "Should find fusion record on A");
     assert!(
-        search_a[0]["content"].as_str().unwrap().contains("Clean nuclear fusion (B version)"),
+        search_a[0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("Clean nuclear fusion (B version)"),
         "A should have updated to the newer version from B"
     );
 
@@ -257,7 +284,12 @@ async fn test_multi_node_e2e_sync() {
     node_b.stop();
 
     // Add another memory on A
-    add_memory(&node_a, "episodic/tech/quantum", "Quantum computing is revolutionary").await;
+    add_memory(
+        &node_a,
+        "episodic/tech/quantum",
+        "Quantum computing is revolutionary",
+    )
+    .await;
 
     // Try to sync from A to B (it should fail gracefully)
     let client = reqwest::Client::new();
@@ -272,7 +304,10 @@ async fn test_multi_node_e2e_sync() {
     if let Ok(resp) = fail_resp {
         if resp.status().is_success() {
             let val: serde_json::Value = resp.json().await.unwrap();
-            assert_eq!(val["status"], "error", "sync push should fail when peer is offline");
+            assert_eq!(
+                val["status"], "error",
+                "sync push should fail when peer is offline"
+            );
         }
     }
 
@@ -282,19 +317,31 @@ async fn test_multi_node_e2e_sync() {
 
     // B should still not have A's quantum record
     let mut search_b_quantum = search_memory(&node_b, "Quantum").await;
-    assert!(search_b_quantum.is_empty(), "Node B should not have the quantum record yet");
+    assert!(
+        search_b_quantum.is_empty(),
+        "Node B should not have the quantum record yet"
+    );
 
     // Trigger sync push on A towards B
     let push_res_2 = trigger_sync_push(&node_a, &node_b.url()).await;
-    assert_eq!(push_res_2["status"], "ok", "sync should succeed after partition is healed");
+    assert_eq!(
+        push_res_2["status"], "ok",
+        "sync should succeed after partition is healed"
+    );
 
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     // Verify B now has the quantum record
     search_b_quantum = search_memory(&node_b, "Quantum").await;
-    assert!(!search_b_quantum.is_empty(), "Node B should have the quantum record after resync");
     assert!(
-        search_b_quantum[0]["content"].as_str().unwrap().contains("Quantum computing"),
+        !search_b_quantum.is_empty(),
+        "Node B should have the quantum record after resync"
+    );
+    assert!(
+        search_b_quantum[0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("Quantum computing"),
         "Content should match"
     );
 }

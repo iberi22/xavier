@@ -24,7 +24,11 @@ fn ensure_sidecar_placeholder() {
         return;
     };
 
-    let exe = if target.contains("windows") { ".exe" } else { "" };
+    let exe = if target.contains("windows") {
+        ".exe"
+    } else {
+        ""
+    };
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR"));
     let path = manifest_dir
         .join("binaries")
@@ -47,7 +51,10 @@ fn ensure_sidecar_placeholder() {
 
     // Minimal placeholder so tauri-build existence checks pass on cargo check/clippy.
     // Release packaging must overwrite this with a real `xavier` binary.
-    let _ = fs::write(&path, b"#!/bin/sh\necho 'xavier sidecar stub - replace with real binary' >&2\nexit 1\n");
+    let _ = fs::write(
+        &path,
+        b"#!/bin/sh\necho 'xavier sidecar stub - replace with real binary' >&2\nexit 1\n",
+    );
 
     #[cfg(unix)]
     {

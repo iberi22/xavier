@@ -82,7 +82,13 @@ impl OnchainDaoClient {
     }
 
     /// Casts a vote on-chain with XP voting power / council flag.
-    pub async fn vote(&self, cluster_id: &str, approve: bool, voting_power: u64, is_council: bool) -> anyhow::Result<()> {
+    pub async fn vote(
+        &self,
+        cluster_id: &str,
+        approve: bool,
+        voting_power: u64,
+        is_council: bool,
+    ) -> anyhow::Result<()> {
         let signer: PrivateKeySigner = self.config.private_key.parse()?;
         let wallet = EthereumWallet::from(signer);
         let provider = ProviderBuilder::new()
@@ -171,7 +177,10 @@ impl OnchainDaoClient {
     }
 
     /// Gets the proposal status from on-chain.
-    pub async fn get_proposal_status(&self, cluster_id: &str) -> anyhow::Result<(bool, u64, u64, u64, u64, bool, bool)> {
+    pub async fn get_proposal_status(
+        &self,
+        cluster_id: &str,
+    ) -> anyhow::Result<(bool, u64, u64, u64, u64, bool, bool)> {
         let provider = ProviderBuilder::new()
             .network::<Ethereum>()
             .connect_http(self.config.rpc_url.parse::<url::Url>()?);
