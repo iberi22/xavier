@@ -551,7 +551,9 @@ pub async fn memory_push_handler(
     Json(diffs): Json<Vec<xavier::memory::sync::ChunkDiff>>,
 ) -> impl axum::response::IntoResponse {
     let mut conflicts = 0u64;
-    match xavier::memory::sync::merge::apply_changes_received(&*state.store, &diffs, &mut conflicts).await {
+    match xavier::memory::sync::merge::apply_changes_received(&*state.store, &diffs, &mut conflicts)
+        .await
+    {
         Ok(()) => (
             StatusCode::OK,
             Json(serde_json::json!({
@@ -596,7 +598,13 @@ pub async fn memory_pull_since_handler(
     axum::extract::Path((workspace_id, since_secs)): axum::extract::Path<(String, u64)>,
 ) -> impl axum::response::IntoResponse {
     let since = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(since_secs);
-    match xavier::memory::sync::push_pull::collect_changes_since(&*state.store, &workspace_id, since).await {
+    match xavier::memory::sync::push_pull::collect_changes_since(
+        &*state.store,
+        &workspace_id,
+        since,
+    )
+    .await
+    {
         Ok(diffs) => (StatusCode::OK, Json(diffs)).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
