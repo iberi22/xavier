@@ -168,7 +168,10 @@ mod tests {
 
     #[test]
     fn test_export_logic_with_mock_db() {
-        std::env::set_var("XAVIER_MAINTAINER_PRIVATE_KEY_HEX", "7861766965725f6c6f63616c5f6d61696e7461696e65725f6465765f73656372");
+        std::env::set_var(
+            "XAVIER_MAINTAINER_PRIVATE_KEY_HEX",
+            "7861766965725f6c6f63616c5f6d61696e7461696e65725f6465765f73656372",
+        );
         let db_file = NamedTempFile::new().unwrap();
         let db = TelemetryDb::new(db_file.path()).unwrap();
 
@@ -177,8 +180,9 @@ mod tests {
             let payload = serde_json::json!({"event": format!("test_{}", i), "value": i});
             let payload_str = serde_json::to_string(&payload).unwrap();
             let (encrypted, ephemeral_pub) = encrypt_for_maintainer(&payload_str).unwrap();
-            let maintainer_pub =
-                crate::data_commons::maintainer::get_maintainer_public_key().unwrap().to_bytes();
+            let maintainer_pub = crate::data_commons::maintainer::get_maintainer_public_key()
+                .unwrap()
+                .to_bytes();
 
             db.save_encrypted_log(
                 &format!("hash_{}", i),
@@ -204,7 +208,10 @@ mod tests {
 
     #[test]
     fn test_deterministic_split() {
-        std::env::set_var("XAVIER_MAINTAINER_PRIVATE_KEY_HEX", "7861766965725f6c6f63616c5f6d61696e7461696e65725f6465765f73656372");
+        std::env::set_var(
+            "XAVIER_MAINTAINER_PRIVATE_KEY_HEX",
+            "7861766965725f6c6f63616c5f6d61696e7461696e65725f6465765f73656372",
+        );
         let db_file = NamedTempFile::new().unwrap();
         let db = TelemetryDb::new(db_file.path()).unwrap();
 
