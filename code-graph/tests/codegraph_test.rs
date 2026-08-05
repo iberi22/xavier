@@ -11,6 +11,7 @@ use std::os::unix::fs::PermissionsExt;
 static PATH_MUTEX: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)] // PATH_MUTEX serializa tests que comparten PATH; guard deliberado
 async fn test_codegraph_plugin_auto_detection_and_execution() {
     let _guard = PATH_MUTEX.lock().unwrap();
     // 1. Create a temp directory for the mock codegraph executable
@@ -99,6 +100,7 @@ echo '{"symbols": [{"name": "test_func", "kind": "Function", "lang": "Rust", "fi
 }
 
 #[tokio::test]
+#[allow(clippy::await_holding_lock)] // PATH_MUTEX serializa tests que comparten PATH; guard deliberado
 async fn test_parser_rust_plugin_execution() {
     let _guard = PATH_MUTEX.lock().unwrap();
     // 1. Ensure parser-rust is compiled in debug mode

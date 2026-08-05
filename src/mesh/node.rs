@@ -109,7 +109,7 @@ impl fmt::Debug for NodeIdentity {
                 &self
                     .ml_dsa_commitment
                     .as_ref()
-                    .map(|c| crate::crypto::hex_encode(c)),
+                    .map(crate::crypto::hex_encode),
             )
             .finish()
     }
@@ -158,7 +158,7 @@ impl NodeIdentity {
     pub fn ml_dsa_commitment_hex(&self) -> Option<String> {
         self.ml_dsa_commitment
             .as_ref()
-            .map(|c| crate::crypto::hex_encode(c))
+            .map(crate::crypto::hex_encode)
     }
 
     /// Sign a message using the node's private key.

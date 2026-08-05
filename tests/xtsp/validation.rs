@@ -567,7 +567,7 @@ async fn xtsp_prune() {
     let prune_dry_body = read_v1_json_body(prune_dry_res).await;
     assert_eq!(prune_dry_body["matched"].as_u64().unwrap(), 2);
     assert_eq!(prune_dry_body["deleted"].as_u64().unwrap(), 0);
-    assert_eq!(prune_dry_body["dry_run"].as_bool().unwrap(), true);
+    assert!(prune_dry_body["dry_run"].as_bool().unwrap());
 
     // Check that memories are still there
     let list_res_before = get_v1(app.clone(), "/v1/memories?limit=10").await;
@@ -588,7 +588,7 @@ async fn xtsp_prune() {
     let prune_act_body = read_v1_json_body(prune_act_res).await;
     assert_eq!(prune_act_body["matched"].as_u64().unwrap(), 2);
     assert_eq!(prune_act_body["deleted"].as_u64().unwrap(), 2);
-    assert_eq!(prune_act_body["dry_run"].as_bool().unwrap(), false);
+    assert!(!prune_act_body["dry_run"].as_bool().unwrap());
 
     // Verify memories are deleted
     let list_res_after = get_v1(app.clone(), "/v1/memories?limit=10").await;

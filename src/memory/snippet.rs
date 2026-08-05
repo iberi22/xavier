@@ -46,11 +46,7 @@ pub fn extract(content: &str, metadata: &Value, query: &str, budget: SnippetBudg
                 let extra = budget.snippet - (end - start);
                 let half_extra = extra / 2;
 
-                let mut start_idx = if start >= half_extra {
-                    start - half_extra
-                } else {
-                    0
-                };
+                let mut start_idx = start.saturating_sub(half_extra);
 
                 let mut end_idx = start_idx + budget.snippet;
                 if end_idx > total_chars {
@@ -82,13 +78,11 @@ pub fn clip_chars(s: &str, max: usize) -> &str {
     if s.is_empty() || max == 0 {
         return "";
     }
-    let mut char_count = 0;
     let mut byte_idx = 0;
-    for c in s.chars() {
-        if char_count == max {
+    for (i, c) in s.chars().enumerate() {
+        if i == max {
             break;
         }
-        char_count += 1;
         byte_idx += c.len_utf8();
     }
     &s[..byte_idx]
@@ -122,12 +116,12 @@ pub fn strip_frontmatter(content: &str) -> (&str, Option<&str>) {
         current_offset += bytes_to_skip;
     }
 
-    let mut lines_iter = content[current_offset..].lines();
+    let lines_iter = content[current_offset..].lines();
     let mut found_closing = false;
     let mut frontmatter_end_offset = current_offset;
     let mut current_line_start = current_offset;
 
-    while let Some(line) = lines_iter.next() {
+    for line in lines_iter {
         if line.trim() == "---" {
             found_closing = true;
             frontmatter_end_offset = current_line_start + line.len();

@@ -19,12 +19,12 @@ impl CheckCodes {
         let mac = hmac_sha256(seed_bytes, DOMAIN);
         // Interpret first 18 nibbles-ish as 6×3 decimal digits via base-1000 chunks
         let mut triplets = [0u16; 6];
-        for i in 0..6 {
+        for (i, t) in triplets.iter_mut().enumerate() {
             let offset = i * 3;
             let v = u32::from(mac[offset])
                 | (u32::from(mac[offset + 1]) << 8)
                 | (u32::from(mac[offset + 2]) << 16);
-            triplets[i] = (v % 1000) as u16;
+            *t = (v % 1000) as u16;
         }
         Self { triplets }
     }

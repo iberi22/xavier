@@ -156,7 +156,7 @@ async fn cmd_create(
     println!();
     println!("Shamir shares 2-of-3 (need any 2 to recover):");
     for share in &bundle.shares {
-        println!("  share x={} ys_hex={}", share.x, hex_encode(&share.ys));
+        println!("  share x={} ys_hex={}", share.x, hex_encode(share.ys));
     }
     println!();
     println!("recovery check-codes (6×3 digits):");
@@ -182,7 +182,7 @@ async fn cmd_create(
             "warning": "SECRET — store offline; 2-of-3 threshold; brick if lost",
             "shares": bundle.shares.iter().map(|s| serde_json::json!({
                 "x": s.x,
-                "ys_hex": hex_encode(&s.ys),
+                "ys_hex": hex_encode(s.ys),
             })).collect::<Vec<_>>(),
             "check_codes": bundle.check_codes.triplets,
         });
@@ -196,6 +196,7 @@ async fn cmd_create(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn cmd_recover(
     pin: Option<String>,
     passphrase: Option<String>,

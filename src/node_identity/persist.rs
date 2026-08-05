@@ -24,8 +24,8 @@ impl PublicNodeIdentity {
         Self {
             version: 1,
             node_id: keys.node_id.as_str().to_string(),
-            ed25519_public_hex: crate::crypto::hex_encode(&keys.ed25519_public),
-            ml_dsa_commitment_hex: crate::crypto::hex_encode(&keys.ml_dsa_commitment),
+            ed25519_public_hex: crate::crypto::hex_encode(keys.ed25519_public),
+            ml_dsa_commitment_hex: crate::crypto::hex_encode(keys.ml_dsa_commitment),
             created_at: chrono::Utc::now().to_rfc3339(),
         }
     }
@@ -119,7 +119,7 @@ impl NodeStore {
         pin: &str,
         device_key: Option<&[u8; 32]>,
     ) -> Result<(OpenedVault, DerivedNodeKeys, CheckCodes), VaultError> {
-        let vault = self.load_vault().map_err(|e| VaultError::Other(e))?;
+        let vault = self.load_vault().map_err(VaultError::Other)?;
         let opened = vault.unlock(pin, device_key)?;
         let phrase = SeedPhrase::from_entropy(
             &opened.entropy,

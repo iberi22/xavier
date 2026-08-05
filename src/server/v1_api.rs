@@ -2537,7 +2537,7 @@ mod tests {
         assert_eq!(val_large["truncated"], true);
         assert!(body_len.len() <= 8192);
         let results_large = val_large["results"].as_array().expect("array");
-        assert!(results_large.len() > 0);
+        assert!(!results_large.is_empty());
         assert!(results_large.len() < 7);
     }
 

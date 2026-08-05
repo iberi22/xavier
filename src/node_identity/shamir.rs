@@ -59,9 +59,9 @@ impl ShamirSplit {
             }
         }
         let mut secret = [0u8; 32];
-        for i in 0..32 {
+        for (i, secret_byte) in secret.iter_mut().enumerate() {
             let pts: Vec<(u8, u8)> = shares.iter().map(|s| (s.x, s.ys[i])).collect();
-            secret[i] = interpolate_at_zero(&pts)?;
+            *secret_byte = interpolate_at_zero(&pts)?;
         }
         Ok(secret)
     }

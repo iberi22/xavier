@@ -68,7 +68,7 @@ fn e2e_f1_mesh_challenge_namespace_pro_gate() {
 
     let challenge = create_signed_nonce_challenge(Some(60));
     let response = sign_nonce_challenge(&identity, &challenge).unwrap();
-    let expected_commit = hex_encode(&bundle.keys.ml_dsa_commitment);
+    let expected_commit = hex_encode(bundle.keys.ml_dsa_commitment);
     assert_eq!(
         response.ml_dsa_commitment_hex.as_deref(),
         Some(expected_commit.as_str())
@@ -145,7 +145,7 @@ fn e2e_f3_hybrid_pack_sign_verify() {
     let sig = HybridPackSignature::sign_ed25519(&id, cipher, meta).unwrap();
     sig.verify_ed25519(meta).unwrap();
     assert!(sig.is_hybrid_ready());
-    let expected = hex_encode(&bundle.keys.ml_dsa_commitment);
+    let expected = hex_encode(bundle.keys.ml_dsa_commitment);
     assert_eq!(
         sig.ml_dsa_commitment_hex.as_deref(),
         Some(expected.as_str())

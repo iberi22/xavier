@@ -38,7 +38,7 @@ fn recover_from_shares_file_same_identity() {
         "version": 1,
         "shares": original.shares.iter().take(2).map(|s| serde_json::json!({
             "x": s.x,
-            "ys_hex": hex_encode(&s.ys),
+            "ys_hex": hex_encode(s.ys),
         })).collect::<Vec<_>>(),
     });
     let shares_path = dir.path().join("shares.json");

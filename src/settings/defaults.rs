@@ -32,12 +32,6 @@ impl Default for WorkspaceSettings {
     }
 }
 
-impl Default for DedupScope {
-    fn default() -> Self {
-        Self::PathExact
-    }
-}
-
 impl Default for DedupSettings {
     fn default() -> Self {
         Self {
