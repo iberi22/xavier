@@ -322,6 +322,14 @@ pub fn scan_code_graph(codebase_root: &str) -> CodeGraphScanResult {
     grep_fallback(codebase_root, &feature_symbols)
 }
 
+// Helper to avoid test name colliding/referencing itself incorrectly
+fn try_code_code_graph_db_with_sqlite_helper(
+    root: &str,
+    feature_symbols: &HashMap<String, Vec<String>>,
+) -> Option<CodeGraphScanResult> {
+    try_code_graph_db(root, feature_symbols)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -622,12 +630,4 @@ mod tests {
             .found
             .contains("cool_fn_symbol"));
     }
-}
-
-// Helper to avoid test name colliding/referencing itself incorrectly
-fn try_code_code_graph_db_with_sqlite_helper(
-    root: &str,
-    feature_symbols: &HashMap<String, Vec<String>>,
-) -> Option<CodeGraphScanResult> {
-    try_code_graph_db(root, feature_symbols)
 }

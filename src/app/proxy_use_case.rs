@@ -227,8 +227,7 @@ impl ProxyUseCase {
             let secret;
             let agent_id;
 
-            if token.starts_with("clavis:") {
-                let clavis_id = &token["clavis:".len()..];
+            if let Some(clavis_id) = token.strip_prefix("clavis:") {
                 let clavis_engine = crate::clavis::get_global_engine();
                 secret = clavis_engine
                     .get_key_value(clavis_id)
@@ -479,8 +478,7 @@ impl ProxyUseCase {
             let secret;
             let agent_id;
 
-            if token.starts_with("clavis:") {
-                let clavis_id = &token["clavis:".len()..];
+            if let Some(clavis_id) = token.strip_prefix("clavis:") {
                 let clavis_engine = crate::clavis::get_global_engine();
                 secret = clavis_engine
                     .get_key_value(clavis_id)

@@ -106,7 +106,7 @@ pub async fn list_peers_handler() -> impl IntoResponse {
                     .unwrap_or(Role::Viewer),
                 clearance: entry
                     .as_ref()
-                    .map(|e| e.clearance.clone())
+                    .map(|e| e.clearance)
                     .unwrap_or(ClearanceLevel::Unclassified),
                 last_seen_at: p.last_seen_at,
                 sync_enabled: p.sync_enabled,

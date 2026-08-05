@@ -150,12 +150,9 @@ pub async fn affected_handler(
 
     if start_nodes.is_empty() {
         // Try searching for the document to see if we can find more context
-        match ctx.workspace.memory.get(&params.path).await {
-            Ok(Some(doc)) => {
-                // If we found a document, use its path as a potential seed
-                start_nodes.insert(doc.path.clone());
-            }
-            _ => {}
+        if let Ok(Some(doc)) = ctx.workspace.memory.get(&params.path).await {
+            // If we found a document, use its path as a potential seed
+            start_nodes.insert(doc.path.clone());
         }
     }
 

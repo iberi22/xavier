@@ -172,6 +172,7 @@ impl CppParser {
         );
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn push_symbol(
         &self,
         symbols: &mut Vec<Symbol>,

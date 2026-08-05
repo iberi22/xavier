@@ -80,7 +80,7 @@ impl Cli {
                 let base_url = resolve_base_url();
                 println!("Searching memories via HTTP API on {}", base_url);
                 // Prefer --max-results / -n flag over positional limit
-                let lim = max_results.clone().or(limit.clone()).unwrap_or(10);
+                let lim = (*max_results).or(*limit).unwrap_or(10);
                 search_memories_filtered(query, lim, cluster.clone(), level.clone(), *offline_ok)
                     .await
             }

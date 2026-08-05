@@ -46,9 +46,8 @@ impl DefaultRegistry {
         match reqwest::get(LIVE_INDEX_URL).await {
             Ok(resp) => {
                 if resp.status().is_success() {
-                    match resp.json::<DefaultRegistry>().await {
-                        Ok(reg) => return Ok(reg),
-                        Err(_) => {}
+                    if let Ok(reg) = resp.json::<DefaultRegistry>().await {
+                        return Ok(reg);
                     }
                 }
                 eprintln!("Using embedded plugin index (network unavailable)");

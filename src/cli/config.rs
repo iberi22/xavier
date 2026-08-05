@@ -126,27 +126,6 @@ pub fn validate_xavier_data_dir_env() -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
-mod data_dir_tests {
-    use super::*;
-
-    #[test]
-    fn rejects_windows_drive_letter_on_unix() {
-        #[cfg(unix)]
-        {
-            assert!(validate_data_dir_path(r"E:\scripts-python\xavier\data").is_err());
-            assert!(validate_data_dir_path("C:/Users/belal/xavier/data").is_err());
-        }
-    }
-
-    #[test]
-    fn accepts_posix_paths() {
-        assert!(validate_data_dir_path("/home/belal/proyectosSWAL/xavier/data").is_ok());
-        assert!(validate_data_dir_path("data").is_ok());
-        assert!(validate_data_dir_path("").is_ok());
-    }
-}
-
 /// Resolve http token.
 pub fn resolve_http_token() -> Result<String> {
     Ok(xavier::security::auth::resolve_xavier_token())
@@ -272,4 +251,25 @@ pub fn save_cwd(path: &str) -> Result<()> {
     }
     std::fs::write(cwd_file, path)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod data_dir_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_windows_drive_letter_on_unix() {
+        #[cfg(unix)]
+        {
+            assert!(validate_data_dir_path(r"E:\scripts-python\xavier\data").is_err());
+            assert!(validate_data_dir_path("C:/Users/belal/xavier/data").is_err());
+        }
+    }
+
+    #[test]
+    fn accepts_posix_paths() {
+        assert!(validate_data_dir_path("/home/belal/proyectosSWAL/xavier/data").is_ok());
+        assert!(validate_data_dir_path("data").is_ok());
+        assert!(validate_data_dir_path("").is_ok());
+    }
 }

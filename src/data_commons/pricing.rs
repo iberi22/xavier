@@ -139,11 +139,7 @@ impl PriceOracle {
         let size_base = (metadata.size as f64) * self.base_price_per_unit;
 
         // 2. Freshness decay: 1 / (1 + (age / half_life))
-        let age = if metadata.last_accessed >= metadata.created_at {
-            metadata.last_accessed - metadata.created_at
-        } else {
-            0
-        };
+        let age = metadata.last_accessed.saturating_sub(metadata.created_at);
         let freshness_factor = 1.0 / (1.0 + (age as f64 / self.decay_half_life as f64));
 
         // 3. Demand multiplier: (1 + demand * demand_multiplier)
@@ -218,8 +214,8 @@ pub fn calculate_price(size: u64, tier: PricingTier, reputation: f64) -> TokenAm
 /// Staking provides a reputation boost up to a maximum boost of +0.50.
 pub fn calculate_reputation_boost(staked_amount: u64) -> f64 {
     // 1000 staked tokens yields maximum boost of 0.50 (linear scaling up to 1000)
-    let boost = (staked_amount as f64 / 2000.0).min(0.50);
-    boost
+
+    (staked_amount as f64 / 2000.0).min(0.50)
 }
 
 /// Applies a reputation boost from staked $SWAL to a provider's base reputation.

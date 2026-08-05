@@ -566,8 +566,8 @@ mod tests {
             content: "Fox jumps".to_string(),
             embedding: {
                 let mut emb = vec![0.0; 128];
-                for i in 0..64 {
-                    emb[i] = 0.3;
+                for e in emb.iter_mut().take(64) {
+                    *e = 0.3;
                 }
                 emb
             },

@@ -548,7 +548,7 @@ mod tests {
         for _ in 0..5 {
             let res = login_handler(
                 State(state.clone()),
-                connect_info.clone(),
+                connect_info,
                 headers.clone(),
                 Json(payload.clone()),
             )
@@ -559,7 +559,7 @@ mod tests {
         // 6th attempt should return 429 Too Many Requests
         let res = login_handler(
             State(state.clone()),
-            connect_info.clone(),
+            connect_info,
             headers.clone(),
             Json(payload.clone()),
         )

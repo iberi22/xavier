@@ -88,9 +88,7 @@ pub async fn handle_doctor(format: String, verbose: bool) -> Result<()> {
 
     checks.push(DoctorCheck {
         name: "Ollama Reachability".to_string(),
-        status: if !provider_is_local && !embeddings_are_local {
-            CheckStatus::Ok
-        } else if ollama_reachable {
+        status: if (!provider_is_local && !embeddings_are_local) || ollama_reachable {
             CheckStatus::Ok
         } else if provider_is_local || embeddings_are_local {
             CheckStatus::Fail

@@ -87,7 +87,7 @@ async fn test_scan_and_dump_workflow_produces_valid_json() {
         .expect("No 'symbols' array in codegraph.json");
 
     assert!(
-        symbols.len() >= 1,
+        !symbols.is_empty(),
         "Expected symbols array to have length >= 1"
     );
     let contains_func = symbols.iter().any(|sym| {
