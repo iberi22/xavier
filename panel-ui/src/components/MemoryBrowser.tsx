@@ -9,6 +9,7 @@ import {
 import type React from "react";
 import { memo, useCallback, useEffect, useState } from "react";
 import { ApiClient } from "../api/client";
+import { useDebounce } from "../hooks/useDebounce";
 import type { MemoryEntry } from "../types";
 
 const PAGE_SIZE = 20;
@@ -41,6 +42,7 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
   const [newContent, setNewContent] = useState("");
   const [newKind, setNewKind] = useState("note");
   const [adding, setAdding] = useState(false);
+  const debouncedQuery = useDebounce(query, 300);
 
   const doSearch = useCallback(
     (q: string, k: string, p: number) => {
@@ -59,8 +61,8 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
   );
 
   useEffect(() => {
-    doSearch(query, kind, page);
-  }, [query, kind, page, doSearch]);
+    doSearch(debouncedQuery, kind, page);
+  }, [debouncedQuery, kind, page, doSearch]);
 
   const handleAdd = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,7 +72,7 @@ export default function MemoryBrowser({ token }: MemoryBrowserProps) {
       await api.addMemory(newContent.trim(), newKind);
       setNewContent("");
       setShowAdd(false);
-      doSearch(query, kind, page);
+      doSearch(debouncedQuery, kind, page);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add memory");
     } finally {
