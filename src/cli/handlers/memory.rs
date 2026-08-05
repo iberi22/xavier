@@ -199,34 +199,68 @@ pub async fn search_handler(
         .unwrap_or_else(|| xavier::memory::schema::parse_zones_from_prompt(effective_query));
     filters.zones = Some(zones);
 
-    let results: Vec<MemoryRecord> = match state
-        .memory
-        .search(effective_query, 10, Some(filters))
-        .await
-    {
-        Ok(results) => results,
-        Err(e) => {
-            info!("Search error: {}", e);
-            return axum::Json(serde_json::json!({
-                "results": [],
-                "query": payload.query,
-                "count": 0,
-                "error": e.to_string(),
-                "workspace_id": state.workspace_id,
-            }));
-        }
-    };
-
-    let search_results: Vec<serde_json::Value> = results
-        .into_iter()
-        .map(|document| {
-            serde_json::json!({
-                "id": document.id,
-                "content": document.content,
-                "embedding": document.embedding,
-            })
-        })
-        .collect();
+    // WAVEX-13-02 fix: use hybrid search (vector + lexical + KG, RRF-scored)
+    // so results carry real similarity scores, path, and metadata. The CLI
+    // recall display reads `score` and `metadata.kind` — previously the
+    // handler only serialized id/content/embedding, which is why recall
+    // always showed σ=0.000 and [unknown]. Falls back to the plain
+    // lexical search when hybrid search is unsupported by the backend.
+    let search_results: Vec<serde_json::Value> =
+        match state
+            .store
+            .hybrid_search(
+                &state.workspace_id,
+                effective_query,
+                xavier::memory::store::HybridSearchMode::Both,
+                Some(&filters),
+                10,
+            )
+            .await
+        {
+            Ok(hybrid) => hybrid
+                .into_iter()
+                .map(|hr| {
+                    serde_json::json!({
+                        "id": hr.record.id,
+                        "path": hr.record.path,
+                        "content": hr.record.content,
+                        "metadata": hr.record.metadata,
+                        "score": hr.score,
+                        "vector_score": hr.vector_score,
+                        "lexical_score": hr.lexical_score,
+                        "embedding": hr.record.embedding,
+                    })
+                })
+                .collect(),
+            Err(e) => {
+                info!("Hybrid search unavailable ({}), falling back to lexical search", e);
+                match state.memory.search(effective_query, 10, Some(filters)).await {
+                    Ok(results) => results
+                        .into_iter()
+                        .map(|document| {
+                            serde_json::json!({
+                                "id": document.id,
+                                "path": document.path,
+                                "content": document.content,
+                                "metadata": document.metadata,
+                                "score": document.score,
+                                "embedding": document.embedding,
+                            })
+                        })
+                        .collect(),
+                    Err(e2) => {
+                        info!("Search error: {}", e2);
+                        return axum::Json(serde_json::json!({
+                            "results": [],
+                            "query": payload.query,
+                            "count": 0,
+                            "error": e2.to_string(),
+                            "workspace_id": state.workspace_id,
+                        }));
+                    }
+                }
+            }
+        };
 
     axum::Json(serde_json::json!({
         "results": search_results,
