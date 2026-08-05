@@ -4,40 +4,30 @@ use std::env;
 use tracing::warn;
 use x25519_dalek::{PublicKey, StaticSecret};
 
-/// Obtiene o genera la llave privada estática del nodo mantenedor.
+/// Obtiene la llave privada estática del nodo mantenedor.
 /// En un escenario de producción, esta llave X25519 privada se cargaría
-/// desde un Secure Enclave o KMS. Para desarrollo/Fase 1, usamos una llave determinista
-/// o inyectada por variable de entorno.
-pub fn get_maintainer_secret() -> StaticSecret {
-    match env::var("XAVIER_MAINTAINER_PRIVATE_KEY_HEX") {
-        Ok(hex_val) => {
-            let mut bytes = [0u8; 32];
-            if let Ok(decoded) = crate::crypto::hex_decode(&hex_val) {
-                if decoded.len() == 32 {
-                    bytes.copy_from_slice(&decoded);
-                    return StaticSecret::from(bytes);
-                }
-            }
-            warn!("XAVIER_MAINTAINER_PRIVATE_KEY_HEX is invalid. Falling back to default.");
-            get_default_secret()
-        }
-        Err(_) => get_default_secret(),
-    }
-}
+/// desde un Secure Enclave o KMS. Fallará de forma segura si la variable de entorno
+/// no está configurada, evitando fallbacks hardcodeados.
+pub fn get_maintainer_secret() -> anyhow::Result<StaticSecret> {
+    let hex_val = env::var("XAVIER_MAINTAINER_PRIVATE_KEY_HEX")
+        .map_err(|_| anyhow::anyhow!("XAVIER_MAINTAINER_PRIVATE_KEY_HEX is missing"))?;
 
-fn get_default_secret() -> StaticSecret {
-    // Llave privada fija solo para propósitos de desarrollo (Nodo local PC)
-    // ¡Nunca usar en producción real fuera de la Fase 1!
-    let seed = b"xavier_local_maintainer_dev_secr"; // Exactamente 32 bytes
     let mut bytes = [0u8; 32];
-    bytes.copy_from_slice(seed);
-    StaticSecret::from(bytes)
+    let decoded = crate::crypto::hex_decode(&hex_val)
+        .map_err(|_| anyhow::anyhow!("XAVIER_MAINTAINER_PRIVATE_KEY_HEX is not valid hex"))?;
+
+    if decoded.len() == 32 {
+        bytes.copy_from_slice(&decoded);
+        Ok(StaticSecret::from(bytes))
+    } else {
+        anyhow::bail!("XAVIER_MAINTAINER_PRIVATE_KEY_HEX must be exactly 32 bytes");
+    }
 }
 
 /// Obtiene la llave pública del nodo mantenedor.
 /// Todos los nodos en la red tienen acceso a esta función para cifrar la telemetría.
-pub fn get_maintainer_public_key() -> PublicKey {
-    PublicKey::from(&get_maintainer_secret())
+pub fn get_maintainer_public_key() -> anyhow::Result<PublicKey> {
+    Ok(PublicKey::from(&get_maintainer_secret()?))
 }
 
 /// Verifica si este nodo está configurado como nodo mantenedor.
@@ -53,7 +43,8 @@ pub fn is_maintainer_node() -> bool {
 pub fn encrypt_for_maintainer(
     payload_json: &str,
 ) -> Result<(Vec<u8>, [u8; 32]), crate::crypto::encryption::EncryptionError> {
-    let maintainer_pub = get_maintainer_public_key();
+    let maintainer_pub = get_maintainer_public_key()
+        .map_err(|_| crate::crypto::encryption::EncryptionError::InvalidKey)?;
 
     // 1. Generar llave efímera para esta única transacción
     let ephemeral_secret = StaticSecret::random_from_rng(OsRng);
@@ -79,7 +70,8 @@ pub fn decrypt_as_maintainer(
         warn!("Intento de descifrado en un nodo que no es mantenedor.");
     }
 
-    let maintainer_secret = get_maintainer_secret();
+    let maintainer_secret = get_maintainer_secret()
+        .map_err(|_| crate::crypto::encryption::EncryptionError::InvalidKey)?;
     let ephemeral_pub = PublicKey::from(*ephemeral_pubkey_bytes);
 
     // Reconstruir la misma llave compartida
