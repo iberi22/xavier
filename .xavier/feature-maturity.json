@@ -1045,8 +1045,8 @@
     "in_progress": 17,
     "scan_errors": 0
   },
-  "scanned_at": "2026-08-03T05:25:23.410011423+00:00",
-  "head_commit": "0f24bb5979c17c22589cfdd2175b2a3c8b249f86",
+  "scanned_at": "2026-08-03T15:18:42.377449434+00:00",
+  "head_commit": "08f5e31afab95a1100be27f588324d3846b33145",
   "errors": [],
   "layers": {
     "static_ms": 0,
