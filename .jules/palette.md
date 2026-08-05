@@ -18,3 +18,6 @@
 ## 2024-05-18 - Form controls lacking IDs in reusable component wrappers
 **Learning:** Reusable form components (like Input, Select, Slider wrappers) frequently lack proper `<label htmlFor="...">` and `<input id="...">` bindings because they are instantiated multiple times. This breaks screen reader associations and clickable label hit areas.
 **Action:** Always verify reusable UI components generate and apply unique IDs (e.g. using React's `useId()` hook) to maintain accessible label bindings across multiple instantiations.
+## 2026-08-04 - [Added ARIA switch attributes to custom toggle components]
+**Learning:** When using custom `button` elements to represent on/off toggles (instead of native checkboxes), screen readers might announce them simply as 'button' without indicating state. Adding `role="switch"` and `aria-checked={boolean}` properly communicates their intended behavior and current state.
+**Action:** Always include `role="switch"` and `aria-checked={boolean}` when creating custom toggle switches using buttons to ensure they are accessible to assistive technologies.
