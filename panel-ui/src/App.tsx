@@ -330,7 +330,7 @@ export default function App() {
     }
   }
 
-  const handleSystemMessage = (text: string) => {
+  const handleSystemMessage = useCallback((text: string) => {
     setMessages((prev) => [
       ...prev,
       {
@@ -340,11 +340,11 @@ export default function App() {
         created_at: new Date().toISOString(),
       },
     ]);
-  };
+  }, []);
 
-  const handleUpdateBookmark = (_updated: BookmarkArtifact) => {
+  const handleUpdateBookmark = useCallback((_updated: BookmarkArtifact) => {
     // For demo purposes, sync local state
-  };
+  }, []);
 
   const handleUpdateGraphData = useCallback(
     (data: GraphData) => {
@@ -375,25 +375,30 @@ export default function App() {
     [api],
   );
 
-  const handlePinArtifact = (artifact: BookmarkArtifact) => {
-    const newWidget: CanvasWidget = {
-      id: `w_${Date.now()}`,
-      artifact,
-      position: { x: 50 + widgets.length * 30, y: 50 + widgets.length * 30 },
-    };
-    setWidgets((prev) => [...prev, newWidget]);
+  const handlePinArtifact = useCallback((artifact: BookmarkArtifact) => {
+    setWidgets((prev) => {
+      const newWidget: CanvasWidget = {
+        id: `w_${Date.now()}`,
+        artifact,
+        position: { x: 50 + prev.length * 30, y: 50 + prev.length * 30 },
+      };
+      return [...prev, newWidget];
+    });
     setIsConfigOpen(false);
-  };
+  }, []);
 
-  const handleRemoveWidget = (id: string) => {
+  const handleRemoveWidget = useCallback((id: string) => {
     setWidgets((prev) => prev.filter((w) => w.id !== id));
-  };
+  }, []);
 
-  const handleUpdateWidgetPosition = (id: string, x: number, y: number) => {
-    setWidgets((prev) =>
-      prev.map((w) => (w.id === id ? { ...w, position: { x, y } } : w)),
-    );
-  };
+  const handleUpdateWidgetPosition = useCallback(
+    (id: string, x: number, y: number) => {
+      setWidgets((prev) =>
+        prev.map((w) => (w.id === id ? { ...w, position: { x, y } } : w)),
+      );
+    },
+    [],
+  );
 
   if (health === "offline") {
     return (

@@ -133,7 +133,7 @@ export default function GraphCanvas({
     [linkCounts],
   );
 
-  const handleNodeClick = async (node: any) => {
+  const handleNodeClick = useCallback(async (node: any) => {
     const nodeObj = node as GraphNode;
 
     // Detect double click manually since ForceGraph2D doesn't have native onNodeDoubleClick
@@ -159,7 +159,16 @@ export default function GraphCanvas({
         console.warn("Failed to fetch node detail:", err);
       }
     }
-  };
+  }, [onNodeDoubleClick, onNodeSelect]);
+
+  const handleNodeHover = useCallback((node: any) => {
+    setHoveredNode((node as GraphNode) || null);
+  }, []);
+
+  const handleBackgroundClick = useCallback(() => {
+    setSelectedNode(null);
+    setSelectedNodeExtra(null);
+  }, []);
 
   const paintNode = useCallback(
     (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -344,12 +353,9 @@ export default function GraphCanvas({
             nodeRelSize={6}
             d3VelocityDecay={0.4}
             d3AlphaDecay={0.03}
-            onNodeHover={(node) => setHoveredNode((node as GraphNode) || null)}
+            onNodeHover={handleNodeHover}
             onNodeClick={handleNodeClick}
-            onBackgroundClick={() => {
-              setSelectedNode(null);
-              setSelectedNodeExtra(null);
-            }}
+            onBackgroundClick={handleBackgroundClick}
           />
         </div>
       )}
