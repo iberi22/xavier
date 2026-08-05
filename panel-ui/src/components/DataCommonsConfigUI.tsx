@@ -92,8 +92,10 @@ export default function DataCommonsConfigUI({ token }: { token: string }) {
             </div>
             <button
               aria-label="Enable Data Telemetry"
+              role="switch"
+              aria-checked={config.enabled}
               onClick={() => setConfig({ ...config, enabled: !config.enabled })}
-              className={`relative w-12 h-7 rounded-full transition-all duration-300 ${
+              className={`relative w-12 h-7 rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
                 config.enabled
                   ? "bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.4)]"
                   : "bg-white/10"
@@ -118,10 +120,12 @@ export default function DataCommonsConfigUI({ token }: { token: string }) {
             </div>
             <button
               aria-label="GDPR / Legal Consent"
+              role="switch"
+              aria-checked={config.consent_given}
               onClick={() =>
                 setConfig({ ...config, consent_given: !config.consent_given })
               }
-              className={`relative w-12 h-7 rounded-full transition-all duration-300 ${
+              className={`relative w-12 h-7 rounded-full transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 ${
                 config.consent_given
                   ? "bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.4)]"
                   : "bg-white/10"
