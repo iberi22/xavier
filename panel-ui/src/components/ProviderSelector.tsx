@@ -19,18 +19,32 @@ export function ProviderSelector({
   activeProvider,
   onSwitch,
 }: ProviderSelectorProps) {
+  const id = React.useId();
+  const labelId = `provider-selector-label-${id}`;
+  const buttonId = `provider-selector-button-${id}`;
+  const listboxId = `provider-selector-listbox-${id}`;
   const [isOpen, setIsOpen] = React.useState(false);
   const active =
     providers.find((p) => p.name === activeProvider) || providers[0];
 
   return (
     <div className="relative w-full max-w-sm">
-      <label className="text-[10px] uppercase text-white/50 tracking-widest mb-2 block">
+      <label
+        id={labelId}
+        htmlFor={buttonId}
+        className="text-[10px] uppercase text-white/50 tracking-widest mb-2 block"
+      >
         Primary Provider
       </label>
       <button
+        id={buttonId}
+        type="button"
         onClick={() => setIsOpen(!isOpen)}
-        className="w-full flex items-center justify-between bg-[#050505]/80 border border-white/10 hover:border-[#39ff14]/50 p-4 rounded-xl transition-all group"
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        aria-labelledby={labelId}
+        aria-controls={isOpen ? listboxId : undefined}
+        className="w-full flex items-center justify-between bg-[#050505]/80 border border-white/10 hover:border-[#39ff14]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#39ff14]/50 p-4 rounded-xl transition-all group"
       >
         <div className="flex items-center gap-3">
           <StatusIndicator status={active?.status || "error"} />
@@ -46,6 +60,9 @@ export function ProviderSelector({
       <AnimatePresence>
         {isOpen && (
           <motion.div
+            id={listboxId}
+            role="listbox"
+            aria-labelledby={labelId}
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: 10 }}
@@ -54,11 +71,14 @@ export function ProviderSelector({
             {providers.map((p) => (
               <button
                 key={p.name}
+                type="button"
+                role="option"
+                aria-selected={activeProvider === p.name}
                 onClick={() => {
                   onSwitch(p.name);
                   setIsOpen(false);
                 }}
-                className="w-full flex items-center justify-between p-4 hover:bg-white/5 transition-colors group"
+                className="w-full flex items-center justify-between p-4 hover:bg-white/5 focus-visible:outline-none focus-visible:bg-white/10 transition-colors group"
               >
                 <div className="flex items-center gap-3">
                   <StatusIndicator status={p.status} />
