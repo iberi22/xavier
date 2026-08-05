@@ -33,7 +33,15 @@ interface GraphCanvasProps {
   isCodeMode?: boolean;
 }
 
-export default function GraphCanvas({
+/**
+ * ⚡ Bolt Performance Optimization
+ *
+ * 💡 What: Wrapped GraphCanvas in React.memo()
+ * 🎯 Why: ForceGraph2D is computationally expensive to render. When rendering GraphCanvas in ConfigModal,
+ *          parent state updates caused unnecessary re-renders of the entire graph subtree.
+ * 📊 Impact: Prevents expensive N+1 canvas recalculations when modal tabs or other config states change.
+ */
+export default React.memo(function GraphCanvas({
   data,
   loading = false,
   error = null,
@@ -549,4 +557,4 @@ export default function GraphCanvas({
       </AnimatePresence>
     </div>
   );
-}
+});
