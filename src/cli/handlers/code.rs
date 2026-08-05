@@ -805,7 +805,7 @@ fn code_find_symbols(
     pattern: Option<&str>,
     limit: usize,
 ) -> Vec<code_graph::types::Symbol> {
-    let limit = limit.max(1).min(100);
+    let limit = limit.clamp(1, 100);
 
     if let Some(n) = name {
         return code_query.find_by_name(n, limit).unwrap_or_default();
